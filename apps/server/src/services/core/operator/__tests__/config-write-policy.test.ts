@@ -134,6 +134,10 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'runtimes.codex.credentialRef',
       'runtimes.codex.defaultTrustStop',
       'runtimes.defaultTrustStop',
+      // Whether Codex and OpenCode agents reach this server's own `/mcp`
+      // (DOR-1613). Refused for the `reach` stake: on, two more programs become
+      // callers of this instance holding its local bearer.
+      'runtimes.dorkosTools',
       'runtimes.opencode.baseURL',
       'runtimes.opencode.binaryPath',
       'runtimes.opencode.defaultTrustStop',

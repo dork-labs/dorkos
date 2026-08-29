@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite build --watch",
-    "build": "vite build",
+    "build": "vite build && tsx scripts/check-plugin-defines.ts",
     "addons:lock": "tsx scripts/lock-addons.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vite build && vitest run"
+    "test": "vite build && tsx scripts/check-plugin-defines.ts && vitest run"
   },
   "dependencies": {
     "@dorkos/client": "workspace:*",

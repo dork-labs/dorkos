@@ -182,7 +182,7 @@ async function chip(): Promise<HTMLElement> {
 
 describe('the presence strip’s hover card opens a profile', () => {
   beforeEach(() => {
-    useRoomPresenceStore.setState({ rooms: {} });
+    useRoomPresenceStore.getState().reset();
     useSessionListStore.setState({ statuses: {}, statusCwds: {} });
     useInteractionStore.getState().reset();
   });

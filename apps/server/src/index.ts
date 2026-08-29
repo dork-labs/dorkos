@@ -274,6 +274,7 @@ import {
   RoomRepoReconciler,
   RoomRepoService,
   RoomRepoStore,
+  RoomWorktreeManager,
 } from './services/rooms/repo/index.js';
 import { ReadCursorStore } from './services/core/read-cursor-store.js';
 import { ReadCursorService, setReadCursorService } from './services/core/read-cursor-service.js';
@@ -992,7 +993,16 @@ async function start() {
             // validateMcpOrigin via the non-browser early return (not the allowlist).
             // Exposes `control_ui` to Codex for canvas parity (the event-mapper turns
             // the resulting mcp_tool_call into a ui_command).
-            mcpUiUrl: `http://127.0.0.1:${PORT}/codex-ui-mcp`,
+            //
+            // Minted from the DIAL form of the bind host, never a hardcoded
+            // `127.0.0.1` (DOR-723): the server binds `env.DORKOS_HOST`, which
+            // Node resolves to ONE address family, so on a host where that is
+            // `::1` a `127.0.0.1` URL is connection-refused — and the shipped
+            // Docker image binds the wildcard `0.0.0.0`, which Windows refuses
+            // to dial at all. This was the last hardcoded mint site in the
+            // server; the sibling sites below already went through
+            // `localDialHost`.
+            mcpUiUrl: `http://${localDialHost(env.DORKOS_HOST)}:${PORT}/codex-ui-mcp`,
           });
           // Durable per-session settings hydrate/write-through (ADR-0260), same
           // port the Claude adapter uses.
@@ -1195,11 +1205,27 @@ async function start() {
       maxFileBytes: () => readRoomRepoConfig().maxFileBytes,
     })
   );
+  // One standing working copy per (room, agent), and the reap that tidies away
+  // the empty ones (spec `project-rooms` §3.4). It gets no timer of its own:
+  // the reconciler below owns the single sweep, and therefore the single
+  // overlap guard.
+  const roomWorktrees = new RoomWorktreeManager({
+    store: roomRepoStore,
+    hasRepo: (roomId) => roomRepoService.hasRepo(roomId),
+    listStrandedWorktrees: (roomId) => roomRepoService.listStrandedWorktrees(roomId),
+    reapAfterDays: () => readRoomRepoConfig().worktreeReapDays,
+    // The claim map is the only live record that an agent is mid-turn, and once
+    // the cwd rung lands (task 2.2) its worktree IS that turn's working
+    // directory. Without this the sweep can delete the directory a turn is
+    // standing in — a turn that only reads leaves no mark on any timestamp.
+    busyAgentPaths: () => roomService.listBusyAgentPaths(),
+  });
   // Rebuilds `room_repos` from the sidecars on disk, on the same five-minute
   // cadence the mesh and workspace reconcilers use (ADR-0043). It never deletes
   // a room's files — see its module doc for why an orphaned home directory is
-  // reported and left standing.
-  new RoomRepoReconciler(roomRepoStore).start();
+  // reported and left standing, and the worktree manager's for the four gates
+  // an agent's working copy has to fail before the reap may remove it.
+  new RoomRepoReconciler(roomRepoStore, undefined, roomWorktrees).start();
 
   // A room's memory is its `room_sessions` binding, and the id in it moves: the
   // room mints a placeholder before the first turn and Claude Code renames the

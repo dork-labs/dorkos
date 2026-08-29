@@ -11,6 +11,7 @@
  * @module shared/lib/direct/system-methods
  */
 import type { RuntimeCapabilities, SystemRequirements } from '@dorkos/shared/agent-runtime';
+import type { CapabilityCatalog } from '@dorkos/shared/capabilities';
 import { deriveRuntimeReadiness } from '@dorkos/shared/agent-runtime';
 import { NOTIFICATION_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
 import type { TemplateEntry } from '@dorkos/shared/template-catalog';
@@ -746,6 +747,19 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
       return {
         capabilities: { [caps.type]: caps },
         defaultRuntime: caps.type,
+      };
+    },
+
+    async getCapabilityCatalog(_opts?: { toolGroup?: string }): Promise<CapabilityCatalog> {
+      // The embed runs no Capability Registry: it holds a runtime and a search
+      // index, not the server's composed domains. An EMPTY catalog is the honest
+      // answer, and it is the one the Tools tabs already handle — a grant with no
+      // tools behind it renders its switch and names no tool, rather than
+      // inventing names this build cannot verify.
+      return {
+        catalogVersion: 'embedded',
+        generatedAt: new Date().toISOString(),
+        capabilities: [],
       };
     },
 

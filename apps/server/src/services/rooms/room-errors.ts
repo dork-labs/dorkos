@@ -106,6 +106,44 @@ export type RoomErrorCode =
    */
   | 'TOOL_POST_NOT_IN_DM'
   /**
+   * `leave_room` was aimed at something that is not a channel (spec
+   * `rooms-management-tools` §D9, DOR-1611).
+   *
+   * **A channel can be re-entered and a direct message cannot**, and that
+   * asymmetry is the whole refusal. Leaving a channel loses nothing that cannot
+   * be handed back: the row, its `#slug` and its whole history stay, the owner
+   * sees every room on the install whether or not she is a member, and she can
+   * add the agent again. Leaving a DM is one-way — `findDmByMemberSet` needs an
+   * EXACT member-set match, so `{owner, agent}` matches nothing once one of them
+   * has gone, and re-opening mints a SECOND conversation beside the first rather
+   * than returning to it. The same trap the cockpit already warns a person about
+   * before they leave a DM.
+   *
+   * Spelled `kind !== 'channel'`, never `kind === 'dm'`, for the reason its
+   * `post` twin above gives: an unrecognized kind takes the narrower branch and
+   * never gets more reach than a DM (`.claude/rules/room-conduct.md`).
+   */
+  | 'TOOL_LEAVE_NOT_IN_DM'
+  /**
+   * `update_room` was asked to rename a direct message (spec
+   * `rooms-management-tools` §D12 amendment, DOR-1611).
+   *
+   * **A DM's name is its roster, not a field.** Its title is derived from who is
+   * in it and re-derived when that changes (`dm-title-follows-roster`), so a
+   * title an agent wrote there is a label that survives only until the next
+   * membership change — and in the meantime it has renamed a conversation
+   * belonging to whoever else is in it. A channel is the opposite: its name is
+   * the thing people type, and fixing a wrong one is the verb's whole purpose.
+   *
+   * The TOPIC stays writable in both, for `requireSystemRoomWritable`'s reason:
+   * describing a room you are in is ordinary participation.
+   *
+   * Spelled `kind !== 'channel'`, never `kind === 'dm'`, for the reason its two
+   * `TOOL_*_NOT_IN_DM` siblings above give: an unrecognized kind takes the
+   * narrower branch (`.claude/rules/room-conduct.md`).
+   */
+  | 'TOOL_RENAME_NOT_IN_DM'
+  /**
    * `post_to_room` was called by an agent whose turn in that room was STOPPED
    * (DOR-1313).
    *
@@ -330,7 +368,23 @@ export type RoomErrorCode =
    * any path on the machine, and nothing in DorkOS resolves it. The message
    * says which of the three it was, because the remedy differs.
    */
-  | 'ROOM_FILE_NOT_READABLE';
+  | 'ROOM_FILE_NOT_READABLE'
+  /**
+   * Something that only makes sense for a room with files was asked of a room
+   * without any — a working copy, a merge, a file listing (spec `project-rooms`
+   * §3.4, §3.6).
+   *
+   * Separate from `ROOM_REPOS_DISABLED`, which is about the INSTALL: this one
+   * says the feature is available and this particular room was never given
+   * files. The remedy differs — turn the setting back on, versus give this room
+   * a repo — so the codes do too.
+   *
+   * No `ROOM_REPO_` prefix, unlike its three neighbours, and that is on purpose:
+   * the spec names this code verbatim in §3.6's refusal contract, which agent
+   * tools will answer with. A code an agent may be told to expect is not one to
+   * rename for tidiness.
+   */
+  | 'NOT_A_PROJECT_ROOM';
 
 /** A refusal from the room domain, carrying a code the routes can switch on. */
 export class RoomError extends Error {

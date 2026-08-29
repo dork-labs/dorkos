@@ -456,6 +456,25 @@ describe('FileExplorer', () => {
     await screen.findByRole('treeitem', { name: '.env' });
   });
 
+  // DOR-1595: pinning is a property of the PANE, not of the room source — so it
+  // reaches the session tree too, and that is intended rather than incidental.
+  // Pinned here so a later change that scopes pinning to rooms has to say so.
+  it('floats a root README.md above the folders (DOR-1595 pinning, both surfaces)', async () => {
+    const transport = createMockTransport();
+    transport.readFileTree = vi
+      .fn()
+      .mockResolvedValue({ entries: [dir('src'), file('a.ts'), file('README.md')] });
+
+    renderExplorer(transport);
+    await screen.findByRole('treeitem', { name: 'README.md' });
+
+    expect(screen.getAllByRole('treeitem').map((el) => el.getAttribute('aria-label'))).toEqual([
+      'README.md',
+      'src',
+      'a.ts',
+    ]);
+  });
+
   it('refreshes the whole expanded subtree, not just the root (D4)', async () => {
     const readFileTree = vi.fn(async (_cwd: string, opts?: { path?: string }) => {
       if (!opts?.path) return { entries: [dir('src')] };

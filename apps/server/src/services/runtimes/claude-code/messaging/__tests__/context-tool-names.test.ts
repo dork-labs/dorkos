@@ -122,6 +122,11 @@ import { ALWAYS_LOADED_TOOLS, IN_SESSION_TOOL_PREFIX } from '../../mcp-tools/too
 import { composeCapabilityRegistryForDocs } from '../../../../core/self-description/dorkos-registry.js';
 import { OPERATING_SKILLS_PACK, TOOL_NAME_NOTE } from '@dorkos/operating-skills';
 import { GEN_UI_CONTEXT } from '../../../shared/gen-ui-context.js';
+import { buildRoomToolsBlock } from '../../../shared/room-tools-context.js';
+import {
+  CODEX_DORKOS_TOOL_PREFIX,
+  OPENCODE_DORKOS_TOOL_PREFIX,
+} from '../../../shared/dorkos-tool-names.js';
 import { buildAgentContextAppend } from '../../../shared/agent-context.js';
 import { NotifyBudget } from '../../../../relay/notify-budget.js';
 import type { McpToolDeps } from '../../mcp-tools/types.js';
@@ -300,7 +305,8 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // through by having nothing to compare against.
     // The exact surface, so a tool added or lost is a line to look at here rather
     // than a change a bound absorbs. Same number as `tool-exposure.test.ts` sees.
-    expect(advertised.size).toBe(88);
+    // 88 → 93 for the five room-management verbs (DOR-1611).
+    expect(advertised.size).toBe(93);
     expect(advertised.has('react_to_room_entry')).toBe(true);
 
     const { prose } = await claudeCodeProse();
@@ -503,11 +509,14 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'agent-context.ts',
       'asar-path.ts',
       'derive-title.ts',
+      'dorkos-mcp-injection.ts',
+      'dorkos-tool-names.ts',
       'gen-ui-context.ts',
       'mcp-content.ts',
       'resolve-agent-runtime-type.ts',
       'resolve-binary.ts',
       'room-context-block.ts',
+      'room-tools-context.ts',
       'run-probe.ts',
       'seed-context-block.ts',
       'staged-context-block.ts',
@@ -517,6 +526,16 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
 
     const offenders: string[] = [];
     for (const name of modules) {
+      // `room-tools-context.ts` is the one module here whose JOB is to name
+      // tools, and it is exempt from the source scan for a reason that is not a
+      // weakening: its body is a TEMPLATE, `${t}post_to_room`, which is neither
+      // bare nor prefixed until a caller supplies the prefix. A raw-source scan
+      // sees `post_to_room` on its own and would flag prose that is correct on
+      // every runtime. The check it needs is on the RENDERED block, once per
+      // prefix, and it is the case immediately below this one — which is
+      // strictly stronger, because it also proves each prefix resolves to real
+      // advertised tools rather than merely proving the source is quiet.
+      if (name === 'room-tools-context.ts') continue;
       const source = stripComments(await readFile(join(dir, name), 'utf8'));
       if (source.includes(IN_SESSION_TOOL_PREFIX)) {
         offenders.push(`${name}: spells ${IN_SESSION_TOOL_PREFIX}`);
@@ -529,6 +548,77 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'these runtime-neutral modules name a DorkOS tool. Codex and OpenCode read them too, ' +
         "and do not use claude-code's prefix — name the verb, or mark it as an ending."
     ).toEqual([]);
+  });
+
+  it('names the room tools correctly on each of the three runtimes (DOR-1613)', async () => {
+    // The replacement for the source scan on `room-tools-context.ts`, and a
+    // harder check than the one it replaces. That block is the one runtime-
+    // neutral module that legitimately names tools, because DOR-1613 gave codex
+    // and opencode the same `dorkos` server claude-code has run in-process all
+    // along — and each of the three spells the SAME tool differently:
+    //
+    //   claude-code  mcp__dorkos__post_to_room
+    //   codex        mcp__dorkos__post_to_room
+    //   opencode     dorkos_post_to_room
+    //
+    // So the invariant is not "names no tool" (the block would be useless) but
+    // "every tool it names is real, and carries this runtime's prefix". Both
+    // halves are checked, per prefix. A bare name is uncallable everywhere —
+    // the DOR-1292 defect that cost two evals — and a name carried under the
+    // wrong runtime's prefix is uncallable in exactly the same way, silently.
+    const advertised = await advertisedToolNames();
+    const prefixes = [
+      ['claude-code', IN_SESSION_TOOL_PREFIX],
+      ['codex', CODEX_DORKOS_TOOL_PREFIX],
+      ['opencode', OPENCODE_DORKOS_TOOL_PREFIX],
+    ] as const;
+
+    for (const [runtime, prefix] of prefixes) {
+      const block = buildRoomToolsBlock(prefix);
+
+      // 1. Nothing is named bare. `namedAsCallable` tokenizes whole identifiers,
+      //    so a prefixed name never reads as its own bare suffix.
+      const bare = [...new Set(namedAsCallable(block, advertised))].sort();
+      expect(
+        bare,
+        `the ${runtime} room-tools block names these tools bare, which is uncallable on ` +
+          'every runtime. Interpolate the prefix.'
+      ).toEqual([]);
+
+      // 2. Every prefixed name resolves to a tool the server really serves, so
+      //    a rename or removal cannot leave the prose behind.
+      const unknown = [
+        ...new Set(
+          identifierTokens(block)
+            .filter((token) => token.startsWith(prefix))
+            .map((token) => token.slice(prefix.length))
+            .filter((name) => !advertised.has(name))
+        ),
+      ].sort();
+      expect(
+        unknown,
+        `the ${runtime} room-tools block teaches these tools, and the server does not have them.`
+      ).toEqual([]);
+
+      // 3. The four room verbs are all present under this prefix. Without this
+      //    the two checks above are satisfied by a block that names nothing —
+      //    which is how a guard like this goes vacuous.
+      for (const verb of [
+        'post_to_room',
+        'react_to_room_entry',
+        'read_room_history',
+        'search_room_history',
+      ]) {
+        expect(advertised.has(verb), `${verb} is not advertised`).toBe(true);
+        expect(block, `the ${runtime} block omits ${verb}`).toContain(`${prefix}${verb}`);
+      }
+    }
+
+    // And the prefixes are actually DIFFERENT where they must be, so a future
+    // edit that collapses opencode onto claude-code's spelling is caught here
+    // rather than by an agent calling a tool that does not exist.
+    expect(OPENCODE_DORKOS_TOOL_PREFIX).not.toBe(IN_SESSION_TOOL_PREFIX);
+    expect(CODEX_DORKOS_TOOL_PREFIX).toBe(IN_SESSION_TOOL_PREFIX);
   });
 
   it('makes every operating skill say its tool names are endings', async () => {

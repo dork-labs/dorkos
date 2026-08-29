@@ -178,6 +178,7 @@ describe('UserConfigSchema', () => {
       runtimes: {
         default: 'claude-code',
         defaultTrustStop: null,
+        dorkosTools: false,
         claudeCode: {
           defaultAccount: null,
           accounts: [],
@@ -550,6 +551,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       runtimes: {
         default: 'claude-code',
         defaultTrustStop: null,
+        dorkosTools: false,
         claudeCode: {
           defaultAccount: null,
           accounts: [],
@@ -970,6 +972,7 @@ describe('UserConfigSchema runtimes', () => {
     expect(result.runtimes).toEqual({
       default: 'claude-code',
       defaultTrustStop: null,
+      dorkosTools: false,
       claudeCode: {
         defaultAccount: null,
         accounts: [],
@@ -1004,6 +1007,7 @@ describe('UserConfigSchema runtimes', () => {
     expect(result.runtimes).toEqual({
       default: 'claude-code',
       defaultTrustStop: null,
+      dorkosTools: false,
       claudeCode: {
         defaultAccount: null,
         accounts: [],

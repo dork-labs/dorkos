@@ -431,6 +431,36 @@ export function buildAgentUnavailableNotice(
 }
 
 /**
+ * The durable `notice` for a member that left the room before the turn it was
+ * owed ever ran.
+ *
+ * **This exists because the room now makes a promise it has to be able to
+ * withdraw.** `POST /api/rooms/:id/entries` answers with the agents it asked to
+ * reply (`PostToRoomResponse.triggered`), and a gathered message can wait the
+ * best part of an hour behind an agent's other work. If the member is taken off
+ * the roster in that time, the batch is dropped when it finally comes round —
+ * and until this line existed that drop wrote a log entry and nothing else, so
+ * from inside the room a message the product had accepted simply never got an
+ * answer.
+ *
+ * Deliberately not `agent_gone`, and the difference matters to the reader. That
+ * one says the folder holds no agent any more and points at re-registering it.
+ * This agent is perfectly fine: it is still registered and still answering in
+ * every other room it belongs to. It is only not a member HERE, so the remedy is
+ * to add it back.
+ *
+ * @param agentName - Display name of the member that is no longer in the room.
+ * @param subjectAuthorId - Author id of that member, for rendering.
+ */
+export function buildAgentLeftNotice(agentName: string, subjectAuthorId: string): RoomEntryBody {
+  return {
+    text: `${agentName} left this conversation before it could answer, so your message is still waiting. Add it back if you want it to pick this up.`,
+    notice: 'agent_left',
+    subjectAuthorId,
+  };
+}
+
+/**
  * The durable `notice` for a second agent refused on a bridged room
  * (chats-as-channels spec §3.4, D-6 Q3).
  *

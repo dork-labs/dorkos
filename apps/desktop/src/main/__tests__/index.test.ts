@@ -1,6 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { LOG_DIRECTORY } from './electron-log-mock';
+import { describeLogLocation } from '../log-location';
 
 vi.mock('electron', () => import('./electron-mock'));
+// `index.ts` logs, and the dialogs it builds quote the log directory
+// (`log-location.ts`). Unmocked, that reaches the REAL electron-log, whose
+// `require('electron')` is CJS and so never sees the mock above: it falls back
+// to its own Node resolver, which is PLATFORM-BRANCHED — `~/Library/Logs/<app>`
+// on macOS and `<userData>/logs` everywhere else. That made this suite pass on
+// a developer's Mac and fail on a Linux runner, and wrote a real log file into
+// the developer's home on every run.
+vi.mock('electron-log', () => import('./electron-log-mock'));
 // Windows are stubbed, but `isWebLink` is kept real: the `open-external` tests
 // below assert that the bridge enforces the shell's actual outbound policy, and
 // a hand-written copy of it here would keep passing after the real one changed.
@@ -24,6 +34,11 @@ vi.mock('../auto-updater', () => ({
   isRestartingToUpdate: vi.fn(() => false),
   consumeUpdateRestart: vi.fn(() => false),
   recordUpdateInstallIntent: vi.fn(),
+}));
+// Reading the bundle on disk is its own suite's job; here the question is only
+// whether the two moments a person expects a new version are wired to it.
+vi.mock('../updater/manual-overwrite', () => ({
+  checkForManualOverwrite: vi.fn(async () => undefined),
 }));
 vi.mock('../tray', () => ({
   setupTray: vi.fn(),
@@ -63,6 +78,14 @@ describe('single-instance lock (A1)', () => {
     app.requestSingleInstanceLock = vi.fn(() => false);
 
     const serverProcess = await import('../server-process');
+    // `vi.resetModules()` re-evaluates `../index`; it does NOT clear a module
+    // mock's call log, which accumulates for the whole file. Without this the
+    // assertion below is really "no test before me started the server", which
+    // holds only while this test happens to run first — it reds immediately
+    // under `--sequence.shuffle`. Cleared here so the claim is about what THIS
+    // import did.
+    vi.mocked(serverProcess.startServer).mockClear();
+
     await import('../index');
 
     expect(app.quit).toHaveBeenCalledTimes(1);
@@ -508,6 +531,57 @@ describe('update IPC handlers', () => {
   });
 });
 
+/**
+ * Noticing an app replaced on disk while it kept running (DOR-1455, decision 8).
+ *
+ * DorkOS survives its window closing, so a drag-install leaves the OLD process
+ * running and the single-instance lock turns "open the new one" into "focus the
+ * old one". These are the two moments a person plainly expects the version they
+ * just installed.
+ */
+describe('a newer DorkOS installed while this one runs', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('looks when a second launch is handed to the running instance', async () => {
+    const { app, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    const manualOverwrite = await import('../updater/manual-overwrite');
+    vi.mocked(manualOverwrite.checkForManualOverwrite).mockClear();
+
+    await import('../index');
+    await app.emit('second-instance', ['/Applications/DorkOS.app']);
+
+    expect(manualOverwrite.checkForManualOverwrite).toHaveBeenCalledTimes(1);
+  });
+
+  it('looks when the window is focused', async () => {
+    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    const windowManager = await import('../window-manager');
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    vi.mocked(windowManager.createWindow)
+      .mockReset()
+      .mockReturnValue(win as unknown as Electron.BrowserWindow);
+
+    const manualOverwrite = await import('../updater/manual-overwrite');
+    vi.mocked(manualOverwrite.checkForManualOverwrite).mockClear();
+
+    await import('../index');
+    await app.emit('ready');
+    expect(manualOverwrite.checkForManualOverwrite).not.toHaveBeenCalled();
+
+    await win.emit('focus');
+
+    expect(manualOverwrite.checkForManualOverwrite).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('keeping DorkOS running in the background (DOR-538)', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -716,7 +790,16 @@ describe('server start failure', () => {
     // An opaque failure gets the generic advice, because trying again really
     // may work and the log really is where to look.
     expect(message).toMatch(/try restarting the app/i);
-    expect(message).toMatch(/Library\/Logs/);
+    // The invariant, not a spelling of it: the dialog names the log folder that
+    // exists on the machine reading it. This line used to assert
+    // `/Library\/Logs/` — the macOS answer and only the macOS answer — which
+    // passed on a developer's Mac and failed on the Linux runner the moment
+    // the message became platform-aware, where it correctly read
+    // `/home/runner/.config/@dorkos/desktop/logs`.
+    expect(message).toContain(describeLogLocation());
+    // ...and that really is the mocked transport's directory, so this asserts
+    // a value rather than agreeing with itself.
+    expect(describeLogLocation()).toBe(LOG_DIRECTORY);
     expect(app.quit).toHaveBeenCalledTimes(1);
     // No window, no menu/updater setup — the app must not proceed past the
     // failed server start into a half-initialized, windowless state.

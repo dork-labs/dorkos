@@ -83,6 +83,12 @@ const NOTICE_STYLES: Record<RoomNoticeCode, { Icon: LucideIcon; tone?: string }>
   // somebody re-registers it. Warm for the same reason `turn_failed` is: this
   // one is waiting on the reader, and waiting longer will not help.
   agent_gone: { Icon: UserX, tone: 'text-status-warning' },
+  // The member left the room before the turn it was owed ever ran, so the
+  // message this room accepted is still waiting. Warm like `agent_gone`: nothing
+  // more happens here until the reader adds the agent back. A different mark
+  // from `agent_gone` because the remedy is different — that one is missing from
+  // the machine, this one is only missing from the room.
+  agent_left: { Icon: UserMinus, tone: 'text-status-warning' },
   // The agent could not be readied to answer — almost always brief database
   // contention that clears on its own by the next message, which is why it
   // reads like `agent_busy` rather than `turn_failed`: occupied, not broken.

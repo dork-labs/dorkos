@@ -1,7 +1,19 @@
 import { app, session } from 'electron';
 import { join } from 'node:path';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, promises as fsPromises } from 'node:fs';
 import log from 'electron-log';
+
+/**
+ * Everything the shell knows about throwing Chromium's caches away.
+ *
+ * Two callers, one body of knowledge: this module clears the HTTP cache once
+ * per version change (below), and `renderer-health/index.ts` reaches for the same
+ * helpers on the rungs of its recovery ladder. A second copy of "which
+ * directories hold the compiled shader cache" is exactly the kind of drift that
+ * makes one caller heal and the other not.
+ *
+ * @module main/cache-hygiene
+ */
 
 /**
  * Drop Chromium's HTTP cache once, whenever the app comes up on a new version.
@@ -60,14 +72,36 @@ function readLastRunVersion(filePath: string): string | null {
 }
 
 /**
+ * Directories under `userData` holding Chromium's compiled GPU and code
+ * caches.
+ *
+ * These survive a `clearCache()` — that call is about HTTP responses, and
+ * these hold compiled shaders and JIT output instead. A corrupt entry in any
+ * of them paints a black or garbled window with a perfectly healthy bundle
+ * behind it, which is why the recovery ladder removes them outright on the
+ * rung before it gives up on hardware acceleration.
+ *
+ * Removed by path rather than through any Electron API because none of them
+ * has one: Chromium writes them, and deleting the directory is how the
+ * platform's own troubleshooting steps clear them.
+ */
+const GPU_CACHE_DIRS = ['GPUCache', 'Code Cache', 'DawnGraphiteCache', 'DawnWebGPUCache'];
+
+/**
  * Clear the default session's cache, or reject once
  * {@link CLEAR_CACHE_TIMEOUT_MS} has passed.
  *
  * `clearCache()` is a promise with no deadline of its own: it can hang rather
  * than reject. Rejecting on the deadline routes a hang into the same handling
  * as a failure — logged, version left unrecorded, boot continues.
+ *
+ * Exported for the recovery ladder (`renderer-health/index.ts`), which needs the
+ * same bounded clear for the same reason: a rung that never finishes is a rung
+ * that never recovers the window.
+ *
+ * @throws If the clear failed, or did not settle within the deadline.
  */
-async function clearCacheWithinDeadline(): Promise<void> {
+export async function clearCacheWithinDeadline(): Promise<void> {
   let deadline: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([
@@ -123,5 +157,64 @@ export async function clearHttpCacheOnVersionChange(): Promise<void> {
     log.info(`[cache] Cleared the web cache for version ${currentVersion}.`);
   } catch (err) {
     log.warn('[cache] Could not clear the web cache after a version change.', err);
+  }
+}
+
+/**
+ * Remove Chromium's compiled GPU and code caches from `userData`.
+ *
+ * Every directory is attempted independently and every failure is swallowed:
+ * this runs on a recovery path, where a locked shader cache must not stop the
+ * rung that was about to relaunch the app.
+ *
+ * @returns The directory names that were removed, for the log line that says
+ *   what recovery actually did.
+ */
+export async function clearGpuAndCodeCaches(): Promise<string[]> {
+  const userDataPath = app.getPath('userData');
+  const outcomes = await Promise.all(
+    GPU_CACHE_DIRS.map(async (name) => {
+      try {
+        await fsPromises.rm(join(userDataPath, name), { recursive: true, force: true });
+        return name;
+      } catch (err) {
+        log.warn(`[cache] Could not remove ${name}.`, err);
+        return null;
+      }
+    })
+  );
+  return outcomes.filter((name): name is string => name !== null);
+}
+
+/**
+ * Wipe the renderer's `Local Storage`.
+ *
+ * The one storage the cockpit keeps a **build-shaped** copy of anything in: the
+ * sidebar's boot cache lives there, keyed by the version that wrote it
+ * (`apps/client/src/layers/shared/lib/query-persister.ts`). Cookies and the
+ * rest are deliberately left alone — this is offered as "reset the window",
+ * not "sign me out".
+ *
+ * Bounded by {@link CLEAR_CACHE_TIMEOUT_MS} for the same reason the cache clear
+ * is: it runs on the path to a relaunch, and a wipe that hangs would strand the
+ * person on the page that offered it.
+ *
+ * @throws If the wipe failed, or did not settle within the deadline.
+ */
+export async function clearLocalStorage(): Promise<void> {
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      session.defaultSession.clearStorageData({ storages: ['localstorage'] }),
+      new Promise<never>((_resolve, reject) => {
+        deadline = setTimeout(
+          () =>
+            reject(new Error(`clearStorageData did not settle within ${CLEAR_CACHE_TIMEOUT_MS}ms`)),
+          CLEAR_CACHE_TIMEOUT_MS
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(deadline);
   }
 }

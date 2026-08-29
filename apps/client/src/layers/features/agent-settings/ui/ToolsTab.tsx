@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { RotateCcw } from 'lucide-react';
 import {
   Badge,
@@ -16,6 +17,10 @@ import { toolNamesForDomain, type ToolDomainKey } from '@dorkos/shared/mcp-tool-
 import { useRelayEnabled } from '@/layers/entities/relay';
 import { useTasksEnabled } from '@/layers/entities/tasks';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
+import { useToolNamesForGroup } from '@/layers/entities/capability';
+import { useUpdateAgent as useUpdateMeshAgent } from '@/layers/entities/mesh';
+import { agentKeys } from '@/layers/entities/agent';
+import { TEAM_ROSTER_KEY } from '@/layers/entities/team';
 import { useAgentContextConfig } from '../model/use-agent-context-config';
 import { AgentMcpServers } from './AgentMcpServers';
 
@@ -149,6 +154,106 @@ interface ToolsTabProps {
 }
 
 /**
+ * The one group that is a LOCK rather than a hint (DOR-1611).
+ *
+ * Its own card, visually apart from the four above it, because merging them
+ * would make one paragraph describe two different mechanisms — and the whole
+ * point of this row is that it does not behave like its neighbours.
+ *
+ * **Written through the operator's route, never the agent self-edit route.**
+ * `PATCH /api/agents/current` REFUSES this field by design: a grant the governed
+ * agent can set for itself is not a grant. The cockpit is the person, so it uses
+ * `PATCH /api/mesh/agents/:id`, which is the only way in.
+ *
+ * **Rendered whatever the runtime is.** The four toggles above hide when a
+ * runtime cannot consume in-session MCP, because there is nothing to describe to
+ * it. This one still applies: a Codex or OpenCode agent reaches these same
+ * capabilities over the external MCP server, and the grant is enforced there too.
+ *
+ * **And it refreshes what it invalidated.** The `agent` this card renders is
+ * read through `useCurrentAgent`, which the mesh mutation knows nothing about —
+ * it clears `['mesh','agents']` and stops. Without the two invalidations below
+ * the switch flipped, the server stored it, and the next render put it straight
+ * back where it was: a save that looked like a refusal. The keys are the ones
+ * `useProfileAgent` already clears for the same reason.
+ */
+function ManageRoomsCard({
+  agent,
+  supportsDorkTools,
+}: {
+  agent: AgentManifest;
+  supportsDorkTools: boolean;
+}) {
+  const tools = useToolNamesForGroup('roomsManage');
+  const updateAgent = useUpdateMeshAgent();
+  const queryClient = useQueryClient();
+  const granted = agent.enabledToolGroups?.roomsManage === true;
+
+  const onToggle = useCallback(
+    (value: boolean) => {
+      updateAgent.mutate(
+        {
+          id: agent.id,
+          updates: {
+            enabledToolGroups: { ...(agent.enabledToolGroups ?? {}), roomsManage: value },
+          },
+        },
+        {
+          // `onSettled`, not `onSuccess`: the switch is fully controlled by the
+          // manifest, so a re-read is the only thing that ever moves it — and
+          // after a REFUSED write it is the only thing that proves it did not.
+          onSettled: () => {
+            void queryClient.invalidateQueries({ queryKey: agentKeys.all });
+            void queryClient.invalidateQueries({ queryKey: TEAM_ROSTER_KEY });
+          },
+        }
+      );
+    },
+    [agent.id, agent.enabledToolGroups, queryClient, updateAgent]
+  );
+
+  return (
+    <FieldCard>
+      <FieldCardContent className="space-y-3">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">Manage rooms</span>
+              {tools.length > 0 ? <ToolCountBadge tools={tools} /> : null}
+            </div>
+            <p className="text-muted-foreground text-sm">
+              Let this agent create channels and direct messages, add and remove members, rename a
+              channel, and leave a channel.
+            </p>
+          </div>
+          <Switch
+            checked={granted}
+            onCheckedChange={onToggle}
+            disabled={updateAgent.isPending}
+            aria-label="Manage rooms"
+          />
+        </div>
+        <p className="text-muted-foreground text-sm">
+          <span className="text-foreground font-medium">This switch is a lock, not a hint.</span>{' '}
+          Unlike the groups above, turning it off blocks the calls: the agent is refused, and told
+          to ask you. It is off until you turn it on, and only you can change it &mdash; the agent
+          cannot turn it on for itself.
+        </p>
+        <p className="text-muted-foreground text-sm">
+          It can never remove you from a room, and any room holding two agents holds you too.
+        </p>
+        {supportsDorkTools ? null : (
+          <p className="text-muted-foreground text-sm">
+            This agent&rsquo;s runtime reaches these over the external MCP server rather than
+            in-session, and the switch applies there just the same.
+          </p>
+        )}
+      </FieldCardContent>
+    </FieldCard>
+  );
+}
+
+/**
  * Tools tab for agent configuration: per-agent tool group overrides and
  * MCP server overview.
  */
@@ -165,21 +270,34 @@ export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
   const caps = useCapabilitiesForRuntime(agent.runtime);
   const supportsDorkTools = caps?.supportsMcp ?? true;
 
+  // **The grant must never ride along on a soft-toggle write** (DOR-1611
+  // review). These two send the whole `enabledToolGroups` object through
+  // `PATCH /api/agents/current`, and `agent-updater` refuses ANY body naming
+  // `roomsManage` — whole-patch, whatever the value, by design, because a grant
+  // the governed agent can set for itself is not a grant. So once a person armed
+  // an agent, spreading the stored object made every one of the four soft
+  // toggles fail with `OPERATOR_ONLY`: arming an agent broke the settings page
+  // beside the switch that armed it. Stripped rather than sent, because the
+  // field is not this route's to carry and the four keys beside it are.
+  const softToolGroups = useCallback((): EnabledToolGroups => {
+    const { roomsManage: _grant, ...soft } = agent.enabledToolGroups ?? {};
+    return soft;
+  }, [agent.enabledToolGroups]);
+
   const handleToolGroupChange = useCallback(
     (key: ToolDomainKey, value: boolean) => {
-      const current = agent.enabledToolGroups ?? {};
-      onUpdate({ enabledToolGroups: { ...current, [key]: value } });
+      onUpdate({ enabledToolGroups: { ...softToolGroups(), [key]: value } });
     },
-    [agent.enabledToolGroups, onUpdate]
+    [onUpdate, softToolGroups]
   );
 
   const handleToolGroupReset = useCallback(
     (key: ToolDomainKey) => {
-      const current = { ...(agent.enabledToolGroups ?? {}) };
+      const current = softToolGroups();
       delete current[key];
       onUpdate({ enabledToolGroups: current });
     },
-    [agent.enabledToolGroups, onUpdate]
+    [onUpdate, softToolGroups]
   );
 
   const toolDomains: ToolDomain[] = [
@@ -228,8 +346,8 @@ export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
           <p className="text-muted-foreground text-sm">
             Choose which tool groups this agent is told about. Turn a group off and the agent stops
             being told those tools exist, so it stops reaching for them. This is guidance, not a
-            lock: if the agent asks for one anyway, you still get an approval prompt. Leave a group
-            unset to inherit the global default.
+            lock &mdash; an agent that asks for one anyway still gets it. Leave a group unset to
+            inherit the global default.
           </p>
 
           <FieldCard>
@@ -263,6 +381,11 @@ export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
           </FieldCardContent>
         </FieldCard>
       )}
+
+      {/* Outside the runtime branch above, deliberately: this grant is enforced
+          for every runtime, including the ones that cannot take DorkOS tools
+          in-session and reach them over the external MCP server instead. */}
+      <ManageRoomsCard agent={agent} supportsDorkTools={supportsDorkTools} />
 
       <AgentMcpServers agent={agent} projectPath={projectPath} />
     </div>

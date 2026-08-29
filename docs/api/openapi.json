@@ -7056,6 +7056,13 @@
               "deliverNotices": {
                 "type": "boolean",
                 "description": "Present only on a bridged room: whether a turn_failed or halted notice reaches the bridged chat (chats-as-channels spec §6.2, D-6 Q5). The one per-bridge override, seeded true for a DM and false for a channel. Absent on any room with no bridge — the field IS the tell that this room projects to an external chat, so the DorkOS app's bridge controls read their state from it."
+              },
+              "workingAgents": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RoomWorkingClaim"
+                },
+                "description": "Who is mid-turn in this room right now, one row per agent, oldest claim first. `[]` means nobody is, and the server always sends it — it is optional only so a caller that predates it still parses, and **absent means \"this source cannot say\", never \"nobody\"**. A live read of the dispatcher's claim map, so it is the same fact the `room_presence` signal carries; it rides the room read so a room opened mid-turn draws its working rows on the first paint instead of waiting up to 10s for the next republish. Named apart from `RoomSummary.working`, which answers the same question with a bare COUNT for a sidebar that draws a dot: the two shapes are routinely spread into one another, so one name for two types would be a silent mismatch rather than a caught one."
               }
             },
             "required": [
@@ -7156,6 +7163,24 @@
           "joinedAt",
           "joinedSeq",
           "lastReadSeq"
+        ]
+      },
+      "RoomWorkingClaim": {
+        "type": "object",
+        "properties": {
+          "authorId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The agent holding the claim, as a roster author id."
+          },
+          "since": {
+            "type": "string",
+            "description": "ISO 8601 — when its turn started, never when this response was built. It is what lets a freshly opened room draw \"4m\" rather than \"0s\" corrected a second later."
+          }
+        },
+        "required": [
+          "authorId",
+          "since"
         ]
       },
       "CreateRoomRequest": {
@@ -7461,6 +7486,7 @@
           "turn_failed",
           "agent_gone",
           "agent_unavailable",
+          "agent_left",
           "awaiting_approval",
           "halted",
           "addressing_changed",
@@ -8083,6 +8109,20 @@
           "seq": {
             "type": "integer",
             "minimum": 1
+          },
+          "triggered": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuthorRef"
+            },
+            "description": "The agents the room ASKED to reply, in roster order — not a promise that any of them did. When the room gathers this message into a batch and that batch closes, it judges it again and can still stop one of these agents: a limit reached (which the room announces as a notice) or, for an agent that was merely overhearing rather than addressed, a decision that it had nothing to add (which is deliberately silent). Neither ever appears in this field. An agent this message NAMED, or the agent on the other side of a direct message, is not subject to the second one. `[]` means the message addressed nobody who could answer, which is the ordinary shape of a message nobody was meant to pick up. An agent already mid-turn is HERE rather than in `skipped`: the room asked it, and it answers when the work in front of it ends."
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkippedTrigger"
+            },
+            "description": "The agents this message reached that will not be answering it, each with the rule that stopped it. `[]` is the ordinary case. Nearly every entry here also has a durable notice in the room, and this is the faster path to the same truth rather than a second one. The exception is the one refusal the room deliberately stays quiet about — an agent posting with no turn behind it is stamped at the depth ceiling, so everything it addresses is refused; announcing that in the room would spray a line per room-mate per post, but telling the POSTER, once, in the answer to its own write, is exactly what it needs to hear."
           }
         },
         "required": [
@@ -8090,6 +8130,32 @@
           "entryId",
           "seq"
         ]
+      },
+      "SkippedTrigger": {
+        "type": "object",
+        "properties": {
+          "authorId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The agent that will not answer, as a roster author id."
+          },
+          "reason": {
+            "$ref": "#/components/schemas/RoomTriggerSkipReason"
+          }
+        },
+        "required": [
+          "authorId",
+          "reason"
+        ]
+      },
+      "RoomTriggerSkipReason": {
+        "type": "string",
+        "enum": [
+          "depth",
+          "repeat",
+          "gone"
+        ],
+        "description": "Which rule stopped it. `depth` — this back-and-forth has run as many automatic replies as the room allows. `repeat` — this agent has already taken its share of turns in this exchange. `gone` — its directory no longer holds the agent it was added as, so it can take no turn at all."
       },
       "PostToRoomRequest": {
         "type": "object",
@@ -21234,14 +21300,25 @@
           {
             "schema": {
               "type": "string",
+              "minLength": 1,
+              "description": "Return only capabilities behind this per-agent grant, e.g. roomsManage — the ones a person has to switch on for an agent before they run at all. Exact match, case-sensitive, and it narrows like the two filters above."
+            },
+            "required": false,
+            "description": "Return only capabilities behind this per-agent grant, e.g. roomsManage — the ones a person has to switch on for an agent before they run at all. Exact match, case-sensitive, and it narrows like the two filters above.",
+            "name": "toolGroup",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "enum": [
                 "compact",
                 "full"
               ],
-              "description": "'compact' returns id, title, tier, and a one-line summary; 'full' adds the model-facing description and the input and output JSON Schemas. Defaults to compact, and to full only when a domain or query filter narrows the catalog to 8 matches or fewer. A broad filter stays compact — ask for full detail explicitly if you want it."
+              "description": "'compact' returns id, title, tier, and a one-line summary; 'full' adds the model-facing description and the input and output JSON Schemas. Defaults to compact, and to full only when a domain, query or toolGroup filter narrows the catalog to 8 matches or fewer. A broad filter stays compact — ask for full detail explicitly if you want it."
             },
             "required": false,
-            "description": "'compact' returns id, title, tier, and a one-line summary; 'full' adds the model-facing description and the input and output JSON Schemas. Defaults to compact, and to full only when a domain or query filter narrows the catalog to 8 matches or fewer. A broad filter stays compact — ask for full detail explicitly if you want it.",
+            "description": "'compact' returns id, title, tier, and a one-line summary; 'full' adds the model-facing description and the input and output JSON Schemas. Defaults to compact, and to full only when a domain, query or toolGroup filter narrows the catalog to 8 matches or fewer. A broad filter stays compact — ask for full detail explicitly if you want it.",
             "name": "detail",
             "in": "query"
           },
@@ -21490,6 +21567,9 @@
                                     ]
                                   }
                                 }
+                              },
+                              "toolGroup": {
+                                "type": "string"
                               }
                             },
                             "required": [

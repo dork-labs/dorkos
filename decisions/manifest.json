@@ -5056,6 +5056,22 @@
         "apps/server/src/services/session/resolve-session-defaults.ts",
         "apps/client/src/layers/features/tasks/ui/TaskFormInner.tsx"
       ]
+    },
+    {
+      "id": "260824-120019",
+      "slug": "the-room-read-carries-live-presence",
+      "title": "The room read carries live presence, reversing \"the republish loop covers it\"",
+      "status": "proposed",
+      "created": "2026-08-24",
+      "amends": null,
+      "supersedes": null,
+      "affects": [
+        "packages/shared/src/room-schemas.ts",
+        "apps/server/src/services/rooms/room-service.ts",
+        "apps/server/src/services/rooms/room-trigger.ts",
+        "apps/client/src/layers/features/room-management/model/use-room-details-view.ts",
+        "apps/server/src/services/rooms/notices/notice-copy.ts"
+      ]
     }
   ]
 }

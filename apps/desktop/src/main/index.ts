@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import log from 'electron-log';
 import { createWindow, isWebLink, makeRendererUrlAccessor } from './window-manager';
 import { watchDisplayChanges } from './window-state';
 import { startServer, stopServer, getServerPort } from './server-process';
@@ -13,6 +14,7 @@ import {
   consumeUpdateRestart,
   recordUpdateInstallIntent,
 } from './auto-updater';
+import { checkForManualOverwrite } from './updater/manual-overwrite';
 import { hasTray, setTrayActivity, setupTray } from './tray';
 import { getActiveAgentCount, watchAgentActivity } from './agent-activity';
 import { watchNotifications } from './notifications';
@@ -20,6 +22,12 @@ import { announceBackgroundRunning } from './background-notice';
 import { armQuitGuard } from './quit-guard';
 import { setupCloseTab } from './close-tab';
 import { clearHttpCacheOnVersionChange } from './cache-hygiene';
+import { describeLogLocation } from './log-location';
+import {
+  attachRendererSupervisor,
+  setupRendererRecovery,
+  shouldDisableHardwareAcceleration,
+} from './renderer-health';
 import {
   ACTIVITY_ROUTE,
   findDeepLinkArg,
@@ -49,9 +57,19 @@ const getRendererUrl = makeRendererUrlAccessor(getServerPort);
  * from touching a destroyed BrowserWindow.
  */
 function createTrackedWindow(): void {
-  mainWindow = createWindow({ getRendererUrl, role: 'primary' });
+  const options = { getRendererUrl, role: 'primary' as const };
+  mainWindow = createWindow(options);
+  // Watch it from the moment it exists: a window that never paints is the one
+  // failure nothing else in the shell can see (renderer-health/).
+  attachRendererSupervisor(mainWindow, options);
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+  // Clicking back into the window is one of the two moments a person expects
+  // the version they just installed (see updater/manual-overwrite.ts). Silent unless
+  // the app on disk is genuinely newer than the one running.
+  mainWindow.on('focus', () => {
+    void checkForManualOverwrite(getMainWindow);
   });
   // A reload or renderer crash keeps this window's webContents.id but drops
   // the renderer's `navigate` subscription — reset the deep-link readiness
@@ -108,7 +126,7 @@ function startupFailureMessage(err: unknown): string {
   if (err instanceof PortUnavailableError) return detail;
   return (
     "DorkOS couldn't start its background server, so it can't continue. " +
-    'Try restarting the app. If this keeps happening, check ~/Library/Logs/@dorkos/desktop for ' +
+    `Try restarting the app. If this keeps happening, check ${describeLogLocation()} for ` +
     `details.\n\n${detail}`
   );
 }
@@ -157,6 +175,19 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
+  // Before anything else, because it cannot be done later: Electron ignores
+  // `disableHardwareAcceleration()` once 'ready' has fired. The flag is set by
+  // the renderer supervisor's third recovery rung, after reloading and
+  // clearing caches both failed to get a window to paint, and it is cleared by
+  // the first renderer that reports alive — one relaunch cycle, not a
+  // permanent downgrade.
+  if (shouldDisableHardwareAcceleration()) {
+    app.disableHardwareAcceleration();
+    log.warn(
+      '[renderer] Starting with hardware acceleration off after repeated renderer failures.'
+    );
+  }
+
   // A second launch attempt was blocked by the lock above; bring the
   // existing window to the front instead of doing nothing. If the window
   // was closed (macOS keeps the app alive with zero windows), recreate it.
@@ -173,6 +204,11 @@ if (!gotTheLock) {
     } else {
       showMainWindow();
     }
+    // The launch that lands here may be a NEWER copy of the app: someone
+    // installed an update by hand while this process stayed alive, and the
+    // lock above just handed their double-click to the old version. Focusing
+    // the old window is not what they asked for — see updater/manual-overwrite.ts.
+    void checkForManualOverwrite(getMainWindow);
   });
 
   // Register `dorkos://` as this app's protocol handler. Cross-platform and
@@ -214,6 +250,13 @@ if (!gotTheLock) {
   // Register IPC handlers for the preload bridge.
   // These must be registered before the window is created.
   setupCloseTab();
+
+  // Renderer supervision's process-wide half: the heartbeat channel, the
+  // recovery page's actions, and crash logging for windows the ladder does not
+  // cover. Before the window for a reason — the renderer can report alive as
+  // soon as its first document runs, and a heartbeat nothing is listening for
+  // is a "failure" the ladder would go on to recover from.
+  setupRendererRecovery();
 
   ipcMain.on('get-server-port', (event) => {
     event.returnValue = getServerPort();

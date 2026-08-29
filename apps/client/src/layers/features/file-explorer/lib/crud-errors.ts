@@ -1,4 +1,5 @@
 import { toast } from 'sonner';
+import { errorCodeOf } from './error-code';
 
 /**
  * Boundary-safe CRUD error mapping for the file explorer (spec
@@ -29,9 +30,8 @@ const KNOWN_CODES: readonly CrudErrorCode[] = [
 
 /** Read the stable `code` off a thrown file-service error, if present. */
 export function getErrorCode(err: unknown): CrudErrorCode | undefined {
-  if (typeof err !== 'object' || err === null) return undefined;
-  const code = (err as { code?: unknown }).code;
-  return typeof code === 'string' && (KNOWN_CODES as readonly string[]).includes(code)
+  const code = errorCodeOf(err);
+  return code !== undefined && (KNOWN_CODES as readonly string[]).includes(code)
     ? (code as CrudErrorCode)
     : undefined;
 }

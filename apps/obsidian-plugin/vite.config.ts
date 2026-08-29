@@ -9,6 +9,7 @@ import { fixDirnamePolyfill } from './build-plugins/fix-dirname-polyfill.js';
 import { safeRequires } from './build-plugins/safe-requires.js';
 import { patchElectronCompat } from './build-plugins/patch-electron-compat.js';
 import { sqliteAddon } from './build-plugins/sqlite-addon.js';
+import { clientDefines } from '../client/vite-define.js';
 
 const nodeBuiltins = builtinModules.flatMap((m) => [m, `node:${m}`]);
 
@@ -43,6 +44,19 @@ const sqliteVersion = (
 
 export default defineConfig({
   define: {
+    // This bundle is the client's source built by a THIRD config (the other
+    // two are apps/client/vite.config.ts and the desktop shell's
+    // electron.vite.config.ts) — see vite-define.ts for what an unshared
+    // `define` cost the desktop build (DOR-1448, a permanently black window).
+    // Nothing in this plugin's entry graph evaluates `__APP_VERSION__` today,
+    // so its absence has not shipped a bug, but that was equally true of the
+    // desktop renderer right up until it wasn't.
+    ...clientDefines(),
+    // Deliberately a DIFFERENT version than `clientDefines()` supplies:
+    // `__APP_VERSION__` above is the monorepo release version, but this plugin
+    // ships on its own cadence (see `pluginVersion` below) and a user's
+    // installed copy can be behind or ahead of the app's. Using the monorepo
+    // version here would label a bundle with a release it was never part of.
     __CLI_VERSION__: JSON.stringify(pluginVersion),
   },
   plugins: [

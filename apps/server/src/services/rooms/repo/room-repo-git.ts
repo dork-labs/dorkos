@@ -65,6 +65,7 @@
  * @module server/services/rooms/repo/room-repo-git
  */
 import { execFile } from 'node:child_process';
+import path from 'node:path';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
@@ -299,8 +300,33 @@ export async function initRepo(repoDir: string, ceilingDir: string): Promise<voi
  * @param ceilingDir - The room home directory the search may not climb past.
  */
 export async function hasMainBranch(checkoutDir: string, ceilingDir: string): Promise<boolean> {
+  return hasLocalBranch(checkoutDir, 'main', ceilingDir);
+}
+
+/**
+ * Whether a checkout has a local branch by this name.
+ *
+ * The general form of {@link hasMainBranch}, and the reason the worktree
+ * manager can tell "this agent has never had a worktree here" from "the reap
+ * removed the worktree and left the branch behind": those need opposite
+ * `git worktree add` invocations, and picking by catching a failure would make
+ * every OTHER failure look like the same case.
+ *
+ * @param checkoutDir - The checkout to ask.
+ * @param branch - The branch name, without `refs/heads/`.
+ * @param ceilingDir - The room home directory the search may not climb past.
+ */
+export async function hasLocalBranch(
+  checkoutDir: string,
+  branch: string,
+  ceilingDir: string
+): Promise<boolean> {
   try {
-    await runGit(['rev-parse', '--verify', '--quiet', 'refs/heads/main'], checkoutDir, ceilingDir);
+    await runGit(
+      ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`],
+      checkoutDir,
+      ceilingDir
+    );
     return true;
   } catch (err) {
     if (err instanceof GitUnavailableError) throw err;
@@ -436,4 +462,147 @@ export async function commitsAheadOfMain(checkoutDir: string, ceilingDir: string
   if (!(await hasMainBranch(checkoutDir, ceilingDir))) return 0;
   const out = await runGit(['rev-list', '--count', 'main..HEAD'], checkoutDir, ceilingDir);
   return Number.parseInt(out, 10) || 0;
+}
+
+/**
+ * Add a standing worktree at `worktreeDir` on branch `branch`.
+ *
+ * Two shapes, because the branch may already exist: the reap removes a
+ * worktree's DIRECTORY and `git worktree remove` leaves the branch behind, so
+ * "create the branch" is right the first time and wrong every time after. The
+ * caller decides which with `createFrom`, having asked
+ * {@link hasLocalBranch} — see {@link addWorktree}'s only caller for why that
+ * probe is not replaced by catching the failure.
+ *
+ * @param repoDir - The room's main checkout, which owns the worktree list.
+ * @param worktreeDir - Where the new working tree goes. Must not exist.
+ * @param branch - The branch to check out in it.
+ * @param createFrom - The commit-ish to branch FROM (`'main'`), or `null` to
+ *   check out a branch that already exists.
+ * @param ceilingDir - The room home directory the search may not climb past.
+ */
+export async function addWorktree(
+  repoDir: string,
+  worktreeDir: string,
+  branch: string,
+  createFrom: string | null,
+  ceilingDir: string
+): Promise<void> {
+  const args = createFrom
+    ? ['worktree', 'add', '--quiet', '-b', branch, worktreeDir, createFrom]
+    : ['worktree', 'add', '--quiet', worktreeDir, branch];
+  await runGit(args, repoDir, ceilingDir);
+}
+
+/**
+ * Remove a standing worktree — **never forced**.
+ *
+ * The absent `--force` is the point. Git refuses to remove a working tree that
+ * holds modified or untracked files, so this call is a second, independent
+ * check on the reap's own dirty gate, made by git at the moment of deletion
+ * rather than by DorkOS a few milliseconds earlier. An agent that started
+ * writing between the two is protected by the one that runs last.
+ *
+ * @param repoDir - The room's main checkout.
+ * @param worktreeDir - The working tree to remove.
+ * @param ceilingDir - The room home directory the search may not climb past.
+ * @throws When git refuses, which includes "it is not empty".
+ */
+export async function removeWorktree(
+  repoDir: string,
+  worktreeDir: string,
+  ceilingDir: string
+): Promise<void> {
+  await runGit(['worktree', 'remove', worktreeDir], repoDir, ceilingDir);
+}
+
+/**
+ * Drop the administrative records of worktrees whose directories are gone.
+ *
+ * Run after a reap so `git worktree list` matches the disk. Harmless when
+ * nothing was removed.
+ *
+ * @param repoDir - The room's main checkout.
+ * @param ceilingDir - The room home directory the search may not climb past.
+ */
+export async function pruneWorktrees(repoDir: string, ceilingDir: string): Promise<void> {
+  await runGit(['worktree', 'prune'], repoDir, ceilingDir);
+}
+
+/**
+ * Delete a branch **only if `main` already contains it** (`-d`, never `-D`).
+ *
+ * The safe form is load-bearing rather than tidy: it means this call cannot be
+ * the thing that loses a commit even if every check above it were wrong. Git
+ * refuses and the branch stays.
+ *
+ * @param repoDir - The room's main checkout.
+ * @param branch - The branch to retire.
+ * @param ceilingDir - The room home directory the search may not climb past.
+ * @returns `true` when the branch is gone, `false` when git refused.
+ */
+export async function deleteMergedBranch(
+  repoDir: string,
+  branch: string,
+  ceilingDir: string
+): Promise<boolean> {
+  try {
+    await runGit(['branch', '--quiet', '-d', branch], repoDir, ceilingDir);
+    return true;
+  } catch (err) {
+    if (err instanceof GitUnavailableError) throw err;
+    return false;
+  }
+}
+
+/**
+ * When the commit at `HEAD` was committed.
+ *
+ * Committer date rather than author date: it moves when a commit is rebased or
+ * amended in this tree, which is the question "when was this worktree last
+ * worked in" actually asks.
+ *
+ * A checkout with no commits yet answers `null` rather than throwing, which the
+ * caller reads as "this tree has no commit date" and moves on to its other
+ * sources. That case is `git log` exiting 128 with "does not have any commits
+ * yet" — caught here, because the alternative was a contract that said `null`
+ * and a function that threw. Every OTHER failure still propagates: an
+ * unreadable tree must not be spelled the same way as an empty one, which is
+ * the mistake {@link commitsAheadOfMain} was fixed for.
+ *
+ * @param checkoutDir - The checkout to ask.
+ * @param ceilingDir - The room home directory the search may not climb past.
+ * @returns The commit time, or `null` when there are no commits yet.
+ * @throws When the checkout cannot be read at all.
+ */
+export async function headCommittedAt(
+  checkoutDir: string,
+  ceilingDir: string
+): Promise<Date | null> {
+  let iso: string;
+  try {
+    iso = await runGit(['log', '-1', '--format=%cI'], checkoutDir, ceilingDir);
+  } catch (err) {
+    if (err instanceof GitUnavailableError) throw err;
+    const stderr = String((err as { stderr?: unknown })?.stderr ?? '');
+    if (/does not have any commits yet|unknown revision or path/i.test(stderr)) return null;
+    throw err;
+  }
+  const at = new Date(iso);
+  return Number.isNaN(at.getTime()) ? null : at;
+}
+
+/**
+ * The git directory shared by a repo and every worktree of it.
+ *
+ * `info/exclude` lives here (git's `common_list` maps `info` to the common
+ * directory), so one write covers the main checkout and every standing
+ * worktree at once.
+ *
+ * @param checkoutDir - Any checkout of the repo.
+ * @param ceilingDir - The room home directory the search may not climb past.
+ */
+export async function commonGitDir(checkoutDir: string, ceilingDir: string): Promise<string> {
+  const dir = await runGit(['rev-parse', '--git-common-dir'], checkoutDir, ceilingDir);
+  return path.resolve(checkoutDir, dir);
 }

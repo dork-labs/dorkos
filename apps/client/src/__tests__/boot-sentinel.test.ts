@@ -440,4 +440,95 @@ describe('boot sentinel', () => {
     const surface = document.getElementById('root')!.firstElementChild as HTMLElement;
     expect(surface.style.background).toBe('rgb(10, 10, 10)');
   });
+
+  /**
+   * The desktop shell asks the same question this sentinel does — "did this
+   * page ever come up?" — and reloads, cache-clears and finally replaces a
+   * window that never answers (the desktop app's `main/renderer-health/`,
+   * DOR-1453). It is
+   * answered from inside `done()` so there is exactly one definition of a
+   * successful boot; these pin that the wiring is really there, and that it
+   * cannot turn a healthy boot into a failed one.
+   */
+  describe('reporting to the desktop shell', () => {
+    /**
+     * Put a preload bridge on `window`, the way the desktop app's does. Torn
+     * down by the suite's `vi.unstubAllGlobals()`.
+     */
+    function installBridge(reportAlive: () => void): void {
+      vi.stubGlobal('electronAPI', { reportAlive });
+    }
+
+    it('reports the window alive when the desktop bridge is there', () => {
+      const reportAlive = vi.fn();
+      installBridge(reportAlive);
+      installSentinel();
+
+      window.__dorkosBoot!.done();
+
+      expect(reportAlive).toHaveBeenCalledTimes(1);
+    });
+
+    it('does nothing at all in a browser, where there is no bridge', () => {
+      installSentinel();
+
+      expect(() => window.__dorkosBoot!.done()).not.toThrow();
+    });
+
+    /**
+     * Probe C, the DOR-1448 replay. A bundle that throws at module scope is
+     * exactly what shipped in v0.63.0: the sentinel paints its panel, and if
+     * only `done()` reported, the shell would count silence, reload the panel
+     * away three times, restart the app with its graphics acceleration off,
+     * and land on a recovery page that says LESS than the panel it destroyed.
+     */
+    it('reports alive when it paints its own failure panel — a readable panel is not a black window', () => {
+      const reportAlive = vi.fn();
+      installBridge(reportAlive);
+      installSentinel();
+
+      throwUncaught('ReferenceError: __APP_VERSION__ is not defined');
+      vi.advanceTimersByTime(ERROR_GRACE_MS);
+
+      expect(surfacePainted()).toBe(true);
+      expect(reportAlive).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports alive on the timeout path too, once it has painted', () => {
+      const reportAlive = vi.fn();
+      installBridge(reportAlive);
+      installSentinel();
+
+      vi.advanceTimersByTime(BOOT_DEADLINE_MS);
+
+      expect(surfacePainted()).toBe(true);
+      expect(reportAlive).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not report alive while it is still waiting', () => {
+      const reportAlive = vi.fn();
+      installBridge(reportAlive);
+      installSentinel();
+
+      vi.advanceTimersByTime(BOOT_DEADLINE_MS - 1);
+
+      // Silence is the whole signal. Reporting early would tell the shell a
+      // window is up before anything is on it.
+      expect(reportAlive).not.toHaveBeenCalled();
+    });
+
+    it('still disarms the watchdog when the bridge throws', () => {
+      installBridge(() => {
+        throw new Error('the bridge is gone');
+      });
+      installSentinel();
+
+      expect(() => window.__dorkosBoot!.done()).not.toThrow();
+
+      // The disarm is the load-bearing half: a boot that succeeded must not be
+      // painted over three seconds later because reporting it failed.
+      vi.advanceTimersByTime(BOOT_DEADLINE_MS * 2);
+      expect(surfacePainted()).toBe(false);
+    });
+  });
 });

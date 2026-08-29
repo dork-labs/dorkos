@@ -391,3 +391,97 @@ describe('ToolsTab — background system switches', () => {
     expect(toggle).not.toBeDisabled();
   });
 });
+
+/**
+ * The one group on this screen that is a lock rather than a hint (DOR-1611).
+ *
+ * It carries NO switch here on purpose: the grant has no global default, and a
+ * global twin would be a second and weaker path to the same permission. What it
+ * shows instead is what the group is and where to turn it on.
+ */
+describe('ToolsTab — the Manage rooms row', () => {
+  it('shows the group with no switch of its own', async () => {
+    const { Wrapper } = setup();
+    render(<ToolsTab />, { wrapper: Wrapper });
+
+    await settled();
+    expect(screen.getByText('Manage rooms')).toBeInTheDocument();
+    expect(screen.getByText('Granted per agent')).toBeInTheDocument();
+    // The four groups above each have one; this one must not, or the person
+    // would be offered a global default that does not exist.
+    expect(screen.queryByLabelText('Toggle Manage rooms')).not.toBeInTheDocument();
+  });
+
+  it('quotes no number of armed agents, because this screen cannot know one', async () => {
+    // The row used to say "N agents can manage rooms", counted off
+    // `GET /api/mesh/agents` — whose rows come from the SQLite cache, which has
+    // no `enabled_tool_groups` column, so `rowToEntry` hardcodes `{}` and every
+    // agent reads as ungranted (DOR-1611 review; the old test mocked a shape the
+    // server never sends and so agreed with itself). A wrong count is worse than
+    // none: this asserts the sentence is gone in BOTH directions, so restoring a
+    // number quietly is not something a passing suite can hide.
+    const { transport, Wrapper } = setup();
+    vi.mocked(transport.listMeshAgents).mockResolvedValue({
+      total: 3,
+      // The real shape: the cache serves this, whatever the manifests say.
+      agents: Array.from({ length: 3 }, (_, index) => ({
+        id: `agent-${index}`,
+        name: `agent-${index}`,
+        enabledToolGroups: {},
+      })),
+    } as never);
+    render(<ToolsTab />, { wrapper: Wrapper });
+
+    await settled();
+    expect(screen.queryByText(/can manage rooms/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/No agents/)).not.toBeInTheDocument();
+  });
+
+  it('tells the truth about which switch blocks, on both halves of the screen', async () => {
+    const { Wrapper } = setup();
+    render(<ToolsTab />, { wrapper: Wrapper });
+
+    await settled();
+    // The four above: guidance.
+    expect(screen.getByText(/an agent that asks for one anyway still gets it/)).toBeInTheDocument();
+    // This one: a refusal, and where to change it.
+    expect(screen.getByText(/this one blocks/)).toBeInTheDocument();
+    expect(screen.getByText(/in that agent’s own Tools settings/)).toBeInTheDocument();
+  });
+
+  it('names the tools behind it from the live catalog', async () => {
+    const { transport, Wrapper } = setup();
+    vi.mocked(transport.getCapabilityCatalog).mockResolvedValue({
+      catalogVersion: 'test',
+      generatedAt: '2026-01-01T00:00:00.000Z',
+      capabilities: [
+        {
+          id: 'rooms.create',
+          title: 'Open a room',
+          description: 'x',
+          tier: 'act',
+          inputSchema: {},
+          outputSchema: {},
+          surfaces: { mcp: { toolName: 'create_room', servers: ['external'] } },
+          toolGroup: 'roomsManage',
+        },
+        {
+          id: 'rooms.post',
+          title: 'Post',
+          description: 'x',
+          tier: 'act',
+          inputSchema: {},
+          outputSchema: {},
+          surfaces: { mcp: { toolName: 'post_to_room', servers: ['external'] } },
+        },
+      ],
+    } as never);
+    render(<ToolsTab />, { wrapper: Wrapper });
+
+    await settled();
+    // One tool declares the grant; the conversation verb beside it does not, and
+    // must not be counted into a group it never joined.
+    const badge = await screen.findByText('1');
+    expect(badge).toBeInTheDocument();
+  });
+});

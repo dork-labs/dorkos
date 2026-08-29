@@ -119,6 +119,20 @@ declare global {
      * waiting update (macOS close→reopen).
      */
     getUpdateStatus(): Promise<DesktopUpdateStatus | null>;
+    /**
+     * Report that this window really came up, to the desktop shell's renderer
+     * supervisor (DOR-1453). Silence past its deadline is what makes it reload
+     * the window, and eventually replace it with a static recovery page.
+     *
+     * **Called from one place only** — the boot sentinel's `done()` in
+     * `index.html` — so the shell and the sentinel cannot end up with two
+     * different definitions of "the app is up". Nothing else in the client
+     * should call it.
+     *
+     * **Optional on purpose.** Absent in the browser cockpit, in the Obsidian
+     * embed, and in any desktop build predating the supervisor.
+     */
+    reportAlive?(): void;
   }
 
   interface Window {

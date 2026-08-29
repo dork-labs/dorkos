@@ -31,6 +31,16 @@
       which reads this file and evaluates the script below — keep the
       `data-boot-sentinel` attribute, that test finds it by name.
 
+      IN THE DESKTOP APP THIS SCRIPT ALSO ANSWERS THE SHELL. Both exits report
+      the window alive over the preload bridge: the mounted app through
+      `done()`, and the painted panel below through `giveUp()`. The shell's
+      renderer supervisor (`apps/desktop/src/main/renderer-health/`) asks one
+      question — is anybody looking at a black rectangle — and a panel that
+      says what went wrong, with its own Try again button, is a NO. Reporting
+      only from `done()` would have the shell reload this panel away three
+      times and then restart the app with its graphics acceleration off,
+      because a bundle threw.
+
       A SLOW NETWORK IS NOT A FAILED BOOT, and this is the trap to know about:
       the critical path is ~1.16MB gzipped, which on a throttled or tunnelled
       connection is still downloading well past ten seconds. Measured in
@@ -92,6 +102,26 @@
           return root.children.length > 0 || root.textContent.trim() !== '';
         }
 
+        // Tell the desktop shell this window is showing something a person can
+        // read. Called from `done()` (React mounted) and from `giveUp()` (the
+        // panel below is up) — those are the same answer to the shell's only
+        // question, which is whether anyone is looking at a black rectangle.
+        // Without the second caller the shell would reload this panel away,
+        // clear caches under it, and restart the app over a JavaScript error,
+        // ending on a page that says LESS than the one it destroyed. Guarded
+        // because there is no bridge in a browser or the Obsidian embed, and
+        // wrapped because a bridge that throws must not change what the page
+        // does.
+        function reportAlive() {
+          try {
+            if (window.electronAPI && window.electronAPI.reportAlive) {
+              window.electronAPI.reportAlive();
+            }
+          } catch (err) {
+            /* Not reporting is survivable; the shell reloads once and moves on. */
+          }
+        }
+
         function giveUp() {
           if (disarmed || painted || mountedAlready()) return;
           // A missing #root is the one truly unrecoverable state, and the one
@@ -101,6 +131,7 @@
           if (!target) return;
           painted = true;
           paint(target);
+          reportAlive();
         }
 
         function scheduleCheck(ms) {
@@ -387,6 +418,7 @@
             timers.length = 0;
             window.removeEventListener('error', onError, true);
             window.removeEventListener('unhandledrejection', onRejection);
+            reportAlive();
           },
         };
       })();

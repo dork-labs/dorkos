@@ -521,6 +521,24 @@ capabilityConformance(registry, {
     // invocation do the thing the suite is asking about, and exercises the sigil
     // that `normalizeRoomNameNeedle` strips on the way in.
     'rooms.find_room': { name: `#${CONFORMANCE_ROOM_SLUG}` },
+    // The five that ARRANGE rooms, and the first real subjects the tool-group
+    // check has ever had (DOR-1611, acceptance criterion 12). Until they landed
+    // that check ran over an empty set and could only ever be green.
+    //
+    // Every one of these must PARSE and then be refused by the GRANT, not by a
+    // ZodError — the check reads an unstructured throw as "the gate is not
+    // there", which is exactly what it should do. So each fixture is a request
+    // that would really run if the caller held the grant, and each names the
+    // harness room the reads above use.
+    //
+    // Nothing in this file wires a `ToolGroupGrantLookup`, and that is the
+    // point: an unwired gate holds no grant for anybody, which is the fail-closed
+    // state these five have to be refused from.
+    'rooms.create': { kind: 'channel', title: 'Conformance opened' },
+    'rooms.add_members': { roomId: CONFORMANCE_ROOM_ID, members: ['@conformance'] },
+    'rooms.remove_members': { roomId: CONFORMANCE_ROOM_ID, members: ['@conformance'] },
+    'rooms.update': { roomId: CONFORMANCE_ROOM_ID, topic: 'what this room is for' },
+    'rooms.leave': { roomId: CONFORMANCE_ROOM_ID },
   },
 });
 

@@ -26,6 +26,15 @@ import { RoomsPage } from '../pages/RoomsPage';
 import { RoomPanelDemo, type RoomPanelDemoProps } from '../showcases/rooms-showcase-helpers';
 import { ARCHIVED_ROOM, CHANNEL_ROOM, DM_ROOM, EMPTY_ROOM } from '../showcases/rooms-showcase-data';
 
+// **The budget here is a sum, not any one wait.** Every case mounts a real panel
+// (or, twice, the whole seven-showcase page) and then chains several Testing
+// Library waits, each with its own one-second ceiling. A case that genuinely
+// breaks still fails at the wait that broke, in under a second, with the element
+// it could not find — so this ceiling never hides a defect. It only ever fires
+// when a loaded machine stretches four honest waits past the five-second default,
+// which is what took this file red in the pre-push gate while it passed alone.
+vi.setConfig({ testTimeout: 30_000 });
+
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 // The room panel reads route state to decide where each member row's face leads
@@ -279,12 +288,17 @@ describe('the page itself draws every section', () => {
    * The whole page, once.
    *
    * The panel gets its own describe block above because it is the one thing
-   * here with a fake server behind it. The other six sections are plain props
-   * — which means nothing would stop one of them throwing on mount, being
-   * swallowed by `ShowcaseErrorBoundary`, and shipping as a red box that only
-   * somebody who opened `/dev/rooms` would ever see.
+   * here with a fake server behind it. Room Files brings its own fixture
+   * source and its own query cache, so it needs no server either. The
+   * remaining six sections are plain props — which means nothing would stop
+   * one of them throwing on mount, being swallowed by
+   * `ShowcaseErrorBoundary`, and shipping as a red box that only somebody who
+   * opened `/dev/rooms` would ever see.
+   *
+   * The list is read from the registry rather than written out here, so a
+   * section added to the page is asserted by this test the day it lands.
    */
-  it('renders all seven, and none of them crashes into the boundary', async () => {
+  it('renders all eight, and none of them crashes into the boundary', async () => {
     render(
       <EventStreamProvider>
         <TransportProvider transport={createPlaygroundTransport()}>
@@ -301,7 +315,12 @@ describe('the page itself draws every section', () => {
       expect(document.getElementById(section.id)).not.toBeNull();
     }
     expect(screen.queryByText(/crashed$/)).not.toBeInTheDocument();
-  });
+    // A generous ceiling on purpose. These two render the WHOLE page, so their
+    // cost is the page's — every section anybody adds lands in both, and the
+    // default 5s was already within a second of the real ~4s when Room Files
+    // arrived. The number is not a performance budget; it is headroom so that a
+    // page growing by a section reds on an assertion rather than on a clock.
+  }, 20_000);
 
   it('draws every loudness level and every rung the two room kinds offer', async () => {
     render(
@@ -328,7 +347,7 @@ describe('the page itself draws every section', () => {
     // three would be the collapse this page exists to show is gone.
     const groups = screen.getAllByRole('radiogroup');
     expect(groups.map((group) => within(group).getAllByRole('radio').length)).toEqual([4, 4, 4, 4]);
-  });
+  }, 20_000);
 });
 
 describe('the rooms page is wired into the playground', () => {

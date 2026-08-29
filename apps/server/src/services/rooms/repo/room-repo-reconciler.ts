@@ -52,6 +52,7 @@
  */
 import { logger } from '../../../lib/logger.js';
 import type { RoomRepoStore } from './room-repo-store.js';
+import type { RoomWorktreeManager } from './room-worktree-manager.js';
 
 /** Default reconcile cadence (ms) — matches the mesh and workspace reconcilers. */
 const DEFAULT_INTERVAL_MS = 300_000;
@@ -81,6 +82,41 @@ export interface RoomRepoReconcileResult {
   orphaned: number;
   /** Leftover sidecar drafts tidied away. */
   draftsRemoved: number;
+  /**
+   * What the worktree reap did across every room with a live binding.
+   *
+   * All zero when the sweep was built without a worktree manager — which is
+   * only the case in the store's own tests; production always passes one.
+   */
+  worktrees: RoomWorktreeReapTotals;
+}
+
+/** The worktree reap's totals across one pass (spec `project-rooms` §3.4). */
+export interface RoomWorktreeReapTotals {
+  /** Working copies fully gone: directory removed AND branch retired. */
+  reaped: number;
+  /**
+   * Working copies removed whose branch was kept because `main` lacks it.
+   *
+   * Counted apart from `reaped` rather than folded in: something was left
+   * behind on purpose, and a total that hid it would report a tidy-up as
+   * complete when it was not.
+   */
+  reapedTreeKeptBranch: number;
+  /**
+   * Working copies kept because they are in use or moved recently.
+   *
+   * Includes the ones whose agent is mid-turn — the sweep must not delete a
+   * live turn's working directory.
+   */
+  spared: number;
+  /**
+   * Working copies kept because they hold work `main` does not have.
+   *
+   * The number a person should be shown: it is the room's unfinished business,
+   * and it is what the explorer surfaces as stranded work (§3.6).
+   */
+  stranded: number;
 }
 
 /** Periodically rebuilds the room-repo cache from the on-disk sidecars. */
@@ -107,10 +143,15 @@ export class RoomRepoReconciler {
    *
    * @param store - The file-first store to read sidecars and write rows through.
    * @param intervalMs - How often to sweep. Defaults to five minutes.
+   * @param worktrees - The worktree manager whose reap rides along with this
+   *   pass, or `null` to run the cache half alone. **One sweep, one overlap
+   *   guard**: the reap is not given a timer of its own, so an install can
+   *   never have two passes walking the same directories.
    */
   constructor(
     private readonly store: RoomRepoStore,
-    private readonly intervalMs: number = DEFAULT_INTERVAL_MS
+    private readonly intervalMs: number = DEFAULT_INTERVAL_MS,
+    private readonly worktrees: RoomWorktreeManager | null = null
   ) {}
 
   /** Start the periodic timer (unref'd so it never blocks process exit). */
@@ -162,6 +203,7 @@ export class RoomRepoReconciler {
       removed: 0,
       orphaned: 0,
       draftsRemoved: 0,
+      worktrees: { reaped: 0, reapedTreeKeptBranch: 0, spared: 0, stranded: 0 },
     };
     const seen = new Set<string>();
 
@@ -210,6 +252,52 @@ export class RoomRepoReconciler {
       result.removed += 1;
     }
 
+    await this.reapWorktrees(seen, result);
     return result;
+  }
+
+  /**
+   * Tidy away the idle working copies of every room whose binding this pass
+   * confirmed.
+   *
+   * **Only rooms in `seen`.** That set is the rooms whose sidecar was read off
+   * disk a moment ago, so a room whose binding is missing — an orphan, a
+   * half-applied delete, a restored backup — is stepped over rather than swept.
+   * Same line the module doc draws for orphaned homes: this sweep does not
+   * decide that files nobody currently claims are disposable.
+   *
+   * Per-room failures are logged and skipped, so one unreadable room home never
+   * stops the rest — and the reap runs after the cache halves, so a failure
+   * here cannot cost the pass its real work.
+   *
+   * @param seen - Rooms whose sidecar this pass read.
+   * @param result - The pass result to accumulate into.
+   */
+  private async reapWorktrees(
+    seen: ReadonlySet<string>,
+    result: RoomRepoReconcileResult
+  ): Promise<void> {
+    if (!this.worktrees) return;
+    for (const roomId of seen) {
+      try {
+        const swept = await this.worktrees.reapRoom(roomId);
+        result.worktrees.reaped += swept.reaped.length;
+        result.worktrees.reapedTreeKeptBranch += swept.reapedTreeKeptBranch.length;
+        result.worktrees.spared += swept.spared.length;
+        result.worktrees.stranded += swept.stranded.length;
+        if (swept.reaped.length + swept.reapedTreeKeptBranch.length > 0) {
+          logger.info('[rooms] tidied away idle room worktrees', {
+            roomId,
+            reaped: swept.reaped,
+            // Named apart in the log for the same reason it is named apart in
+            // the result: these still have a branch, and somebody may want it.
+            keptBranch: swept.reapedTreeKeptBranch,
+            stranded: swept.stranded,
+          });
+        }
+      } catch (err) {
+        logger.warn('[rooms] could not sweep a room’s worktrees', { roomId, err });
+      }
+    }
   }
 }

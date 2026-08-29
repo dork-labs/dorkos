@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type {
   Display,
   HandlerDetails,
@@ -147,10 +148,28 @@ class MockBrowserWindowImpl {
      */
     setWindowOpenHandler:
       vi.fn<(handler: (details: HandlerDetails) => WindowOpenHandlerResponse) => void>(),
+    reload: vi.fn<() => void>(),
+    /**
+     * The document this webContents is on. Modelled because the renderer
+     * supervisor derives "is the recovery page showing?" from it rather than
+     * latching a flag — a mock that always answered `''` would make that whole
+     * decision, and the security boundary resting on it, untestable.
+     */
+    getURL: vi.fn((): string => this.currentUrl),
+    /**
+     * Whether the page is still fetching. `false` by default — the state a
+     * finished load leaves behind — because the renderer supervisor treats a
+     * still-loading page as a slow load rather than a failed one, and a mock
+     * that answered `true` would make its whole ladder unreachable.
+     */
+    isLoading: vi.fn((): boolean => false),
     /** Test helper — not part of the real WebContents API. */
     emit: (event: string, ...args: unknown[]): Promise<void> =>
       this.webContentsBus.emit(event, ...args),
   };
+
+  /** Backing field for `webContents.getURL()`; set by `loadURL`/`loadFile`. */
+  private currentUrl = '';
 
   constructor(options: Record<string, unknown> = {}) {
     this.options = options;
@@ -182,6 +201,7 @@ class MockBrowserWindowImpl {
   show = vi.fn<() => void>();
   close = vi.fn<() => void>();
   isDestroyed = vi.fn((): boolean => false);
+  isVisible = vi.fn((): boolean => true);
   restore = vi.fn(() => {
     this.minimized = false;
   });
@@ -201,8 +221,18 @@ class MockBrowserWindowImpl {
   setBounds = vi.fn((bounds: Partial<Rectangle>) => {
     this.bounds = { ...this.bounds, ...bounds };
   });
-  loadURL = vi.fn<(url: string) => Promise<void>>();
-  loadFile = vi.fn<(filePath: string) => Promise<void>>();
+  // Both record where the window ended up, the way the real ones do: the
+  // supervisor asks `webContents.getURL()` back.
+  loadURL = vi.fn(async (url: string): Promise<void> => {
+    this.currentUrl = url;
+  });
+  loadFile = vi.fn(async (filePath: string): Promise<void> => {
+    this.currentUrl = pathToFileURL(filePath).href;
+  });
+  /** Test helper — put the window on `url` without going through a load. */
+  setUrl(url: string): void {
+    this.currentUrl = url;
+  }
   reload = vi.fn<() => void>();
 }
 
@@ -217,6 +247,16 @@ export const app = {
   name: 'DorkOS',
   requestSingleInstanceLock: vi.fn((): boolean => true),
   quit: vi.fn<() => void>(),
+  /**
+   * Arms a relaunch for whenever this process next exits — which is why tests
+   * assert on the ORDER of `relaunch` against `quit` and against the agent
+   * confirmation, not merely that it was called. The renderer supervisor's
+   * third rung relaunches too, for the same "did it relaunch or merely quit?"
+   * question.
+   */
+  relaunch: vi.fn<(options?: unknown) => void>(),
+  /** No-op here; in production it must run before `ready` (see `main/index.ts`). */
+  disableHardwareAcceleration: vi.fn<() => void>(),
   getPath: vi.fn((_name?: string): string => userDataPath),
   getVersion: vi.fn((): string => '0.1.0'),
   /**
@@ -246,14 +286,16 @@ export const app = {
 };
 
 /**
- * Test double for `session`. Only `defaultSession.clearCache` is modelled —
- * the one session call the main process makes (see `cache-hygiene.ts`), and
- * one whose *failure* has to be drivable, since swallowing it is the behavior
- * under test.
+ * Test double for `session`. Only the two clears the main process makes are
+ * modelled (see `cache-hygiene.ts`), and both are drivable to *failure*: on
+ * every path that calls them — version-change hygiene, and the renderer
+ * supervisor's recovery ladder — swallowing the failure and carrying on is the
+ * behavior under test.
  */
 export const session = {
   defaultSession: {
     clearCache: vi.fn<() => Promise<void>>(() => Promise.resolve()),
+    clearStorageData: vi.fn<(options?: unknown) => Promise<void>>(() => Promise.resolve()),
   },
 };
 
@@ -452,6 +494,8 @@ export function resetElectronMock(): void {
   app.isPackaged = false;
   app.requestSingleInstanceLock = vi.fn(() => true);
   app.quit = vi.fn();
+  app.relaunch = vi.fn();
+  app.disableHardwareAcceleration = vi.fn();
   userDataPath = freshUserDataPath();
   app.getPath = vi.fn((_name?: string) => userDataPath);
   app.getVersion = vi.fn(() => '0.1.0');
@@ -461,6 +505,7 @@ export function resetElectronMock(): void {
   app.dock = { setMenu: vi.fn(), setBadge: vi.fn() };
 
   session.defaultSession.clearCache = vi.fn(() => Promise.resolve());
+  session.defaultSession.clearStorageData = vi.fn(() => Promise.resolve());
 
   ipcMain.on = vi.fn();
   ipcMain.handle = vi.fn();

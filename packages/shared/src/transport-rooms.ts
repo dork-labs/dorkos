@@ -12,6 +12,7 @@
  */
 import type { UploadProgress } from './schemas.js';
 import type { UploadFile } from './transport.js';
+import type { RoomFileContentResponse, RoomFileListResponse } from './room-files.js';
 import type {
   AuthorRef,
   AddRoomMemberRequest,
@@ -108,6 +109,37 @@ export interface RoomTransport {
    * @param query - `before` (exclusive `seq` upper bound) and `limit`.
    */
   listRoomEntries(id: string, query?: ListRoomEntriesQuery): Promise<RoomEntry[]>;
+  /**
+   * List one directory of a room's own files (spec `project-rooms` §3.9).
+   *
+   * Answers from the commit `main` points at, never the checkout on disk, so a
+   * half-written edit is not something a reader can see and `.git` is not a
+   * path anybody can name. Every entry carries the last commit that touched it,
+   * or `null` when nothing in the searched window did.
+   *
+   * Gated exactly as reading the room's history is: a caller who is not on the
+   * roster is refused as if the room did not exist. A room that has no files of
+   * its own is refused separately, with `ROOM_HAS_NO_REPO` — a surface that
+   * offers files only to rooms that have them reads that code and shows nothing.
+   *
+   * @param id - The room id.
+   * @param path - The directory, relative to the repo root; omitted means the root.
+   */
+  readRoomFiles(id: string, path?: string): Promise<RoomFileListResponse>;
+  /**
+   * Read one file out of a room's `main`.
+   *
+   * Three honest answers rather than one plus two errors: the text, `binary`
+   * for a file whose bytes are never decoded into a string, or `too-large`
+   * against the install's ceiling. A directory, a symlink and a submodule are
+   * each refused — a link is listed, never followed.
+   *
+   * Everything it returns is member-written: render it as untrusted text.
+   *
+   * @param id - The room id.
+   * @param path - The file, relative to the repo root.
+   */
+  readRoomFileContent(id: string, path: string): Promise<RoomFileContentResponse>;
   /**
    * Post to a room. Trigger-only, exactly as {@link postMessage} is: the 202
    * carries the new entry's identity, while the entry itself reaches every

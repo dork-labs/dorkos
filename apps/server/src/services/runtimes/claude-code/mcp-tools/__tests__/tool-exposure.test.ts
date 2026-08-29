@@ -172,8 +172,15 @@ describe('in-session tool exposure', () => {
     const deferred = tools.filter((t) => t._meta?.[ALWAYS_LOAD_META] !== true);
     // The exact surface, so a tool added tomorrow shows up here as a number to
     // look at rather than silently passing a `>` bound.
-    expect(tools).toHaveLength(88);
-    expect(deferred).toHaveLength(80);
+    //
+    // 88 → 93 for the five room-MANAGEMENT verbs (DOR-1611), and all five land
+    // in the DEFERRED column, which is the half worth checking. The four room
+    // CONVERSATION verbs above are always-loaded because a room turn is a person
+    // waiting; these are deliberate and occasional, and always-loading five more
+    // schemas onto every turn of every session is the trade this file exists to
+    // refuse. Both counts moving by the same five is what says so.
+    expect(tools).toHaveLength(93);
+    expect(deferred).toHaveLength(85);
   });
 
   it('gives every advertised tool something to be found by', async () => {
