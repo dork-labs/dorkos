@@ -12,7 +12,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import type Database from 'better-sqlite3';
-import type { Db } from '@dorkos/db';
+import { authors, type Db } from '@dorkos/db';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { engagementFor, type EngagedWindow } from '../engagement.js';
 import { RoomStore } from '../room-store.js';
@@ -301,6 +301,62 @@ describe('the engaged window', () => {
       const store = freshStore();
       write(store, { id: 'mention', mentions: [ANA], minutesAgo: 0 });
       expect(isEngaged(store, window)).toBe(false);
+    });
+  });
+
+  describe('the room’s own voice never decays a window', () => {
+    /**
+     * The regression `project-rooms` §3.6 introduced and this closes.
+     *
+     * A notice was already excluded by `kind = 'post'`, and it was easy to read
+     * that as "the room's own voice is handled". It was not: the system author
+     * writes POSTS too — a milestone (`postMoment`) and, since the merge tool, a
+     * merge event — and those were counted as messages by others. In a project
+     * room merges are the ORDINARY traffic, so five of them stood an engaged
+     * agent down in the middle of a conversation with the person who had just
+     * addressed it.
+     *
+     * Seeded defect: dropping the author-kind clause from
+     * `RoomStore.listRecentPostsByOthers` reddens both cases below.
+     */
+    const SYSTEM = 'system-author';
+
+    /** A store whose `authors` table knows which id is the room's own voice. */
+    function roomWithSystemAuthor(): RoomStore {
+      const { db, store } = freshRoom();
+      db.insert(authors)
+        .values({
+          id: SYSTEM,
+          kind: 'system',
+          naturalKey: 'system',
+          displayName: 'DorkOS',
+          createdAt: minutesAgo(600),
+        })
+        .run();
+      return store;
+    }
+
+    it('keeps an open window open through a burst of merge entries', () => {
+      const store = roomWithSystemAuthor();
+      write(store, { id: 'mention', authorId: HUMAN, mentions: [ANA], minutesAgo: 1 });
+      // Five is exactly the ceiling: five messages by other MEMBERS would close
+      // it. These are the room reporting, and they are not messages by anybody.
+      for (let i = 0; i < 5; i++) {
+        write(store, { id: `merge-${i}`, authorId: SYSTEM, minutesAgo: 0 });
+      }
+
+      expect(isEngaged(store)).toBe(true);
+    });
+
+    it('still closes on that many messages from a real member', () => {
+      // The control, so the case above cannot pass by the window never closing.
+      const store = roomWithSystemAuthor();
+      write(store, { id: 'mention', authorId: HUMAN, mentions: [ANA], minutesAgo: 1 });
+      for (let i = 0; i < 5; i++) {
+        write(store, { id: `said-${i}`, authorId: BO, minutesAgo: 0 });
+      }
+
+      expect(isEngaged(store)).toBe(false);
     });
   });
 

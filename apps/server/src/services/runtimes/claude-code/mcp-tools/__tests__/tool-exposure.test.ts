@@ -179,8 +179,20 @@ describe('in-session tool exposure', () => {
     // waiting; these are deliberate and occasional, and always-loading five more
     // schemas onto every turn of every session is the trade this file exists to
     // refuse. Both counts moving by the same five is what says so.
-    expect(tools).toHaveLength(93);
-    expect(deferred).toHaveLength(85);
+    //
+    // 93 → 95 for the two room-REPO verbs, `merge_to_room_main` and
+    // `room_repo_status` (DOR-1598), and both land in the DEFERRED column beside
+    // the management five for the same reason. A merge is what an agent does
+    // when a piece of work is FINISHED, and the status read is what it does
+    // just before — deliberate and occasional, not the per-turn path a room
+    // conversation takes. The rule that would force them the other way is the
+    // one `context-tool-names.test.ts` owns: a tool the PROMPT names may not be
+    // deferred, because the model is told to call it and then cannot. No prompt
+    // block names either of these, which is what makes deferring them safe
+    // rather than merely cheap. Both counts moving by the same two is what says
+    // no schema quietly joined the always-loaded set.
+    expect(tools).toHaveLength(95);
+    expect(deferred).toHaveLength(87);
   });
 
   it('gives every advertised tool something to be found by', async () => {

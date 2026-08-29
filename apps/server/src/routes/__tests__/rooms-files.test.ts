@@ -72,6 +72,7 @@ import {
 } from '../../services/rooms/index.js';
 import {
   RoomFilesService,
+  RoomRepoMutex,
   RoomRepoService,
   RoomRepoStore,
 } from '../../services/rooms/repo/index.js';
@@ -125,6 +126,8 @@ describe('room files routes', () => {
     store = new RoomRepoStore(db, dorkHome);
     const repos = new RoomRepoService({
       store,
+      mutex: new RoomRepoMutex(),
+      queueWaitMs: () => 5000,
       enabled: () => true,
       getRoom: (roomId, viewerAuthorId) => rooms.service.getRoom(roomId, viewerAuthorId),
       isOwnerAuthor: (authorId) => rooms.authors.isOwner(authorId, readOwnerAccount()?.id ?? null),

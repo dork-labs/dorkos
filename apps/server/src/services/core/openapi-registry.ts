@@ -99,6 +99,7 @@ import {
   ListRoomEntriesQuerySchema,
   ListRoomsQuerySchema,
   HaltRoomResponseSchema,
+  MergeRoomRepoRequestSchema,
   PromoteHoldResponseSchema,
   PostThreadReplyRequestSchema,
   PostToRoomRequestSchema,
@@ -4023,6 +4024,123 @@ registry.registerPath({
           }),
         },
       },
+    },
+  },
+});
+
+/** One agent's branch, as the room-repo status reports it. */
+const RoomBranchStatusSchema = z
+  .object({
+    slug: z.string().describe('The working copy’s directory name, and the tail of the branch.'),
+    branch: z.string(),
+    agent: z.string().describe('The agent’s display name, sanitized.'),
+    mine: z.boolean().describe('Whether this row is the caller’s own branch.'),
+    hasWorktree: z.boolean().describe('Whether the working copy is on disk right now.'),
+    ahead: z.number().int().describe('Commits the branch holds that `main` does not.'),
+    behind: z.number().int().describe('Commits `main` holds that the branch does not.'),
+    dirty: z.boolean().describe('Whether the working copy has changes nobody committed.'),
+    stranded: z
+      .boolean()
+      .describe('Work `main` has not got — `dirty || ahead > 0`. Drives the explorer’s badge.'),
+  })
+  .openapi('RoomBranchStatus');
+
+/** What `GET /api/rooms/{id}/repo/status` answers. */
+const RoomRepoStatusSchema = z
+  .object({
+    mainCommit: z.string(),
+    mainCommittedAt: z.string().nullable(),
+    branches: z.array(RoomBranchStatusSchema),
+    strandedWorktrees: z
+      .array(z.string())
+      .describe(
+        'Working copies holding work `main` has not got, including ones no current member maps to.'
+      ),
+    size: z.object({
+      usedBytes: z.number().int(),
+      maxRepoBytes: z.number().int(),
+      maxFileBytes: z.number().int(),
+    }),
+  })
+  .openapi('RoomRepoStatus');
+
+/** What a completed merge answers. */
+const RoomMergeResultSchema = z
+  .object({
+    branch: z.string(),
+    commit: z.string().describe('The merge commit now on the room’s `main`.'),
+    files: z.number().int(),
+    insertions: z.number().int(),
+    deletions: z.number().int(),
+    seq: z.number().int().describe('The `seq` of the room entry announcing the merge.'),
+  })
+  .openapi('RoomMergeResult');
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/rooms/{id}/repo/status',
+  tags: ['Rooms'],
+  summary: 'What a room’s files hold, and who has work that is not merged',
+  description:
+    'Where the room’s own copy is, and for every agent in the room, how far its working copy has run ahead of the room and how far behind, whether it has changes nobody committed, and whether any of that adds up to work the room has not got. Membership-gated exactly like reading the room’s history: a caller who is not on the roster gets the same 404 an unknown room gets, because a room id is not a capability — and seeing a room is not being in it, so the install’s owner is not exempt. It reports working-copy SLUGS and display names, never the directory an agent lives in. It reads only, and it does not queue behind a merge, so the answer may be one merge out of date — which is what a status always is.',
+  request: { params: RoomIdParams },
+  responses: {
+    200: {
+      description: 'The main tip, one row per agent branch, and the size against the caps',
+      content: { 'application/json': { schema: RoomRepoStatusSchema } },
+    },
+    401: roomAgentUnverified,
+    404: roomNotFound,
+    409: {
+      description:
+        'The room has no files (`NOT_A_PROJECT_ROOM`), or room files are switched off on this install (`ROOM_REPOS_DISABLED`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/repo/merge',
+  tags: ['Rooms'],
+  summary: 'Bring an agent’s work into the room',
+  description:
+    'Merges an agent’s branch into the room’s `main`, in the room’s own checkout, and posts one line in the room saying what landed. Merges into one room run **one at a time**: a second caller waits its turn, and is refused 429 `MERGE_IN_FLIGHT` only if the wait runs out. Every other refusal is a 409 and says which: `UNCOMMITTED_WORK` (the working copy has changes nobody committed), `BEHIND_MAIN` (the room has moved on — sync in your own copy first; the message says how far), `NOTHING_TO_MERGE`, `SYMLINK_ESCAPES_REPO` (a shortcut pointing outside the room’s files), `FILE_TOO_LARGE`, `REPO_CAP_EXCEEDED`, `MAIN_CHECKOUT_DIRTY` (something outside DorkOS wrote in the room’s own copy), `MERGE_CONFLICT` (nothing was changed). Nothing here can rewrite history: there is no force, no reset and no push on this surface or under it. Naming a `worktree` merges somebody else’s working copy and is owner-only (403 `OPERATOR_ONLY`); an agent omits it and merges its own.',
+  request: {
+    params: RoomIdParams,
+    body: {
+      content: { 'application/json': { schema: MergeRoomRepoRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: 'The work is on the room’s `main`, and the room has been told once',
+      content: { 'application/json': { schema: RoomMergeResultSchema } },
+    },
+    400: {
+      description: 'The request did not carry a summary anybody could read',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: roomAgentUnverified,
+    403: {
+      description: 'Only the owner may merge somebody else’s working copy (`OPERATOR_ONLY`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: roomNotFound,
+    409: {
+      description: 'The merge was refused; `code` says which of the reasons above it was',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    429: {
+      description:
+        'Another merge held the room’s queue and the wait ran out, or the queue was already full when this call arrived — both `MERGE_IN_FLIGHT`, with a message saying which. `Retry-After` carries the room’s own queue wait in seconds, so a client does not have to guess a backoff.',
+      headers: {
+        'Retry-After': {
+          description: 'Seconds to wait before merging again.',
+          schema: { type: 'integer' },
+        },
+      },
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });

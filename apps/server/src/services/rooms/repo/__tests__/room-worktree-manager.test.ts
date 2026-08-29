@@ -54,6 +54,7 @@ import { ROOM_REPO_CAP_DEFAULTS } from '@dorkos/shared/room-repo';
 import { RoomError } from '../../room-errors.js';
 import { RoomRepoStore } from '../room-repo-store.js';
 import { RoomRepoService } from '../room-repo-service.js';
+import { RoomRepoMutex } from '../room-repo-mutex.js';
 import { RoomRepoReconciler } from '../room-repo-reconciler.js';
 import { RoomWorktreeManager } from '../room-worktree-manager.js';
 import { PROJECTED_ATTACHMENTS_ROOT } from '../../attachments/attachment-paths.js';
@@ -196,6 +197,8 @@ describe('RoomWorktreeManager', () => {
       .run();
     service = new RoomRepoService({
       store,
+      mutex: new RoomRepoMutex(),
+      queueWaitMs: () => 5000,
       enabled: () => true,
       getRoom: () => ROOM,
       isOwnerAuthor: (authorId) => authorId === OPERATOR,

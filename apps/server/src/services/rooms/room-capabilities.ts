@@ -3,8 +3,8 @@
  * to (room-participation spec §10.2 and §10.3, plus the E16b reversal in
  * ADR 260814-195522).
  *
- * Thirteen verbs, and between them they are everything an agent can do in a room
- * that is not simply answering the message it was handed. **Eight are open to
+ * Fifteen verbs, and between them they are everything an agent can do in a room
+ * that is not simply answering the message it was handed. **Ten are open to
  * every agent; the five that arrange rooms are off until a person turns them
  * on** (see "The one group with teeth" below):
  *
@@ -12,10 +12,12 @@
  * | ------------------- | ----------------------- | --------- | ---------- |
  * | `rooms.post`        | `post_to_room`          | `act`     | Say something into a channel, on purpose. |
  * | `rooms.react`       | `react_to_room_entry`   | `act`     | Put one emoji on one message. |
+ * | `rooms.merge`       | `merge_to_room_main`    | `act`     | Bring the work in your own working copy into the room. |
  * | `rooms.read_history`| `read_room_history`     | `observe` | Read back what was said in ONE room. |
  * | `rooms.search_history`| `search_room_history` | `observe` | Find where something was said in ONE room. |
  * | `rooms.list_member_rooms`| `list_member_rooms` | `observe` | Which rooms this agent is in at all. |
  * | `rooms.search_member_rooms`| `search_member_rooms` | `observe` | Find where something was said across ALL of them. |
+ * | `rooms.repo_status` | `room_repo_status`      | `observe` | What the room's files hold, and what is unmerged. |
  * | `rooms.get_room`    | `get_room`              | `observe` | One room in full: topic, roster, who is human. |
  * | `rooms.find_room`   | `find_room`             | `observe` | Turn a `#name` or a set of members into a room. |
  * | `rooms.create`      | `create_room`           | `act`     | Open a channel, or a DM with someone. |
@@ -23,6 +25,25 @@
  * | `rooms.remove_members`| `remove_room_members` | `act`     | Take them out again. |
  * | `rooms.update`      | `update_room`           | `act`     | Rename a room, or set its topic. |
  * | `rooms.leave`       | `leave_room`            | `act`     | Step out of a channel that is finished. |
+ *
+ * ## The two repo verbs, and the three things they are NOT
+ *
+ * `merge_to_room_main` and `room_repo_status` (spec `project-rooms` §3.6) follow
+ * every rule the conversation verbs do — thin callers of a service, membership as
+ * the gate, no `readOnlyCarveOut` on the read — and add one of their own that is
+ * worth stating because its absence would be invisible: **there is no verb here,
+ * and no function under one, that can rewrite a room's history.** No force, no
+ * reset, no push, no branch deletion. A room's repo is append-only, so the
+ * destructive operations are not exposed at a lower layer for this one to
+ * decline to call — `room-repo-git.ts` does not export them at all.
+ *
+ * They are also not a second write path. `merge_to_room_main` runs `git merge`
+ * in the room's integration tree through `RoomMergeService`, and everything it
+ * says about that afterwards goes into the room through `RoomService`, like
+ * every other word an agent puts in a room. And **giving a room files is not
+ * here**: enabling a repo is operator-only over HTTP (spec §3.2), because an
+ * agent that could hand itself a writable working directory is the
+ * confused-deputy shape the membership verbs already refuse.
  *
  * ## The lookup pair answers WHO and WHICH (DOR-1610)
  *
@@ -53,7 +74,7 @@
  *
  * ## The tiers, and what they honestly gate
  *
- * The six reads are `observe`, the tier that returns allowed before any other
+ * The seven reads are `observe`, the tier that returns allowed before any other
  * check runs — so the thing standing between a caller and a room's log is the
  * MEMBERSHIP check, not the tier. That is the honest statement, and it is why
  * every read resolves membership first and answers "not a member" exactly as "no
@@ -68,7 +89,7 @@
  * is not a reason to be the exception. An external caller presents the local
  * token, exactly as it does to post.
  *
- * The two writes are `act`, not `destructive`. A card on every message an agent
+ * The two conversation writes are `act`, not `destructive`. A card on every message an agent
  * posts into its own room would be the over-tiering that teaches people to click
  * through, and nothing either verb does is irreversible in the sense
  * `destructive` means. What bounds them instead is a mechanism apiece, and both
@@ -113,7 +134,7 @@
  * ## The runtime constraint (§10.2.1)
  *
  * Only claude-code declares `supportsMcp: true`, so only a claude-code agent gets
- * these in-session. Codex and OpenCode agents reach the same thirteen through the
+ * these in-session. Codex and OpenCode agents reach the same fifteen through the
  * external `/mcp` server if their owner wires it up, and keep today's behaviour if
  * not: the turn's text is the message. That is a difference in who DECIDES, not in
  * whether posting is possible, which is why nothing here is a mute.
@@ -140,7 +161,11 @@
  */
 import { z } from 'zod';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
-import { directMessageTitle, type RoomEntry } from '@dorkos/shared/room-schemas';
+import {
+  directMessageTitle,
+  MERGE_SUMMARY_MAX_CHARS,
+  type RoomEntry,
+} from '@dorkos/shared/room-schemas';
 
 import {
   CapabilityToolError,
@@ -163,6 +188,7 @@ import {
   type RoomDetail,
   type RoomService,
 } from './room-service.js';
+import type { RoomMergeService } from './repo/room-merge-service.js';
 
 /**
  * Extend the shared dependency bag with the rooms domain's one service handle.
@@ -174,7 +200,21 @@ import {
 declare module '../core/capabilities/capability-definition.js' {
   interface CapabilityDeps {
     /** The live rooms service — membership, posting, history, reactions. */
-    roomDeps?: { rooms: RoomService };
+    roomDeps?: {
+      /** Membership, posting, history, reactions. */
+      rooms: RoomService;
+      /**
+       * A room's own git repo — merging, and reporting what it holds.
+       *
+       * Optional because a room only ever gains files when somebody gives it
+       * some, and because the two repo verbs are the only capabilities that
+       * need it: a registry composed without one still offers the thirteen that
+       * were here first. The verbs that DO need it say so
+       * ({@link requireMergeDeps}) rather than degrading into a confusing
+       * refusal about the room.
+       */
+      merges?: RoomMergeService;
+    };
   }
 }
 
@@ -200,6 +240,26 @@ function requireRoomDeps(deps: CapabilityDeps): RoomService {
     throw new Error('Rooms capability invoked without roomDeps in the registry bag.');
   }
   return deps.roomDeps.rooms;
+}
+
+/**
+ * Narrow the bag to the merge service, throwing if the registry was composed
+ * without it (a wiring bug, caught the first time a repo verb is called).
+ *
+ * A throw rather than a room-shaped refusal, deliberately: "this room has no
+ * files" and "this server was wired without the thing that reads them" are
+ * different facts, and answering the second with the first would send an agent
+ * off to ask an operator to enable something that is already enabled.
+ *
+ * @param deps - The registry's shared dependency bag.
+ * @returns The merge service.
+ */
+function requireMergeDeps(deps: CapabilityDeps): RoomMergeService {
+  const merges = deps.roomDeps?.merges;
+  if (!merges) {
+    throw new Error('Rooms repo capability invoked without a merge service in the registry bag.');
+  }
+  return merges;
 }
 
 /**
@@ -398,6 +458,31 @@ function projectDetail(detail: RoomDetail): Record<string, unknown> {
 function answering<T>(body: () => T): T {
   try {
     return body();
+  } catch (err) {
+    if (err instanceof RoomError) {
+      throw new CapabilityToolError({ error: err.message, code: err.code });
+    }
+    throw err;
+  }
+}
+
+/**
+ * {@link answering} for a verb that returns a promise.
+ *
+ * Its own function rather than a widened signature, because the sync one CANNOT
+ * do this job: a `try` around a call that returns a rejected promise catches
+ * nothing, so a merge refusal would have reached the model as an unhandled
+ * rejection with a stack trace where its typed code should have been. Every
+ * refusal in the room-repo contract is asynchronous, so all of them would have
+ * been affected.
+ *
+ * @param body - The verb.
+ * @returns Whatever the verb resolved to.
+ * @throws {CapabilityToolError} Carrying `{ error, code }` for a typed refusal.
+ */
+async function answeringAsync<T>(body: () => Promise<T>): Promise<T> {
+  try {
+    return await body();
   } catch (err) {
     if (err instanceof RoomError) {
       throw new CapabilityToolError({ error: err.message, code: err.code });
@@ -652,6 +737,93 @@ export const roomsDomain: CapabilityDomain = {
         // deliberately not returned here: it would be state about the operator,
         // handed to a model, for nothing.
         return Promise.resolve({ reacted });
+      },
+    }),
+    defineCapability({
+      id: 'rooms.merge',
+      title: 'Merge your work into the room',
+      description:
+        'Bring the work you have committed in this room’s working copy into the room itself, ' +
+        'where everyone else can see it and build on it. ' +
+        'Commit everything you want to include first — anything uncommitted is left behind — and ' +
+        'run `git merge main` in your own working copy first if the room has moved on, so you ' +
+        'sort out anything that clashes in your own tree rather than in everybody’s. ' +
+        'It is refused, with the reason, if you have uncommitted changes, if your branch is ' +
+        'behind the room, if a file is too big, or if something in it is a shortcut pointing ' +
+        'outside the room’s files. ' +
+        'Merges happen one at a time, so if somebody else is merging right now, yours waits its ' +
+        'turn. ' +
+        'When it lands, the room gets one line saying what you merged — you do not need to ' +
+        'announce it as well.',
+      tier: 'act',
+      input: z.object({
+        roomId: z
+          .string()
+          .describe(
+            'The room to merge into, by its id — not its #name. Inside a room turn your room ' +
+              'context names it. You must be a member of it.'
+          ),
+        summary: z
+          .string()
+          .min(1)
+          // The same cap the server truncates at, so a long summary is refused
+          // while the agent can still write a shorter one, never silently cut.
+          .max(MERGE_SUMMARY_MAX_CHARS)
+          .describe(
+            'What you did, in one line — it becomes the merge’s own description and the line ' +
+              'the room sees. "Add the deploy checklist", not "changes".'
+          ),
+      }),
+      output: z.unknown(),
+      surfaces: {
+        mcp: {
+          toolName: 'merge_to_room_main',
+          servers: ['in-session', 'external'],
+          // Emphatically not idempotent: calling it twice merges twice, and the
+          // second call is refused `NOTHING_TO_MERGE` only because the first one
+          // already moved the branch.
+          annotations: { idempotentHint: false },
+        },
+      },
+      invoke: async (deps, input, context) => {
+        const rooms = requireRoomDeps(deps);
+        const merges = requireMergeDeps(deps);
+        // Inside `answeringAsync` with the merge itself, because resolving WHO
+        // is calling can refuse too — and every refusal in this contract is one
+        // an agent is meant to read and act on.
+        const result = await answeringAsync(() =>
+          merges.merge(input.roomId, callerAuthor(rooms, context).id, { summary: input.summary })
+        );
+        return { merged: true, ...result };
+      },
+    }),
+    defineCapability({
+      id: 'rooms.repo_status',
+      title: 'Check the room’s files',
+      description:
+        'See where this room’s files stand: what the room’s own copy is at, and for every agent ' +
+        'in the room, how far its working copy has run ahead and how far behind. ' +
+        'Use it before you merge, to find out whether you need to sync first, and to see whether ' +
+        'anyone is sitting on work nobody has merged. ' +
+        'It reads only — it changes nothing and merges nothing.',
+      tier: 'observe',
+      input: z.object({
+        roomId: z
+          .string()
+          .describe('The room to look at, by its id — not its #name. You must be a member of it.'),
+      }),
+      output: z.unknown(),
+      surfaces: {
+        mcp: {
+          toolName: 'room_repo_status',
+          servers: ['in-session', 'external'],
+          annotations: { idempotentHint: true },
+        },
+      },
+      invoke: async (deps, input, context) => {
+        const rooms = requireRoomDeps(deps);
+        const merges = requireMergeDeps(deps);
+        return answeringAsync(() => merges.status(input.roomId, callerAuthor(rooms, context).id));
       },
     }),
     defineCapability({

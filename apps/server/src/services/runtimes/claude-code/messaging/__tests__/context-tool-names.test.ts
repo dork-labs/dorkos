@@ -306,7 +306,13 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // The exact surface, so a tool added or lost is a line to look at here rather
     // than a change a bound absorbs. Same number as `tool-exposure.test.ts` sees.
     // 88 → 93 for the five room-management verbs (DOR-1611).
-    expect(advertised.size).toBe(93);
+    // 93 → 95 for the two room-repo verbs, `merge_to_room_main` and
+    // `room_repo_status` (DOR-1598). Both are DEFERRED, and this file is half of
+    // why that is allowed: neither is written into a claude-code prompt block,
+    // so no prose tells a model to call a tool it would have to search for
+    // first. The `bare` assertion below is what keeps that true — the day a
+    // block teaches either one, it fails here until the tool is always-loaded.
+    expect(advertised.size).toBe(95);
     expect(advertised.has('react_to_room_entry')).toBe(true);
 
     const { prose } = await claudeCodeProse();

@@ -268,10 +268,13 @@ import {
   setRoomRepoService,
   setRoomFilesService,
   setRoomWorktreeManager,
+  setRoomMergeService,
 } from './services/rooms/index.js';
 import {
   readRoomRepoConfig,
   RoomFilesService,
+  RoomMergeService,
+  RoomRepoMutex,
   RoomRepoReconciler,
   RoomRepoService,
   RoomRepoStore,
@@ -1173,8 +1176,17 @@ async function start() {
   // turning the feature on or changing a cap binds the next request rather
   // than the next server start.
   const roomRepoStore = new RoomRepoStore(db, dorkHome);
+  // ONE queue for the whole install, shared by every server-side write to a
+  // room's repo. Enabling a repo and merging into it take the same lane, keyed
+  // by room: enable is a check-then-act that two callers could otherwise both
+  // win (destroying the first repo's seed commit), and two merges in one
+  // checkout is the contention one-writer forbids. Two rooms never wait on each
+  // other.
+  const roomRepoMutex = new RoomRepoMutex();
   const roomRepoService = new RoomRepoService({
     store: roomRepoStore,
+    mutex: roomRepoMutex,
+    queueWaitMs: () => readRoomRepoConfig().mergeQueueWaitMs,
     enabled: () => readRoomRepoConfig().enabled,
     getRoom: (roomId, viewerAuthorId) => roomService.getRoom(roomId, viewerAuthorId),
     isOwnerAuthor: (authorId) => roomAuthors.isOwner(authorId, readOwnerAccount()?.id ?? null),
@@ -1236,6 +1248,22 @@ async function start() {
     boundSessionIds: (agentPath) =>
       Promise.resolve(runtimeRegistry.listSessionIdsForAgentPath(agentPath)),
   });
+  // The only path work takes back into a room's `main` (spec §3.6). It writes
+  // in `repo/` and nowhere else — an agent's own working copy has exactly one
+  // writer and it is that agent — and it announces every merge through
+  // `RoomService`, so a room's log keeps its single write path.
+  const roomMerges = new RoomMergeService({
+    store: roomRepoStore,
+    mutex: roomRepoMutex,
+    enabled: () => readRoomRepoConfig().enabled,
+    mergeQueueWaitMs: () => readRoomRepoConfig().mergeQueueWaitMs,
+    requireMembership: (roomId, authorId) => roomService.requireMembership(roomId, authorId),
+    listAgentMembers: (roomId) => roomService.listAgentMembers(roomId),
+    listStrandedWorktrees: (roomId) => roomRepoService.listStrandedWorktrees(roomId),
+    announce: (roomId, input) => roomService.postMergeEvent(roomId, input),
+    isOwnerAuthor: (authorId) => roomAuthors.isOwner(authorId, readOwnerAccount()?.id ?? null),
+  });
+  setRoomMergeService(roomMerges);
   // Rebuilds `room_repos` from the sidecars on disk, on the same five-minute
   // cadence the mesh and workspace reconcilers use (ADR-0043). It never deletes
   // a room's files — see its module doc for why an orphaned home directory is
@@ -3288,11 +3316,12 @@ async function start() {
       // The MCP-server-management domain — its deps are built above so the
       // `mcp.import` fallback closure narrows `meshCore`.
       ...(mcpDeps && { mcpDeps }),
-      // The rooms domain (room-participation spec §10.2, §10.3): the eight verbs
-      // an agent has in the rooms it belongs to. The SAME service instance the
+      // The rooms domain (room-participation spec §10.2, §10.3): the verbs an
+      // agent has in the rooms it belongs to. The SAME service instances the
       // REST routes and the trigger dispatcher hold — one set of membership
-      // rules, one cascade guard, one budget, whichever surface reaches them.
-      roomDeps: { rooms: roomService },
+      // rules, one cascade guard, one budget, one merge queue, whichever surface
+      // reaches them.
+      roomDeps: { rooms: roomService, merges: roomMerges },
       // How a saved note learns which room it was written in (DOR-632). The
       // room service answers for the CALLING session, so the label is derived
       // rather than supplied — a model that could name its own provenance could

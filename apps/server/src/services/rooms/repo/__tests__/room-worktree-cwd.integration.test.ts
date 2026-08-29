@@ -52,6 +52,7 @@ import {
   type ScriptedTurnRunner,
 } from '../../__tests__/room-test-harness.js';
 import { RoomRepoStore } from '../room-repo-store.js';
+import { RoomRepoMutex } from '../room-repo-mutex.js';
 import { RoomRepoService } from '../room-repo-service.js';
 import { RoomWorktreeManager } from '../room-worktree-manager.js';
 import { hasUncommittedChanges, runGit } from '../room-repo-git.js';
@@ -95,6 +96,8 @@ describe('a room turn runs in the room’s repo', () => {
     repoStore = new RoomRepoStore(harness.db, dorkHome);
     repos = new RoomRepoService({
       store: repoStore,
+      mutex: new RoomRepoMutex(),
+      queueWaitMs: () => 5000,
       enabled: () => true,
       getRoom: (roomId) => harness.store.getRoom(roomId),
       // The harness's `human` is the owner, and enabling a repo is operator-only.

@@ -108,6 +108,25 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // rather than a 404, for the same reason as the two above: the answer changes
   // by giving the room a repo, not by asking about a different room.
   NOT_A_PROJECT_ROOM: 409,
+  // Every merge refusal is a 409, and they are 409s for one shared reason: the
+  // request is well formed, the caller is allowed, and the room said not yet.
+  // What changes the answer is always an act in the caller's own tree — commit,
+  // sync, shrink the file, wait — never a different request or a better
+  // credential.
+  UNCOMMITTED_WORK: 409,
+  BEHIND_MAIN: 409,
+  MAIN_CHECKOUT_DIRTY: 409,
+  SYMLINK_ESCAPES_REPO: 409,
+  FILE_TOO_LARGE: 409,
+  REPO_CAP_EXCEEDED: 409,
+  MERGE_CONFLICT: 409,
+  NOTHING_TO_MERGE: 409,
+  SUBMODULE_NOT_ALLOWED: 409,
+  // The exception, and the canonical status for it: the caller waited its turn
+  // and the room is still busy. A 429 says "ask again", which is exactly the
+  // remedy, and is the same answer `REACTION_RATE_LIMITED` gives for the same
+  // shape of refusal.
+  MERGE_IN_FLIGHT: 429,
 };
 
 /**

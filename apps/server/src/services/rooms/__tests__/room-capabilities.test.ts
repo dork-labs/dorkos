@@ -154,7 +154,7 @@ describe('the rooms capability domain', () => {
   });
 
   describe('what it declares', () => {
-    it('advertises the thirteen tools on both MCP servers, with the tiers and the grant it means', () => {
+    it('advertises the fifteen tools on both MCP servers, with the tiers and the grant it means', () => {
       const declared = roomsDomain.capabilities.map((capability) => ({
         id: capability.id,
         tool: capability.surfaces.mcp?.toolName,
@@ -182,6 +182,27 @@ describe('the rooms capability domain', () => {
           group: null,
           tool: 'react_to_room_entry',
           tier: 'act',
+          servers: ['in-session', 'external'],
+          readOnly: false,
+        },
+        {
+          id: 'rooms.merge',
+          group: null,
+          tool: 'merge_to_room_main',
+          // `act`, like the other two writes. Not `destructive`: the room's repo
+          // is append-only — nothing on this surface, or under it, can force,
+          // reset or push — so a merge adds a commit and takes none away.
+          tier: 'act',
+          servers: ['in-session', 'external'],
+          readOnly: false,
+        },
+        {
+          id: 'rooms.repo_status',
+          group: null,
+          tool: 'room_repo_status',
+          tier: 'observe',
+          // Deliberately NOT in the tokenless carve-out, for the reason
+          // `list_member_rooms` is not: it is the shape of somebody's work.
           servers: ['in-session', 'external'],
           readOnly: false,
         },
