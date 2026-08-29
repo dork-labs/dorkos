@@ -52,9 +52,12 @@ import { logger } from '../../../lib/logger.js';
  * them vacuously true: a projection that ran before anything was seeded would
  * find an empty `.claude/skills/` and match. Bumping the literal when the pack
  * grows is the deliberate part.
+ *
+ * 6 → 7 for `working-in-room-repos` (DOR-1599), which teaches an agent how to
+ * work in a room's own files.
  */
 const PACK_NAMES = OPERATING_SKILLS_PACK.map((skill) => skill.name).sort();
-const PACK_SIZE = 6;
+const PACK_SIZE = 7;
 
 let tmpRoot: string;
 
