@@ -54,7 +54,7 @@ import {
 import { RoomRepoStore } from '../room-repo-store.js';
 import { RoomRepoService } from '../room-repo-service.js';
 import { RoomWorktreeManager } from '../room-worktree-manager.js';
-import { absoluteGitDir, hasUncommittedChanges, runGit } from '../room-repo-git.js';
+import { hasUncommittedChanges, runGit } from '../room-repo-git.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -100,6 +100,7 @@ describe('a room turn runs in the room’s repo', () => {
       isOwnerAuthor: (authorId) => authorId === harness.human,
       operatorGitName: () => 'Dorian',
       caps: () => ({ ...ROOM_REPO_CAP_DEFAULTS }),
+      maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
     });
     manager = new RoomWorktreeManager({
       store: repoStore,
@@ -357,12 +358,12 @@ describe('a room turn runs in the room’s repo', () => {
     expect(worktree).toBe(anaWorktree(room.id));
 
     // And age every mtime the sweep reads, so the ONLY thing keeping this tree
-    // is the live claim.
-    const gitDir = await absoluteGitDir(worktree, repoStore.homeDir(room.id));
+    // is the live claim. That is the directory and its top-level entries — the
+    // git index is deliberately NOT among them (the sweep's own reads would
+    // refresh it), so there is nothing else to backdate here.
     for (const name of await readdir(worktree)) {
       await utimes(path.join(worktree, name), when, when).catch(() => undefined);
     }
-    await utimes(path.join(gitDir, 'index'), when, when).catch(() => undefined);
     await utimes(worktree, when, when);
 
     // The claim is live right now — this is the join the reap makes.

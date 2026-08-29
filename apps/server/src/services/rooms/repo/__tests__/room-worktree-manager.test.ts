@@ -58,7 +58,6 @@ import { RoomRepoReconciler } from '../room-repo-reconciler.js';
 import { RoomWorktreeManager } from '../room-worktree-manager.js';
 import { PROJECTED_ATTACHMENTS_ROOT } from '../../attachments/attachment-paths.js';
 import {
-  absoluteGitDir,
   commitAll,
   commonGitDir,
   hasLocalBranch,
