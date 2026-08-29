@@ -73,7 +73,13 @@ import type {
 import { RoomError } from '../room-errors.js';
 import { logger } from '../../../lib/logger.js';
 import type { RoomRepoStore } from './room-repo-store.js';
-import { GitUnavailableError, runGit, runGitRaw } from './room-repo-git.js';
+import {
+  GITLINK_MODE,
+  GitUnavailableError,
+  runGit,
+  runGitRaw,
+  SYMLINK_MODE,
+} from './room-repo-git.js';
 
 /**
  * How many commits one provenance walk may look at.
@@ -104,12 +110,6 @@ const FIELD_SEPARATOR = '\u001f';
  * are shaped the way git shapes them.
  */
 const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/;
-
-/** How git spells "this is a symlink" in a tree. */
-const SYMLINK_MODE = '120000';
-
-/** How git spells "this is a pointer at another repository" in a tree. */
-const GITLINK_MODE = '160000';
 
 /** The signature {@link RoomFilesService} calls git through. */
 export type GitTextRunner = (args: string[], cwd: string, ceilingDir: string) => Promise<string>;
@@ -464,6 +464,41 @@ export class RoomFilesService {
         lastCommit,
         body: { kind: 'text' as const, encoding: 'utf-8' as const, text: bytes.toString('utf-8') },
       };
+    });
+  }
+
+  /**
+   * Who last touched one file, without reading a byte of it.
+   *
+   * The provenance half of {@link RoomFilesService.read}, on its own, for the
+   * one caller that needs the row and not the contents: a save answers with the
+   * commit it just made, and reading the whole file back to learn its author
+   * would mean holding a person's file in memory twice to fill in one field.
+   *
+   * Membership is the caller's to check, exactly as it is for the reads.
+   *
+   * @param roomId - The room.
+   * @param rawPath - The file, relative to the repo root.
+   * @returns The last commit that touched it, or `null` when the file is not
+   *   there, the repo has no commits, or the bounded walk did not reach it.
+   * @throws {RoomError} `ROOM_HAS_NO_REPO`, `ROOM_FILE_PATH_INVALID`, or
+   *   `ROOM_REPO_GIT_UNAVAILABLE`.
+   */
+  async lastCommitFor(roomId: string, rawPath: string): Promise<RoomFileCommit | null> {
+    await this.requireRepo(roomId);
+    const filePath = normalizeRoomFilePath(rawPath);
+    if (filePath === '') return null;
+
+    return this.translatingGitAbsence(async () => {
+      const commit = await this.resolveCommit(roomId);
+      if (!commit) return null;
+      const entry = await this.statPath(roomId, commit, filePath);
+      if (!entry) return null;
+      return (
+        (await this.provenanceFor(roomId, commit, parentOf(filePath), [entry])).get(
+          basenameOf(filePath)
+        ) ?? null
+      );
     });
   }
 

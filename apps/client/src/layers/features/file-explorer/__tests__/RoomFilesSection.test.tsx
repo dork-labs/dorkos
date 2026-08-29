@@ -253,6 +253,9 @@ describe('RoomFilesSection', () => {
       return {
         mainCommit: 'abc1234',
         mainCommittedAt: '2026-08-28T09:00:00.000Z',
+        // The room's own copy is where DorkOS left it — the ordinary case, and
+        // the one these badge assertions are about.
+        main: { branch: 'main', dirty: false, strays: [], strayCount: 0 },
         branches: [],
         strandedWorktrees: [],
         size: { usedBytes: 10, maxRepoBytes: 100, maxFileBytes: 5 },

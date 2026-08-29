@@ -288,3 +288,41 @@ describe('subscribeRoom over a stream socket', () => {
     expect(outcome.ok, 'an abort completes the iteration rather than erroring it').toBe(true);
   });
 });
+
+describe('saveRoomFile', () => {
+  it('PUTs the file, its base commit and its text to the room’s content route', async () => {
+    await setup().saveRoomFile('room-1', {
+      path: 'docs/plan.md',
+      baseCommit: 'abc1234',
+      text: '# Plan\n',
+    });
+    const [url, init] = lastCall();
+    // The same URL the read uses, with the file named in the BODY: a save
+    // carries its contents anyway, and a query and a body cannot then disagree
+    // about which file this is.
+    expect(url).toBe('http://localhost:4242/api/rooms/room-1/files/content');
+    expect(init.method).toBe('PUT');
+    expect(init.body).toBe(
+      JSON.stringify({ path: 'docs/plan.md', baseCommit: 'abc1234', text: '# Plan\n' })
+    );
+  });
+
+  it('rejects with the server’s code and its conflict, so an editor can offer the choice', async () => {
+    const conflict = {
+      error: 'Somebody changed this file while you were editing it',
+      code: 'FILE_CHANGED',
+      conflict: { path: 'docs/plan.md', commit: 'def5678', lastCommit: null },
+    };
+    vi.mocked(globalThis.fetch).mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: () => Promise.resolve(conflict),
+    } as unknown as Response);
+
+    // `message` and `code` cannot carry the commit the "keep mine" choice sends
+    // back, so the parsed body rides along on the thrown error.
+    await expect(
+      setup().saveRoomFile('room-1', { path: 'docs/plan.md', baseCommit: 'abc1234', text: 'x' })
+    ).rejects.toMatchObject({ code: 'FILE_CHANGED', status: 409, body: conflict });
+  });
+});

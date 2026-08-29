@@ -40,7 +40,11 @@ import {
   hasUncommittedChanges,
   initRepo,
   OPERATOR_GIT_EMAIL,
+  pathsInHead,
+  restoreFromHead,
+  unstagePaths,
 } from './room-repo-git.js';
+import { readMainCheckoutState } from './room-main-checkout.js';
 import { ROOM_MD_FILENAME, ROOM_MD_SEED_COMMIT_MESSAGE, seedRoomMd } from './room-md.js';
 import { RoomConventions } from './room-conventions.js';
 
@@ -53,6 +57,49 @@ import { RoomConventions } from './room-conventions.js';
  * repo twice is an outcome, not a malformed request.
  */
 export const ROOM_REPO_EXISTS_CODE = 'ROOM_REPO_EXISTS';
+
+/**
+ * The commit subject a stray-change rescue carries.
+ *
+ * One string, in one place, because it is the sentence a person will find in
+ * `git log` months later trying to work out what happened — and it is the only
+ * commit in a room's history nobody chose the wording of.
+ */
+const STRAY_CHANGES_COMMIT_MESSAGE = 'Keep changes made outside DorkOS';
+
+/** What the operator asked to do about changes DorkOS did not make. */
+export type RoomMainRepair =
+  | { action: 'commit' }
+  | {
+      action: 'discard';
+      /**
+       * Exactly which files to throw away. Never empty, and every one of them
+       * must be a path the room is currently reporting as changed.
+       */
+      paths: string[];
+    };
+
+/** What a repair did, before the room's files are looked at again. */
+interface RepairAction {
+  /** Which action ran. */
+  action: RoomMainRepair['action'];
+  /** The commit that kept the changes, or `null` for a discard. */
+  commit: string | null;
+  /** How many paths it dealt with. */
+  paths: number;
+}
+
+/** What a repair did. */
+export interface RoomMainRepairResult extends RepairAction {
+  /**
+   * Whether the room's files are clean now.
+   *
+   * `false` after a discard that named some of the stray changes and not
+   * others, which is a legitimate thing to do — and the answer says so rather
+   * than letting a client assume merges have resumed.
+   */
+  clean: boolean;
+}
 
 /** What {@link RoomRepoService.enable} answers. */
 export interface EnableRoomRepoResult {
@@ -328,6 +375,220 @@ export class RoomRepoService {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Deal with changes in a room's own copy that DorkOS did not make — the
+   * recovery half of the spec's dirty-main degradation (§3.10).
+   *
+   * While `repo/` holds anything uncommitted, every merge and every save in the
+   * room refuses `MAIN_CHECKOUT_DIRTY` (`room-main-checkout.ts`). That refusal
+   * is deliberate and it is also a dead end unless somebody can END it, which is
+   * what this is: **keep those changes as a commit, or throw away exactly the
+   * ones you name.**
+   *
+   * Two asymmetries, both on purpose:
+   *
+   * - **Committing takes no list and discarding demands one.** Committing
+   *   loses nothing, so sweeping up whatever is there is safe. Discarding is
+   *   the only irreversible act in the whole room-repo surface, so it destroys
+   *   nothing it was not handed by name — and every name has to be one the room
+   *   is reporting right now, so a stale screen cannot delete something that
+   *   arrived after it was drawn.
+   * - **Operator-only.** It is the operator's own terminal that put those
+   *   changes there, and deciding what happens to somebody's unsaved work is
+   *   not a decision to hand an agent, or even another member.
+   *
+   * **A checkout on the wrong branch is refused rather than fixed.** DorkOS
+   * never moves it there, and moving it back would run a checkout over work
+   * somebody left in the tree — the corruption the whole refusal exists to
+   * prevent. The message says what to do.
+   *
+   * Runs on the room's own queue, so it cannot interleave with a merge or a
+   * save.
+   *
+   * @param roomId - The room whose files are stuck.
+   * @param callerAuthorId - Who is asking. Must be the operator.
+   * @param repair - Keep everything, or discard exactly these paths.
+   * @returns What it did, and whether the room's files are clean now.
+   * @throws {RoomError} `ROOM_REPOS_DISABLED`, `ROOM_NOT_FOUND`,
+   *   `OPERATOR_ONLY`, `ROOM_HAS_NO_REPO`, `MAIN_CHECKOUT_DIRTY` for a checkout
+   *   on the wrong branch, `ROOM_FILE_NOT_FOUND` for a path the room is not
+   *   reporting, or `ROOM_REPO_GIT_UNAVAILABLE`.
+   */
+  repairMainCheckout(
+    roomId: string,
+    callerAuthorId: string,
+    repair: RoomMainRepair
+  ): Promise<RoomMainRepairResult> {
+    return this.deps.mutex.run(
+      roomId,
+      {
+        waitMs: this.deps.queueWaitMs(),
+        busy: () =>
+          new RoomError(
+            'MERGE_IN_FLIGHT',
+            'This room’s files are busy — something else is writing to them. Try again in a moment.'
+          ),
+      },
+      () => this.repairUnderLock(roomId, callerAuthorId, repair)
+    );
+  }
+
+  /**
+   * The body of {@link RoomRepoService.repairMainCheckout}, run while holding
+   * the room's queue.
+   *
+   * @param roomId - The room.
+   * @param callerAuthorId - Who is asking.
+   * @param repair - What they asked for.
+   * @returns What it did.
+   */
+  private async repairUnderLock(
+    roomId: string,
+    callerAuthorId: string,
+    repair: RoomMainRepair
+  ): Promise<RoomMainRepairResult> {
+    if (!this.deps.enabled()) {
+      throw new RoomError(
+        'ROOM_REPOS_DISABLED',
+        'Rooms cannot have files of their own on this install. Turn that back on in Settings first.'
+      );
+    }
+    // The room first, so a caller who cannot see it learns nothing else; then
+    // the operator gate — the same order `enable` takes.
+    if (!this.deps.getRoom(roomId, callerAuthorId)) {
+      throw new RoomError('ROOM_NOT_FOUND', 'No such room');
+    }
+    if (!this.deps.isOwnerAuthor(callerAuthorId)) {
+      throw new RoomError('OPERATOR_ONLY', 'Only you can decide what happens to those changes');
+    }
+    if (this.deps.store.getRow(roomId) === null || !(await this.repoIsInitialised(roomId))) {
+      throw new RoomError('ROOM_HAS_NO_REPO', 'This room does not have files of its own.');
+    }
+
+    const repoDir = this.deps.store.repoPath(roomId);
+    const ceiling = this.deps.store.homeDir(roomId);
+    try {
+      const state = await readMainCheckoutState(repoDir, ceiling);
+      if (state.branch !== 'main') {
+        throw new RoomError(
+          'MAIN_CHECKOUT_DIRTY',
+          `This room’s files are on ${state.branch ?? 'no branch'} rather than main, which only something outside DorkOS can have done. Put them back on main yourself — DorkOS will not move a branch it did not move, in case there is work on it.`
+        );
+      }
+
+      const result =
+        repair.action === 'commit'
+          ? await this.keepStrayChanges(repoDir, ceiling, state.strays.length)
+          : await this.discardStrayChanges(repoDir, ceiling, state.strays, repair.paths);
+
+      const after = await readMainCheckoutState(repoDir, ceiling);
+      logger.info('[rooms] a room’s stray file changes were dealt with', {
+        roomId,
+        action: repair.action,
+        paths: result.paths,
+      });
+      return { ...result, clean: after.strays.length === 0 };
+    } catch (err) {
+      if (err instanceof GitUnavailableError) {
+        throw new RoomError(
+          'ROOM_REPO_GIT_UNAVAILABLE',
+          'This computer doesn’t have git installed, and a room’s files are a git repository. Install git, then try again.'
+        );
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Commit whatever is in the room's own copy, as the operator.
+   *
+   * `commitAll` rather than a named list: this is the "keep it" answer, and
+   * keeping half of what is there would leave the room stuck for the other
+   * half.
+   *
+   * @param repoDir - The room's main checkout.
+   * @param ceiling - The room home directory git's search may not climb past.
+   * @param strayCount - How many paths were waiting, for the answer.
+   * @returns What was committed.
+   */
+  private async keepStrayChanges(
+    repoDir: string,
+    ceiling: string,
+    strayCount: number
+  ): Promise<RepairAction> {
+    if (strayCount === 0) return { action: 'commit', commit: null, paths: 0 };
+    const commit = await commitAll(
+      repoDir,
+      STRAY_CHANGES_COMMIT_MESSAGE,
+      {
+        name: this.deps.operatorGitName() ?? FALLBACK_OPERATOR_GIT_NAME,
+        email: OPERATOR_GIT_EMAIL,
+      },
+      ceiling
+    );
+    return { action: 'commit', commit, paths: strayCount };
+  }
+
+  /**
+   * Throw away exactly the named changes, and nothing else.
+   *
+   * Every path has to be one the room is reporting as changed RIGHT NOW,
+   * compared byte for byte against git's own output — no normalising, no case
+   * folding, no prefix matching. That single rule is what makes this narrow: a
+   * path the caller invented, a path that has since been committed, and a path
+   * from a screen drawn ten minutes ago are all refused rather than acted on.
+   *
+   * Then two ways to undo, chosen per path by whether `HEAD` has it: restore it
+   * from the commit, or take it out of the index and delete the file. `git
+   * clean` is deliberately not used — its whole reputation is for removing more
+   * than it was asked to.
+   *
+   * @param repoDir - The room's main checkout.
+   * @param ceiling - The room home directory git's search may not climb past.
+   * @param strays - What the room is reporting as changed.
+   * @param paths - What the operator named.
+   * @returns How many paths were discarded.
+   * @throws {RoomError} `ROOM_FILE_NOT_FOUND` naming the first path that is not
+   *   one of the reported changes.
+   */
+  private async discardStrayChanges(
+    repoDir: string,
+    ceiling: string,
+    strays: readonly { path: string }[],
+    paths: readonly string[]
+  ): Promise<RepairAction> {
+    const reported = new Set(strays.map((stray) => stray.path));
+    for (const filePath of paths) {
+      if (!reported.has(filePath)) {
+        throw new RoomError(
+          'ROOM_FILE_NOT_FOUND',
+          `\`${filePath}\` is not one of the changes waiting in this room’s files. Look again — it may already have been dealt with.`
+        );
+      }
+    }
+
+    const wanted = [...new Set(paths)];
+    const inHead = await pathsInHead(repoDir, wanted, ceiling);
+    const restore = wanted.filter((filePath) => inHead.has(filePath));
+    const remove = wanted.filter((filePath) => !inHead.has(filePath));
+
+    await restoreFromHead(repoDir, restore, ceiling);
+    if (remove.length > 0) {
+      // The files first, then the index — see {@link unstagePaths} for why that
+      // order is what lets this run without a force flag.
+      for (const filePath of remove) {
+        const target = path.join(repoDir, filePath);
+        // Git's own output cannot climb out of the repo, and this is the line
+        // that says so rather than assuming it. `fs.rm` does not follow a
+        // symlink, so a link named here is unlinked and never followed.
+        if (target !== repoDir && !target.startsWith(`${repoDir}${path.sep}`)) continue;
+        await fs.rm(target, { force: true });
+      }
+      await unstagePaths(repoDir, remove, ceiling);
+    }
+    return { action: 'discard', commit: null, paths: wanted.length };
   }
 
   /**

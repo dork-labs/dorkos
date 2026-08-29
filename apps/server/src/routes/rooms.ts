@@ -44,10 +44,17 @@ import {
   type PostToRoomResponse,
   type RoomAttachment,
 } from '@dorkos/shared/room-schemas';
-import { RoomFileContentQuerySchema, RoomFilesQuerySchema } from '@dorkos/shared/room-files';
+import {
+  ROOM_FILE_CHANGED_CODE,
+  RoomFileContentQuerySchema,
+  RoomFileSaveRequestSchema,
+  RoomFilesQuerySchema,
+} from '@dorkos/shared/room-files';
+import { RoomMainRepairRequestSchema } from '@dorkos/shared/room-repo';
 import {
   getAttachmentRowStore,
   getRoomAttachmentStore,
+  getRoomFileEditor,
   getRoomFilesService,
   getRoomMergeService,
   getRoomRepoService,
@@ -1002,6 +1009,90 @@ router.get('/:id/files/content', (req, res) => {
       res.json(await getRoomFilesService().read(req.params.id, query.path));
     } catch (err) {
       sendRoomError(res, err, 'GET /:id/files/content');
+    }
+  })();
+});
+
+/**
+ * PUT /:id/files/content — a person saving one file (spec §3.10).
+ *
+ * **The write twin of the read above, and it names its file the same way**: the
+ * path rides in the body rather than in the URL, so one repo path means one
+ * thing on both verbs and neither end has to encode slashes.
+ *
+ * **People only.** An agent in a project room has a working copy of its own and
+ * `merge_to_room_main` to bring work back through; a second write path into the
+ * integration tree would be one-writer undone and a way onto `main` that the
+ * merge validation never sees. A member agent is refused 403 `PEOPLE_ONLY` —
+ * not a 404, because it is a member of a room it can see and there is nothing
+ * left to hide. Membership is still asked first, so a non-member learns nothing.
+ *
+ * **Optimistic locking, on the FILE.** `baseCommit` is the commit the editor
+ * read the file at. The save is refused only if THAT PATH changed since — not
+ * because `main` moved, which it does every time anybody merges anything. A
+ * refusal is 409 `FILE_CHANGED` and carries `conflict`: the commit `main` is at
+ * now and who last touched the file, which is what the reload / keep-mine
+ * choice is drawn from. Nothing is written on that path.
+ *
+ * Every other refusal is the same one a merge would give, for the same reason:
+ * `MAIN_CHECKOUT_DIRTY` while something outside DorkOS has written in the
+ * room's own copy, `FILE_TOO_LARGE` and `REPO_CAP_EXCEEDED` against the room's
+ * frozen caps. The request body limit (1 MB) is smaller than the default file
+ * cap, so a very large save is refused by the body parser first.
+ */
+router.put('/:id/files/content', (req, res) => {
+  void (async () => {
+    try {
+      // Caller first, for the reason `GET /:id/files` above writes down.
+      const caller = resolveCaller(req, res);
+      const body = parseBody(RoomFileSaveRequestSchema, req.body, res);
+      if (!body) return;
+      const outcome = await getRoomFileEditor().save(req.params.id, caller.id, {
+        path: body.path,
+        baseCommit: body.baseCommit,
+        text: body.text,
+      });
+      if (outcome.status === 'conflict') {
+        return res.status(409).json({
+          error:
+            'Somebody changed this file while you were editing it, so nothing was saved. Open the new version, or save yours over it.',
+          code: ROOM_FILE_CHANGED_CODE,
+          conflict: outcome.conflict,
+        });
+      }
+      res.json(outcome.result);
+    } catch (err) {
+      sendRoomError(res, err, 'PUT /:id/files/content');
+    }
+  })();
+});
+
+/**
+ * POST /:id/repo/main/repair — deal with changes DorkOS did not make (§3.10).
+ *
+ * The way out of `MAIN_CHECKOUT_DIRTY`. While the room's own copy holds
+ * anything uncommitted, every merge and every save in that room refuses; this
+ * is how a person ends that — keep those changes as a commit authored by them,
+ * or discard exactly the files they name.
+ *
+ * **Operator-only** (403 `OPERATOR_ONLY`): it is somebody's unsaved work, and
+ * deciding its fate is not an agent's call. A room the caller cannot see
+ * answers 404 first, before the operator gate, exactly as `POST /:id/repo`
+ * does.
+ *
+ * A discard names its files and they must be files the room is reporting as
+ * changed right now — anything else is 404 `ROOM_FILE_NOT_FOUND`, so a screen
+ * drawn ten minutes ago cannot delete something that arrived since.
+ */
+router.post('/:id/repo/main/repair', (req, res) => {
+  void (async () => {
+    try {
+      const caller = resolveCaller(req, res);
+      const body = parseBody(RoomMainRepairRequestSchema, req.body, res);
+      if (!body) return;
+      res.json(await getRoomRepoService().repairMainCheckout(req.params.id, caller.id, body));
+    } catch (err) {
+      sendRoomError(res, err, 'POST /:id/repo/main/repair');
     }
   })();
 });

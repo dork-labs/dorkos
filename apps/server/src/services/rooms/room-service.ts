@@ -3714,6 +3714,36 @@ export class RoomService {
   }
 
   /**
+   * Refuse anyone who may not SAVE one of this room's own files (spec
+   * `project-rooms` §3.10).
+   *
+   * The read gate plus two, and both additions are the point:
+   *
+   * - **People only.** An agent in a project room already has a writable
+   *   working copy of its own and a merge to bring work back through; letting it
+   *   write into the integration tree as well would be a second writer in the
+   *   one tree the DOR-500 boundary keeps for the server, and a way to put
+   *   something on `main` without the merge's validation ever looking at it. So
+   *   an agent is refused here, and the refusal is a 403 that says so rather
+   *   than a 404 — it is a member of a room it can see, and there is nothing
+   *   left to hide.
+   * - **Not archived.** Archiving stops a room. Its files stay exactly where
+   *   its members left them and can still be READ, which is the point of
+   *   keeping them; what stops is anybody adding to them.
+   *
+   * @param roomId - The room whose file is being saved.
+   * @param authorId - Who is asking.
+   * @throws {RoomError} `ROOM_NOT_FOUND` for a room this caller may not see and
+   *   for one they are not on the roster of alike, `ROOM_ARCHIVED`, or
+   *   `PEOPLE_ONLY`.
+   */
+  assertCanWriteFiles(roomId: string, authorId: string): void {
+    const { room } = this.requireHistoryFloor(roomId, authorId);
+    if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
+    this.requirePersonAuthor(authorId, 'can save a room’s files. Merge your work instead.');
+  }
+
+  /**
    * Whether this caller may READ one stored attachment.
    *
    * Two rules, and the split is the whole access model:

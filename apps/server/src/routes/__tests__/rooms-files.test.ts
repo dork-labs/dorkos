@@ -66,11 +66,13 @@ vi.mock('../../services/core/config-manager.js', () => ({
 import { createApp, finalizeApp } from '../../app.js';
 import {
   createRoomSubsystem,
+  setRoomFileEditor,
   setRoomFilesService,
   setRoomRepoService,
   setRoomService,
 } from '../../services/rooms/index.js';
 import {
+  RoomFileEditor,
   RoomFilesService,
   RoomRepoMutex,
   RoomRepoService,
@@ -124,9 +126,13 @@ describe('room files routes', () => {
     setRoomService(rooms.service);
     setReadCursorService(rooms.readCursors);
     store = new RoomRepoStore(db, dorkHome);
+    // ONE queue, shared by the enable path and the save path exactly as
+    // production shares it: a save and a repo being created are two writes into
+    // the same checkout.
+    const mutex = new RoomRepoMutex();
     const repos = new RoomRepoService({
       store,
-      mutex: new RoomRepoMutex(),
+      mutex,
       queueWaitMs: () => 5000,
       enabled: () => true,
       getRoom: (roomId, viewerAuthorId) => rooms.service.getRoom(roomId, viewerAuthorId),
@@ -136,11 +142,22 @@ describe('room files routes', () => {
       maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
     });
     setRoomRepoService(repos);
-    setRoomFilesService(
-      new RoomFilesService({
+    const files = new RoomFilesService({
+      store,
+      hasRepo: (roomId) => repos.hasRepo(roomId),
+      maxFileBytes: () => maxFileBytes,
+    });
+    setRoomFilesService(files);
+    setRoomFileEditor(
+      new RoomFileEditor({
         store,
-        hasRepo: (roomId) => repos.hasRepo(roomId),
-        maxFileBytes: () => maxFileBytes,
+        mutex,
+        enabled: () => true,
+        queueWaitMs: () => 5000,
+        assertCanWriteFiles: (roomId, authorId) =>
+          rooms.service.assertCanWriteFiles(roomId, authorId),
+        operatorGitName: () => 'Dorian',
+        files,
       })
     );
   });
@@ -389,6 +406,142 @@ describe('room files routes', () => {
       const read = await request(app).get(`/api/rooms/${roomId}`);
       expect(read.status).toBe(200);
       expect(read.body).not.toHaveProperty('files');
+    });
+  });
+  describe('saving (spec §3.10)', () => {
+    /** Read a file back through the API, as a person's editor would. */
+    async function readFileAt(
+      roomId: string,
+      filePath: string
+    ): Promise<{
+      commit: string;
+      text: string;
+    }> {
+      const res = await request(app)
+        .get(`/api/rooms/${roomId}/files/content`)
+        .query({ path: filePath });
+      expect(res.status).toBe(200);
+      return { commit: res.body.commit as string, text: res.body.body.text as string };
+    }
+
+    it('saves as one commit by the person, and the next read sees it', async () => {
+      const roomId = await roomWithFiles();
+      const opened = await readFileAt(roomId, 'docs/plan.md');
+
+      const saved = await request(app)
+        .put(`/api/rooms/${roomId}/files/content`)
+        .send({ path: 'docs/plan.md', baseCommit: opened.commit, text: '# Plan\n\nShip it.\n' });
+
+      expect(saved.status).toBe(200);
+      expect(saved.body).toMatchObject({ path: 'docs/plan.md', committed: true });
+      expect(saved.body.commit).not.toBe(opened.commit);
+      expect(saved.body.lastCommit).toMatchObject({ author: 'Dorian' });
+      // The read path is the proof: it answers out of the commit, so seeing the
+      // new text there means the save really was committed.
+      expect((await readFileAt(roomId, 'docs/plan.md')).text).toBe('# Plan\n\nShip it.\n');
+    });
+
+    it('refuses a member AGENT, and says why rather than pretending the room is gone', async () => {
+      const roomId = await roomWithFiles();
+      const opened = await readFileAt(roomId, 'docs/plan.md');
+      const token = await anaToken();
+
+      const res = await request(app)
+        .put(`/api/rooms/${roomId}/files/content`)
+        .set('X-DorkOS-Agent', token)
+        .send({ path: 'docs/plan.md', baseCommit: opened.commit, text: 'agent was here\n' });
+
+      // An agent in a project room has a working copy of its own and a merge to
+      // bring work back through; a second writer in the integration tree is the
+      // one-writer rule undone. A 403 because it is a member of a room it can
+      // see — there is nothing left to hide.
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('PEOPLE_ONLY');
+      expect((await readFileAt(roomId, 'docs/plan.md')).text).toBe('# Plan\n');
+    });
+
+    it('answers an outsider the same 404 an unknown room gets', async () => {
+      const roomId = await roomWithFiles();
+      const token = await initAgentIdentityService(db).mint({
+        agentPath: '/agents/outsider',
+        displayName: 'Outsider',
+      });
+
+      const res = await request(app)
+        .put(`/api/rooms/${roomId}/files/content`)
+        .set('X-DorkOS-Agent', token)
+        .send({ path: 'docs/plan.md', baseCommit: null, text: 'x\n' });
+
+      // Membership is asked before anything else, so being refused says nothing
+      // about whether the room has files — or exists.
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('ROOM_NOT_FOUND');
+    });
+
+    it('refuses a save whose file moved, and hands back what to do about it', async () => {
+      const roomId = await roomWithFiles();
+      const opened = await readFileAt(roomId, 'docs/plan.md');
+      // Somebody else edits the same file — through the same door, which is the
+      // only door a person has.
+      const theirs = await request(app)
+        .put(`/api/rooms/${roomId}/files/content`)
+        .send({ path: 'docs/plan.md', baseCommit: opened.commit, text: '# Plan\n\nTheirs.\n' });
+      expect(theirs.status).toBe(200);
+
+      const mine = await request(app)
+        .put(`/api/rooms/${roomId}/files/content`)
+        .send({ path: 'docs/plan.md', baseCommit: opened.commit, text: '# Plan\n\nMine.\n' });
+
+      expect(mine.status).toBe(409);
+      expect(mine.body.code).toBe('FILE_CHANGED');
+      // The payload is what the reload / keep-mine choice is drawn from — a
+      // code and a sentence have nowhere to put it.
+      expect(mine.body.conflict).toMatchObject({
+        path: 'docs/plan.md',
+        commit: theirs.body.commit,
+      });
+      expect(mine.body.conflict.lastCommit).toMatchObject({ subject: 'Edit docs/plan.md' });
+      // Nothing of the losing save landed.
+      expect((await readFileAt(roomId, 'docs/plan.md')).text).toBe('# Plan\n\nTheirs.\n');
+
+      // And the way through: send the commit the conflict named, deliberately.
+      const overwritten = await request(app).put(`/api/rooms/${roomId}/files/content`).send({
+        path: 'docs/plan.md',
+        baseCommit: mine.body.conflict.commit,
+        text: '# Plan\n\nMine, on purpose.\n',
+      });
+      expect(overwritten.status).toBe(200);
+    });
+
+    it('refuses to save into an archived room, though it still reads', async () => {
+      const roomId = await roomWithFiles();
+      const opened = await readFileAt(roomId, 'docs/plan.md');
+      expect(
+        (await request(app).patch(`/api/rooms/${roomId}`).send({ archived: true })).status
+      ).toBe(200);
+
+      const res = await request(app)
+        .put(`/api/rooms/${roomId}/files/content`)
+        .send({ path: 'docs/plan.md', baseCommit: opened.commit, text: 'after the fact\n' });
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('ROOM_ARCHIVED');
+    });
+
+    it('refuses a room with no files of its own, and a malformed request', async () => {
+      const bare = await channel('Quiet corner');
+      const noFiles = await request(app)
+        .put(`/api/rooms/${bare}/files/content`)
+        .send({ path: 'ROOM.md', baseCommit: null, text: 'x\n' });
+      expect(noFiles.status).toBe(409);
+      expect(noFiles.body.code).toBe('ROOM_HAS_NO_REPO');
+
+      const roomId = await roomWithFiles();
+      // A base commit that is not a commit id never becomes a git argument.
+      const malformed = await request(app)
+        .put(`/api/rooms/${roomId}/files/content`)
+        .send({ path: 'ROOM.md', baseCommit: '--upload-pack=touch /tmp/pwned', text: 'x\n' });
+      expect(malformed.status).toBe(400);
     });
   });
 });

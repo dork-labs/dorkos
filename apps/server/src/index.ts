@@ -267,11 +267,13 @@ import {
   setRoomAttachmentStores,
   setRoomRepoService,
   setRoomFilesService,
+  setRoomFileEditor,
   setRoomWorktreeManager,
   setRoomMergeService,
 } from './services/rooms/index.js';
 import {
   readRoomRepoConfig,
+  RoomFileEditor,
   RoomFilesService,
   RoomMergeService,
   RoomRepoMutex,
@@ -1212,11 +1214,25 @@ async function start() {
   // else: `hasRepo` already folds the feature flag in, so a room whose files
   // are switched off reads exactly as a room that never had any, and the size
   // ceiling is read per call so lowering it binds the next request.
-  setRoomFilesService(
-    new RoomFilesService({
+  const roomFiles = new RoomFilesService({
+    store: roomRepoStore,
+    hasRepo: (roomId) => roomRepoService.hasRepo(roomId),
+    maxFileBytes: () => readRoomRepoConfig().maxFileBytes,
+  });
+  setRoomFilesService(roomFiles);
+  // And a person editing them (spec §3.10). It takes the SAME queue every other
+  // server-side write to `repo/` takes, so a save and a merge can never be in
+  // that tree at once, and the same `operatorGitName` seam, so a room's `git
+  // log` reads with one voice whoever made the commit.
+  setRoomFileEditor(
+    new RoomFileEditor({
       store: roomRepoStore,
-      hasRepo: (roomId) => roomRepoService.hasRepo(roomId),
-      maxFileBytes: () => readRoomRepoConfig().maxFileBytes,
+      mutex: roomRepoMutex,
+      enabled: () => readRoomRepoConfig().enabled,
+      queueWaitMs: () => readRoomRepoConfig().mergeQueueWaitMs,
+      assertCanWriteFiles: (roomId, authorId) => roomService.assertCanWriteFiles(roomId, authorId),
+      operatorGitName: resolveOperatorDisplayName,
+      files: roomFiles,
     })
   );
   // One standing working copy per (room, agent), and the reap that tidies away

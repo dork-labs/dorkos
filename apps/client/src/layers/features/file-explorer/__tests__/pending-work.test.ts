@@ -37,6 +37,9 @@ function status(overrides: Partial<RoomRepoStatus> = {}): RoomRepoStatus {
   return {
     mainCommit: 'abc1234',
     mainCommittedAt: '2026-08-28T09:00:00.000Z',
+    // The room's own copy is where DorkOS left it, which is the ordinary case
+    // and the one every badge assertion here is about.
+    main: { branch: 'main', dirty: false, strays: [], strayCount: 0 },
     branches: [],
     strandedWorktrees: [],
     size: { usedBytes: 1024, maxRepoBytes: 500, maxFileBytes: 5 },

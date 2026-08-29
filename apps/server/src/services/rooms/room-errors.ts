@@ -397,6 +397,16 @@ export type RoomErrorCode =
    */
   | 'ROOM_FILE_NOT_READABLE'
   /**
+   * A save carried something that would not be a text file — a `NUL` byte
+   * (spec `project-rooms` §3.10).
+   *
+   * The read path answers a file with a `NUL` in it as `binary` and never
+   * decodes its bytes, so committing one would hand somebody a file they saved
+   * and can no longer open. A 400: it is about what was sent, and nothing about
+   * the room or the caller would change the answer.
+   */
+  | 'ROOM_FILE_NOT_TEXT'
+  /**
    * Something that only makes sense for a room with files was asked of a room
    * without any — a working copy, a merge, a file listing (spec `project-rooms`
    * §3.4, §3.6).
