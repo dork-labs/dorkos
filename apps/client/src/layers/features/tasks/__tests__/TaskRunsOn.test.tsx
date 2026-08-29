@@ -542,6 +542,45 @@ describe('the task form Runs-on controls', () => {
       expect(screen.queryByTestId('task-runtime-warning')).toBeNull();
     });
 
+    it('opens New Schedule for an agent whose MANIFEST names a prototype key', async () => {
+      // The other entry point, and a different lookup: the dialog resolves the
+      // stop a NEW task opens at through `capabilities[agentRuntime]` guarded by
+      // truthiness alone, so an agent pinned to `constructor` hands it `Object`
+      // and it reads `permissionModes` off a member that has none. The edit
+      // cases below cannot reach it — a new task has no stored runtime yet.
+      //
+      // All THREE queries are primed, not just the capability map. The manifest
+      // arrives two round trips deep, and the form looks identical before and
+      // after it lands ("Server default" either way, because the agent tier is
+      // taken from `Object.keys` and no prototype key is in there) — so a test
+      // that renders and asserts finishes before the dialog ever sees the
+      // runtime, and passes with the bug fully present. Measured: with only the
+      // map primed, this test survived reverting the fix.
+      const transport = transportWithAgent('constructor');
+      const [capabilities, agentPaths, resolvedAgents] = await Promise.all([
+        transport.getCapabilities(),
+        transport.listMeshAgentPaths(),
+        transport.resolveAgents([AGENT_PATH]),
+      ]);
+      const Wrapper = createWrapper(transport, (client) => {
+        client.setQueryData(['capabilities'], capabilities);
+        client.setQueryData(['mesh', 'agent-paths'], agentPaths);
+        client.setQueryData(['agents', 'resolved', AGENT_PATH], resolvedAgents);
+      });
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} initialAgentId="agent-1" />
+        </Wrapper>
+      );
+      fireEvent.click(screen.getByText('Start from scratch'));
+
+      // "Server default", not the agent's: the form's ladder takes the agent tier
+      // only for a runtime this machine registered, and reads that from
+      // `Object.keys`. The two lookups disagreeing is the whole defect.
+      await expectSelected('task-runtime-select', 'Server default (Claude Code)');
+      expect(screen.getByTestId('trust-dial-caption')).toBeInTheDocument();
+    });
+
     it.each(['constructor', 'toString', '__proto__', 'valueOf', 'hasOwnProperty'])(
       'opens for editing, and reports it, when the stored runtime is "%s"',
       async (runtime) => {

@@ -74,4 +74,31 @@ describe('getRuntimeDescriptor', () => {
     // No invented identity line for a runtime nobody here knows anything about.
     expect(descriptor.subtitle).toBeUndefined();
   });
+
+  // A runtime type is a free string that arrives from stored data — a task's
+  // `runtime` (any non-empty string on the wire), an agent manifest — so these
+  // five are reachable values, not theatre. A plain `RUNTIME_DESCRIPTORS[type]`
+  // answers every one of them with a member inherited from `Object.prototype`,
+  // which is truthy, so the `??` fallback never fires and the caller is handed a
+  // "descriptor" with no `label`: a blank select option, and the sentence
+  // "undefined is not connected on this machine" (DOR-1615).
+  it.each(['constructor', 'toString', '__proto__', 'valueOf', 'hasOwnProperty'])(
+    'falls back for "%s" rather than answering with an inherited member',
+    (type) => {
+      const descriptor = getRuntimeDescriptor(type);
+      expect(descriptor.type).toBe(type);
+      expect(descriptor.label).toBe(type);
+      expect(descriptor.icon).toBe(DefaultAdapterIcon);
+      expect(descriptor.subtitle).toBeUndefined();
+    }
+  );
+
+  it('hands back the registry object itself for a declared runtime', () => {
+    // The other half of the same guard: keeping prototype keys out must not cost
+    // identity. A lookup that rebuilt or copied the descriptor would still read
+    // correctly field by field, and would quietly break the `toBe` the OpenCode
+    // case above depends on.
+    expect(getRuntimeDescriptor('claude-code')).toBe(RUNTIME_DESCRIPTORS['claude-code']);
+    expect(getRuntimeDescriptor('codex')).toBe(RUNTIME_DESCRIPTORS.codex);
+  });
 });
