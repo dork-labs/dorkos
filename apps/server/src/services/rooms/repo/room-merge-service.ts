@@ -942,9 +942,7 @@ export function symlinkLeavesRepo(entryPath: string, target: string): boolean {
   if (normalized.startsWith('/')) return true;
   if (/^[A-Za-z]:\//.test(normalized)) return true;
 
-  const resolved = path.posix.normalize(
-    path.posix.join(path.posix.dirname(entryPath), normalized)
-  );
+  const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(entryPath), normalized));
   if (resolved === '..' || resolved.startsWith('../') || resolved.startsWith('/')) return true;
 
   // Lower-cased: on APFS and NTFS, `.GIT/config` opens `.git/config`.
