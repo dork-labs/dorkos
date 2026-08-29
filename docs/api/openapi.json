@@ -8533,22 +8533,22 @@
               "string",
               "null"
             ],
-            "description": "The branch the room’s copy is on."
+            "description": "The branch the room’s own copy is on."
           },
           "dirty": {
             "type": "boolean",
-            "description": "Whether merges and saves are paused because something outside DorkOS wrote here."
+            "description": "Whether merges and saves are paused because something outside DorkOS wrote in the room’s own copy."
           },
           "strays": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/RoomStrayChange"
-            },
-            "description": "The uncommitted changes, up to 50 of them."
+            }
           },
           "strayCount": {
             "type": "integer",
-            "description": "How many there are in total."
+            "minimum": 0,
+            "description": "How many uncommitted changes there are in total."
           }
         },
         "required": [
@@ -8562,7 +8562,8 @@
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "description": "The file that is different, relative to the room’s own copy."
           },
           "kind": {
             "type": "string",
@@ -8571,7 +8572,12 @@
               "modified",
               "deleted",
               "untracked"
-            ]
+            ],
+            "description": "What happened to it: added, modified, deleted, or never tracked at all."
+          },
+          "renamedFrom": {
+            "type": "string",
+            "description": "Where the file was before it was renamed, when that is what happened."
           }
         },
         "required": [
