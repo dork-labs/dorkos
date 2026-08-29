@@ -460,6 +460,31 @@ export function claimsWorkingIn(
 }
 
 /**
+ * Every agent workspace with a turn running in it right now, install-wide.
+ *
+ * `agentPath` is the grain of the SECOND ceiling — one checkout per agent,
+ * shared across rooms — so this is the claim map's answer to "whose working
+ * directory must nothing touch". Its consumer is the room-worktree reap
+ * (`room-worktree-manager.ts`), which will otherwise happily delete the
+ * directory a live turn is standing in: a turn that only reads leaves no mark
+ * on any timestamp the sweep can see.
+ *
+ * Deduplicated, and NOT room-scoped. An agent can hold only one claim at a time
+ * (`claimBusyWith`'s second ceiling), so the set is small; and answering
+ * install-wide is the conservative direction, which is the one to be wrong in
+ * when the cost of the other is a deleted working directory.
+ *
+ * **A path, so this must not reach a response body.** `ActiveClaimView` leaves
+ * `agentPath` out for exactly that reason; this is an in-process seam.
+ *
+ * @param claims - The live claim map.
+ * @returns Each distinct workspace path holding a claim.
+ */
+export function claimedAgentPaths(claims: ReadonlyMap<string, ActiveClaim>): string[] {
+  return [...new Set([...claims.values()].map((claim) => claim.agentPath))];
+}
+
+/**
  * Which ceiling an agent is already up against, or `null` when it is free.
  *
  * **Two ceilings, one outcome, and two answers anyway.** The `(room, agent)` key

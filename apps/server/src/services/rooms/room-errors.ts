@@ -330,7 +330,23 @@ export type RoomErrorCode =
    * any path on the machine, and nothing in DorkOS resolves it. The message
    * says which of the three it was, because the remedy differs.
    */
-  | 'ROOM_FILE_NOT_READABLE';
+  | 'ROOM_FILE_NOT_READABLE'
+  /**
+   * Something that only makes sense for a room with files was asked of a room
+   * without any — a working copy, a merge, a file listing (spec `project-rooms`
+   * §3.4, §3.6).
+   *
+   * Separate from `ROOM_REPOS_DISABLED`, which is about the INSTALL: this one
+   * says the feature is available and this particular room was never given
+   * files. The remedy differs — turn the setting back on, versus give this room
+   * a repo — so the codes do too.
+   *
+   * No `ROOM_REPO_` prefix, unlike its three neighbours, and that is on purpose:
+   * the spec names this code verbatim in §3.6's refusal contract, which agent
+   * tools will answer with. A code an agent may be told to expect is not one to
+   * rename for tidiness.
+   */
+  | 'NOT_A_PROJECT_ROOM';
 
 /** A refusal from the room domain, carrying a code the routes can switch on. */
 export class RoomError extends Error {

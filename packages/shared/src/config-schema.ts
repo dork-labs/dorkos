@@ -1848,8 +1848,8 @@ export const UserConfigSchema = z.object({
            * **Only a working copy with nothing in it is ever removed.** One
            * holding unsaved edits, or work that has not been merged back into
            * the room, is left alone however long it sits there and is shown to
-           * you instead. So this number decides when clutter goes, never when
-           * work does.
+           * you instead — and so is one the agent is working in right now. So
+           * this number decides when clutter goes, never when work does.
            */
           worktreeReapDays: z.number().int().min(1).max(365).default(14),
           /**

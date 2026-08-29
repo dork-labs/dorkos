@@ -96,6 +96,10 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // A 400: the path is real, but it is a folder, a link or another repository
   // and the request asked for something else. The message says which.
   ROOM_FILE_NOT_READABLE: 400,
+  // The room exists and the caller may see it; it simply has no files. A 409
+  // rather than a 404, for the same reason as the two above: the answer changes
+  // by giving the room a repo, not by asking about a different room.
+  NOT_A_PROJECT_ROOM: 409,
 };
 
 /**

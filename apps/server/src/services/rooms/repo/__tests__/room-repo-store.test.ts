@@ -203,6 +203,20 @@ describe('RoomRepoStore', () => {
   });
 });
 
+/**
+ * What the worktree reap reports when this sweep was built without one.
+ *
+ * These tests exercise the cache halves alone, so the reap is absent by
+ * construction rather than merely inactive — `RoomWorktreeManager` has its own
+ * suite, where the removal gates are pinned red-before/green-after.
+ */
+const NO_WORKTREE_SWEEP = {
+  reaped: 0,
+  reapedTreeKeptBranch: 0,
+  spared: 0,
+  stranded: 0,
+};
+
 describe('RoomRepoReconciler', () => {
   let db: Db;
   let dorkHome: string;
@@ -233,6 +247,7 @@ describe('RoomRepoReconciler', () => {
       removed: 0,
       orphaned: 0,
       draftsRemoved: 0,
+      worktrees: NO_WORKTREE_SWEEP,
     });
     expect(store.getRow(ROOM_ID)).toMatchObject({ roomId: ROOM_ID, mode: 'owned' });
   });
@@ -256,6 +271,7 @@ describe('RoomRepoReconciler', () => {
       removed: 1,
       orphaned: 0,
       draftsRemoved: 0,
+      worktrees: NO_WORKTREE_SWEEP,
     });
     expect(store.getRow(ROOM_ID)).toBeNull();
   });
@@ -272,7 +288,13 @@ describe('RoomRepoReconciler', () => {
 
     const result = await reconciler.reconcile();
 
-    expect(result).toEqual({ synced: 0, removed: 0, orphaned: 1, draftsRemoved: 0 });
+    expect(result).toEqual({
+      synced: 0,
+      removed: 0,
+      orphaned: 1,
+      draftsRemoved: 0,
+      worktrees: NO_WORKTREE_SWEEP,
+    });
     // Nothing was deleted: a missing room row is not proof the operator wanted
     // this room's history and its agents' unmerged work destroyed.
     expect(existsSync(store.sidecarPath(ROOM_ID))).toBe(true);
@@ -289,7 +311,13 @@ describe('RoomRepoReconciler', () => {
 
     const result = await reconciler.reconcile();
 
-    expect(result).toEqual({ synced: 1, removed: 0, orphaned: 1, draftsRemoved: 0 });
+    expect(result).toEqual({
+      synced: 1,
+      removed: 0,
+      orphaned: 1,
+      draftsRemoved: 0,
+      worktrees: NO_WORKTREE_SWEEP,
+    });
     expect(store.getRow(liveRoom)).not.toBeNull();
   });
 
@@ -299,6 +327,7 @@ describe('RoomRepoReconciler', () => {
       removed: 0,
       orphaned: 0,
       draftsRemoved: 0,
+      worktrees: NO_WORKTREE_SWEEP,
     });
   });
 

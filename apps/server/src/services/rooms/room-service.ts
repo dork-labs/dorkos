@@ -873,6 +873,20 @@ export class RoomService {
   }
 
   /**
+   * Every agent workspace with a room turn running in it right now.
+   *
+   * {@link RoomService.listActiveClaims}'s in-process sibling: same claim map,
+   * but it answers with filesystem paths, so it is for callers inside this
+   * process only. Its consumer is the room-worktree reap, which must never
+   * remove the working copy a live turn is standing in.
+   *
+   * @returns Each distinct workspace path holding a claim.
+   */
+  listBusyAgentPaths(): string[] {
+    return this.triggers.busyAgentPaths();
+  }
+
+  /**
    * Every message waiting on an agent that is busy in another room.
    *
    * {@link RoomService.listActiveClaims}'s sibling, and the question it cannot
