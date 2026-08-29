@@ -65,6 +65,7 @@ import {
   initAgentIdentityService,
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
+import { initToolGroupGate, resetToolGroupGate } from '../../services/core/capabilities/index.js';
 
 const app = createApp();
 finalizeApp(app);
@@ -116,6 +117,9 @@ describe('/api/rooms', () => {
 
   afterEach(() => {
     resetAgentIdentityService();
+    // One row here arms the real tool-group gate to prove the grant does NOT
+    // unlock these routes; cleared so it cannot leak into the rest of the file.
+    resetToolGroupGate();
   });
 
   describe('POST /', () => {
@@ -549,9 +553,19 @@ describe('/api/rooms', () => {
       const res = await request(app).post(`/api/rooms/${room.id}/entries`).send({ text: 'hello' });
 
       // Trigger-only, mirroring POST /api/sessions/:id/messages: delivery is
-      // the SSE stream's job, so the body carries identity and nothing else.
+      // the SSE stream's job, so the body carries identity — plus who the
+      // message reached, which is the one thing delivery cannot tell the writer
+      // in time to be useful (DOR-786). This room has no agents in it, so both
+      // lists are empty, and empty is an ANSWER: absent would mean the server
+      // could not say, which is a different thing a client must not confuse.
       expect(res.status).toBe(202);
-      expect(res.body).toEqual({ accepted: true, entryId: expect.any(String), seq: 1 });
+      expect(res.body).toEqual({
+        accepted: true,
+        entryId: expect.any(String),
+        seq: 1,
+        triggered: [],
+        skipped: [],
+      });
       expect(res.body.entry).toBeUndefined();
     });
 
@@ -1165,6 +1179,121 @@ describe('/api/rooms', () => {
 
       const roster = await request(app).get(`/api/rooms/${room.id}`);
       expect(roster.body.members).toHaveLength(1);
+    });
+
+    /**
+     * The roster routes are the OPERATOR's surface, and an agent identity buys
+     * nothing on them (DOR-1611 review).
+     *
+     * This was a real regression for one commit. `RoomService.addMember` and
+     * `removeMember` were unconditionally `requireOperator` until the
+     * room-management verbs widened them to admit a member agent — which widened
+     * these two routes with them, because a route resolves its caller from
+     * `X-DorkOS-Agent` and never goes near `registry.invoke`. The `roomsManage`
+     * grant lives at that choke point, so widening the service turned the grant
+     * into something a direct `curl` could step around.
+     *
+     * The ruling is that an agent's roster surface is the capability verbs, full
+     * stop. `addMember`/`removeMember` went back to operator-only and the verbs
+     * call `addMemberFromTool`/`removeMemberFromTool` instead, so the widened
+     * caller check exists only on a method no route can reach.
+     *
+     * The rows below use a MEMBER agent deliberately. An outsider is refused one
+     * step earlier by `requireVisibleRoom` — see "stops an outsider adding itself
+     * to a room" above, which answers 404 — so it could never have detected this
+     * and cannot detect a relapse.
+     */
+    describe('the roster routes are operator-only, grant or no grant', () => {
+      /** Ana, put on the room's roster by the person, holding a valid token. */
+      async function memberAgent(roomId: string): Promise<{ token: string; authorId: string }> {
+        const added = await request(app)
+          .post(`/api/rooms/${roomId}/members`)
+          .send({ agentPath: ANA_PATH });
+        expect(added.status).toBe(201);
+        const identity = initAgentIdentityService(db);
+        return {
+          token: await identity.mint({ agentPath: ANA_PATH, displayName: 'Ana' }),
+          authorId: added.body.authorId as string,
+        };
+      }
+
+      it('refuses a member agent adding somebody', async () => {
+        const room = await createChannel();
+        const { token } = await memberAgent(room.id);
+
+        const res = await request(app)
+          .post(`/api/rooms/${room.id}/members`)
+          .set('X-DorkOS-Agent', token)
+          .send({ agentPath: BO_PATH });
+
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('OPERATOR_ONLY');
+        expect(res.body.error).toBe('Only you can change who is in a room');
+        const roster = await request(app).get(`/api/rooms/${room.id}`);
+        expect(roster.body.members).toHaveLength(2);
+      });
+
+      it('refuses a member agent removing somebody', async () => {
+        const room = await createChannel();
+        const { token, authorId } = await memberAgent(room.id);
+
+        // Ana removing HERSELF, which is the shape the capability's `leave_room`
+        // is allowed to do — and must not be reachable from here.
+        const res = await request(app)
+          .delete(`/api/rooms/${room.id}/members/${authorId}`)
+          .set('X-DorkOS-Agent', token);
+
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('OPERATOR_ONLY');
+        expect(res.body.error).toBe('Only you can change who is in a room');
+        const after = await request(app).get(`/api/rooms/${room.id}`);
+        expect(after.body.members).toHaveLength(2);
+      });
+
+      it('refuses the same agent even when it HOLDS the roomsManage grant', async () => {
+        // The discriminating row. The real gate is armed and answering "granted"
+        // for every caller, which is the state the capability verbs run in when a
+        // person has switched this agent on — and these routes still refuse,
+        // because the grant unlocks the VERBS and not the HTTP surface. Without
+        // this row the two above would pass just as happily on a build where the
+        // grant did unlock the routes.
+        initToolGroupGate({ grants: { holds: () => Promise.resolve(true) } });
+        const room = await createChannel();
+        const { token, authorId } = await memberAgent(room.id);
+
+        const added = await request(app)
+          .post(`/api/rooms/${room.id}/members`)
+          .set('X-DorkOS-Agent', token)
+          .send({ agentPath: BO_PATH });
+        const removed = await request(app)
+          .delete(`/api/rooms/${room.id}/members/${authorId}`)
+          .set('X-DorkOS-Agent', token);
+
+        expect(added.status).toBe(403);
+        expect(added.body.code).toBe('OPERATOR_ONLY');
+        expect(removed.status).toBe(403);
+        expect(removed.body.code).toBe('OPERATOR_ONLY');
+        // Nothing moved on either route.
+        expect((await request(app).get(`/api/rooms/${room.id}`)).body.members).toHaveLength(2);
+      });
+
+      it('still lets the operator add and remove on both routes', async () => {
+        // The other half of the discrimination: the refusal is about WHO is
+        // calling, so the person's own surface has to keep working.
+        const room = await createChannel();
+
+        const added = await request(app)
+          .post(`/api/rooms/${room.id}/members`)
+          .send({ agentPath: ANA_PATH });
+        expect(added.status).toBe(201);
+        expect((await request(app).get(`/api/rooms/${room.id}`)).body.members).toHaveLength(2);
+
+        const removed = await request(app).delete(
+          `/api/rooms/${room.id}/members/${added.body.authorId}`
+        );
+        expect(removed.status).toBe(204);
+        expect((await request(app).get(`/api/rooms/${room.id}`)).body.members).toHaveLength(1);
+      });
     });
 
     it('lets the same agent read once it has actually been added', async () => {

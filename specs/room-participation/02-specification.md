@@ -586,6 +586,11 @@ The handler routes through `RoomService.post`, so it inherits the mention resolu
 **Membership guarantees the tool.** OpenClaw documents the footgun directly: its `coding` and `minimal` tool profiles omit the message tool, so the agent _"will listen to room events and can never speak."_ Two halves close it here.
 
 - **No toggle.** `EnabledToolGroupsSchema` (`mesh-schemas.ts:108-121`) gains **no** `rooms` key. A togglable rooms group reproduces the footgun exactly, in a place where the toggle is a per-agent setting and the consequence shows up in somebody else's room. Note that those toggles do not filter tools at all: off means the agent is **not told** the tools exist (`mcp-tool-groups.ts:10-25`), which for a speaking tool is the same outcome as removing it. The rooms group is described whenever the agent holds at least one room membership, and not otherwise.
+  > **Amended 2026-08-28 (DOR-1611).** This still holds, and it is about the CONVERSATION verbs.
+  > The five room-MANAGEMENT verbs added later sit behind a `roomsManage` grant, which is
+  > deliberately not the `rooms` key forbidden here and does not reproduce the footgun: it covers
+  > no speaking verb, so an agent without it still posts, reacts and reads exactly as before —
+  > what it withholds is the ability to rearrange rooms. See ADR 260828-123331.
 - **A hard error at join.** `RoomService.addMember` refuses an agent whose resolved runtime cannot carry the tool, with a typed `ROOM_AGENT_CANNOT_POST`, naming the runtime. Never a quiet mute.
 
 #### 10.2.1 The runtime constraint, which the ideation got wrong

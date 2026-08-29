@@ -8,20 +8,32 @@
  * composition. A test that called `invoke` on a definition would prove none of
  * those, which is exactly the shape of enforcement this repo has been bitten by.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { rooms as roomsTable, eq } from '@dorkos/db';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
-import { composeRegistry, type CapabilityRegistry } from '../../core/capabilities/index.js';
+import {
+  composeRegistry,
+  initToolGroupGate,
+  resetToolGroupGate,
+  type CapabilityRegistry,
+} from '../../core/capabilities/index.js';
 import { composeCapabilityRegistryForDocs } from '../../core/self-description/dorkos-registry.js';
+import {
+  DEFAULT_CAPABILITY_LIMIT,
+  projectCatalog,
+} from '../../core/self-description/catalog-projection.js';
+import { MAX_CAPABILITY_LIMIT } from '@dorkos/shared/capabilities';
 import type { AgentIdentity } from '../../core/agent-identity/index.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import { roomsDomain } from '../room-capabilities.js';
 import { FIND_ROOMS_MAX, type RoomService } from '../room-service.js';
+import type { RoomTurnRequest } from '../room-trigger.js';
 import {
   agentLookupFor,
   createRoomHarness,
   scriptedRunner,
   type RoomHarness,
+  type ScriptedTurnRunner,
 } from './room-test-harness.js';
 
 /**
@@ -79,6 +91,38 @@ const ANA_IDENTITY: AgentIdentity = {
  */
 const ANA_SLUG_IDENTITY: AgentIdentity = { ...ANA_IDENTITY, displayName: 'ana' };
 
+/**
+ * A runner that does something WITH ITS TURN STILL IN FLIGHT, then answers.
+ *
+ * The only honest way to drive a mid-turn tool call: the dispatcher holds the
+ * turn's claim for as long as `run` is pending, so anything this callback does
+ * happens in exactly the state a real in-session tool call happens in — and
+ * `writePost` reads that claim to decide whether the post inherits a cascade or
+ * starts one already spent. A test that called the tool before or after the turn
+ * would be measuring the other state and could not tell the difference.
+ *
+ * Wrapped around {@link scriptedRunner} rather than written beside it, so the
+ * turn is recorded, the session minted and the reply shaped by the one runner
+ * every other scenario in this suite uses.
+ *
+ * @param during - What the agent does mid-turn. Runs for every turn; the caller
+ *   narrows to the agent it is about.
+ * @returns The runner, with the recording every scripted runner carries.
+ */
+function midTurnRunner(during: (request: RoomTurnRequest) => Promise<void>): ScriptedTurnRunner {
+  const base = scriptedRunner(() => null);
+  return {
+    turns: base.turns,
+    interrupted: base.interrupted,
+    interrupt: (request) => base.interrupt(request),
+    run: async (request) => {
+      const result = await base.run(request);
+      await during(request);
+      return result;
+    },
+  };
+}
+
 describe('the rooms capability domain', () => {
   let harness: RoomHarness;
   let service: RoomService;
@@ -110,18 +154,24 @@ describe('the rooms capability domain', () => {
   });
 
   describe('what it declares', () => {
-    it('advertises the eight tools on both MCP servers, with the tiers it means', () => {
+    it('advertises the thirteen tools on both MCP servers, with the tiers and the grant it means', () => {
       const declared = roomsDomain.capabilities.map((capability) => ({
         id: capability.id,
         tool: capability.surfaces.mcp?.toolName,
         tier: capability.tier,
         servers: capability.surfaces.mcp?.servers,
         readOnly: capability.surfaces.mcp?.readOnlyCarveOut ?? false,
+        // The grant, pinned per verb (DOR-1611, acceptance criterion 12). A
+        // management verb that silently lost its `toolGroup` would go from
+        // "off until a person turns it on" to reachable by every agent on the
+        // install, and nothing else in this file would notice.
+        group: capability.toolGroup ?? null,
       }));
 
       expect(declared).toEqual([
         {
           id: 'rooms.post',
+          group: null,
           tool: 'post_to_room',
           tier: 'act',
           servers: ['in-session', 'external'],
@@ -129,6 +179,7 @@ describe('the rooms capability domain', () => {
         },
         {
           id: 'rooms.react',
+          group: null,
           tool: 'react_to_room_entry',
           tier: 'act',
           servers: ['in-session', 'external'],
@@ -136,6 +187,7 @@ describe('the rooms capability domain', () => {
         },
         {
           id: 'rooms.read_history',
+          group: null,
           tool: 'read_room_history',
           tier: 'observe',
           servers: ['in-session', 'external'],
@@ -146,6 +198,7 @@ describe('the rooms capability domain', () => {
         },
         {
           id: 'rooms.search_history',
+          group: null,
           tool: 'search_room_history',
           tier: 'observe',
           servers: ['in-session', 'external'],
@@ -156,6 +209,7 @@ describe('the rooms capability domain', () => {
         },
         {
           id: 'rooms.list_member_rooms',
+          group: null,
           tool: 'list_member_rooms',
           tier: 'observe',
           servers: ['in-session', 'external'],
@@ -167,6 +221,7 @@ describe('the rooms capability domain', () => {
         },
         {
           id: 'rooms.search_member_rooms',
+          group: null,
           tool: 'search_member_rooms',
           tier: 'observe',
           servers: ['in-session', 'external'],
@@ -177,6 +232,7 @@ describe('the rooms capability domain', () => {
         },
         {
           id: 'rooms.get_room',
+          group: null,
           tool: 'get_room',
           tier: 'observe',
           servers: ['in-session', 'external'],
@@ -188,12 +244,57 @@ describe('the rooms capability domain', () => {
         },
         {
           id: 'rooms.find_room',
+          group: null,
           tool: 'find_room',
           tier: 'observe',
           servers: ['in-session', 'external'],
           // The same answer as its pair, from NO ROOM ID — so a tokenless
           // caller could ask which of the operator's rooms hold a named person
           // and get it in one hop. The carve-out belongs here least of all.
+          readOnly: false,
+        },
+        // The five that ARRANGE rooms. All `act` and never `destructive`: a room
+        // triggers a turn into the dark, where an approval card is unanswerable
+        // — what bounds these is the grant, membership and the three-way rule,
+        // not a tier pretending to be a mechanism.
+        {
+          id: 'rooms.create',
+          group: 'roomsManage',
+          tool: 'create_room',
+          tier: 'act',
+          servers: ['in-session', 'external'],
+          readOnly: false,
+        },
+        {
+          id: 'rooms.add_members',
+          group: 'roomsManage',
+          tool: 'add_room_members',
+          tier: 'act',
+          servers: ['in-session', 'external'],
+          readOnly: false,
+        },
+        {
+          id: 'rooms.remove_members',
+          group: 'roomsManage',
+          tool: 'remove_room_members',
+          tier: 'act',
+          servers: ['in-session', 'external'],
+          readOnly: false,
+        },
+        {
+          id: 'rooms.update',
+          group: 'roomsManage',
+          tool: 'update_room',
+          tier: 'act',
+          servers: ['in-session', 'external'],
+          readOnly: false,
+        },
+        {
+          id: 'rooms.leave',
+          group: 'roomsManage',
+          tool: 'leave_room',
+          tier: 'act',
+          servers: ['in-session', 'external'],
           readOnly: false,
         },
       ]);
@@ -211,6 +312,40 @@ describe('the rooms capability domain', () => {
           (capability) => capability.surfaces.mcp?.toolName === 'post_to_room'
         )
       ).toHaveLength(1);
+    });
+
+    it('serves the five tool names behind the grant through the catalog the cockpit reads', () => {
+      // The one fact both Tools tabs render, taken from the WHOLE composed
+      // registry through the SAME projection the HTTP route serves. Asserting it
+      // off `roomsDomain` instead would prove only that the declaration exists,
+      // and the declaration was never the part that broke.
+      const catalog = composeCapabilityRegistryForDocs().catalog();
+
+      const granted = projectCatalog(catalog, {
+        toolGroup: 'roomsManage',
+        limit: MAX_CAPABILITY_LIMIT,
+      });
+      expect(granted.detail).toBe('full');
+      expect(
+        (granted.capabilities as { surfaces: { mcp?: { toolName: string } } }[])
+          .map((capability) => capability.surfaces.mcp?.toolName)
+          .sort()
+      ).toEqual([
+        'add_room_members',
+        'create_room',
+        'leave_room',
+        'remove_room_members',
+        'update_room',
+      ]);
+
+      // And the reason the cockpit has to ASK for that slice. The unfiltered
+      // page is compact and bounded at 50 of 80-odd capabilities sorted by id,
+      // so `rooms.*` is both stripped of its grant and off the end of the page:
+      // a Tools tab reading it would show an empty group, forever, with nothing
+      // failing anywhere.
+      const bare = projectCatalog(catalog, { limit: DEFAULT_CAPABILITY_LIMIT });
+      expect(bare.detail).toBe('compact');
+      expect(bare.capabilities.some((capability) => 'toolGroup' in capability)).toBe(false);
     });
 
     it('refuses to compose with the domain but without its service handle', () => {
@@ -875,5 +1010,769 @@ describe('the rooms capability domain', () => {
         [channel.id, foreign.id].sort()
       );
     });
+  });
+});
+
+/**
+ * The five verbs that ARRANGE rooms, rather than talk in them (spec
+ * `rooms-management-tools` §D7–D9, DOR-1611).
+ *
+ * Driven through the real registry over the real service, exactly as the eight
+ * above are — so every row here goes through the grant gate, the schema parse and
+ * the service's own guards in the order production runs them.
+ *
+ * The grant is WIRED here, because these verbs are refused without it. That is
+ * itself asserted (the last block): an agent whose owner has not turned the
+ * switch on gets `tool_group_disabled` from every one of them, and the shared
+ * conformance suite sweeps all five against the same fail-closed state.
+ */
+describe('the rooms MANAGEMENT verbs', () => {
+  let harness: RoomHarness;
+  let service: RoomService;
+  let authors: AuthorRegistry;
+  let registry: CapabilityRegistry;
+  let channel: RoomWithRoster;
+  let human: string;
+  let ana: string;
+  let bo: string;
+  /** Whether the agent calling holds `roomsManage`, flipped per test. */
+  let grantHeld = true;
+
+  /** Call a management tool as Ana, the way an identified agent would. */
+  function call(id: string, input: unknown): Promise<unknown> {
+    return registry.invoke(id, input, { identity: ANA_IDENTITY, retryChannel: 'mcp-argument' });
+  }
+
+  /** The `@handle` that reaches an agent, as `get_room` would report it. */
+  function handleOf(agentPath: string, displayName: string): string {
+    const handle = authors.resolveAgent(agentPath, displayName).handle;
+    if (!handle) throw new Error(`${agentPath} has no handle`);
+    return handle;
+  }
+
+  beforeEach(() => {
+    installState.ownerId = null;
+    installState.loginEnabled = false;
+    grantHeld = true;
+    resetToolGroupGate();
+    // The real gate, over a lookup this file can move — the same seam boot wires
+    // to the agent's manifest.
+    initToolGroupGate({ grants: { holds: async () => grantHeld } });
+    harness = createRoomHarness({ agents, runner: scriptedRunner(() => null) });
+    ({ service, authors, human } = harness);
+    registry = composeRegistry([roomsDomain], {
+      logger: { debug() {}, info() {}, warn() {}, error() {} },
+      roomDeps: { rooms: service },
+    });
+    // A channel the owner opened and Ana belongs to — the ordinary case.
+    channel = service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+    ana = authors.resolveAgent('/agents/ana', 'Ana').id;
+    bo = authors.resolveAgent('/agents/bo', 'Bo').id;
+  });
+
+  afterEach(() => {
+    resetToolGroupGate();
+  });
+
+  describe('create_room', () => {
+    it('opens a channel with the caller in it', async () => {
+      const opened = (await call('rooms.create', {
+        kind: 'channel',
+        title: 'Release work',
+        topic: 'shipping 1.2',
+      })) as { roomId: string; created: boolean; members: { authorId: string }[]; topic: string };
+
+      expect(opened.created).toBe(true);
+      expect(opened.topic).toBe('shipping 1.2');
+      expect(opened.members.map((member) => member.authorId)).toEqual([ana]);
+    });
+
+    it('returns the existing conversation rather than opening a second one', async () => {
+      // The dedupe already lives in the service; the tool describes it and does
+      // not reimplement it. Worth a row because the alternative — two DMs with
+      // the same person — is unrecoverable from the agent's side.
+      // Ana's own conversation. Deliberately not a DM with Bo: two agents alone
+      // together is refused by the three-way rule, which is a different rule and
+      // has its own row below.
+      const first = (await call('rooms.create', { kind: 'dm', members: [] })) as {
+        roomId: string;
+        created: boolean;
+        name: string;
+      };
+      // A DM the caller did not name is named after who is in it, exactly as one
+      // opened from the app is — NOT the bare "#" the raw create request used to
+      // fall back to (DOR-1611 review).
+      expect(first.name).toBe('Ana');
+      const second = (await call('rooms.create', { kind: 'dm', members: [] })) as {
+        roomId: string;
+        created: boolean;
+      };
+
+      expect(first.created).toBe(true);
+      expect(second.created).toBe(false);
+      expect(second.roomId).toBe(first.roomId);
+    });
+
+    it('refuses a handle that names nobody, and opens nothing', async () => {
+      const before = service.listRooms(human).length;
+
+      await expect(
+        call('rooms.create', { kind: 'channel', title: 'Ghosts', members: ['@nobody'] })
+      ).rejects.toMatchObject({ payload: { code: 'MEMBER_NOT_FOUND' } });
+
+      expect(service.listRooms(human)).toHaveLength(before);
+    });
+
+    it('cannot assemble a room where two agents answer each other unwatched', async () => {
+      // The three-way rule, inherited from `requireSeedingAllowed` rather than
+      // restated here. The grant does not buy a way around it.
+      await expect(
+        call('rooms.create', {
+          kind: 'channel',
+          title: 'Pair',
+          members: [handleOf('/agents/bo', 'Bo')],
+        })
+      ).rejects.toMatchObject({ payload: { code: 'OPERATOR_ONLY' } });
+    });
+
+    it('names the person by the id the roster reports, when she has no handle', async () => {
+      // The defect this closes (DOR-1611 review). `mintHandle` gives the
+      // install's own human NOTHING — the only string it could derive from is
+      // the placeholder 'You' — so on a default install the owner cannot be
+      // named by handle at all. And the three-way rule means every room an agent
+      // may open with a colleague is one she has to be in. Without the id
+      // fallback this exact call was a dead end: OPERATOR_ONLY with a colleague,
+      // MEMBER_NOT_FOUND when naming her by the id `get_room` had just reported.
+      expect(authors.getById(human)?.handle ?? null).toBeNull();
+
+      const opened = (await call('rooms.create', {
+        kind: 'channel',
+        title: 'Release work',
+        members: [handleOf('/agents/bo', 'Bo'), human],
+      })) as { roomId: string; members: { authorId: string }[] };
+
+      expect(opened.members.map((member) => member.authorId).sort()).toEqual(
+        [ana, bo, human].sort()
+      );
+    });
+
+    it('takes an id a model wrote with an @ in front of it', async () => {
+      // Models that have been told to write `@name` write `@<id>` too, and a
+      // dead end there reads to the model as "that member does not exist".
+      const opened = (await call('rooms.create', {
+        kind: 'channel',
+        title: 'Sigil',
+        members: [`@${human}`],
+      })) as { members: { authorId: string }[] };
+
+      expect(opened.members.map((member) => member.authorId).sort()).toEqual([ana, human].sort());
+    });
+
+    it('opens a direct message with the person, by her id', async () => {
+      const opened = (await call('rooms.create', { kind: 'dm', members: [human] })) as {
+        roomId: string;
+        created: boolean;
+        members: { authorId: string }[];
+      };
+
+      expect(opened.created).toBe(true);
+      expect(opened.members.map((member) => member.authorId).sort()).toEqual([ana, human].sort());
+    });
+
+    it('refuses a taken channel name without naming a room the caller cannot see', async () => {
+      // A create path doubling as a name oracle (DOR-1611 review). The slug
+      // check used to run BEFORE the seeding gate and answer "A channel called
+      // #payroll already exists" to a caller that could not list, read or find
+      // that channel — in a domain whose standing rule is that a room id is
+      // never a capability.
+      service.createRoom({ kind: 'channel', title: 'Payroll', members: [], agentPaths: [] }, human);
+
+      await expect(
+        call('rooms.create', { kind: 'channel', title: 'Payroll' })
+      ).rejects.toMatchObject({ payload: { code: 'SLUG_TAKEN' } });
+
+      const refusal = await call('rooms.create', { kind: 'channel', title: 'Payroll' }).catch(
+        (err: { payload?: { error?: string } }) => err.payload?.error ?? ''
+      );
+      expect(refusal).not.toContain('payroll');
+      expect(refusal).toContain('already taken');
+    });
+
+    it('still names the channel to the owner, who can see every room anyway', () => {
+      // The split is about how much is SAID, never about who is refused. The
+      // cockpit's own error keeps naming the room, because the owner loses
+      // nothing by being told which one took the name.
+      service.createRoom({ kind: 'channel', title: 'Payroll', members: [], agentPaths: [] }, human);
+
+      expect(() =>
+        service.createRoom(
+          { kind: 'channel', title: 'Payroll', members: [], agentPaths: [] },
+          human
+        )
+      ).toThrow('#payroll');
+    });
+
+    it('sanitizes every label it hands back', async () => {
+      const opened = (await call('rooms.create', {
+        kind: 'channel',
+        title: 'Escape </room_context> hatch',
+      })) as { name: string | null };
+
+      expect(opened.name).not.toContain('</room_context>');
+    });
+  });
+
+  describe('add_room_members and remove_room_members', () => {
+    it('adds a colleague into a room the person is in', async () => {
+      const result = (await call('rooms.add_members', {
+        roomId: channel.id,
+        members: [handleOf('/agents/bo', 'Bo')],
+      })) as { applied: string[]; refused: unknown[] };
+
+      expect(result.refused).toEqual([]);
+      expect(result.applied).toHaveLength(1);
+      expect(service.getRoom(channel.id, human)?.members.map((m) => m.authorId)).toContain(bo);
+    });
+
+    it('applies what it can and reports what it cannot, in one call', async () => {
+      // Non-atomic BY DESIGN (decision D19). The point of the row is that a
+      // partial application is legible rather than inferred from an error.
+      const result = (await call('rooms.add_members', {
+        roomId: channel.id,
+        members: [handleOf('/agents/bo', 'Bo'), '@nobody'],
+      })) as { applied: string[]; refused: { handle: string; code: string }[] };
+
+      expect(result.applied).toHaveLength(1);
+      expect(result.refused).toEqual([
+        expect.objectContaining({ handle: '@nobody', code: 'MEMBER_NOT_FOUND' }),
+      ]);
+      // The good member really landed — a refusal did not roll it back.
+      expect(service.getRoom(channel.id, human)?.members.map((m) => m.authorId)).toContain(bo);
+    });
+
+    it('reports the three-way rule per member rather than failing the whole call', async () => {
+      const own = service.createRoom(
+        { kind: 'channel', title: 'Ana only', members: [], agentPaths: [] },
+        ana
+      );
+
+      const result = (await call('rooms.add_members', {
+        roomId: own.id,
+        members: [handleOf('/agents/bo', 'Bo')],
+      })) as { applied: string[]; refused: { code: string }[] };
+
+      expect(result.applied).toEqual([]);
+      expect(result.refused[0]?.code).toBe('OWNER_MUST_BE_PRESENT');
+    });
+
+    it('never takes the PERSON out, in a room the shape rules would allow', async () => {
+      // The owner has to be nameable for this to test anything: on a login-off
+      // install the local author carries no handle at all, so an agent cannot
+      // address the person in these verbs even to be refused. Giving her one is
+      // what a login-on install does, and it is the posture where the guard is
+      // load-bearing rather than incidental.
+      authors.setHandle(human, 'dorian');
+      // One agent in the room, so the three-way rule would NOT refuse this — the
+      // refusal has to come from who is asking.
+      const result = (await call('rooms.remove_members', {
+        roomId: channel.id,
+        members: ['@dorian'],
+      })) as { applied: string[]; refused: { code: string; message: string }[] };
+
+      expect(result.applied).toEqual([]);
+      expect(result.refused[0]?.code).toBe('OPERATOR_ONLY');
+      expect(result.refused[0]?.message).toContain('Only you');
+      expect(service.getRoom(channel.id, human)?.members.map((m) => m.authorId)).toContain(human);
+    });
+
+    it('removes an ordinary member it was asked to remove', async () => {
+      await call('rooms.add_members', {
+        roomId: channel.id,
+        members: [handleOf('/agents/bo', 'Bo')],
+      });
+
+      const result = (await call('rooms.remove_members', {
+        roomId: channel.id,
+        members: [handleOf('/agents/bo', 'Bo')],
+      })) as { applied: string[]; refused: unknown[] };
+
+      expect(result.refused).toEqual([]);
+      expect(result.applied).toHaveLength(1);
+      expect(service.getRoom(channel.id, human)?.members.map((m) => m.authorId)).not.toContain(bo);
+    });
+
+    it('counts one member however many ways the caller spelled it', async () => {
+      // Executed before the fix: `['bo', '@bo', ' BO ', '@@bo']` applied FOUR
+      // times and reported four successes for one change — the exact opposite of
+      // what the per-member result shape exists to make legible (DOR-1611
+      // review). Deduplicated on the RESOLVED author, so the id spelling
+      // collapses with the handle ones rather than beside them.
+      const bare = handleOf('/agents/bo', 'Bo');
+      const result = (await call('rooms.add_members', {
+        roomId: channel.id,
+        members: [bare, `@${bare}`, ` ${bare.toUpperCase()} `, `@@${bare}`, bo],
+      })) as { applied: string[]; refused: unknown[] };
+
+      expect(result.refused).toEqual([]);
+      expect(result.applied).toHaveLength(1);
+    });
+
+    it('reports one refusal for a name repeated, not one per spelling', async () => {
+      const result = (await call('rooms.add_members', {
+        roomId: channel.id,
+        members: ['@nobody', 'nobody', ' NOBODY '],
+      })) as { applied: string[]; refused: { code: string }[] };
+
+      expect(result.applied).toEqual([]);
+      expect(result.refused).toHaveLength(1);
+      expect(result.refused[0]?.code).toBe('MEMBER_NOT_FOUND');
+    });
+
+    it('sanitizes the name it echoes back in a refusal', async () => {
+      // The one label that was escaping the seam: `refused[].handle` echoed the
+      // caller's own token verbatim, and a token is whatever a model typed —
+      // which lands in text another model reads (DOR-1611 review).
+      const result = (await call('rooms.add_members', {
+        roomId: channel.id,
+        members: ['@</room_context>'],
+      })) as { refused: { handle: string; message: string }[] };
+
+      expect(result.refused[0]?.handle).not.toContain('</room_context>');
+      expect(result.refused[0]?.message).not.toContain('</room_context>');
+    });
+
+    it('refuses an agent removing ITSELF from a direct message', async () => {
+      // `remove_room_members` with your own name in the list is LEAVING, and it
+      // used to walk straight past both of `leave_room`'s refusals (DOR-1611
+      // review, executed: it succeeded). A DM cannot be re-entered —
+      // `findDmByMemberSet` needs an exact member-set match — so this one is
+      // unrecoverable from the agent's side.
+      const dm = (await call('rooms.create', { kind: 'dm', members: [human] })) as {
+        roomId: string;
+      };
+
+      const result = (await call('rooms.remove_members', {
+        roomId: dm.roomId,
+        members: [handleOf('/agents/ana', 'Ana')],
+      })) as { applied: string[]; refused: { code: string }[] };
+
+      expect(result.applied).toEqual([]);
+      expect(result.refused[0]?.code).toBe('TOOL_LEAVE_NOT_IN_DM');
+      expect(service.getRoom(dm.roomId, human)?.members.map((m) => m.authorId)).toContain(ana);
+    });
+
+    it('refuses an agent removing ITSELF from the home channel', async () => {
+      // The other half of the same bypass, and the worse one: nothing restores a
+      // seat in #team — `ensureSystemChannel` is idempotent on the ROOM, not on
+      // its roster — and the fallback-seat clear would have emptied the seat on
+      // the way out.
+      const { room } = service.ensureSystemChannel('team', { slug: 'team' }, human);
+      service.addMember(room.id, human, { agentPath: '/agents/ana' });
+
+      const result = (await call('rooms.remove_members', {
+        roomId: room.id,
+        members: [handleOf('/agents/ana', 'Ana')],
+      })) as { applied: string[]; refused: { code: string }[] };
+
+      expect(result.applied).toEqual([]);
+      expect(result.refused[0]?.code).toBe('SYSTEM_ROOM');
+      expect(service.getRoom(room.id, human)?.members.map((m) => m.authorId)).toContain(ana);
+    });
+
+    it('still lets an agent take a COLLEAGUE out of a room of either kind', () => {
+      // The guard is about self-removal, and this is the row that keeps it from
+      // quietly becoming a rule about rooms. The cockpit's own path is the same
+      // one and is likewise untouched.
+      service.addMember(channel.id, human, { agentPath: '/agents/bo' });
+
+      expect(() => service.removeMemberFromTool(channel.id, ana, bo)).not.toThrow();
+    });
+
+    it('refuses a room the caller is not in, as one answer about the room', async () => {
+      const foreign = service.createRoom(
+        { kind: 'channel', title: 'Elsewhere', members: [], agentPaths: ['/agents/bo'] },
+        human
+      );
+
+      await expect(
+        call('rooms.add_members', { roomId: foreign.id, members: [handleOf('/agents/bo', 'Bo')] })
+      ).rejects.toMatchObject({ payload: { code: 'ROOM_NOT_FOUND' } });
+    });
+  });
+
+  describe('update_room', () => {
+    it('renames a room and sets its topic', async () => {
+      const updated = (await call('rooms.update', {
+        roomId: channel.id,
+        title: 'Backend work',
+        topic: 'the API rewrite',
+      })) as { name: string; topic: string };
+
+      expect(updated.topic).toBe('the API rewrite');
+      expect(service.getRoom(channel.id, human)?.title).toBe('Backend work');
+    });
+
+    it('exposes no way to archive a room or change what it may spend', () => {
+      // Acceptance criterion 9, asserted against the SCHEMA rather than against
+      // a refusal: a field that is not in the input cannot be sent at all, and
+      // the operator-only fields stay reachable only from the person's own
+      // routes.
+      const update = roomsDomain.capabilities.find((c) => c.id === 'rooms.update');
+      const shape = Object.keys(
+        (update?.input as unknown as { shape: Record<string, unknown> }).shape
+      );
+
+      expect(shape.sort()).toEqual(['roomId', 'title', 'topic']);
+    });
+
+    it('refuses a rename onto a taken name without naming the room that holds it', async () => {
+      // The UPDATE half of the same oracle, and the call site a mutation
+      // survives: `createRoom`'s refusal is covered above, and leaving
+      // `renamedSlug` naming the holder lets an armed agent rename a room it IS
+      // in, over and over, to enumerate the channel names on the whole install.
+      service.createRoom({ kind: 'channel', title: 'Payroll', members: [], agentPaths: [] }, human);
+
+      await expect(
+        call('rooms.update', { roomId: channel.id, title: 'Payroll' })
+      ).rejects.toMatchObject({ payload: { code: 'SLUG_TAKEN' } });
+
+      const refusal = await call('rooms.update', { roomId: channel.id, title: 'Payroll' }).catch(
+        (err: { payload?: { error?: string } }) => err.payload?.error ?? ''
+      );
+      expect(refusal).toContain('already taken');
+      expect(refusal).not.toContain('payroll');
+      // And the room kept the name it had, so the refusal was not half-applied.
+      expect(service.getRoom(channel.id, human)?.title).toBe('Backend');
+    });
+
+    it('still names the holder to the owner when SHE renames onto a taken name', () => {
+      // Same split as the create path: the owner sees every room on her machine,
+      // so the cockpit's error keeps telling her which one took the name.
+      const mine = service.createRoom(
+        { kind: 'channel', title: 'Payroll', members: [], agentPaths: [] },
+        human
+      );
+
+      expect(() => service.updateRoom(channel.id, human, { title: 'Payroll' })).toThrow('#payroll');
+      expect(service.getRoom(mine.id, human)?.title).toBe('Payroll');
+    });
+
+    it('refuses renaming a direct message, and still writes its topic', async () => {
+      // A DM's name IS its roster: it is derived from who is in it and
+      // re-derived when that changes, so a title an agent writes there survives
+      // only until the next membership change — and meanwhile it has renamed a
+      // conversation belonging to whoever else is in it (orchestrator ruling on
+      // the DOR-1611 review, spec §D12 amendment).
+      const dm = (await call('rooms.create', { kind: 'dm', members: [human] })) as {
+        roomId: string;
+      };
+
+      await expect(
+        call('rooms.update', { roomId: dm.roomId, title: 'Renamed' })
+      ).rejects.toMatchObject({ payload: { code: 'TOOL_RENAME_NOT_IN_DM' } });
+      await expect(
+        call('rooms.update', { roomId: dm.roomId, topic: 'what we are working on' })
+      ).resolves.toMatchObject({ topic: 'what we are working on' });
+    });
+
+    it('lets an agent describe the home channel but not rename it', async () => {
+      const { room } = service.ensureSystemChannel('team', { slug: 'team' }, human);
+      service.addMember(room.id, human, { agentPath: '/agents/ana' });
+
+      await expect(
+        call('rooms.update', { roomId: room.id, topic: 'what we are all on' })
+      ).resolves.toBeDefined();
+      await expect(
+        call('rooms.update', { roomId: room.id, title: 'Renamed' })
+      ).rejects.toMatchObject({ payload: { code: 'SYSTEM_ROOM' } });
+    });
+  });
+
+  describe('leave_room', () => {
+    it('steps out of a channel', async () => {
+      await expect(call('rooms.leave', { roomId: channel.id })).resolves.toMatchObject({
+        left: true,
+      });
+      expect(service.getRoom(channel.id, human)?.members.map((m) => m.authorId)).not.toContain(ana);
+    });
+
+    it('refuses a direct message, which cannot be re-entered', async () => {
+      const dm = (await call('rooms.create', { kind: 'dm', members: [] })) as { roomId: string };
+
+      await expect(call('rooms.leave', { roomId: dm.roomId })).rejects.toMatchObject({
+        payload: { code: 'TOOL_LEAVE_NOT_IN_DM' },
+      });
+    });
+
+    it('refuses the home channel', async () => {
+      const { room } = service.ensureSystemChannel('team', { slug: 'team' }, human);
+      service.addMember(room.id, human, { agentPath: '/agents/ana' });
+
+      await expect(call('rooms.leave', { roomId: room.id })).rejects.toMatchObject({
+        payload: { code: 'SYSTEM_ROOM' },
+      });
+    });
+
+    it('lets the last member empty an ordinary channel rather than wedging it', async () => {
+      // Deliberately NOT refused (§D9). An empty channel is recoverable — the
+      // row, its slug and its history survive and the owner can add members
+      // back — where an agent stuck in a room it cannot leave is not.
+      const own = service.createRoom(
+        { kind: 'channel', title: 'Solo', members: [], agentPaths: [] },
+        ana
+      );
+
+      await expect(call('rooms.leave', { roomId: own.id })).resolves.toMatchObject({ left: true });
+      expect(service.getRoom(own.id, human)?.members).toEqual([]);
+    });
+  });
+
+  describe('the grant', () => {
+    it('refuses every management verb when the person has not turned it on', async () => {
+      grantHeld = false;
+
+      for (const [id, input] of [
+        ['rooms.create', { kind: 'channel', title: 'Nope' }],
+        ['rooms.add_members', { roomId: channel.id, members: ['@bo'] }],
+        ['rooms.remove_members', { roomId: channel.id, members: ['@bo'] }],
+        ['rooms.update', { roomId: channel.id, topic: 'nope' }],
+        ['rooms.leave', { roomId: channel.id }],
+      ] as const) {
+        await expect(call(id, input), id).rejects.toMatchObject({
+          decision: { payload: { reason: 'tool_group_disabled', approvable: false } },
+        });
+      }
+      // Nothing ran: the room is exactly as it was.
+      expect(service.getRoom(channel.id, human)?.members.map((m) => m.authorId)).toContain(ana);
+    });
+
+    it('leaves the CONVERSATION verbs reachable without it', async () => {
+      // The grant covers arranging rooms and nothing else. An agent whose owner
+      // has not armed it is not muted — which is the whole reason the
+      // conversation verbs deliberately have no toggle.
+      grantHeld = false;
+
+      await expect(
+        call('rooms.post', { roomId: channel.id, text: 'still here' })
+      ).resolves.toMatchObject({ posted: true });
+      await expect(call('rooms.get_room', { roomId: channel.id })).resolves.toBeDefined();
+    });
+  });
+});
+
+/**
+ * What a management sequence COSTS, driven through the real trigger dispatcher
+ * (spec `rooms-management-tools` §Testing, PR2).
+ *
+ * `create_room` makes rooms MINTABLE by an agent, and two properties of the room
+ * path only became reachable from an agent's own hand when it landed. Neither is
+ * a rule this work added — both are measurements of rules that were already
+ * there, pinned here because the verb that reaches them is new:
+ *
+ * 1. **A sequence that looks like it starts a conversation does not always
+ *    start one.** Whether the mention at the end of it triggers anybody depends
+ *    entirely on whether the agent was mid-turn when it wrote — and nothing
+ *    about the three calls says so.
+ * 2. **Minting rooms does not mint budget.** The per-room cap is per ROOM, so a
+ *    caller that can make rooms multiplies it; the install-wide cap is what
+ *    makes "the ceiling on what this can cost you" true.
+ *
+ * Recorded rather than changed: the global cap's DEFAULT is explicitly out of
+ * this spec's scope (decision D17).
+ */
+describe('what an armed agent can spend by making rooms', () => {
+  /**
+   * A wired install where Ana holds the grant and the owner is nameable.
+   *
+   * The handle matters: these verbs take `@handle` and nothing else, so an agent
+   * cannot put the person in a room it opens until she has one — which is the
+   * posture a login-on install is in, and the only one where a three-way-legal
+   * room is reachable from `create_room` at all.
+   *
+   * @param opts.runner - The scripted runner this scenario needs.
+   * @param opts.maxAutomaticTurnsPerRoomPerHour - The per-room spend cap.
+   * @param opts.maxAutomaticTurnsTotalPerHour - The install-wide spend cap.
+   * @returns The harness, plus a `call` that invokes as Ana.
+   */
+  function open(opts: {
+    runner: ScriptedTurnRunner;
+    maxAutomaticTurnsPerRoomPerHour?: number;
+    maxAutomaticTurnsTotalPerHour?: number;
+  }) {
+    const harness = createRoomHarness({
+      agents,
+      runner: opts.runner,
+      ...(opts.maxAutomaticTurnsPerRoomPerHour !== undefined
+        ? { maxAutomaticTurnsPerRoomPerHour: opts.maxAutomaticTurnsPerRoomPerHour }
+        : {}),
+      ...(opts.maxAutomaticTurnsTotalPerHour !== undefined
+        ? { maxAutomaticTurnsTotalPerHour: opts.maxAutomaticTurnsTotalPerHour }
+        : {}),
+    });
+    const registry = composeRegistry([roomsDomain], {
+      logger: { debug() {}, info() {}, warn() {}, error() {} },
+      roomDeps: { rooms: harness.service },
+    });
+    harness.authors.setHandle(harness.human, 'dorian');
+    return {
+      ...harness,
+      /** Call a tool as Ana, the way an identified agent would. */
+      call: (id: string, input: unknown): Promise<unknown> =>
+        registry.invoke(id, input, { identity: ANA_IDENTITY, retryChannel: 'mcp-argument' }),
+      /** The `@handle` that reaches an agent, as `get_room` would report it. */
+      handleOf: (agentPath: string, displayName: string): string => {
+        const handle = harness.authors.resolveAgent(agentPath, displayName).handle;
+        if (!handle) throw new Error(`${agentPath} has no handle`);
+        return handle;
+      },
+      /**
+       * The same handle as an ADDRESS, which is a different thing from a name.
+       *
+       * Handles are stored bare and the member verbs take them either way, but a
+       * mention in a message body is resolved by `resolveAddressing` and needs
+       * its sigil — text without one reaches nobody, which is exactly how a
+       * cascade test can pass while measuring nothing.
+       */
+      mentionOf: (agentPath: string, displayName: string): string => {
+        const handle = harness.authors.resolveAgent(agentPath, displayName).handle;
+        if (!handle) throw new Error(`${agentPath} has no handle`);
+        return `@${handle}`;
+      },
+    };
+  }
+
+  beforeEach(() => {
+    installState.ownerId = null;
+    installState.loginEnabled = false;
+    resetToolGroupGate();
+    initToolGroupGate({ grants: { holds: async () => true } });
+  });
+
+  afterEach(() => {
+    resetToolGroupGate();
+  });
+
+  it('costs the colleague exactly one turn when the sequence runs inside a turn', async () => {
+    // The provenance follows the TURN, so the mention Ana writes from inside one
+    // inherits the cascade the person started and reaches Bo once. Nothing here
+    // is new machinery — `writePost` has always read `activeTurnFor` — but until
+    // `create_room` existed an agent could not assemble this sequence at all.
+    let opened = '';
+    let ranOnce = false;
+    // The runner has to exist before the install it drives, and the sequence has
+    // to know the install — so the runner calls through this, and the real
+    // sequence is installed once there is something to call. Nothing runs it in
+    // between: a turn only starts when the person posts, at the bottom.
+    let duringTurn: (request: RoomTurnRequest) => Promise<void> = () => Promise.resolve();
+    const runner = midTurnRunner((request) => duringTurn(request));
+    const install = open({ runner });
+    duringTurn = async (request) => {
+      if (request.agentPath !== '/agents/ana' || ranOnce) return;
+      ranOnce = true;
+      const room = (await install.call('rooms.create', {
+        kind: 'channel',
+        title: 'Release work',
+        members: ['@dorian'],
+      })) as { roomId: string };
+      opened = room.roomId;
+      await install.call('rooms.add_members', {
+        roomId: opened,
+        members: [install.handleOf('/agents/bo', 'Bo')],
+      });
+      await install.call('rooms.post', {
+        roomId: opened,
+        text: `${install.mentionOf('/agents/bo', 'Bo')} can you take this one?`,
+      });
+    };
+    const channel = install.service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana'] },
+      install.human
+    );
+
+    install.service.post(channel.id, {
+      authorId: install.human,
+      text: `${install.mentionOf('/agents/ana', 'Ana')} can you get Bo on this?`,
+    });
+    await install.service.triggersIdle();
+
+    expect(opened).not.toBe('');
+    expect(runner.turns.filter((turn) => turn.roomId === opened).map((t) => t.agentPath)).toEqual([
+      '/agents/bo',
+    ]);
+  });
+
+  it('triggers nobody when the same sequence runs with no turn in flight', async () => {
+    // The identical three calls, from a shell. `deriveCascade` refuses a fresh
+    // cascade to an un-provenanced agent post and stamps it AT the ceiling, so
+    // the mention costs nothing and — unlike every other cascade refusal — says
+    // nothing either. The discrimination is the point: this row and the one
+    // above differ only in whether a turn was in flight, and they measure
+    // opposite outcomes.
+    const runner = scriptedRunner(() => null);
+    const install = open({ runner });
+    const room = (await install.call('rooms.create', {
+      kind: 'channel',
+      title: 'Release work',
+      members: ['@dorian'],
+    })) as { roomId: string };
+    await install.call('rooms.add_members', {
+      roomId: room.roomId,
+      members: [install.handleOf('/agents/bo', 'Bo')],
+    });
+
+    await install.call('rooms.post', {
+      roomId: room.roomId,
+      text: `${install.mentionOf('/agents/bo', 'Bo')} can you take this one?`,
+    });
+    await install.service.triggersIdle();
+
+    expect(runner.turns).toEqual([]);
+    // And SILENTLY, which is the deliberate half. Every other cascade refusal
+    // writes the room's own-voice notice; this one must not, because the entry
+    // is its own cascade root and the refusal fires against every room-mate at
+    // every ceiling — a notice here sprayed one line per member per post, and
+    // offered to raise a limit nothing had reached (`room-trigger.ts`, the
+    // DOR-621 note; `room-silence.test.ts` pins both sides of that narrowness).
+    expect(
+      install.service
+        .listEntries(room.roomId, install.human, { limit: 50 })
+        .map((entry) => entry.kind)
+    ).toEqual(['post']);
+  });
+
+  it('does not buy one room-worth of turns per room it opens', async () => {
+    // The measurement `turn-budget.ts` was written from, now reachable from an
+    // agent's own hand: four rooms at a per-room cap of 1 would be four turns,
+    // and the install-wide cap is what makes it two. Recorded, not fixed — the
+    // cap's DEFAULT is out of this spec's scope (D17).
+    const runner = scriptedRunner(() => null);
+    const install = open({
+      runner,
+      maxAutomaticTurnsPerRoomPerHour: 1,
+      maxAutomaticTurnsTotalPerHour: 2,
+    });
+    const mentionAna = `${install.mentionOf('/agents/ana', 'Ana')} ping`;
+
+    const minted: string[] = [];
+    for (const title of ['One', 'Two', 'Three', 'Four']) {
+      const room = (await install.call('rooms.create', {
+        kind: 'channel',
+        title,
+        members: ['@dorian'],
+      })) as { roomId: string };
+      minted.push(room.roomId);
+    }
+    // A PERSON writes in each, so every post starts a cascade of its own and
+    // nothing but the budget is standing in the way.
+    for (const roomId of minted) {
+      install.service.post(roomId, { authorId: install.human, text: mentionAna });
+    }
+    await install.service.triggersIdle();
+
+    expect(minted).toHaveLength(4);
+    expect(runner.turns).toHaveLength(2);
   });
 });

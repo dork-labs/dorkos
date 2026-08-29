@@ -44,7 +44,7 @@ beforeAll(() => {
 
 afterEach(() => {
   cleanup();
-  useRoomPresenceStore.setState({ rooms: {} });
+  useRoomPresenceStore.getState().reset();
 });
 
 function member(id: string, displayName: string): RoomRosterEntry {

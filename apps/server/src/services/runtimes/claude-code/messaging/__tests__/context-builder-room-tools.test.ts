@@ -1,13 +1,26 @@
 /**
  * Pins WHERE the react-instead-of-a-word nudge lives (DOR-1234): the
- * claude-code-only `<room_tools>` block inside {@link buildSystemPromptAppend},
- * never the runtime-neutral `<room_context>` body every adapter shares
- * (`runtimes/shared/room-context-block.ts`). Codex and OpenCode agents render
- * only the shared block, so a nudge that named `react_to_room_entry` — a tool
- * only this runtime's in-session MCP server carries — would tell a runtime
- * with no reaction tool to react anyway. `room-context-block.test.ts` already
- * pins the shared block's exact text and contains no mention of it; this file
- * pins the positive half.
+ * `<room_tools>` block that {@link buildSystemPromptAppend} assembles, never
+ * the runtime-neutral `<room_context>` body every adapter shares
+ * (`runtimes/shared/room-context-block.ts`).
+ *
+ * ## The reason changed; the pin did not (DOR-1613)
+ *
+ * This used to say the nudge belonged here because `<room_tools>` was
+ * claude-code-only — codex and opencode carried no room tools at all, so
+ * naming `react_to_room_entry` in shared prose would have told a runtime with
+ * no reaction tool to react anyway. That premise is retired:
+ * `runtimes.dorkosTools` gives both runtimes the same `dorkos` server, and the
+ * block itself now lives in `runtimes/shared/room-tools-context.ts`, rendered
+ * per runtime under that runtime's own tool prefix.
+ *
+ * What survives is the distinction the pin was really about. `<room_tools>` is
+ * built for a KNOWN session — the caller supplies the prefix, and the block is
+ * rendered only when that session actually carries the tools. `<room_context>`
+ * is built from a room and a nonce and knows nothing about the session, so it
+ * cannot name a tool without guessing at both its presence and its spelling.
+ * The nudge belongs on the side that knows. `room-context-block.test.ts` pins
+ * the negative half; this file pins the positive one, as claude-code renders it.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { buildSystemPromptAppend } from '../context-builder.js';

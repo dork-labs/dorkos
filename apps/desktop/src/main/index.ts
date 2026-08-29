@@ -14,6 +14,7 @@ import {
   consumeUpdateRestart,
   recordUpdateInstallIntent,
 } from './auto-updater';
+import { checkForManualOverwrite } from './updater/manual-overwrite';
 import { hasTray, setTrayActivity, setupTray } from './tray';
 import { getActiveAgentCount, watchAgentActivity } from './agent-activity';
 import { watchNotifications } from './notifications';
@@ -63,6 +64,12 @@ function createTrackedWindow(): void {
   attachRendererSupervisor(mainWindow, options);
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+  // Clicking back into the window is one of the two moments a person expects
+  // the version they just installed (see updater/manual-overwrite.ts). Silent unless
+  // the app on disk is genuinely newer than the one running.
+  mainWindow.on('focus', () => {
+    void checkForManualOverwrite(getMainWindow);
   });
   // A reload or renderer crash keeps this window's webContents.id but drops
   // the renderer's `navigate` subscription — reset the deep-link readiness
@@ -197,6 +204,11 @@ if (!gotTheLock) {
     } else {
       showMainWindow();
     }
+    // The launch that lands here may be a NEWER copy of the app: someone
+    // installed an update by hand while this process stayed alive, and the
+    // lock above just handed their double-click to the old version. Focusing
+    // the old window is not what they asked for — see updater/manual-overwrite.ts.
+    void checkForManualOverwrite(getMainWindow);
   });
 
   // Register `dorkos://` as this app's protocol handler. Cross-platform and

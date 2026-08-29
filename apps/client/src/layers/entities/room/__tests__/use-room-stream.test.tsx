@@ -95,7 +95,7 @@ function cursors(transport: Transport): unknown[] {
 }
 
 beforeEach(() => {
-  useRoomPresenceStore.setState({ rooms: {} });
+  useRoomPresenceStore.getState().reset();
   // Full-jitter backoff with the die rigged to zero: the retry schedule is
   // `WSConnection`'s and is tested there; what matters here is that a retry
   // happens at all, and from where.

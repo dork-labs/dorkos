@@ -72,6 +72,7 @@ vi.mock('../room-repo-git.js', async (importOriginal) => {
 
 import { RoomConventions, ROOM_CONVENTIONS_TAG } from '../room-conventions.js';
 import { commitAll, initRepo, runGit } from '../room-repo-git.js';
+import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
 import { ROOM_MD_FILENAME } from '../room-md.js';
 
 const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
@@ -97,6 +98,10 @@ describe('RoomConventions', () => {
   beforeEach(async () => {
     gitHook.before = null;
     gitHook.run = async () => {};
+    // Before `initRepo` below: a `git commit` otherwise leaves a DETACHED
+    // maintenance process writing into `.git` after it returns, and this
+    // suite's teardown deletes that directory. See `fixture-git.ts`.
+    silenceGitAutoMaintenance();
     scratch = await mkdtemp(path.join(await fsp.realpath(tmpdir()), 'dorkos-room-conventions-'));
     home = path.join(scratch, 'rooms', ROOM_ID);
     repo = path.join(home, 'repo');
@@ -113,7 +118,7 @@ describe('RoomConventions', () => {
   });
 
   afterEach(async () => {
-    await rm(scratch, { recursive: true, force: true });
+    await removeFixtureTree(scratch);
   });
 
   describe('a room with no files', () => {

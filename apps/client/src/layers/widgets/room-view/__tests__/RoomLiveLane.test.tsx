@@ -194,7 +194,7 @@ function renderLane(
 beforeEach(() => {
   navigateSpy.mockClear();
   scrollToRowSpy.mockClear();
-  useRoomPresenceStore.setState({ rooms: {} });
+  useRoomPresenceStore.getState().reset();
   vi.useFakeTimers();
   vi.setSystemTime(new Date(STARTED));
 });
@@ -735,7 +735,7 @@ describe('RoomLiveLane', () => {
       // And the working line keeps its own words, so this is a branch rather
       // than a rename.
       cleanup();
-      useRoomPresenceStore.setState({ rooms: {} });
+      useRoomPresenceStore.getState().reset();
       working('kai');
       renderLane({}, seeingTransport());
       await settleRoomList();
@@ -805,7 +805,7 @@ describe('RoomLiveLane', () => {
       // A room this reader cannot see gets NO link rather than a dead one: it
       // would open onto the same refusal a room that does not exist gives.
       cleanup();
-      useRoomPresenceStore.setState({ rooms: {} });
+      useRoomPresenceStore.getState().reset();
       waiting('kai', 'room-nobody-can-see');
       renderLane({}, seeingTransport());
       await settleRoomList();
@@ -825,7 +825,7 @@ describe('RoomLiveLane', () => {
       expect(screen.queryByTestId('live-peek-answer-first')).toBeNull();
 
       cleanup();
-      useRoomPresenceStore.setState({ rooms: {} });
+      useRoomPresenceStore.getState().reset();
       waiting('kai', 'room-elsewhere', STARTED, true);
       renderLane({}, transport);
       await settleRoomList();

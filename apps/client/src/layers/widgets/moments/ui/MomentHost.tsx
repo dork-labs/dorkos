@@ -1,24 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { useConfig } from '@/layers/entities/config';
+import { LAUNCH_STARTED_AT } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { Dialog, DialogContent } from '@/layers/shared/ui';
 
 import { useMoments } from '../model/use-moments';
 import type { MomentDescriptor } from '../model/moment-descriptor';
 
-/**
- * When this app load began, sampled once at module evaluation — which happens
- * during initial bundle load, before any config request goes out.
- *
- * It is the reference for "did the server confirm this answer during THIS
- * launch". A config answer restored from a previous session's persisted cache
- * carries the `dataUpdatedAt` from when it was originally fetched — always older
- * than this — while an answer a fetch produced this session is always newer. So
- * a plain `dataUpdatedAt > LAUNCH_STARTED_AT` tells the two apart, and it does so
- * without depending on WHEN the rail happens to mount (see the class docblock).
- */
-const LAUNCH_STARTED_AT = Date.now();
+// `LAUNCH_STARTED_AT` — the reference for "did the server confirm this answer
+// during THIS launch" — used to be sampled here. It moved to `shared/lib` when
+// the shell needed the same distinction to tell a restored config apart from a
+// reachable server (DOR-1475): two module-level `Date.now()` samples are two
+// different instants by construction, and this question has one answer.
 
 /** Props for {@link MomentHost}. */
 interface MomentHostProps {

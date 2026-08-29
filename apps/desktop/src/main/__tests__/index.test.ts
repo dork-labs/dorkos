@@ -35,6 +35,11 @@ vi.mock('../auto-updater', () => ({
   consumeUpdateRestart: vi.fn(() => false),
   recordUpdateInstallIntent: vi.fn(),
 }));
+// Reading the bundle on disk is its own suite's job; here the question is only
+// whether the two moments a person expects a new version are wired to it.
+vi.mock('../updater/manual-overwrite', () => ({
+  checkForManualOverwrite: vi.fn(async () => undefined),
+}));
 vi.mock('../tray', () => ({
   setupTray: vi.fn(),
   setTrayActivity: vi.fn(),
@@ -523,6 +528,57 @@ describe('update IPC handlers', () => {
     });
     // A stray webContents (devtools, an auxiliary window) gets nothing.
     expect(handler({ sender: { id: 9999 } } as unknown as Electron.IpcMainInvokeEvent)).toBeNull();
+  });
+});
+
+/**
+ * Noticing an app replaced on disk while it kept running (DOR-1455, decision 8).
+ *
+ * DorkOS survives its window closing, so a drag-install leaves the OLD process
+ * running and the single-instance lock turns "open the new one" into "focus the
+ * old one". These are the two moments a person plainly expects the version they
+ * just installed.
+ */
+describe('a newer DorkOS installed while this one runs', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('looks when a second launch is handed to the running instance', async () => {
+    const { app, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    const manualOverwrite = await import('../updater/manual-overwrite');
+    vi.mocked(manualOverwrite.checkForManualOverwrite).mockClear();
+
+    await import('../index');
+    await app.emit('second-instance', ['/Applications/DorkOS.app']);
+
+    expect(manualOverwrite.checkForManualOverwrite).toHaveBeenCalledTimes(1);
+  });
+
+  it('looks when the window is focused', async () => {
+    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    const windowManager = await import('../window-manager');
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    vi.mocked(windowManager.createWindow)
+      .mockReset()
+      .mockReturnValue(win as unknown as Electron.BrowserWindow);
+
+    const manualOverwrite = await import('../updater/manual-overwrite');
+    vi.mocked(manualOverwrite.checkForManualOverwrite).mockClear();
+
+    await import('../index');
+    await app.emit('ready');
+    expect(manualOverwrite.checkForManualOverwrite).not.toHaveBeenCalled();
+
+    await win.emit('focus');
+
+    expect(manualOverwrite.checkForManualOverwrite).toHaveBeenCalledTimes(1);
   });
 });
 

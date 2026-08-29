@@ -1202,7 +1202,7 @@ describe('RoomService — creating a DM in one call', () => {
   });
 });
 
-describe('RoomService — only the operator changes a roster', () => {
+describe('RoomService — who may change a roster', () => {
   let service: RoomService;
   let authors: AuthorRegistry;
   let human: string;
@@ -1219,11 +1219,60 @@ describe('RoomService — only the operator changes a roster', () => {
     ana = authors.resolveAgent('/agents/ana', 'Ana').id;
   });
 
-  it('refuses an agent adding another member', () => {
+  it('refuses an agent on the OPERATOR entry point, whatever grant it holds', () => {
+    // The regression guard (DOR-1611 review). `addMember`/`removeMember` are the
+    // operator surface — the HTTP routes, the community adapter, the team-room
+    // hook — and they went back to `requireOperator` after a branch briefly
+    // widened them for every caller. That widening made the `roomsManage` gate
+    // walkable with a direct HTTP call, because the gate lives at
+    // `registry.invoke` and a route never goes through it. An agent's roster
+    // surface is the capability verbs, full stop.
     expect(() => service.addMember(roomId, ana, { agentPath: '/agents/bo' })).toThrow(
       expect.objectContaining({ code: 'OPERATOR_ONLY' })
     );
+    expect(() => service.removeMember(roomId, ana, ana)).toThrow(
+      expect.objectContaining({ code: 'OPERATOR_ONLY' })
+    );
     expect(service.getRoom(roomId, human)?.members).toHaveLength(2);
+  });
+
+  it('lets a member agent add another member through the TOOL entry point', () => {
+    // No longer operator-only on that path (spec `rooms-management-tools` §D7,
+    // DOR-1611). Ana belongs to this room and the owner is on its roster, so the
+    // roster this produces — the person plus two agents — is exactly the shape
+    // the three-way rule asks for, and nothing about that rule had to move.
+    const added = service.addMemberFromTool(roomId, ana, { agentPath: '/agents/bo' });
+
+    expect(added.authorId).toBeTruthy();
+    expect(service.getRoom(roomId, human)?.members).toHaveLength(3);
+  });
+
+  it('refuses a member agent that would leave two agents alone together', () => {
+    // The widening stops exactly where the three-way rule starts. Ana opens a
+    // room for herself — legitimate, and the owner is not on its roster — and
+    // then tries to pull a colleague into it. That is the amplification shape,
+    // and it is refused for an agent caller by the guard that never asked who
+    // was calling in the first place.
+    const own = service.createRoom(
+      { kind: 'dm', title: 'Ana notes', members: [], agentPaths: [] },
+      ana
+    );
+
+    expect(() => service.addMemberFromTool(own.id, ana, { agentPath: '/agents/bo' })).toThrow(
+      expect.objectContaining({ code: 'OWNER_MUST_BE_PRESENT' })
+    );
+    expect(service.getRoom(own.id, human)?.members).toHaveLength(1);
+  });
+
+  it('refuses a member agent taking the PERSON out, in a room the shape rules would allow', () => {
+    // Stronger than the three-way rule on purpose (§D7 row 4). This room holds
+    // one agent, so removing the owner would leave no forbidden shape behind and
+    // `requireOwnerWitnessesAgents` would permit it — the refusal is about who
+    // is asking, because the person's membership is the guarantee.
+    expect(() => service.removeMemberFromTool(roomId, ana, human)).toThrow(
+      expect.objectContaining({ code: 'OPERATOR_ONLY' })
+    );
+    expect(service.getRoom(roomId, human)?.members.map((m) => m.authorId)).toContain(human);
   });
 
   it('refuses an agent widening a room-mate response mode', () => {
@@ -1240,11 +1289,12 @@ describe('RoomService — only the operator changes a roster', () => {
     ).toBe('engaged');
   });
 
-  it('refuses an agent removing a member', () => {
-    expect(() => service.removeMember(roomId, ana, human)).toThrow(
-      expect.objectContaining({ code: 'OPERATOR_ONLY' })
+  it('tells the agent whose call it is, rather than refusing blankly', () => {
+    // The sentence matters as much as the code: a model that is told "only you"
+    // can relay that to the person, where "OPERATOR_ONLY" alone reads as a bug.
+    expect(() => service.removeMemberFromTool(roomId, ana, human)).toThrow(
+      'Only you can take yourself out of a room'
     );
-    expect(service.getRoom(roomId, human)?.members.map((m) => m.authorId)).toContain(human);
   });
 
   it('refuses an agent conscripting a second agent into a room it opens', () => {
@@ -1690,8 +1740,11 @@ describe('RoomService — an install with no accounts is unchanged', () => {
 
     expect(service.getRoom(room.id, human)?.id).toBe(room.id);
     expect(service.addMember(room.id, human, { agentPath: '/agents/bo' }).authorId).toBeTruthy();
-    expect(() => service.removeMember(room.id, ana, human)).toThrow(
-      'Only you can change who is in a room'
+    // An agent removing the PERSON is refused with the sentence written for that
+    // case (DOR-1611 §D7 row 4); the second-person wording it has always had is
+    // unchanged, which is what this row is really pinning.
+    expect(() => service.removeMemberFromTool(room.id, ana, human)).toThrow(
+      'Only you can take yourself out of a room'
     );
   });
 });

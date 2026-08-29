@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
-import type { FileEntry } from '@dorkos/shared/types';
+import type { ExplorerEntry } from './source';
 import { useTransport } from '@/layers/shared/model';
 import { composerFileReference, requestComposerInsert, useCopyFeedback } from '@/layers/shared/lib';
 import { useConfig } from '@/layers/entities/config';
@@ -33,13 +33,13 @@ export interface FileActionsApi {
    */
   revealLabel: string | null;
   /** Show an entry in the server machine's file manager. */
-  reveal: (entry: FileEntry) => Promise<void>;
+  reveal: (entry: ExplorerEntry) => Promise<void>;
   /** Copy an entry's path to the system clipboard. */
-  copyPath: (entry: FileEntry, kind: CopyPathKind) => Promise<void>;
+  copyPath: (entry: ExplorerEntry, kind: CopyPathKind) => Promise<void>;
   /** Insert `@<path>` into the chat composer and focus it. */
-  addToChat: (entry: FileEntry) => void;
+  addToChat: (entry: ExplorerEntry) => void;
   /** Put an entry on the explorer clipboard, ready for Paste. */
-  copyToClipboard: (entry: FileEntry) => void;
+  copyToClipboard: (entry: ExplorerEntry) => void;
 }
 
 /**
@@ -58,7 +58,7 @@ export function useFileActions(cwd: string | null): FileActionsApi {
   );
 
   const reveal = useCallback(
-    async (entry: FileEntry): Promise<void> => {
+    async (entry: ExplorerEntry): Promise<void> => {
       if (!cwd) return;
       try {
         await transport.revealEntry(cwd, entry.path);
@@ -71,7 +71,7 @@ export function useFileActions(cwd: string | null): FileActionsApi {
 
   const { copy } = useCopyFeedback();
   const copyPath = useCallback(
-    async (entry: FileEntry, kind: CopyPathKind): Promise<void> => {
+    async (entry: ExplorerEntry, kind: CopyPathKind): Promise<void> => {
       const text = kind === 'absolute' && cwd ? toAbsolutePath(cwd, entry.path) : entry.path;
       const ok = await copy(text);
       // Clipboard writes are denied outside a secure context or when the
@@ -84,12 +84,12 @@ export function useFileActions(cwd: string | null): FileActionsApi {
     [cwd, copy]
   );
 
-  const addToChat = useCallback((entry: FileEntry): void => {
+  const addToChat = useCallback((entry: ExplorerEntry): void => {
     const delivered = requestComposerInsert(composerFileReference(entry.path));
     if (!delivered) toast.error('Open a chat first to add a file to it');
   }, []);
 
-  const copyToClipboard = useCallback((entry: FileEntry): void => {
+  const copyToClipboard = useCallback((entry: ExplorerEntry): void => {
     useFileExplorerStore.getState().setClipboard({
       path: entry.path,
       isDir: entry.type === 'dir',

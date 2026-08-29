@@ -126,6 +126,14 @@ export const DORKOS_AGENT_TOOLS = new Set(
     // answer from the caller's own roster rows and nothing else.
     'get_room',
     'find_room',
+    // The five that ARRANGE rooms (DOR-1611). They carry everything above them
+    // plus one bound none of the others has: the `roomsManage` grant, which is
+    // off until a person turns it on for THIS agent. See IDENTITY_SCOPED_TOOLS.
+    'create_room',
+    'add_room_members',
+    'remove_room_members',
+    'update_room',
+    'leave_room',
     'relay_notify_user',
     'relay_send',
     'relay_inbox',
@@ -162,14 +170,14 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * (and by default does) set that scope.
  *
  * What the auto-allow gives up is stated once, here, because it is the same
- * thing for all ten: **the per-call card an operator watching a DIRECT session
+ * thing for all fifteen: **the per-call card an operator watching a DIRECT session
  * could have denied.** Not the setup consent, which is untouched — a room the
  * agent is not a member of, and a binding nobody switched initiating on for, are
  * both still refused underneath. (Note what that does NOT say: an unclaimed CHAT
  * is not necessarily refused, because a wildcard binding's scope covers the whole
  * adapter. The consent that holds is the one on the binding, not one per chat.)
  *
- * ## Why the eight rooms verbs need the qualifier
+ * ## Why the rooms verbs need the qualifier
  *
  * The rooms verbs authorize on MEMBERSHIP: each resolves the caller's roster row
  * before doing anything, and the reads answer "not a member" with the same
@@ -213,6 +221,25 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * an explicit member row even from the owner. The exposure is the operator's own
  * rooms rather than every room on the machine, and that is still an ordinary
  * coding session reading somebody's private conversations without being asked.
+ *
+ * **The five that ARRANGE rooms carry one bound more than any verb above them**
+ * (DOR-1611). `create_room`, `add_room_members`, `remove_room_members`,
+ * `update_room` and `leave_room` are the only entries in this whole set that a
+ * person has to switch ON before they run at all: `registry.invoke` reads the
+ * `roomsManage` grant off the agent's manifest, fresh, on every call, and
+ * refuses without it — and the agent-reachable write path refuses to set it for
+ * itself (ADR `260828-123331`). So the auto-allow here is strictly narrower than
+ * the eight above: those need only an identity, these need an identity AND a
+ * deliberate act by the person, naming this agent.
+ *
+ * They must not raise a card for the domain's standing reason, and it is
+ * sharper for these than for the reads. An agent opens a channel or pulls a
+ * colleague in DURING a room turn — that is the moment the work needs it — and
+ * DOR-1229 measured what a card costs there: eleven minutes, then an auto-deny.
+ * A card would also be asking the person a question she has already answered, in
+ * the one place built for it. Without an identity the grant refuses the call
+ * anyway; the gate still asks rather than inferring harmlessness from another
+ * layer's refusal, which is the same posture `memory_write` takes below.
  *
  * ## Why `relay_notify_user` is here too (DOR-1265)
  *
@@ -294,8 +321,8 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * One KEY — the session's working directory — resolved here by
  * {@link createInSessionContextResolver}, the same function, with the same
  * argument, that `mcp-tools/index.ts` builds the capability resolver from. For
- * the rooms verbs that is also the same STORE, so this gate and the caller those
- * eight run as cannot disagree.
+ * the rooms verbs that is also the same STORE, so this gate and the caller they
+ * run as cannot disagree.
  *
  * **`relay_notify_user` is the exception, and not one to paper over.** The gate's
  * answer comes from an unrevoked `agent_identity_tokens` row
@@ -340,6 +367,11 @@ export const IDENTITY_SCOPED_TOOLS = new Set(
     'search_member_rooms',
     'get_room',
     'find_room',
+    'create_room',
+    'add_room_members',
+    'remove_room_members',
+    'update_room',
+    'leave_room',
     'relay_notify_user',
     'memory_write',
   ].map(inSessionToolName)

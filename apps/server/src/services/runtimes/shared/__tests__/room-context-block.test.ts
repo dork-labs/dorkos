@@ -454,15 +454,28 @@ describe('what the block tells an agent', () => {
     `);
   });
 
-  it('teaches no tool, because this block is shared with runtimes that carry none (DOR-1234)', () => {
-    // Codex and OpenCode render nothing but this body for a room turn — neither
-    // has a `<room_tools>` block, so a tool nudge written HERE would tell a
-    // runtime with no `react_to_room_entry` to react anyway. That nudge lives in
-    // the claude-code adapter's `ROOM_TOOLS_CONTEXT`
-    // (`context-builder-room-tools.test.ts` pins its presence there) — never in
-    // this runtime-neutral function.
+  it('teaches no tool, because it is built without knowing whether the session has any (DOR-1234)', () => {
+    // Re-aimed, not relaxed (DOR-1613). The original premise was that codex and
+    // opencode carry no room tools at all, so a tool nudge here would tell a
+    // runtime with no `react_to_room_entry` to react anyway. That premise is
+    // gone: `runtimes.dorkosTools` gives both runtimes the same `dorkos` server
+    // claude-code runs in-process.
+    //
+    // What replaces it is the invariant underneath it, which never depended on
+    // the premise: this function is handed a room and a nonce and NOTHING about
+    // the session it is being built for — not the runtime, not whether the
+    // tools were injected this turn, not what prefix that runtime would put in
+    // front of them. So it cannot name a tool without guessing, and the two
+    // ways of guessing wrong are both real. Naming one the session lacks costs
+    // an agent a turn discovering that; naming one under the wrong prefix is
+    // uncallable in exactly the same way, and silently (DOR-1292).
+    //
+    // The nudge lives in `room-tools-context.ts`, which takes the prefix as an
+    // argument and is rendered only for a session that actually carries the
+    // tools; `context-tool-names.test.ts` pins it there, per runtime.
     const block = formatRoomContext(context(), { nonce: NONCE });
     expect(block).not.toContain('react_to_room_entry');
+    expect(block).not.toContain('post_to_room');
     expect(block).not.toContain('Ack');
   });
 });

@@ -1848,8 +1848,8 @@ export const UserConfigSchema = z.object({
            * **Only a working copy with nothing in it is ever removed.** One
            * holding unsaved edits, or work that has not been merged back into
            * the room, is left alone however long it sits there and is shown to
-           * you instead. So this number decides when clutter goes, never when
-           * work does.
+           * you instead — and so is one the agent is working in right now. So
+           * this number decides when clutter goes, never when work does.
            */
           worktreeReapDays: z.number().int().min(1).max(365).default(14),
           /**
@@ -2306,6 +2306,24 @@ export const UserConfigSchema = z.object({
        * `runtimes.<runtime>.defaultTrustStop` beats this one.
        */
       defaultTrustStop: DefaultTrustStopSchema,
+      /**
+       * Whether Codex and OpenCode agents get the DorkOS tools that Claude Code
+       * agents already have — posting in rooms, reacting, reading room history,
+       * remembering things between sessions, the marketplace (spec
+       * `tool-only-room-replies`, D5; DOR-1613).
+       *
+       * Claude Code carries those tools in-process and is unaffected either way.
+       * The other two reach them over this server's own `/mcp`, so turning this
+       * on wires one extra MCP server into every agent-bound Codex/OpenCode
+       * session. It ships OFF because the tool list it adds costs tokens on
+       * every turn, and that cost is the thing still being measured — see the
+       * Experiments registry for the graduation issue.
+       *
+       * Every declaration of this value has to agree — here and in the
+       * `runtimes` section literal below — because `conf` merges top-level
+       * defaults shallowly.
+       */
+      dorkosTools: z.boolean().default(false),
       // The rename heal runs BEFORE this object is parsed, so a config still
       // spelling the default `activeAccount` parses with the operator's choice
       // in the new key. What settles the FILE is a write that names `runtimes`,
@@ -2397,6 +2415,11 @@ export const UserConfigSchema = z.object({
     .default(() => ({
       default: 'claude-code',
       defaultTrustStop: null,
+      // DorkOS tools on Codex/OpenCode, OFF (spec `tool-only-room-replies`, D5).
+      // Two declarations carry this value — the per-field one above and this
+      // one — and both have to agree or the shallow defaults-merge lands
+      // somebody on the other value.
+      dorkosTools: false,
       claudeCode: {
         defaultAccount: null,
         accounts: [],
