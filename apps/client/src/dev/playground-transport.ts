@@ -236,7 +236,11 @@ export function createPlaygroundTransport(): Transport {
       // sheet showcase into an error card. "This room has no files of its own"
       // is both the honest default and what nearly every room really says, so
       // the section shows nothing, which is what it does in the app.
-      if (prop === 'readRoomFiles' || prop === 'readRoomFileContent') {
+      if (
+        prop === 'readRoomFiles' ||
+        prop === 'readRoomFileContent' ||
+        prop === 'readRoomRepoStatus'
+      ) {
         return async () => {
           throw Object.assign(new Error('This room does not have files of its own.'), {
             code: 'ROOM_HAS_NO_REPO',

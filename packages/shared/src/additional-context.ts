@@ -337,6 +337,64 @@ export interface RoomContextAcknowledgment extends RoomContextAuthor {
 }
 
 /**
+ * The room's own files, as they stand for the agent taking this turn
+ * (spec `project-rooms` §3.7).
+ *
+ * Absent — not zeroed — for every room without files of its own, which is most
+ * of them. A room that is only a conversation renders no files section at all,
+ * so nothing is spent saying an absence out loud on every message.
+ *
+ * **The counts are a fact about the DISPATCH, resolved once before the turn is
+ * described.** They are read at the moment the turn's directory is decided, so
+ * the section describes the tree the turn actually stands in rather than
+ * whatever `main` did while the model was thinking. A merge landing mid-turn
+ * changes the next turn's numbers, never this one's — the same per-turn pin
+ * `ROOM.md` delivery uses (spec §3.3).
+ */
+export interface RoomContextFiles {
+  /**
+   * The agent's own working copy of the room's files — the directory this turn
+   * runs in, absolute.
+   *
+   * The same string the turn's `cwd` is, said out loud: an agent that is told
+   * "this room has files" and not where they are has to guess, and a guess here
+   * is a write into somebody else's tree.
+   */
+  worktreePath: string;
+  /** The branch checked out in that working copy. */
+  branch: string;
+  /**
+   * The room's own integration checkout, absolute — where `main` lives.
+   *
+   * Named so an agent can READ what the room holds without merging first, and
+   * so the prohibition on writing there has something to attach to. Only the
+   * server writes in it (spec §3.6); every agent has exactly one tree it may
+   * write in, and it is {@link RoomContextFiles.worktreePath}.
+   */
+  repoPath: string;
+  /**
+   * Commits on the room's `main` that this branch does not have, or `null` when
+   * git could not be asked.
+   *
+   * **`null` means "not measured", never "level with the room"**, and the two
+   * must not collapse: an agent told it is up to date when nothing checked will
+   * edit without syncing, which is how a conflict that belonged in its own tree
+   * ends up in everybody's. The rendered block says nothing at all about the
+   * counts in that state, while still telling the agent where it is working and
+   * that the room's own copy is not its to write in.
+   *
+   * Always `null` alongside {@link RoomContextFiles.ahead}: one `git rev-list`
+   * answers both, so either both are known or neither is.
+   */
+  behind: number | null;
+  /**
+   * Commits on this branch that the room's `main` does not have, or `null` when
+   * git could not be asked — see {@link RoomContextFiles.behind}.
+   */
+  ahead: number | null;
+}
+
+/**
  * Where a room turn is happening, who is in it, and what it missed.
  *
  * Structured data only — never pre-formatted prose. Each runtime adapter renders
@@ -562,6 +620,11 @@ export interface RoomContextData {
    * byte (ADR-0273), so anything DorkOS has to say about it belongs here.
    */
   triggerAttachments: { name: string; path: string }[];
+  /**
+   * The room's own files and where this agent works in them, or absent when the
+   * room has none — see {@link RoomContextFiles}.
+   */
+  files?: RoomContextFiles;
   /** How this agent is addressed here, and whether it was addressed now. */
   addressing: {
     /** This room's stored override, not the agent's manifest default. */
@@ -846,6 +909,15 @@ export const RoomContextAcknowledgmentSchema = RoomContextAuthorSchema.extend({
   entryExcerpt: z.string(),
 });
 
+/** Zod schema for {@link RoomContextFiles}. */
+export const RoomContextFilesSchema = z.object({
+  worktreePath: z.string(),
+  branch: z.string(),
+  repoPath: z.string(),
+  behind: z.number().int().nonnegative().nullable(),
+  ahead: z.number().int().nonnegative().nullable(),
+});
+
 /** Zod schema for {@link RoomContextData}. */
 export const RoomContextDataSchema = z.object({
   room: z.object({
@@ -875,6 +947,7 @@ export const RoomContextDataSchema = z.object({
   acknowledgments: z.array(RoomContextAcknowledgmentSchema),
   triggerEntryId: z.string().nullable(),
   triggerAttachments: z.array(z.object({ name: z.string(), path: z.string() })),
+  files: RoomContextFilesSchema.optional(),
   addressing: z.object({
     responseMode: ResponseModeSchema,
     engagedUntil: z.string().nullable(),

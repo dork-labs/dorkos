@@ -13,6 +13,7 @@
 import type { UploadProgress } from './schemas.js';
 import type { UploadFile } from './transport.js';
 import type { RoomFileContentResponse, RoomFileListResponse } from './room-files.js';
+import type { RoomRepoStatus } from './room-repo.js';
 import type {
   AuthorRef,
   AddRoomMemberRequest,
@@ -140,6 +141,25 @@ export interface RoomTransport {
    * @param path - The file, relative to the repo root.
    */
   readRoomFileContent(id: string, path: string): Promise<RoomFileContentResponse>;
+  /**
+   * What a room's files hold right now (spec `project-rooms` §3.6).
+   *
+   * The room's own commit, and for every agent member how far its working copy
+   * has run ahead of the room and how far behind, whether it has changes nobody
+   * committed, and whether any of that adds up to work the room has not got.
+   * The explorer's pending-work badges read exactly this.
+   *
+   * Gated like every other room read: a caller who is not on the roster is
+   * refused as if the room did not exist. A room with no files of its own is
+   * refused with `ROOM_HAS_NO_REPO`, which is the ordinary answer for most
+   * rooms rather than a failure.
+   *
+   * It reports working-copy slugs, display names and author ids, never the
+   * directory an agent lives at.
+   *
+   * @param id - The room id.
+   */
+  readRoomRepoStatus(id: string): Promise<RoomRepoStatus>;
   /**
    * Post to a room. Trigger-only, exactly as {@link postMessage} is: the 202
    * carries the new entry's identity, while the entry itself reaches every

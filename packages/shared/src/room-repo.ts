@@ -154,3 +154,99 @@ export const RoomRepoSidecarSchema = z.object({
 
 /** A parsed `room-repo.json`. See {@link RoomRepoSidecarSchema}. */
 export type RoomRepoSidecar = z.infer<typeof RoomRepoSidecarSchema>;
+
+/**
+ * One agent's branch in a room's repo, as `room_repo_status` and
+ * `GET /api/rooms/:id/repo/status` report it (spec `project-rooms` §3.6).
+ *
+ * **Here rather than beside the service that computes it**, because two ends
+ * read it: an agent through the capability, and the file explorer through the
+ * route, where it draws the pending-work badges (§3.9). One declaration is what
+ * keeps the badge and the tool describing the same fact.
+ *
+ * It names SLUGS and display names, never the directory an agent lives in.
+ */
+export const RoomBranchStatusSchema = z.object({
+  /** The working copy's directory name, and the tail of the branch name. */
+  slug: z.string().describe('The working copy’s directory name, and the tail of the branch.'),
+  /** The branch itself. */
+  branch: z.string(),
+  /** The agent's display name, sanitized. */
+  agent: z.string().describe('The agent’s display name, sanitized.'),
+  /**
+   * The author id of the agent whose branch this is.
+   *
+   * An id rather than a path: it is the same id the room's roster and its
+   * entries carry, so a client can join this row to a member without learning
+   * where that agent lives on disk.
+   */
+  authorId: z
+    .string()
+    .describe(
+      'The agent whose branch this is, by the same author id the roster and the room’s entries carry — so a client can join this row to a member without learning where that agent lives on disk.'
+    ),
+  /** Whether this row is the caller's own. */
+  mine: z.boolean().describe('Whether this row is the caller’s own branch.'),
+  /** Whether the agent has a working copy on disk right now. */
+  hasWorktree: z.boolean().describe('Whether the working copy is on disk right now.'),
+  /** Commits on the branch that `main` does not have. */
+  ahead: z.number().int().nonnegative().describe('Commits the branch holds that `main` does not.'),
+  /** Commits on `main` that the branch does not have. */
+  behind: z.number().int().nonnegative().describe('Commits `main` holds that the branch does not.'),
+  /** Whether the working copy holds changes nobody committed. */
+  dirty: z.boolean().describe('Whether the working copy has changes nobody committed.'),
+  /**
+   * Whether this branch holds work `main` has not got — `dirty || ahead > 0`.
+   *
+   * The same DEFINITION `RoomRepoService.listStrandedWorktrees` uses, restated
+   * per branch so a reader does not have to derive it. It is deliberately not
+   * the same COMPUTATION: that one walks the worktree directories and this one
+   * walks the roster, so the two can disagree in the cases where those disagree
+   * — a worktree whose agent has left the room, a branch whose working copy the
+   * reap removed, or a directory git cannot read (which the other one calls
+   * stranded and this one cannot see at all).
+   * {@link RoomRepoStatusSchema}'s `strandedWorktrees` carries that other answer
+   * alongside, precisely so the two are visible rather than reconciled behind a
+   * reader's back.
+   */
+  stranded: z
+    .boolean()
+    .describe('Work `main` has not got — `dirty || ahead > 0`. Drives the explorer’s badge.'),
+});
+
+/** One agent's branch in a room's repo. See {@link RoomBranchStatusSchema}. */
+export type RoomBranchStatus = z.infer<typeof RoomBranchStatusSchema>;
+
+/** What `room_repo_status` and `GET /api/rooms/:id/repo/status` answer. */
+export const RoomRepoStatusSchema = z.object({
+  /** The commit `main` points at. */
+  mainCommit: z.string(),
+  /** When that commit was made, ISO, or `null` for a repo with no commits. */
+  mainCommittedAt: z.string().nullable(),
+  /** One row per agent member, in roster order. */
+  branches: z.array(RoomBranchStatusSchema),
+  /**
+   * Working copies holding work `main` has not got, by directory name.
+   *
+   * Includes trees no current member maps to — an agent that was renamed, or
+   * whose workspace moved, leaves its old worktree behind and the work in it is
+   * still somebody's.
+   */
+  strandedWorktrees: z
+    .array(z.string())
+    .describe(
+      'Working copies holding work `main` has not got, including ones no current member maps to.'
+    ),
+  /** What the room's files weigh, and what they are allowed to. */
+  size: z.object({
+    /** Total bytes of every file on `main`. */
+    usedBytes: z.number().int().nonnegative(),
+    /** The ceiling for the whole repo, from the sidecar. */
+    maxRepoBytes: z.number().int().nonnegative(),
+    /** The ceiling for one file, from the sidecar. */
+    maxFileBytes: z.number().int().nonnegative(),
+  }),
+});
+
+/** What a room's files hold right now. See {@link RoomRepoStatusSchema}. */
+export type RoomRepoStatus = z.infer<typeof RoomRepoStatusSchema>;

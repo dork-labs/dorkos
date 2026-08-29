@@ -15,23 +15,9 @@
 import type { QueryClient } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { RoomFileEntry } from '@dorkos/shared/room-files';
-import { roomKeys } from '@/layers/entities/room';
 import { errorCodeOf, ROOM_HAS_NO_REPO_CODE } from '../lib/error-code';
+import { watchRoomEntries } from './room-entry-watch';
 import type { ExplorerEntry, ExplorerFile, ExplorerListing, FileExplorerSource } from './source';
-
-/**
- * The shortest gap between two refreshes the room's stream can provoke.
- *
- * A room's files change when somebody merges, and a merge is announced in the
- * room as an entry of its own (spec §3.6, task 2.3) — but so is every message,
- * and this stream carries both. Rather than guess at the shape of an entry that
- * does not exist yet, ANY arriving entry is taken as "look again", and the cost
- * of being wrong is bounded here: a room talking all afternoon buys at most one
- * directory listing every fifteen seconds, and a merge lands on screen inside
- * that same window. When merge entries arrive, this needs no shape to learn —
- * they are entries, and entries are already the signal.
- */
-export const ROOM_FILES_REFRESH_INTERVAL_MS = 15_000;
 
 /** What {@link createRoomFilesSource} needs. */
 export interface RoomFilesSourceDeps {
@@ -132,38 +118,11 @@ export function createRoomFilesSource(deps: RoomFilesSourceDeps): FileExplorerSo
       }
     },
     events(onChange: () => void): () => void {
-      // The room's own stream is what tells this client anything happened: it
-      // merges every arriving entry into the room's cached history, so watching
-      // that cache entry is watching the stream, without opening a second one
-      // or reaching past the hook that owns it.
-      const historyKey = JSON.stringify(roomKeys.entries(roomId));
-      let lastAt = 0;
-      let timer: ReturnType<typeof setTimeout> | null = null;
-
-      const fire = (): void => {
-        lastAt = Date.now();
-        onChange();
-      };
-
-      const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
-        if (event.type !== 'updated') return;
-        if (JSON.stringify(event.query.queryKey) !== historyKey) return;
-        if (timer !== null) return;
-        const wait = Math.max(0, ROOM_FILES_REFRESH_INTERVAL_MS - (Date.now() - lastAt));
-        // Trailing rather than leading, deliberately: the entry that announces
-        // a merge reaches this client at the same moment the merge lands, and
-        // a listing asked for in that instant can still race the commit it is
-        // asking about. Waiting is both cheaper and more likely to be right.
-        timer = setTimeout(() => {
-          timer = null;
-          fire();
-        }, wait);
-      });
-
-      return () => {
-        if (timer !== null) clearTimeout(timer);
-        unsubscribe();
-      };
+      // One shared watcher, so the tree and the pending-work badges above it
+      // refresh off the same signal at the same rate rather than on two clocks
+      // that drift apart — a listing showing a merged file beside a badge still
+      // claiming it is unmerged is worse than either being a moment late.
+      return watchRoomEntries(queryClient, roomId, onChange);
     },
   };
 }

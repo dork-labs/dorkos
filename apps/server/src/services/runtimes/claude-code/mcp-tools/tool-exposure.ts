@@ -118,6 +118,20 @@ export function inSessionToolName(bare: string): string {
  * them costs a search only on the turns that actually want one — and both are
  * the kind of tool `searchHint` finds by intent. Add them the day a prompt block
  * names them, and not before; that is the DOR-1292 rule read in this direction.
+ *
+ * **`merge_to_room_main` is named in a block and is still not here** (DOR-1599),
+ * which is the one place the rule above is read narrowly rather than literally,
+ * so the reasoning is written down. `<room_context>` tells a project-room turn
+ * how to get its work into the room, and it names the verb as a searchable
+ * ENDING with the instruction to look it up — a form that is honest on all three
+ * runtimes and that assumes a lookup rather than being defeated by one. What
+ * earns a place on this list is a turn with no room for that lookup: a room
+ * REPLY is a person waiting, and DOR-1292 measured a whole turn lost to it.
+ * Merging is not that turn. It never opens one — it follows work the agent has
+ * already done and committed — so the search lands mid-turn, among the git
+ * commands it is already running. The cost the other way is a schema in the
+ * turn-1 prompt of EVERY session on the install, including the majority with no
+ * project room at all.
  */
 export const ALWAYS_LOADED_TOOLS: ReadonlySet<string> = new Set([
   'post_to_room',

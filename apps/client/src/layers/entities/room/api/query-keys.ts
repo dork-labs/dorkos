@@ -73,4 +73,15 @@ export const roomKeys = {
    * one more thing an invalidation has to remember exists.
    */
   sessions: (roomId: string) => ['rooms', 'sessions', roomId] as const,
+  /**
+   * Where one room's files stand: its own commit, and who is holding work it
+   * has not got (spec `project-rooms` §3.6).
+   *
+   * Its own key rather than a slice of `detail`, because it answers a different
+   * question at a different rate: a roster changes when somebody joins, and this
+   * changes on every commit any member makes. Sharing an entry would mean the
+   * roster refetching whenever an agent commits, and the badges going stale
+   * whenever it did not.
+   */
+  repoStatus: (roomId: string) => ['rooms', 'repo-status', roomId] as const,
 };

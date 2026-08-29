@@ -11,6 +11,7 @@ import { schedulingTasks } from './skills/scheduling-tasks.js';
 import { usingTheMarketplace } from './skills/using-the-marketplace.js';
 import { readingActivity } from './skills/reading-activity.js';
 import { answeringDorkosQuestions } from './skills/answering-dorkos-questions.js';
+import { workingInRoomRepos } from './skills/working-in-room-repos.js';
 
 /** One authored skill in the pack: its kebab-case name, discovery description, and body. */
 export interface OperatingSkill {
@@ -141,8 +142,26 @@ export interface OperatingSkill {
  *   runs, silently. It also does not know that a runtime the user has not turned
  *   on FAILS the run rather than falling back, which is the one place guessing a
  *   value is worse than leaving it out.
+ * - 14: a room can now own files, and `working-in-room-repos` teaches how to work
+ *   on them (spec `project-rooms` §3.7, DOR-1599). The new skill seeds itself
+ *   without a bump — `seed.ts` writes any absent file — so the bump is for the
+ *   OTHER halves of the change, which rewrite files that already exist:
+ *   `operating-dorkos` and `answering-dorkos-questions` both name their siblings,
+ *   and a seeded copy of either is only rewritten on a strictly higher stamp. An
+ *   agent seeded at 13 would keep a sibling list that omits the one page telling
+ *   it what to do with a room's files, and would have no way to learn the page
+ *   exists.
+ *
+ *   It is 14 rather than 13 for the reason the 5-then-6 entry above records, and
+ *   this is the second time that has happened: DOR-1615 landed on `main` while
+ *   this was being written and took 13. `seed.ts` upgrades on a strictly LOWER
+ *   stored stamp, so a version merely EQUAL to what `main` ships delivers
+ *   nothing — every install that had booted main's 13 would create the new file
+ *   (an absent file is always written) and keep BOTH stale sibling lists. A
+ *   silent partial is worse than a visible no-op, which is why the resolution of
+ *   this conflict is a re-bump and never a keep-mine.
  */
-export const OPERATING_SKILLS_VERSION = 13;
+export const OPERATING_SKILLS_VERSION = 14;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the
@@ -155,4 +174,5 @@ export const OPERATING_SKILLS_PACK: readonly OperatingSkill[] = [
   usingTheMarketplace,
   readingActivity,
   answeringDorkosQuestions,
+  workingInRoomRepos,
 ];

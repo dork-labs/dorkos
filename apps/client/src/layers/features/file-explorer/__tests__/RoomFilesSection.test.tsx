@@ -8,10 +8,11 @@ import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-qu
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import type { RoomFileEntry } from '@dorkos/shared/room-files';
+import type { RoomRepoStatus } from '@dorkos/shared/room-repo';
 import { TransportProvider } from '@/layers/shared/model';
 import { roomKeys } from '@/layers/entities/room';
 import { useFileExplorerStore } from '../model/file-explorer-store';
-import { ROOM_FILES_REFRESH_INTERVAL_MS } from '../model/room-files-source';
+import { ROOM_FILES_REFRESH_INTERVAL_MS } from '../model/room-entry-watch';
 import { RoomFilesSection } from '../ui/RoomFilesSection';
 
 const ROOM_ID = 'room-1';
@@ -244,6 +245,115 @@ describe('RoomFilesSection', () => {
       ).toBeGreaterThan(before)
     );
     vi.useRealTimers();
+  });
+
+  describe('the pending-work badge (spec §3.9)', () => {
+    /** A room's files with nothing unmerged unless a test says otherwise. */
+    function repoStatus(overrides: Partial<RoomRepoStatus> = {}): RoomRepoStatus {
+      return {
+        mainCommit: 'abc1234',
+        mainCommittedAt: '2026-08-28T09:00:00.000Z',
+        branches: [],
+        strandedWorktrees: [],
+        size: { usedBytes: 10, maxRepoBytes: 100, maxFileBytes: 5 },
+        ...overrides,
+      };
+    }
+
+    /** The same room, answering a status read as well as a listing. */
+    function withStatus(status: RoomRepoStatus): Transport {
+      const transport = roomWithFiles([entry({ name: 'ROOM.md' })]);
+      transport.readRoomRepoStatus = vi.fn().mockResolvedValue(status);
+      return transport;
+    }
+
+    it('says nothing when everything is merged', async () => {
+      // Quiet by default. A badge that is always there is a badge nobody reads,
+      // and there is nothing for a person to do about a room that is in step.
+      const transport = withStatus(repoStatus());
+      renderSection(transport);
+
+      await screen.findByRole('treeitem', { name: 'ROOM.md' });
+      await waitFor(() => expect(transport.readRoomRepoStatus).toHaveBeenCalled());
+      expect(screen.queryByText(/Not merged into the room yet/)).not.toBeInTheDocument();
+    });
+
+    it('names who is holding work the room has not got', async () => {
+      const transport = withStatus(
+        repoStatus({
+          branches: [
+            {
+              slug: 'ana-1',
+              branch: 'room/ana-1',
+              agent: 'Ana',
+              authorId: 'author-ana',
+              mine: false,
+              hasWorktree: true,
+              ahead: 2,
+              behind: 0,
+              dirty: false,
+              stranded: true,
+            },
+          ],
+        })
+      );
+      renderSection(transport);
+
+      const badge = await screen.findByText('Ana');
+      expect(badge).toBeInTheDocument();
+      // The detail a person needs to decide whether to go and ask, without a
+      // second surface to open.
+      expect(badge.closest('[data-slot="pending-work-badge"]')).toHaveAttribute(
+        'title',
+        'Ana: 2 commits not merged'
+      );
+      // And the same detail without a pointer. A `title` on a non-interactive
+      // span is mouse-only, so the counts would otherwise be unreachable by
+      // keyboard or screen reader.
+      expect(
+        screen.getByText('Not merged into the room yet. Ana: 2 commits not merged.')
+      ).toBeInTheDocument();
+    });
+
+    it('looks again when the room stream delivers something', async () => {
+      // A merge is announced in the room as an entry, and the badge is
+      // describing the commit that merge produced — so it refreshes off the same
+      // signal the tree does, at the same rate. Without this the badge would
+      // keep naming somebody who merged twenty minutes ago.
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const transport = withStatus(repoStatus());
+      const { queryClient } = renderSection(transport);
+
+      await screen.findByRole('treeitem', { name: 'ROOM.md' });
+      await waitFor(() => expect(transport.readRoomRepoStatus).toHaveBeenCalled());
+      const before = (transport.readRoomRepoStatus as ReturnType<typeof vi.fn>).mock.calls.length;
+
+      queryClient.setQueryData(roomKeys.entries(ROOM_ID), [{ seq: 1 }]);
+      await vi.advanceTimersByTimeAsync(ROOM_FILES_REFRESH_INTERVAL_MS + 50);
+
+      await waitFor(() =>
+        expect(
+          (transport.readRoomRepoStatus as ReturnType<typeof vi.fn>).mock.calls.length
+        ).toBeGreaterThan(before)
+      );
+      vi.useRealTimers();
+    });
+
+    it('stays silent rather than red when the status cannot be read', async () => {
+      // The explorer below is asking the same server about the same room and
+      // reports a real failure loudly, with a retry. A badge going red for the
+      // same cause would be one fault reported twice, in a header where nobody
+      // can act on it — and it must never claim everything is merged, which is
+      // why it renders nothing rather than a reassuring zero.
+      const transport = roomWithFiles([entry({ name: 'ROOM.md' })]);
+      transport.readRoomRepoStatus = vi.fn().mockRejectedValue(new Error('no git here'));
+      const { queryErrors } = renderSection(transport);
+
+      await screen.findByRole('treeitem', { name: 'ROOM.md' });
+      await waitFor(() => expect(transport.readRoomRepoStatus).toHaveBeenCalled());
+      expect(screen.queryByText(/Not merged into the room yet/)).not.toBeInTheDocument();
+      expect(queryErrors).toHaveLength(0);
+    });
   });
 
   it('says so plainly when the files could not be read for a real reason', async () => {

@@ -58,7 +58,7 @@ is running. The documentation exists for exactly this.
 Three places, and only the last one costs a request.
 
 **Your sibling skills.** operating-dorkos, managing-agents, scheduling-tasks,
-using-the-marketplace and reading-activity are seeded beside this one and give
+using-the-marketplace, reading-activity and working-in-room-repos are seeded beside this one and give
 exact tool names, tiers and gates. When one of them covers the question, answer
 from it. It is more precise than the docs and it costs nothing.
 

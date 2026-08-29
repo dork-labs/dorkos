@@ -137,6 +137,7 @@ import type {
   RoomWorkingClaim,
   SkippedTrigger,
 } from '@dorkos/shared/room-schemas';
+import type { RoomContextFiles } from '@dorkos/shared/additional-context';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { logError, logger } from '../../lib/logger.js';
@@ -2140,12 +2141,20 @@ export class RoomTriggerDispatcher {
       // runner puts the files there, so it has to be settled first — see
       // `resolveCwd` below. For a room with no files of its own the answer is
       // `target.agentPath`, unchanged.
-      const { cwd } = await this.resolveCwd(room.id, target.agentPath, target.displayName);
+      const { cwd, files } = await this.resolveTurnPlace(
+        room.id,
+        target.agentPath,
+        target.displayName
+      );
       // Built before the request so the context and the projection plan it
       // implies are one value, resolved once.
       const turnContext = buildRoomContext(this.deps, {
         room,
         agentAuthorId: target.authorId,
+        // What this room's files hold for this agent, measured against the tree
+        // the line above just chose. Absent for every room without files of its
+        // own, which renders nothing (spec §3.7).
+        files,
         // The tree the turn below runs in, so a file the context names is named
         // by a path that opens from where the agent actually stands (DOR-1266).
         // The same value reaches the runner as `cwd` a few lines down.
@@ -2824,11 +2833,14 @@ export class RoomTriggerDispatcher {
     try {
       // An aside turn is a real turn in a real checkout, so it is placed the
       // same way an ordinary one is — see `runOneInDispatch`.
-      const { cwd } = await this.resolveCwd(room.id, input.agentPath, displayName);
+      const { cwd, files } = await this.resolveTurnPlace(room.id, input.agentPath, displayName);
       const turnContext = buildRoomContext(this.deps, {
         room,
         agentAuthorId: authorId,
         cwd,
+        // An aside runs in the same tree an ordinary turn does, so it is told
+        // the same thing about the room's files.
+        files,
         entry,
         working: this.workingIn(room.id),
         // NO AMBIENT WINDOW, and no cursor moved. A trigger replays what the
@@ -3999,6 +4011,42 @@ export class RoomTriggerDispatcher {
    */
   private busyWith(roomId: string, authorId: string, agentPath: string): ClaimBusy | null {
     return claimBusyWith(this.claimed, roomId, authorId, agentPath);
+  }
+
+  /**
+   * Where this turn runs, and what to tell it about the room's files.
+   *
+   * **One call, because the two answers are one decision.** The directory is
+   * resolved first and the files section is measured against what came back, so
+   * the block can never describe a tree the turn is not standing in. Every turn
+   * boundary in this file goes through here rather than through
+   * {@link RoomTriggerDispatcher.resolveCwd} directly, so an ordinary turn and a
+   * welcome-back aside are placed and described identically.
+   *
+   * **The files half never fails a turn.** A room whose repo cannot be measured
+   * renders no files section, which is byte-identical to a room that has none —
+   * and a room with no files of its own does not resolve on the worktree rung at
+   * all, so it never asks.
+   *
+   * @param roomId - The room being answered.
+   * @param agentPath - The agent's directory — its identity, and the floor.
+   * @param displayName - The label the room shows for this agent.
+   * @returns The directory the turn runs in, and the files section for it.
+   */
+  private async resolveTurnPlace(
+    roomId: string,
+    agentPath: string,
+    displayName: string
+  ): Promise<{ cwd: string; files?: RoomContextFiles }> {
+    const resolved = await this.resolveCwd(roomId, agentPath, displayName);
+    // The rung IS the question "did this turn land in the room's files", already
+    // answered once by the resolver. Asking the manager again would be a second
+    // answer that can disagree with the directory the turn is about to use.
+    if (resolved.rung !== 'room-worktree') return { cwd: resolved.cwd };
+    const worktrees = this.deps.worktrees?.();
+    if (!worktrees) return { cwd: resolved.cwd };
+    const files = await worktrees.turnFilesContext(roomId, agentPath, displayName, resolved.cwd);
+    return { cwd: resolved.cwd, ...(files ? { files } : {}) };
   }
 
   /**

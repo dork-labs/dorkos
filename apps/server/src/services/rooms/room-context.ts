@@ -39,6 +39,7 @@ import type {
   RoomContextAuthor,
   RoomContextData,
   RoomContextEntry,
+  RoomContextFiles,
 } from '@dorkos/shared/additional-context';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { Room, RoomAttachment, RoomEntry } from '@dorkos/shared/room-schemas';
@@ -180,6 +181,17 @@ export interface RoomContextInput {
    * is only told about files it can open" stay one expression.
    */
   cwd: string;
+  /**
+   * What this room's files hold for this agent, or absent when the room has
+   * none — which is most rooms (spec §3.7).
+   *
+   * Passed in for exactly the reason {@link RoomContextInput.cwd} beside it is:
+   * it is a fact about the DISPATCH, measured at the moment the turn's directory
+   * was chosen and against the tree that was chosen. This module reads no git
+   * and knows no worktree; deriving it here would be a second answer that can
+   * disagree with where the turn is actually standing.
+   */
+  files?: RoomContextFiles;
   /** The entry that triggered it. Never appears in `pending`: it IS the message. */
   entry: RoomEntry;
   /**
@@ -665,6 +677,12 @@ export function buildRoomContext(
     // — and so its files are in the projection plan like everything else the
     // model is told about.
     triggerAttachments: attachmentsOf(input.entry.id),
+    // Carried through untouched. The dispatcher measured it against the tree it
+    // chose for this turn; nothing here can improve on that, and anything this
+    // module did to it would be a second opinion about somebody else's disk.
+    // Omitted rather than set to `undefined`, so a room without files renders a
+    // context byte-identical to the one it rendered before this field existed.
+    ...(input.files ? { files: input.files } : {}),
     addressing: {
       responseMode:
         self?.responseMode ?? fallbackResponseMode(deps, records.get(input.agentAuthorId)),

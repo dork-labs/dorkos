@@ -124,6 +124,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
+import type { RoomContextFiles } from '@dorkos/shared/additional-context';
 import { slugifyAgentName } from '@dorkos/shared/validation';
 import { logger } from '../../../lib/logger.js';
 import { RoomError } from '../room-errors.js';
@@ -135,6 +136,7 @@ import {
 import type { RoomRepoStore } from './room-repo-store.js';
 import {
   addWorktree,
+  aheadBehind,
   commitsAheadOfMain,
   commonGitDir,
   deleteMergedBranch,
@@ -583,6 +585,83 @@ export class RoomWorktreeManager {
       aheadOfMain: await commitsAheadOfMain(dir, ceiling),
       lastTouchedAt,
     };
+  }
+
+  /**
+   * What one agent's turn should be TOLD about this room's files (spec §3.7).
+   *
+   * **One git command, and that is the whole budget.** This runs on every room
+   * turn in a project room, ahead of a person waiting for an answer, so it asks
+   * the one question the agent has to act on — how far its branch and the room
+   * have drifted — and nothing else. `dirty` is deliberately absent: the agent
+   * is standing in that working copy and can see its own uncommitted changes,
+   * where it cannot see what somebody else merged into `main` while it was away.
+   *
+   * **Asked in the ROOM's own checkout**, never in the worktree, for the reason
+   * {@link aheadBehind} states: a status read must not enter a tree another
+   * process owns.
+   *
+   * **Never a reason for a turn to fail, and it DEGRADES rather than
+   * disappearing.** Git missing, no `main` yet, a branch that does not exist
+   * because this agent has never worked here: none of those is a reason to stop
+   * telling an agent which tree it is standing in and that the room's own copy
+   * is not its to write in. Those three facts need no git at all — the paths are
+   * derived and the branch name is a pure function of the agent's identity — so
+   * only the counts go `null`, and the rendered block simply says nothing about
+   * drift. Nulling the whole section instead would drop the one-writer
+   * prohibition exactly when the repo is already in a state nobody understands.
+   *
+   * `null` is returned only when the room has no files at all, or when its own
+   * home directory cannot be named — at which point there is genuinely nothing
+   * true to say.
+   *
+   * @param roomId - The room being answered.
+   * @param agentPath - The agent's workspace path, its identity anchor.
+   * @param agentName - The agent's display name, the readable half of the slug.
+   * @param worktreePath - The directory the turn resolved to, which the caller
+   *   already holds. Passed in rather than rebuilt so the section describes the
+   *   tree the turn actually stands in, and cannot drift from the resolver.
+   * @returns What to tell the agent, with `null` counts when git could not be
+   *   asked, or `null` when there is nothing to tell at all.
+   */
+  async turnFilesContext(
+    roomId: string,
+    agentPath: string,
+    agentName: string,
+    worktreePath: string
+  ): Promise<RoomContextFiles | null> {
+    if (!this.deps.hasRepo(roomId)) return null;
+    const branch = roomWorktreeBranch(RoomWorktreeManager.slugFor(agentName, agentPath));
+
+    let repoDir: string;
+    let ceiling: string;
+    try {
+      repoDir = this.deps.store.repoPath(roomId);
+      ceiling = this.deps.store.homeDir(roomId);
+    } catch (err) {
+      // The room id is not one this store will name a directory for. There is no
+      // honest path to print, so there is no section to render.
+      logger.debug('[rooms] could not resolve a room repo path for a turn', {
+        roomId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }
+
+    const place = { worktreePath, branch, repoPath: repoDir };
+    try {
+      const { ahead, behind } = await aheadBehind(repoDir, 'main', branch, ceiling);
+      return { ...place, behind, ahead };
+    } catch (err) {
+      logger.debug('[rooms] could not measure a room worktree against main', {
+        roomId,
+        branch,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      // Where the agent works is still true. Only the drift is unknown, and
+      // `null` is how the block is told to say nothing rather than "0".
+      return { ...place, behind: null, ahead: null };
+    }
   }
 
   /**

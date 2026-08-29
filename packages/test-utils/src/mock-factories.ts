@@ -370,6 +370,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // have to know rooms can have files.
     readRoomFiles: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
     readRoomFileContent: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
+    readRoomRepoStatus: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
     postToRoom: vi.fn().mockResolvedValue({ accepted: true, entryId: 'entry-mock', seq: 1 }),
     // Nothing attached, by default: a test that is about attachments overrides
     // this, and every other test posts a message with no files the way a person

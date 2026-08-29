@@ -27,8 +27,8 @@
  *   in leaves main exactly as it was": the checkout is left mid-merge with
  *   conflict markers staged.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtemp, mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -42,6 +42,7 @@ import { MAX_QUEUE_DEPTH, RoomRepoMutex } from '../room-repo-mutex.js';
 import { RoomWorktreeManager } from '../room-worktree-manager.js';
 import { RoomMergeService, symlinkLeavesRepo } from '../room-merge-service.js';
 import { mergeNoFf, runGit } from '../room-repo-git.js';
+import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
 
 const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
 const OPERATOR = 'author-operator';
@@ -154,6 +155,9 @@ describe('RoomMergeService', () => {
 
   beforeEach(async () => {
     db = createTestDb();
+    // Before anything makes a repo: keep git's detached maintenance child from
+    // racing this suite's teardown into the directory. See `fixture-git.ts`.
+    silenceGitAutoMaintenance();
     // The DorkOS home sits inside a git repository on purpose — see the header.
     scratch = await mkdtemp(path.join(tmpdir(), 'dorkos-room-merge-'));
     await runGit(['init', '-b', 'main', '--quiet', '.'], scratch, scratch);
@@ -242,7 +246,8 @@ describe('RoomMergeService', () => {
   });
 
   afterEach(async () => {
-    await rm(scratch, { recursive: true, force: true });
+    vi.unstubAllEnvs();
+    await removeFixtureTree(scratch);
   });
 
   /** Give the room files, as the operator would. */

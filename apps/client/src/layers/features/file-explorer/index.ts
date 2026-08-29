@@ -30,13 +30,19 @@ export { FileExplorer } from './ui/FileExplorer';
 export type { FileExplorerProps } from './ui/FileExplorer';
 export { FileExplorerActions } from './ui/FileExplorerActions';
 export { HiddenEntriesToggle } from './ui/HiddenEntriesToggle';
+// `PendingWorkBadge` and its `pending-work` model are deliberately NOT here.
+// Nothing outside this slice mounts the badge — `RoomFilesSection` composes it
+// from a sibling path, which is an internal import and needs no barrel — and a
+// barrel export with no consumer is a public surface nobody asked for and
+// nothing keeps honest.
 export { RoomFilesSection } from './ui/RoomFilesSection';
 export type { RoomFilesSectionProps } from './ui/RoomFilesSection';
 export { FilePreviewDialog } from './ui/FilePreviewDialog';
 export type { FilePreviewDialogProps } from './ui/FilePreviewDialog';
 export { createSessionCwdSource } from './model/session-cwd-source';
 export type { SessionCwdSourceDeps } from './model/session-cwd-source';
-export { createRoomFilesSource, ROOM_FILES_REFRESH_INTERVAL_MS } from './model/room-files-source';
+export { createRoomFilesSource } from './model/room-files-source';
+export { ROOM_FILES_REFRESH_INTERVAL_MS } from './model/room-entry-watch';
 export type { RoomFilesSourceDeps } from './model/room-files-source';
 export { explorerDirQueryKey, explorerDirQueryOptions } from './model/source';
 export type {

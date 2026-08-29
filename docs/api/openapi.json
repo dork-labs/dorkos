@@ -8494,13 +8494,16 @@
             "type": "object",
             "properties": {
               "usedBytes": {
-                "type": "integer"
+                "type": "integer",
+                "minimum": 0
               },
               "maxRepoBytes": {
-                "type": "integer"
+                "type": "integer",
+                "minimum": 0
               },
               "maxFileBytes": {
-                "type": "integer"
+                "type": "integer",
+                "minimum": 0
               }
             },
             "required": [
@@ -8532,6 +8535,10 @@
             "type": "string",
             "description": "The agent’s display name, sanitized."
           },
+          "authorId": {
+            "type": "string",
+            "description": "The agent whose branch this is, by the same author id the roster and the room’s entries carry — so a client can join this row to a member without learning where that agent lives on disk."
+          },
           "mine": {
             "type": "boolean",
             "description": "Whether this row is the caller’s own branch."
@@ -8542,10 +8549,12 @@
           },
           "ahead": {
             "type": "integer",
+            "minimum": 0,
             "description": "Commits the branch holds that `main` does not."
           },
           "behind": {
             "type": "integer",
+            "minimum": 0,
             "description": "Commits `main` holds that the branch does not."
           },
           "dirty": {
@@ -8561,6 +8570,7 @@
           "slug",
           "branch",
           "agent",
+          "authorId",
           "mine",
           "hasWorktree",
           "ahead",
