@@ -137,7 +137,7 @@ import {
   RoomFileSaveResponseSchema,
   RoomFilesQuerySchema,
 } from '@dorkos/shared/room-files';
-import { RoomMainRepairRequestSchema } from '@dorkos/shared/room-repo';
+import { RoomMainRepairRequestSchema, RoomMainRepairResultSchema } from '@dorkos/shared/room-repo';
 import { PendingInteractionsResponseSchema } from '@dorkos/shared/interaction-events';
 import {
   ReadCursorParamsSchema,
@@ -4280,12 +4280,11 @@ registry.registerPath({
       description: 'What was done, and whether the room’s files are clean now',
       content: {
         'application/json': {
-          schema: z.object({
-            action: z.enum(['commit', 'discard']),
-            commit: z.string().nullable(),
-            paths: z.number().int(),
-            clean: z.boolean(),
-          }),
+          // Derived from the shared schema, the same way the status shapes
+          // above are: the Transport port promises this type to every client,
+          // so a fourth hand-written copy of it here is a fourth thing to keep
+          // in step.
+          schema: z.object(RoomMainRepairResultSchema.shape),
         },
       },
     },

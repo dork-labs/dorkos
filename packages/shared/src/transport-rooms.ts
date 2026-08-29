@@ -18,7 +18,7 @@ import type {
   RoomFileSaveRequest,
   RoomFileSaveResponse,
 } from './room-files.js';
-import type { RoomRepoStatus } from './room-repo.js';
+import type { RoomMainRepairRequest, RoomMainRepairResult, RoomRepoStatus } from './room-repo.js';
 import type {
   AuthorRef,
   AddRoomMemberRequest,
@@ -185,6 +185,30 @@ export interface RoomTransport {
    * @param req - The file, the commit it was read at, and its new contents.
    */
   saveRoomFile(id: string, req: RoomFileSaveRequest): Promise<RoomFileSaveResponse>;
+  /**
+   * Deal with changes in a room's own copy that DorkOS did not make (spec
+   * `project-rooms` §3.10).
+   *
+   * The way out of `MAIN_CHECKOUT_DIRTY`: while anything in the room's own copy
+   * is uncommitted, every save and every merge in that room refuses, and
+   * {@link readRoomRepoStatus}'s `main` is where a caller learns it.
+   *
+   * **The operator's alone** (403 `OPERATOR_ONLY`): it is somebody's unsaved
+   * work, and deciding its fate is not an agent's call and not a guest's.
+   *
+   * Keeping loses nothing, so `commit` sweeps up whatever is there and takes no
+   * list. Discarding is the one irreversible act on this surface, so it
+   * destroys nothing it was not handed by name — and every name has to be a
+   * path the status is reporting as changed right now, so a screen drawn ten
+   * minutes ago cannot delete something that arrived since.
+   *
+   * `clean` in the answer says whether saving has actually resumed: discarding
+   * some of the changes and not others leaves the room paused, honestly.
+   *
+   * @param id - The room id.
+   * @param req - Keep everything, or discard exactly these files.
+   */
+  repairRoomMain(id: string, req: RoomMainRepairRequest): Promise<RoomMainRepairResult>;
   /**
    * Post to a room. Trigger-only, exactly as {@link postMessage} is: the 202
    * carries the new entry's identity, while the entry itself reaches every

@@ -94,6 +94,17 @@ const ROOM_FILES: Record<string, ExplorerFile['body']> = {
   'notes/sizing.md': { kind: 'text', text: 'Rough, and probably wrong.\n' },
 };
 
+/**
+ * The one file whose save always loses the race.
+ *
+ * The conflict path is the half of §3.10 nobody can reach on their own — it
+ * needs a second person editing the same file at the same moment — so one
+ * fixture file answers `FILE_CHANGED` every time, and the copy on the section
+ * says which. Without it the reload / keep-mine choice would be reviewable only
+ * by reading the source.
+ */
+const ALWAYS_CONFLICTS = 'notes/sizing.md';
+
 /** A room's own files, served from the fixture above instead of from git. */
 function createFixtureRoomSource(): FileExplorerSource {
   return {
@@ -103,14 +114,32 @@ function createFixtureRoomSource(): FileExplorerSource {
     provenance: true,
     filtersHidden: false,
     preview: 'inline',
+    editable: true,
     list: (path) => Promise.resolve({ entries: ROOM_TREE[path] ?? [] }),
     read: (path) =>
       Promise.resolve({
         path,
         size: 240,
         lastCommit: ROOM_TREE[''].find((e) => e.path === path)?.lastCommit ?? null,
+        commit: 'fixture0',
         body: ROOM_FILES[path] ?? { kind: 'too-large', maxBytes: 5 * 1024 * 1024 },
       }),
+    save: ({ path, text }) => {
+      if (path === ALWAYS_CONFLICTS) {
+        return Promise.resolve({
+          status: 'conflict',
+          commit: 'fixture1',
+          lastCommit: commit('Ana', 1, 'sharpen the sizing note'),
+        });
+      }
+      ROOM_FILES[path] = { kind: 'text', text };
+      return Promise.resolve({
+        status: 'saved',
+        commit: 'fixture1',
+        lastCommit: commit('You', 0, `edit ${path}`),
+        committed: true,
+      });
+    },
   };
 }
 
@@ -126,7 +155,7 @@ export function FileExplorerShowcases() {
   return (
     <PlaygroundSection
       title="Room Files"
-      description="One explorer, two sources. This is the room-shaped one: read-only, because what it lists is the commit main points at rather than files on a disk; provenance, because a commit knows who last touched a path and a filesystem does not; ROOM.md and README.md floated to the top; and the plumbing hidden until the eye is pressed. Clicking a file previews it in place — try the image and the symlink for the empty states. The session pane is the same component with a different source, and it is on /session rather than here: the two share one store, so only one may be mounted at a time."
+      description="One explorer, two sources. This is the room-shaped one: the tree is read-only, because what it lists is the commit main points at rather than files on a disk, while the markdown files in it can be opened and changed; provenance, because a commit knows who last touched a path and a filesystem does not; ROOM.md and README.md floated to the top; and the plumbing hidden until the eye is pressed. Clicking a file previews it in place — try the image and the symlink for the empty states, and Edit on a markdown file to save one. Saving notes/sizing.md always loses the race, which is how the reload / keep-mine choice is reachable here at all. The session pane is the same component with a different source, and it is on /session rather than here: the two share one store, so only one may be mounted at a time."
     >
       <QueryClientProvider client={queryClient}>
         <TransportProvider transport={transport}>

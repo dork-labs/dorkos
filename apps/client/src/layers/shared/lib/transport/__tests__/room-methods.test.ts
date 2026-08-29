@@ -326,3 +326,36 @@ describe('saveRoomFile', () => {
     ).rejects.toMatchObject({ code: 'FILE_CHANGED', status: 409, body: conflict });
   });
 });
+
+describe('the room-repo status and its repair', () => {
+  it('reads the status from the room’s own repo route', async () => {
+    await setup().readRoomRepoStatus('room-1');
+    const [url, init] = lastCall();
+    expect(url).toBe('http://localhost:4242/api/rooms/room-1/repo/status');
+    expect(init?.method ?? 'GET').toBe('GET');
+  });
+
+  it('sends a keep with no list and a discard with exactly the names it was given', async () => {
+    const rooms = setup();
+
+    await rooms.repairRoomMain('room-1', { action: 'commit' });
+    const [keepUrl, keepInit] = lastCall();
+    expect(keepUrl).toBe('http://localhost:4242/api/rooms/room-1/repo/main/repair');
+    expect(keepInit.method).toBe('POST');
+    // Keeping loses nothing, so it sweeps up whatever is there and takes no
+    // list; discarding is irreversible, so it destroys nothing it was not
+    // handed by name. The asymmetry is the safety rule, and it is on the wire.
+    expect(keepInit.body).toBe(JSON.stringify({ action: 'commit' }));
+
+    await rooms.repairRoomMain('room-1', { action: 'discard', paths: ['ROOM.md', 'a/b.md'] });
+    const [, discardInit] = lastCall();
+    expect(discardInit.body).toBe(
+      JSON.stringify({ action: 'discard', paths: ['ROOM.md', 'a/b.md'] })
+    );
+  });
+
+  it('escapes a room id that would otherwise change which route is called', async () => {
+    await setup().readRoomRepoStatus('a/../b');
+    expect(lastCall()[0]).toBe('http://localhost:4242/api/rooms/a%2F..%2Fb/repo/status');
+  });
+});

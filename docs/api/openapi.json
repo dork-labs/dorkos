@@ -20347,7 +20347,8 @@
                       ]
                     },
                     "paths": {
-                      "type": "integer"
+                      "type": "integer",
+                      "minimum": 0
                     },
                     "clean": {
                       "type": "boolean"

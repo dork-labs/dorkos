@@ -69,6 +69,7 @@ import type {
   RoomRepoCaps,
   RoomRepoStatus,
 } from '@dorkos/shared/room-repo';
+import { MAX_REPORTED_ROOM_STRAYS } from '@dorkos/shared/room-repo';
 import { MERGE_SUMMARY_MAX_CHARS } from '@dorkos/shared/room-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../../lib/logger.js';
@@ -131,7 +132,7 @@ const STATUS_CACHE_MS = 5_000;
  * would turn a warning into a payload nobody can render. `strayCount` still
  * answers how many there really are.
  */
-const MAX_REPORTED_STRAYS = 50;
+const MAX_REPORTED_STRAYS = MAX_REPORTED_ROOM_STRAYS;
 
 /** What a completed merge answers. */
 export interface RoomMergeResult {
