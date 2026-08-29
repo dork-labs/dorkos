@@ -38,6 +38,7 @@ import {
   type UpdateMembershipRequest,
   type UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
+import type { RoomFileContentResponse, RoomFileListResponse } from '@dorkos/shared/room-files';
 import type { UploadProgress } from '@dorkos/shared/types';
 import type { UploadFile } from '@dorkos/shared/transport';
 import { SSE_RESILIENCE } from '../constants';
@@ -138,6 +139,29 @@ export function createRoomMethods(baseUrl: string) {
       const qs = buildQueryString({ before: query?.before, limit: query?.limit });
       return fetchJSON<{ entries: RoomEntry[] }>(baseUrl, `/rooms/${id}/entries${qs}`).then(
         (r) => r.entries
+      );
+    },
+
+    /**
+     * One directory of a room's files. `path` rides as a query value rather
+     * than a path segment because a repo path holds slashes, and a segment
+     * would mean encoding them out and decoding them back in — one more place
+     * for the two ends to disagree about what a filename is.
+     */
+    readRoomFiles(id: string, path?: string): Promise<RoomFileListResponse> {
+      const qs = buildQueryString({ path });
+      return fetchJSON<RoomFileListResponse>(
+        baseUrl,
+        `/rooms/${encodeURIComponent(id)}/files${qs}`
+      );
+    },
+
+    /** One file out of a room's `main`, for the same reason in the same shape. */
+    readRoomFileContent(id: string, path: string): Promise<RoomFileContentResponse> {
+      const qs = buildQueryString({ path });
+      return fetchJSON<RoomFileContentResponse>(
+        baseUrl,
+        `/rooms/${encodeURIComponent(id)}/files/content${qs}`
       );
     },
 
