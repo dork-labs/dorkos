@@ -633,19 +633,39 @@ function LaneElapsed({ since }: { since: string }) {
   const [now, setNow] = useState(() => Date.now());
   const due = Date.parse(since) + LANE_TIMER_FLOOR_MS;
 
+  // **Keyed on `due` alone, never on the `now` it writes.** Depending on `now`
+  // made every tick tear the interval down and build a new one, and a new
+  // interval starts its second from the moment React COMMITS rather than from
+  // the moment the tick fired — so the reading drifted a little further behind
+  // the clock with every second it counted. It also made the leaf's own suite
+  // flaky, which is how this was found: a commit is a task on the real event
+  // loop, a busy runner lands it a fraction of a second late, and the rebuilt
+  // interval's next tick then fell outside the window the test had advanced,
+  // leaving the number one second short (DOR-1642).
   useEffect(() => {
+    const tick = () => setNow(Date.now());
+    let timer: ReturnType<typeof setInterval> | undefined;
+    let wake: ReturnType<typeof setTimeout> | undefined;
     // Nothing is drawn for the first ten seconds, so nothing needs to tick for
     // them either: a claim that has just arrived sleeps until its number is due
     // and only then starts a per-second timer. A room with four agents in it was
     // otherwise running four intervals to render nothing.
     const wait = due - Date.now();
     if (wait > 0) {
-      const wake = setTimeout(() => setNow(Date.now()), wait);
-      return () => clearTimeout(wake);
+      // The number has to appear on the wake itself; the interval only moves it
+      // on from there.
+      wake = setTimeout(() => {
+        tick();
+        timer = setInterval(tick, LANE_TICK_MS);
+      }, wait);
+    } else {
+      timer = setInterval(tick, LANE_TICK_MS);
     }
-    const timer = setInterval(() => setNow(Date.now()), LANE_TICK_MS);
-    return () => clearInterval(timer);
-  }, [due, now]);
+    return () => {
+      clearTimeout(wake);
+      clearInterval(timer);
+    };
+  }, [due]);
 
   const elapsed = laneElapsed(since, now);
   if (elapsed === null) return null;
