@@ -2221,6 +2221,35 @@ describe('AdapterManager', () => {
     });
   });
 
+  describe('hasAgentRuntime — what the Tasks scheduler asks before using the bus (DOR-1614)', () => {
+    // The scheduler routes a run to the relay only when this says yes, so an
+    // answer that is always-true strands codex/opencode runs on a bus that would
+    // refuse them, and an always-false answer silently sends every run direct.
+    // Measured: `return true` here survived 810 tests, so both directions are
+    // pinned below rather than just the happy one.
+    const withRuntimes = (types: string[]): AdapterManager =>
+      new AdapterManager(registry, configPath, {
+        ...mockDeps,
+        agentRuntimes: new Map(
+          types.map((t) => [t, { ensureSession: vi.fn(), sendMessage: vi.fn() }])
+        ),
+      });
+
+    it('says yes for a runtime the map holds', () => {
+      expect(withRuntimes(['claude-code', 'codex']).hasAgentRuntime('codex')).toBe(true);
+    });
+
+    it('says no for a runtime this build never registered', () => {
+      // The half that matters: `opencode` is a real product runtime, so the
+      // wrong answer here is not a type error, it is a stranded run.
+      expect(withRuntimes(['claude-code', 'codex']).hasAgentRuntime('opencode')).toBe(false);
+    });
+
+    it('says no when the map is empty', () => {
+      expect(withRuntimes([]).hasAgentRuntime('claude-code')).toBe(false);
+    });
+  });
+
   describe('authorizeBridgedApproval — the server-side half of a bridged click (spec `ask-entitlement` §5.3)', () => {
     // The adapters run `mayApprove` in process on the click; this runs before
     // the runtime is touched, because the relay bus carries no authority of its

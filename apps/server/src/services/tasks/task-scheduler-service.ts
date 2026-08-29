@@ -1043,6 +1043,24 @@ export class TaskSchedulerService {
         // rather than guessing. It is NOT why the predicate is optional — an
         // absent predicate takes the v1 reading instead, see
         // {@link V1_RELAY_RUNTIME}.
+        //
+        // KNOWN GAP, accepted as parity rather than fixed here. The production
+        // predicate answers from a map built in the AdapterManager constructor,
+        // so it says YES for a built-in adapter that is no longer LIVE: one
+        // disabled through `POST /api/relay/adapters/:id/disable`, or one whose
+        // non-awaited start pass failed. Such a run publishes to a subject
+        // nobody claims, comes back `deliveredTo === 0`, and fails with "No
+        // receiver for the scheduled run" — where the direct path would have run
+        // it. Widening the map widens that blast radius from claude-code to
+        // EVERY runtime the map holds. It is shipped anyway because the same
+        // failure already exists on main today for claude-code tasks in exactly
+        // those states, so this is parity, not a new class of breakage. A
+        // lowered relay turn ceiling produces the same "No receiver" shape for
+        // the same reason (DOR-791), and belongs to the same follow-up.
+        // Tightening the predicate to adapter LIVENESS — asking the registry
+        // (`registry.getBySubject`) whether something is actually subscribed,
+        // rather than asking the map whether a runtime was ever registered — is
+        // deliberate follow-up work, not an oversight.
         const viaRelay =
           isRelayEnabled() && this.relay !== null && this.relayHoldsRuntime(execution.runtimeType);
         span.setAttr(ATTR.TASK_DISPATCH, viaRelay ? 'relay' : 'direct');

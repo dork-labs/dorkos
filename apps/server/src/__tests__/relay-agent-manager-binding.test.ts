@@ -57,6 +57,67 @@ function adapterManagerConstruction(): string {
   return source.slice(start, end);
 }
 
+/**
+ * The dependency object literal passed to `new TaskSchedulerService(...)`, from
+ * the constructor call to the closing `});` of the call.
+ *
+ * Same narrowing as {@link adapterManagerConstruction}, for the same reason: the
+ * scheduler is built inside `start()` with a live registry, a relay and a task
+ * store behind it, and there is no seam that constructs just its deps.
+ *
+ * @returns The source text of the TaskSchedulerService construction.
+ */
+function schedulerConstruction(): string {
+  const start = source.indexOf('new TaskSchedulerService(');
+  expect(start, 'TaskSchedulerService is no longer constructed in index.ts').toBeGreaterThan(-1);
+  const end = source.indexOf('});', start);
+  expect(end, 'could not find the end of the TaskSchedulerService construction').toBeGreaterThan(
+    start
+  );
+  return source.slice(start, end);
+}
+
+describe('the Tasks scheduler asks the relay which runtimes it holds', () => {
+  it('passes relayHoldsRuntime at all', () => {
+    // DELETING this line is a silent revert, which is why it is asserted on its
+    // own. `relayHoldsRuntime` is optional on SchedulerDeps — omitting it takes
+    // the v1 default, claude-code and nothing else — so its absence typechecks
+    // cleanly and every behavioural test still passes: the scheduler's own suite
+    // constructs the predicate itself, and nothing else exercises this wiring.
+    // Measured: removing this line passed the typecheck and 1398 tests.
+    expect(
+      schedulerConstruction(),
+      'Without `relayHoldsRuntime` the scheduler falls back to the v1 reading and every ' +
+        'codex/opencode scheduled run silently goes direct again — the whole of DOR-1614 ' +
+        'at this call site, reverted with no test to notice.'
+    ).toMatch(/relayHoldsRuntime:/);
+  });
+
+  it('answers it from the relay adapter map, not a literal', () => {
+    // The predicate must READ THE RELAY. A hardcoded `() => true` would strand
+    // runs on a bus that refuses them; a hardcoded runtime name is the v1 bug
+    // this replaced. `hasAgentRuntime` is the one narrow question the relay
+    // exposes for it.
+    expect(schedulerConstruction()).toMatch(/adapterManager\?\.hasAgentRuntime\(/);
+  });
+
+  it('falls closed when the relay never built or failed building', () => {
+    // `adapterManager` is undefined before Phase C and is RESET to undefined
+    // when Phase C throws. Optional-chaining alone yields `undefined`, which is
+    // falsy but not a boolean; `?? false` is what makes the contract explicit.
+    expect(schedulerConstruction()).toMatch(/hasAgentRuntime\(runtimeType\)\s*\?\?\s*false/);
+  });
+
+  it('reads a real TaskSchedulerService construction, not an empty slice', () => {
+    // The assertions above are positives, but a broken extraction would fail
+    // them for the wrong reason and send a reader hunting the wrong bug.
+    const construction = schedulerConstruction();
+    expect(construction.length).toBeGreaterThan(100);
+    expect(construction).toContain('runtimes:');
+    expect(construction).toContain('store:');
+  });
+});
+
 describe('the relay adapter binds every registered runtime, not the default one', () => {
   it('passes relayAgentRuntime keyed by its own type', () => {
     // Keyed by `.type`, not a literal: the AdapterManager map is read back by

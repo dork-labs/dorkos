@@ -2285,11 +2285,15 @@ async function start() {
       },
       relay: relayCore,
       // Which runtimes the bus can actually run a turn on (DOR-1614). Read
-      // through the live `adapterManager` rather than captured: it is built in
-      // Phase C — which may be BEFORE or after this line depending on whether
-      // the relay is enabled at all — and a build where it never appears must
-      // answer "no", which is exactly what the `?? false` says. Then every run
-      // executes in this process, as it always did with the relay off.
+      // through the live `adapterManager` rather than captured at this line.
+      // Phase C runs earlier than this in the current ordering, so capturing
+      // would happen to work today — but the binding is deliberately late for
+      // two reasons that outlive the ordering. Moving either block would
+      // silently freeze a stale value, and Phase C RESETS `adapterManager` to
+      // `undefined` when its init throws (see its catch), which a captured
+      // reference could not see. A relay that never built, or that failed
+      // building, must answer "no" — which is what `?? false` says — and then
+      // every run executes in this process, as it always did with the relay off.
       relayHoldsRuntime: (runtimeType) => adapterManager?.hasAgentRuntime(runtimeType) ?? false,
       meshCore,
       activityService,

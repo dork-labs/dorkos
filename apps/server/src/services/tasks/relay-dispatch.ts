@@ -60,9 +60,10 @@ const DEFAULT_DISPATCH_TTL_MS = 3_600_000;
  * @param deps - The scheduler's store, bus, run registry and cwd resolver.
  * @param task - The task being run.
  * @param run - Its run row, already opened.
- * @param execution - What this run resolved to run on (DOR-1615). Always
- *   claude-code here in v1 — the scheduler routes every other runtime direct,
- *   because the bus has no adapter that could run one (DOR-1614).
+ * @param execution - What this run resolved to run on (DOR-1615). Any runtime
+ *   the relay holds, not just claude-code (DOR-1614): the scheduler asks the
+ *   relay per run and hands over only what the far side can drive, so its
+ *   `runtimeType` is written onto the envelope below rather than assumed.
  */
 export async function dispatchRunViaRelay(
   deps: RelayDispatchDeps,

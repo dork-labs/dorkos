@@ -31,8 +31,3 @@ covers:
   quietly handed to a different one (DOR-1614)
 - Approving or denying a tool from a chat now reaches whichever program is
   waiting on the answer, not only Claude Code (DOR-1614)
-- A scheduled task set to run on Codex or OpenCode is no longer forced off the
-  shared path that Claude Code tasks use. It takes the same route, carrying the
-  name of the program it should run on, whenever DorkOS has that program running.
-  When it does not, the task runs the way it always has and nothing about it
-  changes (DOR-1614)
