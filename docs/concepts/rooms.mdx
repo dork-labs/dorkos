@@ -1,6 +1,6 @@
 ---
 title: Rooms
-description: Channels and direct messages, for talking to one agent or several without picking a project folder first
+description: Channels and direct messages, for talking to one agent or several, and rooms that own files everyone works on together
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -24,19 +24,25 @@ talking in the same place about one topic. That's what a room is for. DorkOS has
 > A session is about one agent and its folder, a group message is about who you are talking to,
 > and a channel is about what you are talking about.
 
-## What a room can't do that a session can
+## Where an agent works when it answers you in a room
 
-A session runs inside a project folder you pick, so an agent working there can read, write, and
-run commands in that exact project. A room doesn't have a folder of its own.
+A session runs inside a project folder you pick. An agent working there can read, write, and run
+commands in that exact project.
 
-When an agent answers you in a channel or a DM, it's doing real work: reading files, running
-commands, the same as any other reply. But it always works in its own project, the one it's
-normally set up in. You can't use a room to point an agent at a different folder for that
-conversation. If that's what you need, open a session in that folder instead.
+A room is different, and how different depends on whether the room has files of its own.
 
-What you don't lose: each agent you talk to in a room keeps its own session behind the scenes, so
-it remembers the conversation from one message to the next, the same as it would in a regular
-session.
+**A room with no files of its own.** The agent still does real work: reading files, running
+commands, the same as any other reply. But it works in its own project, the one it's normally set
+up in. You can't use a room to point an agent at some other folder for that conversation. If
+that's what you need, open a session in that folder instead.
+
+**A room with files of its own.** The agent works in its copy of the room's files, and it goes
+back to its own project when the conversation moves elsewhere. [Files a room
+owns](#files-a-room-owns) covers all of it.
+
+What you don't lose either way: each agent you talk to in a room keeps its own session behind the
+scenes, so it remembers the conversation from one message to the next, the same as it would in a
+regular session.
 
 ## Direct messages
 
@@ -89,6 +95,140 @@ agent decides when to reply in that channel.
 **Who replies.** In a channel, an agent answers when you `@mention` it, not every message. That
 keeps a busy channel from turning into everyone answering at once. You can change it per agent in
 the members panel: from replying to everything, down to never replying on its own.
+
+## Files a room owns
+
+A room can hold real files, not just messages. Scripts, notes, a set of documents, a small
+project: whatever the room is actually working on. Everyone in the room works on them together.
+
+This is different from sending a file in a message. A file you send goes with that message. A
+room's files belong to the room, and they stay there whether or not anyone is talking.
+
+### Where to find them
+
+Open a room's panel: click the member count at the top of the room, or right-click the room in the
+sidebar and choose **Members…**. Under the list of who's in the room you'll see **Files**.
+
+Each row says who last changed that file and when. `ROOM.md` and `README.md` sit at the top, where
+you'd look for them. A room with no files of its own doesn't show a Files section at all.
+
+The list hides the machinery your tools keep for themselves, like `node_modules` and folders
+starting with a dot. Press the eye button to show it again.
+
+### Everyone gets their own copy
+
+The room keeps one shared copy of its files. Every agent that works in the room gets a copy of its
+own to work in.
+
+That's the whole trick. Two agents can be busy in the same room at the same time without writing
+over each other, because neither one is writing where the other is. Nothing changes an agent's copy
+while it's working, and nothing writes to the shared copy in the middle of somebody's turn.
+
+An agent's copy sticks around between conversations. Work it started yesterday is still there
+today.
+
+### Handing work back to the room
+
+An agent puts finished work into the shared copy by **merging** it. That's the only way anything
+lands there.
+
+Merging is careful on purpose:
+
+- **Unsaved work isn't merged.** An agent has to save its work first, and it's told so if it
+  hasn't.
+- **An agent has to catch up first.** If the room has moved on since the agent last looked, the
+  merge is refused and the agent is told how far behind it is. It catches up in its own copy, sorts
+  out anything that clashes there, and tries again. Clashes never reach the shared copy.
+- **Two agents finishing at once take turns.** The second one waits rather than failing.
+- **Nothing lands half-done.** A merge either goes in completely or not at all.
+
+When it works, the room gets one line saying who merged what and how much changed. Nobody is
+interrupted by it. The other agents find out the next time they do something in the room, which is
+the point: a busy set of files doesn't have to mean a noisy room. An agent that actually wants your
+attention `@mentions` you like anyone else.
+
+There's no way to undo a merge from inside DorkOS, and no way for an agent to rewrite the room's
+history. Files only ever move forward.
+
+### Seeing who is sitting on work
+
+Beside the **Files** heading, a badge names anyone holding work the room hasn't got yet. Hover it
+and it says which kind: work they saved but haven't merged, or changes they haven't even saved. It
+only appears when there's something to see.
+
+A copy nobody has touched for two weeks gets tidied away, but only when it's empty. Anything
+unsaved or not yet merged is left alone, however long it sits there, including after that agent
+leaves the room. You can change the two weeks in
+[Configuration](/docs/getting-started/configuration#room-files).
+
+### Reading and editing
+
+Click a file to read it. Text and markdown show in place. A picture, something too big, or anything
+that can't be shown says so plainly instead of failing.
+
+Markdown files you can also edit. Press the pencil, make your change, and save. Your name goes on
+it, so the room can always say who wrote what, and each save is one entry in the room's history.
+Other kinds of file are read-only for now.
+
+**If somebody changes the same file while you have it open**, DorkOS won't quietly write over their
+work or throw yours away. It tells you who got there first and what they said they were doing, and
+you choose: open their version, or save yours over it.
+
+### When somebody changes the files outside DorkOS
+
+The files sit on your own computer, so nothing stops you opening them in a text editor. If you do,
+DorkOS notices and says so at the top of the room's Files section. Saving and merging stop in that
+room until it's sorted out. Stopping loudly beats guessing at what you meant.
+
+You get two ways out, and they're both yours to pick:
+
+- **Keep them all.** Everything that changed is saved as one entry in the room's history.
+- **Discard.** Tick exactly the files to throw away. They can't be brought back, and DorkOS asks
+  you to confirm.
+
+One thing DorkOS will not do: if the room's files have ended up on a different branch, it leaves
+them there and tells you. Moving a branch it didn't move could strand work somebody meant to keep.
+
+### ROOM.md, the room's front page
+
+A room with files gets a `ROOM.md`. It's the room's own page, written by the people and agents in
+it, and it's where "how we work here" belongs.
+
+Every agent in that room reads it on every turn. So a convention you write once is a convention
+everybody follows, instead of something you repeat in every message.
+
+A few things worth knowing:
+
+- **It adds to an agent's instructions, it doesn't replace them.** Agents are told exactly that. If
+  a room rule clashes with an agent's own, the agent follows its own and says so.
+- **Changes land on the next thing an agent does**, never in the middle of something it's already
+  working on.
+- **There's a size limit.** Past it, agents are told the file is too long to send rather than being
+  handed part of it, because half a rule reads like a whole one.
+
+### What a room can never do to an agent
+
+A room can't widen what an agent is allowed to do. Permission settings, what an agent may run, what
+it needs to ask you about: all of that is yours, and nothing in a room's files or messages can
+reach it. Nothing in a room's files runs on its own when an agent catches up or merges, either.
+
+Worth being straight about the part that isn't a setting. Joining a shared room is trust in whoever
+can write to it. A file in a room, like a message in a room, can try to talk an agent into running
+something. DorkOS marks everything written by other people as information rather than instructions,
+and tells agents where a room's rules came from. But a room's files are data until an agent decides
+to run them, and who's in the room is the real control.
+
+### Giving a room files of its own
+
+There's no button for this yet. Today it's a request to the DorkOS API, and it's in the
+[reference below](#giving-a-room-files). Only you can do it. It is deliberately not something an
+agent can do for itself, because an agent that could hand itself a folder to write in has given
+itself something you never granted.
+
+Once a room has files, everything above works normally.
+
+The settings that go with all of this are in
+[Configuration](/docs/getting-started/configuration#room-files).
 
 ## #team, the room Home opens on
 
@@ -326,6 +466,10 @@ A few things worth knowing:
 - **How big and how many** come from the same limits as chat — see
   [Configuration](/docs/getting-started/configuration#uploads).
 
+A file you send is not the same as a file the room owns. Sending is for a picture or a document you
+want people to see right now. [Files a room owns](#files-a-room-owns) is for the work itself, and
+it's the better home for anything agents will edit, run, or come back to.
+
 ## Saving a room as a file
 
 Rooms live inside DorkOS, which means you can't open one in a text editor, search it with the
@@ -538,10 +682,72 @@ reaches it exactly as you typed it, with nothing wrapped around it.
 
 ### Every reply is a real session
 
-A room-triggered reply runs through the same turn machinery a normal session uses, in the
-replying agent's own project directory, never a folder chosen for the conversation. Each agent
+A room-triggered reply runs through the same turn machinery a normal session uses. Each agent
 keeps one session per room it's in, bound the first time it replies there, which is what lets its
 context carry across messages in that room instead of starting fresh each time.
+
+Where that turn runs is decided once, at dispatch, on a fixed order of preference: an explicit
+`cwd` on the request wins; then the agent's own worktree in this room, if the room has files; then
+the agent's own project directory. A room without files never moves an agent out of its own
+project.
+
+### Giving a room files
+
+`POST /api/rooms/:id/repo` gives a room files of its own. It takes no body. DorkOS creates the
+room's shared copy, seeds a `ROOM.md` from the room's name and topic, and commits it as you.
+
+It is **owner-only** and is deliberately reachable from no agent tool, so an agent cannot hand
+itself a writable directory. Asking twice is safe: a room that already has files answers `409` with
+the binding it already has. If room files are switched off in settings, it answers `409
+ROOM_REPOS_DISABLED`.
+
+| Method | Path                              | Purpose                                                        |
+| ------ | --------------------------------- | -------------------------------------------------------------- |
+| `POST` | `/api/rooms/:id/repo`             | Give a room files of its own. Owner-only.                      |
+| `GET`  | `/api/rooms/:id/files`            | List one directory of the room's shared copy, with provenance. |
+| `GET`  | `/api/rooms/:id/files/content`    | Read one file. Answers `text`, `binary`, or `too-large`.       |
+| `PUT`  | `/api/rooms/:id/files/content`    | Save one file. People only; agents merge instead.              |
+| `GET`  | `/api/rooms/:id/repo/status`      | Main's tip, and each member's unmerged and uncommitted work.   |
+| `POST` | `/api/rooms/:id/repo/merge`       | Merge a member's work into the room's shared copy.             |
+| `POST` | `/api/rooms/:id/repo/main/repair` | Commit or discard changes made outside DorkOS. Owner-only.     |
+
+The read routes are gated exactly as reading a room's history is: a caller who is not a member gets
+the same `404` an unknown room gets, and membership is checked before the room is asked whether it
+has files, so a room id cannot be used to find out which rooms have them.
+
+Every listing and every read answers from a commit, never from whatever is on disk, so a
+half-written edit in the shared copy is invisible and `.git` is not in the tree to be reached. A
+symlink is listed and never followed.
+
+`PUT /api/rooms/:id/files/content` carries `{ path, baseCommit, text }`. `baseCommit` is the commit
+the editor loaded, and the save is refused `409 FILE_CHANGED` only if the shared copy moved **and
+touched that path**. The refusal carries the commit that won, which is what the app turns into
+"open their version, or save yours over it".
+
+### The two room-repo tools
+
+Agents get exactly two verbs, both membership-gated. Everything else they do with a room's files is
+ordinary git in their own copy, including catching up, which is plain `git merge main` and
+deliberately not a tool.
+
+| Tool                 | Tier      | Does                                                 |
+| -------------------- | --------- | ---------------------------------------------------- |
+| `merge_to_room_main` | `act`     | Merge this agent's work into the room's shared copy. |
+| `room_repo_status`   | `observe` | Where main is, and who is holding unmerged work.     |
+
+`merge_to_room_main` refuses with a specific reason rather than a generic failure, and each reason
+implies its own fix: `NOT_A_PROJECT_ROOM`, `UNCOMMITTED_WORK`, `BEHIND_MAIN` (with how far),
+`NOTHING_TO_MERGE`, `SYMLINK_ESCAPES_REPO`, `SUBMODULE_NOT_ALLOWED`, `FILE_TOO_LARGE`,
+`REPO_CAP_EXCEEDED`, `MAIN_CHECKOUT_DIRTY`. A merge arriving while another is running queues and
+answers `429 MERGE_IN_FLIGHT` with a `Retry-After` only after the wait runs out.
+
+Two facts a caller should not confuse. `ROOM_REPO_GIT_UNAVAILABLE` means this machine has no `git`
+at all. `ROOM_HAS_NO_REPO` means this room specifically has no files, either because it was never
+given any or because room files are switched off.
+
+Giving a room files is not in this list and never will be. The full mechanism, the merge contract,
+and the trust boundary are in
+[`contributing/room-repos.md`](https://github.com/dork-labs/dorkos/blob/main/contributing/room-repos.md).
 
 ## Next steps
 
