@@ -63,6 +63,43 @@ describe('errorHandler', () => {
     });
   });
 
+  it('answers a body that never fit with 413 and a code, not 500', () => {
+    // `express.json`'s own limit raises this, and it used to be flattened into
+    // "Internal server error" with `code: INTERNAL_ERROR` — so a person saving
+    // a large file in a room was told the server broke, and given nothing they
+    // could act on (DOR-1600's review).
+    const res = createMockRes();
+    const tooLarge = Object.assign(new Error('request entity too large'), {
+      type: 'entity.too.large',
+      status: 413,
+      expose: true,
+    });
+
+    errorHandler(tooLarge, mockReq, res, mockNext);
+
+    expect(res.status).toHaveBeenCalledWith(413);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'That is too large to send in one request.',
+      code: 'REQUEST_TOO_LARGE',
+    });
+  });
+
+  it('leaves every other body-parser failure the 500 it has always had', () => {
+    // Deliberately narrow: widening this to "any 4xx that says expose" would
+    // quietly restate every route's answer to a malformed body, which is a
+    // change nobody has argued for here.
+    const res = createMockRes();
+    const malformed = Object.assign(new Error('Unexpected token } in JSON'), {
+      type: 'entity.parse.failed',
+      status: 400,
+      expose: true,
+    });
+
+    errorHandler(malformed, mockReq, res, mockNext);
+
+    expect(res.status).toHaveBeenCalledWith(500);
+  });
+
   it('logs the error via logger', async () => {
     const { logger } = await import('../../lib/logger.js');
     const res = createMockRes();

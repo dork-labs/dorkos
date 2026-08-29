@@ -1037,8 +1037,14 @@ router.get('/:id/files/content', (req, res) => {
  * Every other refusal is the same one a merge would give, for the same reason:
  * `MAIN_CHECKOUT_DIRTY` while something outside DorkOS has written in the
  * room's own copy, `FILE_TOO_LARGE` and `REPO_CAP_EXCEEDED` against the room's
- * frozen caps. The request body limit (1 MB) is smaller than the default file
- * cap, so a very large save is refused by the body parser first.
+ * frozen caps. **Only `FILE_CHANGED` carries a payload** — every other refusal
+ * here is the ordinary `{ error, code }`, so a client switches on the code and
+ * never on whether a field is there.
+ *
+ * The 1 MB request body limit is smaller than the default file cap, so a very
+ * large save never reaches the room's cap: `express.json` refuses it and the
+ * error handler answers **413 `REQUEST_TOO_LARGE`**. That used to be a 500 with
+ * no code, which told a person nothing about the one thing they could act on.
  */
 router.put('/:id/files/content', (req, res) => {
   void (async () => {

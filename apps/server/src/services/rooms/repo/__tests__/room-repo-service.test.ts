@@ -541,6 +541,29 @@ describe('RoomRepoService', () => {
       expect(await git(['rev-parse', 'HEAD'], repoDir)).toBe(before);
     });
 
+    it('undoes a rename whole, rather than deleting the file it renamed', async () => {
+      // Found in review: a rename is one stray with TWO paths, and a discard
+      // that knew only the new one deleted the file from the room and left the
+      // old name still missing — destroying work while claiming to undo it.
+      const repoDir = await withFiles();
+      const before = await git(['rev-parse', 'HEAD'], repoDir);
+      const original = await readFile(path.join(repoDir, ROOM_MD_FILENAME), 'utf-8');
+      await git(['mv', ROOM_MD_FILENAME, 'renamed.md'], repoDir);
+
+      // Whatever the room reports is what the operator can name, so discarding
+      // "everything on the list" is the case to prove.
+      const listed = await service.repairMainCheckout(ROOM_ID, OPERATOR, {
+        action: 'discard',
+        paths: ['renamed.md'],
+      });
+
+      expect(listed).toMatchObject({ action: 'discard', paths: 1, clean: true });
+      expect(await readFile(path.join(repoDir, ROOM_MD_FILENAME), 'utf-8')).toBe(original);
+      expect(existsSync(path.join(repoDir, 'renamed.md'))).toBe(false);
+      expect(await git(['status', '--porcelain=v1'], repoDir)).toBe('');
+      expect(await git(['rev-parse', 'HEAD'], repoDir)).toBe(before);
+    });
+
     it('refuses a path the room is not reporting as changed', async () => {
       const repoDir = await withFiles();
       await writeFile(path.join(repoDir, 'notes.md'), 'jotted down\n', 'utf-8');

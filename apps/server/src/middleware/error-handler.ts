@@ -34,6 +34,25 @@ export function errorHandler(err: Error, _req: Request, res: Response, next: Nex
     return;
   }
 
+  // A body that never fit is not a server fault, and answering 500 to it is a
+  // small lie with a real cost: a person saving a large file in a room was told
+  // "Internal server error" by `express.json`'s own 1 MB limit, so the message
+  // said nothing about the one thing they could act on (DOR-1600's review).
+  //
+  // Deliberately narrow. `body-parser` raises several kinds of failure and this
+  // honours exactly one of them — the size limit, which it marks
+  // `entity.too.large` and which is unambiguous. Everything else it raises keeps
+  // the 500 it has always had, because widening this to "any 4xx with expose"
+  // would quietly restate every route's answer to a malformed body, which is a
+  // change nobody has argued for here.
+  if ((err as { type?: unknown }).type === 'entity.too.large') {
+    res.status(413).json({
+      error: 'That is too large to send in one request.',
+      code: 'REQUEST_TOO_LARGE',
+    });
+    return;
+  }
+
   // eslint-disable-next-line no-restricted-syntax -- must read dynamically; env.ts parses once at import and tests mutate NODE_ENV at runtime
   const isDev = process.env.NODE_ENV !== 'production';
   res.status(500).json({

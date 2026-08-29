@@ -43,6 +43,7 @@ import {
   pathsInHead,
   restoreFromHead,
   unstagePaths,
+  type StrayChange,
 } from './room-repo-git.js';
 import { readMainCheckoutState } from './room-main-checkout.js';
 import { ROOM_MD_FILENAME, ROOM_MD_SEED_COMMIT_MESSAGE, seedRoomMd } from './room-md.js';
@@ -404,8 +405,13 @@ export class RoomRepoService {
    * somebody left in the tree — the corruption the whole refusal exists to
    * prevent. The message says what to do.
    *
-   * Runs on the room's own queue, so it cannot interleave with a merge or a
-   * save.
+   * **Authorization is answered before the queue, and git state inside it** —
+   * the ordering `RoomMergeService.merge` and `RoomFileEditor.save` both write
+   * down, and this used to be the one write that did the opposite. Who may
+   * repair a room does not change while a caller waits, so asking first refuses
+   * a caller who was never allowed immediately rather than after somebody
+   * else's merge; everything git can say has to be asked inside the lane,
+   * because a merge running ahead of this one can change all of it.
    *
    * @param roomId - The room whose files are stuck.
    * @param callerAuthorId - Who is asking. Must be the operator.
@@ -416,35 +422,7 @@ export class RoomRepoService {
    *   on the wrong branch, `ROOM_FILE_NOT_FOUND` for a path the room is not
    *   reporting, or `ROOM_REPO_GIT_UNAVAILABLE`.
    */
-  repairMainCheckout(
-    roomId: string,
-    callerAuthorId: string,
-    repair: RoomMainRepair
-  ): Promise<RoomMainRepairResult> {
-    return this.deps.mutex.run(
-      roomId,
-      {
-        waitMs: this.deps.queueWaitMs(),
-        busy: () =>
-          new RoomError(
-            'MERGE_IN_FLIGHT',
-            'This room’s files are busy — something else is writing to them. Try again in a moment.'
-          ),
-      },
-      () => this.repairUnderLock(roomId, callerAuthorId, repair)
-    );
-  }
-
-  /**
-   * The body of {@link RoomRepoService.repairMainCheckout}, run while holding
-   * the room's queue.
-   *
-   * @param roomId - The room.
-   * @param callerAuthorId - Who is asking.
-   * @param repair - What they asked for.
-   * @returns What it did.
-   */
-  private async repairUnderLock(
+  async repairMainCheckout(
     roomId: string,
     callerAuthorId: string,
     repair: RoomMainRepair
@@ -467,6 +445,35 @@ export class RoomRepoService {
       throw new RoomError('ROOM_HAS_NO_REPO', 'This room does not have files of its own.');
     }
 
+    return this.deps.mutex.run(
+      roomId,
+      {
+        waitMs: this.deps.queueWaitMs(),
+        busy: () =>
+          new RoomError(
+            'MERGE_IN_FLIGHT',
+            'This room’s files are busy — something else is writing to them. Try again in a moment.'
+          ),
+      },
+      () => this.repairUnderLock(roomId, repair)
+    );
+  }
+
+  /**
+   * The git half of {@link RoomRepoService.repairMainCheckout}, run while
+   * holding the room's queue.
+   *
+   * Everything it does can be changed by a merge or a save running ahead of it,
+   * which is exactly why it is in here and the authorization is not.
+   *
+   * @param roomId - The room.
+   * @param repair - What the operator asked for.
+   * @returns What it did.
+   */
+  private async repairUnderLock(
+    roomId: string,
+    repair: RoomMainRepair
+  ): Promise<RoomMainRepairResult> {
     const repoDir = this.deps.store.repoPath(roomId);
     const ceiling = this.deps.store.homeDir(roomId);
     try {
@@ -545,21 +552,30 @@ export class RoomRepoService {
    * clean` is deliberately not used — its whole reputation is for removing more
    * than it was asked to.
    *
+   * **A rename is one change with two paths, and undoing it needs both.**
+   * `git mv notes.md renamed.md` is reported as one stray — `renamed.md`, which
+   * `HEAD` does not hold — so the removal half alone deleted `renamed.md` and
+   * left `notes.md` still missing: the file was gone from the room, and the room
+   * was still stuck. So a discarded rename also restores the name it came from
+   * ({@link StrayChange.renamedFrom}), which is the only reading of "undo" that
+   * ends with the room where it started.
+   *
    * @param repoDir - The room's main checkout.
    * @param ceiling - The room home directory git's search may not climb past.
    * @param strays - What the room is reporting as changed.
    * @param paths - What the operator named.
-   * @returns How many paths were discarded.
+   * @returns How many paths were discarded — the paths the operator named, not
+   *   the files that were touched putting them back.
    * @throws {RoomError} `ROOM_FILE_NOT_FOUND` naming the first path that is not
    *   one of the reported changes.
    */
   private async discardStrayChanges(
     repoDir: string,
     ceiling: string,
-    strays: readonly { path: string }[],
+    strays: readonly StrayChange[],
     paths: readonly string[]
   ): Promise<RepairAction> {
-    const reported = new Set(strays.map((stray) => stray.path));
+    const reported = new Map(strays.map((stray) => [stray.path, stray]));
     for (const filePath of paths) {
       if (!reported.has(filePath)) {
         throw new RoomError(
@@ -570,8 +586,16 @@ export class RoomRepoService {
     }
 
     const wanted = [...new Set(paths)];
-    const inHead = await pathsInHead(repoDir, wanted, ceiling);
-    const restore = wanted.filter((filePath) => inHead.has(filePath));
+    // The name a rename came FROM is restored with it. It was never offered as
+    // a stray of its own (it is not there to discard), and it is not counted as
+    // one either — the answer says how many changes the operator named.
+    const alsoRestore = wanted
+      .map((filePath) => reported.get(filePath)?.renamedFrom)
+      .filter((from): from is string => from !== undefined);
+    const inHead = await pathsInHead(repoDir, [...wanted, ...alsoRestore], ceiling);
+    const restore = [...new Set([...wanted, ...alsoRestore])].filter((filePath) =>
+      inHead.has(filePath)
+    );
     const remove = wanted.filter((filePath) => !inHead.has(filePath));
 
     await restoreFromHead(repoDir, restore, ceiling);

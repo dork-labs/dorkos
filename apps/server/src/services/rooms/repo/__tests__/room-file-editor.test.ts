@@ -29,9 +29,15 @@
  *   clean", which then wedges every merge in the room.
  * - Committing unconditionally reddens "saving an unchanged file commits
  *   nothing".
+ * - Dropping `:(literal)` from `stagePaths` reddens "stages the file it was
+ *   handed": `ax.md` is swept into a save of `[a]x.md`.
+ * - Dropping the `mode` half of the lock's comparison reddens "treats a file
+ *   somebody made executable as a change".
+ * - Running the path checks before the lock reddens "answers a stale save with
+ *   the choice, even when the folder itself has gone".
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdir, mkdtemp, readFile, readlink, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, readlink, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -42,7 +48,7 @@ import { RoomRepoStore } from '../room-repo-store.js';
 import { RoomRepoMutex } from '../room-repo-mutex.js';
 import { RoomFilesService } from '../room-files.js';
 import { RoomFileEditor, type RoomFileSaveOutcome } from '../room-file-editor.js';
-import { commitAll, runGit } from '../room-repo-git.js';
+import { commitAll, runGit, stagePaths } from '../room-repo-git.js';
 import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
 
 const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
@@ -343,7 +349,19 @@ describe('RoomFileEditor', () => {
 
   describe('paths a save must not take', () => {
     it('refuses a path that could mean somewhere else', async () => {
-      for (const bad of ['../escape.md', '/etc/passwd', 'docs\\..\\..\\x', 'docs//plan.md']) {
+      for (const bad of [
+        '../escape.md',
+        '/etc/passwd',
+        'docs\\..\\..\\x',
+        'docs//plan.md',
+        // Pathspec magic. Every other command here wraps a path in
+        // `:(literal)`, which disarms it — but `check-ignore` refuses that
+        // wrapper, so `:!x.md` reached git as magic, exited 128, and answered a
+        // bare 500 that any member could trigger (found in review).
+        ':!x.md',
+        ':(exclude)x.md',
+        ':/x.md',
+      ]) {
         await expectRoomError(
           editor.save(ROOM_ID, OPERATOR, { path: bad, baseCommit: null, text: 'x\n' }),
           'ROOM_FILE_PATH_INVALID'
@@ -465,6 +483,66 @@ describe('RoomFileEditor', () => {
         }),
         'ROOM_FILE_NOT_FOUND'
       );
+    });
+  });
+
+  describe('guards that a passing suite would not have noticed', () => {
+    it('stages the file it was handed and nothing that merely matches it', async () => {
+      // `git add` reads a bare path as a PATTERN: `git add -- '[a]x.md'` was
+      // measured to stage `ax.md` alongside it. Through the save path that
+      // cannot be seen — the dirty-main gate means every neighbour is already
+      // identical to the commit, so an over-broad `git add` stages nothing
+      // extra — which is exactly why this is asked of the PRIMITIVE, with a
+      // neighbour deliberately made dirty first. A test that could not fail
+      // would be worse than none (the review's own mutation survived the suite
+      // at the service level, and this is where it does not).
+      await put('[a]x.md', 'the file that was asked for\n');
+      await put('ax.md', 'the neighbour a glob would sweep in\n');
+
+      await stagePaths(repoDir, ['[a]x.md'], dorkHomeOf());
+
+      expect((await git(['diff', '--cached', '--name-only'])).split('\n')).toEqual(['[a]x.md']);
+    });
+
+    it('treats a file somebody made executable as a change, though its bytes are identical', async () => {
+      // A `chmod +x` moves the mode and not the blob, so a lock that compared
+      // only shas called it "no change" and dropped it on the next save. Two
+      // files with one sha are one file's contents; they are not one file.
+      const opened = await head();
+      // On disk rather than through the index, because the commit below stages
+      // from the working tree — an index-only chmod would be undone by it.
+      await chmod(path.join(repoDir, 'docs/plan.md'), 0o755);
+      await commit('Make the plan runnable');
+
+      const outcome = await editor.save(ROOM_ID, OPERATOR, {
+        path: 'docs/plan.md',
+        baseCommit: opened,
+        text: '# Plan\n\nMine.\n',
+      });
+
+      expect(outcome.status).toBe('conflict');
+      expect(await git(['ls-tree', '-z', 'HEAD', '--', 'docs/plan.md'])).toContain('100755');
+    });
+
+    it('answers a stale save with the choice, even when the folder itself has gone', async () => {
+      // The path checks used to win this race and answer "there is no such
+      // folder — saving does not make new folders", which is true and useless:
+      // the person did not ask for a folder, they were editing a file that has
+      // since been deleted, and what they need is reload-or-keep-mine.
+      const opened = await head();
+      await git(['rm', '-r', '-q', 'docs']);
+      await commit('Ana clears out the docs');
+
+      const outcome = await editor.save(ROOM_ID, OPERATOR, {
+        path: 'docs/plan.md',
+        baseCommit: opened,
+        text: 'still working on this\n',
+      });
+
+      expect(outcome.status).toBe('conflict');
+      if (outcome.status !== 'conflict') throw new Error('unreachable');
+      expect(outcome.conflict.path).toBe('docs/plan.md');
+      expect(outcome.conflict.commit).toBe(await head());
     });
   });
 

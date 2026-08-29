@@ -32,7 +32,12 @@
  * @module server/services/rooms/repo/room-main-checkout
  */
 import { RoomError } from '../room-errors.js';
-import { currentBranch, listStrayChanges, type StrayChange } from './room-repo-git.js';
+import {
+  currentBranch,
+  hasUncommittedChanges,
+  listStrayChanges,
+  type StrayChange,
+} from './room-repo-git.js';
 
 /** What a room's integration tree looks like on disk right now. */
 export interface RoomMainCheckoutState {
@@ -45,9 +50,20 @@ export interface RoomMainCheckoutState {
 /**
  * Read the integration tree's branch and everything uncommitted in it.
  *
- * Two git commands, always both — the caller needs to be able to tell "on the
- * wrong branch" from "has stray edits", and a person looking at a warning needs
- * to be told which.
+ * The branch is always asked, because the caller has to tell "on the wrong
+ * branch" from "has stray edits" and a person looking at a warning has to be
+ * told which.
+ *
+ * **The expensive question is asked only when the cheap one says yes.** The
+ * per-file list needs `--untracked-files=all`, which walks INTO every untracked
+ * directory — so a room somebody unpacked a build directory into costs tens of
+ * thousands of paths. That list is what the warning renders and what a discard
+ * names, so it cannot be given up; but a healthy room is clean, and every merge,
+ * every save and every poll of the room's status asks this. So the cheap
+ * `status --porcelain` (untracked directories collapsed to one entry each)
+ * answers "is anything different at all", and only a room that is really stuck
+ * pays for the detail. The two can never disagree: `all` is a superset of the
+ * default, so one is empty exactly when the other is (found in review).
  *
  * @param repoDir - The room's main checkout.
  * @param ceilingDir - The room home directory git's search may not climb past.
@@ -57,10 +73,9 @@ export async function readMainCheckoutState(
   repoDir: string,
   ceilingDir: string
 ): Promise<RoomMainCheckoutState> {
-  return {
-    branch: await currentBranch(repoDir, ceilingDir),
-    strays: await listStrayChanges(repoDir, ceilingDir),
-  };
+  const branch = await currentBranch(repoDir, ceilingDir);
+  if (!(await hasUncommittedChanges(repoDir, ceilingDir))) return { branch, strays: [] };
+  return { branch, strays: await listStrayChanges(repoDir, ceilingDir) };
 }
 
 /**

@@ -4218,7 +4218,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: "Save one of a room's files",
   description:
-    "Writes one file into the room's own copy and commits it, **as one commit authored by the person who saved it**. The file is named in the body rather than the URL, so a save and a read spell a path the same way. **People only**: a member AGENT is refused 403 `PEOPLE_ONLY` — it has a working copy of its own and `merge_to_room_main` to bring work back through, and a second writer in the integration tree is the one-writer rule undone. Membership is still asked first, so a non-member gets the same 404 an unknown room gets. **Optimistic locking is about the FILE**: `baseCommit` is the commit the editor read it at, and the save is refused 409 `FILE_CHANGED` only if THAT PATH changed since — not merely because the room moved on, which it does every time anybody merges. That refusal carries `conflict` — the commit `main` is at now, and who last touched the file — which is what a reload / keep-mine choice is drawn from; sending the conflict's own commit back as `baseCommit` is how a person overwrites deliberately. Saving text that is byte-for-byte what the file already held commits nothing and answers `committed: false`. Refused otherwise with: `ROOM_FILE_PATH_INVALID` (a path that could mean somewhere else, or that names the room's own git directory in any of its spellings), `ROOM_FILE_NOT_READABLE` (a folder, a link, or another repository — a save never writes through a link), `ROOM_FILE_NOT_FOUND` (a folder the room does not have; saving does not make new folders), `ROOM_FILE_NOT_TEXT` (a `NUL` byte, which would make the file unreadable through the read route), `FILE_TOO_LARGE` and `REPO_CAP_EXCEEDED` against the room's own frozen caps, `MAIN_CHECKOUT_DIRTY` while something outside DorkOS has written in the room's copy, and `ROOM_ARCHIVED`. The request body limit is 1 MB, which is below the default file cap — a very large save is refused by the body parser first.",
+    "Writes one file into the room's own copy and commits it, **as one commit authored by the person who saved it**. The file is named in the body rather than the URL, so a save and a read spell a path the same way. **People only**: a member AGENT is refused 403 `PEOPLE_ONLY` — it has a working copy of its own and `merge_to_room_main` to bring work back through, and a second writer in the integration tree is the one-writer rule undone. Membership is still asked first, so a non-member gets the same 404 an unknown room gets. **Optimistic locking is about the FILE**: `baseCommit` is the commit the editor read it at, and the save is refused 409 `FILE_CHANGED` only if THAT PATH changed since — not merely because the room moved on, which it does every time anybody merges. That refusal carries `conflict` — the commit `main` is at now, and who last touched the file — which is what a reload / keep-mine choice is drawn from; sending the conflict's own commit back as `baseCommit` is how a person overwrites deliberately. Saving text that is byte-for-byte what the file already held commits nothing and answers `committed: false`. Refused otherwise with: `ROOM_FILE_PATH_INVALID` (a path that could mean somewhere else, or that names the room's own git directory in any of its spellings), `ROOM_FILE_NOT_READABLE` (a folder, a link, or another repository — a save never writes through a link), `ROOM_FILE_NOT_FOUND` (a folder the room does not have; saving does not make new folders), `ROOM_FILE_NOT_TEXT` (a `NUL` byte, which would make the file unreadable through the read route), `FILE_TOO_LARGE` and `REPO_CAP_EXCEEDED` against the room's own frozen caps, `MAIN_CHECKOUT_DIRTY` while something outside DorkOS has written in the room's copy, and `ROOM_ARCHIVED`. **Two ceilings, two answers**: the request body limit is 1 MB, below the default file cap, so a very large save never reaches the room's own cap at all — it is refused 413 `REQUEST_TOO_LARGE` by the request parser, where a save that fits the request and not the room is refused 409 `FILE_TOO_LARGE`.",
   request: {
     params: RoomIdParams,
     body: { content: { 'application/json': { schema: RoomFileSaveRequestSchema } } },
@@ -4245,8 +4245,17 @@ registry.registerPath({
     },
     409: {
       description:
-        'The file changed while it was being edited (`FILE_CHANGED`, carrying `conflict`), or the save was refused for one of the room-state reasons above; `code` says which',
-      content: { 'application/json': { schema: RoomFileConflictResponseSchema } },
+        'The file changed while it was being edited — `FILE_CHANGED`, and ONLY that code carries `conflict` — or the save was refused for one of the room-state reasons above (`MAIN_CHECKOUT_DIRTY`, `FILE_TOO_LARGE`, `REPO_CAP_EXCEEDED`, `ROOM_ARCHIVED`, `ROOM_HAS_NO_REPO`, `ROOM_REPOS_DISABLED`, `ROOM_REPO_GIT_UNAVAILABLE`), which answer with the code and the sentence alone. Switch on `code`, never on the presence of a field',
+      content: {
+        'application/json': {
+          schema: z.union([RoomFileConflictResponseSchema, ErrorResponseSchema]),
+        },
+      },
+    },
+    413: {
+      description:
+        'The request body is over the server’s 1 MB limit (`REQUEST_TOO_LARGE`). That limit is below the room’s own file cap, so a very large save meets this one first',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     429: {
       description: 'Another write held the room’s queue and the wait ran out (`MERGE_IN_FLIGHT`)',
@@ -4297,6 +4306,11 @@ registry.registerPath({
     409: {
       description:
         'The room has no files (`ROOM_HAS_NO_REPO`), its copy is on another branch (`MAIN_CHECKOUT_DIRTY`), or room files are switched off (`ROOM_REPOS_DISABLED`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    429: {
+      description:
+        'A merge or a save held the room’s queue and the wait ran out (`MERGE_IN_FLIGHT`) — a repair takes the same one lane every other write to a room’s files takes',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

@@ -528,6 +528,24 @@ describe('room files routes', () => {
       expect(res.body.code).toBe('ROOM_ARCHIVED');
     });
 
+    it('answers a save too large for one request with 413, not a server error', async () => {
+      const roomId = await roomWithFiles();
+      const opened = await readFileAt(roomId, 'docs/plan.md');
+
+      // Over `express.json`'s 1 MB limit and well under the room's own 5 MB
+      // file cap, so the request never reaches the room at all. It used to
+      // answer 500 `INTERNAL_ERROR`, which told a person the server had broken
+      // rather than the one thing they could act on (found in review).
+      const res = await request(app)
+        .put(`/api/rooms/${roomId}/files/content`)
+        .send({ path: 'docs/plan.md', baseCommit: opened.commit, text: 'x'.repeat(1_200_000) });
+
+      expect(res.status).toBe(413);
+      expect(res.body.code).toBe('REQUEST_TOO_LARGE');
+      // And nothing of it landed.
+      expect((await readFileAt(roomId, 'docs/plan.md')).text).toBe('# Plan\n');
+    });
+
     it('refuses a room with no files of its own, and a malformed request', async () => {
       const bare = await channel('Quiet corner');
       const noFiles = await request(app)

@@ -81,6 +81,7 @@ import {
   revParse,
   stagePaths,
   SYMLINK_MODE,
+  UnreadablePathError,
   GITLINK_MODE,
   unstagePaths,
   type TreeEntry,
@@ -260,20 +261,50 @@ export class RoomFileEditor {
       const tree = head ? await listTree(repoDir, head, ceiling) : new Map<string, TreeEntry>();
       const existing = tree.get(filePath) ?? null;
 
+      // **The lock is asked FIRST when the editor said what it read**, and the
+      // order is a fix rather than a preference. A stale save whose file — or
+      // whose whole folder — was deleted by somebody else fails the path checks
+      // below with "there is no such folder in this room's files. Saving does
+      // not make new folders", which is true and useless: the person did not
+      // ask for a new folder, they were editing a file that has since gone, and
+      // what they need is the reload / keep-mine choice. A change under the
+      // editor outranks everything else that can be said about the path
+      // (found in review).
+      //
+      // With no `baseCommit` there is nothing to outrank — the caller is
+      // creating a file and has made no claim about the room's state — so the
+      // path checks come first and answer plainly.
+      if (baseCommit !== null) {
+        const stale = await this.checkLock(
+          roomId,
+          filePath,
+          head,
+          baseCommit,
+          existing,
+          repoDir,
+          ceiling
+        );
+        if (stale) return { status: 'conflict' as const, conflict: stale };
+      }
+
       this.assertOverwritable(filePath, existing, tree);
       this.assertParentExists(filePath, tree);
       await assertNotIgnored(repoDir, ceiling, filePath);
 
-      const conflict = await this.checkLock(
-        roomId,
-        repoDir,
-        ceiling,
-        filePath,
-        head,
-        baseCommit,
-        existing
-      );
-      if (conflict) return { status: 'conflict' as const, conflict };
+      if (baseCommit === null && existing) {
+        // The editor thought it was creating the first version of this file and
+        // the room now holds one: somebody got there first. Asked here rather
+        // than above, because with no base commit the path checks are the more
+        // useful answer to everything else.
+        return {
+          status: 'conflict' as const,
+          conflict: {
+            path: filePath,
+            commit: head as string,
+            lastCommit: await this.lastCommitOf(roomId, filePath),
+          },
+        };
+      }
 
       const bytes = Buffer.from(text, 'utf-8');
       assertText(filePath, bytes);
@@ -497,34 +528,54 @@ export class RoomFileEditor {
    *   the honest one: something is out of step and overwriting blind is not the
    *   fix. (A well-formed sha from another repo, or a room whose files were
    *   deleted and given again.)
-   * - The blob and mode at the path are identical in both commits — the room
+   * - The blob AND mode at the path are identical in both commits — the room
    *   moved on, but not here. The save goes in.
-   * - They differ — including "created since", and "deleted since" — and the
-   *   caller is told what `main` holds now.
+   * - They differ — including "created since", "deleted since", and "made
+   *   executable since" — and the caller is told what `main` holds now.
+   *
+   * **The mode is compared as well as the blob**, which is not a detail: making
+   * a file executable changes nothing about its bytes, so a sha-only comparison
+   * calls a `chmod +x` somebody committed "no change" and quietly drops it on
+   * the next save. Two files with one sha are one file's contents; they are not
+   * one file.
+   *
+   * Called only when the editor gave a `baseCommit` — creating a file makes no
+   * claim about the room's state, and its answer is the path checks'.
    *
    * @param roomId - The room, for reading who last touched the file.
-   * @param repoDir - The room's main checkout.
-   * @param ceiling - The room home directory git's search may not climb past.
    * @param filePath - The path being saved.
    * @param head - The commit `main` points at, or `null`.
-   * @param baseCommit - What the editor read, or `null`.
+   * @param baseCommit - What the editor read.
    * @param existing - The tree entry at `head`, or `null`.
+   * @param repoDir - The room's main checkout.
+   * @param ceiling - The room home directory git's search may not climb past.
    * @returns The conflict, or `null` when the save may proceed.
+   * @throws {RoomError} `ROOM_FILE_NOT_FOUND` when the room's files hold no
+   *   commits at all — see below for why that is a refusal and not a conflict.
    */
   private async checkLock(
     roomId: string,
-    repoDir: string,
-    ceiling: string,
     filePath: string,
     head: string | null,
-    baseCommit: string | null,
-    existing: TreeEntry | null
+    baseCommit: string,
+    existing: TreeEntry | null,
+    repoDir: string,
+    ceiling: string
   ): Promise<RoomFileConflict | null> {
     if (baseCommit === head) return null;
-    // A base commit against a repo with none is not a race anybody can resolve
-    // by overwriting: the room's files are not where the editor left them.
+    // **A room whose files hold no commits at all, against an editor that says
+    // it read one.** `enable` seeds `ROOM.md` in the same call that creates the
+    // repo, so a room with files always has a first commit and this cannot
+    // happen through DorkOS; it is answered rather than assumed away because
+    // the alternative was a conflict carrying `commit: ''`, which is not a
+    // commit id — the client could not send it back, so "keep mine" was
+    // impossible and the person was stuck (found in review). A refusal that
+    // says what is true is better than a choice that cannot be taken.
     if (head === null) {
-      return { path: filePath, commit: '', lastCommit: null };
+      throw new RoomError(
+        'ROOM_FILE_NOT_FOUND',
+        'This room’s files have no history yet, so there is nothing here that you were editing. Open them again.'
+      );
     }
 
     const conflict = async (): Promise<RoomFileConflict> => ({
@@ -532,12 +583,6 @@ export class RoomFileEditor {
       commit: head,
       lastCommit: existing ? await this.lastCommitOf(roomId, filePath) : null,
     });
-
-    if (baseCommit === null) {
-      // The editor thought it was creating the first version of this file. If
-      // the room now holds one, somebody got there first.
-      return existing ? conflict() : null;
-    }
 
     let before: TreeEntry | null;
     try {
@@ -706,6 +751,21 @@ function commitSubject(filePath: string, existed: boolean): string {
  * @throws {RoomError} `ROOM_FILE_PATH_INVALID`.
  */
 function assertWritablePath(filePath: string): void {
+  // **A leading colon is pathspec magic, and one command here cannot disarm
+  // it.** Everywhere else a path reaches git wrapped in `:(literal)`, which
+  // makes every character mean itself — but `check-ignore` refuses that wrapper
+  // outright ({@link isIgnored}), so a path beginning with `:` arrives as magic
+  // and git exits 128 on it. That surfaced as a 500 with no code, reachable by
+  // any member with one request (`:!x.md`, found in review). It is refused here
+  // rather than only handled there, because a path whose first character
+  // changes what a path MEANS is not a filename anybody needs: git itself makes
+  // such a file unnameable without an escape hatch.
+  if (filePath.startsWith(':')) {
+    throw new RoomError(
+      'ROOM_FILE_PATH_INVALID',
+      'That path is not one this room can have: a name cannot start with a colon.'
+    );
+  }
   for (const segment of filePath.split('/')) {
     const lowered = segment.toLowerCase();
     if (GIT_DIR_SPELLINGS.includes(lowered)) {
@@ -738,7 +798,22 @@ async function assertNotIgnored(
   ceilingDir: string,
   filePath: string
 ): Promise<void> {
-  if (!(await isIgnored(repoDir, filePath, ceilingDir))) return;
+  let ignored: boolean;
+  try {
+    ignored = await isIgnored(repoDir, filePath, ceilingDir);
+  } catch (err) {
+    // A path git cannot read as a path is a bad path, not a broken server —
+    // the second closure behind {@link assertWritablePath}'s leading-colon
+    // rule, so a spelling nobody predicted still answers with a code.
+    if (err instanceof UnreadablePathError) {
+      throw new RoomError(
+        'ROOM_FILE_PATH_INVALID',
+        'That path is not one this room can have: git cannot read it as a file name.'
+      );
+    }
+    throw err;
+  }
+  if (!ignored) return;
   throw new RoomError(
     'ROOM_FILE_NOT_READABLE',
     `This room’s files are set to ignore \`${filePath}\`, so saving it would not keep it. Change the room’s \`.gitignore\` first, or save somewhere else.`

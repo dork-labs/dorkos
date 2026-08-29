@@ -200,10 +200,13 @@ export type RoomFileContentResponse = z.infer<typeof RoomFileContentResponseSche
  * now, and a diff computed on the way out is a diff the server would have to
  * trust.
  *
- * **The request body limit applies first.** The server accepts 1 MB of JSON,
- * which is well under a room's own `maxFileBytes` — so a very large file is
- * refused by the request before the room's cap is ever consulted. Both are
- * ceilings on the same act; the smaller one is the one an editor meets.
+ * **The request body limit applies first, and answers differently.** The server
+ * accepts 1 MB of JSON, which is well under a room's own `maxFileBytes` — so a
+ * very large save never reaches the room's cap at all. It is refused **413
+ * `REQUEST_TOO_LARGE`**, by the request parser rather than by the room, while
+ * a save that fits the request and not the room is refused 409
+ * `FILE_TOO_LARGE`. Two ceilings, two answers; an editor that means to explain
+ * itself has to read both.
  */
 export const RoomFileSaveRequestSchema = z.object({
   /**

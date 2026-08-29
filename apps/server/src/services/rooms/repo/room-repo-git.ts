@@ -161,6 +161,25 @@ export class GitUnavailableError extends Error {
   }
 }
 
+/**
+ * Raised when git cannot read a path AS a path.
+ *
+ * Its own type for the reason {@link GitUnavailableError} has one: it is not a
+ * failure of the repository or of the request as a whole, it is a statement
+ * about one argument — and the caller's answer to it ("that path is not one
+ * this room can have") is nothing like its answer to a git that fell over.
+ */
+export class UnreadablePathError extends Error {
+  constructor(
+    readonly path: string,
+    cause?: unknown
+  ) {
+    super(`git cannot read ${path} as a file name`);
+    this.name = 'UnreadablePathError';
+    this.cause = cause;
+  }
+}
+
 /** Who a commit is attributed to. */
 export interface GitIdentity {
   /** The name `git log` shows. */
@@ -533,6 +552,21 @@ export interface StrayChange {
   path: string;
   /** What happened to it, as a person would say it. */
   kind: 'added' | 'modified' | 'deleted' | 'untracked';
+  /**
+   * Where this file was before somebody renamed it, when that is what happened.
+   *
+   * **Carried, rather than dropped, because undoing a rename needs both
+   * halves.** A rename is one act and two paths: the new name appears and the
+   * old one vanishes. Whoever undoes it has to put the old name back as well as
+   * take the new one away — a discard that knew only the new path deleted the
+   * file from the room and left the old name still missing, which is a
+   * destructive half-completion of an act the operator asked to UNDO (found in
+   * review, reproduced with `git mv`).
+   *
+   * The old path is deliberately still not a stray of its own: offering it as a
+   * separate thing to discard would offer a path that is not there.
+   */
+  renamedFrom?: string;
 }
 
 /**
@@ -590,10 +624,16 @@ export async function listStrayChanges(
     const index = record[0] ?? ' ';
     const worktree = record[1] ?? ' ';
     const filePath = record.slice(3);
-    // The old name of a rename or a copy follows in its own record. Skipping it
-    // here is what stops it being offered as a path to discard.
-    if (index === 'R' || index === 'C') at += 1;
-    strays.push({ path: filePath, kind: strayKind(index, worktree) });
+    // The old name of a rename or a copy follows in its own record. It is
+    // consumed rather than listed — offering it would offer a path that is not
+    // there — and kept on the record it belongs to, because undoing the rename
+    // means restoring it. See {@link StrayChange.renamedFrom}.
+    const renamedFrom = index === 'R' || index === 'C' ? records[++at] : undefined;
+    strays.push({
+      path: filePath,
+      kind: strayKind(index, worktree),
+      ...(renamedFrom ? { renamedFrom } : {}),
+    });
   }
   return strays;
 }
@@ -648,7 +688,14 @@ export async function isIgnored(
   } catch (err) {
     if (err instanceof GitUnavailableError) throw err;
     if ((err as { code?: unknown })?.code === 1) return false;
-    throw err;
+    // **Anything else is this command failing on the PATH, and it is named as
+    // that rather than propagated raw.** `check-ignore` exits 128 on a pathspec
+    // it cannot parse — the magic it does not support — and letting that out
+    // reached the global handler as a 500 with no code, which is both a lie
+    // about whose fault it was and unactionable (`:!x.md`, found in review).
+    // Its own type, like the two failures above it, so the caller translates it
+    // into the room's own refusal instead of guessing from a message.
+    throw new UnreadablePathError(filePath, err);
   }
 }
 
