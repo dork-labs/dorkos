@@ -145,6 +145,21 @@ describe('editing one of a room’s files', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
   });
 
+  it('puts the cursor in the editor, and back on the pencil when it leaves', async () => {
+    const transport = createMockTransport();
+    transport.readRoomFileContent = vi.fn().mockResolvedValue(markdownFile('# Rules\n'));
+    renderDialog(transport);
+
+    // Pressing Edit unmounts the button that was focused, so without this the
+    // cursor falls to the body — a keyboard reader is left outside the thing
+    // they just opened, and Tab starts again from the top of the dialog.
+    const box = await startEditing();
+    await waitFor(() => expect(box).toHaveFocus());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Edit' })).toHaveFocus());
+  });
+
   it('offers no editing on a file that is not markdown', async () => {
     const transport = createMockTransport();
     transport.readRoomFileContent = vi.fn().mockResolvedValue({
@@ -218,6 +233,98 @@ describe('when somebody else got there first', () => {
     // The choice is answered, so it is gone — and Save is dark again, because
     // what is in the box now IS what the room holds.
     expect(screen.queryByRole('button', { name: 'Open their version' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  it('keeps what was typed when their version cannot be fetched', async () => {
+    const transport = createMockTransport();
+    transport.readRoomFileContent = vi
+      .fn()
+      .mockResolvedValueOnce(markdownFile('# Rules\n'))
+      .mockRejectedValue(new Error('the network went away'));
+    transport.saveRoomFile = vi.fn().mockRejectedValue(fileChanged('ddd4444'));
+    renderDialog(transport);
+
+    const box = await startEditing();
+    fireEvent.change(box, { target: { value: 'mine\n' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open their version' }));
+
+    // **A failed refetch still resolves, and its `data` is the copy from BEFORE
+    // the conflict.** Adopting that would throw away what was typed and call
+    // the pre-conflict text "their version" — the one destructive act on this
+    // path, performed for a request that never arrived.
+    expect(await screen.findByText(/couldn’t be fetched just now/)).toBeInTheDocument();
+    expect(box).toHaveValue('mine\n');
+    // And the choice is still there to take, because it was never answered.
+    expect(screen.getByRole('button', { name: 'Open their version' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save mine over it' })).toBeInTheDocument();
+  });
+
+  it('says so when their version is that they deleted the file', async () => {
+    const transport = createMockTransport();
+    transport.readRoomFileContent = vi
+      .fn()
+      .mockResolvedValueOnce(markdownFile('# Rules\n'))
+      .mockRejectedValue(refusal('ROOM_FILE_NOT_FOUND', 404));
+    transport.saveRoomFile = vi.fn().mockRejectedValue(fileChanged('ddd4444'));
+    renderDialog(transport);
+
+    const box = await startEditing();
+    fireEvent.change(box, { target: { value: 'mine\n' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open their version' }));
+
+    // The canonical way a re-read comes back as something other than text: the
+    // other person did not change the file, they removed it. There is no
+    // version to open, and a button that silently did nothing left a person
+    // pressing it forever.
+    // The source's own sentence for the refusal, plus what it means for the
+    // text still in the box. The apostrophe class is loose on purpose: the
+    // read-refusal copy predates this branch and spells it straight.
+    expect(await screen.findByText(/isn.t in the room.s files any more/)).toBeInTheDocument();
+    expect(screen.getByText(/save it over their change/)).toBeInTheDocument();
+    expect(box).toHaveValue('mine\n');
+    expect(screen.getByRole('button', { name: 'Save mine over it' })).toBeInTheDocument();
+  });
+
+  it('says the room moved AGAIN when keeping mine loses a second race', async () => {
+    const transport = createMockTransport();
+    transport.readRoomFileContent = vi.fn().mockResolvedValue(markdownFile('# Rules\n'));
+    transport.saveRoomFile = vi
+      .fn()
+      .mockRejectedValueOnce(fileChanged('ddd4444'))
+      .mockRejectedValue(fileChanged('eee5555'));
+    renderDialog(transport);
+
+    const box = await startEditing();
+    fireEvent.change(box, { target: { value: 'mine\n' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save mine over it' }));
+
+    // A banner byte-identical to the one already on screen would read as a
+    // dead button. Something really did happen, so it says what.
+    expect(
+      await screen.findByText(/changed this file again while you were deciding/)
+    ).toBeInTheDocument();
+  });
+
+  it('darkens the footer Save while the choice is open', async () => {
+    const transport = createMockTransport();
+    transport.readRoomFileContent = vi.fn().mockResolvedValue(markdownFile('# Rules\n'));
+    transport.saveRoomFile = vi.fn().mockRejectedValue(fileChanged('ddd4444'));
+    renderDialog(transport);
+
+    const box = await startEditing();
+    fireEvent.change(box, { target: { value: 'mine\n' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await screen.findByRole('button', { name: 'Save mine over it' });
+
+    // It still holds the commit the room has moved past, so it could do nothing
+    // but lose the same race again. Two save-shaped controls where one cannot
+    // work is a choice that is not a choice.
+    // `getByRole`'s name match is already whole-string, so this finds the
+    // footer's Save and never the banner's "Save mine over it".
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
   });
 

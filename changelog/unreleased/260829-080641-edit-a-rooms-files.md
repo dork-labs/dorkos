@@ -3,6 +3,7 @@ covers:
   - "feat(server,shared,client): a person can save a room's file, and a stale save is refused (DOR-1600)"
   - 'fix(server,shared): nine findings from the DOR-1600 adversarial review'
   - "feat(client,shared): a person can open a room's file, change it, and be told when somebody else got there first (DOR-1601)"
+  - 'fix(client,server,specs): nine findings from the DOR-1601 adversarial review'
 ---
 
 ### Added

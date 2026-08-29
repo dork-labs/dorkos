@@ -51,6 +51,23 @@ import type { StrayChange } from '../room-repo-git.js';
 type Mutual<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 
 /**
+ * The same check, with every optional field made required first.
+ *
+ * **{@link Mutual} alone is blind to optional-field drift, and that was
+ * measured rather than assumed**: dropping the required `authorId` from one
+ * side reds immediately, while dropping the OPTIONAL `renamedFrom` does not —
+ * `{ a: string }` and `{ a: string; b?: string }` are mutually assignable,
+ * because a value satisfying the first satisfies the second by omitting `b`.
+ *
+ * That is exactly the drift this file exists to catch. `renamedFrom` is
+ * optional and it is load-bearing: undoing a rename needs the old path as well
+ * as the new one, so a wire type that quietly lost it would take a destructive
+ * half-completion all the way to a client. `Required<>` makes both optionals
+ * present, so a field on one side and not the other is a mismatch again.
+ */
+type MutualIncludingOptional<A, B> = Mutual<Required<A>, Required<B>>;
+
+/**
  * Fails to COMPILE unless its argument type is `true`.
  *
  * A type-level assertion needs no runtime, but it does need to be read by the
@@ -65,6 +82,18 @@ describe('the repo status this server computes and the one the port promises', (
   it('are the same shape, in both directions', () => {
     expect(mutual<Mutual<StrayChange, WireStrayChange>>()).toBe(true);
     expect(mutual<Mutual<RoomMainRepairResult, WireRepairResult>>()).toBe(true);
+  });
+
+  it('are the same shape down to their optional fields', () => {
+    // The half the check above cannot see. `StrayChange` is the one that has an
+    // optional field today; the rest are here so the next optional added
+    // anywhere in this group is covered the day it lands rather than the day
+    // somebody remembers.
+    expect(mutual<MutualIncludingOptional<RoomRepoStatus, WireRepoStatus>>()).toBe(true);
+    expect(mutual<MutualIncludingOptional<RoomMainStatus, WireMainStatus>>()).toBe(true);
+    expect(mutual<MutualIncludingOptional<RoomBranchStatus, WireBranchStatus>>()).toBe(true);
+    expect(mutual<MutualIncludingOptional<StrayChange, WireStrayChange>>()).toBe(true);
+    expect(mutual<MutualIncludingOptional<RoomMainRepairResult, WireRepairResult>>()).toBe(true);
   });
 
   it('agree on how many stray changes a status carries', () => {

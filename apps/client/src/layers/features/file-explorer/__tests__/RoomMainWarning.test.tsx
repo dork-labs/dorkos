@@ -9,12 +9,13 @@
  * before it destroys.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import type { RoomMainStatus, RoomRepoStatus } from '@dorkos/shared/room-repo';
+import { roomKeys } from '@/layers/entities/room';
 import { TransportProvider } from '@/layers/shared/model';
 import { RoomMainWarning } from '../ui/RoomMainWarning';
 
@@ -61,6 +62,9 @@ function renderWarning(transport: Transport) {
       </TransportProvider>
     </QueryClientProvider>
   );
+  // Handed back so a test can make the room answer differently while the panel
+  // is open, which is the one thing this component cannot cause for itself.
+  return queryClient;
 }
 
 beforeEach(() => {
@@ -91,6 +95,24 @@ describe('the warning', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('says so when it could not find out, rather than drawing the same nothing as a clean room', async () => {
+    const transport = createMockTransport();
+    transport.readRoomRepoStatus = vi
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error('no git here'), { code: 'ROOM_REPO_GIT_UNAVAILABLE', status: 409 })
+      );
+    renderWarning(transport);
+
+    // Drawing nothing would be indistinguishable from "everything is fine" —
+    // and a save refused MAIN_CHECKOUT_DIRTY tells a person in so many words
+    // that "the warning above the files says how", which would be pointing at
+    // an empty space.
+    expect(
+      await screen.findByText(/couldn’t check whether this room’s files are in order/)
+    ).toBeInTheDocument();
   });
 
   it('names the changes it found, so a person can recognise them', async () => {
@@ -174,6 +196,36 @@ describe('the two ways out', () => {
         paths: ['notes/scratch.md'],
       })
     );
+  });
+
+  it('takes the question away when the change it was about is gone', async () => {
+    const transport = dirtyRoom();
+    const queryClient = renderWarning(transport);
+
+    fireEvent.click(await screen.findByLabelText('notes/scratch.md'));
+    fireEvent.click(screen.getByRole('button', { name: 'Discard 1' }));
+    expect(await screen.findByText(/cannot be brought back/)).toBeInTheDocument();
+
+    // The list is re-read while this panel is open — somebody fixes their own
+    // terminal edit, a merge lands — and the change this question was about is
+    // no longer one of them. Left standing over nothing, the button sent
+    // `paths: []`, which the schema refuses as a 400 nobody wrote copy for.
+    transport.readRoomRepoStatus = vi.fn().mockResolvedValue(
+      statusWith({
+        branch: 'main',
+        dirty: true,
+        strays: [{ path: 'ROOM.md', kind: 'modified' }],
+        strayCount: 1,
+      })
+    );
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: roomKeys.repoStatus(ROOM_ID) });
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByText(/cannot be brought back/)).not.toBeInTheDocument()
+    );
+    expect(screen.queryByRole('button', { name: 'Yes, discard' })).not.toBeInTheDocument();
   });
 
   it('says who may do it when this person may not', async () => {

@@ -27,7 +27,7 @@
  *
  * @module features/file-explorer/ui/FilePreviewDialog
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileWarning, Loader2, Pencil } from 'lucide-react';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
@@ -131,11 +131,25 @@ export function FilePreviewDialog({ source, path, onClose }: FilePreviewDialogPr
   const [conflict, setConflict] = useState<{
     commit: string;
     lastCommit: ExplorerCommit | null;
+    /**
+     * Whether this is a SECOND race lost while the first was being decided.
+     *
+     * Without it the banner after a failed "save mine over it" is byte-identical
+     * to the one already on screen, so the press reads as a dead button rather
+     * than as the room having moved again underneath the decision.
+     */
+    again: boolean;
   } | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   /** Raised when a close would throw away typing, and answered before it does. */
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+
+  /** The two ends of the mode switch, so the cursor can follow it. */
+  const editorRef = useRef<HTMLTextAreaElement | null>(null);
+  const pencilRef = useRef<HTMLButtonElement | null>(null);
+  /** Whether edit mode has been entered, so opening the dialog steals no focus. */
+  const hasEdited = useRef(false);
 
   const dirty = editing && draft !== base.text;
   /**
@@ -199,7 +213,11 @@ export function FilePreviewDialog({ source, path, onClose }: FilePreviewDialogPr
       }
       setSaved(false);
       if (outcome.status === 'conflict') {
-        setConflict({ commit: outcome.commit, lastCommit: outcome.lastCommit });
+        setConflict((previous) => ({
+          commit: outcome.commit,
+          lastCommit: outcome.lastCommit,
+          again: previous !== null,
+        }));
         setRefusal(null);
         return;
       }
@@ -234,11 +252,38 @@ export function FilePreviewDialog({ source, path, onClose }: FilePreviewDialogPr
     setConfirmingDiscard(false);
   };
 
-  /** Take the other person's version: re-read the file and edit that instead. */
+  /**
+   * Take the other person's version: re-read the file and edit that instead.
+   *
+   * **Every path out of here that is not a successful text read leaves the
+   * choice on screen.** This is the one gesture in the dialog that destroys
+   * typing on purpose, so it may only do so when it really has the other
+   * version in hand — and there are two ways it can fail to.
+   */
   const takeTheirs = async () => {
     const result = await query.refetch();
+    // **A failed refetch still RESOLVES, and `data` still holds the last
+    // successful read** — which here is the text from before the conflict.
+    // Adopting it would throw away what was typed, call the pre-conflict
+    // version "theirs", and move the optimistic lock onto a commit the room has
+    // already left. Nothing is changed and the choice stays takeable.
+    if (result.isError || result.data === undefined) {
+      setRefusal('Their version couldn’t be fetched just now, so nothing here changed.');
+      return;
+    }
     const theirs = result.data;
-    if (theirs === undefined || theirs.body.kind !== 'text') return;
+    // Not text is not a dead end either, and its likeliest cause is the whole
+    // point of saying so: the other person DELETED the file, which is a
+    // conflict like any other and re-reads as "not in the room's files any
+    // more". Returning silently here left the button doing nothing, forever.
+    if (theirs.body.kind !== 'text') {
+      setRefusal(
+        theirs.body.kind === 'not-readable'
+          ? `${theirs.body.reason} What you typed is still here — save it over their change, or close this and copy it out first.`
+          : 'Their version isn’t something that can be shown here, so nothing here changed.'
+      );
+      return;
+    }
     setDraft(theirs.body.text);
     setBase({ text: theirs.body.text, commit: theirs.commit ?? null });
     setConflict(null);
@@ -260,6 +305,19 @@ export function FilePreviewDialog({ source, path, onClose }: FilePreviewDialogPr
     onClose();
   };
 
+  // **The cursor follows the mode, in both directions.** Switching to the
+  // editor unmounts the button that was focused, which drops focus to the body
+  // — so a keyboard reader who pressed Edit was left outside the thing they
+  // just opened, and Tab started again from the top of the dialog. Leaving puts
+  // the cursor back on the pencil, where it came from. Guarded on having
+  // edited, so opening the dialog does not steal focus from Radix's own
+  // placement.
+  useEffect(() => {
+    if (editing) editorRef.current?.focus();
+    else if (hasEdited.current) pencilRef.current?.focus();
+    hasEdited.current = editing;
+  }, [editing]);
+
   return (
     <ResponsiveDialog open={path !== null} onOpenChange={(open) => !open && requestClose()}>
       <ResponsiveDialogContent className="max-h-[80vh] sm:max-w-2xl">
@@ -275,6 +333,7 @@ export function FilePreviewDialog({ source, path, onClose }: FilePreviewDialogPr
         {editable && !editing && (
           <div className="flex justify-end px-4">
             <Button
+              ref={pencilRef}
               type="button"
               variant="ghost"
               size="sm"
@@ -314,16 +373,23 @@ export function FilePreviewDialog({ source, path, onClose }: FilePreviewDialogPr
             <PreviewNote>This file couldn&apos;t be read.</PreviewNote>
           ) : editing ? (
             <textarea
+              ref={editorRef}
               aria-label={`${path === null ? 'File' : baseName(path)} contents`}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               spellCheck={false}
               autoComplete="off"
+              // Soft wrap, and it costs nothing in fidelity: a textarea's
+              // default `wrap="soft"` breaks lines for the eye only — the
+              // wrapping never enters `.value`, so what is saved is still
+              // exactly what was typed. `whitespace-pre` instead laid a long
+              // paragraph out as one horizontal line, which on the phone
+              // drawer made a document unreadable without sideways scrolling.
               className={cn(
                 'text-foreground/90 border-border/60 bg-background field-sizing-content',
                 'focus-visible:border-ring focus-visible:ring-ring/50 min-h-64 w-full',
                 'resize-none rounded-md border px-3 py-2 font-mono text-xs',
-                'whitespace-pre focus-visible:ring-[3px] focus-visible:outline-none'
+                'whitespace-pre-wrap focus-visible:ring-[3px] focus-visible:outline-none'
               )}
             />
           ) : (
@@ -372,10 +438,16 @@ export function FilePreviewDialog({ source, path, onClose }: FilePreviewDialogPr
                   <Button type="button" variant="ghost" size="sm" onClick={leaveEdit}>
                     {dirty ? 'Discard' : 'Done'}
                   </Button>
+                  {/* Dark while a conflict is on screen. The banner above
+                      already offers the only save that can succeed — this one
+                      still holds the commit the room has moved past, so it
+                      could do nothing but lose the same race again, and two
+                      save-shaped controls where one of them cannot work is a
+                      choice that is not a choice. */}
                   <Button
                     type="button"
                     size="sm"
-                    disabled={!dirty || save.isPending}
+                    disabled={!dirty || save.isPending || conflict !== null}
                     onClick={() => save.mutate({ text: draft, baseCommit: base.commit })}
                   >
                     Save
@@ -404,20 +476,25 @@ function ConflictNotice({
   onKeepMine,
   busy,
 }: {
-  conflict: { commit: string; lastCommit: ExplorerCommit | null };
+  conflict: { commit: string; lastCommit: ExplorerCommit | null; again: boolean };
   onTakeTheirs: () => void;
   onKeepMine: () => void;
   busy: boolean;
 }) {
   const who = conflict.lastCommit;
+  const author = who === null ? 'Somebody' : who.author;
   return (
     <div
       role="alert"
       className="border-border/60 bg-muted/40 mx-4 space-y-2 rounded-md border px-3 py-2 text-sm"
     >
+      {/* A second race lost while the first was being decided reads as a dead
+          button if it says exactly what the banner already said. It is the same
+          choice, but something really did happen — so it says what. */}
       <p>
-        {who === null ? 'Somebody' : who.author} changed this file while you were editing it, so
-        nothing was saved.
+        {conflict.again
+          ? `${author} changed this file again while you were deciding, so it still isn’t saved.`
+          : `${author} changed this file while you were editing it, so nothing was saved.`}
       </p>
       {who !== null && (
         // The commit's own subject, which is what makes a conflict resolvable by

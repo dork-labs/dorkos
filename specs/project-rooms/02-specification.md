@@ -168,7 +168,8 @@ Non-project rooms: unchanged today; the channel-workspace projection path (names
 ### 3.10 Human editing (P3)
 
 - `PUT /api/rooms/:id/files/<path>` — **owner/human members only** in v1, serialized through the same merge mutex, committed to main authored as the user ("Dorian edited ROOM.md"). Optimistic locking: request carries `baseCommit`; if main moved and touched the path → 409 `FILE_CHANGED` (client offers reload/overwrite). One save = one commit.
-- Client: the session markdown editor mounts on room files (markdown first; other text later).
+- Client: a markdown editor mounts on room files from the unified explorer (markdown first; other text later).
+  **Amended at implementation (DOR-1601, 2026-08-29): the editor is the file's own SOURCE text, not the session canvas's rich editor.** The canvas edits markdown through Blintz, which round-trips the document through ProseMirror's model — so opening `ROOM.md` and saving it could commit a wholesale reformat under a person's name that they never typed and cannot see. A room repo's whole point is per-line provenance and honest diffs, and `ROOM.md` is read verbatim by every member agent under a byte cap, so byte fidelity outranks editor reuse here. Adversarial review ruled for this reading of §3.10.
 - **Dirty-main detection:** any server git op finding `repo/` dirty (out-of-band edit) pauses merges/saves with `MAIN_CHECKOUT_DIRTY`, surfaces a room-level warning, and offers an operator action: commit the stray changes as the operator, or discard (explicit, named files). Loud degradation, never quiet corruption.
 
 ### 3.11 Trust boundary and security

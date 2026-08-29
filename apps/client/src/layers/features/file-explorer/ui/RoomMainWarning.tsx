@@ -117,6 +117,27 @@ export function RoomMainWarning({ roomId }: RoomMainWarningProps) {
     },
   });
 
+  // **A status this client could not read is not a clean room.** Drawing
+  // nothing here would be indistinguishable from "everything is fine" — and a
+  // save refused MAIN_CHECKOUT_DIRTY says in so many words that "the warning
+  // above the files says how", which would be pointing at an empty space. So
+  // the one thing that IS known gets said.
+  //
+  // `absent` is NOT this case and must never reach it: a room with no files of
+  // its own is the ordinary answer, and it draws nothing at all.
+  if (status.data?.kind === 'unavailable') {
+    return (
+      <p
+        role="alert"
+        data-slot="room-main-warning"
+        className="border-border/60 text-muted-foreground rounded-lg border px-3 py-2.5 text-xs"
+      >
+        DorkOS couldn’t check whether this room’s files are in order. If saving here is refused,
+        this is why — try again in a moment.
+      </p>
+    );
+  }
+
   const main = status.data?.kind === 'ok' ? status.data.status.main : undefined;
   if (main === undefined || !main.dirty) return null;
 
@@ -126,6 +147,16 @@ export function RoomMainWarning({ roomId }: RoomMainWarningProps) {
   // terminal edit — and a discard naming a path that has gone is refused
   // outright, which would lose the rest of the request with it.
   const selected = chosen.filter((path) => main.strays.some((stray) => stray.path === path));
+  /**
+   * Whether the "throw these away" question is actually up.
+   *
+   * Derived from the ask AND what is still ticked, not stored alone: the list
+   * is re-read while this panel is open, and a refetch that empties the
+   * selection left the question standing over nothing — pressing it sent
+   * `paths: []`, which the schema refuses as a 400 nobody wrote copy for.
+   * "Discard nothing" is not an action, so the question closes with its answer.
+   */
+  const askingDiscard = confirmingDiscard && selected.length > 0;
   const toggle = (path: string) =>
     setChosen((prev) => (prev.includes(path) ? prev.filter((p) => p !== path) : [...prev, path]));
 
@@ -178,7 +209,7 @@ export function RoomMainWarning({ roomId }: RoomMainWarningProps) {
             </p>
           )}
 
-          {confirmingDiscard ? (
+          {askingDiscard ? (
             <div className="space-y-2">
               <p className="text-xs">
                 {selected.length === 1
