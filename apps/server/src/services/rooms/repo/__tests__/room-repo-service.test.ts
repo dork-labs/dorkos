@@ -31,6 +31,7 @@ import { RoomRepoStore } from '../room-repo-store.js';
 import { RoomRepoService } from '../room-repo-service.js';
 import { ROOM_MD_FILENAME } from '../room-md.js';
 import { commitAll, commitsAheadOfMain, hasUncommittedChanges, runGit } from '../room-repo-git.js';
+import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
 
 const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
 const OPERATOR = 'author-operator';
@@ -66,6 +67,11 @@ describe('RoomRepoService', () => {
 
   beforeEach(async () => {
     db = createTestDb();
+    // Before any repo exists — including the ones `enable` makes itself: a
+    // `git commit` otherwise leaves a DETACHED maintenance process writing into
+    // `.git` after it returns, and this suite's teardown deletes that
+    // directory. See `fixture-git.ts`.
+    silenceGitAutoMaintenance();
     // **The DorkOS home sits INSIDE a git repository, deliberately.** That is
     // the dev layout — `apps/server/.temp/.dork/` lives in the dorkos checkout —
     // and it is what makes the stranded-work tests discriminate: without a
@@ -121,7 +127,7 @@ describe('RoomRepoService', () => {
   afterEach(async () => {
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
-    await rm(scratch, { recursive: true, force: true });
+    await removeFixtureTree(scratch);
   });
 
   /** Assert a thrown value is a {@link RoomError} with this code. */
