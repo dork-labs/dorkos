@@ -248,6 +248,17 @@ jobs:
       - name: Raw-NUL-byte guard fixtures
         run: bash scripts/test-check-nul-bytes.sh
 
+      # wait-for-npm.sh is the shared npm-availability wait used by
+      # publish-docker.yml and update-homebrew.yml (DOR-1606) — a script that
+      # gives up too early does not crash, it exits 1 on a release that would
+      # have succeeded a few minutes later, which is exactly what shipped
+      # (copy-pasted into both workflows) from v0.63.0 through v0.66.0.
+      # Hermetic: a stub `npm` on PATH and the script's test-only
+      # WAIT_FOR_NPM_POLL_SECONDS / WAIT_FOR_NPM_TIMEOUT_SECONDS overrides mean
+      # it never touches the real registry and runs in well under a second.
+      - name: npm-availability wait fixtures
+        run: bash scripts/test-wait-for-npm.sh
+
       # test-watch-prs.sh pins watch-prs.sh's classify() vocabulary AND (as of
       # DOR-1630) a probe-seam tier that drives its real `gh pr checks`
       # collection path against a stubbed `gh`. Before DOR-1630 nothing
