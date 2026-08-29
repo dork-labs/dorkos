@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createMockRelay } from './fixtures.js';
 import { BaseRelayAdapter } from '../base-adapter.js';
-import type { RelayPublisher, DeliveryResult } from '../types.js';
+import type { RelayPublisher, RelayLogger, DeliveryResult } from '../types.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 
 // === Concrete test subclass ===
@@ -208,6 +208,68 @@ describe('BaseRelayAdapter', () => {
     expect(a.getRelayRefPublic()).toBeNull();
   });
 
+  /**
+   * DOR-1509. The OTHER cleanup `_stop()` call site — the one that runs when
+   * `stop()` intervenes during an in-flight `start()`, not the one that runs
+   * when `_start()` itself throws (covered separately below). Same
+   * nested-secret risk, same fix (`describeError`), different call site —
+   * proven here rather than assumed from the sibling test.
+   */
+  it('the intervening-stop cleanup _stop() failure never lets a nested secret reach the logger', async () => {
+    const secret = 'intervening-secret-token-value';
+    class PoisonedError extends Error {
+      readonly config = { headers: { Authorization: `Bearer ${secret}` } };
+      toJSON() {
+        return { message: this.message, config: this.config };
+      }
+    }
+    let resolveStart!: () => void;
+    let stopCalls = 0;
+    class SlowStartPoisonedCleanupAdapter extends BaseRelayAdapter {
+      constructor() {
+        super('sspc', 'relay.sspc.', 'SSPC');
+      }
+      protected async _start(): Promise<void> {
+        await new Promise<void>((resolve) => {
+          resolveStart = resolve;
+        });
+      }
+      protected async _stop(): Promise<void> {
+        stopCalls++;
+        // The FIRST call is the direct `a.stop()` below, driven the same way
+        // as the sibling test — it must succeed so `isStopped` reads true and
+        // the late `_start()` takes the intervening-cleanup branch. The
+        // SECOND call is that branch's own cleanup `_stop()`, which is the
+        // one whose failure this test is actually about.
+        if (stopCalls > 1) throw new PoisonedError('intervening cleanup stop failed');
+      }
+      async deliver(): Promise<DeliveryResult> {
+        return { success: true };
+      }
+    }
+    const a = new SlowStartPoisonedCleanupAdapter();
+    const logger: RelayLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    a.setLogger(logger);
+
+    const startPromise = a.start(relay);
+    await a.stop(); // first _stop() succeeds; state -> disconnected, isStopped -> true
+
+    resolveStart(); // the hung _start() finally resolves
+    await startPromise; // _runStart sees isStopped, runs cleanup _stop() (2nd call) -> throws
+
+    const everyLoggedArg = [
+      ...vi.mocked(logger.debug).mock.calls,
+      ...vi.mocked(logger.info).mock.calls,
+      ...vi.mocked(logger.warn).mock.calls,
+      ...vi.mocked(logger.error).mock.calls,
+    ];
+    const serialized = JSON.stringify(everyLoggedArg);
+    expect(serialized).not.toContain(secret);
+    // Sanity check the assertion isn't vacuous: the safe part of the same
+    // failure is still logged somewhere.
+    expect(serialized).toContain('intervening cleanup stop failed');
+  });
+
   it('start() attempts _stop() cleanup when _start() throws', async () => {
     let stopCalled = false;
     class FailStartAdapter extends BaseRelayAdapter {
@@ -251,6 +313,60 @@ describe('BaseRelayAdapter', () => {
 
     await expect(a.start(relay)).rejects.toThrow('start failed');
     expect(a.getStatus().state).toBe('error');
+  });
+
+  /**
+   * DOR-1509. The cleanup `_stop()` a failed `start()` runs is shared by
+   * every adapter (Slack, Telegram, whatever comes next) — whatever their
+   * own `_stop()` throws (a dead HTTP client tearing down, say) can carry
+   * the same nested-secret shape Slack's and Telegram's SDKs do. This
+   * reproduces the axios shape (a `toJSON()` that serializes a header) at
+   * the base-class level, since the leak mechanism, not the SDK, is what
+   * this cleanup path is responsible for never exposing.
+   */
+  it('start() cleanup _stop() failure never lets a nested secret reach the logger', async () => {
+    const secret = 'super-secret-token-value';
+    class PoisonedError extends Error {
+      readonly config = { headers: { Authorization: `Bearer ${secret}` } };
+      toJSON() {
+        return { message: this.message, config: this.config };
+      }
+    }
+    class BothThrowPoisonedAdapter extends BaseRelayAdapter {
+      constructor() {
+        super('btp', 'relay.btp.', 'BTP');
+      }
+      protected async _start(): Promise<void> {
+        throw new Error('start failed');
+      }
+      protected async _stop(): Promise<void> {
+        throw new PoisonedError('stop failed');
+      }
+      async deliver(): Promise<DeliveryResult> {
+        return { success: true };
+      }
+    }
+    const a = new BothThrowPoisonedAdapter();
+    const logger: RelayLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    a.setLogger(logger);
+
+    await expect(a.start(relay)).rejects.toThrow('start failed');
+
+    // Load-bearing: scans every argument ever handed to every logger method,
+    // stringified — the same way a regression back to
+    // `logger.warn('...', stopErr)` would actually surface the leak, since
+    // `JSON.stringify` invokes a nested `toJSON()` exactly like axios's does.
+    const everyLoggedArg = [
+      ...vi.mocked(logger.debug).mock.calls,
+      ...vi.mocked(logger.info).mock.calls,
+      ...vi.mocked(logger.warn).mock.calls,
+      ...vi.mocked(logger.error).mock.calls,
+    ];
+    const serialized = JSON.stringify(everyLoggedArg);
+    expect(serialized).not.toContain(secret);
+    // Sanity check the assertion isn't vacuous: the safe part of the same
+    // failure is still logged somewhere.
+    expect(serialized).toContain('stop failed');
   });
 
   it('start() can be retried after a failed attempt', async () => {

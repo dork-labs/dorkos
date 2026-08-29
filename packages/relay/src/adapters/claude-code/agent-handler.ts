@@ -36,6 +36,7 @@ import {
 import { isCallerCancel } from './agent-cancel-handler.js';
 import { interruptTurn } from './interrupt.js';
 import type { InboundTurnBudgets } from '../../inbound-turn-budgets.js';
+import { describeError } from '../../lib/describe-error.js';
 
 /** Dependencies required by the agent handler. */
 export interface AgentHandlerDeps {
@@ -461,7 +462,7 @@ export async function handleAgentMessage(
     }
   } catch (err) {
     streamError = err instanceof Error ? err.message : String(err);
-    log.error('[CCA] Streaming error:', err);
+    log.error('[CCA] Streaming error:', describeError(err));
     deps.traceStore.updateSpan(envelope.id, {
       status: 'failed',
       processedAt: Date.now(),
@@ -628,7 +629,7 @@ async function resolveTurnSettings(
   } catch (err) {
     log.warn(
       `[CCA] could not resolve execution settings for ${sessionId}; running on the runtime default`,
-      err
+      describeError(err)
     );
     return {};
   }

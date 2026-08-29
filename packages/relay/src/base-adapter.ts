@@ -15,6 +15,7 @@ import type {
 } from './types.js';
 import { noopLogger } from './types.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
+import { describeError } from './lib/describe-error.js';
 
 /**
  * Optional abstract base class for relay adapters.
@@ -133,7 +134,10 @@ export abstract class BaseRelayAdapter implements RelayAdapter {
         try {
           await this._stop();
         } catch (stopErr) {
-          this.logger.warn('cleanup _stop() after intervening stop() threw:', stopErr);
+          this.logger.warn(
+            'cleanup _stop() after intervening stop() threw:',
+            describeError(stopErr)
+          );
         }
         this.relay = null;
         return;
@@ -154,7 +158,7 @@ export abstract class BaseRelayAdapter implements RelayAdapter {
       try {
         await this._stop();
       } catch (stopErr) {
-        this.logger.warn('cleanup _stop() after failed _start() threw:', stopErr);
+        this.logger.warn('cleanup _stop() after failed _start() threw:', describeError(stopErr));
       }
       this.relay = null;
       throw err; // re-throw — host (AdapterRegistry) handles isolation
@@ -243,7 +247,7 @@ export abstract class BaseRelayAdapter implements RelayAdapter {
    * @param err - The error to record
    */
   protected recordError(err: unknown): void {
-    const message = err instanceof Error ? err.message : String(err);
+    const { message } = describeError(err);
     this.logger.warn('error:', message);
     this._status = {
       ...this._status,

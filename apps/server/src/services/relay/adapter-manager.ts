@@ -20,6 +20,7 @@ import {
   CLAUDE_CODE_MANIFEST,
   parseAgentSubject,
   toIdList,
+  describeError,
 } from '@dorkos/relay';
 import type { AgentRuntimeLike, TraceStoreLike, TasksStoreLike } from '@dorkos/relay';
 import type { AdapterManifest, CatalogEntry } from '@dorkos/shared/relay-schemas';
@@ -347,7 +348,7 @@ export class AdapterManager {
     void this.queueStartEnabledAdapters();
     this.configWatcher = watchAdapterConfig(this.configPath, () => {
       this.reload().catch((err) => {
-        logger.warn('[AdapterManager] Hot-reload failed:', err);
+        logger.warn('[AdapterManager] Hot-reload failed:', describeError(err));
       });
     });
   }
@@ -446,7 +447,7 @@ export class AdapterManager {
           );
           await this.emitAdapterLifecycle(id, 'disconnected', oldNames.get(id));
         } catch (err) {
-          logger.warn(`[AdapterManager] Failed to unregister adapter '${id}':`, err);
+          logger.warn(`[AdapterManager] Failed to unregister adapter '${id}':`, describeError(err));
         }
       }
     }
@@ -507,7 +508,7 @@ export class AdapterManager {
    */
   private queueStartEnabledAdapters(): Promise<void> {
     return this.enqueue(() => this.startEnabledAdapters()).catch((err) => {
-      logger.warn('[AdapterManager] Adapter start pass failed:', err);
+      logger.warn('[AdapterManager] Adapter start pass failed:', describeError(err));
     });
   }
 
@@ -1160,9 +1161,9 @@ export class AdapterManager {
         );
         await this.emitAdapterLifecycle(config.id, 'connected');
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        this.deps.eventRecorder?.insertAdapterEvent(config.id, 'adapter.error', message);
-        logger.warn(`[AdapterManager] Failed to start adapter '${config.id}':`, err);
+        const described = describeError(err);
+        this.deps.eventRecorder?.insertAdapterEvent(config.id, 'adapter.error', described.message);
+        logger.warn(`[AdapterManager] Failed to start adapter '${config.id}':`, described);
       }
     }
   }

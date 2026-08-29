@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TelegramAdapter, TELEGRAM_MANIFEST } from '../index.js';
-import type { RelayPublisher, Unsubscribe } from '../../../types.js';
+import type { RelayPublisher, RelayLogger, Unsubscribe } from '../../../types.js';
 import type { z } from 'zod';
 import { TelegramAdapterConfigSchema } from '@dorkos/shared/relay-schemas';
 import type { TelegramAdapterConfig } from '../../../types.js';
@@ -1459,6 +1459,117 @@ describe('TelegramAdapter', () => {
 
       expect(mockRelay.publish).not.toHaveBeenCalled();
       expect(ctx.editMessageText).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * DOR-1509. grammY builds its request URL as
+   * `https://api.telegram.org/bot<TOKEN>/<method>` — the bot token lives in
+   * the URL path, not a header. On Node, grammY fetches through `node-fetch`,
+   * whose `FetchError` bakes that URL directly into its own top-level
+   * `.message` for every network-level failure (timeout, connection refused,
+   * DNS failure, a bad redirect — confirmed against `node-fetch@2.7.0`'s
+   * `lib/index.js`, e.g. `` `request to ${request.url} failed, reason: ...` ``).
+   * grammY wraps that in its own `HttpError`, whose *own* `.message` stays
+   * safe by default (`sensitiveLogs` defaults to `false`, never overridden in
+   * this repo) — but the raw, token-bearing `FetchError` still sits one
+   * property access away, on `HttpError.error`. This reproduces exactly that
+   * shape and asserts the nested property is never touched.
+   */
+  describe('error logging never leaks the bot token (DOR-1509)', () => {
+    const LEAKED_TOKEN = 'should-never-appear-in-logs';
+
+    /**
+     * Reproduces node-fetch@2.7.0's real `FetchError` shape (the class
+     * grammY throws on every network-level failure on Node), not just a
+     * plain `Error`. node-fetch predates ES6 classes: its `FetchError`
+     * constructor calls `Error.call(this, message)` and then explicitly does
+     * `this.message = message` — which, unlike a `class X extends Error`
+     * subclass's `super()` (confirmed empirically: a bare `new Error(...)`
+     * has NO own enumerable keys), makes `.message` an OWN ENUMERABLE
+     * property. That is what lets the token-bearing URL survive
+     * `JSON.stringify` and an object spread (`{...err}`) with no `toJSON()`
+     * involved at all — exactly what DorkOS's own NDJSON file reporter does
+     * with an object-shaped second logger argument
+     * (`apps/server/src/lib/logger.ts`'s `createFileReporter`: an object
+     * second arg becomes `context`, spread as `{ ...context }` and
+     * `JSON.stringify`d).
+     */
+    function fakeNodeFetchError(message: string): Error {
+      const err = new Error(message);
+      Object.defineProperty(err, 'message', { value: message, enumerable: true });
+      return err;
+    }
+
+    class FakeGrammyHttpError extends Error {
+      readonly error: unknown;
+      constructor(safeMessage: string, rawFetchError: unknown) {
+        super(safeMessage);
+        this.name = 'HttpError';
+        this.error = rawFetchError;
+      }
+    }
+
+    it('keeps the bot token out of every logger call when a Telegram send fails at the network level', async () => {
+      const logger: RelayLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+      adapter.setLogger(logger);
+      await adapter.start(mockRelay);
+
+      const leakedUrl = `https://api.telegram.org/bot${LEAKED_TOKEN}/sendMessage`;
+      const rawFetchError = fakeNodeFetchError(
+        `request to ${leakedUrl} failed, reason: getaddrinfo ENOTFOUND api.telegram.org`
+      );
+      const safeMessage = "Network request for 'sendMessage' failed!";
+
+      const envelope = createEnvelope('relay.human.telegram.tg1.12345', {
+        type: 'approval_required',
+        data: {
+          toolCallId: 'toolu_leak',
+          toolName: 'Bash',
+          input: '{"command":"echo hi"}',
+          timeoutMs: 0,
+          agentId: 'agent-1',
+          ccaSessionKey: 'sess-leak',
+        },
+      });
+      await adapter.deliver('relay.human.telegram.tg1.12345', envelope);
+
+      const sendCall = mockSendMessage.mock.calls.at(-1)!;
+      const approveData = (
+        sendCall[2] as { reply_markup: { inline_keyboard: { callback_data: string }[][] } }
+      ).reply_markup.inline_keyboard[0][0].callback_data;
+
+      vi.mocked(mockRelay.publish).mockRejectedValueOnce(
+        new FakeGrammyHttpError(safeMessage, rawFetchError)
+      );
+
+      const ctx = {
+        callbackQuery: { data: approveData },
+        from: { id: 42 },
+        answerCallbackQuery: vi.fn().mockResolvedValue(true),
+        editMessageText: vi.fn().mockResolvedValue(true),
+      };
+      await capturedCallbackQueryHandler!(ctx);
+
+      expect(logger.error).toHaveBeenCalledWith(
+        '[Telegram] callback query handler error:',
+        expect.objectContaining({ message: safeMessage })
+      );
+
+      // Load-bearing: scans every argument ever handed to every logger method,
+      // stringified, the same way a regression back to
+      // `logger.error('...', err)` would actually surface the leak (reading
+      // `err.error.message` directly, or spreading `err`, would put the URL —
+      // and the token in it — into this string).
+      const everyLoggedArg = [
+        ...vi.mocked(logger.debug).mock.calls,
+        ...vi.mocked(logger.info).mock.calls,
+        ...vi.mocked(logger.warn).mock.calls,
+        ...vi.mocked(logger.error).mock.calls,
+      ];
+      const serialized = JSON.stringify(everyLoggedArg);
+      expect(serialized).not.toContain(LEAKED_TOKEN);
+      expect(serialized).not.toContain(leakedUrl);
     });
   });
 
