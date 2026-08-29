@@ -432,6 +432,41 @@ describe('useCapabilitiesForRuntime', () => {
     expect(result.current).toBeUndefined();
   });
 
+  it.each(['constructor', 'toString', '__proto__', 'valueOf', 'hasOwnProperty'])(
+    'returns undefined for "%s" instead of an inherited member',
+    async (runtimeType) => {
+      // A runtime type is a free string that arrives from stored data — a task's
+      // `runtime`, an agent manifest — so these five are reachable lookups. A
+      // plain index answers every one of them off `Object.prototype`: truthy,
+      // and shaped like nothing, so a caller takes it for a profile and reads
+      // fields that are not there (DOR-1615). Unregistered is unregistered.
+      const transport = createMockTransport({
+        getCapabilities: vi.fn().mockResolvedValue(mockCapabilitiesResponse),
+      });
+      const { Wrapper } = createWrapper(transport);
+
+      // Both hooks in one render, and the wait is for the MAP to have loaded —
+      // not for `getCapabilities` to have been called. The call happens on mount,
+      // a tick before its promise resolves, so waiting on the call would assert
+      // "undefined" against a map that is not there yet and pass however the
+      // lookup behaves. Measured: written that way, this survived reverting the
+      // guard.
+      const { result } = renderHook(
+        () => ({
+          map: useRuntimeCapabilities(),
+          caps: useCapabilitiesForRuntime(runtimeType),
+        }),
+        { wrapper: Wrapper }
+      );
+
+      await waitFor(() => {
+        expect(result.current.map.isSuccess).toBe(true);
+      });
+
+      expect(result.current.caps).toBeUndefined();
+    }
+  );
+
   it('never issues a per-session fetch — one capabilities call serves every lookup', async () => {
     // Regression guard for the staleness trap this hook replaced: resolving a
     // session's runtime used to hit an infer-on-miss endpoint per session and

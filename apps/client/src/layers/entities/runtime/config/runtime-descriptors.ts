@@ -121,8 +121,16 @@ export const PRIMARY_RUNTIME_TYPES = ['claude-code', 'codex', 'opencode'] as con
  * @param type - Runtime type identifier, e.g. `'opencode'`
  */
 export function getRuntimeDescriptor(type: string): RuntimeDescriptor {
+  // An OWN-property lookup, not a plain index. A runtime type is a free string
+  // that reaches here from stored data — a task's `runtime`, an agent manifest —
+  // so `constructor`, `toString` and `__proto__` are all reachable values, and a
+  // plain index answers them with an inherited member. That member is truthy, so
+  // `??` never fires and the caller gets a descriptor whose `label` is
+  // `undefined`: a blank select option and the sentence "undefined is not
+  // connected on this machine". Falling back is the whole point of this function.
+  const known = Object.hasOwn(RUNTIME_DESCRIPTORS, type) ? RUNTIME_DESCRIPTORS[type] : undefined;
   return (
-    RUNTIME_DESCRIPTORS[type] ?? {
+    known ?? {
       type,
       label: type,
       icon: DefaultAdapterIcon,

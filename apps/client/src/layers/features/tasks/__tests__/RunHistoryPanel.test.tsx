@@ -479,4 +479,70 @@ describe('TaskRunHistoryPanel', () => {
     // Loading state now renders skeleton rows instead of text
     expect(screen.getByLabelText('Loading runs...')).toBeTruthy();
   });
+
+  // What a run RAN on, stamped at dispatch — not what the task says today
+  // (DOR-1615, DOR-1347).
+  describe('what each run ran on', () => {
+    it('names the resolved runtime and model', async () => {
+      const transport = createMockTransport({
+        listTaskRuns: vi.fn().mockResolvedValue([
+          createMockRun({
+            id: 'run-1',
+            resolvedRuntime: 'codex',
+            resolvedModel: 'gpt-5.5',
+          }),
+        ]),
+      });
+      const Wrapper = createWrapper(transport);
+
+      render(
+        <Wrapper>
+          <TaskRunHistoryPanel scheduleId="sched-1" scheduleCwd="/test/cwd" />
+        </Wrapper>
+      );
+
+      expect(await screen.findByText('Codex · gpt-5.5')).toBeInTheDocument();
+    });
+
+    it('degrades to the runtime alone when nothing chose a model', async () => {
+      const transport = createMockTransport({
+        listTaskRuns: vi
+          .fn()
+          .mockResolvedValue([
+            createMockRun({ id: 'run-1', resolvedRuntime: 'claude-code', resolvedModel: null }),
+          ]),
+      });
+      const Wrapper = createWrapper(transport);
+
+      render(
+        <Wrapper>
+          <TaskRunHistoryPanel scheduleId="sched-1" scheduleCwd="/test/cwd" />
+        </Wrapper>
+      );
+
+      expect(await screen.findByText('Claude Code')).toBeInTheDocument();
+    });
+
+    it('says nothing at all for a run recorded before the columns existed', async () => {
+      // `null` here is "nobody wrote this down", and a row that filled it in
+      // from the task's current settings would rewrite that run's own past.
+      const transport = createMockTransport({
+        listTaskRuns: vi
+          .fn()
+          .mockResolvedValue([
+            createMockRun({ id: 'run-1', resolvedRuntime: null, resolvedModel: null }),
+          ]),
+      });
+      const Wrapper = createWrapper(transport);
+
+      render(
+        <Wrapper>
+          <TaskRunHistoryPanel scheduleId="sched-1" scheduleCwd="/test/cwd" />
+        </Wrapper>
+      );
+
+      await screen.findByText('scheduled');
+      expect(screen.queryByText(/Claude Code|Codex|OpenCode/)).toBeNull();
+    });
+  });
 });

@@ -5,6 +5,7 @@ import { MoreHorizontal, Pencil, Play, Trash2, AlertCircle, Shield } from 'lucid
 import { toast } from 'sonner';
 import { useUpdateTask, useTriggerTask, useDeleteTask } from '@/layers/entities/tasks';
 import { AgentAvatar } from '@/layers/entities/agent';
+import { RuntimeMark, formatModelLabel } from '@/layers/entities/runtime';
 import {
   Badge,
   Switch,
@@ -35,6 +36,37 @@ function formatCron(cron: string): string {
   } catch {
     return cron;
   }
+}
+
+/**
+ * What this task runs on, when that is not what its agent runs on.
+ *
+ * Drawn only for a task that actually sets one of the two, which is the point:
+ * nearly every task inherits, and a chip on every row would be a column of the
+ * same word (spec `task-runtime-model` §2, decision 11). The runtime half is the
+ * shared {@link RuntimeMark} — one icon, its identity in the tooltip — so a task
+ * row names a runtime exactly the way a session row does.
+ *
+ * A task that sets only a model shows the model alone. Naming a runtime beside
+ * it would mean resolving the agent's manifest for a value the person did not
+ * choose, and a guessed runtime is worse here than none.
+ */
+function TaskOverrideChip({ task }: { task: Task }) {
+  const modelLabel = formatModelLabel(task.model);
+  if (!task.runtime && !modelLabel) return null;
+  return (
+    <span
+      data-testid="task-override-chip"
+      className="text-muted-foreground/70 inline-flex min-w-0 shrink-0 items-center gap-1 text-[10px]"
+    >
+      {task.runtime && <RuntimeMark type={task.runtime} model={task.model} size={11} />}
+      {modelLabel && (
+        <span className="truncate" title={`Model: ${task.model}`}>
+          {modelLabel}
+        </span>
+      )}
+    </span>
+  );
 }
 
 /** Color-coded dot indicating the task's current status. */
@@ -177,6 +209,7 @@ export function TaskRow({
               >
                 {task.displayName ?? task.name}
               </span>
+              {!isMinimal && <TaskOverrideChip task={task} />}
             </div>
             {shouldShowCron && (
               <div className="text-muted-foreground text-xs">

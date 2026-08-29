@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
+import { TooltipProvider } from '@/layers/shared/ui';
 import type { Task } from '@dorkos/shared/types';
 
 vi.mock('cronstrue', () => ({
@@ -94,7 +95,12 @@ function createWrapper(transport: Transport) {
   });
   return ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>
-      <TransportProvider transport={transport}>{children}</TransportProvider>
+      {/* The override chip's runtime mark is a tooltip, and the app mounts one
+          provider at its root (`AppShell`). Without it here Radix throws the
+          moment a task carries a runtime. */}
+      <TransportProvider transport={transport}>
+        <TooltipProvider>{children}</TooltipProvider>
+      </TransportProvider>
     </QueryClientProvider>
   );
 }
@@ -407,6 +413,58 @@ describe('ScheduleRow', () => {
       // Name shows as primary text, no agent/cwd prefix
       expect(screen.getByText('Daily Review')).toBeTruthy();
       expect(screen.queryByText('Agent not found')).toBeNull();
+    });
+  });
+
+  // A chip on every row would be a column of the same word: nearly every task
+  // follows its agent (DOR-1615, DOR-1347).
+  describe('the runs-on override chip', () => {
+    it('is absent from a task that follows its agent', () => {
+      renderScheduleRow(activeSchedule);
+
+      expect(screen.queryByTestId('task-override-chip')).toBeNull();
+    });
+
+    it('names the runtime a task pins', () => {
+      renderScheduleRow({ ...activeSchedule, runtime: 'codex' });
+
+      expect(screen.getByTestId('task-override-chip')).toBeInTheDocument();
+      expect(screen.getByLabelText('Runtime: Codex')).toBeInTheDocument();
+    });
+
+    it('shows the model beside it, shortened the way every other surface shortens it', () => {
+      renderScheduleRow({ ...activeSchedule, runtime: 'opencode', model: 'ollama/qwen2.5-coder' });
+
+      const chip = screen.getByTestId('task-override-chip');
+      expect(chip).toHaveTextContent('qwen2.5-coder');
+      expect(chip).not.toHaveTextContent('ollama/');
+    });
+
+    it('shows a pinned model on its own, without inventing a runtime for it', () => {
+      // Naming a runtime here would mean resolving the agent's manifest for a
+      // value the person never chose, and a guessed runtime is worse than none.
+      renderScheduleRow({ ...activeSchedule, model: 'claude-opus-4-6' });
+
+      expect(screen.getByTestId('task-override-chip')).toHaveTextContent('claude-opus-4-6');
+      expect(screen.queryByLabelText(/^Runtime:/)).toBeNull();
+    });
+
+    it('stays off the minimal row, which is a name and a dot', () => {
+      const t = createMockTransport();
+      const Wrapper = createWrapper(t);
+      render(
+        <Wrapper>
+          <TaskRow
+            task={{ ...activeSchedule, runtime: 'codex' }}
+            expanded={false}
+            onToggleExpand={vi.fn()}
+            onEdit={vi.fn()}
+            size="minimal"
+          />
+        </Wrapper>
+      );
+
+      expect(screen.queryByTestId('task-override-chip')).toBeNull();
     });
   });
 });

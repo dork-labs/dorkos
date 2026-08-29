@@ -9,7 +9,7 @@ import {
 import type { TaskTemplate } from '@/layers/entities/tasks';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useConfig } from '@/layers/entities/config';
-import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
+import { useCapabilitiesForRuntime, useRuntimeCapabilities } from '@/layers/entities/runtime';
 import { operatorStopForRuntime, resolveConfiguredStopMode } from '@/layers/shared/lib';
 import {
   ResponsiveDialog,
@@ -30,10 +30,10 @@ import { TaskTemplateGallery } from './TaskTemplateGallery';
 import {
   ScheduleForm,
   buildFormValues,
-  TASK_RUNTIME,
   type ScheduleFormValues,
   type DialogStep,
 } from './TaskFormInner';
+import { useAgentRuntime } from './use-task-execution';
 
 interface Props {
   open: boolean;
@@ -61,17 +61,56 @@ export function CreateTaskDialog({
   const { data: agentsData } = useMeshAgentPaths();
   const agents = agentsData?.agents ?? [];
 
-  // A NEW task opens at the operator's own configured stop, mapped to the task
+  // Which runtime a NEW task will actually run on, so the operator's configured
+  // stop is mapped through THAT runtime's own modes and the mode this dialog
+  // stores is the one that will execute.
+  //
+  // Resolved from the agent the dialog was OPENED on, and deliberately not
+  // re-resolved when somebody picks a different agent in the form: the mode is a
+  // starting position, and moving it under a person mid-edit would overwrite a
+  // choice they may already have made. The dial's caption does follow the live
+  // `effectiveRuntime`, so what is on screen always describes the run.
+  //
+  // Two rungs of the fire-time ladder are reachable here (spec
+  // `task-runtime-model` §2.4; `services/tasks/execution/resolve-run-execution.ts`):
+  // the task carries no runtime of its own until somebody picks one in the form,
+  // so it is the target agent's manifest runtime, else the server default. The
+  // agent tier counts only for a runtime this machine has REGISTERED — the same
+  // tolerance the server's resolver applies. Pinned to `claude-code`, this used
+  // to hand a Codex agent's task a stop resolved in Claude Code's vocabulary.
+  const { data: capabilityMap } = useRuntimeCapabilities();
+  const initialAgentRuntime = useAgentRuntime(agents, initialAgentId);
+  // REGISTERED means an own property, not a truthy index. A manifest's `runtime`
+  // is a free string, so `constructor` and `toString` are reachable values, and
+  // a truthiness test answers them with an inherited member — `Object` is truthy,
+  // so the agent tier was taken for a runtime that does not exist. The task then
+  // resolved its opening stop against an empty mode list and fell back to
+  // `acceptEdits`, quietly discarding the operator's configured stop for the
+  // runtime the task would ACTUALLY run on. `useTaskExecution` has always read
+  // this from `Object.keys`; this is the same question, so it gets the same
+  // answer.
+  const agentRuntimeIsRegistered =
+    initialAgentRuntime !== null &&
+    capabilityMap !== undefined &&
+    Object.hasOwn(capabilityMap.capabilities, initialAgentRuntime);
+  const newTaskRuntime = agentRuntimeIsRegistered
+    ? initialAgentRuntime
+    : (capabilityMap?.defaultRuntime ?? null);
+
+  // A NEW task opens at the operator's own configured stop, mapped to that
   // runtime's mode, rather than a hardcoded `acceptEdits` (spec
   // `full-power-defaults`, D6). Falls back to `acceptEdits` when no stop is set
   // or the profile has not loaded. Held in a ref so a late-arriving config does
   // not reset a form the person is already editing — the reset below runs on
   // open, and reads the freshest value then.
   const { data: config } = useConfig();
-  const taskCaps = useCapabilitiesForRuntime(TASK_RUNTIME);
+  const taskCaps = useCapabilitiesForRuntime(newTaskRuntime);
   const defaultMode = resolveConfiguredStopMode(
-    operatorStopForRuntime(config?.executionDefaults, TASK_RUNTIME),
-    taskCaps?.permissionModes.values ?? []
+    newTaskRuntime ? operatorStopForRuntime(config?.executionDefaults, newTaskRuntime) : null,
+    // `?.` on the last link too: the truthiness test above passes an INHERITED
+    // member straight through — an agent pinned to a runtime called `constructor`
+    // resolves `Object` there — and that member has no `permissionModes`.
+    taskCaps?.permissionModes?.values ?? []
   );
   const defaultModeRef = useRef(defaultMode);
   // Latest-value ref, kept fresh in an effect rather than during render (a
