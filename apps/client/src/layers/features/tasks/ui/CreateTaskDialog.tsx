@@ -95,7 +95,10 @@ export function CreateTaskDialog({
   const taskCaps = useCapabilitiesForRuntime(newTaskRuntime);
   const defaultMode = resolveConfiguredStopMode(
     newTaskRuntime ? operatorStopForRuntime(config?.executionDefaults, newTaskRuntime) : null,
-    taskCaps?.permissionModes.values ?? []
+    // `?.` on the last link too: the truthiness test above passes an INHERITED
+    // member straight through — an agent pinned to a runtime called `constructor`
+    // resolves `Object` there — and that member has no `permissionModes`.
+    taskCaps?.permissionModes?.values ?? []
   );
   const defaultModeRef = useRef(defaultMode);
   // Latest-value ref, kept fresh in an effect rather than during render (a

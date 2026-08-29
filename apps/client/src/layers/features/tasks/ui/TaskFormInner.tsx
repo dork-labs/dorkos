@@ -268,9 +268,18 @@ export function ScheduleForm({
   // the same question about a runtime nobody has chosen yet, and two lookups
   // that could disagree is how one door ends up open and the other shut.
   const { data: capabilityMap } = useRuntimeCapabilities();
-  /** The modes a runtime declares — none for one this machine has never heard of. */
+  /**
+   * The modes a runtime declares — none for one this machine has never heard of.
+   *
+   * Every `?.` down to the LAST link, which is not stylistic. A task's `runtime`
+   * is any non-empty string (`UpdateTaskRequestSchema`), so it can be
+   * `constructor` or `toString` — and `capabilities['constructor']` answers with
+   * `Object`, an inherited member that is truthy and has no `permissionModes`.
+   * The optional chain that stopped one link short read `.values` off `undefined`
+   * and took the whole edit form down. Same rule `settingsForRuntime` follows.
+   */
   const modesFor = (runtimeType: string | null): readonly PermissionModeDescriptor[] =>
-    (runtimeType ? capabilityMap?.capabilities[runtimeType]?.permissionModes.values : undefined) ??
+    (runtimeType ? capabilityMap?.capabilities[runtimeType]?.permissionModes?.values : undefined) ??
     [];
   const descriptors = modesFor(execution.effectiveRuntime);
 

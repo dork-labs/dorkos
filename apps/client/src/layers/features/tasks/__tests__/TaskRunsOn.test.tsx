@@ -73,13 +73,14 @@ vi.mock('cronstrue', () => ({
   default: { toString: (cron: string) => `Cron: ${cron}` },
 }));
 
-function createWrapper(transport: Transport) {
+function createWrapper(transport: Transport, seed?: (client: QueryClient) => void) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false, gcTime: 0 },
       mutations: { retry: false },
     },
   });
+  seed?.(queryClient);
   return ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>{children}</TransportProvider>
@@ -108,8 +109,12 @@ function renderNewTask(transport: Transport) {
 }
 
 /** Open the dialog on an existing task, which lands straight on the form. */
-function renderEditTask(transport: Transport, task: ReturnType<typeof createMockSchedule>) {
-  const Wrapper = createWrapper(transport);
+function renderEditTask(
+  transport: Transport,
+  task: ReturnType<typeof createMockSchedule>,
+  seed?: (client: QueryClient) => void
+) {
+  const Wrapper = createWrapper(transport, seed);
   render(
     <Wrapper>
       <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={task} />
@@ -501,6 +506,56 @@ describe('the task form Runs-on controls', () => {
       // see in order to change it.
       expect(screen.getByTestId('task-runtime-select')).toHaveTextContent('mystery-runtime');
     });
+  });
+
+  describe('a task stored on a runtime named like a prototype key', () => {
+    // `runtime` is any non-empty string on the wire (`UpdateTaskRequestSchema`),
+    // and the server stores what it is given — its own note says registration is
+    // ASKED, never indexed (`scheduled-run-power.ts`). So `constructor` reaches
+    // this form, and `capabilities['constructor']` answers `Object`: inherited,
+    // truthy, and carrying no `permissionModes`. Reading `.values` off that threw
+    // during render and took the whole edit dialog down.
+    //
+    // The capability map is PRIMED rather than waited for. With the map absent
+    // every lookup short-circuits on `capabilityMap?.`, so the line under test
+    // never runs and a test that renders before it lands passes vacuously.
+    // `staleTime: Infinity` keeps the seeded value, so the FIRST render is the
+    // real one — and a render that throws fails `render()` itself, not an
+    // assertion after it.
+
+    /** Open an edit form on `runtime`, with the capability map already resolved. */
+    async function renderPrimed(runtime: string) {
+      const transport = transportWithAgent(null);
+      const capabilities = await transport.getCapabilities();
+      renderEditTask(transport, createMockSchedule({ id: 'sched-1', runtime }), (client) =>
+        client.setQueryData(['capabilities'], capabilities)
+      );
+    }
+
+    it('has the map in hand on the first render (the control)', async () => {
+      // This harness's own claim, and the reason the cases below discriminate: a
+      // registered runtime resolves immediately and reports nothing broken, which
+      // it could not do off the loading branch.
+      await renderPrimed('codex');
+
+      await expectSelected('task-runtime-select', 'Codex');
+      expect(screen.queryByTestId('task-runtime-warning')).toBeNull();
+    });
+
+    it.each(['constructor', 'toString', '__proto__', 'valueOf', 'hasOwnProperty'])(
+      'opens for editing, and reports it, when the stored runtime is "%s"',
+      async (runtime) => {
+        await renderPrimed(runtime);
+
+        // Treated as exactly what it is — a runtime this machine has not
+        // connected — and still offered back, because it is the one value a
+        // person has to see in order to change it.
+        expect(await screen.findByTestId('task-runtime-warning')).toHaveTextContent(
+          `${runtime} is not connected on this machine.`
+        );
+        expect(screen.getByTestId('task-runtime-select')).toHaveTextContent(runtime);
+      }
+    );
   });
 
   describe('what gets written', () => {
