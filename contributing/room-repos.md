@@ -127,7 +127,8 @@ implies its own remedy, which is why the operating skill can teach recovery with
 
 | Code                    | Meaning                                                  | Agent's fix                          |
 | ----------------------- | -------------------------------------------------------- | ------------------------------------ |
-| `NOT_A_PROJECT_ROOM`    | Room has no repo                                         | Nothing to do here                   |
+| `ROOM_REPOS_DISABLED`   | `rooms.repo.enabled` is off install-wide                 | Ask the operator                     |
+| `NOT_A_PROJECT_ROOM`    | This room has no repo                                    | Nothing to do here                   |
 | `UNCOMMITTED_WORK`      | The agent's worktree is dirty                            | Commit, then retry                   |
 | `BEHIND_MAIN`           | Branch does not contain main's tip (answer says how far) | `git merge main`, resolve, retry     |
 | `NOTHING_TO_MERGE`      | Branch is level with main                                | Nothing to do                        |
@@ -145,11 +146,21 @@ never left conflicted. Then **one durable, unaddressed, system-voiced room entry
 mentions and triggers no turn. `lastMergeSeq` advances and the explorer refreshes off the room
 stream.
 
+**The merge path keeps the two "no repo" reasons apart; the read routes fold them.** A merge
+answers `ROOM_REPOS_DISABLED` or `NOT_A_PROJECT_ROOM`, because a member agent can act on the
+difference. `GET /files` answers one `ROOM_HAS_NO_REPO` for both, deliberately, because there the
+caller may be an outsider and the difference is information. Neither read route can return the
+merge codes, and the merge tool can return neither `ROOM_HAS_NO_REPO` nor
+`ROOM_REPO_GIT_UNAVAILABLE`.
+
 `MERGE_IN_FLIGHT` is the one refusal here that is a `429` rather than a `409`, because it is the only
 one that means "waited your turn" rather than "this state is wrong".
 
-**History is append-only.** No force-push, reset, or branch-delete verb exists on any surface, and
-`room-repo-git.ts` exports none.
+**History is append-only from every agent-reachable surface.** No tool, route, or MCP verb can
+force-push, reset, or delete a branch. `room-repo-git.ts` does export `deleteMergedBranch`, but it
+is called only by the reap, it passes no force flag, and git refuses it for a branch holding
+unmerged commits — so it can retire a branch whose commits `main` already has and nothing else.
+Adding a rewriting verb to that module would make this paragraph false; do not.
 
 ## The two agent verbs, and the one that is missing
 
@@ -300,10 +311,12 @@ Read `specs/project-rooms/02-specification.md` §3.11 before changing anything h
 | `maxRoomMdBytes`   | 24 KB   | Operator-only                     |
 | `mergeQueueWaitMs` | `30000` | Agent-writable                    |
 
-The three caps are **copied onto each room's `room-repo.json` at creation**, so a room keeps the
-bounds it was made under and a later config change cannot retroactively make existing contents
-illegal. Config seeds them; the sidecar remembers them. `maxRoomMdBytes` is the exception and is read
-live.
+**Two of the three caps freeze; one does not.** `maxFileBytes` and `maxRepoBytes` are **copied onto
+each room's `room-repo.json` at creation**, so a room keeps the bounds it was made under and a later
+config change cannot retroactively make existing contents illegal. Config seeds those two; the
+sidecar remembers them. `maxRoomMdBytes` is read **live** every turn (`index.ts` wires
+`RoomConventions`'s `maxRoomMdBytes()` to `readRoomRepoConfig()`, never to the sidecar), because it
+bounds what a turn may carry rather than what a room may contain.
 
 `enabled` plus the three caps are `PROTECTIVE_CARRYOVERS`: an off switch and three tightened ceilings
 survive a config wipe. Full rationale in `contributing/configuration.md` § `rooms.repo`; the

@@ -61,7 +61,10 @@ provenance and the merge queue in one move. The operating skill teaches publish-
 merge — instead. In-repo relative links are fine. This rule is part of the merge contract rather than a
 record of its own, because it is only ever enforced at this one gate.
 
-**The history is append-only.** No force-push, no reset, no branch-delete verb exists on any surface.
+**The history is append-only from every reachable surface.** No tool, route or MCP verb can
+force-push, reset or delete a branch. The one branch deletion in the codebase belongs to the reap,
+passes no force flag, and git itself refuses it while the branch holds unmerged commits, so it can
+only ever retire a branch `main` already contains.
 
 **The tools are named in prose by their ending, not their prefix.** The context block says "the tool
 whose name ends in `merge_to_room_main`", because each runtime prefixes tool names differently and a

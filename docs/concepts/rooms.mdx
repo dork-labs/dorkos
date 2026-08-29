@@ -107,13 +107,15 @@ room's files belong to the room, and they stay there whether or not anyone is ta
 ### Where to find them
 
 Open a room's panel: click the member count at the top of the room, or right-click the room in the
-sidebar and choose **Members…**. Under the list of who's in the room you'll see **Files**.
+sidebar and choose **Members**. Under the list of who's in the room you'll see **Files**.
 
-Each row says who last changed that file and when. `ROOM.md` and `README.md` sit at the top, where
-you'd look for them. A room with no files of its own doesn't show a Files section at all.
+Each row says who last changed that file and when. If DorkOS can't work that out for a row, it
+shows a dash rather than guessing. `ROOM.md` and `README.md` sit at the top, where you'd look for
+them. A room with no files of its own doesn't show a Files section at all.
 
-The list hides the machinery your tools keep for themselves, like `node_modules` and folders
-starting with a dot. Press the eye button to show it again.
+The list hides the machinery your tools keep for themselves: anything whose name starts with a dot,
+whether it's a file or a folder, plus `node_modules`, `.git`, `.dork`, `.claude`, and `.agents`.
+Press the crossed-out eye to show it all, and the plain eye to hide it again.
 
 ### Everyone gets their own copy
 
@@ -139,7 +141,9 @@ Merging is careful on purpose:
 - **An agent has to catch up first.** If the room has moved on since the agent last looked, the
   merge is refused and the agent is told how far behind it is. It catches up in its own copy, sorts
   out anything that clashes there, and tries again. Clashes never reach the shared copy.
-- **Two agents finishing at once take turns.** The second one waits rather than failing.
+- **Two agents finishing at once take turns.** The second one waits rather than failing. A room
+  that has somehow piled up eight waiting merges turns the ninth away instead of queueing it, and
+  says when to try again.
 - **Nothing lands half-done.** A merge either goes in completely or not at all.
 
 When it works, the room gets one line saying who merged what and how much changed. Nobody is
@@ -156,9 +160,9 @@ Beside the **Files** heading, a badge names anyone holding work the room hasn't 
 and it says which kind: work they saved but haven't merged, or changes they haven't even saved. It
 only appears when there's something to see.
 
-A copy nobody has touched for two weeks gets tidied away, but only when it's empty. Anything
-unsaved or not yet merged is left alone, however long it sits there, including after that agent
-leaves the room. You can change the two weeks in
+A copy nobody has touched for two weeks gets tidied away, but only when it holds nothing the room
+hasn't already got. Anything unsaved or not yet merged is left alone, however long it sits there,
+including after that agent leaves the room. You can change the two weeks in
 [Configuration](/docs/getting-started/configuration#room-files).
 
 ### Reading and editing
@@ -644,7 +648,7 @@ than to the agent.
 ### Setting it, in the app
 
 You do not pick any of those words. Open a room's panel — the member count in its header, or
-**Members…** on its row in the sidebar — and each agent has its loudness on the right, on a scale
+**Members** on its row in the sidebar — and each agent has its loudness on the right, on a scale
 that runs quiet to loud:
 
 **Silent** → **@only** → **Engaged** → **Everything**
@@ -719,6 +723,12 @@ Every listing and every read answers from a commit, never from whatever is on di
 half-written edit in the shared copy is invisible and `.git` is not in the tree to be reached. A
 symlink is listed and never followed.
 
+Two answers from these read routes are worth not confusing. `409 ROOM_HAS_NO_REPO` means this room
+specifically has no files, either because it was never given any or because room files are switched
+off: one predicate covers both, on purpose, so the answer cannot be used to tell them apart.
+`ROOM_REPO_GIT_UNAVAILABLE` means this machine has no `git` at all. The merge tool never returns
+either one; it distinguishes `NOT_A_PROJECT_ROOM` from `ROOM_REPOS_DISABLED` instead.
+
 `PUT /api/rooms/:id/files/content` carries `{ path, baseCommit, text }`. `baseCommit` is the commit
 the editor loaded, and the save is refused `409 FILE_CHANGED` only if the shared copy moved **and
 touched that path**. The refusal carries the commit that won, which is what the app turns into
@@ -738,12 +748,10 @@ deliberately not a tool.
 `merge_to_room_main` refuses with a specific reason rather than a generic failure, and each reason
 implies its own fix: `NOT_A_PROJECT_ROOM`, `UNCOMMITTED_WORK`, `BEHIND_MAIN` (with how far),
 `NOTHING_TO_MERGE`, `SYMLINK_ESCAPES_REPO`, `SUBMODULE_NOT_ALLOWED`, `FILE_TOO_LARGE`,
-`REPO_CAP_EXCEEDED`, `MAIN_CHECKOUT_DIRTY`. A merge arriving while another is running queues and
-answers `429 MERGE_IN_FLIGHT` with a `Retry-After` only after the wait runs out.
-
-Two facts a caller should not confuse. `ROOM_REPO_GIT_UNAVAILABLE` means this machine has no `git`
-at all. `ROOM_HAS_NO_REPO` means this room specifically has no files, either because it was never
-given any or because room files are switched off.
+`REPO_CAP_EXCEEDED`, `MAIN_CHECKOUT_DIRTY`. A merge arriving while another is running queues, and
+answers `429 MERGE_IN_FLIGHT` with a `Retry-After` when its wait runs out. It is answered the same
+way without waiting at all if the room's queue is already eight deep, which is a wedged room saying
+so rather than growing a line nobody will reach the front of.
 
 Giving a room files is not in this list and never will be. The full mechanism, the merge contract,
 and the trust boundary are in

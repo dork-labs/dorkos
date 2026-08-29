@@ -290,7 +290,7 @@ Most people never change these. The defaults are sized for documents and small p
     },
     'rooms.repo.worktreeReapDays': {
       description:
-        "How many days an agent's copy of a room's files may sit untouched before DorkOS tidies it away. Only an empty copy is ever removed. Anything unsaved, or saved but not yet merged, is left alone however long it sits there, and the room shows you who is holding it.",
+        "How many days an agent's copy of a room's files may sit untouched before DorkOS tidies it away. A copy is only ever removed when it holds nothing the room hasn't already got. Anything unsaved, or saved but not yet merged, is left alone however long it sits there, and the room shows you who is holding it. Only you can change this.",
       type: 'integer (1--365)',
       default: '14',
     },
@@ -321,9 +321,11 @@ Most people never change these. The defaults are sized for documents and small p
   }}
 />
 
-The three size limits are also written down for each room when its files are first set up. So a
-room keeps the limits it was made under, and raising or lowering these later never makes an
-existing room's files suddenly illegal.
+Two of the size limits behave differently from the rest. **The file and total-size limits are
+written down for each room when its files are first set up**, so a room keeps the limits it was
+made under, and raising or lowering them later never makes an existing room's files suddenly
+illegal. **The `ROOM.md` limit is read fresh every time**, so changing it takes effect on every
+room's next turn.
 
 ### Welcome back
 
