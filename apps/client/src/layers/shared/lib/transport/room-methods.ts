@@ -38,7 +38,12 @@ import {
   type UpdateMembershipRequest,
   type UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
-import type { RoomFileContentResponse, RoomFileListResponse } from '@dorkos/shared/room-files';
+import type {
+  RoomFileContentResponse,
+  RoomFileListResponse,
+  RoomFileSaveRequest,
+  RoomFileSaveResponse,
+} from '@dorkos/shared/room-files';
 import type { RoomRepoStatus } from '@dorkos/shared/room-repo';
 import type { UploadProgress } from '@dorkos/shared/types';
 import type { UploadFile } from '@dorkos/shared/transport';
@@ -169,6 +174,26 @@ export function createRoomMethods(baseUrl: string) {
     /** Where the room's files stand, and who is holding work it has not got. */
     readRoomRepoStatus(id: string): Promise<RoomRepoStatus> {
       return fetchJSON<RoomRepoStatus>(baseUrl, `/rooms/${encodeURIComponent(id)}/repo/status`);
+    },
+
+    /**
+     * Save one file, as one commit by the person doing it.
+     *
+     * The same URL the read uses, with the file named in the BODY rather than
+     * the query — a save carries its contents anyway, so putting the path
+     * beside them keeps one request rather than a query and a body that could
+     * disagree about which file this is.
+     *
+     * A `FILE_CHANGED` refusal arrives as a thrown error carrying the server's
+     * `code` and its parsed `body`, which is where the `conflict` the reload /
+     * keep-mine choice needs lives.
+     */
+    saveRoomFile(id: string, req: RoomFileSaveRequest): Promise<RoomFileSaveResponse> {
+      return fetchJSON<RoomFileSaveResponse>(
+        baseUrl,
+        `/rooms/${encodeURIComponent(id)}/files/content`,
+        { method: 'PUT', body: JSON.stringify(req) }
+      );
     },
 
     /**

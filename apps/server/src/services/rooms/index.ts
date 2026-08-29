@@ -34,6 +34,7 @@ import { AttachmentRowStore } from './attachments/attachment-row-store.js';
 import type { RoomAttachmentStore } from './attachments/room-attachment-store.js';
 import type { RoomRepoService } from './repo/room-repo-service.js';
 import type { RoomFilesService } from './repo/room-files.js';
+import type { RoomFileEditor } from './repo/room-file-editor.js';
 import type { RoomWorktreeManager } from './repo/room-worktree-manager.js';
 import type { RoomMergeService } from './repo/room-merge-service.js';
 import type { RoomAgentLookup } from './room-errors.js';
@@ -645,6 +646,30 @@ export function setRoomFilesService(service: RoomFilesService): void {
 export function getRoomFilesService(): RoomFilesService {
   if (!activeRoomFiles) throw new Error('RoomFilesService not initialized');
   return activeRoomFiles;
+}
+
+let activeRoomFileEditor: RoomFileEditor | null = null;
+
+/**
+ * Register the room file editor at bootstrap, beside
+ * {@link setRoomFilesService}.
+ *
+ * Its own singleton rather than a method on the read service, for the reason
+ * that one gives about the repo service: reading a room's files is something
+ * every member does on a request path, and saving one is a write into the
+ * integration tree that has to hold the room's queue. They share a store and a
+ * provenance walk, and nothing else.
+ *
+ * @param editor - The wired editor.
+ */
+export function setRoomFileEditor(editor: RoomFileEditor): void {
+  activeRoomFileEditor = editor;
+}
+
+/** The active room file editor (throws if bootstrap has not run). */
+export function getRoomFileEditor(): RoomFileEditor {
+  if (!activeRoomFileEditor) throw new Error('RoomFileEditor not initialized');
+  return activeRoomFileEditor;
 }
 
 let activeWorktrees: RoomWorktreeManager | null = null;

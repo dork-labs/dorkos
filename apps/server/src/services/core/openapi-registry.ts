@@ -124,14 +124,20 @@ import {
 import { ROOM_EXPORT_CONTENT_TYPE, RoomExportLineSchema } from '@dorkos/shared/room-export-schemas';
 import {
   RoomBranchStatusSchema as SharedRoomBranchStatusSchema,
+  RoomMainStatusSchema as SharedRoomMainStatusSchema,
   RoomRepoStatusSchema as SharedRoomRepoStatusSchema,
+  RoomStrayChangeSchema as SharedRoomStrayChangeSchema,
 } from '@dorkos/shared/room-repo';
 import {
+  RoomFileConflictResponseSchema,
   RoomFileContentQuerySchema,
   RoomFileContentResponseSchema,
   RoomFileListResponseSchema,
+  RoomFileSaveRequestSchema,
+  RoomFileSaveResponseSchema,
   RoomFilesQuerySchema,
 } from '@dorkos/shared/room-files';
+import { RoomMainRepairRequestSchema } from '@dorkos/shared/room-repo';
 import { PendingInteractionsResponseSchema } from '@dorkos/shared/interaction-events';
 import {
   ReadCursorParamsSchema,
@@ -4061,9 +4067,36 @@ const RoomBranchStatusSchema = z
   .object(SharedRoomBranchStatusSchema.shape)
   .openapi('RoomBranchStatus');
 
+/**
+ * One uncommitted change in a room's own copy, and the warning it belongs to —
+ * derived from the shared schemas exactly as the branch row above is, and for
+ * the reasons its doc gives.
+ *
+ * `strays` is re-wrapped around the NAMED change schema so the document keeps
+ * its `$ref` instead of inlining the row.
+ */
+const RoomStrayChangeSchema = z
+  .object(SharedRoomStrayChangeSchema.shape)
+  .openapi('RoomStrayChange');
+
+/** What the room's own copy looks like on disk — the dirty-main warning. */
+const RoomMainStatusSchema = z
+  .object({
+    ...SharedRoomMainStatusSchema.shape,
+    strays: z.array(RoomStrayChangeSchema),
+  })
+  .openapi('RoomMainStatus');
+
 /** What `GET /api/rooms/{id}/repo/status` answers. */
 const RoomRepoStatusSchema = z
-  .object({ ...SharedRoomRepoStatusSchema.shape, branches: z.array(RoomBranchStatusSchema) })
+  .object({
+    ...SharedRoomRepoStatusSchema.shape,
+    branches: z.array(RoomBranchStatusSchema),
+    // Re-wrapped for the same reason `branches` is: the shared shape carries
+    // the dirty-main warning, and naming it here keeps a `$ref` in the document
+    // rather than a second inline copy of the same object.
+    main: RoomMainStatusSchema,
+  })
   .openapi('RoomRepoStatus');
 
 /** What a completed merge answers. */
@@ -4174,6 +4207,110 @@ registry.registerPath({
     409: {
       description:
         'The room has no files of its own, or room files are switched off on this install (`ROOM_HAS_NO_REPO`); or this machine has no git (`ROOM_REPO_GIT_UNAVAILABLE`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/rooms/{id}/files/content',
+  tags: ['Rooms'],
+  summary: "Save one of a room's files",
+  description:
+    "Writes one file into the room's own copy and commits it, **as one commit authored by the person who saved it**. The file is named in the body rather than the URL, so a save and a read spell a path the same way. **People only**: a member AGENT is refused 403 `PEOPLE_ONLY` — it has a working copy of its own and `merge_to_room_main` to bring work back through, and a second writer in the integration tree is the one-writer rule undone. Membership is still asked first, so a non-member gets the same 404 an unknown room gets. **Optimistic locking is about the FILE**: `baseCommit` is the commit the editor read it at, and the save is refused 409 `FILE_CHANGED` only if THAT PATH changed since — not merely because the room moved on, which it does every time anybody merges. That refusal carries `conflict` — the commit `main` is at now, and who last touched the file — which is what a reload / keep-mine choice is drawn from; sending the conflict's own commit back as `baseCommit` is how a person overwrites deliberately. Saving text that is byte-for-byte what the file already held commits nothing and answers `committed: false`. Refused otherwise with: `ROOM_FILE_PATH_INVALID` (a path that could mean somewhere else, or that names the room's own git directory in any of its spellings), `ROOM_FILE_NOT_READABLE` (a folder, a link, or another repository — a save never writes through a link), `ROOM_FILE_NOT_FOUND` (a folder the room does not have; saving does not make new folders), `ROOM_FILE_NOT_TEXT` (a `NUL` byte, which would make the file unreadable through the read route), `FILE_TOO_LARGE` and `REPO_CAP_EXCEEDED` against the room's own frozen caps, `MAIN_CHECKOUT_DIRTY` while something outside DorkOS has written in the room's copy, and `ROOM_ARCHIVED`. **Two ceilings, two answers**: the request body limit is 1 MB, below the default file cap, so a very large save never reaches the room's own cap at all — it is refused 413 `REQUEST_TOO_LARGE` by the request parser, where a save that fits the request and not the room is refused 409 `FILE_TOO_LARGE`.",
+  request: {
+    params: RoomIdParams,
+    body: { content: { 'application/json': { schema: RoomFileSaveRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'The file is on the room’s `main`',
+      content: { 'application/json': { schema: RoomFileSaveResponseSchema } },
+    },
+    400: {
+      description:
+        'The path could have meant somewhere else, names something that is not a file, or the contents would not be text',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: roomAgentUnverified,
+    403: {
+      description: 'The caller is an agent; only people save a room’s files (`PEOPLE_ONLY`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description:
+        'No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`) — the same answer for both — or no such folder in the room’s files (`ROOM_FILE_NOT_FOUND`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        'The file changed while it was being edited — `FILE_CHANGED`, and ONLY that code carries `conflict` — or the save was refused for one of the room-state reasons above (`MAIN_CHECKOUT_DIRTY`, `FILE_TOO_LARGE`, `REPO_CAP_EXCEEDED`, `ROOM_ARCHIVED`, `ROOM_HAS_NO_REPO`, `ROOM_REPOS_DISABLED`, `ROOM_REPO_GIT_UNAVAILABLE`), which answer with the code and the sentence alone. Switch on `code`, never on the presence of a field',
+      content: {
+        'application/json': {
+          schema: z.union([RoomFileConflictResponseSchema, ErrorResponseSchema]),
+        },
+      },
+    },
+    413: {
+      description:
+        'The request body is over the server’s 1 MB limit (`REQUEST_TOO_LARGE`). That limit is below the room’s own file cap, so a very large save meets this one first',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    429: {
+      description: 'Another write held the room’s queue and the wait ran out (`MERGE_IN_FLIGHT`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/repo/main/repair',
+  tags: ['Rooms'],
+  summary: 'Deal with changes somebody made outside DorkOS',
+  description:
+    'A room’s own copy has one writer and it is DorkOS, so anything uncommitted in it came from outside — a person with a terminal — and while it is there, every merge and every save in the room refuses `MAIN_CHECKOUT_DIRTY`. This is the way out. `{"action":"commit"}` keeps everything as one commit authored by you; `{"action":"discard","paths":[…]}` throws away exactly the files named, and every one of them has to be a path `GET /repo/status` is reporting as changed right now — anything else is 404, so a screen drawn ten minutes ago cannot delete something that arrived since. Committing keeps work and loses nothing, which is why it needs no list; discarding is the only irreversible act on this surface, which is why it demands one. **Operator-only** (403 `OPERATOR_ONLY`). A room’s copy that is on some other branch is refused rather than fixed — DorkOS does not check out over work it did not put there. `clean` in the answer says whether the room is unstuck: discarding some of the changes and not others leaves it paused, honestly.',
+  request: {
+    params: RoomIdParams,
+    body: { content: { 'application/json': { schema: RoomMainRepairRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'What was done, and whether the room’s files are clean now',
+      content: {
+        'application/json': {
+          schema: z.object({
+            action: z.enum(['commit', 'discard']),
+            commit: z.string().nullable(),
+            paths: z.number().int(),
+            clean: z.boolean(),
+          }),
+        },
+      },
+    },
+    400: {
+      description: 'Neither action was named, or a discard named no files',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: roomAgentUnverified,
+    403: {
+      description: 'The caller is not the person who owns this install (`OPERATOR_ONLY`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description:
+        'No such room (`ROOM_NOT_FOUND`), or a named path is not one of the changes waiting (`ROOM_FILE_NOT_FOUND`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        'The room has no files (`ROOM_HAS_NO_REPO`), its copy is on another branch (`MAIN_CHECKOUT_DIRTY`), or room files are switched off (`ROOM_REPOS_DISABLED`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    429: {
+      description:
+        'A merge or a save held the room’s queue and the wait ran out (`MERGE_IN_FLIGHT`) — a repair takes the same one lane every other write to a room’s files takes',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

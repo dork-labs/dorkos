@@ -458,4 +458,148 @@ describe('the room repo routes', () => {
     expect(merges).toHaveLength(1);
     expect(merges[0]?.body.text).toContain('Ana merged: Add the deploy checklist');
   });
+  describe('dirty main — the pause, and the way out (spec §3.10)', () => {
+    /** Edit the room's own copy the way a person with a terminal would. */
+    async function editByHand(roomId: string, name: string, body: string): Promise<void> {
+      await writeFile(path.join(store.repoPath(roomId), name), body, 'utf-8');
+    }
+
+    it('reports what is different, stops every write, and starts again once it is dealt with', async () => {
+      const roomId = await projectRoom();
+      // Ana has work ready to merge, so the pause is stopping something real.
+      const tree = await roomWorktrees.ensureWorktree(roomId, ANA_PATH, 'Ana');
+      const ceiling = store.homeDir(roomId);
+      await writeFile(path.join(tree.path, 'checklist.md'), 'one\n', 'utf-8');
+      await runGit(['add', '--all'], tree.path, ceiling);
+      await runGit(
+        [
+          '-c',
+          'user.name=Ana',
+          '-c',
+          'user.email=ana@dorkos.local',
+          'commit',
+          '-q',
+          '-m',
+          'checklist',
+        ],
+        tree.path,
+        ceiling
+      );
+
+      await editByHand(roomId, 'stray.md', 'typed straight into the folder\n');
+
+      // The warning: what is different, named, so a person can act on it.
+      const paused = await request(app).get(`/api/rooms/${roomId}/repo/status`);
+      expect(paused.status).toBe(200);
+      expect(paused.body.main).toMatchObject({ branch: 'main', dirty: true, strayCount: 1 });
+      expect(paused.body.main.strays).toEqual([{ path: 'stray.md', kind: 'untracked' }]);
+
+      // And the pause itself, on the merge.
+      const refused = await request(app)
+        .post(`/api/rooms/${roomId}/repo/merge`)
+        .send({ summary: 'Add the deploy checklist', worktree: tree.slug });
+      expect(refused.status).toBe(409);
+      expect(refused.body.code).toBe('MAIN_CHECKOUT_DIRTY');
+
+      // The way out: throw away the change nobody wanted, by name.
+      const repaired = await request(app)
+        .post(`/api/rooms/${roomId}/repo/main/repair`)
+        .send({ action: 'discard', paths: ['stray.md'] });
+      expect(repaired.status).toBe(200);
+      expect(repaired.body).toMatchObject({ action: 'discard', paths: 1, clean: true });
+
+      // And the room is working again — the merge that was refused now lands.
+      const merged = await request(app)
+        .post(`/api/rooms/${roomId}/repo/merge`)
+        .send({ summary: 'Add the deploy checklist', worktree: tree.slug });
+      expect(merged.status).toBe(200);
+      const clear = await request(app).get(`/api/rooms/${roomId}/repo/status`);
+      expect(clear.body.main).toMatchObject({ dirty: false, strayCount: 0, strays: [] });
+    });
+
+    it('keeping the changes moves main, so the ordinary sync rule takes over', async () => {
+      // Worth pinning, because it is the one thing about `commit` that
+      // surprises: it ends the pause by making a commit, and a commit on main
+      // is a commit every agent's branch is now behind. That is not a failure
+      // of the repair — it is the room's normal rule, and the refusal changes
+      // from "somebody wrote in here" to "sync first", which is a refusal the
+      // agent knows what to do with.
+      const roomId = await projectRoom();
+      const tree = await roomWorktrees.ensureWorktree(roomId, ANA_PATH, 'Ana');
+      const ceiling = store.homeDir(roomId);
+      await writeFile(path.join(tree.path, 'checklist.md'), 'one\n', 'utf-8');
+      await runGit(['add', '--all'], tree.path, ceiling);
+      await runGit(
+        [
+          '-c',
+          'user.name=Ana',
+          '-c',
+          'user.email=ana@dorkos.local',
+          'commit',
+          '-q',
+          '-m',
+          'checklist',
+        ],
+        tree.path,
+        ceiling
+      );
+      await editByHand(roomId, 'stray.md', 'typed straight into the folder\n');
+
+      const repaired = await request(app)
+        .post(`/api/rooms/${roomId}/repo/main/repair`)
+        .send({ action: 'commit' });
+      expect(repaired.body).toMatchObject({ action: 'commit', paths: 1, clean: true });
+      // Their work was kept, which is the whole point of the other answer.
+      expect(existsSync(path.join(store.repoPath(roomId), 'stray.md'))).toBe(true);
+
+      const merged = await request(app)
+        .post(`/api/rooms/${roomId}/repo/merge`)
+        .send({ summary: 'Add the deploy checklist', worktree: tree.slug });
+      expect(merged.status).toBe(409);
+      expect(merged.body.code).toBe('BEHIND_MAIN');
+    });
+
+    it('discards only what the operator named', async () => {
+      const roomId = await projectRoom();
+      await editByHand(roomId, 'throw-away.md', 'not wanted\n');
+      await editByHand(roomId, 'keep.md', 'wanted\n');
+
+      const res = await request(app)
+        .post(`/api/rooms/${roomId}/repo/main/repair`)
+        .send({ action: 'discard', paths: ['throw-away.md'] });
+
+      expect(res.status).toBe(200);
+      // Half-dealt-with is a legitimate outcome, and the answer says so rather
+      // than implying merges have resumed.
+      expect(res.body).toMatchObject({ action: 'discard', paths: 1, clean: false });
+      expect(existsSync(path.join(store.repoPath(roomId), 'throw-away.md'))).toBe(false);
+      expect(existsSync(path.join(store.repoPath(roomId), 'keep.md'))).toBe(true);
+    });
+
+    it('refuses an agent, and refuses a discard of nothing', async () => {
+      const roomId = await projectRoom();
+      await editByHand(roomId, 'stray.md', 'x\n');
+      const token = await initAgentIdentityService(db).mint({
+        agentPath: ANA_PATH,
+        displayName: 'Ana',
+      });
+
+      const asAgent = await request(app)
+        .post(`/api/rooms/${roomId}/repo/main/repair`)
+        .set('X-DorkOS-Agent', token)
+        .send({ action: 'commit' });
+      expect(asAgent.status).toBe(403);
+      expect(asAgent.body.code).toBe('OPERATOR_ONLY');
+
+      // "Discard nothing" is not an action, and the schema says so before any
+      // git runs.
+      const empty = await request(app)
+        .post(`/api/rooms/${roomId}/repo/main/repair`)
+        .send({ action: 'discard', paths: [] });
+      expect(empty.status).toBe(400);
+
+      // Neither attempt touched it.
+      expect(existsSync(path.join(store.repoPath(roomId), 'stray.md'))).toBe(true);
+    });
+  });
 });

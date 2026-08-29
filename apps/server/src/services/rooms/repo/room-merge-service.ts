@@ -63,7 +63,12 @@
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
-import type { RoomBranchStatus, RoomRepoCaps, RoomRepoStatus } from '@dorkos/shared/room-repo';
+import type {
+  RoomBranchStatus,
+  RoomMainStatus,
+  RoomRepoCaps,
+  RoomRepoStatus,
+} from '@dorkos/shared/room-repo';
 import { MERGE_SUMMARY_MAX_CHARS } from '@dorkos/shared/room-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../../lib/logger.js';
@@ -72,8 +77,12 @@ import type { RoomRepoStore } from './room-repo-store.js';
 import { RoomWorktreeManager, roomWorktreeBranch } from './room-worktree-manager.js';
 import type { RoomRepoMutex } from './room-repo-mutex.js';
 import {
+  assertMainCheckoutReady,
+  readMainCheckoutState,
+  type RoomMainCheckoutState,
+} from './room-main-checkout.js';
+import {
   aheadBehind,
-  currentBranch,
   hasLocalBranch,
   hasUncommittedChanges,
   headCommittedAt,
@@ -85,6 +94,7 @@ import {
   shortstat,
   GITLINK_MODE,
   SYMLINK_MODE,
+  type StrayChange,
   type TreeEntry,
 } from './room-repo-git.js';
 
@@ -110,6 +120,18 @@ const AGENT_GIT_EMAIL_DOMAIN = 'dorkos.local';
  * clock.
  */
 const STATUS_CACHE_MS = 5_000;
+
+/**
+ * How many stray changes one status answer carries.
+ *
+ * Fifty, and the number is about what the list is FOR: it is the evidence
+ * behind "somebody wrote in this room's files", and a person deciding what to
+ * do about that needs to recognise the change, not to audit every path. A tree
+ * somebody dropped `node_modules` into has tens of thousands, and sending them
+ * would turn a warning into a payload nobody can render. `strayCount` still
+ * answers how many there really are.
+ */
+const MAX_REPORTED_STRAYS = 50;
 
 /** What a completed merge answers. */
 export interface RoomMergeResult {
@@ -279,12 +301,34 @@ export class RoomMergeService {
 
     // One cheap read decides whether the expensive ones have to happen at all.
     const mainCommit = await revParse(repoDir, 'main', ceiling);
-    const cached = this.cachedStatus(roomId, mainCommit);
-    if (cached) return this.withCaller(cached, callerAuthorId);
+    // Never cached — see {@link RoomRepoStatus.main}. Somebody editing the
+    // room's own copy in a terminal, and the operator undoing it, both change
+    // this without moving a commit, so a cached answer would go on saying the
+    // room is stuck after it was fixed.
+    const main = await this.readMain(repoDir, ceiling);
 
-    const fresh = await this.computeStatus(roomId, repoDir, ceiling, mainCommit);
+    const cached = this.cachedStatus(roomId, mainCommit);
+    if (cached) return this.withCaller({ ...cached, main }, callerAuthorId);
+
+    const fresh = await this.computeStatus(roomId, repoDir, ceiling, mainCommit, main);
     this.statusCache.set(roomId, { mainCommit, at: Date.now(), status: fresh });
     return this.withCaller(fresh, callerAuthorId);
+  }
+
+  /**
+   * What the room's own copy holds on disk, in the shape the status reports.
+   *
+   * @param repoDir - The room's main checkout.
+   * @param ceiling - The room home directory git's search may not climb past.
+   */
+  private async readMain(repoDir: string, ceiling: string): Promise<RoomMainStatus> {
+    const state: RoomMainCheckoutState = await readMainCheckoutState(repoDir, ceiling);
+    return {
+      branch: state.branch,
+      dirty: state.branch !== 'main' || state.strays.length > 0,
+      strays: state.strays.slice(0, MAX_REPORTED_STRAYS),
+      strayCount: state.strays.length,
+    };
   }
 
   /**
@@ -339,12 +383,16 @@ export class RoomMergeService {
    * @param repoDir - Its main checkout.
    * @param ceiling - The room home directory git's search may not climb past.
    * @param mainCommit - What `main` points at.
+   * @param main - What the room's own copy holds on disk, read fresh by the
+   *   caller. Stored on the cached answer only so the shape is whole; every
+   *   later read replaces it.
    */
   private async computeStatus(
     roomId: string,
     repoDir: string,
     ceiling: string,
-    mainCommit: string
+    mainCommit: string,
+    main: RoomMainStatus
   ): Promise<RoomRepoStatus> {
     const caps = await this.requireCaps(roomId);
     const committedAt = await headCommittedAt(repoDir, ceiling);
@@ -398,6 +446,7 @@ export class RoomMergeService {
     return {
       mainCommit,
       mainCommittedAt: committedAt?.toISOString() ?? null,
+      main,
       branches,
       strandedWorktrees: await this.deps.listStrandedWorktrees(roomId),
       size: {
@@ -532,7 +581,11 @@ export class RoomMergeService {
     const ceiling = this.deps.store.homeDir(roomId);
     const caps = await this.requireCaps(roomId);
 
-    await this.assertMainCheckoutReady(repoDir, ceiling);
+    // The one dirty-main gate, shared with the human save path
+    // (`room-main-checkout.ts`): two writers into one tree must agree about
+    // what "somebody else has been writing here" means, or one of them
+    // eventually writes on top of it.
+    await assertMainCheckoutReady(repoDir, ceiling);
 
     if (!(await hasLocalBranch(repoDir, target.branch, ceiling))) {
       throw new RoomError(
@@ -637,34 +690,6 @@ export class RoomMergeService {
       deletions: stat.deletions,
       seq: entry.seq,
     };
-  }
-
-  /**
-   * Refuse to merge into an integration tree somebody else has been writing in.
-   *
-   * Two ways it can be wrong, and they are reported as one code because the
-   * remedy is the same — a person has to look at it (spec §3.10's loud
-   * degradation): the checkout holds uncommitted changes, or it is not on `main`
-   * at all. Neither can happen through DorkOS, which is exactly why finding one
-   * means something outside DorkOS wrote here.
-   *
-   * @param repoDir - The room's main checkout.
-   * @param ceiling - The room home directory git's search may not climb past.
-   */
-  private async assertMainCheckoutReady(repoDir: string, ceiling: string): Promise<void> {
-    const branch = await currentBranch(repoDir, ceiling);
-    if (branch !== 'main') {
-      throw new RoomError(
-        'MAIN_CHECKOUT_DIRTY',
-        `This room’s files are not on their main branch (${branch ?? 'no branch'}), which only something outside DorkOS can have done. Put them back on main before merging.`
-      );
-    }
-    if (await hasUncommittedChanges(repoDir, ceiling)) {
-      throw new RoomError(
-        'MAIN_CHECKOUT_DIRTY',
-        'This room’s files have changes DorkOS did not make. Nothing will be merged until they are committed or undone.'
-      );
-    }
   }
 
   /**

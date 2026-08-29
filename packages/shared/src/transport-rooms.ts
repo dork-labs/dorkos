@@ -12,7 +12,12 @@
  */
 import type { UploadProgress } from './schemas.js';
 import type { UploadFile } from './transport.js';
-import type { RoomFileContentResponse, RoomFileListResponse } from './room-files.js';
+import type {
+  RoomFileContentResponse,
+  RoomFileListResponse,
+  RoomFileSaveRequest,
+  RoomFileSaveResponse,
+} from './room-files.js';
 import type { RoomRepoStatus } from './room-repo.js';
 import type {
   AuthorRef,
@@ -160,6 +165,26 @@ export interface RoomTransport {
    * @param id - The room id.
    */
   readRoomRepoStatus(id: string): Promise<RoomRepoStatus>;
+  /**
+   * Save one of a room's files, as one commit authored by the person doing it
+   * (spec `project-rooms` §3.10).
+   *
+   * **People only.** An agent in a project room has a working copy of its own
+   * and a merge to bring work back through; this door is the person's.
+   *
+   * `baseCommit` is the commit the editor read the file at — the `commit` on
+   * the read that opened it. The save is refused only if THAT FILE changed
+   * since, never merely because the room moved on: the rejection carries the
+   * code `FILE_CHANGED`, and the parsed body on the thrown error carries
+   * `conflict` — the commit `main` is at now and who last touched the file — so
+   * an editor can offer "open theirs" or "keep mine" instead of overwriting
+   * blind. Sending the conflict's own `commit` back as `baseCommit` is what
+   * "keep mine" means.
+   *
+   * @param id - The room id.
+   * @param req - The file, the commit it was read at, and its new contents.
+   */
+  saveRoomFile(id: string, req: RoomFileSaveRequest): Promise<RoomFileSaveResponse>;
   /**
    * Post to a room. Trigger-only, exactly as {@link postMessage} is: the 202
    * carries the new entry's identity, while the entry itself reaches every

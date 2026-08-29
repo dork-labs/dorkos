@@ -490,4 +490,139 @@ describe('RoomRepoService', () => {
       expect(service.hasRepo(ROOM_ID)).toBe(true);
     });
   });
+  describe('repairMainCheckout', () => {
+    /** Enable the room's files and hand back its checkout. */
+    async function withFiles(): Promise<string> {
+      await service.enable(ROOM_ID, OPERATOR);
+      return store.repoPath(ROOM_ID);
+    }
+
+    it('keeps changes somebody made outside DorkOS, as one commit by the operator', async () => {
+      const repoDir = await withFiles();
+      const before = await git(['rev-parse', 'HEAD'], repoDir);
+      // A person with a terminal: one file edited, one file added.
+      await writeFile(path.join(repoDir, ROOM_MD_FILENAME), '# edited by hand\n', 'utf-8');
+      await writeFile(path.join(repoDir, 'notes.md'), 'jotted down\n', 'utf-8');
+
+      const result = await service.repairMainCheckout(ROOM_ID, OPERATOR, { action: 'commit' });
+
+      expect(result).toMatchObject({ action: 'commit', paths: 2, clean: true });
+      expect(result.commit).not.toBe(before);
+      expect(await git(['status', '--porcelain=v1'], repoDir)).toBe('');
+      expect(await git(['log', '--format=%an%n%s', '-n', '1'], repoDir)).toBe(
+        'Dorian\nKeep changes made outside DorkOS'
+      );
+      // Both files are in it, which is the whole point of not asking for a list.
+      expect(await git(['show', '--name-only', '--format=', 'HEAD'], repoDir)).toContain(
+        'notes.md'
+      );
+    });
+
+    it('discards exactly the files it was handed, and nothing else', async () => {
+      const repoDir = await withFiles();
+      const before = await git(['rev-parse', 'HEAD'], repoDir);
+      const original = await readFile(path.join(repoDir, ROOM_MD_FILENAME), 'utf-8');
+      await writeFile(path.join(repoDir, ROOM_MD_FILENAME), '# edited by hand\n', 'utf-8');
+      await writeFile(path.join(repoDir, 'keep.md'), 'still wanted\n', 'utf-8');
+      await writeFile(path.join(repoDir, 'throw-away.md'), 'not wanted\n', 'utf-8');
+
+      const result = await service.repairMainCheckout(ROOM_ID, OPERATOR, {
+        action: 'discard',
+        paths: [ROOM_MD_FILENAME, 'throw-away.md'],
+      });
+
+      // A tracked file goes back to what the commit has; an untracked one is
+      // removed. The file nobody named is untouched — so the room is still
+      // dirty, and the answer says so rather than implying merges resumed.
+      expect(result).toMatchObject({ action: 'discard', commit: null, paths: 2, clean: false });
+      expect(await readFile(path.join(repoDir, ROOM_MD_FILENAME), 'utf-8')).toBe(original);
+      expect(existsSync(path.join(repoDir, 'throw-away.md'))).toBe(false);
+      expect(existsSync(path.join(repoDir, 'keep.md'))).toBe(true);
+      expect(await git(['rev-parse', 'HEAD'], repoDir)).toBe(before);
+    });
+
+    it('undoes a rename whole, rather than deleting the file it renamed', async () => {
+      // Found in review: a rename is one stray with TWO paths, and a discard
+      // that knew only the new one deleted the file from the room and left the
+      // old name still missing — destroying work while claiming to undo it.
+      const repoDir = await withFiles();
+      const before = await git(['rev-parse', 'HEAD'], repoDir);
+      const original = await readFile(path.join(repoDir, ROOM_MD_FILENAME), 'utf-8');
+      await git(['mv', ROOM_MD_FILENAME, 'renamed.md'], repoDir);
+
+      // Whatever the room reports is what the operator can name, so discarding
+      // "everything on the list" is the case to prove.
+      const listed = await service.repairMainCheckout(ROOM_ID, OPERATOR, {
+        action: 'discard',
+        paths: ['renamed.md'],
+      });
+
+      expect(listed).toMatchObject({ action: 'discard', paths: 1, clean: true });
+      expect(await readFile(path.join(repoDir, ROOM_MD_FILENAME), 'utf-8')).toBe(original);
+      expect(existsSync(path.join(repoDir, 'renamed.md'))).toBe(false);
+      expect(await git(['status', '--porcelain=v1'], repoDir)).toBe('');
+      expect(await git(['rev-parse', 'HEAD'], repoDir)).toBe(before);
+    });
+
+    it('refuses a path the room is not reporting as changed', async () => {
+      const repoDir = await withFiles();
+      await writeFile(path.join(repoDir, 'notes.md'), 'jotted down\n', 'utf-8');
+
+      // The stale-screen case, and the invented-path case, are the same case:
+      // if it is not on the list right now, it is not discarded.
+      await expectRoomError(
+        service.repairMainCheckout(ROOM_ID, OPERATOR, {
+          action: 'discard',
+          paths: ['notes.md', ROOM_MD_FILENAME],
+        }),
+        'ROOM_FILE_NOT_FOUND'
+      );
+      // And nothing was discarded — the refusal comes before any of it runs.
+      expect(existsSync(path.join(repoDir, 'notes.md'))).toBe(true);
+    });
+
+    it('refuses everybody but the operator, and answers 404 for a room they cannot see', async () => {
+      await withFiles();
+
+      await expectRoomError(
+        service.repairMainCheckout(ROOM_ID, AGENT, { action: 'commit' }),
+        'OPERATOR_ONLY'
+      );
+      visible = false;
+      await expectRoomError(
+        service.repairMainCheckout(ROOM_ID, AGENT, { action: 'commit' }),
+        'ROOM_NOT_FOUND'
+      );
+    });
+
+    it('refuses to move a branch somebody else checked out', async () => {
+      const repoDir = await withFiles();
+      await git(['checkout', '-q', '-b', 'somebody-elses-work'], repoDir);
+
+      await expectRoomError(
+        service.repairMainCheckout(ROOM_ID, OPERATOR, { action: 'commit' }),
+        'MAIN_CHECKOUT_DIRTY'
+      );
+      // Still where they left it: DorkOS does not check out over work it did
+      // not put there.
+      expect(await git(['rev-parse', '--abbrev-ref', 'HEAD'], repoDir)).toBe('somebody-elses-work');
+    });
+
+    it('is a no-op on a room whose files are already clean', async () => {
+      const repoDir = await withFiles();
+      const before = await git(['rev-parse', 'HEAD'], repoDir);
+
+      const result = await service.repairMainCheckout(ROOM_ID, OPERATOR, { action: 'commit' });
+
+      expect(result).toEqual({ action: 'commit', commit: null, paths: 0, clean: true });
+      expect(await git(['rev-parse', 'HEAD'], repoDir)).toBe(before);
+    });
+
+    it('refuses a room with no files of its own', async () => {
+      await expectRoomError(
+        service.repairMainCheckout(ROOM_ID, OPERATOR, { action: 'commit' }),
+        'ROOM_HAS_NO_REPO'
+      );
+    });
+  });
 });

@@ -190,3 +190,142 @@ export const RoomFileContentResponseSchema = z.object({
 
 /** One file from a room's repo. See {@link RoomFileContentResponseSchema}. */
 export type RoomFileContentResponse = z.infer<typeof RoomFileContentResponseSchema>;
+
+/**
+ * `PUT /api/rooms/{id}/files/content` — a person saving one file (spec
+ * `project-rooms` §3.10).
+ *
+ * One save is one commit, authored as the person who typed it. The whole file
+ * is sent, not a patch: the editor holds the text it opened and the text it has
+ * now, and a diff computed on the way out is a diff the server would have to
+ * trust.
+ *
+ * **The request body limit applies first, and answers differently.** The server
+ * accepts 1 MB of JSON, which is well under a room's own `maxFileBytes` — so a
+ * very large save never reaches the room's cap at all. It is refused **413
+ * `REQUEST_TOO_LARGE`**, by the request parser rather than by the room, while
+ * a save that fits the request and not the room is refused 409
+ * `FILE_TOO_LARGE`. Two ceilings, two answers; an editor that means to explain
+ * itself has to read both.
+ */
+export const RoomFileSaveRequestSchema = z.object({
+  /**
+   * The file, relative to the repo root — the `path` a listing or a read gave
+   * you, verbatim.
+   *
+   * The write refuses everything the read refuses, plus any path that names the
+   * repository's own `.git` directory in any of its spellings: a read answers
+   * out of a commit, where `.git` cannot appear, while a write lands in a real
+   * checkout where it is a real door.
+   */
+  path: z.string().min(1),
+  /**
+   * The commit the editor's copy came from — the `commit` on the read that
+   * opened it, or `null` when the file is being created in a repo that has no
+   * commits yet.
+   *
+   * This is the whole of the optimistic lock. The server does not ask whether
+   * `main` has moved (it moves whenever anybody merges, which has nothing to do
+   * with this file); it asks whether THIS PATH changed between `baseCommit` and
+   * `main`'s tip. If it did, the save is refused with `FILE_CHANGED` and
+   * nothing is written.
+   *
+   * **Shaped like a commit id, or refused before it can be one.** The value
+   * becomes an ARGUMENT to git, and a string beginning with `-` is an option
+   * rather than a commit. Hex only, so nothing else is ever tried.
+   */
+  baseCommit: z
+    .string()
+    .regex(/^[0-9a-f]{7,40}$/, 'that is not a commit id')
+    .nullable(),
+  /**
+   * The file's whole new contents, as text.
+   *
+   * Text only: a string carrying a `NUL` is refused rather than committed,
+   * because the read path would answer it as `binary` and the person would have
+   * saved a file they can no longer open.
+   */
+  text: z.string(),
+});
+
+/** What a save sends. See {@link RoomFileSaveRequestSchema}. */
+export type RoomFileSaveRequest = z.infer<typeof RoomFileSaveRequestSchema>;
+
+/** What a completed save answers. */
+export const RoomFileSaveResponseSchema = z.object({
+  /** The file that was saved, exactly as it was asked for. */
+  path: z.string(),
+  /**
+   * The commit `main` points at now — the new one, or the one that was already
+   * there when the save changed nothing.
+   *
+   * Hand it back as the next save's `baseCommit`, which is what lets somebody
+   * keep editing without re-reading the file.
+   */
+  commit: z.string(),
+  /** The saved file's size in bytes. */
+  size: z.number().int().nonnegative(),
+  /**
+   * Whether a commit was actually made.
+   *
+   * `false` when the text sent was byte-for-byte what the file already held.
+   * Saving an unchanged file is a normal thing for a person to do and is not an
+   * error, but it is not history either — so nothing is committed and the
+   * answer says so.
+   */
+  committed: z.boolean(),
+  /** Who last touched the file after the save. See {@link RoomFileCommitSchema}. */
+  lastCommit: RoomFileCommitSchema.nullable(),
+});
+
+/** What a completed save answers. See {@link RoomFileSaveResponseSchema}. */
+export type RoomFileSaveResponse = z.infer<typeof RoomFileSaveResponseSchema>;
+
+/**
+ * The code a save is refused with when the file moved under the editor.
+ *
+ * A constant rather than a string in two places, because it is the one refusal
+ * the client must act on rather than only describe: it opens the reload /
+ * keep-mine choice, and a typo in either end would silently turn that into a
+ * generic error toast.
+ */
+export const ROOM_FILE_CHANGED_CODE = 'FILE_CHANGED';
+
+/** What the room knows about a save that lost the race. */
+export const RoomFileConflictSchema = z.object({
+  /** The file that was being saved. */
+  path: z.string(),
+  /**
+   * The commit `main` points at now.
+   *
+   * Re-read the file at this commit to see what landed, or send it back as
+   * `baseCommit` to overwrite deliberately — which is the "keep mine" half of
+   * the choice, and is a decision a person makes rather than one the server
+   * makes for them.
+   */
+  commit: z.string(),
+  /**
+   * The commit that touched the file after the editor opened it, or `null` when
+   * the walk could not attribute it.
+   *
+   * It is what lets the conflict be described in words a person can act on —
+   * who changed it, when, and what they said they were doing.
+   */
+  lastCommit: RoomFileCommitSchema.nullable(),
+});
+
+/** What the room knows about a save that lost the race. See {@link RoomFileConflictSchema}. */
+export type RoomFileConflict = z.infer<typeof RoomFileConflictSchema>;
+
+/** The 409 body a `FILE_CHANGED` refusal carries. */
+export const RoomFileConflictResponseSchema = z.object({
+  /** The sentence to show. */
+  error: z.string(),
+  /** Always {@link ROOM_FILE_CHANGED_CODE}. */
+  code: z.literal(ROOM_FILE_CHANGED_CODE),
+  /** What changed under the editor. See {@link RoomFileConflictSchema}. */
+  conflict: RoomFileConflictSchema,
+});
+
+/** The 409 body a `FILE_CHANGED` refusal carries. See {@link RoomFileConflictResponseSchema}. */
+export type RoomFileConflictResponse = z.infer<typeof RoomFileConflictResponseSchema>;

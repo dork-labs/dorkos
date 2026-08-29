@@ -217,12 +217,104 @@ export const RoomBranchStatusSchema = z.object({
 /** One agent's branch in a room's repo. See {@link RoomBranchStatusSchema}. */
 export type RoomBranchStatus = z.infer<typeof RoomBranchStatusSchema>;
 
+/**
+ * One uncommitted change in a room's own copy of its files (spec §3.10).
+ *
+ * A room's integration tree has exactly one writer and it is the server, so
+ * anything uncommitted in it came from OUTSIDE DorkOS — a person with a
+ * terminal, almost always. These records are what the room shows them, and what
+ * a repair names when it throws one away.
+ */
+export const RoomStrayChangeSchema = z.object({
+  /** The path, relative to the room's own copy. */
+  path: z.string().describe('The file that is different, relative to the room’s own copy.'),
+  /**
+   * What happened to it, in a word.
+   *
+   * Coarser than git's own vocabulary on purpose: the question being asked is
+   * whether to keep this or throw it away, and "staged for deletion but
+   * modified in the tree" is not a distinction that changes that answer.
+   */
+  kind: z
+    .enum(['added', 'modified', 'deleted', 'untracked'])
+    .describe('What happened to it: added, modified, deleted, or never tracked at all.'),
+  /**
+   * Where the file was before somebody renamed it, when that is what happened.
+   *
+   * A rename is one change with TWO paths, and both are needed to undo it: the
+   * new name appears and the old one vanishes, so a discard that knew only the
+   * new one would delete the file from the room and leave the old name still
+   * missing. The old path is never listed as a change of its own — it is not
+   * there to discard — but it rides along here.
+   */
+  renamedFrom: z
+    .string()
+    .optional()
+    .describe('Where the file was before it was renamed, when that is what happened.'),
+});
+
+/** One uncommitted change in a room's own copy. See {@link RoomStrayChangeSchema}. */
+export type RoomStrayChange = z.infer<typeof RoomStrayChangeSchema>;
+
+/**
+ * What the room's own copy looks like on disk — the dirty-main warning
+ * (spec §3.10).
+ *
+ * Reported rather than only refused: while anything here is uncommitted, every
+ * merge and every save in the room answers `MAIN_CHECKOUT_DIRTY`, and a refusal
+ * a person cannot act on is a dead end. This is what the room shows them, and
+ * what the two operator actions — keep these, or discard exactly these — are
+ * chosen from.
+ */
+export const RoomMainStatusSchema = z.object({
+  /** The branch the room's copy is on, or `null` for a detached head. */
+  branch: z.string().nullable().describe('The branch the room’s own copy is on.'),
+  /**
+   * Whether merges and saves are paused right now.
+   *
+   * True for either fault — stray changes, or a branch that is not `main` — for
+   * the same reason both answer one refusal code: what a person does about it
+   * is to go and look.
+   */
+  dirty: z
+    .boolean()
+    .describe(
+      'Whether merges and saves are paused because something outside DorkOS wrote in the room’s own copy.'
+    ),
+  /**
+   * The uncommitted changes, capped at fifty.
+   *
+   * Capped because the honest answer to "somebody unpacked a build directory in
+   * here" is a number and a sample, not fifty thousand rows through an API.
+   */
+  strays: z
+    .array(RoomStrayChangeSchema)
+    .describe('The uncommitted changes, up to fifty of them. See `strayCount` for the total.'),
+  /** How many there are in total, which may be more than `strays` holds. */
+  strayCount: z
+    .number()
+    .int()
+    .nonnegative()
+    .describe('How many uncommitted changes there are in total.'),
+});
+
+/** What the room's own copy looks like on disk. See {@link RoomMainStatusSchema}. */
+export type RoomMainStatus = z.infer<typeof RoomMainStatusSchema>;
+
 /** What `room_repo_status` and `GET /api/rooms/:id/repo/status` answer. */
 export const RoomRepoStatusSchema = z.object({
   /** The commit `main` points at. */
   mainCommit: z.string(),
   /** When that commit was made, ISO, or `null` for a repo with no commits. */
   mainCommittedAt: z.string().nullable(),
+  /**
+   * What the room's own copy holds on disk right now — the dirty-main warning.
+   *
+   * Beside the commit rather than folded into it, because the two answer
+   * different questions: `mainCommit` is what the room has agreed on, and this
+   * is whether anything is standing in the way of adding to it.
+   */
+  main: RoomMainStatusSchema,
   /** One row per agent member, in roster order. */
   branches: z.array(RoomBranchStatusSchema),
   /**
@@ -250,3 +342,41 @@ export const RoomRepoStatusSchema = z.object({
 
 /** What a room's files hold right now. See {@link RoomRepoStatusSchema}. */
 export type RoomRepoStatus = z.infer<typeof RoomRepoStatusSchema>;
+
+/**
+ * `POST /api/rooms/{id}/repo/main/repair` — what to do about changes in a
+ * room's own copy that DorkOS did not make (spec `project-rooms` §3.10).
+ *
+ * A room's integration tree has one writer, and it is the server. Anything
+ * uncommitted in it therefore came from outside DorkOS — a person with a
+ * terminal — and until it is dealt with, every merge and every save in that
+ * room refuses. This is how it gets dealt with.
+ *
+ * **`commit` takes no list and `discard` demands one**, and the asymmetry is
+ * the safety rule: keeping changes loses nothing, so it sweeps up whatever is
+ * there; throwing them away is the one irreversible act on this surface, so it
+ * destroys nothing it was not handed by name — and every name has to be a path
+ * the room is reporting as changed right now, so a stale screen cannot delete
+ * something that arrived after it was drawn.
+ */
+export const RoomMainRepairRequestSchema = z.discriminatedUnion('action', [
+  z.object({
+    /** Keep every uncommitted change, as one commit authored by you. */
+    action: z.literal('commit'),
+  }),
+  z.object({
+    /** Throw away exactly the files named below. */
+    action: z.literal('discard'),
+    /**
+     * The files to discard, spelled exactly as `repo/status` reports them.
+     *
+     * At least one — "discard nothing" is not an action — and capped, because
+     * a tree somebody unpacked an archive into can report tens of thousands of
+     * changes and a request naming all of them is a mistake, not a decision.
+     */
+    paths: z.array(z.string().min(1)).min(1).max(500),
+  }),
+]);
+
+/** What a repair asks for. See {@link RoomMainRepairRequestSchema}. */
+export type RoomMainRepairRequest = z.infer<typeof RoomMainRepairRequestSchema>;
