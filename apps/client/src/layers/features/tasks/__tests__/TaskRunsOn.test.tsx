@@ -19,6 +19,7 @@ import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { PermissionMode } from '@dorkos/shared/types';
 import { createMockTransport, createMockSchedule } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
+import { configKeys } from '@/layers/entities/config';
 import { CreateTaskDialog } from '../ui/CreateTaskDialog';
 
 const AGENT_PATH = '/projects/api';
@@ -556,16 +557,28 @@ describe('the task form Runs-on controls', () => {
       // that renders and asserts finishes before the dialog ever sees the
       // runtime, and passes with the bug fully present. Measured: with only the
       // map primed, this test survived reverting the fix.
+      // The operator has configured a stop, which is what the crash-free version
+      // of this bug quietly threw away: `constructor` was taken as the runtime,
+      // its "profile" declared no modes, and the stop resolved to the hardcoded
+      // `acceptEdits` fallback — a WIDER posture than the person asked for, on
+      // every new task filed under that agent.
       const transport = transportWithAgent('constructor');
-      const [capabilities, agentPaths, resolvedAgents] = await Promise.all([
+      const [capabilities, agentPaths, resolvedAgents, config] = await Promise.all([
         transport.getCapabilities(),
         transport.listMeshAgentPaths(),
         transport.resolveAgents([AGENT_PATH]),
+        transport.getConfig(),
       ]);
       const Wrapper = createWrapper(transport, (client) => {
         client.setQueryData(['capabilities'], capabilities);
         client.setQueryData(['mesh', 'agent-paths'], agentPaths);
         client.setQueryData(['agents', 'resolved', AGENT_PATH], resolvedAgents);
+        // Through the factory, never the literal: `one-config-query-key.test.ts`
+        // bans hand-spelling this key anywhere but where it is defined.
+        client.setQueryData(configKeys.current(), {
+          ...config,
+          executionDefaults: { trustStop: 'ask', perRuntime: [] },
+        });
       });
       render(
         <Wrapper>
@@ -574,11 +587,16 @@ describe('the task form Runs-on controls', () => {
       );
       fireEvent.click(screen.getByText('Start from scratch'));
 
-      // "Server default", not the agent's: the form's ladder takes the agent tier
-      // only for a runtime this machine registered, and reads that from
-      // `Object.keys`. The two lookups disagreeing is the whole defect.
+      // Falls THROUGH to the default runtime, rather than treating an inherited
+      // member as a registered one. `useTaskExecution` always read this from
+      // `Object.keys` and said "Server default"; the dialog said `constructor`.
+      // The two lookups disagreeing is the defect.
       await expectSelected('task-runtime-select', 'Server default (Claude Code)');
-      expect(screen.getByTestId('trust-dial-caption')).toBeInTheDocument();
+
+      // And the operator's stop survives the trip: Claude Code's ask-stop mode,
+      // not the `acceptEdits` fallback that an empty mode list collapses to.
+      await waitFor(() => expect(screen.getByRole('radio', { name: 'Ask first' })).toBeChecked());
+      expect(screen.getByRole('radio', { name: 'Act' })).not.toBeChecked();
     });
 
     it.each(['constructor', 'toString', '__proto__', 'valueOf', 'hasOwnProperty'])(

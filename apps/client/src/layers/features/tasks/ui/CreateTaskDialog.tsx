@@ -80,10 +80,22 @@ export function CreateTaskDialog({
   // to hand a Codex agent's task a stop resolved in Claude Code's vocabulary.
   const { data: capabilityMap } = useRuntimeCapabilities();
   const initialAgentRuntime = useAgentRuntime(agents, initialAgentId);
-  const newTaskRuntime =
-    initialAgentRuntime && capabilityMap?.capabilities[initialAgentRuntime]
-      ? initialAgentRuntime
-      : (capabilityMap?.defaultRuntime ?? null);
+  // REGISTERED means an own property, not a truthy index. A manifest's `runtime`
+  // is a free string, so `constructor` and `toString` are reachable values, and
+  // a truthiness test answers them with an inherited member — `Object` is truthy,
+  // so the agent tier was taken for a runtime that does not exist. The task then
+  // resolved its opening stop against an empty mode list and fell back to
+  // `acceptEdits`, quietly discarding the operator's configured stop for the
+  // runtime the task would ACTUALLY run on. `useTaskExecution` has always read
+  // this from `Object.keys`; this is the same question, so it gets the same
+  // answer.
+  const agentRuntimeIsRegistered =
+    initialAgentRuntime !== null &&
+    capabilityMap !== undefined &&
+    Object.hasOwn(capabilityMap.capabilities, initialAgentRuntime);
+  const newTaskRuntime = agentRuntimeIsRegistered
+    ? initialAgentRuntime
+    : (capabilityMap?.defaultRuntime ?? null);
 
   // A NEW task opens at the operator's own configured stop, mapped to that
   // runtime's mode, rather than a hardcoded `acceptEdits` (spec

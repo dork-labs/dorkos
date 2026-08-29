@@ -58,6 +58,14 @@ export function useRuntimeCapabilities(options?: UseRuntimeCapabilitiesOptions) 
  * gated itself off with `enabled: false` and nobody else has loaded the map, or
  * when the runtime type is not registered with this server.
  *
+ * **"Not registered" is an own-property question.** A runtime type is a free
+ * string that arrives from stored data — a task's `runtime`, an agent manifest —
+ * so `constructor`, `toString` and `__proto__` all reach this lookup, and a plain
+ * index answers each of them with something inherited from `Object.prototype`.
+ * That answer is truthy and shaped like nothing, so callers took it for a profile
+ * and read fields that are not there. Unregistered is unregistered, whatever the
+ * string spells.
+ *
  * @param runtimeType - Runtime type (e.g. `'codex'`), or nullish for the server default
  * @param options - Fetch gate; see {@link UseRuntimeCapabilitiesOptions}.
  */
@@ -67,5 +75,6 @@ export function useCapabilitiesForRuntime(
 ): RuntimeCapabilities | undefined {
   const { data } = useRuntimeCapabilities(options);
   if (!data) return undefined;
-  return data.capabilities[runtimeType ?? data.defaultRuntime];
+  const type = runtimeType ?? data.defaultRuntime;
+  return Object.hasOwn(data.capabilities, type) ? data.capabilities[type] : undefined;
 }

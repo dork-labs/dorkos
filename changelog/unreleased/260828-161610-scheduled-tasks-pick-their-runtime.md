@@ -16,6 +16,7 @@ covers:
   - "fix(client): a task's stored effort stays readable when its model's ladder is shorter (DOR-1347)"
   - 'fix(client): a task moved to another runtime asks before it stops asking (DOR-1615)'
   - 'fix(client): a task stored on a runtime called "constructor" opens instead of crashing (DOR-1615)'
+  - 'fix(client): a new task keeps your default trust stop when its agent names an unregistered runtime (DOR-1615)'
 ---
 
 ### Added
