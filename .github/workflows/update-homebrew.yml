@@ -56,27 +56,22 @@ jobs:
       # On a tag run the tag is pushed before npm publish finishes, so wait for
       # the exact version to land on npm before computing its tarball SHA (the
       # tarball 404s until then). Also runs on release-published events — cheap,
-      # since npm is live long before publish and the loop exits on first hit.
+      # since npm is live long before publish and the wait exits on first hit.
       # Skipped for workflow_dispatch, which either names an already-published
       # version or reads npm's current latest — keeping manual runs
-      # byte-for-byte as before. Mirrors the retry loop in publish-docker.yml's
-      # "Wait for npm package availability" step.
+      # byte-for-byte as before. Shares scripts/wait-for-npm.sh with
+      # publish-docker.yml's "Wait for npm package availability" step
+      # (DOR-1606) rather than carrying its own copy of the loop.
+      - name: Checkout for the shared npm-wait script
+        if: github.event_name == 'push' || github.event_name == 'release'
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            scripts/wait-for-npm.sh
+
       - name: Wait for npm package availability
         if: github.event_name == 'push' || github.event_name == 'release'
-        env:
-          PKG_VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          echo "Waiting for dorkos@${PKG_VERSION} on npm..."
-          for i in $(seq 1 30); do
-            if npm view "dorkos@${PKG_VERSION}" version 2>/dev/null; then
-              echo "Package available!"
-              exit 0
-            fi
-            echo "Attempt $i/30 — not yet available, waiting 10s..."
-            sleep 10
-          done
-          echo "::error::Package dorkos@${PKG_VERSION} not found on npm after 5 minutes"
-          exit 1
+        run: bash scripts/wait-for-npm.sh "${{ steps.version.outputs.version }}"
 
       - name: Compute SHA256
         id: sha

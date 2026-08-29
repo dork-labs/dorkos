@@ -16,11 +16,14 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    # Generous 4x headroom over the ~9-11 minute baseline seen across the last
-    # three releases. Without this, a QEMU arm64 cross-compile deadlock (seen
-    # in the v0.52.0 run) burns hours silently before GitHub's 6h default
-    # job timeout finally kills it.
-    timeout-minutes: 45
+    # 75 = up to 30 minutes waiting for the just-published npm package to
+    # become fetchable (scripts/wait-for-npm.sh, DOR-1606) plus the same 45
+    # minutes of generous 4x headroom the rest of the job always had, over the
+    # ~9-11 minute build-and-push baseline seen across releases. Without that
+    # second half, a QEMU arm64 cross-compile deadlock (seen in the v0.52.0
+    # run) burns hours silently before GitHub's 6h default job timeout
+    # finally kills it.
+    timeout-minutes: 75
     permissions:
       contents: read
       packages: write
@@ -48,19 +51,7 @@ jobs:
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Wait for npm package availability
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          echo "Waiting for dorkos@${VERSION} on npm..."
-          for i in $(seq 1 30); do
-            if npm view "dorkos@${VERSION}" version 2>/dev/null; then
-              echo "Package available!"
-              exit 0
-            fi
-            echo "Attempt $i/30 — not yet available, waiting 10s..."
-            sleep 10
-          done
-          echo "::error::Package dorkos@${VERSION} not found on npm after 5 minutes"
-          exit 1
+        run: bash scripts/wait-for-npm.sh "${{ steps.version.outputs.version }}"
 
       - name: Extract Docker metadata
         id: meta
