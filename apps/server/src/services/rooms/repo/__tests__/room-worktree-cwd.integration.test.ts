@@ -33,7 +33,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { existsSync } from 'node:fs';
-import { access, mkdtemp, mkdir, readdir, rm, utimes, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, mkdir, readdir, utimes, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { ROOM_REPO_CAP_DEFAULTS } from '@dorkos/shared/room-repo';
@@ -55,6 +55,7 @@ import { RoomRepoStore } from '../room-repo-store.js';
 import { RoomRepoService } from '../room-repo-service.js';
 import { RoomWorktreeManager } from '../room-worktree-manager.js';
 import { hasUncommittedChanges, runGit } from '../room-repo-git.js';
+import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -124,6 +125,9 @@ describe('a room turn runs in the room’s repo', () => {
   }
 
   beforeEach(async () => {
+    // Before anything makes a repo: keep git's detached maintenance child from
+    // racing this suite's teardown into the directory. See `fixture-git.ts`.
+    silenceGitAutoMaintenance();
     // The DorkOS home sits inside a git repository on purpose — the trap layout.
     scratch = await mkdtemp(path.join(tmpdir(), 'dorkos-room-cwd-'));
     await runGit(['init', '-b', 'main', '--quiet', '.'], scratch, scratch);
@@ -145,7 +149,7 @@ describe('a room turn runs in the room’s repo', () => {
 
   afterEach(async () => {
     vi.unstubAllEnvs();
-    await rm(scratch, { recursive: true, force: true });
+    await removeFixtureTree(scratch);
   });
 
   /** Ana's worktree in `roomId`, as the manager names it. */
@@ -346,11 +350,29 @@ describe('a room turn runs in the room’s repo', () => {
     vi.stubEnv('GIT_COMMITTER_DATE', when.toISOString());
     vi.stubEnv('GIT_AUTHOR_DATE', when.toISOString());
     await runGit(
-      ['commit', '--amend', '--no-edit', '--quiet'],
+      [
+        // **Identity inline, never the machine's.** An `--amend` needs a
+        // COMMITTER, and a CI runner has no global `user.name`/`user.email` at
+        // all — this failed there while passing on every developer machine,
+        // which is the whole failure mode of leaning on ambient git config.
+        // `--no-edit` keeps the original author, so this only names the
+        // committer, and it names the same operator that made the commit.
+        '-c',
+        'user.name=Dorian',
+        '-c',
+        'user.email=operator@dorkos.local',
+        'commit',
+        '--amend',
+        '--no-edit',
+        '--quiet',
+      ],
       repoStore.repoPath(room.id),
       repoStore.homeDir(room.id)
     );
+    // Drops the two date stubs — and the maintenance belt with them, since it is
+    // stubbed too, so it is put straight back for the rest of this test.
     vi.unstubAllEnvs();
+    silenceGitAutoMaintenance();
 
     harness.service.post(room.id, { authorId: harness.human, text: '@ana what is left?' });
     await settleUntil(() => runner.turns.length === 1, 'Ana started work');
