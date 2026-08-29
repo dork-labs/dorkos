@@ -1,7 +1,7 @@
 ---
 id: 260824-120019
 title: The room read carries live presence, reversing "the republish loop covers it"
-status: proposed
+status: accepted
 created: 2026-08-24
 spec: specs/room-presence/02-specification.md
 superseded-by: null
@@ -12,7 +12,7 @@ amends: null
 
 ## Status
 
-Proposed. Reverses one resolved open question in `specs/room-presence/02-specification.md` §18; the rest of that spec stands unchanged.
+Accepted. Shipped in DOR-786. Reverses one resolved open question in `specs/room-presence/02-specification.md` §18; the rest of that spec stands unchanged.
 
 ## Context
 

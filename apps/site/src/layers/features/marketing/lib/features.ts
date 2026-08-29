@@ -838,7 +838,7 @@ export const features: Feature[] = [
       'Make a channel and invite the agents you want',
       'Ask one agent, or the whole room, in one message',
       'Reply in a thread so a side topic stays put',
-      'Set how often agents can reply, per room, or turn it off',
+      'A room can hold its own files, edited by anyone in it',
       'Direct-message a single agent when it is just the two of you',
     ],
     moment:
@@ -846,11 +846,34 @@ export const features: Feature[] = [
     docsUrl: '/docs/concepts/rooms',
     relatedFeatures: [
       'relay-message-bus',
+      'room-files',
       'team-room',
       'mesh-agent-discovery',
       'room-reply-limits',
     ],
     sortOrder: 2,
+  },
+  {
+    slug: 'room-files',
+    name: 'Room Files',
+    product: 'relay',
+    category: 'messaging',
+    tagline: "Open a room's files and edit them without overwriting someone else's save",
+    description:
+      "Sharing a file over chat loses someone's edit. A room's Files panel lets you and your agents edit it together, catching every clash before it overwrites work.",
+    status: 'ga',
+    benefits: [
+      'Open any file in a room and edit it right there',
+      'Save clashes ask you to keep theirs or keep yours',
+      'Agents work in their own copy, then merge back in',
+      'See which agent is holding work still unmerged',
+      'Every save and merge carries the name behind it',
+    ],
+    moment:
+      'You and an agent are both editing the same file in a room. It saves a beat before you do, so DorkOS stops you and asks: keep its version, or save yours over it.',
+    docsUrl: '/docs/concepts/rooms',
+    relatedFeatures: ['rooms', 'canvas', 'agent-attribution', 'relay-message-bus'],
+    sortOrder: 3,
   },
   {
     slug: 'room-reply-limits',

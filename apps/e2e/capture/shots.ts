@@ -158,6 +158,14 @@ export const SHOTS: readonly Shot[] = [
   // Settings → Rooms: the four reply-limit dials behind the Control Center's
   // "Limit automatic replies" switch.
   { id: 'settings-rooms', kind: 'still', frame: 'desktop', consumers: ['changelog'] },
+  // --- Desktop stills (v0.66.0 release headline) ---
+  // A channel's Files section: ROOM.md pinned above a couple of real,
+  // committed files, each with its provenance column drawn ("who last
+  // touched it").
+  { id: 'room-files', kind: 'still', frame: 'desktop', consumers: ['changelog'] },
+  // A scheduled task's edit form, Advanced settings expanded to the Runs-on
+  // fieldset (runtime + model).
+  { id: 'task-runtime-picker', kind: 'still', frame: 'desktop', consumers: ['changelog'] },
 ];
 
 /** Index of shots by id for O(1) lookup. */

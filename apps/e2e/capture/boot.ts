@@ -43,6 +43,12 @@ function baseEnv(): NodeJS.ProcessEnv {
     // A second test-mode runtime so some session rows carry a distinct (still
     // truthful) runtime mark alongside the default.
     DORKOS_TEST_RUNTIME_SECONDARY: 'true',
+    // A TestModeRuntime registered under the real 'claude-code' type string
+    // (DOR-952), so a picker that reads the capability map by runtime type —
+    // the scheduled-task Advanced settings' Runs-on select — has a properly
+    // branded, "connected" option to show instead of the internal 'test-mode'
+    // label. Still the same fake runtime underneath; only the type key differs.
+    DORKOS_TEST_RUNTIME_CLAUDE_ALIAS: 'true',
     DORKOS_PORT: String(SERVER_PORT),
     VITE_PORT: String(VITE_PORT),
     DORK_HOME: CAPTURE_HOME,

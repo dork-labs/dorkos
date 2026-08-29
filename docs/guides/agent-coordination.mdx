@@ -144,9 +144,13 @@ Agent "api" asks "web" a question:
 The web agent's reply routes back to `relay.agent.backend.api` on its own; you don't have to wire that up.
 
 <Callout type="info">
-  Every message carries a budget: a default limit of 5 hops and a 1-hour TTL (time to live, how long
-  a message stays valid before it expires). That budget keeps a chain of agents from looping forever
-  or running up API costs.
+  Every message carries a budget: a default limit of 5 hops, a 1-hour TTL (time to live, how long a
+  message stays valid before it expires), and 10 calls. A reply inherits its budget from the message
+  that started the turn, so a chain of agents can't hand itself a fresh allowance. On top of that,
+  DorkOS caps how many agent turns can start in an hour — by agent and across the whole install —
+  because every route into an agent (a message, a scheduled task, an outside system) ends at the
+  same counted choke point. See [Relay Messaging](/docs/guides/relay-messaging#the-hourly-ceiling)
+  for both sets of numbers and how to change them.
 </Callout>
 
 ### Scheduling messages with Tasks

@@ -73,9 +73,10 @@ The A2A agent endpoints follow the same rule: unauthenticated only on a loopback
 
 ## Agent-to-agent messaging and budgets
 
-Agents can talk to each other and to you through the relay. Two controls keep that from running away:
+Agents can talk to each other and to you through the relay. These controls keep that from running away:
 
 - **Budgets are enforced before delivery.** Every message passes an authoritative budget and hop check before it is delivered, so a runaway loop is stopped at the source, not just in a mailbox. Cascade depth, cycles, and per-agent call budgets are all bounded.
+- **An hourly ceiling caps the cost, whatever the route in.** A message, a scheduled task, and an outside system speaking A2A all end at the same counted checkpoint before a turn starts, so no route around the relay buys a bigger allowance. You set the cap per agent and for everything combined; see [Relay Messaging](/docs/guides/relay-messaging#the-hourly-ceiling).
 - **Identity cannot be spoofed.** An agent's "from" address is resolved by the server from the session, not taken from the tool call, so one agent cannot impersonate another.
 - **Reaching a human is a consent choice.** Whether an agent may start a conversation with you on an integration like Telegram is a per-integration setting you control.
 
