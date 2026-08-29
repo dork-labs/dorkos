@@ -3,7 +3,7 @@ import { useStore } from '@tanstack/react-form';
 import { ChevronRight, Trash2 } from 'lucide-react';
 import { useCreateTask, useUpdateTask } from '@/layers/entities/tasks';
 import type { TaskTemplate } from '@/layers/entities/tasks';
-import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
+import { useRuntimeCapabilities } from '@/layers/entities/runtime';
 import {
   ResponsiveDialogFooter,
   Label,
@@ -159,6 +159,21 @@ export interface ScheduleFormProps {
   isPending: boolean;
 }
 
+/**
+ * A change waiting at the consent door: the mode being consented to, and what to
+ * write once somebody says yes.
+ *
+ * Two different choices can open this one door — picking a stop on the dial, and
+ * picking a runtime that re-reads the stored stop as a never-asking one — so what
+ * gets applied cannot be inferred from the descriptor. Each caller supplies it.
+ */
+interface PendingConsent {
+  /** The mode as the runtime that will run it declared it. */
+  descriptor: PermissionModeDescriptor;
+  /** Write the change the person just confirmed. */
+  apply: () => void;
+}
+
 /** Inner form component. Remounted via `key` when defaultValues change. */
 export function ScheduleForm({
   defaultValues,
@@ -171,7 +186,7 @@ export function ScheduleForm({
 }: ScheduleFormProps) {
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
-  const [pendingAutonomy, setPendingAutonomy] = useState<PermissionModeDescriptor | null>(null);
+  const [pendingConsent, setPendingConsent] = useState<PendingConsent | null>(null);
 
   const form = useAppForm({
     defaultValues,
@@ -229,6 +244,9 @@ export function ScheduleForm({
   const runtimeOverride = useStore(form.store, (s) => s.values.runtime);
   const modelOverride = useStore(form.store, (s) => s.values.model);
   const effortOverride = useStore(form.store, (s) => s.values.effort);
+  // Read here as well as inside its own field, because the runtime picker below
+  // has to know which mode it is about to hand to a different runtime.
+  const permissionMode = useStore(form.store, (s) => s.values.permissionMode);
 
   // The picked agent's own runtime, off the manifest that owns it (ADR-0043).
   const agentRuntime = useAgentRuntime(agents, agentId);
@@ -245,8 +263,47 @@ export function ScheduleForm({
   // Pinned to `claude-code` this used to caption a Codex run with Claude Code's
   // promises, which is the defect the retired `TASK_RUNTIME` constant named in
   // its own comment.
-  const caps = useCapabilitiesForRuntime(execution.effectiveRuntime);
-  const descriptors = caps?.permissionModes.values ?? [];
+  //
+  // The whole map rather than one runtime's slice: the runtime picker below asks
+  // the same question about a runtime nobody has chosen yet, and two lookups
+  // that could disagree is how one door ends up open and the other shut.
+  const { data: capabilityMap } = useRuntimeCapabilities();
+  /** The modes a runtime declares — none for one this machine has never heard of. */
+  const modesFor = (runtimeType: string | null): readonly PermissionModeDescriptor[] =>
+    (runtimeType ? capabilityMap?.capabilities[runtimeType]?.permissionModes.values : undefined) ??
+    [];
+  const descriptors = modesFor(execution.effectiveRuntime);
+
+  /**
+   * Whether moving this task to `nextRuntime` would turn its stored mode into
+   * one that never stops to ask — the thing a person has to agree to rather than
+   * arrive at.
+   *
+   * A mode id means whatever the runtime running it says it means, and the two
+   * shipped meanings of `acceptEdits` are the live case: on Claude Code it asks
+   * before a command, on Codex it cannot ask at all. Carrying the id across the
+   * change is right — the alternative is silently rewriting somebody's setting —
+   * so the CHANGE is what gets gated, by the same `needsConsentRitual` the dial
+   * and the server's own door apply.
+   *
+   * Only a NEW never-asking posture opens the door. Somebody already sitting at
+   * one has walked through it, and asking again on every runtime change would
+   * make the question furniture. A mode the OLD runtime never declared counts as
+   * new: nobody agreed to a posture that had no meaning a moment ago.
+   *
+   * **One route is knowingly not gated here**: changing the AGENT moves the
+   * inherited runtime the same way, and reaches the same widening. It is not
+   * silent — the dial re-captions to the new runtime's own promise the moment the
+   * agent changes — but it is not asked about either. Closing it needs the
+   * candidate agent's runtime before the change is committed, which is a
+   * different resolve from the one this form holds.
+   */
+  const widensToNeverAsking = (nextRuntime: string | null): PermissionModeDescriptor | null => {
+    const next = modesFor(nextRuntime).find((d) => d.id === permissionMode);
+    if (!next || !needsConsentRitual(next)) return null;
+    const before = descriptors.find((d) => d.id === permissionMode);
+    return before && needsConsentRitual(before) ? null : next;
+  };
 
   return (
     <form.AppForm>
@@ -406,7 +463,25 @@ export function ScheduleForm({
                 // does, and the person clears it or changes it themselves.
                 // Deleting somebody's choice as a side effect of another choice
                 // is the thing they cannot undo.
-                onRuntimeChange={(value) => form.setFieldValue('runtime', value)}
+                //
+                // The permission mode is the one thing a runtime change can
+                // WIDEN rather than merely break, because the id survives and
+                // the meaning does not, so this is the dial's consent door
+                // reached by another route (see `widensToNeverAsking`). Nothing
+                // is written until the door is answered: the select is
+                // controlled by the field, so dismissing leaves it exactly where
+                // it was, with no revert to write.
+                onRuntimeChange={(value) => {
+                  const widening = widensToNeverAsking(value || execution.inheritedRuntime);
+                  if (widening) {
+                    setPendingConsent({
+                      descriptor: widening,
+                      apply: () => form.setFieldValue('runtime', value),
+                    });
+                    return;
+                  }
+                  form.setFieldValue('runtime', value);
+                }}
                 onModelChange={(value) => form.setFieldValue('model', value)}
                 onEffortChange={(value) => form.setFieldValue('effort', value)}
               />
@@ -446,10 +521,19 @@ export function ScheduleForm({
                         // a stop comparison, so a runtime that files a
                         // never-asking mode at the MIDDLE stop is caught here
                         // too (DOR-816).
+                        //
+                        // This is one of TWO ways into that posture on this
+                        // form. The other is the Runtime picker above, which can
+                        // hand an unchanged mode id to a runtime that reads it as
+                        // never-asking; it opens the same door with the same
+                        // rule, because a gate on one path is not a gate.
                         onChangeMode={(next) => {
                           const descriptor = descriptors.find((d) => d.id === next);
                           if (descriptor && needsConsentRitual(descriptor)) {
-                            setPendingAutonomy(descriptor);
+                            setPendingConsent({
+                              descriptor,
+                              apply: () => field.handleChange(next as PermissionMode),
+                            });
                             return;
                           }
                           field.handleChange(next as PermissionMode);
@@ -487,24 +571,6 @@ export function ScheduleForm({
                         mode={field.state.value}
                         {...(current ? { descriptor: current } : {})}
                         className="px-1"
-                      />
-                      <UnattendedAutonomyDialog
-                        descriptor={pendingAutonomy}
-                        consequence={
-                          <>
-                            A scheduled run has nobody to ask, so nothing is asked: no approval
-                            card, no message, no record of a decision anybody made. At a stop that
-                            asks, an action it cannot take is refused and the run works around it.
-                            Here it simply happens.
-                          </>
-                        }
-                        onCancel={() => setPendingAutonomy(null)}
-                        onConfirm={() => {
-                          if (pendingAutonomy) {
-                            field.handleChange(pendingAutonomy.id as PermissionMode);
-                          }
-                          setPendingAutonomy(null);
-                        }}
                       />
                     </fieldset>
                   );
@@ -550,6 +616,27 @@ export function ScheduleForm({
           </details>
         </div>
       </form>
+
+      {/* One door, both routes into a never-asking posture — the dial and the
+          runtime picker. Outside the Permissions field on purpose: that field
+          renders nothing when the effective runtime has declared no modes, and
+          moving a task ONTO a runtime that declares one is exactly the case that
+          has to be asked about. */}
+      <UnattendedAutonomyDialog
+        descriptor={pendingConsent?.descriptor ?? null}
+        consequence={
+          <>
+            A scheduled run has nobody to ask, so nothing is asked: no approval card, no message, no
+            record of a decision anybody made. At a stop that asks, an action it cannot take is
+            refused and the run works around it. Here it simply happens.
+          </>
+        }
+        onCancel={() => setPendingConsent(null)}
+        onConfirm={() => {
+          pendingConsent?.apply();
+          setPendingConsent(null);
+        }}
+      />
 
       {/* Footer uses form.Subscribe to reactively derive submit-button disabled state. */}
       <ResponsiveDialogFooter className="shrink-0 border-t px-4 py-3">

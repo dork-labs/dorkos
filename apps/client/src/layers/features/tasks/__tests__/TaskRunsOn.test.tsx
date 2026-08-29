@@ -10,12 +10,13 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import type { PermissionMode } from '@dorkos/shared/types';
 import { createMockTransport, createMockSchedule } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { CreateTaskDialog } from '../ui/CreateTaskDialog';
@@ -140,6 +141,13 @@ let user: ReturnType<typeof userEvent.setup>;
 async function pick(testId: string, optionName: string | RegExp) {
   await user.click(await screen.findByTestId(testId));
   await user.click(await screen.findByRole('option', { name: optionName }));
+}
+
+/** Answer the unattended-consent door with its confirm button. */
+async function confirmConsent(actionName: string) {
+  const door = await screen.findByRole('alertdialog');
+  await user.click(within(door).getByRole('button', { name: actionName }));
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
 }
 
 describe('the task form Runs-on controls', () => {
@@ -291,12 +299,23 @@ describe('the task form Runs-on controls', () => {
         createMockSchedule({ id: 'sched-1', model: 'short-ladder', effort: 'max' })
       );
 
-      await expectSelected('task-effort-select', 'Max');
+      // Wait for the CATALOG, not for the trigger: until the models land every
+      // rung passes the filter, so the trigger reads "Max" on a list nobody has
+      // narrowed yet — and Radix keeps that cloned text even after the item it
+      // came from unmounts, which is exactly why the trigger cannot be the
+      // evidence here.
+      await expectSelected('task-model-select', 'Short ladder');
       await user.click(screen.getByTestId('task-effort-select'));
-      const options = (await screen.findAllByRole('option')).map((el) => el.textContent);
-      expect(options).toContain('Max');
-      // Still filtered, though — the rungs GPT-5.5 does not take stay out.
-      expect(options).not.toContain('Minimal');
+      const options = await screen.findAllByRole('option');
+      expect(options.map((el) => el.textContent)).toContain('Max');
+      // Selected in the LIST, which is the state a person can act on: still
+      // there, still checked, still re-selectable.
+      expect(options.find((el) => el.textContent === 'Max')).toHaveAttribute(
+        'data-state',
+        'checked'
+      );
+      // Still filtered, though — the rungs this model does not take stay out.
+      expect(options.map((el) => el.textContent)).not.toContain('Minimal');
     });
 
     it('shows a stored effort on such a runtime, with a way to clear it', async () => {
@@ -311,6 +330,130 @@ describe('the task form Runs-on controls', () => {
       const stranded = await screen.findByTestId('task-effort-stranded');
       expect(stranded).toHaveTextContent(/no effort setting/i);
       expect(screen.getByTestId('task-effort-clear')).toBeInTheDocument();
+    });
+
+    it('actually clears the stranded effort when "Clear it" is pressed', async () => {
+      // The button existing is not the claim — a no-op `onClick` passes the test
+      // above. What has to hold is that the value LEAVES, all the way to the
+      // wire, because it is the only control there is for removing it.
+      const updateTask = vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-1' }));
+      const transport = transportWithAgent(null, { updateTask });
+      renderEditTask(
+        transport,
+        createMockSchedule({ id: 'sched-1', runtime: 'opencode', effort: 'high' })
+      );
+
+      await user.click(await screen.findByTestId('task-effort-clear'));
+      // The block goes with the value it existed to show.
+      await waitFor(() => expect(screen.queryByTestId('task-effort-stranded')).toBeNull());
+
+      fireEvent.click(screen.getByText('Save'));
+      await waitFor(() =>
+        expect(updateTask).toHaveBeenCalledWith(
+          'sched-1',
+          expect.objectContaining({ effort: null })
+        )
+      );
+    });
+  });
+
+  describe('moving a task onto a runtime that reads its mode as never-asking', () => {
+    // A mode id means whatever the runtime running it says it means, and
+    // `acceptEdits` is the live case: Claude Code asks before a command, Codex
+    // cannot ask at all. Changing the runtime therefore changes the POSTURE
+    // without touching the Permissions control, which is the second, ungated way
+    // into a never-asking scheduled run that the dial's own door (DOR-816) does
+    // not see.
+
+    /** An edit task on the default runtime, sitting at `mode`. */
+    function renderTaskAt(mode: PermissionMode, updateTask = vi.fn()) {
+      const transport = transportWithAgent(null, { updateTask });
+      renderEditTask(
+        transport,
+        createMockSchedule({ id: 'sched-1', permissionMode: mode, runtime: null })
+      );
+      return updateTask;
+    }
+
+    it('asks first, and writes nothing until the person agrees', async () => {
+      const updateTask = renderTaskAt(
+        'acceptEdits',
+        vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-1' }))
+      );
+
+      await expectSelected('task-runtime-select', /Server default/);
+      await pick('task-runtime-select', 'Codex');
+
+      const door = await screen.findByRole('alertdialog');
+      // The dial's own word for the stop this mode sits at on Codex, and the
+      // sentence that makes the difference impossible to miss.
+      expect(door).toHaveTextContent('Turn on Act');
+      expect(within(door).getByTestId('consent-asks-note')).toHaveTextContent(
+        /never pauses to ask/i
+      );
+      expect(door).toHaveTextContent(/nobody to ask/i);
+      // Held, not applied: the select still reads the runtime it had.
+      expect(screen.getByTestId('task-runtime-select')).toHaveTextContent(/Server default/);
+
+      await confirmConsent('Turn on Act');
+      await expectSelected('task-runtime-select', 'Codex');
+      fireEvent.click(screen.getByText('Save'));
+      await waitFor(() =>
+        expect(updateTask).toHaveBeenCalledWith(
+          'sched-1',
+          expect.objectContaining({ runtime: 'codex', permissionMode: 'acceptEdits' })
+        )
+      );
+    });
+
+    it('puts the runtime back when the door is dismissed', async () => {
+      const updateTask = renderTaskAt(
+        'acceptEdits',
+        vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-1' }))
+      );
+
+      await expectSelected('task-runtime-select', /Server default/);
+      await pick('task-runtime-select', 'Codex');
+
+      const door = await screen.findByRole('alertdialog');
+      await user.click(within(door).getByRole('button', { name: 'Cancel' }));
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+
+      expect(screen.getByTestId('task-runtime-select')).toHaveTextContent(/Server default/);
+      fireEvent.click(screen.getByText('Save'));
+      await waitFor(() =>
+        expect(updateTask).toHaveBeenCalledWith(
+          'sched-1',
+          expect.objectContaining({ runtime: null })
+        )
+      );
+    });
+
+    it('does not ask when the mode is no more permissive on the new runtime', async () => {
+      // Codex's own `default` never asks either — because it can only READ, and
+      // a door in front of the safest setting on offer is how a door stops being
+      // read. `needsConsentRitual` excludes `reach: 'read'`, and this is the case
+      // a plain "does it ask?" check would get wrong.
+      renderTaskAt('default');
+
+      await expectSelected('task-runtime-select', /Server default/);
+      await pick('task-runtime-select', 'Codex');
+
+      await expectSelected('task-runtime-select', 'Codex');
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+    });
+
+    it('does not ask again for a posture the person already agreed to', async () => {
+      // Full autonomy on both sides. The door is for a posture that BECOMES
+      // never-asking; asking on every runtime change from one that already is
+      // would make the question furniture.
+      renderTaskAt('bypassPermissions');
+
+      await expectSelected('task-runtime-select', /Server default/);
+      await pick('task-runtime-select', 'Codex');
+
+      await expectSelected('task-runtime-select', 'Codex');
+      expect(screen.queryByRole('alertdialog')).toBeNull();
     });
   });
 
@@ -376,6 +519,10 @@ describe('the task form Runs-on controls', () => {
 
       await expectSelected('task-runtime-select', /Server default/);
       await pick('task-runtime-select', 'Codex');
+      // Codex reads this form's default mode as never-asking, so the move is
+      // gated (see "moving a task onto a runtime that reads its mode as
+      // never-asking" below). Answering the door is part of picking Codex.
+      await confirmConsent('Turn on Act');
       await pick('task-model-select', 'Sonnet 4.5');
       await pick('task-effort-select', 'High');
 

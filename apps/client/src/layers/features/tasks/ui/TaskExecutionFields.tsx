@@ -168,10 +168,13 @@ export function TaskExecutionFields({
             <p className={WARNING_CLASS}>
               {effortWarning ?? 'This runtime has no effort setting, so this one does nothing.'}
             </p>
+            {/* Reads as a control beside the amber sentence, not as more of it —
+                the same treatment its sibling in Settings gives the same job
+                (`settings/ui/runtimes/rows/EffortRow.tsx`). */}
             <button
               type="button"
               onClick={() => onEffortChange('')}
-              className="text-muted-foreground hover:text-foreground text-xs underline-offset-4 hover:underline"
+              className="focus-ring rounded-sm text-xs text-amber-700 underline-offset-2 hover:underline dark:text-amber-400"
               data-testid="task-effort-clear"
             >
               Clear it

@@ -23,7 +23,7 @@
  */
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { EffortLevel, ModelOption } from '@dorkos/shared/types';
+import type { EffortLevel } from '@dorkos/shared/types';
 import { EFFORT_LEVELS } from '@dorkos/shared/constants';
 import { describeAgentExecution, effortLabel, knownModelsFrom } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
@@ -121,12 +121,20 @@ export interface TaskExecution {
    * known yet", never a guess.
    */
   effectiveRuntime: string | null;
+  /**
+   * The runtime a task with NO override of its own lands on — the agent's, else
+   * the registry default — or `null` while nothing has answered.
+   *
+   * The rung directly beneath {@link TaskExecution.effectiveRuntime}, which is
+   * exactly `override || inheritedRuntime`. Exposed because the form has to
+   * answer "what would this task run on if I picked *that*" for a runtime the
+   * person has not chosen yet, and clearing the override is one of the choices.
+   */
+  inheritedRuntime: string | null;
   /** The runtime select's options, primaries first, registered only. */
   runtimeOptions: ExecutionOption[];
   /** What the runtime select's "don't override" option reads as. */
   inheritRuntimeLabel: string;
-  /** The effective runtime's catalog, `undefined` until it lands. */
-  models: ModelOption[] | undefined;
   /** The model select's options — the catalog, worded. */
   modelOptions: ExecutionOption[];
   /** Whether the effective runtime declares an effort setting at all. */
@@ -263,9 +271,9 @@ export function useTaskExecution(input: TaskExecutionInput): TaskExecution {
 
   return {
     effectiveRuntime,
+    inheritedRuntime,
     runtimeOptions,
     inheritRuntimeLabel,
-    models,
     modelOptions,
     supportsEffort: runtimeSupportsEffort === true,
     effortOptions,

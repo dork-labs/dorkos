@@ -65,6 +65,12 @@ export function CreateTaskDialog({
   // stop is mapped through THAT runtime's own modes and the mode this dialog
   // stores is the one that will execute.
   //
+  // Resolved from the agent the dialog was OPENED on, and deliberately not
+  // re-resolved when somebody picks a different agent in the form: the mode is a
+  // starting position, and moving it under a person mid-edit would overwrite a
+  // choice they may already have made. The dial's caption does follow the live
+  // `effectiveRuntime`, so what is on screen always describes the run.
+  //
   // Two rungs of the fire-time ladder are reachable here (spec
   // `task-runtime-model` §2.4; `services/tasks/execution/resolve-run-execution.ts`):
   // the task carries no runtime of its own until somebody picks one in the form,

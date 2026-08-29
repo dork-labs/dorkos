@@ -14,6 +14,7 @@ covers:
   - 'feat(client): a scheduled task picks its runtime, model and effort in the app (DOR-1615, DOR-1347)'
   - 'feat(operating-skills): agents learn that a task can name its runtime, model and effort (DOR-1615, DOR-1347)'
   - "fix(client): a task's stored effort stays readable when its model's ladder is shorter (DOR-1347)"
+  - 'fix(client): a task moved to another runtime asks before it stops asking (DOR-1615)'
 ---
 
 ### Added
@@ -27,9 +28,6 @@ covers:
   turned on, or a model that runtime does not offer — which is what you see if
   you pick a model for one runtime and then move the task to another. It never
   drops the choice for you (DOR-1615, DOR-1347)
-- The permissions dial on a task now speaks the vocabulary of the runtime that
-  task will really run on, so it stops promising you Claude Code's behaviour for
-  a run happening on Codex (DOR-1615)
 - A task that runs somewhere other than its agent says so on its row, and
   nowhere else — the tasks that simply follow their agent stay quiet (DOR-1615,
   DOR-1347)
@@ -42,6 +40,10 @@ covers:
 
 ### Changed
 
+- The permissions dial on a task now describes what will actually happen on the
+  program the task runs on, instead of always describing Claude Code. And if you
+  move a task to a program where its setting means "never stop to ask", the app
+  asks you first rather than making the change quietly (DOR-1615)
 - Scheduled runs used to happen on Claude Code no matter what the task or its
   agent said, on whatever model came out of the box. They now walk the same
   ladder every other kind of turn walks: the task's own setting, then the skill
