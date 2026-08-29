@@ -21,7 +21,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { RoomEntry, RoomRosterEntry, RoomSignalEvent } from '@dorkos/shared/room-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
 import { EventStreamProvider, TransportProvider } from '@/layers/shared/model';
-import { useRoomPresenceStore } from '@/layers/entities/room';
+import { SILENT_FINISH_DISPLAY_MS, useRoomPresenceStore } from '@/layers/entities/room';
 import { RoomLiveLane } from '../ui/RoomLiveLane';
 
 const navigateSpy = vi.fn();
@@ -150,6 +150,32 @@ function waiting(
     entryId: `trigger-${authorId}`,
     since,
     ...(behindRoomId === null ? {} : { heldBehind: { roomId: behindRoomId, othersWaiting } }),
+  };
+  useRoomPresenceStore.getState().observe(ROOM, event);
+}
+
+/**
+ * Release a claim through the store, exactly as `releaseClaim` would.
+ *
+ * `outcome` is optional and omitted by default — a server that predates D7,
+ * or a `done` this rung has no opinion about (`answered` already has a
+ * durable entry speaking for it; `halted`/`failed` have their own notices).
+ */
+function released(
+  authorId: string,
+  outcome?: 'answered' | 'silent',
+  entryId = `trigger-${authorId}`,
+  since = STARTED
+): void {
+  const event: RoomSignalEvent = {
+    type: 'signal',
+    signal: 'progress',
+    authorId,
+    at: since,
+    state: 'done',
+    entryId,
+    since,
+    ...(outcome ? { outcome } : {}),
   };
   useRoomPresenceStore.getState().observe(ROOM, event);
 }
@@ -886,6 +912,70 @@ describe('RoomLiveLane', () => {
 
       expect(screen.queryByTestId('live-peek-next-up')).toBeNull();
       expect(screen.getByTestId('live-peek-answer-first')).toBeVisible();
+    });
+  });
+
+  describe('a turn that released with nothing to show (D7)', () => {
+    it('draws the pill releasing into a fading line', () => {
+      working('kai');
+      renderLane();
+      expect(screen.getByTestId('room-presence')).toBeInTheDocument();
+
+      act(() => released('kai', 'silent'));
+
+      // The working pill is gone — a `done` always retires the claim — and in
+      // its place is the past-tense report, not silence that would read as a
+      // crash under `rooms.toolOnlyReplies`.
+      expect(screen.queryByTestId('room-presence')).toBeNull();
+      expect(screen.getByTestId('lane-silent-finish').textContent).toBe(
+        'Kai finished — nothing to add'
+      );
+    });
+
+    it('draws nothing at all for a release with no `outcome` — the regression that matters', () => {
+      // A server that predates D7 sends exactly this frame today, and this is
+      // the whole promise: absent renders exactly what it always has.
+      working('kai');
+      renderLane();
+
+      act(() => released('kai'));
+
+      expect(screen.queryByTestId('room-presence')).toBeNull();
+      expect(screen.queryByTestId('lane-silent-finish')).toBeNull();
+      // Nothing to say and the lane looks like it — mounted, empty, 24px.
+      expect(document.querySelector('[data-slot="live-lane"]')).toHaveClass('h-6');
+    });
+
+    it('draws nothing for `outcome: "answered"` — a durable entry already speaks for it', () => {
+      working('kai');
+      renderLane();
+
+      act(() => released('kai', 'answered'));
+
+      expect(screen.queryByTestId('lane-silent-finish')).toBeNull();
+    });
+
+    it('lets somebody still working outrank a report about a different, already-released turn', () => {
+      working('kai');
+      act(() => released('ana', 'silent', 'trigger-ana'));
+
+      renderLane();
+
+      expect(screen.getByTestId('room-presence')).toBeInTheDocument();
+      expect(screen.queryByTestId('lane-silent-finish')).toBeNull();
+    });
+
+    it('fades out on its own once the display window ends, without a fresh event', async () => {
+      working('kai');
+      renderLane();
+      act(() => released('kai', 'silent'));
+      expect(screen.getByTestId('lane-silent-finish')).toBeInTheDocument();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(SILENT_FINISH_DISPLAY_MS);
+      });
+
+      expect(screen.queryByTestId('lane-silent-finish')).toBeNull();
     });
   });
 });

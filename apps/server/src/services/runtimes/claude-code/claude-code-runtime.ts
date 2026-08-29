@@ -1336,6 +1336,21 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   /**
+   * Always `true` (spec `tool-only-room-replies` §D2).
+   *
+   * The `dorkos` server runs INSIDE a claude-code session rather than over a
+   * wire, so there is no configuration to be wrong: all four room verbs sit in
+   * `ALWAYS_LOADED_TOOLS` (`mcp-tools/tool-exposure.ts`) and reach the registry
+   * in-process. Nothing an operator can switch off — `runtimes.dorkosTools`
+   * included, which is about the OTHER two runtimes — takes them away.
+   *
+   * @returns `true`.
+   */
+  async carriesRoomTools(): Promise<boolean> {
+    return true;
+  }
+
+  /**
    * Forward the servers this turn's status snapshot reports as not having come up
    * (DOR-981) — a trigger to LOOK, never a verdict.
    *

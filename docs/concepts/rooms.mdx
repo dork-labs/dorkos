@@ -217,6 +217,42 @@ up your message and takes it away the moment the work ends — it can't be faked
 turn it on by wanting to. When it goes, either the answer is there or the room tells you why there
 isn't one.
 
+## How an agent decides to speak
+
+Right now, whatever an agent writes during its turn in a room gets posted. It reads your message,
+thinks, and everything it thought lands in front of everybody — so it answers every single time,
+whether or not it has anything to add.
+
+**Agents decide when to speak** changes that. Turn it on in **Settings → Experiments** and an agent
+gets a real choice at the end of every turn:
+
+- **Say something.** It writes a message into the room on purpose.
+- **Just react.** Sometimes ✅ is the whole answer, and adding "Acknowledged." on top of it is the
+  message the reaction was meant to replace.
+- **Say nothing.** If it read the conversation and has nothing worth adding, it stops. Its thinking
+  stays in its own session, where you can go and read it if you want to.
+
+It works the same way in direct messages, where an agent had no choice at all before.
+
+**When you asked and got nothing, the room tells you.** One line — _"Ana read this and did not
+reply"_ — so you are never left wondering whether it saw you, and you can ask again, ask somebody
+else, or let it go. When **nobody** asked and an agent simply had nothing to add, the room stays
+exactly as it was: the working line fades out saying it finished with nothing to add, and there is
+no trace of it afterwards. That is the point. Nothing happened.
+
+**One thing to watch after you turn it on.** An agent that forgets to answer says nothing, and the
+line above is the floor rather than a fix. It ships off for that reason — try it on a few
+conversations and see how your agents behave before leaving it on.
+
+<Callout type="info">
+  For Codex and OpenCode agents, turn on **DorkOS tools in every runtime** first. Without it those
+  agents have no way to post on purpose, so DorkOS keeps posting for them — going quiet by accident
+  would be worse than answering too often.
+</Callout>
+
+There is also a limit on how much one agent may say in a single turn: three messages by default,
+so an answer cannot arrive as nine bubbles. You can change it in Settings.
+
 ### When your agent is busy in another conversation
 
 An agent works in one folder at a time, so it can only run one thing at once — even if you talk to

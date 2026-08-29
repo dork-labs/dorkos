@@ -94,6 +94,18 @@ export const REFUSAL_REASONS = {
    * elsewhere, it is simply not a member here any more.
    */
   agent_left: 'the agent is no longer in the room',
+  /**
+   * A person asked, a turn ran perfectly well, and the agent chose not to reply
+   * (spec `tool-only-room-replies` §D6).
+   *
+   * **The one reason here that is not a fault.** Every other member of this union
+   * is something the room could not do; this is something an agent decided, and
+   * it is the outcome `rooms.toolOnlyReplies` exists to make possible. It is
+   * recorded anyway because each one is a measured near-miss during the flag's
+   * dogfood week — a `group_by(.reason)` over it is exactly the count that
+   * decides whether the flip graduates.
+   */
+  agent_declined: 'the agent read the question and chose not to reply',
   /** The `(room, agent)` session row could not be written, so no turn started. */
   session_bind_failed: 'the room session could not be bound',
   /** A prompt only a person can answer expired, and was denied by the clock. */

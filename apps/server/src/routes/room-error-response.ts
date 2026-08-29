@@ -52,6 +52,11 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // room to ask this of, and no retry fixes it.
   TOOL_RENAME_NOT_IN_DM: 400,
   // Same story: an MCP-only verb, mapped because the table is total by type. A
+  // 429 rather than a 400 — the request is perfectly well formed and would have
+  // been accepted a moment earlier, and the remedy is to say less rather than to
+  // say it differently, which is exactly what a rate answer means.
+  TOO_MANY_POSTS_THIS_TURN: 429,
+  // Same story: an MCP-only verb, mapped because the table is total by type. A
   // 409 rather than a 400 — the request is well formed and the room is right,
   // but somebody stopped this turn while it was being written.
   TURN_WAS_STOPPED: 409,

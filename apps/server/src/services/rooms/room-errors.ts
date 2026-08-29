@@ -93,12 +93,20 @@ export type RoomErrorCode =
    */
   | 'PEOPLE_ONLY'
   /**
-   * `post_to_room` was aimed at a direct message (room-participation spec §2.6).
+   * `post_to_room` was aimed at a direct message from a turn whose OWN TEXT is
+   * still being posted (room-participation spec §2.6, as reversed under
+   * `rooms.toolOnlyReplies` by spec `tool-only-room-replies` §D3).
    *
-   * In a DM the reply IS the message: the agent was unambiguously addressed and
-   * answering is obligatory, so the turn's own text posts and there is nothing
-   * for a posting verb to add. A second way to say the same thing there would be
-   * a second way for it to fail.
+   * **Mode-conditional since DOR-1613, and both halves are correct.** In text
+   * mode the reply IS the message in a DM: the agent was unambiguously
+   * addressed, answering is obligatory, and the turn's own text posts — so a
+   * posting verb adds nothing but a second way to fail. Under a tool-only turn
+   * every clause of that is false: nothing the turn writes is posted, so this
+   * refusal would leave the agent structurally unable to answer a direct
+   * message, holding two contradictory models of what silence means.
+   *
+   * The condition is on the resolved reply mode, and the refusal is not removed:
+   * §2.6's argument still holds exactly where it was made.
    *
    * Spelled `kind !== 'channel'`, never `kind === 'dm'`: `rooms.kind` is a text
    * column narrowed by an unchecked cast, and an unrecognized kind must take the
@@ -143,6 +151,25 @@ export type RoomErrorCode =
    * narrower branch (`.claude/rules/room-conduct.md`).
    */
   | 'TOOL_RENAME_NOT_IN_DM'
+  /**
+   * One turn tried to post more messages into one room than
+   * `rooms.maxPostsPerTurn` allows (spec `tool-only-room-replies` §D9).
+   *
+   * **A mechanism, because a bound has to be one.** Nothing counted an agent's
+   * posts before this: multiple posts inside a turn cost ONE turn against the
+   * cascade budget (DOR-1434, deliberately — being legible is not a thing the
+   * room charges for), and etiquette E8's "one message, not three" is a prompt.
+   * `.claude/rules/room-conduct.md` is unambiguous that a prompt is not a bound,
+   * and under `rooms.toolOnlyReplies` posting stops being an extra an agent
+   * rarely reaches for and becomes the only voice it has.
+   *
+   * Counted per `(room, agent, turn)` on the live claim, so an agent that posts
+   * into a different room mid-turn spends nothing here, and a post made with no
+   * turn behind it is not bounded at all — it already costs a turn of its own.
+   *
+   * The message names the remedy rather than the rule: consolidate.
+   */
+  | 'TOO_MANY_POSTS_THIS_TURN'
   /**
    * `post_to_room` was called by an agent whose turn in that room was STOPPED
    * (DOR-1313).

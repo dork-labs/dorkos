@@ -23,6 +23,24 @@ function humanizeSnakeCase(s: string): string {
     .join(' ');
 }
 
+/**
+ * How OpenCode names a tool that came from the `dorkos` MCP server.
+ *
+ * **Not every runtime spells an MCP tool `mcp__server__tool`.** Claude Code and
+ * Codex do; OpenCode builds `sanitize(server) + "_" + sanitize(tool)` and hands
+ * that key straight through — so the same call arrives here as
+ * `mcp__dorkos__post_to_room` from two runtimes and `dorkos_post_to_room` from
+ * the third. Keyed on `mcp__` alone, every DorkOS tool an OpenCode agent called
+ * rendered as its raw wire name, with no badge and no humanised label
+ * (DOR-1613).
+ *
+ * It is scoped to the ONE server DorkOS itself injects rather than generalised,
+ * and that is deliberate: `a_b_c` cannot be split into a server and a tool
+ * without guessing where the boundary is, and a guess would relabel somebody's
+ * `run_migration` as "Migration" from a server called "Run".
+ */
+const OPENCODE_DORKOS_PREFIX = 'dorkos_';
+
 /** Parse an MCP tool name into server + tool components. */
 export function parseMcpToolName(toolName: string): {
   server: string;
@@ -30,6 +48,18 @@ export function parseMcpToolName(toolName: string): {
   tool: string;
   toolLabel: string;
 } | null {
+  // OpenCode's spelling first — `mcp__dorkos__x` does not start with `dorkos_`,
+  // so the two cannot collide.
+  if (toolName.startsWith(OPENCODE_DORKOS_PREFIX)) {
+    const tool = toolName.slice(OPENCODE_DORKOS_PREFIX.length);
+    if (tool === '') return null;
+    return {
+      server: 'dorkos',
+      serverLabel: MCP_SERVER_LABELS.dorkos!,
+      tool,
+      toolLabel: humanizeSnakeCase(tool),
+    };
+  }
   if (!toolName.startsWith('mcp__')) return null;
   const parts = toolName.split('__');
   if (parts.length < 3) return null;

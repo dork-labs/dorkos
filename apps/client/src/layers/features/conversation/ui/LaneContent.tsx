@@ -88,6 +88,11 @@ export function laneAnnouncement(state: LaneState, unavailable: boolean): string
       // lane draws no verb at all — nothing has started — so for it the two are
       // the same string.
       return state.sentence;
+    case 'silent-finish':
+      // No separate `line` to draw one way and announce another, unlike
+      // `presence`: this rung has one sentence and nothing about it changes
+      // while it is on screen, so there is nothing for the two to disagree on.
+      return state.sentence;
     case 'turn-waiting':
       return state.waitingType === 'approval'
         ? 'Waiting for your approval'
@@ -126,6 +131,12 @@ export function laneMotionKey(state: LaneState): string {
       return `presence:${state.sentence}`;
     case 'held':
       return `held:${state.sentence}`;
+    case 'silent-finish':
+      // The sentence, not just the kind: the store's single slot means a
+      // SECOND release can replace the first without ever passing through
+      // `empty` in between, and without this the two would share one key and
+      // the second would silently skip its own crossfade in.
+      return `silent-finish:${state.sentence}`;
     case 'turn-waiting':
       return `turn-waiting:${state.waitingType}`;
     case 'turn-progress':
@@ -214,6 +225,8 @@ export function LaneContent({
       );
     case 'held':
       return <HeldLine state={state} faces={faces} scope={scope} />;
+    case 'silent-finish':
+      return <SilentFinishLine state={state} />;
     case 'turn-waiting':
       return <WaitingLine state={state} />;
     case 'turn-progress':
@@ -395,6 +408,32 @@ function HeldLine({
         <span className="truncate">{state.sentence}</span>
         <LaneElapsed since={state.since} />
       </span>
+    </span>
+  );
+}
+
+/**
+ * A turn that released here with nothing to show, on its way out.
+ *
+ * **Styled exactly like {@link CompleteLine}, not `PresenceLine` or
+ * `HeldLine`.** Both are reports about a turn that has already ended, muted
+ * and half-opacity rather than the ordinary foreground colour a live rung
+ * uses — the visual vocabulary this cockpit already has for "this is a
+ * summary, not a status". No dot at all, for the same reason `CompleteLine`
+ * draws none: nothing is running, so nothing here should read as `working`.
+ * No elapsed time either — the fact has no duration, only a moment it
+ * happened, and that moment is already spent by the time this line exists to
+ * draw it.
+ *
+ * @internal
+ */
+function SilentFinishLine({ state }: { state: Extract<LaneState, { kind: 'silent-finish' }> }) {
+  return (
+    <span
+      data-testid="lane-silent-finish"
+      className="text-muted-foreground/50 flex min-w-0 items-center gap-2 opacity-60"
+    >
+      <span className="truncate">{state.sentence}</span>
     </span>
   );
 }

@@ -13,10 +13,12 @@ import { useRoomStream } from '../use-room-stream';
 import {
   PRESENCE_TICK_MS,
   PRESENCE_TTL_MS,
+  SILENT_FINISH_DISPLAY_MS,
   useRoomHolds,
   useRoomPresence,
   useRoomPresenceClaims,
   useRoomPresenceStore,
+  useRoomSilentFinish,
 } from '../use-room-presence';
 
 const ROOM = 'room-1';
@@ -27,7 +29,10 @@ function signal(
   state: 'working' | 'working_late' | 'done',
   entryId: string,
   since = '2026-07-30T10:00:00.000Z',
-  activity?: SessionActivity
+  activity?: SessionActivity,
+  // Only ever set alongside `state: 'done'` (D7) — appended last, and optional,
+  // so every existing call above stays exactly what it was.
+  outcome?: 'answered' | 'silent'
 ): RoomSignalEvent {
   return {
     type: 'signal',
@@ -38,6 +43,7 @@ function signal(
     entryId,
     since,
     ...(activity ? { activity } : {}),
+    ...(outcome ? { outcome } : {}),
   };
 }
 
@@ -548,5 +554,196 @@ describe('a message waiting on an agent busy elsewhere', () => {
 
     store.prune(PRESENCE_TTL_MS);
     expect(keysIn(ROOM)).toEqual([]);
+  });
+});
+
+describe('a turn that released with nothing to show (D7)', () => {
+  it('is recorded from a `done` carrying `outcome: "silent"`', () => {
+    useRoomPresenceStore
+      .getState()
+      .observe(ROOM, signal('kai', 'done', 'entry-1', undefined, undefined, 'silent'), 1_000);
+
+    expect(useRoomPresenceStore.getState().silentFinish[ROOM]).toEqual({
+      authorId: 'kai',
+      entryId: 'entry-1',
+      at: 1_000,
+    });
+  });
+
+  it('records nothing from a `done` with no `outcome` at all — the regression that matters', () => {
+    // The older-server case D7 exists to protect: a `done` that carries no
+    // opinion must leave this slot exactly as untouched as it always was.
+    useRoomPresenceStore.getState().observe(ROOM, signal('kai', 'done', 'entry-1'));
+
+    expect(useRoomPresenceStore.getState().silentFinish[ROOM]).toBeUndefined();
+  });
+
+  it('records nothing from a `done` carrying `outcome: "answered"`', () => {
+    // A durable entry already landed for this one — the reader can see it,
+    // and this rung has nothing to add on top of it.
+    useRoomPresenceStore
+      .getState()
+      .observe(ROOM, signal('kai', 'done', 'entry-1', undefined, undefined, 'answered'));
+
+    expect(useRoomPresenceStore.getState().silentFinish[ROOM]).toBeUndefined();
+  });
+
+  it('is retired by a LATER `done` in the same room, silent or not', () => {
+    // Without this, Kai's silent release at t=0 could still be fading on
+    // screen at t=2s when Ana's turn finishes normally — misreporting the
+    // turn that just answered as the one that stayed quiet.
+    const store = useRoomPresenceStore.getState();
+    store.observe(ROOM, signal('kai', 'done', 'entry-1', undefined, undefined, 'silent'), 1_000);
+    store.observe(ROOM, signal('ana', 'done', 'entry-2', undefined, undefined, 'answered'), 2_000);
+
+    expect(useRoomPresenceStore.getState().silentFinish[ROOM]).toBeUndefined();
+  });
+
+  it('is replaced, not joined, by a second silent release in the same room', () => {
+    // The store keeps one slot per room — the lane has exactly one line to put
+    // a release on — so a second agent releasing silently moments later
+    // becomes the line rather than a second one appearing beside it.
+    const store = useRoomPresenceStore.getState();
+    store.observe(ROOM, signal('kai', 'done', 'entry-1', undefined, undefined, 'silent'), 1_000);
+    store.observe(ROOM, signal('ana', 'done', 'entry-2', undefined, undefined, 'silent'), 2_000);
+
+    expect(useRoomPresenceStore.getState().silentFinish[ROOM]).toEqual({
+      authorId: 'ana',
+      entryId: 'entry-2',
+      at: 2_000,
+    });
+  });
+
+  it('is cleared when its own author speaks here', () => {
+    const store = useRoomPresenceStore.getState();
+    store.observe(ROOM, signal('kai', 'done', 'entry-1', undefined, undefined, 'silent'), 1_000);
+
+    store.clearAuthor(ROOM, 'kai');
+
+    expect(useRoomPresenceStore.getState().silentFinish[ROOM]).toBeUndefined();
+  });
+
+  it('leaves another author’s slot alone', () => {
+    const store = useRoomPresenceStore.getState();
+    store.observe(ROOM, signal('kai', 'done', 'entry-1', undefined, undefined, 'silent'), 1_000);
+
+    store.clearAuthor(ROOM, 'ana');
+
+    expect(useRoomPresenceStore.getState().silentFinish[ROOM]).toEqual({
+      authorId: 'kai',
+      entryId: 'entry-1',
+      at: 1_000,
+    });
+  });
+
+  it('is forgotten when the whole room is', () => {
+    const store = useRoomPresenceStore.getState();
+    store.observe(ROOM, signal('kai', 'done', 'entry-1', undefined, undefined, 'silent'), 1_000);
+
+    store.clearRoom(ROOM);
+
+    expect(useRoomPresenceStore.getState().silentFinish[ROOM]).toBeUndefined();
+  });
+
+  it('survives a `prune`, unlike every other timed field here', () => {
+    // Deliberate: `useRoomSilentFinish` owns its own clock rather than
+    // leaning on the tick `prune` answers to, so a bare `prune` call — however
+    // much time has passed — must not be what makes this slot disappear.
+    useRoomPresenceStore
+      .getState()
+      .observe(ROOM, signal('kai', 'done', 'entry-1', undefined, undefined, 'silent'), 0);
+
+    useRoomPresenceStore.getState().prune(PRESENCE_TTL_MS * 10);
+
+    expect(useRoomPresenceStore.getState().silentFinish[ROOM]).toEqual({
+      authorId: 'kai',
+      entryId: 'entry-1',
+      at: 0,
+    });
+  });
+});
+
+describe('useRoomSilentFinish', () => {
+  it('draws a fresh silent release', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-30T10:00:00.000Z'));
+    useRoomPresenceStore
+      .getState()
+      .observe(ROOM, signal('kai', 'done', 'entry-1', undefined, undefined, 'silent'));
+
+    const { result } = renderHook(() => useRoomSilentFinish(ROOM));
+
+    expect(result.current).toEqual({
+      authorId: 'kai',
+      entryId: 'entry-1',
+      at: Date.parse('2026-07-30T10:00:00.000Z'),
+    });
+  });
+
+  it('answers null for a room with no release, and for no room at all', () => {
+    useRoomPresenceStore
+      .getState()
+      .observe(ROOM, signal('kai', 'done', 'entry-1', undefined, undefined, 'answered'));
+
+    expect(renderHook(() => useRoomSilentFinish(ROOM)).result.current).toBeNull();
+    expect(renderHook(() => useRoomSilentFinish(null)).result.current).toBeNull();
+  });
+
+  it('fades out on its own clock once the display window ends', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-30T10:00:00.000Z'));
+    useRoomPresenceStore
+      .getState()
+      .observe(ROOM, signal('kai', 'done', 'entry-1', undefined, undefined, 'silent'));
+
+    const { result } = renderHook(() => useRoomSilentFinish(ROOM));
+    expect(result.current).not.toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SILENT_FINISH_DISPLAY_MS);
+    });
+
+    expect(result.current).toBeNull();
+    // The record itself is untouched — only the READING treats it as gone
+    // (see the `prune` test above).
+    expect(useRoomPresenceStore.getState().silentFinish[ROOM]).toBeDefined();
+  });
+
+  it('never draws a release that expired while nobody was looking', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-30T10:00:00.000Z'));
+    useRoomPresenceStore
+      .getState()
+      .observe(ROOM, signal('kai', 'done', 'entry-1', undefined, undefined, 'silent'));
+
+    vi.setSystemTime(new Date(Date.now() + SILENT_FINISH_DISPLAY_MS + 60_000));
+    const { result } = renderHook(() => useRoomSilentFinish(ROOM));
+
+    expect(result.current).toBeNull();
+  });
+
+  describe('scoped to a thread', () => {
+    const inThread = { replyIds: new Set(['reply-1']), inside: true };
+    const outsideThread = { replyIds: new Set(['reply-1']), inside: false };
+
+    it('draws a release triggered by a thread reply only inside the thread', () => {
+      useRoomPresenceStore
+        .getState()
+        .observe(ROOM, signal('kai', 'done', 'reply-1', undefined, undefined, 'silent'));
+
+      expect(renderHook(() => useRoomSilentFinish(ROOM, inThread)).result.current).not.toBeNull();
+      expect(renderHook(() => useRoomSilentFinish(ROOM, outsideThread)).result.current).toBeNull();
+    });
+
+    it('leaves a release on a room message in the room, not in the thread', () => {
+      useRoomPresenceStore
+        .getState()
+        .observe(ROOM, signal('kai', 'done', 'entry-9', undefined, undefined, 'silent'));
+
+      expect(renderHook(() => useRoomSilentFinish(ROOM, inThread)).result.current).toBeNull();
+      expect(
+        renderHook(() => useRoomSilentFinish(ROOM, outsideThread)).result.current
+      ).not.toBeNull();
+    });
   });
 });

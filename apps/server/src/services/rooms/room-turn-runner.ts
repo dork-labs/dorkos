@@ -37,6 +37,8 @@
 import { randomUUID } from 'node:crypto';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { Room } from '@dorkos/shared/room-schemas';
+import type { RoomContextData } from '@dorkos/shared/additional-context';
+import { readManifest } from '@dorkos/shared/manifest';
 import {
   isBlockingInteractionEvent,
   type BlockingInteractionEventType,
@@ -48,6 +50,7 @@ import { projectRoomAttachments } from './attachments/attachment-projection.js';
 import { getRoomAttachmentStore, tryGetRoomRepoService } from './index.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import { resolveAgentRuntimeType } from '../runtimes/shared/resolve-agent-runtime-type.js';
+import { configManager } from '../core/config-manager.js';
 import {
   dispatchMessage,
   getOrCreateProjector,
@@ -58,6 +61,7 @@ import {
 } from '../session/index.js';
 import type {
   LateRoomReply,
+  RoomReplyMode,
   RoomTurnRequest,
   RoomTurnResult,
   RoomTurnRunner,
@@ -125,6 +129,83 @@ export interface RoomTurnRunnerOptions {
    * @param room - The room being answered.
    */
   roomConventions?: (room: Room) => Promise<string | null>;
+}
+
+/**
+ * Resolve how one turn's words reach the room, once, before it starts (spec
+ * `tool-only-room-replies` §D2).
+ *
+ * ## The flag is not read as "suppress the text"
+ *
+ * It is read as: **suppress the text only where this session is KNOWN to be able
+ * to post.** The difference is the whole safety of the feature. `/mcp` sits
+ * behind `requireMcpEnabled`, and agent tokens expire on a 7-day-idle /
+ * 30-day-absolute fuse — two reachable states in which a codex or opencode agent
+ * has no posting tool at all. Read the flag alone and either one leaves every
+ * such agent silently mute in every room, with nothing on the log to say so.
+ *
+ * ## And it fails OPEN, which is the opposite polarity to a permission check
+ *
+ * A grant asks a positive question and must strictly narrow when a credential is
+ * missing. This asks a DELIVERY question, and its two errors are not symmetric:
+ *
+ * - Fail closed → the agent is silently mute. `.claude/rules/room-conduct.md`,
+ *   constraint 6: **silence is the worse failure**.
+ * - Fail open → a turn's text posts that the agent might not have chosen to
+ *   post. Untidy, visible, recoverable.
+ *
+ * So every uncertainty — a runtime that does not implement the question, a
+ * runtime that throws answering it, a config manager that is not up yet —
+ * resolves to `'text'`. Nothing about permission is decided here: the agent could
+ * always post, and this decides only whether DorkOS ALSO posts for it.
+ *
+ * It lives beside its one caller rather than in a module of its own because the
+ * runner is the only thing that holds both halves of the question.
+ *
+ * @param opts.runtime - The runtime about to take the turn. Answers whether the
+ *   session carries the room tools through its optional `carriesRoomTools`; a
+ *   runtime that does not implement it is "we do not know", which is `'text'`.
+ * @param opts.cwd - **Where the turn will actually RUN**, which since DOR-1597 is
+ *   not the same string as the agent's identity path: a turn in a room with
+ *   files stands in that agent's worktree. It has to be the run cwd, because
+ *   that is what the two runtimes that can be given these tools gate their
+ *   injection on — asking about the identity path would answer for a session
+ *   nobody configured.
+ * @param opts.sessionId - The session the turn will run on.
+ * @returns `'tool-only'` only when the flag is on AND the session is known
+ *   tool-capable; `'text'` for everything else, including every error.
+ */
+export async function resolveReplyMode(opts: {
+  runtime: Pick<AgentRuntime, 'carriesRoomTools'>;
+  cwd: string;
+  sessionId: string;
+}): Promise<RoomReplyMode> {
+  try {
+    // Optional-chained on purpose, like every other read of this manager on a
+    // hot path: `configManager` is a `let` the boot assigns, so it is genuinely
+    // `undefined` before that, and a section can be absent on a partially
+    // configured store. A read that THREW here would take the room turn down
+    // with it, which is a far worse failure than the experiment staying off.
+    if (configManager?.get('rooms')?.toolOnlyReplies !== true) return 'text';
+    // Not implemented is not a `false` answer — it is no answer, and the two
+    // land in the same place only because that place is the safe one.
+    if (opts.runtime.carriesRoomTools === undefined) return 'text';
+    const capable = await opts.runtime.carriesRoomTools({
+      cwd: opts.cwd,
+      sessionId: opts.sessionId,
+    });
+    return capable ? 'tool-only' : 'text';
+  } catch (err) {
+    // The one place this can be wrong in the expensive direction, so it says so
+    // out loud rather than degrading quietly: an operator who turned the
+    // experiment on and sees text still posting can find this line.
+    logger.warn('[rooms] could not resolve the reply mode; posting this turn’s text', {
+      sessionId: opts.sessionId,
+      cwd: opts.cwd,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return 'text';
+  }
 }
 
 /** The shipped wait, used when a caller supplies no reader. */
@@ -221,6 +302,56 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // registry's own docs warn about exactly this ghost-row shape.
       const runtime = runtimeRegistry.get(runtimeType);
       if (!runtime) throw new Error(`Runtime '${runtimeType}' is not registered`);
+
+      // **How this turn's words reach the room, decided ONCE and carried.** The
+      // runner is the only thing that holds both halves of the question — the
+      // `rooms.toolOnlyReplies` flag and this runtime's own answer about whether
+      // the session carries the posting tool — so it resolves the mode here and
+      // hands it to both consumers: the model, through the room context it is
+      // told the truth in, and `deliver`, on every reply below. Re-deriving it
+      // at delivery would re-read a flag minutes after a late turn started; see
+      // {@link RoomTurnReply.replyMode}.
+      // A caller may PIN the mode instead of letting it be resolved, and exactly
+      // one does: the welcome-back offer, whose text the greeter posts itself
+      // (spec `tool-only-room-replies` §D12). See {@link RoomTurnRequest.replyMode}.
+      //
+      // **`request.cwd`, never `request.agentPath`, and the difference is a mute**
+      // (DOR-1597 × DOR-1613). Since the cwd rung split identity from where a
+      // turn stands, a turn in a room with files runs in that agent's WORKTREE,
+      // and both runtimes that can be given the room tools gate their injection
+      // on the directory the session actually launches in: codex asks
+      // `meshCore.getByPath(cwd)` before it builds the `dorkos` entry, and
+      // opencode's reconcile is keyed by the same cwd. A worktree hosts no
+      // registered agent, so neither injects — and asking this question about
+      // the IDENTITY path instead would answer `true` for a session that was
+      // just left with no posting tool at all. The room would suppress its text,
+      // the agent would have nothing to suppress it in favour of, and every
+      // project-room turn would go silent. That is the same mute the codex
+      // divergence produced, arrived at from the other side, and it is the
+      // NORMAL path for a room with files rather than an edge case.
+      //
+      // So the question is asked about the session that is about to run. For
+      // claude-code (in-process) and test-mode (keyed on its scenario) the
+      // argument is inert; for the two that read it, it is now the same string
+      // their injection read.
+      //
+      // **The standing consequence, so nobody rediscovers it as a bug.**
+      // `AgentRegistry.getByPath` is an exact match on `agents.project_path`
+      // with no prefix rule, so a codex or opencode agent taking a turn in a
+      // room WITH FILES gets no `dorkos` server and no identity token — not
+      // merely no flip. It keeps text-as-reply, which is the correct behaviour
+      // and the honest one, and it will keep it until the injection gate learns
+      // that a worktree belongs to the agent that owns it. That is a change to
+      // the WIRING (DOR-1613 PR1 × DOR-1597), not to this line: making this
+      // answer `true` before the tools are actually there is exactly the mute
+      // above.
+      const replyMode =
+        request.replyMode ?? (await resolveReplyMode({ runtime, cwd: request.cwd, sessionId }));
+      const roomContext: RoomContextData = { ...request.roomContext, replyMode };
+      // Onto the live claim, before anything runs: a `post_to_room` made from
+      // inside this turn reads the mode there to decide whether a DM refusal
+      // still applies (spec `tool-only-room-replies` §D3).
+      request.onReplyMode(replyMode);
 
       // A room turn is the one place a session's first turn runs BEFORE its
       // `session_metadata` row exists, so it cannot inherit its model and effort
@@ -441,7 +572,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         clientId: ROOM_CLIENT_ID,
         content: prompt,
         cwd: request.cwd,
-        roomContext: request.roomContext,
+        roomContext,
         // Omitted, never passed as an empty string, when this room has no files.
         // Not because `''` misbehaves today — it does not: all three adapters
         // guard with `if (opts?.systemPromptAppend)` and claude-code's launch
@@ -521,10 +652,17 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
           sessionId,
           roomId: request.room.id,
         });
-        return { sessionId, text: null, unanswered: 'busy' };
+        return { sessionId, text: null, unanswered: 'busy', replyMode };
       }
 
       const canonicalId = result.canonicalId ?? sessionId;
+      // **As early as it is knowable, and before the answer is collected.** The
+      // room bound a `(room, agent)` session before the claim, but on a first
+      // turn that id is a placeholder the runtime renames mid-flight — so a tool
+      // post that read the binding would stamp an id nothing writes to again
+      // (spec `tool-only-room-replies` §D8). Reported here, so almost every tool
+      // call inside the turn sees the real one.
+      request.onSessionBound(canonicalId);
 
       // The turn started, so the session is real: record which runtime owns it.
       // The registry binds a session that has no runtime yet and leaves a bound
@@ -573,12 +711,31 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
           sessionId: canonicalId,
           roomId: request.room.id,
         });
-        return { sessionId: canonicalId, text: null, late: collecting.afterDeadline };
+        return {
+          sessionId: canonicalId,
+          text: null,
+          // **The mode rides the LATE shape too, and forgetting it was a silent
+          // regression rather than a missing feature.** `deliverLate` calls
+          // straight back into `deliver`, which reads the mode off the REPLY —
+          // so a late answer that arrived without one took the fail-open `'text'`
+          // branch and posted the very narration the flip exists to keep
+          // private. `collectRoomReply` cannot add it (it is built before the
+          // mode is known and knows nothing about rooms), so it is mapped on
+          // here, where `replyMode` is in scope.
+          //
+          // The second-order failure was worse than the visible one: a late turn
+          // that DID tool-post landed in the text path, hit `!said → 'quiet'`,
+          // and left `spokeViaTool` standing on a claim — which under RP8's
+          // park-and-resume would swallow the NEXT delivery for that pair.
+          late: collecting.afterDeadline.then((reply) => ({ ...reply, replyMode })),
+          replyMode,
+        };
       }
 
       return {
         sessionId: canonicalId,
         text: reply.text,
+        replyMode,
         ...(reply.failed ? { unanswered: 'failed' as const } : {}),
       };
     },

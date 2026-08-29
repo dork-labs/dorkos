@@ -825,11 +825,14 @@ function selfIdentity(self: RoomContextMember): string {
  * a line.
  *
  * **Runtime-neutral, so it names the FIELDS and not the tools.** This block is
- * rendered for claude-code, codex and opencode alike, and only claude-code
- * carries the in-session room tools — telling the other two here that they have
- * a reaction verb would be a claim about somebody else's configuration
- * (room-participation spec §10.2.1). So this says what the ids ARE; what to do
- * with them is `ROOM_TOOLS_CONTEXT`'s job, on the runtime where it is true.
+ * built from a room and a nonce and knows NOTHING about the session it is being
+ * rendered for — not the runtime, not whether the tools were injected this turn,
+ * not what prefix that runtime puts in front of them. So it says what the ids
+ * ARE; what to do with them is `room-tools-context.ts`'s job, which takes the
+ * prefix as an argument and is rendered only for a session that carries them.
+ * (The original reason was narrower — that codex and opencode carried no room
+ * tools at all — and DOR-1613's wiring dissolved it; the invariant above never
+ * depended on it.)
  *
  * The example spelling is built by {@link idLabel} rather than written out, so
  * the promise made here and the label on every line below cannot drift apart —
@@ -966,12 +969,43 @@ function preamble(data: RoomContextData, where: string, nonce: string): string[]
   // is a deferred decision (design record §3), so there is no such set to name.
   // A reply is an ordinary entry in this room's log — anybody here can read it —
   // and the true half is the half worth saying.
+  // **And it is mode-aware, because the alternative is the worst reachable
+  // outcome of this whole feature** (spec `tool-only-room-replies` §D11). Under a
+  // `'tool-only'` turn the sentence above is not merely stale, it is FALSE — the
+  // turn's words are not posted, and an agent told otherwise writes its answer
+  // into a session nobody is reading and believes it has replied.
+  //
+  // It says the FACT and never the verb, which is what keeps this block
+  // runtime-neutral: naming a tool here would guess at both the session's tools
+  // and its prefix, and both guesses are wrong in ways the agent finds out by
+  // spending a turn (DOR-1292). `room-tools-context.ts` names them, per runtime,
+  // for a session that actually carries them.
   lines.push(
-    data.thread
-      ? `Whatever you say this turn is posted as a reply in that thread, not into the main flow ` +
+    data.replyMode === 'tool-only'
+      ? data.thread
+        ? `Nothing you write back this turn is posted into that thread, or anywhere else. ` +
+          `Saying something there is a thing you do on purpose, with a tool — and saying ` +
+          `nothing is a real answer too. Your own thinking stays in this session.`
+        : `Nothing you write back this turn is posted into ${where}, or anywhere else. ` +
+          `Saying something there is a thing you do on purpose, with a tool — and saying ` +
+          `nothing is a real answer too. Your own thinking stays in this session.`
+      : data.thread
+        ? `Whatever you say this turn is posted as a reply in that thread, not into the main flow ` +
           `of ${where}. Every member can read it there.`
-      : `Whatever you say this turn is posted into ${where}, where every member reads it.`
+        : `Whatever you say this turn is posted into ${where}, where every member reads it.`
   );
+  // **The one instruction the DM reversal rests on** (§D11, and E1). In a channel
+  // an agent may decide nothing needs saying; in a direct message with a person
+  // it may not, because there is nobody else the question could have been for.
+  // Only said when it is true: in text mode the reply posts itself, so there is
+  // nothing to instruct.
+  if (data.replyMode === 'tool-only' && data.room.kind !== 'channel') {
+    lines.push(
+      `This is a direct message, so answering is not optional: a person wrote here and ` +
+        `nobody else can answer for you. Post something, or put a reaction on their message ` +
+        `if that genuinely says it all.`
+    );
+  }
   lines.push(`Members: ${data.members.map(memberLine).join(', ')}.`);
 
   if (data.working.length > 0) {

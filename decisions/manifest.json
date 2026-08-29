@@ -5072,6 +5072,28 @@
         "apps/client/src/layers/features/room-management/model/use-room-details-view.ts",
         "apps/server/src/services/rooms/notices/notice-copy.ts"
       ]
+    },
+    {
+      "id": "260829-025020",
+      "slug": "a-room-turn-speaks-by-calling-a-tool",
+      "title": "A room turn speaks by calling a tool, in every room kind \u2014 including DMs",
+      "status": "accepted",
+      "created": "2026-08-29",
+      "specSlug": "tool-only-room-replies",
+      "amends": null,
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/rooms/room-trigger.ts",
+        "apps/server/src/services/rooms/room-service.ts",
+        "apps/server/src/services/rooms/room-turn-runner.ts",
+        "apps/server/src/services/rooms/room-claims.ts",
+        "apps/server/src/services/rooms/notices/notice-log.ts",
+        "apps/server/src/services/rooms/notices/notice-copy.ts",
+        "apps/server/src/services/runtimes/shared/room-tools-context.ts",
+        "apps/server/src/services/runtimes/shared/room-context-block.ts",
+        "packages/shared/src/room-schemas.ts",
+        "packages/shared/src/config-schema.ts"
+      ]
     }
   ]
 }

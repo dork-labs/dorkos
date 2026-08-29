@@ -7490,6 +7490,7 @@
           "agent_gone",
           "agent_unavailable",
           "agent_left",
+          "agent_declined",
           "awaiting_approval",
           "halted",
           "addressing_changed",
@@ -8699,6 +8700,13 @@
           },
           "heldBehind": {
             "$ref": "#/components/schemas/RoomHeldBehind"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "answered",
+              "silent"
+            ]
           }
         },
         "required": [

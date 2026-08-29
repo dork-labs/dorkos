@@ -239,11 +239,20 @@ It is currently **private** and decides _damping_; here it also decides _whether
 
 It is deliberately **narrower** than §10.2.2's "addressed", which reads the dispatcher's trigger reason and would include an agent naming an agent. Orchestrator ruling: the narrow one stands (Q2).
 
-**The notice.** A ninth code `agent_declined` — the name §10.2.2 already chose — in `notices/notice-copy.ts` beside the other eight, written through `notice-log.ts`'s single `write` seam. `room-conduct.md` permits no other shape: _"A new way to go quiet earns a new code there, never a free-text line."_ Damped on the existing `noticedSilence` memory under a new `dampReason`, re-armed by `recovered` like its siblings, so three mentions in one cascade still write one line. Copy states the fact without apologising:
+**The notice.** A ninth code `agent_declined` — the name §10.2.2 already chose — in `notices/notice-copy.ts` beside the other eight, written through `notice-log.ts`'s single `write` seam. `room-conduct.md` permits no other shape: _"A new way to go quiet earns a new code there, never a free-text line."_ Copy states the fact without apologising:
 
 > **Ana read this and did not reply.**
 
 `RoomNoticeCodeSchema` gains the member; the client's notice renderer picks it up from the shared copy map.
+
+**Amended 2026-08-29 (adversarial review, before merge) — the damping is per CASCADE, in its own memory.** The text above originally said "damped on the existing `noticedSilence` memory under a new `dampReason`, re-armed by `recovered` like its siblings". Both halves were wrong and the second is what makes the first unsalvageable:
+
+- **`recovered` cannot be the re-arm.** `deliver` calls it at guard 3 and `reportDeclined` at guard 6 of the SAME call, so a key it could clear would be cleared by the very turn that armed it. The damping would suppress nothing.
+- **A `(room, agent)` key never expires.** Nothing else clears it, so a person who asked once, got one line, and asked something else entirely the next day would get SILENCE — the dead air E1 and this notice exist to prevent, and the inverse of `reportSilence`'s own rule that a direct question is never damped. It violated this spec's Goal 3 outright.
+
+So it is keyed `(room, agent, cascadeRoot)` — the shape `cascadeNoticeKey` already uses, for the reason it uses it: a later exchange may legitimately say this again. It lives in its own `noticedDeclines` set rather than as a fourth reason inside `noticedSilence`, because the two key SHAPES differ and sharing one memory invites exactly the `recovered` mistake above.
+
+It cannot become a flood: `directlyAsked` requires depth 0 and a human author, so every message that reaches it starts its own cascade and the bound is the sender's own typing. Messages typed in one breath gather into one turn (RP8) and earn one line between them. And the key damps nothing reachable TODAY — one entry produces one dispatch per agent and `deliver` runs once per turn — so it is a guard against a future re-dispatch spraying, on the same terms `cascadeNoticeKey` is.
 
 ### D7. The `done` outcome field — the ephemeral half
 
@@ -256,6 +265,8 @@ state: 'done', outcome?: 'answered' | 'silent'
 ```
 
 **The older-client argument, recorded because it is the whole reason for the shape.** `RoomPresenceStateSchema` (`room-schemas.ts:1573-1575`) is a Zod enum parsed by every client and reused by the `CommunityAdapter` presence payload, and `useRoomPresenceStore.observe` **drops** a frame it cannot parse (`:1762-1766`). A new enum member would therefore make an older client — a desktop build one release behind, a community peer — fail to parse the release frame and **leave the working pill spinning forever**. An optional field degrades to exactly today's behaviour. The schema's own doc already blesses the additive direction: _"Adding a member is additive for a remote producer."_
+
+**Published only for a turn that actually ran `'tool-only'` (amended 2026-08-29, orchestrator ruling).** Acceptance criterion 1 wins this: with the flag off, room behaviour is byte-identical to before the feature, and a new field on every release frame is not byte-identical. It buys nothing there either — a text-mode turn that finishes has posted its words or written a notice, so the indicator already releases into something a reader can see. Criterion 15's forward-compat parse is unaffected, because it is about a frame that DOES carry the field.
 
 Rendered as the pill releasing into a brief, fading "finished — nothing to add", gone on reload. E16a is what makes this legal without counting as participation: a mechanical presence signal published while the harness holds a real claim _"is not a turn, not an acknowledgment, and never model-chosen."_ Past-tense, so unlike the held-promise it replaces, a restart forgetting it costs nothing.
 
@@ -425,7 +436,7 @@ _It does not split._ The DM half alone would leave the agent holding two contrad
 
 A reviewer can check each directly.
 
-1. Both flags off: room behaviour is byte-identical to today, and the `deliver` guard order is unchanged on that path.
+1. Both flags off: room behaviour is byte-identical to today, and the `deliver` guard order is unchanged on that path. **This includes the wire**: the `done` presence frame carries no `outcome` for a turn that did not run tool-only (D7, as amended).
 2. Flag on, claude-code, channel: a turn that calls `post_to_room` and also narrates produces **one** entry — the tool's text — and the release reports `'answered'`.
 3. The same turn narrating **without** calling the tool produces **no** entry.
 4. Flag on, agent mentioned by a person, turn produces nothing: exactly **one** `agent_declined`. Three mentions in one cascade still produce one.

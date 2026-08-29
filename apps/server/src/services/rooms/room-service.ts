@@ -299,6 +299,17 @@ export interface RoomServiceDeps {
    */
   maxAttachmentsPerEntry(): number;
   /**
+   * The live `rooms.maxPostsPerTurn` — how many messages one agent may post into
+   * a room inside a single turn (spec `tool-only-room-replies` §D9).
+   *
+   * Injected in the same style as {@link RoomServiceDeps.limitsFor}, so this
+   * domain still reads no config. Read PER POST rather than captured, because an
+   * operator who feels the number is wrong must be able to move it without
+   * restarting anything — posting is the agent's only voice once
+   * `rooms.toolOnlyReplies` is on.
+   */
+  maxPostsPerTurn(): number;
+  /**
    * Whether this author is the person who owns the install.
    *
    * Injected in the same style as {@link RoomServiceDeps.limitsFor}, so this
@@ -738,6 +749,7 @@ export class RoomService {
   private readonly limitsFor: RoomLimitsResolver;
   /** The live `uploads.maxFiles`. Read per post, so a change takes effect. */
   private readonly maxAttachmentsPerEntry: () => number;
+  private readonly maxPostsPerTurn: () => number;
   /** Whether an author is the install's owner. Read per check, never captured. */
   private readonly isOwnerAuthor: (authorId: string) => boolean;
   /** The record-based twin of {@link RoomService.isOwnerAuthor}. */
@@ -789,6 +801,7 @@ export class RoomService {
     this.broadcaster = deps.broadcaster;
     this.limitsFor = deps.limitsFor;
     this.maxAttachmentsPerEntry = deps.maxAttachmentsPerEntry;
+    this.maxPostsPerTurn = deps.maxPostsPerTurn;
     this.isOwnerAuthor = deps.isOwnerAuthor;
     this.isOwnerRecord = deps.isOwnerRecord;
     this.bridges = deps.bridges;
@@ -2822,10 +2835,23 @@ export class RoomService {
    *
    * What it adds:
    *
-   * - **Channels and threads only** (§2.6). In a DM the reply IS the message: the
-   *   agent was unambiguously addressed, answering is obligatory, and the turn's
-   *   own text already posts. A second way to say the same thing there would be a
-   *   second way for it to fail, and it would buy nothing.
+   * - **Channels and threads only WHILE THE TURN'S TEXT STILL POSTS** (§2.6, as
+   *   reversed by spec `tool-only-room-replies` §D3). In text mode the reply IS
+   *   the message in a DM: the agent was unambiguously addressed, answering is
+   *   obligatory, and the turn's own text already lands — so a second way to say
+   *   the same thing there would be a second way for it to fail, and would buy
+   *   nothing. Under a tool-only turn none of that is true any more: nothing the
+   *   turn writes is posted, so refusing here would leave the agent unable to
+   *   answer a direct message at all. The refusal is therefore conditioned on the
+   *   resolved reply mode rather than removed, and it is still spelled
+   *   `!== 'channel'` — `rooms.kind` is a text column narrowed by an unchecked
+   *   cast, and an unknown kind never gets more reach than a DM.
+   * - **A per-turn post ceiling** — `TOO_MANY_POSTS_THIS_TURN`,
+   *   `rooms.maxPostsPerTurn` (§D9). Under the flip, posting is the only voice an
+   *   agent has and nothing else bounds how often it uses it;
+   *   `.claude/rules/room-conduct.md` says a bound is a mechanism, never a
+   *   prompt. Asked AFTER the stop mark and BEFORE the write, so a refusal never
+   *   costs a claim mark and never spends a post.
    * - **A turn somebody STOPPED is refused** — `TURN_WAS_STOPPED`, DOR-1313. An
    *   interrupt is delivered rather than obeyed, so a stopped turn may still be
    *   running and reach for this; the room already throws away its narration and
@@ -2847,7 +2873,7 @@ export class RoomService {
    * answers has taken one turn against `maxTurnsPerAgentPerCascade`, not four
    * (DOR-1434). Being legible is not a thing this room charges for.
    *
-   * @param roomId - The channel to post into.
+   * @param roomId - The room to post into.
    * @param input.authorId - The agent posting, resolved from its identity by the
    *   capability — never read off the tool's arguments.
    * @param input.text - What to say.
@@ -2860,13 +2886,24 @@ export class RoomService {
     input: { authorId: string; text: string; replyTo?: string }
   ): PostedEntry {
     const room = this.requireVisibleRoom(roomId, input.authorId);
+    // The turn this post is being made from inside, when there is one. Read
+    // once, before every refusal below, because three separate things need it:
+    // the mode conditioning the DM refusal, the ceiling, and the answer/session
+    // pointers a tool post has never carried.
+    const turn = this.triggers.activeTurnHere(roomId, input.authorId);
     // `!== 'channel'`, never `=== 'dm'`: `rooms.kind` is a text column narrowed by
     // an unchecked cast, so an unrecognized kind takes the narrower branch
     // (`.claude/rules/room-conduct.md`).
-    if (room.kind !== 'channel') {
+    //
+    // **Conditioned on the reply mode since DOR-1613** (spec
+    // `tool-only-room-replies` §D3). In text mode the refusal is exactly as
+    // right as it was: the reply genuinely IS the message there. In a tool-only
+    // turn it is false — nothing the turn writes is posted — so keeping it would
+    // leave the agent structurally unable to answer a direct message.
+    if (turn?.replyMode !== 'tool-only' && room.kind !== 'channel') {
       throw new RoomError(
         'TOOL_POST_NOT_IN_DM',
-        'This is a direct message — your reply is posted for you, so there is nothing to post here.'
+        'This is a direct message and your reply is being posted for you, so there is nothing to post here. Just answer.'
       );
     }
     // **A stopped turn says nothing here either** (DOR-1313). The room already
@@ -2887,7 +2924,55 @@ export class RoomService {
         'This conversation was stopped, so nothing more from this turn is posted. Wait for the next message before answering here.'
       );
     }
-    const entry = this.post(roomId, input);
+    // **The per-turn ceiling** (spec `tool-only-room-replies` §D9). Read per call
+    // rather than captured, like every other live bound this service is handed,
+    // so moving the number in Settings takes effect on the very next post.
+    //
+    // Asked AFTER the stop mark, so a turn that was going to be refused anyway
+    // does not spend a post on the way out — the same ordering the reaction
+    // budget keeps — and BEFORE the write, so a refusal never leaves a claim
+    // marked as having spoken.
+    //
+    // `postsThisTurn` is `undefined` when this agent holds no claim here, and
+    // that is not zero: a post with no turn behind it is not part of one, so
+    // there is no per-turn ceiling to apply. It already costs a turn against the
+    // cascade budget on its own.
+    if (turn !== undefined) {
+      const ceiling = this.maxPostsPerTurn();
+      if (turn.postsThisTurn >= ceiling) {
+        logger.info('[rooms] refused a turn a further post', {
+          roomId,
+          authorId: input.authorId,
+          ceiling,
+        });
+        throw new RoomError(
+          'TOO_MANY_POSTS_THIS_TURN',
+          `You have already posted ${ceiling} ${ceiling === 1 ? 'message' : 'messages'} in this conversation during this turn, which is the limit. Consolidate the rest into one message next turn.`
+        );
+      }
+    }
+    const entry = this.post(roomId, {
+      ...input,
+      // **What a tool post has never carried, and now must** (spec
+      // `tool-only-room-replies` §D8). The turn-text path passes both; a tool
+      // post passed neither, so `sessionId` fell to `null` and the "answers
+      // this" pointer was simply absent. That was survivable while a deliberate
+      // post was rare. Under the flip it is EVERY agent reply in the product:
+      // the room would stop drawing the pointer, and no entry could be traced
+      // back to the session that wrote it.
+      //
+      // Both facts are in hand at write time — the live claim knows the entry it
+      // is answering, and the `(room, agent)` binding is the session that turn
+      // runs on — so they are filled from there rather than trusted from the
+      // caller. Only for a post made INSIDE a turn: a post with no claim behind
+      // it is answering nothing and belongs to no session here.
+      ...(turn !== undefined
+        ? {
+            answersEntryId: turn.entryId,
+            ...(turn.sessionId !== undefined ? { sessionId: turn.sessionId } : {}),
+          }
+        : {}),
+    });
     this.triggers.noteDeliberatePost(roomId, input.authorId);
     return entry;
   }
@@ -4459,6 +4544,17 @@ export class RoomService {
       new Date().toISOString(),
       on
     );
+    // **A reaction can BE the answer** (spec `tool-only-room-replies` §D10). Under
+    // `rooms.toolOnlyReplies` a turn that reacts and says nothing has still put
+    // something in front of the reader, so it releases as `'answered'` and earns
+    // no "read this and did not reply" line.
+    //
+    // Marked AFTER the write and only when a pill is now STANDING. Both halves
+    // matter: every refusal above throws, so nothing that put nothing in front of
+    // anybody can reach this line — and a retraction leaves the entry with
+    // nothing on it, which is not an answer to anything. A person's reaction
+    // marks nothing, because a claim belongs to an agent.
+    if (reacted) this.triggers.noteDeliberateReaction(roomId, viewerAuthorId);
     this.publishReactions(roomId, entryId);
     return { reacted, frequents: this.reactions.frequents(viewerAuthorId) };
   }

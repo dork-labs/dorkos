@@ -190,6 +190,29 @@ export function presenceRow(name: string, detail: string | null, state: Presence
 }
 
 /**
+ * What the lane says once a turn has released here with nothing durable to
+ * show.
+ *
+ * **Past tense, unlike every other sentence in this file.** Every other
+ * function here describes something still happening — a claim still open, a
+ * wait still running — and reads that way ("is working", "will pick this
+ * up"). By the time this line is drawn the claim is already gone: the pill
+ * has released, and the honest voice for a fact that already happened is a
+ * report, not a status.
+ *
+ * The words themselves are spec `tool-only-room-replies` §D7's own: *"the pill
+ * releasing into a brief, fading 'finished — nothing to add'"*. Not an
+ * apology and not a guess at why — E16a is what makes the choice to stay quiet
+ * legal in the first place, and the room does not owe a reason on top of the
+ * fact.
+ *
+ * @param name - The agent's display name.
+ */
+export function silentFinishSentence(name: string): string {
+  return `${name} finished — nothing to add`;
+}
+
+/**
  * How long something has been running, in the shortest true form.
  *
  * Seconds while it is quick, then minutes, then hours. No decimals and no

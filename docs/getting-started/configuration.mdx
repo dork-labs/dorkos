@@ -248,6 +248,18 @@ You do not have to edit the file for these. **Settings → Rooms** has the switc
       type: "'off' | 'routing'",
       default: "'routing'",
     },
+    'rooms.toolOnlyReplies': {
+      description:
+        'Whether your agents decide for themselves when to speak. Right now, whatever an agent writes during a room turn gets posted. With this on it chooses: answer, react with an emoji, or decide nothing needs saying and stay quiet — and its thinking stays in its own session. Ships off; turn it on in Settings under Experiments. An agent that never got the posting tool keeps posting its text, because going quiet by accident is the worse failure. Only you can change this.',
+      type: 'boolean',
+      default: 'false',
+    },
+    'rooms.maxPostsPerTurn': {
+      description:
+        'How many messages one agent may post into a room during a single turn. Three is room for "on it", the answer, and a correction; the fourth is refused and the agent is told to say it in one message. Nothing you write is ever counted. Only you can change this.',
+      type: 'integer (1--10)',
+      default: '3',
+    },
   }}
 />
 

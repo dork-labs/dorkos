@@ -83,12 +83,16 @@ import { tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
 import { CODEX_CAPABILITIES, CODEX_MODELS } from './runtime-constants.js';
 import { CODEX_UI_MCP_SERVER } from './codex-ui-mcp-server.js';
 import {
+  dorkosToolsPosture,
   resolveDorkosMcpInjection,
   type DorkosMcpInjection,
 } from '../shared/dorkos-mcp-injection.js';
 import { buildCodexOptions } from './codex-options.js';
 import { CODEX_DORKOS_TOOL_PREFIX, DORKOS_MCP_SERVER_NAME } from '../shared/dorkos-tool-names.js';
-import { buildRoomToolsBlock } from '../shared/room-tools-context.js';
+import {
+  buildRoomToolsBlock,
+  roomReplyModeForToolCapableSession,
+} from '../shared/room-tools-context.js';
 import { toCodexMcpServers, type CodexMcpServerRecord } from './mcp-server-config.js';
 import { buildCodexPrompt, projectThreadOptions } from './turn-input.js';
 import { enumerateCodexMcpServers } from './enumerate-mcp-servers.js';
@@ -640,7 +644,12 @@ export class CodexRuntime implements AgentRuntime {
     // nothing injected this is byte-identical to what a codex turn carried
     // before.
     const agentContext = dorkosTools
-      ? `${neutralContext}\n\n${buildRoomToolsBlock(CODEX_DORKOS_TOOL_PREFIX)}`
+      ? `${neutralContext}\n\n${buildRoomToolsBlock(
+          CODEX_DORKOS_TOOL_PREFIX,
+          // Per TURN here, unlike claude-code's cached prefix: codex builds this
+          // append on every turn anyway, so the mode is always current.
+          roomReplyModeForToolCapableSession()
+        )}`
       : neutralContext;
 
     const threadOptions = projectThreadOptions(settings, cwd);
@@ -969,6 +978,40 @@ export class CodexRuntime implements AgentRuntime {
   getMcpStatus(_cwd: string): McpServerEntry[] | null {
     this.maybeWarmMcpStatus();
     return this.mcpStatusCache;
+  }
+
+  /**
+   * Whether a turn in this directory would carry the DorkOS room tools (spec
+   * `tool-only-room-replies` §D2).
+   *
+   * **It asks the question the exact way the injection site asks it**, and the
+   * `meshCore` hop is the part that has to match rather than merely resemble.
+   * `sendMessage` gates on `meshAgent ? cwd : undefined`, so a directory that
+   * hosts no registered agent — an absent registry, or a `getByPath` miss —
+   * withholds the entry. Handing this a bare `cwd` string instead made the
+   * `'no-agent'` answer structurally unreachable from here: the posture said
+   * `wired: true` for a session the runtime was about to leave with no tools,
+   * the room read that as tool-capable, and the agent went MUTE — no post, no
+   * `<room_tools>` block, and nothing on the log saying why. Two readings of one
+   * gate is exactly the drift `dorkosToolsPosture` was extracted to prevent, and
+   * this caller had quietly reintroduced it.
+   *
+   * Two residuals remain, and both cost an ANSWER rather than a tidy room — so
+   * neither is comfortable, and both are named rather than smoothed over. A mint
+   * that fails withholds the entry and this cannot see it (see
+   * {@link dorkosToolsPosture}); and a user's own MCP server named `dorkos` is
+   * refused rather than shadowed, which `reservedNames` handles at build time
+   * and this reports as capable. In both, a room that suppressed the turn's text
+   * on the strength of this answer leaves the agent silent. They are rare and
+   * both are logged where they happen, which is the honest state of it rather
+   * than a claim that they are harmless.
+   *
+   * @param session.cwd - The session's working directory.
+   * @returns Whether the `dorkos` entry is configured for it.
+   */
+  async carriesRoomTools(session: { cwd: string }): Promise<boolean> {
+    return dorkosToolsPosture(this.meshCore?.getByPath(session.cwd) ? session.cwd : undefined)
+      .wired;
   }
 
   /**

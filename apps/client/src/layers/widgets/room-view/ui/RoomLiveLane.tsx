@@ -22,6 +22,7 @@ import {
   usePromoteHold,
   useRoomHolds,
   useRoomPresenceClaims,
+  useRoomSilentFinish,
   useRooms,
   useRoomSessions,
   type PresenceScope,
@@ -35,6 +36,7 @@ import {
   type LaneScope,
   type LaneHeldAuthor,
   type LanePresenceAuthor,
+  type LaneSilentFinish,
   type LivePeekRow,
 } from '@/layers/features/conversation';
 import { activitySentence } from '@/layers/shared/lib';
@@ -123,6 +125,7 @@ export function RoomLiveLane({
   const navigate = useNavigate();
   const claims = useRoomPresenceClaims(room.id, scope);
   const holds = useRoomHolds(room.id, scope);
+  const silentFinish = useRoomSilentFinish(room.id, scope);
   const [peekOpen, setPeekOpen] = useState(false);
   const sessions = useRoomSessions(room.id, { enabled: peekOpen });
   const halt = useHaltRoom();
@@ -242,6 +245,14 @@ export function RoomLiveLane({
     return asked;
   }, [holds, promoted]);
 
+  const laneSilentFinish = useMemo<LaneSilentFinish | null>(
+    () =>
+      silentFinish === null
+        ? null
+        : { authorId: silentFinish.authorId, name: nameOf(silentFinish.authorId) },
+    [silentFinish, nameOf]
+  );
+
   const state = useMemo(
     () =>
       deriveLaneState({
@@ -251,11 +262,12 @@ export function RoomLiveLane({
         stalled,
         presence,
         held,
+        silentFinish: laneSilentFinish,
         // A room has no turn of its own: `turnStatus` is off in its capability
         // table.
         turn: null,
       }),
-    [asks, askAgentNames, presence, held, stalled]
+    [asks, askAgentNames, presence, held, laneSilentFinish, stalled]
   );
 
   const sessionByAuthor = useMemo(() => {

@@ -1,9 +1,9 @@
 /**
  * The live lane's priority stack, rung by rung.
  *
- * Ten states share one line, and which one wins is the whole of what this file
- * pins. Three of the orderings are decisions with reasons attached — `ask` over
- * `stalled`, `stalled` over `presence`, and `turn-waiting` surviving beside
+ * Eleven states share one line, and which one wins is the whole of what this
+ * file pins. Three of the orderings are decisions with reasons attached — `ask`
+ * over `stalled`, `stalled` over `presence`, and `turn-waiting` surviving beside
  * `ask` — and each has a case here that fails if the order moves.
  *
  * Seeded defects, each run and each red before the fix:
@@ -20,6 +20,9 @@
  *   actually working outranks somebody about to" red.
  * - Reading `held[held.length - 1]!` instead of `held[0]!` turns "counts from
  *   the OLDEST wait" red.
+ * - Swapping rungs 4 and 5 (checking `silentFinish` before `held`) turns "a
+ *   message this conversation is still owed an answer to outranks a report
+ *   about a DIFFERENT turn that already released" red.
  */
 import { describe, it, expect } from 'vitest';
 import type { ConversationCapabilities } from '../capabilities';
@@ -31,6 +34,7 @@ import {
   type LaneAsk,
   type LaneHeldAuthor,
   type LanePresenceAuthor,
+  type LaneSilentFinish,
   type LaneStateInput,
   type LaneTurn,
 } from '../lane-state';
@@ -122,6 +126,11 @@ function waiting(name: string, minutesIn: number, behindTitle: string | null): L
     behind: { roomId: 'room-elsewhere', title: behindTitle },
     othersWaiting: false,
   };
+}
+
+/** A turn that just released here with nothing to show (D7). */
+function released(name: string): LaneSilentFinish {
+  return { authorId: name.toLowerCase(), name };
 }
 
 /** A session's turn, streaming unless told otherwise. */
@@ -566,6 +575,71 @@ describe('deriveLaneState — a message that has not started', () => {
     expect(deriveLaneState(input({ held: many }))).toMatchObject({
       sentence: "4 agents will pick this up when they're free",
     });
+  });
+});
+
+describe('deriveLaneState — a turn that released with nothing to show', () => {
+  it('says who, past tense, when a silent release is the only thing to report', () => {
+    // The exact words spec `tool-only-room-replies` §D7 asks for: the pill
+    // releasing into "finished — nothing to add".
+    const state = deriveLaneState(input({ silentFinish: released('Kai') }));
+
+    expect(state).toEqual({
+      kind: 'silent-finish',
+      sentence: 'Kai finished — nothing to add',
+      authorId: 'kai',
+    });
+  });
+
+  it('says nothing when the host reports no release — the regression that matters', () => {
+    // A server that predates `outcome`, a `CommunityAdapter` peer, or an
+    // outcome this rung has no opinion on (`answered`, or something a durable
+    // notice already covers) all arrive here the same way: absent. Absent
+    // must render exactly what an ordinary quiet conversation always has.
+    expect(deriveLaneState(input())).toEqual({ kind: 'empty' });
+    expect(deriveLaneState(input({ silentFinish: null }))).toEqual({ kind: 'empty' });
+  });
+
+  it('lets somebody actually working outrank a report about a turn that already released', () => {
+    // **Seeded defect:** check `silentFinish` ahead of `presence`, and a room
+    // where one agent is still mid-turn reports a DIFFERENT agent's past-tense
+    // release instead of hiding it behind the work still in front of the
+    // reader.
+    const state = deriveLaneState(
+      input({ presence: [claim('Kai', 2)], silentFinish: released('Ana') })
+    );
+
+    expect(state).toMatchObject({ kind: 'presence' });
+  });
+
+  it('lets a message this conversation is still owed an answer to outrank it', () => {
+    // **Seeded defect:** swap rungs 4 and 5 (checking `silentFinish` before
+    // `held`), and a room where somebody's message has not even started yet
+    // reports a past-tense footnote about a different agent instead — the
+    // live concern loses to the ephemeral one.
+    const state = deriveLaneState(
+      input({ held: [waiting('Mio Clicker PM', 5, null)], silentFinish: released('Ana') })
+    );
+
+    expect(state).toMatchObject({ kind: 'held' });
+  });
+
+  it('beats an empty lane, which is the case it exists for', () => {
+    // A working pill that simply vanished with nothing to show reads as a
+    // crash (D7) — this rung is what stops that, under `rooms.toolOnlyReplies`
+    // once presence and held have both gone quiet.
+    expect(deriveLaneState(input({ silentFinish: released('Kai') })).kind).toBe('silent-finish');
+  });
+
+  it('withholds it from a conversation that carries no presence at all', () => {
+    // Rides `capabilities.presence` for the same reason `held` does: it comes
+    // off the same store and the same stream, and a session — which has never
+    // had a room-style presence rung — has no `outcome` to read either.
+    const state = deriveLaneState(
+      input({ capabilities: SESSION_CAPABILITIES, silentFinish: released('Kai') })
+    );
+
+    expect(state).toEqual({ kind: 'empty' });
   });
 });
 
