@@ -2,15 +2,43 @@
 slug: channel-workspace
 id: 260726-162747
 created: 2026-07-26
-status: specified
+status: superseded
+superseded-by: 260827-202452
 ---
 
 # Channel workspaces — a room's shared working context, distributed by git, layered by harness sync
 
-**Status:** Draft
+**Status:** Superseded by [`specs/project-rooms/`](../project-rooms/02-specification.md)
+(id `260827-202452`, shipped 2026-08-29) — never implemented in this shape.
 **Author:** Claude (directed by Dorian)
 **Date:** 2026-07-26
 **Tracker:** unassigned (rooms track)
+
+## Supersession note (2026-08-29, DOR-1602)
+
+`project-rooms` replaced the **shape** of this spec and kept its **mechanics**.
+
+What changed: a room's repo is no longer a read-only conventions repo every member clones. It is a
+collaborative workspace the room owns — one integration tree the server writes, one standing
+worktree per participating agent, and work merged back through a serialized server-mediated merge.
+`AGENTS.md` as the room's front page became `ROOM.md` at the repo root. "Channel workspace" is
+retired as a term (ideation Decision 20), which also settles this spec's own Open Question 4 about
+the three-way collision on the word "channel".
+
+What carried over, largely verbatim: the tagged, provenance-labeled instruction block and its
+advisory precedence rules (§3.3 → `project-rooms` §3.3); the consent sidecar living **outside** the
+repo so a repo can never rewrite its own grant (§3.1 → §3.1); the exclusion of hooks and anything
+else that would execute at sync time (§3.6 → §3.11); operator-only enablement, for the same
+confused-deputy reason (§3.6 → §3.2); and the multi-machine extension path by git remote
+(§3.8 → resolved question 7).
+
+What is deferred rather than dropped: projecting a room's skills and commands into a room that has
+**no** repo — the namespaced `<roomSlug>__<name>` harness path this spec designed. A project room's
+repo is an ordinary project, so its harness discovers skills natively and needs none of that
+machinery; the projection path serves conventions-only rooms, which are P4 alongside linked repos
+(`project-rooms` §3.8).
+
+The text below is preserved unchanged as the record of the design it replaced.
 
 ## Overview
 

@@ -272,6 +272,61 @@ You do not have to edit the file for these. **Settings → Rooms** has the switc
   **Require login** to close the gap.
 </Callout>
 
+### Room files
+
+A room can own files that everyone in it works on together. See [Files a room
+owns](/docs/concepts/rooms#files-a-room-owns) for what that gets you. These settings decide whether
+rooms may have files at all, how long an untouched copy is kept, and how big things may get.
+
+Most people never change these. The defaults are sized for documents and small projects.
+
+<TypeTable
+  type={{
+    'rooms.repo.enabled': {
+      description:
+        'Whether rooms may have files of their own. Turn it off and every room behaves like a room without files: no new ones can be set up, and a room that already has some stops offering them. Nothing on disk is deleted, so turning it back on returns everything. Only you can change this.',
+      type: 'boolean',
+      default: 'true',
+    },
+    'rooms.repo.worktreeReapDays': {
+      description:
+        "How many days an agent's copy of a room's files may sit untouched before DorkOS tidies it away. A copy is only ever removed when it holds nothing the room hasn't already got. Anything unsaved, or saved but not yet merged, is left alone however long it sits there, and the room shows you who is holding it. Only you can change this.",
+      type: 'integer (1--365)',
+      default: '14',
+    },
+    'rooms.repo.maxFileBytes': {
+      description:
+        "The largest single file an agent may merge into a room. A merge carrying something bigger is refused whole and says which file it was. Big files belong in a message attachment, not in a room's files. Only you can change this.",
+      type: 'integer',
+      default: '5242880 (5 MB)',
+    },
+    'rooms.repo.maxRepoBytes': {
+      description:
+        "How large one room's files may grow in total. A merge that would push a room past this is refused. Only you can change this.",
+      type: 'integer',
+      default: '524288000 (500 MB)',
+    },
+    'rooms.repo.maxRoomMdBytes': {
+      description:
+        "How much of a room's ROOM.md may ride along on every agent's turn. Past this size the agents are told the file is too long to send, rather than being handed part of it. Only you can change this.",
+      type: 'integer',
+      default: '24576 (24 KB)',
+    },
+    'rooms.repo.mergeQueueWaitMs': {
+      description:
+        'How long a merge waits its turn before giving up. Merges into one room run one at a time, so two agents finishing together queue rather than collide.',
+      type: 'integer (1000--600000)',
+      default: '30000',
+    },
+  }}
+/>
+
+Two of the size limits behave differently from the rest. **The file and total-size limits are
+written down for each room when its files are first set up**, so a room keeps the limits it was
+made under, and raising or lowering them later never makes an existing room's files suddenly
+illegal. **The `ROOM.md` limit is read fresh every time**, so changing it takes effect on every
+room's next turn.
+
 ### Welcome back
 
 When you come back after a few hours away, the agents that got something done while you were gone can post a line about it in your team channel. The rule is news, not noise: an agent with nothing new to say says nothing, and only a few post at all.

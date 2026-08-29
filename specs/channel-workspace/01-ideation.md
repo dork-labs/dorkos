@@ -2,10 +2,15 @@
 slug: channel-workspace
 id: 260726-162747
 created: 2026-07-26
-status: ideation
+status: superseded
+superseded-by: 260827-202452
 ---
 
 # Ideation: Channel workspaces
+
+**Superseded 2026-08-29 by [`specs/project-rooms/`](../project-rooms/02-specification.md)**
+(id `260827-202452`). See the supersession note in this spec's `02-specification.md` for what
+carried over and what changed.
 
 - **Slug:** channel-workspace
 - **Date:** 2026-07-26

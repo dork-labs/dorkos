@@ -2,7 +2,7 @@
 slug: project-rooms
 id: 260827-202452
 created: 2026-08-27
-status: ideation
+status: implemented
 ---
 
 # Project Rooms — rooms with their own repo, files, and collaboration
