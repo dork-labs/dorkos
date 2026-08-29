@@ -2,16 +2,28 @@
 slug: agent-workspace-binding
 id: 260726-162520
 created: 2026-07-26
-status: specified
+status: implemented
 ---
 
 # Agent workspace binding — every agent knows where it works
 
-**Status:** Draft <!-- Draft | Under Review | Approved | Implemented -->
+**Status:** Implemented <!-- Draft | Under Review | Approved | Implemented -->
 **Author:** Claude (directed by Dorian)
 **Date:** 2026-07-26
-**Tracker:** unassigned
+**Tracker:** [DOR-1589](https://linear.app/dorkspace/issue/DOR-1589), [DOR-1590](https://linear.app/dorkspace/issue/DOR-1590)
 **Project:** Agents as First-Class Operators
+
+**Shipped 2026-08-28** as Phase 0 of the `project-rooms` programme, in the compressed phasing that
+spec's Implementation Phases section describes: the manifest field and the `owner` discriminator
+(DOR-1589), then `resolve-session-cwd.ts` and the re-pointing of the three cwd derivations
+(DOR-1590). `resolve-session-cwd.ts` declares a fourth rung, `room-worktree`, which `project-rooms`
+§3.5 wired ahead of the agent binding.
+
+**Code references in this document are anchored by file and symbol, not by line
+(corrected 2026-08-29, DOR-1602).** Both files originally cited `path.ts:NNN`, and every one of
+those numbers had drifted by the time the spec shipped — several onto unrelated code, two past the
+end of the file they named. Re-pinning them to today's lines would only re-arm the same trap, so
+the numbers are gone and the surrounding prose names the symbol instead.
 
 ## Overview
 
@@ -21,16 +33,16 @@ This spec does not build workspaces. `WorkspaceManager` shipped with DOR-84 and 
 
 ## Background / Problem Statement
 
-`AgentManifestSchema` (`packages/shared/src/mesh-schemas.ts:131-168`) has no working directory. `SessionOpts.cwd` is optional (`packages/shared/src/agent-runtime.ts:370`), and when absent every runtime falls through to one process-wide constant, `DEFAULT_CWD` (`apps/server/src/lib/resolve-root.ts:16`) — claude-code at `claude-code-runtime.ts:126`, codex at `codex-runtime.ts:211`, opencode at `opencode-runtime.ts:247`. **Every agent that does not name a directory works in the same folder as every other one.**
+`AgentManifestSchema` (`packages/shared/src/mesh-schemas.ts`) has no working directory. `SessionOpts.cwd` is optional (`packages/shared/src/agent-runtime.ts`), and when absent every runtime falls through to one process-wide constant, `DEFAULT_CWD` (`apps/server/src/lib/resolve-root.ts`) — claude-code at `claude-code-runtime.ts`, codex at `codex-runtime.ts`, opencode at `opencode-runtime.ts`. **Every agent that does not name a directory works in the same folder as every other one.**
 
 Measured (DOR-500): six concurrent agents in one tree produced pervasive fine-grained write interleaving; splitting them across two trees roughly doubled write survival.
 
 Four facts from the tree, verified at `5a84de271`, shape the design:
 
-1. **Agents already have a stable directory identity.** `agents.project_path` is `.notNull().unique()` (`packages/db/src/schema/mesh.ts:9`) — no two agents share a directory. It is absent from the manifest because `.dork/agent.json` is located _at_ that path.
-2. **Three surfaces already re-derive it, differently.** The task scheduler resolves an agent-linked task's cwd to `getProjectPath` (`task-scheduler-service.ts:336-347`); the relay binding router stamps `cwd: projectPath` onto the dispatch payload (`binding-router.ts:305`); the cockpit inverts the relation entirely and derives _the agent_ from _the selected directory_ (`use-current-agent.ts:14`), seeded from `GET /api/directory/default` when nothing is chosen (`use-default-cwd.ts:23-27`).
-3. **`session_metadata.agent_path` is written and read by nothing.** The column exists (`packages/db/src/schema/sessions.ts:18`), `persistSessionRuntime` writes it first-write-wins (`runtime-registry.ts:145-162`), and no code reads it. This spec is its first consumer.
-4. **`workspaceKey` has zero client callers.** `POST /api/sessions/:id/messages` accepts it and provisions on it (`sessions.ts:391-417`), but nothing in `apps/client/src` passes it. The whole WorkspaceManager subsystem is reachable only from `/api/workspaces` and the `/workspaces` page.
+1. **Agents already have a stable directory identity.** `agents.project_path` is `.notNull().unique()` (`packages/db/src/schema/mesh.ts`) — no two agents share a directory. It is absent from the manifest because `.dork/agent.json` is located _at_ that path.
+2. **Three surfaces already re-derive it, differently.** The task scheduler resolves an agent-linked task's cwd to `getProjectPath` (`task-scheduler-service.ts`); the relay binding router stamps `cwd: projectPath` onto the dispatch payload (`binding-router.ts`); the cockpit inverts the relation entirely and derives _the agent_ from _the selected directory_ (`use-current-agent.ts`), seeded from `GET /api/directory/default` when nothing is chosen (`use-default-cwd.ts`).
+3. **`session_metadata.agent_path` is written and read by nothing.** The column exists (`packages/db/src/schema/sessions.ts`), `persistSessionRuntime` writes it first-write-wins (`runtime-registry.ts`), and no code reads it. This spec is its first consumer.
+4. **`workspaceKey` has zero client callers.** `POST /api/sessions/:id/messages` accepts it and provisions on it (`sessions.ts`), but nothing in `apps/client/src` passes it. The whole WorkspaceManager subsystem is reachable only from `/api/workspaces` and the `/workspaces` page.
 
 ## Goals
 
@@ -44,7 +56,7 @@ Four facts from the tree, verified at `5a84de271`, shape the design:
 
 ## Non-Goals
 
-- **Making `cwd` mandatory.** Considered and rejected: it breaks external MCP callers that have no meaningful path (`session?.cwd ?? deps.defaultCwd`, `mcp-tools/index.ts:242`), test-mode and e2e sessions, and non-code agents. The defect is that the default is global, not that a default exists.
+- **Making `cwd` mandatory.** Considered and rejected: it breaks external MCP callers that have no meaningful path (`session?.cwd ?? deps.defaultCwd`, `mcp-tools/index.ts`), test-mode and e2e sessions, and non-code agents. The defect is that the default is global, not that a default exists.
 - **The resource lock / write-locking mechanism.** A separate concern and a lower priority once agents stop sharing a tree by default. It remains the honest answer for concurrent sessions of the _same_ agent, which this work does not address (see Open Questions).
 - **Channel workspaces.** A sibling spec, being written concurrently. Related, referenced, not designed here.
 - **New `WorkspaceProvider` implementations.** `container`/`remote` remain out of scope (ADR-0283 admits them).
@@ -95,18 +107,18 @@ owner: z
   .default(null),
 ```
 
-`ref` is the agent's **`agentPath`**, never its ULID. This follows DOR-446 exactly, for the reason its schema states: the `agents` table is a derived cache the reconciler is licensed to delete and rebuild, "re-registering every agent under a fresh ULID" (`packages/db/src/schema/agent-identity.ts:11-19`). `agentPath` is what survives a rebuild, and `agents.project_path` being `unique` makes it a legitimate key.
+`ref` is the agent's **`agentPath`**, never its ULID. This follows DOR-446 exactly, for the reason its schema states: the `agents` table is a derived cache the reconciler is licensed to delete and rebuild, "re-registering every agent under a fresh ULID" (`packages/db/src/schema/agent-identity.ts`). `agentPath` is what survives a rebuild, and `agents.project_path` being `unique` makes it a legitimate key.
 
 Two columns on the `workspaces` table (`owner_kind TEXT`, `owner_ref TEXT`), both nullable. `NULL` means unit-of-work — today's semantics — so existing rows and existing sidecar manifests need no backfill. The sidecar manifest stays the source of truth (ADR-0043 write ordering unchanged: manifest before DB, manifest deleted before row).
 
 Keying an agent workspace inside the existing `(projectKey, key)` uniqueness:
 
-- `projectKey` = `sanitizeWorkspaceKey(path.basename(source))` — unchanged from `sessions.ts:394`.
+- `projectKey` = `sanitizeWorkspaceKey(path.basename(source))` — unchanged from `sessions.ts`.
 - `key` = `agent-${sanitizeWorkspaceKey(manifest.name)}-${sha256(agentPath).slice(0, 8)}`.
 
 The name makes the directory legible on disk and in the `/workspaces` list; the path digest makes it stable and collision-free when two agents in different directories share a slug. The alternative — a reserved `projectKey` such as `"agents"` with a bare slug key — was rejected as stringly-typed reserved-prefix magic (a Hard No in `.claude/rules/conventions.md`) and because it would put every agent's checkout under one project key regardless of which repo it came from.
 
-**`sweep` exemption is structural.** `WorkspaceService.sweep()` today removes every non-pinned, non-dirty workspace (`workspace-service.ts:171-185`); it has no production caller and its `retentionCap` config is threaded in and never read (`workspace-service.ts:38`). Agent-owned rows are skipped with `reason: 'owned'` (a new `SweepResult.skipped` reason) rather than being protected by setting `pinned: true`, because a convention someone must remember is not a safety property. The unread `retentionCap` is a pre-existing gap noted here and left alone — fixing it is not this spec's job, but a sweep that silently ignores its own cap should not also be silently deleting agent homes.
+**`sweep` exemption is structural.** `WorkspaceService.sweep()` today removes every non-pinned, non-dirty workspace (`workspace-service.ts`); it has no production caller and its `retentionCap` config is threaded in and never read (`workspace-service.ts`). Agent-owned rows are skipped with `reason: 'owned'` (a new `SweepResult.skipped` reason) rather than being protected by setting `pinned: true`, because a convention someone must remember is not a safety property. The unread `retentionCap` is a pre-existing gap noted here and left alone — fixing it is not this spec's job, but a sweep that silently ignores its own cap should not also be silently deleting agent homes.
 
 ### 3.3 The resolver
 
@@ -151,7 +163,7 @@ The result is boundary-validated before use: `validateBoundaryOrDorkHome` for th
 
 **One spelling per directory.** The agent path is canonicalized (`fs.realpath`, falling back to `path.resolve` when the directory does not resolve) before it is digested into the workspace key and before it is stored as `owner.ref`. `/tmp/x`, `/private/tmp/x` and `/tmp/x/` are one folder; without this they would be three digests, giving one agent up to three checkouts and up to three ownership records of which at most one could ever match.
 
-**Call site.** `POST /api/sessions/:id/messages`, replacing the current `workspaceKey` block (`sessions.ts:391-417`). `workspaceKey` survives untouched and takes precedence over the agent binding when supplied — it is a per-turn unit-of-work override, a strictly more specific statement than a standing per-agent preference.
+**Call site.** `POST /api/sessions/:id/messages`, replacing the current `workspaceKey` block (`sessions.ts`). `workspaceKey` survives untouched and takes precedence over the agent binding when supplied — it is a per-turn unit-of-work override, a strictly more specific statement than a standing per-agent preference.
 
 **Observability.** Each turn logs one line naming the rung, the resolved cwd, and any `degraded` reason. Without it, "why is my agent writing there" is unanswerable, and a three-rung chain that cannot be interrogated is worse than the one-rung chain it replaces.
 
@@ -159,7 +171,7 @@ The result is boundary-validated before use: `validateBoundaryOrDorkHome` for th
 
 **The binding resolves exactly once per turn, at the session boundary, before the runtime is invoked. Nothing inside a turn may call `resolveSessionCwd`.**
 
-A claude-code subagent is an SDK sidechain running inside the parent's `query` and inherits the parent process's cwd by construction — nothing in the subagent path re-enters session creation (`transcript-parser.ts:47`, `message-event-mapper.ts:80-94` merely map its output). Codex and opencode behave the same way. So the invariant is currently true for free; the risk is that a future "resolve per tool call" convenience quietly breaks it.
+A claude-code subagent is an SDK sidechain running inside the parent's `query` and inherits the parent process's cwd by construction — nothing in the subagent path re-enters session creation (`transcript-parser.ts`, `message-event-mapper.ts` merely map its output). Codex and opencode behave the same way. So the invariant is currently true for free; the risk is that a future "resolve per tool call" convenience quietly breaks it.
 
 This is the distinction that makes the whole model coherent, and it should be readable as one sentence in the code comment: **a subagent is the same agent doing the same task, so it stays in the tree; a peer agent reached over Relay or Mesh is a different agent, so it gets its own session, its own `agentPath`, and its own binding.** Delegation down stays put; delegation across moves.
 
@@ -175,7 +187,7 @@ Protected by a regression test that spies on the resolver and asserts exactly on
 | Later turns               | Same workspace, reused. `lastUsedAt` bumped. A workspace outlives every session bound to it.                                                                                          |
 | Agent renamed             | `key` contains the name, so the derived key changes. The old row is **not** orphaned: lookup is by `owner.ref` (the path), which did not move; the stored `key` stays as provisioned. |
 | Agent directory moved     | `owner.ref` no longer matches any agent. The workspace becomes unowned and appears on `/workspaces` as an ordinary row. Same limitation as DOR-446 identity tokens.                   |
-| Agent unregistered        | `onUnregister` (`index.ts:1140`) clears `owner`. The checkout is **never** auto-deleted.                                                                                              |
+| Agent unregistered        | `onUnregister` (`apps/server/src/index.ts`) clears `owner`. The checkout is **never** auto-deleted.                                                                                   |
 | `sweep()`                 | Skips `owner.kind === 'agent'` with `reason: 'owned'`.                                                                                                                                |
 | Workspace deleted by user | Existing dirty-gated `DELETE /api/workspaces/:id`, unchanged. The binding stays `managed`; the next turn re-provisions.                                                               |
 
@@ -185,9 +197,9 @@ Never auto-deleting is not caution for its own sake — it is research finding 5
 
 Unchanged, in all three roles. It is not deprecated, and it is not merely a lazy fallback:
 
-1. **The directory browser's start point.** `GET /api/directory/default` returns it (`routes/directory.ts:88`). It stays agent-unaware — a deliberate non-change, written down because someone will otherwise "fix" it. Where the folder picker opens is a UI affordance about the machine, not a statement about where work happens.
-2. **Tied to the security boundary.** The CLI clamps `DORKOS_DEFAULT_CWD` to the boundary root, and the route returns the clamped value for the documented reason (`directory.ts:84`): the unclamped `process.cwd()` handed clients a directory that boundary-enforced routes then rejected with 403.
-3. **The MCP fallback for external callers with no meaningful path.** `session?.cwd ?? deps.defaultCwd` (`mcp-tools/index.ts:242`) is unchanged.
+1. **The directory browser's start point.** `GET /api/directory/default` returns it (`routes/directory.ts`). It stays agent-unaware — a deliberate non-change, written down because someone will otherwise "fix" it. Where the folder picker opens is a UI affordance about the machine, not a statement about where work happens.
+2. **Tied to the security boundary.** The CLI clamps `DORKOS_DEFAULT_CWD` to the boundary root, and the route returns the clamped value for the documented reason (`directory.ts`): the unclamped `process.cwd()` handed clients a directory that boundary-enforced routes then rejected with 403.
+3. **The MCP fallback for external callers with no meaningful path.** `session?.cwd ?? deps.defaultCwd` (`mcp-tools/index.ts`) is unchanged.
 
 The only thing that changes is its position: from "rung 1 for everything" to "rung 3 for callers who genuinely have no better answer", which is what it was always for.
 
@@ -198,13 +210,13 @@ The only thing that changes is its position: from "rung 1 for everything" to "ru
 
 **Ceiling.** With shipped defaults (`portBase` 4250, `portBlockSize` 10, ceiling 65535) the pool holds ≈6,128 blocks. Agent count is not the binding constraint; disk and git worktrees are. **Exhaustion** throws from `lowestFreeBlock`, `ensure` marks the workspace `failed`, and §3.3's degradation returns rung 3 with a warning — the turn runs.
 
-`ensure` continues to cut a `dork/<key>` branch and to upsert `DORKOS_PORT`/`VITE_PORT`/`SITE_PORT` into the checkout's `.env` (`port-env.ts:28`). Accepted unchanged: an agent-owned checkout of a source repo is the same kind of object as a unit-of-work checkout, and forking the code path to suppress a harmless file would be the more expensive of the two mistakes. Noted rather than hidden.
+`ensure` continues to cut a `dork/<key>` branch and to upsert `DORKOS_PORT`/`VITE_PORT`/`SITE_PORT` into the checkout's `.env` (`port-env.ts`). Accepted unchanged: an agent-owned checkout of a source repo is the same kind of object as a unit-of-work checkout, and forking the code path to suppress a harmless file would be the more expensive of the two mistakes. Noted rather than hidden.
 
 ### 3.8 Terminology
 
-`createAgentWorkspace` (`apps/server/src/services/core/agent-creator.ts:223`) already means "scaffold `.dork/agent.json`, SOUL.md, and NOPE.md into a directory" — its module doc opens "Agent workspace creation service". Shipping this spec without settling that leaves two meanings of "agent workspace" in one server, which is exactly the tolerated legacy AGENTS.md forbids.
+`createAgentWorkspace` (`apps/server/src/services/core/agent-creator.ts`) already means "scaffold `.dork/agent.json`, SOUL.md, and NOPE.md into a directory" — its module doc opens "Agent workspace creation service". Shipping this spec without settling that leaves two meanings of "agent workspace" in one server, which is exactly the tolerated legacy AGENTS.md forbids.
 
-Renamed to **`scaffoldAgentHome`**, with its module doc updated. Three call sites: `routes/agents.ts:196`, `index.ts:1477`, `marketplace/flows/install-agent.ts:121` (plus the `AgentCreatorDeps` type at `install-agent.ts:33`). Mechanical, and it is the difference between a codebase that gets cleaner and one that accretes homonyms.
+Renamed to **`scaffoldAgentHome`**, with its module doc updated. Three call sites: `routes/agents.ts`, `apps/server/src/index.ts`, `marketplace/flows/install-agent.ts` (plus the `AgentCreatorDeps` type at `install-agent.ts`). Mechanical, and it is the difference between a codebase that gets cleaner and one that accretes homonyms.
 
 ### 3.9 Code structure
 
@@ -269,14 +281,14 @@ Error and exit paths: a `managed` binding that cannot provision produces a visib
 
 ## Performance Considerations
 
-Rung 1 costs nothing — the common cockpit path returns before reading anything. Rung 2 costs one `session_metadata` primary-key lookup (only when the request omits `agentPath`) plus one `agent.json` read, both on the turn-trigger path, which already does a manifest read for runtime resolution (`resolveRuntimeTypeForNewSession`, `sessions.ts:319-354`) — the two should share one read rather than doing two. Rung 2 in `managed` mode costs an `ensure`, which is a cache hit after the first turn.
+Rung 1 costs nothing — the common cockpit path returns before reading anything. Rung 2 costs one `session_metadata` primary-key lookup (only when the request omits `agentPath`) plus one `agent.json` read, both on the turn-trigger path, which already does a manifest read for runtime resolution (`resolveRuntimeTypeForNewSession`, `sessions.ts`) — the two should share one read rather than doing two. Rung 2 in `managed` mode costs an `ensure`, which is a cache hit after the first turn.
 
 No new hot-path work for any caller that supplies a `cwd`, which is every interactive turn.
 
 ## Security Considerations
 
 - **Every resolved path is boundary-validated before it reaches a runtime**, on every rung. This is the invariant that makes storing the binding in `agent.json` acceptable: an agent that rewrites its own manifest still cannot resolve to a path outside `DORKOS_BOUNDARY`.
-- `validateBoundaryOrDorkHome` is used only for the agent-home rung, matching its documented agent-registry carve-out (`lib/boundary.ts:21-28`); it is not widened to any raw file surface.
+- `validateBoundaryOrDorkHome` is used only for the agent-home rung, matching its documented agent-registry carve-out (`lib/boundary.ts`); it is not widened to any raw file surface.
 - The binding is a **coordination** default, not a containment boundary, and the spec states that plainly so it is never mistaken for one. Containment is `DORKOS_BOUNDARY` plus the capability tier gate, both unchanged.
 - An agent-owned workspace is not a trust boundary either: an agent with a shell can still reach its peers' trees. What changes is that it no longer does so by accident.
 - No new credential, token, or config surface. Nothing is added to `UserConfigSchema`, so no `config-write-policy` classification is required.
@@ -322,6 +334,6 @@ No new hot-path work for any caller that supplies a `cwd`, which is every intera
 - `research/20260611_workspace_strategy_runtimes_symphony.md` — findings 2, 5, 6.
 - `specs/workspace-manager/02-specification.md` — the entity and safety invariants inherited here.
 - `specs/agent-approval-settings/01-ideation.md` §A — the `agent.json` rejection this spec deliberately diverges from.
-- `packages/db/src/schema/agent-identity.ts:11-30` — the DOR-446 keying precedent, stated in full.
+- `packages/db/src/schema/agent-identity.ts` — the DOR-446 keying precedent, stated in full.
 - `contributing/workspace-manager.md` — the shipped subsystem's key seams.
 - DOR-500 — the interleaving measurement.

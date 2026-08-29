@@ -955,7 +955,7 @@ A room's own files: a git repo under the DorkOS data directory, a standing worki
 
 The three byte caps are what a merge is refused against, whole and by name — `FILE_TOO_LARGE`, `REPO_CAP_EXCEEDED`, and for `ROOM.md` a one-line notice saying the file is too long rather than a silent truncation, because half a rule reads like a whole one. They are `resources`-stake operator-only for the confused-deputy reason: an agent raising the cap that would have refused its own merge is the widening, and DOR-1497's wipe floor says a bound a person tightened is not an agent's to slacken.
 
-The caps are also copied onto each room's `room-repo.json` when its repo is created, so a room keeps the bounds it was made under and a later config change cannot retroactively make an existing room's contents illegal. Config seeds them; the sidecar remembers them.
+**Two of the three caps freeze; one does not.** `maxFileBytes` and `maxRepoBytes` are copied onto each room's `room-repo.json` when its repo is created, so a room keeps the bounds it was made under and a later config change cannot retroactively make an existing room's contents illegal. Config seeds those two; the sidecar remembers them. `maxRoomMdBytes` is read **live** on every turn (`index.ts` wires `RoomConventions`'s `maxRoomMdBytes()` to `readRoomRepoConfig()`, not to the sidecar), because it bounds what a turn may carry rather than what a room may contain — a merge already landed under a frozen cap must not become unsendable, and lowering it has to take effect at the next turn rather than at the next room. Do not describe the caps as uniformly frozen; that was the wording here before DOR-1602 and it was wrong for one of the three.
 
 `worktreeReapDays` decides when clutter goes, never when work does. The sweep removes a working copy only when it is idle past the window AND clean — nothing uncommitted, nothing unmerged. A dirty or ahead copy is left alone however long it sits there and is surfaced as stranded work instead, including after the agent leaves the room.
 
@@ -968,7 +968,7 @@ dorkos config set rooms.repo.enabled false
 dorkos config set rooms.repo.worktreeReapDays 30
 ```
 
-These six leaves are now mirrored in `docs/getting-started/configuration.mdx`: the enable route (DOR-1592), the merge path (DOR-1598), and human file editing (DOR-1600/1601) all shipped after the P1 groundwork (DOR-1591) landed the schema, so a reader can now actually use the feature the table describes. `docs/concepts/rooms.mdx` covers the feature itself; a dedicated `contributing/room-repos.md` internals guide is not written yet — see that page's own coverage gap.
+All six are now mirrored in `docs/getting-started/configuration.mdx` § Room files (DOR-1602). The mirroring rule was knowingly suspended between DOR-1591 and that rewrite, because the schema fields landed with the P1 groundwork while nothing read them: publishing a settings table for a feature a reader could not use would have stated that it worked, which is the demo-claim gate (`meta/positioning-202607/09-gtm-plan.md` §2.0). The suspension is over and the rule holds again here. The mechanism behind these leaves is `contributing/room-repos.md`; the user-facing story is `docs/concepts/rooms.mdx` § Files a room owns.
 
 ### rooms.responseGate
 

@@ -242,6 +242,17 @@
       ]
     },
     {
+      "guide": "adding-a-memory-provider.md",
+      "description": "Memory backend authoring: MemoryProvider port (seam #5), three-way honest reads, five typed errors + MemoryPathError, memoryConformance, and the quarantine that keeps a fault off a turn",
+      "patterns": [
+        "memory-provider",
+        "packages/memory/",
+        "apps/server/src/services/memory/",
+        "memory-conformance",
+        "fake-memory-provider"
+      ]
+    },
+    {
       "guide": "adding-a-search-source.md",
       "description": "Message-search source authoring: the registry row, the pure projection contract, picking M1/M2/M3 by resumption primitive, opaque `origin_key`, the column rule, never traverse generically, port refusal",
       "patterns": [
@@ -297,6 +308,17 @@
       "guide": "sidebar-model.md",
       "description": "The sidebar's pure model: zone/section/row shape, the named rules and how they compose, reading a `reason`, adding a rule or a fixture, and the standing no-verbs-in-the-model rule",
       "patterns": ["features/dashboard-sidebar/model/", "entities/interactions/"]
+    },
+    {
+      "guide": "room-repos.md",
+      "description": "A room's own git repo: on-disk layout and file-first sidecar, the one-writer rule, turn cwd resolution, the merge contract and its refusals, human saves and dirty-main repair, `ROOM.md` delivery, the worktree reap, and the trust boundary",
+      "patterns": [
+        "apps/server/src/services/rooms/repo/",
+        "packages/shared/src/room-repo",
+        "packages/shared/src/room-files",
+        "apps/client/src/layers/features/file-explorer/",
+        "operating-skills/src/skills/working-in-room-repos"
+      ]
     }
   ],
   "externalDocs": [
@@ -355,13 +377,14 @@
     },
     {
       "doc": "docs/concepts/rooms.mdx",
-      "description": "Rooms concepts: channels and direct messages, vs. sessions",
+      "description": "Rooms concepts: channels and direct messages, vs. sessions; files a room owns",
       "patterns": [
         "apps/server/src/services/rooms/",
         "apps/server/src/routes/rooms",
         "apps/client/src/layers/entities/room",
         "apps/client/src/layers/widgets/room-view",
-        "apps/client/src/layers/features/dashboard-sidebar/ui/rooms"
+        "apps/client/src/layers/features/dashboard-sidebar/ui/rooms",
+        "apps/client/src/layers/features/file-explorer/"
       ]
     },
     {
