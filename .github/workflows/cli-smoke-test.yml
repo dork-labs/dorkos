@@ -18,10 +18,16 @@ on:
       - '.github/workflows/cli-smoke-test.yml'
   workflow_dispatch:
 
-# Cancel superseded runs on the same ref for PRs only — every push to main
-# keeps its own completed run.
+# Cancel superseded runs on the same ref for PRs only. For push events, group
+# by SHA instead of ref: GitHub only lets one run per group be *pending* at a
+# time, so several quick merges to main sharing a `cli-smoke-refs/heads/main`
+# group would cancel each other's queued runs and only the final push would
+# actually get checked — reproduced for typecheck.yml (DOR-517/#543), the same
+# shape this workflow shared until DOR-637. Per-SHA groups give every
+# push-to-main its own slot, and as a side effect also keep a workflow_dispatch
+# run from ever sharing a group with a push to the same ref.
 concurrency:
-  group: cli-smoke-${{ github.ref }}
+  group: cli-smoke-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Opt into Node 24 for every JavaScript-based action (checkout, setup-node,

@@ -72,11 +72,18 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
-# Cancel superseded runs on the same ref for PRs only — every push to main keeps
-# its own completed run. Matters more here than elsewhere: this job holds a
-# scarce macOS runner.
+# Cancel superseded runs on the same ref for PRs only. For push events, group
+# by SHA instead of ref: GitHub only lets one run per group be *pending* at a
+# time, so several quick merges to main sharing a `desktop-smoke-refs/heads/main`
+# group would cancel each other's queued runs and only the final push would
+# actually get checked — reproduced for typecheck.yml (DOR-517/#543), the same
+# shape this workflow shared until DOR-637. Matters more here than elsewhere:
+# this job holds a scarce macOS runner. Per-SHA groups give every push-to-main
+# its own slot, and as a side effect also keep this workflow's own
+# workflow_dispatch trigger from ever sharing a group — and so cancelling or
+# dropping — a push to the same ref.
 concurrency:
-  group: desktop-smoke-${{ github.ref }}
+  group: desktop-smoke-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
