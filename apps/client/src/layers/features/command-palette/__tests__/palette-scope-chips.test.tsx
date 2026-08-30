@@ -419,10 +419,17 @@ describe('two chips at once are rejected, by construction', () => {
     // session id for a conversation, the room id for a channel and the agent's
     // display name for an agent — so this says "no agent and no channel row"
     // in the one place those three are distinguishable.
+    //
+    // Wrapped in its own `waitFor` rather than read once: the row-text wait
+    // above only proves a session row arrived, not that the agent/channel rows
+    // it is replacing are gone yet — under load those can still be settling on
+    // a later render pass, which is exactly what made this flake (DOR-1502).
     const sessionIds = new Set(ALL_SESSIONS.map((session) => session.id));
-    const values = screen.getAllByRole('option').map((el) => el.getAttribute('data-value') ?? '');
-    expect(values.length).toBeGreaterThan(0);
-    expect(values.filter((value) => !sessionIds.has(value))).toEqual([]);
+    await waitFor(() => {
+      const values = screen.getAllByRole('option').map((el) => el.getAttribute('data-value') ?? '');
+      expect(values.length).toBeGreaterThan(0);
+      expect(values.filter((value) => !sessionIds.has(value))).toEqual([]);
+    });
 
     // The footer agrees, which is what the comment used to promise and never
     // checked: with nothing scopable highlighted, Tab is not offered.
