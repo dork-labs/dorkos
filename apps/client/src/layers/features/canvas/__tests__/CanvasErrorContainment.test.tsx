@@ -30,17 +30,6 @@ vi.mock('../ui/BlintzCanvas', () => ({
   BlintzCanvas: ({ value }: { value: string }) => <div data-testid="blintz-canvas">{value}</div>,
 }));
 
-function PassThrough({ children, ...rest }: Record<string, unknown>) {
-  return (
-    <div {...(rest as React.HTMLAttributes<HTMLDivElement>)}>{children as React.ReactNode}</div>
-  );
-}
-vi.mock('motion/react', () => ({
-  motion: new Proxy({} as Record<string, typeof PassThrough>, { get: () => PassThrough }),
-  useReducedMotion: () => true,
-  AnimatePresence: PassThrough,
-}));
-
 type MockContent =
   | { type: 'markdown'; content: string; title?: string }
   | { type: 'json'; data: unknown; title?: string };

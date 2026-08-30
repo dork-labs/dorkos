@@ -26,11 +26,6 @@ function PromptHost() {
   return <ProfilePromptCard prompt={prompt} />;
 }
 
-vi.mock('motion/react', () => ({
-  motion: { div: 'div' },
-  useReducedMotion: () => true,
-}));
-
 /** Config-shape fragments the card reads. */
 interface CardConfigOverrides {
   onboarding?: Partial<{

@@ -11,12 +11,6 @@ import { AdapterSetupWizard, unflattenConfig } from '../AdapterSetupWizard';
 import type { AdapterManifest, CatalogInstance } from '@dorkos/shared/relay-schemas';
 
 // Mock motion/react to render plain elements in tests
-vi.mock('motion/react', () => ({
-  motion: {
-    div: ({ children, ...props }: React.ComponentProps<'div'>) => <div {...props}>{children}</div>,
-  },
-  AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
 
 // Toasts are the wizard's only channel for a save's outcome, so the rollback
 // tests below read what it said rather than what happened to the DOM.

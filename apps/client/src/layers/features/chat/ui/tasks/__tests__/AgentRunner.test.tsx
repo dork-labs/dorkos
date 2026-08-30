@@ -11,16 +11,6 @@ import { TASK_COLORS } from '../../../model/use-background-tasks';
 
 // The bar animates with motion; the runner itself does not. Stripping motion
 // keeps the bar renderable in jsdom without touching the runner under test.
-vi.mock('motion/react', () => ({
-  motion: {
-    div: ({ children, ...props }: Record<string, unknown> & { children?: React.ReactNode }) => {
-      const { initial: _i, animate: _a, exit: _e, transition: _t, ...domProps } = props;
-      return <div {...domProps}>{children}</div>;
-    },
-  },
-  AnimatePresence: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
-  useReducedMotion: () => false,
-}));
 
 /** The celebration burst plays for 350ms before the runner settles into its mark. */
 const SETTLE_DELAY_MS = 350;

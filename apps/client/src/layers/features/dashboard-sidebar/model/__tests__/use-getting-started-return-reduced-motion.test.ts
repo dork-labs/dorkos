@@ -18,8 +18,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 
-vi.mock('motion/react', () => ({ useReducedMotion: () => true }));
-
 import {
   ZONE_LABEL,
   type SidebarModel,

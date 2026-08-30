@@ -46,13 +46,6 @@ vi.mock('../ui/BlintzCanvas', () => ({
   BlintzCanvas: ({ value }: { value: string }) => <div data-testid="blintz-canvas">{value}</div>,
 }));
 
-// Mock motion/react — render children without animation
-function PassThrough({ children, ...rest }: Record<string, unknown>) {
-  return (
-    <div {...(rest as React.HTMLAttributes<HTMLDivElement>)}>{children as React.ReactNode}</div>
-  );
-}
-
 // Mock Sheet components for mobile canvas
 vi.mock('@/layers/shared/ui', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
@@ -71,14 +64,6 @@ vi.mock('@/layers/shared/ui', async (importOriginal) => {
     SheetDescription: Passthrough,
   };
 });
-
-vi.mock('motion/react', () => ({
-  motion: new Proxy({} as Record<string, typeof PassThrough>, {
-    get: () => PassThrough,
-  }),
-  useReducedMotion: () => true,
-  AnimatePresence: PassThrough,
-}));
 
 let mockIsMobile = false;
 

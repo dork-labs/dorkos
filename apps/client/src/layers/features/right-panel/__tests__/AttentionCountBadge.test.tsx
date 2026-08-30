@@ -6,19 +6,6 @@ import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 
 // Strip motion props so the pill renders as a plain span in jsdom.
-vi.mock('motion/react', () => ({
-  motion: {
-    span: ({
-      children,
-      initial: _i,
-      animate: _a,
-      transition: _t,
-      ...rest
-    }: React.PropsWithChildren<Record<string, unknown>>) => (
-      <span {...(rest as React.HTMLAttributes<HTMLSpanElement>)}>{children}</span>
-    ),
-  },
-}));
 
 import { AttentionCountBadge } from '../ui/AttentionCountBadge';
 

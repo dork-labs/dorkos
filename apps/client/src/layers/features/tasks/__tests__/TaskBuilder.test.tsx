@@ -88,18 +88,6 @@ vi.mock('@/layers/shared/ui', () => ({
 }));
 
 // --- Mock motion/react to skip animations ---
-vi.mock('motion/react', () => ({
-  AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  motion: {
-    div: React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
-      ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>, ref) => (
-        <div ref={ref} {...props}>
-          {children}
-        </div>
-      )
-    ),
-  },
-}));
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {

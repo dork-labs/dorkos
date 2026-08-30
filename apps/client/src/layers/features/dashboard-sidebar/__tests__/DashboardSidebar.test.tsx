@@ -12,6 +12,7 @@ import {
   type ThreadSummary,
 } from '@dorkos/shared/room-schemas';
 import { toast } from 'sonner';
+import { setPrefersReducedMotion } from '@/test-setup';
 import { resolveAgentVisual } from '@/layers/shared/lib';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { useRoomOpenThreadStore } from '@/layers/entities/room';
@@ -249,19 +250,6 @@ function parkedSchedule(overrides: Partial<Task> & Pick<Task, 'id'>): Task {
     ...overrides,
   };
 }
-
-/**
- * Whether the operator asked for less motion.
- *
- * A `let` behind a mock rather than a redefined `matchMedia`: BC-50 turns on
- * this one answer, and driving it through the media query would make the case
- * depend on when motion happens to read it.
- */
-let mockReducedMotion = false;
-vi.mock('motion/react', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('motion/react')>()),
-  useReducedMotion: () => mockReducedMotion,
-}));
 
 const mockRooms = vi.fn<() => RoomSummary[]>(() => []);
 const mockThreads = vi.fn<() => ThreadSummary[]>(() => []);
@@ -698,7 +686,6 @@ describe('DashboardSidebar', () => {
     mockTasks.mockReset();
     mockTasks.mockReturnValue([]);
     mockTasksEnabled = false;
-    mockReducedMotion = false;
     useSessionListStore.getState().resetStatuses();
     mockRooms.mockReset();
     mockRooms.mockReturnValue([]);
@@ -1374,7 +1361,6 @@ describe('Heads up — the zone that justifies the redesign', () => {
     localStorage.clear();
     useInteractionStore.getState().reset();
     useSessionListStore.getState().resetStatuses();
-    mockReducedMotion = false;
     mockMeshPaths.mockReset();
     mockMeshPaths.mockReturnValue(['~/.dork/agents/dorkbot', '/projects/alpha', '/projects/beta']);
     mockResolvedAgents.mockReset();
@@ -1885,7 +1871,7 @@ describe('Heads up — the zone that justifies the redesign', () => {
 
     it('never renders under a reduced-motion preference', async () => {
       vi.useFakeTimers();
-      mockReducedMotion = true;
+      setPrefersReducedMotion(true);
       try {
         mockApprovals.mockReturnValue([pendingApproval()]);
         const view = renderWithProviders(<DashboardSidebar />);
@@ -1920,7 +1906,6 @@ describe('Getting started — Heads up’s first life stage (BC-4, BC-12 → BC-
     useInteractionStore.getState().reset();
     useSessionListStore.getState().resetStatuses();
     useDiscoveryStore.setState({ candidates: [] });
-    mockReducedMotion = false;
     // A day-one install: DorkBot and nothing else, no session ever.
     mockMeshPaths.mockReset();
     mockMeshPaths.mockReturnValue([DORKBOT]);
@@ -2143,7 +2128,6 @@ describe('Today — what you were doing, and it holds still', () => {
     localStorage.clear();
     useInteractionStore.getState().reset();
     useSessionListStore.getState().resetStatuses();
-    mockReducedMotion = false;
     mockMeshPaths.mockReset();
     mockMeshPaths.mockReturnValue(['~/.dork/agents/dorkbot', '/projects/alpha', '/projects/beta']);
     mockResolvedAgents.mockReset();
@@ -2357,7 +2341,7 @@ describe('Today — what you were doing, and it holds still', () => {
     });
 
     it('jumps instantly under a reduced-motion preference', () => {
-      mockReducedMotion = true;
+      setPrefersReducedMotion(true);
       seedThreeConversations();
       openRoute('ses-a');
       const view = mountSidebar();

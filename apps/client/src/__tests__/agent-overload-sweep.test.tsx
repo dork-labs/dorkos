@@ -42,11 +42,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import { mergeDialogSearch, TransportProvider } from '@/layers/shared/model';
 
-vi.mock('motion/react', () => ({
-  motion: { div: 'div' },
-  useReducedMotion: () => false,
-}));
-
 vi.mock('@/layers/shared/model', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/model')>();
   return {

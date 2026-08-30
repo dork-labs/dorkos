@@ -226,6 +226,39 @@ function createMotionComponent(Component: React.ElementType): React.FC<Record<st
   return makeMotionComponent(Component);
 }
 
+/**
+ * Backs {@link setPrefersReducedMotion}. A plain module-level object rather
+ * than a `let`: `vi.mock` factories are hoisted above every other statement in
+ * the file, so a factory below can only close over a binding that already
+ * exists by the time it runs — `vi.hoisted` is what guarantees that.
+ */
+const reducedMotionState = vi.hoisted(() => ({ current: false }));
+
+/**
+ * Make the mocked `useReducedMotion()` answer `true` for the rest of the
+ * current test, in whichever file calls it.
+ *
+ * Before this, testing a reduced-motion code path meant a per-file
+ * `vi.mock('motion/react', () => ({ useReducedMotion: () => true }))` — which
+ * REPLACES the module for that file rather than patching one hook, so `motion`
+ * itself came back `undefined` there. That was silently safe only because
+ * those files' reduced-motion branch never touched `motion.*`; the moment one
+ * did, the shadow would throw where the shared mock wouldn't. 41 such shadows,
+ * mostly missing `motion.create` rather than `motion` entirely, were the
+ * subject of DOR-1416 — this closes the `useReducedMotion` variant of the same
+ * hole by giving every file the one shared mock, toggled instead of replaced.
+ *
+ * Resets automatically after each test (see the `afterEach` below), so a test
+ * that wants it need only call this once, at the top.
+ */
+export function setPrefersReducedMotion(value: boolean): void {
+  reducedMotionState.current = value;
+}
+
+afterEach(() => {
+  reducedMotionState.current = false;
+});
+
 // Global mock for motion/react — renders plain HTML elements without animation props.
 // Eliminates the need to duplicate this mock in every component test file.
 vi.mock('motion/react', () => ({
@@ -239,7 +272,7 @@ vi.mock('motion/react', () => ({
   AnimatePresence: ({ children }: { children: React.ReactNode }) => children,
   LayoutGroup: ({ children }: { children: React.ReactNode }) => children,
   MotionConfig: ({ children }: { children: React.ReactNode }) => children,
-  useReducedMotion: () => false,
+  useReducedMotion: () => reducedMotionState.current,
   useAnimate: () => [{ current: document.createElement('div') }, vi.fn()],
   // Inert drag/animation controls: gesture and imperative-animation mechanics
   // are browser territory, not jsdom's.

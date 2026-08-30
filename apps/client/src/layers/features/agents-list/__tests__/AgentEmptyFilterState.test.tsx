@@ -11,13 +11,6 @@ import { AgentEmptyFilterState } from '../ui/AgentEmptyFilterState';
 // ---------------------------------------------------------------------------
 
 // Suppress motion animation in tests
-vi.mock('motion/react', () => ({
-  motion: {
-    div: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-      <div {...props}>{children}</div>
-    ),
-  },
-}));
 
 // ---------------------------------------------------------------------------
 // Tests
