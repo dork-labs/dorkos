@@ -4318,6 +4318,97 @@
           "isDirectory"
         ]
       },
+      "WorkbenchSignResponse": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unavailable": {
+            "type": "string",
+            "enum": [
+              "tunnel",
+              "no-port"
+            ]
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "WorkbenchSignRequest": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "serve"
+                ]
+              },
+              "cwd": {
+                "type": "string",
+                "minLength": 1
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "cwd"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "proxy"
+                ]
+              },
+              "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              }
+            },
+            "required": [
+              "kind",
+              "port"
+            ]
+          }
+        ]
+      },
+      "WorkbenchProbeResponse": {
+        "type": "object",
+        "properties": {
+          "listening": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "listening"
+        ]
+      },
+      "WorkbenchProbeRequest": {
+        "type": "object",
+        "properties": {
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          }
+        },
+        "required": [
+          "port"
+        ]
+      },
       "CommandRegistry": {
         "type": "object",
         "properties": {
@@ -12370,6 +12461,170 @@
                   "required": [
                     "path"
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/sign": {
+      "post": {
+        "tags": [
+          "Workbench"
+        ],
+        "summary": "Mint a signed URL for the embedded browser",
+        "description": "Mints what the embedded browser needs to load a target, gated by the app-wide session auth. A `serve` request gets a short-lived signed URL into `GET /api/workbench/serve/{token}/{splat}`, after its `cwd` is checked against the boundary. A `proxy` request opens (or reuses) a preview listener for that dev-server port and returns its bootstrap URL — a whole origin of its own, because a dev server served under a path prefix cannot resolve its own root-absolute assets.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkbenchSignRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Signed URL to load, or a null url with an honest reason",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbenchSignResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access denied: cwd outside directory boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/probe": {
+      "post": {
+        "tags": [
+          "Workbench"
+        ],
+        "summary": "Probe a loopback port before framing it",
+        "description": "Reports whether a loopback port has a server on it, so the embedded browser can explain a dead port instead of framing a blank preview. Gated by the app-wide session auth and loopback-pinned: the body carries a port and nothing else.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkbenchProbeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Whether something accepted a connection on that port",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbenchProbeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/serve/{token}/{splat}": {
+      "get": {
+        "tags": [
+          "Workbench"
+        ],
+        "summary": "Serve a local file signed by /sign",
+        "description": "Statically serves a local file from the signed token's `cwd` so relative assets resolve, with the remainder re-confined against `cwd` (a `..`/symlink escape is rejected). Authorized by the signed token, NOT cookie/header auth — the browser frame is opaque-origin and credential-less, so this path is exempted from the session gate. `{splat}` stands in for the whole remainder of the path (it may contain `/`); the bare `/api/workbench/serve/{token}` form (root → index.html) is registered the same way with no remainder.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "token",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The remainder path under `cwd`; may contain `/`."
+            },
+            "required": true,
+            "description": "The remainder path under `cwd`; may contain `/`.",
+            "name": "splat",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File contents, content-typed by extension"
+          },
+          "400": {
+            "description": "Invalid path (null byte, symlink loop, not a directory)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Token forged/malformed, wrong scope, or path escapes the boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "File not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
