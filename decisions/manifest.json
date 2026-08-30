@@ -1585,7 +1585,7 @@
       "created": "2026-04-11",
       "extractedFrom": "mesh-panel-consolidation",
       "specSlug": "mesh-panel-consolidation",
-      "lastVerified": "2026-08-06",
+      "lastVerified": "2026-08-30",
       "affects": ["apps/client/src/router.tsx", "apps/client/src/layers/widgets/team/**"]
     },
     {
@@ -1596,7 +1596,7 @@
       "created": "2026-04-11",
       "extractedFrom": "mesh-panel-consolidation",
       "specSlug": "mesh-panel-consolidation",
-      "lastVerified": "2026-08-06",
+      "lastVerified": "2026-08-30",
       "affects": ["apps/client/src/layers/widgets/team/**"]
     },
     {

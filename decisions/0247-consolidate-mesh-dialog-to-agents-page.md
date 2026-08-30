@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+(2026-08-30 audit) Amended: DOR-973 renamed the destination page from `/agents` to `/team` (`/agents` survives only as a redirect alias, kept for external links and the media-capture pipeline). The consolidation itself stands unchanged — Denied and Access still live as views on that one page (`DeniedView`/`AccessView` in `apps/client/src/layers/features/agents-list/`, rendered from `apps/client/src/layers/widgets/team/ui/TeamRoute.tsx`), there is still one surface instead of a dialog plus a page.
+
 ## Context
 
 The app has two overlapping surfaces for agent/mesh management: a MeshPanel dialog (4 tabs: Topology, Discovery, Denied, Access) opened from command palette, status cards, feature promos, and URL deep-links; and a dedicated `/agents` page with List and Topology views. They share the same TopologyGraph component and useTopology() hook but differ in additional functionality. This split-brain UX forces users to guess which surface has what capability, and the dialog — with 4 tabs, a topology graph, and a detail panel — has outgrown the modal pattern per NN/Group guidance and industry precedent (Linear, GitHub, Vercel).
