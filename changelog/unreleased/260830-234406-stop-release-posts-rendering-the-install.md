@@ -5,4 +5,4 @@ covers:
 
 ### Fixed
 
-- Stop release posts rendering the install block twice (DOR-649)
+- Release blog posts no longer show the install instructions twice near the bottom of the page (DOR-649)
