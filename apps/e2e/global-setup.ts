@@ -80,17 +80,58 @@ const CONFIG_READY_TIMEOUT_MS = 30_000;
 const CONFIG_RETRY_DELAY_MS = 500;
 
 /**
- * Read `/api/config`, waiting out a cold start rather than failing on it.
+ * Retry an `/api/*` call through a leg's Vite proxy, waiting out a cold start
+ * rather than failing on it.
  *
  * Playwright's `webServer.url` gate proves the Vite dev server's PORT is
  * answering, which is not the same as the API behind its proxy being up: on a
- * cold start the first `/api/*` request through that proxy can 500 or time out
- * while the server is still booting. It fired on two of three suite launches,
- * which is often enough to be a broken gate rather than a flake — and it took
- * the whole run with it, because this is global setup.
+ * cold start the first `/api/*` request through that proxy can 500, ETIMEDOUT,
+ * or otherwise fail while the server is still booting. It fired on two of
+ * three suite launches for the read below, which is often enough to be a
+ * broken gate rather than a flake — and it took the whole run with it,
+ * because this is global setup. The write in {@link dismissOnboarding} hit
+ * the identical cold-start race with no retry at all (DOR-1622): a single
+ * ETIMEDOUT through the proxy killed the run before any spec executed, even
+ * though the read just above it had already proven the leg was warming up
+ * fine. Both go through this one retrying attempt now, and the write is safe
+ * to repeat — its body is idempotent (see the comment on that call).
  *
- * Bounded, so a genuinely dead API still fails the run instead of hanging it,
+ * Bounded, so a genuinely dead leg still fails the run instead of hanging it,
  * and it reports the last thing it saw.
+ *
+ * @param attempt - Makes one request; called again on failure until it
+ *   succeeds or the deadline passes.
+ * @param describe - What the call is doing, for the timeout error's message.
+ * @param baseURL - The Vite dev server that proxies to the leg being checked.
+ * @returns The successful response.
+ */
+async function requestWhenReady(
+  attempt: () => Promise<APIResponse>,
+  describe: string,
+  baseURL: string
+): Promise<APIResponse> {
+  const deadline = Date.now() + CONFIG_READY_TIMEOUT_MS;
+  let lastSeen = '(no response)';
+  for (;;) {
+    try {
+      const response = await attempt();
+      if (response.ok()) return response;
+      lastSeen = String(response.status());
+    } catch (error) {
+      lastSeen = error instanceof Error ? error.message : String(error);
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `Could not ${describe} at ${baseURL} within ${CONFIG_READY_TIMEOUT_MS / 1000}s: ${lastSeen}`
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, CONFIG_RETRY_DELAY_MS));
+  }
+}
+
+/**
+ * Read `/api/config`, waiting out a cold start rather than failing on it. See
+ * {@link requestWhenReady}.
  *
  * @param context - A request context already bound to `baseURL`.
  * @param baseURL - The Vite dev server that proxies to the leg being checked.
@@ -100,23 +141,7 @@ async function readConfigWhenReady(
   context: Awaited<ReturnType<typeof request.newContext>>,
   baseURL: string
 ): Promise<APIResponse> {
-  const deadline = Date.now() + CONFIG_READY_TIMEOUT_MS;
-  let lastSeen = '(no response)';
-  for (;;) {
-    try {
-      const response = await context.get('/api/config');
-      if (response.ok()) return response;
-      lastSeen = String(response.status());
-    } catch (error) {
-      lastSeen = error instanceof Error ? error.message : String(error);
-    }
-    if (Date.now() >= deadline) {
-      throw new Error(
-        `Could not read config at ${baseURL} within ${CONFIG_READY_TIMEOUT_MS / 1000}s: ${lastSeen}`
-      );
-    }
-    await new Promise((resolve) => setTimeout(resolve, CONFIG_RETRY_DELAY_MS));
-  }
+  return requestWhenReady(() => context.get('/api/config'), 'read config', baseURL);
 }
 
 /**
@@ -177,43 +202,47 @@ async function dismissOnboarding(baseURL: string): Promise<void> {
     }
 
     const now = new Date().toISOString();
-    const res = await context.patch('/api/config', {
-      data: {
-        onboarding: { dismissedAt: onboarding?.dismissedAt ?? now },
-        profile: { rolePromptDismissedAt: profile?.rolePromptDismissedAt ?? now },
-        // Record a settled decision so the launch modal never renders. NOT
-        // `?? true` like the two above: `userHasDecided` defaults to an explicit
-        // `false` (unlike `dismissedAt`, which is absent until set), and
-        // `false ?? true` is `false` — which would write the unset value back
-        // and leave the modal to ambush the next spec. The write is
-        // idempotent: on a persistent home that already decided, this rewrites
-        // the same `true`, and the channels it does not name keep their values.
-        telemetry: { userHasDecided: true },
-        // The full-power consent door is the second launch modal on the moments
-        // rail (spec `full-power-defaults` D3), eligible whenever onboarding is
-        // settled and `ui.fullPowerDecidedAt` is still null — which is EXACTLY
-        // this suite's steady state, so without this every spec is ambushed by
-        // it the way telemetry once ambushed them. Settle a real "supervised"
-        // decision: it records that the question was answered WITHOUT flipping
-        // any consent-gated value (no autonomy stop, no standing grants, no open
-        // mesh), so the suite runs at the same safe defaults it always has. The
-        // opt-in `full-power-door.spec.ts` re-opens the door on its own serial
-        // run; nothing else should see it.
-        ui: {
-          fullPowerDecidedAt: ui?.fullPowerDecidedAt ?? now,
-          // `?? 'supervised'` for the same reason the timestamp uses `?? now`: a
-          // persistent home that already chose 'full' keeps it rather than being
-          // quietly demoted. (Theoretical for a throwaway e2e home, but the two
-          // fields settle together, so they defer together.)
-          fullPowerChoice: ui?.fullPowerChoice ?? 'supervised',
-        },
-      },
-    });
-    if (!res.ok()) {
-      throw new Error(
-        `Could not dismiss first-run prompts at ${baseURL}: ${res.status()} ${await res.text()}`
-      );
-    }
+    // Retried the same way the read above is: the write hits the identical
+    // cold-start proxy race, and its body is fully idempotent — every field
+    // is either a fixed value or a `?? now`/`?? current-value` fallback
+    // computed once above, so repeating it changes nothing (DOR-1622).
+    await requestWhenReady(
+      () =>
+        context.patch('/api/config', {
+          data: {
+            onboarding: { dismissedAt: onboarding?.dismissedAt ?? now },
+            profile: { rolePromptDismissedAt: profile?.rolePromptDismissedAt ?? now },
+            // Record a settled decision so the launch modal never renders. NOT
+            // `?? true` like the two above: `userHasDecided` defaults to an explicit
+            // `false` (unlike `dismissedAt`, which is absent until set), and
+            // `false ?? true` is `false` — which would write the unset value back
+            // and leave the modal to ambush the next spec. The write is
+            // idempotent: on a persistent home that already decided, this rewrites
+            // the same `true`, and the channels it does not name keep their values.
+            telemetry: { userHasDecided: true },
+            // The full-power consent door is the second launch modal on the moments
+            // rail (spec `full-power-defaults` D3), eligible whenever onboarding is
+            // settled and `ui.fullPowerDecidedAt` is still null — which is EXACTLY
+            // this suite's steady state, so without this every spec is ambushed by
+            // it the way telemetry once ambushed them. Settle a real "supervised"
+            // decision: it records that the question was answered WITHOUT flipping
+            // any consent-gated value (no autonomy stop, no standing grants, no open
+            // mesh), so the suite runs at the same safe defaults it always has. The
+            // opt-in `full-power-door.spec.ts` re-opens the door on its own serial
+            // run; nothing else should see it.
+            ui: {
+              fullPowerDecidedAt: ui?.fullPowerDecidedAt ?? now,
+              // `?? 'supervised'` for the same reason the timestamp uses `?? now`: a
+              // persistent home that already chose 'full' keeps it rather than being
+              // quietly demoted. (Theoretical for a throwaway e2e home, but the two
+              // fields settle together, so they defer together.)
+              fullPowerChoice: ui?.fullPowerChoice ?? 'supervised',
+            },
+          },
+        }),
+      'dismiss first-run prompts',
+      baseURL
+    );
   } finally {
     await context.dispose();
   }
