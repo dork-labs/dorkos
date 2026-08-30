@@ -5,4 +5,4 @@ covers:
 
 ### Fixed
 
-- Cancel ask-receipt settle timers on forget/clear (DOR-1633)
+- Fixed a rare bug where re-answering a request an agent had already rejected could make its confirmation card disappear too soon (DOR-1633)
