@@ -86,16 +86,9 @@ test.describe('marketplace browse', () => {
     await expect(page).toHaveURL(new RegExp(`/marketplace/${slug}$`), {
       timeout: FIRST_LOAD_TIMEOUT,
     });
-    // Scoped to the page's own <header>: a README that starts with the
-    // package's name as a markdown h1 (most do) renders a SECOND identical
-    // <h1> through streamdown, and the unscoped locator strict-fails on it.
-    // The banner is also a <header> but carries no such heading, so this
-    // resolves to exactly the title.
-    await expect(page.locator('header').getByRole('heading', { name: slug, level: 1 })).toBeVisible(
-      {
-        timeout: FIRST_LOAD_TIMEOUT,
-      }
-    );
+    await expect(page.getByRole('heading', { name: slug, level: 1 })).toBeVisible({
+      timeout: FIRST_LOAD_TIMEOUT,
+    });
     // .first(): most READMEs quote their own install command, and an unscoped
     // getByText strict-fails the day the first-ranked package's does. Note the
     // README renders BEFORE the canonical install block ([slug]/page.tsx), so

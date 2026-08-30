@@ -13,6 +13,7 @@
  * @module features/marketplace/ui/StreamdownMarkdown
  */
 
+import type { Components } from 'streamdown';
 import { Streamdown } from 'streamdown';
 import 'streamdown/styles.css';
 
@@ -22,10 +23,26 @@ interface StreamdownMarkdownProps {
 }
 
 /**
+ * Demote every rendered heading one level (h1→h2, h2→h3, h3→h4). A README's
+ * leading `# <name>` would otherwise render as a real `<h1>` competing with
+ * the page's own title heading — see `PackageReadme`, the only current
+ * caller, which sits below a page that renders its own `<h1>`.
+ */
+const headingDemotedComponents: Components = {
+  h1: 'h2',
+  h2: 'h3',
+  h3: 'h4',
+};
+
+/**
  * Render a raw markdown string with the workspace's standard streamdown
  * pipeline. Uses the GitHub light/dark Shiki themes to match the rest of
  * the docs surface.
  */
 export function StreamdownMarkdown({ content }: StreamdownMarkdownProps) {
-  return <Streamdown shikiTheme={['github-light', 'github-dark']}>{content}</Streamdown>;
+  return (
+    <Streamdown shikiTheme={['github-light', 'github-dark']} components={headingDemotedComponents}>
+      {content}
+    </Streamdown>
+  );
 }
