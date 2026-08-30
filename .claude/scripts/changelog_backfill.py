@@ -163,6 +163,17 @@ SLUG_MAX_LEN = 40
 # Frontmatter field a fragment uses to declare which commits it covers.
 COVERS_FIELD = "covers"
 
+# The six Keep a Changelog (https://keepachangelog.com/en/1.0.0/) categories the
+# release compiler iterates over (release.md step 6.4). A heading outside this
+# set is invisible to that step: its bullets are silently discarded rather than
+# compiled into CHANGELOG.md at release, with nothing failing along the way
+# (DOR-1635, third sighting of the same trap in one program).
+VALID_CATEGORIES = {"Added", "Changed", "Deprecated", "Removed", "Fixed", "Security"}
+
+# A fragment's category heading, e.g. `### Added`. Captures the heading text so
+# it can be checked against `VALID_CATEGORIES`.
+HEADING_RE = re.compile(r"^###\s+(.+?)\s*$")
+
 # Shapes a `covers:` item can take. Anything matching neither is a commit
 # subject line — a conventional-commit subject always contains ": ", so it can
 # never be mistaken for a bare SHA or a "#123" pull-request reference.
@@ -415,6 +426,15 @@ def find_fragment_problems(body: list[str]) -> list[str]:
                 f"`{COVERS_FIELD}:` appears in the body, not in a frontmatter block. "
                 "The declaration must sit between a `---` line at the very top of "
                 "the file and a closing `---` line."
+            )
+            continue
+        heading = HEADING_RE.match(line)
+        if heading and heading.group(1) not in VALID_CATEGORIES:
+            problems.append(
+                f"`### {heading.group(1)}` is not a Keep a Changelog category. The "
+                f"release compiler only merges {', '.join(sorted(VALID_CATEGORIES))} "
+                "headings, so bullets under any other heading are silently dropped "
+                "at release rather than failing anything."
             )
             continue
         if not line.startswith("- "):

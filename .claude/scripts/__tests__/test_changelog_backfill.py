@@ -440,6 +440,20 @@ class TestMalformedFragments(GateTestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("stranded in", result.stderr)
 
+    def test_an_invalid_heading_fails_the_gate(self):
+        """DOR-1635: `### Docs` is not a real category. Third sighting of this
+        exact mistake in one program; the gate must catch it, not a careful
+        reader at release time.
+        """
+        self.repo.commit(self.FIRST, touch="apps/server/src/a.ts")
+        self.repo.fragment(
+            "260725-000055-tiers.md",
+            "### Docs\n\n- Tiers gate what agents may do\n",
+        )
+        result = self.repo.check()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("not a Keep a Changelog category", result.stderr)
+
     def test_a_malformed_fragment_fails_even_when_nothing_is_uncovered(self):
         """Nothing to cover, but the wildcard is still on disk. Fail anyway."""
         self.repo.commit("chore: nothing user-facing here")
@@ -972,6 +986,36 @@ class TestParserUnits(unittest.TestCase):
             '- "Style: compact"',
         ]
         self.assertEqual(self.mod.find_fragment_problems(body), [])
+
+    def test_an_invalid_category_heading_is_flagged(self):
+        """DOR-1635: a heading outside the six Keep a Changelog categories is
+        invisible to the release compiler, so its bullets are silently dropped
+        rather than shipped. `### Improved` and `### Docs` are both real
+        sightings of this mistake.
+        """
+        for heading in ("Improved", "Docs", "Security Fixes", "added"):
+            with self.subTest(heading=heading):
+                problems = self.mod.find_fragment_problems(
+                    [f"### {heading}", "", "- Something happened"]
+                )
+                self.assertEqual(len(problems), 1, problems)
+                self.assertIn(f"### {heading}", problems[0])
+                self.assertIn("not a Keep a Changelog category", problems[0])
+
+    def test_every_real_category_heading_passes(self):
+        for heading in (
+            "Added",
+            "Changed",
+            "Deprecated",
+            "Removed",
+            "Fixed",
+            "Security",
+        ):
+            with self.subTest(heading=heading):
+                problems = self.mod.find_fragment_problems(
+                    [f"### {heading}", "", "- Something happened"]
+                )
+                self.assertEqual(problems, [])
 
     def test_a_real_claim_line_is_still_caught_in_the_body(self):
         """The narrowings above must not blunt the detector itself."""
