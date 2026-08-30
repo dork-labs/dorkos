@@ -420,15 +420,15 @@ describe('two chips at once are rejected, by construction', () => {
     // display name for an agent — so this says "no agent and no channel row"
     // in the one place those three are distinguishable.
     //
-    // Wrapped in its own `waitFor` rather than read once: the row-text wait
-    // above only proves a session row arrived, not that the agent/channel rows
-    // it is replacing are gone yet — under load those can still be settling on
-    // a later render pass, which is exactly what made this flake (DOR-1502).
-    const sessionIds = new Set(ALL_SESSIONS.map((session) => session.id));
+    // Wrapped in its own `waitFor` rather than read once: this flaked under CI
+    // load (DOR-1502), and the row-text wait above only proves a session row
+    // has arrived, not that the list is done changing — an agent/channel row
+    // could still be on screen at that instant. Asserting the exact set the
+    // Orbit scope admits, not just "nothing foreign", so a regression that
+    // drops a real row is caught here too.
     await waitFor(() => {
       const values = screen.getAllByRole('option').map((el) => el.getAttribute('data-value') ?? '');
-      expect(values.length).toBeGreaterThan(0);
-      expect(values.filter((value) => !sessionIds.has(value))).toEqual([]);
+      expect(new Set(values)).toEqual(new Set([orbitOne.id, orbitTwo.id]));
     });
 
     // The footer agrees, which is what the comment used to promise and never
