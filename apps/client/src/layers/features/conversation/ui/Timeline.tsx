@@ -473,6 +473,17 @@ export function ConversationTimeline({
     [capabilities.threads, onOpenThread]
   );
 
+  // How many `message` rows the component currently knows about — independent
+  // of virtualization (only rows on screen are ever drawn) and of the
+  // scroller's measured/estimated height (which day dividers, notices, and an
+  // unmeasured row's 80px estimate can all inflate). Test-only surface: e2e's
+  // `waitForHistory` (`apps/e2e/pages/RoomsPage.ts`) polls this to know the
+  // whole history has landed, rather than inferring it from geometry.
+  const messageRowCount = useMemo(
+    () => rows.reduce((count, row) => count + (row.kind === 'message' ? 1 : 0), 0),
+    [rows]
+  );
+
   if (loading != null) return <>{loading}</>;
   if (empty !== undefined && rows.length === 0 && pendingRows.length === 0) return <>{empty}</>;
 
@@ -481,6 +492,7 @@ export function ConversationTimeline({
       data-slot="conversation-timeline"
       data-testid={testId}
       data-landed-on={landedOn ?? undefined}
+      data-message-row-count={messageRowCount}
       className={cn('relative min-h-0 flex-1', className)}
     >
       <div

@@ -750,24 +750,33 @@ export class RoomsPage {
    * a count assertion over the seeded total is a claim the design has made
    * impossible rather than a regression.
    *
-   * What the list still publishes is its SIZE: the virtualizer gives the
-   * scroller a height for every row it knows about, whether or not that row is
-   * drawn. So "the history has landed" is "the scroller has been sized for all
-   * of them", which is the same barrier the count was being used as — and it
-   * still fails loudly on a room that rendered nothing.
+   * A first cut inferred "landed" from the scroller's measured `scrollHeight`
+   * against `total * 24` (the shortest a row is ever laid out at). That bar was
+   * satisfied by the ESTIMATE, not the count: an unmeasured row lays out at the
+   * virtualizer's 80px `estimateSize`, so for 40 rows the threshold (960px)
+   * cleared once only 12 rows were known about — the gate could not mean what
+   * its docstring claimed (DOR-1377).
+   *
+   * `Conversation.Timeline` now publishes the real count directly:
+   * `data-message-row-count` on the timeline's own wrapper is how many
+   * `message`-kind rows the component currently knows about, independent of
+   * both virtualization and geometry. This polls that.
    *
    * @param total - How many entries were seeded.
    * @param timeout - How long to wait for them.
    */
   async waitForHistory(total: number, timeout: number): Promise<void> {
-    // The shortest a message row is ever laid out at — a one-line continuation
-    // with no author line. Anything at or above `total` of these means the list
-    // has been told about every entry.
-    const MIN_ROW_PX = 24;
     await expect(this.entries.first()).toBeVisible({ timeout });
     await expect
-      .poll(() => this.scroller.evaluate((el) => el.scrollHeight), { timeout })
-      .toBeGreaterThanOrEqual(total * MIN_ROW_PX);
+      .poll(
+        () =>
+          this.scroller
+            .locator('xpath=..')
+            .getAttribute('data-message-row-count')
+            .then((value) => Number(value)),
+        { timeout }
+      )
+      .toBeGreaterThanOrEqual(total);
   }
 
   /**
