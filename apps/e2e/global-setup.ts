@@ -102,7 +102,8 @@ const CONFIG_RETRY_DELAY_MS = 500;
  * @param attempt - Makes one request; called again on failure until it
  *   succeeds or the deadline passes.
  * @param describe - What the call is doing, for the timeout error's message.
- * @param baseURL - The Vite dev server that proxies to the leg being checked.
+ * @param baseURL - The leg being checked, named only in the timeout error —
+ *   the request itself goes through whatever `attempt` already targets.
  * @returns The successful response.
  */
 async function requestWhenReady(
@@ -116,7 +117,11 @@ async function requestWhenReady(
     try {
       const response = await attempt();
       if (response.ok()) return response;
-      lastSeen = String(response.status());
+      // The body, not just the status: a non-2xx here can also be a real
+      // schema break rather than a cold-start hiccup, and the status alone
+      // ("400") gives a reviewer nothing to act on when this does end up in
+      // the timeout error below.
+      lastSeen = `${response.status()} ${await response.text().catch(() => '')}`;
     } catch (error) {
       lastSeen = error instanceof Error ? error.message : String(error);
     }
