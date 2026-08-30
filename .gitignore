@@ -98,3 +98,4 @@ mockups/running-figure-v3.html
 # Transient install-transaction target backups (ADR-0304): reaped on success,
 # left on disk only after a hard crash mid-activate.
 *.dorkos-bak-*
+vitest-shard-report.json

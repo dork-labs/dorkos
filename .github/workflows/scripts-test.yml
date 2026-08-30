@@ -185,6 +185,14 @@ jobs:
       - name: Test-execution assertion fixtures
         run: bash scripts/test-assert-tests-executed.sh
 
+      # assert-shard-union.sh is the other half of the same gate: it restores
+      # the zero-collected-files net that --passWithNoTests removes from the
+      # sharded merge-queue sweep. A union check that stops discriminating
+      # lets a package's entire suite vanish from the queue gate silently, so
+      # its verdicts are pinned the same hermetic way.
+      - name: Shard-union assertion fixtures
+        run: bash scripts/test-assert-shard-union.sh
+
       # The same argument one runner over: assert-browser-tests-executed.sh is
       # what stops the `browser-test` workflow certifying a run that collected
       # nothing. Playwright exits 0 when a testIgnore glob quietly drops a spec
