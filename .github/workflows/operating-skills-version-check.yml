@@ -171,10 +171,32 @@ jobs:
       # two that read the version out of the same file. It exits 2 rather than
       # guessing if a ref will not resolve, which under the runner's default
       # `bash -e` fails this step loudly instead of scoping the whole job away.
+      #
+      # MISSING-SCRIPT FALLBACK (DOR-835). On `pull_request`, GitHub reads this
+      # YAML from a synthetic merge of base into head, so it always reflects the
+      # latest version of this file — but the `actions/checkout` step above
+      # deliberately pins the WORKING TREE to the PR head, so a branch cut before
+      # `scripts/seeded-pack-changed.sh` existed checks out a tree that lacks it.
+      # Calling it unconditionally then exits 127 for a reason that has nothing
+      # to do with the PR (observed live on PR #607 and #609). The fallback
+      # cannot live in a separate repo script: that script would have exactly
+      # the same staleness problem on exactly the branches this exists to fix,
+      # so the resolution has to be inline bash here. Deliberately still runs
+      # the HEAD's own copy when one exists — see the workflow header for why
+      # that self-modification tradeoff is accepted rather than closed.
       - name: Decide whether the seeded pack content changed
         id: scope
         run: |
-          verdict="$(./scripts/seeded-pack-changed.sh "${{ steps.base.outputs.fork_point }}")"
+          script=./scripts/seeded-pack-changed.sh
+          if [ ! -f "$script" ]; then
+            base_tip="${{ steps.base.outputs.base_tip }}"
+            echo "::notice::$script is absent at this ref (branch cut before it existed) — falling back to the base branch tip's copy ($base_tip)."
+            script="$(mktemp)"
+            git show "$base_tip:scripts/seeded-pack-changed.sh" > "$script" ||
+              { echo "::error::scripts/seeded-pack-changed.sh is missing from both this ref and the base branch tip ($base_tip)."; exit 1; }
+            chmod +x "$script"
+          fi
+          verdict="$("$script" "${{ steps.base.outputs.fork_point }}")"
           if [ "$verdict" = "changed" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
