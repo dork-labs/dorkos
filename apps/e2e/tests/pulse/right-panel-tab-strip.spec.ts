@@ -105,28 +105,33 @@ test.describe('Right panel — a tab strip that never hides the tab you are on @
     // behind under load (DOR-1414). Stopping on overhang alone let the poll exit
     // a beat before the fades caught up, so the one-shot assertion below caught
     // it mid-lag ~50% of the time under machine load.
+    // Summarized rather than a bare boolean: a poll timeout only ever prints
+    // its LAST returned value, and "false" says nothing about which half —
+    // the overhang or the fades — was still unsettled when it gave up.
     let reading: FarTabReading | undefined;
     await expect
       .poll(
         async () => {
           reading = await readFarTab(rightPanel);
-          return reading.overhang <= SLACK_PX && reading.fades === 'start:ok end:ok';
+          const overhang = reading.overhang <= SLACK_PX ? 'ok' : reading.overhang;
+          return `overhang:${overhang} ${reading.fades}`;
         },
         {
           message: `the ${FAR_TAB_ID} tab must be selected, fully in view, and its fades settled`,
           timeout: SETTLE_TIMEOUT_MS,
         }
       )
-      .toBe(true);
+      .toBe('overhang:ok start:ok end:ok');
 
     // Revealing the last tab means scrolling past the first ones, so the start edge
     // has tabs behind it and must say so — and each fade has to agree with the
     // scroll position it was read with (ADR 260725-004456: a fade over nothing is
-    // worse than no fade at all).
+    // worse than no fade at all). The fades themselves are already proven by the
+    // poll above; this checks the one thing it does not — that they were earned
+    // by an actual scroll, not just a coincidental read.
     expect(reading!.scrollLeft, 'the reveal must have scrolled the strip').toBeGreaterThan(
       SLACK_PX
     );
-    expect(reading!.fades).toBe('start:ok end:ok');
   });
 
   test('advertises nothing when every tab fits', async ({ rightPanel, page }) => {
