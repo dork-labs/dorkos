@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTransport, useAppStore, useTabVisibility } from '@/layers/shared/model';
 import { QUERY_TIMING } from '@/layers/shared/lib';
@@ -95,9 +95,19 @@ export function useTaskState(sessionId: string | null, isStreaming: boolean = fa
     },
   });
 
-  // Reset state when query data changes (initial load or sync invalidation)
+  // Reset state when query data changes (initial load or sync invalidation).
+  // An empty response is NOT on its own a reason to wipe local state: the
+  // history fetch and the live event stream race, and a slow or stale fetch
+  // resolving empty for the SAME session must not discard task events the
+  // live stream already folded in (DOR-1632). Only a genuine session (or
+  // scope) change may reset to empty.
+  const scopeKeyRef = useRef<string | null>(null);
   /* eslint-disable react-hooks/set-state-in-effect -- sync TanStack Query data to local state */
   useEffect(() => {
+    const scopeKey = `${sessionId ?? ''}::${selectedCwd ?? ''}`;
+    const scopeChanged = scopeKeyRef.current !== scopeKey;
+    scopeKeyRef.current = scopeKey;
+
     if (initialTasks && initialTasks.tasks.length > 0) {
       const next = createTaskFoldState();
       applyTaskEvent(
@@ -106,10 +116,10 @@ export function useTaskState(sessionId: string | null, isStreaming: boolean = fa
         Date.now()
       );
       setState(next);
-    } else {
+    } else if (scopeChanged) {
       setState(createTaskFoldState());
     }
-  }, [initialTasks]);
+  }, [initialTasks, sessionId, selectedCwd]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleTaskEvent = useCallback((event: TaskUpdateEvent) => {
