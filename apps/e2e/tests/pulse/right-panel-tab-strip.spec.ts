@@ -98,19 +98,26 @@ test.describe('Right panel — a tab strip that never hides the tab you are on @
 
     // Before the fix this never converged: the strip stayed where it was and the
     // selected tab sat ~190px past its end for as long as you cared to wait.
+    //
+    // The poll's own stop condition has to include the fades, not just the
+    // overhang: `scrollLeft` moves the instant the scroll happens, but the fade
+    // elements are toggled by the app's own scroll-event handler, which lags
+    // behind under load (DOR-1414). Stopping on overhang alone let the poll exit
+    // a beat before the fades caught up, so the one-shot assertion below caught
+    // it mid-lag ~50% of the time under machine load.
     let reading: FarTabReading | undefined;
     await expect
       .poll(
         async () => {
           reading = await readFarTab(rightPanel);
-          return reading.overhang;
+          return reading.overhang <= SLACK_PX && reading.fades === 'start:ok end:ok';
         },
         {
-          message: `the ${FAR_TAB_ID} tab must be selected and fully in view`,
+          message: `the ${FAR_TAB_ID} tab must be selected, fully in view, and its fades settled`,
           timeout: SETTLE_TIMEOUT_MS,
         }
       )
-      .toBeLessThanOrEqual(SLACK_PX);
+      .toBe(true);
 
     // Revealing the last tab means scrolling past the first ones, so the start edge
     // has tabs behind it and must say so — and each fade has to agree with the
