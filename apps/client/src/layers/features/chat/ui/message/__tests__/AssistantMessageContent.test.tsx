@@ -127,7 +127,7 @@ describe('AssistantMessageContent — compaction & local-command parts (DOR-118)
     ];
     render(<AssistantMessageContent message={makeMessage(parts)} />);
     expect(screen.getByTestId('compact-boundary-row')).toBeInTheDocument();
-    expect(screen.getByText('Compacted context — 52.0k → 8.0k tokens')).toBeInTheDocument();
+    expect(screen.getByText('Compacted context · 52.0k → 8.0k tokens')).toBeInTheDocument();
   });
 });
 

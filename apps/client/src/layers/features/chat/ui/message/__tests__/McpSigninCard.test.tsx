@@ -114,7 +114,7 @@ describe('McpSigninCard', () => {
 
     // It really did observe the sign-in land — this is not a test that passes
     // because nothing happened.
-    expect(screen.getByText('Connected — 7 tools.')).toBeInTheDocument();
+    expect(screen.getByText('Connected · 7 tools.')).toBeInTheDocument();
     expect(transport.sendUiAction).not.toHaveBeenCalled();
     expect(transport.postMessage).not.toHaveBeenCalled();
   });
@@ -127,13 +127,13 @@ describe('McpSigninCard', () => {
     await tick(2_100);
 
     expect(transport.pollMcpSignin).toHaveBeenCalledWith('flow-1');
-    expect(screen.getByText('Connected — 7 tools.')).toBeInTheDocument();
+    expect(screen.getByText('Connected · 7 tools.')).toBeInTheDocument();
     expect(transport.sendUiAction).not.toHaveBeenCalled();
   });
 
   it('never claims a tool count the server did not report', async () => {
     // `toolCount` is optional on the wire. Reading it as a number regardless would
-    // put "Connected — 0 tools." under a sign-in that in fact worked.
+    // put "Connected · 0 tools." under a sign-in that in fact worked.
     const transport = createMockTransport();
     pollsThenConnects(transport);
     render(<McpSigninCard part={PART} />, { wrapper: wrapperFor(transport) });
@@ -189,7 +189,7 @@ describe('McpSigninCard', () => {
 
     await tick();
     expect(screen.getByTestId('mcp-signin-receipt')).toHaveTextContent(
-      'Connected to granola — 7 tools.'
+      'Connected to granola · 7 tools.'
     );
     // A settled receipt is not a live card: no link, and no polling.
     expect(screen.queryByRole('link')).not.toBeInTheDocument();

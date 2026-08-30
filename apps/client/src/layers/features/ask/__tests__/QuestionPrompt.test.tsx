@@ -420,7 +420,7 @@ describe('QuestionPrompt', () => {
 
   it('renders option descriptions inline when provided', () => {
     render(<QuestionPrompt {...baseProps} questions={[singleSelectQuestion]} />);
-    // Descriptions are rendered inline after label text with " — " separator
+    // Descriptions are rendered inline after label text with a middot separator
     expect(screen.getByText(/External meetings are harder to move\./)).toBeDefined();
   });
 });

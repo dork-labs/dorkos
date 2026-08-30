@@ -44,7 +44,7 @@ export async function dispatchCompactIntent(
     const locked = (err as { code?: string }).code === 'SESSION_LOCKED';
     toast.error(
       locked
-        ? 'The agent is busy — try compacting again in a moment.'
+        ? 'The agent is busy. Try compacting again in a moment.'
         : "Couldn't compact the conversation."
     );
     return false;

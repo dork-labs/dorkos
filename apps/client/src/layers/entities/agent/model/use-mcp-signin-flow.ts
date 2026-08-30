@@ -197,7 +197,7 @@ const IDLE_STATE: SigninLocalState = {
  *
  * `toolCount` is optional on the wire and absent means "we don't know", never
  * zero: the server reports a connection whether or not its follow-up probe could
- * take a count, so a missing value must not become "Connected — 0 tools."
+ * take a count, so a missing value must not become "Connected · 0 tools."
  *
  * The finite/non-negative check stays even though the field is typed `number`,
  * because the type describes what DorkOS sends and this reads what ARRIVED — an
