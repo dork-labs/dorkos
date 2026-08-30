@@ -1120,10 +1120,17 @@ test.describe('conversations in the command palette', () => {
       const title = el.querySelector('[data-slot="palette-session-title"]');
       if (!line || !who || !title) return null;
 
-      // Settle web fonts before either read below. Without this, a font swap
-      // landing between the two reads resolves `6ch` against a different font
-      // than `min-width` did, and the two numbers fall apart by more than the
-      // 0.5px tolerance below (DOR-1220).
+      // Settle web fonts before either read below (DOR-1220). Observed:
+      // `titleMinWidth` and `sixCh` disagreed by ~0.7px against the 0.5px
+      // tolerance below, intermittently, under machine load. The callback
+      // here is one synchronous pass — nothing can swap a font mid-callback
+      // — so the mismatch is not two reads racing each other; it is one (or
+      // both) of them resolving against a font that had not finished
+      // settling by the time this callback ran. Awaiting `fonts.ready` first
+      // gives any in-flight font work a chance to finish before either
+      // measurement below is taken, which removed the flake in repeated
+      // testing; the precise browser-internal reason the unsettled read
+      // disagreed with the settled one was not pinned down further.
       await document.fonts.ready;
 
       // What `6ch` is worth in the title's OWN font, measured rather than
