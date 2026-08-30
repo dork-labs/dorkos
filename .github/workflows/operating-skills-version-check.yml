@@ -181,9 +181,18 @@ jobs:
       # to do with the PR (observed live on PR #607 and #609). The fallback
       # cannot live in a separate repo script: that script would have exactly
       # the same staleness problem on exactly the branches this exists to fix,
-      # so the resolution has to be inline bash here. Deliberately still runs
-      # the HEAD's own copy when one exists — see the workflow header for why
-      # that self-modification tradeoff is accepted rather than closed.
+      # so the resolution has to be inline bash here.
+      #
+      # Deliberately still runs the HEAD's own copy when one exists, rather than
+      # always preferring the base branch's. That is a self-modification
+      # tradeoff, accepted rather than closed: it is what let PR #600 (DOR-671)
+      # demonstrate its own scoping refinement in CI, and a PR can equally use
+      # it to scope away its own gate. The mitigation is the 26-case fixture
+      # suite (scripts/test-seeded-pack-changed.sh) plus review, not the gate
+      # itself. Always running the base's copy was rejected because it would
+      # have blocked PR #600 itself: its comment-only pack.ts edit would have
+      # been judged by the OLD file-granular logic and demanded a bump it did
+      # not owe.
       - name: Decide whether the seeded pack content changed
         id: scope
         run: |

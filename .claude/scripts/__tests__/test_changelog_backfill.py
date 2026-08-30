@@ -441,9 +441,9 @@ class TestMalformedFragments(GateTestCase):
         self.assertIn("stranded in", result.stderr)
 
     def test_an_invalid_heading_fails_the_gate(self):
-        """DOR-1635: `### Docs` is not a real category. Third sighting of this
-        exact mistake in one program; the gate must catch it, not a careful
-        reader at release time.
+        """DOR-1635: `### Docs` is not an allowed heading. Third sighting of
+        this exact mistake in one program; the gate must catch it, not a
+        careful reader at release time.
         """
         self.repo.commit(self.FIRST, touch="apps/server/src/a.ts")
         self.repo.fragment(
@@ -452,7 +452,26 @@ class TestMalformedFragments(GateTestCase):
         )
         result = self.repo.check()
         self.assertEqual(result.returncode, 1)
-        self.assertIn("not a Keep a Changelog category", result.stderr)
+        self.assertIn(
+            "not a heading release.md's compile step knows to merge", result.stderr
+        )
+
+    def test_the_established_upgrading_note_heading_passes_the_gate(self):
+        """DOR-1635 should-fix: `### Note for people upgrading` is not a Keep
+        a Changelog category, but established repo practice (it has shipped
+        in CHANGELOG.md three times) — it must not be treated the same as an
+        invented heading like `### Docs` above.
+        """
+        sha = self.repo.commit(self.FIRST, touch="apps/server/src/a.ts")
+        self.repo.fragment(
+            "260725-000056-tiers.md",
+            f'---\ncovers:\n  - "{self.FIRST}"\n---\n\n'
+            "### Added\n\n- Tiers gate what agents may do\n\n"
+            "### Note for people upgrading\n\n"
+            "- Nothing changes until you turn tiers on\n",
+        )
+        result = self.repo.validate()
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_a_malformed_fragment_fails_even_when_nothing_is_uncovered(self):
         """Nothing to cover, but the wildcard is still on disk. Fail anyway."""
@@ -988,10 +1007,11 @@ class TestParserUnits(unittest.TestCase):
         self.assertEqual(self.mod.find_fragment_problems(body), [])
 
     def test_an_invalid_category_heading_is_flagged(self):
-        """DOR-1635: a heading outside the six Keep a Changelog categories is
-        invisible to the release compiler, so its bullets are silently dropped
-        rather than shipped. `### Improved` and `### Docs` are both real
-        sightings of this mistake.
+        """DOR-1635: a heading outside the allowed set is invisible to
+        release.md's compile step, which names its headings explicitly — so
+        nothing automatically merges a bullet under any other one, and it
+        depends on whoever compiles the release noticing by hand. `### Improved`
+        and `### Docs` are both real sightings of this mistake.
         """
         for heading in ("Improved", "Docs", "Security Fixes", "added"):
             with self.subTest(heading=heading):
@@ -1000,7 +1020,10 @@ class TestParserUnits(unittest.TestCase):
                 )
                 self.assertEqual(len(problems), 1, problems)
                 self.assertIn(f"### {heading}", problems[0])
-                self.assertIn("not a Keep a Changelog category", problems[0])
+                self.assertIn(
+                    "not a heading release.md's compile step knows to merge",
+                    problems[0],
+                )
 
     def test_every_real_category_heading_passes(self):
         for heading in (
@@ -1016,6 +1039,16 @@ class TestParserUnits(unittest.TestCase):
                     [f"### {heading}", "", "- Something happened"]
                 )
                 self.assertEqual(problems, [])
+
+    def test_the_established_upgrading_note_heading_passes(self):
+        """Not a Keep a Changelog category, but established repo practice: it
+        has shipped in CHANGELOG.md three times (PRs #621, #493, #606) and is
+        documented as allowed in changelog/README.md.
+        """
+        problems = self.mod.find_fragment_problems(
+            ["### Note for people upgrading", "", "- Something to know before upgrading"]
+        )
+        self.assertEqual(problems, [])
 
     def test_a_real_claim_line_is_still_caught_in_the_body(self):
         """The narrowings above must not blunt the detector itself."""

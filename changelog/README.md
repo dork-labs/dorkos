@@ -49,6 +49,14 @@ markdown bullets. One fragment may carry more than one category. Write bullets p
 `writing-changelogs` skill: imperative, user-focused, with references like `(DOR-123)` or
 `(#42)` where they exist.
 
+One heading outside Keep a Changelog is also allowed: `### Note for people upgrading`, for a
+bullet that is not a change so much as something an upgrader needs to know before or after
+applying one (an established repo practice — it has shipped in CHANGELOG.md's v0.57.0 notes and
+in several PRs since). `.claude/scripts/changelog_backfill.py --validate` accepts exactly these
+seven headings and rejects any other; a typo'd or invented heading (`### Improved`, `### Docs`)
+is not automatically merged at release, so it fails the gate instead of depending on whoever
+compiles the release to notice it by hand.
+
 <!-- The double quotes below are load-bearing: verbatim what the post-commit hook writes.
      Prettier rewrites quotes inside an embedded fence, hence the ignore. -->
 <!-- prettier-ignore -->
