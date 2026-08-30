@@ -1,7 +1,7 @@
 ---
 id: 260807-233815
 title: Room attachments are room-scoped, upload-then-reference, stored under dorkHome behind a store seam
-status: draft
+status: accepted
 created: 2026-08-07
 spec: room-attachments
 superseded-by: null
@@ -11,7 +11,12 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: room-attachments)
+Accepted — verified against `main` on 2026-08-30. `room_attachments` is a real table
+(`packages/db/src/schema/rooms.ts`), `POST /:id/attachments` and
+`GET /:id/attachments/:attachmentId` are routed (`apps/server/src/routes/rooms.ts`), the
+`RoomAttachmentStore` seam and its `<dorkHome>/rooms/<roomId>/attachments/` local
+implementation exist (`apps/server/src/services/rooms/attachments/`), and the inline-vs-download
+split ships with `nosniff`. One mechanism named below turned out differently — see the amendment.
 
 ## Context
 
@@ -73,3 +78,22 @@ else is `application/octet-stream` with `Content-Disposition: attachment` and `n
   with what people put in it.
 - The `CommunityAdapter` port stays text-only, so `local-projection.ts` drops attachments — a known,
   documented gap rather than a silently lossy mapping.
+
+## Amendment — 2026-08-30: the bind runs through its own hook, not through `within(tx)`
+
+**What changed.** The decision above says the attachments are bound to the entry "inside the entry's
+own transaction through `writePost`'s existing `within(tx)` hook". They are not: `appendEntry` gained
+a **second** hook, `bind(tx, seq)`, and the attachment UPDATE runs there.
+
+**Why the named hook could not work.** `within` runs BEFORE the entry row is inserted, and
+`room_attachments` carries a foreign key pointing AT the entry. With `foreign_keys` ON and no
+`DEFERRABLE` clause emitted by drizzle, the key is checked at statement time, so the UPDATE in
+`within` fails immediately with `FOREIGN KEY constraint failed`. `bind` is its mirror: same
+transaction, but after the insert, so the child row has a parent to point at. Pinned by
+`room-store-bind-hook.test.ts`, which asserts both halves — `within` is refused, `bind` is accepted,
+and a throwing `bind` rolls the entry back.
+
+**What is unchanged.** The property the decision was making — an entry can never claim files nothing
+points at, because both writes share one transaction — holds exactly as stated. Only the name of the
+hook was wrong. `within` still exists and still runs first, for the bridged-roster join it was built
+for.

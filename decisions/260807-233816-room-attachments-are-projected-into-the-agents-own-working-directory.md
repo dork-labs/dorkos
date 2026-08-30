@@ -1,7 +1,7 @@
 ---
 id: 260807-233816
 title: Room attachments reach agents as files projected into the agent's own working directory
-status: draft
+status: accepted
 created: 2026-08-07
 spec: room-attachments
 superseded-by: null
@@ -11,7 +11,11 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: room-attachments)
+Accepted — verified against `main` on 2026-08-30. `attachment-projection.ts` hardlinks first and
+falls back to a copy on `EXDEV`/`EPERM`, `projectedAttachmentPath` is the one shared expression, and
+`room-context.ts` records the projection plan in the same statement that tells the model about the
+file, joining the absolute path the amendment describes. One name in that amendment has since moved —
+see the note at the end.
 
 ## Context
 
@@ -116,3 +120,13 @@ Confirmed on claude-code by the live rerun (`rooms-recall-attachment`, 2026-08-1
   is made LOUD instead: `room-context-block.ts` logs
   `[rooms] an attachment path was changed by sanitizing and may not open` with the path. Before this
   amendment every component was server-generated `[a-zA-Z0-9._-]` and the case could not arise.
+
+## Note — 2026-08-30: the field the amendment calls `agentPath` is now `cwd`
+
+The amendment above says "`buildRoomContext` now takes `agentPath`". The input field is spelled
+`cwd`, and the rename carries a meaning: since DOR-1597 a turn in a project room runs in that agent's
+working COPY of the room's repo (`resolve-session-cwd.ts` rung 2), while its `agentPath` — what the
+claim map, the busy ceilings and the runtime lookup key on — stays what it was. This record wants the
+files half of that split, so `cwd` is the right name and `agentPath` would now be the wrong one.
+Nothing about the decision changes: the path is still `path.join(input.cwd, relativePath)`, still
+inside the tree the turn runs in, and the projector still writes under that same root.
