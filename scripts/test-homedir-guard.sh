@@ -233,6 +233,22 @@ check_sdk 'claude-code tests may import their OWN SDK' \
   src/services/runtimes/claude-code/__tests__/probe.test.ts \
   "import x from '@anthropic-ai/claude-agent-sdk';" allowed
 
+# node-pty (Hard Rule 2's SDK-confinement posture, DOR-689) drifted out of
+# every runtime adapter's restated ban list silently: each directory-scoped
+# block replaces rather than merges `no-restricted-imports`, so an omission
+# here reports nothing and fails nothing — the config just stops banning it.
+# claude-code, codex and opencode each own a different SDK but none of them
+# owns node-pty (services/terminal does), so all three must still ban it.
+check_sdk 'claude-code tests ban node-pty' \
+  src/services/runtimes/claude-code/__tests__/probe.test.ts \
+  "import x from 'node-pty';" banned
+check_sdk 'codex tests ban node-pty' \
+  src/services/runtimes/codex/__tests__/probe.test.ts \
+  "import x from 'node-pty';" banned
+check_sdk 'opencode tests ban node-pty' \
+  src/services/runtimes/opencode/__tests__/probe.test.ts \
+  "import x from 'node-pty';" banned
+
 echo '--- the per-call-site carve-out is not a whole-file one ---'
 check 'a new call in lib/boundary.ts' src/lib/boundary.ts "$ORDINARY" "$PROPS"
 

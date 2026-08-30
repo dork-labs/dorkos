@@ -243,10 +243,21 @@ export default defineConfig([
   ...confineDirectory('src/services/runtimes/claude-code', [
     CODEX_SDK_BAN,
     OPENCODE_SDK_BAN,
+    NODE_PTY_BAN,
     OTEL_BAN,
   ]),
-  ...confineDirectory('src/services/runtimes/codex', [CLAUDE_SDK_BAN, OPENCODE_SDK_BAN, OTEL_BAN]),
-  ...confineDirectory('src/services/runtimes/opencode', [CLAUDE_SDK_BAN, CODEX_SDK_BAN, OTEL_BAN]),
+  ...confineDirectory('src/services/runtimes/codex', [
+    CLAUDE_SDK_BAN,
+    OPENCODE_SDK_BAN,
+    NODE_PTY_BAN,
+    OTEL_BAN,
+  ]),
+  ...confineDirectory('src/services/runtimes/opencode', [
+    CLAUDE_SDK_BAN,
+    CODEX_SDK_BAN,
+    NODE_PTY_BAN,
+    OTEL_BAN,
+  ]),
 
   ...testConfig,
 ]);
