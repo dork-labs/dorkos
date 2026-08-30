@@ -60,3 +60,13 @@ scripts/fixtures/review-failure/malformed.json
 # browser-test run the repo-wide `pnpm format:check` — the gate the typecheck
 # job also runs — failed on an artifact nobody wrote and nobody can commit.
 apps/e2e/playwright-report/
+
+# Next.js's own build output and generated ambient-types file (both already
+# gitignored, apps/site/.gitignore). Same class as docs/api/ above — emitted
+# verbatim by `next build`/`next dev`, never hand-written — but Prettier walks
+# the filesystem, not the index, so `pnpm format:check` was un-greenable on any
+# machine that had ever built or dev-run the site (i.e. every developer
+# machine): reproduced by building apps/site, which alone put 2000+ unformatted
+# files under prettier --check's path (DOR-575).
+apps/site/.next/
+apps/site/next-env.d.ts
