@@ -1,0 +1,1 @@
+CREATE INDEX "idx_feedback_submission_linear_issue_id" ON "feedback_submission" USING btree ("linear_issue_id");
