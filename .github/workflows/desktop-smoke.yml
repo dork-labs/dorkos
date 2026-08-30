@@ -72,18 +72,19 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
-# Cancel superseded runs on the same ref for PRs only. For push events, group
-# by SHA instead of ref: GitHub only lets one run per group be *pending* at a
-# time, so several quick merges to main sharing a `desktop-smoke-refs/heads/main`
-# group would cancel each other's queued runs and only the final push would
-# actually get checked — reproduced for typecheck.yml (DOR-517/#543), the same
-# shape this workflow shared until DOR-637. Matters more here than elsewhere:
-# this job holds a scarce macOS runner. Per-SHA groups give every push-to-main
-# its own slot, and as a side effect also keep this workflow's own
-# workflow_dispatch trigger from ever sharing a group — and so cancelling or
-# dropping — a push to the same ref.
+# Cancel superseded runs on the same ref for PRs only. Push events share this
+# SAME ref-keyed group too, deliberately, even though that can drop a
+# superseded *pending* run on a quick double-merge to main — the mechanism
+# DOR-517/#543 fixed for typecheck.yml by keying push events on github.sha
+# instead. DOR-637 tried that shape here as well and it was reverted: this job
+# holds a scarce macOS runner that desktop-release also competes for, so a
+# per-SHA group would let two quick pushes each claim a runner concurrently
+# instead of queueing behind one — trading an occasional dropped pending run
+# for not starving the runner pool, which costs less here. cli-smoke-test.yml
+# made the opposite call: it runs on ubuntu, where runners are not scarce, so
+# per-SHA is a free improvement there.
 concurrency:
-  group: desktop-smoke-${{ github.event_name == 'push' && github.sha || github.ref }}
+  group: desktop-smoke-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
