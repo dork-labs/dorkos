@@ -163,7 +163,16 @@ const COPY_ATTR_NAMES = new Set([
   'tooltip',
 ]);
 
-/** Object-property names whose value the render path treats as user copy. See {@link COPY_ATTR_NAMES}. */
+/**
+ * Object-property names whose value the render path treats as user copy. See
+ * {@link COPY_ATTR_NAMES}.
+ *
+ * `q`/`a` are the compare-page FAQ shape (`{ q: string; a: string }[]` in
+ * `apps/site/src/layers/features/marketing/lib/comparisons.ts`), rendered
+ * verbatim by `ComparisonFaq`. Property-only — a one-letter JSX attribute
+ * would be too easy to collide with an unrelated prop (an alpha channel, a
+ * query flag), so `q`/`a` are not added to {@link COPY_ATTR_NAMES}.
+ */
 const COPY_PROP_NAMES = new Set([
   'label',
   'shortLabel',
@@ -176,6 +185,8 @@ const COPY_PROP_NAMES = new Set([
   'tagline',
   'placeholder',
   'tooltip',
+  'q',
+  'a',
 ]);
 
 /**
