@@ -681,9 +681,18 @@ describe('RoomFilesService', () => {
       // worker that spawns anything.
       vi.stubEnv('PATH', '');
       try {
-        for (const call of [service.list(ROOM_ID), service.read(ROOM_ID, 'ROOM.md')]) {
-          await expect(call).rejects.toMatchObject({ code: 'ROOM_REPO_GIT_UNAVAILABLE' });
-        }
+        // Each call is awaited and given its `.rejects` handler before the
+        // next one is even created — building an array of both promises
+        // first (as `for (const call of [a, b])` would) leaves the second
+        // one rejecting with no handler attached until the loop reaches it,
+        // which Node can flag as an unhandled rejection under CI timing
+        // even though the test goes on to handle it (DOR-1638).
+        await expect(service.list(ROOM_ID)).rejects.toMatchObject({
+          code: 'ROOM_REPO_GIT_UNAVAILABLE',
+        });
+        await expect(service.read(ROOM_ID, 'ROOM.md')).rejects.toMatchObject({
+          code: 'ROOM_REPO_GIT_UNAVAILABLE',
+        });
       } finally {
         vi.unstubAllEnvs();
       }
