@@ -85,27 +85,6 @@ pre-push:
       #     does NOT set it, so the same commit can pass here and fail there;
       #     when that happens the test is flaky and the CI verdict is the
       #     honest one.
-      #
-      # HARD TIMEOUT (DOR-473). This gate used to be able to hang forever with
-      # an empty log: no output, no failure, nothing to explain why, on a
-      # machine already running other worktrees' agents. `timeout`/`gtimeout`
-      # is not guaranteed on a contributor's machine (no coreutils by
-      # default on macOS), so the wait loop below is a portable substitute.
-      # 600s is generous — this is already --affected-scoped and contended
-      # machines are the expected condition here, not the edge case — but it
-      # turns "stuck forever" into a bounded, legible failure that names what
-      # it was running, instead of a silent stall someone has to Ctrl-C.
-      #
-      # `set -m` before backgrounding, then killing the NEGATIVE pid, is
-      # deliberate, not decoration: `pnpm exec dotenv -- turbo ... vitest` is a
-      # multi-hop chain (pnpm -> dotenv -> turbo -> a vitest per package), and
-      # a plain `kill "$pid"` only reaches the first hop — verified by
-      # reproducing exactly that leak (a 3-hop chain left its grandchild
-      # orphaned and running under a plain `kill $pid`). `set -m` puts the
-      # whole background job in its own process group, so `kill -TERM -"$pid"`
-      # (note the leading `-`) reaches every descendant in one signal instead
-      # of leaving turbo/vitest workers running loose on an already-contended
-      # machine, which would make this bug worse, not better.
       use_stdin: true
       run: |
         saw_ref=0
@@ -118,23 +97,5 @@ pre-push:
           echo "Delete-only push — skipping the test gate (nothing to test)."
           exit 0
         fi
-        set -m
-        VITEST_RETRY=2 pnpm exec dotenv -- turbo test --affected --concurrency=1 -- --run &
-        pid=$!
-        limit=600
-        elapsed=0
-        while kill -0 "$pid" 2>/dev/null; do
-          if [ "$elapsed" -ge "$limit" ]; then
-            echo "" >&2
-            echo "pre-push tests (turbo test --affected) did not finish within ${limit}s — killing it." >&2
-            echo "This is usually contention from other worktrees/agents on this machine, not a real failure." >&2
-            echo "Verify the packages you touched by hand, then push once you have (or --no-verify if you already did)." >&2
-            kill -TERM -"$pid" 2>/dev/null
-            wait "$pid" 2>/dev/null
-            exit 1
-          fi
-          sleep 5
-          elapsed=$((elapsed + 5))
-        done
-        wait "$pid"
+        VITEST_RETRY=2 pnpm exec dotenv -- turbo test --affected --concurrency=1 -- --run
       fail_text: 'Tests failed — fix them before pushing.'
