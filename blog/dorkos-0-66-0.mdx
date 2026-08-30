@@ -138,9 +138,3 @@ A task can now say which runtime and model it runs on, right in its Advanced set
 - Leaving the folder out of a request no longer reads a chat that naming the same folder would be refused for. Every session request is now checked against your allowed folders, whether you named one or DorkOS worked it out.
 - With Require login on, deleting a scheduled task or cancelling a run now needs a person signed in to DorkOS. A program holding one of your API keys is refused, the same as when it tries to change how a task runs. The approvals guide now says plainly that if you leave agents running on their own and they can use a shell, you should turn on Require login — without it, one of those agents can approve its own scheduled task. (DOR-1574)
 - Connection errors from chat integrations can no longer write access tokens into log files.
-
-## Install / Update
-
-```
-npm install -g dorkos@0.66.0
-```
