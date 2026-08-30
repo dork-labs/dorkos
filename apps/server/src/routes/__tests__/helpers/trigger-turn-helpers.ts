@@ -134,6 +134,17 @@ export function attachEventStream(
     });
     req.end();
   });
+  // A caller can stop watching `done` before it settles — the outer test
+  // hit ITS OWN timeout first and moved on (a real race under CPU
+  // contention: this promise's `maxMs` timer and the test's timeout are
+  // both `setTimeout`s competing for the same congested event loop), or a
+  // caller juggling two concurrent streams only ever awaits one of them to
+  // completion. When the socket then reports its own error, rejecting a
+  // promise nobody is watching anymore is exactly what Node calls an
+  // Unhandled Rejection (DOR-807). A caller that DOES await `done` still
+  // sees the real rejection normally through its own attachment below —
+  // this only keeps the copy nobody was watching from escaping.
+  done.catch(() => {});
   return { ready, done, close: () => forceClose() };
 }
 
