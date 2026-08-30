@@ -6,7 +6,7 @@
  * actually holds, and a fixture standing in for any of those would only prove
  * the fixture round-trips.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   ROOM_EXPORT_FORMAT,
   RoomExportLineSchema,
@@ -61,13 +61,25 @@ describe('exporting a room', () => {
   let channelId: string;
 
   beforeEach(() => {
+    // Mint each fixture author on its own tick of a controlled clock. `ulid()`
+    // ties its sortable prefix to Date.now(), and minting human/ana/bo
+    // back-to-back on a fast machine can land two of them in the same
+    // millisecond — the reactor-order flake in DOR-1641, where the tie then
+    // falls to the ULID's random suffix. The store's own tie-break (createdAt
+    // then author id) is correct and deliberate; this only removes the id
+    // collision the fixture was handing it.
+    vi.useFakeTimers();
     ({ service, store, authors, attachments, human } = createRoomHarness({
       agents,
       // Nobody answers, so the log holds exactly what the test puts in it.
       runner: scriptedRunner(() => null),
     }));
+    vi.advanceTimersByTime(1);
     ana = authors.resolveAgent('/agents/ana', 'Ana').id;
+    vi.advanceTimersByTime(1);
     bo = authors.resolveAgent('/agents/bo', 'Bo').id;
+    vi.useRealTimers();
+
     channelId = service.createRoom(
       { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana', '/agents/bo'] },
       human
