@@ -55,7 +55,7 @@
       "failCount": 0,
       "relatedCode": [
         "apps/client/src/layers/features/session-list/ui/EmbedSidebar.tsx",
-        "apps/client/src/layers/features/session-list/ui/SessionItem.tsx"
+        "apps/client/src/layers/entities/session/ui/SessionRow.tsx"
       ],
       "lastModified": ""
     },
@@ -190,7 +190,6 @@
       "relatedCode": [
         "apps/client/src/layers/entities/room/ui/RoomTitle.tsx",
         "apps/client/src/layers/entities/room/ui/RoomAvatar.tsx",
-        "apps/client/src/layers/entities/room/ui/MemberList.tsx",
         "apps/client/src/layers/entities/room/lib/room-display.ts",
         "apps/client/src/layers/features/dashboard-sidebar/ui/rooms/RoomRow.tsx"
       ],
@@ -381,7 +380,7 @@
         "apps/client/src/layers/widgets/team/ui/TeamRoute.tsx",
         "apps/client/src/layers/widgets/team/ui/TeamPage.tsx",
         "apps/client/src/layers/features/team-roster/ui/TeamRosterToolbar.tsx",
-        "apps/client/src/layers/features/top-nav/ui/TeamHeader.tsx"
+        "apps/client/src/layers/widgets/one-bar/ui/TeamHeader.tsx"
       ],
       "lastModified": ""
     },
