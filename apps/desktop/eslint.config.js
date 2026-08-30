@@ -6,7 +6,11 @@ export default defineConfig([
   // core-extensions/ is build output copied by scripts/build-server.ts —
   // raw apps/server source staged alongside dist/, not authored here
   // (mirrors packages/cli's identical ignore for the same reason, DOR-245).
-  { ignores: ['dist/**', 'release/**', '.turbo/**', 'core-extensions/**'] },
+  // .temp/ is the dev-mode DORK_HOME (src/main/dork-home.ts): running the
+  // desktop app in dev writes a real data directory, extension cache
+  // included, under here. ESLint's flat config does not read .gitignore, so
+  // without this it becomes lintable the moment anyone runs the app (DOR-573).
+  { ignores: ['dist/**', 'release/**', '.turbo/**', 'core-extensions/**', '.temp/**'] },
   ...nodeConfig,
 
   // process.env carve-outs. The desktop app has no env.ts: the main process
