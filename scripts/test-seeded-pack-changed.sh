@@ -46,7 +46,7 @@ export GIT_COMMITTER_NAME=fixture GIT_COMMITTER_EMAIL=fixture@example.invalid
 
 # Every case must be counted, so an emptied or mis-edited case list cannot report
 # green off zero assertions.
-EXPECTED_CASES=29
+EXPECTED_CASES=32
 total=0
 pass=0
 fail=0
@@ -530,6 +530,25 @@ for extracted in \
   "script skills_dir:$(script_default skills_dir SKILLS_DIR)"; do
   check "${extracted%%:*} is still extractable" 'found' \
     "$([ -n "${extracted#*:}" ] && printf 'found' || printf 'extracted-nothing')"
+done
+
+# --- The workflow still contains the missing-script fallback (DOR-835) ------
+#
+# `resolve_and_run` above is a hand-duplicated mirror of the workflow's inline
+# bash — it has to be duplicated rather than centralized (see its own comment
+# for why). Nothing else keeps the two in sync: if someone simplified the
+# workflow step back to a bare `./scripts/seeded-pack-changed.sh ...` call, the
+# fixtures above would keep exercising the MIRROR and stay green while the real
+# fallback was gone, the same "tested the wrong thing" gap
+# scripts/assert-tests-executed.sh exists to close for a cached "29
+# successful". Pin that the workflow's own text still contains the fallback,
+# not just that a hand-copy of its logic works.
+for marker in \
+  'if [ ! -f "$script" ]; then' \
+  'git show "$base_tip:scripts/seeded-pack-changed.sh"' \
+  'chmod +x "$script"'; do
+  check "workflow step still contains: $marker" 'found' \
+    "$(grep -qF "$marker" "$workflow" && printf 'found' || printf 'missing')"
 done
 
 # -----------------------------------------------------------------------------
