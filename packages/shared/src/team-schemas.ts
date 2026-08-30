@@ -90,7 +90,16 @@ export type TeamAgentActivity = z.infer<typeof TeamAgentActivitySchema>;
  */
 export const TeamAgentFactsSchema = z
   .object({
-    /** The agent's manifest ULID — the same value the row's `id` carries. */
+    /**
+     * The agent's mesh **registry** id — the same value the row's `id`
+     * carries. Named for the on-disk manifest file, but populated from the
+     * registry (`meshCore.listWithHealth()`), not read from `.dork/agent.json`
+     * directly — the two agree at registration and can diverge if the
+     * manifest file is rewritten afterward. W1.3 (spec `profile-unification`)
+     * established the registry id as the roster/member id everywhere; the
+     * on-disk id is never the identity, it only ever draws the face (the
+     * emoji hash `resolveAgentVisual` falls back to).
+     */
     manifestId: z.string().min(1),
     runtime: AgentRuntimeSchema,
     /** The model new sessions start on. Absent = inherit the server default. */
