@@ -78,10 +78,12 @@ describe('scanSource — copy positions the gate must catch', () => {
   });
 
   it('ignores q/a as JSX attributes — deliberately prop-only (DOR-1520)', () => {
-    // Unlike label/title/etc., q/a are not added to COPY_ATTR_NAMES: a
-    // one-letter JSX attribute is too easy to collide with an unrelated prop
-    // (an alpha channel, a query flag). Only the FAQ object-property shape
-    // is scanned.
+    // Unlike label/title/etc., q/a are not added to COPY_ATTR_NAMES — not
+    // because an attribute is riskier than a property (it isn't: `{ a: '...' }`
+    // scans as a real violation the same way an attribute would), but because
+    // nothing needs them there yet. Only the FAQ object-property shape is
+    // scanned; add the attribute form if a real `<Foo q=... a=... />` copy
+    // position ever shows up.
     const violations = scanSource('Field.tsx', `<Foo q="Connection?" a="Connection." />`, TERMS);
     expect(violations).toHaveLength(0);
   });
