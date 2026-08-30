@@ -20,7 +20,7 @@ dorkos package validate ./my-plugin
 The scaffolder writes:
 
 - `.dork/manifest.json` — DorkOS package manifest (all types)
-- `.claude-plugin/plugin.json` — Claude Code plugin manifest (plugin/skill-pack/adapter only)
+- `.claude-plugin/plugin.json` — Claude Code plugin manifest (every type except `agent`)
 - `README.md`
 - Type-specific starter directories (e.g., `skills/`, `hooks/`, `commands/` for plugins)
 
@@ -64,10 +64,17 @@ Before installing a package, load it straight from your working copy so you can
 iterate without a publish/install round-trip. The loop is per-harness — each
 agent runtime reads plugin content differently.
 
-| Harness     | Dev loop                                | Notes                                                                                                                                                              |
-| ----------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Claude Code | `claude --plugin-dir <path-to-package>` | Dev-only flag. Loads the package's commands, skills, and hooks for that session only — it does not write anything, and other agents on the machine are unaffected. |
-| Codex       | None needed — reads `.agents/` directly | If the package ships an `.agents/` tree (skills, commands), Codex picks it up natively with no flag and no install step.                                           |
+`--plugin-dir` needs a `.claude-plugin/plugin.json` in the package root, which
+the scaffolder writes for every package type except `agent` — `plugin`,
+`skill-pack`, `adapter`, and `shape` all get one (`requiresClaudePlugin()` in
+`packages/marketplace/src/package-types.ts`). An `agent` package is a pure
+DorkOS construct with no Claude Code plugin manifest, so there is nothing for
+`--plugin-dir` to load.
+
+| Harness     | Dev loop                                       | Notes                                                                                                                                                                                                                                                             |
+| ----------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code | `claude --plugin-dir <path-to-package>`        | Dev-only flag. Loads the package's commands, skills, and hooks for that session only — it does not write anything, and other agents on the machine are unaffected.                                                                                                |
+| Codex       | None needed — reads `.agents/skills/` directly | Skills travel natively, no flag or install step. Commands do not: Codex has no repo-local slash-command format, so an authored command's behavior travels as a mapped skill instead of a command (`commandMappings` in `packages/harness/src/plan/projector.ts`). |
 
 ```bash
 # Clone the package's repo first; <package-dir> is the package root inside it
