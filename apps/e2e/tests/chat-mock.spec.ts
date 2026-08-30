@@ -1114,11 +1114,17 @@ test.describe('conversations in the command palette', () => {
     // `Agent › title`, whole and untruncated, in the row's own tooltip.
     await expect(row).toHaveAttribute('title', /›/);
 
-    const budget = await row.evaluate((el) => {
+    const budget = await row.evaluate(async (el) => {
       const line = el.querySelector('[data-slot="palette-session-line"]');
       const who = el.querySelector('[data-slot="palette-session-who"]');
       const title = el.querySelector('[data-slot="palette-session-title"]');
       if (!line || !who || !title) return null;
+
+      // Settle web fonts before either read below. Without this, a font swap
+      // landing between the two reads resolves `6ch` against a different font
+      // than `min-width` did, and the two numbers fall apart by more than the
+      // 0.5px tolerance below (DOR-1220).
+      await document.fonts.ready;
 
       // What `6ch` is worth in the title's OWN font, measured rather than
       // guessed: `ch` is the advance width of a "0" in the element's font, so
