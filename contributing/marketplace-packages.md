@@ -58,6 +58,28 @@ See `packages/marketplace/src/manifest-schema.ts` for the canonical Zod schema. 
 - `requires` — dependency declarations like `adapter:slack@^1.0.0`
 - `layers` — content categories (`skills`, `tasks`, `hooks`, etc.)
 
+## Local Development Loop
+
+Before installing a package, load it straight from your working copy so you can
+iterate without a publish/install round-trip. The loop is per-harness — each
+agent runtime reads plugin content differently.
+
+| Harness     | Dev loop                                | Notes                                                                                                                                                              |
+| ----------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Claude Code | `claude --plugin-dir <path-to-package>` | Dev-only flag. Loads the package's commands, skills, and hooks for that session only — it does not write anything, and other agents on the machine are unaffected. |
+| Codex       | None needed — reads `.agents/` directly | If the package ships an `.agents/` tree (skills, commands), Codex picks it up natively with no flag and no install step.                                           |
+
+```bash
+# Clone the package's repo first; <package-dir> is the package root inside it
+# (the directory containing .dork/manifest.json), not the whole repo.
+claude --plugin-dir <package-dir>
+```
+
+`--plugin-dir` is how the flow plugin itself is dogfooded during development —
+see `contributing/flow-engine.md` for that loop in practice. Once the package
+is ready, install it for real through the Marketplace (`contributing/marketplace-installs.md`)
+so it persists across sessions and projects.
+
 ## Related
 
 - `packages/marketplace/README.md` — Package API
