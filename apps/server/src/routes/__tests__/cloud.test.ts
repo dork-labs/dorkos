@@ -1,4 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
 import express from 'express';
 import request from 'supertest';
 
@@ -20,12 +22,30 @@ import cloudRouter from '../cloud.js';
 
 const manager = mockManager;
 
-function buildApp() {
-  const app = express();
-  app.use(express.json());
-  app.use('/api/cloud', cloudRouter);
-  return app;
-}
+const app = express();
+app.use(express.json());
+app.use('/api/cloud', cloudRouter);
+
+/**
+ * ONE listener for the whole file, reused by every request.
+ *
+ * Handed a non-listening app, supertest opens a fresh ephemeral listener per
+ * request and closes it in the response callback; under a full-suite run that
+ * churn intermittently lands a connection on a listener mid-close, failing a
+ * random test with a client-side `socket hang up` rather than an assertion
+ * (the DOR-458 pattern, applied here per DOR-545). Given a server whose
+ * `address()` is already set, supertest reuses it and never closes it.
+ */
+const server = createServer(app);
+
+beforeAll(async () => {
+  server.listen(0);
+  await once(server, 'listening');
+});
+
+afterAll(async () => {
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+});
 
 describe('cloud routes', () => {
   beforeEach(() => {
@@ -39,7 +59,7 @@ describe('cloud routes', () => {
         verificationUri: 'https://dorkos.ai/activate',
         expiresAt: '2026-07-03T00:30:00Z',
       });
-      const res = await request(buildApp()).post('/api/cloud/link/start').expect(200);
+      const res = await request(server).post('/api/cloud/link/start').expect(200);
       expect(res.body).toEqual({
         userCode: 'ABCD1234',
         verificationUri: 'https://dorkos.ai/activate',
@@ -50,7 +70,7 @@ describe('cloud routes', () => {
 
     it('returns 502 when the cloud is unreachable', async () => {
       manager.startLink.mockRejectedValue(new Error('fetch failed'));
-      const res = await request(buildApp()).post('/api/cloud/link/start').expect(502);
+      const res = await request(server).post('/api/cloud/link/start').expect(502);
       expect(res.body.error).toMatch(/cloud/i);
     });
   });
@@ -61,13 +81,13 @@ describe('cloud routes', () => {
         state: 'pending',
         lastHeartbeatAt: undefined,
       });
-      const res = await request(buildApp()).get('/api/cloud/link/status').expect(200);
+      const res = await request(server).get('/api/cloud/link/status').expect(200);
       expect(res.body.state).toBe('pending');
     });
 
     it('surfaces the unlinked state', async () => {
       manager.getStatus.mockReturnValue({ state: 'unlinked' });
-      const res = await request(buildApp()).get('/api/cloud/link/status').expect(200);
+      const res = await request(server).get('/api/cloud/link/status').expect(200);
       expect(res.body).toEqual({ state: 'unlinked' });
     });
   });
@@ -75,14 +95,14 @@ describe('cloud routes', () => {
   describe('POST /api/cloud/unlink', () => {
     it('unlinks and returns ok', async () => {
       manager.unlink.mockResolvedValue(undefined);
-      const res = await request(buildApp()).post('/api/cloud/unlink').expect(200);
+      const res = await request(server).post('/api/cloud/unlink').expect(200);
       expect(res.body).toEqual({ ok: true });
       expect(manager.unlink).toHaveBeenCalledOnce();
     });
 
     it('returns 500 when unlink throws', async () => {
       manager.unlink.mockRejectedValue(new Error('boom'));
-      await request(buildApp()).post('/api/cloud/unlink').expect(500);
+      await request(server).post('/api/cloud/unlink').expect(500);
     });
   });
 
@@ -93,7 +113,7 @@ describe('cloud routes', () => {
         accountLabel: 'Kai',
         lastHeartbeatAt: '2026-07-03T00:00:00Z',
       });
-      const res = await request(buildApp()).get('/api/cloud/status').expect(200);
+      const res = await request(server).get('/api/cloud/status').expect(200);
       expect(res.body).toEqual({
         linked: true,
         accountLabel: 'Kai',
@@ -107,7 +127,7 @@ describe('cloud routes', () => {
         accountLabel: null,
         lastHeartbeatAt: null,
       });
-      const res = await request(buildApp()).get('/api/cloud/status').expect(200);
+      const res = await request(server).get('/api/cloud/status').expect(200);
       expect(res.body.linked).toBe(false);
     });
   });
