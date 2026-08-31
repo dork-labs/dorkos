@@ -19,15 +19,15 @@ interface CompactBoundaryRowProps {
 function summaryText(preTokens?: number, postTokens?: number): string {
   if (preTokens === undefined) return 'Compacted context';
   if (postTokens === undefined)
-    return `Compacted context — ${formatTokenCount(preTokens)} tokens summarized`;
-  return `Compacted context — ${formatTokenCount(preTokens)} → ${formatTokenCount(postTokens)} tokens`;
+    return `Compacted context · ${formatTokenCount(preTokens)} tokens summarized`;
+  return `Compacted context · ${formatTokenCount(preTokens)} → ${formatTokenCount(postTokens)} tokens`;
 }
 
 /**
  * Inline row marking a context-window compaction in the transcript.
  *
  * Success state ({@link CompactResultRow} with a refresh glyph): "Compacted
- * context — N → M tokens" plus a `manual`/`auto` trigger badge. Failure state
+ * context · N → M tokens" plus a `manual`/`auto` trigger badge. Failure state
  * (amber alert glyph): "Compaction failed" with the SDK error beneath. Sourced
  * from the `compact_boundary` part folded by `projectInProgressTurn`.
  */

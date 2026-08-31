@@ -60,7 +60,7 @@ describe('ElicitationPrompt — URL mode', () => {
     expect(screen.queryByRole('button', { name: /Done/ })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Open authorization page' }));
-    expect(screen.getByRole('button', { name: 'Done — I authorized' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'I authorized it' })).toBeInTheDocument();
   });
 
   it('refuses a scheme the link seam does not dispatch, and says so', () => {
@@ -120,13 +120,13 @@ describe('ElicitationPrompt — URL mode', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open authorization page' }));
 
     expect(screen.queryByText(/Could not open/)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Done — I authorized' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'I authorized it' })).toBeInTheDocument();
   });
 
   it('submits the acceptance once the user confirms a real open', async () => {
     renderPrompt();
     fireEvent.click(screen.getByRole('button', { name: 'Open authorization page' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Done — I authorized' }));
+    fireEvent.click(screen.getByRole('button', { name: 'I authorized it' }));
 
     await waitFor(() => {
       expect(submitElicitation).toHaveBeenCalledWith(

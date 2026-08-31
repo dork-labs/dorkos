@@ -40,8 +40,8 @@ function WorkingLine({ children }: { children: React.ReactNode }) {
  * @param toolCount - Tools the server exposes, or `null` when unreported.
  */
 function connectedCopy(toolCount: number | null): string {
-  if (toolCount === null) return 'Signed in — the server’s tools are available on the next turn.';
-  return `Connected — ${toolCount} tool${toolCount === 1 ? '' : 's'}.`;
+  if (toolCount === null) return 'Signed in. The server’s tools are available on the next turn.';
+  return `Connected · ${toolCount} tool${toolCount === 1 ? '' : 's'}.`;
 }
 
 /**

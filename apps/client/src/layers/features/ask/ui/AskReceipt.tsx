@@ -123,7 +123,7 @@ export function AskReceipt({
         <span className="min-w-0 truncate">
           {outcome === 'expired' ? (
             <>
-              Expired — {isBatch ? `${subject} ` : ''}denied
+              Expired &middot; {isBatch ? `${subject} ` : ''}denied
               {waitedMs !== null && ` after ${formatWaited(waitedMs)}`}
             </>
           ) : (
@@ -132,7 +132,7 @@ export function AskReceipt({
               {isBatch ? subject : <span className="font-mono">{subject}</span>}
               {/* Only when the reason actually reached the agent. A refusal it
                   can explain is one it can work around instead of retrying. */}
-              {outcome === 'denied' && reasonGiven === true && <> — agent was told why</>}
+              {outcome === 'denied' && reasonGiven === true && <> &middot; agent was told why</>}
             </>
           )}
         </span>

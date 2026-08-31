@@ -253,7 +253,7 @@ describe('approval receipts', () => {
 
     const receipt = screen.getByTestId('approval-receipt');
     expect(receipt.getAttribute('data-outcome')).toBe('expired');
-    expect(receipt.textContent).toContain('Expired — denied after 10:00');
+    expect(receipt.textContent).toContain('Expired · denied after 10:00');
     expect(receipt.textContent).not.toContain('You denied');
     // The clock answered on the person's behalf. Nobody told the agent
     // anything, so the reason clause must never appear here.
@@ -593,7 +593,7 @@ describe('approval receipts on a cold open', () => {
     ]);
 
     const receipt = screen.getByTestId('approval-receipt');
-    expect(receipt.textContent).toContain('Expired — denied after 10:00');
+    expect(receipt.textContent).toContain('Expired · denied after 10:00');
   });
 
   it('leaves an ordinary tool call alone', () => {

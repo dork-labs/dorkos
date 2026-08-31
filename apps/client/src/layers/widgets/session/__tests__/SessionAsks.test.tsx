@@ -117,12 +117,12 @@ describe('SessionAsks', () => {
 
     it('says how many messages are waiting', () => {
       renderWithQueue(3);
-      expect(screen.getByText('3 messages are waiting — they send once you answer.')).toBeDefined();
+      expect(screen.getByText('3 messages are waiting. They send once you answer.')).toBeDefined();
     });
 
     it('reads naturally for a single message', () => {
       renderWithQueue(1);
-      expect(screen.getByText('1 message is waiting — it sends once you answer.')).toBeDefined();
+      expect(screen.getByText('1 message is waiting. It sends once you answer.')).toBeDefined();
     });
 
     it('says nothing when the queue is empty', () => {

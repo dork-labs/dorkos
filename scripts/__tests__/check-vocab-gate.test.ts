@@ -77,6 +77,17 @@ describe('scanSource — copy positions the gate must catch', () => {
     expect(violations).toHaveLength(0);
   });
 
+  it('ignores q/a as JSX attributes — deliberately prop-only (DOR-1520)', () => {
+    // Unlike label/title/etc., q/a are not added to COPY_ATTR_NAMES — not
+    // because an attribute is riskier than a property (it isn't: `{ a: '...' }`
+    // scans as a real violation the same way an attribute would), but because
+    // nothing needs them there yet. Only the FAQ object-property shape is
+    // scanned; add the attribute form if a real `<Foo q=... a=... />` copy
+    // position ever shows up.
+    const violations = scanSource('Field.tsx', `<Foo q="Connection?" a="Connection." />`, TERMS);
+    expect(violations).toHaveLength(0);
+  });
+
   it('catches an object property named like a copy field', () => {
     const violations = scanSource(
       'config.ts',
@@ -85,6 +96,15 @@ describe('scanSource — copy positions the gate must catch', () => {
     );
     // Only `label`, not `key` — `key` is not a copy-bearing property name.
     expect(violations).toHaveLength(1);
+  });
+
+  it('catches the compare-page FAQ shape (DOR-1520): q/a object properties', () => {
+    const violations = scanSource(
+      'comparisons.ts',
+      `faq: [{ q: 'Is there a Connection fee?', a: 'No Connection fee applies.' }]`,
+      TERMS
+    );
+    expect(violations).toHaveLength(2);
   });
 
   it('catches a toast.error(...) first argument', () => {

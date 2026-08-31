@@ -95,6 +95,11 @@
       "path": "apps/client/src/layers/features/mesh/ui/TopologyGraph.tsx",
       "terms": ["connection"],
       "reason": "The topology graph's keyboard-fallback summary, drag-to-bind hint, and remove-binding confirm dialog (plan D2, DOR-896) all name the same Connections-domain entity as BindingEdge and AdapterNode in this directory: an adapter-to-agent binding a person creates or deletes. Not a network-health reading — a binding's own reachability is reported by its test action, not this copy."
+    },
+    {
+      "path": "apps/site/src/layers/features/marketing/lib/comparisons.ts",
+      "terms": ["mission control"],
+      "reason": "The GitHub Agent HQ compare page's FAQ answers the question \"What is GitHub Mission Control?\" — GitHub's own blog named its agent-hub page that, and the FAQ says so exactly to note the docs don't use the name. AGENTS.md carves this out: GitHub ships a product literally named Mission Control. This is DorkOS's own carve-out, not the copy this wave retires."
     }
   ]
 }

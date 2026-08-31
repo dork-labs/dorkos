@@ -290,7 +290,7 @@ export function TouchChipStrip({ parts, sessionId, turnActive = false }: TouchCh
                 />
               </Fragment>
             ))}
-            <span aria-hidden="true">—</span>
+            <span aria-hidden="true">&middot;</span>
             <button
               type="button"
               aria-expanded={tray.expanded}

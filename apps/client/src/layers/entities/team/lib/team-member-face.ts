@@ -25,9 +25,11 @@ import { hashToEmoji, resolveIdentityFace, type IdentityFace } from '@/layers/sh
  *
  * **An agent that never chose an icon still gets one here** (DOR-1122), because
  * a roster row is the one place that can honestly invent it: a `TeamMember`'s
- * `id` IS the agent's manifest ULID (`TeamAgentFactsSchema.manifestId` is
- * documented as "the same value the row's `id` carries"), so hashing it reaches
- * the exact emoji `resolveAgentVisual` gives the sidebar for that agent. The
+ * `id` IS the agent's mesh registry id (`TeamAgentFactsSchema.manifestId` is
+ * documented as "the same value the row's `id` carries" — the field name
+ * predates W1.3 establishing the registry id, not the on-disk manifest id, as
+ * the roster identity), so hashing it reaches the exact emoji
+ * `resolveAgentVisual` gives the sidebar for that agent. The
  * rung deliberately does NOT live in `resolveIdentityFace`: `MemberList` feeds
  * that function author-row ids, which hash to a different emoji, so one agent
  * would wear two faces in one room. A person keeps the letter — an invented

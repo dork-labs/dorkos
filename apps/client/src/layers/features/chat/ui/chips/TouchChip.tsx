@@ -49,7 +49,7 @@ function tooltipFor(chip: TouchChipData): string {
   return [
     chip.fullTarget,
     chip.history.join(', '),
-    chip.pattern === true ? 'A pattern, not one file — there is nothing to open.' : '',
+    chip.pattern === true ? 'A pattern, not one file. There is nothing to open.' : '',
   ]
     .filter(Boolean)
     .join('\n');

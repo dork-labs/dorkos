@@ -44,7 +44,7 @@ function CardShell({
  * EPHEMERAL, deliberately, and worth being precise about because an earlier
  * version of this comment claimed otherwise. The receipt exists to close the
  * loop for the person standing there: they walk back from their browser, read
- * "Connected — 7 tools", and watch the agent carry on. It survives the turn the
+ * "Connected · 7 tools", and watch the agent carry on. It survives the turn the
  * sign-in triggered and the conversation then moves on without it (one turn of
  * grace; see `ageSigninCards` on both the projector and the store).
  *
@@ -84,7 +84,7 @@ function SigninReceipt({ part }: { part: McpSigninPart }) {
         Connected to {part.serverName}
         {part.toolCount === undefined
           ? ''
-          : ` — ${part.toolCount} tool${part.toolCount === 1 ? '' : 's'}`}
+          : ` · ${part.toolCount} tool${part.toolCount === 1 ? '' : 's'}`}
         .
       </p>
     </CardShell>

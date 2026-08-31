@@ -20,7 +20,7 @@ export function CompactPendingRow({
 }: CompactPendingRowProps) {
   const baseLabel = type === 'approval' ? 'Waiting for approval' : 'Answering questions';
   const toolLabel = toolName ? getToolLabel(toolName, toolInput ?? '') : null;
-  const label = toolLabel ? `${baseLabel} — ${toolLabel}` : `${baseLabel}...`;
+  const label = toolLabel ? `${baseLabel} · ${toolLabel}` : `${baseLabel}...`;
 
   return (
     <div

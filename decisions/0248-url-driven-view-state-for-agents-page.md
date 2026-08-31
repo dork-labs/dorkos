@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+(2026-08-30 audit) Amended: the page moved from `/agents` to `/team` (DOR-973; `/agents` is now a redirect alias). The URL-driven view-state decision stands: `teamSearchSchema` (`apps/client/src/router.tsx`) still validates `view` with a Zod enum over TanStack Router search params, now `z.enum(TEAM_VIEWS)` = `'cards' | 'table' | 'topology' | 'denied' | 'access'` (`apps/client/src/layers/shared/lib/team-view.ts`), defaulting to `'cards'` rather than `'list'`. `'list'` (this ADR's original spelling) is preprocessed to `'table'` for backward compatibility rather than removed. Every enum here `.catch()`s back to the default instead of throwing, so a stale bookmark or old release note renders the roster rather than a Zod error page. The schema grew `kind`, `owner`, `group`, `q`, and `sort` beyond the `view`/`agent` pair this ADR describes, for the roster filter bar the table view gained.
+
 ## Context
 
 The Agents page needs to support 4 views (List, Topology, Denied, Access) plus an optional detail panel for topology node selection. The two main options for view state management are: (1) local React state (useState), or (2) URL search params via TanStack Router's `validateSearch` with a Zod schema. The existing page already uses `?view=list|topology` via TanStack Router search params.

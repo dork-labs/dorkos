@@ -159,8 +159,8 @@ export function SessionAsks({
       {queueDepth > 0 && (
         <p className="text-muted-foreground px-1 pt-2 text-xs">
           {queueDepth === 1
-            ? '1 message is waiting — it sends once you answer.'
-            : `${queueDepth} messages are waiting — they send once you answer.`}
+            ? '1 message is waiting. It sends once you answer.'
+            : `${queueDepth} messages are waiting. They send once you answer.`}
         </p>
       )}
     </>

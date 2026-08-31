@@ -64,6 +64,10 @@ import {
   ListTaskRunsQuerySchema,
   ModelOptionSchema,
   ForkShapeRequestSchema,
+  WorkbenchSignRequestSchema,
+  WorkbenchSignResponseSchema,
+  WorkbenchProbeRequestSchema,
+  WorkbenchProbeResponseSchema,
 } from '@dorkos/shared/schemas';
 import {
   RelayEnvelopeSchema,
@@ -1260,6 +1264,108 @@ registry.registerPath({
           schema: z.object({ path: z.string() }),
         },
       },
+    },
+  },
+});
+
+// --- Workbench (embedded browser; DOR-216, DOR-1260; ADR 260708-185519) ---
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/workbench/sign',
+  tags: ['Workbench'],
+  summary: 'Mint a signed URL for the embedded browser',
+  description:
+    'Mints what the embedded browser needs to load a target, gated by the app-wide ' +
+    'session auth. A `serve` request gets a short-lived signed URL into ' +
+    '`GET /api/workbench/serve/{token}/{splat}`, after its `cwd` is checked against ' +
+    'the boundary. A `proxy` request opens (or reuses) a preview listener for that ' +
+    'dev-server port and returns its bootstrap URL — a whole origin of its own, ' +
+    'because a dev server served under a path prefix cannot resolve its own ' +
+    'root-absolute assets.',
+  request: {
+    body: {
+      content: { 'application/json': { schema: WorkbenchSignRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Signed URL to load, or a null url with an honest reason',
+      content: { 'application/json': { schema: WorkbenchSignResponseSchema } },
+    },
+    400: {
+      description: 'Invalid body',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'Access denied: cwd outside directory boundary',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/workbench/probe',
+  tags: ['Workbench'],
+  summary: 'Probe a loopback port before framing it',
+  description:
+    'Reports whether a loopback port has a server on it, so the embedded browser can ' +
+    'explain a dead port instead of framing a blank preview. Gated by the app-wide ' +
+    'session auth and loopback-pinned: the body carries a port and nothing else.',
+  request: {
+    body: {
+      content: { 'application/json': { schema: WorkbenchProbeRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Whether something accepted a connection on that port',
+      content: { 'application/json': { schema: WorkbenchProbeResponseSchema } },
+    },
+    400: {
+      description: 'Invalid body',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/workbench/serve/{token}/{splat}',
+  tags: ['Workbench'],
+  summary: 'Serve a local file signed by /sign',
+  description:
+    "Statically serves a local file from the signed token's `cwd` so relative assets " +
+    'resolve, with the remainder re-confined against `cwd` (a `..`/symlink escape is ' +
+    'rejected). Authorized by the signed token, NOT cookie/header auth — the browser ' +
+    'frame is opaque-origin and credential-less, so this path is exempted from the ' +
+    'session gate. `{splat}` stands in for the whole remainder of the path (it may ' +
+    'contain `/`); the bare `/api/workbench/serve/{token}` form (root → index.html) ' +
+    'is registered the same way with no remainder.',
+  request: {
+    params: z.object({
+      token: z.string(),
+      splat: z.string().describe('The remainder path under `cwd`; may contain `/`.'),
+    }),
+  },
+  responses: {
+    200: { description: 'File contents, content-typed by extension' },
+    400: {
+      description: 'Invalid path (null byte, symlink loop, not a directory)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: {
+      description: 'Token expired',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'Token forged/malformed, wrong scope, or path escapes the boundary',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'File not found',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });

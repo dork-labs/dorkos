@@ -163,7 +163,20 @@ const COPY_ATTR_NAMES = new Set([
   'tooltip',
 ]);
 
-/** Object-property names whose value the render path treats as user copy. See {@link COPY_ATTR_NAMES}. */
+/**
+ * Object-property names whose value the render path treats as user copy. See
+ * {@link COPY_ATTR_NAMES}.
+ *
+ * `q`/`a` are the compare-page FAQ shape (`{ q: string; a: string }[]` in
+ * `apps/site/src/layers/features/marketing/lib/comparisons.ts`), rendered
+ * verbatim by `ComparisonFaq`. A one-letter name is exactly as collision-prone
+ * here as it would be as a JSX attribute — `{ a: 'Connection lost' }` scans as
+ * a real violation today, same risk either way, so this is not a safety
+ * argument. `q`/`a` are accepted as properties because a scan of the whole
+ * tree finds zero false positives right now; they are left out of
+ * {@link COPY_ATTR_NAMES} only because nothing needs them there yet. Add them
+ * if a genuine `<Foo q="..." a="..." />` copy position ever shows up.
+ */
 const COPY_PROP_NAMES = new Set([
   'label',
   'shortLabel',
@@ -176,6 +189,8 @@ const COPY_PROP_NAMES = new Set([
   'tagline',
   'placeholder',
   'tooltip',
+  'q',
+  'a',
 ]);
 
 /**

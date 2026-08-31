@@ -314,9 +314,9 @@ describe('SessionPopover — an action the line had no room for', () => {
     const onAction = vi.fn();
     renderPanel({
       onOpenChange,
-      urgentAction: { label: 'Compact conversation — 88% full', onAction },
+      urgentAction: { label: 'Compact conversation · 88% full', onAction },
     });
-    const button = screen.getByRole('button', { name: 'Compact conversation — 88% full' });
+    const button = screen.getByRole('button', { name: 'Compact conversation · 88% full' });
     fireEvent.click(button);
     expect(onAction).toHaveBeenCalled();
     expect(onOpenChange).toHaveBeenCalledWith(false);

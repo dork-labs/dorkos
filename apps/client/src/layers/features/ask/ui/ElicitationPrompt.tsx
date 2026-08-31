@@ -113,12 +113,12 @@ export function ElicitationPrompt({
   const handleOpenUrl = useCallback(() => {
     if (!url) return;
     // Always leaves the app — the button promises a browser trip. Gate the
-    // "Done — I authorized" button on the link actually being dispatched: an
+    // "I authorized it" button on the link actually being dispatched: an
     // MCP server can name a scheme the seam refuses (a `myapp://` desktop
     // OAuth deep link, say), and offering to confirm an authorization that
     // never opened would let someone accept a flow that never ran.
     if (!openExternalLink(url)) {
-      setError(`Could not open ${url} — DorkOS only opens web and mail links.`);
+      setError(`Could not open ${url}. DorkOS only opens web and mail links.`);
       return;
     }
     setError(null);
@@ -130,7 +130,7 @@ export function ElicitationPrompt({
     return (
       <div className="text-muted-foreground flex items-center gap-2 py-1 text-xs">
         <span className="font-mono">{serverName}</span>
-        <span>—</span>
+        <span>&middot;</span>
         <span>
           {action === 'accept' ? 'Authorized' : action === 'decline' ? 'Declined' : 'Cancelled'}
         </span>
@@ -168,7 +168,7 @@ export function ElicitationPrompt({
           </Button>
           {urlOpened && (
             <Button size="sm" onClick={handleUrlAccept} disabled={submitting}>
-              {submitting ? 'Submitting…' : 'Done — I authorized'}
+              {submitting ? 'Submitting…' : 'I authorized it'}
             </Button>
           )}
           <Button size="sm" variant="ghost" onClick={handleDecline} disabled={submitting}>

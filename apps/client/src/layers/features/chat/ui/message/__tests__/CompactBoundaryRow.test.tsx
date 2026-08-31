@@ -14,13 +14,13 @@ describe('CompactBoundaryRow', () => {
   it('renders the pre→post token summary and the trigger badge', () => {
     render(<CompactBoundaryRow trigger="manual" preTokens={52000} postTokens={8000} />);
     expect(screen.getByTestId('compact-boundary-row')).toBeInTheDocument();
-    expect(screen.getByText('Compacted context — 52.0k → 8.0k tokens')).toBeInTheDocument();
+    expect(screen.getByText('Compacted context · 52.0k → 8.0k tokens')).toBeInTheDocument();
     expect(screen.getByTestId('compact-boundary-trigger')).toHaveTextContent('manual');
   });
 
   it('summarizes from preTokens alone when postTokens is absent', () => {
     render(<CompactBoundaryRow trigger="auto" preTokens={840} />);
-    expect(screen.getByText('Compacted context — 840 tokens summarized')).toBeInTheDocument();
+    expect(screen.getByText('Compacted context · 840 tokens summarized')).toBeInTheDocument();
     expect(screen.getByTestId('compact-boundary-trigger')).toHaveTextContent('auto');
   });
 

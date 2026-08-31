@@ -183,9 +183,7 @@ describe('useCompactionChip', () => {
     expect(result.current.pending).toBe(true);
 
     await waitFor(() => expect(result.current.pending).toBe(false));
-    expect(toastError).toHaveBeenCalledWith(
-      'The agent is busy — try compacting again in a moment.'
-    );
+    expect(toastError).toHaveBeenCalledWith('The agent is busy. Try compacting again in a moment.');
     // Still visible (not streaming, still over threshold) — the operator can retry.
     expect(result.current.visible).toBe(true);
   });

@@ -278,7 +278,7 @@ export function ApprovalPrompt({
         onDecided?.();
       } else {
         console.error('Approval failed:', err);
-        setError('Approval request failed — try again');
+        setError('Approval request failed. Try again.');
       }
     } finally {
       setResponding(false);
@@ -300,7 +300,7 @@ export function ApprovalPrompt({
         onDecided?.();
       } else {
         console.error('Always Allow failed:', err);
-        setError('Always Allow request failed — try again');
+        setError('Always Allow request failed. Try again.');
       }
     } finally {
       setResponding(false);
@@ -324,7 +324,7 @@ export function ApprovalPrompt({
         onDecided?.();
       } else {
         console.error('Deny failed:', err);
-        setError('Deny request failed — try again');
+        setError('Deny request failed. Try again.');
       }
     } finally {
       setResponding(false);

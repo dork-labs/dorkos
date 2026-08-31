@@ -179,7 +179,7 @@ export function registerCompactionTests(ctx: { apiUrl: string; agentDir: () => s
       // a different path entirely.
       const liveRow = page.getByTestId('compact-boundary-row');
       await expect(liveRow).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
-      await expect(liveRow).toContainText('Compacted context — 51.2k → 4.2k tokens');
+      await expect(liveRow).toContainText('Compacted context · 51.2k → 4.2k tokens');
       // `auto`, not `manual`. The badge is the only thing that tells a reader
       // the machine did this rather than them, and the two are one enum apart
       // the whole way down from the SDK — so a boundary that arrived with the
