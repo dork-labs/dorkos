@@ -163,6 +163,31 @@ SLUG_MAX_LEN = 40
 # Frontmatter field a fragment uses to declare which commits it covers.
 COVERS_FIELD = "covers"
 
+# The six Keep a Changelog (https://keepachangelog.com/en/1.0.0/) categories
+# release.md step 6.4 tells whoever is compiling a release to merge, plus one
+# established exception this repo already relies on: "Note for people
+# upgrading" is not a Keep a Changelog category, but it has shipped verbatim in
+# CHANGELOG.md three times (PRs #621, #493, #606; still there in the v0.57.0
+# notes) and is documented as allowed in changelog/README.md.
+#
+# Compiling a release is a person or an agent following release.md's
+# instructions, not an automated script, so a heading outside this set is not
+# GUARANTEED to be dropped — a careful compiler can carry one forward by hand,
+# which is exactly what happened to the fragment that prompted DOR-1635 (its
+# `### Docs` bullet survived, folded into the neighboring Security entry by
+# whoever ran that release). What nothing catches is the MISTAKE: step 6.4
+# names six headings by name, so anything outside this set is invisible to
+# that instruction and depends entirely on whoever is compiling noticing it
+# anyway (DOR-1635, third sighting of the same trap in one program — the other
+# two, `### Improved` and a near-miss `### Docs`, were not caught by a careful
+# compiler).
+VALID_CATEGORIES = {"Added", "Changed", "Deprecated", "Removed", "Fixed", "Security"}
+ALLOWED_HEADINGS = VALID_CATEGORIES | {"Note for people upgrading"}
+
+# A fragment's category heading, e.g. `### Added`. Captures the heading text so
+# it can be checked against `ALLOWED_HEADINGS`.
+HEADING_RE = re.compile(r"^###\s+(.+?)\s*$")
+
 # Shapes a `covers:` item can take. Anything matching neither is a commit
 # subject line — a conventional-commit subject always contains ": ", so it can
 # never be mistaken for a bare SHA or a "#123" pull-request reference.
@@ -415,6 +440,16 @@ def find_fragment_problems(body: list[str]) -> list[str]:
                 f"`{COVERS_FIELD}:` appears in the body, not in a frontmatter block. "
                 "The declaration must sit between a `---` line at the very top of "
                 "the file and a closing `---` line."
+            )
+            continue
+        heading = HEADING_RE.match(line)
+        if heading and heading.group(1) not in ALLOWED_HEADINGS:
+            problems.append(
+                f"`### {heading.group(1)}` is not a heading release.md's compile "
+                f"step knows to merge ({', '.join(sorted(ALLOWED_HEADINGS))}). "
+                "Nothing automatically catches a bullet under any other heading — "
+                "it depends on whoever compiles the release noticing it by hand, "
+                "which is not a rule you can count on (see changelog/README.md)."
             )
             continue
         if not line.startswith("- "):

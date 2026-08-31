@@ -39,6 +39,16 @@ const OTEL_BAN = {
   message:
     'OpenTelemetry imports are confined to services/observability/. Instrument through the observability helpers instead.',
 };
+
+// Every dependency confined to exactly one directory. DERIVED from, rather
+// than restated alongside, both the global ban list and every per-directory
+// one below: each directory owns exactly one entry and bans the rest via
+// `ALL_CONFINED.filter((b) => b !== OWN_BAN)`, so a fifth ban added here
+// reaches every confinement automatically instead of depending on someone
+// updating N call sites by hand. This is the fix for DOR-689 (node-pty had
+// silently stopped being banned in three of five directories because
+// restating the list is exactly the kind of thing that drifts).
+const ALL_CONFINED = [CLAUDE_SDK_BAN, CODEX_SDK_BAN, OPENCODE_SDK_BAN, NODE_PTY_BAN, OTEL_BAN];
 // os.homedir() ban (Hard Rule #3), half one. `no-restricted-imports` sees the
 // IMPORT: `import { homedir } from 'os'` and `import * as os from 'os'`. It is
 // blind to `import os from 'os'` — which is the spelling this server actually
@@ -176,7 +186,7 @@ export default defineConfig([
       'no-restricted-imports': [
         'error',
         {
-          patterns: [CLAUDE_SDK_BAN, CODEX_SDK_BAN, OPENCODE_SDK_BAN, NODE_PTY_BAN, OTEL_BAN],
+          patterns: ALL_CONFINED,
           paths: HOMEDIR_BANS,
         },
       ],
@@ -213,8 +223,9 @@ export default defineConfig([
     rules: { 'no-restricted-properties': ['error', HOMEDIR_MEMBER_BAN] },
   },
 
-  // Every directory that owns one dependency: `patterns` stay banned there, and
-  // the homedir IMPORT ban applies to its source.
+  // Every directory that owns one dependency: everything else in
+  // `ALL_CONFINED` stays banned there, and the homedir IMPORT ban applies to
+  // its source.
   //
   // Two blocks per directory, on purpose. Block 1 above already ignores
   // `src/**` + `__tests__`, so these per-directory blocks are the ONLY thing
@@ -225,28 +236,33 @@ export default defineConfig([
   // claude-code/__tests__.) The second block hands the patterns straight back,
   // minus the homedir paths tests are carved out from.
   //
-  // Built from one helper rather than ten literal blocks because restating a
-  // ban by hand in every block is what drifts — see the note at the top of this
-  // file.
-  ...confineDirectory('src/services/terminal', [
-    CLAUDE_SDK_BAN,
-    CODEX_SDK_BAN,
-    OPENCODE_SDK_BAN,
-    OTEL_BAN,
-  ]),
-  ...confineDirectory('src/services/observability', [
-    CLAUDE_SDK_BAN,
-    CODEX_SDK_BAN,
-    OPENCODE_SDK_BAN,
-    NODE_PTY_BAN,
-  ]),
-  ...confineDirectory('src/services/runtimes/claude-code', [
-    CODEX_SDK_BAN,
-    OPENCODE_SDK_BAN,
-    OTEL_BAN,
-  ]),
-  ...confineDirectory('src/services/runtimes/codex', [CLAUDE_SDK_BAN, OPENCODE_SDK_BAN, OTEL_BAN]),
-  ...confineDirectory('src/services/runtimes/opencode', [CLAUDE_SDK_BAN, CODEX_SDK_BAN, OTEL_BAN]),
+  // Built from one helper, filtering the single `ALL_CONFINED` source rather
+  // than restating each directory's ban list by hand — restating by hand is
+  // what drifted (DOR-689: node-pty silently stopped being banned in three of
+  // these five directories, because nobody updates every call site when a
+  // fifth ban is added). `!== OWN_BAN` is safe because every ban is a distinct
+  // object identity, never reconstructed, so this can never accidentally
+  // filter out a different directory's ban with the same shape.
+  ...confineDirectory(
+    'src/services/terminal',
+    ALL_CONFINED.filter((ban) => ban !== NODE_PTY_BAN)
+  ),
+  ...confineDirectory(
+    'src/services/observability',
+    ALL_CONFINED.filter((ban) => ban !== OTEL_BAN)
+  ),
+  ...confineDirectory(
+    'src/services/runtimes/claude-code',
+    ALL_CONFINED.filter((ban) => ban !== CLAUDE_SDK_BAN)
+  ),
+  ...confineDirectory(
+    'src/services/runtimes/codex',
+    ALL_CONFINED.filter((ban) => ban !== CODEX_SDK_BAN)
+  ),
+  ...confineDirectory(
+    'src/services/runtimes/opencode',
+    ALL_CONFINED.filter((ban) => ban !== OPENCODE_SDK_BAN)
+  ),
 
   ...testConfig,
 ]);
