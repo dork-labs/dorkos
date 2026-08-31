@@ -30,8 +30,6 @@ export function PreferencesTab() {
     toggleDevtools,
     showTaskCelebrations,
     setShowTaskCelebrations,
-    enableTasksNotifications,
-    setEnableTasksNotifications,
     promoEnabled,
     setPromoEnabled,
     setOnboardingHiddenForSession,
@@ -111,12 +109,12 @@ export function PreferencesTab() {
               escalation settings — one place to answer "how loud may this be?"
               rather than one switch here and another in a session's popover. */}
 
-          <SwitchSettingRow
-            label="Scheduled run notifications"
-            description="Show a toast when a scheduled task finishes"
-            checked={enableTasksNotifications}
-            onCheckedChange={setEnableTasksNotifications}
-          />
+          {/* "Scheduled run notifications" used to sit here, promising a toast
+              when a scheduled task finished. No code ever rendered that toast —
+              nothing in the client subscribed to task-run completion — so the
+              setting was a promise nobody kept. Removed rather than wired,
+              since there is no task-run-finished event to hang it on yet
+              (DOR-1522). Reintroduce it once that event exists. */}
 
           <SwitchSettingRow
             label="Feature suggestions"
