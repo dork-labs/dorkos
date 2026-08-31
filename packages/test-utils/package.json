@@ -38,7 +38,7 @@
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/relay": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
-    "@tanstack/react-query": "^5.102.3",
+    "@tanstack/react-query": "^5.102.8",
     "@types/express": "^5.0.6",
     "@types/react": "^19.2.18",
     "@types/supertest": "^7.2.1",
