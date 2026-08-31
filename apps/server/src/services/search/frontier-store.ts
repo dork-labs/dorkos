@@ -224,6 +224,26 @@ export type Writer = Db | Parameters<Parameters<Db['transaction']>[0]>[0];
 const INSERT_CHUNK_ROWS = 500;
 
 /**
+ * The two sentinel control characters `query.ts`'s `snippet()` call wraps a
+ * match in (`MATCH_OPEN`/`MATCH_CLOSE`, U+0001/U+0002) — chosen precisely
+ * because no message body is SUPPOSED to contain them (DOR-1552). Stripped
+ * here, at the one chokepoint every projected message passes through before
+ * it reaches the index, rather than merely documented as an invariant a
+ * malformed or hand-edited source could violate: a body that smuggled a raw
+ * sentinel in would otherwise make `search-excerpt.ts`'s parser see a match
+ * marker that was never a real one.
+ */
+// These two control characters are the whole point of the pattern: the
+// sentinels this function exists to strip, not an accidental escape.
+// eslint-disable-next-line no-control-regex
+const SENTINEL_PATTERN = /[\u0001\u0002]/g;
+
+/** Remove any sentinel byte a message body cannot legitimately contain (DOR-1552). */
+function stripSentinels(body: string): string {
+  return body.replace(SENTINEL_PATTERN, '');
+}
+
+/**
  * Write projected messages for one source, in chunks, inside the caller's
  * transaction.
  *
@@ -245,7 +265,7 @@ export function insertMessages(
       messageId: message.messageId,
       role: message.role,
       createdAt: message.createdAt,
-      body: message.body,
+      body: stripSentinels(message.body),
     }));
     writer
       .insert(messages)

@@ -96,7 +96,18 @@ function parseHsl(body: string): RgbColor | null {
   return hslToRgb(hue, saturation, lightness);
 }
 
-/** Parses hex, `rgb()`/`rgba()`, and `hsl()`/`hsla()` — every format an identity colour in this cockpit is stored or hashed into (see `hashToHslColor`). Anything else returns `null`. */
+/**
+ * Parses hex, `rgb()`/`rgba()`, and `hsl()`/`hsla()` — every format an
+ * identity colour in this cockpit is stored or hashed into (see
+ * `hashToHslColor`). Anything else returns `null`, which now correctly
+ * declines `fill` rather than guessing (DOR-998) — including a CSS named
+ * colour (`'coral'`) or `oklch(...)`, neither of which any code path here
+ * writes, but a hand-edited `agent.json` could. `IdentityAvatar` falling
+ * back to `tint` for those is a safe, if slightly conservative, default;
+ * extending this parser to cover them would need a real OKLab→sRGB
+ * conversion and the 148-entry CSS keyword table, which is more than this
+ * function's callers currently need to carry.
+ */
 function parseCssColor(input: string): RgbColor | null {
   const value = input.trim();
   const hex = HEX_PATTERN.exec(value);

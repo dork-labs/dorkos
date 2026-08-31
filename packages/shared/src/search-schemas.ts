@@ -162,8 +162,10 @@ export const SearchHitSchema = z
      * literal text `<mark>` — included, so a renderer escapes the text and
      * re-applies the marks, never assigns it to `innerHTML`. Control
      * characters were chosen over a visible delimiter like `<mark>` precisely
-     * because a message body can contain that text; it cannot contain
-     * U+0001/U+0002 (DOR-1552).
+     * because a message body can contain that text; U+0001/U+0002 cannot
+     * reach here at all — the server's indexer strips both bytes from every
+     * message before it is indexed (DOR-1552), so this is an enforced
+     * invariant of the wire contract, not merely an assumption about it.
      */
     excerpt: z.string(),
   })

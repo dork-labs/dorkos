@@ -5,4 +5,4 @@ covers:
 
 ### Fixed
 
-- Small buttons ("Try again", "Create agent", and every other size="sm" button) are now 44px tall on touch screens, up from 40px, meeting the minimum tap target Apple and Google both recommend. Nothing changed on desktop (DOR-771)
+- On narrow screens, small buttons ("Try again", "Create agent", and others like them) are easier to tap. They're now 44px tall, up from 40px, meeting the minimum size Apple and Google both recommend for a comfortable tap (DOR-771)

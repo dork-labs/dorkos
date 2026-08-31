@@ -79,17 +79,19 @@ import { sql, type Db, type SQL } from '@dorkos/db';
 import { searchTokens } from '@dorkos/shared/search-schemas';
 
 /**
- * The character `snippet()` opens a match with — U+0001 (SOH), a control
- * character no message body typed or pasted into chat can contain. Chosen
- * over the earlier `<mark>` literal, which a message containing that exact
- * substring made indistinguishable from a real match marker (DOR-1552). Kept
- * in sync with the client's copy of the same sentinel in
+ * The character `snippet()` opens a match with — U+0001 (SOH). Chosen over
+ * the earlier `<mark>` literal, which a message containing that exact
+ * substring made indistinguishable from a real match marker (DOR-1552).
+ * `frontier-store.ts`'s `insertMessages` strips this byte (`stripSentinels`)
+ * from every message body before it ever reaches `messages_fts`, so a real
+ * message cannot contain it — ENFORCED at index time, not merely assumed.
+ * Kept in sync with the client's copy of the same sentinel in
  * `features/command-palette/model/search-excerpt.ts`, which parses it back
  * out — there is no shared module between the two runtimes to hold it once.
  */
 export const MATCH_OPEN = '\u0001';
 
-/** The character `snippet()` closes a match with — U+0002 (STX), for the same reason as {@link MATCH_OPEN}. */
+/** The character `snippet()` closes a match with — U+0002 (STX), enforced the same way; see {@link MATCH_OPEN}. */
 export const MATCH_CLOSE = '\u0002';
 
 /** One hit, as a coordinate the owning store resolves. */
@@ -218,8 +220,10 @@ export function searchMessages(db: Db, query: MessageQuery): MessageHit[] {
       // The open/close markers are sentinel control characters, not `<mark>`
       // literals: a message body typed or pasted into chat can contain the
       // text `<mark>`, which made it indistinguishable from a real match
-      // marker at the contract level (DOR-1552). No chat message can contain
-      // U+0001/U+0002, so this collision cannot recur.
+      // marker at the contract level (DOR-1552). U+0001/U+0002 cannot recur
+      // the same way — `insertMessages` (`frontier-store.ts`) strips both
+      // bytes from every body before it reaches this index, so it is not a
+      // message a person could ever have typed, it is enforced absence.
       sql`snippet(messages_fts, 0, ${MATCH_OPEN}, ${MATCH_CLOSE}, '…', 12)`
     : sql`NULL`;
 

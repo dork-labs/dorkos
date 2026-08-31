@@ -43,9 +43,13 @@ export type ButtonSize =
 
 // xs and icon-xs are intentionally small UI chrome — excluded from responsive scaling
 const RESPONSIVE_SIZE_CLASSES: Partial<Record<ButtonSize, string>> = {
-  // 44px on touch (Apple HIG / Material minimum), not 40px — DOR-771. Desktop
-  // stays md:h-8 (32px): a mouse pointer has no minimum target size, and this
-  // is the one field of the pair that matters for touch.
+  // 44px below the `md` breakpoint (Apple HIG / Material minimum), not 40px
+  // — DOR-771. This gate is VIEWPORT WIDTH (Tailwind's `md:`, 768px), not a
+  // touch-capability media query, so it is really "narrow screens get more
+  // headroom", not "touch screens do" — a resized desktop window under 768px
+  // gets the taller target too, and a touch device above it does not. Kept
+  // 32px past `md:` on purpose: the width is a proxy for finger-sized targets
+  // mattering more, not a claim about the actual input device.
   sm: 'h-11 md:h-8',
   default: 'h-11 md:h-9',
   lg: 'h-12 md:h-10',

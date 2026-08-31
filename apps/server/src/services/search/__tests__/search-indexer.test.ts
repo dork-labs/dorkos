@@ -640,6 +640,23 @@ describe('SearchIndexer over the room log', () => {
     expect(hits.some((hit) => hit.excerpt.includes('\u0001dog\u0002'))).toBe(true);
   });
 
+  it('strips a raw sentinel byte out of a message body before it reaches the index (DOR-1552)', async () => {
+    // The invariant `search-excerpt.ts` and `query.ts` document — no message
+    // body can carry U+0001/U+0002 — used to be an ASSUMPTION about what chat
+    // text happens to contain. This is the enforcement: whatever a person (or
+    // a corrupted source) actually typed, the bytes that would masquerade as
+    // real match markers never survive into `messages.body`.
+    seedRoom('room-sentinel');
+    say('room-sentinel', 'careful\u0001 with\u0002 this word');
+    await new SearchIndexer(db, [roomsSource]).sweep();
+
+    const [row] = indexedMessages() as { body: string }[];
+    expect(row!.body).not.toContain('\u0001');
+    expect(row!.body).not.toContain('\u0002');
+    // Stripped, not replaced with a space — the surrounding text is untouched.
+    expect(row!.body).toBe('careful with this word');
+  });
+
   it('indexes a container far past SQLite s parameter ceiling for one statement', async () => {
     // 6,000 rows bind 36,000 host parameters, and SQLite refuses a statement above
     // 32,766. Chunking is what keeps a single container from failing outright, so
