@@ -70,7 +70,6 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
   const queryClient = useQueryClient();
   const transport = useTransport();
 
-  const setPreviousCwd = useAppStore((s) => s.setPreviousCwd);
   const openFeedback = useFeedbackDialogStore((s) => s.openFeedback);
 
   // URL-based openers for dialog panels. These update TanStack Router
@@ -105,21 +104,17 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
   const handleAgentSelect = useCallback(
     (agent: AgentPathEntry) => {
       // The palette closes at once — it has done its job either way — but the
-      // switch-back target and the frecency bump wait until the agent actually
-      // opens. `setDir` resolves which conversation that is, which can fail or
-      // be overtaken; recording either up front would rank an agent you never
-      // reached and offer "switch back" to a directory you never left
-      // (DOR-928).
-      const leaving = selectedCwd;
+      // frecency bump waits until the agent actually opens. `setDir` resolves
+      // which conversation that is, which can fail or be overtaken; recording
+      // up front would rank an agent you never reached (DOR-928).
       setDir(agent.projectPath, {
         onOpened: () => {
-          if (leaving && leaving !== agent.projectPath) setPreviousCwd(leaving);
           recordAgentOpened(agent.projectPath);
         },
       });
       closePalette();
     },
-    [recordAgentOpened, setDir, closePalette, selectedCwd, setPreviousCwd]
+    [recordAgentOpened, setDir, closePalette]
   );
 
   // Shared with the sidebar and the chat header's agent chip; carries the

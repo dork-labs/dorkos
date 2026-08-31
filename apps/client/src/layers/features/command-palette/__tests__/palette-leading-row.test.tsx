@@ -125,8 +125,6 @@ vi.mock('@/layers/shared/model', () => ({
       setCanvasOpen: vi.fn(),
       setRightPanelOpen: vi.fn(),
       setActiveRightPanelTab: vi.fn(),
-      setPreviousCwd: vi.fn(),
-      previousCwd: null,
       globalPaletteInitialSearch: null,
       clearGlobalPaletteInitialSearch: vi.fn(),
     };

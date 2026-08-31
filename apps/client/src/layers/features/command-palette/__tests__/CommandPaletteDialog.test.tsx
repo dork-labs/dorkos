@@ -114,7 +114,6 @@ const mockSetActiveRightPanelTab = vi.fn();
 
 let mockGlobalPaletteOpen = true;
 
-const mockSetPreviousCwd = vi.fn();
 const mockClearGlobalPaletteInitialSearch = vi.fn();
 
 vi.mock('@/layers/shared/model', () => ({
@@ -125,7 +124,6 @@ vi.mock('@/layers/shared/model', () => ({
       setPickerOpen: mockSetPickerOpen,
       setRightPanelOpen: mockSetRightPanelOpen,
       setActiveRightPanelTab: mockSetActiveRightPanelTab,
-      setPreviousCwd: mockSetPreviousCwd,
       globalPaletteInitialSearch: null,
       clearGlobalPaletteInitialSearch: mockClearGlobalPaletteInitialSearch,
     };
