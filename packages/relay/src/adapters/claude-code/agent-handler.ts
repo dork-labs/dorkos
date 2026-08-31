@@ -10,7 +10,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
-import type { PermissionMode } from '@dorkos/shared/schemas';
+import { StreamEventTypeSchema, type PermissionMode } from '@dorkos/shared/schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { defuseSystemTags } from '@dorkos/shared/untrusted-text';
@@ -164,32 +164,21 @@ function abortText(signal: AbortSignal): string | undefined {
  *
  * A hand-set `replyTo: relay.agent.*` can route any StreamEvent back to an
  * agent as if it were a prompt; this set is what tells that case apart from a
- * real message. `thinking_delta`, `tool_progress`, and `system_status` were
- * missing (DOR-804): a new stream event type shipped without a matching entry
- * here, so it would have round-tripped as a prompt instead of being
- * recognized as stream traffic. The fixture test pins its own literal list
- * rather than importing this one, on purpose — an import would move in
- * lockstep with a regression here instead of catching it.
+ * real message. Derived from {@link StreamEventTypeSchema}'s own enum values
+ * (DOR-804) rather than a hand-copied literal list: `thinking_delta`,
+ * `tool_progress`, and `system_status` were missing from an earlier literal
+ * copy of this set, each added only after it round-tripped as a prompt in
+ * production — three instances of the same class of gap. Deriving from the
+ * schema closes the class instead of the instances: a stream event type added
+ * to `StreamEventTypeSchema` automatically joins this guard, with nothing
+ * left to remember to update here.
+ *
+ * The fixture test pins its own literal expected list rather than importing
+ * this set, on purpose — an import would move in lockstep with a regression
+ * here instead of catching it; the test separately asserts this set's
+ * coverage against the schema so a mismatch between the two is still caught.
  */
-const STREAM_EVENT_TYPES = new Set([
-  'text_delta',
-  'thinking_delta',
-  'tool_call_start',
-  'tool_call_end',
-  'tool_call_delta',
-  'tool_progress',
-  'tool_result',
-  'session_status',
-  'system_status',
-  'approval_required',
-  'question_prompt',
-  'error',
-  'done',
-  'task_update',
-  'relay_message',
-  'relay_receipt',
-  'message_delivered',
-]);
+const STREAM_EVENT_TYPES: ReadonlySet<string> = new Set(StreamEventTypeSchema.options);
 
 /**
  * Handle a relay.agent.{agentId} message.

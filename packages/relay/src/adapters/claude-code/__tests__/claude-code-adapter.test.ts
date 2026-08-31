@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
+import { StreamEventTypeSchema } from '@dorkos/shared/schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { ClaudeCodeAdapter } from '../index.js';
 import type {
@@ -1174,6 +1175,31 @@ describe('ClaudeCodeAdapter', () => {
           envelope.id,
           expect.objectContaining({ status: 'processed', processedAt: expect.any(Number) })
         );
+      }
+    });
+
+    it('skips every type StreamEventTypeSchema declares, not just the ones remembered above (DOR-804)', async () => {
+      // The production guard derives its set from StreamEventTypeSchema.options
+      // rather than a hand-copied literal (DOR-804), so a new stream event type
+      // joins the guard automatically. This test reads from the SCHEMA
+      // directly — not from the guard's own derived set, and not from the
+      // literal list in the test above — so a future regression back to a
+      // hand-copied, incomplete literal in production is what this test would
+      // catch: it cannot move in lockstep with that regression the way
+      // importing the production set would.
+      await adapter.start(relay);
+
+      for (const type of StreamEventTypeSchema.options) {
+        vi.clearAllMocks();
+        const envelope = createTestEnvelope({
+          payload: { type, data: { text: 'response from peer agent' } },
+          replyTo: 'relay.human.console.client-1',
+        });
+
+        const result = await adapter.deliver(envelope.subject, envelope);
+
+        expect(result.success, `type=${type}`).toBe(true);
+        expect(agentManager.sendMessage, `type=${type}`).not.toHaveBeenCalled();
       }
     });
   });
