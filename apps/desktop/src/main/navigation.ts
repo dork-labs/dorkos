@@ -1,4 +1,6 @@
 import type { BrowserWindow } from 'electron';
+import log from 'electron-log';
+import { SERVER_READY_PARENT_TIMEOUT_MS } from '../shared/boot-timeouts';
 
 /**
  * Client route the "Settings…" menu item opens.
@@ -106,12 +108,19 @@ export function findDeepLinkArg(argv: readonly string[]): string | null {
  * considered stale (DOR-564). Without a bound, a `dorkos://` deep link that
  * arrives while nothing is subscribed sits in the slot indefinitely — so
  * opening the app the next morning silently navigates to whatever was asked
- * for yesterday, with no explanation. 30 seconds is far longer than any real
- * boot or window-creation takes, so a delivery within the window is
- * indistinguishable from an unbounded wait; past it, the request is too old
- * to still reflect what the person wants.
+ * for yesterday, with no explanation.
+ *
+ * Pinned to {@link SERVER_READY_PARENT_TIMEOUT_MS} (70s) rather than a
+ * standalone number: a cold-start deep link can arrive before the window
+ * even exists, and the window doesn't get created until the server is up —
+ * which the repo's own boot budget says can legitimately take that long. A
+ * shorter TTL would expire a genuinely-still-booting deep link before its
+ * renderer ever got the chance to subscribe and claim it, which is the exact
+ * silent-drop failure this bound exists to prevent, just triggered early
+ * instead of late. Reusing the constant also means the two windows can never
+ * silently drift apart again.
  */
-const PENDING_PATH_TTL_MS = 30_000;
+const PENDING_PATH_TTL_MS = SERVER_READY_PARENT_TIMEOUT_MS;
 
 /** The most recently requested path that hasn't been delivered yet (last-write-wins), and when it was queued. */
 let pendingPath: { path: string; queuedAt: number } | null = null;
@@ -214,6 +223,13 @@ export function resolvePendingNavigate(webContentsId: number): string | null {
   const queued = pendingPath;
   pendingPath = null;
   if (!queued) return null;
-  if (Date.now() - queued.queuedAt > PENDING_PATH_TTL_MS) return null;
+  const age = Date.now() - queued.queuedAt;
+  if (age > PENDING_PATH_TTL_MS) {
+    log.info(
+      `[navigation] Dropping a queued path older than the ${PENDING_PATH_TTL_MS}ms TTL ` +
+        `(queued ${age}ms ago): ${queued.path}`
+    );
+    return null;
+  }
   return queued.path;
 }
