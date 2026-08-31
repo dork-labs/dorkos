@@ -63,9 +63,9 @@ describe('createAgentIdentityUnregisterCascade', () => {
   it('never says nothing was there when an agent held no tokens', async () => {
     const cascade = createAgentIdentityUnregisterCascade(() => service, logger);
     cascade('agent-1', '/projects/never-minted');
-    await vi.waitFor(() => expect(service.revoke).toBeDefined());
     // revoke() resolves 0; the info line is conditional on count > 0, so
-    // nothing should be logged for an agent that never minted a token.
+    // nothing should be logged for an agent that never minted a token. Give
+    // its promise chain a turn before asserting.
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(logger.info).not.toHaveBeenCalled();
     expect(logger.warn).not.toHaveBeenCalled();
