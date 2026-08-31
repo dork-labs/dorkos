@@ -118,7 +118,22 @@ export function useProfileAgent(
           // 400 used to look exactly like a save that worked (DOR-1253).
           // Deliberately a `mutate` callback rather than `meta`: what it does is
           // set state on THIS component, which a closed panel no longer wants.
-          onSuccess: () => onSaved?.(),
+          onSuccess: () => {
+            onSaved?.();
+            // Every open room's roster (DOR-1114). Nothing else invalidates
+            // `roomKeys.detail` on a rename or a convention-file edit, so a
+            // renamed agent's old name could sit in an idle room's message
+            // gutter and mention pills until an unrelated refetch. There is no
+            // event that names which rooms this agent is in, so this sweeps
+            // every open detail rather than guessing.
+            //
+            // `onSuccess`, not `onSettled`: unlike the roster and agent-cache
+            // sweep below, this one is real network traffic for every open
+            // room, not a bare cache invalidation — a REFUSED save should not
+            // pay for a refetch of something that never changed (adversarial
+            // review).
+            void queryClient.invalidateQueries({ queryKey: roomKeys.details() });
+          },
           onSettled: () => {
             // The roster the portrait and the rows are drawn from…
             void queryClient.invalidateQueries({ queryKey: TEAM_ROSTER_KEY });
@@ -127,13 +142,6 @@ export function useProfileAgent(
             // `agentKeys.resolved`, so a rename left the panel saying one name
             // and the list beside it saying the old one. The prefix covers both.
             void queryClient.invalidateQueries({ queryKey: agentKeys.all });
-            // …and every open room's roster (DOR-1114). Nothing else invalidates
-            // `roomKeys.detail` on a rename or a convention-file edit, so a
-            // renamed agent's old name could sit in an idle room's message
-            // gutter and mention pills until an unrelated refetch. There is no
-            // event that names which rooms this agent is in, so this sweeps
-            // every open detail rather than guessing.
-            void queryClient.invalidateQueries({ queryKey: roomKeys.details() });
           },
         }
       );

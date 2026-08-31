@@ -9,7 +9,7 @@
  * unrelated refetch touched it.
  */
 import type { ReactNode } from 'react';
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { renderHook, waitFor, act, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
@@ -84,5 +84,33 @@ describe('useProfileAgent', () => {
     expect(invalidated).toContainEqual([...TEAM_ROSTER_KEY]);
     expect(invalidated).toContainEqual(agentKeys.all);
     expect(invalidated).toContainEqual(roomKeys.details());
+  });
+
+  it('does not sweep every open room when the save is refused (adversarial review)', async () => {
+    // The roster and agent-cache invalidations below still fire on a refused
+    // save — `useUpdateAgent`'s own `onSettled` needs to re-sync the manifest
+    // cache with whatever the server actually held onto either way. The room
+    // sweep is different: it is real network traffic for every open room, paid
+    // for a change that never landed, so it belongs to `onSuccess` alone.
+    const transport = createMockTransport({
+      updateAgentByPath: vi.fn().mockRejectedValue(new Error('locked')),
+    });
+    const { queryClient, invalidated } = recordingWrapper();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>{children}</TransportProvider>
+      </QueryClientProvider>
+    );
+
+    const { result } = renderHook(() => useProfileAgent(AGENT_MEMBER), { wrapper });
+
+    await act(async () => {
+      result.current.update({ displayName: 'The Warden' });
+    });
+
+    await waitFor(() => expect(transport.updateAgentByPath).toHaveBeenCalled());
+    expect(invalidated).toContainEqual([...TEAM_ROSTER_KEY]);
+    expect(invalidated).toContainEqual(agentKeys.all);
+    expect(invalidated).not.toContainEqual(roomKeys.details());
   });
 });
