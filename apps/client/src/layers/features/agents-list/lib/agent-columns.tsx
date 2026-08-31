@@ -172,9 +172,17 @@ export function createAgentColumns(
     },
 
     // ── Activity ─────────────────────────────────────────────
+    // The one column with no declared width — it takes whatever `table-fixed`
+    // leaves over once Agent, Managed by, Scheduled and Actions have theirs.
+    // That remainder can shrink past the one-word "Activity" header's content
+    // width (e.g. with a Profile panel docked beside the table), and a `<th>`
+    // has no default clipping — the overflowing text painted straight over
+    // "Managed by" next to it, reading as "Manaigedy by" (DOR-1287).
+    // `overflow-hidden` clips it instead of bleeding into the next header.
     {
       accessorKey: 'lastSeenEvent',
       header: 'Activity',
+      meta: { headClassName: 'overflow-hidden', cellClassName: 'overflow-hidden' },
       cell: ({ row }) => <ActivityCell row={row.original} />,
     },
 

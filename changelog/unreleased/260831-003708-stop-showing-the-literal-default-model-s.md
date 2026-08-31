@@ -5,4 +5,5 @@ covers:
 
 ### Fixed
 
-- Stop showing the literal `default` model sentinel (DOR-1279)
+- A session running a runtime's own default model no longer shows a
+  meaningless "· default" after the runtime name (DOR-1279)

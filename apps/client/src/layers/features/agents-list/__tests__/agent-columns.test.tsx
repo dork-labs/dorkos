@@ -90,4 +90,19 @@ describe('the fleet table', () => {
     renderTable([row({ id: 'dorkbot', name: 'dorkbot', managedBy: null })]);
     expect(managedByCells()).toEqual(['—']);
   });
+
+  it('clips the Activity header instead of letting it bleed into the next column (DOR-1287)', () => {
+    // The Activity column is the one with no declared width — under
+    // `table-fixed` it takes whatever the other columns leave over, which can
+    // shrink past its one-word header's content width (e.g. a docked Profile
+    // panel narrowing the table). A `<th>` with no clipping lets overflowing
+    // text paint on top of its neighbor instead of wrapping, which is how
+    // "Activity" / "Managed by" read as "Manaigedy by" in the field.
+    // jsdom lays out every element at 0×0, so it cannot see the overlap
+    // itself — this only pins the clipping class that prevents it; the
+    // narrowed-table appearance still wants a browser check.
+    renderTable([row({ id: '1', name: 'scout' })]);
+    const header = screen.getByRole('columnheader', { name: 'Activity' });
+    expect(header.className).toMatch(/overflow-hidden/);
+  });
 });
