@@ -634,6 +634,31 @@
   user-select: text;
 }
 
+/* Toast/error text selectable (DOR-254): sonner portals its toaster straight
+   onto <body> rather than into React's own tree, so it sits outside every
+   content-surface re-enable above and inherited the disable with nothing to
+   opt it back in — a person could not select and copy an error message out
+   of a toast. `[data-sonner-toast]` is the attribute sonner stamps on every
+   individual toast. */
+.desktop [data-sonner-toast] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Window dim-on-blur (DOR-254): native mac apps dim their chrome when the
+   window loses focus (Linear does this too) — a small signal for which
+   window is active when several are open. `useWindowFocusDimming` toggles
+   `.window-blurred` on `<html>` from `window`'s own focus/blur events;
+   macOS-only, hence scoped to `.desktop-darwin` rather than the
+   platform-neutral `.desktop`. Targets the drag-region chrome (header, tab
+   strip, titlebar strip) and the sidebar — the same surfaces DOR-253 already
+   treats as "the app's chrome" rather than its content. */
+.desktop-darwin.window-blurred .app-drag-region,
+.desktop-darwin.window-blurred [data-slot='sidebar'] {
+  opacity: 0.55;
+  transition: opacity 150ms ease-out;
+}
+
 *:where(:not(.copilot-view-content *)) {
   border-color: hsl(var(--border));
 }
@@ -1792,6 +1817,16 @@ body {
 .dork-tour-mask--reduced-motion,
 .dork-tour-mask--reduced-motion * {
   transition: none !important;
+}
+
+/* Overscroll tuning (DOR-254): the chat transcript and sidebar lists rubber-
+   banded on a trackpad even on desktop — the mobile-only pull-to-refresh
+   guard below never covered them since it's gated on viewport width, not
+   input device. `contain` stops scroll chaining into the page behind these
+   panels without touching that mobile rule. */
+.chat-scroll-area,
+[data-sidebar='content'] {
+  overscroll-behavior: contain;
 }
 
 /* iOS input zoom prevention (fallback for low --mobile-scale values) */

@@ -10,6 +10,7 @@ import {
 import { useElectronNavigate } from './app/use-electron-navigate';
 import { useElectronCloseTab } from './app/use-electron-close-tab';
 import { useElectronFullscreen } from './app/use-electron-fullscreen';
+import { useWindowFocusDimming } from './app/use-window-focus-dimming';
 import { useRoomDocumentTitle } from './app/use-room-document-title';
 import { TitlebarDragStrip } from './app/TitlebarDragStrip';
 import { SidebarBodyErrorBoundary } from './app/SidebarBodyErrorBoundary';
@@ -293,6 +294,9 @@ export function AppShell() {
   // clearance for them (below) is dropped for as long as this holds. Always
   // `false` without the bridge.
   const isFullscreen = useElectronFullscreen();
+  // Dim the chrome when the window loses focus (DOR-254) — a no-op outside
+  // the macOS desktop shell.
+  useWindowFocusDimming();
   // Bridge the global `/api/events` session-list stream into the shared
   // session-list query cache (sidebar/dashboard/loader go live; ADR-0265).
   useGlobalSessionStream();
