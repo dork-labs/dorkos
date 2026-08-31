@@ -47,6 +47,7 @@ import { slugify } from '@dorkos/skills/slug';
 import { parseDuration } from '@dorkos/skills/duration';
 import { agentSkillsRoot, globalSkillsRoot, resolveRootPath } from '../tasks/skills-roots.js';
 import { readScheduleFromSkill } from '../tasks/skills-root-discovery.js';
+import { clampSchedulePermissionMode } from '../tasks/schedule-permission-clamp.js';
 import type { TaskStore } from '../tasks/task-store.js';
 import type { TaskRegistrar } from '../tasks/task-registrar.js';
 import { resolveParkedScheduleRemoved } from '../notifications/emitters/schedule-park.js';
@@ -192,7 +193,14 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
           agentId,
           enabled: req.enabled,
           maxRuntime: req.maxRuntime ? parseDuration(req.maxRuntime) : null,
-          permissionMode: req.permissionMode,
+          // `taskStore.createTask` is the raw row writer — unlike
+          // `upsertFromFile` above, it has no clamp of its own (DOR-823). This
+          // branch runs exactly when `parseSkillFile` fails on the file this
+          // method just wrote, which is precisely when a package-declared
+          // schedule's permission mode must not reach the row unclamped: the
+          // clamp exists so a Shape's schedule can't self-elevate, and a
+          // parse failure is not a reason to skip it.
+          permissionMode: clampSchedulePermissionMode(req.permissionMode ?? 'acceptEdits').mode,
           filePath,
         });
 

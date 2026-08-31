@@ -26,6 +26,16 @@ import { TaskRegistrar, type SchedulerRegistrationTarget } from '../../tasks/tas
 import { readRawFrontmatter } from '@dorkos/skills/parser';
 import { ShapeScheduleService } from '../shape-schedule-service.js';
 
+// Wraps the real parser so every existing test in this file keeps exercising
+// the genuine read-your-own-write round trip; only the fallback-path test
+// below overrides a single call with `mockReturnValueOnce` to force the
+// branch `parseSkillFile` failing on the file `createSchedule` just wrote
+// takes (DOR-823).
+vi.mock('@dorkos/skills/parser', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@dorkos/skills/parser')>();
+  return { ...actual, parseSkillFile: vi.fn(actual.parseSkillFile) };
+});
+
 /** A global, disabled inbox-tick request (agent missing at apply time). */
 function globalDisabledTick(): CreateTaskRequest {
   return {
@@ -429,6 +439,68 @@ describe('ShapeScheduleService.createSchedule — every declarable permission mo
       expect(row?.permissionMode).toBe(mode === 'bypassPermissions' ? 'acceptEdits' : mode);
     }
   );
+});
+
+describe('ShapeScheduleService.createSchedule — the fallback path (DOR-823)', () => {
+  let db: Db;
+  let store: TaskStore;
+  let dorkHome: string;
+  let service: ShapeScheduleService;
+
+  beforeEach(async () => {
+    db = createTestDb();
+    store = new TaskStore(db);
+    dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'dork-shape-fallback-'));
+    service = new ShapeScheduleService({
+      taskStore: store,
+      registrar: new TaskRegistrar({
+        store,
+        scheduler: { isStarted: true, registerTask: vi.fn(() => true), unregisterTask: vi.fn() },
+      }),
+      meshCore: undefined,
+      dorkHome,
+      logger: {
+        info: vi.fn(),
+        warn: vi.fn(),
+        debug: vi.fn(),
+        error: vi.fn(),
+      } as unknown as Logger,
+    });
+  });
+
+  afterEach(async () => {
+    vi.mocked(parseSkillFile).mockClear();
+    await fs.rm(dorkHome, { recursive: true, force: true });
+  });
+
+  it('clamps bypassPermissions in the row even when parseSkillFile fails on the file it just wrote', async () => {
+    // Force exactly the branch the clamp gap lives in: the write succeeds, but
+    // reading the file straight back fails, so `createSchedule` falls through
+    // to `taskStore.createTask` — the raw row writer with no clamp of its own.
+    vi.mocked(parseSkillFile).mockReturnValueOnce({
+      ok: false,
+      error: 'forced parse failure (DOR-823 fixture)',
+      filePath: '(fixture)',
+    });
+
+    const request: CreateTaskRequest = {
+      name: 'inbox-tick',
+      description: 'poll the inbox',
+      prompt: 'run one tick',
+      cron: '*/15 * * * *',
+      timezone: null,
+      target: 'global',
+      enabled: true,
+      permissionMode: 'bypassPermissions',
+    };
+    const created = await service.createSchedule(request, { shape: 'linear-ops' });
+
+    expect(created).toBe(true);
+    const row = store.getTasks().find((t) => t.name === request.name);
+    // Not 'bypassPermissions': a package-declared schedule cannot self-elevate,
+    // and a parse failure on the fallback path is not an exemption from that.
+    expect(row?.permissionMode).toBe('acceptEdits');
+  });
 });
 
 describe('ShapeScheduleService.deleteSchedulesForShape (integration)', () => {
