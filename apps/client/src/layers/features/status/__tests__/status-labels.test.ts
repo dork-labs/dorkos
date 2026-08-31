@@ -87,6 +87,16 @@ describe('statusModelLabel', () => {
     const long = option('x', 'Extremely Verbose Model Name');
     expect(statusModelLabel('x', [long]).length).toBeLessThanOrEqual(STATUS_VALUE_MAX_CHARS);
   });
+
+  it('says "Default" for the sentinel even before the catalog has answered (adversarial review)', () => {
+    // The cold-catalog window: `options` is empty while the read is still in
+    // flight, so the lookup that turns `'default'` into "Default" elsewhere in
+    // this file never runs. `formatModelLabel` treats the sentinel as
+    // unresolved and returns `null` (DOR-1279) — which used to fall through to
+    // the raw wire value here, resurfacing the literal word "default" the
+    // catalog-loaded case never shows.
+    expect(statusModelLabel('default', [])).toBe('Default');
+  });
 });
 
 describe('the compactness invariant the slot budget rests on', () => {
