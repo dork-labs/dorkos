@@ -41,7 +41,7 @@ export function SessionRowFull({
   const renameInputRef = useRef<HTMLInputElement>(null);
   const committedRef = useRef(false);
 
-  const { isUnsafe } = useSessionPermissionSummary(session);
+  const { isFullPower } = useSessionPermissionSummary(session);
 
   const now = useNow(60_000);
   const relativeTime = useMemo(
@@ -149,7 +149,7 @@ export function SessionRowFull({
                       aria-label="Awaiting your approval"
                     />
                   )}
-                  {isUnsafe && <FullPowerIcon />}
+                  {isFullPower && <FullPowerIcon />}
                   {onRename && !isRenaming && (
                     <button
                       type="button"

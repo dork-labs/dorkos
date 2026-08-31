@@ -237,9 +237,11 @@ describe('SessionRow variant="full"', () => {
   // has to name the mode the session is actually in. It used to derive a
   // boolean — "is this bypass?" — and print "Default" for everything else,
   // which told the person that Plan Mode (proposes, never acts) and Don't Ask
-  // (acts without prompting) were the same setting (DOR-496).
+  // (acts without prompting) were the same setting (DOR-496). Bypass itself
+  // reads "Full power" rather than the runtime's own mode name, matching the
+  // mark on the row face above it — one register for one fact (DOR-1499).
   it.each([
-    ['bypassPermissions', 'Bypass All'],
+    ['bypassPermissions', 'Full power'],
     ['plan', 'Plan Mode'],
     ['acceptEdits', 'Accept Edits'],
     ['dontAsk', "Don't Ask"],
@@ -317,7 +319,7 @@ describe('SessionRow variant="full"', () => {
       <SessionRow variant="full" session={makeSession()} isActive={false} onClick={() => {}} />
     );
     fireEvent.click(screen.getByLabelText('Session details'));
-    expect(screen.getByText('Bypass All')).toBeDefined();
+    expect(screen.getByText('Full power')).toBeDefined();
     // The details line and the mark on the row face are the same fact, so they
     // read in the same colour — green, never red. Scoped to the details panel:
     // the context gauge on the row face is red on purpose when a session is
