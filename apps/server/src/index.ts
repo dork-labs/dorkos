@@ -212,8 +212,10 @@ import { createExternalMcpServer } from './services/core/mcp-server.js';
 import { composeDorkOsCapabilityRegistry } from './services/core/self-description/dorkos-registry.js';
 import {
   initAgentIdentityService,
+  getAgentIdentityService,
   createCapabilityAttributionObserver,
   createCapabilityGateAuditObserver,
+  createAgentIdentityUnregisterCascade,
 } from './services/core/agent-identity/index.js';
 import {
   ApprovalGrantService,
@@ -1504,6 +1506,19 @@ async function start() {
       logger,
     });
     logger.info('[Mesh] MeshCore initialized');
+
+    // Cascade: deleting or unregistering an agent is an operator's decision to
+    // turn it off (DOR-490), and until this fired that decision had no effect
+    // on identity — `AgentIdentityService.revoke` had zero production callers,
+    // so an agent token kept working past the operator's own removal, bounded
+    // only by its idle/absolute expiry clocks. Fires for both DELETE
+    // `/api/mesh/agents/:id` and `/api/mesh/agents/:id/data` (both route
+    // through `meshCore.unregister`) and the reconciler's grace-period sweep —
+    // every path that removes an agent shares this one cascade. The callback's
+    // `projectPath` is `AgentIdentityService`'s `agentPath` — the same value
+    // `agent-token-env.ts` mints tokens under — captured before registry
+    // removal, exactly like the sibling cascades below.
+    meshCore.onUnregister(createAgentIdentityUnregisterCascade(getAgentIdentityService, logger));
 
     // Wire the cwd -> agent lookup notification emitters read from (session
     // lifecycle, ask resolution): both fire from module-level projector

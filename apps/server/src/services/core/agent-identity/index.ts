@@ -22,3 +22,4 @@ export {
 } from './agent-token-env.js';
 export { createCapabilityAttributionObserver } from './capability-attribution.js';
 export { createCapabilityGateAuditObserver } from './capability-gate-audit.js';
+export { createAgentIdentityUnregisterCascade } from './unregister-cascade.js';
