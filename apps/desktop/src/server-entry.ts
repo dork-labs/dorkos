@@ -19,6 +19,7 @@
  */
 declare module '@dorkos/server';
 
+import { assessProcessLiveness, isProcessAlive } from '@dorkos/shared/process-liveness';
 import { SERVER_READY_TIMEOUT_MS } from './shared/boot-timeouts';
 
 /** How often the dev child re-checks that the process that spawned it is still alive. */
@@ -73,31 +74,6 @@ function onParentMessage(handler: (msg: unknown) => void): void {
 }
 
 /**
- * Is `pid` still running?
- *
- * Signal 0 runs the kernel's existence and permission checks without
- * delivering anything. `EPERM` means the process is there but owned by someone
- * else — alive is alive; only `ESRCH` means it is gone.
- *
- * Known limit: a pid is not a durable identity. If the shell's pid is recycled
- * by an unrelated process before the next poll, this reads "alive" and the
- * orphan keeps running — and a recycled *root-owned* pid answers `EPERM`
- * forever. Narrowing that needs the pid corroborated against its start time
- * (`ps -o lstart=`), which is the approach the server's instance lock takes;
- * this should adopt that helper rather than grow a second copy of it. Until
- * then the window is small and dev-only, and the failure mode is the one that
- * existed before this watchdog rather than a new one.
- */
-function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code === 'EPERM';
-  }
-}
-
-/**
  * Shut down when the desktop shell that spawned this process goes away.
  *
  * Armed only in development, where the shell passes its own pid as
@@ -117,6 +93,18 @@ function isProcessAlive(pid: number): boolean {
  * dying — with the shell killed hard, a watchdog built on either one never
  * fired and the server was still holding its port seconds later. A pid handed
  * down from the shell sees straight through the wrapper.
+ *
+ * Corroborated against `DORKOS_PARENT_STARTED_AT` via
+ * `@dorkos/shared/process-liveness` (DOR-552), the same helper the server's
+ * instance lock uses for the identical problem: a bare `process.kill(pid, 0)`
+ * treats `EPERM` as alive, which is correct, but once the OS recycles the
+ * shell's pid onto some other process — especially a root-owned one, which
+ * answers `EPERM` forever — this would read "parent still there" forever too,
+ * and the orphan keeps its port, its SQLite WAL lock, and every live agent
+ * session: precisely the state this watchdog exists to prevent.
+ * `DORKOS_PARENT_STARTED_AT` is optional because `processStartTime` can fail
+ * to establish it (no `ps` on Windows); when it's absent the check degrades to
+ * plain pid-only liveness, same as before this existed.
  */
 function exitWhenOrphaned(): void {
   // Unset, empty and malformed all land here: `Number(undefined)` is NaN and
@@ -125,9 +113,15 @@ function exitWhenOrphaned(): void {
   const parentPid = Number(process.env.DORKOS_PARENT_PID);
   if (!Number.isInteger(parentPid) || parentPid <= 0) return;
 
+  const parentStartedAtMs = Date.parse(process.env.DORKOS_PARENT_STARTED_AT ?? '');
+  const parentStartedAt = Number.isNaN(parentStartedAtMs) ? null : new Date(parentStartedAtMs);
+
   // unref'd: this watchdog must never be the reason the process stays alive.
   setInterval(() => {
-    if (isProcessAlive(parentPid)) return;
+    const isAlive = parentStartedAt
+      ? assessProcessLiveness(parentPid, parentStartedAt) !== 'gone'
+      : isProcessAlive(parentPid);
+    if (isAlive) return;
     console.error('Shutting the server down: the desktop app that started it is gone.');
     process.exit(0);
   }, ORPHAN_CHECK_INTERVAL_MS).unref();

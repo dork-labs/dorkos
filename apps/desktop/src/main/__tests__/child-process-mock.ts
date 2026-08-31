@@ -86,6 +86,20 @@ export const spawnSync = vi.fn(
   })
 );
 
+/**
+ * Test double for `execFileSync`, used only by
+ * `@dorkos/shared/process-liveness`'s `processStartTime` — the corroboration
+ * `buildServerEnv` (DOR-552) runs against this process's own pid when it
+ * captures `DORKOS_PARENT_STARTED_AT`. A real `ps -o lstart=` invocation is
+ * exactly what {@link execFileSync} in `../process-liveness.test.ts` (in
+ * `packages/shared`) exercises against a real process; here the concern is
+ * only "does `buildServerEnv` forward what it got", so a fixed, parseable
+ * `lstart`-shaped line is enough and keeps this suite off real OS behavior.
+ */
+export const execFileSync = vi.fn(
+  (_command: string, _args: string[], _options: unknown): string => 'Mon Jan  1 00:00:00 2024\n'
+);
+
 /** Reset all mock state between tests — call from `beforeEach`. */
 export function resetChildProcessMock(): void {
   forkedChildren.length = 0;
@@ -93,4 +107,5 @@ export function resetChildProcessMock(): void {
   forkErrorIsPersistent = false;
   fork.mockClear();
   spawnSync.mockReset();
+  execFileSync.mockClear();
 }
