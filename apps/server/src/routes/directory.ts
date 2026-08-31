@@ -7,6 +7,7 @@ import { AGENT_NAME_REGEX } from '@dorkos/shared/validation';
 import {
   validateBoundary,
   validateBoundaryOrDorkHome,
+  resolveAgentsRoot,
   getBoundary,
   BoundaryError,
 } from '../lib/boundary.js';
@@ -74,9 +75,21 @@ router.get('/', async (req, res) => {
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  // The agents root gets the same "navigate up" treatment as the project
+  // boundary (DOR-437): a resolved path that landed under {dorkHome}/agents
+  // (via validateBoundaryOrDorkHome, above) needs an up-button that stays
+  // live up to that root and stops there — otherwise a boundary-scoped
+  // install strands the picker on a dead up-button inside the one subtree
+  // this route can actually reach, or worse, offers a breadcrumb one level
+  // up that immediately 403s.
+  const agentsRoot = await resolveAgentsRoot();
   const parent = path.dirname(resolved);
   const hasParent =
-    parent !== resolved && (parent === boundary || parent.startsWith(boundary + path.sep));
+    parent !== resolved &&
+    (parent === boundary ||
+      parent.startsWith(boundary + path.sep) ||
+      parent === agentsRoot ||
+      parent.startsWith(agentsRoot + path.sep));
 
   res.json({
     path: resolved,

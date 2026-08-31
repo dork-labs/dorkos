@@ -14,18 +14,25 @@ import { resolveDorkHome } from './dork-home.js';
  *
  * - {@link validateBoundary} confines a path to the configured boundary root.
  *   Use it for every RAW FILE/CONTENT surface — file reads/writes, terminal,
- *   git, diff, uploads, directory browsing, marketplace installs. The boundary
- *   exists to keep these off the operator's wider disk (and, deliberately, off
- *   DorkOS's own data directory, which holds an encrypted runtime-credential
- *   store under `{dorkHome}/extension-secrets/`).
- * - {@link validateBoundaryOrDorkHome} additionally accepts DorkOS's own data
- *   directory (`resolveDorkHome()`). Use it ONLY for AGENT-REGISTRY operations
- *   that key off an agent manifest path — the system agent (DorkBot) and
- *   marketplace-installed agents live under `{dorkHome}/agents/*` BY DESIGN, so
- *   confining these to a user-project boundary would 403 legitimate work (e.g.
- *   applying DorkBot's persona during onboarding in a `DORKOS_BOUNDARY`-scoped
- *   Docker deployment). Never reach for it from a raw file surface — that would
- *   widen file access into the credential store.
+ *   git, diff, uploads, marketplace installs. The boundary exists to keep
+ *   these off the operator's wider disk (and, deliberately, off DorkOS's own
+ *   data directory, which holds an encrypted runtime-credential store under
+ *   `{dorkHome}/extension-secrets/`).
+ * - {@link validateBoundaryOrDorkHome} additionally accepts DorkOS's own
+ *   `{dorkHome}/agents/*` subtree — NOT all of `resolveDorkHome()` (see the
+ *   function's own doc for the narrowing). Use it for AGENT-REGISTRY
+ *   operations that key off an agent manifest path, PLUS read-only directory
+ *   LISTING (`GET /api/directory`, DOR-437): the system agent (DorkBot) and
+ *   marketplace-installed agents live under `{dorkHome}/agents/*` BY DESIGN,
+ *   so confining either to a user-project boundary would 403 legitimate work
+ *   (e.g. the New Agent dialog's directory browser, or applying DorkBot's
+ *   persona during onboarding) in a `DORKOS_BOUNDARY`-scoped Docker
+ *   deployment. Directory listing is safe here specifically because it is
+ *   NAMES ONLY (no file contents, no writes) and the narrowing still excludes
+ *   every dork-home sibling of `agents/` — `extension-secrets/` included.
+ *   Never reach for it from a raw file/content surface (read, write, upload,
+ *   terminal, git, diff) — those widen actual file access into the
+ *   credential store, which listing directory names does not.
  *
  * ## The `os.homedir()` calls here (a declared carve-out)
  *
@@ -369,23 +376,31 @@ export async function validateBoundary(userPath: string, boundary?: string): Pro
 }
 
 /**
- * Validate that a path is within the directory boundary OR within DorkOS's own
- * data directory (`resolveDorkHome()`).
+ * Validate that a path is within the directory boundary OR within
+ * `{dorkHome}/agents` — NOT all of `resolveDorkHome()`; see the narrowing
+ * below.
  *
- * This is the AGENT-REGISTRY seam. The directory boundary confines access to
- * user project paths, but DorkOS's system agent (DorkBot) and every
- * marketplace-installed agent live under `{dorkHome}/agents/*` by design.
- * Agent-registry operations that key off an agent manifest path must therefore
- * treat the `{dorkHome}/agents` subtree as always in-bounds — otherwise a boundary-scoped deployment
- * (e.g. Docker with `DORKOS_BOUNDARY=/workspace`) 403s legitimate work like
- * applying DorkBot's persona during onboarding.
+ * This is the AGENT-REGISTRY seam (and, since DOR-437, the agents-folder
+ * LISTING seam). The directory boundary confines access to user project
+ * paths, but DorkOS's system agent (DorkBot) and every marketplace-installed
+ * agent live under `{dorkHome}/agents/*` by design. Agent-registry operations
+ * that key off an agent manifest path, and `GET /api/directory` browsing that
+ * same subtree, must therefore treat `{dorkHome}/agents` as always
+ * in-bounds — otherwise a boundary-scoped deployment (e.g. Docker with
+ * `DORKOS_BOUNDARY=/workspace`) 403s legitimate work like applying DorkBot's
+ * persona during onboarding, or opening the New Agent dialog's directory
+ * browser.
  *
  * The allowance is deliberately NARROW: only callers that operate on agent
- * paths use this. Raw file/terminal/git/diff surfaces keep {@link validateBoundary}
- * so dork-home's encrypted runtime-credential store (`{dorkHome}/extension-secrets/`)
- * is never reachable through a file API. Null-byte, EACCES, and symlink handling
- * are identical to {@link validateBoundary}; dork-home is realpath-resolved so a
- * symlink can't spoof containment.
+ * paths, or list directory NAMES under this subtree, use this. Raw
+ * file/content surfaces — reads, writes, terminal, git, diff, uploads — keep
+ * {@link validateBoundary} so dork-home's encrypted runtime-credential store
+ * (`{dorkHome}/extension-secrets/`) is never reachable through a file API;
+ * listing directory names under `{dorkHome}/agents` cannot reach that sibling
+ * directory and returns no file contents, so it does not widen that surface.
+ * Null-byte, EACCES, and symlink handling are identical to
+ * {@link validateBoundary}; dork-home is realpath-resolved so a symlink can't
+ * spoof containment.
  *
  * @param userPath - User-supplied agent path to validate (absolute or tilde-prefixed)
  * @param boundary - Optional boundary override (defaults to initialized boundary)
@@ -406,12 +421,29 @@ export async function validateBoundaryOrDorkHome(
   // Narrowed to the agents subtree (not all of dork-home): every legitimate
   // agent lives under {dorkHome}/agents/*, and this keeps sibling dirs like
   // the encrypted credential store out of reach even for manifest writes.
-  const dorkHome = await resolveDorkHomeReal();
-  if (isContained(resolved, path.join(dorkHome, 'agents'))) {
+  const agentsRoot = await resolveAgentsRoot();
+  if (isContained(resolved, agentsRoot)) {
     return resolved;
   }
 
   throw new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY');
+}
+
+/**
+ * Resolve `{dorkHome}/agents` — the exact subtree {@link validateBoundaryOrDorkHome}
+ * additionally accepts, realpath-resolved the same way.
+ *
+ * Exported so callers that also need to reason about the boundary of THIS
+ * subtree (not just validate a single path against it) can do so without
+ * re-deriving it — `GET /api/directory`'s parent/`hasParent` computation
+ * (DOR-437) is the first: a path resolved into this subtree needs its
+ * "navigate up" affordance bounded the same way `validateBoundaryOrDorkHome`
+ * bounds the resolution itself, or the picker strands the user on a dead
+ * up-button (or, worse, a breadcrumb that immediately 403s).
+ */
+export async function resolveAgentsRoot(): Promise<string> {
+  const dorkHome = await resolveDorkHomeReal();
+  return path.join(dorkHome, 'agents');
 }
 
 /**

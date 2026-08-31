@@ -4,10 +4,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mockGetBoundary = vi.fn();
 const mockValidateBoundary = vi.fn();
 const mockValidateBoundaryOrDorkHome = vi.fn();
+const mockResolveAgentsRoot = vi.fn();
 vi.mock('../../lib/boundary.js', () => ({
   getBoundary: (...args: unknown[]) => mockGetBoundary(...args),
   validateBoundary: (...args: unknown[]) => mockValidateBoundary(...args),
   validateBoundaryOrDorkHome: (...args: unknown[]) => mockValidateBoundaryOrDorkHome(...args),
+  resolveAgentsRoot: (...args: unknown[]) => mockResolveAgentsRoot(...args),
   BoundaryError: class BoundaryError extends Error {
     readonly code: string;
     constructor(message: string, code: string) {
@@ -57,11 +59,13 @@ import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 
 const app = createApp();
 const BOUNDARY = '/Users/testuser';
+const AGENTS_ROOT = '/home/node/.dork/agents';
 
 describe('Directory Routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetBoundary.mockReturnValue(BOUNDARY);
+    mockResolveAgentsRoot.mockResolvedValue(AGENTS_ROOT);
   });
 
   describe('GET /api/directory', () => {
@@ -220,20 +224,40 @@ describe('Directory Routes', () => {
       // container): the agents directory lives under dorkHome, not under
       // the project boundary. validateBoundaryOrDorkHome is the seam that
       // makes this resolve instead of 403ing like plain validateBoundary did.
-      const agentsPath = '/home/node/.dork/agents';
-      mockValidateBoundaryOrDorkHome.mockResolvedValue(agentsPath);
+      mockValidateBoundaryOrDorkHome.mockResolvedValue(AGENTS_ROOT);
       mockReaddir.mockResolvedValue([{ name: 'dorkbot', isDirectory: () => true }]);
 
-      const res = await request(app).get(`/api/directory?path=${encodeURIComponent(agentsPath)}`);
+      const res = await request(app).get(`/api/directory?path=${encodeURIComponent(AGENTS_ROOT)}`);
 
       expect(res.status).toBe(200);
-      expect(res.body.path).toBe(agentsPath);
+      expect(res.body.path).toBe(AGENTS_ROOT);
       expect(res.body.entries).toEqual([
-        { name: 'dorkbot', path: `${agentsPath}/dorkbot`, isDirectory: true },
+        { name: 'dorkbot', path: `${AGENTS_ROOT}/dorkbot`, isDirectory: true },
       ]);
-      expect(mockValidateBoundaryOrDorkHome).toHaveBeenCalledWith(agentsPath);
+      expect(mockValidateBoundaryOrDorkHome).toHaveBeenCalledWith(AGENTS_ROOT);
       // The plain (boundary-only) validator must not be used for this route.
       expect(mockValidateBoundary).not.toHaveBeenCalled();
+      // Browsing the agents root itself has nowhere sanctioned to navigate
+      // up to — its parent (dorkHome) sits outside both the boundary and the
+      // narrowed agents subtree.
+      expect(res.body.parent).toBeNull();
+    });
+
+    it('offers a live "navigate up" inside {dorkHome}/agents instead of stranding the picker (DOR-437)', async () => {
+      // A subdirectory under the agents root (e.g. a single agent's home)
+      // must get an up-button back to the agents root itself, the same way a
+      // boundary subdirectory gets one back to the boundary. Before this fix,
+      // hasParent only ever compared against `boundary`, so this case fell
+      // through to `parent: null` — a dead up-button in the one subtree this
+      // route can actually reach under a boundary-scoped install.
+      const agentDir = `${AGENTS_ROOT}/dorkbot`;
+      mockValidateBoundaryOrDorkHome.mockResolvedValue(agentDir);
+      mockReaddir.mockResolvedValue([]);
+
+      const res = await request(app).get(`/api/directory?path=${encodeURIComponent(agentDir)}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.parent).toBe(AGENTS_ROOT);
     });
   });
 

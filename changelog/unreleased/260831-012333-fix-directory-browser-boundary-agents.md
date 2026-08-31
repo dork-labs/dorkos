@@ -5,5 +5,5 @@ covers:
 
 ### Fixed
 
-- The New Agent dialog's directory browser no longer fails to open the agents folder on a
-  boundary-scoped install (for example a Docker container with `DORKOS_BOUNDARY` set) (DOR-437).
+- The New Agent dialog now opens your agents folder even when DorkOS is limited to a single
+  project folder, for example in Docker with `DORKOS_BOUNDARY` set (DOR-437).
