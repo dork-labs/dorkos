@@ -103,6 +103,6 @@ describe('the fleet table', () => {
     // narrowed-table appearance still wants a browser check.
     renderTable([row({ id: '1', name: 'scout' })]);
     const header = screen.getByRole('columnheader', { name: 'Activity' });
-    expect(header.className).toMatch(/overflow-hidden/);
+    expect(header.className).toMatch(/truncate/);
   });
 });

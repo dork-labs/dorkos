@@ -178,11 +178,13 @@ export function createAgentColumns(
     // width (e.g. with a Profile panel docked beside the table), and a `<th>`
     // has no default clipping — the overflowing text painted straight over
     // "Managed by" next to it, reading as "Manaigedy by" (DOR-1287).
-    // `overflow-hidden` clips it instead of bleeding into the next header.
+    // `truncate` (the house pattern the Agent and Managed-by cells already use)
+    // clips it with an ellipsis rather than a hard cut, and forces the
+    // single-line layout that stops it wrapping into the row below.
     {
       accessorKey: 'lastSeenEvent',
       header: 'Activity',
-      meta: { headClassName: 'overflow-hidden', cellClassName: 'overflow-hidden' },
+      meta: { headClassName: 'truncate', cellClassName: 'truncate' },
       cell: ({ row }) => <ActivityCell row={row.original} />,
     },
 
