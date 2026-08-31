@@ -67,7 +67,7 @@ describe('projectRoomEntries', () => {
         kind: 'notice',
         authorKind: 'system',
         body: JSON.stringify({
-          text: 'mio stopped replying here — this back-and-forth hit its automatic-reply limit.',
+          text: 'mio stopped replying here, this back-and-forth hit its automatic-reply limit.',
           notice: 'cascade_stopped',
         }),
       }),

@@ -32,7 +32,7 @@ import type { BudgetRefusalScope } from '../limits/turn-budget.js';
  */
 export function buildCascadeNotice(agentName: string, subjectAuthorId: string): RoomEntryBody {
   return {
-    text: `${agentName} stopped replying here — this back-and-forth hit its automatic-reply limit. Send a message to pick it back up.`,
+    text: `${agentName} stopped replying here, this back-and-forth hit its automatic-reply limit. Send a message to pick it back up.`,
     notice: 'cascade_stopped',
     subjectAuthorId,
   };

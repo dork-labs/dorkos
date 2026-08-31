@@ -57,7 +57,7 @@ const NOTICES: ReadonlyArray<{ code: RoomNoticeCode; text: string; label: string
   {
     code: 'cascade_stopped',
     label: 'cascade_stopped — the back-and-forth hit its limit',
-    text: 'Kai stopped replying here — this back-and-forth hit its automatic-reply limit. Send a message to pick it back up.',
+    text: 'Kai stopped replying here, this back-and-forth hit its automatic-reply limit. Send a message to pick it back up.',
   },
   {
     code: 'budget_reached',
