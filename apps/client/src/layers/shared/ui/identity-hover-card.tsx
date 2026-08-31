@@ -196,6 +196,26 @@ function IdentityHoverCard({
   // press timer fires. A `PointerEvent` isn't available inside the timer
   // callback itself, so this is captured at `pointerdown` time instead.
   const isTouchLikePressRef = React.useRef(false);
+  // The trigger's own DOM node — a mention pill, an avatar — so the footer's
+  // "View profile" can hand focus back to it before opening the profile
+  // (DOR-1274 adversarial review).
+  //
+  // **Why the click handler can't just read `document.activeElement`.**
+  // Clicking the footer button moves browser focus onto THAT button first —
+  // native default behaviour, before React's `onClick` ever runs — so
+  // whatever reads `document.activeElement` there sees the footer button, not
+  // the trigger. The footer button is also portalled inside `HoverCardContent`
+  // and unmounts the instant this card closes, which happens as part of the
+  // very same interaction. A downstream capture (`useProfileDeepLink`'s
+  // `open()`, called from `onViewProfile`) would grab a node that is already
+  // gone by the time anything asks for it back — the exact DOR-1274 shape,
+  // one layer closer to its actual cause than where the original fix looked.
+  //
+  // Refocusing the trigger HERE, before `onViewProfile` runs, means
+  // `document.activeElement` is correct again by the time that downstream
+  // capture reads it — no coordination between this component and the
+  // profile-sheet plumbing required.
+  const triggerRef = React.useRef<React.ElementRef<typeof HoverCardTrigger>>(null);
   const longPress = useLongPress({
     onLongPress: () => {
       if (isTouchLikePressRef.current) setOpen(true);
@@ -206,6 +226,7 @@ function IdentityHoverCard({
     <HoverCard open={open} onOpenChange={setOpen} openDelay={OPEN_DELAY_MS}>
       <HoverCardTrigger
         asChild
+        ref={triggerRef}
         // Claims gesture priority (see the doc above) — an ancestor
         // `ResponsiveContextMenu` long-press yields to this marker rather
         // than racing it. An empty string: this is a presence flag, not a
@@ -275,7 +296,14 @@ function IdentityHoverCard({
           <button
             type="button"
             data-slot="identity-hover-card-profile"
-            onClick={onViewProfile}
+            onClick={() => {
+              // Put focus back on the trigger BEFORE opening the profile, so
+              // whatever captures `document.activeElement` downstream sees
+              // the trigger rather than this button — see the doc on
+              // `triggerRef` above.
+              triggerRef.current?.focus();
+              onViewProfile();
+            }}
             className="border-border hover:bg-accent focus-visible:ring-ring text-brand mt-auto flex w-full items-center border-t px-3 py-2 text-left text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none"
           >
             View profile

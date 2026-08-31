@@ -9,7 +9,7 @@
  * @module features/profile/ui/ProfileSheetContainer
  */
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { useProfileDeepLink, useSafePathname } from '@/layers/shared/model';
+import { useProfileDeepLink, useSafePathname, clearProfileOpener } from '@/layers/shared/model';
 import { useTeamRoster } from '@/layers/entities/team';
 import { shouldDock } from '../model/profile-home';
 import { useProfileStore } from '../model/profile-store';
@@ -160,6 +160,12 @@ export function ProfileSheetContainer({ open, onOpenChange }: ProfileSheetContai
     if (dockPath === null) return;
     openProfileDockedFromLink(dockPath, dockPage);
     close();
+    // This link never mounts a real `ProfileSheet`, so nothing will ever call
+    // `takeProfileOpener` to claim whatever `open()` captured on the way in.
+    // Left in place, that capture would sit there matching THIS identity's id
+    // indefinitely — ready to hijack a later, unrelated close that happens to
+    // land on the same id by coincidence (adversarial review fix #1).
+    clearProfileOpener();
   }, [dockPath, dockPage, openProfileDockedFromLink, close]);
 
   if (!member || !stack || docked) return null;

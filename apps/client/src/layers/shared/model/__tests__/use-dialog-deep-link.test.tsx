@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { createContext, useContext, type ReactNode } from 'react';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import {
   createMemoryHistory,
@@ -23,6 +23,8 @@ import {
   useProfileDeepLink,
   useOpenConnections,
   resolveDeepLinkTarget,
+  takeProfileOpener,
+  clearProfileOpener,
   type SettingsRouteTarget,
 } from '../use-dialog-deep-link';
 import type { SettingsTab } from '../app-store/app-store-panels';
@@ -110,10 +112,14 @@ type RouterTestHarness = ReturnType<typeof buildHarness>;
 
 // The app store is a module singleton, and `close()` now writes to it — reset
 // the dialog flags so one test's open dialog cannot leak into the next.
+// `takeProfileOpener`'s own capture is a second module singleton for the same
+// reason (DOR-1274) — cleared here so a capture left over from one test's
+// `open()` cannot be mistaken for another's.
 beforeEach(() => {
   useAppStore.getState().setSettingsOpen(false);
   useAppStore.getState().setTasksOpen(false);
   useAppStore.getState().setProfileOpen(false);
+  clearProfileOpener();
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -667,6 +673,116 @@ describe('useProfileDeepLink', () => {
     // deep link into collateral damage.
     expect(harness.readSearch().settings).toBe('tools');
     expect(harness.readSearch().settingsSection).toBe('external-mcp');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// The profile opener capture (DOR-1274, hardened by adversarial review)
+// ─────────────────────────────────────────────────────────────
+//
+// `ProfileSheet`'s `onCloseAutoFocus` consumes this through `takeProfileOpener`
+// directly, so the capture/take/clear contract is worth pinning at this level
+// rather than only through the full sheet — a mismatch here is exactly what
+// let a stale, never-consumed capture (the docked-link path never mounts a
+// real sheet) hijack a LATER, unrelated close.
+describe('the profile opener capture', () => {
+  /** A real, focusable node in the document — `document.activeElement` needs one. */
+  function focusableButton(): HTMLButtonElement {
+    const button = document.createElement('button');
+    document.body.appendChild(button);
+    button.focus();
+    return button;
+  }
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('captures the focused control on a fresh open, returned by take() for that id', async () => {
+    const harness = buildHarness('/');
+    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+    const button = focusableButton();
+
+    await act(async () => {
+      result.current.open('agent-warden');
+    });
+
+    expect(takeProfileOpener('agent-warden')).toBe(button);
+  });
+
+  it('refuses a capture whose root id does not match — the stale-hijack guard', async () => {
+    // The scenario the review found: a capture nobody ever consumes (the
+    // docked-link path) surviving to answer for a LATER, unrelated close.
+    // Asking for the wrong id is the direct pin on that refusal.
+    const harness = buildHarness('/');
+    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+    focusableButton();
+
+    await act(async () => {
+      result.current.open('agent-warden');
+    });
+
+    expect(takeProfileOpener('somebody-else')).toBeNull();
+  });
+
+  it('is consumed exactly once — asking again for the same id gets nothing', async () => {
+    const harness = buildHarness('/');
+    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+    focusableButton();
+
+    await act(async () => {
+      result.current.open('agent-warden');
+    });
+
+    expect(takeProfileOpener('agent-warden')).not.toBeNull();
+    expect(takeProfileOpener('agent-warden')).toBeNull();
+  });
+
+  it('does not re-capture a chained push — the root stays whoever opened it first', async () => {
+    // A chain (`open(A)`, then a "Managed by" link inside the sheet calling
+    // `open(B)`) has `document.activeElement` sitting on a row INSIDE the
+    // sheet at the moment of the second call — a row that call is about to
+    // navigate away from. Capturing it there would hand focus, on the whole
+    // chain's eventual close, to a control that no longer exists — the exact
+    // DOR-1274 bug, reintroduced by the chain path (adversarial review fix #2).
+    const harness = buildHarness('/');
+    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+    const original = focusableButton();
+
+    await act(async () => {
+      result.current.open('agent-warden');
+    });
+    await waitFor(() => expect(harness.readSearch().profile).toBe('agent-warden'));
+
+    // Stands in for the in-sheet "Managed by" link the chain push focuses.
+    focusableButton();
+    await act(async () => {
+      result.current.open('person-dorian');
+    });
+    await waitFor(() => expect(harness.readSearch().profile).toBe('person-dorian'));
+
+    // Asked about the CHAIN's root, `agent-warden` — never re-captured, so
+    // still the ORIGINAL control, not the in-sheet link the chain moved
+    // through.
+    expect(takeProfileOpener('agent-warden')).toBe(original);
+  });
+
+  it('clearProfileOpener discards a capture that will never be claimed', async () => {
+    const harness = buildHarness('/');
+    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+    focusableButton();
+
+    await act(async () => {
+      result.current.open('agent-warden');
+    });
+    clearProfileOpener();
+
+    expect(takeProfileOpener('agent-warden')).toBeNull();
   });
 });
 

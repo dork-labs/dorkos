@@ -484,9 +484,16 @@ describe('returning focus to the opener on close (DOR-1274)', () => {
     // The hover-card-footer case: the control that opened the sheet can be
     // unmounted by the time the sheet closes. Focusing a detached node throws
     // in some engines and silently no-ops in others — either way, reaching for
-    // it is wrong. This pins the connectedness check rather than asserting a
-    // specific fallback target, since Radix's own default in that case is an
-    // implementation detail this fix does not own.
+    // it is wrong.
+    //
+    // This is a SMOKE CHECK, not a pin on the `.isConnected` guard itself:
+    // jsdom does not throw on `.focus()`-ing a detached node and does not move
+    // `document.activeElement` to it either, so a version of this fix with the
+    // connectedness check deleted outright still passes this exact assertion
+    // (verified by removing it and re-running). What this test DOES catch is a
+    // regression that makes the close throw or hang when the opener is
+    // gone — real failure modes for a stale-reference bug that jsdom can
+    // reproduce faithfully, just not this specific one.
     const user = userEvent.setup();
     const harness = renderOpenerHarness();
     await harness.ready();

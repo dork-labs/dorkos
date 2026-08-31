@@ -71,8 +71,14 @@ export function ProfileSheet({ open, onOpenChange, ...view }: ProfileSheetProps)
         // the time this sheet's `FocusScope` looks, `document.activeElement` is
         // already `<body>`. `takeProfileOpener` was captured earlier, at the
         // `open()` call itself, which is before any of that has a chance to run.
+        //
+        // Asked about `stack.rootMemberId`, not `member.id`: a chained profile
+        // (an owner, an agent they manage) keeps `member` pointed at whichever
+        // one is on screen, but `open()` only captures on the FIRST open of a
+        // chain — the root is the identity the capture was made under, and the
+        // one `takeProfileOpener` checks it against (adversarial review).
         onCloseAutoFocus={(event) => {
-          const opener = takeProfileOpener();
+          const opener = takeProfileOpener(view.stack.rootMemberId);
           if (opener === null || !opener.isConnected) return;
           event.preventDefault();
           opener.focus();

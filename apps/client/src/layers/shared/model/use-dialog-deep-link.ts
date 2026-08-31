@@ -241,6 +241,26 @@ export function useTasksDeepLink(): DialogDeepLink<never> {
 }
 
 /**
+ * What was on screen when a profile opened: the control to hand focus back
+ * to, and which root identity it opened — the ONE fact that tells a genuine
+ * close of that same open apart from an unrelated one that merely happens to
+ * still be pending (DOR-1274, adversarial review).
+ */
+interface ProfileOpenerCapture {
+  /** The control to refocus. */
+  node: HTMLElement;
+  /**
+   * The root identity this capture belongs to — `chain[0] ?? memberId` at
+   * capture time, never the leaf of a chain. A chain push does not
+   * re-capture (see `open()` below), so this stays the identity the FIRST
+   * open in the chain named, and {@link takeProfileOpener} is asked about
+   * that same root when the whole chain eventually closes — never about
+   * whichever member happened to be on screen at that moment.
+   */
+  rootMemberId: string;
+}
+
+/**
  * The control the profile sheet should hand focus back to once it closes
  * (DOR-1274).
  *
@@ -257,20 +277,51 @@ export function useTasksDeepLink(): DialogDeepLink<never> {
  * the time the sheet's `onCloseAutoFocus` runs, that trigger and whatever
  * focus it held are long gone. Module-scoped because the component that calls
  * `open()` and the sheet that consumes this on close are different instances.
+ *
+ * **Paired with the identity it opened, not read back unconditionally.** A
+ * capture that never gets consumed — the docked-link case
+ * (`ProfileSheetContainer`'s dock effect, which never mounts a real sheet at
+ * all) — used to sit here and hijack whatever UNRELATED close came next,
+ * including one with no click behind it at all (a deep link, the browser's
+ * back/forward). {@link takeProfileOpener} refuses a mismatched identity, and
+ * {@link clearProfileOpener} lets a caller that knows its capture will never
+ * be claimed say so up front.
  */
-let profileOpener: HTMLElement | null = null;
+let profileOpener: ProfileOpenerCapture | null = null;
 
 /**
  * Hand back the control a profile was opened from, once — clearing it so a
  * later close with no fresh open before it does not reuse a stale one.
  *
- * @returns The opener, or `null` when nothing was captured (no router, or the
- *   click that opened it left no focused element behind).
+ * @param rootMemberId - The root identity of the sheet that is closing —
+ *   `chain[0] ?? memberId`, the same expression `ProfileSheetContainer` builds
+ *   its stack from. A capture whose own root does not match this is refused:
+ *   it belongs to a DIFFERENT open (docked and never mounted, or superseded by
+ *   one that skipped `open()` entirely) and restoring it would hand focus to a
+ *   control this close has nothing to do with.
+ * @returns The opener, or `null` when nothing was captured for this identity —
+ *   no click preceded the open that led here, or the capture on record names
+ *   a different root.
  */
-export function takeProfileOpener(): HTMLElement | null {
-  const opener = profileOpener;
+export function takeProfileOpener(rootMemberId: string): HTMLElement | null {
+  const captured = profileOpener;
   profileOpener = null;
-  return opener;
+  if (captured === null || captured.rootMemberId !== rootMemberId) return null;
+  return captured.node;
+}
+
+/**
+ * Discard a pending capture that will never be consumed.
+ *
+ * The docked-link case: `open()` still captures on the way in, but
+ * `ProfileSheetContainer` decides to hand the identity to the docked panel
+ * instead of ever mounting `ProfileSheet` — so no `onCloseAutoFocus` will ever
+ * run to claim it. Left in place, that capture would sit there matching its
+ * own root identity's id indefinitely, ready to hijack a LATER, unrelated
+ * close that happens to land on the same id by coincidence.
+ */
+export function clearProfileOpener(): void {
+  profileOpener = null;
 }
 
 /** The profile's URL state: which identity is open, on which page, and how to change it. */
@@ -326,8 +377,21 @@ export function useProfileDeepLink(): ProfileDeepLink {
 
   const open = useCallback(
     (id: string, toPage?: string) => {
-      // Captured before anything else runs — see `takeProfileOpener` (DOR-1274).
-      profileOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      // Captured before anything else runs — see `takeProfileOpener` (DOR-1274)
+      // — but ONLY when nothing is open yet. A chained push (an owner, an
+      // agent they manage) calls this same `open()` from a control INSIDE the
+      // sheet that is already showing, and that control is what this very
+      // call is about to navigate away from — capturing it would hand focus
+      // back, on close, to a row that no longer exists (adversarial review
+      // fix #2). Skipping the recapture keeps whatever was captured when the
+      // sheet was last fully closed, so the whole chain still hands focus
+      // back to the control that started it.
+      if (memberId === null) {
+        profileOpener =
+          document.activeElement instanceof HTMLElement
+            ? { node: document.activeElement, rootMemberId: id }
+            : null;
+      }
       if (!inPlaceNav) return openProfileForMember(id, toPage);
       // A history push, not a replace: a chained profile (an owner, an agent
       // they manage) is a place you can come back from, and the phone's back
@@ -335,7 +399,7 @@ export function useProfileDeepLink(): ProfileDeepLink {
       const updater: AnySearchUpdater = (prev) => ({ ...prev, profile: id, profilePage: toPage });
       inPlaceNav({ search: updater });
     },
-    [inPlaceNav, openProfileForMember]
+    [inPlaceNav, openProfileForMember, memberId]
   );
 
   const setPage = useCallback(
