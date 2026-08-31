@@ -20,6 +20,7 @@ import type {
   UpdateAgentConventions,
 } from '@dorkos/shared/mesh-schemas';
 import { agentKeys, useCurrentAgent, useUpdateAgent } from '@/layers/entities/agent';
+import { roomKeys } from '@/layers/entities/room';
 import { TEAM_ROSTER_KEY } from '@/layers/entities/team';
 
 /**
@@ -126,6 +127,13 @@ export function useProfileAgent(
             // `agentKeys.resolved`, so a rename left the panel saying one name
             // and the list beside it saying the old one. The prefix covers both.
             void queryClient.invalidateQueries({ queryKey: agentKeys.all });
+            // …and every open room's roster (DOR-1114). Nothing else invalidates
+            // `roomKeys.detail` on a rename or a convention-file edit, so a
+            // renamed agent's old name could sit in an idle room's message
+            // gutter and mention pills until an unrelated refetch. There is no
+            // event that names which rooms this agent is in, so this sweeps
+            // every open detail rather than guessing.
+            void queryClient.invalidateQueries({ queryKey: roomKeys.details() });
           },
         }
       );
