@@ -29,6 +29,15 @@ interface MessageContextValue {
    * Undefined when the session has no runtime row yet.
    */
   runtimeLabel?: string;
+  /**
+   * Whether this session's runtime can deliver a free-text deny reason to the
+   * agent (`RuntimeCapabilities.permissionModes.denyReason`). Read by every
+   * `ApprovalPrompt` this transcript renders directly (a parked or batched
+   * approval, not the one card the input zone diverts to `CompactPendingRow`)
+   * — see `ApprovalPrompt`'s own prop for why (DOR-825). Defaults to `true`
+   * when omitted, matching the prop's own default.
+   */
+  allowsDenyReason?: boolean;
 }
 
 const MessageCtx = createContext<MessageContextValue | null>(null);
@@ -60,6 +69,7 @@ export function MessageProvider({
       value.inputZoneToolCallId,
       value.textEffect,
       value.runtimeLabel,
+      value.allowsDenyReason,
     ]
   );
   return <MessageCtx value={memoized}>{children}</MessageCtx>;
