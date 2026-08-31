@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { PendingApprovalStore } from '../approvals.js';
 import { SESSIONS } from '../../../../config/constants.js';
+import { logger } from '../../../../lib/logger.js';
 
 /**
  * Who answered — the one thing OpenCode's own events cannot say.
@@ -75,5 +76,43 @@ describe('PendingApprovalStore expiry marking', () => {
     store.clearSession('s1');
 
     expect(store.consumeExpired('s1', 'per_1')).toBe(false);
+  });
+
+  it('writes the same durable log line claude-code writes when nobody answers (DOR-803)', () => {
+    // Before this, opencode/approvals.ts armed the same auto-deny timer as
+    // claude-code's interactive-handlers.ts but logged nothing when it fired —
+    // "DorkOS writes a line saying which agent gave up" held for only one
+    // runtime. This pins the structured shape claude-code's own
+    // logInteractionTimeout writes: session id, interaction kind, tool name,
+    // waitedMs, and never the request's own content.
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    vi.useFakeTimers();
+    try {
+      const store = new PendingApprovalStore();
+      store.register(
+        's1',
+        'per_1',
+        { ocSessionId: 'oc-1', cwd: '/repo', toolName: 'bash' },
+        vi.fn()
+      );
+
+      vi.advanceTimersByTime(SESSIONS.INTERACTION_PARK_CEILING_MS);
+
+      const said = warn.mock.calls.filter(([message]) =>
+        String(message).startsWith('[opencode] nobody answered')
+      );
+      expect(said).toHaveLength(1);
+      expect(said[0][1]).toEqual({
+        sessionId: 's1',
+        interactionId: 'per_1',
+        kind: 'approval',
+        toolName: 'bash',
+        waitedMs: SESSIONS.INTERACTION_PARK_CEILING_MS,
+        reason: 'interaction_expired',
+        visibility: 'silent',
+      });
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
