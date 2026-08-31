@@ -151,6 +151,12 @@ export { useMenuCloseFocusGuard } from './interaction/use-menu-close-focus-guard
 export type { MenuCloseFocusGuard } from './interaction/use-menu-close-focus-guard';
 export { useInlineEditorSettle } from './interaction/use-inline-editor-settle';
 export type { InlineEditorSettle } from './interaction/use-inline-editor-settle';
+export { useDragVsTapGuard } from './interaction/use-drag-vs-tap-guard';
+export type {
+  DragVsTapGuard,
+  DragVsTapPoint,
+  DragVsTapClick,
+} from './interaction/use-drag-vs-tap-guard';
 export {
   useRovingFocus,
   SIDEBAR_ACTIONS_ATTRIBUTE,
