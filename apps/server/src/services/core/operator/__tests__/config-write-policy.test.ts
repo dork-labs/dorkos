@@ -161,9 +161,9 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'ui.autonomyAcknowledgedAt',
       'ui.fullPowerChoice',
       'ui.fullPowerDecidedAt',
-      // Two bounds a person can tighten past the shipped default. `allowedTypes`
-      // is NOT here: it is narrowable too, but carries no carryover rule, so the
-      // wipe floor does not reach it and moving it would be a fresh judgement.
+      // Three uploads.* leaves a person can tighten past the shipped default,
+      // all carried by the wipe floor (DOR-1505 added `allowedTypes`).
+      'uploads.allowedTypes',
       'uploads.maxFileSize',
       'uploads.maxFiles',
       'welcomeBack.absenceThresholdMinutes',

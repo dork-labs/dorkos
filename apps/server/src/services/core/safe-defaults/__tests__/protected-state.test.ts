@@ -13,6 +13,7 @@ import {
 import { ConfigManager } from '../../config-manager.js';
 import { logger } from '../../../../lib/logger.js';
 import { configSchemaLeafPaths } from '../../operator/config-disclosure.js';
+import { recordedDefaultFor } from '../default-verdicts.js';
 
 vi.mock('../../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -257,6 +258,26 @@ describe('salvageProtectedState', () => {
     expect(salvageProtectedState(null, fresh)).toEqual({ leaves: {}, dropped: [] });
   });
 
+  it('carries an upload allowlist narrower than the universal default', () => {
+    const salvaged = salvageProtectedState({ uploads: { allowedTypes: ['image/*'] } }, fresh);
+    expect(salvaged.leaves['uploads.allowedTypes']).toEqual(['image/*']);
+  });
+
+  it('carries an emptied upload allowlist — denying everything is the most protective list', () => {
+    const salvaged = salvageProtectedState({ uploads: { allowedTypes: [] } }, fresh);
+    expect(salvaged.leaves['uploads.allowedTypes']).toEqual([]);
+  });
+
+  it('does not carry an upload allowlist that still names the universal wildcard', () => {
+    // Redundant with the fresh default, not narrower than it — `*/*` alongside
+    // anything else still matches every type.
+    const salvaged = salvageProtectedState(
+      { uploads: { allowedTypes: ['*/*', 'image/*'] } },
+      fresh
+    );
+    expect(salvaged.leaves['uploads.allowedTypes']).toBeUndefined();
+  });
+
   it('lets a carried decision own the telemetry block outright', () => {
     // When a decision IS carried, the per-leaf rules must not also fire on
     // telemetry, or the two could contradict each other on the same field.
@@ -358,6 +379,26 @@ describe('PROTECTIVE_CARRYOVERS registry', () => {
       expect(read(entry.path), `${entry.path} default already protective`).not.toBe(
         entry.protectiveValue
       );
+    }
+  });
+
+  it('keeps every `restricted` entry live — its wildcard is actually in the recorded default', () => {
+    // `moreProtective`'s 'restricted' case only ever fires when `fresh.includes
+    // (entry.wildcard)` — so a `restricted` entry whose `wildcard` does not
+    // match what the leaf's default actually ships is not a weaker rule, it is
+    // a DEAD one: every comparison would return `undefined` unconditionally,
+    // silently. This is the same failure class `default-verdicts.test.ts`'s
+    // drift guard catches for the plain default/verdict pairing, aimed at the
+    // one thing that pairing cannot see: whether the CARRYOVER direction's own
+    // parameter still lines up with reality.
+    for (const entry of PROTECTIVE_CARRYOVERS.filter((e) => e.direction === 'restricted')) {
+      expect(entry.wildcard, `${entry.path} needs a wildcard for 'restricted'`).toBeDefined();
+      const recorded = recordedDefaultFor(entry.path);
+      expect(recorded, `${entry.path} has no recorded default to check against`).toBeDefined();
+      expect(
+        recorded!.value,
+        `${entry.path}'s recorded default must be an array containing its wildcard`
+      ).toEqual(expect.arrayContaining([entry.wildcard]));
     }
   });
 });
@@ -491,6 +532,15 @@ describe('ConfigManager recovery keeps protections (real conf + Ajv)', () => {
       expect(manager.get('mcp').rateLimit.maxPerWindow).toBe(5);
       expect(manager.get('rooms').maxAgentDepth).toBe(1);
       // A loosened bound is never carried — recovery only ever tightens.
+      expect(manager.validate()).toEqual({ valid: true });
+    });
+
+    it('keeps a narrowed upload allowlist across a real recovery (DOR-1505)', () => {
+      const { dir } = seedInvalidConfig({
+        uploads: { allowedTypes: ['image/*', 'application/pdf'] },
+      });
+      const manager = new ConfigManager(dir);
+      expect(manager.get('uploads').allowedTypes).toEqual(['image/*', 'application/pdf']);
       expect(manager.validate()).toEqual({ valid: true });
     });
 

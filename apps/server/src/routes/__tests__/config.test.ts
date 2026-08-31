@@ -292,19 +292,21 @@ describe('PATCH /api/config', () => {
     // The reproduction, kept as the test. Every leaf below is on
     // `PROTECTIVE_CARRYOVERS`: recovery from a corrupt config carries the
     // person's value across rather than landing on the shipped default, because
-    // a wipe may lose a preference and must never lose a protection. All nine
-    // were `agent-writable` anyway — so the ACCIDENT was refused and the
-    // DELIBERATE write by an agent was not. Measured before the fix: every one
-    // of these returned 200 and the stored protective value was gone.
+    // a wipe may lose a preference and must never lose a protection. The
+    // original nine were `agent-writable` anyway — so the ACCIDENT was refused
+    // and the DELIBERATE write by an agent was not. Measured before the fix:
+    // every one of these returned 200 and the stored protective value was
+    // gone. `uploads.allowedTypes` joined the ten as DOR-1505's fix, the same
+    // way and for the same reason.
     //
     // Each case is driven through the real route with the real header, and each
     // asserts the STORE as well as the status: a refusal that still wrote would
     // pass a status-only test.
     //
-    // The nine share ONE test per direction rather than getting a case each.
+    // The ten share ONE test per direction rather than getting a case each.
     // That is a memory decision, not a style one: every test in this file mints
     // a fresh app, a fresh config directory and a fresh module graph
-    // (`vi.resetModules()`), and eighteen more of those took the worker past the
+    // (`vi.resetModules()`), and twenty more of those took the worker past the
     // heap limit — a `FATAL ERROR: JavaScript heap out of memory` that reads
     // like a hang rather than a failure. Each leaf still carries its own
     // assertion message, so a red names the leaf that broke.
@@ -365,6 +367,12 @@ describe('PATCH /api/config', () => {
         patch: { uploads: { maxFiles: 20 } },
       },
       {
+        path: 'uploads.allowedTypes',
+        protective: ['image/*'],
+        agentWants: ['*/*'],
+        patch: { uploads: { allowedTypes: ['*/*'] } },
+      },
+      {
         path: 'scheduler.maxConcurrentRuns',
         protective: 1,
         agentWants: 10,
@@ -387,17 +395,19 @@ describe('PATCH /api/config', () => {
         expect(refused.status, leaf.path).toBe(403);
         expect(refused.body.code, leaf.path).toBe('operator_only_config');
         expect(refused.body.paths, leaf.path).toContain(leaf.path);
-        expect(configManager.getDot(leaf.path), leaf.path).toBe(leaf.protective);
-        expect(configManager.getDot(leaf.path), leaf.path).not.toBe(leaf.agentWants);
+        // `.toEqual`, not `.toBe`: `uploads.allowedTypes` carries an array, and
+        // deep equality is the right comparison for every scalar leaf here too.
+        expect(configManager.getDot(leaf.path), leaf.path).toEqual(leaf.protective);
+        expect(configManager.getDot(leaf.path), leaf.path).not.toEqual(leaf.agentWants);
       }
     });
 
     it('lets the PERSON write every one of them through the same door', async () => {
       // The other half, and the one that decides whether the fix is usable.
-      // Every surface that owns one of these nine writes through THIS route: the
+      // Every surface that owns one of these ten writes through THIS route: the
       // Control Center's 'Warm agents' switch and its 'Scheduled runs at once'
       // stepper, Settings → Tools for the four tool switches and the same
-      // concurrency stepper, and `dorkos config set` for `uploads.max*` and
+      // concurrency stepper, and `dorkos config set` for `uploads.*` and
       // `harness.autoSync`, which have no screen of their own. A guard that
       // refused everybody would break every one of them.
       const { configManager } = await import('../../services/core/config-manager.js');
@@ -408,15 +418,16 @@ describe('PATCH /api/config', () => {
 
         expect(response.status, leaf.path).toBe(200);
         expect(response.body.success, leaf.path).toBe(true);
-        expect(configManager.getDot(leaf.path), leaf.path).toBe(leaf.agentWants);
+        expect(configManager.getDot(leaf.path), leaf.path).toEqual(leaf.agentWants);
       }
     });
 
     it('leaves an agent the ordinary preferences beside them', async () => {
-      // The over-refusal check. `uploads.allowedTypes` sits in the same section
-      // as two newly refused bounds, `defaultModel` beside a newly refused
-      // runtime leaf, and neither is carried across a wipe — so both must still
-      // go through, or the guard has been drawn wider than the rule it enforces.
+      // The over-refusal check. `ui.theme` sits beside a newly refused runtime
+      // leaf, `retentionCount` beside a newly refused scheduler leaf, and
+      // `defaultModel` beside a newly refused `uploads.*` sibling — none of the
+      // three is carried across a wipe, so all must still go through, or the
+      // guard has been drawn wider than the rule it enforces.
       agentHeader = 'agent-token';
       signedInUser = undefined;
 
@@ -424,7 +435,6 @@ describe('PATCH /api/config', () => {
         .patch('/api/config')
         .send({
           ui: { theme: 'dark' },
-          uploads: { allowedTypes: ['image/*'] },
           scheduler: { retentionCount: 50 },
           runtimes: { claudeCode: { defaultModel: 'opus' } },
         })
@@ -432,7 +442,7 @@ describe('PATCH /api/config', () => {
 
       expect(response.body.success).toBe(true);
       const { configManager } = await import('../../services/core/config-manager.js');
-      expect(configManager.getDot('uploads.allowedTypes')).toEqual(['image/*']);
+      expect(configManager.getDot('ui.theme')).toBe('dark');
       expect(configManager.getDot('runtimes.claudeCode.defaultModel')).toBe('opus');
       expect(configManager.getDot('scheduler.retentionCount')).toBe(50);
     });

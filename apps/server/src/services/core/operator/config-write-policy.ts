@@ -556,18 +556,17 @@ export const CONFIG_WRITE_POLICY = {
   'agentContext.adapterTools': 'operator-only',
   'agentContext.tasksTools': 'operator-only',
 
-  // The two upload bounds a person can tighten past the shipped default, and so
-  // two more `PROTECTIVE_CARRYOVERS` leaves: operator-only by the wipe floor. A
-  // `safe` verdict on the default means the shipped value protects, not that it
-  // is the tightest anybody might want. `allowedTypes` is left where it was: it
-  // ships at `*/*` and a person CAN narrow it, but it carries no carryover rule,
-  // so the floor does not reach it and moving it here would be a fresh judgement
-  // rather than this fix. Filed as a question for the carryover list, which is
-  // the side that decides it (DOR-1505); if it gains a rule there, this verdict
-  // follows automatically and the drift guard is what will say so.
+  // The three upload leaves a person can tighten past the shipped default, and
+  // so three `PROTECTIVE_CARRYOVERS` leaves: operator-only by the wipe floor. A
+  // `safe`/`permissive` verdict on the default means the shipped value is
+  // exposed, not that it is the tightest anybody might want. `allowedTypes`
+  // gained its carryover rule for DOR-1505 (a `restricted` direction: the
+  // default is the universal `*/*`, so any narrower list is provably more
+  // protective without needing a general subset test), so this verdict follows
+  // automatically — the drift guard would have said so had it not.
   'uploads.maxFileSize': 'operator-only',
   'uploads.maxFiles': 'operator-only',
-  'uploads.allowedTypes': 'agent-writable',
+  'uploads.allowedTypes': 'operator-only',
 
   // Where agent manifests are created. `agent-creator.ts` DOES boundary-check the
   // resolved path (403 on a violation), so this is not an unchecked write. It is
@@ -1006,6 +1005,10 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
     paths: [
       'uploads.maxFileSize',
       'uploads.maxFiles',
+      // Not a size or a count, but the same shape of leaf: a bound on what an
+      // upload may bring onto this machine that a person narrowed on their own,
+      // and the wipe floor says an agent may not widen it back (DOR-1505).
+      'uploads.allowedTypes',
       'runtimes.claudeCode.persistentSession',
       'scheduler.maxConcurrentRuns',
       // How large a room's files may get, how much of its conventions file
