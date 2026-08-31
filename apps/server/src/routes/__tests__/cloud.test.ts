@@ -1,8 +1,7 @@
-import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
-import { createServer } from 'node:http';
-import { once } from 'node:events';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 
 // Mock the cloud-link manager accessor — the route is thin over it, so the
 // route test only proves wiring + response shapes, not the flow (covered by
@@ -26,26 +25,10 @@ const app = express();
 app.use(express.json());
 app.use('/api/cloud', cloudRouter);
 
-/**
- * ONE listener for the whole file, reused by every request.
- *
- * Handed a non-listening app, supertest opens a fresh ephemeral listener per
- * request and closes it in the response callback; under a full-suite run that
- * churn intermittently lands a connection on a listener mid-close, failing a
- * random test with a client-side `socket hang up` rather than an assertion
- * (the DOR-458 pattern, applied here per DOR-545). Given a server whose
- * `address()` is already set, supertest reuses it and never closes it.
- */
-const server = createServer(app);
-
-beforeAll(async () => {
-  server.listen(0);
-  await once(server, 'listening');
-});
-
-afterAll(async () => {
-  await new Promise<void>((resolve) => server.close(() => resolve()));
-});
+// ONE listener for the whole file, reused by every request — the DOR-458
+// listener-churn pattern, closed here per DOR-545. See listeningServer's own
+// doc for why a per-request listener flakes under a full-suite run.
+const server = listeningServer(app);
 
 describe('cloud routes', () => {
   beforeEach(() => {
