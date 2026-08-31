@@ -175,6 +175,16 @@ export function setupMenu(
             ],
           },
           { role: 'editMenu' },
+          // Deliberate (DOR-564): Electron's default `viewMenu` role includes
+          // "Toggle Developer Tools", and this is not gated on
+          // `app.isPackaged` — DevTools is reachable in every build,
+          // including a production one someone installed from dorkos.ai.
+          // For a developer-facing product that's a defensible default (the
+          // audience this ships to already expects to be able to inspect
+          // it), but it's an unexamined one without this comment saying so.
+          // It compounds the still-missing renderer CSP (DOR-560): DevTools
+          // plus no CSP is a wider attack surface than either alone. See the
+          // matching note on the Windows/Linux `toggleDevTools` item below.
           { role: 'viewMenu' },
           // The role is kept while the submenu is replaced. Dropping it and
           // hand-building a "Window" menu costs the macOS windows menu — the
@@ -232,6 +242,9 @@ export function setupMenu(
             submenu: [
               { role: 'reload' },
               { role: 'forceReload' },
+              // Deliberate, not gated on `app.isPackaged` — see the matching
+              // note on macOS's `viewMenu` role above for why, and DOR-560
+              // for the missing CSP this compounds.
               { role: 'toggleDevTools' },
               { type: 'separator' },
               { role: 'resetZoom' },

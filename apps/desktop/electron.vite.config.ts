@@ -113,15 +113,25 @@ export default defineConfig({
       alias: {
         '@': path.resolve(clientRoot, 'src'),
         ...sharedSubpathAliases(),
+        // Overrides the generic mapping above for this one subpath (DOR-564).
+        // @dorkos/shared/manifest uses Node.js built-ins (fs, path, crypto)
+        // the renderer doesn't have — it's only imported by DirectTransport
+        // (Obsidian), never by anything the Electron renderer's import graph
+        // reaches. This used to be `build.rollupOptions.external` instead,
+        // on the theory that nothing imports it — but externalizing doesn't
+        // *prevent* an import, it just emits a bare specifier the renderer
+        // can't resolve, so the day something DID reach it, the desktop
+        // renderer would fail at runtime with a blank window while the web
+        // build stayed green. This stub throws immediately on import
+        // instead, so a future import fails loudly at first run rather than
+        // shipping broken.
+        '@dorkos/shared/manifest': path.resolve(__dirname, 'src/shared/manifest-renderer-stub.ts'),
       },
     },
     build: {
       outDir: path.resolve(__dirname, 'dist/renderer'),
       rollupOptions: {
         input: path.resolve(clientRoot, 'index.html'),
-        // @dorkos/shared/manifest uses Node.js built-ins (fs, path, crypto).
-        // It's only imported by DirectTransport (not used in Electron renderer).
-        external: ['@dorkos/shared/manifest'],
       },
     },
   },

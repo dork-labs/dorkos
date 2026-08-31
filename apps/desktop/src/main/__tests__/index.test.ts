@@ -188,6 +188,36 @@ describe('single-instance lock (A1)', () => {
     expect(destroyedWindow.focus).not.toHaveBeenCalled();
     expect(windowManager.createWindow).toHaveBeenCalledTimes(2);
   });
+
+  it('logs rather than failing silently when there is no window and no server port yet (DOR-564)', async () => {
+    const { app, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    const windowManager = await import('../window-manager');
+    vi.mocked(windowManager.createWindow).mockReset();
+    const serverProcess = await import('../server-process');
+    vi.mocked(serverProcess.getServerPort).mockReturnValue(null);
+    // Fetched through the 'electron-log' specifier, not a direct import of
+    // './electron-log-mock' — see getElectronMock's doc comment above for
+    // why: only the aliased specifier is guaranteed to be the same singleton
+    // '../index' resolves to after vi.resetModules().
+    const { resetLogMock, default: log } =
+      (await import('electron-log')) as unknown as typeof import('./electron-log-mock');
+    resetLogMock();
+
+    await import('../index');
+    // A second-instance launch during a slow start: no tracked window yet,
+    // and the server has no port to serve from.
+    await app.emit('second-instance');
+
+    expect(windowManager.createWindow).not.toHaveBeenCalled();
+    expect(vi.mocked(log.info)).toHaveBeenCalledWith(expect.stringContaining('showMainWindow'));
+
+    // This mock is memoized for the whole file (see getElectronMock's doc
+    // comment) — restore its default so later tests don't inherit "no port".
+    vi.mocked(serverProcess.getServerPort).mockReturnValue(4242);
+  });
 });
 
 describe('dorkos:// deep links (D2) and the pending-navigation handoff (D3)', () => {

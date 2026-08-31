@@ -2,11 +2,17 @@
  * Resolve the server API base URL for the current runtime (web vs Electron).
  *
  * The standalone web client talks to a relative `/api` path (proxied by Vite in
- * dev, served directly in production). The packaged desktop shell is normally
- * served BY that server too (`http://localhost:<port>`, see
- * `window-manager.ts`), so a relative path would reach it — but the shell also
- * has a `file://` last resort, where nothing relative can, so the base URL is
- * pinned to the dynamic localhost port exposed via the preload bridge.
+ * dev, served directly in production). The packaged desktop shell is served BY
+ * that same server (`http://localhost:<port>`, see `window-manager.ts`) — it
+ * does NOT load from `file://`; that changed with ADR 260712-005315, which
+ * moved the packaged window to `loadURL('http://localhost:<port>')`
+ * specifically to make relative API paths and cookie-based auth work at all
+ * (a `file://` page sends `Origin: null`, which the server's CORS allowlist
+ * rejects). So a relative path would resolve correctly today — this module
+ * pins the base URL to the dynamic port from the preload bridge instead
+ * because the port can still be legitimately unknown for a moment (startup,
+ * after a crash, between restarts), and an absolute URL is what makes that
+ * window explicit rather than silently mis-resolving.
  *
  * Shared by the {@link HttpTransport} construction in `main.tsx` and the auth
  * client (`features/auth`), so both speak to the same origin — Better Auth session
@@ -38,12 +44,12 @@ export function resolveApiBaseUrl(): string {
   if (!window.electronAPI?.getServerPort) return '/api';
   const port = window.electronAPI.getServerPort();
   if (!isServingPort(port)) {
-    // The relative path is the better answer wherever the page has a real
-    // origin: the packaged shell is served BY the server it is asking
-    // (`http://localhost:<port>`), so `/api` resolves to the same place the
-    // port would have. It only fails on the shell's `file://` last resort —
-    // and there it fails as requests that retry, not as a module that throws
-    // on the way up. Either way the log line says the port never arrived.
+    // The relative path is the correct answer here: the packaged shell is
+    // served BY the server it is asking (`http://localhost:<port>`, ADR
+    // 260712-005315 — it never loads from `file://`), so `/api` resolves to
+    // the same place the port would have. This branch exists for the
+    // genuinely transient case where the bridge hasn't reported a port yet
+    // (startup, after a crash, between restarts); the log line says so.
     console.error(
       `[dorkos] The desktop shell reported no server port (${String(port)}); ` +
         `falling back to a relative /api path until it does.`

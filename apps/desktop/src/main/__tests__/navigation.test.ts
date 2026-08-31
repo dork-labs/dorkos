@@ -167,6 +167,42 @@ describe('requestNavigate / resolvePendingNavigate (pending-navigation handoff)'
     expect(resolvePendingNavigate(win.webContents.id)).toBeNull();
   });
 
+  it('expires a queued path older than 30s rather than delivering it stale (DOR-564)', async () => {
+    vi.useFakeTimers();
+    try {
+      const { resetElectronMock } = await import('./electron-mock');
+      resetElectronMock();
+      const { requestNavigate, resolvePendingNavigate } = await import('../navigation');
+
+      // A dorkos:// deep link arrives with no window/renderer to receive it.
+      requestNavigate(() => null, vi.fn(), '/agents');
+
+      vi.advanceTimersByTime(30_001);
+
+      // The renderer finally subscribes the next morning — too late.
+      expect(resolvePendingNavigate(1)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('still delivers a queued path picked up just under the 30s TTL', async () => {
+    vi.useFakeTimers();
+    try {
+      const { resetElectronMock } = await import('./electron-mock');
+      resetElectronMock();
+      const { requestNavigate, resolvePendingNavigate } = await import('../navigation');
+
+      requestNavigate(() => null, vi.fn(), '/agents');
+
+      vi.advanceTimersByTime(29_999);
+
+      expect(resolvePendingNavigate(1)).toBe('/agents');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('last-write-wins when requestNavigate is called twice before pickup', async () => {
     const { resetElectronMock } = await import('./electron-mock');
     resetElectronMock();

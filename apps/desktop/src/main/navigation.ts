@@ -101,8 +101,20 @@ export function findDeepLinkArg(argv: readonly string[]): string | null {
 // receive it" — a single pending slot plus a renderer-readiness signal
 // covers both with one mechanism (see `requestNavigate`/`resolvePendingNavigate`).
 
-/** The most recently requested path that hasn't been delivered yet (last-write-wins). */
-let pendingPath: string | null = null;
+/**
+ * How long a queued path may wait for a renderer to claim it before it's
+ * considered stale (DOR-564). Without a bound, a `dorkos://` deep link that
+ * arrives while nothing is subscribed sits in the slot indefinitely — so
+ * opening the app the next morning silently navigates to whatever was asked
+ * for yesterday, with no explanation. 30 seconds is far longer than any real
+ * boot or window-creation takes, so a delivery within the window is
+ * indistinguishable from an unbounded wait; past it, the request is too old
+ * to still reflect what the person wants.
+ */
+const PENDING_PATH_TTL_MS = 30_000;
+
+/** The most recently requested path that hasn't been delivered yet (last-write-wins), and when it was queued. */
+let pendingPath: { path: string; queuedAt: number } | null = null;
 
 /**
  * The `webContents.id` of the renderer that most recently proved it's
@@ -176,7 +188,7 @@ export function requestNavigate(
   if (win && !win.isDestroyed() && isRendererReady(win)) {
     sendNavigate(win, path);
   } else {
-    pendingPath = path;
+    pendingPath = { path, queuedAt: Date.now() };
   }
   ensureWindow();
 }
@@ -189,16 +201,19 @@ export function requestNavigate(
  * Marks `webContentsId` as the ready renderer — so a subsequent
  * {@link requestNavigate} call can use the hot path — and hands back
  * whatever path was queued before this renderer had the chance to
- * subscribe. Read-once: the slot is cleared immediately, so a path is only
- * ever delivered once (a second invoke from the same or another renderer
- * returns `null`).
+ * subscribe, unless it's older than {@link PENDING_PATH_TTL_MS}, in which
+ * case it's dropped as stale rather than delivered. Read-once either way:
+ * the slot is cleared immediately, so a path is only ever delivered once (a
+ * second invoke from the same or another renderer returns `null`).
  *
  * @param webContentsId - `event.sender.id` of the invoking renderer.
- * @returns The queued path, or `null` if nothing is pending.
+ * @returns The queued path, or `null` if nothing is pending or it expired.
  */
 export function resolvePendingNavigate(webContentsId: number): string | null {
   readyWebContentsId = webContentsId;
-  const path = pendingPath;
+  const queued = pendingPath;
   pendingPath = null;
-  return path;
+  if (!queued) return null;
+  if (Date.now() - queued.queuedAt > PENDING_PATH_TTL_MS) return null;
+  return queued.path;
 }

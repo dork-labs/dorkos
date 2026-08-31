@@ -47,8 +47,6 @@ declare global {
      * with it.
      */
     getServerPort(): number | null;
-    /** Get the app version string. */
-    getAppVersion(): string;
     /** The current platform (darwin, win32, linux). */
     platform: NodeJS.Platform;
     /**

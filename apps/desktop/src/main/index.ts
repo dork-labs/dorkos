@@ -139,7 +139,15 @@ function startupFailureMessage(err: unknown): string {
  */
 function showMainWindow(): void {
   if (!mainWindow || mainWindow.isDestroyed()) {
-    if (getServerPort()) createTrackedWindow();
+    if (getServerPort()) {
+      createTrackedWindow();
+    } else {
+      // Narrow window (DOR-564): a second-instance launch, a Dock click, or
+      // a deep link arriving before the server has a port to serve from.
+      // Silent otherwise — someone double-clicking the icon during a slow
+      // start would see nothing happen and have no idea why.
+      log.info('[window] showMainWindow called with no server port yet; nothing to show.');
+    }
     return;
   }
   if (mainWindow.isMinimized()) mainWindow.restore();
@@ -261,10 +269,6 @@ if (!gotTheLock) {
 
   ipcMain.on('get-server-port', (event) => {
     event.returnValue = getServerPort();
-  });
-
-  ipcMain.on('get-app-version', (event) => {
-    event.returnValue = app.getVersion();
   });
 
   // Open a URL outside the app. The renderer needs this for one address in

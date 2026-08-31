@@ -94,8 +94,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * {@link retryRenderer} for who may call this.
    */
   saveDiagnosticReport: (): Promise<void> => ipcRenderer.invoke(DIAGNOSTICS_CHANNEL),
-  /** Get the app version from package.json (synchronous). */
-  getAppVersion: (): string => ipcRenderer.sendSync('get-app-version'),
   /** The current platform (darwin, win32, linux). */
   platform: process.platform,
   /**
