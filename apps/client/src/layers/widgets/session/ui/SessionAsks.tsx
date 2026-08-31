@@ -41,6 +41,12 @@ interface SessionAsksProps {
    * loss. They are safe; this says so and nothing more.
    */
   queueDepth?: number;
+  /**
+   * Whether this session's runtime can deliver a free-text deny reason to the
+   * agent. Passed straight through to `ApprovalPrompt` — see its own prop for
+   * why (DOR-825).
+   */
+  allowsDenyReason?: boolean;
 }
 
 /**
@@ -56,6 +62,7 @@ export function SessionAsks({
   onToolRef,
   onToolDecided,
   queueDepth = 0,
+  allowsDenyReason = true,
 }: SessionAsksProps) {
   // Forward submitted question answers so they're persisted onto the tool-call
   // part immediately — otherwise the inline answered row briefly shows the
@@ -141,6 +148,7 @@ export function SessionAsks({
               approvalBlockedPath={activeInteraction.approvalBlockedPath}
               approvalDecisionReason={activeInteraction.approvalDecisionReason}
               approvalHasSuggestions={activeInteraction.approvalHasSuggestions}
+              allowsDenyReason={allowsDenyReason}
             />
           ) : activeInteraction.interactiveType === 'question' && activeInteraction.questions ? (
             <QuestionPrompt

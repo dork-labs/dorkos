@@ -545,6 +545,16 @@ export interface RuntimeCapabilities {
      */
     default?: string;
     values: PermissionModeDescriptor[];
+    /**
+     * Whether denying a tool call can carry a free-text reason the agent
+     * receives. OpenCode's respond endpoint has no such channel, so typing one
+     * there went nowhere — the receipt correctly never claimed the agent was
+     * told why, but the person typed into a void (DOR-825, PR #693/DOR-809's
+     * review). `undefined` defaults to `true`: every runtime declared before
+     * this field existed already had the channel, so an unset value preserves
+     * that behavior rather than silently hiding the affordance everywhere.
+     */
+    denyReason?: boolean;
   };
 
   /**

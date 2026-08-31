@@ -105,6 +105,10 @@ export const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
         promise: "Answers each request the way the test scenario's script says. For tests only.",
       },
     ],
+    // The simulator has no real transport constraint to mirror — declared
+    // explicitly (true, also the default) so a conformance/e2e run can exercise
+    // the deny-reason field the same way a real runtime with one does (DOR-825).
+    denyReason: true,
   },
   // `configSection: null` because test-mode is a real runtime with NO section
   // under `runtimes.*` in user config — which is why it must stay absent from

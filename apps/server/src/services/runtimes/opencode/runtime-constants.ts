@@ -99,6 +99,12 @@ export const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
           'Acts without approval prompts — including outside this project. Still asks when it needs your call.',
       },
     ],
+    // `POST /session/{id}/permissions/{permissionID}` takes `once`/`reject`
+    // only — no free-text field the sidecar forwards to the agent. A reason
+    // typed into DorkOS's deny UI would go nowhere (DOR-825, PR #693/DOR-809's
+    // review), so the client hides that field on this runtime instead of
+    // offering it silently.
+    denyReason: false,
   },
   // `supportsEffort: false` because OpenCode's prompt body carries no effort
   // field in either the pinned or the current SDK — effort exists there only as

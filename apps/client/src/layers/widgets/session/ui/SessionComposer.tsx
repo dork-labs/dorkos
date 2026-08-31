@@ -199,6 +199,11 @@ export function SessionComposer({
   const sessionSteerable = useSessionSteerable(sessionId);
   const canSteer = (capabilities?.supportsSteer ?? false) && (sessionSteerable ?? true);
   const canAddContext = capabilities?.supportsContextStaging ?? false;
+  // Whether a deny reason typed here reaches the agent at all. `true` while
+  // capabilities are still loading and for every runtime that has not opted
+  // out — most have the channel, so an unresolved answer should not hide an
+  // affordance that works (DOR-825).
+  const allowsDenyReason = capabilities?.permissionModes?.denyReason ?? true;
 
   /**
    * Hold these words for the running turn — the session's queue, reached
@@ -603,6 +608,7 @@ export function SessionComposer({
             // messages still exist would vanish at exactly the moment it
             // reassures. The messages survive — say so.
             queueDepth={chatQueue.queue.length}
+            allowsDenyReason={allowsDenyReason}
           />
         ) : null
       }
