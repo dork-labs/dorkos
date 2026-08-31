@@ -71,13 +71,26 @@ describe('settleAsk removal timer', () => {
   it('clearAskReceipts cancels in-flight timers instead of leaking them across tests', () => {
     const { result } = renderHook(() => useSettlingAsks());
 
+    // Deliberately NOT "settle, clear, advance, assert not-held": that shape
+    // passes even without cancelling the timer, because clearAskReceipts's
+    // own setState already empties `settling` — an uncancelled timer's later
+    // removal is then a silent no-op the test would never notice. This
+    // mirrors the stale-timer shape above instead, going through
+    // clearAskReceipts rather than forgetAskReceipt.
     act(() => settleAsk(ASK));
+    act(() => vi.advanceTimersByTime(300));
     act(() => clearAskReceipts());
 
-    // If the timer were still scheduled, letting it fire here would be
-    // exercising a dangling callback against state a later test may already
-    // own — the cross-test leak the issue calls out.
-    act(() => vi.advanceTimersByTime(1_200));
+    // Re-settled after the clear. If the FIRST timer were still scheduled
+    // (not cancelled by clearAskReceipts), it fires 900ms from here — the
+    // same 1200ms-from-first-settle mark as the stale-timer test above —
+    // and removes this second hold ~300ms early.
+    act(() => settleAsk(ASK));
+    act(() => vi.advanceTimersByTime(900));
+    expect(result.current.some((held) => held.interaction.id === ASK.interaction.id)).toBe(true);
+
+    // The second timer's own deadline: now it is gone.
+    act(() => vi.advanceTimersByTime(300));
     expect(result.current.some((held) => held.interaction.id === ASK.interaction.id)).toBe(false);
   });
 

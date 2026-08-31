@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(client): guard task-state reset on genuine session change (DOR-1632)'
+  - 'fix(client): narrow the task-state empty-response guard to fetch timing (DOR-1632)'
 ---
 
 ### Fixed
