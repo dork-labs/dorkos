@@ -169,12 +169,21 @@ function normalizeStatus(status: string): string {
   return STATUS_NORMALIZE[status] ?? status;
 }
 
+// The visual-companion skill's documented convention writes design-decision
+// records into spec dirs as `04-design-decisions.md`. That collides with this
+// script's ARTIFACT_TO_STATUS[4] = 'implemented': a freshly designed (not yet
+// implemented) spec gets auto-promoted to "implemented" the moment that file
+// lands. Skip it explicitly rather than teach ARTIFACT_TO_STATUS a status for
+// artifact 4 that only sometimes means "implemented" (DOR-818).
+const NON_STATUS_ARTIFACTS = new Set(['04-design-decisions.md']);
+
 function getHighestArtifact(slug: string): number {
   const dir = join(SPECS_DIR, slug);
   if (!existsSync(dir)) return 0;
 
   let highest = 0;
   for (const file of readdirSync(dir)) {
+    if (NON_STATUS_ARTIFACTS.has(file)) continue;
     const match = file.match(/^0([1-5])-.*\.(md|json)$/);
     if (match) {
       const num = parseInt(match[1], 10);
