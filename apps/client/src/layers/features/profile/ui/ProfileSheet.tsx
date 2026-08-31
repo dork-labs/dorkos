@@ -15,6 +15,7 @@ import {
   ResponsiveSheetDescription,
   ResponsiveSheetTitle,
 } from '@/layers/shared/ui';
+import { takeProfileOpener } from '@/layers/shared/model';
 import { teamMemberFace } from '@/layers/entities/team';
 import { hasUnsavedProfileEdits } from '../model/profile-leave-guard';
 import { DiscardChangesDialog } from './DiscardChangesDialog';
@@ -62,6 +63,20 @@ export function ProfileSheet({ open, onOpenChange, ...view }: ProfileSheetProps)
         // caller's `className` is merged last, so this outranks the primitive's
         // own duration for this one panel.
         className="flex flex-col gap-0 overflow-hidden p-0 data-[state=open]:duration-300"
+        // Hand focus back to whatever opened this sheet, rather than Radix's
+        // own default (DOR-1274). Radix restores to whatever had focus at MOUNT
+        // time, which for several openers — a hover card's "View profile"
+        // footer, a mention pill inside a message — is already gone by then:
+        // the hover card unmounts the instant its own click handler runs, so by
+        // the time this sheet's `FocusScope` looks, `document.activeElement` is
+        // already `<body>`. `takeProfileOpener` was captured earlier, at the
+        // `open()` call itself, which is before any of that has a chance to run.
+        onCloseAutoFocus={(event) => {
+          const opener = takeProfileOpener();
+          if (opener === null || !opener.isConnected) return;
+          event.preventDefault();
+          opener.focus();
+        }}
       >
         {/* Radix wants a title on every dialog. The portrait's own name is the
             visible one; this says what the panel IS, which is the thing a

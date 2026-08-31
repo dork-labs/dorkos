@@ -126,6 +126,7 @@ export {
   useOpenConnections,
   clearedDialogSearch,
   isDualSignalDialog,
+  takeProfileOpener,
   type DialogDeepLink,
   type ProfileDeepLink,
 } from './use-dialog-deep-link';

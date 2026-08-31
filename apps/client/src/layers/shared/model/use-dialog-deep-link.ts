@@ -240,6 +240,39 @@ export function useTasksDeepLink(): DialogDeepLink<never> {
   return useSimpleDialogDeepLink('tasks');
 }
 
+/**
+ * The control the profile sheet should hand focus back to once it closes
+ * (DOR-1274).
+ *
+ * A captured NODE, not an id: a profile can be opened from a huge variety of
+ * controls — a mention pill, a message face, a hover card's "View profile"
+ * footer, a roster card, the sidebar's own face — with no one identifier
+ * scheme to look a row back up by the way a room thread panel's origin row
+ * can (`widgets/room-view/model/use-restore-thread-focus.ts`). Captured at
+ * `open()` time rather than read later
+ * off `document.activeElement` by the sheet itself: some of those openers sit
+ * inside another overlay (a Radix `HoverCard`) that unmounts the instant its
+ * own click handler runs, which is exactly the "menu-close steals the thing
+ * it just opened" shape `use-menu-close-focus-guard.ts` names elsewhere — by
+ * the time the sheet's `onCloseAutoFocus` runs, that trigger and whatever
+ * focus it held are long gone. Module-scoped because the component that calls
+ * `open()` and the sheet that consumes this on close are different instances.
+ */
+let profileOpener: HTMLElement | null = null;
+
+/**
+ * Hand back the control a profile was opened from, once — clearing it so a
+ * later close with no fresh open before it does not reuse a stale one.
+ *
+ * @returns The opener, or `null` when nothing was captured (no router, or the
+ *   click that opened it left no focused element behind).
+ */
+export function takeProfileOpener(): HTMLElement | null {
+  const opener = profileOpener;
+  profileOpener = null;
+  return opener;
+}
+
 /** The profile's URL state: which identity is open, on which page, and how to change it. */
 export interface ProfileDeepLink {
   /** True if the profile should be open. */
@@ -293,6 +326,8 @@ export function useProfileDeepLink(): ProfileDeepLink {
 
   const open = useCallback(
     (id: string, toPage?: string) => {
+      // Captured before anything else runs — see `takeProfileOpener` (DOR-1274).
+      profileOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       if (!inPlaceNav) return openProfileForMember(id, toPage);
       // A history push, not a replace: a chained profile (an owner, an agent
       // they manage) is a place you can come back from, and the phone's back

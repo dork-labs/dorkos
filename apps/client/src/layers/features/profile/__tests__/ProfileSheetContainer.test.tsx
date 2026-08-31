@@ -12,9 +12,9 @@
  * that `?profilePage=` opens a page — including when the page names nothing
  * this build has.
  */
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useContext, useState, type ReactNode } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -30,7 +30,12 @@ import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
-import { TransportProvider, mergeDialogSearch, useAppStore } from '@/layers/shared/model';
+import {
+  TransportProvider,
+  mergeDialogSearch,
+  useAppStore,
+  useProfileDeepLink,
+} from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';
 import { useProfileStore } from '../model/profile-store';
@@ -367,5 +372,143 @@ describe('a chained profile', () => {
     expect(await screen.findByText('Warden')).toBeInTheDocument();
     await waitFor(() => expect(useProfileStore.getState().sheetChain).toEqual([]));
     expect(screen.queryByRole('button', { name: /^Back to/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('returning focus to the opener on close (DOR-1274)', () => {
+  /**
+   * A stand-in for whatever opened the sheet in the real app (a mention pill,
+   * a message face, a hover card footer) plus the container, wired the way
+   * `DialogHost` wires them: `onOpenChange(false)` drives both the store flag
+   * AND clears the URL half, which is what actually lets `ResponsiveSheet`'s
+   * Radix `Dialog.Root` see `open` flip to `false` and run its real close
+   * transition — the thing `onCloseAutoFocus` fires off. A test that flipped
+   * `open` without also clearing the URL would leave the container's own
+   * `member` lookup non-null and the sheet reopening the next render.
+   */
+  function OpenerHarness() {
+    const [open, setOpen] = useState(false);
+    // Toggled by a test standing in for the hover-card-footer case: the
+    // control that opened the sheet can be unmounted before the sheet closes.
+    // A React-driven removal, not a raw `node.remove()` — the latter fights
+    // React's own reconciliation over who owns the DOM node.
+    const [openerMounted, setOpenerMounted] = useState(true);
+    const { open: openProfile, close } = useProfileDeepLink();
+    return (
+      <>
+        {openerMounted && (
+          <button
+            onClick={() => {
+              openProfile(WARDEN);
+              setOpen(true);
+            }}
+          >
+            Open Warden
+          </button>
+        )}
+        <button onClick={() => setOpenerMounted(false)}>Unmount opener</button>
+        <ProfileSheetContainer
+          open={open}
+          onOpenChange={(next) => {
+            setOpen(next);
+            if (!next) close();
+          }}
+        />
+      </>
+    );
+  }
+
+  function renderOpenerHarness() {
+    const rootRoute = createRootRoute({
+      staticData: { header: null },
+      component: () => <Outlet />,
+    });
+    const indexRoute = createRoute({
+      staticData: { header: null },
+      getParentRoute: () => rootRoute,
+      path: '/',
+      validateSearch: zodValidator(testSearchSchema),
+      component: HookSlot,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([indexRoute]),
+      history: createMemoryHistory({ initialEntries: ['/'] }),
+    });
+    const transport = createMockTransport({
+      getTeamRoster: vi.fn().mockResolvedValue({ members: MOCK_TEAM_ROSTER }),
+      getAgentByPath: vi.fn().mockResolvedValue(null),
+      listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: FLEET }),
+      listMemberRooms: vi.fn().mockResolvedValue({ rooms: [] }),
+    } as Partial<Transport>);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+
+    render(
+      <HookSlotContext.Provider
+        value={
+          <QueryClientProvider client={queryClient}>
+            <TransportProvider transport={transport}>
+              <TooltipProvider>
+                <OpenerHarness />
+              </TooltipProvider>
+            </TransportProvider>
+          </QueryClientProvider>
+        }
+      >
+        <RouterProvider router={router} />
+      </HookSlotContext.Provider>
+    );
+
+    return { ready: () => waitFor(() => expect(router.state.status).toBe('idle')) };
+  }
+
+  it('hands focus back to the control that opened it, not the body', async () => {
+    const user = userEvent.setup();
+    const harness = renderOpenerHarness();
+    await harness.ready();
+
+    const opener = await screen.findByRole('button', { name: 'Open Warden' });
+    await user.click(opener);
+    expect(await screen.findByText('Warden')).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+
+    // Radix's OWN default would land here too, in the buggy case — the
+    // discriminating assertion is that it is specifically the button that
+    // opened the sheet, not merely "not body".
+    await waitFor(() => expect(opener).toHaveFocus());
+  });
+
+  it('leaves focus alone when the opener is gone rather than reaching for it anyway', async () => {
+    // The hover-card-footer case: the control that opened the sheet can be
+    // unmounted by the time the sheet closes. Focusing a detached node throws
+    // in some engines and silently no-ops in others — either way, reaching for
+    // it is wrong. This pins the connectedness check rather than asserting a
+    // specific fallback target, since Radix's own default in that case is an
+    // implementation detail this fix does not own.
+    const user = userEvent.setup();
+    const harness = renderOpenerHarness();
+    await harness.ready();
+
+    const opener = await screen.findByRole('button', { name: 'Open Warden' });
+    await user.click(opener);
+    expect(await screen.findByText('Warden')).toBeInTheDocument();
+
+    // `fireEvent`, not `userEvent`: Radix correctly sets `pointer-events: none`
+    // on the background while the dialog is modal, so a realistic pointer
+    // interaction refuses this click — rightly, for a real user. This button is
+    // a test fixture standing in for React unmounting the opener, not
+    // something a real user reaches while the sheet is open, so it bypasses
+    // that check on purpose.
+    fireEvent.click(screen.getByRole('button', { name: 'Unmount opener', hidden: true }));
+    expect(
+      screen.queryByRole('button', { name: 'Open Warden', hidden: true })
+    ).not.toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+
+    // Nothing throws, and the sheet still closes normally.
+    await waitFor(() => expect(screen.queryByText('Warden')).not.toBeInTheDocument());
   });
 });
