@@ -120,13 +120,13 @@ hooks, commands, or scripts:
 - Every surviving reference to a removed thing is a finding: 🟡 at least, 🔴 if a
   runtime, build, or CI path resolves it.
 
-This is mechanical and cheap. Run it before concluding a deletion PR is clean.
-
 When a PR touches a Playwright locator that matches on copy, flag it: prefer a
 stable `data-testid` instead. Copy changes for reasons that have nothing to do
 with the test — a rewording, a translation, an A/B test — and a locator tied to
 it breaks every time, often in a directory nobody thought to check (see the
 PR #575 example above).
+
+This is mechanical and cheap. Run it before concluding a deletion PR is clean.
 
 ## Conventions to check (cheap, high-signal)
 
