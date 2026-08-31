@@ -278,8 +278,18 @@ export function createProfileRouter(deps: ProfileRouterDeps): Router {
     }
   });
 
-  // GET /avatar/:id — serve one. The `?v=<hash>` the stored URL carries is what
-  // makes a replaced photo appear at once without turning caching off.
+  // GET /avatar/:id — serve one. `put()` always writes the SAME path
+  // (`<id>.<ext>`), so the path alone proves nothing about which bytes are
+  // behind it today — a stale `?v=` sitting in a browser cache would otherwise
+  // be handed `immutable` for content it no longer names. The route reads the
+  // query itself and answers the one question that makes `immutable` true:
+  // does `?v=` name the id's CURRENT etag? On a match the requester already
+  // named these exact bytes, so nothing about a future replacement can make
+  // this response wrong — that request will carry a new `?v=`, a different
+  // URL, cached separately. On a mismatch or an absent `?v=` (a raw
+  // `/avatar/:id` fetch, or one that outlived a replacement), caching still
+  // has to `must-revalidate`, because the path can legitimately start serving
+  // different bytes tomorrow.
   router.get('/avatar/:id', async (req, res) => {
     let stored;
     try {
@@ -293,9 +303,21 @@ export function createProfileRouter(deps: ProfileRouterDeps): Router {
     // An image served from a URL a person can influence is exactly where a
     // sniffing browser turns a photo into a document.
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    // Defense-in-depth alongside `private` above: no origin other than this
+    // install's own should be able to embed somebody's photo even if it
+    // guessed the id.
+    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
     res.setHeader('Content-Disposition', 'inline');
     res.setHeader('ETag', stored.etag);
-    res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+    const requestedVersion = req.query.v;
+    const namesCurrentBytes =
+      typeof requestedVersion === 'string' && `"${requestedVersion}"` === stored.etag;
+    res.setHeader(
+      'Cache-Control',
+      namesCurrentBytes
+        ? 'private, max-age=31536000, immutable'
+        : 'private, max-age=0, must-revalidate'
+    );
 
     if (req.headers['if-none-match'] === stored.etag) {
       stored.stream.destroy();
