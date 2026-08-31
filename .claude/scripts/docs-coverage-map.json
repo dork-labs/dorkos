@@ -694,6 +694,15 @@
       ]
     },
     {
+      "doc": "docs/api/index.mdx",
+      "description": "REST/SSE API landing page: base URL, authentication, and the generated per-resource reference under it",
+      "patterns": [
+        "apps/server/src/services/core/openapi-registry.ts",
+        "apps/server/src/env.ts",
+        "routes/mcp"
+      ]
+    },
+    {
       "doc": "docs/changelog-archive.mdx",
       "description": "Older releases aged out of the main changelog",
       "patterns": ["CHANGELOG.md"]
