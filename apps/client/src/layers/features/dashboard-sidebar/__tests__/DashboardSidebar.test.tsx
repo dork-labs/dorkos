@@ -12,7 +12,7 @@ import {
   type ThreadSummary,
 } from '@dorkos/shared/room-schemas';
 import { toast } from 'sonner';
-import { setPrefersReducedMotion } from '@/test-setup';
+import { getPrefersReducedMotion, setPrefersReducedMotion } from '@/test-setup';
 import { resolveAgentVisual } from '@/layers/shared/lib';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { useRoomOpenThreadStore } from '@/layers/entities/room';
@@ -250,6 +250,19 @@ function parkedSchedule(overrides: Partial<Task> & Pick<Task, 'id'>): Task {
     ...overrides,
   };
 }
+
+// This file runs the REAL motion library, not the jsdom-safe stand-in every
+// other suite gets from test-setup.ts's global mock. BC-19's "unfolds them
+// where they are, and folds them back" case measures a row surviving through
+// its 120ms fade-out (spec D5) rather than vanishing same-tick — a claim only
+// the real library's timing can make true. `useReducedMotion` still reads the
+// SAME shared toggle test-setup.ts exports (`getPrefersReducedMotion`), so this
+// file's `setPrefersReducedMotion(true)` calls (BC-50, P2 AC-9) keep working
+// unchanged; only the rest of the module is the real one (DOR-1416 review).
+vi.mock('motion/react', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('motion/react')>()),
+  useReducedMotion: () => getPrefersReducedMotion(),
+}));
 
 const mockRooms = vi.fn<() => RoomSummary[]>(() => []);
 const mockThreads = vi.fn<() => ThreadSummary[]>(() => []);

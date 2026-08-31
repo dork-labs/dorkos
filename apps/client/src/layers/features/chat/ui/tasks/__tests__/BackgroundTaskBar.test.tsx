@@ -9,8 +9,6 @@ import { BackgroundTaskBar } from '../BackgroundTaskBar';
 import type { VisibleBackgroundTask } from '../../../model/use-background-tasks';
 import { TASK_COLORS } from '../../../model/use-background-tasks';
 
-// Mock motion/react to avoid animation complexity in unit tests
-
 // Mock child components to isolate BackgroundTaskBar logic. The stub runner
 // only echoes the status it was handed, so nothing here can see what the runner
 // actually draws — that lives in AgentRunner.test.tsx, which drives the real

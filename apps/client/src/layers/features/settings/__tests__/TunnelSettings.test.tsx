@@ -5,8 +5,6 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { TunnelSettings } from '../ui/TunnelSettings';
 
-// Mock motion/react so AnimatePresence renders immediately
-
 afterEach(() => {
   cleanup();
 });

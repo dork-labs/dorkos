@@ -22,8 +22,6 @@ vi.mock('@/layers/shared/model', async (importOriginal) => ({
   useIsMobile: () => mockUseIsMobile(),
 }));
 
-// Mock motion components to render plain DOM elements
-
 afterEach(() => {
   cleanup();
 });

@@ -9,8 +9,6 @@ vi.mock('react-qr-code', () => ({
   default: ({ value }: { value: string }) => <div data-testid="qr-code">{value}</div>,
 }));
 
-// Mock motion/react so AnimatePresence renders immediately
-
 const mockClipboardWriteText = vi.fn().mockResolvedValue(undefined);
 
 beforeEach(() => {

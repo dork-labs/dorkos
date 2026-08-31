@@ -231,8 +231,29 @@ function createMotionComponent(Component: React.ElementType): React.FC<Record<st
  * than a `let`: `vi.mock` factories are hoisted above every other statement in
  * the file, so a factory below can only close over a binding that already
  * exists by the time it runs — `vi.hoisted` is what guarantees that.
+ *
+ * NOT exported directly: `vi.mock` factories cannot export a `vi.hoisted`
+ * binding straight out of the module ("Cannot export hoisted variable" —
+ * Vitest's own hoisting pass rejects it). {@link getPrefersReducedMotion}
+ * is the read side for the rare file that needs it.
  */
 const reducedMotionState = vi.hoisted(() => ({ current: false }));
+
+/**
+ * Read the same toggle {@link setPrefersReducedMotion} writes.
+ *
+ * For the rare file that needs the REAL `motion/react` library rather than
+ * this file's jsdom-safe stand-in — e.g. a fade whose timing the test
+ * actually measures. Such a file installs its own `vi.mock('motion/react',
+ * async (importOriginal) => ({ ...await importOriginal(), useReducedMotion:
+ * getPrefersReducedMotion }))`, which shadows the mock below for that file
+ * only; reading this same toggle keeps `setPrefersReducedMotion` working
+ * there too, instead of that file reinventing its own
+ * (DashboardSidebar.test.tsx, DOR-1416 review).
+ */
+export function getPrefersReducedMotion(): boolean {
+  return reducedMotionState.current;
+}
 
 /**
  * Make the mocked `useReducedMotion()` answer `true` for the rest of the

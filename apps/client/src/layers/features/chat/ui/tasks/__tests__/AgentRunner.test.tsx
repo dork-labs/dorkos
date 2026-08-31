@@ -9,9 +9,6 @@ import { BackgroundTaskBar } from '../BackgroundTaskBar';
 import type { VisibleBackgroundTask } from '../../../model/use-background-tasks';
 import { TASK_COLORS } from '../../../model/use-background-tasks';
 
-// The bar animates with motion; the runner itself does not. Stripping motion
-// keeps the bar renderable in jsdom without touching the runner under test.
-
 /** The celebration burst plays for 350ms before the runner settles into its mark. */
 const SETTLE_DELAY_MS = 350;
 

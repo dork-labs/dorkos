@@ -9,8 +9,6 @@ import '@testing-library/jest-dom/vitest';
 // Mocks
 // ---------------------------------------------------------------------------
 
-// Suppress motion animation in tests
-
 const mockImportOpen = vi.fn();
 vi.mock('@/layers/shared/model', () => ({
   useImportProjectsStore: (selector?: (s: { open: () => void }) => unknown) => {

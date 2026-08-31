@@ -38,8 +38,6 @@ vi.mock('react-qr-code', () => ({
   default: ({ value }: { value: string }) => <div data-testid="qr-code">{value}</div>,
 }));
 
-// Mock motion/react so AnimatePresence mode="wait" renders immediately in jsdom
-
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,

@@ -16,6 +16,10 @@ vi.mock('motion/react', () => ({
       ...props
     }: React.HTMLAttributes<HTMLDivElement> & { children?: React.ReactNode }) =>
       React.createElement('div', props, children),
+    // Not exercised by this component today, but a shadow missing `create` is
+    // exactly the "breaks on any new gen-ui import edge" shape DOR-1416 found
+    // 41 of — see test-setup.ts's own `motion.create` handling.
+    create: (Component: React.ElementType) => Component,
   },
 }));
 

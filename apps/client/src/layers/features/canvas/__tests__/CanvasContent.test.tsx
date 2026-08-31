@@ -74,8 +74,14 @@ vi.mock('@/layers/shared/model', () => {
   };
 });
 
+import { setPrefersReducedMotion } from '@/test-setup';
 import { CanvasContent } from '../ui/AgentCanvas';
 
+// The suite's own local `motion/react` shadow used to answer
+// `useReducedMotion: () => true`; deleting it (DOR-1416) silently flipped
+// every case here to "no preference" instead. Restored via the shared
+// toggle so the branch under test doesn't move out from under it.
+beforeEach(() => setPrefersReducedMotion(true));
 afterEach(cleanup);
 
 describe('CanvasContent', () => {

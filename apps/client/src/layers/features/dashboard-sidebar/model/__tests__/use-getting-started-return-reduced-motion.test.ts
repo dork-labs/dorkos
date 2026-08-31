@@ -2,9 +2,15 @@
 /**
  * The Getting-started swap under `prefers-reduced-motion` (BC-52).
  *
- * A file of its own with a `motion/react` mock of its own, because the global
- * one in `test-setup.ts` always answers "no preference" — the same reason
- * `ApprovalReceipt-reduced-motion.test.tsx` is its own file.
+ * `useGettingStartedReturn` never calls `useReducedMotion()` at all — by
+ * design, per its own module doc ("this is timing, not animation, so
+ * `prefers-reduced-motion` changes none of it"). The main suite for this
+ * sidebar never turns reduced motion on either, so nothing exercises that
+ * claim without this file: `setPrefersReducedMotion(true)` (test-setup.ts)
+ * is what makes "an operator who prefers reduced motion" below actually true
+ * during the test, rather than an assumption the describe block's name makes
+ * on the hook's behalf. Its own file for the same reason
+ * `AskReceipt-reduced-motion.test.tsx` is one.
  *
  * The rest of this sidebar's reduced-motion contract suppresses things: the
  * welcome-back glow and the all-clear beat do not render at all. That is right
@@ -17,6 +23,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
+import { setPrefersReducedMotion } from '@/test-setup';
 
 import {
   ZONE_LABEL,
@@ -42,7 +49,10 @@ function shows(model: SidebarModel): boolean {
   return model.zones.some((entry) => entry.id === 'getting-started');
 }
 
-beforeEach(() => vi.useFakeTimers());
+beforeEach(() => {
+  vi.useFakeTimers();
+  setPrefersReducedMotion(true);
+});
 afterEach(() => vi.useRealTimers());
 
 describe('an operator who prefers reduced motion', () => {

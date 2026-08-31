@@ -22,10 +22,6 @@ vi.mock('@/layers/shared/model', async (importOriginal) => ({
 }));
 
 // ---------------------------------------------------------------------------
-// Mock: motion/react (strip animation props, render plain DOM elements)
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
 // Mock: dialog + drawer (required by ResponsiveDialog → ResponsiveDialogContent)
 // ---------------------------------------------------------------------------
 

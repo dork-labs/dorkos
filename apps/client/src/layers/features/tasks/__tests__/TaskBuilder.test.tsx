@@ -87,8 +87,6 @@ vi.mock('@/layers/shared/ui', () => ({
   }) => <option value={value}>{children}</option>,
 }));
 
-// --- Mock motion/react to skip animations ---
-
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,

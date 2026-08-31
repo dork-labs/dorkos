@@ -5,8 +5,6 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 
-// Strip motion props so the pill renders as a plain span in jsdom.
-
 import { AttentionCountBadge } from '../ui/AttentionCountBadge';
 
 const BADGE = 'right-panel-attention-badge';
