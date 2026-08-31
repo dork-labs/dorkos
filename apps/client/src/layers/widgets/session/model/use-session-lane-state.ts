@@ -10,7 +10,6 @@
  * @module widgets/session/model/use-session-lane-state
  */
 import { useEffect, useRef, useState } from 'react';
-import type { PermissionMode } from '@dorkos/shared/types';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
 import {
   deriveLaneState,
@@ -35,8 +34,13 @@ export interface SessionLaneInput {
   streamStartTime: number | null;
   /** The running token estimate. */
   estimatedTokens: number;
-  /** The session's permission mode, as its own runtime reports it. */
-  permissionMode: PermissionMode;
+  /**
+   * The session's permission mode, as its own runtime reports it — any id it
+   * declares (DOR-811), wider than the shared `PermissionMode` enum's known
+   * names. `string`, matching `SessionStatusData`, so this input never
+   * narrows with a cast (DOR-820).
+   */
+  permissionMode: string;
   /**
    * Prompts this session is parked on, from the fleet-wide list.
    *

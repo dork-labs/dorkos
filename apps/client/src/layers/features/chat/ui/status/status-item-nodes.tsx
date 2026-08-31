@@ -4,7 +4,6 @@ import type {
   ContextUsage,
   GitStatusError,
   GitStatusResponse,
-  PermissionMode,
   UpdateSessionRequest,
   UsageStatus,
 } from '@dorkos/shared/types';
@@ -52,8 +51,14 @@ export interface StatusItemNodesInput {
   status: SessionStatusData;
   /** Apply a session change (model, effort, fast mode). */
   onUpdateSession: (opts: UpdateSessionRequest) => void;
-  /** Apply a permission-mode change, gated by the auto-mode confirmation. */
-  onChangeMode: (mode: PermissionMode) => void;
+  /**
+   * Apply a permission-mode change, gated by the auto-mode confirmation. Any
+   * id the runtime declares (DOR-811), matching `PermissionModeItem.onChangeMode`
+   * and `TrustDial.onChangeMode` — `string` rather than `PermissionMode` so
+   * the whole call chain states that honestly instead of narrowing with a
+   * cast (DOR-820).
+   */
+  onChangeMode: (mode: string) => void;
   /** Whether the active model can run the `auto` permission mode. */
   modelSupportsAutoMode: boolean;
   /**

@@ -27,7 +27,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import { useCallback } from 'react';
-import type { ConnectionState, PermissionMode, UsageStatus } from '@dorkos/shared/types';
+import type { ConnectionState, UsageStatus } from '@dorkos/shared/types';
 import type { StatusBarPin } from '@dorkos/shared/config-schema';
 import { STATUS_BAR_PIN_KEYS } from '@dorkos/shared/config-schema';
 import { CONTEXT_ACTION_PERCENT, CONTEXT_PROMOTE_PERCENT } from '@/layers/entities/session';
@@ -72,8 +72,13 @@ export interface StatusPromotionContext {
   contextPercent: number | null;
   /** Live-sync connection state of this session's durable event stream. */
   connectionState: ConnectionState;
-  /** The session's permission mode. */
-  permissionMode: PermissionMode;
+  /**
+   * The session's permission mode — any id the runtime declares (DOR-811),
+   * wider than the shared `PermissionMode` enum's known names (test-mode's
+   * ids sit outside it on purpose). `string`, matching `SessionStatusData`,
+   * so nothing here narrows with a cast (DOR-820).
+   */
+  permissionMode: string;
   /**
    * That mode as its runtime declared it, or `null` while the capability map is
    * still arriving. What ranks the item is what the mode DOES, not what it is
@@ -381,7 +386,16 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
         ? isBypassSemantics(ctx.permissionDescriptor)
         : isBypassPermissionMode(ctx.permissionMode);
       if (bypassed) return SEVERITY.PERMISSION_BYPASS;
-      return ctx.permissionMode === 'default' ? SEVERITY.QUIET : SEVERITY.PERMISSION_ELEVATED;
+      // Off the dial's safest stop ('ask', which always asks first) the same
+      // way the bypass check above prefers the descriptor: PATCHing to a mode
+      // whose NAME merely differs from 'default' says nothing about what it
+      // DOES — test-mode's always-deny is its safest mode and is not named
+      // 'default' (DOR-820). Falls back to the name only before the
+      // capability map has arrived, same as the bypass check.
+      const elevated = ctx.permissionDescriptor
+        ? ctx.permissionDescriptor.stop !== 'ask'
+        : ctx.permissionMode !== 'default';
+      return elevated ? SEVERITY.PERMISSION_ELEVATED : SEVERITY.QUIET;
     },
   },
   {

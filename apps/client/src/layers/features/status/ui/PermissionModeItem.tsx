@@ -1,5 +1,4 @@
 import { Sparkles } from 'lucide-react';
-import type { PermissionMode } from '@dorkos/shared/types';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import { useAppStore } from '@/layers/shared/model';
@@ -24,8 +23,14 @@ import {
 const AUTO_UNSUPPORTED_TOOLTIP = 'Auto mode requires Opus 4.6+ or Sonnet 4.6';
 
 interface PermissionModeItemProps {
-  mode: PermissionMode;
-  onChangeMode: (mode: PermissionMode) => void;
+  /**
+   * The session's current mode id — any id the runtime declares (DOR-811),
+   * wider than the shared `PermissionMode` enum's known names. Matches
+   * `TrustDial.mode`, which this component renders it through unchanged.
+   */
+  mode: string;
+  /** Matches `TrustDial.onChangeMode` — see {@link mode} (DOR-820). */
+  onChangeMode: (mode: string) => void;
   /** When true, the selector is disabled and shows a tooltip explaining why. */
   disabled?: boolean;
   /**
@@ -185,7 +190,7 @@ export function PermissionModeItem({
         <TrustDial
           mode={mode}
           descriptors={descriptors}
-          onChangeMode={(next) => onChangeMode(next as PermissionMode)}
+          onChangeMode={onChangeMode}
           planActive={planActive}
           onUnlock={() => setControlCenterOpen(true)}
         />

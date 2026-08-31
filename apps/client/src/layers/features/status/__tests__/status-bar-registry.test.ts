@@ -412,4 +412,32 @@ describe('STATUS_BAR_REGISTRY — permission severity comes from the mode’s me
     });
     expect(severityOf('permission', ctx)).toBe(severityOf('permission', withProfile));
   });
+
+  it('reads QUIET off a safe mode whose NAME merely differs from "default" (DOR-820)', () => {
+    // test-mode's always-deny is its SAFEST mode — sits at the dial's 'ask'
+    // stop — but its id is not literally 'default'. Judging by the name alone
+    // (the bug) would have shown PERMISSION_ELEVATED for the safest mode a
+    // runtime can offer.
+    const ctx = restingContext({
+      permissionMode: 'always-deny',
+      permissionDescriptor: descriptor({
+        id: 'always-deny',
+        stop: 'ask',
+        asks: 'always',
+        reach: 'read',
+      }),
+    });
+    expect(severityOf('permission', ctx)).toBe(
+      severityOf('permission', restingContext({ permissionMode: 'default' }))
+    );
+  });
+
+  it('still reads ELEVATED off the mode name when no descriptor has arrived yet', () => {
+    // The fallback path — same shape as the bypass check right above it —
+    // still has only the name to go on before the capability map lands.
+    const ctx = restingContext({ permissionMode: 'acceptEdits', permissionDescriptor: null });
+    expect(severityOf('permission', ctx)).toBeGreaterThan(
+      severityOf('permission', restingContext({ permissionMode: 'default' }))
+    );
+  });
 });
