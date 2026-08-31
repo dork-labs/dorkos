@@ -86,6 +86,18 @@ const useAskReceiptStore = create<AskReceiptState>(() => ({
 }));
 
 /**
+ * The removal timer each settling id is currently holding, so it can be
+ * cancelled instead of left to fire on its own.
+ *
+ * Without this, `forgetAskReceipt` clearing the settling state for an id
+ * does not stop the removal `setTimeout` still in flight from the FIRST
+ * `settleAsk` call. If the same id is re-answered and settles a second
+ * time before that timer fires, the stale timer removes it early, cutting
+ * the second hold short (DOR-1633).
+ */
+const settleTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/**
  * Record how one prompt ended.
  *
  * Called twice for the same id on the ordinary path — once optimistically by the
@@ -128,6 +140,11 @@ export function recordAskReceipt(interactionId: string, receipt: AskReceipt): vo
  * @param interactionId - The prompt whose receipt was premature.
  */
 export function forgetAskReceipt(interactionId: string): void {
+  const timer = settleTimers.get(interactionId);
+  if (timer !== undefined) {
+    clearTimeout(timer);
+    settleTimers.delete(interactionId);
+  }
   useAskReceiptStore.setState((state) => {
     const receipts = { ...state.receipts };
     delete receipts[interactionId];
@@ -153,11 +170,13 @@ export function settleAsk(ask: InteractionPendingEvent): void {
   const { settling } = useAskReceiptStore.getState();
   if (settling.some((held) => held.interaction.id === id)) return;
   useAskReceiptStore.setState({ settling: [...settling, ask] });
-  setTimeout(() => {
+  const timer = setTimeout(() => {
+    settleTimers.delete(id);
     useAskReceiptStore.setState((state) => ({
       settling: state.settling.filter((held) => held.interaction.id !== id),
     }));
   }, SETTLE_MS);
+  settleTimers.set(id, timer);
 }
 
 /** The answered prompts still on screen saying so. */
@@ -176,5 +195,9 @@ export function useAskReceipt(interactionId: string): AskReceipt | undefined {
 
 /** Forget every receipt. Test seam; nothing in the app calls it. */
 export function clearAskReceipts(): void {
+  for (const timer of settleTimers.values()) {
+    clearTimeout(timer);
+  }
+  settleTimers.clear();
   useAskReceiptStore.setState({ receipts: {}, order: [], settling: [] });
 }

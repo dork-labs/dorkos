@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTransport, useAppStore, useTabVisibility } from '@/layers/shared/model';
 import { QUERY_TIMING } from '@/layers/shared/lib';
@@ -77,10 +77,20 @@ export function useTaskState(sessionId: string | null, isStreaming: boolean = fa
   const [state, setState] = useState<TaskFoldState>(createTaskFoldState());
   const [isCollapsed, setIsCollapsed] = useState(false);
 
+  // Stamped in handleTaskEvent (last live fold) and inside queryFn (when the
+  // in-flight fetch was ISSUED, not when it resolves) so an empty history
+  // response can be judged against what the live stream already knows —
+  // see the reset effect below (DOR-1632).
+  const lastLiveEventAtRef = useRef(0);
+  const fetchStartedAtRef = useRef(0);
+
   // Load historical tasks via TanStack Query (polled while a turn streams)
   const { data: initialTasks } = useQuery({
     queryKey: ['tasks', sessionId, selectedCwd],
-    queryFn: () => transport.getTasks(sessionId!, selectedCwd ?? undefined),
+    queryFn: () => {
+      fetchStartedAtRef.current = Date.now();
+      return transport.getTasks(sessionId!, selectedCwd ?? undefined);
+    },
     staleTime: 30_000,
     refetchOnWindowFocus: false,
     // A null directory is a complete question — the server resolves the
@@ -95,9 +105,40 @@ export function useTaskState(sessionId: string | null, isStreaming: boolean = fa
     },
   });
 
-  // Reset state when query data changes (initial load or sync invalidation)
+  // Reset state when query data changes (initial load or sync invalidation).
+  // An empty response is NOT automatically a reason to wipe local state, but
+  // it is not automatically safe to ignore either — both directions are real:
+  //
+  // - IGNORE: the history fetch and the live stream race. A fetch already
+  //   in flight when a live event lands can still resolve afterward (network
+  //   latency), and its empty answer reflects server state from BEFORE that
+  //   event. Wiping local state on that stale answer was the original
+  //   DOR-1632 bug.
+  // - HONOR: a cleared task list has no live signal of its own — opencode's
+  //   `mapTodos` and claude-code's `buildTodoWriteEvent` both emit nothing
+  //   for an empty list (session-event-mapper.ts, build-task-event.ts), so a
+  //   fresh history fetch returning `[]` is the ONLY way a genuine clear
+  //   ever reaches this hook. `use-turn-end-reconcile.ts` invalidates this
+  //   query specifically to deliver that answer. Ignoring every empty
+  //   response for an unchanged scope (the first round of this fix) would
+  //   leave a cleared list stuck on screen forever.
+  //
+  // The fetch that is settling is judged by when it was ISSUED
+  // (`fetchStartedAtRef`, stamped inside `queryFn`) against the newest live
+  // fold (`lastLiveEventAtRef`, stamped in handleTaskEvent) — not by when it
+  // RESOLVED. Commit time is the wrong axis: network latency means a fetch
+  // issued before a live event can still commit after it, and a fetch's
+  // commit time tells you nothing about which happened first on the server.
+  // A fetch issued strictly before the newest fold predates it and is
+  // ignored; anything issued at or after is judged authoritative. A genuine
+  // session (or scope) change always resets, regardless of timing.
+  const scopeKeyRef = useRef<string | null>(null);
   /* eslint-disable react-hooks/set-state-in-effect -- sync TanStack Query data to local state */
   useEffect(() => {
+    const scopeKey = `${sessionId ?? ''}::${selectedCwd ?? ''}`;
+    const scopeChanged = scopeKeyRef.current !== scopeKey;
+    scopeKeyRef.current = scopeKey;
+
     if (initialTasks && initialTasks.tasks.length > 0) {
       const next = createTaskFoldState();
       applyTaskEvent(
@@ -106,13 +147,14 @@ export function useTaskState(sessionId: string | null, isStreaming: boolean = fa
         Date.now()
       );
       setState(next);
-    } else {
+    } else if (scopeChanged || fetchStartedAtRef.current >= lastLiveEventAtRef.current) {
       setState(createTaskFoldState());
     }
-  }, [initialTasks]);
+  }, [initialTasks, sessionId, selectedCwd]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleTaskEvent = useCallback((event: TaskUpdateEvent) => {
+    lastLiveEventAtRef.current = Date.now();
     setState((prev) => {
       const next: TaskFoldState = {
         tasks: new Map(prev.tasks),

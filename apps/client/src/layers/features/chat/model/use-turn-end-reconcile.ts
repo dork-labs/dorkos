@@ -194,7 +194,13 @@ export function useTurnEndReconcile({
     // Re-sync canonical task state: the live todo_update forwarding covers the
     // streamed turn, but the settled turn's final list is authoritative on the
     // server (and a turn observed with this tab backgrounded may have throttled
-    // effects) — invalidate so useTaskState reloads it (CLI-B4).
+    // effects) — invalidate so useTaskState reloads it (CLI-B4). This is also
+    // the ONLY way useTaskState ever learns a todo list was cleared to empty:
+    // an empty result has no live event of its own (opencode's `mapTodos` and
+    // claude-code's `buildTodoWriteEvent` both emit nothing for `[]`), and
+    // useTaskState only accepts an empty answer from a fetch it can tell was
+    // issued at or after every live fold — which firing this AFTER the turn
+    // has settled guarantees (DOR-1632).
     void queryClient.invalidateQueries({ queryKey: ['tasks', reloadId] });
 
     // The notification answers a REQUEST — "the thing you asked for is done" —
