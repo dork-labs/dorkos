@@ -1,0 +1,22 @@
+---
+title: API Reference
+description: The REST and SSE API the DorkOS app runs on your own machine
+---
+
+# API Reference
+
+DorkOS runs a local REST and SSE API on your own machine, the same one the app's own interface talks to. Every session, room, agent, and marketplace action you can take in the app has an endpoint here, so you can script it, build your own client against it, or point a tool you already use at your DorkOS instance.
+
+The pages in the sidebar are generated straight from the running server's OpenAPI spec, grouped by resource (sessions, rooms, agents, marketplace, and so on). Each one documents the request shape, the response shape, and lets you try the call.
+
+## Base URL
+
+By default the server listens on `http://localhost:4242` (or `:6242` in a dev checkout). Every path below is relative to that.
+
+## Authentication
+
+DorkOS runs with no login by default, for a single person on their own machine. If you turn on login (`dorkos auth enable`) or expose the server past localhost, requests need the same session credentials the app itself uses. Agents reaching the API from outside the app (over the tunnel, for example) can use the external MCP server at `/mcp` instead, which accepts an API key rather than a browser session.
+
+## Prefer talking to an agent instead?
+
+Most of what this API exposes, an agent already has as tools through the [MCP server](/docs/integrations/mcp-server). If you are building an integration rather than a script, start there.

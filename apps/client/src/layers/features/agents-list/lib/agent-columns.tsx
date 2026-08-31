@@ -145,12 +145,14 @@ function ActivityCell({ row }: { row: AgentTableRow }) {
 // ---------------------------------------------------------------------------
 
 export interface AgentColumnCallbacks {
-  /** Navigate to a session for the given project path. */
+  /**
+   * Open a session for the given project path — resuming the agent's existing
+   * conversation when one exists, minting a fresh one otherwise. Both the row
+   * itself and its action button open the same door (DOR-1415).
+   */
   onNavigate: (projectPath: string) => void;
   /** View an agent's profile — where everything about it is read and changed. */
   onViewProfile: (projectPath: string) => void;
-  /** Start a new session for an agent. */
-  onStartSession: (projectPath: string) => void;
 }
 
 /** Create column definitions for the agent fleet table. */
@@ -172,9 +174,19 @@ export function createAgentColumns(
     },
 
     // ── Activity ─────────────────────────────────────────────
+    // The one column with no declared width — it takes whatever `table-fixed`
+    // leaves over once Agent, Managed by, Scheduled and Actions have theirs.
+    // That remainder can shrink past the one-word "Activity" header's content
+    // width (e.g. with a Profile panel docked beside the table), and a `<th>`
+    // has no default clipping — the overflowing text painted straight over
+    // "Managed by" next to it, reading as "Manaigedy by" (DOR-1287).
+    // `truncate` (the house pattern the Agent and Managed-by cells already use)
+    // clips it with an ellipsis rather than a hard cut, and forces the
+    // single-line layout that stops it wrapping into the row below.
     {
       accessorKey: 'lastSeenEvent',
       header: 'Activity',
+      meta: { headClassName: 'truncate', cellClassName: 'truncate' },
       cell: ({ row }) => <ActivityCell row={row.original} />,
     },
 
@@ -238,7 +250,7 @@ export function createAgentColumns(
               className="size-8 p-0"
               onClick={(e) => {
                 e.stopPropagation();
-                callbacks.onStartSession(agent.projectPath ?? '');
+                callbacks.onNavigate(agent.projectPath ?? '');
               }}
               // It opens a SESSION — the same door the agent's row in the
               // sidebar is. "Chat with" read as "send this agent a message",

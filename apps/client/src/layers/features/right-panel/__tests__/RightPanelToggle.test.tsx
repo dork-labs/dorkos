@@ -44,29 +44,6 @@ vi.mock('@/layers/features/dashboard-attention', () => ({
   }),
 }));
 
-vi.mock('motion/react', () => ({
-  motion: {
-    button: ({
-      children,
-      whileHover: _wh,
-      whileTap: _wt,
-      transition: _t,
-      ...rest
-    }: React.PropsWithChildren<Record<string, unknown>>) => (
-      <button {...(rest as React.ButtonHTMLAttributes<HTMLButtonElement>)}>{children}</button>
-    ),
-    span: ({
-      children,
-      initial: _i,
-      animate: _a,
-      transition: _t,
-      ...rest
-    }: React.PropsWithChildren<Record<string, unknown>>) => (
-      <span {...(rest as React.HTMLAttributes<HTMLSpanElement>)}>{children}</span>
-    ),
-  },
-}));
-
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,

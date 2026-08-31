@@ -316,9 +316,3 @@ dorkos.ai/compare now covers the runtimes DorkOS drives and the tools people kee
 ## For contributors
 
 Two seams landed under this release. Message search is a **derived, rebuildable index** rather than a second transcript store — deleting it is a supported recovery ([ADR 260728-214214](https://github.com/dork-labs/dorkos/blob/main/decisions/260728-214214-message-search-is-a-derived-rebuildable-index.md)) — and agent memory arrived behind `MemoryProvider`, DorkOS's fifth swappable port, with its own conformance suite. Scheduling also stopped being a directory and became a frontmatter property ([ADR 260823-200724](https://github.com/dork-labs/dorkos/blob/main/decisions/260823-200724-schedulability-is-a-frontmatter-property.md)), with file-discovered schedules that never auto-arm ([ADR 260823-200726](https://github.com/dork-labs/dorkos/blob/main/decisions/260823-200726-file-discovered-schedules-never-auto-arm.md)).
-
-## Install / Update
-
-```
-npm install -g dorkos@0.65.0
-```

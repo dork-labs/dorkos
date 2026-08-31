@@ -13,7 +13,7 @@ export { useEngagedWindow } from './model/use-engaged-window';
 export { useRoomTurnLimits } from './model/use-room-turn-limits';
 export type { RoomTurnLimits, RoomTurnLimitsState } from './model/use-room-turn-limits';
 export { useDefaultAgentSession, resolveDefaultAgentDir } from './model/use-default-agent-session';
-export type { DefaultAgentSession, DefaultAgentIdentity } from './model/use-default-agent-session';
+export type { DefaultAgentSession } from './model/use-default-agent-session';
 export { useUpdateConfig } from './model/use-update-config';
 export { usePromoDismissals, resetLegacyPromoImportForTests } from './model/use-promo-dismissals';
 export type { PromoDismissals } from './model/use-promo-dismissals';

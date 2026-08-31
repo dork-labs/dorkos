@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import nodePath from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { Logger } from '@dorkos/shared/logger';
 import type {
   AdapterPackageManifest,
@@ -452,6 +453,45 @@ describe('MarketplaceInstaller', () => {
         })
       );
       expect(fetcher.fetchFromGit).not.toHaveBeenCalled();
+    });
+
+    it('decodes a file:// marketplace source whose directory name contains a space (DOR-412)', async () => {
+      // Same bug as PackageFetcher.fileUrlToPath, on the install path this
+      // time: buildFetchableSource used to populate marketplaceRoot via
+      // `new URL(sourceUrl).pathname`, which left the space percent-encoded
+      // (`%20`) instead of decoding it back to a real directory name.
+      const { deps, resolver, fetcher, pluginFlow, previewBuilder } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'my-plugin' });
+      const marketplaceDir = '/Users/test/.dork/my marketplace';
+
+      const resolved: ResolvedPackageSource = {
+        kind: 'marketplace',
+        packageName: 'my-plugin',
+        marketplaceName: 'personal',
+        pluginSource: './my-plugin',
+        marketplaceSourceUrl: pathToFileURL(marketplaceDir).href,
+      };
+      resolver.resolve.mockResolvedValue(resolved);
+      fetcher.fetchPackage.mockResolvedValue({
+        path: `${marketplaceDir}/my-plugin`,
+        commitSha: 'relative-path',
+        fromCache: true,
+      });
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      pluginFlow.install.mockResolvedValue(buildInstallResult(manifest));
+
+      const installer = new MarketplaceInstaller(deps);
+      await installer.install({ name: 'my-plugin' });
+
+      expect(fetcher.fetchPackage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: './my-plugin',
+          marketplaceRoot: marketplaceDir,
+        })
+      );
+      const call = fetcher.fetchPackage.mock.calls[0]?.[0];
+      expect(call?.marketplaceRoot).not.toContain('%20');
     });
 
     it('throws InvalidPackageError on validation failure and reports failure telemetry', async () => {

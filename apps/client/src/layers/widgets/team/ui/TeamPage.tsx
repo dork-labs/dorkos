@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useIsRestoring } from '@tanstack/react-query';
 import { Loader2, TriangleAlert } from 'lucide-react';
 import { Button, PageContainer } from '@/layers/shared/ui';
 import {
@@ -75,7 +76,19 @@ export function TeamPage({ filters, onFiltersChange }: TeamPageProps) {
   // The roster rows this page draws ARE the drawer's own id space, so a card
   // hands its `member.id` straight over with nothing to map.
   const { open: openProfile } = useProfileDeepLink();
-  const { data, isLoading, isError, refetch } = useTeamRoster();
+  const { data, isLoading: isFetchingRoster, isError, refetch } = useTeamRoster();
+  // "The read has not settled" is not "there is nobody" (DOR-1419). `isLoading`
+  // is `isPending && isFetching`. While `PersistQueryClientProvider` restores
+  // the persisted cache (`shared/lib/query-persister.ts`), TanStack PAUSES
+  // every query, so `isFetching` reads false while `data` is still undefined —
+  // `isLoading` comes back FALSE with an empty roster in hand, and the grid
+  // below renders "Nobody to show yet." for a beat before the real roster
+  // lands. The same defect `useOnboarding` fixed for the onboarding overlay
+  // (DOR-1365 §3.2). `useIsRestoring` is false wherever there is no
+  // persister — the Obsidian embed included — so this costs those surfaces
+  // nothing.
+  const isRestoring = useIsRestoring();
+  const isLoading = isFetchingRoster || isRestoring;
   const roster = useMemo(() => data?.members ?? [], [data]);
   const visible = useMemo(() => filterTeamMembers(roster, activeFilters), [roster, activeFilters]);
   const people = useMemo(() => roster.filter((member) => member.kind === 'human'), [roster]);

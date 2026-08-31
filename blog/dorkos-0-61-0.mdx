@@ -65,9 +65,3 @@ Your agents can finally do what you ask them to in a channel, and a question an 
 - The text under one of these rows keeps its line breaks, so a blocked command reads the way it was written instead of running together on one line. A very long one is cut short with a button to show the rest (DOR-1293)
 - If you turn on the experimental setting that keeps an agent warm between messages (`runtimes.claudeCode.persistentSession`, off by default), sending a message into a reply that was already being written could leave that chat stuck — every message afterwards went nowhere, and only restarting DorkOS brought it back. It no longer can: a late answer is matched to the message it belongs to, and a reply that never finishes is closed out so the next message still runs. When that happens the unfinished reply is marked as an error rather than left spinning, and your next message goes through normally (DOR-1294)
 - With that same experimental setting on, a reply that never finished used to spoil the next one: DorkOS closed out the unfinished reply while your new message was already under way, so the new reply was marked failed and stopped mid-sentence even though the agent was still writing, and the chat's saved history mixed the two together. The unfinished reply is now closed out first, before the new one starts, so it is marked as an error on its own and your next message runs clean. The same goes for `/compact` after a reply that never finished (DOR-1295)
-
-## Install / Update
-
-```
-npm install -g dorkos@0.61.0
-```

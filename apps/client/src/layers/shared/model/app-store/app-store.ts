@@ -161,9 +161,6 @@ export const useAppStore = create<AppState>()(
         routerDevtoolsOpen: false,
         toggleRouterDevtools: () => set((s) => ({ routerDevtoolsOpen: !s.routerDevtoolsOpen })),
 
-        previousCwd: null,
-        setPreviousCwd: (cwd) => set({ previousCwd: cwd }),
-
         // ── Session UI status ──────────────────────────────────────────────
         isStreaming: false,
         setIsStreaming: (v) => set({ isStreaming: v }),

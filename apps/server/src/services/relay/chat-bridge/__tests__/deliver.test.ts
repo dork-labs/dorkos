@@ -702,7 +702,7 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
       it('cascade_stopped is never delivered', async () => {
         const { dm, delivery } = dmDelivery('601');
         const notice = harness.service.postNotice(dm.id, {
-          text: 'Ana stopped replying here — this back-and-forth hit its automatic-reply limit.',
+          text: 'Ana stopped replying here. This back-and-forth hit its automatic-reply limit.',
           notice: 'cascade_stopped',
         });
         expect(await delivery.deliverEntry(notice)).toBe('skipped');

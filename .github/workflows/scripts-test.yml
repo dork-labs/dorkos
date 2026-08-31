@@ -35,6 +35,15 @@ name: scripts-test
 # beats inheriting whatever Node the runner image happens to ship. It pins the
 # same Node 22 as `harness`, which is the version the repo runs.
 #
+# `.claude/scripts/__tests__/*.test.ts` (spec-manifest-ops.ts, id.ts, and the
+# changelog-fragment merge-behavior experiments, DOR-751/DOR-818) rides
+# `fixtures` for the same "no node_modules needed" reason: every file there
+# imports only `node:*` built-ins and sibling `.claude/scripts/*.ts` files.
+# Before this step, nothing executed that directory at all — not
+# `pnpm verify` (no package.json owns it, so turbo's affected-only resolution
+# always sees 0 affected packages), not `test:scripts` (it never named the
+# files). A regression test could sit there green forever and prove nothing.
+#
 # TWO JOBS, on purpose. `fixtures` needs only bash, jq, iconv and Node, so
 # skipping the pnpm toolchain keeps it a few seconds, which is worth preserving
 # for the reviewer scripts it guards. `harness` covers the TypeScript under
@@ -101,6 +110,7 @@ on:
     paths:
       - 'scripts/**'
       - '.agents/skills/creating-pull-requests/scripts/**'
+      - '.claude/scripts/**'
       - 'package.json'
       - 'apps/*/package.json'
       - 'packages/*/package.json'
@@ -118,6 +128,7 @@ on:
     paths:
       - 'scripts/**'
       - '.agents/skills/creating-pull-requests/scripts/**'
+      - '.claude/scripts/**'
       - 'package.json'
       - 'apps/*/package.json'
       - 'packages/*/package.json'
@@ -280,6 +291,22 @@ jobs:
       # than through `shell-suite-parity.test.ts`'s `scripts/test-*.sh` regex.
       - name: Watch-PRs FAILING-state regression fixtures
         run: bash .agents/skills/creating-pull-requests/scripts/test-watch-prs.sh
+
+      # spec-manifest-ops.ts, id.ts, and the changelog merge-behavior experiments
+      # under .claude/scripts/ had a test directory (`__tests__/*.test.ts`,
+      # Node's built-in runner, no workspace) that nothing ran (DOR-751): not
+      # `pnpm verify` (no package.json owns this directory, so turbo's
+      # affected-only resolution sees 0 affected packages), not `test:scripts`
+      # (it never named the files), not this workflow. A round-trip regression
+      # test could sit here green forever without ever executing. Every file
+      # imports only `node:*` built-ins plus sibling `.ts` files under
+      # .claude/scripts/ — no npm dependency — so, like the suites above it,
+      # this belongs in `fixtures` rather than `harness`: no `pnpm install`
+      # needed.
+      - name: Spec-manifest-ops and changelog-fragment merge fixtures
+        run: |
+          node --experimental-strip-types --disable-warning=ExperimentalWarning \
+            --test .claude/scripts/__tests__/*.test.ts
 
   # The TypeScript under scripts/ belongs to no pnpm workspace, so `pnpm verify`'s
   # affected-only turbo run resolves a scripts-only change to 0 affected packages

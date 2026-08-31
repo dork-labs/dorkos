@@ -116,6 +116,9 @@ export function latestInstant(a: string | null, b: string | null): string | null
  * - `lower` — a bound, where a smaller number is a tighter limit.
  * - `higher` — a threshold, where a LARGER number is the quieter setting.
  * - `later` — a monotonic floor, where a later instant voids more.
+ * - `restricted` — an allow-list whose default is a catch-all
+ *   ({@link ProtectiveCarryover.wildcard}); protective when the stored list
+ *   excludes it, denying at least one thing the default would have allowed.
  *
  * `higher` is not the odd one out it looks like. Most numbers here are caps, so
  * tightening means lowering; a few are thresholds something has to CROSS before
@@ -125,8 +128,19 @@ export function latestInstant(a: string | null, b: string | null): string | null
  * either way. Reading the shape off the field rather than assuming every number
  * is a cap is what stops `welcomeBack.absenceThresholdMinutes` at a week being
  * silently reset to four hours by a recovery.
+ *
+ * `restricted` is deliberately narrow, not a general array-subset test. Ranking
+ * two already-narrowed lists against each other has no sound answer — is
+ * `['image/*']` more or less protective than `['image/png', 'application/pdf']`?
+ * — but this direction never has to: it only ever compares the STORED list
+ * against the fresh DEFAULT, never against another stored list, and the one
+ * default it is built for is the universal MIME wildcard (two stars either
+ * side of a slash — spelled out here rather than literally, which would close
+ * this very comment). That pattern matches every MIME type there is, so any
+ * list that omits it denies something the default would have allowed,
+ * regardless of what else the list contains (DOR-1505).
  */
-export type CarryoverDirection = 'boolean' | 'lower' | 'higher' | 'later';
+export type CarryoverDirection = 'boolean' | 'lower' | 'higher' | 'later' | 'restricted';
 
 /** One config leaf whose default is permissive, and the direction that protects. */
 export interface ProtectiveCarryover {
@@ -136,6 +150,12 @@ export interface ProtectiveCarryover {
   direction: CarryoverDirection;
   /** For `direction: 'boolean'`, the value that protects the person. */
   protectiveValue?: boolean;
+  /**
+   * For `direction: 'restricted'`, the catch-all value whose presence in a
+   * list means "permits everything" — the one value this direction knows how
+   * to compare against.
+   */
+  wildcard?: string;
   /** Why losing this on a wipe would cost the person a protection. */
   reason: string;
 }
@@ -225,6 +245,13 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
     path: 'uploads.maxFiles',
     direction: 'lower',
     reason: 'A tightened cap on how many files one upload may carry.',
+  },
+  {
+    path: 'uploads.allowedTypes',
+    direction: 'restricted',
+    wildcard: '*/*',
+    reason:
+      'The default accepts every MIME type. A person who narrowed this list denied something the default would have allowed — image-only, say — and a wipe handing `*/*` back re-opens exactly that. `maxFileSize` and `maxFiles` beside this one already carry; this was the third `uploads.*` leaf still exposed (DOR-1505).',
   },
   {
     path: 'mcp.rateLimit.maxPerWindow',
@@ -435,7 +462,7 @@ export interface SalvagedProtections {
    * {@link PROTECTIVE_CARRYOVERS}. Only leaves whose stored value beat the
    * default appear.
    */
-  leaves: Record<string, boolean | number | string>;
+  leaves: Record<string, boolean | number | string | string[]>;
   /**
    * Values found on the protective side that could NOT be carried, and why.
    *
@@ -585,7 +612,7 @@ function moreProtective(
   entry: ProtectiveCarryover,
   stored: unknown,
   fresh: unknown
-): boolean | number | string | undefined {
+): boolean | number | string | string[] | undefined {
   switch (entry.direction) {
     case 'boolean': {
       if (typeof stored !== 'boolean') return undefined;
@@ -614,6 +641,19 @@ function moreProtective(
       const freshFloor = IsoInstantSchema.safeParse(fresh).success ? (fresh as string) : null;
       const winner = latestInstant(freshFloor, stored as string);
       return winner !== null && winner !== fresh ? winner : undefined;
+    }
+    case 'restricted': {
+      // See the CarryoverDirection doc: this compares STORED against the fresh
+      // DEFAULT only, never against another stored value, so it never needs a
+      // general subset test — just "does the list still contain the catch-all
+      // the default ships with".
+      if (!Array.isArray(stored) || !stored.every((item) => typeof item === 'string')) {
+        return undefined;
+      }
+      const wildcard = entry.wildcard;
+      if (wildcard === undefined) return undefined;
+      if (!Array.isArray(fresh) || !fresh.includes(wildcard)) return undefined;
+      return stored.includes(wildcard) ? undefined : stored;
     }
   }
 }

@@ -211,11 +211,13 @@ pnpm format
 
 ### File Size Limits
 
-- **Components**: 500 lines max
-- **Services**: 800 lines max
-- **General**: 1000 lines max
+- **< 300 lines**: ideal, no action needed
+- **300–500 lines**: consider splitting if the file has multiple responsibilities
+- **500+ lines**: must split — enforced by the `max-lines` ESLint rule (warn), which
+  excludes blank lines and comments from the count
 
-See [.claude/rules/file-size.md](.claude/rules/file-size.md) for enforcement details.
+See [.claude/rules/conventions.md](.claude/rules/conventions.md) for extraction
+patterns and exceptions, and `packages/eslint-config/base.js` for the enforced rule.
 
 ## Pull Request Process
 

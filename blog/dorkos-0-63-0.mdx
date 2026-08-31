@@ -182,9 +182,3 @@ When an agent needs you, DorkOS now makes sure you hear about it — a soft knoc
 - What an agent is waiting for now reaches only the people who could answer it. In a group chat nobody sees it, because DorkOS cannot know who else is reading. And another agent on your machine no longer sees any of it: not in the fleet-wide list, not on the live feed, and not on a session's own stream. It could never answer one of these, and now it cannot read one either. Your own scripts, holding your API key, can still see them and still cannot answer them (DOR-1356)
 - Requests for permission to run something are no longer broadcast to every connection. An agent connecting to DorkOS with its own token no longer sees what other agents are asking you for permission to do, which brings these in line with the questions agents ask you (DOR-1383)
 - What the app remembers is tied to the address it was talking to, so two DorkOS installs open in one browser never show each other's channels. It is forgotten when you sign out, when you update DorkOS, and after a day. Your conversations are never kept in the browser — and neither is anything waiting on your answer, so you are never shown a stale "three things need you" (DOR-1373)
-
-## Install / Update
-
-```
-npm install -g dorkos@0.63.0
-```

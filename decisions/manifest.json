@@ -4539,17 +4539,18 @@
       "id": "260807-233815",
       "slug": "room-attachments-are-room-scoped-upload-then-reference",
       "title": "Room attachments are room-scoped, upload-then-reference, stored under dorkHome behind a store seam",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-08-07",
+      "lastVerified": "2026-08-30",
       "specSlug": "room-attachments"
     },
     {
       "id": "260807-233816",
       "slug": "room-attachments-are-projected-into-the-agents-own-working-directory",
       "title": "Room attachments reach agents as files projected into the agent's own working directory",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-08-07",
-      "lastVerified": "2026-08-16",
+      "lastVerified": "2026-08-30",
       "specSlug": "room-attachments"
     },
     {

@@ -46,7 +46,7 @@ export GIT_COMMITTER_NAME=fixture GIT_COMMITTER_EMAIL=fixture@example.invalid
 
 # Every case must be counted, so an emptied or mis-edited case list cannot report
 # green off zero assertions.
-EXPECTED_CASES=26
+EXPECTED_CASES=32
 total=0
 pass=0
 fail=0
@@ -411,6 +411,92 @@ else
     'fixture-build-failed'
 fi
 
+# --- The workflow's own missing-script fallback (DOR-835) --------------------
+#
+# `operating-skills-version-check.yml`'s "Decide whether the seeded pack
+# content changed" step calls this script directly. On `pull_request`, GitHub
+# reads that YAML from a synthetic merge of base into head, so it always
+# reflects the CURRENT workflow — but `actions/checkout` pins the WORKING TREE
+# to the PR head, so a branch cut before this script existed checks out a tree
+# that lacks it, and the unconditional call used to exit 127 for a reason that
+# has nothing to do with the PR (live on PR #607 and #609). The fix falls back
+# to `git show <base_tip>:scripts/seeded-pack-changed.sh` when the head's own
+# copy is missing.
+#
+# That fallback is duplicated here rather than centralized into a shared repo
+# script on purpose: a helper script would have EXACTLY the same staleness
+# problem on exactly the branches this exists to fix, so it has to be inline
+# bash in the workflow step, and the closest this suite can get to testing the
+# genuine article is reproducing that inline logic byte-for-byte.
+resolve_and_run() {
+  local repo=$1 base_tip=$2 fork_point=$3 out status
+  out=$(
+    cd "$repo" || exit 1
+    script=./scripts/seeded-pack-changed.sh
+    if [ ! -f "$script" ]; then
+      script=$(mktemp)
+      git show "$base_tip:scripts/seeded-pack-changed.sh" >"$script" 2>/dev/null || exit 2
+      chmod +x "$script"
+    fi
+    "$script" "$fork_point"
+  ) 2>/dev/null
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    printf 'error(%s)' "$status"
+  else
+    printf '%s' "$out"
+  fi
+}
+
+# A repo whose fork point (like every case above) never carried the script —
+# standing in for a branch cut before it existed — that then makes a real pack
+# edit. `base_tip` is a SEPARATE commit, off in its own branch of the same
+# fixture repo, carrying a real copy of this repo's actual script: exactly the
+# "base branch has since gained the script" shape the fallback exists for.
+missing_script_built=$(make_case missing-script-fallback <<'MUTATE'
+perl -pi -e "s/OPERATING_SKILLS_VERSION = 4;/OPERATING_SKILLS_VERSION = 5;/" packages/operating-skills/src/pack.ts
+MUTATE
+) || missing_script_built=''
+if [ -n "$missing_script_built" ]; then
+  fallback_repo=${missing_script_built%% *}
+  fallback_fork=${missing_script_built##* }
+  (
+    cd "$fallback_repo" || exit 1
+    git checkout -q -b main-tip "$fallback_fork"
+    mkdir -p scripts
+    cp "$repo_root/scripts/seeded-pack-changed.sh" scripts/seeded-pack-changed.sh
+    chmod +x scripts/seeded-pack-changed.sh
+    git add -A
+    git commit -qm 'main has since gained the script'
+    git checkout -q main
+  ) >/dev/null 2>&1
+  fallback_base_tip=$(cd "$fallback_repo" && git rev-parse main-tip 2>/dev/null)
+
+  # The working tree really does lack the file — this is not asserting a
+  # premise, it is the premise the fallback exists to handle.
+  if [ -e "$fallback_repo/scripts/seeded-pack-changed.sh" ]; then
+    check 'precondition: the head tree has no script of its own' 'absent' 'present'
+  else
+    check 'precondition: the head tree has no script of its own' 'absent' 'absent'
+  fi
+
+  check 'a branch predating the script falls back to the base tip copy' 'changed' \
+    "$(resolve_and_run "$fallback_repo" "$fallback_base_tip" "$fallback_fork")"
+
+  # Without the fallback — the exact call the workflow made before DOR-835 —
+  # the same fixture just 127s, which is the bug this whole case exists to
+  # prove is fixed. Manually confirmed the case above fails the same way when
+  # `resolve_and_run`'s fallback branch is deleted (i.e. it "reddens" without
+  # the fix); kept as a live assertion here too so a regression cannot go
+  # unnoticed silently.
+  check 'the naive call this replaces really did 127' 'error(127)' \
+    "$(cd "$fallback_repo" && ./scripts/seeded-pack-changed.sh "$fallback_fork" 2>/dev/null; printf 'error(%s)' $?)"
+else
+  check 'precondition: the head tree has no script of its own' 'absent' 'fixture-build-failed'
+  check 'a branch predating the script falls back to the base tip copy' 'changed' 'fixture-build-failed'
+  check 'the naive call this replaces really did 127' 'error(127)' 'fixture-build-failed'
+fi
+
 # --- The script and the workflow must agree on which paths matter ------------
 #
 # In CI the two paths come from the workflow's job `env:`; in these fixtures they
@@ -444,6 +530,25 @@ for extracted in \
   "script skills_dir:$(script_default skills_dir SKILLS_DIR)"; do
   check "${extracted%%:*} is still extractable" 'found' \
     "$([ -n "${extracted#*:}" ] && printf 'found' || printf 'extracted-nothing')"
+done
+
+# --- The workflow still contains the missing-script fallback (DOR-835) ------
+#
+# `resolve_and_run` above is a hand-duplicated mirror of the workflow's inline
+# bash — it has to be duplicated rather than centralized (see its own comment
+# for why). Nothing else keeps the two in sync: if someone simplified the
+# workflow step back to a bare `./scripts/seeded-pack-changed.sh ...` call, the
+# fixtures above would keep exercising the MIRROR and stay green while the real
+# fallback was gone, the same "tested the wrong thing" gap
+# scripts/assert-tests-executed.sh exists to close for a cached "29
+# successful". Pin that the workflow's own text still contains the fallback,
+# not just that a hand-copy of its logic works.
+for marker in \
+  'if [ ! -f "$script" ]; then' \
+  'git show "$base_tip:scripts/seeded-pack-changed.sh"' \
+  'chmod +x "$script"'; do
+  check "workflow step still contains: $marker" 'found' \
+    "$(grep -qF "$marker" "$workflow" && printf 'found' || printf 'missing')"
 done
 
 # -----------------------------------------------------------------------------

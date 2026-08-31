@@ -25,7 +25,6 @@ import { zodValidator } from '@tanstack/zod-adapter';
 import { onboardingStageSearchSchema } from '../model/onboarding-stage';
 
 // Instant reveals so each beat's scripted lines land synchronously.
-vi.mock('motion/react', () => ({ useReducedMotion: () => true }));
 
 const mockDismiss = vi.fn().mockResolvedValue(undefined);
 const mockStartOnboarding = vi.fn();
@@ -152,6 +151,7 @@ vi.mock('../ui/OnboardingPowerStep', () => ({
   ),
 }));
 
+import { setPrefersReducedMotion } from '@/test-setup';
 import { OnboardingFlow } from '../ui/OnboardingFlow';
 
 /**
@@ -202,7 +202,12 @@ function expectFlowStillMounted() {
 }
 
 describe('onboarding skip semantics (DOR-472)', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Its own former `vi.mock('motion/react', () => ({ useReducedMotion: () =>
+    // true }))` replaced the WHOLE module for this file — DOR-1416.
+    setPrefersReducedMotion(true);
+  });
   afterEach(() => cleanup());
 
   it('skipping the personality beat lands on the profile beat, flow still mounted', async () => {

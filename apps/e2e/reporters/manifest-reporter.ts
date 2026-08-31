@@ -22,6 +22,26 @@ interface TestEntry {
   lastModified: string;
 }
 
+/**
+ * The hand-curated half of a test's record: what a person decided, that no
+ * run can rediscover on its own. `manifest.json` itself is gitignored
+ * (DOR-726) — every run rewrites its run-stats fields, so no legitimate
+ * action could ever leave it clean tracked. `manifest-curated.json` is the
+ * tracked half that survives a deleted/regenerated `manifest.json`: this
+ * reporter merges it back in on every write (see `applyCurated`), so
+ * `relatedCode`/`explorationNotes` a person set never depend on
+ * `manifest.json` having been present to carry them forward.
+ */
+interface CuratedEntry {
+  relatedCode?: string[];
+  explorationNotes?: string[];
+}
+
+interface CuratedManifest {
+  version: number;
+  tests: Record<string, CuratedEntry>;
+}
+
 interface Manifest {
   version: number;
   tests: Record<string, TestEntry>;
@@ -126,9 +146,18 @@ class ManifestReporter implements Reporter {
    */
   private canRefreshDescriptions = false;
 
-  constructor(options: { manifestPath?: string } = {}) {
+  private curatedPath: string;
+  private curated: CuratedManifest;
+
+  constructor(options: { manifestPath?: string; curatedPath?: string } = {}) {
     this.manifestPath =
       options.manifestPath ?? path.resolve(import.meta.dirname, '..', 'manifest.json');
+    // Defaults to a sibling of `manifestPath`, not a fixed repo path: a test
+    // that points `manifestPath` at a temp file must not go on to read this
+    // repo's real `manifest-curated.json` for `curatedPath`'s default.
+    this.curatedPath =
+      options.curatedPath ?? path.join(path.dirname(this.manifestPath), 'manifest-curated.json');
+    this.curated = this.loadCurated();
     this.manifest = this.loadManifest();
   }
 
@@ -138,6 +167,34 @@ class ManifestReporter implements Reporter {
     } catch {
       return { version: 1, tests: {}, runHistory: [] };
     }
+  }
+
+  private loadCurated(): CuratedManifest {
+    try {
+      return JSON.parse(fs.readFileSync(this.curatedPath, 'utf-8'));
+    } catch {
+      return { version: 1, tests: {} };
+    }
+  }
+
+  /**
+   * Overlay this test's curated `relatedCode`/`explorationNotes` onto `entry`,
+   * in place — curated always wins, whether `entry` came from an existing
+   * `manifest.json` (which may predate a curation edit) or was just
+   * constructed fresh for a test `manifest.json` had never seen (which
+   * otherwise defaults to `relatedCode: []` and no notes at all, the exact
+   * loss DOR-726's review caught: an untracked, regenerated `manifest.json`
+   * cannot know what a person once decided about a test it is meeting again
+   * for the first time).
+   *
+   * @param testKey - The manifest key both files share.
+   * @param entry - The entry to patch, in place.
+   */
+  private applyCurated(testKey: string, entry: TestEntry): void {
+    const curatedEntry = this.curated.tests[testKey];
+    if (!curatedEntry) return;
+    if (curatedEntry.relatedCode) entry.relatedCode = curatedEntry.relatedCode;
+    if (curatedEntry.explorationNotes) entry.explorationNotes = curatedEntry.explorationNotes;
   }
 
   onBegin(config: FullConfig) {
@@ -237,6 +294,7 @@ class ManifestReporter implements Reporter {
       entry.runCount++;
       if (allPassed) entry.passCount++;
       if (anyFailed) entry.failCount++;
+      this.applyCurated(testKey, entry);
       this.manifest.tests[testKey] = entry;
     }
 

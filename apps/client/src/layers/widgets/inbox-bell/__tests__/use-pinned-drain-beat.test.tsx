@@ -3,18 +3,11 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, cleanup } from '@testing-library/react';
-
-/** Whether the person has asked for less motion. Flipped per test. */
-let reducedMotion = false;
-vi.mock('motion/react', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('motion/react')>()),
-  useReducedMotion: () => reducedMotion,
-}));
+import { setPrefersReducedMotion } from '@/test-setup';
 
 const { usePinnedDrainBeat, ALL_CLEAR_BEAT_MS } = await import('../model/use-pinned-drain-beat');
 
 beforeEach(() => {
-  reducedMotion = false;
   vi.useFakeTimers();
 });
 
@@ -101,7 +94,7 @@ describe('usePinnedDrainBeat', () => {
   });
 
   it('is suppressed entirely under prefers-reduced-motion', () => {
-    reducedMotion = true;
+    setPrefersReducedMotion(true);
     const { result, rerender } = renderHook(({ count, open }) => usePinnedDrainBeat(count, open), {
       initialProps: { count: 1, open: true },
     });

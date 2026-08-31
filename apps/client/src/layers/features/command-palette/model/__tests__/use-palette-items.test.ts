@@ -245,7 +245,6 @@ describe('usePaletteItems', () => {
     mockUseSessions.mockReturnValue({ sessions: [] });
     mockUseRecentSessions.mockReturnValue({ data: undefined });
     mockSessionListState.mockReturnValue({ statuses: {}, sessions: {} });
-    mockUseAppStore.mockReturnValue({ previousCwd: null });
     mockUseRooms.mockReturnValue({ data: [], isLoading: false, isError: false });
     mockUseSlotContributions.mockReturnValue(DEFAULT_PALETTE_CONTRIBUTIONS);
   });

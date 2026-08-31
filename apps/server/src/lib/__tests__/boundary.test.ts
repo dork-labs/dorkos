@@ -324,6 +324,29 @@ describe('boundary module', () => {
       ).rejects.toMatchObject({ name: 'BoundaryError', code: 'NULL_BYTE' });
       expect(vi.mocked(fs.realpath)).not.toHaveBeenCalled();
     });
+
+    // resolveAgentsRoot exposes the exact subtree this seam accepts, so a
+    // caller that needs to reason about the subtree itself (DOR-437's
+    // parent/hasParent computation in GET /api/directory) doesn't re-derive
+    // it with its own drift-prone copy.
+    describe('resolveAgentsRoot', () => {
+      it('resolves to {dorkHome}/agents, realpath-resolved the same way as the seam', async () => {
+        vi.mocked(fs.realpath).mockResolvedValueOnce(DORK_HOME);
+
+        const result = await boundary.resolveAgentsRoot();
+
+        expect(result).toBe(`${DORK_HOME}/agents`);
+      });
+
+      it('follows a symlinked dork-home, matching validateBoundaryOrDorkHome', async () => {
+        process.env.DORK_HOME = '/sym/dork';
+        vi.mocked(fs.realpath).mockResolvedValueOnce('/real/dork');
+
+        const result = await boundary.resolveAgentsRoot();
+
+        expect(result).toBe('/real/dork/agents');
+      });
+    });
   });
 
   // ---------------------------------------------------------------------------

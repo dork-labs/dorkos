@@ -65,7 +65,6 @@ Key state owned by the app store:
 
 - `sidebarOpen` — persisted to localStorage; defaults to open on desktop (`BOOL_DEFAULTS.sidebarOpen`), always `false` on mobile and the embedded overlay on first load
 - `sidebarActiveTab` — persisted; the active tab of the embedded shell's legacy sidebar strip (Obsidian only — the web cockpit has no sidebar tab strip)
-- `previousCwd` — transient; used by command palette for "switch back" suggestions
 - Dialog open states (`settingsOpen`, `tasksOpen`, `relayOpen`, etc.) — transient, not persisted
 - Canvas panel state (`canvasOpen`, `canvasContent`, `canvasPreferredWidth`) — transient; controls the agent-driven canvas side panel visibility, content, and width
 - `selectedCwd` — writes to `recentCwds` in localStorage on change

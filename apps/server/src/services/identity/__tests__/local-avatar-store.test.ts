@@ -9,9 +9,10 @@
  * one file, not two, or the next read is a coin flip.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, rm, readdir, readFile, writeFile, mkdir } from 'fs/promises';
+import { mkdtemp, rm, readdir, readFile, writeFile, mkdir, utimes } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
+import { logger } from '../../../lib/logger.js';
 import { InvalidAvatarIdError } from '../avatar-store.js';
 import { LocalAvatarStore } from '../local-avatar-store.js';
 
@@ -172,5 +173,68 @@ describe('LocalAvatarStore', () => {
     expect(await store.get('../secret')).toBeNull();
     // And the file it was aiming at is untouched.
     expect(await readFile(outside)).toEqual(PNG);
+  });
+
+  describe('orphan .tmp sweep', () => {
+    /** Back-date a file's mtime so the sweep reads it as old enough to reap. */
+    async function backdate(file: string, ageMs: number): Promise<void> {
+      const then = new Date(Date.now() - ageMs);
+      await utimes(file, then, then);
+    }
+
+    it('reaps a staging file an interrupted put left behind long ago, on construction', async () => {
+      const avatarsDir = path.join(dorkHome, 'avatars');
+      await mkdir(avatarsDir, { recursive: true });
+      const orphan = path.join(avatarsDir, 'author-1.png.dead-uuid.tmp');
+      await writeFile(orphan, PNG);
+      await backdate(orphan, 2 * 60 * 60 * 1000); // two hours — past ORPHAN_TMP_AGE_MS
+      await writeFile(path.join(avatarsDir, 'author-1.png'), PNG);
+
+      // The constructor's sweep is fire-and-forget: readdir + stat + rm across
+      // a few microtask turns, so poll rather than assume one tick.
+      new LocalAvatarStore(dorkHome);
+      await vi.waitFor(async () => {
+        expect(await readdir(avatarsDir)).toEqual(['author-1.png']);
+      });
+    });
+
+    it('leaves a fresh .tmp file alone — it could be a write still in flight', async () => {
+      // The race this guards: a second store instance (here, standing in for a
+      // second process) must not delete the staging file an overlapping put()
+      // has not yet renamed into place. A file this young cannot be an orphan —
+      // put()'s own staging window is milliseconds — so the sweep must skip it.
+      const avatarsDir = path.join(dorkHome, 'avatars');
+      await mkdir(avatarsDir, { recursive: true });
+      const inFlight = path.join(avatarsDir, 'author-1.png.live-uuid.tmp');
+      await writeFile(inFlight, PNG);
+
+      new LocalAvatarStore(dorkHome);
+      // Give the detached sweep every chance to run before asserting the
+      // negative — there is no "it never will" event to wait for instead.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(await readdir(avatarsDir)).toEqual([path.basename(inFlight)]);
+    });
+
+    it('logs and swallows a sweep failure instead of throwing or crashing the process', async () => {
+      // A real seam, not a tautology: `new LocalAvatarStore()` can never
+      // synchronously throw regardless of what the detached sweep does (it is
+      // `void`ed), so `expect(() => new LocalAvatarStore(...)).not.toThrow()`
+      // passes even if the catch-and-log path were deleted outright. Forcing a
+      // genuine failure — `avatars` exists as a FILE, so `readdir` rejects with
+      // ENOTDIR rather than the expected-and-silent ENOENT — and asserting the
+      // log line actually happens is a test that fails if that path regresses.
+      await writeFile(path.join(dorkHome, 'avatars'), 'not a directory');
+      const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => logger);
+
+      new LocalAvatarStore(dorkHome);
+
+      await vi.waitFor(() => {
+        expect(errorSpy).toHaveBeenCalledWith(
+          '[LocalAvatarStore] orphan sweep could not list avatars dir',
+          expect.anything()
+        );
+      });
+      errorSpy.mockRestore();
+    });
   });
 });

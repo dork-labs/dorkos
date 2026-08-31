@@ -421,15 +421,25 @@ describe('useCapabilitiesForRuntime', () => {
     });
     const { Wrapper } = createWrapper(transport);
 
-    const { result } = renderHook(() => useCapabilitiesForRuntime('mystery-rt'), {
-      wrapper: Wrapper,
-    });
+    // Both hooks in one render, and the wait is for the MAP to have loaded —
+    // not for `getCapabilities` to have been called. The call happens on
+    // mount, a tick before its promise resolves, so waiting on the call
+    // asserts "undefined" against a map that is not there yet and passes
+    // however the lookup behaves — classic verification-that-cannot-fail
+    // (DOR-1639). Same shape the prototype-key cases below use.
+    const { result } = renderHook(
+      () => ({
+        map: useRuntimeCapabilities(),
+        caps: useCapabilitiesForRuntime('mystery-rt'),
+      }),
+      { wrapper: Wrapper }
+    );
 
     await waitFor(() => {
-      expect(transport.getCapabilities).toHaveBeenCalled();
+      expect(result.current.map.isSuccess).toBe(true);
     });
 
-    expect(result.current).toBeUndefined();
+    expect(result.current.caps).toBeUndefined();
   });
 
   it.each(['constructor', 'toString', '__proto__', 'valueOf', 'hasOwnProperty'])(

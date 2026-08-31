@@ -5,11 +5,6 @@ import { TooltipProvider } from '@/layers/shared/ui';
 import { ContextItem } from '../ui/ContextItem';
 import type { ContextUsage } from '@dorkos/shared/types';
 
-vi.mock('motion/react', () => ({
-  motion: new Proxy({}, { get: (_, tag) => tag }),
-  AnimatePresence: ({ children }: { children: React.ReactNode }) => children,
-}));
-
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,

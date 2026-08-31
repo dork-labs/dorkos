@@ -129,7 +129,8 @@ describe('/api/profile/avatar', () => {
       expect(fetched.status).toBe(200);
       expect(fetched.headers['content-type']).toBe('image/png');
       expect(fetched.headers['x-content-type-options']).toBe('nosniff');
-      expect(fetched.headers['cache-control']).toBe('private, max-age=0, must-revalidate');
+      expect(fetched.headers['cross-origin-resource-policy']).toBe('same-origin');
+      expect(fetched.headers['cache-control']).toBe('private, max-age=31536000, immutable');
       expect(fetched.headers.etag).toMatch(/^"[0-9a-f]+"$/);
       expect(Buffer.from(fetched.body)).toEqual(PNG);
     });
@@ -163,6 +164,45 @@ describe('/api/profile/avatar', () => {
 
     it('answers 404 for an identity with no photo', async () => {
       expect((await request(app()).get('/api/profile/avatar/nobody')).status).toBe(404);
+    });
+
+    it('serves must-revalidate when the request names no version at all', async () => {
+      const posted = await request(app())
+        .post('/api/profile/avatar')
+        .attach('avatar', PNG, { filename: 'me.png' });
+      const bare = posted.body.imageUrl.split('?')[0];
+
+      const fetched = await request(app()).get(bare);
+
+      expect(fetched.status).toBe(200);
+      expect(fetched.headers['cache-control']).toBe('private, max-age=0, must-revalidate');
+    });
+
+    it('serves must-revalidate when ?v= names a version that is no longer current', async () => {
+      // The path a `put()` always writes is the same one, so a `?v=` sitting in
+      // a stale cache — one photo replaced by another — no longer names what
+      // the path serves today. Caching that as `immutable` would be a promise
+      // this route cannot keep.
+      const posted = await request(app())
+        .post('/api/profile/avatar')
+        .attach('avatar', PNG, { filename: 'me.png' });
+      const stalePath = posted.body.imageUrl.split('?')[0];
+
+      const fetched = await request(app()).get(`${stalePath}?v=0000000000000000`);
+
+      expect(fetched.status).toBe(200);
+      expect(fetched.headers['cache-control']).toBe('private, max-age=0, must-revalidate');
+    });
+
+    it('serves immutable only when ?v= names the photo currently behind the path', async () => {
+      const posted = await request(app())
+        .post('/api/profile/avatar')
+        .attach('avatar', PNG, { filename: 'me.png' });
+
+      const fetched = await request(app()).get(posted.body.imageUrl);
+
+      expect(posted.body.imageUrl).toContain('?v=');
+      expect(fetched.headers['cache-control']).toBe('private, max-age=31536000, immutable');
     });
   });
 

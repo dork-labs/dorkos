@@ -16,13 +16,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import { mergeDialogSearch, TransportProvider } from '@/layers/shared/model';
 
-vi.mock('motion/react', () => ({
-  motion: {
-    div: 'div',
-  },
-  useReducedMotion: () => false,
-}));
-
 // Only the two stores are stubbed. `useSettingsDeepLink` stays real, because the
 // thing under test is which Settings tab the card actually lands on — a stub
 // would only prove the card called something (DOR-484).

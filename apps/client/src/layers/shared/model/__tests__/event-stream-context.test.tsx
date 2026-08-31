@@ -233,9 +233,19 @@ describe('refetch-on-reconnect', () => {
     mockInvalidateQueries.mockClear();
     fireState('connected', 0);
 
-    await vi.waitFor(() => {
-      expect(mockInvalidateQueries).not.toHaveBeenCalled();
-    });
+    // `vi.waitFor(() => expect(x).not.toHaveBeenCalled())` would pass on its
+    // very first poll no matter what the transition above did — it is
+    // satisfied by a call that hasn't happened YET, not one that provably
+    // never will. The real invalidation (if it fired) lands behind the async
+    // `import('@/layers/shared/lib/query-client')` in event-stream-context.tsx,
+    // so await that same specifier here: a dynamic import of an
+    // already-loaded module resolves its `.then()` queue in call order, and
+    // production's `.then()` (attached during the synchronous `fireState`
+    // above) was queued before this one — so by the time this import
+    // settles, any invalidation it would have scheduled has already run.
+    await import('@/layers/shared/lib/query-client');
+
+    expect(mockInvalidateQueries).not.toHaveBeenCalled();
   });
 
   it('does not invalidate on connected → connected', async () => {
@@ -245,8 +255,11 @@ describe('refetch-on-reconnect', () => {
     mockInvalidateQueries.mockClear();
     fireState('connected', 0);
 
-    await vi.waitFor(() => {
-      expect(mockInvalidateQueries).not.toHaveBeenCalled();
-    });
+    // Same reasoning as above: await the production code's own dynamic
+    // import so this check runs after any invalidation it would have
+    // scheduled, instead of racing it.
+    await import('@/layers/shared/lib/query-client');
+
+    expect(mockInvalidateQueries).not.toHaveBeenCalled();
   });
 });

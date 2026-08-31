@@ -252,6 +252,30 @@ describe('RoomMemberRow', () => {
         '@only'
       );
     });
+
+    it('ignores a press that travelled — dragging the sheet is not opening the scale (DOR-1275)', () => {
+      // The same vaul-drawer hazard `ProfileLink` guards against
+      // (`RoomMemberRow.click-to-profile.test.tsx`): a downward drag over the
+      // roster ends where it started, so the pill under the finger at the end
+      // of the gesture fires a click it never asked for.
+      const { props } = renderRow();
+      const pill = screen.getByRole('button', { name: 'How loud Ana is here' });
+
+      fireEvent.pointerDown(pill, { clientX: 100, clientY: 100 });
+      fireEvent.click(pill, { clientX: 100, clientY: 260, detail: 1 });
+
+      expect(props.onExpandedChange).not.toHaveBeenCalled();
+    });
+
+    it('opens the scale on a press that stayed put, drag guard and all', () => {
+      const { props } = renderRow();
+      const pill = screen.getByRole('button', { name: 'How loud Ana is here' });
+
+      fireEvent.pointerDown(pill, { clientX: 100, clientY: 100 });
+      fireEvent.click(pill, { clientX: 103, clientY: 104, detail: 1 });
+
+      expect(props.onExpandedChange).toHaveBeenCalledWith(true);
+    });
   });
 
   describe('where Remove lives', () => {
@@ -285,6 +309,31 @@ describe('RoomMemberRow', () => {
           { name: 'Remove' }
         )
       ).toHaveFocus();
+    });
+
+    it('ignores a press that travelled on the in-row Remove button too (DOR-1275)', () => {
+      // Before this fix only `ProfileLink` guarded against the drawer-drag
+      // hazard — the in-row Remove button, reachable on exactly the phone
+      // layout where the hazard exists, had none.
+      viewport('phone');
+      const { props } = renderRow({ expanded: true });
+      const remove = screen.getByRole('button', { name: 'Remove from this room' });
+
+      fireEvent.pointerDown(remove, { clientX: 100, clientY: 100 });
+      fireEvent.click(remove, { clientX: 100, clientY: 260, detail: 1 });
+
+      expect(props.onRemoveRequested).not.toHaveBeenCalled();
+    });
+
+    it('removes on a press that stayed put, drag guard and all', () => {
+      viewport('phone');
+      const { props } = renderRow({ expanded: true });
+      const remove = screen.getByRole('button', { name: 'Remove from this room' });
+
+      fireEvent.pointerDown(remove, { clientX: 100, clientY: 100 });
+      fireEvent.click(remove, { clientX: 103, clientY: 104, detail: 1 });
+
+      expect(props.onRemoveRequested).toHaveBeenCalled();
     });
   });
 

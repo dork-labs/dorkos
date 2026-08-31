@@ -400,9 +400,8 @@ const extensionDeps: ExtensionAPIDeps = {
       },
     },
     // Wires the agent's `control_ui switch_agent` command to the same CWD switch
-    // the command palette performs (DOR-354). Reads the store fresh per call so
-    // the switch-back target reflects the current directory, and drives the
-    // router directly since dispatch happens outside React.
+    // the command palette performs (DOR-354). Reads the store fresh per call and
+    // drives the router directly since dispatch happens outside React.
     switchAgent: (cwd: string) =>
       switchAgentCwd(cwd, {
         store: useAppStore.getState(),

@@ -20,6 +20,14 @@ describe('formatModelLabel', () => {
     expect(formatModelLabel('   ')).toBeNull();
     expect(formatModelLabel('ollama/')).toBeNull();
   });
+
+  it('returns null for the `default` sentinel rather than passing it through (DOR-1279)', () => {
+    expect(formatModelLabel('default')).toBeNull();
+  });
+
+  it('returns null when the sentinel is the final segment of a provider-prefixed id', () => {
+    expect(formatModelLabel('ollama/default')).toBeNull();
+  });
 });
 
 describe('formatRuntimeIdentity', () => {
@@ -33,6 +41,12 @@ describe('formatRuntimeIdentity', () => {
 
   it('degrades to the runtime alone when no model is resolved', () => {
     const identity = formatRuntimeIdentity({ runtime: 'claude-code', model: null });
+    expect(identity.modelLabel).toBeNull();
+    expect(identity.text).toBe('Claude Code');
+  });
+
+  it('degrades to the runtime alone rather than showing the `default` sentinel (DOR-1279)', () => {
+    const identity = formatRuntimeIdentity({ runtime: 'claude-code', model: 'default' });
     expect(identity.modelLabel).toBeNull();
     expect(identity.text).toBe('Claude Code');
   });

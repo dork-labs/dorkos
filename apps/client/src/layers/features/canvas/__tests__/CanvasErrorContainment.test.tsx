@@ -30,17 +30,6 @@ vi.mock('../ui/BlintzCanvas', () => ({
   BlintzCanvas: ({ value }: { value: string }) => <div data-testid="blintz-canvas">{value}</div>,
 }));
 
-function PassThrough({ children, ...rest }: Record<string, unknown>) {
-  return (
-    <div {...(rest as React.HTMLAttributes<HTMLDivElement>)}>{children as React.ReactNode}</div>
-  );
-}
-vi.mock('motion/react', () => ({
-  motion: new Proxy({} as Record<string, typeof PassThrough>, { get: () => PassThrough }),
-  useReducedMotion: () => true,
-  AnimatePresence: PassThrough,
-}));
-
 type MockContent =
   | { type: 'markdown'; content: string; title?: string }
   | { type: 'json'; data: unknown; title?: string };
@@ -78,6 +67,7 @@ vi.mock('@/layers/shared/model', () => {
   };
 });
 
+import { setPrefersReducedMotion } from '@/test-setup';
 import { CanvasContent } from '../ui/AgentCanvas';
 
 /** Two open documents: a broken JSON viewer (active) and a healthy markdown doc. */
@@ -111,6 +101,11 @@ beforeEach(() => {
   mockState.openDocuments = [];
   mockState.activeDocumentId = null;
   errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  // The suite's own local `motion/react` shadow used to answer
+  // `useReducedMotion: () => true`; deleting it (DOR-1416) silently flipped
+  // every case here to "no preference" instead. Restored via the shared
+  // toggle so the branch under test doesn't move out from under it.
+  setPrefersReducedMotion(true);
 });
 afterEach(() => {
   errorSpy.mockRestore();

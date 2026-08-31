@@ -25,7 +25,7 @@
  *
  * @module __tests__/one-live-definition
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, renderHook } from '@testing-library/react';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 import type { Session } from '@dorkos/shared/types';
@@ -41,11 +41,6 @@ import {
 } from '@/layers/features/dashboard-sidebar/model/fixtures';
 import type { SidebarState } from '@/layers/features/dashboard-sidebar/model/sidebar-state';
 import { selectWorkingSessions } from '@/layers/features/presence-strip/lib/working-sessions';
-
-vi.mock('motion/react', async () => {
-  const actual = await vi.importActual<typeof import('motion/react')>('motion/react');
-  return { ...actual, useReducedMotion: () => false };
-});
 
 /** The one agent every scenario's sessions belong to. */
 const CWD = '/Users/dev/code/tangerine';

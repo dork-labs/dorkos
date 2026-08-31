@@ -14,9 +14,14 @@ vi.mock('motion/react', () => {
   const motion = new Proxy(
     {},
     {
-      get:
-        (_target: unknown, tag: string) =>
-        ({
+      get: (_target: unknown, tag: string) => {
+        // `motion.create(Component)` wraps a component, unlike every other
+        // property here which draws a tag — a shadow that did not
+        // special-case this would treat "create" as the tag name and hand
+        // the caller a broken <create> element instead of their component
+        // back (DOR-1416).
+        if (tag === 'create') return (Component: React.ElementType) => Component;
+        return ({
           children,
           initial,
           transition,
@@ -37,7 +42,8 @@ vi.mock('motion/react', () => {
               {children}
             </Tag>
           );
-        },
+        };
+      },
     }
   );
   return {

@@ -16,9 +16,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 function makeStore(overrides: Partial<SwitchAgentCwdStore> = {}): SwitchAgentCwdStore {
   return {
-    selectedCwd: null,
     setSelectedCwd: vi.fn(),
-    setPreviousCwd: vi.fn(),
     ...overrides,
   };
 }
@@ -51,42 +49,6 @@ describe('switchAgentCwd', () => {
       navigate,
     });
     expect(store.setSelectedCwd).toHaveBeenCalledWith('/home/user/project');
-  });
-
-  it('records the current directory as the switch-back target when it differs', async () => {
-    const store = makeStore({ selectedCwd: '/home/user/old' });
-    await switchAgentCwd('/home/user/new', {
-      store,
-      queryClient: new QueryClient(),
-      transport: makeTransport(),
-      currentLocation: () => ({ pathname: '/session', search: {} }),
-      navigate: vi.fn(),
-    });
-    expect(store.setPreviousCwd).toHaveBeenCalledWith('/home/user/old');
-  });
-
-  it('does not record a switch-back target when already in the directory', async () => {
-    const store = makeStore({ selectedCwd: '/home/user/same' });
-    await switchAgentCwd('/home/user/same', {
-      store,
-      queryClient: new QueryClient(),
-      transport: makeTransport(),
-      currentLocation: () => ({ pathname: '/session', search: {} }),
-      navigate: vi.fn(),
-    });
-    expect(store.setPreviousCwd).not.toHaveBeenCalled();
-  });
-
-  it('does not record a switch-back target when no directory is active', async () => {
-    const store = makeStore({ selectedCwd: null });
-    await switchAgentCwd('/home/user/project', {
-      store,
-      queryClient: new QueryClient(),
-      transport: makeTransport(),
-      currentLocation: () => ({ pathname: '/session', search: {} }),
-      navigate: vi.fn(),
-    });
-    expect(store.setPreviousCwd).not.toHaveBeenCalled();
   });
 
   it('navigates reusing the most-recent cached session for the directory', async () => {
@@ -126,7 +88,7 @@ describe('switchAgentCwd', () => {
     // NEW directory, and the server resolves history from `?cwd=` — so for the
     // length of the request the client is asking the wrong project for the
     // wrong transcript.
-    const store = makeStore({ selectedCwd: '/home/user/old' });
+    const store = makeStore();
     const order: string[] = [];
     store.setSelectedCwd = vi.fn(() => order.push('store'));
     let answer!: (value: { sessions: Session[] }) => void;
@@ -154,7 +116,7 @@ describe('switchAgentCwd', () => {
   });
 
   it('leaves the cockpit where it is when the lookup fails', async () => {
-    const store = makeStore({ selectedCwd: '/home/user/old' });
+    const store = makeStore();
     const navigate = vi.fn();
     const transport = createMockTransport({
       listSessions: vi.fn().mockRejectedValue(new Error('offline')),
@@ -274,7 +236,7 @@ describe('executeUiCommand switch_agent → switchAgentCwd (wired path)', () => 
     // context's switchAgent delegates to switchAgentCwd. This proves the
     // control_ui switch_agent command now produces a real cwd switch rather
     // than the pre-DOR-354 no-op.
-    const store = makeStore({ selectedCwd: '/home/user/old' });
+    const store = makeStore();
     const queryClient = new QueryClient();
     seedSession(queryClient, '/home/user/new', 'sess-new');
     const navigate = vi.fn();
@@ -296,7 +258,6 @@ describe('executeUiCommand switch_agent → switchAgentCwd (wired path)', () => 
     executeUiCommand(ctx, { action: 'switch_agent', cwd: '/home/user/new' }, 'agent');
     await vi.waitFor(() => expect(navigate).toHaveBeenCalled());
 
-    expect(store.setPreviousCwd).toHaveBeenCalledWith('/home/user/old');
     expect(store.setSelectedCwd).toHaveBeenCalledWith('/home/user/new');
     expect(navigate).toHaveBeenCalledWith({ dir: '/home/user/new', session: 'sess-new' });
   });

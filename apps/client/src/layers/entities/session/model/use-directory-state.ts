@@ -16,9 +16,8 @@ export interface SetDirOptions {
    * failed or was overtaken.
    *
    * For the work that must not happen speculatively: the command palette
-   * records frecency and the switch-back target here, because ranking an agent
-   * you never reached, or offering to switch back to a directory you never
-   * left, is worse than not recording anything (DOR-928).
+   * records frecency here, because ranking an agent you never reached is worse
+   * than not recording anything (DOR-928).
    */
   onOpened?: () => void;
   /**

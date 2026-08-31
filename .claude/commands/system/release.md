@@ -459,13 +459,9 @@ tags: [release, plus 2-3 relevant tags from the changes]
 [Copy from CHANGELOG.md version section — same content as GitHub Release]
 
 [Optional: ## For contributors — include ONLY when this release cycle landed a major internal shift (a new CI gate, workflow engine, or architecture seam). One short paragraph naming the shift and linking its ADR(s). The changelog itself never carries builder-facing entries (Phase 4 curation drops them); this coda is the one sanctioned place a release may speak to people building DorkOS. Omit the section entirely otherwise — most releases have none.]
-
-## Install / Update
-
-\`\`\`
-npm install -g dorkos@X.Y.Z
-\`\`\`
 ```
+
+Do not add a hand-written "## Install / Update" section — the blog template renders `ReleaseInstallFooter` automatically for every post with `category: release` (`apps/site/src/app/(marketing)/blog/[slug]/page.tsx`), so a scaffolded section here would duplicate it (DOR-649).
 
 The user can edit this post before the release commit.
 

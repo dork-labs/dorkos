@@ -247,7 +247,32 @@ export function ResponseModeControl({
     return disabledReasonId === null ? consequenceId : `${consequenceId} ${disabledReasonId}`;
   }
 
-  /** Shared by both renderings: what one rung's button has to be and do. */
+  /**
+   * Shared by both renderings: what one rung's button has to be and do.
+   *
+   * **Known gap, decided explicitly rather than silently left (DOR-1275
+   * adversarial review): the mobile rungs below are NOT guarded against the
+   * room sheet's drawer-drag-dismiss hazard** the way the loudness pill and
+   * the in-row Remove button beside them are (`RoomMemberRow.tsx`'s
+   * `useDragVsTapGuard`). They render inside the same scrollable, draggable
+   * sheet, and `onClick` here IS a network write — pressing a rung commits it,
+   * per {@link ResponseModeControlProps.onChange}'s own contract — so the
+   * hazard is real, arguably worse than the pill's (which only opens this
+   * panel) or Remove's (which still asks for a confirmation before it takes
+   * anyone out).
+   *
+   * Left unguarded for now rather than extended in a rush: `RESPONSE_RUNGS`
+   * renders four buttons off one `.map()`, and `useDragVsTapGuard` needs one
+   * instance PER button (a shared instance would let a drag that started on
+   * one rung answer for a click on another, the same reasoning
+   * `RoomMemberRow.tsx` documents for its own two guards) — which the Rules of
+   * Hooks forbid calling inside a loop. Extending it here means either four
+   * named hook calls or a small per-key map of press origins, plus a second
+   * test pass across both the mobile list and (harmlessly, but not for free)
+   * the desktop segmented control that shares this same function. That is
+   * real work this pass did not budget for; tracked as a follow-up rather than
+   * shipped half-tested.
+   */
   function radioProps(rung: ResponseRung) {
     return {
       type: 'button' as const,

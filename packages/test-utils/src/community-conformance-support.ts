@@ -29,6 +29,38 @@ export const QUIET_WINDOW_MS = 60;
 /** Page size the pagination assertion uses, so any room with two entries pages. */
 export const PAGE_SIZE = 1;
 
+/**
+ * Guard a `toThrow(SomeClass)` assertion against a stale `@dorkos/shared` dist.
+ *
+ * Vite's SSR interop does not enforce named-export existence the way Node's
+ * ESM linker does: importing a class absent from the built dist lands as
+ * `undefined` rather than a resolution error, a fake adapter's `throw new
+ * SomeError(...)` becomes a bare `TypeError`, and `expect(...).toThrow(undefined)`
+ * degrades to a bare `toThrow()` — so the assertion passes with the class it
+ * exists to discriminate silently gone (DOR-755, DOR-754). Reachable in
+ * exactly the loop `AGENTS.md` prescribes: `pnpm vitest run <path>` after
+ * pulling without rebuilding `packages/shared/dist`.
+ *
+ * **`toBeInstanceOf(SomeClass)` does not share this hole** — measured:
+ * `expect(x).toBeInstanceOf(undefined)` throws its own error ("The instanceof
+ * assertion needs a constructor but undefined was given") rather than
+ * degrading, so it already fails loudly on a stale dist without this guard.
+ * `toThrow` is the one call this closes.
+ *
+ * Call at the top of any conformance case whose whole job is discriminating
+ * one error class from another via `toThrow`.
+ *
+ * @param ctor - The imported binding to check.
+ * @param name - Its name, for the failure message.
+ */
+export function assertImported(ctor: unknown, name: string): void {
+  if (typeof ctor !== 'function') {
+    throw new Error(
+      `stale @dorkos/shared dist: ${name} did not import — rebuild with \`pnpm --filter @dorkos/shared build\``
+    );
+  }
+}
+
 /** Tuning knobs + hooks for the community conformance suite. */
 export interface CommunityConformanceOpts {
   /** Label for the registered describe block. Defaults to `'CommunityAdapter conformance'`. */

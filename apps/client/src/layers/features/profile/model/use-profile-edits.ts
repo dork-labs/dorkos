@@ -6,11 +6,23 @@
  * every room's author row agree a moment after a photo lands, without any of
  * them knowing this hook exists.
  *
+ * Each one also invalidates every open room's detail query (DOR-1114): a
+ * room's author row is drawn from its own cached roster, not from `['team']`,
+ * so an idle open room could keep a renamed operator's old name in the
+ * message gutter until an unrelated refetch touched it.
+ *
  * @module features/profile/model/use-profile-edits
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
+import { roomKeys } from '@/layers/entities/room';
 import { TEAM_ROSTER_KEY } from '@/layers/entities/team';
+
+/** Refresh the roster and every open room's roster after a profile write. */
+function invalidateProfileReaders(queryClient: ReturnType<typeof useQueryClient>) {
+  void queryClient.invalidateQueries({ queryKey: [...TEAM_ROSTER_KEY] });
+  void queryClient.invalidateQueries({ queryKey: roomKeys.details() });
+}
 
 /** What a photo write needs: the bytes and a name for the multipart part. */
 export interface AvatarUpload {
@@ -29,7 +41,7 @@ export function useUpdateProfileName() {
 
   return useMutation({
     mutationFn: (displayName: string) => transport.updateProfile(displayName),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: [...TEAM_ROSTER_KEY] }),
+    onSuccess: () => invalidateProfileReaders(queryClient),
   });
 }
 
@@ -44,7 +56,7 @@ export function useUploadProfileAvatar() {
 
   return useMutation({
     mutationFn: ({ file }: AvatarUpload) => transport.uploadProfileAvatar(file, file.name),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: [...TEAM_ROSTER_KEY] }),
+    onSuccess: () => invalidateProfileReaders(queryClient),
   });
 }
 
@@ -59,7 +71,7 @@ export function useDeleteProfileAvatar() {
 
   return useMutation({
     mutationFn: () => transport.deleteProfileAvatar(),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: [...TEAM_ROSTER_KEY] }),
+    onSuccess: () => invalidateProfileReaders(queryClient),
   });
 }
 
@@ -80,6 +92,6 @@ export function useSetAuthorHandle() {
   return useMutation({
     mutationFn: ({ authorId, handle }: { authorId: string; handle: string }) =>
       transport.setAuthorHandle(authorId, handle),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: [...TEAM_ROSTER_KEY] }),
+    onSuccess: () => invalidateProfileReaders(queryClient),
   });
 }

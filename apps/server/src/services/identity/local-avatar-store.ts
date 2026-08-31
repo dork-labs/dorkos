@@ -13,8 +13,9 @@
  */
 import { createHash, randomUUID } from 'crypto';
 import { createReadStream } from 'fs';
-import { mkdir, readFile, rename, rm, writeFile } from 'fs/promises';
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'fs/promises';
 import path from 'path';
+import { logError, logger } from '../../lib/logger.js';
 import {
   AVATAR_CONTENT_TYPES,
   InvalidAvatarIdError,
@@ -75,6 +76,62 @@ export class LocalAvatarStore implements AvatarStore {
    */
   constructor(dorkHome: string) {
     this.dir = path.join(dorkHome, 'avatars');
+    // `.catch(() => {})`, not just fire-and-forget: `sweepOrphanedTempFiles`
+    // already logs and swallows every failure it recognizes, but a `void`ed
+    // async call is one throw-from-somewhere-unexpected away from an unhandled
+    // rejection, which crashes the process by default. A constructor doing that
+    // to the caller would be a worse bug than any orphaned `.tmp` file.
+    void this.sweepOrphanedTempFiles().catch(() => {});
+  }
+
+  /**
+   * Remove staging files an interrupted {@link put} left behind.
+   *
+   * A crash between `writeFile` and `rename` in `put()` leaves
+   * `<id>.<ext>.<uuid>.tmp` in the avatars directory forever — {@link
+   * removeExcept} only ever looks at the three real extensions, so it never
+   * reaps them. This runs once, best-effort, at construction time: a missing
+   * directory (nothing uploaded yet) is not an error, and any other failure is
+   * logged rather than thrown, since a sweep that could crash the store would
+   * be worse than the orphans it is cleaning up.
+   *
+   * Only reaps a `.tmp` file older than {@link ORPHAN_TMP_AGE_MS}. `put()`'s own
+   * staging window is milliseconds, so a file that young is somebody's write in
+   * flight, not a crash's leftovers — skipping it is what keeps a second store
+   * instance (a test; in principle a second process) from deleting the very
+   * file a concurrent `put()` is about to `rename` into place.
+   */
+  private async sweepOrphanedTempFiles(): Promise<void> {
+    let entries: string[];
+    try {
+      entries = await readdir(this.dir);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+      logger.error('[LocalAvatarStore] orphan sweep could not list avatars dir', logError(err));
+      return;
+    }
+    await Promise.all(
+      entries
+        .filter((name) => name.endsWith('.tmp'))
+        .map((name) => this.reapIfStale(path.join(this.dir, name)))
+    );
+  }
+
+  /** Remove one `.tmp` file, but only once it is old enough to be an orphan. */
+  private async reapIfStale(file: string): Promise<void> {
+    try {
+      const { mtimeMs } = await stat(file);
+      if (Date.now() - mtimeMs < ORPHAN_TMP_AGE_MS) return;
+    } catch (err) {
+      // Gone already (another sweep, or the write it belonged to finished and
+      // cleaned up after itself) — nothing left to reap.
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+      logger.error('[LocalAvatarStore] orphan sweep could not stat a .tmp file', logError(err));
+      return;
+    }
+    await rm(file, { force: true }).catch((err: unknown) => {
+      logger.error('[LocalAvatarStore] orphan sweep could not remove a .tmp file', logError(err));
+    });
   }
 
   /**
@@ -217,6 +274,18 @@ function isSafeId(id: string): boolean {
 function assertSafeId(id: string): void {
   if (!isSafeId(id)) throw new InvalidAvatarIdError(id);
 }
+
+/**
+ * How old a `.tmp` staging file must be before the sweep will touch it.
+ *
+ * `put()`'s window between `writeFile` and `rename` is milliseconds — never
+ * remotely close to this — so a second {@link LocalAvatarStore} constructed
+ * over the same directory (a test creating one mid-upload; in principle a
+ * second process) can run its own sweep concurrently without racing a write
+ * that is actually still in flight. Anything this old was abandoned by a
+ * crash, not delayed by load.
+ */
+const ORPHAN_TMP_AGE_MS = 60 * 60 * 1000;
 
 /** The short content hash that versions a URL and fills an ETag. */
 function hashOf(bytes: Buffer): string {

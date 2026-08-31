@@ -5,38 +5,6 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { TunnelSettings } from '../ui/TunnelSettings';
 
-// Mock motion/react so AnimatePresence renders immediately
-vi.mock('motion/react', () => ({
-  AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  motion: new Proxy(
-    {},
-    {
-      get: (_target, prop: string) => {
-        return ({ children, ...rest }: Record<string, unknown>) => {
-          const htmlProps: Record<string, unknown> = {};
-          for (const [k, v] of Object.entries(rest)) {
-            if (
-              ![
-                'variants',
-                'initial',
-                'animate',
-                'exit',
-                'transition',
-                'onAnimationComplete',
-              ].includes(k)
-            ) {
-              htmlProps[k] = v;
-            }
-          }
-          const Tag = prop as keyof React.JSX.IntrinsicElements;
-          // @ts-expect-error — dynamic tag rendering for test mock
-          return <Tag {...htmlProps}>{children}</Tag>;
-        };
-      },
-    }
-  ),
-}));
-
 afterEach(() => {
   cleanup();
 });

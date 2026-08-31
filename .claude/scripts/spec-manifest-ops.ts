@@ -169,12 +169,36 @@ function normalizeStatus(status: string): string {
   return STATUS_NORMALIZE[status] ?? status;
 }
 
+// Fails closed: an artifact file only counts toward status if its exact name
+// is a KNOWN one for that numbered stage. Only naming what promotes, rather
+// than naming what to skip, means a future file this list has never seen
+// (the visual-companion skill's `04-design-decisions.md` was exactly that
+// case, DOR-818) does not silently promote a spec's status — an unrecognized
+// `0N-*` name is a no-op here, not a guess. Sourced from every `0[1-5]-*.md`
+// / `.json` name actually in use under specs/ at the time of writing:
+// 01-ideation.md; 02-spec.md and 02-specification.md (both seen); 03-tasks.md
+// and 03-tasks.json; 04-implementation.md; 05-bootstrap.md and
+// 05-feedback.md (post-implementation runbooks/feedback, both still
+// 'implemented' per ARTIFACT_TO_STATUS[5]). `04-design-decisions.md` is
+// deliberately absent: it is written well before implementation.
+const STATUS_BEARING_ARTIFACTS = new Set([
+  '01-ideation.md',
+  '02-spec.md',
+  '02-specification.md',
+  '03-tasks.md',
+  '03-tasks.json',
+  '04-implementation.md',
+  '05-bootstrap.md',
+  '05-feedback.md',
+]);
+
 function getHighestArtifact(slug: string): number {
   const dir = join(SPECS_DIR, slug);
   if (!existsSync(dir)) return 0;
 
   let highest = 0;
   for (const file of readdirSync(dir)) {
+    if (!STATUS_BEARING_ARTIFACTS.has(file)) continue;
     const match = file.match(/^0([1-5])-.*\.(md|json)$/);
     if (match) {
       const num = parseInt(match[1], 10);

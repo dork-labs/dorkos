@@ -12,7 +12,7 @@ import type { ReactNode } from 'react';
 import { render, screen, cleanup, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, IsRestoringProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { TeamMember, TeamRosterResponse } from '@dorkos/shared/team-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
@@ -416,5 +416,48 @@ describe('TeamPage — the empty and degraded states', () => {
     await user.click(screen.getByRole('button', { name: 'Dismiss' }));
 
     expect(screen.queryByRole('status')).toBeNull();
+  });
+});
+
+describe('the query-restore pause (DOR-1419)', () => {
+  it('shows the loading state, not an empty roster, while a persisted cache is restoring', async () => {
+    // `IsRestoringProvider` is the same context `PersistQueryClientProvider`
+    // sets while its persister's restore promise is in flight — forcing it
+    // here reproduces the paused-query window deterministically, without
+    // racing a real persister and a real router against each other.
+    // `useBaseQuery` reads it directly (`useBaseQuery.js`): while true, a
+    // query neither subscribes nor fetches, so `isFetching` stays false. With
+    // no data yet either, `isLoading` (`isPending && isFetching`) used to read
+    // FALSE — nothing loading, nothing to show — and `TeamPage` painted
+    // "Nobody to show yet." for a beat before the real roster arrived
+    // (DOR-1419). `useIsRestoring` fixes that read; this pins it.
+    const transport = createMockTransport({
+      getTeamRoster: vi.fn().mockResolvedValue({ members: MOCK_TEAM_ROSTER }),
+    } as Partial<Transport>);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <IsRestoringProvider value={true}>
+          <TransportProvider transport={transport}>
+            <harness.Wrapper>
+              <TeamPage />
+            </harness.Wrapper>
+          </TransportProvider>
+        </IsRestoringProvider>
+      </QueryClientProvider>
+    );
+
+    await harness.ready();
+
+    expect(screen.getByLabelText('Loading the team')).toBeInTheDocument();
+    expect(screen.queryByText('Nobody to show yet.')).toBeNull();
+    // The transport was never given the chance to answer — `IsRestoringProvider`
+    // keeps the query from ever subscribing or fetching — which is the proof
+    // that the loading state above is read off `isRestoring`, not off a request
+    // that happened to still be in flight.
+    expect(transport.getTeamRoster).not.toHaveBeenCalled();
   });
 });

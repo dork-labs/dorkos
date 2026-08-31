@@ -9,17 +9,6 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 
 // ---------------------------------------------------------------------------
-// Mock motion/react to avoid animation issues in jsdom
-// ---------------------------------------------------------------------------
-
-vi.mock('motion/react', () => ({
-  motion: {
-    div: ({ children, ...props }: React.ComponentProps<'div'>) => <div {...props}>{children}</div>,
-  },
-  AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
-
-// ---------------------------------------------------------------------------
 // Mock entity hooks
 // ---------------------------------------------------------------------------
 

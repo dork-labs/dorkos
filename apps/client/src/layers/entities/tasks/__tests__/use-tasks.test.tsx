@@ -236,6 +236,7 @@ describe('the tasks-list invalidation is exact', () => {
         create: useCreateTask(),
         update: useUpdateTask(),
         remove: useDeleteTask(),
+        trigger: useTriggerTask(),
       }),
       { wrapper }
     );
@@ -281,6 +282,21 @@ describe('the tasks-list invalidation is exact', () => {
     });
 
     result.current.remove.mutate('task-1');
+
+    await waitFor(() => expect(listTasks).toHaveBeenCalledTimes(2));
+    expect(sessionTodoFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('useTriggerTask refetches the list too, so a manual run’s timing text is not stale (DOR-1492)', async () => {
+    // A manual run moves `lastRunAt`/`nextRunAt` on the schedule's OWN row in
+    // the tasks list — a fact the runs-query invalidation says nothing about.
+    // Before this fix the row kept showing its pre-trigger timing until
+    // something else happened to refresh `[tasks]`.
+    const { result, listTasks, sessionTodoFetch } = await mountHarness({
+      triggerTask: vi.fn().mockResolvedValue({ runId: 'run-1' }),
+    });
+
+    result.current.trigger.mutate('task-1');
 
     await waitFor(() => expect(listTasks).toHaveBeenCalledTimes(2));
     expect(sessionTodoFetch).toHaveBeenCalledTimes(1);

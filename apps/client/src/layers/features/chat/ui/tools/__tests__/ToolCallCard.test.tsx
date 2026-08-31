@@ -7,15 +7,6 @@ import '@testing-library/jest-dom/vitest';
 import { ToolCallCard } from '../ToolCallCard';
 import type { ToolCallState, HookState } from '../../../model/chat-types';
 
-vi.mock('motion/react', () => ({
-  motion: {
-    div: ({ children, ...props }: Record<string, unknown> & { children?: React.ReactNode }) => (
-      <div {...props}>{children}</div>
-    ),
-  },
-  AnimatePresence: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
-}));
-
 vi.mock('../../message/OutputRenderer', () => ({
   OutputRenderer: ({ content, toolName }: { content: string; toolName: string }) => {
     const isTruncated = content.length > 5120;

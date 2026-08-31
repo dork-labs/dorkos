@@ -88,5 +88,17 @@ function resolveModelName(model: string, options: readonly ModelOption[]): strin
   const family = /claude-(\w+)-/.exec(model);
   if (family) return `${family[1].charAt(0).toUpperCase()}${family[1].slice(1)}`;
 
+  // The cold-catalog window: `options` is empty while the catalog is still
+  // loading, so the lookup above never runs for the literal `default`
+  // sentinel — the case the catalog itself would otherwise label "Default"
+  // (see the tests below). `formatModelLabel` treats that sentinel as "no
+  // model resolved" and returns `null` (DOR-1279), which would otherwise fall
+  // through to the RAW SENTINEL via `?? model`, resurfacing the exact
+  // meaningless "default" text DOR-1279 was written to stop showing — just
+  // here instead of in the runtime identity line. "Default" is honest rather
+  // than invented: the model genuinely IS the runtime's default, which is
+  // what the catalog itself calls this same entry once it has loaded.
+  if (model === 'default') return 'Default';
+
   return formatModelLabel(model) ?? model;
 }

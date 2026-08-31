@@ -68,6 +68,7 @@ import {
   type TransportStreams,
 } from './transport-stream-pump';
 import { addBreadcrumb } from '../breadcrumbs';
+import { SESSION_LIST_EVENT_TYPES } from './session-stream-methods';
 
 /**
  * Minimal surface of {@link WSConnection} StreamManager depends on. Defining it
@@ -182,17 +183,6 @@ const SESSION_EVENT_TYPES = [
 ] as const;
 
 /**
- * The {@link SessionListEvent} `type` discriminants the global stream emits.
- *
- * The gate every session-list event the HTTP cockpit receives passes through: a
- * name the server broadcasts but this array omits gets no listener, and the
- * frame is dropped in silence. Pinned against `SessionListEventSchema`
- * in `__tests__/stream-manager.test.ts` (DOR-548). A second, independent copy of
- * this allowlist lives in `session-stream-methods.ts` and is pinned there.
- */
-const SESSION_LIST_EVENT_TYPES = ['session_upserted', 'session_removed', 'session_status'] as const;
-
-/**
  * The non-session broadcast event names the unified `/api/events` stream emits.
  * Static — add new names here as the server emits them. They are dispatched
  * verbatim (no schema at this layer; payloads are validated by their consumers)
@@ -247,8 +237,6 @@ export const GENERIC_EVENTS = [
   // prompt appears and once when it is answered, cancelled or times out; the
   // countdown in between is local, ticked from the start time inside the
   // interaction. See `specs/unified-conversation` §3.
-  // (No apostrophes here, for the reason the rooms block above gives: the guard
-  // test parses this block with a single-quote regex.)
   'interaction_pending',
   'interaction_resolved',
   // Rooms (spec `rooms`, ADR 260726-170125). The ENTRIES of a room ride that
@@ -256,8 +244,6 @@ export const GENERIC_EVENTS = [
   // the global signals for a reader NOT connected to it — the room list
   // changing, an activity bump that reorders the list and marks a room unread,
   // the count of agents working in it, and a read cursor moving.
-  // (No apostrophes here on purpose: the guard test parses this block with a
-  // single-quote regex, so a contraction would read as an event name.)
   'room_created',
   'room_updated',
   'room_member_added',
@@ -285,8 +271,6 @@ export const GENERIC_EVENTS = [
   // on the laptop clears on the phone. Both are ADDRESSED: they carry what an
   // agent is doing and what is waiting on a person, so an agent principal
   // receives neither.
-  // (No apostrophes here, for the reason the rooms block above gives: the guard
-  // test parses this block with a single-quote regex.)
   'notification',
   'notification_read',
 ] as const;

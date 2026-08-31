@@ -99,8 +99,6 @@ vi.mock('@/layers/shared/model', () => ({
       setCanvasOpen: vi.fn(),
       setRightPanelOpen: vi.fn(),
       setActiveRightPanelTab: vi.fn(),
-      setPreviousCwd: vi.fn(),
-      previousCwd: null,
       selectedCwd: ACTIVE_CWD,
       setSelectedCwd: vi.fn(),
       setSessionId: vi.fn(),

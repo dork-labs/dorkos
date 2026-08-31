@@ -9,6 +9,7 @@ import {
   type CommunityRef,
 } from '@dorkos/shared/community-adapter';
 import { communityConformance } from '../community-conformance.js';
+import { assertImported } from '../community-conformance-support.js';
 import { FakeCommunityAdapter } from '../fake-community-adapter.js';
 
 // FakeCommunityAdapter is the reference "passing" backend for the shared
@@ -149,6 +150,7 @@ communityConformance(make(COMMUNITY_INVITE_OPAQUE_CURSOR), {
 
 describe('communityConformance discriminates', () => {
   it('rejects a foreign cursor EAGERLY — the throw lands at call time, not on first pull', async () => {
+    assertImported(StaleCommunityCursorError, 'StaleCommunityCursorError');
     const adapter = new FakeCommunityAdapter();
     await adapter.connect();
     const roomA = adapter.seedRoom({ entries: 2 });

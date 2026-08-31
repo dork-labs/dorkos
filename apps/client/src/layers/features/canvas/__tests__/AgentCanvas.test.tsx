@@ -46,13 +46,6 @@ vi.mock('../ui/BlintzCanvas', () => ({
   BlintzCanvas: ({ value }: { value: string }) => <div data-testid="blintz-canvas">{value}</div>,
 }));
 
-// Mock motion/react — render children without animation
-function PassThrough({ children, ...rest }: Record<string, unknown>) {
-  return (
-    <div {...(rest as React.HTMLAttributes<HTMLDivElement>)}>{children as React.ReactNode}</div>
-  );
-}
-
 // Mock Sheet components for mobile canvas
 vi.mock('@/layers/shared/ui', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
@@ -71,14 +64,6 @@ vi.mock('@/layers/shared/ui', async (importOriginal) => {
     SheetDescription: Passthrough,
   };
 });
-
-vi.mock('motion/react', () => ({
-  motion: new Proxy({} as Record<string, typeof PassThrough>, {
-    get: () => PassThrough,
-  }),
-  useReducedMotion: () => true,
-  AnimatePresence: PassThrough,
-}));
 
 let mockIsMobile = false;
 
@@ -149,8 +134,14 @@ vi.mock('@/layers/shared/model', () => {
   };
 });
 
+import { setPrefersReducedMotion } from '@/test-setup';
 import { AgentCanvas } from '../ui/AgentCanvas';
 
+// The suite's own local `motion/react` shadow used to answer
+// `useReducedMotion: () => true`; deleting it (DOR-1416) silently flipped
+// every case here to "no preference" instead. Restored via the shared
+// toggle so the branch under test doesn't move out from under it.
+beforeEach(() => setPrefersReducedMotion(true));
 afterEach(cleanup);
 
 describe('AgentCanvas', () => {

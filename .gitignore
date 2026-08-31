@@ -44,6 +44,13 @@ tmp/
 apps/e2e/capture/library/*
 !apps/e2e/capture/library/README.md
 
+# The browser-suite manifest: every run rewrites lastRun/run/pass counts and
+# reformats the file, so no legitimate action could ever leave it clean when
+# tracked — a standing trap two branches had to hand-restore before committing
+# (DOR-726). `apps/e2e/reporters/manifest-reporter.ts` keeps writing it as a
+# local artifact; nothing in CI reads or uploads it.
+apps/e2e/manifest.json
+
 # Environment & secrets
 .env
 .mcp.json

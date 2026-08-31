@@ -74,7 +74,6 @@ const mockSetTheme = vi.fn();
 let mockGlobalPaletteOpen = true;
 let mockTheme = 'light';
 
-const mockSetPreviousCwd = vi.fn();
 // Hoisted, NOT built inside the selector. A zustand action has a stable
 // identity for the app's lifetime, and a mock that mints a fresh `vi.fn()` per
 // selector call does not: it makes every consuming `useCallback` re-create on
@@ -114,7 +113,6 @@ vi.mock('@/layers/shared/model', () => ({
       setSettingsOpen: mockSetSettingsOpen,
       setTasksOpen: mockSetTasksOpen,
       setPickerOpen: mockSetPickerOpen,
-      setPreviousCwd: mockSetPreviousCwd,
       // The real store carries these; "New session" reads the active agent from
       // here and mints an id into it (DOR-928).
       selectedCwd: mockSelectedCwd,
