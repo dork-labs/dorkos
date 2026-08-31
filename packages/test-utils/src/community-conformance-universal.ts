@@ -30,6 +30,7 @@ import {
 import {
   GATED_PROBES,
   PAGE_SIZE,
+  assertImported,
   nextEvent,
   pageAllEntries,
   type CommunityConformanceContext,
@@ -174,6 +175,7 @@ export function registerUniversalAssertions(ctx: CommunityConformanceContext): v
     });
 
     it('U6 resumes gap-free or throws eagerly — there is no third outcome', async () => {
+      assertImported(StaleCommunityCursorError, 'StaleCommunityCursorError');
       const { adapter, roomId } = await arrange();
       const { entries } = await pageAllEntries(adapter, roomId);
       expect(
@@ -218,6 +220,7 @@ export function registerUniversalAssertions(ctx: CommunityConformanceContext): v
     });
 
     it('U7 rejects a cursor minted for another room, never serves it silently', async () => {
+      assertImported(StaleCommunityCursorError, 'StaleCommunityCursorError');
       const { adapter } = await arrange();
       const roomA = await seedRoom(adapter);
       const roomB = await seedRoom(adapter);
@@ -232,6 +235,7 @@ export function registerUniversalAssertions(ctx: CommunityConformanceContext): v
 
     if (secondCommunity) {
       it('U7 rejects a cursor minted by another community', async () => {
+        assertImported(StaleCommunityCursorError, 'StaleCommunityCursorError');
         const { adapter } = await arrange();
         const roomId = await seedRoom(adapter);
 
@@ -512,17 +516,7 @@ export function registerUniversalAssertions(ctx: CommunityConformanceContext): v
     });
 
     it('U16 refuses to stream a room it cannot serve, eagerly', async () => {
-      // The guard, and it is not paranoia: `toThrow(undefined)` degrades to a
-      // bare `toThrow`, so a stale `@dorkos/shared` dist turns this case — whose
-      // whole job is discriminating one error class from another — into "it
-      // threw something", and a backend throwing a plain `Error` passes it. The
-      // check costs a line and makes the failure name its own cause instead of
-      // going green.
-      if (typeof CommunityRoomNotFoundError !== 'function') {
-        throw new Error(
-          'stale @dorkos/shared dist: CommunityRoomNotFoundError did not import — rebuild with `pnpm --filter @dorkos/shared build`'
-        );
-      }
+      assertImported(CommunityRoomNotFoundError, 'CommunityRoomNotFoundError');
       const { adapter } = await arrange();
 
       // Constructed, awaiting nothing — the U6/U7 shape, for the same reason.
