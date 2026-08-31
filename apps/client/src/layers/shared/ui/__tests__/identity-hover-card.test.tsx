@@ -142,6 +142,39 @@ describe('IdentityHoverCard', () => {
     expect(onViewProfile).toHaveBeenCalledTimes(1);
   });
 
+  it('refocuses the trigger before opening the profile, not the footer button (DOR-1274 adversarial review)', async () => {
+    // Clicking the footer moves native browser focus onto the FOOTER first —
+    // default click behaviour, before `onClick` ever runs — and the footer is
+    // portalled inside `HoverCardContent`, which unmounts the instant this
+    // card closes. Anything downstream that captures `document.activeElement`
+    // when `onViewProfile` fires (`useProfileDeepLink`'s `open()`) would grab
+    // a node already gone by the time it is asked for back, unless this
+    // component puts focus back on its OWN trigger first. Asserted by reading
+    // `document.activeElement` from inside `onViewProfile` itself — the exact
+    // moment the downstream capture would run.
+    let activeElementAtCallTime: Element | null = null;
+    const onViewProfile = vi.fn(() => {
+      activeElementAtCallTime = document.activeElement;
+    });
+    const user = userEvent.setup();
+    render(
+      <IdentityHoverCard
+        identity={{ kind: 'human', displayName: 'Ana', handle: 'ana' }}
+        onViewProfile={onViewProfile}
+      >
+        <button type="button">Ana</button>
+      </IdentityHoverCard>
+    );
+    const trigger = screen.getByRole('button', { name: 'Ana' });
+    await user.hover(trigger);
+
+    const viewProfile = await screen.findByRole('button', { name: 'View profile' });
+    await user.click(viewProfile);
+
+    expect(onViewProfile).toHaveBeenCalledTimes(1);
+    expect(activeElementAtCallTime).toBe(trigger);
+  });
+
   it("shows an agent's runtime/model and working chips, never a person's", async () => {
     await openOn({
       kind: 'agent',

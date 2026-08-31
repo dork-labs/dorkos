@@ -95,6 +95,13 @@ export function useTriggerTask() {
       // in all of them. The chat panel's `['tasks', sessionId, cwd]` todo query
       // is not underneath it, so the prefix match cannot reach that.
       queryClient.invalidateQueries({ queryKey: [...TASK_RUNS_KEY] });
+      // A manual run also moves `lastRunAt`/`nextRunAt` on the schedule's OWN
+      // row (DOR-1492) — the runs list above says nothing about that, so
+      // without this the row's timing text stayed stale until something else
+      // happened to invalidate `[tasks]`. `exact: true` for the same reason
+      // every other `[tasks]` invalidation here is: a prefix match would also
+      // refetch — and reset mid-turn — the chat panel's todo query.
+      queryClient.invalidateQueries({ queryKey: [...TASKS_KEY], exact: true });
     },
     meta: { errorLabel: "Couldn't run the scheduled task" },
   });

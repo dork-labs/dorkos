@@ -7,13 +7,8 @@ import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ChevronDown, MoreHorizontal } from 'lucide-react';
 import type { RoomKind, RoomRosterEntry } from '@dorkos/shared/room-schemas';
-import {
-  cn,
-  resolveIdentityFace,
-  LONG_PRESS_DRIFT_PX,
-  type AgentVisual,
-} from '@/layers/shared/lib';
-import { useIsMobile } from '@/layers/shared/model';
+import { cn, resolveIdentityFace, type AgentVisual } from '@/layers/shared/lib';
+import { useIsMobile, useDragVsTapGuard } from '@/layers/shared/model';
 import {
   Button,
   DropdownMenu,
@@ -138,9 +133,10 @@ export interface RoomMemberRowProps {
  * gesture is the same one it started on — and the browser fires a click. Before
  * this control existed the lockup was an inert `<div>` and that click landed on
  * nothing; as a button it opened a profile every time somebody tried to put the
- * sheet away, which is how `room-sheet-phone.spec.ts` found it. The same
- * {@link LONG_PRESS_DRIFT_PX} the long-press gesture uses decides here: past it,
- * the reader was moving the sheet, not choosing a member.
+ * sheet away, which is how `room-sheet-phone.spec.ts` found it.
+ * `useDragVsTapGuard` (DOR-1275) is what decides here now — extracted from an
+ * inline version of the same check so the loudness pill and the in-row Remove
+ * button beside this control could share it instead of going without.
  *
  * @param props.onViewProfile - Open this member's profile, or `undefined` for a
  *   member with none to open.
@@ -163,30 +159,16 @@ function ProfileLink({
   describedById: string;
   children: ReactNode;
 }) {
-  // Where the press started, so a click can be told from the tail of a drag.
-  // Read at `pointerdown` because that is the only moment the origin exists.
-  const pressedAt = useRef<{ x: number; y: number } | null>(null);
+  const dragGuard = useDragVsTapGuard();
 
   if (onViewProfile === undefined) return <>{children}</>;
 
   return (
     <button
       type="button"
-      onPointerDown={(event) => {
-        pressedAt.current = { x: event.clientX, y: event.clientY };
-      }}
+      onPointerDown={dragGuard.onPointerDown}
       onClick={(event) => {
-        const from = pressedAt.current;
-        pressedAt.current = null;
-        // `detail > 0` is a click a POINTER made. A keyboard's click reports 0
-        // and carries no coordinates, so it is never measured against a stale
-        // origin left behind by a press that ended somewhere else.
-        const travelled =
-          event.detail > 0 &&
-          from !== null &&
-          (Math.abs(event.clientX - from.x) > LONG_PRESS_DRIFT_PX ||
-            Math.abs(event.clientY - from.y) > LONG_PRESS_DRIFT_PX);
-        if (travelled) return;
+        if (dragGuard.travelled(event)) return;
         onViewProfile();
       }}
       // Names the ACTION with the name inside it, the shape the sidebar face,
@@ -204,7 +186,19 @@ function ProfileLink({
       // as harmless and made every row 8px taller, which moved the scale out
       // from under a resting pointer and cost the room-sheet specs two reds.
       className={cn(
-        'focus-visible:ring-ring hover:bg-accent/60 relative -mx-1 flex min-w-0 flex-1 items-center gap-3 rounded-md px-1 text-left outline-hidden transition-colors focus-visible:ring-2',
+        // `-ml-1`/`-mr-[5px]`, not a symmetric `-mx-1` — and PHONE ONLY in what
+        // it actually buys: the row's 12px gap to the loudness pill splits as
+        // 4px of reach here plus 7px of the pill's own `-inset-[7px]` outset,
+        // which left exactly 1px neither control claimed (DOR-1275) — a dead
+        // pixel a drag-to-dismiss could still land a stray click on. Above
+        // 768px the pill's own reach is `md:after:hidden`, so there is no
+        // invisible-reach dance left to have a dead pixel in; the margin
+        // change ships everywhere because it costs nothing there (padding
+        // absorbs it, so the visible content does not move), but the 1px it
+        // closes only exists below `md:`. It comes off the right margin only,
+        // since that is the side facing the pill; the left side has nothing
+        // to its left in this row to encroach on.
+        'focus-visible:ring-ring hover:bg-accent/60 relative -mr-[5px] -ml-1 flex min-w-0 flex-1 items-center gap-3 rounded-md px-1 text-left outline-hidden transition-colors focus-visible:ring-2',
         // The house recipe for a control shorter than a thumb (`PresenceStrip`,
         // the loudness pill): invisible reach rather than real height, so the
         // 44px target costs the row none of its own rhythm. VERTICAL only — the
@@ -289,6 +283,11 @@ export function RoomMemberRow({
   // see {@link ProfileLink}.
   const secondaryId = `${controlId}-secondary`;
   const confirmRef = useRef<HTMLButtonElement>(null);
+  // One guard per control, not one shared: each tracks where ITS OWN press
+  // began, and a shared instance would let a drag that started on one button
+  // decide whether a click on the other one counts (DOR-1275).
+  const loudnessDragGuard = useDragVsTapGuard();
+  const removeDragGuard = useDragVsTapGuard();
   const { author } = member;
   const isAgent = author.kind === 'agent';
   const rung = rungOf(member.responseMode, roomKind);
@@ -376,7 +375,11 @@ export function RoomMemberRow({
             // that away for the length of a round trip would be a control that
             // stops working every time it is used.
             aria-busy={savingRung || undefined}
-            onClick={() => onExpandedChange(!expanded)}
+            onPointerDown={loudnessDragGuard.onPointerDown}
+            onClick={(event) => {
+              if (loudnessDragGuard.travelled(event)) return;
+              onExpandedChange(!expanded);
+            }}
             className={cn(
               'text-muted-foreground hover:text-foreground focus-visible:ring-ring relative inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs outline-hidden transition-colors focus-visible:ring-2 md:h-6 md:px-2',
               savingRung && 'opacity-60',
@@ -503,7 +506,11 @@ export function RoomMemberRow({
                   type="button"
                   size="sm"
                   variant="ghost"
-                  onClick={onRemoveRequested}
+                  onPointerDown={removeDragGuard.onPointerDown}
+                  onClick={(event) => {
+                    if (removeDragGuard.travelled(event)) return;
+                    onRemoveRequested();
+                  }}
                   className="text-destructive hover:text-destructive mt-1 h-11 w-full justify-start px-3"
                 >
                   Remove from this room
