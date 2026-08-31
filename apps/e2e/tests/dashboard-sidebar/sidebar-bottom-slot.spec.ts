@@ -87,8 +87,16 @@ test.describe('the sidebar’s bottom slot @smoke', () => {
   // baseline here and restore it in `afterEach` so every run starts from the
   // same undismissed state the first one did.
   let dismissedIdsBefore: string[] = [];
+  // Whether `dismissedIdsBefore` above actually came from THIS test's own GET.
+  // Without this, a failed GET fell through leaving the PREVIOUS test's value
+  // (or the module's initial `[]` on the very first test) in place, and
+  // `afterEach` would still PATCH it — on the first test, that is `[]` written
+  // over whatever real dismissals already existed before the suite ran, from
+  // a request that never told us what they were.
+  let capturedOk = false;
 
   test.beforeEach(async ({ request }) => {
+    capturedOk = false;
     const res = await request.get('/api/config');
     if (!res.ok()) return;
     // GET flattens this to `dismissedPromoIds` (`routes/config.ts`) — a
@@ -96,12 +104,15 @@ test.describe('the sidebar’s bottom slot @smoke', () => {
     // own nested `ui.promos.dismissedIds`.
     const config = (await res.json()) as { dismissedPromoIds: string[] };
     dismissedIdsBefore = config.dismissedPromoIds;
+    capturedOk = true;
   });
 
   test.afterEach(async ({ request }) => {
-    await request
-      .patch('/api/config', { data: { ui: { promos: { dismissedIds: dismissedIdsBefore } } } })
-      .catch(() => {});
+    if (!capturedOk) return;
+    const res = await request.patch('/api/config', {
+      data: { ui: { promos: { dismissedIds: dismissedIdsBefore } } },
+    });
+    expect(res.ok(), `restoring dismissedPromoIds answered ${res.status()}`).toBe(true);
   });
 
   test('stays on screen while the list scrolls, and stays dismissed after a reload', async ({
