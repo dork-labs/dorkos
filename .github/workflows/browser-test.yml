@@ -339,18 +339,19 @@ jobs:
       # — with one, pnpm 10.28.2 refuses the command outright ("You may need to
       # escape symbols like ...", exit 1). Verified locally on the pinned pnpm.
       #
-      # KNOWN, HARMLESS HERE: apps/e2e/reporters/manifest-reporter.ts rewrites
-      # the TRACKED file apps/e2e/manifest.json after every run that executes at
-      # least one test (`--list` and empty runs no longer touch it). So this
-      # step leaves the checkout dirty, and under sharding it leaves it dirty
-      # with a THIRD of the suite — the reporter merges per file it saw, so each
-      # shard writes a different partial update to run counts/`lastRun`/
-      # `specFile`/`feature` (all per-file facts, safe from any single shard).
-      # On three ephemeral runners that costs nothing, nothing later in this
-      # workflow reads the file, and it is never uploaded. But do not add a
-      # "the tree is clean" assertion to this job without dealing with that
-      # first: it would fail every time, for a reason unrelated to the code
-      # under test.
+      # apps/e2e/reporters/manifest-reporter.ts rewrites apps/e2e/manifest.json
+      # after every run that executes at least one test (`--list` and empty
+      # runs no longer touch it), but that file is GITIGNORED (DOR-726) — every
+      # run rewrites its lastRun/run-count fields, so no legitimate action
+      # could ever leave it clean tracked. This step and its sharding leave it
+      # dirty on disk, which costs nothing on an ephemeral runner: nothing
+      # later in this workflow reads the file, and it is never uploaded.
+      #
+      # apps/e2e/manifest-curated.json — the hand-curated relatedCode/
+      # explorationNotes half — IS tracked, but the reporter only ever READS
+      # it (see `applyCurated`); no run, sharded or not, writes to it. A "the
+      # tree is clean" assertion on this job is safe with respect to both
+      # files today, for different reasons.
       #
       # `description` refresh is a separate, narrower thing (DOR-1555): the
       # `pnpm --filter @dorkos/e2e run e2e` script this step calls sets

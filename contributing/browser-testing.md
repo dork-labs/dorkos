@@ -47,7 +47,8 @@ cd apps/e2e && PWDEBUG=1 npx playwright test tests/chat/send-message.spec.ts
 ```
 apps/e2e/
 ├── playwright.config.ts      # Multi-server config (Vite + Express)
-├── manifest.json              # Test registry + run history (AI health tracking)
+├── manifest.json              # Test registry + run history (regenerable, gitignored — DOR-726)
+├── manifest-curated.json      # Hand-curated relatedCode/explorationNotes (tracked)
 ├── GOTCHAS.md                 # Known anti-patterns and hard-won lessons
 ├── BROWSER_TEST_PLAN.md       # Manual + automated test coverage checklist
 ├── global-setup.ts            # Dismisses first-run onboarding on every API leg
@@ -218,7 +219,9 @@ Audits all tests, categorizes them as healthy/stale/broken/orphaned, and auto-fi
 
 ## Manifest
 
-`apps/e2e/manifest.json` is the central registry tracking all tests with metadata:
+`apps/e2e/manifest.json` is the central registry tracking all tests with metadata. It is **gitignored** (DOR-726): every run rewrites its `lastRun`/run-count fields, so no legitimate action could ever leave it clean tracked — two branches had to hand-restore it before committing when it still was. Delete it and it regenerates from nothing the next time the suite runs.
+
+`apps/e2e/manifest-curated.json` is the half that stays **tracked**: just each test's hand-set `relatedCode` and `explorationNotes`, nothing a run could regenerate on its own. `manifest-reporter.ts` merges it back into `manifest.json` on every write (`applyCurated`), so a person's curation survives even a `manifest.json` that started from nothing — the loss a first cut of the gitignore fix caused, caught in review.
 
 ```json
 {
