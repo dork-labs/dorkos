@@ -6,14 +6,6 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { MessageRow } from '../MessageRow';
 
-// Mock motion/react to render plain elements in tests
-vi.mock('motion/react', () => ({
-  motion: {
-    div: ({ children, ...props }: React.ComponentProps<'div'>) => <div {...props}>{children}</div>,
-  },
-  AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
-
 // Mock MessageTrace to avoid real data fetching
 vi.mock('../MessageTrace', () => ({
   MessageTrace: ({ messageId, onClose }: { messageId: string; onClose?: () => void }) => (

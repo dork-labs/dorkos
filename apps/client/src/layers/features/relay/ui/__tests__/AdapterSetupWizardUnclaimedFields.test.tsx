@@ -23,13 +23,6 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { AdapterSetupWizard } from '../AdapterSetupWizard';
 import type { AdapterManifest, CatalogInstance } from '@dorkos/shared/relay-schemas';
 
-vi.mock('motion/react', () => ({
-  motion: {
-    div: ({ children, ...props }: React.ComponentProps<'div'>) => <div {...props}>{children}</div>,
-  },
-  AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
-
 // ---------------------------------------------------------------------------
 // Fixtures — the real step/field splits, trimmed to what this file asserts
 // ---------------------------------------------------------------------------

@@ -237,8 +237,6 @@ export const GENERIC_EVENTS = [
   // prompt appears and once when it is answered, cancelled or times out; the
   // countdown in between is local, ticked from the start time inside the
   // interaction. See `specs/unified-conversation` §3.
-  // (No apostrophes here, for the reason the rooms block above gives: the guard
-  // test parses this block with a single-quote regex.)
   'interaction_pending',
   'interaction_resolved',
   // Rooms (spec `rooms`, ADR 260726-170125). The ENTRIES of a room ride that
@@ -246,8 +244,6 @@ export const GENERIC_EVENTS = [
   // the global signals for a reader NOT connected to it — the room list
   // changing, an activity bump that reorders the list and marks a room unread,
   // the count of agents working in it, and a read cursor moving.
-  // (No apostrophes here on purpose: the guard test parses this block with a
-  // single-quote regex, so a contraction would read as an event name.)
   'room_created',
   'room_updated',
   'room_member_added',
@@ -275,8 +271,6 @@ export const GENERIC_EVENTS = [
   // on the laptop clears on the phone. Both are ADDRESSED: they carry what an
   // agent is doing and what is waiting on a person, so an agent principal
   // receives neither.
-  // (No apostrophes here, for the reason the rooms block above gives: the guard
-  // test parses this block with a single-quote regex.)
   'notification',
   'notification_read',
 ] as const;

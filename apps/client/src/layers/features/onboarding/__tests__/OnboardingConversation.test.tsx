@@ -7,9 +7,9 @@ import { DORKBOT_ONBOARDING_LINES } from '@dorkos/shared/dorkbot-templates';
 import { ROLE_CANON } from '@dorkos/shared/profile-recommendations';
 import { useAgentBirthStore, useAppStore } from '@/layers/shared/model';
 import { hashToHslColor, hashToEmoji, resolveAgentVisual } from '@/layers/shared/lib';
+import { setPrefersReducedMotion } from '@/test-setup';
 
 // Instant reveals so the scripted lines land synchronously.
-vi.mock('motion/react', () => ({ useReducedMotion: () => true }));
 
 const mockNavigate = vi.fn();
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => mockNavigate }));
@@ -282,6 +282,12 @@ async function reachDiscovery() {
 describe('OnboardingConversation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // The whole flow is exercised under reduced motion here — its own former
+    // `vi.mock('motion/react', () => ({ useReducedMotion: () => true }))`
+    // replaced the WHOLE module for this file, so `motion` itself came back
+    // `undefined`; silently safe only because this flow's rendering never
+    // touches `motion.*`. DOR-1416.
+    setPrefersReducedMotion(true);
     mockOnboardingConfig = {
       agents: { defaultDirectory: '/home/kai/.dork/agents', defaultAgent: 'dorkbot' },
     };

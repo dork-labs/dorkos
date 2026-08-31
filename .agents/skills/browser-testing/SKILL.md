@@ -137,7 +137,7 @@ Run by tag: `npx playwright test --grep @smoke`
 
 ## 7. Manifest Management
 
-`apps/e2e/manifest.json` is automatically updated by the custom reporter (`apps/e2e/reporters/manifest-reporter.ts`) after each run.
+`apps/e2e/manifest.json` is automatically updated by the custom reporter (`apps/e2e/reporters/manifest-reporter.ts`) after each run. It is **gitignored** (DOR-726) — every run rewrites its run-stats fields, so it regenerates from nothing rather than staying tracked. `apps/e2e/manifest-curated.json` is the tracked half: just `relatedCode`/`explorationNotes`, which the reporter merges back into `manifest.json` on every write, so curating a test survives a `manifest.json` that starts from scratch. Edit the curated file by hand when you set either field for a test; don't hand-edit `manifest.json`, the next run overwrites it.
 
 - Test entries keyed by spec filename (e.g., `send-message`)
 - `specFile`/`feature` refresh from every run that saw the file, so a spec that moves directories is never left pointing at a path that no longer exists

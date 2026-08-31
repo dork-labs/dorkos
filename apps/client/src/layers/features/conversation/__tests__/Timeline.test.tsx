@@ -211,6 +211,25 @@ describe('Conversation.Timeline', () => {
     expect(screen.getByTestId('row-entry-2')).toHaveAttribute('data-index', '1');
   });
 
+  it('publishes the message-row count, not the row count', () => {
+    // e2e's `waitForHistory` (apps/e2e/pages/RoomsPage.ts, DOR-1377) polls
+    // `data-message-row-count` to know a room's whole history has landed,
+    // instead of inferring it from the scroller's measured/estimated height. A
+    // day divider is a row the virtualizer counts but is not a seeded message,
+    // so it must NOT inflate this number — otherwise the same "estimate looks
+    // like the real count" trap the geometry check fell into just moves here.
+    mount({
+      'data-testid': 'timeline',
+      rows: [
+        { kind: 'day-divider', id: 'divider-1', label: 'Today' },
+        messageRow('entry-1'),
+        messageRow('entry-2'),
+      ],
+    });
+
+    expect(screen.getByTestId('timeline')).toHaveAttribute('data-message-row-count', '2');
+  });
+
   describe('where it opens', () => {
     /** The landing's own answer, which only the wrapper publishes. */
     function landedOn(props: Partial<Parameters<typeof Conversation.Timeline>[0]> = {}) {

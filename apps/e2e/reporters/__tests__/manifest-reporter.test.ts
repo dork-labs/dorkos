@@ -354,4 +354,97 @@ describe('manifest-reporter', () => {
 
     expect(fs.statSync(manifestPath).mtimeMs).toBe(before);
   });
+
+  describe('manifest-curated.json (DOR-726)', () => {
+    let curatedPath: string;
+
+    beforeEach(() => {
+      curatedPath = path.join(
+        os.tmpdir(),
+        `manifest-curated-test-${Date.now()}-${Math.random().toString(36).slice(2)}.json`
+      );
+    });
+
+    afterEach(() => {
+      fs.rmSync(curatedPath, { force: true });
+    });
+
+    /** Seeds the scratch curated file with one hand-authored entry. */
+    function seedCurated(tests: Record<string, unknown>): void {
+      fs.writeFileSync(curatedPath, JSON.stringify({ version: 1, tests }, null, 2));
+    }
+
+    it("restores a curated entry's relatedCode/explorationNotes into a manifest.json that never had them — the untrack's own failure mode", () => {
+      // No seedManifest(): manifest.json starts empty, exactly as it does the
+      // first time a fresh checkout (or CI runner) regenerates the now-
+      // gitignored file from nothing. Without the curated merge, this is the
+      // 22-relatedCode/8-explorationNotes loss the DOR-726 review caught.
+      seedCurated({
+        'brand-new': {
+          relatedCode: ['apps/client/src/curated-file.ts'],
+          explorationNotes: ['a note only a person could have written'],
+        },
+      });
+      const reporter = new ManifestReporter({ manifestPath, curatedPath });
+      reporter.onBegin(fakeConfig());
+      reporter.onTestEnd(
+        fakeTestCase('a fresh test', 'chat/brand-new.spec.ts'),
+        fakeTestResult('passed')
+      );
+      reporter.onEnd(undefined as never);
+
+      const entry = readManifest().tests['brand-new'];
+      expect(entry.relatedCode).toEqual(['apps/client/src/curated-file.ts']);
+      expect(entry.explorationNotes).toEqual(['a note only a person could have written']);
+    });
+
+    it('overrides a stale relatedCode already sitting in manifest.json — curated always wins', () => {
+      seedManifest({ relatedCode: ['apps/client/src/old-path.ts'] });
+      seedCurated({
+        'rename-test': { relatedCode: ['apps/client/src/renamed-path.ts'] },
+      });
+      const reporter = new ManifestReporter({ manifestPath, curatedPath });
+      reporter.onBegin(fakeConfig());
+      reporter.onTestEnd(
+        fakeTestCase('shows the old, pre-rename behavior', 'chat/rename-test.spec.ts'),
+        fakeTestResult('passed')
+      );
+      reporter.onEnd(undefined as never);
+
+      expect(readManifest().tests['rename-test'].relatedCode).toEqual([
+        'apps/client/src/renamed-path.ts',
+      ]);
+    });
+
+    it('leaves relatedCode alone for a test the curated file says nothing about', () => {
+      seedManifest();
+      seedCurated({}); // no entries at all
+      const reporter = new ManifestReporter({ manifestPath, curatedPath });
+      reporter.onBegin(fakeConfig());
+      reporter.onTestEnd(
+        fakeTestCase('shows the old, pre-rename behavior', 'chat/rename-test.spec.ts'),
+        fakeTestResult('passed')
+      );
+      reporter.onEnd(undefined as never);
+
+      expect(readManifest().tests['rename-test'].relatedCode).toEqual([
+        'apps/client/src/some-file.ts',
+      ]);
+    });
+
+    it('defaults curatedPath to a sibling of manifestPath, not the real repo file', () => {
+      // No curatedPath option passed — a test whose manifestPath points at a
+      // temp file must not go on to read this repo's actual
+      // apps/e2e/manifest-curated.json (22 real entries) for the default.
+      const reporter = new ManifestReporter({ manifestPath });
+      reporter.onBegin(fakeConfig());
+      reporter.onTestEnd(
+        fakeTestCase('a fresh test', 'chat/brand-new.spec.ts'),
+        fakeTestResult('passed')
+      );
+      reporter.onEnd(undefined as never);
+
+      expect(readManifest().tests['brand-new'].relatedCode).toEqual([]);
+    });
+  });
 });

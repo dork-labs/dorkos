@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import { DORKBOT_ONBOARDING_LINES } from '@dorkos/shared/dorkbot-templates';
 import { TransportProvider } from '@/layers/shared/model';
+import { setPrefersReducedMotion } from '@/test-setup';
 import { ProfilePromptCard } from '../ui/ProfilePromptCard';
 import { useProfilePrompt } from '../model/use-profile-prompt';
 
@@ -25,11 +26,6 @@ function PromptHost() {
   if (!prompt.visible) return null;
   return <ProfilePromptCard prompt={prompt} />;
 }
-
-vi.mock('motion/react', () => ({
-  motion: { div: 'div' },
-  useReducedMotion: () => true,
-}));
 
 /** Config-shape fragments the card reads. */
 interface CardConfigOverrides {
@@ -99,7 +95,14 @@ async function renderCard(overrides: CardConfigOverrides = {}) {
 }
 
 describe('ProfilePromptCard', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // The suite's own local `motion/react` shadow used to answer
+    // `useReducedMotion: () => true`; deleting it (DOR-1416) silently flipped
+    // every case here to "no preference" instead. Restored via the shared
+    // toggle so the branch under test doesn't move out from under it.
+    setPrefersReducedMotion(true);
+  });
   afterEach(() => cleanup());
 
   it('shows once when every clause of the show condition holds', async () => {

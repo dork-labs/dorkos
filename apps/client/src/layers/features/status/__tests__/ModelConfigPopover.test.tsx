@@ -92,6 +92,11 @@ vi.mock('motion/react', () => ({
     {},
     {
       get: (_target, tag: string) => {
+        // `motion.create(Component)` wraps a component, unlike every other
+        // property here which is a tag name — a shadow that did not
+        // special-case this would treat "create" as the tag and hand back a
+        // broken <create> element instead of the caller's component (DOR-1416).
+        if (tag === 'create') return (Component: React.ElementType) => Component;
         const Component = React.forwardRef(
           (props: Record<string, unknown>, ref: React.Ref<HTMLElement>) => {
             const {

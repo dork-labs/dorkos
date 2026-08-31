@@ -38,39 +38,6 @@ vi.mock('react-qr-code', () => ({
   default: ({ value }: { value: string }) => <div data-testid="qr-code">{value}</div>,
 }));
 
-// Mock motion/react so AnimatePresence mode="wait" renders immediately in jsdom
-vi.mock('motion/react', () => ({
-  AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  motion: new Proxy(
-    {},
-    {
-      get: (_target, prop: string) => {
-        return ({ children, ...rest }: Record<string, unknown>) => {
-          const Tag = prop as keyof React.JSX.IntrinsicElements;
-          // Filter out motion-specific props
-          const htmlProps: Record<string, unknown> = {};
-          for (const [k, v] of Object.entries(rest)) {
-            if (
-              ![
-                'variants',
-                'initial',
-                'animate',
-                'exit',
-                'transition',
-                'onAnimationComplete',
-              ].includes(k)
-            ) {
-              htmlProps[k] = v;
-            }
-          }
-          // @ts-expect-error — dynamic tag rendering for test mock
-          return <Tag {...htmlProps}>{children}</Tag>;
-        };
-      },
-    }
-  ),
-}));
-
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,

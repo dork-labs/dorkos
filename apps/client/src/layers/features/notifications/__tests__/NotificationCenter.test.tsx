@@ -9,6 +9,7 @@ import type { ServerConfig } from '@dorkos/shared/types';
 import type { NotificationPrefs } from '@dorkos/shared/config-schema';
 import { NOTIFICATION_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
 import { createMockTransport } from '@dorkos/test-utils';
+import { setPrefersReducedMotion } from '@/test-setup';
 
 /** The blocking queue the watcher reads, swapped between renders. */
 const world = {
@@ -30,13 +31,6 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
     useEventSubscription: () => {},
   };
 });
-
-/** Whether the person has asked for less motion. Flipped per test. */
-let reducedMotion = false;
-vi.mock('motion/react', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('motion/react')>()),
-  useReducedMotion: () => reducedMotion,
-}));
 
 const { TransportProvider } = await import('@/layers/shared/model');
 const { configKeys, resetLegacySoundImportForTests } = await import('@/layers/entities/config');
@@ -88,7 +82,6 @@ function ask(id: string) {
 beforeEach(() => {
   played = [];
   world.signals = [];
-  reducedMotion = false;
   resetPermissionPrimerForTests();
   resetLegacySoundImportForTests();
   localStorage.clear();
@@ -160,7 +153,7 @@ describe('NotificationCenter — the all-clear chime', () => {
     // The visible beat in the bell IS suppressed under reduced motion. This one
     // must not be: somebody who asked for less movement, or who cannot see the
     // check mark at all, should still hear the queue empty.
-    reducedMotion = true;
+    setPrefersReducedMotion(true);
     const { rerender } = renderCenter();
     world.signals = [ask('a')];
     rerender(<NotificationCenter />);

@@ -9,15 +9,6 @@ import { TaskDetailPanel } from '../TaskDetailPanel';
 import type { VisibleBackgroundTask } from '../../../model/use-background-tasks';
 import { TASK_COLORS } from '../../../model/use-background-tasks';
 
-vi.mock('motion/react', () => ({
-  motion: {
-    div: ({ children, ...props }: Record<string, unknown> & { children?: React.ReactNode }) => (
-      <div {...props}>{children}</div>
-    ),
-  },
-  AnimatePresence: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
-}));
-
 afterEach(cleanup);
 
 function makeTask(overrides: Partial<VisibleBackgroundTask> = {}): VisibleBackgroundTask {

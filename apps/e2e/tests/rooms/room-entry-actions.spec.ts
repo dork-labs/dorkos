@@ -390,7 +390,7 @@ test.describe('Rooms — every message gets a menu', () => {
     await expect(roomsPage.threadComposer).toBeFocused();
   });
 
-  test('a room costs one Tab per message, not one per action', async ({
+  test('a threadless room costs one Tab per message, not one per action', async ({
     page,
     roomsApi,
     roomsPage,
@@ -408,6 +408,40 @@ test.describe('Rooms — every message gets a menu', () => {
     await expect(roomsPage.entries).toHaveCount(3, { timeout: SERVER_ROUND_TRIP_MS });
 
     await roomsPage.entries.nth(0).focus();
+    await page.keyboard.press('Tab');
+    await expect(roomsPage.entries.nth(1)).toBeFocused();
+
+    await page.keyboard.press('Tab');
+    await expect(roomsPage.entries.nth(2)).toBeFocused();
+  });
+
+  test('a threaded room costs one Tab per message PLUS one per thread reply row', async ({
+    page,
+    roomsApi,
+    roomsPage,
+  }) => {
+    // The sibling test above seeds a threadless room, so the thread reply row's
+    // own `<button>` (ThreadReplyRow.tsx) never enters that trail. It is the
+    // ONLY keyboard way into a thread (there is no other control on the row),
+    // so it must be tabbable — which means a room with threads costs one Tab
+    // per message plus one per thread reply row, a cost the sibling test's name
+    // promises does not exist (DOR-775).
+    const slug = `e2e-actions-thread-trail-${roomsApi.runId}`;
+    const room = await roomsApi.createChannel(slug, slug);
+    await roomsApi.postEntries(room.id, ['first', 'second', 'third']);
+    const [firstId] = await roomsApi.entryIds(room.id);
+    await roomsApi.postThreadReply(room.id, firstId!, 'a reply');
+
+    await page.goto(`/channels?id=${room.id}`);
+    await expect(roomsPage.entries).toHaveCount(3, { timeout: SERVER_ROUND_TRIP_MS });
+    await expect(roomsPage.replyRows).toHaveCount(1);
+
+    // first message -> its reply row -> second message -> third message: two
+    // presses would skip the row entirely and land straight on "second".
+    await roomsPage.entries.nth(0).focus();
+    await page.keyboard.press('Tab');
+    await expect(roomsPage.replyRows.first()).toBeFocused();
+
     await page.keyboard.press('Tab');
     await expect(roomsPage.entries.nth(1)).toBeFocused();
 

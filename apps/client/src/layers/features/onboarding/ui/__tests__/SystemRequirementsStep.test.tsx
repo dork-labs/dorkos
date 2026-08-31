@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import type { ReactNode } from 'react';
+import type { ElementType, ReactNode } from 'react';
 import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
@@ -13,7 +13,21 @@ import { SystemRequirementsStep } from '../SystemRequirementsStep';
 // Mock motion so animations resolve instantly and headings render as plain text.
 // `useReducedMotion → true` also collapses the min-scan timer to 0ms.
 vi.mock('motion/react', () => ({
-  motion: new Proxy({}, { get: (_t, prop) => (typeof prop === 'string' ? prop : undefined) }),
+  motion: new Proxy(
+    {},
+    {
+      get: (_t, prop) =>
+        // `motion.create(Component)` wraps a component, unlike every other
+        // property here which is a plain HTML tag name string — a shadow that
+        // did not special-case this would hand back the string "create" and
+        // crash the moment anything called it as a function (DOR-1416).
+        prop === 'create'
+          ? (Component: ElementType) => Component
+          : typeof prop === 'string'
+            ? prop
+            : undefined,
+    }
+  ),
   AnimatePresence: ({ children }: { children: ReactNode }) => <>{children}</>,
   useReducedMotion: () => true,
 }));

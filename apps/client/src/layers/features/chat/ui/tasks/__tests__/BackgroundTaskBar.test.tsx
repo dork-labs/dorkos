@@ -9,19 +9,6 @@ import { BackgroundTaskBar } from '../BackgroundTaskBar';
 import type { VisibleBackgroundTask } from '../../../model/use-background-tasks';
 import { TASK_COLORS } from '../../../model/use-background-tasks';
 
-// Mock motion/react to avoid animation complexity in unit tests
-vi.mock('motion/react', () => ({
-  motion: {
-    div: ({ children, ...props }: Record<string, unknown> & { children?: React.ReactNode }) => {
-      // Strip motion-specific props to avoid React DOM warnings
-      const { initial: _i, animate: _a, exit: _e, transition: _t, ...domProps } = props;
-      return <div {...domProps}>{children}</div>;
-    },
-  },
-  AnimatePresence: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
-  useReducedMotion: () => false,
-}));
-
 // Mock child components to isolate BackgroundTaskBar logic. The stub runner
 // only echoes the status it was handed, so nothing here can see what the runner
 // actually draws — that lives in AgentRunner.test.tsx, which drives the real

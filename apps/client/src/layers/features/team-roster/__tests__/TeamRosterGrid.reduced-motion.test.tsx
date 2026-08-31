@@ -18,7 +18,7 @@
  * not to.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { createElement, type ReactNode } from 'react';
+import { createElement, type ElementType, type ReactNode } from 'react';
 import { render, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 
@@ -39,12 +39,19 @@ vi.mock('motion/react', () => ({
   motion: new Proxy(
     {},
     {
-      get: (_target: unknown, tag: string) => (allProps: Record<string, unknown>) => {
-        const { children, ...rest } = allProps;
-        const filtered = Object.fromEntries(
-          Object.entries(rest).filter(([key]) => !MOTION_PROPS.has(key))
-        );
-        return createElement(tag, filtered, children as ReactNode);
+      get: (_target: unknown, tag: string) => {
+        // `motion.create(Component)` wraps a component, unlike every other
+        // property here which is a tag name — a shadow that did not
+        // special-case this would treat "create" as the tag and hand back a
+        // broken <create> element instead of the caller's component (DOR-1416).
+        if (tag === 'create') return (Component: ElementType) => Component;
+        return (allProps: Record<string, unknown>) => {
+          const { children, ...rest } = allProps;
+          const filtered = Object.fromEntries(
+            Object.entries(rest).filter(([key]) => !MOTION_PROPS.has(key))
+          );
+          return createElement(tag, filtered, children as ReactNode);
+        };
       },
     }
   ),

@@ -1,23 +1,14 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import type { SessionStatus, SessionLifecycle } from '@dorkos/shared/session-stream';
+import { setPrefersReducedMotion } from '@/test-setup';
 import { useSessionChatStore, type SessionState } from '../session-chat-store';
 import { useSessionStreamStore } from '../session-stream-store';
 import { useSessionListStore } from '../session-list-store';
 import { useSessionBorderState } from '../use-session-border-state';
-
-// Override the test-setup mock so we can toggle reduced motion per test.
-const reducedMotionRef = { value: false };
-vi.mock('motion/react', async () => {
-  const actual = await vi.importActual<typeof import('motion/react')>('motion/react');
-  return {
-    ...actual,
-    useReducedMotion: () => reducedMotionRef.value,
-  };
-});
 
 const SESSION_ID = 's1';
 
@@ -65,7 +56,6 @@ describe('useSessionBorderState', () => {
     useSessionChatStore.setState({ sessions: {}, sessionAccessOrder: [] });
     useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [] });
     useSessionListStore.setState({ sessions: {}, statuses: {}, statusCwds: {}, unseen: {} });
-    reducedMotionRef.value = false;
   });
 
   it('returns idle kind for a session with no store entry', () => {
@@ -156,7 +146,7 @@ describe('useSessionBorderState', () => {
 
   // Reduced motion
   it('suppresses pulse when prefers-reduced-motion is set', () => {
-    reducedMotionRef.value = true;
+    setPrefersReducedMotion(true);
     setSession({ status: 'streaming' });
     const { result } = renderHook(() => useSessionBorderState(SESSION_ID));
     expect(result.current.kind).toBe('streaming');
@@ -164,7 +154,7 @@ describe('useSessionBorderState', () => {
   });
 
   it('suppresses pulse for pending approval when reduced motion is set', () => {
-    reducedMotionRef.value = true;
+    setPrefersReducedMotion(true);
     setSession({ sdkState: 'requires_action' });
     const { result } = renderHook(() => useSessionBorderState(SESSION_ID));
     expect(result.current.kind).toBe('pendingApproval');

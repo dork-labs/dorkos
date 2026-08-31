@@ -22,49 +22,6 @@ vi.mock('@/layers/shared/model', async (importOriginal) => ({
 }));
 
 // ---------------------------------------------------------------------------
-// Mock: motion/react (strip animation props, render plain DOM elements)
-// ---------------------------------------------------------------------------
-
-vi.mock('motion/react', () => ({
-  motion: {
-    div: React.forwardRef(
-      (
-        {
-          initial: _i,
-          animate: _a,
-          exit: _e,
-          transition: _t,
-          whileTap: _w,
-          layoutId: _li,
-          layout: _lo,
-          ...props
-        }: Record<string, unknown> & { children?: React.ReactNode },
-        ref: React.Ref<HTMLDivElement>
-      ) => <div ref={ref} {...props} />
-    ),
-    button: React.forwardRef(
-      (
-        {
-          initial: _i,
-          animate: _a,
-          exit: _e,
-          transition: _t,
-          whileTap: _w,
-          layoutId: _li,
-          layout: _lo,
-          autoFocus,
-          ...props
-        }: Record<string, unknown> & { children?: React.ReactNode; autoFocus?: boolean },
-        ref: React.Ref<HTMLButtonElement>
-        // eslint-disable-next-line jsx-a11y/no-autofocus -- Test mock mirrors production autoFocus behavior
-      ) => <button ref={ref} autoFocus={autoFocus} {...props} />
-    ),
-  },
-  AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  LayoutGroup: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
-
-// ---------------------------------------------------------------------------
 // Mock: dialog + drawer (required by ResponsiveDialog → ResponsiveDialogContent)
 // ---------------------------------------------------------------------------
 
