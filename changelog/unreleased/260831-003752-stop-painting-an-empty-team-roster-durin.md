@@ -5,4 +5,5 @@ covers:
 
 ### Fixed
 
-- Stop painting an empty team roster during the query-restore pause (DOR-1419)
+- The Team page no longer flashes "Nobody to show yet." for a moment on
+  startup before your team appears (DOR-1419)
