@@ -57,12 +57,12 @@ const NOTICES: ReadonlyArray<{ code: RoomNoticeCode; text: string; label: string
   {
     code: 'cascade_stopped',
     label: 'cascade_stopped — the back-and-forth hit its limit',
-    text: 'Kai stopped replying here, this back-and-forth hit its automatic-reply limit. Send a message to pick it back up.',
+    text: 'Kai stopped replying here. This back-and-forth hit its automatic-reply limit. Send a message to pick it back up.',
   },
   {
     code: 'budget_reached',
     label: 'budget_reached — the room hit its cap for the hour',
-    text: 'This room has used up its automatic replies for the hour. It will pick up again shortly — or raise the limit in Settings if this room is meant to be this busy.',
+    text: 'This room has used up its automatic replies for the hour. It will pick up again shortly, or raise the limit in Settings if this room is meant to be this busy.',
   },
   {
     code: 'addressing_changed',

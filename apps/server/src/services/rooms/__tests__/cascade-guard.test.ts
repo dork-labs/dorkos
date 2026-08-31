@@ -295,7 +295,7 @@ describe('cascade guard, wired', () => {
     expect(runner.turns).toHaveLength(0);
     // And it says NOTHING about it. The depth here is a stamp, not a chain that
     // ran: nobody was triggered, no back-and-forth happened, and "Bo stopped
-    // replying — this hit its automatic-reply limit" would be three false
+    // replying. This hit its automatic-reply limit" would be three false
     // claims plus a remedy that does nothing. Five ordinary posts by one agent
     // used to produce five such lines, one per room-mate.
     expect(log().filter((entry) => entry.kind === 'notice')).toEqual([]);

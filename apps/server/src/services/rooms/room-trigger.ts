@@ -976,7 +976,7 @@ export class RoomTriggerDispatcher {
         // against an entry that is its OWN cascade root did not come from a
         // back-and-forth — it comes from the ceiling `deriveCascade` synthesizes
         // for an agent posting with no turn behind it. Announcing it said "Bo
-        // stopped replying here, this back-and-forth hit its automatic-reply
+        // stopped replying here. This back-and-forth hit its automatic-reply
         // limit" when Bo was never triggered, no exchange happened, and the
         // suggested remedy does nothing. Five ordinary posts by one agent
         // produced five such lines, one per room-mate, and the dedupe never
