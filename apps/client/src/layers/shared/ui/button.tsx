@@ -43,7 +43,10 @@ export type ButtonSize =
 
 // xs and icon-xs are intentionally small UI chrome — excluded from responsive scaling
 const RESPONSIVE_SIZE_CLASSES: Partial<Record<ButtonSize, string>> = {
-  sm: 'h-10 md:h-8',
+  // 44px on touch (Apple HIG / Material minimum), not 40px — DOR-771. Desktop
+  // stays md:h-8 (32px): a mouse pointer has no minimum target size, and this
+  // is the one field of the pair that matters for touch.
+  sm: 'h-11 md:h-8',
   default: 'h-11 md:h-9',
   lg: 'h-12 md:h-10',
   icon: 'size-11 md:size-9',
