@@ -95,7 +95,14 @@ at it. For any PR that deletes or renames files, paths, exports, config keys,
 hooks, commands, or scripts:
 
 - Enumerate every removed identifier: package name, file path, directory, exported
-  symbol, command, hook, env key, label.
+  symbol, command, hook, env key, label. **A changed user-visible string counts
+  too** — a placeholder, a label, an error message. Anything that matches on the
+  old text (a Playwright locator in another directory, a fixture, a snapshot) is
+  broken exactly like a renamed export, and a diff that "just" reworded a string
+  is where this is easiest to miss (PR #575: a composer placeholder changed from
+  "Search agents, features, commands..." to "Search rooms, agents, commands...",
+  and a locator matching on the old copy broke in a directory the author never
+  looked in).
 - For each one, search the whole post-merge tree for that token and confirm
   zero surviving references. Check prose and config too, not just code: `*.md`,
   `*.json` manifests, `.github/`, `settings.json`, `CLAUDE.md` / `AGENTS.md`,
@@ -114,6 +121,12 @@ hooks, commands, or scripts:
   runtime, build, or CI path resolves it.
 
 This is mechanical and cheap. Run it before concluding a deletion PR is clean.
+
+When a PR touches a Playwright locator that matches on copy, flag it: prefer a
+stable `data-testid` instead. Copy changes for reasons that have nothing to do
+with the test — a rewording, a translation, an A/B test — and a locator tied to
+it breaks every time, often in a directory nobody thought to check (see the
+PR #575 example above).
 
 ## Conventions to check (cheap, high-signal)
 
