@@ -16,8 +16,8 @@
     "test": "vitest run"
   },
   "optionalDependencies": {
-    "@anthropic-ai/claude-agent-sdk-darwin-arm64": "0.3.250",
-    "@anthropic-ai/claude-agent-sdk-win32-x64": "0.3.250",
+    "@anthropic-ai/claude-agent-sdk-darwin-arm64": "0.3.224",
+    "@anthropic-ai/claude-agent-sdk-win32-x64": "0.3.224",
     "@esbuild/darwin-arm64": "0.28.2",
     "@esbuild/win32-x64": "0.28.2",
     "@openai/codex-darwin-arm64": "npm:@openai/codex@0.147.0-darwin-arm64",
@@ -30,7 +30,7 @@
     "@dorkos/server": "workspace:*",
     "@dorkos/shared": "workspace:*",
     "@ngrok/ngrok": "^1.7.0",
-    "@openai/codex": "0.150.1",
+    "@openai/codex": "0.147.0",
     "@openai/codex-sdk": "~0.147.0",
     "@opencode-ai/sdk": "^1.18.15",
     "@scalar/express-api-reference": "^0.10.16",
