@@ -38,7 +38,8 @@ if (!fs.existsSync(openapiPath)) {
 // orphan MDX page that crashes `next build` at prerender ("Method X not found in
 // operation: /api/..."). Removing the generated `api/` subtree first guarantees
 // the output always matches the current spec. The hand-authored meta.json,
-// .gitkeep, and openapi.json live directly under docs/api/ and are untouched.
+// .gitkeep, openapi.json, and index.mdx live directly under docs/api/ and are
+// untouched.
 const generatedDir = path.join(outputDir, 'api');
 fs.rmSync(generatedDir, { recursive: true, force: true });
 

@@ -141,16 +141,13 @@
       "description": "Marketplace install pipeline, transaction engine, flows, conflict detection",
       "patterns": [
         "apps/server/src/services/marketplace/",
-        "packages/cli/src/commands/(install",
-        "uninstall",
-        "update",
-        "cache)"
+        "packages/cli/src/commands/(install|uninstall|update|cache)"
       ]
     },
     {
       "guide": "marketplace-packages.md",
       "description": "Package manifest schema, package types (plugin/agent/skill-pack/adapter), scaffolding",
-      "patterns": ["packages/marketplace/", "packages/cli/src/package-(init", "validate)-command"]
+      "patterns": ["packages/marketplace/", "packages/cli/src/package-(init|validate)-command"]
     },
     {
       "guide": "marketplace-registry.md",
@@ -274,10 +271,7 @@
         "services/core/mcp-tool-",
         "external-mcp/tool-security",
         "packages/evals/src/suite/governance",
-        "packages/cli/src/commands/(agent",
-        "task",
-        "activity",
-        "version)"
+        "packages/cli/src/commands/(agent|task|activity|version)"
       ]
     },
     {
@@ -533,9 +527,7 @@
       "patterns": [
         "services/core/capabilities/",
         "services/core/operator/",
-        "packages/cli/src/commands/(agent",
-        "task",
-        "activity)"
+        "packages/cli/src/commands/(agent|task|activity)"
       ]
     },
     {
@@ -699,6 +691,15 @@
         "packages/extension-api/",
         "apps/server/src/services/extensions/",
         "extension-events"
+      ]
+    },
+    {
+      "doc": "docs/api/index.mdx",
+      "description": "REST/SSE API landing page: base URL, authentication, and the generated per-resource reference under it",
+      "patterns": [
+        "apps/server/src/services/core/openapi-registry.ts",
+        "apps/server/src/env.ts",
+        "routes/mcp"
       ]
     },
     {

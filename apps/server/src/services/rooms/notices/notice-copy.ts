@@ -32,7 +32,7 @@ import type { BudgetRefusalScope } from '../limits/turn-budget.js';
  */
 export function buildCascadeNotice(agentName: string, subjectAuthorId: string): RoomEntryBody {
   return {
-    text: `${agentName} stopped replying here — this back-and-forth hit its automatic-reply limit. Send a message to pick it back up.`,
+    text: `${agentName} stopped replying here. This back-and-forth hit its automatic-reply limit. Send a message to pick it back up.`,
     notice: 'cascade_stopped',
     subjectAuthorId,
   };
@@ -55,8 +55,8 @@ export function buildBudgetNotice(scope: BudgetRefusalScope = 'room'): RoomEntry
   return {
     text:
       scope === 'global'
-        ? 'DorkOS has used up its automatic replies for the hour, across all your rooms. They will pick up again shortly — or raise the limit in Settings.'
-        : 'This room has used up its automatic replies for the hour. It will pick up again shortly — or raise the limit in Settings if this room is meant to be this busy.',
+        ? 'DorkOS has used up its automatic replies for the hour, across all your rooms. They will pick up again shortly, or raise the limit in Settings.'
+        : 'This room has used up its automatic replies for the hour. It will pick up again shortly, or raise the limit in Settings if this room is meant to be this busy.',
     notice: 'budget_reached',
   };
 }
@@ -515,7 +515,7 @@ export function buildAgentDeclinedNotice(
  */
 export function buildBridgeSecondAgentRefusedNotice(agentName: string): RoomEntryBody {
   return {
-    text: `${agentName} was not added — a bridged room can hold only one agent. The platform binding's permission to reply is set for one agent at a time, so a second agent here would have no way to answer the chat safely.`,
+    text: `${agentName} was not added. A bridged room can hold only one agent. The platform binding's permission to reply is set for one agent at a time, so a second agent here would have no way to answer the chat safely.`,
     notice: 'bridge_second_agent_refused',
   };
 }
@@ -663,7 +663,7 @@ export function buildBridgeBlockedNotice(reason: BridgeBlockedReason): RoomEntry
           'this connection. Turn on "Start conversations" for it in Connections › Messaging to let ' +
           'the agent reach out first.'
         : // lost_provenance — the server restarted mid-turn (§6.6).
-          'This answer lost its provenance — the server restarted mid-turn — and was treated as a ' +
+          'This answer lost its provenance (the server restarted mid-turn) and was treated as a ' +
           'new conversation. It stayed here.';
   return { text, notice: 'bridge_blocked' };
 }

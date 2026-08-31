@@ -2,7 +2,8 @@
  * Handler for `POST /api/sessions/:id/ui-action` — the generative-UI widget
  * interactivity return channel (spec gen-ui-tier1 §3, PR E), extracted from
  * `sessions.ts` so that route file stays under the 500-line rule
- * (`.claude/rules/file-size.md`), mirroring `session-events-handler.ts`.
+ * (`max-lines` in `packages/eslint-config/base.js`), mirroring
+ * `session-events-handler.ts`.
  *
  * A click on an `agent`-kind widget action lands here. Unlike `/submit-answers`
  * (which resolves a runtime interaction the agent is already blocked on), a
