@@ -1114,11 +1114,24 @@ test.describe('conversations in the command palette', () => {
     // `Agent › title`, whole and untruncated, in the row's own tooltip.
     await expect(row).toHaveAttribute('title', /›/);
 
-    const budget = await row.evaluate((el) => {
+    const budget = await row.evaluate(async (el) => {
       const line = el.querySelector('[data-slot="palette-session-line"]');
       const who = el.querySelector('[data-slot="palette-session-who"]');
       const title = el.querySelector('[data-slot="palette-session-title"]');
       if (!line || !who || !title) return null;
+
+      // Settle web fonts before either read below (DOR-1220). Observed:
+      // `titleMinWidth` and `sixCh` disagreed by ~0.7px against the 0.5px
+      // tolerance below, intermittently, under machine load. The callback
+      // here is one synchronous pass — nothing can swap a font mid-callback
+      // — so the mismatch is not two reads racing each other; it is one (or
+      // both) of them resolving against a font that had not finished
+      // settling by the time this callback ran. Awaiting `fonts.ready` first
+      // gives any in-flight font work a chance to finish before either
+      // measurement below is taken, which removed the flake in repeated
+      // testing; the precise browser-internal reason the unsettled read
+      // disagreed with the settled one was not pinned down further.
+      await document.fonts.ready;
 
       // What `6ch` is worth in the title's OWN font, measured rather than
       // guessed: `ch` is the advance width of a "0" in the element's font, so
