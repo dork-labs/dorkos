@@ -294,5 +294,22 @@ describe('Tunnel Route', () => {
       expect(res.status).toBe(500);
       expect(res.body.error).toBe('Disconnect failed');
     });
+
+    it('returns 409 AUTH_REQUIRED_FOR_EXPOSURE when the exposure guard blocks (DOR-574)', async () => {
+      setConfig(undefined);
+      mockCanExpose.mockReturnValue(false);
+
+      const res = await request(app).post('/api/tunnel/stop');
+
+      expect(res.status).toBe(409);
+      expect(res.body).toEqual({
+        error: 'Exposing DorkOS requires a login. Create an owner account first.',
+        code: 'AUTH_REQUIRED_FOR_EXPOSURE',
+      });
+      // Blocked before any ngrok work — the operator-only `tunnel.enabled` key
+      // is never written.
+      expect(tunnelManager.stop).not.toHaveBeenCalled();
+      expect(configManager.set).not.toHaveBeenCalled();
+    });
   });
 });

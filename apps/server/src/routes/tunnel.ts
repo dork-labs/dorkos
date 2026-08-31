@@ -107,6 +107,20 @@ router.post('/start', async (_req, res) => {
 });
 
 router.post('/stop', async (_req, res) => {
+  // Exposure guard (DOR-574): `/start` has always required this; `/stop` wrote
+  // the same operator-only `tunnel.enabled` key through no gate at all. The
+  // action fails safe (it only ever narrows exposure), but an ungated write to
+  // an operator-only config key is exactly the invariant this guard restores.
+  if (!canExpose()) {
+    logger.warn(
+      '[Tunnel] Blocked stop — exposing DorkOS requires a login (login disabled or no owner account)'
+    );
+    return res.status(409).json({
+      error: EXPOSURE_REQUIRES_LOGIN_MESSAGE,
+      code: AUTH_REQUIRED_FOR_EXPOSURE,
+    });
+  }
+
   try {
     await tunnelManager.stop();
 
