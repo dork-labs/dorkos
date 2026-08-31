@@ -767,16 +767,18 @@ export class RoomsPage {
    */
   async waitForHistory(total: number, timeout: number): Promise<void> {
     await expect(this.entries.first()).toBeVisible({ timeout });
+    // A broken selector here (the xpath walking to the wrong element, the
+    // attribute renamed) reads as `NaN`, and `NaN >= total` is false forever —
+    // the poll below would just time out with no hint of why. Naming the
+    // selector's own health first means that failure says "no such attribute"
+    // instead of "history never arrived".
+    const wrapper = this.scroller.locator('xpath=..');
+    await expect(wrapper).toHaveAttribute('data-message-row-count', /\d+/, { timeout });
     await expect
-      .poll(
-        () =>
-          this.scroller
-            .locator('xpath=..')
-            .getAttribute('data-message-row-count')
-            .then((value) => Number(value)),
-        { timeout }
-      )
-      .toBeGreaterThanOrEqual(total);
+      .poll(() => wrapper.getAttribute('data-message-row-count').then((value) => Number(value)), {
+        timeout,
+      })
+      .toBe(total);
   }
 
   /**

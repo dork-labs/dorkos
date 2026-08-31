@@ -390,7 +390,7 @@ test.describe('Rooms — every message gets a menu', () => {
     await expect(roomsPage.threadComposer).toBeFocused();
   });
 
-  test('a room costs one Tab per message, not one per action', async ({
+  test('a threadless room costs one Tab per message, not one per action', async ({
     page,
     roomsApi,
     roomsPage,
