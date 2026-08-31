@@ -423,7 +423,7 @@
         };
       })();
     </script>
-    <script>
+    <script data-desktop-class-detect>
       (function () {
         var t = localStorage.getItem('gateway-theme');
         var dark =
@@ -431,11 +431,18 @@
         if (dark) document.documentElement.classList.add('dark');
         // Desktop (Electron) shell detection, paint-safe: the preload script's
         // contextBridge runs before this inline script, so window.electronAPI
-        // is already available here. Drives the `desktop-darwin` CSS variant
-        // (drag region, traffic-light inset, selection defaults) before first
-        // paint, avoiding a flash of un-adapted chrome.
-        if (window.electronAPI && window.electronAPI.platform === 'darwin') {
-          document.documentElement.classList.add('desktop-darwin');
+        // is already available here.
+        //
+        // `desktop` is platform-neutral (DOR-562) — it drives chrome that
+        // applies to every desktop platform, like the non-selectable-text
+        // default that makes the app read as an app rather than a document.
+        // `desktop-darwin` stays macOS-only, for chrome that is meaningless
+        // against a native frame (the drag region, the traffic-light inset).
+        if (window.electronAPI) {
+          document.documentElement.classList.add('desktop');
+          if (window.electronAPI.platform === 'darwin') {
+            document.documentElement.classList.add('desktop-darwin');
+          }
         }
       })();
     </script>

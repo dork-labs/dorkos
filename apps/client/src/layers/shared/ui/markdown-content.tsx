@@ -76,10 +76,10 @@ export function MarkdownContent({
   literalTagContent,
 }: MarkdownContentProps) {
   return (
-    // desktop-darwin:select-text — see message-variants.ts for why: the
-    // desktop shell defaults chrome to non-selectable, and static markdown
-    // (setup guides, canvas documents, help text) is genuinely copyable
-    // content, not chrome.
+    // desktop:select-text — see message-variants.ts for why: the desktop
+    // shell defaults chrome to non-selectable on every platform (DOR-562),
+    // and static markdown (setup guides, canvas documents, help text) is
+    // genuinely copyable content, not chrome.
     //
     // **No `prose` classes here, and that is deliberate rather than an
     // oversight.** They were on this container for a long time and generated no
@@ -92,7 +92,7 @@ export function MarkdownContent({
     // the stylesheet imported above for the rest. Adding the plugin would have
     // meant a new dependency whose typography then had to be reconciled with
     // Streamdown's, to restyle surfaces that already look right.
-    <div className={cn('desktop-darwin:select-text', className)}>
+    <div className={cn('desktop:select-text', className)}>
       {/* Guard the render so a failed code-block chunk degrades to a note here
           instead of throwing to the route boundary. Reset on content change. */}
       <MarkdownErrorBoundary resetKey={content} fallback={errorFallback}>

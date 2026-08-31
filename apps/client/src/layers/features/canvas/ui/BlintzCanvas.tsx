@@ -33,16 +33,16 @@ export function BlintzCanvas({ value, editable, onChange, className }: BlintzCan
     // `display: contents` — the wrapper exists only to carry `data-theme` as an
     // ancestor of Blintz's `.milkdown`; it adds no box, so layout is unchanged.
     <div data-theme={resolvedTheme} className="contents">
-      {/* desktop-darwin:select-text — the desktop shell defaults chrome to
-          non-selectable (index.css). Canvas documents are content, and in view
-          mode (`editable={false}`) the ProseMirror surface is NOT contenteditable,
-          so without this the body-level user-select:none would make the document
-          unselectable (DOR-253). */}
+      {/* desktop:select-text — the desktop shell defaults chrome to
+          non-selectable on every platform (index.css). Canvas documents are
+          content, and in view mode (`editable={false}`) the ProseMirror surface
+          is NOT contenteditable, so without this the body-level
+          user-select:none would make the document unselectable (DOR-253). */}
       <MarkdownEditor
         value={value}
         editable={editable}
         onChange={onChange}
-        className={cn('desktop-darwin:select-text', className)}
+        className={cn('desktop:select-text', className)}
       />
     </div>
   );

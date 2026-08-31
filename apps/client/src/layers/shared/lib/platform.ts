@@ -77,9 +77,13 @@ export function localDeviceNoun(): string {
  *
  * Reflects the `desktop-darwin` class the bootstrap script in `index.html`
  * stamps onto `<html>` before first paint (from `window.electronAPI.platform`
- * exposed by the preload script's contextBridge). Drives the drag-region,
- * traffic-light inset, and desktop selection-default styling — see the
- * `desktop-darwin` custom variant in `index.css`.
+ * exposed by the preload script's contextBridge). Drives styling that only
+ * makes sense against macOS's frameless window — the drag region and the
+ * traffic-light inset — see the `desktop-darwin` custom variant in
+ * `index.css`. Chrome that applies to every desktop platform, like the
+ * selection-default (DOR-562), instead uses the platform-neutral `desktop`
+ * class/variant, which is stamped alongside this one on every OS running the
+ * shell.
  */
 export const isDesktopDarwin =
   typeof document !== 'undefined' && document.documentElement.classList.contains('desktop-darwin');

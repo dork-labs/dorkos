@@ -16,6 +16,7 @@
 @import '@xyflow/react/dist/style.css';
 
 @custom-variant dark (&:is(.dark *));
+@custom-variant desktop (&:is(.desktop *));
 @custom-variant desktop-darwin (&:is(.desktop-darwin *));
 @source '../node_modules/streamdown/dist/*.js';
 
@@ -616,15 +617,19 @@
 
 /* Desktop chrome defaults to non-selectable text (it reads like an app, not
    a document) — content surfaces opt back in explicitly below. `user-select`
-   is inherited, so the re-enables must be as explicit as the disable. */
-.desktop-darwin body {
+   is inherited, so the re-enables must be as explicit as the disable.
+
+   Platform-neutral (DOR-562): scoped to `.desktop`, not `.desktop-darwin`, so
+   Windows gets the same app-like chrome instead of drag-selectable labels
+   and sidebar rows like a web page. */
+.desktop body {
   -webkit-user-select: none;
   user-select: none;
 }
 
-.desktop-darwin input,
-.desktop-darwin textarea,
-.desktop-darwin [contenteditable='true'] {
+.desktop input,
+.desktop textarea,
+.desktop [contenteditable='true'] {
   -webkit-user-select: text;
   user-select: text;
 }
