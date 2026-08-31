@@ -258,6 +258,39 @@ describe('scanInstalledPackages', () => {
     expect(result[0].installedAt).toBeUndefined();
   });
 
+  it('surfaces adapterType for an installed connector adapter, matching what Browse shows (DOR-710)', async () => {
+    const connectorDir = join(dorkHome, 'plugins', 'slack-connector');
+    await writeManifest(connectorDir, {
+      schemaVersion: 1,
+      type: 'adapter',
+      adapterType: 'connector',
+      name: 'slack-connector',
+      version: '1.0.0',
+    });
+
+    const result = await scanInstalledPackages(dorkHome);
+    expect(result).toHaveLength(1);
+    expect(result[0].adapterType).toBe('connector');
+  });
+
+  it('never leaks adapterType onto a non-adapter package, even if the manifest carries the field', async () => {
+    // The same gate `flattenMergedEntry` applies for Browse: adapterType is
+    // meaningful only for `type: 'adapter'`, so it must not leak through for
+    // any other type even if present on disk.
+    const pluginDir = join(dorkHome, 'plugins', 'odd-plugin');
+    await writeManifest(pluginDir, {
+      schemaVersion: 1,
+      type: 'plugin',
+      adapterType: 'connector',
+      name: 'odd-plugin',
+      version: '1.0.0',
+    });
+
+    const result = await scanInstalledPackages(dorkHome);
+    expect(result).toHaveLength(1);
+    expect(result[0].adapterType).toBeUndefined();
+  });
+
   it('sees a CC-NATIVE package (only .claude-plugin/plugin.json, no .dork/manifest.json) — DOR-264', async () => {
     // The installer copies Claude Code packages verbatim, so a CC-native
     // install has no `.dork/manifest.json`. It must still be visible to

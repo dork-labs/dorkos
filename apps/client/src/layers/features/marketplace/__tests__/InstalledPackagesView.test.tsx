@@ -242,6 +242,28 @@ describe('InstalledPackagesView', () => {
       expect(screen.getByText('SHAPE')).toBeInTheDocument();
       expect(screen.getByText('v2.0.0')).toBeInTheDocument();
     });
+
+    it('shows the same cyan CONNECTOR badge Browse shows, for an installed connector adapter (DOR-710)', () => {
+      // Browse already renders CONNECTOR for adapterType: 'connector'; the
+      // installed view used to render the generic ADAPTER badge instead
+      // because the installed-package DTO carried no adapterType.
+      setInstalledState({
+        data: [
+          makeInstalled({
+            name: 'slack-connector',
+            type: 'adapter',
+            adapterType: 'connector',
+            version: '1.0.0',
+            installPath: '/tmp/.dork/plugins/slack-connector',
+          }),
+        ],
+      });
+
+      render(<InstalledPackagesView />);
+
+      expect(screen.getByText('CONNECTOR')).toBeInTheDocument();
+      expect(screen.queryByText('ADAPTER')).not.toBeInTheDocument();
+    });
   });
 
   describe('shape rows: apply + active', () => {

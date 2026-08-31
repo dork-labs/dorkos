@@ -46,7 +46,7 @@ function PackageRow({
   onUpdateClick,
   onUninstallClick,
 }: PackageRowProps) {
-  const { name, version, type, scope, installedFrom, installedAt } = installation;
+  const { name, version, type, scope, installedFrom, installedAt, adapterType } = installation;
   const dependencyWarnings = installation.dependencyWarnings ?? [];
   const isShape = type === 'shape';
   // The installed record ships only a slug (no `displayName`), so humanize it
@@ -67,7 +67,7 @@ function PackageRow({
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex flex-wrap items-center gap-2">
           <span className="text-sm font-semibold">{displayName}</span>
-          <PackageTypeBadge type={type} />
+          <PackageTypeBadge type={type} adapterType={adapterType} />
           {isActiveShape && <Badge variant="secondary">Active</Badge>}
           <Badge variant="outline" className="font-mono text-xs">
             v{version}

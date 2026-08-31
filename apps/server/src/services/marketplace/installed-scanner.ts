@@ -37,6 +37,15 @@ export interface InstalledPackage {
   version: string;
   /** Package type (plugin, agent, skill-pack, adapter). */
   type: PackageType;
+  /**
+   * Adapter type identifier from the manifest (e.g. `'slack'`, or the
+   * well-known `'connector'` value marking a connector-gateway package —
+   * `CONNECTOR_ADAPTER_TYPE` in `@dorkos/marketplace`). Present only for
+   * adapter packages, mirroring the gate `AggregatedPackage.adapterType`
+   * already applies for Browse (DOR-710) — never leaked for non-adapter
+   * entries.
+   */
+  adapterType?: string;
   /** Absolute path to the package root directory. */
   installPath: string;
   /** Marketplace source the package was installed from, if known. */
@@ -346,6 +355,7 @@ async function readManifestSummary(
     name: unknown;
     version: unknown;
     type: unknown;
+    adapterType: unknown;
   }>;
 
   if (
@@ -357,6 +367,11 @@ async function readManifestSummary(
       name: shallow.name,
       version: shallow.version,
       type: shallow.type as PackageType,
+      // Gated on type, mirroring the Browse-side gate in
+      // `flattenMergedEntry` (marketplace.ts): a manifest that sets
+      // adapterType on a non-adapter entry does not leak it downstream.
+      ...(shallow.type === 'adapter' &&
+        typeof shallow.adapterType === 'string' && { adapterType: shallow.adapterType }),
       installPath: packagePath,
     };
   }
@@ -395,6 +410,11 @@ async function validatedSummary(
     name: validated.manifest.name,
     version: validated.manifest.version,
     type: validated.manifest.type,
+    // Same gate as the shallow-parse branch above and Browse's
+    // `flattenMergedEntry`: only an adapter manifest carries this field.
+    ...(validated.manifest.type === 'adapter' && {
+      adapterType: validated.manifest.adapterType,
+    }),
     installPath: packagePath,
   };
 }
