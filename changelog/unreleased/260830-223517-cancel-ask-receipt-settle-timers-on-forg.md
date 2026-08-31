@@ -5,4 +5,4 @@ covers:
 
 ### Fixed
 
-- Fixed a rare bug where re-answering a request an agent had already rejected could make its confirmation card disappear too soon (DOR-1633)
+- Fixed a rare bug where answering a request again after the server refused your first answer (for example, another window already answered it) could make its confirmation card disappear too soon (DOR-1633)
