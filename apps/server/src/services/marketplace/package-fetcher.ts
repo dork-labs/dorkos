@@ -25,6 +25,7 @@ import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import type { Logger } from '@dorkos/shared/logger';
 import {
   parseDorkosSidecar,
@@ -520,7 +521,7 @@ function isFileUrl(source: string): boolean {
  * @param source - A `file://` URL produced by `pathToFileURL` or hand-built.
  */
 function fileUrlToPath(source: string): string {
-  return new URL(source).pathname;
+  return fileURLToPath(source);
 }
 
 /**

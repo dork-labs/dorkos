@@ -392,5 +392,26 @@ describe('PackageFetcher', () => {
       expect(cache.putPackage).not.toHaveBeenCalled();
       expect(downloader.cloneRepository).not.toHaveBeenCalled();
     });
+
+    it('fetchFromGit decodes a file:// path whose directory name contains a space', async () => {
+      // node:url's fileURLToPath decodes percent-escapes (e.g. %20 -> ' ');
+      // new URL(source).pathname does not, and previously left the encoded
+      // form in the returned path (DOR-412).
+      workDir = await mkdtemp(path.join(tmpdir(), 'pkg-fetcher-file-'));
+      const pkgDir = path.join(workDir, 'my plugin');
+      await mkdir(pkgDir, { recursive: true });
+
+      const cache = buildCacheMock();
+      const downloader = buildDownloaderMock();
+      const fetcher = new PackageFetcher(cache, downloader, buildLogger());
+
+      const result = await fetcher.fetchFromGit({
+        packageName: 'my-plugin',
+        gitUrl: pathToFileURL(pkgDir).href,
+      });
+
+      expect(result.path).toBe(pkgDir);
+      expect(result.path).not.toContain('%20');
+    });
   });
 });
