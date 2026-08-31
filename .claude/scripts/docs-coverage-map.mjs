@@ -46,6 +46,33 @@ const GENERATED_COMMENT =
   'Do NOT hand-edit; edit INDEX.md and regenerate.';
 
 /**
+ * Split a pattern cell into its constituent regex patterns on `|`, but only at
+ * paren depth 0 — a `|` inside a parenthesised alternation like
+ * `commands/(agent|task|activity)` stays part of that one pattern instead of
+ * shredding it into unterminated fragments. Table-level `\|` escaping has
+ * already been resolved to a literal `|` by the time this runs, so a plain
+ * `.split('|')` cannot tell an alternation pipe from a pattern separator;
+ * paren depth is the signal that survives.
+ */
+function splitPatterns(cell) {
+  const patterns = [];
+  let current = '';
+  let depth = 0;
+  for (const ch of cell) {
+    if (ch === '(') depth++;
+    else if (ch === ')') depth = Math.max(0, depth - 1);
+    if (ch === '|' && depth === 0) {
+      patterns.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  patterns.push(current);
+  return patterns;
+}
+
+/**
  * Parse a pipe-delimited markdown table whose rows are wrapped in backticks and
  * may contain escaped pipes (`\|`) inside the pattern cell.
  */
@@ -75,7 +102,7 @@ function parseTable(lines, startMarker, stopMarkers) {
     const name = first;
     const description = cells[1].trim();
     const pattern = cells[cells.length - 1].replace(/`/g, '').trim();
-    rows.push({ name, description, patterns: pattern.split('|') });
+    rows.push({ name, description, patterns: splitPatterns(pattern) });
   }
   return rows;
 }
