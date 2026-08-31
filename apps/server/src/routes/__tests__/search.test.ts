@@ -31,6 +31,9 @@ import { createSearchRouter } from '../search.js';
 const AT = '2026-07-29T09:00:00.000Z';
 const ANA: AgentIdentity = { agentPath: '/agents/ana', displayName: 'Ana' } as AgentIdentity;
 
+/** A matched excerpt's real markers: sentinel control characters, not `<mark>` (DOR-1552). */
+const MARKED_SCHEDULER = '\u0001scheduler\u0002';
+
 let db: Db;
 let subsystem: RoomSubsystem;
 let ownerId: string;
@@ -144,7 +147,7 @@ describe('GET /api/search', () => {
     // for a query that had silently lost two of them.
     expect(res.body.results).toHaveLength(3);
     for (const hit of res.body.results) {
-      expect(hit.excerpt).toContain('<mark>scheduler</mark>');
+      expect(hit.excerpt).toContain(MARKED_SCHEDULER);
     }
   });
 
@@ -161,7 +164,7 @@ describe('GET /api/search', () => {
       ordinal: 1,
       role: 'assistant',
       createdAt: AT,
-      excerpt: expect.stringContaining('<mark>scheduler</mark>'),
+      excerpt: expect.stringContaining(MARKED_SCHEDULER),
     });
   });
 

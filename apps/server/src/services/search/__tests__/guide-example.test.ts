@@ -43,7 +43,7 @@ import { fileURLToPath } from 'url';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { messages as messagesTable, searchSources, eq, type Db } from '@dorkos/db';
 import { sweepFileSource } from '../jsonl-frontier.js';
-import { searchMessages } from '../query.js';
+import { searchMessages, MATCH_OPEN, MATCH_CLOSE } from '../query.js';
 import { SEARCH_SOURCES } from '../registry.js';
 import type {
   DiscoveryFailure,
@@ -479,7 +479,7 @@ describe('the worked example, run as a real source', () => {
     expect(hits[0]?.ordinal).toBe(0);
     expect(hits[0]?.role).toBe('user');
     expect(hits[0]?.createdAt).toBe('2026-08-25T10:00:00.000Z');
-    expect(hits[0]?.excerpt).toContain('<mark>deploy</mark>');
+    expect(hits[0]?.excerpt).toContain(`${MATCH_OPEN}deploy${MATCH_CLOSE}`);
   });
 
   it('reads only what the file gained since the last sweep', async () => {

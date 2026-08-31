@@ -3,11 +3,11 @@
  *
  * **`SearchHit.excerpt` is TEXT, not HTML**, and this module exists so nothing
  * ever has to be tempted to treat it otherwise. FTS5's `snippet()` wraps each
- * match in the literal characters `<mark>` and `</mark>` and leaves everything
- * around them exactly as it was typed — which is arbitrary text, `<script>`
- * included, because people paste error messages and markup into chat all day.
- * The schema's own TSDoc states the rule: a renderer escapes the text and
- * re-applies the marks, never assigns it to `innerHTML`.
+ * match in a pair of sentinel control characters (U+0001/U+0002 — see below)
+ * and leaves everything around them exactly as it was typed — which is
+ * arbitrary text, `<script>` included, because people paste error messages and
+ * markup into chat all day. The schema's own TSDoc states the rule: a renderer
+ * escapes the text and re-applies the marks, never assigns it to `innerHTML`.
  *
  * So the marks are parsed OUT here into a list of runs, and the component turns
  * each run into a React child. React escapes every string it renders, which
@@ -17,11 +17,17 @@
  * @module features/command-palette/model/search-excerpt
  */
 
-/** The literal characters `snippet()` opens a match with. */
-const MARK_OPEN = '<mark>';
+/**
+ * The character `snippet()` opens a match with — U+0001 (SOH), a control
+ * character no chat message can contain (DorkOS message bodies are ordinary
+ * typed or pasted text). Chosen over the earlier `<mark>` literal, which a
+ * message containing that exact substring made indistinguishable from a real
+ * match marker (DOR-1552).
+ */
+const MARK_OPEN = '\u0001';
 
-/** The literal characters `snippet()` closes a match with. */
-const MARK_CLOSE = '</mark>';
+/** The character `snippet()` closes a match with — U+0002 (STX), for the same reason as {@link MARK_OPEN}. */
+const MARK_CLOSE = '\u0002';
 
 /** One run of an excerpt: a stretch of text that either matched or did not. */
 export interface ExcerptRun {
@@ -34,18 +40,20 @@ export interface ExcerptRun {
 /**
  * Split an excerpt into its plain and matched runs, in order.
  *
- * The scan alternates: outside a mark it looks for the next `<mark>`, inside
- * one it looks for the next `</mark>`. Nothing else in the string is treated as
- * markup, so `<script>` and `<img onerror=…>` come back as ordinary text in an
- * ordinary run and are rendered as the characters somebody typed.
+ * The scan alternates: outside a mark it looks for the next opening sentinel,
+ * inside one it looks for the next closing sentinel. Nothing else in the
+ * string is treated as markup, so `<script>`, `<img onerror=…>`, and even the
+ * literal text `<mark>` come back as ordinary text in an ordinary run and are
+ * rendered as the characters somebody typed (DOR-1552 — a visible delimiter
+ * like `<mark>` could collide with that literal text; a control character a
+ * chat message cannot contain never does).
  *
- * **Unbalanced input degrades to text rather than to a guess.** A `<mark>` with
- * no closer leaves its tail marked; a stray `</mark>` outside a mark is not a
- * closer and stays in the text. Both can only arise from somebody literally
- * typing those characters into a message, in which case the excerpt is
- * ambiguous at the source and no reader can recover it — highlighting slightly
- * wrong is the harmless end of that, and there is no branch here that could
- * turn it into markup.
+ * **Unbalanced input degrades to text rather than to a guess.** An opening
+ * sentinel with no closer leaves its tail marked; a stray closing sentinel
+ * outside a mark is not a closer and stays in the text. Both can only arise
+ * from a corrupted index, since no message body itself can carry either
+ * sentinel — highlighting slightly wrong is the harmless end of that, and
+ * there is no branch here that could turn it into markup.
  *
  * @param excerpt - `SearchHit.excerpt`, as the route returned it.
  * @returns The runs, in order, with empty ones dropped. An empty excerpt gives

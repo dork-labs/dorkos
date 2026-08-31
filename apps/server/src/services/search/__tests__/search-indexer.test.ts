@@ -111,13 +111,19 @@ function frontierRows(): unknown[] {
     .all();
 }
 
-/** The query the search route will run — `snippet()` included, deliberately. */
+/**
+ * The query the search route will run — `snippet()` included, deliberately.
+ *
+ * Delimiters match `MATCH_OPEN`/`MATCH_CLOSE` in `../query.ts`: sentinel
+ * control characters (U+0001/U+0002), not the `<mark>` literal a chat message
+ * could actually contain (DOR-1552).
+ */
 function search(query: string): { origin_key: string; excerpt: string }[] {
   return raw
     .prepare(
-      `SELECT m.origin_key, snippet(messages_fts, 0, '<mark>', '</mark>', '…', 12) AS excerpt
-       FROM messages_fts f JOIN messages m ON m.id = f.rowid
-       WHERE messages_fts MATCH ? ORDER BY bm25(messages_fts) LIMIT 20`
+      "SELECT m.origin_key, snippet(messages_fts, 0, '\u0001', '\u0002', '…', 12) AS excerpt\n" +
+        '       FROM messages_fts f JOIN messages m ON m.id = f.rowid\n' +
+        '       WHERE messages_fts MATCH ? ORDER BY bm25(messages_fts) LIMIT 20'
     )
     .all(query) as { origin_key: string; excerpt: string }[];
 }
@@ -630,8 +636,8 @@ describe('SearchIndexer over the room log', () => {
     const hits = search('dogs');
 
     expect(hits).toHaveLength(2);
-    expect(hits.map((hit) => hit.excerpt).join(' ')).toContain('<mark>');
-    expect(hits.some((hit) => hit.excerpt.includes('<mark>dog</mark>'))).toBe(true);
+    expect(hits.map((hit) => hit.excerpt).join(' ')).toContain('\u0001');
+    expect(hits.some((hit) => hit.excerpt.includes('\u0001dog\u0002'))).toBe(true);
   });
 
   it('indexes a container far past SQLite s parameter ceiling for one statement', async () => {

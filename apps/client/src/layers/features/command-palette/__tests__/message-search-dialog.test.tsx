@@ -29,6 +29,10 @@ vi.mock('sonner', () => ({ toast: { info: toastInfo } }));
 
 // --- Fixtures ---
 
+/** The real sentinel characters `snippet()` wraps a match in (DOR-1552). */
+const OPEN = '\u0001';
+const CLOSE = '\u0002';
+
 const roomHit: SearchHit = {
   source: 'rooms',
   container: 'room-1',
@@ -36,7 +40,7 @@ const roomHit: SearchHit = {
   ordinal: 12,
   role: 'user',
   createdAt: '2026-08-24T10:00:00.000Z',
-  excerpt: 'we settled the <mark>port</mark> question in here',
+  excerpt: `we settled the ${OPEN}port${CLOSE} question in here`,
 };
 
 const sessionHit: SearchHit = {
@@ -46,7 +50,7 @@ const sessionHit: SearchHit = {
   ordinal: 3,
   role: 'assistant',
   createdAt: '2026-08-24T09:00:00.000Z',
-  excerpt: 'the <mark>port</mark> is bound at boot',
+  excerpt: `the ${OPEN}port${CLOSE} is bound at boot`,
 };
 
 const general: RoomSummary = {
