@@ -79,6 +79,31 @@ async function isOnScreen(page: Page, selector: string): Promise<boolean> {
 }
 
 test.describe('the sidebar’s bottom slot @smoke', () => {
+  // The spec dismisses a promo, which PATCHes `ui.promos.dismissedIds` to
+  // `~/.dork/config.json` — a write that outlives this test. Fine for CI's
+  // single run, but it made the spec impossible to `--repeat-each` to hunt
+  // flakes: from run 3 on, the promo was already dismissed and "the card is
+  // there at all" failed with "element(s) not found" (DOR-1584). Capture the
+  // baseline here and restore it in `afterEach` so every run starts from the
+  // same undismissed state the first one did.
+  let dismissedIdsBefore: string[] = [];
+
+  test.beforeEach(async ({ request }) => {
+    const res = await request.get('/api/config');
+    if (!res.ok()) return;
+    // GET flattens this to `dismissedPromoIds` (`routes/config.ts`) — a
+    // DIFFERENT shape than the PATCH body below, which writes the schema's
+    // own nested `ui.promos.dismissedIds`.
+    const config = (await res.json()) as { dismissedPromoIds: string[] };
+    dismissedIdsBefore = config.dismissedPromoIds;
+  });
+
+  test.afterEach(async ({ request }) => {
+    await request
+      .patch('/api/config', { data: { ui: { promos: { dismissedIds: dismissedIdsBefore } } } })
+      .catch(() => {});
+  });
+
   test('stays on screen while the list scrolls, and stays dismissed after a reload', async ({
     page,
     roomsApi,
