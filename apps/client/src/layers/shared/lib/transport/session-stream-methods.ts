@@ -29,12 +29,14 @@ import { streamSocketFrames } from './stream-socket-iterator';
  * carries other event families (sync updates, relay messages, heartbeats); only
  * these are part of the session-list contract.
  *
- * A SECOND, independent copy of the allowlist in `stream-manager.ts` — that one
- * gates the shipped HTTP cockpit, this one gates the Transport-contract path. A
- * name missing from either is a frame dropped in silence, so both are pinned
- * against `SessionListEventSchema` by tests (DOR-548). Exported for the reverse
- * half of that pin: proving no name here has outlived its discriminant needs the
- * set itself, not a guess at which stale names to probe for.
+ * The single source of truth: `stream-manager.ts` imports this rather than
+ * declaring its own copy (DOR-576 — the two used to drift independently). A
+ * name missing here is a frame dropped in silence on both the HTTP-path
+ * consumer here and the managed-path consumer in `stream-manager.ts`, so this
+ * set is pinned against `SessionListEventSchema` by tests (DOR-548) and
+ * exported for the reverse half of that pin: proving no name here has
+ * outlived its discriminant needs the set itself, not a guess at which stale
+ * names to probe for.
  */
 export const SESSION_LIST_EVENT_TYPES = new Set([
   'session_upserted',

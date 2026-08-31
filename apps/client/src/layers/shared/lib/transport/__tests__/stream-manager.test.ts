@@ -294,15 +294,16 @@ describe('StreamManager', () => {
   });
 
   it('registers a frame handler for EVERY SessionListEventSchema discriminant (schema-drift pin)', () => {
-    // Real failure mode, and the exact one the sibling pin above exists for, on the
-    // OTHER allowlist: `SESSION_LIST_EVENT_TYPES` (stream-manager.ts) is the gate
-    // every session-list event the shipped web/Electron/CLI cockpit receives over
-    // HTTP passes through. A discriminant the server broadcasts but this array does
-    // not name gets no listener, and `EventSource` drops the frame in silence — no
-    // warning, no failed request, just a sidebar that stops updating. Nothing
-    // guarded it: the server-side `sse-event-allowlist` scan matches
-    // `.broadcast('literal')`, and the session-list broadcast site passes a
-    // variable (`eventFanOut.broadcast(outgoing.type, outgoing)`).
+    // Real failure mode, and the exact one the sibling pin above exists for, on
+    // `SESSION_LIST_EVENT_TYPES` (declared once in `session-stream-methods.ts` and
+    // imported here, DOR-576): it is the gate every session-list event the shipped
+    // web/Electron/CLI cockpit receives over HTTP passes through. A discriminant
+    // the server broadcasts but this set does not name gets no listener, and
+    // `EventSource` drops the frame in silence — no warning, no failed request,
+    // just a sidebar that stops updating. Nothing guarded it: the server-side
+    // `sse-event-allowlist` scan matches `.broadcast('literal')`, and the
+    // session-list broadcast site passes a variable
+    // (`eventFanOut.broadcast(outgoing.type, outgoing)`).
     const { manager, connections } = setup();
     manager.connectList();
     const handlers = connections[0]!.opts.eventHandlers;

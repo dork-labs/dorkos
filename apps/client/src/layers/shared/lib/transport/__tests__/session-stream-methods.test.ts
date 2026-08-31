@@ -248,14 +248,14 @@ describe('createSessionStreamMethods', () => {
     });
 
     it('forwards EVERY SessionListEventSchema discriminant (schema-drift pin)', async () => {
-      // Real failure mode: `SESSION_LIST_EVENT_TYPES` in session-stream-methods.ts
-      // is a SECOND, independent copy of the session-list allowlist — a `Set`,
+      // Real failure mode: `SESSION_LIST_EVENT_TYPES`, declared here and imported
+      // by `stream-manager.ts` (DOR-576, single source of truth) — a `Set`,
       // consulted at `subscribeSessionList`'s `frame.type` check. A discriminant
       // missing from it is `continue`d before validation: dropped in silence,
-      // exactly like the StreamManager copy this mirrors. This path is not wired
-      // into the live HTTP flow today (only DirectTransport reaches it), but it is
-      // an exported implementation of the Transport contract and one rewiring away
-      // from being as live as the other.
+      // exactly like the StreamManager consumer that shares this same set. This
+      // path is not wired into the live HTTP flow today (only DirectTransport
+      // reaches it), but it is an exported implementation of the Transport
+      // contract and one rewiring away from being as live as the other.
       //
       // The previous version of this test hardcoded "the 3 session-list event
       // types" and passed exactly one frame, so it would have gone on passing the
