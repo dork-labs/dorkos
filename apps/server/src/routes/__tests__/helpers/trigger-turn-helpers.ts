@@ -129,6 +129,11 @@ export function attachEventStream(
       if (!settled) {
         settled = true;
         clearTimeout(timer);
+        // A caller awaiting `ready` (never having seen a snapshot) must not
+        // be left hanging for the full `maxMs` just because THIS promise
+        // rejected — signal it now so that caller gets the loud error on
+        // `done` instead of a bare, uninformative timeout later.
+        signalReady();
         reject(new Error('events request errored'));
       }
     });
