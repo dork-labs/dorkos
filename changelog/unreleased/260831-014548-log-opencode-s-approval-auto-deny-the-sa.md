@@ -5,4 +5,4 @@ covers:
 
 ### Fixed
 
-- When an OpenCode agent gives up waiting for a permission nobody answered, the server now logs it — matching what already happens for Claude Code agents
+- Server logs now record it when an OpenCode agent's unanswered permission request times out, so support and troubleshooting can see it — matching what already happens for Claude Code agents
