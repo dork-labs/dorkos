@@ -810,9 +810,3 @@ The desktop app now runs on `http://localhost:4242`, the same address as the com
 ## For contributors
 
 This cycle changed how work lands in DorkOS itself. `main` now merges through a GitHub merge queue, so a pull request is tested against `main` plus everything queued ahead of it and nobody has to keep a branch up to date by hand ([ADR 260728-112203](https://github.com/dork-labs/dorkos/blob/main/decisions/260728-112203-merge-queue-replaces-branch-currency.md)). Database migrations picked up their own required checks in continuous integration, so a schema change cannot merge without one. And the changelog became audience-aware: an entry ships only when someone running DorkOS would notice it, which is why this release note is shorter than the commit log behind it.
-
-## Install / Update
-
-```
-npm install -g dorkos@0.57.0
-```

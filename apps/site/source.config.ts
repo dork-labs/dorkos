@@ -23,7 +23,6 @@ export const blogPosts = defineCollections({
       author: z.string().optional(),
       category: z.enum(['release', 'tutorial', 'announcement', 'news']).optional(),
       tags: z.array(z.string()).optional(),
-      image: z.string().optional(),
     }),
 });
 
