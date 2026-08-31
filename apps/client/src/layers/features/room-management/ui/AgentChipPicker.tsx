@@ -449,22 +449,19 @@ export function AgentChipPicker({
                   read as meaningful — see `AgentPickerCandidate.visual` for
                   why the directory is not hashed into a face here.
 
-                  That neutral disc has to stay `tint`, not `kind="agent"`'s
-                  default `fill`: `fill` sets BOTH `backgroundColor` and the
-                  fallback letter's `color` to values derived from `color`, so
-                  filling with `currentColor` makes the letter's own resolved
-                  foreground the background `currentColor` then resolves
-                  against — the letter paints itself invisible on its own
-                  disc. An explicit visual's colour is a real, opaque value
-                  `fill` handles fine; only the `currentColor` fallback needs
-                  the override back to `tint`. */}
+                  No `variant` override needed for that neutral disc:
+                  `IdentityAvatar` itself declines `kind="agent"`'s default
+                  `fill` when it cannot compute a readable foreground for the
+                  colour it was given, and `currentColor` is exactly such a
+                  colour (DOR-998) — this call site used to re-decide that
+                  guard by hand. An explicit visual's colour is a real, opaque
+                  value the primitive fills without hesitation. */}
               <IdentityAvatar
                 size="xs"
                 color={candidate.visual?.color ?? 'currentColor'}
                 emoji={candidate.visual?.emoji}
                 fallback={initialOf(candidate.displayName)}
                 kind="agent"
-                variant={candidate.visual ? undefined : 'tint'}
                 badge={null}
               />
               <span className="min-w-0 flex-1">

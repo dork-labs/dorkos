@@ -6,7 +6,7 @@
 import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import type { AuthorKind } from '@dorkos/shared/room-schemas';
-import { readableForeground } from '../lib/readable-foreground';
+import { canComputeReadableForeground, readableForeground } from '../lib/readable-foreground';
 import { cn } from '../lib/utils';
 import type { IdentityOrigin } from '../lib/identity-origin';
 import { AGENT_GLYPH, platformGlyph } from './identity-glyphs';
@@ -359,8 +359,18 @@ function IdentityAvatar({
   // "none" and has to survive the derivation.
   const defaults = defaultsForKind(kind, origin);
   const drawnShape = shape ?? defaults.shape;
-  const drawnVariant = variant ?? defaults.variant;
+  const requestedVariant = variant ?? defaults.variant;
   const drawnBadge = badge === undefined ? defaults.badge : badge;
+  // Decline fill rather than guess. `fill` sets both the background and the
+  // fallback letter's colour from `color`, and a colour `readableForeground`
+  // cannot parse — `currentColor`, a theme token — makes it guess a
+  // foreground that can land on the same value the background resolves to,
+  // painting an invisible letter (DOR-998). `tint` has no such problem, so
+  // this is the one axis the primitive overrides a caller's own choice on:
+  // every caller that asked for `fill` meant "a real, opaque colour", never
+  // "guess something readable on whatever this turns out to be".
+  const drawnVariant: NonNullable<VariantProps<typeof identityAvatarVariants>['variant']> =
+    requestedVariant === 'fill' && !canComputeReadableForeground(color) ? 'tint' : requestedVariant;
   const isFill = drawnVariant === 'fill';
   // The URL that failed, rather than a boolean, so a REPLACED photo is tried
   // again. A person who uploads a new one after a bad file would otherwise be

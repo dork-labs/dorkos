@@ -137,3 +137,23 @@ export function readableForeground(color: string): string {
   const luminance = rgb ? relativeLuminance(rgb) : 0;
   return luminance > LUMINANCE_THRESHOLD ? FOREGROUND_ON_LIGHT : FOREGROUND_ON_DARK;
 }
+
+/**
+ * Whether {@link readableForeground} can compute a REAL answer for `color`,
+ * as opposed to falling through to its dark-background default.
+ *
+ * `IdentityAvatar`'s `fill` variant reads this to decide whether filling is
+ * safe at all (DOR-998): `fill` sets both the disc's background and the
+ * fallback letter's colour from the same string, so a colour this cannot
+ * parse — `currentColor`, a theme token like `var(--color-orange-500)` or
+ * `hsl(var(--muted-foreground))` — makes `readableForeground` guess, and the
+ * guess can land on the same value the background itself resolves to,
+ * painting an invisible letter. `tint` has no such problem: its
+ * `color-mix()` is real CSS the browser resolves a `var()` token through
+ * correctly, so declining to `tint` costs nothing but the solid fill.
+ *
+ * @param color - The same string {@link readableForeground} would receive.
+ */
+export function canComputeReadableForeground(color: string): boolean {
+  return parseCssColor(color) !== null;
+}

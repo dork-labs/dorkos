@@ -167,6 +167,62 @@ describe('IdentityAvatar', () => {
     });
   });
 
+  describe('declining fill on a colour it cannot read a foreground for (DOR-998)', () => {
+    // `fill` sets both the disc's background and the fallback letter's colour
+    // from the same string. A colour `readableForeground` cannot parse makes
+    // it guess, and the guess can land on the same value the background
+    // itself resolves to — painting an invisible letter. The primitive steps
+    // back to `tint` instead of guessing, on every caller that asked for
+    // `fill`, whether by kind or by explicit prop.
+    it.each([
+      ['#7c3aed', true],
+      ['rgb(124, 58, 237)', true],
+      ['hsl(262 83% 58%)', true],
+      ['currentColor', false],
+      ['var(--color-orange-500)', false],
+      ['hsl(var(--muted-foreground))', false],
+    ] as const)('keeps fill for %s: %s', (color, keepsFill) => {
+      const { container } = render(<IdentityAvatar color={color} fallback="A" variant="fill" />);
+      const disc = container.querySelector('[data-slot="identity-avatar"]') as HTMLElement;
+
+      expect(disc.style.backgroundColor).toBe(keepsFill ? fill(color) : tint(color));
+      // The fallback letter's colour is only ever set for a fill that held —
+      // a declined fill leaves it alone, the same as an ordinary tint.
+      expect(disc.style.color).toBe(keepsFill ? disc.style.color : '');
+      if (keepsFill) expect(disc.style.color).toMatch(/^oklch\(/);
+    });
+
+    it('never leaves the fallback letter set for a declined fill', () => {
+      // Spelled out on its own rather than folded into the loop above: this is
+      // the exact defect (an invisible letter), not a byproduct of the table.
+      const { container } = render(
+        <IdentityAvatar color="currentColor" fallback="A" variant="fill" />
+      );
+      expect(
+        (container.querySelector('[data-slot="identity-avatar"]') as HTMLElement).style.color
+      ).toBe('');
+    });
+
+    it('declines fill from kind="agent"’s own default, not only from an explicit variant prop', () => {
+      // `AgentChipPicker`'s unresolved-agent row hits exactly this path:
+      // `kind="agent"` defaults to fill, no `variant` prop in sight.
+      const { container } = render(
+        <IdentityAvatar color="currentColor" fallback="A" kind="agent" />
+      );
+      const disc = container.querySelector('[data-slot="identity-avatar"]') as HTMLElement;
+      expect(disc.style.backgroundColor).toBe(tint('currentColor'));
+      // Still the agent's square shape — only the fill/tint choice changes.
+      expect(disc).toHaveClass('rounded-lg');
+    });
+
+    it('keeps the agent shape and badge when fill is declined', () => {
+      const { container } = render(
+        <IdentityAvatar color="currentColor" fallback="A" kind="agent" />
+      );
+      expect(badgeOf(container)).not.toBeNull();
+    });
+  });
+
   it('sets a letter a step below the circle, so one rule covers every size', () => {
     // jsdom does no layout, so what can be pinned is the rule itself: the
     // fallback glyph is sized relative to the disc's own font size. An emoji
