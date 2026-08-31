@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(site,e2e): demote README headings so package pages have one h1 (DOR-725)'
+  - 'fix(site): restore heading margins after demotion, add regression test (DOR-725)'
 ---
 
 ### Fixed
