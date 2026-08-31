@@ -840,8 +840,35 @@ describe('resolveSenderIdentity', () => {
     } as McpToolDeps;
 
     const identity = resolveSenderIdentity(deps, '/tmp/scratch');
-    expect(identity.subject).toBe('relay.session.scratch');
+    // basename + a short hash of the FULL cwd (DOR-514), not bare
+    // `path.basename(cwd)` — see the next test for why the hash suffix is the
+    // whole point, and this fixture's own module doc for why the basename
+    // stays legible rather than being hashed away entirely.
+    expect(identity.subject).toBe('relay.session.scratch-e549f2e8');
     expect(identity.agentId).toBeUndefined();
+  });
+
+  it('gives two projects that share a leaf directory name distinct identities (DOR-514)', () => {
+    // Before this, the non-agent session subject was `relay.session.${
+    // path.basename(cwd)}`, so `/a/project` and `/b/project` — two unrelated
+    // directories that happen to share a leaf name — collided on one identity.
+    // No agent ACL rule keys on this subject, so the collision was mild rather
+    // than the in-session escalation DOR-506 closed, but it is cheap to fix.
+    const deps = {
+      meshCore: {
+        getSubjectByPath: vi.fn().mockReturnValue(undefined),
+      } as unknown as McpToolDeps['meshCore'],
+    } as McpToolDeps;
+
+    const a = resolveSenderIdentity(deps, '/a/project');
+    const b = resolveSenderIdentity(deps, '/b/project');
+
+    expect(a.subject).not.toBe(b.subject);
+    // Both keep the shared leaf name legible — only the hash suffix differs —
+    // so a person reading a session-origin label still sees "project-…", not
+    // an opaque hash with no relation to the directory it came from.
+    expect(a.subject.startsWith('relay.session.project-')).toBe(true);
+    expect(b.subject.startsWith('relay.session.project-')).toBe(true);
   });
 
   it('uses the external principal when there is no session (undefined cwd)', () => {

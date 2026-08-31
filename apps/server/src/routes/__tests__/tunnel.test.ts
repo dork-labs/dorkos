@@ -294,5 +294,25 @@ describe('Tunnel Route', () => {
       expect(res.status).toBe(500);
       expect(res.body.error).toBe('Disconnect failed');
     });
+
+    it('always stops the tunnel, even when the exposure guard would block a start (DOR-574)', async () => {
+      // An earlier version of this route gated /stop behind canExpose(),
+      // mirroring /start. That gate stranded a running tunnel: start it while
+      // exposable, disable login afterward, and /stop would 409 forever — the
+      // one action that only ever narrows exposure must always succeed.
+      vi.mocked(tunnelManager.stop).mockResolvedValue(undefined);
+      setConfig({ enabled: true, domain: null, authtoken: null, auth: null });
+      mockCanExpose.mockReturnValue(false);
+
+      const res = await request(app).post('/api/tunnel/stop');
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ ok: true });
+      expect(tunnelManager.stop).toHaveBeenCalled();
+      expect(configManager.set).toHaveBeenCalledWith(
+        'tunnel',
+        expect.objectContaining({ enabled: false })
+      );
+    });
   });
 });

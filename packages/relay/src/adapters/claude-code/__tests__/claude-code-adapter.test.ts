@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
+import { StreamEventTypeSchema } from '@dorkos/shared/schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { ClaudeCodeAdapter } from '../index.js';
 import type {
@@ -1130,13 +1131,23 @@ describe('ClaudeCodeAdapter', () => {
 
   describe('agent message delivery', () => {
     it('skips sendMessage and marks trace processed for every StreamEvent payload type', async () => {
+      // A literal list, not an import of the production guard's own set: this
+      // is the fixture the guard is checked against, so it must stay able to
+      // catch a regression there rather than moving in lockstep with one.
+      // thinking_delta, tool_progress, and system_status were missing from
+      // the production guard until DOR-804 — a hand-set `replyTo:
+      // relay.agent.*` could route one of them back to an agent as a prompt
+      // instead of it being recognized as stream traffic.
       const STREAM_EVENT_TYPES = [
         'text_delta',
+        'thinking_delta',
         'tool_call_start',
         'tool_call_end',
         'tool_call_delta',
+        'tool_progress',
         'tool_result',
         'session_status',
+        'system_status',
         'approval_required',
         'question_prompt',
         'error',
@@ -1164,6 +1175,31 @@ describe('ClaudeCodeAdapter', () => {
           envelope.id,
           expect.objectContaining({ status: 'processed', processedAt: expect.any(Number) })
         );
+      }
+    });
+
+    it('skips every type StreamEventTypeSchema declares, not just the ones remembered above (DOR-804)', async () => {
+      // The production guard derives its set from StreamEventTypeSchema.options
+      // rather than a hand-copied literal (DOR-804), so a new stream event type
+      // joins the guard automatically. This test reads from the SCHEMA
+      // directly — not from the guard's own derived set, and not from the
+      // literal list in the test above — so a future regression back to a
+      // hand-copied, incomplete literal in production is what this test would
+      // catch: it cannot move in lockstep with that regression the way
+      // importing the production set would.
+      await adapter.start(relay);
+
+      for (const type of StreamEventTypeSchema.options) {
+        vi.clearAllMocks();
+        const envelope = createTestEnvelope({
+          payload: { type, data: { text: 'response from peer agent' } },
+          replyTo: 'relay.human.console.client-1',
+        });
+
+        const result = await adapter.deliver(envelope.subject, envelope);
+
+        expect(result.success, `type=${type}`).toBe(true);
+        expect(agentManager.sendMessage, `type=${type}`).not.toHaveBeenCalled();
       }
     });
   });

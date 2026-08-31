@@ -10,7 +10,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
-import type { PermissionMode } from '@dorkos/shared/schemas';
+import { StreamEventTypeSchema, type PermissionMode } from '@dorkos/shared/schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { defuseSystemTags } from '@dorkos/shared/untrusted-text';
@@ -159,23 +159,26 @@ function abortText(signal: AbortSignal): string | undefined {
   return 'TTL budget expired';
 }
 
-/** StreamEvent types that are skipped to prevent infinite loops (Bug 1 guard). */
-const STREAM_EVENT_TYPES = new Set([
-  'text_delta',
-  'tool_call_start',
-  'tool_call_end',
-  'tool_call_delta',
-  'tool_result',
-  'session_status',
-  'approval_required',
-  'question_prompt',
-  'error',
-  'done',
-  'task_update',
-  'relay_message',
-  'relay_receipt',
-  'message_delivered',
-]);
+/**
+ * StreamEvent types that are skipped to prevent infinite loops (Bug 1 guard).
+ *
+ * A hand-set `replyTo: relay.agent.*` can route any StreamEvent back to an
+ * agent as if it were a prompt; this set is what tells that case apart from a
+ * real message. Derived from {@link StreamEventTypeSchema}'s own enum values
+ * (DOR-804) rather than a hand-copied literal list: `thinking_delta`,
+ * `tool_progress`, and `system_status` were missing from an earlier literal
+ * copy of this set, each added only after it round-tripped as a prompt in
+ * production — three instances of the same class of gap. Deriving from the
+ * schema closes the class instead of the instances: a stream event type added
+ * to `StreamEventTypeSchema` automatically joins this guard, with nothing
+ * left to remember to update here.
+ *
+ * The fixture test pins its own literal expected list rather than importing
+ * this set, on purpose — an import would move in lockstep with a regression
+ * here instead of catching it; the test separately asserts this set's
+ * coverage against the schema so a mismatch between the two is still caught.
+ */
+const STREAM_EVENT_TYPES: ReadonlySet<string> = new Set(StreamEventTypeSchema.options);
 
 /**
  * Handle a relay.agent.{agentId} message.

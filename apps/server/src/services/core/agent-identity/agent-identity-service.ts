@@ -281,7 +281,23 @@ export class AgentIdentityService {
    * Deliberately ignores token expiry, unlike {@link resolve}: nothing is being
    * presented here, so there is no bearer secret to age out, and dropping the
    * identity would drop the agent's tier ceiling along with it (see the module
-   * TSDoc). Revocation still applies — that is the operator's real off switch.
+   * TSDoc). Revocation still applies — that is the operator's real off switch,
+   * now that DOR-490 gives it a production caller.
+   *
+   * **Residual risk noted in DOR-490's review, unresolved by that change.**
+   * `undefined` here does not mean "no privilege" to the caller —
+   * `tier-enforcement.ts`'s `enforceCapabilityTier` reads
+   * `identity?.tierCeiling ?? gate?.anonymousTierCeiling ??
+   * DEFAULT_ANONYMOUS_TIER_CEILING` ('destructive', the WIDEST ceiling, applied
+   * to every caller that does not identify itself). So a mid-session
+   * revocation only narrows an agent's ceiling today because every minted
+   * token happens to carry that same anonymous default. The moment any caller
+   * mints a token with a LOWER explicit `tierCeiling`, revoking it mid-session
+   * would WIDEN that agent's effective power rather than shutting it off —
+   * exactly backward from what revocation is for. Closing this needs
+   * `enforceCapabilityTier` to treat "this agentPath is known but revoked"
+   * differently from "this caller never identified itself," which this method
+   * cannot express on its own (it returns the same `undefined` for both).
    *
    * @param agentPath - Absolute path to the agent's project directory.
    * @returns The agent's current identity, or `undefined` when it has no live token.

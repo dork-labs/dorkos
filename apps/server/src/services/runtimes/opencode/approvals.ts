@@ -44,6 +44,7 @@
 import type { ApprovalEvent, PermissionMode, StreamEvent } from '@dorkos/shared/types';
 import { SESSIONS } from '../../../config/constants.js';
 import { logger, logError } from '../../../lib/logger.js';
+import { logRefusal } from '../../observability/refusals.js';
 import type { OpenCodePermissionState } from './session-event-mapper.js';
 import type { OpenCodeClientProvider } from './session-mapper.js';
 import type { OpenCodeSessionRegistry } from './session-registry.js';
@@ -90,6 +91,10 @@ interface PendingApproval {
   cwd: string;
   /** Armed auto-deny timer, which fires at the park ceiling. */
   timer: ReturnType<typeof setTimeout>;
+  /** The permission's key (`bash`, `edit`, …), for the auto-deny log line only. */
+  toolName?: string;
+  /** Server epoch ms this request was registered, for the auto-deny `waitedMs`. */
+  startedAt: number;
 }
 
 /**
@@ -122,13 +127,15 @@ export class PendingApprovalStore {
    *
    * @param sessionId - DorkOS session the request belongs to
    * @param permissionId - `Permission.id` (the `approval_required.toolCallId`)
-   * @param entry - Respond-routing info for the request
+   * @param entry - Respond-routing info for the request, plus the permission's
+   *   key (`toolName`) for the auto-deny log line — never logged content, only
+   *   what was asked and how long it waited.
    * @param onTimeout - Invoked once when the timer fires (after the record is removed)
    */
   register(
     sessionId: string,
     permissionId: string,
-    entry: { ocSessionId: string; cwd: string },
+    entry: { ocSessionId: string; cwd: string; toolName?: string },
     onTimeout: () => void
   ): void {
     // Re-registration (an upstream re-publish of the same permission) replaces
@@ -139,6 +146,7 @@ export class PendingApprovalStore {
     // their decision as "nobody was there".
     this.take(sessionId, permissionId);
     this.consumeExpired(sessionId, permissionId);
+    const startedAt = Date.now();
     // The PARK CEILING, not the countdown: past ten minutes the card says the
     // agent is waiting, and this is when the agent actually gives up (spec
     // `ask-parks-on-timeout` §6). The mapper still advertises the countdown,
@@ -148,6 +156,28 @@ export class PendingApprovalStore {
       const forSession = this.expired.get(sessionId) ?? new Set<string>();
       forSession.add(permissionId);
       this.expired.set(sessionId, forSession);
+      // The only DURABLE trace an expired prompt leaves (DOR-803) — the
+      // claude-code adapter's `logInteractionTimeout` companion, so "DorkOS
+      // writes a line saying which agent gave up" holds for every runtime, not
+      // just one. `silent`: OpenCode has no park notice of its own (see this
+      // module's TSDoc), so this line is the only record at all. Nothing from
+      // the request's input is logged — only what it was and how long it
+      // waited.
+      const waitedMs = Date.now() - startedAt;
+      logRefusal(
+        `[opencode] nobody answered in ${Math.round(waitedMs / 60_000)}m, so this was denied`,
+        {
+          reason: 'interaction_expired',
+          visibility: 'silent',
+          sessionId,
+          detail: {
+            interactionId: permissionId,
+            kind: 'approval',
+            toolName: entry.toolName,
+            waitedMs,
+          },
+        }
+      );
       onTimeout();
     }, SESSIONS.INTERACTION_PARK_CEILING_MS);
     // Never hold the event loop open for an approval countdown.
@@ -157,7 +187,7 @@ export class PendingApprovalStore {
       forSession = new Map();
       this.pending.set(sessionId, forSession);
     }
-    forSession.set(permissionId, { ...entry, timer });
+    forSession.set(permissionId, { ...entry, timer, startedAt });
   }
 
   /**
@@ -347,16 +377,21 @@ export async function* enforceApprovals(
         );
       }
     }
-    deps.approvals.register(sessionId, approval.toolCallId, { ocSessionId: askedIn, cwd }, () => {
-      void respondPermission(
-        deps.provider,
-        { ocSessionId: askedIn, cwd },
-        approval.toolCallId,
-        'reject'
-      ).catch((err: unknown) =>
-        logger.warn('[OpenCodeRuntime] approval auto-deny failed', logError(err))
-      );
-    });
+    deps.approvals.register(
+      sessionId,
+      approval.toolCallId,
+      { ocSessionId: askedIn, cwd, toolName: approval.toolName },
+      () => {
+        void respondPermission(
+          deps.provider,
+          { ocSessionId: askedIn, cwd },
+          approval.toolCallId,
+          'reject'
+        ).catch((err: unknown) =>
+          logger.warn('[OpenCodeRuntime] approval auto-deny failed', logError(err))
+        );
+      }
+    );
     yield event;
     return;
   }

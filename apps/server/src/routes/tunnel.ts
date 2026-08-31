@@ -107,6 +107,17 @@ router.post('/start', async (_req, res) => {
 });
 
 router.post('/stop', async (_req, res) => {
+  // DOR-574 revisited: an earlier version of this route gated `/stop` behind
+  // `canExpose()`, mirroring `/start`. Adversarial review rejected that —
+  // `canExpose()` answers "is login configured for exposure", not "is this
+  // caller authorized", so it gates nothing a real attacker cannot already
+  // walk past (when it is false, login is off and the whole API is open
+  // anyway). Worse, it actively strands a running tunnel: start it while
+  // exposable, disable login afterward, and `/stop` would 409 forever — the
+  // response tells the operator to CREATE a login in order to turn something
+  // OFF, and a default install with a stale `tunnel.enabled: true` from a
+  // prior session could never self-heal. Stopping a tunnel only ever narrows
+  // exposure, so it must always succeed regardless of the login posture.
   try {
     await tunnelManager.stop();
 

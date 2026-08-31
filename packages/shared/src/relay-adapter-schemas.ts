@@ -312,13 +312,24 @@ export const SlackAdapterConfigSchema = z
      * to an agent and authorizing a shell command are different privileges.
      */
     approverAllowlist: z.array(z.string()).default([]),
+    /**
+     * `.strict()` on the inner object is deliberate (DOR-655): a plain
+     * `z.object()` silently strips unrecognized keys, so
+     * `{"C01ABC": {"bogusKey": 1}}` used to parse to `{"C01ABC": {}}` — a
+     * successful save that discarded the person's rule with no signal at any
+     * layer. Strict refuses it instead, naming the offending key, matching
+     * the loud failure the DOR-640 work already gives a malformed
+     * `respondMode`.
+     */
     channelOverrides: z
       .record(
         z.string(),
-        z.object({
-          enabled: z.boolean().optional(),
-          respondMode: RespondModeSchema.optional(),
-        })
+        z
+          .object({
+            enabled: z.boolean().optional(),
+            respondMode: RespondModeSchema.optional(),
+          })
+          .strict()
       )
       .default({}),
   })

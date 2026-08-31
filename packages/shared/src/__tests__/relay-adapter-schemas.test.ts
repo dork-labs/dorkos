@@ -523,6 +523,22 @@ describe('SlackAdapterConfigSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('rejects (not silently empties) an unknown key inside a channelOverrides entry (DOR-655)', () => {
+    const result = SlackAdapterConfigSchema.safeParse({
+      ...baseConfig,
+      channelOverrides: {
+        C01ABC: { bogusKey: 1 },
+      },
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      // Names the offending key rather than failing generically, and must not
+      // be confused with the sibling "stored as {}" outcome this pins against.
+      expect(JSON.stringify(result.error.issues)).toContain('bogusKey');
+    }
+  });
+
   it('preserves backward compatibility with explicit old config', () => {
     const result = SlackAdapterConfigSchema.safeParse({
       ...baseConfig,
