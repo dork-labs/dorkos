@@ -6,7 +6,7 @@
  * actually holds, and a fixture standing in for any of those would only prove
  * the fixture round-trips.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   ROOM_EXPORT_FORMAT,
   RoomExportLineSchema,
@@ -84,6 +84,14 @@ describe('exporting a room', () => {
       { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana', '/agents/bo'] },
       human
     ).id;
+  });
+
+  // A safety net, not a duplicate: if the harness above throws before reaching
+  // its own `vi.useRealTimers()` call, fake timers would otherwise stay armed
+  // and leak into whichever test runs next — this guarantees they are cleared
+  // regardless of where a throw lands.
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   describe('what the file holds', () => {
