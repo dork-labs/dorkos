@@ -114,7 +114,7 @@ test('add → needs sign-in → Sign in → approve → connected with N tools',
   // before — the count-less fallback, which stopped being what this flow says
   // once DOR-1004 put `toolCount` on the poll result. It was failing on `main`
   // too.)
-  await expect(mcp.mcpSection.getByText(/Connected — 2 tools\./)).toBeVisible({
+  await expect(mcp.mcpSection.getByText(/Connected · 2 tools\./)).toBeVisible({
     timeout: 15_000,
   });
   // "Signed in", not "Connected": DorkOS now holds a token, but nothing has
