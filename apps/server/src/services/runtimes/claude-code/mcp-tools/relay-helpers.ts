@@ -3,7 +3,7 @@
  *
  * @module services/runtimes/claude-code/mcp-tools/relay-helpers
  */
-import path from 'node:path';
+import { createHash } from 'node:crypto';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 import { isServerManagedSubject, parseAgentSubject } from '@dorkos/relay';
@@ -46,7 +46,12 @@ export interface SenderIdentity {
  *   explicit-namespace agents.)
  * - Any other session (or the external `/mcp` surface, `cwd` undefined): a
  *   deterministic, non-agent identity so the sender is still stable and
- *   unspoofable — no agent ACL rules apply to it.
+ *   unspoofable — no agent ACL rules apply to it. Hashed from the FULL `cwd`
+ *   (DOR-514), not `path.basename(cwd)`: two unrelated projects that happen to
+ *   share a leaf directory name — `/a/project` and `/b/project` — used to
+ *   collide on one `relay.session.project` identity. No agent ACL rule keys on
+ *   this subject, so the collision was pre-existing and mild rather than the
+ *   in-session escalation DOR-506 closed, but it is cheap to remove.
  *
  * @param deps - Tool dependencies, for the Mesh registry lookup
  * @param cwd - The session's working directory, when known
@@ -56,7 +61,18 @@ export function resolveSenderIdentity(deps: McpToolDeps, cwd: string | undefined
     const identity = deps.meshCore.getSubjectByPath(cwd);
     if (identity) return identity;
   }
-  return { subject: cwd ? `relay.session.${path.basename(cwd)}` : EXTERNAL_MCP_SENDER };
+  return { subject: cwd ? `relay.session.${hashCwd(cwd)}` : EXTERNAL_MCP_SENDER };
+}
+
+/**
+ * A short, deterministic, filesystem-path-safe stand-in for a full `cwd` in a
+ * Relay subject. Not for secrecy — a subject is not a secret — only so two
+ * different directories never resolve to the same identity.
+ *
+ * @param cwd - The session's working directory.
+ */
+function hashCwd(cwd: string): string {
+  return createHash('sha256').update(cwd, 'utf8').digest('hex').slice(0, 12);
 }
 
 /**
