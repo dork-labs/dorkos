@@ -11,10 +11,16 @@ export default defineConfig([
 
   // process.env carve-outs. The desktop app has no env.ts: the main process
   // reads Electron/electron-vite runtime env (ELECTRON_RENDERER_URL) and
-  // composes the child server's env, and server-entry runs inside that child
-  // where env vars ARE the IPC contract with the main process.
+  // composes the child server's env, and server-entry (plus the orphan
+  // watchdog it arms) runs inside that child where env vars ARE the IPC
+  // contract with the main process.
   {
-    files: ['src/main/server-spawn.ts', 'src/main/window-manager.ts', 'src/server-entry.ts'],
+    files: [
+      'src/main/server-spawn.ts',
+      'src/main/window-manager.ts',
+      'src/server-entry.ts',
+      'src/orphan-watchdog.ts',
+    ],
     rules: { 'no-restricted-syntax': 'off' },
   },
 

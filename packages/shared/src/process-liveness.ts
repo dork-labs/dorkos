@@ -13,7 +13,7 @@
  * Shared by the server's single-instance lock
  * (`apps/server/src/lib/instance-lock.ts`, DOR-532, which first solved this)
  * and the desktop app's dev orphan watchdog
- * (`apps/desktop/src/main/server-entry.ts`, DOR-552) — two processes with the
+ * (`apps/desktop/src/orphan-watchdog.ts`, DOR-552) — two processes with the
  * same "is the pid I remember still who I think it is" question and, before
  * this, two different answers to it.
  *
