@@ -129,7 +129,7 @@ async function allowlist(): Promise<string[]> {
   const source = await readFile(STREAM_MANAGER, 'utf-8');
   const block = /export const GENERIC_EVENTS = \[([\s\S]*?)\] as const;/.exec(source);
   if (!block) throw new Error(`Could not find GENERIC_EVENTS in ${STREAM_MANAGER}`);
-  return [...block[1].matchAll(/'([^']+)'/g)].map((m) => m[1]).sort();
+  return [...block[1].matchAll(/'([A-Za-z0-9_]+)'/g)].map((m) => m[1]).sort();
 }
 
 // Both sides are read ONCE, at module load, rather than per case. Walking the
