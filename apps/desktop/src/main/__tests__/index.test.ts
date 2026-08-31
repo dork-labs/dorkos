@@ -595,6 +595,37 @@ describe('update IPC handlers', () => {
     // reported as not fullscreen rather than throwing.
     expect(handler({ sender: { id: 9999 } } as unknown as Electron.IpcMainInvokeEvent)).toBe(false);
   });
+
+  it('get-focus-state answers about the calling window (DOR-254)', async () => {
+    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    const windowManager = await import('../window-manager');
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    vi.mocked(windowManager.createWindow)
+      .mockReset()
+      .mockReturnValue(win as unknown as Electron.BrowserWindow);
+
+    await import('../index');
+    await app.emit('ready');
+
+    const handler = await getInvokeHandler('get-focus-state');
+
+    // A renderer that mounts (or reloads) after the window already lost
+    // focus recovers the current state on request rather than waiting for
+    // the next focus/blur transition.
+    expect(handler({ sender: win.webContents } as unknown as Electron.IpcMainInvokeEvent)).toBe(
+      true
+    );
+    win.blur();
+    expect(handler({ sender: win.webContents } as unknown as Electron.IpcMainInvokeEvent)).toBe(
+      false
+    );
+    // A sender with no owning window (already destroyed, or none tracked) is
+    // reported as unfocused rather than throwing.
+    expect(handler({ sender: { id: 9999 } } as unknown as Electron.IpcMainInvokeEvent)).toBe(false);
+  });
 });
 
 /**

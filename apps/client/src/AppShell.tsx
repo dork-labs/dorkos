@@ -573,7 +573,7 @@ export function AppShell() {
                         nothing to put away (P4). */}
                   {!isMobile && (
                     <Sidebar variant="inset">
-                      <TitlebarDragStrip />
+                      <TitlebarDragStrip isFullscreen={isFullscreen} />
                       {/* ── The header block: persistent chrome ──
                           The mount point for the workspace switcher, the New
                           button and the ⌘K pill (spec BC-43→46, task P2.4). It

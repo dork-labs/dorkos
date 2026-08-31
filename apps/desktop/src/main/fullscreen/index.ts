@@ -10,12 +10,15 @@
  * `enter-full-screen`/`leave-full-screen` to the renderer at all, so there
  * was nothing either component could key off of.
  *
- * @module main/fullscreen
+ * @module main/fullscreen/index
  */
 import type { BrowserWindow } from 'electron';
 
 /** IPC channel the main process pushes fullscreen state on (mirrors the preload and `useElectronFullscreen`). */
 export const FULLSCREEN_CHANGE_CHANNEL = 'window:fullscreen-changed';
+
+/** IPC channel a renderer asks this window's current fullscreen state on (mirrors the preload). */
+export const GET_FULLSCREEN_STATE_CHANNEL = 'get-fullscreen-state';
 
 /**
  * Subscribe a window's `enter-full-screen`/`leave-full-screen` events and push

@@ -5,4 +5,4 @@ covers:
 
 ### Fixed
 
-- Stop reserving traffic-light space in fullscreen
+- Full-screen mode no longer leaves an empty strip at the top of the window

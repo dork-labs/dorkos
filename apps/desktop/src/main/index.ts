@@ -37,6 +37,8 @@ import {
   requestNavigate,
   resolvePendingNavigate,
 } from './navigation';
+import { GET_FULLSCREEN_STATE_CHANNEL } from './fullscreen';
+import { GET_FOCUS_STATE_CHANNEL } from './window-focus';
 
 /** The custom URL scheme `dorkos://` deep links arrive on. */
 const DEEP_LINK_PROTOCOL = 'dorkos';
@@ -321,14 +323,23 @@ if (!gotTheLock) {
     return resolvePendingNavigate(event.sender.id);
   });
 
-  // Initial-state replay for `useElectronFullscreen` (see fullscreen.ts's
+  // Initial-state replay for `useElectronFullscreen` (see `./fullscreen`'s
   // `forwardFullscreenState`, which pushes changes but has nothing to send a
   // renderer that mounts — or remounts — after the window already entered
   // fullscreen). Answers about the calling renderer's own window, so unlike
   // the handlers above it needs no `isTrackedRenderer` gate: there is nothing
   // here for a second window to steal.
-  ipcMain.handle('get-fullscreen-state', (event) => {
+  ipcMain.handle(GET_FULLSCREEN_STATE_CHANNEL, (event) => {
     return BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false;
+  });
+
+  // Initial-state replay for `useWindowFocusDimming` (see `./window-focus`'s
+  // `forwardFocusState`). Same shape as the fullscreen replay above, and for
+  // the same reason: a renderer that mounts (or remounts, after a reload)
+  // while the window already lacks focus would otherwise never dim until the
+  // next focus/blur transition.
+  ipcMain.handle(GET_FOCUS_STATE_CHANNEL, (event) => {
+    return BrowserWindow.fromWebContents(event.sender)?.isFocused() ?? false;
   });
 
   app.on('ready', async () => {

@@ -634,12 +634,14 @@
   user-select: text;
 }
 
-/* Toast/error text selectable (DOR-254): sonner portals its toaster straight
-   onto <body> rather than into React's own tree, so it sits outside every
-   content-surface re-enable above and inherited the disable with nothing to
-   opt it back in — a person could not select and copy an error message out
-   of a toast. `[data-sonner-toast]` is the attribute sonner stamps on every
-   individual toast. */
+/* Toast/error text selectable (DOR-254): `<Toaster />` (App.tsx/AppShell.tsx)
+   renders straight into the component tree, same as everything else — sonner
+   does not portal it. It's just chrome that happens to render text, and no
+   content-surface re-enable container (`.chat-scroll-area`, `desktop:select-text`,
+   etc.) happens to wrap it, so it inherited the blanket disable above with
+   nothing opting it back in — a person could not select and copy an error
+   message out of a toast. `[data-sonner-toast]` is the attribute sonner
+   stamps on every individual toast. */
 .desktop [data-sonner-toast] {
   -webkit-user-select: text;
   user-select: text;
@@ -648,15 +650,24 @@
 /* Window dim-on-blur (DOR-254): native mac apps dim their chrome when the
    window loses focus (Linear does this too) — a small signal for which
    window is active when several are open. `useWindowFocusDimming` toggles
-   `.window-blurred` on `<html>` from `window`'s own focus/blur events;
+   `.window-blurred` on `<html>` from the main process's OS-level focus/blur
+   events (not the document's own DOM focus/blur — see that hook for why);
    macOS-only, hence scoped to `.desktop-darwin` rather than the
    platform-neutral `.desktop`. Targets the drag-region chrome (header, tab
-   strip, titlebar strip) and the sidebar — the same surfaces DOR-253 already
-   treats as "the app's chrome" rather than its content. */
-.desktop-darwin.window-blurred .app-drag-region,
-.desktop-darwin.window-blurred [data-slot='sidebar'] {
-  opacity: 0.55;
+   strip, titlebar strip) — the same surfaces DOR-253 already treats as "the
+   app's chrome" rather than its content.
+
+   `transition` lives on the always-applied rule, not the `.window-blurred`
+   one: putting it only on the blurred variant means the property itself
+   disappears the instant the class is removed, so refocusing snapped back to
+   full opacity instantly instead of fading in — only the dim-in direction
+   animated. */
+.desktop-darwin .app-drag-region {
   transition: opacity 150ms ease-out;
+}
+
+.desktop-darwin.window-blurred .app-drag-region {
+  opacity: 0.55;
 }
 
 *:where(:not(.copilot-view-content *)) {

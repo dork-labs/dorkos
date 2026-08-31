@@ -54,6 +54,54 @@ describe('useElectronFullscreen', () => {
     await waitFor(() => expect(result.current).toBe(true));
   });
 
+  it('does not let a stale getFullscreenState reply clobber a live event that arrived first (DOR-254 review)', async () => {
+    let deliver: (isFullScreen: boolean) => void = () => {};
+    const onFullscreenChange = vi.fn((cb: (isFullScreen: boolean) => void) => {
+      deliver = cb;
+      return vi.fn();
+    });
+    // The replay never resolves within this test — it stands in for "still
+    // in flight" when the live event below arrives.
+    let resolveReplay: (state: boolean) => void = () => {};
+    const getFullscreenState = vi.fn(
+      () => new Promise<boolean>((resolve) => (resolveReplay = resolve))
+    );
+    window.electronAPI = {
+      onFullscreenChange,
+      getFullscreenState,
+    } as unknown as Window['electronAPI'];
+
+    const { result } = renderHook(() => useElectronFullscreen());
+
+    // A real transition lands before the replay's answer does.
+    act(() => deliver(true));
+    expect(result.current).toBe(true);
+
+    // The replay finally resolves with what was true when it was requested —
+    // now stale. Applying it would flip the state back to a wrong answer.
+    await act(async () => resolveReplay(false));
+    expect(result.current).toBe(true);
+  });
+
+  it('does not apply a getFullscreenState reply that resolves after unmount', async () => {
+    const onFullscreenChange = vi.fn(() => vi.fn());
+    let resolveReplay: (state: boolean) => void = () => {};
+    const getFullscreenState = vi.fn(
+      () => new Promise<boolean>((resolve) => (resolveReplay = resolve))
+    );
+    window.electronAPI = {
+      onFullscreenChange,
+      getFullscreenState,
+    } as unknown as Window['electronAPI'];
+
+    const { unmount } = renderHook(() => useElectronFullscreen());
+    unmount();
+
+    // Resolving after unmount must not throw ("set state on an unmounted
+    // component") or otherwise misbehave.
+    await expect(act(async () => resolveReplay(true))).resolves.not.toThrow();
+  });
+
   it('unsubscribes on unmount', () => {
     const unsubscribe = vi.fn();
     const onFullscreenChange = vi.fn(() => unsubscribe);

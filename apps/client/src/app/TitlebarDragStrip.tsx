@@ -4,7 +4,19 @@
  * @module app/TitlebarDragStrip
  */
 import { cn } from '@/layers/shared/lib';
-import { useElectronFullscreen } from './use-electron-fullscreen';
+
+/** Props for {@link TitlebarDragStrip}. */
+export interface TitlebarDragStripProps {
+  /**
+   * Whether the desktop window is fullscreen (DOR-563). Passed down from
+   * {@link AppShell} rather than read via `useElectronFullscreen` here —
+   * that hook opens an IPC subscription and fires a replay `invoke` on
+   * mount, and AppShell already mounts one for the tab strip's own
+   * clearance; a second call site here would be a second subscription doing
+   * identical work.
+   */
+  isFullscreen: boolean;
+}
 
 /**
  * A thin strip pinned to the top of the sidebar that lets the user drag the
@@ -19,9 +31,7 @@ import { useElectronFullscreen } from './use-electron-fullscreen';
  * variant (stamped on `<html>` by the `index.html` bootstrap script) is the
  * only thing that reveals it. A no-op in the browser and Obsidian.
  */
-export function TitlebarDragStrip() {
-  const isFullscreen = useElectronFullscreen();
-
+export function TitlebarDragStrip({ isFullscreen }: TitlebarDragStripProps) {
   return (
     <div
       className={cn(

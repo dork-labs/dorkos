@@ -8,6 +8,7 @@ import type {
 import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { forwardFullscreenState } from './fullscreen';
+import { forwardFocusState } from './window-focus';
 import {
   attachWindowStatePersistence,
   clampSizeToWorkArea,
@@ -317,6 +318,7 @@ export function createWindow(options: CreateWindowOptions = {}): BrowserWindow {
   revealWhenReady(win, state);
   loadRenderer(win, options);
   forwardFullscreenState(win);
+  forwardFocusState(win);
   if (isPrimary) attachWindowStatePersistence(win);
 
   return win;

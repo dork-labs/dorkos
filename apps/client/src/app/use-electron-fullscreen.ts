@@ -11,6 +11,11 @@
  * In the browser and Obsidian `window.electronAPI` is absent, so this always
  * answers `false` there.
  *
+ * **Mounted once**, by {@link AppShell} — pass the result down to
+ * {@link TitlebarDragStrip} rather than calling this a second time. Each call
+ * opens its own IPC subscription and fires its own replay `invoke`, so two
+ * mounted call sites means two subscriptions doing identical work.
+ *
  * @module app/use-electron-fullscreen
  */
 import { useEffect, useState } from 'react';
@@ -22,17 +27,35 @@ import { useEffect, useState } from 'react';
  * `getPendingNavigate`), so a renderer that mounts — or remounts — after the
  * window already entered fullscreen still reflects it. Unsubscribes on
  * unmount.
+ *
+ * The replay is guarded against two races, both against the same fact:
+ * `getFullscreenState` is an async round-trip. A fast unmount before it
+ * resolves must not let a now-stale answer set state nothing is reading —
+ * and a real `onFullscreenChange` event landing WHILE the replay is still in
+ * flight must not have its answer clobbered a moment later by the replay's
+ * older one resolving after it.
  */
 export function useElectronFullscreen(): boolean {
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     if (!window.electronAPI?.onFullscreenChange) return;
-    const unsubscribe = window.electronAPI.onFullscreenChange(setIsFullscreen);
+    let live = true;
+    let sawLiveUpdate = false;
 
-    void window.electronAPI.getFullscreenState?.().then(setIsFullscreen);
+    const unsubscribe = window.electronAPI.onFullscreenChange((state) => {
+      sawLiveUpdate = true;
+      setIsFullscreen(state);
+    });
 
-    return unsubscribe;
+    void window.electronAPI.getFullscreenState?.().then((state) => {
+      if (live && !sawLiveUpdate) setIsFullscreen(state);
+    });
+
+    return () => {
+      live = false;
+      unsubscribe();
+    };
   }, []);
 
   return isFullscreen;

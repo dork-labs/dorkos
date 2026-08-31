@@ -149,6 +149,25 @@ declare global {
      * the current state.
      */
     getFullscreenState?(): Promise<boolean>;
+    /**
+     * Subscribe to this window's OS-level focus state (DOR-254). Deliberately
+     * the window's own `focus`/`blur`, not the document's: clicking into an
+     * `<iframe>` the cockpit hosts (an MCP app frame, an embedded browser)
+     * fires the document's own DOM `blur` with no OS focus change at all, so
+     * only the main process can answer this correctly.
+     *
+     * **Optional on purpose.** Absent in the browser cockpit, in the
+     * Obsidian embed, and in any desktop build predating this.
+     *
+     * @returns An unsubscribe function that removes the listener.
+     */
+    onFocusChange?(cb: (isFocused: boolean) => void): () => void;
+    /**
+     * Whether this window has OS focus right now. Called once on mount right
+     * after {@link onFocusChange}, so a renderer that mounts (or remounts)
+     * while the window already lacks focus still recovers the current state.
+     */
+    getFocusState?(): Promise<boolean>;
   }
 
   interface Window {

@@ -5,4 +5,5 @@ covers:
 
 ### Fixed
 
-- Make desktop chrome read as an app on Windows too
+- Labels, headers, and sidebar rows on Windows no longer act like drag-selectable web page text
+- Text in messages, code, and diffs can still be selected and copied on Windows
