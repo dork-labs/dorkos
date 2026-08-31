@@ -41,11 +41,31 @@ function runCli(root: string, args: string[]): string {
 test("adding one spec through the canonical script touches only that entry's lines", () => {
   const root = mkdtempSync(join(tmpdir(), 'spec-manifest-roundtrip-'));
   try {
+    // spec-manifest-ops.ts resolves its own root with `git rev-parse
+    // --show-toplevel`, falling back to `process.cwd()` only if that command
+    // fails. A bare temp dir has no failure guarantee: if the OS temp
+    // directory happens to sit inside some OTHER git repo, resolution walks
+    // up and finds that repo's root instead of the sandbox, and the CLI
+    // would write outside of `root` entirely. Making the sandbox its own
+    // repo removes the ambiguity rather than relying on the fallback path.
+    execFileSync('git', ['init', '--quiet'], { cwd: root });
+
     mkdirSync(join(root, 'specs'), { recursive: true });
     const manifestPath = join(root, 'specs', 'manifest.json');
     cpSync(REAL_MANIFEST, manifestPath);
     const before = readFileSync(manifestPath, 'utf-8');
     const beforeLines = before.split('\n');
+
+    // The bug this test guards against is specifically a unicode-escaping
+    // disagreement, so the fixture has to actually contain a non-ASCII
+    // character or this test cannot discriminate a regression from a no-op —
+    // it would pass just as well against a manifest of pure ASCII titles.
+    assert.match(
+      before,
+      /[^\x00-\x7F]/,
+      'the real specs/manifest.json fixture has no non-ASCII character today, so this test cannot ' +
+        'tell a fixed writer from a broken one — this assertion is supposed to fail loudly if that changes'
+    );
 
     runCli(root, ['add', 'dor-751-roundtrip-fixture', 'DOR-751 roundtrip fixture', '--quiet']);
 
