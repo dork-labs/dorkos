@@ -73,6 +73,26 @@ function buildWindowClosingItems(): Electron.MenuItemConstructorOptions[] {
 }
 
 /**
+ * Windows/Linux only: reclaims `Alt+F4` from Electron's `role: 'quit'`
+ * default and rebinds it to closing the active window (DOR-561).
+ *
+ * `Alt+F4` means "close the active window" on Windows, not "quit the
+ * application" — but since DOR-538, closing the window deliberately does
+ * NOT quit (the server keeps running and the tray is the way back). Binding
+ * the keystroke everyone reaches for to dismiss a window to `role: 'quit'`
+ * tore down the whole app and every running agent instead, which is the
+ * opposite of what that feature shipped to do.
+ *
+ * Hidden because "Close Window" already has a visible entry for this exact
+ * role (`CmdOrCtrl+Shift+W`, from {@link buildWindowClosingItems}); this item
+ * exists only to give `Alt+F4` somewhere correct to go, not to add a second
+ * visible menu row that does the same thing.
+ */
+function buildAltF4CloseItem(): Electron.MenuItemConstructorOptions {
+  return { visible: false, accelerator: 'Alt+F4', role: 'close' };
+}
+
+/**
  * Build the "Save Diagnostic Report…" item every platform's Help menu shares.
  *
  * Lives in the menu bar, not in the cockpit, because the failure it exists for
@@ -186,9 +206,13 @@ export function setupMenu(
             submenu: [
               settingsItem,
               { type: 'separator' },
-              // Windows convention is "Exit", not "Quit"; Alt+F4 is the
-              // idiomatic accelerator (role: 'quit' provides the behavior).
-              { label: 'Exit', role: 'quit', accelerator: 'Alt+F4' },
+              // Windows convention is "Exit", not "Quit" — but unlike on
+              // other platforms this item carries no accelerator: `Alt+F4`
+              // is the platform's close-the-active-window keystroke, not
+              // quit, and is rebound to `role: 'close'` instead (DOR-561,
+              // see buildAltF4CloseItem). Quitting stays reachable via this
+              // menu item and the tray.
+              { label: 'Exit', role: 'quit' },
             ],
           },
           {
@@ -219,7 +243,7 @@ export function setupMenu(
           },
           {
             label: 'Window',
-            submenu: [{ role: 'minimize' }, ...windowClosingItems],
+            submenu: [{ role: 'minimize' }, ...windowClosingItems, buildAltF4CloseItem()],
           },
           {
             label: 'Help',
