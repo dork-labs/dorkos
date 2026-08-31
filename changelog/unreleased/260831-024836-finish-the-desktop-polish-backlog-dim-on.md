@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(client): finish the desktop polish backlog — dim on blur, overscroll, selectable toasts'
+  - 'fix(desktop,client): dim on blur from OS focus, not DOM focus (review)'
 ---
 
 ### Fixed
