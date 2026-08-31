@@ -143,7 +143,7 @@ function UnifiedDiff({
       readOnly
       theme={theme}
       height="100%"
-      className="desktop-darwin:select-text h-full text-sm"
+      className="desktop:select-text h-full text-sm"
       extensions={extensions}
       basicSetup={{ highlightActiveLine: false, highlightActiveLineGutter: false }}
       // A non-editable doc only changes via the gutter's `rejectChunk`, which

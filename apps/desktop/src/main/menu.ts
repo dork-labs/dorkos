@@ -73,6 +73,26 @@ function buildWindowClosingItems(): Electron.MenuItemConstructorOptions[] {
 }
 
 /**
+ * Windows/Linux only: reclaims `Alt+F4` from Electron's `role: 'quit'`
+ * default and rebinds it to closing the active window (DOR-561).
+ *
+ * `Alt+F4` means "close the active window" on Windows, not "quit the
+ * application" — but since DOR-538, closing the window deliberately does
+ * NOT quit (the server keeps running and the tray is the way back). Binding
+ * the keystroke everyone reaches for to dismiss a window to `role: 'quit'`
+ * tore down the whole app and every running agent instead, which is the
+ * opposite of what that feature shipped to do.
+ *
+ * Hidden because "Close Window" already has a visible entry for this exact
+ * role (`CmdOrCtrl+Shift+W`, from {@link buildWindowClosingItems}); this item
+ * exists only to give `Alt+F4` somewhere correct to go, not to add a second
+ * visible menu row that does the same thing.
+ */
+function buildAltF4CloseItem(): Electron.MenuItemConstructorOptions {
+  return { visible: false, accelerator: 'Alt+F4', role: 'close' };
+}
+
+/**
  * Build the "Save Diagnostic Report…" item every platform's Help menu shares.
  *
  * Lives in the menu bar, not in the cockpit, because the failure it exists for
@@ -155,6 +175,16 @@ export function setupMenu(
             ],
           },
           { role: 'editMenu' },
+          // Deliberate (DOR-564): Electron's default `viewMenu` role includes
+          // "Toggle Developer Tools", and this is not gated on
+          // `app.isPackaged` — DevTools is reachable in every build,
+          // including a production one someone installed from dorkos.ai.
+          // For a developer-facing product that's a defensible default (the
+          // audience this ships to already expects to be able to inspect
+          // it), but it's an unexamined one without this comment saying so.
+          // It compounds the still-missing renderer CSP (DOR-560): DevTools
+          // plus no CSP is a wider attack surface than either alone. See the
+          // matching note on the Windows/Linux `toggleDevTools` item below.
           { role: 'viewMenu' },
           // The role is kept while the submenu is replaced. Dropping it and
           // hand-building a "Window" menu costs the macOS windows menu — the
@@ -186,9 +216,13 @@ export function setupMenu(
             submenu: [
               settingsItem,
               { type: 'separator' },
-              // Windows convention is "Exit", not "Quit"; Alt+F4 is the
-              // idiomatic accelerator (role: 'quit' provides the behavior).
-              { label: 'Exit', role: 'quit', accelerator: 'Alt+F4' },
+              // Windows convention is "Exit", not "Quit" — but unlike on
+              // other platforms this item carries no accelerator: `Alt+F4`
+              // is the platform's close-the-active-window keystroke, not
+              // quit, and is rebound to `role: 'close'` instead (DOR-561,
+              // see buildAltF4CloseItem). Quitting stays reachable via this
+              // menu item and the tray.
+              { label: 'Exit', role: 'quit' },
             ],
           },
           {
@@ -208,6 +242,9 @@ export function setupMenu(
             submenu: [
               { role: 'reload' },
               { role: 'forceReload' },
+              // Deliberate, not gated on `app.isPackaged` — see the matching
+              // note on macOS's `viewMenu` role above for why, and DOR-560
+              // for the missing CSP this compounds.
               { role: 'toggleDevTools' },
               { type: 'separator' },
               { role: 'resetZoom' },
@@ -219,7 +256,7 @@ export function setupMenu(
           },
           {
             label: 'Window',
-            submenu: [{ role: 'minimize' }, ...windowClosingItems],
+            submenu: [{ role: 'minimize' }, ...windowClosingItems, buildAltF4CloseItem()],
           },
           {
             label: 'Help',

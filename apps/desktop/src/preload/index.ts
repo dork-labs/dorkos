@@ -32,6 +32,18 @@ const RESET_CHANNEL = 'renderer:reset-and-relaunch';
 /** IPC channel the recovery page's "Save Diagnostic Report" goes out on (mirrors `DIAGNOSTICS_CHANNEL` in renderer-health/index.ts). */
 const DIAGNOSTICS_CHANNEL = 'renderer:save-diagnostics';
 
+/** IPC channel the main process pushes fullscreen state on (mirrors `FULLSCREEN_CHANGE_CHANNEL` in main/fullscreen/index.ts). */
+const FULLSCREEN_CHANGE_CHANNEL = 'window:fullscreen-changed';
+
+/** IPC channel this renderer asks its window's fullscreen state on (mirrors `GET_FULLSCREEN_STATE_CHANNEL` in main/fullscreen/index.ts). */
+const GET_FULLSCREEN_STATE_CHANNEL = 'get-fullscreen-state';
+
+/** IPC channel the main process pushes focus state on (mirrors `FOCUS_CHANGE_CHANNEL` in main/window-focus/index.ts). */
+const FOCUS_CHANGE_CHANNEL = 'window:focus-changed';
+
+/** IPC channel this renderer asks its window's focus state on (mirrors `GET_FOCUS_STATE_CHANNEL` in main/window-focus/index.ts). */
+const GET_FOCUS_STATE_CHANNEL = 'get-focus-state';
+
 /**
  * How many live `onCloseTab` subscriptions this renderer holds.
  *
@@ -91,8 +103,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * {@link retryRenderer} for who may call this.
    */
   saveDiagnosticReport: (): Promise<void> => ipcRenderer.invoke(DIAGNOSTICS_CHANNEL),
-  /** Get the app version from package.json (synchronous). */
-  getAppVersion: (): string => ipcRenderer.sendSync('get-app-version'),
   /** The current platform (darwin, win32, linux). */
   platform: process.platform,
   /**
@@ -212,4 +222,49 @@ contextBridge.exposeInMainWorld('electronAPI', {
       if (--closeTabSubscriptions === 0) ipcRenderer.send(CLOSE_TAB_UNSUBSCRIBE_CHANNEL);
     };
   },
+  /**
+   * Subscribe to this window's fullscreen state (DOR-563). macOS retracts the
+   * traffic lights into the auto-hiding menu bar while fullscreen holds, so
+   * the renderer drops the space it otherwise reserves for them (see
+   * `AppShell.tsx` and `TitlebarDragStrip.tsx`).
+   *
+   * @returns An unsubscribe function that removes the listener.
+   */
+  onFullscreenChange: (cb: (isFullScreen: boolean) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, isFullScreen: boolean): void =>
+      cb(isFullScreen);
+    ipcRenderer.on(FULLSCREEN_CHANGE_CHANNEL, listener);
+    return () => ipcRenderer.removeListener(FULLSCREEN_CHANGE_CHANNEL, listener);
+  },
+  /**
+   * Whether this window is fullscreen right now. Called once by
+   * `useElectronFullscreen` right after it subscribes via
+   * {@link onFullscreenChange}, so a renderer that mounts (or remounts) after
+   * the window already entered fullscreen still recovers the current state
+   * instead of waiting for the next transition.
+   */
+  getFullscreenState: (): Promise<boolean> => ipcRenderer.invoke(GET_FULLSCREEN_STATE_CHANNEL),
+  /**
+   * Subscribe to this window's OS-level focus state (DOR-254). Deliberately
+   * the window's own `focus`/`blur`, not the document's — `useWindowFocusDimming`
+   * needs "does the OS still consider this window frontmost", which a DOM
+   * `blur` listener in the renderer cannot answer: clicking into an `<iframe>`
+   * the cockpit hosts fires the document's own `blur` with no OS focus change
+   * at all.
+   *
+   * @returns An unsubscribe function that removes the listener.
+   */
+  onFocusChange: (cb: (isFocused: boolean) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, isFocused: boolean): void => cb(isFocused);
+    ipcRenderer.on(FOCUS_CHANGE_CHANNEL, listener);
+    return () => ipcRenderer.removeListener(FOCUS_CHANGE_CHANNEL, listener);
+  },
+  /**
+   * Whether this window has OS focus right now. Called once by
+   * `useWindowFocusDimming` right after it subscribes via
+   * {@link onFocusChange}, so a renderer that mounts (or remounts) while the
+   * window already lacks focus still recovers the current state instead of
+   * waiting for the next transition.
+   */
+  getFocusState: (): Promise<boolean> => ipcRenderer.invoke(GET_FOCUS_STATE_CHANNEL),
 });

@@ -16,6 +16,7 @@
 @import '@xyflow/react/dist/style.css';
 
 @custom-variant dark (&:is(.dark *));
+@custom-variant desktop (&:is(.desktop *));
 @custom-variant desktop-darwin (&:is(.desktop-darwin *));
 @source '../node_modules/streamdown/dist/*.js';
 
@@ -616,17 +617,57 @@
 
 /* Desktop chrome defaults to non-selectable text (it reads like an app, not
    a document) — content surfaces opt back in explicitly below. `user-select`
-   is inherited, so the re-enables must be as explicit as the disable. */
-.desktop-darwin body {
+   is inherited, so the re-enables must be as explicit as the disable.
+
+   Platform-neutral (DOR-562): scoped to `.desktop`, not `.desktop-darwin`, so
+   Windows gets the same app-like chrome instead of drag-selectable labels
+   and sidebar rows like a web page. */
+.desktop body {
   -webkit-user-select: none;
   user-select: none;
 }
 
-.desktop-darwin input,
-.desktop-darwin textarea,
-.desktop-darwin [contenteditable='true'] {
+.desktop input,
+.desktop textarea,
+.desktop [contenteditable='true'] {
   -webkit-user-select: text;
   user-select: text;
+}
+
+/* Toast/error text selectable (DOR-254): `<Toaster />` (App.tsx/AppShell.tsx)
+   renders straight into the component tree, same as everything else — sonner
+   does not portal it. It's just chrome that happens to render text, and no
+   content-surface re-enable container (`.chat-scroll-area`, `desktop:select-text`,
+   etc.) happens to wrap it, so it inherited the blanket disable above with
+   nothing opting it back in — a person could not select and copy an error
+   message out of a toast. `[data-sonner-toast]` is the attribute sonner
+   stamps on every individual toast. */
+.desktop [data-sonner-toast] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Window dim-on-blur (DOR-254): native mac apps dim their chrome when the
+   window loses focus (Linear does this too) — a small signal for which
+   window is active when several are open. `useWindowFocusDimming` toggles
+   `.window-blurred` on `<html>` from the main process's OS-level focus/blur
+   events (not the document's own DOM focus/blur — see that hook for why);
+   macOS-only, hence scoped to `.desktop-darwin` rather than the
+   platform-neutral `.desktop`. Targets the drag-region chrome (header, tab
+   strip, titlebar strip) — the same surfaces DOR-253 already treats as "the
+   app's chrome" rather than its content.
+
+   `transition` lives on the always-applied rule, not the `.window-blurred`
+   one: putting it only on the blurred variant means the property itself
+   disappears the instant the class is removed, so refocusing snapped back to
+   full opacity instantly instead of fading in — only the dim-in direction
+   animated. */
+.desktop-darwin .app-drag-region {
+  transition: opacity 150ms ease-out;
+}
+
+.desktop-darwin.window-blurred .app-drag-region {
+  opacity: 0.55;
 }
 
 *:where(:not(.copilot-view-content *)) {
@@ -1787,6 +1828,16 @@ body {
 .dork-tour-mask--reduced-motion,
 .dork-tour-mask--reduced-motion * {
   transition: none !important;
+}
+
+/* Overscroll tuning (DOR-254): the chat transcript and sidebar lists rubber-
+   banded on a trackpad even on desktop — the mobile-only pull-to-refresh
+   guard below never covered them since it's gated on viewport width, not
+   input device. `contain` stops scroll chaining into the page behind these
+   panels without touching that mobile rule. */
+.chat-scroll-area,
+[data-sidebar='content'] {
+  overscroll-behavior: contain;
 }
 
 /* iOS input zoom prevention (fallback for low --mobile-scale values) */

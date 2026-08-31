@@ -3,6 +3,7 @@ import { fork, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import log from 'electron-log';
+import { processStartTime } from '@dorkos/shared/process-liveness';
 import { resolveDataDirectory } from './dork-home';
 import { resolveServerCwd, type ServerWorkingDirectory } from './server-cwd';
 import { createStderrTail, type StderrTail } from './server-output';
@@ -320,18 +321,33 @@ function buildServerEnv(
   // directories, which is why the packaged app could not find tools the same
   // machine's terminal finds instantly. See shell-path.ts; a no-op in dev.
   const childPath = resolveChildPath(process.env.PATH);
+  // Dev only: tell the child which pid to watch so it can kill itself if the
+  // shell dies without cleaning up (see server-entry.ts's exitWhenOrphaned).
+  // It has to be handed down explicitly because the child cannot work it out
+  // for itself — `tsx` runs the server as a *grandchild* of this process, so
+  // from in there `process.ppid` is the tsx wrapper, not us. A packaged build
+  // needs none of this: Electron tears a UtilityProcess down with the app.
+  //
+  // `startedAt` rides alongside the pid (DOR-552) so the watchdog can
+  // corroborate it against its actual start time instead of trusting a bare
+  // `process.kill(pid, 0)` forever — see `@dorkos/shared/process-liveness`
+  // for why a recycled pid needs that. Captured HERE, not read back later
+  // from `process`, because by the time the watchdog might ask, this process
+  // could be gone; `processStartTime` returns `null` on Windows (no `ps`),
+  // in which case the child simply doesn't get the var and degrades to the
+  // pid-only check it always did.
+  const parentWatchEnv: Record<string, string> = {};
+  if (!app.isPackaged) {
+    parentWatchEnv.DORKOS_PARENT_PID = String(process.pid);
+    const startedAt = processStartTime(process.pid);
+    if (startedAt) parentWatchEnv.DORKOS_PARENT_STARTED_AT = startedAt.toISOString();
+  }
 
   return {
     DORKOS_PORT: String(port),
     NODE_ENV: app.isPackaged ? 'production' : 'development',
     DORKOS_MANAGED_BY: MANAGED_BY,
-    // Dev only: tell the child which pid to watch so it can kill itself if the
-    // shell dies without cleaning up (see server-entry.ts's exitWhenOrphaned).
-    // It has to be handed down explicitly because the child cannot work it out
-    // for itself — `tsx` runs the server as a *grandchild* of this process, so
-    // from in there `process.ppid` is the tsx wrapper, not us. A packaged build
-    // needs none of this: Electron tears a UtilityProcess down with the app.
-    ...(app.isPackaged ? {} : { DORKOS_PARENT_PID: String(process.pid) }),
+    ...parentWatchEnv,
     ...(dorkHome ? { DORK_HOME: dorkHome } : {}),
     ...(rendererUrl ? { DORKOS_CORS_ORIGIN: new URL(rendererUrl).origin } : {}),
     ...(clientDistPath ? { CLIENT_DIST_PATH: clientDistPath } : {}),
@@ -375,6 +391,7 @@ export function spawnServer(port: number): ServerChild {
     // against a stale pid; it would exit 0 a poll later and the shell would
     // report a crash it caused itself. Production never wants that watchdog.
     delete env.DORKOS_PARENT_PID;
+    delete env.DORKOS_PARENT_STARTED_AT;
   }
   const tail = createStderrTail();
 

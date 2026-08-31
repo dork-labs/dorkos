@@ -259,7 +259,7 @@ describe('setupMenu on win32/linux (DOR-310)', () => {
     }
   );
 
-  it('File has Settings… (CmdOrCtrl+,) then Exit (role quit, Alt+F4)', async () => {
+  it('File has Settings… (CmdOrCtrl+,) then Exit (role quit, no accelerator)', async () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     const { Menu, resetElectronMock } = await getElectronMock();
     resetElectronMock();
@@ -280,10 +280,13 @@ describe('setupMenu on win32/linux (DOR-310)', () => {
     expect(ensureWindow).toHaveBeenCalledTimes(1);
     expect(resolvePendingNavigate(1)).toBe(SETTINGS_ROUTE);
 
+    // DOR-561: Exit no longer claims Alt+F4 — that's the Windows convention
+    // for closing the active window, not quitting the app, and since DOR-538
+    // closing the window deliberately doesn't quit.
     const exitItem = fileMenu.find((item) => item.label === 'Exit');
     expect(exitItem).toBeDefined();
     expect(exitItem!.role).toBe('quit');
-    expect(exitItem!.accelerator).toBe('Alt+F4');
+    expect(exitItem!.accelerator).toBeUndefined();
   });
 
   it('Edit has the standard undo/redo/cut/copy/paste/selectAll roles', async () => {
@@ -326,7 +329,7 @@ describe('setupMenu on win32/linux (DOR-310)', () => {
     ]);
   });
 
-  it('Window has minimize, Close Tab and Close Window', async () => {
+  it('Window has minimize, Close Tab, Close Window, and a hidden Alt+F4 close item', async () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     const { Menu, resetElectronMock } = await getElectronMock();
     resetElectronMock();
@@ -342,7 +345,16 @@ describe('setupMenu on win32/linux (DOR-310)', () => {
       'minimize',
       'Close Tab',
       'Close Window',
+      'close',
     ]);
+
+    // DOR-561: Alt+F4 closes the active window (Windows convention), not
+    // the whole app. Hidden so it doesn't add a second visible "Close
+    // Window" row next to the CmdOrCtrl+Shift+W one.
+    const altF4Item = windowMenu.find((item) => item.accelerator === 'Alt+F4');
+    expect(altF4Item).toBeDefined();
+    expect(altF4Item!.role).toBe('close');
+    expect(altF4Item!.visible).toBe(false);
   });
 
   it('Help has the 3 external links, Save Diagnostic Report…, a gated Check for Updates…, and About DorkOS (role about)', async () => {

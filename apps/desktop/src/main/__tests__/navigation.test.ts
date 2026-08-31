@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { findDeepLinkArg, parseDeepLink } from '../navigation';
 
 vi.mock('electron', () => import('./electron-mock'));
+vi.mock('electron-log', () => import('./electron-log-mock'));
 
 describe('sendNavigate', () => {
   beforeEach(() => {
@@ -165,6 +166,73 @@ describe('requestNavigate / resolvePendingNavigate (pending-navigation handoff)'
 
     expect(resolvePendingNavigate(win.webContents.id)).toBe('/agents');
     expect(resolvePendingNavigate(win.webContents.id)).toBeNull();
+  });
+
+  it('expires a queued path older than the server-ready boot budget rather than delivering it stale (DOR-564)', async () => {
+    vi.useFakeTimers();
+    try {
+      const { resetElectronMock } = await import('./electron-mock');
+      resetElectronMock();
+      const { requestNavigate, resolvePendingNavigate } = await import('../navigation');
+      const { SERVER_READY_PARENT_TIMEOUT_MS } = await import('../../shared/boot-timeouts');
+
+      // A dorkos:// deep link arrives with no window/renderer to receive it.
+      requestNavigate(() => null, vi.fn(), '/agents');
+
+      vi.advanceTimersByTime(SERVER_READY_PARENT_TIMEOUT_MS + 1);
+
+      // The renderer finally subscribes the next morning — too late.
+      expect(resolvePendingNavigate(1)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('still delivers a queued path picked up just under the TTL — including a cold start that legitimately took the full boot budget', async () => {
+    vi.useFakeTimers();
+    try {
+      const { resetElectronMock } = await import('./electron-mock');
+      resetElectronMock();
+      const { requestNavigate, resolvePendingNavigate } = await import('../navigation');
+      const { SERVER_READY_PARENT_TIMEOUT_MS } = await import('../../shared/boot-timeouts');
+
+      requestNavigate(() => null, vi.fn(), '/agents');
+
+      // A slow first-run boot (DB setup, a mesh disk scan) can legitimately
+      // eat nearly the whole server-ready window before the window — and its
+      // renderer — even exists. A TTL shorter than that budget would drop
+      // this exact, entirely normal case.
+      vi.advanceTimersByTime(SERVER_READY_PARENT_TIMEOUT_MS - 1);
+
+      expect(resolvePendingNavigate(1)).toBe('/agents');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('logs when it drops an expired path, naming the path and the TTL (DOR-254 review)', async () => {
+    vi.useFakeTimers();
+    try {
+      const { resetElectronMock } = await import('./electron-mock');
+      resetElectronMock();
+      const { requestNavigate, resolvePendingNavigate } = await import('../navigation');
+      const { SERVER_READY_PARENT_TIMEOUT_MS } = await import('../../shared/boot-timeouts');
+      // Fetched through the 'electron-log' specifier, not a direct import of
+      // './electron-log-mock' — only the aliased specifier is guaranteed to
+      // be the same singleton '../navigation' resolves to after
+      // vi.resetModules() (see index.test.ts's matching note).
+      const { resetLogMock, default: log } =
+        (await import('electron-log')) as unknown as typeof import('./electron-log-mock');
+      resetLogMock();
+
+      requestNavigate(() => null, vi.fn(), '/agents');
+      vi.advanceTimersByTime(SERVER_READY_PARENT_TIMEOUT_MS + 1);
+
+      expect(resolvePendingNavigate(1)).toBeNull();
+      expect(vi.mocked(log.info)).toHaveBeenCalledWith(expect.stringContaining('/agents'));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('last-write-wins when requestNavigate is called twice before pickup', async () => {

@@ -166,6 +166,53 @@ describe('instance-lock', () => {
       expect(readLockFile().port).toBe(4242);
     });
 
+    // The test above doesn't actually pin the self-pid guard: its fabricated
+    // `startedAt` (2026-01-01) is old enough that recycled-pid corroboration
+    // alone would already call it 'gone', so the assertion passes even with
+    // the explicit `holder.pid === process.pid` check deleted. This one
+    // closes that gap: `startedAt` is "right now", which is exactly what
+    // corroboration would call `'live-confirmed'` for THIS process (it really
+    // is alive, and its own real start time is at or before now) — so only
+    // the self-pid check, not corroboration, can be why this succeeds.
+    it('takes over a lock naming this process even when its startedAt would otherwise corroborate as live', () => {
+      writeLockFile({
+        pid: process.pid,
+        port: 1,
+        startedAt: new Date().toISOString(),
+        version: '1',
+      });
+
+      const result = acquireInstanceLock({ dorkHome, port: 4242, version: '1.2.3' });
+
+      expect(result.acquired).toBe(true);
+      expect(readLockFile().port).toBe(4242);
+    });
+
+    // Corroboration needs a parseable `startedAt` to compare against — an
+    // unparseable one used to fall through to 'live-unconfirmed' regardless
+    // of whether the pid was even alive, which refuses to boot over a dead
+    // process's garbled lock file. A dead pid is dead independent of what its
+    // `startedAt` says, and must still read as 'gone'.
+    it('takes over a lock with an unparseable startedAt when the pid is dead (gone, not merely unconfirmed)', () => {
+      writeLockFile({ pid: DEAD_PID, port: 6242, startedAt: 'not-a-real-date', version: '1' });
+
+      const result = acquireInstanceLock({ dorkHome, port: 4242, version: '1.2.3' });
+
+      expect(result.acquired).toBe(true);
+      expect(readLockFile().pid).toBe(process.pid);
+    });
+
+    // The mirror case: an unparseable startedAt with a genuinely LIVE pid
+    // (never THIS process — see the self-pid case above) must still refuse,
+    // since there is nothing to corroborate a rival's claim against.
+    it('refuses a lock with an unparseable startedAt naming a pid that is alive', () => {
+      writeLockFile({ pid: LIVE_PID, port: 6242, startedAt: 'not-a-real-date', version: '1' });
+
+      const result = acquireInstanceLock({ dorkHome, port: 4242, version: '1.2.3' });
+
+      expect(result.acquired).toBe(false);
+    });
+
     // A SIGKILL leaves the file behind; later the OS wraps pids onto some
     // unrelated process. Pid existence alone would then refuse every start
     // forever and tell the operator to kill an innocent process. The holder must

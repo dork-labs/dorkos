@@ -1,4 +1,6 @@
 import type { BrowserWindow } from 'electron';
+import log from 'electron-log';
+import { SERVER_READY_PARENT_TIMEOUT_MS } from '../shared/boot-timeouts';
 
 /**
  * Client route the "Settings…" menu item opens.
@@ -101,8 +103,27 @@ export function findDeepLinkArg(argv: readonly string[]): string | null {
 // receive it" — a single pending slot plus a renderer-readiness signal
 // covers both with one mechanism (see `requestNavigate`/`resolvePendingNavigate`).
 
-/** The most recently requested path that hasn't been delivered yet (last-write-wins). */
-let pendingPath: string | null = null;
+/**
+ * How long a queued path may wait for a renderer to claim it before it's
+ * considered stale (DOR-564). Without a bound, a `dorkos://` deep link that
+ * arrives while nothing is subscribed sits in the slot indefinitely — so
+ * opening the app the next morning silently navigates to whatever was asked
+ * for yesterday, with no explanation.
+ *
+ * Pinned to {@link SERVER_READY_PARENT_TIMEOUT_MS} (70s) rather than a
+ * standalone number: a cold-start deep link can arrive before the window
+ * even exists, and the window doesn't get created until the server is up —
+ * which the repo's own boot budget says can legitimately take that long. A
+ * shorter TTL would expire a genuinely-still-booting deep link before its
+ * renderer ever got the chance to subscribe and claim it, which is the exact
+ * silent-drop failure this bound exists to prevent, just triggered early
+ * instead of late. Reusing the constant also means the two windows can never
+ * silently drift apart again.
+ */
+const PENDING_PATH_TTL_MS = SERVER_READY_PARENT_TIMEOUT_MS;
+
+/** The most recently requested path that hasn't been delivered yet (last-write-wins), and when it was queued. */
+let pendingPath: { path: string; queuedAt: number } | null = null;
 
 /**
  * The `webContents.id` of the renderer that most recently proved it's
@@ -176,7 +197,7 @@ export function requestNavigate(
   if (win && !win.isDestroyed() && isRendererReady(win)) {
     sendNavigate(win, path);
   } else {
-    pendingPath = path;
+    pendingPath = { path, queuedAt: Date.now() };
   }
   ensureWindow();
 }
@@ -189,16 +210,26 @@ export function requestNavigate(
  * Marks `webContentsId` as the ready renderer — so a subsequent
  * {@link requestNavigate} call can use the hot path — and hands back
  * whatever path was queued before this renderer had the chance to
- * subscribe. Read-once: the slot is cleared immediately, so a path is only
- * ever delivered once (a second invoke from the same or another renderer
- * returns `null`).
+ * subscribe, unless it's older than {@link PENDING_PATH_TTL_MS}, in which
+ * case it's dropped as stale rather than delivered. Read-once either way:
+ * the slot is cleared immediately, so a path is only ever delivered once (a
+ * second invoke from the same or another renderer returns `null`).
  *
  * @param webContentsId - `event.sender.id` of the invoking renderer.
- * @returns The queued path, or `null` if nothing is pending.
+ * @returns The queued path, or `null` if nothing is pending or it expired.
  */
 export function resolvePendingNavigate(webContentsId: number): string | null {
   readyWebContentsId = webContentsId;
-  const path = pendingPath;
+  const queued = pendingPath;
   pendingPath = null;
-  return path;
+  if (!queued) return null;
+  const age = Date.now() - queued.queuedAt;
+  if (age > PENDING_PATH_TTL_MS) {
+    log.info(
+      `[navigation] Dropping a queued path older than the ${PENDING_PATH_TTL_MS}ms TTL ` +
+        `(queued ${age}ms ago): ${queued.path}`
+    );
+    return null;
+  }
+  return queued.path;
 }

@@ -19,10 +19,8 @@
  */
 declare module '@dorkos/server';
 
+import { exitWhenOrphaned } from './orphan-watchdog';
 import { SERVER_READY_TIMEOUT_MS } from './shared/boot-timeouts';
-
-/** How often the dev child re-checks that the process that spawned it is still alive. */
-const ORPHAN_CHECK_INTERVAL_MS = 2_000;
 
 // Mark this file as a module so the ambient declaration above and the
 // top-level helpers below stay file-scoped instead of leaking into the
@@ -70,67 +68,6 @@ function onParentMessage(handler: (msg: unknown) => void): void {
     // child_process.fork: messages arrive directly
     process.on('message', handler);
   }
-}
-
-/**
- * Is `pid` still running?
- *
- * Signal 0 runs the kernel's existence and permission checks without
- * delivering anything. `EPERM` means the process is there but owned by someone
- * else — alive is alive; only `ESRCH` means it is gone.
- *
- * Known limit: a pid is not a durable identity. If the shell's pid is recycled
- * by an unrelated process before the next poll, this reads "alive" and the
- * orphan keeps running — and a recycled *root-owned* pid answers `EPERM`
- * forever. Narrowing that needs the pid corroborated against its start time
- * (`ps -o lstart=`), which is the approach the server's instance lock takes;
- * this should adopt that helper rather than grow a second copy of it. Until
- * then the window is small and dev-only, and the failure mode is the one that
- * existed before this watchdog rather than a new one.
- */
-function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code === 'EPERM';
-  }
-}
-
-/**
- * Shut down when the desktop shell that spawned this process goes away.
- *
- * Armed only in development, where the shell passes its own pid as
- * `DORKOS_PARENT_PID`. A packaged build leaves that unset and this is a no-op:
- * there the server runs in an Electron UtilityProcess, which Electron tears
- * down with the app. In dev it runs under `child_process.fork` instead, and a
- * fork outlives a parent that dies without cleaning up — it gets reparented to
- * init and keeps the port, the SQLite WAL lock and every live agent session,
- * so the next launch starts against a directory another process still owns.
- *
- * Watching an explicitly-passed pid is the only thing that works here, and the
- * two obvious alternatives were both measured failing before this was written.
- * `tsx` does not run this file in-process: it spawns the real server as a
- * *grandchild* of the shell and proxies IPC through itself. So from in here
- * `process.ppid` is the tsx wrapper, and the peer whose exit would fire
- * `process.on('disconnect')` is the tsx wrapper too. Neither notices Electron
- * dying — with the shell killed hard, a watchdog built on either one never
- * fired and the server was still holding its port seconds later. A pid handed
- * down from the shell sees straight through the wrapper.
- */
-function exitWhenOrphaned(): void {
-  // Unset, empty and malformed all land here: `Number(undefined)` is NaN and
-  // `Number('')` is 0, and neither survives the guard. A packaged build also
-  // deletes any inherited value (see server-spawn), so production never arms.
-  const parentPid = Number(process.env.DORKOS_PARENT_PID);
-  if (!Number.isInteger(parentPid) || parentPid <= 0) return;
-
-  // unref'd: this watchdog must never be the reason the process stays alive.
-  setInterval(() => {
-    if (isProcessAlive(parentPid)) return;
-    console.error('Shutting the server down: the desktop app that started it is gone.');
-    process.exit(0);
-  }, ORPHAN_CHECK_INTERVAL_MS).unref();
 }
 
 async function main() {

@@ -638,6 +638,13 @@ describe('the environment handed to the server child', () => {
     // The child cannot derive this itself — tsx runs it as a grandchild, so
     // its own ppid is the tsx wrapper. See server-entry.ts's exitWhenOrphaned.
     expect(child.env.DORKOS_PARENT_PID).toBe(String(process.pid));
+    // DOR-552: rides alongside the pid so the watchdog can corroborate it
+    // against a recycled pid instead of trusting a bare liveness check
+    // forever. Captured at spawn time (this test's own process is a real,
+    // running one `ps` can see), not asserted to a specific value — only
+    // that it's present and parses.
+    expect(child.env.DORKOS_PARENT_STARTED_AT).toBeDefined();
+    expect(Number.isNaN(Date.parse(child.env.DORKOS_PARENT_STARTED_AT as string))).toBe(false);
   });
 
   it('pins DORK_HOME to ~/.dork in a packaged build, spawned as a UtilityProcess', async () => {
@@ -658,6 +665,7 @@ describe('the environment handed to the server child', () => {
       expect(child.env.DORKOS_MANAGED_BY).toBe('desktop');
       // Electron tears a UtilityProcess down with the app; no watchdog needed.
       expect(child.env.DORKOS_PARENT_PID).toBeUndefined();
+      expect(child.env.DORKOS_PARENT_STARTED_AT).toBeUndefined();
     } finally {
       restorePaths();
     }

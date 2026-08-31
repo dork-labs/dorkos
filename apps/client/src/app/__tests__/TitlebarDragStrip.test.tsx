@@ -9,7 +9,7 @@ afterEach(() => {
 
 describe('TitlebarDragStrip', () => {
   it('renders hidden by default (browser and Obsidian)', () => {
-    const { container } = render(<TitlebarDragStrip />);
+    const { container } = render(<TitlebarDragStrip isFullscreen={false} />);
     const strip = container.firstElementChild;
 
     expect(strip).toHaveClass('hidden');
@@ -18,7 +18,7 @@ describe('TitlebarDragStrip', () => {
 
   it('carries the desktop-darwin reveal, height, and drag-region classes when the desktop shell class is present', () => {
     document.documentElement.classList.add('desktop-darwin');
-    const { container } = render(<TitlebarDragStrip />);
+    const { container } = render(<TitlebarDragStrip isFullscreen={false} />);
     const strip = container.firstElementChild;
 
     // jsdom doesn't evaluate Tailwind's compiled CSS, so this asserts the
@@ -38,7 +38,20 @@ describe('TitlebarDragStrip', () => {
   });
 
   it('is aria-hidden — decorative only, never a tab stop', () => {
-    const { container } = render(<TitlebarDragStrip />);
+    const { container } = render(<TitlebarDragStrip isFullscreen={false} />);
     expect(container.firstElementChild).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('drops the h-11 clearance in fullscreen, where the traffic lights retract (DOR-563)', () => {
+    // Fullscreen state is passed down from AppShell (DOR-254 review: a single
+    // useElectronFullscreen subscription, not one per consumer) rather than
+    // read here, so the test exercises that directly instead of faking IPC.
+    document.documentElement.classList.add('desktop-darwin');
+
+    const { container } = render(<TitlebarDragStrip isFullscreen={true} />);
+    const strip = container.firstElementChild;
+
+    expect(strip).toHaveClass('desktop-darwin:block');
+    expect(strip).not.toHaveClass('desktop-darwin:h-11');
   });
 });

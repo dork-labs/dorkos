@@ -18,10 +18,14 @@
  *
  * @module lib/instance-lock
  */
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
+import {
+  assessProcessLiveness,
+  isProcessAlive,
+  type ProcessLivenessState,
+} from '@dorkos/shared/process-liveness';
 import { env } from '../env.js';
 
 /** File name (under `dorkHome`) holding the current instance's claim. */
@@ -95,87 +99,14 @@ export function isInstanceLockEnabled(): boolean {
  * gone, whereupon the next boot deletes its lock and two servers open the same
  * SQLite file — the exact corruption this module exists to prevent. Too loose
  * only means a recycled pid keeps the lock a little longer, and a recycled pid
- * is off by minutes or days, never seconds.
- *
- * Wall-clock steps are the realistic source of skew: Linux `procps` derives
- * `lstart` from `btime + start_jiffies/Hz`, and `btime` is itself `now − uptime`,
- * so NTP correcting a bad RTC, or a VM resuming from a snapshot, shifts a live
- * process's reported start time.
+ * is off by minutes or days, never seconds. Matches
+ * `@dorkos/shared/process-liveness`'s own default — see that module for the
+ * wall-clock-skew rationale, which is not specific to lock files.
  */
 const PID_REUSE_TOLERANCE_MS = 120_000;
 
-/**
- * Ceiling on the `ps` call. It is synchronous and on the boot path, so a wedged
- * or unusually slow `ps` must not hang startup. A throw lands on
- * `live-unconfirmed`, which is the safe direction (never steals a lock).
- */
-const PS_TIMEOUT_MS = 2_000;
-
-/**
- * Whether a process id belongs to a process that is running right now.
- *
- * Signal `0` performs the permission and existence checks without delivering
- * anything. `EPERM` means the process exists but belongs to another user, which
- * still counts as alive. Our own pid never counts: a lock file naming this
- * process is one we are about to replace, not a rival.
- *
- * @param pid - The process id recorded in the lock file.
- */
-function isProcessAlive(pid: number): boolean {
-  if (pid === process.pid) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
-}
-
-/**
- * When a process started, or `null` when this platform cannot say.
- *
- * `ps -o lstart=` is POSIX-portable enough for macOS and Linux, which is where
- * DorkOS runs today. Windows has no `ps`, so the call fails and the caller falls
- * back to pid-only liveness. The spawn happens only on the rare path where a
- * lock file exists AND names a live pid, never on a normal boot.
- *
- * `LC_ALL=C` is load-bearing, not tidiness. macOS renders `lstart` through
- * `strftime("%c")`, which is locale-dependent, and `new Date()` parses almost
- * none of those forms — `fr_FR` gives `dim. 26 juil. 15:40:36 2026` → `NaN`, as
- * do most non-English UTF-8 locales. Without this, the corroboration in
- * {@link assessHolder} silently does nothing on a large share of Macs, and the
- * recycled-pid lockout it exists to prevent comes straight back. It also keeps
- * the suite honest: a contributor on a French-locale Mac would otherwise watch
- * that test go red while CI, which runs Linux in the `C` locale, stayed green.
- *
- * @param pid - The process id recorded in the lock file.
- */
-function processStartTime(pid: number): Date | null {
-  try {
-    const raw = execFileSync('ps', ['-p', String(pid), '-o', 'lstart='], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-      timeout: PS_TIMEOUT_MS,
-      // eslint-disable-next-line no-restricted-syntax -- forwarding the real environment to a child process, with the C locale forced so `lstart` parses
-      env: { ...process.env, LC_ALL: 'C' },
-    }).trim();
-    if (!raw) return null;
-    const parsed = new Date(raw);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  } catch {
-    // No `ps` (Windows), no such process, a timeout, or an unparseable format.
-    return null;
-  }
-}
-
 /** What we could establish about the process named in a lock file. */
-type HolderState =
-  /** No such process, or a different process wearing a recycled pid. */
-  | 'gone'
-  /** Alive, and it started before it wrote the lock — this really is the holder. */
-  | 'live-confirmed'
-  /** Alive, but this platform cannot tell us when it started. */
-  | 'live-unconfirmed';
+type HolderState = ProcessLivenessState;
 
 /**
  * Decide whether the process named in a lock file is genuinely still holding it.
@@ -184,23 +115,29 @@ type HolderState =
  * `pkill -9`, a forced logout) the lock file survives naming a dead pid, and
  * operating systems wrap pids around onto unrelated processes. A pid-only check
  * would then refuse every future start forever, while telling the operator to
- * kill a process that has nothing to do with DorkOS. So we corroborate: the
- * holder must have STARTED no later than the moment it wrote the lock. A
- * recycled pid belongs to a process that started afterwards, and is reported
- * `gone` so the next boot simply takes the lock over.
+ * kill a process that has nothing to do with DorkOS. So we corroborate via
+ * `@dorkos/shared/process-liveness`: the holder must have STARTED no later
+ * than the moment it wrote the lock. A recycled pid belongs to a process that
+ * started afterwards, and is reported `gone` so the next boot simply takes the
+ * lock over.
  *
  * @param holder - The claim read from the lock file.
  */
 function assessHolder(holder: InstanceLockInfo): HolderState {
-  if (!isProcessAlive(holder.pid)) return 'gone';
-
-  const startedAt = processStartTime(holder.pid);
-  if (startedAt === null) return 'live-unconfirmed';
+  // Our own pid never counts as a holder: a lock file naming this process is
+  // one we are about to replace, not a rival. Checked ahead of the shared
+  // corroboration, which knows nothing about "this process" as a concept.
+  if (holder.pid === process.pid) return 'gone';
 
   const lockWrittenAt = Date.parse(holder.startedAt);
-  if (Number.isNaN(lockWrittenAt)) return 'live-unconfirmed';
+  if (Number.isNaN(lockWrittenAt)) {
+    // Can't corroborate a start time against an unparseable one, but a dead
+    // pid is still dead regardless — recorded as such rather than as merely
+    // unconfirmed.
+    return isProcessAlive(holder.pid) ? 'live-unconfirmed' : 'gone';
+  }
 
-  return startedAt.getTime() <= lockWrittenAt + PID_REUSE_TOLERANCE_MS ? 'live-confirmed' : 'gone';
+  return assessProcessLiveness(holder.pid, new Date(lockWrittenAt), PID_REUSE_TOLERANCE_MS);
 }
 
 /**

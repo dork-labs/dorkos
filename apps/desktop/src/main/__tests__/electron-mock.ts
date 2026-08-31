@@ -140,12 +140,18 @@ class MockBrowserWindowImpl {
   static getFocusedWindow = vi.fn(
     (): MockBrowserWindowImpl | null => MockBrowserWindowImpl.instances[0] ?? null
   );
+  /** Finds the window owning a given `webContents` — real Electron's `BrowserWindow.fromWebContents`. */
+  static fromWebContents = vi.fn(
+    (webContents: unknown): MockBrowserWindowImpl | null =>
+      MockBrowserWindowImpl.instances.find((win) => win.webContents === webContents) ?? null
+  );
 
   private readonly bus = createEventBus();
   private readonly webContentsBus = createEventBus();
   private maximized = false;
   private minimized = false;
   private fullScreen = false;
+  private focused = true;
   /** Construction options, so tests can assert on `show`, `backgroundColor`, `webPreferences`. */
   readonly options: Record<string, unknown>;
   bounds: Rectangle;
@@ -216,7 +222,13 @@ class MockBrowserWindowImpl {
   /** Test helper — not part of the real BrowserWindow API. */
   emit = (event: string, ...args: unknown[]): Promise<void> => this.bus.emit(event, ...args);
 
-  focus = vi.fn<() => void>();
+  focus = vi.fn(() => {
+    this.focused = true;
+  });
+  blur = vi.fn(() => {
+    this.focused = false;
+  });
+  isFocused = vi.fn((): boolean => this.focused);
   show = vi.fn<() => void>();
   close = vi.fn<() => void>();
   isDestroyed = vi.fn((): boolean => false);
