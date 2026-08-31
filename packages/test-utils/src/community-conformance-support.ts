@@ -30,8 +30,7 @@ export const QUIET_WINDOW_MS = 60;
 export const PAGE_SIZE = 1;
 
 /**
- * Guard a class-identity assertion (`toThrow(SomeClass)`, `toBeInstanceOf(SomeClass)`)
- * against a stale `@dorkos/shared` dist.
+ * Guard a `toThrow(SomeClass)` assertion against a stale `@dorkos/shared` dist.
  *
  * Vite's SSR interop does not enforce named-export existence the way Node's
  * ESM linker does: importing a class absent from the built dist lands as
@@ -42,8 +41,14 @@ export const PAGE_SIZE = 1;
  * exactly the loop `AGENTS.md` prescribes: `pnpm vitest run <path>` after
  * pulling without rebuilding `packages/shared/dist`.
  *
+ * **`toBeInstanceOf(SomeClass)` does not share this hole** — measured:
+ * `expect(x).toBeInstanceOf(undefined)` throws its own error ("The instanceof
+ * assertion needs a constructor but undefined was given") rather than
+ * degrading, so it already fails loudly on a stale dist without this guard.
+ * `toThrow` is the one call this closes.
+ *
  * Call at the top of any conformance case whose whole job is discriminating
- * one error class from another.
+ * one error class from another via `toThrow`.
  *
  * @param ctor - The imported binding to check.
  * @param name - Its name, for the failure message.
