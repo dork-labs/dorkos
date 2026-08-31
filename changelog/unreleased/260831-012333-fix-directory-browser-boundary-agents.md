@@ -1,6 +1,6 @@
 ---
 covers:
-  - 'fix(server): directory browser no longer 403s on the agents folder under a boundary-scoped install (DOR-437)'
+  - 'fix(server): directory browser 403s on {dorkHome}/agents under a boundary-scoped install (DOR-437)'
 ---
 
 ### Fixed
