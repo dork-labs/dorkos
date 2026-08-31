@@ -69,12 +69,22 @@ export function sendError(res: Response, status: number, message: string, code: 
 export interface AssertBoundaryOptions {
   /**
    * Also accept DorkOS's own `{dorkHome}/agents/*` subtree — the agent-registry
-   * seam (PR #409, `validateBoundaryOrDorkHome`). Set it ONLY for a SESSION-CWD
+   * seam (PR #409, `validateBoundaryOrDorkHome`). Set it for a SESSION-CWD
    * check: a session whose working directory is a system or marketplace agent's
    * home (`{dorkHome}/agents/<name>`) must be allowed to stream, list, and read
    * even under a narrow `DORKOS_BOUNDARY` (e.g. Docker) — otherwise onboarding's
-   * DorkBot session 403s. Never set it for a raw file/terminal/git surface;
-   * those confine to the plain boundary so the encrypted credential store under
+   * DorkBot session 403s.
+   *
+   * Not the only caller of `validateBoundaryOrDorkHome`: `GET /api/directory`
+   * (DOR-437) calls it directly rather than through this option, for the same
+   * reason — browsing `{dorkHome}/agents` itself must not 403 under a boundary-
+   * scoped install. That call is read-only directory LISTING (names only, no
+   * contents), which is why it is safe without going through this session-cwd
+   * option at all.
+   *
+   * Never set this option, and never reach for `validateBoundaryOrDorkHome`,
+   * for a raw file/content surface — read, write, terminal, git, diff, upload.
+   * Those stay on the plain boundary so the encrypted credential store under
    * `{dorkHome}/extension-secrets/` stays unreachable.
    */
   allowDorkHome?: boolean;

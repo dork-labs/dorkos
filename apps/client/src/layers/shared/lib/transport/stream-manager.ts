@@ -68,6 +68,7 @@ import {
   type TransportStreams,
 } from './transport-stream-pump';
 import { addBreadcrumb } from '../breadcrumbs';
+import { SESSION_LIST_EVENT_TYPES } from './session-stream-methods';
 
 /**
  * Minimal surface of {@link WSConnection} StreamManager depends on. Defining it
@@ -180,17 +181,6 @@ const SESSION_EVENT_TYPES = [
   // event exists to prevent.
   'context_staged',
 ] as const;
-
-/**
- * The {@link SessionListEvent} `type` discriminants the global stream emits.
- *
- * The gate every session-list event the HTTP cockpit receives passes through: a
- * name the server broadcasts but this array omits gets no listener, and the
- * frame is dropped in silence. Pinned against `SessionListEventSchema`
- * in `__tests__/stream-manager.test.ts` (DOR-548). A second, independent copy of
- * this allowlist lives in `session-stream-methods.ts` and is pinned there.
- */
-const SESSION_LIST_EVENT_TYPES = ['session_upserted', 'session_removed', 'session_status'] as const;
 
 /**
  * The non-session broadcast event names the unified `/api/events` stream emits.

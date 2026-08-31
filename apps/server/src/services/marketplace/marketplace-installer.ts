@@ -28,7 +28,7 @@
 import type { MarketplacePackageManifest, PackageType, PluginSource } from '@dorkos/marketplace';
 import { validatePackage } from '@dorkos/marketplace/package-validator';
 import type { Logger } from '@dorkos/shared/logger';
-import type { PackageFetcher } from './package-fetcher.js';
+import { fileUrlToPath, type PackageFetcher } from './package-fetcher.js';
 import type { PackageResolver, ResolvedPackageSource } from './package-resolver.js';
 import type { PermissionPreviewBuilder } from './permission-preview.js';
 import type { AdapterInstallFlow } from './flows/install-adapter.js';
@@ -582,8 +582,10 @@ export class MarketplaceInstaller implements InstallerLike {
     const sourceUrl = resolved.marketplaceSourceUrl;
     if (!sourceUrl || sourceUrl.startsWith('file://')) {
       // Populate marketplaceRoot from the file:// URL for the fetcher.
+      // fileUrlToPath (DOR-412), not new URL(sourceUrl).pathname: the latter
+      // leaves directory names with spaces percent-encoded.
       if (sourceUrl) {
-        resolved.marketplaceRoot = new URL(sourceUrl).pathname;
+        resolved.marketplaceRoot = fileUrlToPath(sourceUrl);
       }
       return resolved.pluginSource;
     }
