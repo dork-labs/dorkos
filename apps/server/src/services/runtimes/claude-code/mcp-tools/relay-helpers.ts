@@ -4,6 +4,7 @@
  * @module services/runtimes/claude-code/mcp-tools/relay-helpers
  */
 import { createHash } from 'node:crypto';
+import path from 'node:path';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 import { isServerManagedSubject, parseAgentSubject } from '@dorkos/relay';
@@ -46,12 +47,19 @@ export interface SenderIdentity {
  *   explicit-namespace agents.)
  * - Any other session (or the external `/mcp` surface, `cwd` undefined): a
  *   deterministic, non-agent identity so the sender is still stable and
- *   unspoofable — no agent ACL rules apply to it. Hashed from the FULL `cwd`
- *   (DOR-514), not `path.basename(cwd)`: two unrelated projects that happen to
- *   share a leaf directory name — `/a/project` and `/b/project` — used to
- *   collide on one `relay.session.project` identity. No agent ACL rule keys on
- *   this subject, so the collision was pre-existing and mild rather than the
- *   in-session escalation DOR-506 closed, but it is cheap to remove.
+ *   unspoofable — no agent ACL rules apply to it. Suffixed with a short hash
+ *   of the FULL `cwd` (DOR-514), not bare `path.basename(cwd)`: two unrelated
+ *   projects that happen to share a leaf directory name — `/a/project` and
+ *   `/b/project` — used to collide on one `relay.session.project` identity.
+ *   No agent ACL rule keys on this subject, so the collision was pre-existing
+ *   and mild rather than the in-session escalation DOR-506 closed, but it is
+ *   cheap to remove. Keeping the basename in front of the hash (rather than
+ *   hashing it away entirely) is deliberate: `classify-origin.ts` renders
+ *   this subject's last segment as a session's origin label (e.g. "myproject
+ *   (agent)") — a bare hash there reads as "e549f2e8 (agent)", which answers
+ *   "is this the same session as before" but not "whose session is this,"
+ *   the question the label exists to answer. `${basename}-${hash}` keeps
+ *   both: legible AND distinct even when two projects share a leaf name.
  *
  * @param deps - Tool dependencies, for the Mesh registry lookup
  * @param cwd - The session's working directory, when known
@@ -61,18 +69,20 @@ export function resolveSenderIdentity(deps: McpToolDeps, cwd: string | undefined
     const identity = deps.meshCore.getSubjectByPath(cwd);
     if (identity) return identity;
   }
-  return { subject: cwd ? `relay.session.${hashCwd(cwd)}` : EXTERNAL_MCP_SENDER };
+  return { subject: cwd ? `relay.session.${sessionSubjectSegment(cwd)}` : EXTERNAL_MCP_SENDER };
 }
 
 /**
- * A short, deterministic, filesystem-path-safe stand-in for a full `cwd` in a
- * Relay subject. Not for secrecy — a subject is not a secret — only so two
- * different directories never resolve to the same identity.
+ * A legible, deterministic, filesystem-path-safe stand-in for a full `cwd` in
+ * a Relay subject: the directory's own leaf name, plus a short hash of the
+ * FULL path so two directories sharing a leaf name never collide. The hash is
+ * not for secrecy — a subject is not a secret — only for distinctness.
  *
  * @param cwd - The session's working directory.
  */
-function hashCwd(cwd: string): string {
-  return createHash('sha256').update(cwd, 'utf8').digest('hex').slice(0, 12);
+function sessionSubjectSegment(cwd: string): string {
+  const hash = createHash('sha256').update(cwd, 'utf8').digest('hex').slice(0, 8);
+  return `${path.basename(cwd)}-${hash}`;
 }
 
 /**

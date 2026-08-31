@@ -840,9 +840,11 @@ describe('resolveSenderIdentity', () => {
     } as McpToolDeps;
 
     const identity = resolveSenderIdentity(deps, '/tmp/scratch');
-    // A hash of the FULL cwd (DOR-514), not `path.basename(cwd)` — see the
-    // next test for why that distinction is the whole point.
-    expect(identity.subject).toBe('relay.session.e549f2e8c418');
+    // basename + a short hash of the FULL cwd (DOR-514), not bare
+    // `path.basename(cwd)` — see the next test for why the hash suffix is the
+    // whole point, and this fixture's own module doc for why the basename
+    // stays legible rather than being hashed away entirely.
+    expect(identity.subject).toBe('relay.session.scratch-e549f2e8');
     expect(identity.agentId).toBeUndefined();
   });
 
@@ -862,8 +864,11 @@ describe('resolveSenderIdentity', () => {
     const b = resolveSenderIdentity(deps, '/b/project');
 
     expect(a.subject).not.toBe(b.subject);
-    expect(a.subject.startsWith('relay.session.')).toBe(true);
-    expect(b.subject.startsWith('relay.session.')).toBe(true);
+    // Both keep the shared leaf name legible — only the hash suffix differs —
+    // so a person reading a session-origin label still sees "project-…", not
+    // an opaque hash with no relation to the directory it came from.
+    expect(a.subject.startsWith('relay.session.project-')).toBe(true);
+    expect(b.subject.startsWith('relay.session.project-')).toBe(true);
   });
 
   it('uses the external principal when there is no session (undefined cwd)', () => {
