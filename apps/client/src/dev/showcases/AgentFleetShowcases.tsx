@@ -122,7 +122,6 @@ const FLEET: AgentTableRow[] = [
 const NOOP_CALLBACKS = {
   onNavigate: () => {},
   onViewProfile: () => {},
-  onStartSession: () => {},
 };
 
 /** The agent fleet table, in attention order and flattened. */
