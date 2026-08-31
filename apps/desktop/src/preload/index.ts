@@ -32,6 +32,9 @@ const RESET_CHANNEL = 'renderer:reset-and-relaunch';
 /** IPC channel the recovery page's "Save Diagnostic Report" goes out on (mirrors `DIAGNOSTICS_CHANNEL` in renderer-health/index.ts). */
 const DIAGNOSTICS_CHANNEL = 'renderer:save-diagnostics';
 
+/** IPC channel the main process pushes fullscreen state on (mirrors `FULLSCREEN_CHANGE_CHANNEL` in fullscreen.ts). */
+const FULLSCREEN_CHANGE_CHANNEL = 'window:fullscreen-changed';
+
 /**
  * How many live `onCloseTab` subscriptions this renderer holds.
  *
@@ -212,4 +215,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
       if (--closeTabSubscriptions === 0) ipcRenderer.send(CLOSE_TAB_UNSUBSCRIBE_CHANNEL);
     };
   },
+  /**
+   * Subscribe to this window's fullscreen state (DOR-563). macOS retracts the
+   * traffic lights into the auto-hiding menu bar while fullscreen holds, so
+   * the renderer drops the space it otherwise reserves for them (see
+   * `AppShell.tsx` and `TitlebarDragStrip.tsx`).
+   *
+   * @returns An unsubscribe function that removes the listener.
+   */
+  onFullscreenChange: (cb: (isFullScreen: boolean) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, isFullScreen: boolean): void =>
+      cb(isFullScreen);
+    ipcRenderer.on(FULLSCREEN_CHANGE_CHANNEL, listener);
+    return () => ipcRenderer.removeListener(FULLSCREEN_CHANGE_CHANNEL, listener);
+  },
+  /**
+   * Whether this window is fullscreen right now. Called once by
+   * `useElectronFullscreen` right after it subscribes via
+   * {@link onFullscreenChange}, so a renderer that mounts (or remounts) after
+   * the window already entered fullscreen still recovers the current state
+   * instead of waiting for the next transition.
+   */
+  getFullscreenState: (): Promise<boolean> => ipcRenderer.invoke('get-fullscreen-state'),
 });

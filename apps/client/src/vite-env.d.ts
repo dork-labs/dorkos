@@ -133,6 +133,24 @@ declare global {
      * embed, and in any desktop build predating the supervisor.
      */
     reportAlive?(): void;
+    /**
+     * Subscribe to this window's fullscreen state (DOR-563). macOS retracts
+     * the traffic lights into the auto-hiding menu bar while fullscreen
+     * holds, so the renderer drops the space it otherwise reserves for them.
+     *
+     * **Optional on purpose.** Absent in the browser cockpit, in the
+     * Obsidian embed, and in any desktop build predating this.
+     *
+     * @returns An unsubscribe function that removes the listener.
+     */
+    onFullscreenChange?(cb: (isFullScreen: boolean) => void): () => void;
+    /**
+     * Whether this window is fullscreen right now. Called once on mount right
+     * after {@link onFullscreenChange}, so a renderer that mounts (or
+     * remounts) after the window already entered fullscreen still recovers
+     * the current state.
+     */
+    getFullscreenState?(): Promise<boolean>;
   }
 
   interface Window {

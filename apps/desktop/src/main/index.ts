@@ -317,6 +317,16 @@ if (!gotTheLock) {
     return resolvePendingNavigate(event.sender.id);
   });
 
+  // Initial-state replay for `useElectronFullscreen` (see fullscreen.ts's
+  // `forwardFullscreenState`, which pushes changes but has nothing to send a
+  // renderer that mounts — or remounts — after the window already entered
+  // fullscreen). Answers about the calling renderer's own window, so unlike
+  // the handlers above it needs no `isTrackedRenderer` gate: there is nothing
+  // here for a second window to steal.
+  ipcMain.handle('get-fullscreen-state', (event) => {
+    return BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false;
+  });
+
   app.on('ready', async () => {
     // 0. Before anything is started: a copy running from the disk image or
     // Downloads cannot update itself, so offer once to move it into

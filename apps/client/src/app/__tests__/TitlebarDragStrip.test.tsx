@@ -41,4 +41,23 @@ describe('TitlebarDragStrip', () => {
     const { container } = render(<TitlebarDragStrip />);
     expect(container.firstElementChild).toHaveAttribute('aria-hidden', 'true');
   });
+
+  it('drops the h-11 clearance in fullscreen, where the traffic lights retract (DOR-563)', () => {
+    document.documentElement.classList.add('desktop-darwin');
+    window.electronAPI = {
+      onFullscreenChange: (cb: (isFullScreen: boolean) => void) => {
+        cb(true);
+        return () => {};
+      },
+      getFullscreenState: () => Promise.resolve(true),
+    } as unknown as Window['electronAPI'];
+
+    const { container } = render(<TitlebarDragStrip />);
+    const strip = container.firstElementChild;
+
+    expect(strip).toHaveClass('desktop-darwin:block');
+    expect(strip).not.toHaveClass('desktop-darwin:h-11');
+
+    delete (window as { electronAPI?: unknown }).electronAPI;
+  });
 });

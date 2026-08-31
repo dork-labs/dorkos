@@ -9,6 +9,7 @@ import {
 } from '@/layers/shared/model';
 import { useElectronNavigate } from './app/use-electron-navigate';
 import { useElectronCloseTab } from './app/use-electron-close-tab';
+import { useElectronFullscreen } from './app/use-electron-fullscreen';
 import { useRoomDocumentTitle } from './app/use-room-document-title';
 import { TitlebarDragStrip } from './app/TitlebarDragStrip';
 import { SidebarBodyErrorBoundary } from './app/SidebarBodyErrorBoundary';
@@ -287,6 +288,11 @@ export function AppShell() {
   // Desktop Cmd+W → close a tab, not the window. No-op without the bridge, and
   // deliberately silent on the last tab so the window still closes.
   useElectronCloseTab();
+  // Whether the desktop window is fullscreen (DOR-563) — macOS retracts the
+  // traffic lights into the auto-hiding menu bar there, so the tab strip's
+  // clearance for them (below) is dropped for as long as this holds. Always
+  // `false` without the bridge.
+  const isFullscreen = useElectronFullscreen();
   // Bridge the global `/api/events` session-list stream into the shared
   // session-list query cache (sidebar/dashboard/loader go live; ADR-0265).
   useGlobalSessionStream();
@@ -661,8 +667,11 @@ export function AppShell() {
                           // When the sidebar is collapsed, TitlebarDragStrip's
                           // traffic-light clearance collapses with it — pad this
                           // strip so the first tab doesn't sit under the native
-                          // traffic lights (DOR-253).
-                          !sidebarOpen && 'desktop-darwin:pl-20'
+                          // traffic lights (DOR-253). Dropped in fullscreen
+                          // (DOR-563): the traffic lights retract into the
+                          // auto-hiding menu bar there, so there is nothing
+                          // left to clear.
+                          !sidebarOpen && !isFullscreen && 'desktop-darwin:pl-20'
                         )}
                       />
                     )}

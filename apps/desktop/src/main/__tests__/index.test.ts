@@ -534,6 +534,37 @@ describe('update IPC handlers', () => {
     // A stray webContents (devtools, an auxiliary window) gets nothing.
     expect(handler({ sender: { id: 9999 } } as unknown as Electron.IpcMainInvokeEvent)).toBeNull();
   });
+
+  it('get-fullscreen-state answers about the calling window (DOR-563)', async () => {
+    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    const windowManager = await import('../window-manager');
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    vi.mocked(windowManager.createWindow)
+      .mockReset()
+      .mockReturnValue(win as unknown as Electron.BrowserWindow);
+
+    await import('../index');
+    await app.emit('ready');
+
+    const handler = await getInvokeHandler('get-fullscreen-state');
+
+    // A renderer that mounts after the window already entered fullscreen
+    // (a reload, or a remount) recovers the current state on request rather
+    // than waiting for the next enter/leave transition.
+    expect(handler({ sender: win.webContents } as unknown as Electron.IpcMainInvokeEvent)).toBe(
+      false
+    );
+    win.setFullScreen(true);
+    expect(handler({ sender: win.webContents } as unknown as Electron.IpcMainInvokeEvent)).toBe(
+      true
+    );
+    // A sender with no owning window (already destroyed, or none tracked) is
+    // reported as not fullscreen rather than throwing.
+    expect(handler({ sender: { id: 9999 } } as unknown as Electron.IpcMainInvokeEvent)).toBe(false);
+  });
 });
 
 /**

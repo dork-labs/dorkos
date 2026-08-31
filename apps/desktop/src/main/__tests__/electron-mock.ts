@@ -140,6 +140,11 @@ class MockBrowserWindowImpl {
   static getFocusedWindow = vi.fn(
     (): MockBrowserWindowImpl | null => MockBrowserWindowImpl.instances[0] ?? null
   );
+  /** Finds the window owning a given `webContents` — real Electron's `BrowserWindow.fromWebContents`. */
+  static fromWebContents = vi.fn(
+    (webContents: unknown): MockBrowserWindowImpl | null =>
+      MockBrowserWindowImpl.instances.find((win) => win.webContents === webContents) ?? null
+  );
 
   private readonly bus = createEventBus();
   private readonly webContentsBus = createEventBus();
