@@ -5,4 +5,4 @@ covers:
 
 ### Fixed
 
-- Fixed a rare bug where a session's task list could briefly lose tasks that had just been created, if the task history finished loading late (DOR-1632)
+- Fixed a bug where a session's task list could lose tasks that had just been created, and stay that way until the list next changed, if the task history finished loading late (DOR-1632)
