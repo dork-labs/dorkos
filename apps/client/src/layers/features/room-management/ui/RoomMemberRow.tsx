@@ -186,13 +186,18 @@ function ProfileLink({
       // as harmless and made every row 8px taller, which moved the scale out
       // from under a resting pointer and cost the room-sheet specs two reds.
       className={cn(
-        // `-ml-1`/`-mr-[5px]`, not a symmetric `-mx-1`: the row's 12px gap to
-        // the loudness pill splits as 4px of reach here plus 7px of the
-        // pill's own `-inset-[7px]` outset, which left exactly 1px neither
-        // control claimed (DOR-1275) — a dead pixel a drag-to-dismiss could
-        // still land a stray click on. The extra pixel comes off the right
-        // margin only, since that is the side facing the pill; the left side
-        // has nothing to its left in this row to encroach on.
+        // `-ml-1`/`-mr-[5px]`, not a symmetric `-mx-1` — and PHONE ONLY in what
+        // it actually buys: the row's 12px gap to the loudness pill splits as
+        // 4px of reach here plus 7px of the pill's own `-inset-[7px]` outset,
+        // which left exactly 1px neither control claimed (DOR-1275) — a dead
+        // pixel a drag-to-dismiss could still land a stray click on. Above
+        // 768px the pill's own reach is `md:after:hidden`, so there is no
+        // invisible-reach dance left to have a dead pixel in; the margin
+        // change ships everywhere because it costs nothing there (padding
+        // absorbs it, so the visible content does not move), but the 1px it
+        // closes only exists below `md:`. It comes off the right margin only,
+        // since that is the side facing the pill; the left side has nothing
+        // to its left in this row to encroach on.
         'focus-visible:ring-ring hover:bg-accent/60 relative -mr-[5px] -ml-1 flex min-w-0 flex-1 items-center gap-3 rounded-md px-1 text-left outline-hidden transition-colors focus-visible:ring-2',
         // The house recipe for a control shorter than a thumb (`PresenceStrip`,
         // the loudness pill): invisible reach rather than real height, so the
