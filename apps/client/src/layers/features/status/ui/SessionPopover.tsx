@@ -44,7 +44,7 @@ export interface SessionControls {
 
 /** An action urgent enough to lead the panel on a phone, where the line has no room for it. */
 interface SessionUrgentAction {
-  /** Full-sentence button copy, e.g. "Compact conversation — 88% full". */
+  /** Full-sentence button copy, e.g. "Compact conversation · 88% full". */
   label: string;
   /** Run the action. */
   onAction: () => void;
@@ -132,7 +132,7 @@ export function SessionPopover({
             </TooltipTrigger>
           </ResponsivePopoverTrigger>
           <TooltipContent side="top">
-            {hidden ? `Session details — ${overflowCount} more` : 'Session details'}
+            {hidden ? `Session details, ${overflowCount} more` : 'Session details'}
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>

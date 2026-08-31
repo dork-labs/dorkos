@@ -338,8 +338,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
                       <span className="text-sm font-medium">{opt.label}</span>
                       {opt.description && (
                         <span className="text-muted-foreground ml-1.5 text-xs">
-                          {' '}
-                          &middot; {opt.description}
+                          : {opt.description}
                         </span>
                       )}
                       {oIdx < 9 && (
@@ -379,8 +378,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
                       <span className="text-sm font-medium">{opt.label}</span>
                       {opt.description && (
                         <span className="text-muted-foreground ml-1.5 text-xs">
-                          {' '}
-                          &middot; {opt.description}
+                          : {opt.description}
                         </span>
                       )}
                       {oIdx < 9 && (

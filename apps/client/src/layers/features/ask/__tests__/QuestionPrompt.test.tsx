@@ -420,8 +420,19 @@ describe('QuestionPrompt', () => {
 
   it('renders option descriptions inline when provided', () => {
     render(<QuestionPrompt {...baseProps} questions={[singleSelectQuestion]} />);
-    // Descriptions are rendered inline after label text with a middot separator
     expect(screen.getByText(/External meetings are harder to move\./)).toBeDefined();
+  });
+
+  it('joins an option label to its description with a colon, not a middot (DOR-1261)', () => {
+    // The description is a gloss on the label, not a second peer fact — a
+    // middot (used elsewhere for two short facts of equal weight) reads wrong
+    // here. Checked via the shared <label> textContent since the label and
+    // description live in separate spans that getByText cannot join.
+    render(<QuestionPrompt {...baseProps} questions={[singleSelectQuestion]} />);
+    const optionLabel = screen.getByText('Reschedule the internal meeting');
+    expect(optionLabel.closest('label')?.textContent).toContain(
+      'Reschedule the internal meeting: External meetings are harder to move.'
+    );
   });
 });
 
