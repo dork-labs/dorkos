@@ -510,7 +510,7 @@ export class PackageFetcher {
  *
  * @param source - Raw marketplace source string from a `MarketplaceSource`.
  */
-function isFileUrl(source: string): boolean {
+export function isFileUrl(source: string): boolean {
   return source.startsWith('file://');
 }
 
@@ -518,9 +518,25 @@ function isFileUrl(source: string): boolean {
  * Convert a `file://` URL into an absolute filesystem path. Caller is
  * responsible for ensuring the input is a `file://` URL — see {@link isFileUrl}.
  *
+ * Exported so every local-source code path shares one conversion (DOR-412):
+ * `PackageFetcher`'s own `file://` handling here, and
+ * `MarketplaceInstaller.buildFetchableSource`'s `marketplaceRoot`
+ * population, previously each carried their own `new URL(source).pathname`,
+ * which left directory names with spaces percent-encoded and mishandled
+ * Windows drive letters.
+ *
  * @param source - A `file://` URL produced by `pathToFileURL` or hand-built.
+ * @throws {TypeError} If `source` is not a valid `file://` URL — for example
+ *   a `file://host/...` form (a remote host segment, which Node's
+ *   `fileURLToPath` refuses on all platforms) or a value with an encoded
+ *   path separator (`%2F`/`%5C`), which `fileURLToPath` rejects rather than
+ *   silently decoding. The old `new URL(source).pathname` code returned junk
+ *   in these cases instead of throwing; callers of this function already
+ *   catch and translate fetch failures (surfaced as a degraded install/502),
+ *   so throwing here is a strictly more honest failure than the silent junk
+ *   it replaces.
  */
-function fileUrlToPath(source: string): string {
+export function fileUrlToPath(source: string): string {
   return fileURLToPath(source);
 }
 
