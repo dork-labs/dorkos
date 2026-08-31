@@ -3,9 +3,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Mock boundary module
 const mockGetBoundary = vi.fn();
 const mockValidateBoundary = vi.fn();
+const mockValidateBoundaryOrDorkHome = vi.fn();
 vi.mock('../../lib/boundary.js', () => ({
   getBoundary: (...args: unknown[]) => mockGetBoundary(...args),
   validateBoundary: (...args: unknown[]) => mockValidateBoundary(...args),
+  validateBoundaryOrDorkHome: (...args: unknown[]) => mockValidateBoundaryOrDorkHome(...args),
   BoundaryError: class BoundaryError extends Error {
     readonly code: string;
     constructor(message: string, code: string) {
@@ -65,7 +67,7 @@ describe('Directory Routes', () => {
   describe('GET /api/directory', () => {
     it('returns directory listing for a valid path', async () => {
       const testPath = `${BOUNDARY}/projects`;
-      mockValidateBoundary.mockResolvedValue(testPath);
+      mockValidateBoundaryOrDorkHome.mockResolvedValue(testPath);
       mockReaddir.mockResolvedValue([
         { name: 'app-a', isDirectory: () => true },
         { name: 'app-b', isDirectory: () => true },
@@ -83,18 +85,18 @@ describe('Directory Routes', () => {
     });
 
     it('defaults to boundary root when no path given', async () => {
-      mockValidateBoundary.mockResolvedValue(BOUNDARY);
+      mockValidateBoundaryOrDorkHome.mockResolvedValue(BOUNDARY);
       mockReaddir.mockResolvedValue([{ name: 'Documents', isDirectory: () => true }]);
 
       const res = await request(app).get('/api/directory');
 
       expect(res.status).toBe(200);
       expect(res.body.path).toBe(BOUNDARY);
-      expect(mockValidateBoundary).toHaveBeenCalledWith(BOUNDARY);
+      expect(mockValidateBoundaryOrDorkHome).toHaveBeenCalledWith(BOUNDARY);
     });
 
     it('rejects paths outside configured boundary', async () => {
-      mockValidateBoundary.mockRejectedValue(
+      mockValidateBoundaryOrDorkHome.mockRejectedValue(
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
@@ -108,7 +110,7 @@ describe('Directory Routes', () => {
     it('returns 404 for non-existent path', async () => {
       const err = new Error('ENOENT') as NodeJS.ErrnoException;
       err.code = 'ENOENT';
-      mockValidateBoundary.mockRejectedValue(err);
+      mockValidateBoundaryOrDorkHome.mockRejectedValue(err);
 
       const res = await request(app).get('/api/directory?path=/nonexistent');
 
@@ -117,7 +119,7 @@ describe('Directory Routes', () => {
     });
 
     it('returns 403 for permission errors', async () => {
-      mockValidateBoundary.mockRejectedValue(
+      mockValidateBoundaryOrDorkHome.mockRejectedValue(
         new BoundaryError('Permission denied', 'PERMISSION_DENIED')
       );
 
@@ -128,7 +130,7 @@ describe('Directory Routes', () => {
     });
 
     it('returns 400 for null byte paths', async () => {
-      mockValidateBoundary.mockRejectedValue(
+      mockValidateBoundaryOrDorkHome.mockRejectedValue(
         new BoundaryError('Invalid path: null bytes not allowed', 'NULL_BYTE')
       );
 
@@ -140,7 +142,7 @@ describe('Directory Routes', () => {
 
     it('filters hidden directories by default', async () => {
       const testPath = `${BOUNDARY}/projects`;
-      mockValidateBoundary.mockResolvedValue(testPath);
+      mockValidateBoundaryOrDorkHome.mockResolvedValue(testPath);
       mockReaddir.mockResolvedValue([
         { name: '.hidden', isDirectory: () => true },
         { name: 'visible', isDirectory: () => true },
@@ -155,7 +157,7 @@ describe('Directory Routes', () => {
 
     it('shows hidden directories when showHidden=true', async () => {
       const testPath = `${BOUNDARY}/projects`;
-      mockValidateBoundary.mockResolvedValue(testPath);
+      mockValidateBoundaryOrDorkHome.mockResolvedValue(testPath);
       mockReaddir.mockResolvedValue([
         { name: '.hidden', isDirectory: () => true },
         { name: 'visible', isDirectory: () => true },
@@ -170,7 +172,7 @@ describe('Directory Routes', () => {
     });
 
     it('parent navigation stops at boundary root', async () => {
-      mockValidateBoundary.mockResolvedValue(BOUNDARY);
+      mockValidateBoundaryOrDorkHome.mockResolvedValue(BOUNDARY);
       mockReaddir.mockResolvedValue([]);
 
       const res = await request(app).get('/api/directory');
@@ -181,7 +183,7 @@ describe('Directory Routes', () => {
 
     it('returns parent for subdirectories within boundary', async () => {
       const testPath = `${BOUNDARY}/projects/deep`;
-      mockValidateBoundary.mockResolvedValue(testPath);
+      mockValidateBoundaryOrDorkHome.mockResolvedValue(testPath);
       mockReaddir.mockResolvedValue([]);
 
       const res = await request(app).get(`/api/directory?path=${encodeURIComponent(testPath)}`);
@@ -191,7 +193,7 @@ describe('Directory Routes', () => {
     });
 
     it('handles path traversal attempts', async () => {
-      mockValidateBoundary.mockRejectedValue(
+      mockValidateBoundaryOrDorkHome.mockRejectedValue(
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
@@ -203,7 +205,7 @@ describe('Directory Routes', () => {
     it('does not navigate parent above boundary even with path.sep prefix match', async () => {
       // Boundary is /Users/testuser, resolved path is /Users/testuser itself
       // Parent would be /Users which should NOT be navigable
-      mockValidateBoundary.mockResolvedValue(BOUNDARY);
+      mockValidateBoundaryOrDorkHome.mockResolvedValue(BOUNDARY);
       mockReaddir.mockResolvedValue([]);
 
       const res = await request(app).get(`/api/directory?path=${encodeURIComponent(BOUNDARY)}`);
@@ -211,6 +213,27 @@ describe('Directory Routes', () => {
       expect(res.status).toBe(200);
       // /Users is NOT within boundary, so parent should be null
       expect(res.body.parent).toBeNull();
+    });
+
+    it('resolves {dorkHome}/agents even when it sits outside the configured boundary (DOR-437)', async () => {
+      // Boundary-scoped install (e.g. DORKOS_BOUNDARY=/workspace in a
+      // container): the agents directory lives under dorkHome, not under
+      // the project boundary. validateBoundaryOrDorkHome is the seam that
+      // makes this resolve instead of 403ing like plain validateBoundary did.
+      const agentsPath = '/home/node/.dork/agents';
+      mockValidateBoundaryOrDorkHome.mockResolvedValue(agentsPath);
+      mockReaddir.mockResolvedValue([{ name: 'dorkbot', isDirectory: () => true }]);
+
+      const res = await request(app).get(`/api/directory?path=${encodeURIComponent(agentsPath)}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.path).toBe(agentsPath);
+      expect(res.body.entries).toEqual([
+        { name: 'dorkbot', path: `${agentsPath}/dorkbot`, isDirectory: true },
+      ]);
+      expect(mockValidateBoundaryOrDorkHome).toHaveBeenCalledWith(agentsPath);
+      // The plain (boundary-only) validator must not be used for this route.
+      expect(mockValidateBoundary).not.toHaveBeenCalled();
     });
   });
 

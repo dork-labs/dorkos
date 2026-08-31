@@ -4,7 +4,12 @@ import path from 'path';
 import { z } from 'zod';
 import { BrowseDirectoryQuerySchema } from '@dorkos/shared/schemas';
 import { AGENT_NAME_REGEX } from '@dorkos/shared/validation';
-import { validateBoundary, getBoundary, BoundaryError } from '../lib/boundary.js';
+import {
+  validateBoundary,
+  validateBoundaryOrDorkHome,
+  getBoundary,
+  BoundaryError,
+} from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 
@@ -28,7 +33,11 @@ router.get('/', async (req, res) => {
 
   let resolved: string;
   try {
-    resolved = await validateBoundary(targetPath);
+    // Widened to validateBoundaryOrDorkHome (not validateBoundary) so browsing
+    // {dorkHome}/agents/* resolves under a boundary-scoped install (e.g.
+    // DORKOS_BOUNDARY=/workspace in a container) — the same treatment the
+    // session routes got in PR #412 (DOR-437).
+    resolved = await validateBoundaryOrDorkHome(targetPath);
   } catch (err: unknown) {
     if (err instanceof BoundaryError) {
       if (err.code === 'NULL_BYTE')
