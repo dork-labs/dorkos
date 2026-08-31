@@ -193,14 +193,10 @@ export function AgentsList({ agents, isLoading, rosterFilters }: AgentsListProps
   );
 
   // ── Callbacks for column cell renderers ────────────────────────
+  // The row click and the row's action button both open the same door — resume
+  // the agent's existing session, or mint one if it has none — so they share
+  // one handler (DOR-1415).
   const handleNavigate = useCallback(
-    (projectPath: string) => {
-      void navigate({ to: '/session', search: { dir: projectPath } });
-    },
-    [navigate]
-  );
-
-  const handleStartSession = useCallback(
     (projectPath: string) => {
       void navigate({ to: '/session', search: { dir: projectPath } });
     },
@@ -212,9 +208,8 @@ export function AgentsList({ agents, isLoading, rosterFilters }: AgentsListProps
     () => ({
       onNavigate: handleNavigate,
       onViewProfile: handleViewProfile,
-      onStartSession: handleStartSession,
     }),
-    [handleNavigate, handleViewProfile, handleStartSession]
+    [handleNavigate, handleViewProfile]
   );
 
   /**

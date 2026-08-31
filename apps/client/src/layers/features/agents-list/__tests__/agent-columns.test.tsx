@@ -54,7 +54,7 @@ function row(overrides: Partial<AgentTableRow> & { id: string; name: string }): 
   };
 }
 
-const callbacks = { onNavigate: vi.fn(), onViewProfile: vi.fn(), onStartSession: vi.fn() };
+const callbacks = { onNavigate: vi.fn(), onViewProfile: vi.fn() };
 
 function renderTable(rows: AgentTableRow[]) {
   return render(<AgentFleetTable rows={rows} grouped={false} callbacks={callbacks} />);

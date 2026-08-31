@@ -9,12 +9,8 @@ import { beginSessionNavigation, type CockpitLocation } from './session-navigati
  * small mock.
  */
 export interface SwitchAgentCwdStore {
-  /** The active working directory — recorded as the switch-back target. */
-  selectedCwd: string | null;
   /** Persist the newly-selected working directory. */
   setSelectedCwd: (cwd: string) => void;
-  /** Remember the directory being left, powering the palette's "switch back" hint. */
-  setPreviousCwd: (cwd: string | null) => void;
 }
 
 /** Injected dependencies for {@link switchAgentCwd}. */
@@ -43,11 +39,11 @@ export interface SwitchAgentCwdDeps {
  * Switch the cockpit's active agent to `cwd`.
  *
  * Mirrors the command palette's agent-select path (`handleAgentSelect` →
- * `setDir`): resolve which conversation that directory is on, then record the
- * switch-back directory, persist the new working directory, and navigate to
- * `/session` carrying it (a null session id resets the chat input). This is the
- * seam the agent's `control_ui switch_agent` command drives, so it lives as a
- * plain function callable from outside React.
+ * `setDir`): resolve which conversation that directory is on, then persist the
+ * new working directory and navigate to `/session` carrying it (a null session
+ * id resets the chat input). This is the seam the agent's `control_ui
+ * switch_agent` command drives, so it lives as a plain function callable from
+ * outside React.
  *
  * **Nothing is committed until the destination is known.** The chat stream is
  * keyed on (session id, selected cwd), so writing the new cwd while the lookup
@@ -67,10 +63,6 @@ export interface SwitchAgentCwdDeps {
 export async function switchAgentCwd(cwd: string, deps: SwitchAgentCwdDeps): Promise<void> {
   const { store, queryClient, transport, currentLocation, navigate } = deps;
   const isStillWanted = beginSessionNavigation(currentLocation);
-  // Captured at the gesture, applied after: this is the directory being LEFT,
-  // and reading it back after the await would read whatever the cockpit has
-  // moved on to.
-  const leaving = store.selectedCwd;
 
   const resolved = await resolveSessionForCwd({ queryClient, transport }, cwd);
   // Overtaken checks FIRST: an abandoned switch has nothing to say. Reporting a
@@ -82,7 +74,6 @@ export async function switchAgentCwd(cwd: string, deps: SwitchAgentCwdDeps): Pro
     return;
   }
 
-  if (leaving && leaving !== cwd) store.setPreviousCwd(leaving);
   store.setSelectedCwd(cwd);
   navigate({ dir: cwd, session: resolved.sessionId });
 }

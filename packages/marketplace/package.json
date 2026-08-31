@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
     "typecheck": "tsc --noEmit && tsc -p scripts",
     "test": "vitest",
     "check-categories": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/run-check-categories.ts",

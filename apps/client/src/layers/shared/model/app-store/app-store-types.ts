@@ -166,9 +166,6 @@ export interface CoreSlice {
   routerDevtoolsOpen: boolean;
   toggleRouterDevtools: () => void;
 
-  previousCwd: string | null;
-  setPreviousCwd: (cwd: string | null) => void;
-
   isStreaming: boolean;
   setIsStreaming: (v: boolean) => void;
   isTextStreaming: boolean;

@@ -424,7 +424,7 @@ export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = 
   'uploads.allowedTypes': {
     value: ['*/*'],
     reason:
-      'Accepts every MIME type, because an agent working on a real codebase receives arbitrary file types and a curated allowlist would reject legitimate work. The size and count caps stay on and are the real bound.',
+      'Accepts every MIME type, because an agent working on a real codebase receives arbitrary file types and a curated allowlist would reject legitimate work. The size and count caps stay on and are a real bound regardless; a person who narrows this list further has that narrowing carried across a wipe and closed to agent writes, same as those two (DOR-1505).',
   },
   'rooms.repo.enabled': {
     value: true,

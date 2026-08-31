@@ -145,12 +145,14 @@ function ActivityCell({ row }: { row: AgentTableRow }) {
 // ---------------------------------------------------------------------------
 
 export interface AgentColumnCallbacks {
-  /** Navigate to a session for the given project path. */
+  /**
+   * Open a session for the given project path — resuming the agent's existing
+   * conversation when one exists, minting a fresh one otherwise. Both the row
+   * itself and its action button open the same door (DOR-1415).
+   */
   onNavigate: (projectPath: string) => void;
   /** View an agent's profile — where everything about it is read and changed. */
   onViewProfile: (projectPath: string) => void;
-  /** Start a new session for an agent. */
-  onStartSession: (projectPath: string) => void;
 }
 
 /** Create column definitions for the agent fleet table. */
@@ -238,7 +240,7 @@ export function createAgentColumns(
               className="size-8 p-0"
               onClick={(e) => {
                 e.stopPropagation();
-                callbacks.onStartSession(agent.projectPath ?? '');
+                callbacks.onNavigate(agent.projectPath ?? '');
               }}
               // It opens a SESSION — the same door the agent's row in the
               // sidebar is. "Chat with" read as "send this agent a message",

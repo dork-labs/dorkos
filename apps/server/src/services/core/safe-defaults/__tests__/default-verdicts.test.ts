@@ -163,21 +163,24 @@ describe('config default verdicts cover the whole schema', () => {
 /**
  * Permissive leaves this deliberately does not carry across a wipe, and why.
  *
- * The carryover rules speak `boolean` / `lower` / `higher` / `later`, so a
- * permissive enum, array, or free string cannot be expressed as one today.
- * Naming them here rather than letting the assertion below skip them silently is
- * the point: the gap is recorded, not hidden.
+ * The carryover rules speak `boolean` / `lower` / `higher` / `later` /
+ * `restricted`, so a permissive enum or free string with no sound comparison
+ * against its default still has no direction to express it. Naming such a leaf
+ * here rather than letting the assertion below skip it silently is the point:
+ * the gap is recorded, not hidden.
  *
  * An exemption is for a leaf where no direction is more protective — never for
- * one whose direction the union happens not to speak yet.
- * `welcomeBack.absenceThresholdMinutes` was listed here on first writing and was
- * wrong for it: someone who set a week and lands back on four hours loses a real
- * protection, so the union grew `higher` and the leaf moved to
- * PROTECTIVE_CARRYOVERS where it belonged.
+ * one whose direction the union happens not to speak yet. Two leaves were
+ * listed here on first writing and were wrong for it, each fixed by growing the
+ * union instead of accepting the gap:
+ * `welcomeBack.absenceThresholdMinutes` (someone who set a week and lands back
+ * on four hours loses a real protection, so the union grew `higher`) and
+ * `uploads.allowedTypes` (an array is not a general subset-comparable type, but
+ * THIS array's default is a universal wildcard, so "excludes the wildcard" is a
+ * sound comparison without needing one — the union grew `restricted`,
+ * DOR-1505). Both moved to PROTECTIVE_CARRYOVERS where they belonged.
  */
 const CARRYOVER_EXEMPT: Readonly<Record<string, string>> = {
-  'uploads.allowedTypes':
-    'An array of MIME globs. "More protective" is a subset test the carryover directions cannot express. The size and count caps are the real bound, and both of those DO carry across a wipe.',
   'mcp.rateLimit.windowSecs':
     'Lower is not more protective here: a shorter window with the same request count allows MORE traffic, not less. The count (`maxPerWindow`) is the bound that carries.',
   'rooms.replyWaitMinutes':

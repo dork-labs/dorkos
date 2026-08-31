@@ -13,8 +13,8 @@ import { useAppStore, useTransport } from '@/layers/shared/model';
 import { switchAgentCwd } from '@/layers/entities/session';
 
 /**
- * @returns A callback that switches the cockpit to an agent's working directory,
- *   reading the store fresh per call so the switch-back target stays current.
+ * @returns A callback that switches the cockpit to an agent's working
+ *   directory, reading the store fresh per call.
  */
 export function useSwitchAgentCwd(): (cwd: string) => void {
   const queryClient = useQueryClient();
