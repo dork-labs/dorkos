@@ -159,14 +159,28 @@ function abortText(signal: AbortSignal): string | undefined {
   return 'TTL budget expired';
 }
 
-/** StreamEvent types that are skipped to prevent infinite loops (Bug 1 guard). */
+/**
+ * StreamEvent types that are skipped to prevent infinite loops (Bug 1 guard).
+ *
+ * A hand-set `replyTo: relay.agent.*` can route any StreamEvent back to an
+ * agent as if it were a prompt; this set is what tells that case apart from a
+ * real message. `thinking_delta`, `tool_progress`, and `system_status` were
+ * missing (DOR-804): a new stream event type shipped without a matching entry
+ * here, so it would have round-tripped as a prompt instead of being
+ * recognized as stream traffic. The fixture test pins its own literal list
+ * rather than importing this one, on purpose — an import would move in
+ * lockstep with a regression here instead of catching it.
+ */
 const STREAM_EVENT_TYPES = new Set([
   'text_delta',
+  'thinking_delta',
   'tool_call_start',
   'tool_call_end',
   'tool_call_delta',
+  'tool_progress',
   'tool_result',
   'session_status',
+  'system_status',
   'approval_required',
   'question_prompt',
   'error',

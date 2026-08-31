@@ -1130,13 +1130,23 @@ describe('ClaudeCodeAdapter', () => {
 
   describe('agent message delivery', () => {
     it('skips sendMessage and marks trace processed for every StreamEvent payload type', async () => {
+      // A literal list, not an import of the production guard's own set: this
+      // is the fixture the guard is checked against, so it must stay able to
+      // catch a regression there rather than moving in lockstep with one.
+      // thinking_delta, tool_progress, and system_status were missing from
+      // the production guard until DOR-804 — a hand-set `replyTo:
+      // relay.agent.*` could route one of them back to an agent as a prompt
+      // instead of it being recognized as stream traffic.
       const STREAM_EVENT_TYPES = [
         'text_delta',
+        'thinking_delta',
         'tool_call_start',
         'tool_call_end',
         'tool_call_delta',
+        'tool_progress',
         'tool_result',
         'session_status',
+        'system_status',
         'approval_required',
         'question_prompt',
         'error',
