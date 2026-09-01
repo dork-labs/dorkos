@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type {
   ModelOption,
@@ -27,6 +30,7 @@ vi.mock('../../../../lib/logger.js', () => ({
 }));
 
 import { RuntimeCache, mapSdkModelToModelOption } from '../messaging/runtime-cache.js';
+import { CLAUDE_SDK_VERSION } from '../tooling/provision.js';
 import {
   ControlRequestTimeoutError,
   LAUNCH_PROBE_ACK_TIMEOUT_MS,
@@ -107,6 +111,104 @@ describe('RuntimeCache', () => {
   });
 
   // =========================================================================
+  // Disk cache — the SDK re-pin gate (DOR-1672)
+  // =========================================================================
+
+  describe('disk cache', () => {
+    let dorkHome: string;
+
+    /** Where the constructor puts a claude-code cache under a dork home. */
+    const cacheFileIn = (home: string) =>
+      path.join(home, 'cache', 'runtimes', 'claude-code', 'models.json');
+
+    /**
+     * One persisted row, carrying the capability claims that make this gate
+     * necessary — `supportsVision` is DorkOS's assertion about a model line,
+     * not an SDK echo, so a row written under one pin can outlive the pin that
+     * justified it.
+     */
+    const OPUS: ModelOption = {
+      value: 'claude-opus-4-8',
+      displayName: 'Opus',
+      description: 'the big one',
+      supportsToolUse: true,
+      supportsVision: true,
+    };
+
+    /** Write a disk cache by hand, so each test differs by exactly one field. */
+    function writeDiskCache(fields: { sdkVersion: string; fetchedAt: string }): void {
+      const file = cacheFileIn(dorkHome);
+      mkdirSync(path.dirname(file), { recursive: true });
+      writeFileSync(
+        file,
+        JSON.stringify({
+          models: [OPUS],
+          fetchedAt: fields.fetchedAt,
+          sdkVersion: fields.sdkVersion,
+          version: 1,
+        }),
+        'utf-8'
+      );
+    }
+
+    beforeEach(() => {
+      dorkHome = mkdtempSync(path.join(tmpdir(), 'dorkos-runtime-cache-'));
+    });
+
+    afterEach(() => {
+      rmSync(dorkHome, { recursive: true, force: true });
+    });
+
+    it('serves a cache written by the SDK pin it is running, inside the TTL', async () => {
+      writeDiskCache({ sdkVersion: CLAUDE_SDK_VERSION, fetchedAt: new Date().toISOString() });
+
+      const cold = new RuntimeCache(dorkHome);
+
+      expect(await cold.getSupportedModels()).toEqual([OPUS]);
+      expect(cold.getCachedModel('claude-opus-4-8')?.supportsVision).toBe(true);
+    });
+
+    it('refuses a cache written by a different SDK pin, however fresh it is', async () => {
+      // Same fixture as the test above but for the version string, so what is
+      // measured here is the version match and nothing else. Without it, a
+      // re-pin that corrects a capability claim would keep serving the old
+      // claim for up to a TTL (DOR-1672 review).
+      writeDiskCache({ sdkVersion: '0.3.100', fetchedAt: new Date().toISOString() });
+
+      const cold = new RuntimeCache(dorkHome);
+
+      // No default cwd is set, so there is no lazy warm-up to fall through to:
+      // anything returned here could only have come off disk.
+      expect(await cold.getSupportedModels()).toEqual([]);
+      expect(cold.getCachedModel('claude-opus-4-8')).toBeUndefined();
+    });
+
+    it('refuses a matching-pin cache that has aged past the TTL', async () => {
+      writeDiskCache({
+        sdkVersion: CLAUDE_SDK_VERSION,
+        fetchedAt: new Date(Date.now() - 86_400_000 - 60_000).toISOString(),
+      });
+
+      const cold = new RuntimeCache(dorkHome);
+
+      expect(await cold.getSupportedModels()).toEqual([]);
+    });
+
+    it('stamps the running pin on what it writes, so its own cache reads back', async () => {
+      const writer = new RuntimeCache(dorkHome);
+      writer.buildSendCallbacks('/project').onModelsReceived!(makeModels('claude-opus-4-8'));
+
+      const persisted = JSON.parse(readFileSync(cacheFileIn(dorkHome), 'utf-8')) as {
+        sdkVersion: string;
+      };
+      expect(persisted.sdkVersion).toBe(CLAUDE_SDK_VERSION);
+
+      const reader = new RuntimeCache(dorkHome);
+      expect((await reader.getSupportedModels()).map((m) => m.value)).toEqual(['claude-opus-4-8']);
+    });
+  });
+
+  // =========================================================================
   // mapSdkModelToModelOption
   // =========================================================================
 
@@ -141,6 +243,58 @@ describe('RuntimeCache', () => {
         description: '',
       });
       expect(option.resolvedModel).toBe('claude-sonnet-5');
+    });
+
+    // ---- Capability flags are DorkOS's claims, not the SDK's (DOR-1672) ----
+
+    it('states what every Claude model can do, in real booleans', () => {
+      // `ModelInfo` reports nothing capability-shaped, so these three are static
+      // claims the mapper makes: the Agent SDK only lists models it can drive
+      // through a tool loop, and the Messages API has no image-output modality.
+      // Deleting `...CLAUDE_MODEL_CAPABILITIES` from the mapper makes this red.
+      const option = mapSdkModelToModelOption({
+        value: 'claude-opus-4-8',
+        displayName: 'Opus',
+        description: '',
+      });
+      expect(option.supportsToolUse).toBe(true);
+      expect(option.supportsVision).toBe(true);
+      expect(option.supportsImageOutput).toBe(false);
+    });
+
+    it('claims vision only for a family DorkOS has verified, never for a stranger id', () => {
+      // The tool-use and image-output claims are structural (true of anything
+      // this SDK can drive); vision is a claim about verified model LINES. An
+      // id outside the inferTier vocabulary — a future line the SDK starts
+      // listing — must get the honest absence, not an inherited true
+      // (DOR-1672 review).
+      const option = mapSdkModelToModelOption({
+        value: 'claude-mythos-preview',
+        displayName: 'Mythos',
+        description: '',
+      });
+      expect(option.supportsToolUse).toBe(true);
+      expect(option.supportsImageOutput).toBe(false);
+      expect(option.supportsVision).toBeUndefined();
+    });
+
+    it('invents no context window the SDK never reported', () => {
+      // The other half of the same honesty rule, and the half that is easier to
+      // get wrong later: `ModelInfo` carries neither `contextWindow` nor
+      // `maxOutputTokens`, and DorkOS has no defensible static value for either
+      // (they differ per model and per account tier), so the mapper says
+      // nothing rather than guessing. Every consumer reads absent as unknown —
+      // `useSessionStatus` falls back to `null`, the picker hides its badge.
+      //
+      // If a future SDK starts reporting them, READ them here and delete this
+      // test. Do not satisfy it with a hardcoded number.
+      const option = mapSdkModelToModelOption({
+        value: 'claude-opus-4-8',
+        displayName: 'Opus',
+        description: '',
+      });
+      expect(option.contextWindow).toBeUndefined();
+      expect(option.maxOutputTokens).toBeUndefined();
     });
   });
 
