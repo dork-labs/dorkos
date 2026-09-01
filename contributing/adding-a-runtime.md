@@ -464,6 +464,18 @@ path and sidecar port, and `configManager` is undefined until something calls
 the section it needs and points the manager at that. Reading the real `~/.dork`
 would be a test that can write to a person's settings.
 
+**And there is a class of bug ONLY the live smoke can catch: a request field the
+SDK types as optional and the server requires.** Generated SDK clients (hey-api,
+which is what `@opencode-ai/sdk` uses) mark every request payload `body?:`
+whether or not the endpoint needs one, so the compiler cannot tell a genuinely
+optional body from a required one — and neither can a mocked client, which
+accepts whatever it is handed. DorkOS shipped exactly that: `/compact` was broken
+on every OpenCode session for as long as it existed, with a fully green suite,
+because `session.summarize` was called with no body (DOR-1668; the audit of every
+call is `services/runtimes/opencode/NOTES.md` §9). **A `body?:` in generated
+types proves nothing.** Check the server's own contract, and put anything you
+cannot check that way through the live arm.
+
 ### 5. Add the ESLint SDK-confinement boundary (Hard Rule #2)
 
 `apps/server/eslint.config.js` confines each SDK to its adapter directory. Three edits, all in that file:
