@@ -29,6 +29,7 @@
  */
 import type { SseFrame } from '@dorkos/test-utils/sse-test-helpers';
 import type { Oracle } from '../types.js';
+import { evalCostSignal } from '../runner/budget.js';
 
 /** A durable tool frame's data payload (reuses the `ToolCallEvent` shape). */
 interface ToolFrameData {
@@ -268,4 +269,218 @@ export function uiActionTriggerObserved(actionId: string, label?: string): Oracl
       detail: passed ? undefined : `no turn_start carried a <ui_action> trigger for "${actionId}"`,
     };
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cross-runtime chat oracles
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// These assert the SHAPE of a turn rather than anything said in it, which is the
+// only way one case can mean the same thing on claude-code and on an open-weight
+// model reached through OpenRouter. A cheap model's prose is not stable enough to
+// assert on and never was — `apps/e2e`'s `toContainText('hello world')` would
+// fail intermittently here, and the red would be about the model rather than
+// about DorkOS. There is also no determinism seam to fall back on: OpenCode's
+// `session.promptAsync` body carries no temperature and no seed (SDK 1.18.15
+// `SessionPromptData`), so a prose assertion has nothing holding it still.
+
+/**
+ * Oracle: the turn produced EXACTLY ONE terminal `turn_end`.
+ *
+ * The most basic promise a runtime makes and the one whose breach is worst: two
+ * terminals leave a client that closes on the first one deaf to everything after
+ * it, and zero leave it spinning forever. `runtimeConformance` proves it at the
+ * adapter; this proves it survived the whole path out to the durable stream a
+ * person's browser actually reads.
+ *
+ * @param label - Human-readable label; defaults to a fixed one.
+ * @returns An {@link Oracle}.
+ */
+export function turnEndedExactlyOnce(label?: string): Oracle {
+  return async (ctx) => {
+    const ends = framesOfType(ctx.frames, 'turn_end');
+    return {
+      label: label ?? 'the turn ended exactly once',
+      passed: ends.length === 1,
+      evidence: { turnEndFrames: ends.length, totalFrames: ctx.frames.length },
+      detail:
+        ends.length === 1 ? undefined : `expected exactly one turn_end frame, saw ${ends.length}`,
+    };
+  };
+}
+
+/**
+ * Oracle: at least one tool call OPENED and the SAME call closed, in that order.
+ *
+ * Pairing on `toolCallId` is the point. "A `tool_call` appeared and a
+ * `tool_result` appeared" would pass on a stream that opened one tool and closed
+ * a different one — which is exactly the failure a demux bug produces, and
+ * exactly the one worth catching on a runtime whose events arrive on a shared
+ * global stream and are filtered back apart by key (OpenCode's
+ * `{directory, sessionID}` demux).
+ *
+ * Deliberately says nothing about WHICH tool: a cheap model asked to read a file
+ * may reach for `read`, `bash`, or a grep-shaped tool, and all three are correct
+ * answers to the question this oracle asks (did a tool loop open and close?).
+ *
+ * @param label - Human-readable label; defaults to a fixed one.
+ * @returns An {@link Oracle}.
+ */
+export function toolLoopClosed(label?: string): Oracle {
+  return async (ctx) => {
+    const opened = new Map<string, number>();
+    const closed = new Map<string, number>();
+    ctx.frames.forEach((frame, index) => {
+      const data = frame.data as (ToolFrameData & { toolCallId?: string }) | undefined;
+      const id = data?.toolCallId;
+      if (typeof id !== 'string' || id === '') return;
+      const type = frame.event ?? data?.type;
+      if (type === 'tool_call' && !opened.has(id)) opened.set(id, index);
+      if (type === 'tool_result' && !closed.has(id)) closed.set(id, index);
+    });
+    const paired = [...opened.entries()].filter(([id, at]) => {
+      const end = closed.get(id);
+      return end !== undefined && end >= at;
+    });
+    return {
+      label: label ?? 'a tool call opened and the same call closed',
+      passed: paired.length > 0,
+      evidence: {
+        openedToolCalls: opened.size,
+        closedToolCalls: closed.size,
+        pairedToolCalls: paired.length,
+        observedToolNames: observedToolNames(ctx.frames, 'tool_call'),
+      },
+      detail:
+        paired.length > 0
+          ? undefined
+          : `no tool_call was followed by a tool_result carrying the same toolCallId (${opened.size} opened, ${closed.size} closed)`,
+    };
+  };
+}
+
+/** A durable `status_change` frame's payload, as probed off `SseFrame.data`. */
+interface StatusFrameData {
+  type?: string;
+  status?: { model?: unknown; cost?: unknown; usage?: unknown };
+}
+
+/** Every `status_change` frame's `status` object, in order. */
+function statusPayloads(frames: SseFrame[]): NonNullable<StatusFrameData['status']>[] {
+  return framesOfType(frames, 'status_change')
+    .map((f) => (f.data as StatusFrameData | undefined)?.status)
+    .filter((s): s is NonNullable<StatusFrameData['status']> => !!s && typeof s === 'object');
+}
+
+/**
+ * Oracle: the turn reported a real, positive, finite cost.
+ *
+ * `OPENCODE_CAPABILITIES.supportsCostTracking` claims OpenCode reports cost
+ * (`opencode/runtime-constants.ts`); until something drives a paid turn and
+ * reads the number back off the durable stream, that is a claim rather than a
+ * fact. It also matters operationally: `--budget` can only enforce on a cost it
+ * can see, so a runtime whose cost never arrives is a runtime whose spend
+ * ceiling does nothing (`EvalResult.costUnmetered` exists because that already
+ * happened once).
+ *
+ * Positive AND finite, not merely present: a `0` from a completed paid turn and
+ * a `NaN` are both ways of saying "the ceiling is not watching".
+ *
+ * @param label - Human-readable label; defaults to a fixed one.
+ * @returns An {@link Oracle}.
+ */
+export function costReportedPositive(label?: string): Oracle {
+  return async (ctx) => {
+    const cost = evalCostSignal(ctx.frames);
+    const passed = cost !== null && Number.isFinite(cost) && cost > 0;
+    return {
+      label: label ?? 'the runtime reported a positive, finite cost',
+      passed,
+      evidence: { costUsd: cost, statusFrames: statusPayloads(ctx.frames).length },
+      detail: passed
+        ? undefined
+        : cost === null
+          ? 'no status frame carried a cost at all, so --budget saw nothing'
+          : `cost was ${String(cost)}, which is not a positive finite number`,
+    };
+  };
+}
+
+/**
+ * Oracle: some status frame named `expected` as the active model.
+ *
+ * The pin this protects is spelling. DorkOS stores one model string per session
+ * and OpenCode addresses models as `{providerID, modelID}`, so
+ * `parseModelSelection` (`opencode/turn-input.ts`) splits on the FIRST `/` —
+ * which makes `openrouter/qwen/qwen3.7-flash` right and both
+ * `qwen/qwen3.7-flash` and `openrouter/qwen3.7-flash` wrong in ways that fail
+ * far from the typo. Reading the model back off the stream is what turns the
+ * convention into a fact.
+ *
+ * The comparison is against the SECOND segment onward, because the sidecar
+ * reports `modelID` alone: the provider half is carried on `usage.detail`.
+ *
+ * @param expected - The pinned model, as `provider/model`.
+ * @param label - Human-readable label; defaults to naming the model.
+ * @returns An {@link Oracle}.
+ */
+export function modelReportedIs(expected: string, label?: string): Oracle {
+  const separator = expected.indexOf('/');
+  const expectedModelId = separator > 0 ? expected.slice(separator + 1) : expected;
+  return async (ctx) => {
+    const models = statusPayloads(ctx.frames)
+      .map((s) => s.model)
+      .filter((m): m is string => typeof m === 'string' && m !== '');
+    const passed = models.includes(expectedModelId);
+    return {
+      label: label ?? `the turn ran on ${expected}`,
+      passed,
+      evidence: { expected, expectedModelId, observedModels: [...new Set(models)] },
+      detail: passed
+        ? undefined
+        : `no status frame reported model '${expectedModelId}' (saw: ${[...new Set(models)].join(', ') || 'nothing'})`,
+    };
+  };
+}
+
+/**
+ * Oracle: the turn failed HONESTLY — a typed `error` frame arrived, and the turn
+ * still reached its terminal `turn_end`.
+ *
+ * Both halves are the assertion. An error with no terminal is a hang, which is
+ * what a person actually complains about (the pane spins and nothing ever says
+ * why); a terminal with no error is a turn that failed silently and left the
+ * person to guess. The pairing is what "fails honestly" means.
+ *
+ * @param label - Human-readable label; defaults to a fixed one.
+ * @returns An {@link Oracle}.
+ */
+export function failedHonestly(label?: string): Oracle {
+  return async (ctx) => {
+    const errorAt = ctx.frames.findIndex(
+      (f) => (f.event ?? (f.data as { type?: string })?.type) === 'error'
+    );
+    const endAt = ctx.frames.findIndex((f) => isTurnEndFrame(f));
+    const passed = errorAt >= 0 && endAt >= 0 && errorAt < endAt;
+    const messages = framesOfType(ctx.frames, 'error')
+      .map((f) => (f.data as { message?: unknown } | undefined)?.message)
+      .filter((m): m is string => typeof m === 'string');
+    return {
+      label: label ?? 'the turn reported a typed error and still terminated',
+      passed,
+      evidence: { errorFrameIndex: errorAt, turnEndIndex: endAt, errorMessages: messages },
+      detail: passed
+        ? undefined
+        : errorAt < 0
+          ? 'no error frame arrived — the failure was silent'
+          : endAt < 0
+            ? 'an error arrived but the turn never ended — this is the hang'
+            : 'the error arrived after the turn had already ended',
+    };
+  };
+}
+
+/** True when a frame is the turn's terminal `turn_end` boundary. */
+function isTurnEndFrame(frame: SseFrame): boolean {
+  return (frame.event ?? (frame.data as { type?: string } | undefined)?.type) === 'turn_end';
 }

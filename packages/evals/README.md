@@ -63,7 +63,96 @@ bill, so it is worth knowing which is which:
 | `memory`       | agent memory across surfaces, three quarantined probes          | yes, credentialed                   |
 | `connector`    | connector routing, quarantined                                  | yes, credentialed                   |
 | `experimental` | cases kept out of `core` by a known harness gap                 | yes, credentialed                   |
+| `chat`         | the same six chat cases, on whichever runtime you point them at | yes, and NOT on a Claude plan       |
 | `all`          | everything registered                                           | yes                                 |
+
+### The `chat` suite, and runs that pay somebody else
+
+`chat` is six cases about what the chat pane owes a person: one turn ends exactly
+once, a tool call opens and the same call closes, a permission prompt is answered
+and the file is either written or is not, a real cost comes back, the model is the
+one you pinned, and a model that does not exist says so instead of spinning. None
+of them read the assistant's words — a cheap open-weight model's prose is not
+steady enough to check, and there is no temperature or seed to steady it, so every
+answer here is mechanical.
+
+They run on whatever runtime you point them at:
+
+```bash
+# the whole suite on OpenCode, through OpenRouter — measured at $0.0072
+DORKOS_EVALS_PAID_PROVIDER=1 OPENROUTER_API_KEY=sk-or-… \
+  pnpm evals -- --suite chat --tier real-provider
+```
+
+**Any run that reaches an external provider** spends money that is **not** a
+Claude subscription, so it asks for two separate things and needs both:
+
+- `DORKOS_EVALS_PAID_PROVIDER=1` — the decision. Without it the run stops before
+  it starts anything, prints why, and bills nothing.
+- `OPENROUTER_API_KEY` — the instrument. With the flag and no key, every case is
+  an error. Never a pass, never a quiet skip.
+
+A key on its own does nothing. That is deliberate: people leave keys exported
+because half the toolchain wants one, and having a key is not the same as
+deciding to spend.
+
+**What decides whether you are asked is what the run REACHES, not which `--tier`
+you typed.** OpenCode is the only runtime that fronts an outside provider, so
+`--runtime opencode` spends on one whatever tier sits beside it, and naming
+`--provider` does the same. All three of these ask for the flag, and refuse
+without it:
+
+```bash
+pnpm evals -- --suite chat --tier real-provider
+pnpm evals -- --suite chat --tier claude-code-cheap --runtime opencode
+pnpm evals -- --suite chat --tier claude-code-cheap --provider openrouter
+```
+
+That is not a nicety. Keying the gate on the tier name was a real hole: the
+middle command above reached OpenRouter and spent money with the flag never set,
+and then recorded `credentialSource: 'anthropic-…'`, naming the wrong bill on the
+way out. An ordinary `--tier claude-code-cheap` run — no OpenCode, no provider —
+is unaffected and still uses your Claude credential.
+
+Defaults you get for free: `--runtime opencode`, `--provider openrouter`,
+`--model openrouter/qwen/qwen3.7-flash`, and a `--budget` of `0.50`. The budget is
+a tripwire, not an allowance — a full six-case pass measured **$0.0072** on
+OpenRouter's own meter (2026-09-01), so reaching fifty cents means something
+looped.
+
+Read the harness's own total as a FLOOR, not a bill. That same run printed
+`$0.0015`, about a fifth of what OpenRouter charged. The harness can only count
+what arrives on the session stream, and OpenCode reports the cost of a completed
+assistant message — so a turn that fails before completing (the bad-model case) is
+counted as unmetered and contributes nothing, and any tokens spent outside a
+completed message are invisible. The table says `unmetered` where that happened,
+and the `SPEND:` line under it says the total is a floor. Believe the provider's
+dashboard for what you actually paid.
+
+The tier will not run in a container. Eval containers get no network at all, which
+is the point of them, and this tier has to reach openrouter.ai — so
+`--isolation docker` is refused rather than quietly downgraded.
+
+One thing to know before you point this at OpenCode: DorkOS spawns the OpenCode
+sidecar with an ask-before-you-act rule set, so every turn that touches a file
+stops and waits. The harness answers those prompts itself; a case you add here
+without an approval policy will not run a weaker test, it will sit there until the
+timeout.
+
+Every case lands quarantined — they report, they do not gate — until three runs in
+a row reach their oracles green. See the promotion bar below.
+
+**So this suite cannot exit 0 yet, and a green table beside a non-zero exit is not
+a contradiction.** A run that gates on zero cases is treated as a failed run on
+purpose (a suite whose every case is exempt would otherwise be indistinguishable
+from one that passed), and every case here is exempt. Read the table and the
+GATING line, not the exit code, until the first case is promoted. `--suite
+connector` and `--suite experimental` behave the same way.
+
+One more thing to read honestly: the `$0.50` ceiling is enforced on the number the
+harness can SEE, and that number under-counts (see the floor note above). Treat it
+as a tripwire against a runaway loop, not as a guarantee of what you will be
+charged.
 
 ### The `rooms` suite (channels)
 
@@ -565,6 +654,20 @@ of the eval workflow allowed exactly that, which meant a stale or mistyped name
 would ship an unrelated repository secret to a third party as an auth header.
 Adding a source means adding a literal name, never an input.
 
+The `real-provider` tier is outside that ladder on purpose. It reads
+`OPENROUTER_API_KEY` and nothing else, and only when `DORKOS_EVALS_PAID_PROVIDER`
+is `1`. Being signed in to `claude` must never arm a run that bills an OpenRouter
+account, and folding the two questions together is exactly how it would: while
+this tier was being built, a run armed with the flag and no OpenRouter key booted
+five servers and drove real turns, because the local sign-in answered the ladder.
+Nothing was billed only because the sandbox had no OpenRouter key to spend, which
+is luck rather than a gate.
+
+None of these names is listed in `turbo.json`, and none of them may be. Turbo runs
+strict and strips whatever a task was not told to pass, which is the single reason
+`pnpm test`, `pnpm verify`, the pre-push hook and CI have never been able to reach
+a paid path. A test pins this.
+
 CI has no sign-in of its own, so the credentialed workflow needs one of the two
 secrets. When neither is configured it skips with a notice instead of failing.
 
@@ -577,6 +680,9 @@ secrets. When neither is configured it skips with a notice instead of failing.
 | `child-process`  | a server subprocess on your machine  | all three                  |
 | `docker`         | one throwaway container per eval     | the two variables only     |
 | `auto` (default) | container for cases that ask for one | depends which one it picks |
+
+A `real-provider` run always uses `child-process` and refuses to do anything else,
+for the same reason the table below explains: containers have no network.
 
 The container is the reason for the split. It gets no network, no host home, and
 a short list of environment variables, which is what makes it safe to let an
@@ -598,6 +704,10 @@ adds the `run-evals` label. A nightly job runs the free structural suites — bo
 of them, `core` and `rooms`, as two steps, because `--suite` takes one name. The
 credentialed suite is manual only, and promoting a case out of quarantine stays a
 human decision made on the evidence it uploads.
+
+The `real-provider` tier has no CI job at all, and no workflow in this repo sets
+`DORKOS_EVALS_PAID_PROVIDER`. It is a thing a person runs on their own machine,
+having decided to spend.
 
 ## Adding a case
 

@@ -13,10 +13,15 @@ import { describe, it, expect } from 'vitest';
 import type { SseFrame } from '@dorkos/test-utils';
 import { emptyApprovalLog, type OracleContext } from '../../types.js';
 import {
+  costReportedPositive,
+  failedHonestly,
+  modelReportedIs,
   toolInvokedInStream,
+  toolLoopClosed,
   toolNameMatches,
   toolResultContains,
   toolResultPayloads,
+  turnEndedExactlyOnce,
   uiCommandEmitted,
   uiActionTriggerObserved,
 } from '../stream.js';
@@ -236,5 +241,142 @@ describe('uiActionTriggerObserved', () => {
     const frames = [turnStart('Just a normal prompt mentioning Action: confirm-order in prose')];
     const result = await uiActionTriggerObserved('confirm-order')(ctx(frames));
     expect(result.passed).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cross-runtime chat oracles
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Each has a passing case AND the specific failure it exists to catch, because
+// an always-pass structural oracle is worse than none: these are the only
+// assertions the `chat` suite makes, so a broken one turns the whole paid tier
+// into a green that measures nothing.
+
+/** A durable `turn_end` frame. */
+function turnEnd(): SseFrame {
+  return { event: 'turn_end', data: { type: 'turn_end', seq: 9 } };
+}
+
+/** A durable `status_change` frame carrying a model and/or a cost. */
+function statusChange(status: { model?: string; cost?: number }): SseFrame {
+  return { event: 'status_change', data: { type: 'status_change', seq: 5, status } };
+}
+
+/** A durable `error` frame. */
+function errorFrame(message: string): SseFrame {
+  return { event: 'error', data: { type: 'error', seq: 7, message } };
+}
+
+/** A `tool_call` / `tool_result` pair addressed by an explicit call id. */
+function toolPair(id: string, toolName = 'read'): SseFrame[] {
+  return [
+    { event: 'tool_call', data: { type: 'tool_call', seq: 1, toolName, toolCallId: id } },
+    { event: 'tool_result', data: { type: 'tool_result', seq: 2, toolName, toolCallId: id } },
+  ];
+}
+
+describe('turnEndedExactlyOnce', () => {
+  it('passes on exactly one terminal', async () => {
+    expect((await turnEndedExactlyOnce()(ctx([turnEnd()]))).passed).toBe(true);
+  });
+
+  it('fails on a turn that never ended — the hang', async () => {
+    const result = await turnEndedExactlyOnce()(ctx([statusChange({ cost: 1 })]));
+    expect(result.passed).toBe(false);
+    expect(result.detail).toContain('saw 0');
+  });
+
+  it('fails on two terminals — a client that closes on the first goes deaf', async () => {
+    const result = await turnEndedExactlyOnce()(ctx([turnEnd(), turnEnd()]));
+    expect(result.passed).toBe(false);
+    expect(result.detail).toContain('saw 2');
+  });
+});
+
+describe('toolLoopClosed', () => {
+  it('passes when a call opens and the SAME call closes', async () => {
+    expect((await toolLoopClosed()(ctx(toolPair('tc-a')))).passed).toBe(true);
+  });
+
+  it('fails when a different call closes — the demux failure it exists to catch', async () => {
+    // One opened, one closed, nothing paired: exactly what a stream filtered on
+    // the wrong key produces, and exactly what a "saw a call, saw a result"
+    // oracle would have called green.
+    const opened = toolPair('tc-a')[0] as SseFrame;
+    const closed = toolPair('tc-b')[1] as SseFrame;
+    const result = await toolLoopClosed()(ctx([opened, closed]));
+    expect(result.passed).toBe(false);
+    expect(result.detail).toContain('1 opened, 1 closed');
+  });
+
+  it('fails when a result precedes its own call', async () => {
+    const [call, res] = toolPair('tc-a') as [SseFrame, SseFrame];
+    expect((await toolLoopClosed()(ctx([res, call]))).passed).toBe(false);
+  });
+
+  it('fails when the turn used no tools at all', async () => {
+    const result = await toolLoopClosed()(ctx([turnEnd()]));
+    expect(result.passed).toBe(false);
+    expect(result.detail).toContain('0 opened');
+  });
+});
+
+describe('costReportedPositive', () => {
+  it('passes on a real reported cost', async () => {
+    expect((await costReportedPositive()(ctx([statusChange({ cost: 0.00028 })]))).passed).toBe(
+      true
+    );
+  });
+
+  it('fails when nothing reported a cost — the ceiling was watching nothing', async () => {
+    const result = await costReportedPositive()(ctx([turnEnd()]));
+    expect(result.passed).toBe(false);
+    expect(result.detail).toContain('no status frame carried a cost');
+  });
+
+  it('fails on a zero from a completed paid turn', async () => {
+    expect((await costReportedPositive()(ctx([statusChange({ cost: 0 })]))).passed).toBe(false);
+  });
+});
+
+describe('modelReportedIs', () => {
+  it('matches the model id half of a `provider/model` pin', async () => {
+    // The sidecar reports `modelID` alone; the provider half rides usage.detail.
+    const frames = [statusChange({ model: 'qwen/qwen3.7-flash' })];
+    expect((await modelReportedIs('openrouter/qwen/qwen3.7-flash')(ctx(frames))).passed).toBe(true);
+  });
+
+  it('fails when the turn answered on a different model', async () => {
+    const result = await modelReportedIs('openrouter/qwen/qwen3.7-flash')(
+      ctx([statusChange({ model: 'anthropic/claude-haiku-4-5' })])
+    );
+    expect(result.passed).toBe(false);
+    expect(result.detail).toContain('anthropic/claude-haiku-4-5');
+  });
+
+  it('fails, rather than passing vacuously, when no model was reported', async () => {
+    const result = await modelReportedIs('openrouter/qwen/qwen3.7-flash')(ctx([turnEnd()]));
+    expect(result.passed).toBe(false);
+    expect(result.detail).toContain('nothing');
+  });
+});
+
+describe('failedHonestly', () => {
+  it('passes on a typed error followed by the terminal', async () => {
+    const frames = [errorFrame("That model isn't available."), turnEnd()];
+    expect((await failedHonestly()(ctx(frames))).passed).toBe(true);
+  });
+
+  it('fails on an error with no terminal — the hang a person actually complains about', async () => {
+    const result = await failedHonestly()(ctx([errorFrame('boom')]));
+    expect(result.passed).toBe(false);
+    expect(result.detail).toContain('never ended');
+  });
+
+  it('fails on a terminal with no error — a silent failure', async () => {
+    const result = await failedHonestly()(ctx([turnEnd()]));
+    expect(result.passed).toBe(false);
+    expect(result.detail).toContain('silent');
   });
 });

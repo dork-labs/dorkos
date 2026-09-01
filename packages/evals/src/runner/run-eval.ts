@@ -25,6 +25,7 @@ import type { SseFrame } from '@dorkos/test-utils/sse-test-helpers';
 import type {
   EvalCase,
   EvalResult,
+  EvalRuntime,
   IsolationRecord,
   OracleContext,
   OracleResult,
@@ -46,6 +47,8 @@ import { BudgetTracker, evalCostSignal, evalCostUsd } from './budget.js';
 import { TURN_TIMEOUT_ERROR } from './retry.js';
 import {
   resolveModelCredential,
+  resolvePaidProviderCredential,
+  spendsOnExternalProvider,
   noCredentialMessage,
   dockerNeedsPortableCredentialMessage,
   type ModelCredential,
@@ -64,8 +67,24 @@ export interface RunEvalOptions {
   tracker: BudgetTracker;
   /** Per-turn timeout guard in ms. */
   timeoutMs?: number;
-  /** Cheap model for the credentialed tiers (`ANTHROPIC_MODEL`); defaults per the boot. */
+  /**
+   * The run's model for the credentialed tiers, overridden per case by
+   * {@link EvalCase.model}. Defaults per the boot on claude-code; required (and
+   * supplied by the caller) on OpenCode.
+   */
   model?: string;
+  /**
+   * The agent runtime every session in this eval binds to. Omitted ⇒ the
+   * server's own default, which is `claude-code`.
+   */
+  runtime?: EvalRuntime;
+  /** Model provider for a runtime that fronts several (`openrouter` on OpenCode). */
+  provider?: string;
+  /**
+   * Absolute path to the host's `opencode` binary, resolved once per run. Only
+   * read on an OpenCode boot, where the sandbox cannot find one itself.
+   */
+  openCodeBinaryPath?: string;
   /**
    * The isolation launcher the credentialed tiers boot through (`--isolation`).
    * Omitted ⇒ the default child-process tier. `test-mode` runs in-process and
@@ -157,13 +176,51 @@ async function runOracles(evalCase: EvalCase, ctx: OracleContext): Promise<Oracl
 function credentialGateError(
   tier: RuntimeTier,
   isolation: IsolationRecord,
-  credential: ModelCredential | undefined
+  credential: ModelCredential | undefined,
+  paidRefusal: string | undefined
 ): string | undefined {
-  if (!credential) return noCredentialMessage(tier);
+  if (!credential) return paidRefusal ?? noCredentialMessage(tier);
   if (isolation === 'docker' && !credential.portable) {
     return dockerNeedsPortableCredentialMessage();
   }
   return undefined;
+}
+
+/**
+ * The credential this eval will authenticate with, and — on the paid tier — the
+ * refusal to report when there is none.
+ *
+ * The split is the fail-closed rule, and it is NOT cosmetic: falling back to
+ * {@link resolveModelCredential} on a paid-provider eval would let an ANTHROPIC
+ * credential (or merely being signed in to `claude`) satisfy a gate about
+ * spending on OpenRouter. Measured while building this tier: with
+ * `DORKOS_EVALS_PAID_PROVIDER=1` and no `OPENROUTER_API_KEY`, five of six cases
+ * booted real servers and drove turns, because the local `claude` sign-in
+ * answered the ladder. Nothing was billed only because the sandbox had no
+ * OpenRouter key to spend — which is luck, not a gate.
+ *
+ * Which side of the split a run lands on follows the MONEY, not the tier string
+ * — see {@link spendsOnExternalProvider} for the command that proved the
+ * difference matters.
+ *
+ * @param tier - The tier this eval runs on.
+ * @param provided - A credential the suite already resolved once for the run.
+ * @returns The credential to boot with, and any paid-tier refusal message.
+ */
+async function resolveCredentialFor(
+  tier: RuntimeTier,
+  provided: ModelCredential | undefined,
+  runtime: string | undefined,
+  provider: string | undefined
+): Promise<{ credential?: ModelCredential; paidRefusal?: string }> {
+  if (tier === 'test-mode') return {};
+  if (provided) return { credential: provided };
+  if (spendsOnExternalProvider(tier, runtime, provider)) {
+    const gate = resolvePaidProviderCredential();
+    return gate.ok ? { credential: gate.credential } : { paidRefusal: gate.message };
+  }
+  const credential = await resolveModelCredential();
+  return credential ? { credential } : {};
 }
 
 /**
@@ -181,6 +238,9 @@ function bootServerForTier(
   dorkHome: string,
   opts: {
     model?: string;
+    runtime?: EvalRuntime;
+    provider?: string;
+    openCodeBinaryPath?: string;
     credentialEnv?: Record<string, string>;
     env?: Record<string, string>;
     launcher?: IsolationLauncher;
@@ -190,6 +250,9 @@ function bootServerForTier(
   return startChildProcessServer({
     dorkHome,
     model: opts.model,
+    ...(opts.runtime ? { runtime: opts.runtime } : {}),
+    ...(opts.provider ? { provider: opts.provider } : {}),
+    ...(opts.openCodeBinaryPath ? { openCodeBinaryPath: opts.openCodeBinaryPath } : {}),
     // The credential env goes FIRST so a case's own `serverEnv` stays the last
     // word on everything else, exactly as before.
     env: { ...opts.credentialEnv, ...opts.env },
@@ -283,10 +346,14 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
   // Credentialed tiers need a way to reach a model; having none is a RUNNER
   // error (never a false pass), reported before any sandbox/server is spun up.
   const isolation = isolationOf(opts.tier, opts.launcher);
-  const credential =
-    opts.tier === 'test-mode' ? undefined : (opts.credential ?? (await resolveModelCredential()));
+  const { credential, paidRefusal } = await resolveCredentialFor(
+    opts.tier,
+    opts.credential,
+    opts.runtime,
+    opts.provider
+  );
   if (opts.tier !== 'test-mode') {
-    const gateError = credentialGateError(opts.tier, isolation, credential);
+    const gateError = credentialGateError(opts.tier, isolation, credential, paidRefusal);
     if (gateError) {
       result.status = 'error';
       result.error = gateError;
@@ -296,6 +363,7 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
   }
 
   result.isolation = isolation;
+  if (opts.runtime) result.runtime = opts.runtime;
 
   const sandbox = await createSandbox();
   let server: HarnessServer | undefined;
@@ -332,7 +400,12 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
     await evalCase.seed?.(sandbox);
 
     server = await bootServerForTier(opts.tier, sandbox.dorkHome, {
-      model: opts.model,
+      // A case may pin its OWN model (the terminal-failure case needs an
+      // unreachable one) without moving the rest of the run off the pin.
+      model: evalCase.model ?? opts.model,
+      ...(opts.runtime ? { runtime: opts.runtime } : {}),
+      ...(opts.provider ? { provider: opts.provider } : {}),
+      ...(opts.openCodeBinaryPath ? { openCodeBinaryPath: opts.openCodeBinaryPath } : {}),
       ...(credential ? { credentialEnv: credential.env } : {}),
       ...(evalCase.serverEnv ? { env: evalCase.serverEnv } : {}),
       ...(opts.launcher ? { launcher: opts.launcher } : {}),
@@ -373,6 +446,7 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
         timeoutMs: opts.timeoutMs,
         abortWhen,
         onFrames,
+        ...(opts.runtime ? { runtime: opts.runtime } : {}),
       });
       frames = drive.frames;
       sessionId = drive.canonicalId;

@@ -23,6 +23,7 @@ import { governanceCases } from './governance.js';
 import { roomsStructuralCases } from './rooms.js';
 import { roomsCredentialedCases } from './rooms-recall.js';
 import { memoryCases } from './memory.js';
+import { chatCases } from './chat.js';
 
 /** Every registered eval case, across all suites. */
 export const ALL_CASES: EvalCase[] = [
@@ -42,14 +43,23 @@ export const ALL_CASES: EvalCase[] = [
   ...roomsStructuralCases,
   ...roomsCredentialedCases,
   ...memoryCases,
+  ...chatCases,
 ];
 
 /** The tag values a `--suite` name may select. */
-const TAGS: readonly EvalTag[] = ['smoke', 'core', 'connector', 'experimental', 'rooms', 'memory'];
+const TAGS: readonly EvalTag[] = [
+  'smoke',
+  'core',
+  'connector',
+  'experimental',
+  'rooms',
+  'memory',
+  'chat',
+];
 
 /**
  * Resolve a `--suite` name to the cases to run. A name matching a tag
- * (`smoke`/`core`/`connector`/`experimental`/`rooms`/`memory`) selects every case
+ * (`smoke`/`core`/`connector`/`experimental`/`rooms`/`memory`/`chat`) selects every case
  * carrying it; `all` selects every case; otherwise the name is matched against a
  * case id.
  *
@@ -118,6 +128,15 @@ export {
   roomsDeclinesVisiblyCase,
   roomsJudgmentCases,
 } from './rooms-judgment.js';
+export {
+  chatTurnRoundTripCase,
+  chatToolLoopCase,
+  chatApprovalAllowsWriteCase,
+  chatApprovalRefusesWriteCase,
+  chatModelPinnedCase,
+  chatBadModelFailsHonestlyCase,
+  chatCases,
+} from './chat.js';
 export {
   memoryRecallCrossSurfaceCase,
   memoryCapConsolidationCase,

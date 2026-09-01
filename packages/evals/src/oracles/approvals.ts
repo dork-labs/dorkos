@@ -172,3 +172,47 @@ export function noApprovalDecided(capabilityId: string, label?: string): Oracle 
     };
   };
 }
+
+/**
+ * Oracle: the harness answered at least one RUNTIME tool-permission prompt, and
+ * answered it the way this case's policy says it should have.
+ *
+ * The companion half of a filesystem assertion, and it is what makes the pair
+ * falsifiable. "The file exists" alone would also pass on a runtime that never
+ * asked for permission at all — the very failure a permission surface is supposed
+ * to prevent — and "the file is absent" alone would pass on a turn where the
+ * model simply never tried. Asserting that a prompt ARRIVED and was answered
+ * `allow`/`deny` is what separates "the gate worked" from "nothing happened".
+ *
+ * Scoped to the runtime prompt (`approval_required` → `POST /api/sessions/:id/
+ * approve|deny`), not the capability tier gate — see {@link approvalDecided} for
+ * that one.
+ *
+ * @param answer - The answer the case expects the driver to have given.
+ * @param label - Human-readable label; defaults to naming the answer.
+ * @returns An {@link Oracle}.
+ */
+export function toolPermissionAnswered(answer: 'allow' | 'deny', label?: string): Oracle {
+  return async (ctx) => {
+    const answered = ctx.approvals.toolPermissions.filter((p) => p.answer === answer);
+    const passed = answered.length > 0;
+    return {
+      label: label ?? `a tool permission prompt was answered '${answer}'`,
+      passed,
+      evidence: {
+        answer,
+        matching: answered.map((p) => ({ toolName: p.toolName, status: p.status })),
+        allAnswered: ctx.approvals.toolPermissions.map((p) => ({
+          toolName: p.toolName,
+          answer: p.answer,
+        })),
+        driverErrors: ctx.approvals.errors,
+      },
+      detail: passed
+        ? undefined
+        : ctx.approvals.toolPermissions.length === 0
+          ? 'the runtime never asked for a tool permission, so nothing was answered'
+          : `no prompt was answered '${answer}'`,
+    };
+  };
+}

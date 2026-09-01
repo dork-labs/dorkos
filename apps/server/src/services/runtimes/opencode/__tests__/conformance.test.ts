@@ -7,31 +7,65 @@
  * the `/global/event` SSE stream — and the dependency probe are fully mocked
  * by default: this suite must NEVER require the real `opencode` binary in CI.
  *
- * --- Local live smoke: OpenCode + a local open-source model (env-gated) ----
+ * --- Two live smokes, two independent flags, and one of them costs money -----
  *
- * To exercise a REAL sidecar end-to-end (real `opencode serve` boot, real
- * turns through the full adapter: session create, global-event demux, event
- * mapping, terminal `done`), run:
+ * Both drive a REAL sidecar end to end (real `opencode serve` boot, real turns
+ * through the full adapter: session create, global-event demux, event mapping,
+ * terminal `done`). They are armed by SEPARATE variables on purpose, so the free
+ * one can never turn into the paid one by accident:
  *
- *   DORKOS_OPENCODE_LIVE=1 pnpm vitest run \
- *     src/services/runtimes/opencode/__tests__/conformance.test.ts
+ *   FREE — a local open-source model, nothing billed:
+ *     DORKOS_OPENCODE_LIVE=1 pnpm vitest run \
+ *       src/services/runtimes/opencode/__tests__/conformance.test.ts
  *
- * Requirements: an `opencode` binary on PATH (or `runtimes.opencode.binaryPath`
- * configured) with at least one provider configured. The spec's
- * open-source-model acceptance is satisfied by pointing OpenCode's default
- * model at a local Ollama model — e.g. `ollama pull qwen2.5-coder:32b` (or any
- * qwen2.5-coder-class model your hardware runs) and an `ollama` provider in
- * `opencode.json` with that model as the default — so the identical
- * conformance assertions stream a real turn from a genuinely local model with
- * no proprietary API in the loop. Under the flag the vi.mock factory below
- * returns `importOriginal()` (the real dependency probe), the runtime is
- * constructed over a real `OpenCodeServerManager` (which spawns and owns the
- * sidecar, shared across tests and shut down in afterAll), `projectDir`
- * becomes a real temp directory, and per-test timeouts are raised for model
- * latency. Turns run in 'default' permission mode, so the sidecar's
- * conservative ask-ruleset (edit/bash/webfetch → ask) gates every mutation —
- * a live run cannot write unattended. CI never sets the flag: unset → fully
- * mocked, no binary, no Ollama.
+ *   PAID — a cheap model on OpenRouter, billed to that account:
+ *     DORKOS_EVALS_PAID_PROVIDER is NOT what arms this one; this file has its
+ *     own flag, because it is a vitest file rather than an eval run:
+ *     DORKOS_OPENCODE_LIVE_PAID=1 OPENROUTER_API_KEY=sk-or-… pnpm vitest run \
+ *       src/services/runtimes/opencode/__tests__/conformance.test.ts
+ *
+ * The paid flag needs the key TOO, and a flag with no key is a hard collection
+ * failure rather than a quiet fall back to the mocked run — a paid smoke that
+ * silently ran mocked would report a green about a provider it never reached.
+ * A key with no flag arms nothing: plenty of people leave `OPENROUTER_API_KEY`
+ * exported, and having one is not the same as deciding to spend.
+ *
+ * FREE mode's model comes from OpenCode's own config — e.g. `ollama pull
+ * qwen2.5-coder:32b` and an `ollama` provider in `opencode.json` with that model
+ * as the default — so the identical conformance assertions stream a real turn
+ * from a genuinely local model with no proprietary API in the loop.
+ *
+ * **"Free" there is a property of YOUR OpenCode config, not of this flag.** The
+ * free arm writes `provider: null` / `defaultModel: null`, so the sidecar falls
+ * back to whatever `~/.config/opencode` names as its default — and
+ * `server-manager.ts` spreads `process.env` into the spawn, so an exported
+ * `OPENROUTER_API_KEY` is reachable from it. If your OpenCode default is a hosted
+ * model, `DORKOS_OPENCODE_LIVE=1` bills it. Point that default at a local model
+ * before using this arm, or use the paid arm, which at least pins what it spends
+ * on.
+ *
+ * PAID mode pins its model instead of inheriting one, because an unpinned run
+ * cannot say what it spent on. The pin rides `OPENCODE_CONFIG`, a temp config
+ * file the sidecar MERGES with the `OPENCODE_CONFIG_CONTENT` DorkOS injects
+ * (verified live against 1.18.15: `GET /config` reports the model from the file
+ * and the ask-ruleset from the injected content). The key itself travels as
+ * `OPENROUTER_API_KEY` in the inherited environment — `server-manager.ts` spreads
+ * `process.env` into the spawn — so nothing is written to disk.
+ *
+ * Both modes need a `runtimes.opencode` config section to boot a sidecar at all,
+ * and neither may touch the operator's real one: this file writes a THROWAWAY
+ * `DORK_HOME` and points the config manager at it. The `opencode` binary is
+ * found at `DORKOS_OPENCODE_BINARY`, else the DorkOS-provisioned install under
+ * `~/.dork`, else plain `opencode` on `PATH`.
+ *
+ * Under either flag the vi.mock factory below returns `importOriginal()` (the
+ * real dependency probe), the runtime is constructed over a real
+ * `OpenCodeServerManager` (which spawns and owns the sidecar, shared across
+ * tests and shut down in afterAll), `projectDir` becomes a real temp directory,
+ * and per-test timeouts are raised for model latency. Turns run in 'default'
+ * permission mode, so the sidecar's conservative ask-ruleset (edit/bash/webfetch
+ * → ask) gates every mutation — a live run cannot write unattended. CI never
+ * sets either flag: unset → fully mocked, no binary, no provider, no spend.
  */
 import { afterAll, expect, onTestFinished, vi } from 'vitest';
 import fs from 'node:fs';
@@ -40,8 +74,41 @@ import path from 'node:path';
 import type { OpencodeClient, GlobalEvent } from '@opencode-ai/sdk';
 import { runtimeConformance } from '@dorkos/test-utils';
 
-/** Hoisted so the (also hoisted) vi.mock factory can branch on it. */
-const LIVE = vi.hoisted(() => process.env.DORKOS_OPENCODE_LIVE === '1');
+/**
+ * The live-mode decision, hoisted so the (also hoisted) vi.mock factory can
+ * branch on it — and computed in ONE callback so the paid arm's fail-closed
+ * check cannot be evaluated before the flags it reads.
+ *
+ * `paid` requires the key as well as the flag, and a flag without a key THROWS
+ * here. Collection fails with the reason on screen, which is the only honest
+ * outcome: falling back to the mocked run would report a green about a provider
+ * nothing reached, and skipping would report nothing at all to somebody who
+ * explicitly asked for a paid run.
+ */
+const LIVE_MODE = vi.hoisted(() => {
+  const free = process.env.DORKOS_OPENCODE_LIVE === '1';
+  const paid = process.env.DORKOS_OPENCODE_LIVE_PAID === '1';
+  const key = (process.env.OPENROUTER_API_KEY ?? '').trim();
+  if (paid && key === '') {
+    throw new Error(
+      'DORKOS_OPENCODE_LIVE_PAID=1 was set with no OPENROUTER_API_KEY, so this suite has no way ' +
+        'to reach a model. Set the key, or unset the flag to run fully mocked. Refusing rather ' +
+        'than falling back to the mocked run, which would report a green about a provider ' +
+        'nothing reached.'
+    );
+  }
+  return { free, paid, live: free || paid };
+});
+
+/**
+ * True in either live mode — the real sidecar, the real dependency probe.
+ *
+ * Hoisted in its own right, not merely derived: the `vi.mock` factory below is
+ * lifted above every ordinary declaration in this file, so a plain
+ * `const LIVE = LIVE_MODE.live` is in its temporal dead zone when the factory
+ * runs (measured: "Cannot access 'LIVE' before initialization").
+ */
+const LIVE = vi.hoisted(() => LIVE_MODE.live);
 
 // checkDependencies() shells out to `opencode --version` / `opencode auth
 // list` for real — mock the probe so conformance never spawns (or requires)
@@ -112,10 +179,98 @@ const PROJECT_DIR = LIVE
   ? fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-opencode-live-'))
   : '/projects/conformance';
 
+/**
+ * The cheap OpenRouter model the PAID smoke pins, in OpenCode's own
+ * `provider/model` spelling.
+ *
+ * The two-segment tail is load-bearing and is the same pin
+ * `packages/evals/src/types.ts` carries: `parseModelSelection` splits on the
+ * FIRST `/`, so this is `{providerID: 'openrouter', modelID: 'qwen/qwen3.7-flash'}`.
+ * Repeated here rather than imported because `packages/evals` depends on this
+ * app, not the other way round; a test in `packages/evals` pins the two together.
+ */
+const PAID_MODEL = 'openrouter/qwen/qwen3.7-flash';
+
+/**
+ * The `opencode` binary a live run should boot.
+ *
+ * `DORKOS_OPENCODE_BINARY` wins, then the DorkOS-provisioned install under the
+ * operator's real `~/.dork` (which is where `Settings → Runtimes → OpenCode`
+ * puts it, and it is NOT on `PATH`), then a plain `opencode` for a machine that
+ * installed one itself. `resolveDorkHome()` is deliberately not consulted: under
+ * vitest it answers `<cwd>/.temp/.dork`, which never holds a provisioned copy.
+ */
+function resolveLiveBinary(): string {
+  const override = process.env.DORKOS_OPENCODE_BINARY;
+  if (override) return override;
+  const provisioned = path.join(
+    os.homedir(),
+    '.dork',
+    'runtimes',
+    'opencode',
+    'node_modules',
+    '.bin',
+    process.platform === 'win32' ? 'opencode.cmd' : 'opencode'
+  );
+  return fs.existsSync(provisioned) ? provisioned : 'opencode';
+}
+
+/**
+ * Stand up a THROWAWAY `DORK_HOME` for a live run and point the config manager
+ * at it, so the sidecar has a `runtimes.opencode` section to boot from without
+ * this suite ever reading or writing the operator's real config.
+ *
+ * In PAID mode it also writes an `OPENCODE_CONFIG` file pinning the model and
+ * exports the variable, which the sidecar merges with the ask-ruleset DorkOS
+ * injects as `OPENCODE_CONFIG_CONTENT`.
+ *
+ * @returns The temp directory to remove afterwards.
+ */
+async function prepareLiveConfig(): Promise<string> {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-opencode-live-home-'));
+  fs.mkdirSync(path.join(home, '.dork'), { recursive: true });
+  const dorkHome = path.join(home, '.dork');
+  fs.writeFileSync(
+    path.join(dorkHome, 'config.json'),
+    JSON.stringify({
+      // A PARTIAL `runtimes` section, deliberately: `conf` merges its defaults
+      // at the top level, so this replaces the whole section — and the only
+      // thing a live sidecar boot reads out of it is `runtimes.opencode`.
+      runtimes: {
+        default: 'opencode',
+        opencode: {
+          enabled: true,
+          binaryPath: resolveLiveBinary(),
+          port: 0,
+          provider: LIVE_MODE.paid ? 'openrouter' : null,
+          baseURL: null,
+          defaultModel: LIVE_MODE.paid ? PAID_MODEL : null,
+          defaultTrustStop: null,
+        },
+      },
+    }),
+    'utf8'
+  );
+  (await import('../../../core/config-manager.js')).initConfigManager(dorkHome);
+
+  if (LIVE_MODE.paid) {
+    const configFile = path.join(home, 'opencode.json');
+    fs.writeFileSync(configFile, JSON.stringify({ model: PAID_MODEL }), 'utf8');
+    // This suite owns the sidecar's environment for a manually-armed live run;
+    // `server-manager.ts` spreads `process.env` into the spawn, which is how the
+    // pin (and the key) reach it.
+    process.env.OPENCODE_CONFIG = configFile;
+  }
+  return home;
+}
+
+let liveHome: string | undefined;
+
 if (LIVE) {
   // Real turns boot a sidecar and round-trip to a local model — well beyond
   // the default 5s test timeout.
   vi.setConfig({ testTimeout: 180_000, hookTimeout: 180_000 });
+  liveHome = await prepareLiveConfig();
 }
 
 // The live sidecar is shared across tests (one boot) and owned by this file;
@@ -128,6 +283,7 @@ const liveManager = LIVE
 afterAll(async () => {
   if (liveManager) await liveManager.shutdown();
   if (LIVE) fs.rmSync(PROJECT_DIR, { recursive: true, force: true });
+  if (liveHome) fs.rmSync(liveHome, { recursive: true, force: true });
 });
 
 /**
@@ -219,9 +375,11 @@ runtimeConformance(
   // Fresh runtime per test; the provider is the only dependency (ADR-0308).
   () => new OpenCodeRuntime({ provider: LIVE ? liveManager! : makeMockedProvider() }),
   {
-    name: LIVE
-      ? 'OpenCodeRuntime (LIVE sidecar + local model) — AgentRuntime conformance'
-      : 'OpenCodeRuntime (mocked sidecar) — AgentRuntime conformance',
+    name: LIVE_MODE.paid
+      ? `OpenCodeRuntime (LIVE sidecar + ${PAID_MODEL} on OpenRouter) — AgentRuntime conformance`
+      : LIVE
+        ? 'OpenCodeRuntime (LIVE sidecar + local model) — AgentRuntime conformance'
+        : 'OpenCodeRuntime (mocked sidecar) — AgentRuntime conformance',
     projectDir: PROJECT_DIR,
     // OpenCode owns a durable native store (unlike stateless Codex), so a
     // completed turn MUST surface real history: scripted session.messages in

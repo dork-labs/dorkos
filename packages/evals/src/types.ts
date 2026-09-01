@@ -21,12 +21,33 @@ import type { UiActionRequest } from '@dorkos/shared/schemas';
  * - `test-mode`: the in-process deterministic runtime (no model, free).
  * - `claude-code-cheap`: real `claude-code` on a cheap (Haiku-class) model —
  *   the judgment tier that exercises tool-choice-from-natural-language.
- * - `real-provider`: real external providers (weekly deep tier).
+ * - `real-provider`: a real EXTERNAL provider (OpenRouter today) reached through
+ *   a non-Anthropic runtime — the tier that proves DorkOS's chat surface works
+ *   on somebody else's model. It spends money that is NOT a Claude subscription,
+ *   so it is gated twice over: `DORKOS_EVALS_PAID_PROVIDER=1` (the decision) AND
+ *   {@link OPENROUTER_API_KEY_VAR} (the instrument). See `runner/credentials.ts`.
  */
 export const RuntimeTierSchema = z.enum(['test-mode', 'claude-code-cheap', 'real-provider']);
 
 /** Inferred type for {@link RuntimeTierSchema}. */
 export type RuntimeTier = z.infer<typeof RuntimeTierSchema>;
+
+/**
+ * Which DorkOS agent runtime an eval's session is bound to.
+ *
+ * These are the production `AgentRuntime` type ids (`services/runtimes/`), not
+ * a harness invention: the value travels to the server as the `runtime` hint on
+ * the first `POST /api/sessions/:id/messages` (ADR-0255, first-write-wins), so a
+ * value this enum does not carry would be rejected by the route rather than
+ * quietly ignored.
+ *
+ * `test-mode` is deliberately absent — the deterministic runtime is selected by
+ * the TIER, never by this field.
+ */
+export const EvalRuntimeSchema = z.enum(['claude-code', 'codex', 'opencode']);
+
+/** Inferred type for {@link EvalRuntimeSchema}. */
+export type EvalRuntime = z.infer<typeof EvalRuntimeSchema>;
 
 /**
  * The isolation an eval's server ACTUALLY ran inside — the durable record of
@@ -73,6 +94,7 @@ export const CredentialSourceSchema = z.enum([
   'anthropic-api-key',
   'claude-oauth-token',
   'local-claude-login',
+  'openrouter-api-key',
 ]);
 
 /** Inferred type for {@link CredentialSourceSchema}. */
@@ -89,12 +111,76 @@ export const API_KEY_VAR = 'ANTHROPIC_API_KEY';
  */
 export const OAUTH_TOKEN_VAR = 'CLAUDE_CODE_OAUTH_TOKEN';
 
+/**
+ * The OpenRouter key variable the `real-provider` tier reads, PINNED to this
+ * exact name for the same reason {@link OAUTH_TOKEN_VAR} is: a run that let its
+ * caller name which secret to read could be pointed at any secret on the machine
+ * and have it shipped to a third party as an auth header. Adding a provider means
+ * adding a literal name here, never an input.
+ *
+ * Deliberately NOT listed in `turbo.json` (`globalPassThroughEnv`, or the `test`
+ * task's `passThroughEnv`). Turbo runs strict and strips anything it is not told
+ * to pass, which is exactly what has kept `pnpm test`, `pnpm verify`, pre-push
+ * and CI away from the Anthropic key. Adding this name there would open the paid
+ * path to every one of them at once.
+ */
+export const OPENROUTER_API_KEY_VAR = 'OPENROUTER_API_KEY';
+
+/**
+ * The deliberate-act flag the `real-provider` tier needs BESIDE a key.
+ *
+ * A key alone must never arm a paid run: people leave `OPENROUTER_API_KEY`
+ * exported in a shell profile because half the toolchain wants it, and an ambient
+ * key is not a person asking to spend money. Same reasoning, same shape as
+ * `DORKOS_EVALS_CREDENTIALED` in
+ * `packages/evals/src/runner/__tests__/harness-server.test.ts`.
+ */
+export const PAID_PROVIDER_OPT_IN_VAR = 'DORKOS_EVALS_PAID_PROVIDER';
+
+/**
+ * The provider id the `real-provider` tier fronts today — the key into the
+ * top-level `providers` config registry AND into OpenCode's own provider table,
+ * which is why one string serves both (`services/core/credential-env.ts` maps
+ * `openrouter → OPENROUTER_API_KEY`).
+ */
+export const OPENROUTER_PROVIDER_ID = 'openrouter';
+
+/**
+ * The pinned OpenRouter model the tier runs on, in DorkOS's `provider/model`
+ * spelling.
+ *
+ * **The two-segment tail is load-bearing.** `parseModelSelection`
+ * (`services/runtimes/opencode/turn-input.ts`) splits on the FIRST `/` only, so
+ * this resolves to `{providerID: 'openrouter', modelID: 'qwen/qwen3.7-flash'}` —
+ * the shape OpenCode's `session.promptAsync` body wants. Written any other way
+ * (`qwen/qwen3.7-flash` alone, or `openrouter/qwen3.7-flash`) the sidecar is
+ * handed a provider or a model that does not exist.
+ *
+ * Cheap on purpose and PAID on purpose. At $0.030/M in and $0.130/M out it is
+ * roughly two orders of magnitude under the Haiku tier the credentialed suite
+ * uses, and a `:free` id is not an acceptable substitute for a committed pin:
+ * the free tier is rate-capped per day, counts failed calls against the quota,
+ * needs an account-level training opt-in, and `openrouter/free` routes to a
+ * DIFFERENT model per call — which makes any red unreproducible.
+ */
+export const DEFAULT_OPENROUTER_MODEL = 'openrouter/qwen/qwen3.7-flash';
+
+/**
+ * Default per-run spend ceiling for the `real-provider` tier, in USD.
+ *
+ * Far tighter than {@link DEFAULT_RUN_BUDGET_USD} because the tier's whole point
+ * is that its turns cost fractions of a cent: a run that reaches even this is a
+ * runaway loop, not a big suite. It is a tripwire, not an allowance.
+ */
+export const PAID_PROVIDER_RUN_BUDGET_USD = 0.5;
+
 /** One human-readable line per source, for run output. */
 const CREDENTIAL_SOURCE_LABELS: Record<CredentialSource, string> = {
   'anthropic-api-key': `the ${API_KEY_VAR} environment variable (billed to that API account)`,
   'claude-oauth-token': `the ${OAUTH_TOKEN_VAR} environment variable (billed to that Claude subscription)`,
   'local-claude-login':
     'the Claude sign-in on this machine (billed to your own Claude subscription)',
+  'openrouter-api-key': `the ${OPENROUTER_API_KEY_VAR} environment variable (billed to that OpenRouter account)`,
 };
 
 /**
@@ -146,6 +232,14 @@ export type CostClass = z.infer<typeof CostClassSchema>;
  * than anything about a room, and because `--suite rooms` names the set
  * `suite/__tests__/rooms.test.ts` enumerates. Every case in it is credentialed
  * and quarantined, so the tag spends only when somebody selects it.
+ *
+ * `chat` is the cross-runtime chat-capability suite: one turn, one tool loop,
+ * one approval round trip, one cost reading — the things a person does in the
+ * chat pane, asserted STRUCTURALLY so the same case can run on `claude-code`
+ * and on `opencode`/OpenRouter and mean the same thing on both. It is a tag of
+ * its own for the same money reason `rooms` is: `core` is run credentialed by
+ * `pnpm evals:local`, and these cases are meant to be pointed at a chosen
+ * runtime with `--runtime`, not swept up by a default local run.
  */
 export const EvalTagSchema = z.enum([
   'smoke',
@@ -154,6 +248,7 @@ export const EvalTagSchema = z.enum([
   'experimental',
   'rooms',
   'memory',
+  'chat',
 ]);
 
 /** Inferred type for {@link EvalTagSchema}. */
@@ -508,6 +603,36 @@ export const EvalCaseMetaSchema = z.object({
    * (DOR-1239).
    */
   testModeOnly: z.boolean().optional(),
+  /**
+   * The agent runtime this case REQUIRES, when it is about one in particular.
+   *
+   * Absent is the normal state and it means cross-runtime: the case asserts
+   * something every runtime owes a person in the chat pane (a turn terminates
+   * once, a tool loop opens and closes, an approval is answered), so it runs on
+   * whichever runtime `--runtime` booted and means the same thing there. That is
+   * the whole point of the `chat` suite.
+   *
+   * Set it only when the case would be MEANINGLESS elsewhere — pinning an
+   * OpenRouter model id, or proving a bad model id fails honestly through
+   * OpenCode's sidecar. Such a case is SKIPPED (`skipped-wrong-runtime`) on a run
+   * that booted a different runtime, never silently re-pointed: the same
+   * enforced-rather-than-described rule {@link EvalCaseMeta}'s `runtimeTier`
+   * carries, for the same reason (a case that runs somewhere it cannot mean
+   * anything reports a verdict about nothing).
+   */
+  runtime: EvalRuntimeSchema.optional(),
+  /**
+   * Model this ONE case runs on, overriding the run's `--model`, as
+   * `provider/model`.
+   *
+   * Exists for the terminal-failure case, which needs a deliberately unreachable
+   * model id to prove that a bad model surfaces as a typed `error` before `done`
+   * rather than as a hang. A per-run flag cannot express that: the rest of the
+   * suite has to keep running on the real pin in the same run, or the evidence
+   * that the harness works and the evidence that failure is honest can never be
+   * gathered together.
+   */
+  model: z.string().optional(),
   /** Cost envelope. */
   costClass: CostClassSchema,
   /** Suite membership; `smoke` is the label-gated PR subset. */
@@ -640,6 +765,11 @@ export interface EvalCase extends EvalCaseMeta {
  *   run booted a credentialed tier (DOR-1228). A case that merely declares
  *   `test-mode` without that flag is NOT skipped downward — see
  *   `runtimeTier`'s doc for why (DOR-1239).
+ * - `skipped-wrong-runtime` — the case names a runtime it is ABOUT
+ *   ({@link EvalCaseMeta}'s `runtime`) and the run booted a different one, so it
+ *   was never started. Distinct from `skipped-wrong-tier` on purpose: "this run
+ *   has no model" and "this run has the wrong runtime" send a reader to
+ *   different flags.
  */
 export const EvalStatusSchema = z.enum([
   'pass',
@@ -647,6 +777,7 @@ export const EvalStatusSchema = z.enum([
   'error',
   'skipped-over-budget',
   'skipped-wrong-tier',
+  'skipped-wrong-runtime',
 ]);
 
 /** Inferred type for {@link EvalStatusSchema}. */
@@ -662,6 +793,14 @@ export const EvalResultSchema = z.object({
   status: EvalStatusSchema,
   /** The tier this eval ran on. */
   runtimeTier: RuntimeTierSchema,
+  /**
+   * The agent runtime this eval's session was bound to, when the run booted one
+   * (every tier but `test-mode`). Recorded per case rather than only on the run,
+   * for the same reason `model` is recorded at all: a `chat` case that passed on
+   * `claude-code` and failed on `opencode` is the interesting result, and a row
+   * that cannot name its runtime cannot be re-read later.
+   */
+  runtime: EvalRuntimeSchema.optional(),
   /**
    * The isolation the eval's server ACTUALLY ran inside (see
    * {@link IsolationRecordSchema}). Omitted only when the eval never launched a
@@ -772,6 +911,18 @@ export const RunSummarySchema = z.object({
    * somebody's memory.
    */
   model: z.string().optional(),
+  /**
+   * The agent runtime every case in this run was bound to (`--runtime`, or the
+   * tier's default). Omitted on `test-mode`, which boots the deterministic
+   * runtime instead.
+   */
+  runtime: EvalRuntimeSchema.optional(),
+  /**
+   * The model PROVIDER the run's runtime was pointed at (`openrouter` on the
+   * `real-provider` tier). Omitted when the runtime uses its own host auth, which
+   * is every claude-code run.
+   */
+  provider: z.string().optional(),
   /**
    * How this run reached a model (see {@link CredentialSourceSchema}). Omitted
    * on `test-mode`, which needs no credential, and on a credentialed run where

@@ -444,6 +444,24 @@ The rules live in `runtimeConformance` (`packages/test-utils/src/runtime-conform
 DORKOS_CODEX_LIVE=1 pnpm vitest run src/services/runtimes/codex/__tests__/conformance.test.ts
 ```
 
+**A live smoke that spends money needs its own second flag.** `DORKOS_<NAME>_LIVE`
+is the FREE smoke — a local model, nothing billed — and it must never be able to
+arm a paid one. OpenCode is the worked example: `DORKOS_OPENCODE_LIVE=1` runs the
+suite against a local Ollama model, and a separate `DORKOS_OPENCODE_LIVE_PAID=1`
+runs it against a pinned cheap model on OpenRouter. The paid flag needs
+`OPENROUTER_API_KEY` as well, and a flag with no key fails collection loudly
+rather than falling back to the mocked run — a paid smoke that silently ran mocked
+would report a green about a provider it never reached. Read both at module scope
+(inside `vi.hoisted`), so no other file's `vi.stubEnv` can move them, and never
+list the key in `turbo.json`. See AGENTS.md → the three paths that spend money.
+
+A live smoke also needs a config store, and it must not be the operator's. The
+conformance suite's `OpenCodeServerManager` reads `configManager` for its binary
+path and sidecar port, and `configManager` is undefined until something calls
+`initConfigManager` — so the live branch writes a THROWAWAY `DORK_HOME` with just
+the section it needs and points the manager at that. Reading the real `~/.dork`
+would be a test that can write to a person's settings.
+
 ### 5. Add the ESLint SDK-confinement boundary (Hard Rule #2)
 
 `apps/server/eslint.config.js` confines each SDK to its adapter directory. Three edits, all in that file:
@@ -528,7 +546,7 @@ pnpm vitest run apps/server/src/services/runtimes/<name>/   # adapter + conforma
 pnpm vitest run apps/server/src/services/runtimes/__tests__/ # label bound over the real catalogs
 pnpm lint                                                    # SDK confinement holds
 pnpm typecheck
-DORKOS_<NAME>_LIVE=1 pnpm vitest run .../conformance.test.ts # local live smoke
+DORKOS_<NAME>_LIVE=1 pnpm vitest run .../conformance.test.ts # local live smoke (free)
 ```
 
 Then boot `pnpm dev`, confirm the registration log line, and check the runtime appears in the picker (with the setup dialog when its dependencies fail).

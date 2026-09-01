@@ -24,6 +24,13 @@ name: Evals
 #
 # CI budget discipline: there is deliberately NO automatic per-PR eval run. A PR
 # runs evals only when someone applies the `run-evals` label.
+#
+# The `real-provider` tier has NO job here on purpose, and no step in this repo
+# sets `DORKOS_EVALS_PAID_PROVIDER`. That tier bills an OpenRouter account rather
+# than a Claude plan, and it is something a person decides to spend on for
+# themselves — see `packages/evals/README.md`. Adding a job for it would mean
+# adding an OpenRouter secret and an always-armed flag beside it, which is the
+# exact shape this file avoids everywhere else.
 
 on:
   pull_request:
