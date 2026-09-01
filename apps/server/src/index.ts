@@ -969,7 +969,17 @@ async function start() {
       await import('./services/runtimes/test-mode/fake-cloud-link.js');
     initCloudLinkManager({ fetchImpl: createFakeCloudLinkFetch() });
   } else {
-    claudeRuntime = new ClaudeCodeRuntime(dorkHome, env.DORKOS_DEFAULT_CWD);
+    // Where images a turn produces live is chosen HERE and nowhere else: the
+    // adapters and the serving route depend on the `SessionAttachmentStore`
+    // interface and never build a path, so the day those bytes live somewhere
+    // other than this machine, this line is what changes. Same doctrine as the
+    // room attachment store below. Registered for the route, and handed to
+    // every adapter that can produce media — an adapter given none declares
+    // `mediaOutput: 'none'` rather than promising something it cannot keep.
+    const sessionAttachmentStore = new LocalSessionAttachmentStore(dorkHome);
+    setSessionAttachmentStore(sessionAttachmentStore);
+
+    claudeRuntime = new ClaudeCodeRuntime(dorkHome, env.DORKOS_DEFAULT_CWD, sessionAttachmentStore);
     relayAgentRuntime = claudeRuntime;
     runtimeRegistry.register(claudeRuntime);
     // Inject the core session-settings store (ADR-0260). The registry implements
@@ -987,16 +997,6 @@ async function start() {
     claudeRuntime.refreshActivatedPlugins().catch((err) => {
       logger.warn('[Startup] Plugin activation scan failed (will retry on next install)', { err });
     });
-
-    // Where images a turn produces live is chosen HERE and nowhere else: the
-    // adapters and the serving route depend on the `SessionAttachmentStore`
-    // interface and never build a path, so the day those bytes live somewhere
-    // other than this machine, this line is what changes. Same doctrine as the
-    // room attachment store below. Registered for the route, and handed to
-    // every adapter that can produce media — an adapter given none declares
-    // `mediaOutput: 'none'` rather than promising something it cannot keep.
-    const sessionAttachmentStore = new LocalSessionAttachmentStore(dorkHome);
-    setSessionAttachmentStore(sessionAttachmentStore);
 
     // --- Codex runtime (spec additional-agent-runtimes, ADR-0309) ---
     // Gated on `runtimes.codex.enabled` config. Must register BEFORE
@@ -1033,6 +1033,11 @@ async function start() {
             // server; the sibling sites below already went through
             // `localDialHost`.
             mcpUiUrl: `http://${localDialHost(env.DORKOS_HOST)}:${PORT}/codex-ui-mcp`,
+            // Where images a turn's MCP tools hand back are kept. Wiring it here
+            // is what makes the runtime declare `mediaOutput: 'attachments'` —
+            // the composition root owns the deployment decision, and the adapter
+            // reports what it was actually given (ADR 260901-135657).
+            attachments: sessionAttachmentStore,
           });
           // Durable per-session settings hydrate/write-through (ADR-0260), same
           // port the Claude adapter uses.
