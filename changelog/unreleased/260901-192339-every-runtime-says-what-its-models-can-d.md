@@ -2,6 +2,7 @@
 covers:
   - 'feat(server,client): every runtime says what its models can do, not just OpenCode (DOR-1672)'
   - 'fix(server): close the re-pin drift gaps in the model capability claims (DOR-1672)'
+  - 'fix(server): apply DOR-1672 adversarial-review findings'
 ---
 
 ### Changed
