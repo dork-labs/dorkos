@@ -1389,6 +1389,87 @@ export function isInterruptedTerminalReason(terminalReason: string | undefined):
   return terminalReason !== undefined && INTERRUPTED_TERMINAL_REASONS.has(terminalReason);
 }
 
+/**
+ * Terminal reasons that say the turn DID its work, so an `error` it reported
+ * along the way is one it RECOVERED from.
+ *
+ * Not just `completed`. The other three ride the SDK's `SDKResultSuccess`: the
+ * turn deferred a tool or moved to the background and will be back to finish —
+ * the DOR-1100 continuation the session normalizer already models as a second
+ * turn window. Settling any of them as a failure would call a turn that is still
+ * working a turn that broke.
+ *
+ * **Why this list is short on purpose.** It is the ABSOLVING half of the rule in
+ * {@link isInterruptedTerminalReason}'s sibling derivation — a turn's terminal
+ * lifecycle is decided by whether it carried a fatal error FRAME, and a reason
+ * may only ever excuse that frame, never manufacture one. The SDK's
+ * `TerminalReason` union is mostly failures (`api_error`, `model_error`,
+ * `turn_setup_failed`, `prompt_too_long`, `blocking_limit`, `budget_exhausted`,
+ * …), and a reason nobody has classified absolves nothing and accuses nothing.
+ * So the safe direction is a short allowlist of exonerations rather than a long
+ * denylist of failures that a new SDK value could silently fall off (DOR-1676).
+ */
+export const ABSOLVING_TERMINAL_REASONS: ReadonlySet<string> = new Set([
+  'completed',
+  'background_requested',
+  'tool_deferred',
+  'tool_deferred_unavailable',
+]);
+
+/**
+ * Whether a terminal reason says the turn finished its work (or handed it off
+ * and is coming back), excusing any error it reported on the way.
+ *
+ * Read defensively, exactly as {@link isInterruptedTerminalReason} is:
+ * {@link TerminalReasonSchema} is a forward-open union, so an unfamiliar value
+ * is simply not an exoneration.
+ *
+ * @param terminalReason - The reason a turn ended, if it carried one
+ */
+export function isAbsolvingTerminalReason(terminalReason: string | undefined): boolean {
+  return terminalReason !== undefined && ABSOLVING_TERMINAL_REASONS.has(terminalReason);
+}
+
+/**
+ * `error` events that do NOT mean the turn failed.
+ *
+ * A DENYLIST, not an allowlist, and the direction is the whole decision. Most
+ * genuinely fatal errors carry no `code` at all, so an allowlist of "fatal
+ * codes" would wave every one of them through as a success. A denylist fails the
+ * other way: an error nobody has classified yet is treated as a failure, and
+ * being shown a failure that turned out to be survivable costs a glance, while
+ * being shown nothing about a real one costs the answer.
+ *
+ * `hook_failure` is on it because a hook is the OPERATOR'S own script, not the
+ * agent's work. The claude-code runtime escalates any non-tool hook that exits
+ * non-zero (Stop, SubagentStop, SessionStart — this repo configures all three)
+ * to a stream `error` event, and the turn then ends with a normal `done`
+ * carrying the complete answer.
+ *
+ * Runtime-neutral by construction: the rule is about the code's MEANING, not
+ * about which runtime emitted it. A new runtime that invents a survivable error
+ * code adds it here; until then its errors count as failures, which is the safe
+ * half.
+ *
+ * **One source, because the readings must agree.** The relay's claude-code
+ * agent handler keeps a byte-identical copy (`packages/relay/src/adapters/
+ * claude-code/agent-handler.ts`) and DOR-1658's run-outcome module adds a third;
+ * both should import this one, so "is this error the turn failing?" has a single
+ * answer whether it is asked by a session's lifecycle, an agent's reply, or a
+ * scheduled run's row. Folding those copies in is deliberately left to the
+ * branch that owns them (DOR-1676 could not touch the relay safely mid-flight).
+ */
+export const NON_FATAL_ERROR_CODES: ReadonlySet<string> = new Set(['hook_failure']);
+
+/**
+ * Whether an `error` event's code marks it as survivable rather than turn-fatal.
+ *
+ * @param code - The `code` of an `error` event, when it carried one
+ */
+export function isNonFatalErrorCode(code: string | undefined): boolean {
+  return code !== undefined && NON_FATAL_ERROR_CODES.has(code);
+}
+
 // === Runtime-neutral Usage / Cost Status ===
 
 /** Utilization health for a subscription window (drives amber/red styling). */

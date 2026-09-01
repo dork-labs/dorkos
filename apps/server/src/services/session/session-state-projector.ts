@@ -38,7 +38,11 @@ import type {
   TaskItem,
 } from '@dorkos/shared/types';
 import type { QueuedMessage } from '@dorkos/shared/schemas';
-import { INTERRUPTED_TERMINAL_REASONS } from '@dorkos/shared/schemas';
+import {
+  isAbsolvingTerminalReason,
+  isInterruptedTerminalReason,
+  isNonFatalErrorCode,
+} from '@dorkos/shared/schemas';
 import { listPendingInteractions } from './pending-interactions.js';
 import type { SessionDebugCounters } from './session-debug-counters.js';
 import { logger } from '../../lib/logger.js';
@@ -196,10 +200,11 @@ const EVENTS_OUTSIDE_THE_TURN: ReadonlySet<SessionEvent['type']> = new Set([
  */
 const TERMINAL_REASON_ERROR = 'error';
 
-// `INTERRUPTED_TERMINAL_REASONS` — the reasons that settle a turn to the
-// `interrupted` lifecycle rather than idle — is imported from `@dorkos/shared`,
-// which is also where the claude-code result mapper reads it. It used to be a
-// hand-kept copy in each place (DOR-1320 review).
+// The three predicates {@link deriveTurnEndLifecycle} settles a turn with —
+// "was it cut short", "did it finish its work", "is this error survivable" —
+// all come from `@dorkos/shared`, which is also where the claude-code result
+// mapper and the client's mirror of this projector read them. They used to be
+// hand-kept copies in each place (DOR-1320 review, DOR-1676).
 
 /** A fully-zeroed {@link SessionContextUsage}; the base for the first delta. */
 const ZERO_CONTEXT_USAGE: SessionContextUsage = {
@@ -1458,9 +1463,59 @@ export class SessionStateProjector {
    * it. So a turn that ends in a terminal failure SETTLES to that terminal
    * lifecycle instead of idle.
    *
-   * Terminal when: the held lifecycle is already `error` (the error
-   * `status_change` arrived first), OR `terminalReason` names an error/abort.
-   * Otherwise the normal idle/blocked derivation applies.
+   * ## The rule: the error FRAME decides, the reason only ABSOLVES (DOR-1676)
+   *
+   * This used to treat ONLY `terminalReason === 'error'` as a failure, so any
+   * other explicit reason settled the turn as idle. That under-reported real
+   * failures on the default runtime, and it was measured end-to-end rather than
+   * argued: drive the claude-code result mapper with a failing `result` that
+   * carries the CLI's own `terminal_reason` and it yields
+   * `session_status{terminalReason:'model_error'} → error → done`. The
+   * normalizer attaches the explicit reason to `turn_end` (rightly — it is the
+   * diagnostic the chip shows), the old rule did not recognise it, and the turn
+   * settled `idle` with `lastError` WIPED by the clear below. A turn that failed
+   * on an API error, a model error, a context overflow or a turn-setup failure
+   * reported itself as a clean idle session, and the failure text went with it.
+   *
+   * So the decision is founded on the error FRAME the window latched, and a
+   * reason may only ever excuse it. Founding it the other way round — "any
+   * reason that is not `completed` failed" — is wrong in both directions: it
+   * over-fires on {@link isNonFatalErrorCode} frames (a `hook_failure` is the
+   * OPERATOR'S own script exiting non-zero, and the turn still carries the whole
+   * answer), and it under-absolves the three reasons that ride
+   * `SDKResultSuccess` — `tool_deferred`, `tool_deferred_unavailable` and
+   * `background_requested` all mean the turn handed work off and will be BACK
+   * (the DOR-1100 continuation), so failing them fails a turn still in progress.
+   *
+   * In order, a `turn_end` settles as:
+   *
+   * 1. `error` — the held lifecycle is already `error` (the detached-error
+   *    `status_change` arrived first), or the reason is the codebase-wide
+   *    `error` signal every runtime and every injected failure closes with.
+   * 2. `interrupted` — the reason names an abort. A stop is not a failure, and
+   *    this deliberately outranks the frame below: a turn a person cut short
+   *    that reported something on its way out was still cut short, not broken.
+   * 3. idle/blocked — the reason absolves ({@link isAbsolvingTerminalReason}).
+   * 4. `error` — otherwise the FRAME decides: the window latched an error whose
+   *    code does not mark it survivable. An unclassified reason absolves nothing
+   *    and accuses nothing.
+   * 5. idle/blocked — nothing failed.
+   *
+   * ## Why `status.lastError` is the frame latch
+   *
+   * Because it is the only carrier that survives HYDRATION, and live and
+   * hydrated readings of one turn may not disagree. `lastError` is cleared by
+   * every `turn_start` (including a DOR-1100 reopen) and set by every `error`,
+   * so within a window it IS "the error frame this window carried" — and it
+   * rides the snapshot, so a client that hydrates mid-turn and then sees the
+   * live `turn_end` derives the same answer this projector does. A private
+   * boolean would be identical while the process lived and blank after a
+   * reconnect, which is exactly the class of bug this method exists to prevent.
+   *
+   * Its one limit, stated rather than hidden: `lastError` holds the LAST frame,
+   * so a fatal error followed by a survivable one inside a single window is read
+   * as survivable. The status surface shows that same last frame either way, so
+   * the lifecycle and the error a person is shown stay consistent.
    *
    * Note: {@link markInterrupted} ingests NO `turn_end`, so the eviction-driven
    * interrupted lifecycle it sets is never routed through here — this only
@@ -1472,8 +1527,19 @@ export class SessionStateProjector {
     if (this.status.lifecycle === 'error' || terminalReason === TERMINAL_REASON_ERROR) {
       return 'error';
     }
-    if (terminalReason !== undefined && INTERRUPTED_TERMINAL_REASONS.has(terminalReason)) {
+    if (isInterruptedTerminalReason(terminalReason)) {
       return 'interrupted';
+    }
+    if (isAbsolvingTerminalReason(terminalReason)) {
+      return this.deriveIdleLifecycle();
+    }
+    // Truthiness, not `!== null`: the schema defaults the field to `null`, but a
+    // status merged from a partial `status_change` (or restored from a snapshot
+    // written before the field existed) simply has no key there, and reading
+    // `.code` off that throws inside the projection rather than settling a turn.
+    const frame = this.status.lastError;
+    if (frame && !isNonFatalErrorCode(frame.code)) {
+      return 'error';
     }
     return this.deriveIdleLifecycle();
   }

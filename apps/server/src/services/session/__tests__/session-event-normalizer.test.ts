@@ -681,9 +681,55 @@ describe('feedProjector', () => {
     expect(projector.getStatus().lifecycle).toBe('error');
   });
 
+  // DOR-1676. A SURVIVABLE error must not latch. A `hook_failure` is the
+  // OPERATOR'S own script exiting non-zero — the turn then ends normally
+  // carrying the whole answer — so closing it as `terminalReason: 'error'`
+  // reported a working turn as a failed one, red-bordered the session and armed
+  // the error escalation. The latch means a FATAL frame, and nothing else.
+  it('does not latch a non-fatal hook failure into turn_end{terminalReason:"error"}', async () => {
+    const projector = new SessionStateProjector('s-latch-hook');
+    const ingestSpy = vi.spyOn(projector, 'ingest');
+
+    async function* turn(): AsyncIterable<StreamEvent> {
+      yield {
+        type: 'error',
+        data: { message: 'Hook "notify" failed (Stop)', code: 'hook_failure' },
+      };
+      yield { type: 'done', data: { sessionId: 's-latch-hook' } };
+    }
+
+    await feedProjector(projector, turn());
+
+    const turnEnd = ingestSpy.mock.calls.map((c) => c[0]).find((e) => e.type === 'turn_end');
+    expect(turnEnd).not.toHaveProperty('terminalReason');
+    expect(projector.getStatus().lifecycle).toBe('idle');
+  });
+
+  // The other half of the same denylist: an error with no code at all is
+  // UNCLASSIFIED, and unclassified means fatal. The direction matters — most
+  // genuinely fatal errors carry no code, so an allowlist would wave every one
+  // of them through as a success.
+  it('still latches an error that carries no code at all', async () => {
+    const projector = new SessionStateProjector('s-latch-uncoded');
+    const ingestSpy = vi.spyOn(projector, 'ingest');
+
+    async function* turn(): AsyncIterable<StreamEvent> {
+      yield { type: 'error', data: { message: 'the sidecar died' } };
+      yield { type: 'done', data: { sessionId: 's-latch-uncoded' } };
+    }
+
+    await feedProjector(projector, turn());
+
+    const turnEnd = ingestSpy.mock.calls.map((c) => c[0]).find((e) => e.type === 'turn_end');
+    expect(turnEnd).toMatchObject({ terminalReason: 'error' });
+    expect(projector.getStatus().lifecycle).toBe('error');
+  });
+
   // Explicit reasons always win: the latch only fills an UNDEFINED reason, so a
   // runtime that recovered from a mid-turn error and completed cleanly keeps its
-  // explicit 'completed'.
+  // explicit 'completed'. The reason the SDK named is the diagnostic the chip
+  // shows, so it is preserved on the wire even when it names a failure — what it
+  // MEANS for the lifecycle is the projector's job (DOR-1676).
   it('lets an explicit terminalReason beat the error latch', async () => {
     const projector = new SessionStateProjector('s-latch-2');
     const ingestSpy = vi.spyOn(projector, 'ingest');

@@ -27,6 +27,7 @@ import { immer } from 'zustand/middleware/immer';
 import type {
   BackgroundTaskStatus,
   ConnectionState,
+  ErrorEvent as TurnErrorEvent,
   HistoryMessage,
   PendingInteractionDTO,
 } from '@dorkos/shared/types';
@@ -37,6 +38,11 @@ import type {
   SessionContextUsage,
   SessionLifecycle,
 } from '@dorkos/shared/session-stream';
+import {
+  isAbsolvingTerminalReason,
+  isInterruptedTerminalReason,
+  isNonFatalErrorCode,
+} from '@dorkos/shared/schemas';
 import type { MessageDeliveryOutcome, QueuedMessage } from '@dorkos/shared/schemas';
 
 /** Maximum number of sessions retained before LRU eviction (mirrors the chat store). */
@@ -627,39 +633,53 @@ function touchAndGet(state: SessionStreamStoreState, sessionId: string): Session
 }
 
 /**
- * `turn_end.terminalReason` values meaning the turn was interrupted/aborted
- * rather than completing normally. Mirrors the server projector's
- * `INTERRUPTED_TERMINAL_REASONS` so a client observing a live `turn_end` settles
- * to the SAME lifecycle the server's snapshot would.
- */
-const INTERRUPTED_TERMINAL_REASONS: ReadonlySet<string> = new Set([
-  'interrupted',
-  'aborted_streaming',
-  'aborted_tools',
-]);
-
-/**
  * Lifecycle to settle into when a live `turn_end` arrives. The success path emits
  * NO `status_change` carrying `lifecycle` (only `turn_end` with a `terminalReason`),
  * so the client must derive the settled lifecycle itself — otherwise it stays
  * `streaming` forever after a turn (blocking the next send and the reconcile).
- * Mirrors `deriveTurnEndLifecycle` in `session-state-projector.ts`.
+ *
+ * **A mirror of `deriveTurnEndLifecycle` in the server's
+ * `session-state-projector.ts`, and it has to stay one.** One turn gets read
+ * twice — live here, and from the server's snapshot on a cold hydrate — and the
+ * two readings may not disagree, or a hard refresh would change what a session
+ * says happened. The three predicates the rule turns on are imported from
+ * `@dorkos/shared` for that reason rather than hand-copied; the interrupted set
+ * WAS a hand-kept copy here until DOR-1676.
+ *
+ * The rule, in full, lives on the server method's docstring: the error FRAME
+ * decides and the terminal reason only ever absolves. In short — an already-held
+ * `error` or the `error` reason settles `error`; an abort settles `interrupted`
+ * (a stop is not a failure); a reason that says the turn did its work or handed
+ * it off settles idle; otherwise a latched error frame that is not survivable
+ * settles `error`.
+ *
+ * `lastError` is the frame latch because it is the one that survives hydration:
+ * it is cleared by every `turn_start` and set by every `error`, and it rides the
+ * snapshot, so a client that hydrates mid-turn and then sees the live `turn_end`
+ * lands on the server's answer instead of guessing from an empty local flag.
  *
  * @param current - The currently-held lifecycle (an `error` already set by an
  *   earlier `status_change` wins, matching the detached-error path).
  * @param terminalReason - The `turn_end`'s terminal reason, if carried.
+ * @param lastError - The error frame this window latched, if any. Accepts
+ *   `undefined` as well as `null`: the schema defaults it to `null`, but a
+ *   status assembled from a partial `status_change` (or minted by a server that
+ *   predates the field) simply has no key there, so a `!== null` test would read
+ *   `.code` off nothing and throw inside the projection.
  * @param hasPendingInteractions - Whether interactions remain (→ `blocked`).
  */
 function deriveTurnEndLifecycle(
   current: SessionLifecycle,
   terminalReason: string | undefined,
+  lastError: TurnErrorEvent | null | undefined,
   hasPendingInteractions: boolean
 ): SessionLifecycle {
   if (current === 'error' || terminalReason === 'error') return 'error';
-  if (terminalReason !== undefined && INTERRUPTED_TERMINAL_REASONS.has(terminalReason)) {
-    return 'interrupted';
-  }
-  return hasPendingInteractions ? 'blocked' : 'idle';
+  if (isInterruptedTerminalReason(terminalReason)) return 'interrupted';
+  const settled = hasPendingInteractions ? 'blocked' : 'idle';
+  if (isAbsolvingTerminalReason(terminalReason)) return settled;
+  if (lastError && !isNonFatalErrorCode(lastError.code)) return 'error';
+  return settled;
 }
 
 /**
@@ -771,6 +791,7 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
         session.status.lifecycle = deriveTurnEndLifecycle(
           session.status.lifecycle,
           event.terminalReason,
+          session.status.lastError,
           session.pendingInteractions.length > 0
         );
         // A turn that did not settle to error leaves no stale failure behind

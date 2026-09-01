@@ -1147,6 +1147,113 @@ describe('SessionStateProjector', () => {
     expect(status.lastError).toEqual({ message: 'fatal' });
   });
 
+  // Failure mode (DOR-1676): the SDK names its OWN reason on a failing result,
+  // and the old rule treated only the literal `'error'` as terminal — so a turn
+  // that emitted a real error frame and closed as `model_error` settled `idle`
+  // AND had its failure text wiped by the clear that follows the derivation. On
+  // the default runtime that is the ordinary way a turn fails, so the session
+  // list, the red border, the Heads-up row and the failure notice all reported a
+  // clean idle session, and the notification layer sent `turn.completed`.
+  it.each(['model_error', 'api_error', 'turn_setup_failed', 'prompt_too_long', 'max_turns'])(
+    'settles to error and keeps lastError when a turn with an error frame ends with %s',
+    (terminalReason) => {
+      const p = new SessionStateProjector('s1');
+      p.ingest({ type: 'turn_start' });
+      p.ingest({ type: 'error', message: 'API Error: 500' } as RawSessionEvent);
+      p.ingest({ type: 'turn_end', terminalReason });
+      const status = p.getStatus();
+      expect(status.lifecycle).toBe('error');
+      expect(status.lastError).toEqual({ message: 'API Error: 500' });
+    }
+  );
+
+  // The absolving half. These three ride the SDK's SUCCESS result: the turn
+  // deferred a tool or went to the background and will be BACK (the DOR-1100
+  // continuation the normalizer models as a second window), so an error it
+  // reported on the way is one it recovered from. Settling them error would
+  // report a turn that is still working as one that broke.
+  it.each(['completed', 'background_requested', 'tool_deferred', 'tool_deferred_unavailable'])(
+    'stays idle and clears lastError when an error frame is excused by %s',
+    (terminalReason) => {
+      const p = new SessionStateProjector('s1');
+      p.ingest({ type: 'turn_start' });
+      p.ingest({ type: 'error', message: 'transient' } as RawSessionEvent);
+      p.ingest({ type: 'turn_end', terminalReason });
+      const status = p.getStatus();
+      expect(status.lifecycle).toBe('idle');
+      expect(status.lastError).toBeNull();
+    }
+  );
+
+  // A survivable error is not the turn failing. A `hook_failure` is the
+  // OPERATOR'S own script exiting non-zero — the turn then ends carrying the
+  // whole answer — so the frame rule must not fail it. Without the denylist this
+  // reads `error`, which escalates a working turn.
+  it('stays idle when the only error frame is a non-fatal hook failure', () => {
+    const p = new SessionStateProjector('s1');
+    p.ingest({ type: 'turn_start' });
+    p.ingest({
+      type: 'error',
+      message: 'Hook "notify" failed (Stop)',
+      code: 'hook_failure',
+    } as RawSessionEvent);
+    p.ingest({ type: 'turn_end' });
+    expect(p.getStatus().lifecycle).toBe('idle');
+  });
+
+  // A stop OUTRANKS the frame, which is why the abort check sits above it. The
+  // claude-code mapper deliberately keeps an error frame on an abort nobody
+  // asked for (DOR-1320); a turn cut short is cut short, not crashed.
+  it('settles to interrupted, not error, when an aborted turn carried an error frame', () => {
+    const p = new SessionStateProjector('s1');
+    p.ingest({ type: 'turn_start' });
+    p.ingest({ type: 'error', message: 'aborted' } as RawSessionEvent);
+    p.ingest({ type: 'turn_end', terminalReason: 'aborted_streaming' });
+    expect(p.getStatus().lifecycle).toBe('interrupted');
+  });
+
+  // The FRAME decides, so an unfamiliar reason may not accuse on its own.
+  // `TerminalReason` is a forward-open union — new SDK values land without
+  // warning — and one of them failing a turn that reported nothing wrong would
+  // be the mirror image of the bug above.
+  it('stays idle for an unclassified terminal reason when no error frame was latched', () => {
+    const p = new SessionStateProjector('s1');
+    p.ingest({ type: 'turn_start' });
+    p.ingest({ type: 'turn_end', terminalReason: 'some_future_reason' });
+    expect(p.getStatus().lifecycle).toBe('idle');
+  });
+
+  // The reason the frame latch is `status.lastError` and not a private flag: a
+  // turn is read TWICE, live and from the snapshot, and the two readings may not
+  // disagree. `lastError` rides the snapshot, so the settled failure survives a
+  // hard refresh — a private boolean would be right until the first reconnect.
+  it('carries an SDK-named failure into the cold snapshot', async () => {
+    const p = new SessionStateProjector('s1');
+    p.ingest({ type: 'turn_start' });
+    p.ingest({ type: 'error', message: 'API Error: 500' } as RawSessionEvent);
+    p.ingest({ type: 'turn_end', terminalReason: 'model_error' });
+    const snap = await p.buildSnapshot(async () => []);
+    expect(snap.status.lifecycle).toBe('error');
+    expect(snap.status.lastError).toEqual({ message: 'API Error: 500' });
+  });
+
+  // A turn that reports an error and then RECOVERS in a reopened window
+  // (DOR-1100) must not inherit the closed window's failure: `turn_start` clears
+  // the frame latch, so the second window settles on its own evidence.
+  it('does not carry a closed window’s error frame into a reopened window', () => {
+    const p = new SessionStateProjector('s1');
+    p.ingest({ type: 'turn_start' });
+    p.ingest({ type: 'error', message: 'API Error: 500' } as RawSessionEvent);
+    p.ingest({ type: 'turn_end', terminalReason: 'model_error' });
+    expect(p.getStatus().lifecycle).toBe('error');
+
+    p.ingest({ type: 'turn_start', origin: 'runtime' } as RawSessionEvent);
+    p.ingest({ type: 'turn_end', terminalReason: 'max_turns' });
+    const status = p.getStatus();
+    expect(status.lifecycle).toBe('idle');
+    expect(status.lastError).toBeNull();
+  });
+
   // Failure mode (SRV-C1): a cursor ahead of the counter means the seq space
   // was reset (server restart re-created the projector). Subscribing anyway
   // leaves the live filter dropping EVERY future event — a permanently deaf
