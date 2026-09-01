@@ -35,6 +35,11 @@
  * DOR-1570's scope, and the honest place to add it is here, in one line, when
  * somebody decides it earns a banner.
  *
+ * `signin.required` IS announced (DOR-1657), and it is the case that needs this
+ * most: it is the one standing kind no in-app surface derives, so the arrival on
+ * the wire and the escalation clock it starts are the whole of what reaches
+ * anybody while the credential is dead.
+ *
  * @module services/notifications/standing-events
  */
 import type {

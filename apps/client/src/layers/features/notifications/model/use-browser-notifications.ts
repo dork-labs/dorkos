@@ -68,6 +68,13 @@ interface OpenNotification {
  * acted on is the kind of noise that teaches people to ignore the ones that can.
  * It is in the Inbox, where it belongs. Widening either source to include it is a
  * product decision, not a bug fix.
+ *
+ * **`signin.required` reaches neither for the same reason** (DOR-1657): it
+ * became a `blocking` standing condition, so the tier filter drops it and
+ * `useBlockingArrivals` does not know about it. Unlike a session error it does
+ * still leave the machine — the escalation ladder pushes it to a subscribed
+ * phone, and the desktop shell draws it off `standing_pending` — so this hook is
+ * not the only thing that could carry it.
  */
 export function useBrowserNotifications(): void {
   const { permission } = useBrowserNotificationPermission();

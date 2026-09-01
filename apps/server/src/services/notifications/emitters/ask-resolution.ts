@@ -18,7 +18,7 @@
  * headline case for the ladder — an agent stopped, waiting on a person who may
  * have walked away — and this is the one seam that sees every Ask from every
  * runtime begin. Nothing here cancels: a resolution of any kind runs through
- * `resolveStanding`, which disarms in one place for all three standing kinds.
+ * `resolveStanding`, which disarms in one place for every standing kind.
  *
  * @module services/notifications/emitters/ask-resolution
  */

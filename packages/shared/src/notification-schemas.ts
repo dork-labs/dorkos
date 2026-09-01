@@ -73,7 +73,11 @@ export const NOTIFICATION_KINDS = [
   'dead-letter.created',
   /** An agent stopped answering. */
   'agent.unreachable',
-  /** A runtime's sign-in stopped working, so nothing can run on it. */
+  /**
+   * A runtime's sign-in stopped working, so nothing can run on it. Standing,
+   * per sign-in episode — it ends at the next turn on that runtime that gets
+   * through.
+   */
   'signin.required',
   /** DorkOS is running a version it was not running before. */
   'update.installed',

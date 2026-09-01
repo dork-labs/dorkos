@@ -89,7 +89,7 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     reason: 'no endpoint accepted it',
   },
   'agent.unreachable': { agentId: 'agent-1', agentName: 'Ana' },
-  'signin.required': { runtime: 'claude-code' },
+  'signin.required': { runtime: 'claude-code', since: '2026-08-20T03:00:00.000Z' },
   'update.installed': { version: '0.61.0', previousVersion: '0.60.0' },
   'report.daily': {
     date: '2026-08-20',
@@ -111,7 +111,7 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'agent.note': 'notable',
   'dead-letter.created': 'quiet',
   'agent.unreachable': 'quiet',
-  'signin.required': 'notable',
+  'signin.required': 'blocking',
   'update.installed': 'quiet',
   'report.daily': 'quiet',
 };
@@ -119,13 +119,17 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
 /**
  * The kinds ADR 260819-234828 says are standing conditions — the three it named,
  * plus `approval.pending`, which DOR-1570 brought onto the same discipline so a
- * destructive capability waiting on a person can reach the escalation ladder.
+ * destructive capability waiting on a person can reach the escalation ladder,
+ * plus `signin.required`, which DOR-1657 did the same for once the sign-in watch
+ * gained a store that answers "is this credential still dead?" and an edge where
+ * it stops being one.
  */
 const STANDING: NotificationKind[] = [
   'ask.pending',
   'schedule.parked',
   'approval.pending',
   'session.error',
+  'signin.required',
 ];
 
 describe('notification registry', () => {
