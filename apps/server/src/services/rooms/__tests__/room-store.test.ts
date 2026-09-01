@@ -17,7 +17,7 @@ import { createDb, runMigrations, type Db } from '@dorkos/db';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { BridgeStore } from '../../relay/chat-bridge/bridge-store.js';
 import { RoomStore, type NewRoomEntry } from '../room-store.js';
-import { EVENT_LOG_MAX_EVENTS } from '../../session/event-log.js';
+import { EVENT_LOG_MAX_EVENTS } from '../../session/replay/event-log.js';
 
 const require = createRequire(import.meta.url);
 const ROOM_ID = 'room-1';

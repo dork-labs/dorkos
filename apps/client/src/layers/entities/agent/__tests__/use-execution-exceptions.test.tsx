@@ -38,6 +38,7 @@ function runtimeEntry(type: string, supportsEffort: boolean): RuntimeCapabilitie
     supportsPersistentSession: false,
     supportsSteer: false,
     supportsContextStaging: false,
+    mediaOutput: 'none',
     permissionModes: { supported: false, values: [] },
     settings: { configSection: type, supportsEffort, sections: [] },
     commandIntents: { compact: { supported: false } },

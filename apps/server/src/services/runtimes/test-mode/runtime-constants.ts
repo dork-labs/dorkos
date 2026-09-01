@@ -67,6 +67,9 @@ export const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
   // Stateless: completed history lives only in the DorkOS EventLog, so the
   // platform persists it durably (DOR-189) — the conformance/e2e vehicle.
   logBackedHistory: true,
+  // Scripted turns carry no media, so there is none to keep. Not a gap — an
+  // accurate description of a runtime that exists to drive e2e scenarios.
+  mediaOutput: 'none',
   permissionModes: {
     supported: true,
     default: 'always-allow',

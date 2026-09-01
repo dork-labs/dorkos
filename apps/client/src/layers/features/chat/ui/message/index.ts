@@ -14,6 +14,7 @@ export { StreamingText } from './StreamingText';
 export { ThinkingBlock } from './ThinkingBlock';
 export { MemoryRecallBlock } from './MemoryRecallBlock';
 export { CompactBoundaryRow } from './CompactBoundaryRow';
+export { MessageImage } from './MessageImage';
 export { StagedContextNote } from './StagedContextNote';
 export { SubagentBlock } from './SubagentBlock';
 export { OutputRenderer } from './OutputRenderer';

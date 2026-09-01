@@ -101,6 +101,8 @@ import { awaitAbortAck, delay } from './bounded-abort.js';
 import { buildOpenCodeParts, parseModelSelection } from './turn-input.js';
 import { projectModelOptions } from './providers/models.js';
 import { OpenCodeMcpManager } from './mcp-manager.js';
+import { captureOpenCodeMedia } from './media-capture.js';
+import type { SessionAttachmentStore } from '../../session/attachments/index.js';
 
 /** Constructor dependencies for {@link OpenCodeRuntime} (composition root). */
 export interface OpenCodeRuntimeOptions {
@@ -116,6 +118,13 @@ export interface OpenCodeRuntimeOptions {
    * persistence may omit it.
    */
   sessionMap?: OpenCodeSessionMapStore;
+  /**
+   * Where images this runtime's turns produce are stored (the local store over
+   * the resolved data directory in production). Omitted, the runtime declares
+   * `mediaOutput: 'none'` and says so per image rather than dropping one
+   * quietly — see {@link OpenCodeRuntime.getCapabilities}.
+   */
+  attachments?: SessionAttachmentStore;
 }
 
 /** One in-flight turn (identity-matched on teardown, like Codex's controllers). */
@@ -131,6 +140,8 @@ export class OpenCodeRuntime implements AgentRuntime {
   readonly type = 'opencode' as const;
 
   private readonly provider: OpenCodeClientProvider;
+  /** Where a turn's images go, or `null` when the composition root wired none. */
+  private readonly attachments: SessionAttachmentStore | null;
   private readonly mapper: OpenCodeSessionMapper;
   private readonly hub: OpenCodeGlobalEventHub;
   private readonly registry = new OpenCodeSessionRegistry();
@@ -157,7 +168,8 @@ export class OpenCodeRuntime implements AgentRuntime {
 
   constructor(options: OpenCodeRuntimeOptions) {
     this.provider = options.provider;
-    this.mapper = new OpenCodeSessionMapper(options.provider, options.sessionMap);
+    this.attachments = options.attachments ?? null;
+    this.mapper = new OpenCodeSessionMapper(options.provider, options.sessionMap, this.attachments);
     this.hub = new OpenCodeGlobalEventHub(options.provider);
     this.mcp = new OpenCodeMcpManager(options.provider);
     this.approvalGate = {
@@ -420,6 +432,11 @@ export class OpenCodeRuntime implements AgentRuntime {
       const routing: ApprovalRouting = { sessionId, ocSessionId, cwd, permissions: ctx };
       for await (const event of mapOpenCodeTurn(queue, ctx)) {
         yield* enforceApprovals(this.approvalGate, routing, event);
+        // The async half of media mapping. `mapOpenCodeTurn` is pure and cannot
+        // store bytes, so it records what it saw on `ctx` and this drains it
+        // here — after the event it rode in on, so an image lands in the
+        // transcript exactly where the tool result that produced it did.
+        yield* captureOpenCodeMedia(this.attachments, sessionId, ctx);
       }
     } finally {
       subscription.unsubscribe();
@@ -791,8 +808,18 @@ export class OpenCodeRuntime implements AgentRuntime {
     return [];
   }
 
+  /**
+   * @inheritdoc
+   *
+   * `mediaOutput` is resolved per INSTANCE rather than baked into
+   * {@link OPENCODE_CAPABILITIES}, because it is the one capability here that
+   * depends on how the runtime was wired: with no attachment store there is
+   * nowhere to put an image, and claiming otherwise would be exactly the silent
+   * promise this field exists to end.
+   */
   getCapabilities(): RuntimeCapabilities {
-    return OPENCODE_CAPABILITIES;
+    if (!this.attachments) return OPENCODE_CAPABILITIES;
+    return { ...OPENCODE_CAPABILITIES, mediaOutput: 'attachments' };
   }
 
   async checkDependencies(): Promise<DependencyCheck[]> {

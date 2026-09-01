@@ -70,6 +70,7 @@ import {
 import { sessionEventsHandler } from './session-events-handler.js';
 import { sessionCommandIntentHandler } from './session-command-intent-handler.js';
 import { sessionDevtoolsIngestHandler } from './session-devtools.js';
+import { sessionAttachmentHandler } from './session-attachments-handler.js';
 import { sessionMcpAppResourceHandler } from './session-mcp-app-resource-handler.js';
 import path from 'node:path';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
@@ -1227,6 +1228,16 @@ router.post('/:id/command-intents/:intent', sessionCommandIntentHandler);
 // Session-gated (credentialed same-origin client call), Zod-validated, batch-capped.
 // The handler lives in `session-devtools.ts` to keep this file under the size rule.
 router.post('/:id/devtools/ingest', sessionDevtoolsIngestHandler);
+
+/**
+ * GET /:id/attachments/:file — an image this session's turn produced.
+ *
+ * The handler lives in `session-attachments-handler.ts`, same reason as above.
+ * `:file` is `<attachmentId>.<ext>`, exactly the URL the attachment store
+ * answered — the message part carries that URL verbatim rather than rebuilding
+ * it, which is what keeps the store a real seam.
+ */
+router.get('/:id/attachments/:file', sessionAttachmentHandler);
 
 // POST /api/sessions/:id/mcp-app/resource — Read a ui:// MCP App resource
 // (SEP-1865) for client rendering. The handler lives in

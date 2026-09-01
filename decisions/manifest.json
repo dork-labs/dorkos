@@ -5246,6 +5246,28 @@
         "apps/desktop/src/main/updater/app-bundle.ts",
         "apps/desktop/src/main/updater/manual-overwrite.ts"
       ]
+    },
+    {
+      "id": "260901-135657",
+      "slug": "a-message-carries-an-image-by-reference-through-a-session-attachment-store",
+      "title": "A message carries an image by reference, through a session attachment store",
+      "status": "accepted",
+      "created": "2026-09-01",
+      "extractedFrom": "implementation",
+      "specSlug": null,
+      "amends": null,
+      "supersedes": null,
+      "affects": [
+        "packages/shared/src/schemas.ts",
+        "packages/shared/src/session-stream.ts",
+        "packages/shared/src/agent-runtime.ts",
+        "apps/server/src/services/session/attachments/",
+        "apps/server/src/services/session/replay/event-size-guard.ts",
+        "apps/server/src/routes/session-attachments-handler.ts",
+        "apps/server/src/services/runtimes/opencode/media-capture.ts",
+        "apps/client/src/layers/features/chat/ui/message/MessageImage.tsx",
+        "packages/test-utils/src/runtime-conformance.ts"
+      ]
     }
   ]
 }

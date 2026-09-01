@@ -55,7 +55,7 @@ import {
 } from '@dorkos/shared/session-stream';
 import type { PendingInteractionDTO } from '@dorkos/shared/types';
 import { logger } from '../../lib/logger.js';
-import { EVENT_LOG_MAX_EVENTS } from './event-log.js';
+import { EVENT_LOG_MAX_EVENTS } from './replay/event-log.js';
 
 /**
  * One ask that was raised and never resolved — what

@@ -41,7 +41,13 @@ import {
   questionOutcomeOf,
   type SessionEvent,
 } from '@dorkos/shared/session-stream';
-import type { ErrorPart, HistoryMessage, HistoryToolCall, MessagePart } from '@dorkos/shared/types';
+import type {
+  ErrorPart,
+  HistoryMessage,
+  HistoryToolCall,
+  ImagePart,
+  MessagePart,
+} from '@dorkos/shared/types';
 import { SDK_TOOL_NAMES } from '@dorkos/shared/constants';
 
 /** The `error` session-event member, the per-turn error accumulator entry. */
@@ -67,6 +73,17 @@ interface TurnAccumulator {
   tools: Map<string, HistoryToolCall>;
   /** Typed turn errors, in arrival order. */
   errors: ErrorSessionEvent[];
+  /**
+   * Images the turn produced, in arrival order.
+   *
+   * For a log-backed runtime this stream IS the transcript, so an
+   * `image_attachment` that is not rebuilt here is a picture that exists on
+   * disk and is reachable from nothing. OpenCode declares `logBackedHistory`
+   * precisely so this loader is the fallback when its sidecar read fails — and
+   * a picture vanishing on that path, with no error, is the same silent drop
+   * the whole feature exists to end.
+   */
+  images: ImagePart[];
   /**
    * Answered approvals, by the id of the tool call each one gated. Applied when
    * the turn closes rather than on arrival, so a runtime that reports the
@@ -218,13 +235,18 @@ function toErrorPart(error: ErrorSessionEvent): ErrorPart {
 }
 
 /**
- * Build the `parts` array for a FAILED turn: the concatenated text (when
- * non-empty), one `tool_call` part per merged tool, then one `error` part per
- * accumulated error. Clean turns never call this — they stay `parts`-less so
- * their reconstruction is byte-identical to the pre-error fold (the client's
- * `mapHistoryMessage` uses `parts` exclusively when present).
+ * Build the `parts` array for a turn that needs one: the concatenated text
+ * (when non-empty), one `tool_call` part per merged tool, one `image` part per
+ * picture the turn produced, then one `error` part per accumulated error.
+ *
+ * Called for a turn that FAILED or that produced an IMAGE. A turn with neither
+ * stays `parts`-less, so its reconstruction is byte-identical to the pre-error
+ * fold — the client's `mapHistoryMessage` uses `parts` exclusively when
+ * present, which is also why everything the turn holds has to be rebuilt here
+ * rather than only the new thing: emitting parts for an image-bearing turn and
+ * forgetting its text would delete the text.
  */
-function buildFailedTurnParts(turn: TurnAccumulator): MessagePart[] {
+function buildTurnParts(turn: TurnAccumulator): MessagePart[] {
   const parts: MessagePart[] = [];
   if (turn.text.length > 0) parts.push({ type: 'text', text: turn.text });
   for (const tool of turn.tools.values()) {
@@ -261,6 +283,7 @@ function buildFailedTurnParts(turn: TurnAccumulator): MessagePart[] {
         : {}),
     });
   }
+  for (const image of turn.images) parts.push(image);
   for (const error of turn.errors) parts.push(toErrorPart(error));
   return parts;
 }
@@ -285,7 +308,14 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
   for (const event of events) {
     switch (event.type) {
       case 'turn_start':
-        turn = { seq: event.seq, text: '', tools: new Map(), errors: [], receipts: new Map() };
+        turn = {
+          seq: event.seq,
+          text: '',
+          tools: new Map(),
+          errors: [],
+          images: [],
+          receipts: new Map(),
+        };
         if (event.userMessage !== undefined) {
           messages.push({ id: `user-${event.seq}`, role: 'user', content: event.userMessage });
         }
@@ -415,6 +445,20 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
       case 'error':
         if (turn) turn.errors.push(event);
         break;
+      case 'image_attachment':
+        // A reference, exactly as it rode the stream — the bytes are behind the
+        // URL and this loader never touches them.
+        if (turn) {
+          turn.images.push({
+            type: 'image',
+            attachmentId: event.attachmentId,
+            url: event.url,
+            mediaType: event.mediaType,
+            size: event.size,
+            ...(event.alt !== undefined ? { alt: event.alt } : {}),
+          });
+        }
+        break;
       case 'interaction_resolved': {
         // The permission prompt is a DorkOS event, so its answer has no other
         // home: for a log-backed runtime this stream IS the transcript, and
@@ -445,13 +489,23 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
         // An errors-only turn still emits an assistant message: the failure IS
         // the turn's output, and dropping it would make a failed turn vanish
         // from a log-backed runtime's history.
-        if (turn.text.length > 0 || turn.tools.size > 0 || turn.errors.length > 0) {
+        // An images-only turn emits an assistant message for the same reason an
+        // errors-only one does: the picture IS the turn's output, and a turn
+        // that produced nothing but an image would otherwise vanish.
+        if (
+          turn.text.length > 0 ||
+          turn.tools.size > 0 ||
+          turn.errors.length > 0 ||
+          turn.images.length > 0
+        ) {
           messages.push({
             id: `assistant-${turn.seq}`,
             role: 'assistant',
             content: turn.text,
             ...(turn.tools.size > 0 ? { toolCalls: [...turn.tools.values()] } : {}),
-            ...(turn.errors.length > 0 ? { parts: buildFailedTurnParts(turn) } : {}),
+            ...(turn.errors.length > 0 || turn.images.length > 0
+              ? { parts: buildTurnParts(turn) }
+              : {}),
           });
         }
         turn = null;

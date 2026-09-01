@@ -40,6 +40,7 @@ describe('RuntimeCapabilities shape', () => {
       supportsPersistentSession: false,
       supportsSteer: false,
       supportsContextStaging: false,
+      mediaOutput: 'none',
       nativeContext: [],
       permissionModes: {
         supported: true,
@@ -107,6 +108,7 @@ describe('RuntimeCapabilities shape', () => {
       supportsPersistentSession: false,
       supportsSteer: false,
       supportsContextStaging: false,
+      mediaOutput: 'none',
       nativeContext: [],
       permissionModes: { supported: false, values: [] },
       settings: { configSection: null, supportsEffort: false, sections: [] },
@@ -132,6 +134,7 @@ describe('RuntimeCapabilities shape', () => {
       supportsPersistentSession: false,
       supportsSteer: false,
       supportsContextStaging: false,
+      mediaOutput: 'none',
       permissionModes: { supported: false, values: [] },
       settings: { configSection: null, supportsEffort: false, sections: [] },
       features: {
@@ -167,6 +170,7 @@ describe('RuntimeCapabilities shape', () => {
       supportsPersistentSession: false,
       supportsSteer: false,
       supportsContextStaging: false,
+      mediaOutput: 'none',
       permissionModes: { supported: false, values: [] },
       features: {},
     };
@@ -199,6 +203,38 @@ describe('RuntimeCapabilities shape', () => {
     };
 
     expect(undeclared.type).toBe('undeclared-delivery-runtime');
+  });
+
+  it('requires every runtime to declare what it does with media', () => {
+    // The same compile-time forcing, for the field that ended a silence: before
+    // `mediaOutput` existed, every runtime dropped every image a model or a tool
+    // produced and none of them said so, so all three looked identical from the
+    // outside and a person paid for a picture that was never shown
+    // (ADR 260901-135657). Optional would mean `undefined` — an adapter that
+    // never said, read as "no" by a falsy check, which is the same silent
+    // default in a new place. If it becomes optional, the `@ts-expect-error`
+    // turns into an unused-directive error, and that red is the point.
+    // @ts-expect-error mediaOutput is required
+    const undeclared: RuntimeCapabilities = {
+      type: 'undeclared-media-runtime',
+      commandIntents: { compact: { supported: false } },
+      nativeContext: [],
+      supportsResume: false,
+      supportsMcp: false,
+      supportsManagedMcpServers: false,
+      supportsCostTracking: false,
+      supportsToolApproval: false,
+      supportsQuestionPrompt: false,
+      supportsPlugins: false,
+      supportsPersistentSession: false,
+      supportsSteer: false,
+      supportsContextStaging: false,
+      permissionModes: { supported: false, values: [] },
+      settings: { configSection: null, supportsEffort: false, sections: [] },
+      features: {},
+    };
+
+    expect(undeclared.type).toBe('undeclared-media-runtime');
   });
 
   it('requires a PermissionModeDescriptor to say what its mode does', () => {

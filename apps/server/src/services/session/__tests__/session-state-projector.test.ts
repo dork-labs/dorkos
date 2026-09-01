@@ -18,7 +18,7 @@ import type {
   ProjectorStatusUpdate,
   InteractionChange,
 } from '../session-state-projector.js';
-import { EVENT_LOG_MAX_EVENTS } from '../event-log.js';
+import { EVENT_LOG_MAX_EVENTS } from '../replay/event-log.js';
 import {
   StaleResumeCursorError,
   BLOCKING_INTERACTION_EVENT_TYPES,
