@@ -646,12 +646,16 @@ function touchAndGet(state: SessionStreamStoreState, sessionId: string): Session
  * `@dorkos/shared` for that reason rather than hand-copied; the interrupted set
  * WAS a hand-kept copy here until DOR-1676.
  *
- * The rule, in full, lives on the server method's docstring: the error FRAME
- * decides and the terminal reason only ever absolves. In short — an already-held
- * `error` or the `error` reason settles `error`; an abort settles `interrupted`
- * (a stop is not a failure); a reason that says the turn did its work or handed
- * it off settles idle; otherwise a latched error frame that is not survivable
- * settles `error`.
+ * The rule, in full, lives on the server method's docstring — including the two
+ * limits it names, which apply here identically. In short: an already-held
+ * `error` or the `error` reason settles `error`; an abort settles `interrupted`;
+ * a reason that absolves settles idle; otherwise a latched error frame that is
+ * not survivable settles `error`.
+ *
+ * The abort check knows SHAPE, never intent — the CLI collapses nine abort
+ * causes into two strings — so an abort nobody asked for (an API refusal) reads
+ * here as a stop. Read the server docstring's "known hole" section before
+ * changing that ordering.
  *
  * `lastError` is the frame latch because it is the one that survives hydration:
  * it is cleared by every `turn_start` and set by every `error`, and it rides the

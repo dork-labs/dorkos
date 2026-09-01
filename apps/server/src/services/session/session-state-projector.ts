@@ -1482,19 +1482,22 @@ export class SessionStateProjector {
    * reason that is not `completed` failed" — is wrong in both directions: it
    * over-fires on {@link isNonFatalErrorCode} frames (a `hook_failure` is the
    * OPERATOR'S own script exiting non-zero, and the turn still carries the whole
-   * answer), and it under-absolves the three reasons that ride
-   * `SDKResultSuccess` — `tool_deferred`, `tool_deferred_unavailable` and
-   * `background_requested` all mean the turn handed work off and will be BACK
-   * (the DOR-1100 continuation), so failing them fails a turn still in progress.
+   * answer), and it under-absolves the reasons that ride `SDKResultSuccess` —
+   * `tool_deferred` and `background_requested` mean the turn handed work off and
+   * will be BACK (the DOR-1100 continuation), so failing them fails a turn still
+   * in progress. See {@link isAbsolvingTerminalReason} for the full list and for
+   * why `tool_deferred_unavailable` is on it despite NOT coming back.
    *
    * In order, a `turn_end` settles as:
    *
    * 1. `error` — the held lifecycle is already `error` (the detached-error
    *    `status_change` arrived first), or the reason is the codebase-wide
    *    `error` signal every runtime and every injected failure closes with.
-   * 2. `interrupted` — the reason names an abort. A stop is not a failure, and
-   *    this deliberately outranks the frame below: a turn a person cut short
-   *    that reported something on its way out was still cut short, not broken.
+   * 2. `interrupted` — the reason names an abort, and this deliberately outranks
+   *    the frame below. **What that check knows is SHAPE, never intent**: the
+   *    CLI collapses nine distinct abort causes into these two strings, so this
+   *    cannot tell a turn a person stopped from one an API refusal aborted. The
+   *    hole it leaves is named below.
    * 3. idle/blocked — the reason absolves ({@link isAbsolvingTerminalReason}).
    * 4. `error` — otherwise the FRAME decides: the window latched an error whose
    *    code does not mark it survivable. An unclassified reason absolves nothing
@@ -1516,6 +1519,23 @@ export class SessionStateProjector {
    * so a fatal error followed by a survivable one inside a single window is read
    * as survivable. The status surface shows that same last frame either way, so
    * the lifecycle and the error a person is shown stay consistent.
+   *
+   * ## The known hole: an abort nobody asked for reads as a stop
+   *
+   * Step 2 outranks the frame on SHAPE alone, and shape cannot say who aborted.
+   * `sdk/sdk-error-mapping.ts` (see `isStoppedTurnResult`) documents the case
+   * this misses: an API refusal aborts the main turn controller, DorkOS never
+   * asked for a stop, and the result mapper therefore KEEPS the error frame on
+   * purpose. This rule then settles `interrupted` and the clear below erases
+   * `lastError` — so a turn the operator never touched is presented as one they
+   * stopped, with its explanation dropped.
+   *
+   * Unchanged by DOR-1676 (the old rule did exactly the same thing) and left
+   * that way deliberately rather than silently: fixing it needs DorkOS's own
+   * stop record plumbed into settlement, which is the AND that
+   * `isStoppedTurnResult` already performs one layer down and this projector
+   * has no access to. Tracked as a follow-up; do not "fix" it here by dropping
+   * the abort check, which would make every operator Stop read as a crash.
    *
    * Note: {@link markInterrupted} ingests NO `turn_end`, so the eviction-driven
    * interrupted lifecycle it sets is never routed through here — this only

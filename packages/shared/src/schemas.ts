@@ -1393,11 +1393,30 @@ export function isInterruptedTerminalReason(terminalReason: string | undefined):
  * Terminal reasons that say the turn DID its work, so an `error` it reported
  * along the way is one it RECOVERED from.
  *
- * Not just `completed`. The other three ride the SDK's `SDKResultSuccess`: the
- * turn deferred a tool or moved to the background and will be back to finish —
- * the DOR-1100 continuation the session normalizer already models as a second
- * turn window. Settling any of them as a failure would call a turn that is still
- * working a turn that broke.
+ * Not just `completed`. The other three ride the SDK's `SDKResultSuccess`, so
+ * the claude-code result mapper — which gates its error frame on the SUBTYPE,
+ * not on `is_error` — emits no frame for any of them. That makes their
+ * membership here inert on the default runtime today, and deliberately kept:
+ * these are the shapes a runtime CAN close a deferred turn with, and the rule
+ * should not depend on which of them a given SDK version happens to use.
+ *
+ * They are not all the same story, and the difference matters to anyone reading
+ * this list as documentation:
+ *
+ * - `background_requested` and `tool_deferred` — the turn handed work off and
+ *   WILL be back, the DOR-1100 continuation the session normalizer already
+ *   models as a second turn window. Settling these as a failure would call a
+ *   turn that is still working a turn that broke.
+ * - `tool_deferred_unavailable` — the turn will NOT be back. The SDK reports it
+ *   with `is_error: true` and a line saying the deferred tool is no longer
+ *   available because its MCP server disconnected. It is here because the
+ *   subtype is still `success`, so no error frame is latched and the frame rule
+ *   answers idle regardless; it is NOT here because the turn is coming back.
+ *
+ * Two more reasons are deliberately ABSENT and equally benign: the SDK's
+ * `stop_hook_prevented` and `hook_stopped` also ride the success subtype and so
+ * latch no frame either. They fall through to the frame rule and settle idle on
+ * their own, which is why they need no exoneration here.
  *
  * **Why this list is short on purpose.** It is the ABSOLVING half of the rule in
  * {@link isInterruptedTerminalReason}'s sibling derivation — a turn's terminal
@@ -1408,6 +1427,10 @@ export function isInterruptedTerminalReason(terminalReason: string | undefined):
  * …), and a reason nobody has classified absolves nothing and accuses nothing.
  * So the safe direction is a short allowlist of exonerations rather than a long
  * denylist of failures that a new SDK value could silently fall off (DOR-1676).
+ *
+ * DOR-1658's `run-outcome.ts` (PR #1416) redeclares this set privately; see
+ * {@link NON_FATAL_ERROR_CODES} for the one-line fold whichever branch lands
+ * second should apply.
  */
 export const ABSOLVING_TERMINAL_REASONS: ReadonlySet<string> = new Set([
   'completed',
@@ -1451,13 +1474,23 @@ export function isAbsolvingTerminalReason(terminalReason: string | undefined): b
  * code adds it here; until then its errors count as failures, which is the safe
  * half.
  *
- * **One source, because the readings must agree.** The relay's claude-code
- * agent handler keeps a byte-identical copy (`packages/relay/src/adapters/
- * claude-code/agent-handler.ts`) and DOR-1658's run-outcome module adds a third;
- * both should import this one, so "is this error the turn failing?" has a single
- * answer whether it is asked by a session's lifecycle, an agent's reply, or a
- * scheduled run's row. Folding those copies in is deliberately left to the
- * branch that owns them (DOR-1676 could not touch the relay safely mid-flight).
+ * **One source, because the readings must agree.** Two byte-identical copies
+ * exist as this lands, and both are owned by branches DOR-1676 could not touch
+ * mid-flight: the relay's claude-code agent handler
+ * (`packages/relay/src/adapters/claude-code/agent-handler.ts`), and DOR-1658's
+ * `run-outcome.ts` (PR #1416). "Is this error the turn failing?" must have ONE
+ * answer whether a session's lifecycle, an agent's reply or a scheduled run's
+ * row asks it.
+ *
+ * **The fold, concretely, for whichever of the two lands second:** re-export
+ * rather than redeclare. `run-outcome.ts` already does
+ * `import { isInterruptedTerminalReason } from './schemas.js'`, so it is one
+ * line — add `NON_FATAL_ERROR_CODES` and `isNonFatalErrorCode` to that import
+ * and delete its local `const`/`function` pair, keeping its own `export` of
+ * both so the relay's import path does not move. The relay then swaps its
+ * private `const` for the shared import. Same direction for
+ * {@link ABSOLVING_TERMINAL_REASONS}, which `run-outcome.ts` also redeclares
+ * privately. Tracked as a follow-up; nothing here depends on it happening.
  */
 export const NON_FATAL_ERROR_CODES: ReadonlySet<string> = new Set(['hook_failure']);
 
