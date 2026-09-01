@@ -261,6 +261,23 @@ describe('RuntimeCardView', () => {
     expect(screen.getByRole('button', { name: 'Sign in to Claude Code' })).toBeInTheDocument();
   });
 
+  it('warns before a working sign-in runs out, while the card still reads Ready', () => {
+    // The point of the warning is that nothing is broken yet: the card is Ready,
+    // and this is the window in which signing in again costs nothing.
+    renderCard({ expiringSignIn: { expiresAt: '2026-09-20T04:51:04.000Z', timeLeft: '2 days' } });
+
+    expect(screen.getByTestId('runtime-ready-claude-code')).toBeInTheDocument();
+    expect(screen.getByTestId('runtime-sign-in-expiring-claude-code')).toHaveTextContent(
+      'Your Claude Code sign-in runs out in 2 days. Sign in again before your agents stall.'
+    );
+  });
+
+  it('says nothing about expiry when no deadline is known — which is most of the time', () => {
+    renderCard();
+
+    expect(screen.queryByTestId('runtime-sign-in-expiring-claude-code')).not.toBeInTheDocument();
+  });
+
   it('replaces a not-ready card’s summary with the one sentence that is true', () => {
     renderCard({ ready: false, summary: [], expanded: true });
 

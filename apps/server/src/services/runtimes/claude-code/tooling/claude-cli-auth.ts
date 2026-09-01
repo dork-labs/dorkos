@@ -56,13 +56,35 @@ export async function resolveClaudeBinaryPath(): Promise<string | null> {
   );
 }
 
-/** Whether `claude auth status --json` output reports an authenticated session (no token material read). */
-function isLoggedIn(statusJson: string): boolean {
+/** What `claude auth status --json` reports about this machine's sign-in (never any token material). */
+export interface ClaudeAuthStatus {
+  /** Whether the CLI reports an authenticated session. */
+  loggedIn: boolean;
+  /**
+   * How the CLI is authenticated, verbatim from the CLI. Measured values:
+   * `claude.ai` (the stored subscription sign-in), `api_key` (an inherited
+   * `ANTHROPIC_API_KEY`), `oauth_token` (an inherited `CLAUDE_CODE_OAUTH_TOKEN`),
+   * `none` (signed out). Absent when the CLI does not report one.
+   *
+   * This matters because only the stored `claude.ai` sign-in has a renewal
+   * deadline to read: attaching one to an inherited env credential would warn
+   * about an account that is not even in use.
+   */
+  authMethod?: string;
+}
+
+/** Parse `claude auth status --json` output (reads two non-secret fields; no token material). */
+function parseAuthStatus(statusJson: string): ClaudeAuthStatus | null {
   try {
     const parsed: unknown = JSON.parse(statusJson);
-    return (parsed as { loggedIn?: unknown }).loggedIn === true;
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const { loggedIn, authMethod } = parsed as { loggedIn?: unknown; authMethod?: unknown };
+    return {
+      loggedIn: loggedIn === true,
+      ...(typeof authMethod === 'string' ? { authMethod } : {}),
+    };
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -78,24 +100,42 @@ function isLoggedIn(statusJson: string): boolean {
  * whatever the CLI actually honors.
  *
  * A PRESENT-but-expired or revoked credential still reads `true`: `auth status`
- * reports from stored state without a live network check, so nothing here can
- * tell an expired token from a valid one. In-session auth-error remediation is
- * what catches a revoked credential when a turn actually fails.
+ * reports from stored state without a live network check, so nothing THIS probe
+ * asks can tell an expired token from a valid one. Two other things cover that
+ * gap: `claude-sign-in-expiry.ts` reads the stored sign-in's own renewal
+ * deadline, which catches a subscription sign-in that has run out of time; and
+ * in-session auth-error remediation catches a revoked credential when a turn
+ * actually fails. `authMethod` is reported here because that expiry read applies
+ * to exactly one of these credentials and must not be attributed to the others.
+ *
+ * @param binary - The resolved `claude` binary (or `null` when none resolved).
+ * @returns The reported status, or `null` when the CLI could not be asked at all
+ *   (no binary, signed out — which exits non-zero — or a bounded-out probe).
+ */
+export async function readClaudeAuthStatus(
+  binary: string | null
+): Promise<ClaudeAuthStatus | null> {
+  if (!binary) return null;
+  try {
+    const out = await runBinaryProbe(binary, ['auth', 'status', '--json'], CLAUDE_PROBE_TIMEOUT_MS);
+    return parseAuthStatus(out);
+  } catch (err) {
+    // Non-zero exit (signed out) or a bounded-out probe. Reported once per
+    // distinct failure so "authentication: missing" is never unexplainable.
+    logProbeFailure(AUTH_PROBE_LABEL, binary, err);
+    return null;
+  }
+}
+
+/**
+ * Whether the CLI reports an authenticated session — the boolean the eval
+ * harness asks for, and the same answer {@link readClaudeAuthStatus} gives.
  *
  * @param binary - The resolved `claude` binary (or `null` when none resolved).
  * @returns True when the CLI reports an authenticated session.
  */
 export async function isClaudeCliAuthenticated(binary: string | null): Promise<boolean> {
-  if (!binary) return false;
-  try {
-    const out = await runBinaryProbe(binary, ['auth', 'status', '--json'], CLAUDE_PROBE_TIMEOUT_MS);
-    return isLoggedIn(out);
-  } catch (err) {
-    // Non-zero exit (signed out) or a bounded-out probe. Reported once per
-    // distinct failure so "authentication: missing" is never unexplainable.
-    logProbeFailure(AUTH_PROBE_LABEL, binary, err);
-    return false;
-  }
+  return (await readClaudeAuthStatus(binary))?.loggedIn === true;
 }
 
 /**

@@ -50,6 +50,7 @@ import {
   PRIMARY_RUNTIME_TYPES,
   getRuntimeDescriptor,
   selectRuntimeReadiness,
+  selectExpiringSignIn,
   settingsForRuntime,
   useProvisionRuntime,
   useRuntimeCapabilities,
@@ -186,6 +187,9 @@ export function RuntimeCard({
   const defaults = config?.executionDefaults?.perRuntime.find((e) => e.runtime === type);
   const configuredModel = defaults?.model ?? null;
   const requirementsEntry = requirements?.runtimes[type];
+  // Null nearly always: only a credential that reports a real deadline, close
+  // enough to act on, says anything here.
+  const expiringSignIn = selectExpiringSignIn(requirements, type);
 
   // Late, and only when there is a question to answer: an open card offers a
   // model picker, and a collapsed one with a model set needs the catalog to name
@@ -375,6 +379,7 @@ export function RuntimeCard({
         expanded={expanded}
         onToggleExpanded={() => setExpanded((open) => !open)}
         summary={summary}
+        {...(expiringSignIn ? { expiringSignIn } : {})}
         connectSlot={connectSlot}
         {...(reconnect && !reconnecting
           ? { reconnect: { kind: reconnect.kind, onOpen: () => setReconnecting(true) } }

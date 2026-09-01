@@ -53,8 +53,13 @@ type ConfigReader = { get<K extends keyof UserConfig>(key: K): UserConfig[K] };
  * Reads the variable through {@link ambientClaudeConfigDir} rather than directly,
  * so a rename or fork holding the D8 env lock cannot make this answer its
  * transient value and send a brand-new session to another client's account.
+ *
+ * Exported because the sign-in expiry probe needs the SAME root: it reads the
+ * credential store belonging to whichever account `claude auth status` just
+ * reported on, and that probe inherits the ambient environment. Deriving the
+ * path there instead would need `os.homedir()`, which only this file may call.
  */
-function inheritedClaudeRoot(): string {
+export function inheritedClaudeRoot(): string {
   return ambientClaudeConfigDir() ?? path.join(os.homedir(), '.claude');
 }
 

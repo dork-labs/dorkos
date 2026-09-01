@@ -26,7 +26,7 @@ import { ChevronDown, CircleAlert } from 'lucide-react';
 import type { RuntimeSettingsSection } from '@dorkos/shared/agent-runtime';
 import { cn } from '@/layers/shared/lib';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/layers/shared/ui';
-import { getRuntimeDescriptor } from '@/layers/entities/runtime';
+import { getRuntimeDescriptor, type ExpiringSignIn } from '@/layers/entities/runtime';
 import {
   RECONNECT_TRIGGERS,
   RuntimeCardHeader,
@@ -45,6 +45,19 @@ const LOCKED_LINE = 'One sign-in away. Settings unlock once it’s connected.';
 /** What a card says when the runtime new conversations start on cannot start one. */
 const BROKEN_DEFAULT_LINE =
   'Your default runtime isn’t connected. New conversations can’t start here.';
+
+/**
+ * What a card says while a working sign-in is running out of time.
+ *
+ * Said early and in the present tense, because the whole point is to be read
+ * BEFORE anything breaks: the sign-in still works, and this is the window in
+ * which fixing it costs nothing.
+ *
+ * @param label - The runtime's name, as a person calls it.
+ * @param timeLeft - How long is left, already in words (e.g. `'2 days'`).
+ */
+const expiringSignInLine = (label: string, timeLeft: string) =>
+  `Your ${label} sign-in runs out in ${timeLeft}. Sign in again before your agents stall.`;
 
 /**
  * What a card says instead of rows when the runtime has nowhere to keep them.
@@ -78,6 +91,12 @@ export interface RuntimeCardViewProps {
   ready: boolean;
   /** Whether new conversations start on this runtime. */
   isDefault: boolean;
+  /**
+   * The runtime's sign-in deadline, when it is close enough to be worth saying
+   * so. Omit — as it is nearly always — to show nothing: most credentials report
+   * no deadline at all, and silence is the honest reading of an unknown one.
+   */
+  expiringSignIn?: ExpiringSignIn | undefined;
   /**
    * Make this runtime the default. Omit to render no such affordance — a card
    * that already is the default, or a surface where the choice is not offered.
@@ -159,6 +178,7 @@ export function RuntimeCardView({
   sections,
   renderSection,
   setupDetails,
+  expiringSignIn,
   className,
 }: RuntimeCardViewProps) {
   const descriptor = getRuntimeDescriptor(type);
@@ -267,6 +287,16 @@ export function RuntimeCardView({
         >
           <CircleAlert className="mt-px size-3.5 shrink-0" aria-hidden />
           {BROKEN_DEFAULT_LINE}
+        </p>
+      )}
+
+      {expiringSignIn && (
+        <p
+          className="flex items-start gap-1.5 px-4 pb-3 text-xs text-amber-700 dark:text-amber-400"
+          data-testid={`runtime-sign-in-expiring-${type}`}
+        >
+          <CircleAlert className="mt-px size-3.5 shrink-0" aria-hidden />
+          {expiringSignInLine(descriptor.label, expiringSignIn.timeLeft)}
         </p>
       )}
 
