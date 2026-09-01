@@ -771,6 +771,119 @@ describe('OpenCodeSessionMapper', () => {
       expect(history[0]).toMatchObject({ id: 'msg_real', content: 'actual question' });
     });
 
+    // A failed turn is recorded in OpenCode's store as an assistant message
+    // carrying `error` — often with NO parts at all (measured: all six
+    // `APIError` rows in this machine's opencode.db have zero parts). The
+    // parts-only reader dropped them, so a reopened transcript showed the
+    // question and nothing after it (DOR-1666).
+    it('keeps a turn that failed with nothing said, as a typed error part', async () => {
+      const client = createMockClient();
+      client.session.create.mockResolvedValue({ data: ocSession({ id: 'ses_hist' }) });
+      client.session.messages.mockResolvedValue({
+        data: [
+          { info: userMessage(), parts: [textPart('Run the tests')] },
+          {
+            info: assistantMessage({
+              id: 'msg_failed',
+              error: {
+                name: 'ProviderAuthError',
+                data: { providerID: 'anthropic', message: 'OAuth token revoked' },
+              },
+            }),
+            parts: [],
+          },
+        ],
+      });
+      const mapper = new OpenCodeSessionMapper(createProvider(client));
+      await mapper.ensureSession(DORKOS_ID, { cwd: PROJECT_DIR });
+
+      const history = await mapper.getMessageHistory(PROJECT_DIR, DORKOS_ID);
+
+      expect(history).toHaveLength(2);
+      const failed = history[1]!;
+      expect(failed).toMatchObject({ id: 'msg_failed', role: 'assistant' });
+      // `auth_error` is what turns the block into a "Fix sign-in" affordance.
+      expect(failed.parts).toEqual([
+        {
+          type: 'error',
+          message: 'OAuth token revoked',
+          category: 'auth_error',
+          details: '[ProviderAuthError]',
+        },
+      ]);
+    });
+
+    it('appends the failure after whatever the agent managed to say', async () => {
+      const client = createMockClient();
+      client.session.create.mockResolvedValue({ data: ocSession({ id: 'ses_hist' }) });
+      client.session.messages.mockResolvedValue({
+        data: [
+          {
+            info: assistantMessage({
+              error: { name: 'APIError', data: { message: 'upstream 500', isRetryable: true } },
+            }),
+            parts: [
+              textPart('Starting now.'),
+              toolPart({
+                status: 'completed',
+                input: { command: 'pnpm test' },
+                output: 'all green',
+                title: 'pnpm test',
+                metadata: {},
+                time: { start: CREATED_MS, end: CREATED_MS + 100 },
+              }),
+            ],
+          },
+        ],
+      });
+      const mapper = new OpenCodeSessionMapper(createProvider(client));
+      await mapper.ensureSession(DORKOS_ID, { cwd: PROJECT_DIR });
+
+      const [message] = await mapper.getMessageHistory(PROJECT_DIR, DORKOS_ID);
+
+      expect(message!.parts?.map((p) => p.type)).toEqual(['text', 'tool_call', 'error']);
+      // The error part is not text, so it never leaks into the message content.
+      expect(message!.content).toBe('Starting now.');
+      expect(message!.parts?.[2]).toMatchObject({
+        type: 'error',
+        message: 'upstream 500',
+        category: 'execution_error',
+      });
+    });
+
+    it('shows no error for an interrupted turn — an abort is not a failure', async () => {
+      const client = createMockClient();
+      client.session.create.mockResolvedValue({ data: ocSession({ id: 'ses_hist' }) });
+      client.session.messages.mockResolvedValue({
+        data: [
+          {
+            info: assistantMessage({
+              id: 'msg_partial',
+              error: { name: 'MessageAbortedError', data: { message: 'Aborted' } },
+            }),
+            parts: [textPart('Half a thought')],
+          },
+          {
+            info: assistantMessage({
+              id: 'msg_silent',
+              error: { name: 'MessageAbortedError', data: { message: 'Aborted' } },
+            }),
+            parts: [],
+          },
+        ],
+      });
+      const mapper = new OpenCodeSessionMapper(createProvider(client));
+      await mapper.ensureSession(DORKOS_ID, { cwd: PROJECT_DIR });
+
+      const history = await mapper.getMessageHistory(PROJECT_DIR, DORKOS_ID);
+
+      // The partial answer survives on its own; the one that said nothing at
+      // all still drops, because an interrupt with no output IS nothing.
+      expect(history).toHaveLength(1);
+      expect(history[0]).toMatchObject({ id: 'msg_partial', content: 'Half a thought' });
+      expect(history[0]!.parts?.map((p) => p.type)).toEqual(['text']);
+    });
+
     it('re-lists to recover a derived binding in a fresh mapper (post-restart)', async () => {
       const client = createMockClient();
       client.session.list.mockResolvedValue({ data: [ocSession({ id: 'ses_prev' })] });
