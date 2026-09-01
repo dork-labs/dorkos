@@ -119,8 +119,12 @@ class Fragment:
 
     `claims` holds the raw `covers:` items (empty for a fragment with no
     frontmatter); `bullets` holds the entry lines from the fragment body, which
-    feed the legacy word-overlap fallback. `problems` is non-empty when the file
-    is malformed, in which case it contributes neither claims nor bullets.
+    feed the legacy word-overlap fallback. `problems` is non-empty when
+    something is wrong with the file, in which case it never contributes
+    bullets — but it keeps contributing claims unless the problem implicates
+    the declaration itself (see `FragmentProblem.suppresses_claims`). A seed
+    marker is the case that doesn't: the frontmatter is fine and its
+    `covers:` line is correct, only the entry below the marker is unread.
     """
     name: str
     claims: list[str]
@@ -162,6 +166,29 @@ SLUG_MAX_LEN = 40
 
 # Frontmatter field a fragment uses to declare which commits it covers.
 COVERS_FIELD = "covers"
+
+# Token inside the HTML comment marker `changelog-populator.py` writes into
+# every seeded fragment's body, directly above the raw entry it derived from
+# the commit subject. Its presence means nobody has read that entry yet — a
+# commit subject is developer shorthand, not prose written for a user — so a
+# fragment carrying it fails validation rather than being free to compile into
+# CHANGELOG.md untouched (a technical subject reached PR #1409 verbatim before
+# only a human reviewer's attention caught it; nothing structural did). Kept in
+# sync with `.claude/git-hooks/changelog-populator.py`, which writes it — the
+# two scripts are deliberately standalone (a git hook must not depend on an
+# import path).
+SEED_MARKER_TOKEN = "dorkos-changelog:seeded"
+
+# The full comment `render_fragment` below writes into a freshly generated
+# fragment's body, above its entry. `--apply` writes the same kind of
+# unreviewed, commit-subject-derived prose the hook does, so it carries the
+# same marker for the same reason. Text kept identical to the hook's copy —
+# both explain the fix (rewrite or delete) and point at the same doc anchor.
+SEED_MARKER = (
+    f"<!-- {SEED_MARKER_TOKEN} — rewrite this bullet for a human, then delete "
+    "this comment. If the change needs no changelog entry, delete the whole "
+    "fragment instead. See changelog/README.md#seeded-fragments. -->"
+)
 
 # The six Keep a Changelog (https://keepachangelog.com/en/1.0.0/) categories
 # release.md step 6.4 tells whoever is compiling a release to merge, plus one
@@ -419,8 +446,36 @@ def split_frontmatter(text: str) -> tuple[list[str], list[str]]:
     return [], lines
 
 
+@dataclass
+class FragmentProblem:
+    """One thing wrong with a fragment's body, and what it means for coverage.
+
+    `suppresses_claims` splits problems into two kinds. A structural defect
+    that implicates the declaration itself — an unterminated frontmatter
+    block, a claim-shaped line stranded in the body — must not be trusted for
+    coverage either: the declaration might be exactly the corruption in
+    question, so a fragment like that contributes neither claims nor bullets
+    (see `find_fragment_problems`'s docstring).
+
+    A seed marker is different: it says nothing about the declaration. The
+    frontmatter is well-formed and its `covers:` line is correct — only the
+    entry below the marker is unread. Suppressing its claims too used to make
+    `--check` tell you to add a claim line that was already there, and made
+    `--apply` mint a duplicate fragment for a commit that already had one
+    (both real bugs an earlier version of this guard shipped with — DOR-1667
+    review). So a seed marker sets `suppresses_claims=False`: it still fails
+    `find_fragment_problems`'s caller (nothing here waives `--validate`), but
+    it leaves `covers:` free to keep doing its job. Bullets stay suppressed
+    regardless — a raw, unread entry must never become a word-overlap
+    wildcard for some other commit.
+    """
+    message: str
+    suppresses_claims: bool = True
+
+
 def find_fragment_problems(body: list[str]) -> list[str]:
-    """Report claim-shaped content stranded in a fragment's body.
+    """Report claim-shaped content stranded in a fragment's body, or a body
+    nobody has rewritten yet.
 
     A malformed declaration must never be quieter than no declaration. When the
     frontmatter delimiters are wrong (an unterminated `---`, a `covers:` key with
@@ -429,28 +484,68 @@ def find_fragment_problems(body: list[str]) -> list[str]:
     overlap. That is a false green, and Prettier happily reformats the mistake
     into something that looks intentional. So: refuse to guess, and say what to
     fix.
+
+    The same refusal covers a fragment `changelog-populator.py` (or `--apply`)
+    seeded and nobody has touched since: its entry is the commit subject
+    reshaped just enough to look like a bullet, never prose written for a
+    user. Seeded output marks itself with a `SEED_MARKER_TOKEN` HTML comment
+    for exactly this reason, so this function does not need to guess whether
+    a bullet was rewritten — it only needs to notice the marker is still
+    there.
+
+    Thin wrapper over `classify_fragment_problems`, which keeps the extra
+    `suppresses_claims` bit `read_fragments` needs and this flat message list
+    does not.
     """
-    problems: list[str] = []
+    return [problem.message for problem in classify_fragment_problems(body)]
+
+
+def classify_fragment_problems(body: list[str]) -> list[FragmentProblem]:
+    """Same detection as `find_fragment_problems`, tagged with whether each
+    problem should also blank out the fragment's `covers:` claims.
+
+    See `FragmentProblem` for why a seed marker is tagged differently from
+    every other problem here.
+    """
+    problems: list[FragmentProblem] = []
     for raw in body:
         line = raw.strip()
         if not line:
             continue
+        if SEED_MARKER_TOKEN in line:
+            problems.append(FragmentProblem(
+                message=(
+                    "this fragment was auto-seeded from the commit subject and its "
+                    "entry has not been rewritten. A commit subject is developer "
+                    "shorthand, not prose written for a user — rewrite the bullet "
+                    "for a human, then delete this comment line. If the change "
+                    "needs no changelog entry at all, delete the whole fragment "
+                    f"instead. The `{COVERS_FIELD}:` declaration is correct as-is; "
+                    "leave it alone. See changelog/README.md#seeded-fragments."
+                ),
+                suppresses_claims=False,
+            ))
+            continue
         if line.lower().startswith(COVERS_FIELD + ":"):
-            problems.append(
-                f"`{COVERS_FIELD}:` appears in the body, not in a frontmatter block. "
-                "The declaration must sit between a `---` line at the very top of "
-                "the file and a closing `---` line."
-            )
+            problems.append(FragmentProblem(
+                message=(
+                    f"`{COVERS_FIELD}:` appears in the body, not in a frontmatter block. "
+                    "The declaration must sit between a `---` line at the very top of "
+                    "the file and a closing `---` line."
+                ),
+            ))
             continue
         heading = HEADING_RE.match(line)
         if heading and heading.group(1) not in ALLOWED_HEADINGS:
-            problems.append(
-                f"`### {heading.group(1)}` is not a heading release.md's compile "
-                f"step knows to merge ({', '.join(sorted(ALLOWED_HEADINGS))}). "
-                "Nothing automatically catches a bullet under any other heading — "
-                "it depends on whoever compiles the release noticing it by hand, "
-                "which is not a rule you can count on (see changelog/README.md)."
-            )
+            problems.append(FragmentProblem(
+                message=(
+                    f"`### {heading.group(1)}` is not a heading release.md's compile "
+                    f"step knows to merge ({', '.join(sorted(ALLOWED_HEADINGS))}). "
+                    "Nothing automatically catches a bullet under any other heading — "
+                    "it depends on whoever compiles the release noticing it by hand, "
+                    "which is not a rule you can count on (see changelog/README.md)."
+                ),
+            ))
             continue
         if not line.startswith("- "):
             continue
@@ -462,10 +557,12 @@ def find_fragment_problems(body: list[str]) -> list[str]:
             or (item != unquoted and CONVENTIONAL_SUBJECT_RE.match(unquoted))
         )
         if looks_like_claim:
-            problems.append(
-                f"the entry line `- {item}` is a `{COVERS_FIELD}:` item stranded in "
-                "the body. Move it inside the frontmatter block, or delete it."
-            )
+            problems.append(FragmentProblem(
+                message=(
+                    f"the entry line `- {item}` is a `{COVERS_FIELD}:` item stranded in "
+                    "the body. Move it inside the frontmatter block, or delete it."
+                ),
+            ))
     return problems
 
 
@@ -534,26 +631,30 @@ def split_inline_items(inline: str) -> list[str]:
 def read_fragments(unreleased_dir: Path) -> list[Fragment]:
     """Read every fragment in changelog/unreleased/ with its claims and bullets.
 
-    A malformed fragment yields neither claims nor bullets: its stranded claim
-    lines must not reach the word-overlap pool, where they would act as wildcards.
+    Any problem blanks out bullets: a raw or malformed entry must never reach
+    the word-overlap pool, where it would act as a wildcard. Claims are
+    blanked out too, but only by a problem that implicates the declaration
+    itself — a seed marker does not, since the `covers:` block it sits above
+    is well-formed and correct (see `FragmentProblem`).
     """
     fragments: list[Fragment] = []
     if not unreleased_dir.is_dir():
         return fragments
     for frag in sorted(unreleased_dir.glob("*.md")):
         frontmatter, body = split_frontmatter(frag.read_text(encoding="utf-8"))
-        problems = find_fragment_problems(body)
+        classified = classify_fragment_problems(body)
+        suppress_claims = any(problem.suppresses_claims for problem in classified)
         bullets = (
             []
-            if problems
+            if classified
             else [line.strip() for line in body if line.strip().startswith("- ")]
         )
         fragments.append(
             Fragment(
                 name=frag.name,
-                claims=[] if problems else parse_covers(frontmatter),
+                claims=[] if suppress_claims else parse_covers(frontmatter),
                 bullets=bullets,
-                problems=problems,
+                problems=[problem.message for problem in classified],
             )
         )
     return fragments
@@ -880,9 +981,24 @@ def analyze_and_generate(
     return result
 
 
-def render_fragment(section: str, entry: str, claims: list[str]) -> str:
-    """Render fragment file contents: a `covers:` frontmatter block, then the entry."""
-    body = f"### {section}\n\n{entry}\n"
+def render_fragment(
+    section: str, entry: str, claims: list[str], *, seeded: bool = False
+) -> str:
+    """Render fragment file contents: a `covers:` frontmatter block, then the
+    entry — with a seed marker above it when `seeded=True`.
+
+    Defaults to the clean rendering on purpose. `print_gate_failure` prints
+    this exact text as the template for a human to paste into a new fragment
+    ("a new fragment looks like this ... rewrite the bullet for a human
+    afterwards"); that printed template must already pass
+    `find_fragment_problems`, or copying it verbatim reds the very next run
+    (DOR-1667 review). `write_fragments` (the actual `--apply` writer) is the
+    one caller that opts into `seeded=True`: its output is genuinely
+    auto-generated from a commit subject and nobody has read it yet, same as
+    the post-commit hook's — see `SEED_MARKER` above.
+    """
+    marker = f"{SEED_MARKER}\n" if seeded else ""
+    body = f"### {section}\n\n{marker}{entry}\n"
     if not claims:
         return body
     lines = ["---", f"{COVERS_FIELD}:"]
@@ -896,6 +1012,8 @@ def write_fragments(entries: list[dict], unreleased_dir: Path) -> int:
 
     Each fragment declares the commit it covers by subject line, so the entry
     text stays free to be rewritten for a human without breaking the gate.
+    Written with `seeded=True`: this entry is the commit subject reshaped
+    into a bullet, and nobody has read it yet.
     """
     unreleased_dir.mkdir(parents=True, exist_ok=True)
     used: set[str] = set()
@@ -914,7 +1032,8 @@ def write_fragments(entries: list[dict], unreleased_dir: Path) -> int:
         used.add(name)
         claims = [e["original"]] if e.get("original") else []
         (unreleased_dir / name).write_text(
-            render_fragment(e["section"], e["entry"], claims), encoding="utf-8"
+            render_fragment(e["section"], e["entry"], claims, seeded=True),
+            encoding="utf-8",
         )
         written += 1
 

@@ -187,6 +187,50 @@ contributor docs, internal refactors) takes the `skip-changelog` label instead, 
 lands as `feat:` or `fix:` (the `writing-changelogs` skill's audience test). Never edit
 `CHANGELOG.md`'s `[Unreleased]` section — it no longer holds entries.
 
+### Seeded fragments
+
+A hook-minted fragment's entry is not a changelog bullet yet — it is the commit subject reshaped
+just enough to look like one. Nobody has read it, and a technical subject ("Watch the relay's
+runtime too, and regenerate the API spec") reads fine to the agent that wrote the commit and badly
+to everyone else. Once, that shipped almost verbatim; only a human reviewer caught it, and nothing
+structural stopped it (PR #1409).
+
+So every fragment `changelog-populator.py` writes carries an HTML comment above its entry.
+`.claude/scripts/changelog_backfill.py --apply` (the backfill command behind `/changelog:backfill`)
+seeds the identical marker on its own writes, for the same reason: its entries are commit
+subjects nobody has read either.
+
+```markdown
+<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the
+     change needs no changelog entry, delete the whole fragment instead. See
+     changelog/README.md#seeded-fragments. -->
+```
+
+`.claude/scripts/changelog_backfill.py --validate` fails on any fragment that still contains it —
+no `skip-changelog` bypass, the same as any other malformed fragment (see "Who gets blamed"
+above). `--check` (the coverage gate) fails on it too, though it reports the commit as covered
+(the marker does not blank out the `covers:` claim it sits below) — it is the malformed-fragment
+report that reds, not a manufactured "uncovered commit" one. `--validate` is the one that matters:
+it is the step CI runs unconditionally, with no `skip-changelog` door. Fix it one of two ways:
+
+- **Rewrite the bullet for a human, then delete the comment.** The `covers:` declaration needs no
+  changes — it is correct as written and stays byte-identical to the commit subject on purpose.
+- **Delete the whole fragment** if the change turns out not to be user-facing after all. The hook
+  cannot know that; it only pattern-matches the commit prefix.
+
+This is the normal shape of the workflow, not an edge case: commit, let the hook seed a fragment,
+then curate it before opening the PR — exactly what "By hand" above already asks for. The marker
+just makes skipping that step loud instead of silent.
+
+**The guard's real limit.** This is a comment, not a lock: deleting the marker line without
+touching the entry below it defeats the guard completely, and nothing else notices. That is a
+deliberate honor-system boundary, not an oversight — the alternative is inspecting prose for
+"has a human actually read this," which no tool can do. The guard's job is narrower and
+achievable: make skipping the rewrite step loud (a stray marker) instead of silent (nothing).
+One more edge worth knowing: because the check matches the marker by a literal substring, a
+fragment that quotes the token `dorkos-changelog:seeded` itself — describing this very guard, say
+— would trip the check on prose that was, in fact, written by a human. Rare enough to live with.
+
 ## Embedding product media
 
 A fragment or release note may embed real product media (the same seeded-from-the-real-UI
