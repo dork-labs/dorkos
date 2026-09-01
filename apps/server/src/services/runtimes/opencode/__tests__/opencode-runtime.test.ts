@@ -9,6 +9,7 @@ import type {
 import type { StreamEvent } from '@dorkos/shared/types';
 import { wrapKickoff, filterKickoffHistory } from '@dorkos/shared/kickoff';
 import { SESSIONS } from '../../../../config/constants.js';
+import { DEFAULT_CWD } from '../../../../lib/resolve-root.js';
 import {
   getOrCreateProjector,
   disposeProjector,
@@ -30,6 +31,7 @@ import {
   serverConnected,
   sessionInfo,
   sessionIdle,
+  sessionCompacted,
   sessionError,
   abortedError,
   statusEvent,
@@ -131,6 +133,7 @@ function createMockClient() {
       update: vi.fn(async () => ({ data: sessionInfo(OC_SESSION_A, DIRECTORY) })),
       fork: vi.fn(async () => ({ data: sessionInfo(OC_SESSION_B, DIRECTORY) })),
       promptAsync: vi.fn(async () => ({})),
+      summarize: vi.fn(async () => ({ data: true })),
       abort: vi.fn(async () => ({ data: true })),
       todo: vi.fn(async () => ({ data: [] })),
     },
@@ -476,6 +479,76 @@ describe('OpenCodeRuntime', () => {
         connection.push(globalEvent(DIRECTORY, event));
       }
       await finished;
+    });
+  });
+
+  describe('executeCommandIntent — compact (DOR-1668)', () => {
+    /**
+     * Drive a compaction to the point where the sidecar accepted it, then run
+     * it out through the compacted → idle terminal.
+     *
+     * NOTE ON WHAT THESE CASES CAN AND CANNOT PROVE. They pin that DorkOS SENDS
+     * a `{providerID, modelID}` body — our side of the contract. They do NOT
+     * prove the sidecar REQUIRES one: this client is a mock, and a mock accepts
+     * whatever it is handed, which is exactly how the missing body shipped
+     * (`@opencode-ai/sdk` types the payload `body?:`, so omitting it compiled
+     * and mocked green while every real `/compact` answered
+     * `BadRequest: Expected object, got undefined`). The requirement itself is
+     * the shipped server's, and only a live sidecar can answer for it — see the
+     * live arm in `conformance.test.ts`.
+     */
+    async function compact(
+      harness: ReturnType<typeof makeRuntime>,
+      sessionId: string
+    ): Promise<StreamEvent[]> {
+      const { finished } = consume(
+        harness.runtime.executeCommandIntent(sessionId, 'compact', { cwd: DIRECTORY })
+      );
+      await vi.waitFor(() => expect(harness.client.global.event).toHaveBeenCalled());
+      const connection = harness.source.latest();
+      connection.push(globalEvent(DIRECTORY, serverConnected()));
+      await vi.waitFor(() => expect(harness.client.session.summarize).toHaveBeenCalled());
+      connection.push(globalEvent(DIRECTORY, sessionCompacted(OC_SESSION_A)));
+      connection.push(globalEvent(DIRECTORY, sessionIdle(OC_SESSION_A)));
+      return finished;
+    }
+
+    it('sends the model body the sidecar requires, and yields the boundary', async () => {
+      const harness = makeRuntime();
+      const sessionId = nextSessionId();
+      harness.runtime.ensureSession(sessionId, {
+        permissionMode: 'default',
+        cwd: DIRECTORY,
+        model: 'anthropic/claude-sonnet-4-5',
+      });
+
+      const events = await compact(harness, sessionId);
+
+      expect(harness.client.session.summarize).toHaveBeenCalledWith({
+        path: { id: OC_SESSION_A },
+        body: { providerID: 'anthropic', modelID: 'claude-sonnet-4-5' },
+      });
+      expect(events.some((event) => event.type === 'compact_boundary')).toBe(true);
+      expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
+    });
+
+    it('compacts on the model a restart-hydrated session was left running', async () => {
+      // The session is untracked (post-restart), so the model has to come back
+      // out of the durable settings store the way a prompt's would — otherwise
+      // compaction silently runs on a different model than the conversation.
+      const harness = makeRuntime();
+      const sessionId = nextSessionId();
+      harness.settingsPort.getSessionSettings.mockResolvedValue({
+        permissionMode: 'default',
+        model: 'ollama/qwen2.5-coder:32b',
+      });
+
+      await compact(harness, sessionId);
+
+      expect(harness.client.session.summarize).toHaveBeenCalledWith({
+        path: { id: OC_SESSION_A },
+        body: { providerID: 'ollama', modelID: 'qwen2.5-coder:32b' },
+      });
     });
   });
 
@@ -1421,6 +1494,24 @@ describe('OpenCodeRuntime', () => {
       });
       expect(models[1]).toMatchObject({ value: 'ollama/llama3.3:70b', provider: 'ollama' });
       expect(models[1]!.isDefault).toBeUndefined();
+    });
+
+    it('scopes the provider catalog to the working directory, not the sidecar cwd', async () => {
+      // `GET /provider` reads enabled/disabled providers off the same
+      // per-directory config `GET /config` does, and falls back to the
+      // SIDECAR's own process.cwd() when no directory is given. Handing a cwd
+      // to `getClient` does not carry it — that argument is accepted and
+      // ignored, and the client sends no directory header — so an unscoped
+      // read builds the model picker from whatever project the sidecar process
+      // happens to sit in (NOTES.md §9).
+      const { runtime, client } = makeRuntime();
+      client.provider.list.mockResolvedValue({ data: { all: [], default: {}, connected: [] } });
+
+      await runtime.getSupportedModels();
+
+      expect(client.provider.list).toHaveBeenCalledWith({
+        query: { directory: DEFAULT_CWD },
+      });
     });
 
     it('filters ollama models to installed tags when Ollama is running (spec §10)', async () => {
