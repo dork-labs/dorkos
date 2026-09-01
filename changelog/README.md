@@ -195,7 +195,10 @@ runtime too, and regenerate the API spec") reads fine to the agent that wrote th
 to everyone else. Once, that shipped almost verbatim; only a human reviewer caught it, and nothing
 structural stopped it (PR #1409).
 
-So every fragment `changelog-populator.py` writes carries an HTML comment above its entry:
+So every fragment `changelog-populator.py` writes carries an HTML comment above its entry.
+`.claude/scripts/changelog_backfill.py --apply` (the backfill command behind `/changelog:backfill`)
+seeds the identical marker on its own writes, for the same reason: its entries are commit
+subjects nobody has read either.
 
 ```markdown
 <!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the
