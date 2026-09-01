@@ -597,14 +597,25 @@ class TestSeededFragments(GateTestCase):
         self.assertIn("correct as-is", result.stderr)
         self.assertIn("changelog/README.md#seeded-fragments", result.stderr)
 
-    def test_a_seeded_fragment_also_fails_check(self):
+    def test_a_seeded_fragment_also_fails_check_with_the_right_report(self):
         """Belt and suspenders: coverage fails too, not only validity —
         though `--validate` is the one CI runs with no `skip-changelog` door.
+
+        But it must fail for the RIGHT reason. Before the DOR-1667 review fix,
+        the marker blanked out the fragment's `covers:` claim along with its
+        bullets, so the commit read as uncovered — a returncode==1 that would
+        have been satisfied by the WRONG report, one telling you to add a
+        claim line that was already there. The malformed-fragment message is
+        what must red this, not a bogus "uncovered commit" finding.
         """
         self.repo.commit(self.SUBJECT, touch="apps/server/src/relay.ts")
         self.seeded_fragment()
         result = self.repo.check()
         self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("1 covered, 0 uncovered", result.stdout)
+        self.assertIn("auto-seeded", result.stderr)
+        self.assertIn("has not been rewritten", result.stderr)
+        self.assertIn("correct as-is", result.stderr)
 
     def test_rewriting_the_bullet_and_deleting_the_marker_passes(self):
         self.repo.commit(self.SUBJECT, touch="apps/server/src/relay.ts")
@@ -927,6 +938,15 @@ class TestFailureMessage(GateTestCase):
         # And the escape hatch, named.
         self.assertIn("skip-changelog", stderr)
 
+    def test_the_printed_template_carries_no_seed_marker(self):
+        """DOR-1667 review: the printed template is the gate's own
+        remediation. Copying it verbatim into a new fragment must not itself
+        red the next run — only `--apply`'s real writer opts into the marker.
+        """
+        self.repo.commit("feat(client): add a keyboard shortcut for the composer")
+        stderr = self.repo.check().stderr
+        self.assertNotIn("dorkos-changelog:seeded", stderr)
+
     def test_check_keeps_stdout_to_a_one_line_summary(self):
         self.repo.commit("feat(client): add a keyboard shortcut for the composer")
         result = self.repo.check()
@@ -955,10 +975,15 @@ class TestApplyWritesDeclarations(GateTestCase):
 
         # `--apply` writes the commit subject reshaped into a bullet, same as
         # the post-commit hook does. Nobody has read it yet, so it fails —
-        # same as a freshly hook-seeded fragment.
+        # same as a freshly hook-seeded fragment. But the commit is genuinely
+        # covered (the marker must not blank that claim out — DOR-1667
+        # review), so this is a malformed-fragment red, not a bogus
+        # "uncovered commit" one.
         result = self.repo.check()
         self.assertEqual(result.returncode, 1, result.stdout)
-        self.assertIn("dorkos-changelog:seeded", result.stderr)
+        self.assertIn("1 covered, 0 uncovered", result.stdout)
+        self.assertIn("auto-seeded", result.stderr)
+        self.assertIn("has not been rewritten", result.stderr)
 
         # Now do the thing that used to break the old gate: rewrite the prose.
         # The `covers:` declaration is untouched; only the entry changes.
@@ -966,6 +991,40 @@ class TestApplyWritesDeclarations(GateTestCase):
         head, _, _ = text.partition("### ")
         written[0].write_text(head + "### Added\n\n- Reach the message box from anywhere\n")
         self.assertEqual(self.repo.check().returncode, 0, self.repo.check().stderr)
+
+    def test_re_running_apply_over_an_already_seeded_fragment_writes_nothing_new(self):
+        """DOR-1667 review, the blocker: before this fix, a seed marker wiped
+        out the fragment's `covers:` claims along with its bullets, so its
+        commit read as uncovered and a second `--apply` (or the hook itself,
+        re-run after a rebase) minted a DUPLICATE fragment for a commit that
+        already had one. The claim must survive the marker.
+        """
+        self.repo.commit("feat(client): add a keyboard shortcut for the composer")
+        subprocess.run(
+            [sys.executable, str(SCRIPT), "--since", self.repo.base, "--apply"],
+            cwd=self.repo.path,
+            env=GIT_ENV,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertEqual(len(list(self.repo.unreleased.glob("*.md"))), 1)
+
+        # The commit is already covered, seed marker and all.
+        result = self.repo.check()
+        self.assertIn("1 covered, 0 uncovered", result.stdout)
+
+        # Running `--apply` again must find nothing missing to write.
+        rerun = subprocess.run(
+            [sys.executable, str(SCRIPT), "--since", self.repo.base, "--apply"],
+            cwd=self.repo.path,
+            env=GIT_ENV,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertNotIn("Wrote", rerun.stdout)
+        self.assertEqual(len(list(self.repo.unreleased.glob("*.md"))), 1)
 
 
 class TestPopulatorHook(GateTestCase):
@@ -1051,10 +1110,29 @@ class TestPopulatorHook(GateTestCase):
 
         fragments = list(self.repo.unreleased.glob("*.md"))
         self.assertEqual(len(fragments), 1)
-        self.assert_declares(fragments[0].read_text(), folded)
-        # Still seeded, still unread — the gate must still refuse it.
+        text = fragments[0].read_text()
+        self.assert_declares(text, folded)
+
+        # Still seeded, still unread — the gate refuses it, but for the right
+        # reason: the folded subject still covers its own commit (the marker
+        # must not blank that claim out), so this reds on the malformed
+        # fragment, not on a bogus "uncovered commit" finding.
         result = self.repo.check()
         self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("1 covered, 0 uncovered", result.stdout)
+        self.assertIn("auto-seeded", result.stderr)
+
+        # Curate it, same as the un-wrapped case: the gate must pass cleanly.
+        fragments[0].write_text(
+            text.split("### ")[0]
+            + "### Added\n\n- The message box follows you to every page\n"
+        )
+        self.repo.git("add", "-A")
+        self.repo.git(
+            "-c", "core.hooksPath=/dev/null", "commit", "-qm", "docs: curate the fragment"
+        )
+        result = self.repo.check()
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_hook_does_not_double_up_on_a_replay(self):
         """A cherry-pick of a committed change must not mint a second fragment."""
@@ -1190,6 +1268,58 @@ class TestParserUnits(unittest.TestCase):
             ["### Added", "", "- A bullet a human actually wrote"]
         )
         self.assertEqual(problems, [])
+
+    def test_a_seed_marker_does_not_suppress_its_claim(self):
+        """DOR-1667 review, the blocker: the marker must fail validation
+        without also blanking out the `covers:` claim it sits below —
+        otherwise the commit reads as uncovered and `--apply` mints a
+        duplicate fragment for a commit that already has one.
+        """
+        problems = self.mod.classify_fragment_problems(
+            [
+                "### Added",
+                "",
+                f"<!-- {self.mod.SEED_MARKER_TOKEN} -->",
+                "- Watch the relay's runtime too, and regenerate the API spec",
+            ]
+        )
+        self.assertEqual(len(problems), 1)
+        self.assertFalse(problems[0].suppresses_claims)
+
+    def test_a_structural_defect_still_suppresses_its_claim(self):
+        """The other half of the same distinction: a problem that implicates
+        the declaration itself must keep blanking claims, exactly as before.
+        """
+        problems = self.mod.classify_fragment_problems(["covers:"])
+        self.assertEqual(len(problems), 1)
+        self.assertTrue(problems[0].suppresses_claims)
+
+    def test_render_fragment_defaults_to_a_clean_template(self):
+        """`print_gate_failure` prints this text verbatim as the template for
+        a human to paste into a new fragment. It must already pass
+        `find_fragment_problems` — copying the gate's own remediation must
+        never itself red the next run (DOR-1667 review).
+        """
+        text = self.mod.render_fragment(
+            "Added",
+            "- Add a keyboard shortcut for the composer",
+            ['"feat(client): add a keyboard shortcut for the composer"'],
+        )
+        self.assertNotIn(self.mod.SEED_MARKER_TOKEN, text)
+        _, body = self.mod.split_frontmatter(text)
+        self.assertEqual(self.mod.find_fragment_problems(body), [])
+
+    def test_render_fragment_seeded_true_carries_the_marker_and_fails(self):
+        """The one caller that opts in: `write_fragments`, for `--apply`."""
+        text = self.mod.render_fragment(
+            "Added",
+            "- Add a keyboard shortcut for the composer",
+            ['"feat(client): add a keyboard shortcut for the composer"'],
+            seeded=True,
+        )
+        self.assertIn(self.mod.SEED_MARKER_TOKEN, text)
+        _, body = self.mod.split_frontmatter(text)
+        self.assertTrue(self.mod.find_fragment_problems(body))
 
     def test_a_real_claim_line_is_still_caught_in_the_body(self):
         """The narrowings above must not blunt the detector itself."""
