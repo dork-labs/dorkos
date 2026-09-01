@@ -627,14 +627,142 @@ describe('useSessionStreamStore', () => {
     it('a turn_end that does not settle to error clears lastError (recovered mid-turn error)', () => {
       // Real failure mode: a runtime that recovers from a mid-turn error (e.g. a
       // Codex item_error) must not leave a stale failure surface behind.
+      //
+      // The recovered shape carries `completed`, and that is load-bearing: a
+      // turn that recovered SAYS so. This drove a reason-less `turn_end` until
+      // DOR-1676, which is the CRASH shape rather than the recovered one (the
+      // server's mirror of this test always used `completed`), so it asserted
+      // idle for a turn that had failed.
       const store = useSessionStreamStore.getState();
       store.applySnapshot(SID, snapshot({ cursor: 0 }));
       store.applyEvent(SID, { type: 'turn_start', seq: 1 });
       store.applyEvent(SID, errorEvent);
-      store.applyEvent(SID, { type: 'turn_end', seq: 3 });
+      store.applyEvent(SID, { type: 'turn_end', seq: 3, terminalReason: 'completed' });
       const s = useSessionStreamStore.getState().getSession(SID);
       expect(s.status?.lifecycle).toBe('idle');
       expect(s.status?.lastError).toBeNull();
+    });
+
+    // DOR-1676. The gap this closes, on the client half of the mirror: the SDK
+    // names its own reason on a failing result, so a turn that emitted a real
+    // error frame closed as `turn_end{terminalReason:'model_error'}` — which the
+    // old rule recognised as neither an error nor an abort, settling the session
+    // idle AND wiping the failure text with it.
+    it.each(['model_error', 'api_error', 'turn_setup_failed', 'prompt_too_long', 'max_turns'])(
+      'settles to error and keeps lastError when a turn with an error frame ends with %s',
+      (terminalReason) => {
+        const store = useSessionStreamStore.getState();
+        store.applySnapshot(SID, snapshot({ cursor: 0 }));
+        store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+        store.applyEvent(SID, errorEvent);
+        store.applyEvent(SID, { type: 'turn_end', seq: 3, terminalReason });
+        const s = useSessionStreamStore.getState().getSession(SID);
+        expect(s.status?.lifecycle).toBe('error');
+        expect(s.status?.lastError?.message).toBe('Model overloaded');
+      }
+    );
+
+    // The absolving half, and the reason it is an allowlist rather than just
+    // `completed`: these three ride the SDK's success result — the turn handed
+    // work off and is coming back (the DOR-1100 continuation). Failing them
+    // would call a turn that is still working a turn that broke.
+    it.each(['background_requested', 'tool_deferred', 'tool_deferred_unavailable'])(
+      'stays idle when an error frame is excused by %s',
+      (terminalReason) => {
+        const store = useSessionStreamStore.getState();
+        store.applySnapshot(SID, snapshot({ cursor: 0 }));
+        store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+        store.applyEvent(SID, errorEvent);
+        store.applyEvent(SID, { type: 'turn_end', seq: 3, terminalReason });
+        expect(useSessionStreamStore.getState().getSession(SID).status?.lifecycle).toBe('idle');
+      }
+    );
+
+    // A survivable error is not the turn failing: a `hook_failure` is the
+    // operator's own script exiting non-zero, and the turn still carried the
+    // whole answer. Without the denylist the frame rule would fail it.
+    it('stays idle when the only error frame is a non-fatal hook failure', () => {
+      const store = useSessionStreamStore.getState();
+      store.applySnapshot(SID, snapshot({ cursor: 0 }));
+      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+      store.applyEvent(SID, {
+        type: 'error',
+        seq: 2,
+        message: 'Hook "notify" failed (Stop)',
+        code: 'hook_failure',
+      });
+      store.applyEvent(SID, { type: 'turn_end', seq: 3 });
+      expect(useSessionStreamStore.getState().getSession(SID).status?.lifecycle).toBe('idle');
+    });
+
+    // A stop outranks the frame. The claude-code mapper deliberately KEEPS an
+    // error frame on an abort nobody asked for (DOR-1320), so the frame rule
+    // must not turn every such turn into a crash — cut short is its own answer.
+    it('settles to interrupted, not error, when an aborted turn carried an error frame', () => {
+      const store = useSessionStreamStore.getState();
+      store.applySnapshot(SID, snapshot({ cursor: 0 }));
+      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+      store.applyEvent(SID, errorEvent);
+      store.applyEvent(SID, { type: 'turn_end', seq: 3, terminalReason: 'aborted_streaming' });
+      expect(useSessionStreamStore.getState().getSession(SID).status?.lifecycle).toBe(
+        'interrupted'
+      );
+    });
+
+    // Real failure mode, and it reached main's own send tests before this guard
+    // existed. `status_change.status` is `.partial()`, so a delta can carry one
+    // field — and `mergeStatus` used to fall back to that delta itself when no
+    // snapshot had hydrated yet ("prior is non-null in practice"), leaving a
+    // held status with no `lastError` key at all. `lastError` is typed
+    // `ErrorEvent | null`, so a `!== null` test LOOKED total; reading `.code`
+    // off nothing THREW inside the projection, and an ordinary turn ending
+    // stopped settling — the session stayed `streaming` and the composer stayed
+    // locked. The root fix is that the held status is a WHOLE `SessionStatus`
+    // from the first event on, so the fields the derivation reads
+    // unconditionally are all there.
+    //
+    // Deliberately applies NO snapshot, because that is the whole reproduction.
+    it('settles a turn whose held status was built by a status_change alone (no snapshot yet)', () => {
+      const store = useSessionStreamStore.getState();
+      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+      store.applyEvent(SID, {
+        type: 'status_change',
+        seq: 2,
+        status: { lifecycle: 'streaming', permissionMode: 'default' },
+      });
+      expect(useSessionStreamStore.getState().getSession(SID).status?.lastError).toBeNull();
+
+      store.applyEvent(SID, { type: 'turn_end', seq: 3, terminalReason: 'model_error' });
+      const s = useSessionStreamStore.getState().getSession(SID);
+      expect(s.status?.lifecycle).toBe('idle');
+      expect(s.status?.lastError).toBeNull();
+      expect(s.status?.cost).toBeNull();
+    });
+
+    // The second defense, kept because the first cannot reach every source of a
+    // missing key: a snapshot minted by a server that predates `lastError`
+    // hydrates status WHOLESALE, so `mergeStatus` never sees it and the field is
+    // structurally absent however complete the store's own base is. The
+    // derivation therefore reads `lastError` truthily rather than `!== null`.
+    it('settles a turn hydrated from a snapshot whose status predates lastError', () => {
+      const store = useSessionStreamStore.getState();
+      const { lastError: _omitted, ...withoutLastError } = STATUS;
+      store.applySnapshot(SID, snapshot({ cursor: 0, status: withoutLastError as SessionStatus }));
+      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+      store.applyEvent(SID, { type: 'turn_end', seq: 2, terminalReason: 'model_error' });
+      expect(useSessionStreamStore.getState().getSession(SID).status?.lifecycle).toBe('idle');
+    });
+
+    // The frame is what decides, so a clean turn must not be dragged into error
+    // by an unfamiliar reason. A forward-open union means new SDK values arrive
+    // without warning, and one of them accusing a turn that reported nothing
+    // wrong would be the mirror-image bug.
+    it('stays idle for an unclassified terminal reason when no error frame was latched', () => {
+      const store = useSessionStreamStore.getState();
+      store.applySnapshot(SID, snapshot({ cursor: 0 }));
+      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+      store.applyEvent(SID, { type: 'turn_end', seq: 2, terminalReason: 'some_future_reason' });
+      expect(useSessionStreamStore.getState().getSession(SID).status?.lifecycle).toBe('idle');
     });
 
     it('a turn_end that settles to error retains lastError', () => {

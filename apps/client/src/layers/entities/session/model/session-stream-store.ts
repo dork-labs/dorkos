@@ -27,6 +27,7 @@ import { immer } from 'zustand/middleware/immer';
 import type {
   BackgroundTaskStatus,
   ConnectionState,
+  ErrorEvent as TurnErrorEvent,
   HistoryMessage,
   PendingInteractionDTO,
 } from '@dorkos/shared/types';
@@ -37,6 +38,8 @@ import type {
   SessionContextUsage,
   SessionLifecycle,
 } from '@dorkos/shared/session-stream';
+import { isInterruptedTerminalReason } from '@dorkos/shared/schemas';
+import { isAbsolvingTerminalReason, isNonFatalErrorCode } from '@dorkos/shared/run-outcome';
 import type { MessageDeliveryOutcome, QueuedMessage } from '@dorkos/shared/schemas';
 
 /** Maximum number of sessions retained before LRU eviction (mirrors the chat store). */
@@ -253,6 +256,33 @@ const ZERO_CONTEXT_USAGE: SessionContextUsage = {
 };
 
 /**
+ * The status a session holds when nothing about it is known yet — every field
+ * at its documented before-the-first-turn value.
+ *
+ * The base a `status_change` merges onto when no snapshot has hydrated status.
+ * Its whole job is that the store's held status is a WHOLE `SessionStatus` from
+ * the first event on: `status_change.status` is `.partial()`, so a delta may
+ * carry as little as one field, and building the held status out of that delta
+ * alone leaves every other field structurally absent — including `lastError`
+ * and `lifecycle`, which the projection reads unconditionally. That produced a
+ * value the `SessionStatus` type said could not exist, and the first read that
+ * dereferenced one of its nested objects crashed the whole `applyEvent`
+ * (DOR-1676: `status.lastError.code`).
+ */
+const UNHYDRATED_SESSION_STATUS: SessionStatus = {
+  contextUsage: null,
+  cost: null,
+  usage: null,
+  cacheStats: null,
+  model: null,
+  permissionMode: 'default',
+  todoCounts: null,
+  runningSubagentCount: 0,
+  lifecycle: 'idle',
+  lastError: null,
+};
+
+/**
  * Field-wise-merge a partial `status_change.status` delta onto the held status,
  * mirroring the server projector's merge: `contextUsage` is merged field-wise
  * onto the prior value (a streaming delta carries only `outputTokens`; a final
@@ -265,8 +295,9 @@ function mergeStatus(
 ): SessionStatus {
   const { contextUsage, ...rest } = partial;
   // `prior` is non-null in practice (a snapshot always hydrates status before any
-  // event applies), but fall back to the partial's own fields for safety.
-  const base = (prior ?? (rest as SessionStatus)) as SessionStatus;
+  // event applies); when it is not, the delta fills in over a complete
+  // not-yet-known status rather than becoming one on its own.
+  const base = prior ?? UNHYDRATED_SESSION_STATUS;
   const merged: SessionStatus = { ...base, ...rest };
   if (contextUsage !== undefined) {
     merged.contextUsage =
@@ -627,39 +658,57 @@ function touchAndGet(state: SessionStreamStoreState, sessionId: string): Session
 }
 
 /**
- * `turn_end.terminalReason` values meaning the turn was interrupted/aborted
- * rather than completing normally. Mirrors the server projector's
- * `INTERRUPTED_TERMINAL_REASONS` so a client observing a live `turn_end` settles
- * to the SAME lifecycle the server's snapshot would.
- */
-const INTERRUPTED_TERMINAL_REASONS: ReadonlySet<string> = new Set([
-  'interrupted',
-  'aborted_streaming',
-  'aborted_tools',
-]);
-
-/**
  * Lifecycle to settle into when a live `turn_end` arrives. The success path emits
  * NO `status_change` carrying `lifecycle` (only `turn_end` with a `terminalReason`),
  * so the client must derive the settled lifecycle itself — otherwise it stays
  * `streaming` forever after a turn (blocking the next send and the reconcile).
- * Mirrors `deriveTurnEndLifecycle` in `session-state-projector.ts`.
+ *
+ * **A mirror of `deriveTurnEndLifecycle` in the server's
+ * `session-state-projector.ts`, and it has to stay one.** One turn gets read
+ * twice — live here, and from the server's snapshot on a cold hydrate — and the
+ * two readings may not disagree, or a hard refresh would change what a session
+ * says happened. The three predicates the rule turns on are imported from
+ * `@dorkos/shared` for that reason rather than hand-copied; the interrupted set
+ * WAS a hand-kept copy here until DOR-1676.
+ *
+ * The rule, in full, lives on the server method's docstring — including the two
+ * limits it names, which apply here identically. In short: an already-held
+ * `error` or the `error` reason settles `error`; an abort settles `interrupted`;
+ * a reason that absolves settles idle; otherwise a latched error frame that is
+ * not survivable settles `error`.
+ *
+ * The abort check knows SHAPE, never intent — the CLI collapses nine abort
+ * causes into two strings — so an abort nobody asked for (an API refusal) reads
+ * here as a stop. Read the server docstring's "known hole" section before
+ * changing that ordering.
+ *
+ * `lastError` is the frame latch because it is the one that survives hydration:
+ * it is cleared by every `turn_start` and set by every `error`, and it rides the
+ * snapshot, so a client that hydrates mid-turn and then sees the live `turn_end`
+ * lands on the server's answer instead of guessing from an empty local flag.
  *
  * @param current - The currently-held lifecycle (an `error` already set by an
  *   earlier `status_change` wins, matching the detached-error path).
  * @param terminalReason - The `turn_end`'s terminal reason, if carried.
+ * @param lastError - The error frame this window latched, if any. Accepts
+ *   `undefined` as well as `null`: the schema defaults it to `null`, but a
+ *   status assembled from a partial `status_change` (or minted by a server that
+ *   predates the field) simply has no key there, so a `!== null` test would read
+ *   `.code` off nothing and throw inside the projection.
  * @param hasPendingInteractions - Whether interactions remain (→ `blocked`).
  */
 function deriveTurnEndLifecycle(
   current: SessionLifecycle,
   terminalReason: string | undefined,
+  lastError: TurnErrorEvent | null | undefined,
   hasPendingInteractions: boolean
 ): SessionLifecycle {
   if (current === 'error' || terminalReason === 'error') return 'error';
-  if (terminalReason !== undefined && INTERRUPTED_TERMINAL_REASONS.has(terminalReason)) {
-    return 'interrupted';
-  }
-  return hasPendingInteractions ? 'blocked' : 'idle';
+  if (isInterruptedTerminalReason(terminalReason)) return 'interrupted';
+  const settled = hasPendingInteractions ? 'blocked' : 'idle';
+  if (isAbsolvingTerminalReason(terminalReason)) return settled;
+  if (lastError && !isNonFatalErrorCode(lastError.code)) return 'error';
+  return settled;
 }
 
 /**
@@ -771,6 +820,7 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
         session.status.lifecycle = deriveTurnEndLifecycle(
           session.status.lifecycle,
           event.terminalReason,
+          session.status.lastError,
           session.pendingInteractions.length > 0
         );
         // A turn that did not settle to error leaves no stale failure behind
