@@ -40,9 +40,39 @@
  * For a run row it would reproduce the very bug this closes: the Claude Code
  * SDK names its own reason on a failing result (`api_error`, `model_error`,
  * `turn_setup_failed`, …), so an auth failure carrying one would settle to
- * `completed` again on the default runtime. So a window that latched a real
- * error frame settles as a failure unless the reason says the turn was STOPPED
- * or COMPLETED. Nothing else is treated as absolution.
+ * `completed` again on the default runtime.
+ *
+ * ## What decides is WHAT the error was, not which reason arrived
+ *
+ * The rule is founded on the error FRAME, and the reason only ever absolves.
+ * Founding it the other way round — "any reason that is not `completed` fails" —
+ * is wrong in both directions, and both directions were measured:
+ *
+ * - **It over-fires.** {@link NON_FATAL_ERROR_CODES} exists because some `error`
+ *   frames are not the turn failing. A `hook_failure` is the OPERATOR'S own
+ *   script exiting non-zero; the turn then ends normally carrying the whole
+ *   answer. Failing the run for it is expensive, not merely untidy: a `failed`
+ *   run row raises `run.completed` with `relay: 'always'`, so every over-fire is
+ *   an unconditional ping.
+ * - **It under-absolves.** `tool_deferred`, `tool_deferred_unavailable` and
+ *   `background_requested` all ride `SDKResultSuccess` — the turn handed work
+ *   off and will be back (DOR-1100). Under an everything-else-fails fallback a
+ *   recovered error followed by one of those would fail a run that succeeded.
+ *
+ * So: a window fails when it latched a FATAL error frame that no absolving
+ * reason excuses, or when the reason is the codebase-wide `error` signal. An
+ * unclassified reason absolves nothing and accuses nothing — the frame decides,
+ * which is the same denylist direction {@link NON_FATAL_ERROR_CODES} documents:
+ * an unclassified error is reported, because being told about a survivable
+ * failure costs a retry while being told nothing about a real one costs the run.
+ *
+ * ## What this rule cannot see
+ *
+ * OpenCode emits no `terminalReason` anywhere — not on `session_status`, not on
+ * `done`. So on that runtime the absolving half is unreachable and the rule
+ * degrades to "any fatal error frame fails the run". That is the honest ceiling
+ * of what its stream says, not a decision: give it terminal reasons and the
+ * recovered-error carve-out starts working there for free.
  *
  * Pure and environment-agnostic: it lives here because both dispatch paths need
  * it and they share no other code — the direct one in `apps/server`, the
@@ -62,8 +92,58 @@ import { isInterruptedTerminalReason } from './schemas.js';
  */
 const TERMINAL_REASON_ERROR = 'error';
 
-/** The reason a runtime reports when a turn finished its work normally. */
-const TERMINAL_REASON_COMPLETED = 'completed';
+/**
+ * Terminal reasons that say the turn DID its work, so an error frame it carried
+ * along the way was one it recovered from.
+ *
+ * Not just `completed`. The other three ride `SDKResultSuccess`: the turn handed
+ * a tool off, or moved to the background, and will be back to finish — the
+ * DOR-1100 continuation this tracker already models as a second window. Calling
+ * any of them a failure would fail a run that is still working.
+ */
+const ABSOLVING_TERMINAL_REASONS: ReadonlySet<string> = new Set([
+  'completed',
+  'background_requested',
+  'tool_deferred',
+  'tool_deferred_unavailable',
+]);
+
+/**
+ * `error` events that do NOT mean the turn failed.
+ *
+ * A DENYLIST, not an allowlist, and the direction is the whole decision. Most
+ * genuinely fatal errors carry no `code` at all, so an allowlist of "fatal
+ * codes" would pass every one of them off as a success. A denylist fails the
+ * other way: an error nobody has classified yet is reported as a failure, and
+ * being told about a failure that was survivable costs a retry, while being told
+ * nothing about a real one costs the answer.
+ *
+ * `hook_failure` is on it because a hook is the OPERATOR'S own script, not the
+ * agent's work. The claude-code runtime escalates any non-tool hook that exits
+ * non-zero (Stop, SubagentStop, SessionStart — this repo configures all three)
+ * to a stream `error` event, and the turn then ends with a normal `done`
+ * carrying the complete answer.
+ *
+ * Runtime-neutral by construction: the rule is about the code's MEANING, not
+ * about which runtime emitted it. A new runtime that invents a non-fatal error
+ * code adds it here; until then its errors are treated as failures, which is the
+ * safe half.
+ *
+ * Lifted out of the relay's `agent-handler.ts` (DOR-1337 / F6), which now
+ * imports it, so the two places that must agree about "is this error the turn
+ * failing?" cannot drift — the answer an agent reply gives and the answer a
+ * scheduled run's row gives are one answer (DOR-1658).
+ */
+export const NON_FATAL_ERROR_CODES: ReadonlySet<string> = new Set(['hook_failure']);
+
+/**
+ * Whether an `error` event's code marks it as survivable rather than turn-fatal.
+ *
+ * @param code - The `data.code` of an `error` StreamEvent, when it has one.
+ */
+export function isNonFatalErrorCode(code: string | undefined): boolean {
+  return code !== undefined && NON_FATAL_ERROR_CODES.has(code);
+}
 
 /**
  * Events that OPEN a turn window when one is not open — the runtime picking the
@@ -106,16 +186,20 @@ export interface RunOutcomeTracker {
 }
 
 /**
- * Read a `terminalReason` off an event that can carry one.
+ * Read a `terminalReason` off any event that carries one.
  *
- * Only `session_status` does: `DoneEvent` has no such field, which is why every
- * runtime rides its outcome on a `session_status` emitted just before `done`.
+ * Deliberately NOT narrowed to `session_status`, even though that is the only
+ * event whose schema declares the field today — `DoneEvent` has none, which is
+ * why every runtime rides its outcome on a `session_status` emitted just before
+ * `done`. The session normalizer's own `readTerminalReason` reads the field off
+ * whatever event it is handed, and the day a runtime starts putting it on `done`
+ * a narrowed copy here would silently stop seeing outcomes the session pipeline
+ * still sees. Same shape, same blindness, no drift.
  *
  * @param event - The event to read.
  */
 function readTerminalReason(event: StreamEvent): string | undefined {
-  if (event.type !== 'session_status') return undefined;
-  const reason = (event.data as { terminalReason?: unknown }).terminalReason;
+  const reason = (event.data as { terminalReason?: unknown } | undefined)?.terminalReason;
   return typeof reason === 'string' ? reason : undefined;
 }
 
@@ -162,10 +246,15 @@ export function createRunOutcomeTracker(): RunOutcomeTracker {
   const decide = (): string | null => {
     // A stop, not a failure: the caller records a stopped run as `cancelled`.
     if (isInterruptedTerminalReason(terminalReason)) return null;
+    // The one reason that accuses on its own — every runtime and every injected
+    // failure sets it deliberately, and Codex's dedupe path can close a failed
+    // turn with it and no frame at all.
     if (terminalReason === TERMINAL_REASON_ERROR) return composeMessage(latched);
-    // The runtime says the turn did its work, so an error it reported along the
-    // way was one it recovered from.
-    if (terminalReason === TERMINAL_REASON_COMPLETED) return null;
+    // The turn did its work, or handed it off and is coming back. Either way an
+    // error it reported along the way is one it recovered from.
+    if (terminalReason !== undefined && ABSOLVING_TERMINAL_REASONS.has(terminalReason)) return null;
+    // Otherwise the FRAME decides — including when the reason is one nobody has
+    // classified, which absolves nothing and accuses nothing.
     return latched === null ? null : composeMessage(latched);
   };
 
@@ -181,13 +270,18 @@ export function createRunOutcomeTracker(): RunOutcomeTracker {
       const reason = readTerminalReason(event);
       if (reason !== undefined) terminalReason = reason;
       if (event.type === 'error') {
-        const data = event.data as { message?: unknown; category?: unknown };
-        latched = {
-          ...(typeof data.message === 'string' ? { message: data.message } : {}),
-          ...(typeof data.category === 'string'
-            ? { category: data.category as ErrorCategory }
-            : {}),
-        };
+        const data = event.data as { message?: unknown; code?: unknown; category?: unknown };
+        // A survivable error is not the turn failing, so it never reaches the
+        // latch — the operator's own hook script exiting non-zero must not turn
+        // a complete answer into a failed run.
+        if (!isNonFatalErrorCode(typeof data.code === 'string' ? data.code : undefined)) {
+          latched = {
+            ...(typeof data.message === 'string' ? { message: data.message } : {}),
+            ...(typeof data.category === 'string'
+              ? { category: data.category as ErrorCategory }
+              : {}),
+          };
+        }
       }
       if (event.type === 'done') close();
     },
