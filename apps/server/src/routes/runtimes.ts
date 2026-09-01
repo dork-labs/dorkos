@@ -127,6 +127,14 @@ const OllamaPullBodySchema = z.object({
   // not (spec §3). The regex only rejects malformed input, never uncurated tags.
   model: z.string().min(1).regex(OLLAMA_TAG_PATTERN).optional(),
 });
+const LoginBodySchema = z.object({
+  // `claude-code` only: pin the login to this account root instead of the
+  // one DorkOS runs new sessions on (DOR-1652). Shape-validated here;
+  // `delegateRuntimeLogin` rejects it outright for `codex` (no config-dir
+  // concept there) and, for `claude-code`, against the known account roots —
+  // both before anything spawns.
+  accountRoot: z.string().min(1).optional(),
+});
 
 /** A runtime's on-demand provisioning function (streams progress, resolves to a result). */
 type ProvisionFn = (
@@ -451,6 +459,14 @@ router.post('/:type/credential', async (req, res) => {
 /**
  * POST /api/runtimes/:type/login — delegate the vendor CLI login terminal-free
  * and detect completion (bounded). Returns `{ ok, error? }`. Loopback-only.
+ *
+ * Body is optional (Express 5 leaves `req.body` `undefined` on an empty POST):
+ * an omitted body signs in the account DorkOS runs new sessions on. `{
+ * accountRoot }` (DOR-1652's seam for DOR-1651, its first real caller) pins
+ * the login to a specific account instead. `delegateRuntimeLogin` owns the
+ * rest of the validation: it rejects `accountRoot` outright for any type
+ * other than `claude-code`, and — for `claude-code` — against the known
+ * account roots, both before anything spawns.
  */
 router.post('/:type/login', async (req, res) => {
   if (rejectNonLoopback(req, res)) return;
@@ -458,7 +474,11 @@ router.post('/:type/login', async (req, res) => {
   if (!(LOGIN_RUNTIME_TYPES as readonly string[]).includes(type)) {
     return res.status(400).json({ ok: false, error: `"${type}" does not support sign-in.` });
   }
-  const result = await delegateRuntimeLogin(type);
+  const parsed = LoginBodySchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ ok: false, error: 'accountRoot must be a non-empty string.' });
+  }
+  const result = await delegateRuntimeLogin(type, { accountRoot: parsed.data.accountRoot });
   res.json(result);
 });
 

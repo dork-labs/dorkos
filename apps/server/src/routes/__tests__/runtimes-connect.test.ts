@@ -218,7 +218,7 @@ describe('runtime connect endpoints', () => {
       const res = await request(server).post('/api/runtimes/codex/login');
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
-      expect(delegateRuntimeLogin).toHaveBeenCalledWith('codex');
+      expect(delegateRuntimeLogin).toHaveBeenCalledWith('codex', { accountRoot: undefined });
     });
 
     it('surfaces an honest failure/timeout result', async () => {
@@ -244,6 +244,67 @@ describe('runtime connect endpoints', () => {
         .set('Host', 'evil.example.com');
       expect(res.status).toBe(403);
       expect(delegateRuntimeLogin).not.toHaveBeenCalled();
+    });
+
+    it('handles an empty POST body (Express 5: req.body is undefined)', async () => {
+      vi.mocked(delegateRuntimeLogin).mockResolvedValue({ ok: true });
+      // No .send() at all — req.body is undefined, not {}, on the wire.
+      const res = await request(server).post('/api/runtimes/codex/login');
+      expect(res.status).toBe(200);
+      expect(delegateRuntimeLogin).toHaveBeenCalledWith('codex', { accountRoot: undefined });
+    });
+
+    it('forwards an explicit accountRoot to the service (DOR-1652)', async () => {
+      vi.mocked(delegateRuntimeLogin).mockResolvedValue({ ok: true });
+      const res = await request(server)
+        .post('/api/runtimes/claude-code/login')
+        .send({ accountRoot: '/Users/x/.claude2' });
+      expect(res.status).toBe(200);
+      expect(delegateRuntimeLogin).toHaveBeenCalledWith('claude-code', {
+        accountRoot: '/Users/x/.claude2',
+      });
+    });
+
+    it('passes accountRoot: undefined to the service when the body carries none', async () => {
+      vi.mocked(delegateRuntimeLogin).mockResolvedValue({ ok: true });
+      const res = await request(server).post('/api/runtimes/claude-code/login').send({});
+      expect(res.status).toBe(200);
+      expect(delegateRuntimeLogin).toHaveBeenCalledWith('claude-code', { accountRoot: undefined });
+    });
+
+    it('rejects a non-string accountRoot with 400 and never calls the service', async () => {
+      const res = await request(server)
+        .post('/api/runtimes/claude-code/login')
+        .send({ accountRoot: 12345 });
+      expect(res.status).toBe(400);
+      expect(res.body.ok).toBe(false);
+      expect(delegateRuntimeLogin).not.toHaveBeenCalled();
+    });
+
+    it('rejects an empty-string accountRoot with 400 and never calls the service', async () => {
+      const res = await request(server)
+        .post('/api/runtimes/claude-code/login')
+        .send({ accountRoot: '' });
+      expect(res.status).toBe(400);
+      expect(delegateRuntimeLogin).not.toHaveBeenCalled();
+    });
+
+    it('forwards an accountRoot for codex too — the route does not gate by type, the service does', async () => {
+      vi.mocked(delegateRuntimeLogin).mockResolvedValue({
+        ok: false,
+        error: '"codex" does not support pinning a specific account.',
+      });
+      const res = await request(server)
+        .post('/api/runtimes/codex/login')
+        .send({ accountRoot: '/Users/x/.claude' });
+      expect(res.status).toBe(200);
+      expect(delegateRuntimeLogin).toHaveBeenCalledWith('codex', {
+        accountRoot: '/Users/x/.claude',
+      });
+      expect(res.body).toEqual({
+        ok: false,
+        error: '"codex" does not support pinning a specific account.',
+      });
     });
   });
 
