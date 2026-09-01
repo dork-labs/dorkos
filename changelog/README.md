@@ -187,6 +187,35 @@ contributor docs, internal refactors) takes the `skip-changelog` label instead, 
 lands as `feat:` or `fix:` (the `writing-changelogs` skill's audience test). Never edit
 `CHANGELOG.md`'s `[Unreleased]` section — it no longer holds entries.
 
+### Seeded fragments
+
+A hook-minted fragment's entry is not a changelog bullet yet — it is the commit subject reshaped
+just enough to look like one. Nobody has read it, and a technical subject ("Watch the relay's
+runtime too, and regenerate the API spec") reads fine to the agent that wrote the commit and badly
+to everyone else. Once, that shipped almost verbatim; only a human reviewer caught it, and nothing
+structural stopped it (PR #1409).
+
+So every fragment `changelog-populator.py` writes carries an HTML comment above its entry:
+
+```markdown
+<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the
+     change needs no changelog entry, delete the whole fragment instead. See
+     changelog/README.md#seeded-fragments. -->
+```
+
+`.claude/scripts/changelog_backfill.py --validate` fails on any fragment that still contains it —
+no `skip-changelog` bypass, the same as any other malformed fragment (see "Who gets blamed"
+above). Fix it one of two ways:
+
+- **Rewrite the bullet for a human, then delete the comment.** The `covers:` declaration needs no
+  changes — it is correct as written and stays byte-identical to the commit subject on purpose.
+- **Delete the whole fragment** if the change turns out not to be user-facing after all. The hook
+  cannot know that; it only pattern-matches the commit prefix.
+
+This is the normal shape of the workflow, not an edge case: commit, let the hook seed a fragment,
+then curate it before opening the PR — exactly what "By hand" above already asks for. The marker
+just makes skipping that step loud instead of silent.
+
 ## Embedding product media
 
 A fragment or release note may embed real product media (the same seeded-from-the-real-UI

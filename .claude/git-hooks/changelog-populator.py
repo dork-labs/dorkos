@@ -42,6 +42,13 @@ Why the subject and not the SHA: this hook amends the commit to include the
 fragment, which changes the commit's SHA — a commit can never contain its own
 SHA. Rebases rewrite SHAs too. The subject survives both.
 
+The entry itself is raw, seeded prose — the commit subject, reshaped just
+enough to look like a bullet — and nobody has read it yet. It ships with a
+`SEED_MARKER` HTML comment above it, which `changelog_backfill.py --validate`
+rejects until that comment is gone. Rewrite the bullet for a human (or delete
+the fragment if the change needs no entry at all) and delete the marker with
+it; the `covers:` declaration is unaffected and needs no changes.
+
 Installation:
     ln -sf ../../.claude/git-hooks/changelog-populator.py .git/hooks/post-commit
 
@@ -99,6 +106,24 @@ SLUG_MAX_LEN = 40
 # `.claude/scripts/changelog_backfill.py`, which reads it — the two scripts are
 # deliberately standalone (a git hook must not depend on an import path).
 COVERS_FIELD = "covers"
+
+# Token inside the HTML comment this hook writes into every seeded fragment's
+# body, right above the raw entry. `changelog_backfill.py --validate` rejects
+# any fragment containing it, so a bullet nobody has read yet — a commit
+# subject is developer shorthand, not prose written for a user — cannot compile
+# into CHANGELOG.md silently. Kept in sync with `.claude/scripts/
+# changelog_backfill.py`, which reads it — the two scripts are deliberately
+# standalone (a git hook must not depend on an import path).
+#
+# Lives in the body, not the frontmatter: `covers:` staying byte-identical to
+# the commit subject is correct and must keep working, so only the entry prose
+# — the part nobody has actually read yet — is what needs to fail the gate.
+SEED_MARKER_TOKEN = "dorkos-changelog:seeded"
+SEED_MARKER = (
+    f"<!-- {SEED_MARKER_TOKEN} — rewrite this bullet for a human, then delete "
+    "this comment. If the change needs no changelog entry, delete the whole "
+    "fragment instead. See changelog/README.md#seeded-fragments. -->"
+)
 
 
 def get_vault_root() -> Path:
@@ -343,7 +368,12 @@ def format_with_prettier(path: Path) -> None:
 
 
 def render_fragment(section: str, entry: str, subject: str) -> str:
-    """Render fragment contents: a `covers:` declaration, then the entry."""
+    """Render fragment contents: a `covers:` declaration, a seed marker, then
+    the entry.
+
+    The marker is what makes `--validate` refuse this fragment until a human
+    or agent rewrites the entry below it — see `SEED_MARKER` above.
+    """
     return (
         "---\n"
         f"{COVERS_FIELD}:\n"
@@ -352,6 +382,7 @@ def render_fragment(section: str, entry: str, subject: str) -> str:
         "\n"
         f"### {section}\n"
         "\n"
+        f"{SEED_MARKER}\n"
         f"{entry}\n"
     )
 

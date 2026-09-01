@@ -163,6 +163,29 @@ SLUG_MAX_LEN = 40
 # Frontmatter field a fragment uses to declare which commits it covers.
 COVERS_FIELD = "covers"
 
+# Token inside the HTML comment marker `changelog-populator.py` writes into
+# every seeded fragment's body, directly above the raw entry it derived from
+# the commit subject. Its presence means nobody has read that entry yet — a
+# commit subject is developer shorthand, not prose written for a user — so a
+# fragment carrying it fails validation rather than being free to compile into
+# CHANGELOG.md untouched (a technical subject reached PR #1409 verbatim before
+# only a human reviewer's attention caught it; nothing structural did). Kept in
+# sync with `.claude/git-hooks/changelog-populator.py`, which writes it — the
+# two scripts are deliberately standalone (a git hook must not depend on an
+# import path).
+SEED_MARKER_TOKEN = "dorkos-changelog:seeded"
+
+# The full comment `render_fragment` below writes into a freshly generated
+# fragment's body, above its entry. `--apply` writes the same kind of
+# unreviewed, commit-subject-derived prose the hook does, so it carries the
+# same marker for the same reason. Text kept identical to the hook's copy —
+# both explain the fix (rewrite or delete) and point at the same doc anchor.
+SEED_MARKER = (
+    f"<!-- {SEED_MARKER_TOKEN} — rewrite this bullet for a human, then delete "
+    "this comment. If the change needs no changelog entry, delete the whole "
+    "fragment instead. See changelog/README.md#seeded-fragments. -->"
+)
+
 # The six Keep a Changelog (https://keepachangelog.com/en/1.0.0/) categories
 # release.md step 6.4 tells whoever is compiling a release to merge, plus one
 # established exception this repo already relies on: "Note for people
@@ -420,7 +443,8 @@ def split_frontmatter(text: str) -> tuple[list[str], list[str]]:
 
 
 def find_fragment_problems(body: list[str]) -> list[str]:
-    """Report claim-shaped content stranded in a fragment's body.
+    """Report claim-shaped content stranded in a fragment's body, or a body
+    nobody has rewritten yet.
 
     A malformed declaration must never be quieter than no declaration. When the
     frontmatter delimiters are wrong (an unterminated `---`, a `covers:` key with
@@ -429,11 +453,29 @@ def find_fragment_problems(body: list[str]) -> list[str]:
     overlap. That is a false green, and Prettier happily reformats the mistake
     into something that looks intentional. So: refuse to guess, and say what to
     fix.
+
+    The same refusal covers a fragment `changelog-populator.py` seeded and
+    nobody has touched since: its entry is the commit subject reshaped just
+    enough to look like a bullet, never prose written for a user. The hook
+    marks its own output with a `SEED_MARKER_TOKEN` HTML comment for exactly
+    this reason, so this function does not need to guess whether a bullet was
+    rewritten — it only needs to notice the marker is still there.
     """
     problems: list[str] = []
     for raw in body:
         line = raw.strip()
         if not line:
+            continue
+        if SEED_MARKER_TOKEN in line:
+            problems.append(
+                "this fragment was auto-seeded from the commit subject and its "
+                "entry has not been rewritten. A commit subject is developer "
+                "shorthand, not prose written for a user — rewrite the bullet "
+                "for a human, then delete this comment line. If the change "
+                "needs no changelog entry at all, delete the whole fragment "
+                f"instead. The `{COVERS_FIELD}:` declaration is correct as-is; "
+                "leave it alone. See changelog/README.md#seeded-fragments."
+            )
             continue
         if line.lower().startswith(COVERS_FIELD + ":"):
             problems.append(
@@ -881,8 +923,14 @@ def analyze_and_generate(
 
 
 def render_fragment(section: str, entry: str, claims: list[str]) -> str:
-    """Render fragment file contents: a `covers:` frontmatter block, then the entry."""
-    body = f"### {section}\n\n{entry}\n"
+    """Render fragment file contents: a `covers:` frontmatter block, a seed
+    marker, then the entry.
+
+    `--apply` writes the commit subject reshaped into a bullet, same as the
+    post-commit hook does — nobody has read this entry yet either, so it
+    fails `--validate` until the marker is gone. See `SEED_MARKER` above.
+    """
+    body = f"### {section}\n\n{SEED_MARKER}\n{entry}\n"
     if not claims:
         return body
     lines = ["---", f"{COVERS_FIELD}:"]
