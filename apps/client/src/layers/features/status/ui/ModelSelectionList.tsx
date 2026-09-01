@@ -13,7 +13,14 @@
  */
 import * as React from 'react';
 import { AlertCircle, RefreshCw, Search } from 'lucide-react';
-import { RadioGroup, RadioGroupItem, Skeleton, Badge, Input } from '@/layers/shared/ui';
+import {
+  RadioGroup,
+  RadioGroupItem,
+  Skeleton,
+  Badge,
+  Input,
+  UnverifiedCatalogNotice,
+} from '@/layers/shared/ui';
 import { cn, localDeviceNoun } from '@/layers/shared/lib';
 import type { ModelOption } from '@dorkos/shared/types';
 import {
@@ -261,29 +268,6 @@ function UnavailableSavedModel({ value }: { value: string }) {
         This model isn&apos;t available anymore. Pick another.
       </p>
     </div>
-  );
-}
-
-/**
- * Says out loud that the menu is a bounded guess, not the real list.
- *
- * Shown when the runtime found no connected provider: it then offers a
- * shortened slice of every model it has ever heard of, none of which it can
- * confirm you are able to run. Without this the list reads as complete, and the
- * search box turns that into an active falsehood — typing the name of a model
- * that IS in the catalog returns "No models match" because the search only sees
- * the slice. The fix a person actually needs is naming the cause, so the line
- * ends on the action rather than the apology (DOR-1660).
- */
-function UnverifiedCatalogNotice() {
-  return (
-    <p
-      className="text-muted-foreground border-border rounded-lg border border-dashed p-2 text-[11px] leading-snug"
-      data-testid="model-catalog-unverified"
-    >
-      This is a short list of models nobody has confirmed you can run. Connect a provider to see the
-      ones you actually have.
-    </p>
   );
 }
 
