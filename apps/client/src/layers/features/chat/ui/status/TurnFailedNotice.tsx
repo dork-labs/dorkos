@@ -73,6 +73,7 @@ export function TurnFailedNotice({ sessionId, onRetry }: TurnFailedNoticeProps) 
         details={details || undefined}
         onRetry={onRetry}
         runtimeLabel={runtimeLabel}
+        sessionId={sessionId}
       />
     </motion.div>
   );

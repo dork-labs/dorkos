@@ -46,6 +46,7 @@ import type {
 } from '@dorkos/shared/notification-schemas';
 import type {
   StoreCredentialResult,
+  DelegateLoginOptions,
   DelegatedLoginResult,
   OpenRouterKeyResult,
   OpenRouterOAuthStart,
@@ -702,7 +703,10 @@ export const serverOnlyStubs = {
     throw new Error('Connecting a provider is not supported in Obsidian plugin mode.');
   },
 
-  async delegateRuntimeLogin(_type: string): Promise<DelegatedLoginResult> {
+  async delegateRuntimeLogin(
+    _type: string,
+    _options?: DelegateLoginOptions
+  ): Promise<DelegatedLoginResult> {
     return { ok: false, error: 'Signing in is not supported in Obsidian plugin mode.' };
   },
 

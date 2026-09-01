@@ -25,6 +25,27 @@ export interface StoreCredentialResult {
 }
 
 /**
+ * Options for a delegated vendor login.
+ *
+ * `accountRoot` pins the login to ONE account instead of whichever one DorkOS
+ * currently runs new sessions on. A session is bound to an account when it is
+ * created, so re-authenticating from that session's own error card must sign
+ * back into THAT account — otherwise the person signs in successfully and the
+ * session still fails (DOR-1651/DOR-1652).
+ *
+ * Only `claude-code` has a config-dir account concept; the server rejects the
+ * pin for every other runtime, so callers send it only for `claude-code`.
+ */
+export interface DelegateLoginOptions {
+  /**
+   * Absolute Claude config directory to sign into (the value a session reports
+   * as `Session.account`). Omit to sign into the account DorkOS runs new
+   * sessions on. Validated server-side against the known account roots.
+   */
+  accountRoot?: string;
+}
+
+/**
  * Result of a delegated vendor login (`claude auth login` / `codex login`). The
  * login is bounded by a timeout server-side; a hung login resolves to
  * `{ ok: false }` with an honest message rather than blocking forever.

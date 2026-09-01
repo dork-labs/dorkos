@@ -8,12 +8,21 @@
  * transport and never returned, cached, or logged — the store response carries
  * only a reference.
  *
- * @module features/runtime-connect/model/use-credential-connect
+ * These live in `entities/runtime` rather than beside the connect flow that was
+ * their first caller: signing a runtime in is runtime-scoped model logic, and
+ * TWO features now need it — the settings connect flow (`features/runtime-connect`)
+ * and the chat auth-error card that signs in without leaving the conversation
+ * (`features/chat`, DOR-1651). A feature may not reach into another feature's
+ * model, so the shared half sits one layer down, the same way `McpSigninBody` /
+ * `useMcpSigninFlow` sit in `entities/agent` for their two callers.
+ *
+ * @module entities/runtime/model/use-credential-connect
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { REQUIREMENTS_KEY } from '@/layers/entities/runtime';
+import type { DelegateLoginOptions } from '@dorkos/shared/runtime-connect';
 import { MODELS_KEY } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
+import { REQUIREMENTS_KEY } from './use-runtime-requirements';
 
 /** The native paste-key connect: store an API key, flip the runtime to Ready. */
 export interface UseStoreRuntimeCredential {
@@ -87,14 +96,29 @@ export interface UseDelegateRuntimeLogin {
  * failure alongside a thrown error — one honest, retryable error path. Only a
  * completed login invalidates `['requirements']`.
  *
+ * A loopback-only refusal (the login route is local-only) and the Obsidian
+ * embed's honest decline both arrive on that same error path, so a caller that
+ * cannot reach the endpoint shows a real message and a retry rather than a
+ * button that does nothing. Reaching sign-in from a remote/tunnel client is
+ * DOR-1655, not this hook.
+ *
  * @param type - Runtime type to sign in (`'claude-code'` | `'codex'`).
+ * @param options - Optional `accountRoot` pinning the login to one account.
+ *   Pass a session's own `account` so re-authenticating from that session signs
+ *   back into the account it is bound to instead of the current default
+ *   (DOR-1651). `claude-code` only — the server rejects the pin elsewhere.
  */
-export function useDelegateRuntimeLogin(type: string): UseDelegateRuntimeLogin {
+export function useDelegateRuntimeLogin(
+  type: string,
+  options?: DelegateLoginOptions
+): UseDelegateRuntimeLogin {
   const transport = useTransport();
   const queryClient = useQueryClient();
+  const accountRoot = options?.accountRoot;
 
   const mutation = useMutation({
-    mutationFn: () => transport.delegateRuntimeLogin(type),
+    mutationFn: () =>
+      transport.delegateRuntimeLogin(type, accountRoot === undefined ? undefined : { accountRoot }),
     onSuccess: (result) => {
       if (result.ok) {
         void queryClient.invalidateQueries({ queryKey: [...REQUIREMENTS_KEY] });

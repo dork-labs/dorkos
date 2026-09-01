@@ -36,6 +36,7 @@ import type {
 } from '@dorkos/shared/transport';
 import type {
   StoreCredentialResult,
+  DelegateLoginOptions,
   DelegatedLoginResult,
   OpenRouterKeyResult,
   OpenRouterOAuthStart,
@@ -498,11 +499,22 @@ export function createSystemMethods(baseUrl: string) {
       });
     },
 
-    delegateRuntimeLogin(type: string): Promise<DelegatedLoginResult> {
+    delegateRuntimeLogin(
+      type: string,
+      options?: DelegateLoginOptions
+    ): Promise<DelegatedLoginResult> {
+      // The body carries `accountRoot` only when the caller pinned one — the
+      // route rejects the pin outright for runtimes with no account concept, so
+      // an unpinned login must send no key at all rather than an explicit
+      // `undefined` (DOR-1651).
+      const body =
+        options?.accountRoot === undefined
+          ? undefined
+          : JSON.stringify({ accountRoot: options.accountRoot });
       return fetchJSON<DelegatedLoginResult>(
         baseUrl,
         `/runtimes/${encodeURIComponent(type)}/login`,
-        { method: 'POST' }
+        { method: 'POST', ...(body === undefined ? {} : { body }) }
       );
     },
 

@@ -1,15 +1,12 @@
 import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { AlertTriangle, ChevronDown, LogIn, RotateCcw } from 'lucide-react';
+import { AlertTriangle, ChevronDown, RotateCcw } from 'lucide-react';
 import type { ErrorCategory } from '@dorkos/shared/types';
 import { Button, LinkifiedText, containsUrl } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
-import { useSettingsDeepLink } from '@/layers/shared/model';
+import { AuthErrorActions } from './AuthErrorActions';
 
 const collapseTransition = { duration: 0.25, ease: [0.4, 0, 0.2, 1] } as const;
-
-/** Settings tab that hosts runtime sign-in — where "Fix sign-in" deep-links. */
-const RUNTIMES_SETTINGS_TAB = 'runtimes';
 
 /** Runtime name in the auth heading ("Sign in to X again") when unresolved. */
 const AUTH_HEADING_FALLBACK_NAME = 'your agent';
@@ -80,30 +77,6 @@ function authSubtext(runtimeLabel: string | undefined): string {
   return `Your ${name} login stopped working. Sign in again to pick up where you left off.`;
 }
 
-/**
- * Actions for an auth error: a primary "Fix sign-in" that deep-links to
- * Settings → Runtimes, and an optional secondary Retry. Extracted so the
- * router-backed deep-link hook is only invoked for auth errors — non-auth
- * error blocks stay router-independent.
- */
-function AuthErrorActions({ onRetry }: { onRetry?: () => void }) {
-  const { open: openSettings } = useSettingsDeepLink();
-  return (
-    <div className="mt-3 flex flex-wrap items-center gap-2">
-      <Button size="sm" onClick={() => openSettings(RUNTIMES_SETTINGS_TAB)} className="gap-1.5">
-        <LogIn className="size-3" />
-        Fix sign-in
-      </Button>
-      {onRetry && (
-        <Button variant="outline" size="sm" onClick={onRetry} className="gap-1.5">
-          <RotateCcw className="size-3" />
-          Retry
-        </Button>
-      )}
-    </div>
-  );
-}
-
 interface ErrorMessageBlockProps {
   /**
    * What the runtime actually said. Never dropped: it takes the subtext slot
@@ -126,6 +99,18 @@ interface ErrorMessageBlockProps {
    * Personalizes the `auth_error` copy; falls back to a neutral name when absent.
    */
   runtimeLabel?: string;
+  /**
+   * Session this error belongs to. For an `auth_error` it is what lets the card
+   * sign in on the spot: it resolves which runtime failed and which account that
+   * session is bound to. Without it the card falls back to the settings
+   * deep-link, because there is no honest way to know what to sign into.
+   */
+  sessionId?: string;
+  /**
+   * Called once a sign-in started from this card completes. The seam DOR-1650
+   * (auto-resume the failed turn) consumes; nothing passes it today.
+   */
+  onSigninComplete?: () => void;
 }
 
 /**
@@ -134,8 +119,10 @@ interface ErrorMessageBlockProps {
  * panel-level `TurnFailedNotice`, and transport errors from `ChatPanel`).
  *
  * Shows a category-specific heading, the failure text, an optional retry
- * button, and collapsible raw details. For `auth_error` it renders a primary
- * "Fix sign-in" action that deep-links to Settings → Runtimes.
+ * button, and collapsible raw details. For `auth_error` with a session in
+ * context it signs the runtime back in on the spot (DOR-1651); without one, or
+ * for a runtime that picks a provider rather than logging in, it deep-links to
+ * Settings → Runtimes instead.
  *
  * **Nothing the runtime said is thrown away, and every URL in it is a real
  * link.** Both were broken: friendly `auth_error` copy replaced the raw
@@ -155,6 +142,8 @@ export function ErrorMessageBlock({
   heading: headingOverride,
   subtext: subtextOverride,
   runtimeLabel,
+  sessionId,
+  onSigninComplete,
 }: ErrorMessageBlockProps) {
   const [showDetails, setShowDetails] = useState(false);
   const isAuthError = category === 'auth_error';
@@ -258,7 +247,13 @@ export function ErrorMessageBlock({
               </motion.div>
             )}
           </AnimatePresence>
-          {isAuthError && <AuthErrorActions onRetry={onRetry} />}
+          {isAuthError && (
+            <AuthErrorActions
+              sessionId={sessionId}
+              onRetry={onRetry}
+              onSigninComplete={onSigninComplete}
+            />
+          )}
         </div>
         {!isAuthError && retryable && onRetry && (
           <Button variant="outline" size="sm" onClick={onRetry} className="shrink-0 gap-1.5">

@@ -115,6 +115,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           // unaffected.
           onRetry={part.category !== undefined ? onRetry : undefined}
           runtimeLabel={runtimeLabel}
+          sessionId={sessionId}
         />
       );
     }

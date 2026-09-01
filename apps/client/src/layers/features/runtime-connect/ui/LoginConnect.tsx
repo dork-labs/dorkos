@@ -12,11 +12,12 @@
 import { useEffect, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { Button, Label, PasswordInput } from '@/layers/shared/ui';
-import { getRuntimeDescriptor, type RuntimeConnectSuccess } from '@/layers/entities/runtime';
 import {
+  getRuntimeDescriptor,
   useDelegateRuntimeLogin,
   useStoreRuntimeCredential,
-} from '../model/use-credential-connect';
+  type RuntimeConnectSuccess,
+} from '@/layers/entities/runtime';
 import { loginConnectSuccess } from '../lib/connect-success';
 import { ConnectErrorRow, ConnectProgressRow, ConnectedRow } from './connect-feedback';
 

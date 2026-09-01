@@ -83,6 +83,7 @@ import type { UnattendedAutonomyState } from './permission-semantics.js';
 import type { RuntimeCommandIntentId } from './command-intents.js';
 import type {
   StoreCredentialResult,
+  DelegateLoginOptions,
   DelegatedLoginResult,
   OpenRouterKeyResult,
   OpenRouterOAuthStart,
@@ -1353,8 +1354,12 @@ export interface Transport extends RoomTransport {
    * rather than blocking. Loopback-only server action.
    *
    * @param type - Runtime type (`'claude-code'` | `'codex'`).
+   * @param options - Optional `accountRoot` pinning the login to one account,
+   *   so re-authenticating from a session's own error card signs back into the
+   *   account THAT session is bound to (`claude-code` only; see
+   *   {@link DelegateLoginOptions}).
    */
-  delegateRuntimeLogin(type: string): Promise<DelegatedLoginResult>;
+  delegateRuntimeLogin(type: string, options?: DelegateLoginOptions): Promise<DelegatedLoginResult>;
   /**
    * Validate and store an OpenRouter API key (Gateway paste-key path). The key is
    * validated against OpenRouter before being stored as a reference; the response

@@ -2,22 +2,78 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { act, render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { Session } from '@dorkos/shared/types';
+import type { DelegatedLoginResult } from '@dorkos/shared/runtime-connect';
+import { createMockTransport } from '@dorkos/test-utils';
+import { TransportProvider } from '@/layers/shared/model';
 import { ErrorMessageBlock } from '../ErrorMessageBlock';
 
 // The component deep-links to Settings → Runtimes via useSettingsDeepLink,
-// which needs TanStack Router context. Mock the hook to a plain spy.
+// which needs TanStack Router context. Override just that hook — the rest of
+// the module (TransportProvider, useTransport) has to stay real, because the
+// inline sign-in reaches the transport through it.
 const { openSettings } = vi.hoisted(() => ({ openSettings: vi.fn() }));
-vi.mock('@/layers/shared/model', () => ({
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
   useSettingsDeepLink: () => ({ open: openSettings }),
 }));
 
-describe('ErrorMessageBlock', () => {
-  afterEach(() => {
-    cleanup();
-    openSettings.mockClear();
+// The card resolves the failing runtime and that session's bound account from
+// the session-list cache. Mocking the LIST (not the two hooks that read it)
+// keeps `useSessionRuntime`/`useSessionAccount` running for real, so these
+// tests cover the lookup as well as the card.
+const { sessionRows } = vi.hoisted(() => ({ sessionRows: { current: [] as Session[] } }));
+vi.mock('@/layers/entities/session/model/use-sessions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/session/model/use-sessions')>()),
+  useSessions: () => ({ sessions: sessionRows.current, isLoading: false }),
+}));
+
+const SESSION_ID = 'session-1';
+
+/** A session-list row carrying only what the auth card reads off it. */
+function sessionRow(runtime: string, account?: string): Session {
+  return { id: SESSION_ID, runtime, ...(account ? { account } : {}) } as Session;
+}
+
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  let reject!: (e: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
   });
+  return { promise, resolve, reject };
+}
+
+/** Render the block with the providers the inline sign-in needs. */
+function renderBlock(
+  ui: ReactNode,
+  overrides: Partial<Parameters<typeof createMockTransport>[0]> = {}
+) {
+  const transport = createMockTransport(overrides);
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={transport}>{ui}</TransportProvider>
+    </QueryClientProvider>
+  );
+  return transport;
+}
+
+afterEach(() => {
+  cleanup();
+  openSettings.mockClear();
+  sessionRows.current = [];
+});
+
+describe('ErrorMessageBlock', () => {
   it('renders category heading and subtext for max_turns', () => {
     render(<ErrorMessageBlock message="Hit limit" category="max_turns" />);
 
@@ -161,9 +217,9 @@ describe('ErrorMessageBlock', () => {
     expect(screen.getByText('Something went wrong')).toBeInTheDocument();
   });
 
-  describe('auth_error', () => {
+  describe('auth_error copy', () => {
     it('renders the runtime-aware friendly heading and re-auth subtext', () => {
-      render(
+      renderBlock(
         <ErrorMessageBlock message="401 revoked" category="auth_error" runtimeLabel="Claude" />
       );
 
@@ -176,7 +232,7 @@ describe('ErrorMessageBlock', () => {
     });
 
     it('falls back to a neutral runtime name when none is supplied', () => {
-      render(<ErrorMessageBlock message="401 revoked" category="auth_error" />);
+      renderBlock(<ErrorMessageBlock message="401 revoked" category="auth_error" />);
 
       expect(screen.getByText('Sign in to your agent again')).toBeInTheDocument();
       expect(
@@ -187,6 +243,9 @@ describe('ErrorMessageBlock', () => {
     });
 
     it('renders a "Fix sign-in" button that deep-links to the runtimes settings tab', () => {
+      // No `sessionId`, so there is no runtime to sign in and the deep-link is
+      // still the whole action (DOR-1651 changed only the WITH-session path;
+      // its labels are covered in the inline-sign-in block below).
       render(
         <ErrorMessageBlock message="401 revoked" category="auth_error" runtimeLabel="Claude" />
       );
@@ -264,7 +323,7 @@ describe('ErrorMessageBlock', () => {
 
     it('renders a secondary Retry button when onRetry is provided', () => {
       const onRetry = vi.fn();
-      render(
+      renderBlock(
         <ErrorMessageBlock
           message="401 revoked"
           category="auth_error"
@@ -334,6 +393,188 @@ describe('ErrorMessageBlock', () => {
       expect(container.querySelector('img')).toBeNull();
       expect(container.querySelector('strong')).toBeNull();
       expect(screen.getByText('<img src=x onerror=alert(1)> **not bold**')).toBeInTheDocument();
+    });
+  });
+
+  describe('auth_error — inline sign-in (DOR-1651)', () => {
+    it('signs Claude Code in from the card, pinned to that session’s account', async () => {
+      // Purpose: the whole point of the card. The primary button runs the
+      // delegated login in place, and pins it to the account THIS session is
+      // bound to — signing into the default account instead would report
+      // success while the session kept failing (the DOR-1652 seam).
+      const user = userEvent.setup();
+      sessionRows.current = [sessionRow('claude-code', '/Users/dev/.claude2')];
+      const transport = renderBlock(
+        <ErrorMessageBlock
+          message="401 revoked"
+          category="auth_error"
+          runtimeLabel="Claude"
+          sessionId={SESSION_ID}
+        />
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Sign in' }));
+
+      expect(transport.delegateRuntimeLogin).toHaveBeenCalledWith('claude-code', {
+        accountRoot: '/Users/dev/.claude2',
+      });
+      // It signed in HERE — it did not send the person to Settings.
+      expect(openSettings).not.toHaveBeenCalled();
+    });
+
+    it('sends no account pin when the session reports no account', async () => {
+      // Purpose: a single-account machine has no account to name, and an
+      // unrecognized root is refused server-side — so "unknown" must mean
+      // "sign into the usual account", not an invented value.
+      const user = userEvent.setup();
+      sessionRows.current = [sessionRow('claude-code')];
+      const transport = renderBlock(
+        <ErrorMessageBlock message="401" category="auth_error" sessionId={SESSION_ID} />
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Sign in' }));
+
+      expect(transport.delegateRuntimeLogin).toHaveBeenCalledWith('claude-code', undefined);
+    });
+
+    it('signs Codex in inline, and never sends it an account pin', async () => {
+      // Purpose: Codex gets the same inline path, but it has no config-dir
+      // account concept — the server rejects the pin outright, so a stray
+      // account on the row must not turn a working sign-in into an error.
+      const user = userEvent.setup();
+      sessionRows.current = [sessionRow('codex', '/Users/dev/.claude2')];
+      const transport = renderBlock(
+        <ErrorMessageBlock message="401" category="auth_error" sessionId={SESSION_ID} />
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Sign in' }));
+
+      expect(transport.delegateRuntimeLogin).toHaveBeenCalledWith('codex', undefined);
+    });
+
+    it('shows progress while the sign-in runs, then confirms it landed', async () => {
+      // Purpose: the delegated login opens a browser and can take a while. The
+      // card has to say so, then say when it is done, without the person
+      // leaving the conversation to find out.
+      const user = userEvent.setup();
+      sessionRows.current = [sessionRow('claude-code')];
+      const login = deferred<DelegatedLoginResult>();
+      renderBlock(
+        <ErrorMessageBlock
+          message="401"
+          category="auth_error"
+          sessionId={SESSION_ID}
+          onRetry={vi.fn()}
+        />,
+        { delegateRuntimeLogin: vi.fn(() => login.promise) }
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Sign in' }));
+      expect(await screen.findByTestId('auth-error-signin-pending')).toBeInTheDocument();
+      expect(screen.getByText('Waiting for sign-in to complete…')).toBeInTheDocument();
+
+      await act(async () => {
+        login.resolve({ ok: true });
+      });
+      expect(await screen.findByTestId('auth-error-signin-success')).toBeInTheDocument();
+      expect(screen.getByText('Signed in.')).toBeInTheDocument();
+    });
+
+    it('reports a refused sign-in honestly and offers another go', async () => {
+      // Purpose: a denied or timed-out login must not read as success. The
+      // server's real message shows, and the button becomes "Try again".
+      const user = userEvent.setup();
+      sessionRows.current = [sessionRow('claude-code')];
+      const transport = renderBlock(
+        <ErrorMessageBlock message="401" category="auth_error" sessionId={SESSION_ID} />,
+        {
+          delegateRuntimeLogin: vi
+            .fn()
+            .mockResolvedValue({ ok: false, error: 'Sign-in timed out. Please try again.' }),
+        }
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Sign in' }));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'Sign-in timed out. Please try again.'
+      );
+      expect(screen.queryByTestId('auth-error-signin-success')).not.toBeInTheDocument();
+
+      // And the retry genuinely re-runs the sign-in.
+      await user.click(screen.getByRole('button', { name: 'Try again' }));
+      await waitFor(() => {
+        expect(transport.delegateRuntimeLogin).toHaveBeenCalledTimes(2);
+      });
+    });
+
+    it('surfaces an endpoint refusal instead of leaving a dead button', async () => {
+      // Purpose: the login route is loopback-only, and the Obsidian embed
+      // declines it outright. Reaching sign-in from a phone or tunnel is
+      // DOR-1655 — until then the card must say why nothing happened rather
+      // than swallow the refusal.
+      const user = userEvent.setup();
+      sessionRows.current = [sessionRow('claude-code')];
+      renderBlock(
+        <ErrorMessageBlock message="401" category="auth_error" sessionId={SESSION_ID} />,
+        {
+          delegateRuntimeLogin: vi
+            .fn()
+            .mockRejectedValue(new Error('Runtime connect actions are only available locally')),
+        }
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Sign in' }));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'Runtime connect actions are only available locally'
+      );
+      expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    });
+
+    it('keeps the settings route as a quiet link, named for what it gets you', async () => {
+      // Purpose: the API-key form lives in Settings → Runtimes. It stays
+      // reachable, but demoted — one quiet link under the primary action, not
+      // a second button competing with it.
+      const user = userEvent.setup();
+      sessionRows.current = [sessionRow('claude-code')];
+      renderBlock(<ErrorMessageBlock message="401" category="auth_error" sessionId={SESSION_ID} />);
+
+      const link = screen.getByRole('button', { name: 'Use an API key instead' });
+      await user.click(link);
+      expect(openSettings).toHaveBeenCalledWith('runtimes');
+    });
+  });
+
+  describe('auth_error — runtimes with no sign-in to run', () => {
+    it('keeps the settings deep-link for OpenCode', async () => {
+      // Purpose: OpenCode's "connect" is picking where the model comes from,
+      // not logging in (`runtimeAuthConnectKind` → provider-picker). An inline
+      // "Sign in" button would be a lie, so the deep-link stays.
+      const user = userEvent.setup();
+      sessionRows.current = [sessionRow('opencode')];
+      const transport = renderBlock(
+        <ErrorMessageBlock message="401" category="auth_error" sessionId={SESSION_ID} />
+      );
+
+      expect(screen.queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: /fix sign-in/i }));
+
+      expect(openSettings).toHaveBeenCalledWith('runtimes');
+      expect(transport.delegateRuntimeLogin).not.toHaveBeenCalled();
+    });
+
+    it('keeps the settings deep-link when no session is in context', async () => {
+      // Purpose: with no session there is no way to know which runtime failed,
+      // so there is nothing honest to sign into — fall back rather than guess.
+      const user = userEvent.setup();
+      const transport = renderBlock(<ErrorMessageBlock message="401" category="auth_error" />);
+
+      expect(screen.queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: /fix sign-in/i }));
+
+      expect(openSettings).toHaveBeenCalledWith('runtimes');
+      expect(transport.delegateRuntimeLogin).not.toHaveBeenCalled();
     });
   });
 
