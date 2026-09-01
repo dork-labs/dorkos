@@ -45,6 +45,13 @@ runtimeConformance(() => new TestModeRuntime(), {
   // property; saying so beats a case that quietly asserts nothing.
   systemPromptAppendUnprovenReason:
     'test-mode answers from a scripted scenario table — there is no model to give a system prompt to, and no backend input a caller’s append could be read off',
+  // The one runtime allowed to repeat its trigger: `simple-text` answers
+  // `Echo: <content>`, and that determinism is the fixture's entire job — the
+  // browser suite asserts on it (`apps/e2e/tests/chat-mock.spec.ts`). Only the
+  // trigger half is waived; test-mode must still never stream an injected
+  // context block back, and it does not.
+  echoesTriggerReason:
+    'test-mode answers `Echo: <content>` by design — a scripted fixture whose determinism the browser tests assert on, with no model that could have been prompted',
   // Turn failure rides the scenario store: the built-in 'error' scenario is
   // the runtime's production failing turn (typed error, then terminal done).
   makeFailingRuntime: () => {

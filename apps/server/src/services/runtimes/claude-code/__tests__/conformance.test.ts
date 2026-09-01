@@ -346,9 +346,14 @@ beforeEach(() => {
   mockedQuery.mockReset();
   // mockImplementation (not mockReturnValue): every sendMessage turn must get
   // a FRESH generator — a spent one would end the stream with zero events.
+  //
+  // The scripted reply deliberately does not restate the prompt: the suite
+  // asserts that a turn never streams its trigger back (DOR-1659), and a
+  // fixture that answered `Echo: <prompt>` would make that check unfalsifiable
+  // here for a reason that has nothing to do with the adapter.
   mockedQuery.mockImplementation(
     () =>
-      wrapSdkQuery(sdkSimpleText('Echo: conformance ping')) as unknown as ReturnType<typeof query>
+      wrapSdkQuery(sdkSimpleText('pong from claude-code')) as unknown as ReturnType<typeof query>
   );
 });
 

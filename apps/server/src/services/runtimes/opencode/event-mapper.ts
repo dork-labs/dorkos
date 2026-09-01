@@ -47,6 +47,13 @@
  * todos and terminals are deliberately dropped: only the parent session may
  * write the transcript or end the turn.
  *
+ * WHO WROTE IT: OpenCode publishes part events for the USER's message as well
+ * as the assistant's, and a part names only its `messageID`. This module learns
+ * the role of every message from `message.updated` and admits parts only from
+ * assistant messages ({@link isAssistantMessage}) — without that, every turn
+ * replayed DorkOS's own injected context and the person's own words back as
+ * assistant output.
+ *
  * @module services/runtimes/opencode/event-mapper
  */
 import type { Event, GlobalEvent } from '@opencode-ai/sdk';
@@ -104,6 +111,14 @@ export interface OpenCodeEventContext extends OpenCodePartState, OpenCodePermiss
    * (3.6) bridges the namespaces via the session mapper.
    */
   readonly sessionId: string;
+
+  /**
+   * Role per OpenCode message id, learned from `message.updated`. Parts carry
+   * only a `messageID` and no role of their own, so this map is the ONLY way
+   * the live path can tell the assistant's output from the prompt DorkOS just
+   * wrote — see {@link isAssistantMessage} for why that matters.
+   */
+  readonly roleByMessageId: Map<string, string>;
 }
 
 /**
@@ -122,6 +137,7 @@ export function createOpenCodeEventContext(sessionId: string): OpenCodeEventCont
     subagentRuns: new Map(),
     subagentTaskIdBySession: new Map(),
     pendingPermissionSessions: new Map(),
+    roleByMessageId: new Map(),
   };
 }
 
@@ -228,6 +244,13 @@ export function mapOpenCodeEvent(
   event: OpenCodeWireEvent,
   ctx: OpenCodeEventContext
 ): StreamEvent[] {
+  // Learn who wrote each message BEFORE anything is routed or mapped. Every
+  // admitted message announces itself this way — the parent's and the child's
+  // alike — and message ids are unique across sessions, so one map serves both.
+  if (event.type === 'message.updated') {
+    ctx.roleByMessageId.set(event.properties.info.id, event.properties.info.role);
+  }
+
   // A subagent's child session speaks only through its parent's task card:
   // route it away from the parent-session mapping entirely, so its text never
   // lands in the transcript and its `session.idle` never ends the parent turn.
@@ -236,8 +259,10 @@ export function mapOpenCodeEvent(
 
   switch (event.type) {
     case 'message.part.updated':
+      if (!isAssistantMessage(event.properties.part.messageID, ctx)) return [];
       return mapPartSnapshot(event.properties.part, ctx);
     case 'message.part.delta':
+      if (!isAssistantMessage(event.properties.messageID, ctx)) return [];
       return mapPartDelta(event.properties, ctx);
     case 'message.updated':
       return mapMessageUpdated(event.properties.info, ctx.sessionId);
@@ -319,6 +344,55 @@ export async function* mapOpenCodeTurn(
     }
   }
   yield { type: 'done', data: { sessionId: ctx.sessionId } };
+}
+
+/**
+ * Whether a part belongs to a message the ASSISTANT wrote — the gate that keeps
+ * the turn's own prompt out of the turn's own output (DOR-1659).
+ *
+ * OpenCode publishes `message.part.updated` for the USER's parts too, and a part
+ * carries no role of its own. DorkOS writes two user parts per turn
+ * (`turn-input.ts#buildOpenCodeParts`): the injected DorkOS context as a
+ * `synthetic` part, then the person's pristine text. Mapped, those became
+ * `text_delta`s — so a room post opened with ~13 KB of `<gen_ui>`,
+ * `<agent_identity>` and `<room_context>` (other people's words, an
+ * `agent-etiquette.md` violation), a task summary was 500 characters of
+ * `<gen_ui>`, and both were written to the durable event log, where the
+ * EventLog history fallback replays them forever. History never had the bug
+ * (`session-mapper.ts` skips `role === 'user' && synthetic`); this restores the
+ * same rule to the live path, and covers the un-`synthetic` halves history
+ * cannot see either — the pristine echo and the `<dork-kickoff>` birth turn.
+ *
+ * UNKNOWN IDS FAIL CLOSED, deliberately. Upstream publishes `message.updated`
+ * at message creation, before any part of that message: verified in the live
+ * capture `live-child-permission.jsonl` at both the parent boundary (user
+ * 3→4→5, assistant 8→14) and the child's (21→22), and pinned against that
+ * capture by `live-capture-replay.test.ts`. The runtime also subscribes BEFORE it fires the
+ * trigger (`opencode-runtime.ts#runOpenCodeTurn`), so a turn always sees its own
+ * messages announced. An id we have nonetheless never heard of could resolve
+ * either way, and the two mistakes are not equal: admitting a `user` part leaks
+ * someone else's text into a shared room and into durable storage, while
+ * dropping an `assistant` fragment costs a fragment of one bubble that the
+ * canonical history restores at turn end.
+ *
+ * The one real path to an unannounced id is that subscription's own bound:
+ * `runOpenCodeTurn` races `subscription.live` against a 2s timeout and triggers
+ * either way, so a tap that goes live late can miss the assistant's
+ * `message.updated` and then drop every part of that message — and, since the
+ * parent `task` part is gated too, that turn's subagent card with it. Before
+ * this gate the late cumulative end-snapshot would still have rendered the text.
+ * The turn still ends on `session.idle` and the reload at turn end restores the
+ * canonical history, so the cost is a transient blank rather than a wrong one;
+ * it is recorded here because it is the assumption's only known soft edge.
+ *
+ * Subagent child parts do not come through here — {@link mapSubagentChildEvent}
+ * already admits nothing but `tool` parts, which only an assistant message has.
+ *
+ * @param messageId - The `messageID` the part or delta declares.
+ * @param ctx - The turn's mapping context (holds the learned roles).
+ */
+function isAssistantMessage(messageId: string, ctx: OpenCodeEventContext): boolean {
+  return ctx.roleByMessageId.get(messageId) === 'assistant';
 }
 
 // === Subagent routing (the `task` tool) ===

@@ -63,6 +63,7 @@
  *
  * @module server/services/search/projections/codex
  */
+import { isKickoffEnvelope } from '@dorkos/shared/kickoff';
 import type { ProjectedMessage, Projection } from '../types.js';
 
 /** Which container these lines belong to, and where its ordinals resume. */
@@ -248,6 +249,18 @@ function blockText(content: readonly unknown[]): string {
  * @returns The person's words, or `null` when nothing is left.
  */
 function personAuthoredText(text: string): string | null {
+  // The auto-first-turn kickoff, named rather than left to luck. For the shape it
+  // was added for — a bare envelope — this changes nothing: `BLOCK_OPEN` admits
+  // the hyphen in `dork-kickoff`, so the strip below already reduces one to
+  // nothing. That makes it mostly a regression pin, and it earns its place two
+  // ways. It does change one case the strip gets wrong: the strip removes only
+  // the FIRST leading block, so a record holding two envelopes with prose between
+  // them indexes that prose today, and this drops the record. And the strip's
+  // coverage of the bare case is incidental — tighten `BLOCK_OPEN`'s character
+  // class to drop `-` and bare envelopes silently start being indexed as the
+  // person's words. Same predicate as the other two projections (DOR-1659).
+  if (isKickoffEnvelope(text)) return null;
+
   let rest = text.trim();
   for (;;) {
     const shortened = dropLeadingBlock(rest);

@@ -755,6 +755,32 @@ describe('what gets indexed', () => {
     expect(indexed()).toHaveLength(1);
   });
 
+  it('leaves the birth turn out — the kickoff is DorkOS asking, not the person', async () => {
+    // The kickoff carries NO `synthetic` flag, so the rule above cannot see it;
+    // indexed, it would return DorkOS's own instruction as the user's words.
+    seedSession('ses_a');
+    say('ses_a', 'user', [
+      text('<dork-kickoff>\nIntroduce yourself to the person who made you.\n</dork-kickoff>'),
+    ]);
+    say('ses_a', 'assistant', [text('Hello — I help you track kestrels.')]);
+    await sweep();
+
+    expect(indexed()).toEqual([
+      expect.objectContaining({ ordinal: 2, body: 'Hello — I help you track kestrels.' }),
+    ]);
+  });
+
+  it('still indexes a message that merely MENTIONS the kickoff tag', async () => {
+    // The envelope predicate needs both anchors: quoting the tag is real speech.
+    seedSession('ses_a');
+    say('ses_a', 'user', [text('what does <dork-kickoff> mean in the source?')]);
+    await sweep();
+
+    expect(indexed()).toEqual([
+      expect.objectContaining({ body: 'what does <dork-kickoff> mean in the source?' }),
+    ]);
+  });
+
   it('carries the directory the session ran in, so a hit can open somewhere', async () => {
     seedSession('ses_a', '/Users/dork/code/other-repo');
     say('ses_a', 'user', [text('a kestrel')]);

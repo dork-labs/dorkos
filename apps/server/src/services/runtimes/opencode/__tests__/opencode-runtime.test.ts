@@ -320,6 +320,11 @@ describe('OpenCodeRuntime', () => {
       const input = taskToolInput();
       const metadata = taskToolMetadata(OC_CHILD_SESSION, OC_SESSION_A);
 
+      // 0. The assistant message announces itself, as the wire always does
+      //    before publishing any of its parts — the mapper attributes parts by
+      //    `messageID` and drops what it cannot place on the assistant.
+      connection.push(globalEvent(DIRECTORY, messageUpdated(assistantMessage(OC_SESSION_A))));
+
       // 1. The task part opens, then reveals its child session.
       connection.push(
         globalEvent(
@@ -849,6 +854,9 @@ describe('OpenCodeRuntime', () => {
       const consumed = consume(runtime.sendMessage(sessionId, 'delegate it', { cwd: DIRECTORY }));
       const connection = await openTurn(harness);
       connection.push(globalEvent(DIRECTORY, statusEvent(OC_SESSION_A, { type: 'busy' })));
+      // The assistant message announces itself before its parts, as the wire
+      // does — without it the mapper cannot attribute the `task` part.
+      connection.push(globalEvent(DIRECTORY, messageUpdated(assistantMessage(OC_SESSION_A))));
       connection.push(
         globalEvent(
           DIRECTORY,

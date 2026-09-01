@@ -20,9 +20,13 @@
  * calls; this one answers "where did we talk about X". The two share their
  * authorship rules — `ignored` text never rendered, and `synthetic` user text is
  * SDK-injected rather than typed by a person — and diverge on everything that is
- * about display. Reusing the mapper directly is not possible in any case: it
- * returns `HistoryMessage` and is typed against `@opencode-ai/sdk`, whose import
- * is confined to the adapter directory (Hard Rule 2).
+ * about display. This projection adds one authorship rule of its own: the
+ * auto-first-turn `<dork-kickoff>` instruction is DorkOS's, not the person's,
+ * and carries no `synthetic` flag to be caught by the rule above, so it is
+ * dropped by the shared envelope predicate rather than indexed as their words.
+ * Reusing the mapper directly is not possible in any case: it returns
+ * `HistoryMessage` and is typed against `@opencode-ai/sdk`, whose import is
+ * confined to the adapter directory (Hard Rule 2).
  *
  * ## What is counted rather than dropped
  *
@@ -39,6 +43,7 @@
  *
  * @module server/services/search/projections/opencode
  */
+import { isKickoffEnvelope } from '@dorkos/shared/kickoff';
 import type { ProjectedMessage, Projection } from '../types.js';
 
 /**
@@ -135,6 +140,12 @@ export function projectOpenCodeMessages(
 
     const body = spoken.join('\n').trim();
     if (body === '') continue;
+    // The auto-first-turn kickoff is DorkOS's own instruction, not something a
+    // person typed — and it carries no `synthetic` flag for the rule above to
+    // catch, so the birth turn would otherwise be indexed and returned as the
+    // user's own words. The same predicate the render seams use, never a second
+    // copy of the rule (`@dorkos/shared/kickoff`).
+    if (role === 'user' && isKickoffEnvelope(body)) continue;
 
     messages.push({
       originKey,

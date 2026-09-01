@@ -67,6 +67,7 @@ import {
   stripSystemTags,
   type TranscriptLine,
 } from '../../runtimes/claude-code/sessions/transcript-parser.js';
+import { isKickoffEnvelope } from '@dorkos/shared/kickoff';
 import type { ProjectedMessage, Projection } from '../types.js';
 
 /** Which container these lines belong to, and where its ordinals resume. */
@@ -356,7 +357,19 @@ function readSpeech(line: TranscriptLine): { role: 'user' | 'assistant'; body: s
     // blocks, whose sibling `text` blocks are SDK-internal rather than anyone's.
     if (!isPersonAuthoredUserRecord(line)) return null;
     const body = stripSystemTags(extractTextContent(line.message?.content ?? '')).trim();
-    return body === '' ? null : { role: 'user', body };
+    if (body === '') return null;
+    // The auto-first-turn kickoff is DorkOS's own instruction wearing the
+    // person's role, and `stripSystemTags` cannot reach it: it strips
+    // `<system-reminder>` and the eight `CONTEXT_TAG` wrappers, and
+    // `dork-kickoff` is not one of them. Without this the birth turn is
+    // returned by search as the person's own words. The predicate is the one
+    // the render seams already use, never a second copy of the rule
+    // (`@dorkos/shared/kickoff`).
+    //
+    // Dropping the record here cannot move a turn boundary: `endsAssistantTurn`
+    // is decided on its own branch in the walk above, before this runs.
+    if (isKickoffEnvelope(body)) return null;
+    return { role: 'user', body };
   }
 
   if (line.type === 'assistant') {

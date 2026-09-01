@@ -71,8 +71,21 @@ import {
 const SESSION_ID = 'a0000000-0000-4000-8000-000000000001';
 const OC = OC_SESSION_A;
 
+/**
+ * A fresh turn context that has already seen the assistant `message.updated`
+ * the sidecar opens every message with.
+ *
+ * Load-bearing, not ceremony: parts name only a `messageID`, so the mapper
+ * learns who wrote a message from that announcement and drops parts it cannot
+ * attribute to the assistant (`isAssistantMessage`). The wire always announces
+ * first — a context that has not seen it is not a state OpenCode can produce —
+ * and every part these fixtures build belongs to `msg_0001`, the id
+ * {@link assistantMessage} defaults to.
+ */
 function makeContext(): OpenCodeEventContext {
-  return createOpenCodeEventContext(SESSION_ID);
+  const ctx = createOpenCodeEventContext(SESSION_ID);
+  mapOpenCodeEvent(messageUpdated(assistantMessage(OC)), ctx);
+  return ctx;
 }
 
 async function drain(
@@ -163,7 +176,7 @@ describe('matchesOpenCodeSession — demux on one multiplexed stream', () => {
 
 describe('matchesOpenCodeSubagentSession — admitting a subagent child session', () => {
   it('admits nothing until a task tool part has revealed its child session', () => {
-    const ctx = createOpenCodeEventContext(SESSION_ID);
+    const ctx = makeContext();
     const childEvent = globalEvent(
       DIRECTORY,
       partUpdated(toolPart(OC_CHILD_SESSION, 'child_1', 'grep', toolStateRunning({})))
@@ -251,6 +264,104 @@ describe('mapOpenCodeEvent', () => {
       expect(
         mapOpenCodeEvent(partUpdated(textPart(OC, 'p1', 'hidden', { ignored: true })), ctx)
       ).toEqual([]);
+    });
+  });
+
+  /**
+   * The turn must never speak its own prompt back (DOR-1659). OpenCode
+   * publishes part events for the USER's message too, and DorkOS writes two
+   * user parts per turn (`turn-input.ts`): the injected context as a
+   * `synthetic` part, then the person's pristine text. Mapped, they opened
+   * every room post, every task summary and the durable event log with ~13 KB
+   * of `<gen_ui>`/`<room_context>` plus an echo of the trigger.
+   */
+  describe('whose message a part belongs to', () => {
+    const USER_MESSAGE = 'msg_user01';
+
+    /** A context that has seen the user message the fixtures' user parts belong to. */
+    function contextWithUserMessage(): OpenCodeEventContext {
+      const ctx = makeContext();
+      mapOpenCodeEvent(messageUpdated(userMessage(OC, USER_MESSAGE)), ctx);
+      return ctx;
+    }
+
+    it('drops the injected synthetic context part DorkOS wrote', () => {
+      const ctx = contextWithUserMessage();
+      const injected = textPart(OC, 'p_ctx', '<gen_ui>\nDorkOS generative UI…\n</gen_ui>', {
+        messageID: USER_MESSAGE,
+      });
+      expect(mapOpenCodeEvent(partUpdated({ ...injected, synthetic: true }), ctx)).toEqual([]);
+    });
+
+    it("drops the person's own pristine text, which carries no synthetic flag", () => {
+      const ctx = contextWithUserMessage();
+      expect(
+        mapOpenCodeEvent(
+          partUpdated(textPart(OC, 'p_prompt', 'summarise the repo', { messageID: USER_MESSAGE })),
+          ctx
+        )
+      ).toEqual([]);
+    });
+
+    it('drops the `<dork-kickoff>` birth turn, which is a user part like any other', () => {
+      const ctx = contextWithUserMessage();
+      expect(
+        mapOpenCodeEvent(
+          partUpdated(
+            textPart(OC, 'p_kick', '<dork-kickoff>\nintroduce yourself\n</dork-kickoff>', {
+              messageID: USER_MESSAGE,
+            })
+          ),
+          ctx
+        )
+      ).toEqual([]);
+    });
+
+    it('drops deltas on a user part too, not just its snapshots', () => {
+      const ctx = contextWithUserMessage();
+      mapOpenCodeEvent(partUpdated(textPart(OC, 'p_prompt', '', { messageID: USER_MESSAGE })), ctx);
+      expect(
+        mapOpenCodeEvent(partDelta(OC, 'p_prompt', 'typed', { messageID: USER_MESSAGE }), ctx)
+      ).toEqual([]);
+    });
+
+    it('still streams the assistant text of the very same turn', () => {
+      const ctx = contextWithUserMessage();
+      mapOpenCodeEvent(
+        partUpdated(textPart(OC, 'p_prompt', 'summarise the repo', { messageID: USER_MESSAGE })),
+        ctx
+      );
+      expect(
+        mapOpenCodeEvent(partUpdated(textPart(OC, 'p1', 'Here is the summary.')), ctx)
+      ).toEqual([{ type: 'text_delta', data: { text: 'Here is the summary.' } }]);
+    });
+
+    /**
+     * Fails closed. The wire announces a message before any of its parts (pinned
+     * against the real capture in `live-capture-replay.test.ts`) and the runtime
+     * subscribes before it triggers the turn, so an unattributable part should
+     * not happen — and if it does, admitting it could leak someone else's words
+     * into a shared room and into durable storage, while dropping it costs a
+     * fragment of a bubble the canonical history restores at turn end.
+     */
+    it('drops a part whose message was never announced, rather than guessing', () => {
+      const ctx = createOpenCodeEventContext(SESSION_ID);
+      expect(
+        mapOpenCodeEvent(
+          partUpdated(textPart(OC, 'p1', 'unattributable', { messageID: 'msg_never_seen' })),
+          ctx
+        )
+      ).toEqual([]);
+    });
+
+    it('learns the role from message.updated regardless of whether the message completed', () => {
+      const ctx = createOpenCodeEventContext(SESSION_ID);
+      // An in-flight assistant message maps to no StreamEvent of its own...
+      expect(mapOpenCodeEvent(messageUpdated(assistantMessage(OC)), ctx)).toEqual([]);
+      // ...but its role is recorded, so its parts stream from the first one.
+      expect(mapOpenCodeEvent(partUpdated(textPart(OC, 'p1', 'Hi')), ctx)).toEqual([
+        { type: 'text_delta', data: { text: 'Hi' } },
+      ]);
     });
   });
 
