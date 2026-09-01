@@ -74,12 +74,60 @@ function inferTier(value: string): 'flagship' | 'balanced' | 'fast' | undefined 
 }
 
 /**
+ * What every Claude model the SDK offers can do, asserted by DorkOS rather than
+ * read from the SDK. The reasoning for each field — and what would falsify it —
+ * is in {@link mapSdkModelToModelOption}. One constant so a correction is one
+ * edit, and so the claim is visible instead of buried in an object literal.
+ */
+const CLAUDE_MODEL_CAPABILITIES = {
+  supportsToolUse: true,
+  supportsVision: true,
+  supportsImageOutput: false,
+} as const satisfies Pick<
+  ModelOption,
+  'supportsToolUse' | 'supportsVision' | 'supportsImageOutput'
+>;
+
+/**
  * Map an SDK-reported model to a universal ModelOption.
  *
  * Takes the full {@link SdkReportedModel} shape so every capability field the
  * SDK reports survives into the cache — both persistence paths (the warm-up
  * probe and the per-send refresh) must feed this mapper the SDK's objects
  * whole, never a re-picked subset.
+ *
+ * ## The three capability flags are DorkOS's claims, not the SDK's
+ *
+ * `ModelOption` carries `supportsToolUse` / `supportsVision` /
+ * `supportsImageOutput` as a **tri-state**: `true` and `false` are claims, and
+ * absent means "nobody checked". `ModelInfo` at the 0.3.224 pin reports exactly
+ * the eight fields {@link SdkReportedModel} mirrors and nothing capability-shaped
+ * beyond them, so the SDK cannot answer these three — re-check that on every SDK
+ * re-pin, and read from the SDK the moment it can. Until then the choice is
+ * between a static claim and an honest absence, made per field rather than in
+ * bulk, because a wrong `true` is worse than saying nothing:
+ *
+ * - **`supportsToolUse: true`** — structural, not a guess. The Claude Agent SDK
+ *   IS a tool-calling agent loop, and `supportedModels()` lists the models it
+ *   can drive; a model that could not call a tool could not be in this list.
+ * - **`supportsImageOutput: false`** — structural. The Anthropic Messages API
+ *   answers with text and thinking. There is no image-output modality for a
+ *   Claude model to return, so this is a real `false`, not a default.
+ * - **`supportsVision: true`** — the weakest of the three, and the only one that
+ *   is a claim about Anthropic's model LINE rather than about this API: every
+ *   Claude model Anthropic serves through this SDK accepts image input. It goes
+ *   wrong the day Anthropic ships a text-only model into `supportedModels()`,
+ *   which is the condition to watch on an SDK re-pin.
+ *
+ * `contextWindow`/`maxOutputTokens` stay absent for the same reason, one step
+ * further: the SDK does not report them and DorkOS has no defensible static
+ * value either, so claude-code entries never carry them and every consumer
+ * treats that as unknown. Other runtimes populate them on ModelOption directly.
+ *
+ * Model entries persisted by an older build predate these flags and read back as
+ * absent. That needs no migration and no cache-version bump: absent is a legal
+ * tri-state value meaning unknown, every consumer already reads it that way, and
+ * the disk cache expires on its own TTL.
  */
 export function mapSdkModelToModelOption(m: SdkReportedModel): ModelOption {
   return {
@@ -92,9 +140,7 @@ export function mapSdkModelToModelOption(m: SdkReportedModel): ModelOption {
     supportsAdaptiveThinking: m.supportsAdaptiveThinking,
     supportsFastMode: m.supportsFastMode,
     supportsAutoMode: m.supportsAutoMode,
-    // contextWindow/maxOutputTokens: the Claude SDK's supportedModels() does not
-    // report them, so claude-code entries never carry them. Other runtimes
-    // populate them on ModelOption directly.
+    ...CLAUDE_MODEL_CAPABILITIES,
     provider: 'anthropic',
     family: extractFamily(m.value),
     tier: inferTier(m.value),

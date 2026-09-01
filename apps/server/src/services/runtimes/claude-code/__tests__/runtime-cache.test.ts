@@ -142,6 +142,42 @@ describe('RuntimeCache', () => {
       });
       expect(option.resolvedModel).toBe('claude-sonnet-5');
     });
+
+    // ---- Capability flags are DorkOS's claims, not the SDK's (DOR-1672) ----
+
+    it('states what every Claude model can do, in real booleans', () => {
+      // `ModelInfo` reports nothing capability-shaped, so these three are static
+      // claims the mapper makes: the Agent SDK only lists models it can drive
+      // through a tool loop, and the Messages API has no image-output modality.
+      // Deleting `...CLAUDE_MODEL_CAPABILITIES` from the mapper makes this red.
+      const option = mapSdkModelToModelOption({
+        value: 'claude-opus-4-8',
+        displayName: 'Opus',
+        description: '',
+      });
+      expect(option.supportsToolUse).toBe(true);
+      expect(option.supportsVision).toBe(true);
+      expect(option.supportsImageOutput).toBe(false);
+    });
+
+    it('invents no context window the SDK never reported', () => {
+      // The other half of the same honesty rule, and the half that is easier to
+      // get wrong later: `ModelInfo` carries neither `contextWindow` nor
+      // `maxOutputTokens`, and DorkOS has no defensible static value for either
+      // (they differ per model and per account tier), so the mapper says
+      // nothing rather than guessing. Every consumer reads absent as unknown —
+      // `useSessionStatus` falls back to `null`, the picker hides its badge.
+      //
+      // If a future SDK starts reporting them, READ them here and delete this
+      // test. Do not satisfy it with a hardcoded number.
+      const option = mapSdkModelToModelOption({
+        value: 'claude-opus-4-8',
+        displayName: 'Opus',
+        description: '',
+      });
+      expect(option.contextWindow).toBeUndefined();
+      expect(option.maxOutputTokens).toBeUndefined();
+    });
   });
 
   // =========================================================================

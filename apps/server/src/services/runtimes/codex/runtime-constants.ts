@@ -125,6 +125,34 @@ const CODEX_EFFORT_LEVELS: EffortLevel[] = ['low', 'medium', 'high', 'xhigh'];
 const CODEX_CONTEXT_WINDOW = 272_000;
 
 /**
+ * What every catalog model below can do. Because {@link CODEX_MODELS} is a
+ * hardcoded snapshot rather than a live probe, these are **static claims by
+ * construction** — DorkOS asserting them, not the Codex SDK reporting them.
+ * Kept in one constant, like {@link CODEX_CONTEXT_WINDOW} above, so correcting a
+ * claim is a single edit and so a model that ever differs has to opt OUT
+ * visibly (override the field on its own entry) rather than silently inherit a
+ * wrong answer.
+ *
+ * `supportsToolUse` and `supportsImageOutput` are safe to assert: Codex drives a
+ * tool-calling agent loop, so a model that could not call tools could not be in
+ * this catalog at all, and none of the GPT-5.x reasoning models returns
+ * generated images (OpenAI's image models are a separate line that Codex does
+ * not expose). `supportsVision` is the softer of the three — true of every
+ * GPT-5.x model at the pin, and the one to re-check first if a text-only model
+ * is ever added.
+ *
+ * Re-verify on every SDK re-pin, alongside the effort levels and context window.
+ */
+const CODEX_MODEL_CAPABILITIES = {
+  supportsToolUse: true,
+  supportsVision: true,
+  supportsImageOutput: false,
+} as const satisfies Pick<
+  ModelOption,
+  'supportsToolUse' | 'supportsVision' | 'supportsImageOutput'
+>;
+
+/**
  * The models the pinned Codex CLI exposes (its embedded model manifest,
  * `visibility: "list"` entries). The CLI also maintains a remote models
  * cache, so this static catalog is a snapshot of the pin — re-verify on
@@ -139,6 +167,7 @@ export const CODEX_MODELS: ModelOption[] = [
     contextWindow: CODEX_CONTEXT_WINDOW,
     supportsEffort: true,
     supportedEffortLevels: CODEX_EFFORT_LEVELS,
+    ...CODEX_MODEL_CAPABILITIES,
     provider: 'openai',
     tier: 'flagship',
   },
@@ -149,6 +178,7 @@ export const CODEX_MODELS: ModelOption[] = [
     contextWindow: CODEX_CONTEXT_WINDOW,
     supportsEffort: true,
     supportedEffortLevels: CODEX_EFFORT_LEVELS,
+    ...CODEX_MODEL_CAPABILITIES,
     provider: 'openai',
     tier: 'balanced',
   },
@@ -159,6 +189,7 @@ export const CODEX_MODELS: ModelOption[] = [
     contextWindow: CODEX_CONTEXT_WINDOW,
     supportsEffort: true,
     supportedEffortLevels: CODEX_EFFORT_LEVELS,
+    ...CODEX_MODEL_CAPABILITIES,
     provider: 'openai',
     tier: 'fast',
   },
@@ -169,6 +200,7 @@ export const CODEX_MODELS: ModelOption[] = [
     contextWindow: CODEX_CONTEXT_WINDOW,
     supportsEffort: true,
     supportedEffortLevels: CODEX_EFFORT_LEVELS,
+    ...CODEX_MODEL_CAPABILITIES,
     provider: 'openai',
     tier: 'specialized',
   },
@@ -179,6 +211,7 @@ export const CODEX_MODELS: ModelOption[] = [
     contextWindow: CODEX_CONTEXT_WINDOW,
     supportsEffort: true,
     supportedEffortLevels: CODEX_EFFORT_LEVELS,
+    ...CODEX_MODEL_CAPABILITIES,
     provider: 'openai',
     tier: 'balanced',
   },
