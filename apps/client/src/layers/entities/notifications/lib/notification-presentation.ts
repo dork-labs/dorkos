@@ -15,6 +15,7 @@ import {
   CircleAlert,
   Clock,
   Download,
+  LogIn,
   Mail,
   MessageSquare,
   ShieldQuestion,
@@ -23,6 +24,15 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { NotificationDTO, NotificationKind } from '@dorkos/shared/notification-schemas';
+
+/**
+ * The Settings tab that holds every runtime's sign-in.
+ *
+ * Spelled here as well as in `ErrorMessageBlock` because the two live in
+ * different FSD layers (an entity may not import from a feature) and this is one
+ * short string, not shared logic worth a `shared/` home of its own.
+ */
+const RUNTIMES_SETTINGS_TAB = 'runtimes';
 
 /**
  * Where a notification row navigates.
@@ -63,6 +73,7 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'agent.note': Bell,
   'dead-letter.created': Mail,
   'agent.unreachable': WifiOff,
+  'signin.required': LogIn,
   'update.installed': Download,
   'report.daily': Sparkles,
 };
@@ -228,6 +239,14 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
   }
   if (kind === 'dead-letter.created') {
     return { to: '/connections', search: {} };
+  }
+  if (kind === 'signin.required') {
+    // Settings → Runtimes, which is where signing in again actually happens —
+    // the same destination the chat's own "Fix sign-in" button opens
+    // (`features/chat/ui/message/ErrorMessageBlock.tsx`). Its subject type is
+    // `system`, so without this the switch below would send it nowhere and the
+    // one row in the inbox that has something to DO would draw as plain text.
+    return { to: '/', search: { settings: RUNTIMES_SETTINGS_TAB } };
   }
   if (kind === 'update.installed' || kind === 'report.daily') {
     return null;

@@ -536,8 +536,12 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
 
     it('resolveForSession() returns the claude-code runtime for a session with no row (no side-effect write)', async () => {
       const runtime = await runtimeRegistry.resolveForSession(UNSEEN_SESSION);
+      // `type`, not identity: `register()` wraps every runtime at the one
+      // registration seam (the sign-in watch, and tracing when it is on), so a
+      // lookup DELEGATES to the instance that was registered rather than being
+      // it. Which runtime answered is the claim here, and this is how it is
+      // spelled everywhere else since DOR-1654.
       expect(runtime.type).toBe('claude-code');
-      expect(runtime).toBe(claude);
 
       // Read is pure — no row is written. Explicit persistence is the
       // `persistSessionRuntime` call made by `POST /:id/messages`.

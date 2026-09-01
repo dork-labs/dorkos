@@ -25,6 +25,7 @@
  *
  * @module services/notifications/notification-registry
  */
+import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import {
   NOTIFICATION_KINDS,
   type NotificationActionDTO,
@@ -205,6 +206,18 @@ export interface NotificationPayloads {
     agentId: string;
     agentName: string;
   };
+  /**
+   * A runtime's sign-in stopped working, so nothing can run on it.
+   *
+   * Deliberately says NOTHING about the turn that discovered it. An expired
+   * credential is a fact about the RUNTIME — every agent on it is stopped, not
+   * just the one that happened to notice — so the payload carries the runtime
+   * and nothing else, and the dedupe key below is the runtime alone.
+   */
+  'signin.required': {
+    /** The runtime type, e.g. `claude-code`. Also what tells two of these apart. */
+    runtime: string;
+  };
   /** DorkOS is running a version it was not running before. */
   'update.installed': {
     version: string;
@@ -330,6 +343,18 @@ export const DEFAULT_DEDUPE_WINDOW_MS = 5 * 60 * 1000;
 
 /** How long an unreachable agent stays quiet before it is worth saying again. */
 const UNREACHABLE_DEDUPE_WINDOW_MS = 60 * 60 * 1000;
+
+/**
+ * How long a dead sign-in stays quiet before it is worth saying again.
+ *
+ * An hour, for the same reason {@link UNREACHABLE_DEDUPE_WINDOW_MS} is an hour,
+ * arrived at from the other side: an expired credential does not flap, it simply
+ * stays broken, so every task and every room turn for the rest of the night
+ * would raise the identical row. Wide enough that a nightly schedule produces
+ * one, short enough that somebody who signed in, walked away, and had it expire
+ * again the next morning is told the second time too.
+ */
+const SIGNIN_DEDUPE_WINDOW_MS = 60 * 60 * 1000;
 
 /**
  * How long a day's Shift Report stays deduped once raised.
@@ -579,6 +604,48 @@ const ENTRIES: NotificationRegistryMap = {
     relay: 'never',
   },
 
+  'signin.required': {
+    // Raised by the runtime-registry wrap (`emitters/runtime-signin.ts`), which
+    // sees EVERY turn on every runtime — the interactive composer, a room reply,
+    // a 3am scheduled run and an agent-to-agent relay delivery alike.
+    //
+    // **`notable`, not `blocking`, and the difference is the whole point.**
+    // `blocking` is reserved here for a condition a person can END by answering
+    // it, and every one of the four is `standing` — the store that owns it
+    // answers "is it still waiting?". Nothing owns "is this credential still
+    // dead?": the only honest answer comes from trying another turn. So this is
+    // an `event` — the row IS the record.
+    //
+    // `notable` is also the only tier `use-browser-notifications.ts` will draw
+    // an OS banner for (`blocking` is left to the attention store, `quiet` is
+    // by definition not worth one). That is a possible second surface, not a
+    // promised one: the banner is additionally gated on the operator's
+    // `notifyOnTurnCompleteWhileAway` preference, on browser permission, and on
+    // the app being open at all. The inbox row is the surface this kind
+    // actually guarantees.
+    kind: 'signin.required',
+    tier: 'notable',
+    storage: 'event',
+    // `system`, not `agent` or `session`: a dead credential is not about the
+    // turn that tripped over it. Clicking through opens Settings → Runtimes,
+    // which is where signing in again actually happens.
+    subjectType: 'system',
+    locate: (p) => ({ subjectId: p.runtime }),
+    title: (p) => `${runtimeDisplayName(p.runtime)} needs you to sign in again`,
+    body: () => 'Scheduled tasks and agent replies keep failing until you sign in.',
+    // ONE per runtime, however many tasks, rooms and relay deliveries trip over
+    // the same dead credential. Held for an hour for the reason
+    // `agent.unreachable` holds its own: a nightly schedule with a dozen tasks
+    // would otherwise fill the inbox with one row per task, all saying the
+    // single thing the operator already knows.
+    dedupeKey: (p) => `signin:${p.runtime}`,
+    dedupeWindowMs: SIGNIN_DEDUPE_WINDOW_MS,
+    // No agent to route through — the payload deliberately carries none — and
+    // `dispatchRelay` needs one, so `always` here would be a promise that is
+    // silently never kept. Reaching a phone about this is DOR-1655.
+    relay: 'never',
+  },
+
   'update.installed': {
     kind: 'update.installed',
     tier: 'quiet',
@@ -672,6 +739,7 @@ export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'agent.note',
   'dead-letter.created',
   'agent.unreachable',
+  'signin.required',
   'update.installed',
   'report.daily',
 ];

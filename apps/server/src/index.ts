@@ -74,6 +74,7 @@ import {
 } from './services/notifications/notification-service.js';
 import { watchSessionLifecycle } from './services/notifications/emitters/session-lifecycle.js';
 import { watchAskResolution } from './services/notifications/emitters/ask-resolution.js';
+import { watchRuntimeSigninFailures } from './services/notifications/emitters/runtime-signin.js';
 import { deadLetterPayload } from './services/notifications/emitters/dead-letter.js';
 import { agentLivenessObserver } from './services/notifications/emitters/agent-liveness.js';
 import { announceInstalledVersion } from './services/notifications/emitters/update-installed.js';
@@ -746,6 +747,9 @@ async function start() {
   watchSessionLifecycle();
   // How every Ask ended — including the ones nobody answered.
   watchAskResolution();
+  // A runtime whose sign-in stopped working, noticed at whichever turn trips
+  // over it first — including the 3am ones nobody is watching (DOR-1654).
+  watchRuntimeSigninFailures();
   // Nothing tells the server it was updated, so it compares versions on boot.
   void announceInstalledVersion(dorkHome);
   // "While you were away" — composed once the day's first activity arrives.
@@ -1688,7 +1692,32 @@ async function start() {
       adapterManager = new AdapterManager(adapterRegistry, adapterConfigPath, {
         agentRuntimes: new Map<string, AgentRuntimeLike>([
           ...runtimeRegistry.listRuntimes().map((r): [string, AgentRuntimeLike] => [r.type, r]),
-          [relayAgentRuntime.type, relayAgentRuntime],
+          // **The relay's default runtime, keyed by its own type but resolved
+          // back through the REGISTRY.** `relayAgentRuntime` is the raw object
+          // this function constructed; the registry holds the WRAPPED one
+          // (tracing, and the DOR-1654 sign-in watch). This entry is appended
+          // last and so wins on key collision, which means spelling the VALUE
+          // `relayAgentRuntime` put the raw runtime in the map — and from there
+          // into `deps.agentManager`, since `adapter-factory.ts`'s
+          // `defaultRuntimeFor` reads this very map, and back over the map again
+          // in `ClaudeCodeAdapter`'s constructor. Every relay turn on claude-code
+          // then ran unwatched, so a Telegram-bridged agent on an expired
+          // sign-in told nobody: the exact gap DOR-1654 exists to close.
+          //
+          // Resolved by TYPE, not by identity, so this entry and `agentManager`
+          // are the SAME proxy instance — `register()` builds the wrapper once
+          // and stores it, so repeated `get()` calls return one reference and
+          // `ClaudeCodeAdapter`'s `r !== this.deps.agentManager` dedupe still
+          // holds. Both paths that assign `relayAgentRuntime` register it first,
+          // so this lookup cannot miss; if it ever did, throwing inside this
+          // `try` costs the relay and says so, which beats seeding an unwatched
+          // runtime in silence.
+          //
+          // `setRelayBindingContext` below deliberately keeps the RAW
+          // `claudeRuntime`, and that is not an oversight: it calls a
+          // ClaudeCodeRuntime-only method that is not part of `AgentRuntime`.
+          // Two consumers, two objects, on purpose.
+          [relayAgentRuntime.type, runtimeRegistry.get(relayAgentRuntime.type)],
         ]),
         traceStore,
         taskStore: taskStore,

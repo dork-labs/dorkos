@@ -52,6 +52,7 @@ export const notifications = sqliteTable(
         'agent.note',
         'dead-letter.created',
         'agent.unreachable',
+        'signin.required',
         'update.installed',
         'report.daily',
       ],

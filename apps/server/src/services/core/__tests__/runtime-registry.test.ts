@@ -122,11 +122,28 @@ describe('RuntimeRegistry', () => {
     lastResolveOpts = null;
   });
 
+  // **A lookup is never `toBe` the instance that was registered, and asking for
+  // that would be asserting an implementation detail.** `register()` wraps at
+  // the one registration seam — `traceRuntime` when tracing is on, and the
+  // sign-in watch always (DOR-1654) — so what comes back is a transparent Proxy
+  // that DELEGATES to the runtime you handed in. These assertions therefore ask
+  // the question they always meant: is this the right runtime answering? Told
+  // apart by `type` where the types differ, and by a declared capability where
+  // two mocks share one type.
   describe('register and get', () => {
     it('registers and retrieves a runtime by type', () => {
-      const runtime = createMockRuntime('claude-code');
-      registry.register(runtime);
-      expect(registry.get('claude-code')).toBe(runtime);
+      // Two runtimes, so "the right one came back" is a real question. Asking
+      // only `get('claude-code').type === 'claude-code'` would compare the key
+      // to itself and pass however the registry mixed them up; the capability
+      // is what identifies WHICH instance answered.
+      const claude = createMockRuntime('claude-code', { supportsResume: true });
+      const opencode = createMockRuntime('opencode', { supportsResume: false });
+      registry.register(claude);
+      registry.register(opencode);
+
+      const found = registry.get('claude-code');
+      expect(found.type).toBe('claude-code');
+      expect(found.getCapabilities().supportsResume).toBe(true);
     });
 
     it('throws when getting an unregistered type', () => {
@@ -134,11 +151,11 @@ describe('RuntimeRegistry', () => {
     });
 
     it('replaces existing registration for the same type', () => {
-      const runtime1 = createMockRuntime('claude-code');
-      const runtime2 = createMockRuntime('claude-code');
+      const runtime1 = createMockRuntime('claude-code', { supportsResume: true });
+      const runtime2 = createMockRuntime('claude-code', { supportsResume: false });
       registry.register(runtime1);
       registry.register(runtime2);
-      expect(registry.get('claude-code')).toBe(runtime2);
+      expect(registry.get('claude-code').getCapabilities().supportsResume).toBe(false);
     });
   });
 
@@ -146,7 +163,7 @@ describe('RuntimeRegistry', () => {
     it('defaults to claude-code', () => {
       const runtime = createMockRuntime('claude-code');
       registry.register(runtime);
-      expect(registry.getDefault()).toBe(runtime);
+      expect(registry.getDefault().type).toBe('claude-code');
     });
 
     it('throws when default type is not registered', () => {
@@ -161,7 +178,7 @@ describe('RuntimeRegistry', () => {
       registry.register(cc);
       registry.register(oc);
       registry.setDefault('opencode');
-      expect(registry.getDefault()).toBe(oc);
+      expect(registry.getDefault().type).toBe('opencode');
     });
 
     it('throws when setting default to unregistered type', () => {
@@ -178,34 +195,34 @@ describe('RuntimeRegistry', () => {
       registry.register(cc);
       registry.register(oc);
       const meshCore = { getAgent: () => ({ runtime: 'opencode' }) };
-      expect(registry.resolveForAgent('agent-1', meshCore)).toBe(oc);
+      expect(registry.resolveForAgent('agent-1', meshCore).type).toBe('opencode');
     });
 
     it('falls back to default when agent has no runtime field', () => {
       const cc = createMockRuntime('claude-code');
       registry.register(cc);
       const meshCore = { getAgent: () => ({}) };
-      expect(registry.resolveForAgent('agent-1', meshCore)).toBe(cc);
+      expect(registry.resolveForAgent('agent-1', meshCore).type).toBe('claude-code');
     });
 
     it('falls back to default when agent is not found', () => {
       const cc = createMockRuntime('claude-code');
       registry.register(cc);
       const meshCore = { getAgent: () => undefined };
-      expect(registry.resolveForAgent('unknown', meshCore)).toBe(cc);
+      expect(registry.resolveForAgent('unknown', meshCore).type).toBe('claude-code');
     });
 
     it('falls back to default when meshCore is undefined', () => {
       const cc = createMockRuntime('claude-code');
       registry.register(cc);
-      expect(registry.resolveForAgent('agent-1')).toBe(cc);
+      expect(registry.resolveForAgent('agent-1').type).toBe('claude-code');
     });
 
     it('falls back to default when agent runtime type is not registered', () => {
       const cc = createMockRuntime('claude-code');
       registry.register(cc);
       const meshCore = { getAgent: () => ({ runtime: 'aider' }) };
-      expect(registry.resolveForAgent('agent-1', meshCore)).toBe(cc);
+      expect(registry.resolveForAgent('agent-1', meshCore).type).toBe('claude-code');
     });
   });
 
@@ -220,8 +237,12 @@ describe('RuntimeRegistry', () => {
       registry.register(cc);
       registry.register(oc);
       expect(registry.listRuntimes()).toHaveLength(2);
-      expect(registry.listRuntimes()).toContain(cc);
-      expect(registry.listRuntimes()).toContain(oc);
+      expect(
+        registry
+          .listRuntimes()
+          .map((r) => r.type)
+          .sort()
+      ).toEqual(['claude-code', 'opencode']);
     });
   });
 
