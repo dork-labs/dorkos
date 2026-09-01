@@ -710,22 +710,46 @@ describe('useSessionStreamStore', () => {
     });
 
     // Real failure mode, and it reached main's own send tests before this guard
-    // existed. `lastError` is typed `ErrorEvent | null` and the schema defaults
-    // it to `null`, so a `!== null` test LOOKS total — but `mergeStatus` falls
-    // back to the partial itself when no snapshot has hydrated yet ("prior is
-    // non-null in practice"), and that object has no `lastError` key at all.
-    // Reading `.code` off it THREW inside the projection, so an ordinary turn
-    // ending stopped settling: the session stayed `streaming` and the composer
-    // stayed locked.
+    // existed. `status_change.status` is `.partial()`, so a delta can carry one
+    // field — and `mergeStatus` used to fall back to that delta itself when no
+    // snapshot had hydrated yet ("prior is non-null in practice"), leaving a
+    // held status with no `lastError` key at all. `lastError` is typed
+    // `ErrorEvent | null`, so a `!== null` test LOOKED total; reading `.code`
+    // off nothing THREW inside the projection, and an ordinary turn ending
+    // stopped settling — the session stayed `streaming` and the composer stayed
+    // locked. The root fix is that the held status is a WHOLE `SessionStatus`
+    // from the first event on, so the fields the derivation reads
+    // unconditionally are all there.
     //
     // Deliberately applies NO snapshot, because that is the whole reproduction.
-    it('settles a turn whose held status was built without a snapshot (no lastError key)', () => {
+    it('settles a turn whose held status was built by a status_change alone (no snapshot yet)', () => {
       const store = useSessionStreamStore.getState();
       store.applyEvent(SID, { type: 'turn_start', seq: 1 });
-      store.applyEvent(SID, { type: 'status_change', seq: 2, status: { lifecycle: 'streaming' } });
-      expect(useSessionStreamStore.getState().getSession(SID).status?.lastError).toBeUndefined();
+      store.applyEvent(SID, {
+        type: 'status_change',
+        seq: 2,
+        status: { lifecycle: 'streaming', permissionMode: 'default' },
+      });
+      expect(useSessionStreamStore.getState().getSession(SID).status?.lastError).toBeNull();
 
       store.applyEvent(SID, { type: 'turn_end', seq: 3, terminalReason: 'model_error' });
+      const s = useSessionStreamStore.getState().getSession(SID);
+      expect(s.status?.lifecycle).toBe('idle');
+      expect(s.status?.lastError).toBeNull();
+      expect(s.status?.cost).toBeNull();
+    });
+
+    // The second defense, kept because the first cannot reach every source of a
+    // missing key: a snapshot minted by a server that predates `lastError`
+    // hydrates status WHOLESALE, so `mergeStatus` never sees it and the field is
+    // structurally absent however complete the store's own base is. The
+    // derivation therefore reads `lastError` truthily rather than `!== null`.
+    it('settles a turn hydrated from a snapshot whose status predates lastError', () => {
+      const store = useSessionStreamStore.getState();
+      const { lastError: _omitted, ...withoutLastError } = STATUS;
+      store.applySnapshot(SID, snapshot({ cursor: 0, status: withoutLastError as SessionStatus }));
+      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+      store.applyEvent(SID, { type: 'turn_end', seq: 2, terminalReason: 'model_error' });
       expect(useSessionStreamStore.getState().getSession(SID).status?.lifecycle).toBe('idle');
     });
 

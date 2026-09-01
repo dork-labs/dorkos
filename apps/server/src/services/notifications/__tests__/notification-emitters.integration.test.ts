@@ -306,6 +306,34 @@ describe('a turn that finishes', () => {
     expect(row).toMatchObject({ kind: 'turn.completed', agentId: ACME_AGENT_ID });
   });
 
+  it('escalates session.error, not turn.completed, when a fatal frame closes under an SDK-named reason', async () => {
+    // DOR-1676: this shape used to settle idle, so the turn announced itself as
+    // COMPLETED. It now settles error, arming the standing session.error
+    // escalation instead — a deliberate, user-visible fan-out change.
+    unsubscribes.push(watchSessionLifecycle());
+    const projector = new SessionStateProjector('sess-1676');
+    projector.cwd = '/Users/dev/acme';
+
+    projector.ingest({ type: 'turn_start' } as never);
+    projector.ingest({
+      type: 'error',
+      message: 'billing hard stop',
+      code: 'error_during_execution',
+    } as never);
+    projector.ingest({ type: 'turn_end', terminalReason: 'api_error' } as never);
+    await flush();
+
+    expect(announced().filter((n) => n.kind === 'turn.completed')).toHaveLength(0);
+    // Standing kind: nothing stored while it stands; the row lands on clear.
+    // (The clearing turn itself completes normally and files its own
+    // turn.completed row on top, so find the error row rather than take [0].)
+    projector.ingest({ type: 'turn_start' } as never);
+    projector.ingest({ type: 'turn_end', terminalReason: 'completed' } as never);
+    await flush();
+    const rows = service.list({ limit: 25, unread: false }).notifications;
+    expect(rows.find((r) => r.kind === 'session.error')).toMatchObject({ outcome: 'cleared' });
+  });
+
   it('leaves agentId unstamped when the session runs nowhere a registered agent lives', async () => {
     unsubscribes.push(watchSessionLifecycle());
     const projector = new SessionStateProjector('sess-3b');

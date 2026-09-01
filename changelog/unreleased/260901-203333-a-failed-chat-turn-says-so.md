@@ -1,6 +1,8 @@
 ---
 covers:
   - 'fix(client,server,shared): a failed chat turn says so, whatever the runtime called it (DOR-1676)'
+  - 'docs(server,client,shared): say only what the rule can know, in the fragment and the docstrings (DOR-1676)'
+  - 'fix(client,server,shared): one owner for the turn-failure rule (DOR-1676)'
 ---
 
 ### Fixed

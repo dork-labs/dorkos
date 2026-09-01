@@ -32,15 +32,21 @@
  *   error and then completes the turn normally (`terminalReason: 'completed'`,
  *   e.g. a Codex `item_error` the turn recovers from) did the work.
  *
- * ## The one deliberate difference from `deriveTurnEndLifecycle`
+ * ## Alignment with `deriveTurnEndLifecycle`
  *
- * That derivation treats ONLY `terminalReason === 'error'` as terminal, so any
- * other explicit reason wins over the error latch. For a session lifecycle that
- * is right — the reason it exists is to keep a stop from reading as a crash.
- * For a run row it would reproduce the very bug this closes: the Claude Code
- * SDK names its own reason on a failing result (`api_error`, `model_error`,
- * `turn_setup_failed`, …), so an auth failure carrying one would settle to
- * `completed` again on the default runtime.
+ * The chat projector's derivation once treated ONLY `terminalReason === 'error'`
+ * as terminal, so an SDK-named reason on a failing result (`api_error`,
+ * `model_error`, `turn_setup_failed`, …) beat the error latch and the session
+ * settled idle — the same shape this module closed for run rows. It now shares
+ * this module's core (DOR-1676, via {@link isAbsolvingTerminalReason} and
+ * {@link isNonFatalErrorCode}): the frame decides, the reason absolves. One
+ * ordering difference remains, deliberately: the projector checks its error
+ * latch before the abort reasons, so a `status_change{lifecycle:'error'}`
+ * followed by an abort still settles `error` there ("a failure is more
+ * specific than a stop"), while this module checks the stop first — a
+ * stopped RUN is recorded `cancelled` by its caller and must never also read
+ * as failed. A lifecycle and a run row answer different questions; the shared
+ * part is what counts as a failure, not which signal outranks which.
  *
  * ## What decides is WHAT the error was, not which reason arrived
  *
@@ -55,9 +61,11 @@
  *   run row raises `run.completed` with `relay: 'always'`, so every over-fire is
  *   an unconditional ping.
  * - **It under-absolves.** `tool_deferred`, `tool_deferred_unavailable` and
- *   `background_requested` all ride `SDKResultSuccess` — the turn handed work
- *   off and will be back (DOR-1100). Under an everything-else-fails fallback a
- *   recovered error followed by one of those would fail a run that succeeded.
+ *   `background_requested` all ride `SDKResultSuccess`; for two of the three the
+ *   turn handed work off and will be back (DOR-1100), and the third is benign
+ *   for a different reason — see {@link ABSOLVING_TERMINAL_REASONS}. Under an
+ *   everything-else-fails fallback a recovered error followed by one of those
+ *   would fail a run that succeeded.
  *
  * So: a window fails when it latched a FATAL error frame that no absolving
  * reason excuses, or when the reason is the codebase-wide `error` signal. An
@@ -96,10 +104,41 @@ const TERMINAL_REASON_ERROR = 'error';
  * Terminal reasons that say the turn DID its work, so an error frame it carried
  * along the way was one it recovered from.
  *
- * Not just `completed`. The other three ride `SDKResultSuccess`: the turn handed
- * a tool off, or moved to the background, and will be back to finish — the
- * DOR-1100 continuation this tracker already models as a second window. Calling
- * any of them a failure would fail a run that is still working.
+ * Not just `completed`. The other three ride the SDK's `SDKResultSuccess`, so
+ * the claude-code result mapper — which gates its error frame on the SUBTYPE,
+ * not on `is_error` — emits no frame for any of them. That makes their
+ * membership here inert on the default runtime today, and deliberately kept:
+ * these are the shapes a runtime CAN close a deferred turn with, and the rule
+ * should not depend on which of them a given SDK version happens to use.
+ *
+ * They are not all the same story, and the difference matters to anyone reading
+ * this list as documentation:
+ *
+ * - `background_requested` and `tool_deferred` — the turn handed work off and
+ *   WILL be back, the DOR-1100 continuation this tracker already models as a
+ *   second window. Settling these as a failure would call a turn that is still
+ *   working a turn that broke.
+ * - `tool_deferred_unavailable` — the turn will NOT be back. The SDK reports it
+ *   with `is_error: true` and a line saying the deferred tool is no longer
+ *   available because its MCP server disconnected. It is here because the
+ *   subtype is still `success`, so no error frame is latched and the frame rule
+ *   answers "no failure" regardless; it is NOT here because the turn is coming
+ *   back.
+ *
+ * Two more reasons are deliberately ABSENT and equally benign: the SDK's
+ * `stop_hook_prevented` and `hook_stopped` also ride the success subtype and so
+ * latch no frame either. They fall through to the frame rule on their own, which
+ * is why they need no exoneration here.
+ *
+ * **Why this list is short on purpose.** It is the ABSOLVING half of the rule
+ * this module founds — the outcome is decided by whether the turn carried a
+ * fatal error FRAME, and a reason may only ever excuse that frame, never
+ * manufacture one. The SDK's `TerminalReason` union is mostly failures
+ * (`api_error`, `model_error`, `turn_setup_failed`, `prompt_too_long`,
+ * `blocking_limit`, `budget_exhausted`, …), and a reason nobody has classified
+ * absolves nothing and accuses nothing. So the safe direction is a short
+ * allowlist of exonerations rather than a long denylist of failures that a new
+ * SDK value could silently fall off (DOR-1676).
  */
 const ABSOLVING_TERMINAL_REASONS: ReadonlySet<string> = new Set([
   'completed',
@@ -130,9 +169,12 @@ const ABSOLVING_TERMINAL_REASONS: ReadonlySet<string> = new Set([
  * safe half.
  *
  * Lifted out of the relay's `agent-handler.ts` (DOR-1337 / F6), which now
- * imports it, so the two places that must agree about "is this error the turn
- * failing?" cannot drift — the answer an agent reply gives and the answer a
- * scheduled run's row gives are one answer (DOR-1658).
+ * imports it, so the places that must agree about "is this error the turn
+ * failing?" cannot drift. The chat pipeline joined them in DOR-1676: the session
+ * normalizer's error latch and the projector's `deriveTurnEndLifecycle` both
+ * read this set too. The answer an agent reply gives, the answer a scheduled
+ * run's row gives and the answer a live session's lifecycle gives are one
+ * answer.
  */
 export const NON_FATAL_ERROR_CODES: ReadonlySet<string> = new Set(['hook_failure']);
 
@@ -143,6 +185,25 @@ export const NON_FATAL_ERROR_CODES: ReadonlySet<string> = new Set(['hook_failure
  */
 export function isNonFatalErrorCode(code: string | undefined): boolean {
   return code !== undefined && NON_FATAL_ERROR_CODES.has(code);
+}
+
+/**
+ * Whether a terminal reason says the turn DID its work — so an error frame it
+ * carried along the way was one it recovered from.
+ *
+ * Exported for `deriveTurnEndLifecycle` (the chat projector), which settles a
+ * latched fatal error frame by the same frame-decides/reason-absolves rule this
+ * module founds (DOR-1676).
+ *
+ * Read defensively rather than by narrowing, exactly as
+ * `isInterruptedTerminalReason` is: `TerminalReasonSchema` is a forward-open
+ * union, so an unfamiliar value is simply not an exoneration, and an `undefined`
+ * reason absolves nothing.
+ *
+ * @param reason - The `turn_end`/`session_status` terminal reason, when carried.
+ */
+export function isAbsolvingTerminalReason(reason: string | undefined): boolean {
+  return reason !== undefined && ABSOLVING_TERMINAL_REASONS.has(reason);
 }
 
 /**

@@ -38,11 +38,8 @@ import type {
   TaskItem,
 } from '@dorkos/shared/types';
 import type { QueuedMessage } from '@dorkos/shared/schemas';
-import {
-  isAbsolvingTerminalReason,
-  isInterruptedTerminalReason,
-  isNonFatalErrorCode,
-} from '@dorkos/shared/schemas';
+import { isInterruptedTerminalReason } from '@dorkos/shared/schemas';
+import { isAbsolvingTerminalReason, isNonFatalErrorCode } from '@dorkos/shared/run-outcome';
 import { listPendingInteractions } from './pending-interactions.js';
 import type { SessionDebugCounters } from './session-debug-counters.js';
 import { logger } from '../../lib/logger.js';

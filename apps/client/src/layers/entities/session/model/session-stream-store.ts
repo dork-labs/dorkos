@@ -38,11 +38,8 @@ import type {
   SessionContextUsage,
   SessionLifecycle,
 } from '@dorkos/shared/session-stream';
-import {
-  isAbsolvingTerminalReason,
-  isInterruptedTerminalReason,
-  isNonFatalErrorCode,
-} from '@dorkos/shared/schemas';
+import { isInterruptedTerminalReason } from '@dorkos/shared/schemas';
+import { isAbsolvingTerminalReason, isNonFatalErrorCode } from '@dorkos/shared/run-outcome';
 import type { MessageDeliveryOutcome, QueuedMessage } from '@dorkos/shared/schemas';
 
 /** Maximum number of sessions retained before LRU eviction (mirrors the chat store). */
@@ -259,6 +256,33 @@ const ZERO_CONTEXT_USAGE: SessionContextUsage = {
 };
 
 /**
+ * The status a session holds when nothing about it is known yet — every field
+ * at its documented before-the-first-turn value.
+ *
+ * The base a `status_change` merges onto when no snapshot has hydrated status.
+ * Its whole job is that the store's held status is a WHOLE `SessionStatus` from
+ * the first event on: `status_change.status` is `.partial()`, so a delta may
+ * carry as little as one field, and building the held status out of that delta
+ * alone leaves every other field structurally absent — including `lastError`
+ * and `lifecycle`, which the projection reads unconditionally. That produced a
+ * value the `SessionStatus` type said could not exist, and the first read that
+ * dereferenced one of its nested objects crashed the whole `applyEvent`
+ * (DOR-1676: `status.lastError.code`).
+ */
+const UNHYDRATED_SESSION_STATUS: SessionStatus = {
+  contextUsage: null,
+  cost: null,
+  usage: null,
+  cacheStats: null,
+  model: null,
+  permissionMode: 'default',
+  todoCounts: null,
+  runningSubagentCount: 0,
+  lifecycle: 'idle',
+  lastError: null,
+};
+
+/**
  * Field-wise-merge a partial `status_change.status` delta onto the held status,
  * mirroring the server projector's merge: `contextUsage` is merged field-wise
  * onto the prior value (a streaming delta carries only `outputTokens`; a final
@@ -271,8 +295,9 @@ function mergeStatus(
 ): SessionStatus {
   const { contextUsage, ...rest } = partial;
   // `prior` is non-null in practice (a snapshot always hydrates status before any
-  // event applies), but fall back to the partial's own fields for safety.
-  const base = (prior ?? (rest as SessionStatus)) as SessionStatus;
+  // event applies); when it is not, the delta fills in over a complete
+  // not-yet-known status rather than becoming one on its own.
+  const base = prior ?? UNHYDRATED_SESSION_STATUS;
   const merged: SessionStatus = { ...base, ...rest };
   if (contextUsage !== undefined) {
     merged.contextUsage =

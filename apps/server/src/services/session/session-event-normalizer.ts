@@ -26,7 +26,7 @@
  *
  * @module services/session/session-event-normalizer
  */
-import { isNonFatalErrorCode } from '@dorkos/shared/schemas';
+import { isNonFatalErrorCode } from '@dorkos/shared/run-outcome';
 import type { StreamEvent, TerminalReason } from '@dorkos/shared/types';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { RawSessionEvent, SessionStateProjector } from './session-state-projector.js';
