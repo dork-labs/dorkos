@@ -13,6 +13,7 @@ import { z } from 'zod';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import { TaskDispatchPayloadSchema } from '@dorkos/shared/relay-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
+import { createRunOutcomeTracker } from '@dorkos/shared/run-outcome';
 import type { AdapterContext, DeliveryResult, TraceStoreLike } from '../../types.js';
 import type { AgentRuntimeLike, TasksStoreLike } from './types.js';
 import { OPERATOR_CANCEL } from './task-cancel-handler.js';
@@ -45,9 +46,19 @@ const RUN_STOPPED = Symbol('run-stopped');
  *
  * Deliberately duplicated from `consumeRunStream` in
  * `apps/server/src/services/tasks/run-stream.ts` (the direct-dispatch twin of
- * this path): sharing it would mean a new `@dorkos/shared` subpath for ~20
- * lines. Fix both if you fix one — since DOR-1567 dropped the progress republish
- * that used to make this copy `await` its `onEvent`, they do the same work.
+ * this path). Fix both if you fix one — since DOR-1567 dropped the progress
+ * republish that used to make this copy `await` its `onEvent`, they do the same
+ * work.
+ *
+ * A `@dorkos/shared` subpath does now exist for this pair — `run-outcome`, which
+ * both callers use so the two dispatch paths cannot disagree about whether a run
+ * FAILED (DOR-1658). The loop itself stays copied because what it duplicates is
+ * mechanical and what it races is not: this copy still awaits its `onEvent` and
+ * the server's does not, and an extra microtask per event lands in exactly the
+ * window between the stream's last event and a stop, which is the one the
+ * server's `turnThatEndsAsItIsStopped` test exists to pin. A judgement two paths
+ * must share is worth a subpath; twenty mechanical lines with a timing
+ * difference are not.
  *
  * @param stream - The agent's per-turn event stream.
  * @param signal - Aborts when the run is stopped or out of budget.
@@ -254,6 +265,12 @@ export async function handleTasksMessage(
 
   let outputSummary = '';
   let releaseInboundBudget: (() => void) | undefined;
+  // How the turn behind this run SETTLES — the same question, and the same
+  // answer, as the direct-dispatch twin in `apps/server` (DOR-1658). The rule
+  // is shared rather than copied beside the loop below: a run row that says
+  // "completed" on one dispatch path and "failed" on the other for the same
+  // stream is the drift this is worth a subpath to avoid.
+  const outcome = createRunOutcomeTracker();
 
   try {
     if (controller.signal.aborted) {
@@ -303,6 +320,7 @@ export async function handleTasksMessage(
       controller.signal,
       () => void interruptTurn(deps.agentManager, sessionId, `run ${runId}`, deps.logger),
       (event) => {
+        outcome.observe(event);
         if (event.type === 'text_delta' && outputSummary.length < OUTPUT_SUMMARY_MAX_CHARS) {
           const data = event.data as { text: string };
           outputSummary += data.text;
@@ -328,11 +346,19 @@ export async function handleTasksMessage(
           sessionId: persistedSessionId(),
         });
       } else {
+        // The stream ending is not the work having succeeded: a turn that
+        // streamed a typed `error` and then ended used to be filed as a success
+        // here too (DOR-1658). The DELIVERY is still a success either way — the
+        // envelope was carried and acted on — so only the run row changes; the
+        // trace span below and this handler's return value are untouched, or a
+        // run that genuinely ran would be dead-lettered and redelivered.
+        const failure = outcome.settle();
         deps.taskStore.updateRun(runId, {
-          status: 'completed',
+          status: failure ? 'failed' : 'completed',
           finishedAt: new Date().toISOString(),
           durationMs,
           outputSummary: truncatedSummary,
+          ...(failure ? { error: failure } : {}),
           sessionId: persistedSessionId(),
         });
       }
