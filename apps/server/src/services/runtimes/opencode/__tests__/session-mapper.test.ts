@@ -1347,15 +1347,17 @@ describe('getMessageHistory — images', () => {
     ]);
   });
 
-  it('a turn whose only output is an UNSTORABLE image type survives as an honest placeholder (DOR-1671)', async () => {
+  it('a turn whose only output is an UNSTORABLE image type survives as a typed error part (DOR-1671)', async () => {
     // SVG is refused by the store deliberately (serving it inline is a
     // stored-XSS vector). The fix is not to allow it — it is to keep the turn,
-    // with a line saying an image DorkOS cannot show was made. The raw SVG
-    // bytes must never ride along.
+    // as the SAME typed error the live path shows for this condition, never as
+    // prose that reads like the agent said it. The raw SVG bytes must never
+    // ride along, and the mime is sanitized before display (it is
+    // producer-controlled).
     const client = createMockClient();
     serveAssistant(client, [
       ocFilePart('prt_svg01', {
-        mime: 'image/svg+xml',
+        mime: 'image/svg+xml; a=<img src="https://evil.example/beacon.png">',
         url: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
         filename: 'diagram.svg',
       }),
@@ -1368,12 +1370,21 @@ describe('getMessageHistory — images', () => {
 
     expect(history).toHaveLength(1);
     expect(history[0]!.parts).toEqual([
-      { type: 'text', text: expect.stringContaining('image/svg+xml') },
+      {
+        type: 'error',
+        message: 'A session cannot store image/svg+xml — only PNG, JPEG, GIF and WebP images.',
+        category: 'execution_error',
+      },
     ]);
-    expect(JSON.stringify(history[0]!.parts)).not.toContain('base64');
+    const serialized = JSON.stringify(history[0]!.parts);
+    expect(serialized).not.toContain('base64');
+    expect(serialized).not.toContain('evil.example');
+    // An error part never becomes the message content, so nothing here can be
+    // quoted back in an excerpt as the agent's own words.
+    expect(history[0]!.content).toBe('');
   });
 
-  it('a mapper with no attachment store keeps an image-only turn as a placeholder, not a hole', async () => {
+  it('a mapper with no attachment store keeps an image-only turn as a typed error, not a hole', async () => {
     const client = createMockClient();
     serveAssistant(client, [ocFilePart('prt_gen02', { filename: 'banana.png' })]);
     const mapper = new OpenCodeSessionMapper(createProvider(client));
@@ -1383,8 +1394,15 @@ describe('getMessageHistory — images', () => {
 
     expect(history).toHaveLength(1);
     expect(history[0]!.parts).toEqual([
-      { type: 'text', text: expect.stringContaining("can't show") },
+      {
+        type: 'error',
+        message: 'This agent is not set up to keep images, so one was not saved.',
+        category: 'execution_error',
+      },
     ]);
+    // The no-store branch fires for EVERY image type — pin that the data: URI
+    // bytes never leak through it either.
+    expect(JSON.stringify(history[0]!.parts)).not.toContain('base64');
   });
 
   it('re-materializes an image a tool returned, from `attachments`', async () => {
@@ -1431,7 +1449,7 @@ describe('getMessageHistory — images', () => {
     expect(second[0]!.parts).toEqual(first[0]!.parts);
   });
 
-  it('shows no picture, and no crash, when no attachment store is wired', async () => {
+  it('says the picture was not kept — as an error part beside the prose — when no store is wired (DOR-1671)', async () => {
     const client = createMockClient();
     serveAssistant(client, [ocFilePart('prt_gen01'), textPart('Here it is.')]);
     const mapper = new OpenCodeSessionMapper(createProvider(client));
@@ -1439,7 +1457,10 @@ describe('getMessageHistory — images', () => {
 
     const [message] = await mapper.getMessageHistory(PROJECT_DIR, DORKOS_ID);
 
-    expect(message!.parts?.map((p) => p.type)).toEqual(['text']);
+    // The typed placeholder stands where the image was; the model's own words
+    // stay their own separate part and remain the whole `content`.
+    expect(message!.parts?.map((p) => p.type)).toEqual(['error', 'text']);
+    expect(message!.content).toBe('Here it is.');
   });
 
   it('keeps the turn when the bytes are gone, showing an unavailable image rather than nothing', async () => {

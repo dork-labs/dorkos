@@ -29,6 +29,7 @@ import type {
   Session,
   HistoryMessage,
   HistoryToolCall,
+  ErrorPart,
   ImagePart,
   MessagePart,
   TextPart,
@@ -258,19 +259,42 @@ function appendText(parts: MessagePart[], text: string): void {
 type HistoryMediaResolver = (
   file: OpenCodeFilePart,
   identity: readonly string[]
-) => Promise<ImagePart | TextPart | null>;
+) => Promise<ImagePart | ErrorPart | null>;
 
 /**
  * The honest remainder when a picture cannot be projected at all — no store to
  * keep it, or a media type the store refuses (SVG is a stored-XSS vector, not
  * an oversight). A turn whose only output was such an image used to map to no
  * parts and vanish on reload (DOR-1671); it now keeps its place in the
- * transcript with this line, and the raw bytes never ride along.
+ * transcript with this part, and the raw bytes never ride along.
  *
- * @param mime - The image media type that cannot be shown.
+ * A typed `error` part, not prose, for the live path's own reason
+ * (`media-capture.ts`): prose in the transcript reads as something the model
+ * said, ends up in the message `content`, and gets quoted back in excerpts as
+ * the agent's words. An error part renders as the same chip the live stream
+ * shows, so the two surfaces of one turn tell one story.
+ *
+ * @param message - What a person is told in place of the image, worded
+ *   identically to the live path's `mediaError` copy for the same condition.
  */
-function unshowableImagePlaceholder(mime: string): TextPart {
-  return { type: 'text', text: `[Made an image DorkOS can't show (${mime})]` };
+function unshowableImagePart(message: string): ErrorPart {
+  return { type: 'error', message, category: 'execution_error' };
+}
+
+/**
+ * The media type, reduced to something safe to show.
+ *
+ * `file.mime` is producer-controlled (the sidecar records whatever the model
+ * or an MCP tool claimed), so it must not be interpolated into a rendered
+ * transcript verbatim. The parameters after `;` are dropped — exactly what the
+ * storability check compares against — and anything not shaped like a media
+ * type at all falls back to a plain phrase.
+ *
+ * @param mime - The raw media type the sidecar recorded.
+ */
+function displayableMime(mime: string): string {
+  const base = mime.split(';')[0]!.trim().toLowerCase();
+  return /^[\w.+-]+\/[\w.+-]+$/.test(base) ? base : 'an unnamed image format';
 }
 
 /** The `file` member of OpenCode's part union, named for readability. */
@@ -295,7 +319,7 @@ type OpenCodeFilePart = Extract<OpenCodePart, { type: 'file' }>;
  *
  * The last hole closed with DOR-1671: a media type the store could never have
  * held (a generated SVG, AVIF, BMP or HEIC), or a mapper wired with no store at
- * all, now degrades to {@link unshowableImagePlaceholder} instead of `null` —
+ * all, now degrades to {@link unshowableImagePart} instead of `null` —
  * so a turn whose only output was such an image keeps its place here rather
  * than mapping to no parts and being dropped.
  *
@@ -826,11 +850,18 @@ export class OpenCodeSessionMapper {
       if (!mime.startsWith('image/')) return null;
       // A picture with nowhere to live is still a picture the transcript is
       // entitled to mention (DOR-1671): no store, or a media type the store
-      // deliberately refuses, degrades to the placeholder rather than to a
-      // dropped turn.
-      if (!store) return unshowableImagePlaceholder(file.mime);
+      // deliberately refuses, degrades to the typed placeholder rather than to
+      // a dropped turn. Copy matches the live path's mediaError for the same
+      // condition, so live and reload tell one story.
+      if (!store) {
+        return unshowableImagePart(
+          'This agent is not set up to keep images, so one was not saved.'
+        );
+      }
       if (storableImageExtension(file.mime) === null) {
-        return unshowableImagePlaceholder(file.mime);
+        return unshowableImagePart(
+          `A session cannot store ${displayableMime(file.mime)} — only PNG, JPEG, GIF and WebP images.`
+        );
       }
       const attachmentId = deriveSessionAttachmentId(identity);
       const alt = file.filename !== undefined ? { alt: file.filename } : {};
@@ -852,7 +883,10 @@ export class OpenCodeSessionMapper {
         // picture the transcript is entitled to mention.
       }
       const url = store.urlFor(sessionId, attachmentId, file.mime);
-      if (!url) return null;
+      // With the unstorable-type case answered above, `urlFor` can only refuse
+      // here on a malformed id — practically unreachable for derived hex ids,
+      // but the honest degradation is the same either way: never a dropped turn.
+      if (!url) return unshowableImagePart('An image was produced but could not be saved.');
       return { type: 'image', attachmentId, url, mediaType: file.mime, size: 0, ...alt };
     };
   }
