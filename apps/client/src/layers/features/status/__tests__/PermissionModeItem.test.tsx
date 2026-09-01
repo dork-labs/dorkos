@@ -109,6 +109,7 @@ const CLAUDE_CAPABILITIES: RuntimeCapabilities = {
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
+  mediaOutput: 'none',
   nativeContext: [],
   permissionModes: {
     supported: true,
@@ -182,6 +183,7 @@ const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
+  mediaOutput: 'none',
   nativeContext: [],
   permissionModes: {
     supported: true,
@@ -232,6 +234,7 @@ const CODEX_CAPABILITIES: RuntimeCapabilities = {
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
+  mediaOutput: 'none',
   nativeContext: [],
   permissionModes: {
     supported: true,
@@ -286,6 +289,7 @@ const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
+  mediaOutput: 'none',
   nativeContext: [],
   permissionModes: {
     supported: true,
@@ -337,6 +341,7 @@ const UNSUPPORTED_CAPABILITIES: RuntimeCapabilities = {
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
+  mediaOutput: 'none',
   nativeContext: [],
   permissionModes: { supported: false, values: [] },
   commandIntents: { compact: { supported: false } },

@@ -37,6 +37,7 @@ import {
   HookStatusSchema,
   MemoryRecallEventSchema,
   CompactBoundaryEventSchema,
+  SessionImageEventSchema,
   SystemStatusEventSchema,
   OperationProgressEventShapeSchema,
   UiCommandEventSchema,
@@ -468,6 +469,17 @@ export const SessionEventSchema = z
     }),
     // Memories surfaced into the turn by the SDK's memory supervisor.
     z.object({ ...seqShape, type: z.literal('memory_recall'), ...MemoryRecallEventSchema.shape }),
+    // A picture the turn produced — a model that draws, a tool that screenshots.
+    // A REFERENCE to stored bytes and never the bytes: this stream is replayed
+    // whole on every reconnect, and the buffers behind it hold a bounded
+    // window, so an inlined image is re-sent forever and spends on itself the
+    // window the turn's own words needed. See `sessionImageShape` in
+    // `schemas.ts`.
+    z.object({
+      ...seqShape,
+      type: z.literal('image_attachment'),
+      ...SessionImageEventSchema.shape,
+    }),
     // A context-window compaction boundary (SDK `compact_boundary`). Carries the
     // SDK `compact_metadata` so the client folds an inline "Compacted — N tokens
     // summarized (manual/auto)" row. Fidelity member: no status projection.

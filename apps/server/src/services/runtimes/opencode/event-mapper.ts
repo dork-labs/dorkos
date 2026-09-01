@@ -134,6 +134,10 @@ export function createOpenCodeEventContext(sessionId: string): OpenCodeEventCont
     partKindById: new Map(),
     startedToolCallIds: new Set(),
     endedToolCallIds: new Set(),
+    // Images the pure mapper recorded and the runtime's async loop has yet to
+    // store (`media-capture.ts`).
+    pendingMedia: [],
+    recordedMediaKeys: new Set(),
     subagentRuns: new Map(),
     subagentTaskIdBySession: new Map(),
     pendingPermissionSessions: new Map(),

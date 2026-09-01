@@ -155,6 +155,12 @@ const SESSION_EVENT_TYPES = [
   'subagent_update',
   'hook_update',
   'memory_recall',
+  // An image the turn produced (ADR 260901-135657). Registered with the CONTRACT rather
+  // than with the UI that renders it, like the queue and steer members above:
+  // a picture that silently never arrives is indistinguishable from the bug
+  // this whole feature exists to fix, and it would be debugged for hours
+  // before anyone suspected the allowlist.
+  'image_attachment',
   'compact_boundary',
   'system_status',
   'operation_progress',

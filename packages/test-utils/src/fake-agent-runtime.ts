@@ -242,6 +242,9 @@ export class FakeAgentRuntime implements AgentRuntime {
     supportsPersistentSession: false,
     supportsSteer: false,
     supportsContextStaging: false,
+    // The fake produces no media. Overridable per test like every other field
+    // here, which is what lets a suite exercise the `'attachments'` branch.
+    mediaOutput: 'none',
     nativeContext: [],
     permissionModes: {
       supported: true,

@@ -8,9 +8,10 @@
  * unbounded {@link EventLog}. After a turn ends the events linger for a TTL so a
  * race between `turn_end` and a refresh still resolves, then they are evicted.
  *
- * @module services/session/ring-buffer
+ * @module services/session/replay/ring-buffer
  */
 import type { SessionEvent } from '@dorkos/shared/session-stream';
+import { RING_BUFFER_MAX_BYTES, eventByteSize } from './event-size-guard.js';
 
 /**
  * Hard cap on events retained for a single turn. Bounds per-session memory under
@@ -46,18 +47,45 @@ export class RingBuffer {
    */
   private endedAt: number | null = null;
 
-  /** Append an event to the current turn, dropping the oldest past the cap. */
+  /** Running byte total of {@link RingBuffer.events}, kept in step with it. */
+  private bytes = 0;
+
+  /**
+   * Append an event to the current turn, dropping the oldest past EITHER cap.
+   *
+   * Two caps, because a count alone stopped being a bound once a message part
+   * could stand for an image: two hundred events is a fixed number of entries
+   * and an unbounded number of bytes. Whichever cap bites first wins, and both
+   * have the same, already-defined consequence — a client that fell past the
+   * ring replays from the {@link EventLog}, and one past that takes a fresh
+   * snapshot. See `event-size-guard.ts` for the budget and its reasoning.
+   */
   append(event: SessionEvent): void {
     this.sweepIfExpired();
     this.events.push(event);
+    this.bytes += eventByteSize(event);
     if (this.events.length > RING_BUFFER_MAX_EVENTS) {
-      this.events.splice(0, this.events.length - RING_BUFFER_MAX_EVENTS);
+      this.evict(this.events.length - RING_BUFFER_MAX_EVENTS);
     }
+    // Never evicts the event just appended: a single event past the whole
+    // budget is still delivered, because dropping the only copy of what just
+    // happened is worse than briefly exceeding a memory target — and the string
+    // guard has already bounded how far past it can be.
+    while (this.bytes > RING_BUFFER_MAX_BYTES && this.events.length > 1) {
+      this.evict(1);
+    }
+  }
+
+  /** Drop the oldest `count` events, keeping the byte total honest. */
+  private evict(count: number): void {
+    const dropped = this.events.splice(0, count);
+    for (const event of dropped) this.bytes -= eventByteSize(event);
   }
 
   /** Begin a new turn: clear any retained (possibly expired) prior-turn events. */
   markTurnStarted(): void {
     this.events = [];
+    this.bytes = 0;
     this.endedAt = null;
   }
 
@@ -95,6 +123,7 @@ export class RingBuffer {
   private sweepIfExpired(): void {
     if (this.endedAt !== null && Date.now() - this.endedAt >= RING_BUFFER_TTL_MS) {
       this.events = [];
+      this.bytes = 0;
       this.endedAt = null;
     }
   }

@@ -387,3 +387,51 @@ describe('AssistantMessageContent — error parts keep the server-authored messa
     ).toHaveAttribute('href', 'https://openrouter.ai/settings/credits');
   });
 });
+
+/**
+ * The renderer used to end with a bare comment asserting "at this point
+ * part.type === 'tool_call'". Adding a member to `MessagePartSchema` made that
+ * comment false, and an unhandled part fell through to the tool branch and
+ * rendered as a broken card reading properties it does not have.
+ */
+describe('AssistantMessageContent — images and unknown parts (ADR 260901-135657)', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('renders an image part where it sits in the turn', () => {
+    const parts = [
+      { type: 'text' as const, text: 'Here you go.' },
+      {
+        type: 'image' as const,
+        attachmentId: 'abc123',
+        url: '/api/sessions/s1/attachments/abc123.png',
+        mediaType: 'image/png',
+        size: 2048,
+        alt: 'banana.png',
+      },
+    ];
+
+    render(<AssistantMessageContent message={makeMessage(parts)} />);
+
+    expect(screen.getByText('Here you go.')).toBeInTheDocument();
+    expect(screen.getByAltText('banana.png')).toHaveAttribute(
+      'src',
+      '/api/sessions/s1/attachments/abc123.png'
+    );
+  });
+
+  it('renders nothing at all for a part type it does not recognize', () => {
+    // A client too old for a member a newer server sent. Nothing on screen is
+    // the right outcome; a broken tool card is not.
+    const parts = [
+      { type: 'text' as const, text: 'Only this.' },
+      { type: 'something_from_the_future' } as unknown as NonNullable<ChatMessage['parts']>[number],
+    ];
+
+    render(<AssistantMessageContent message={makeMessage(parts)} />);
+
+    expect(screen.getByText('Only this.')).toBeInTheDocument();
+    expect(screen.queryByTestId('tool-call-card')).not.toBeInTheDocument();
+  });
+});

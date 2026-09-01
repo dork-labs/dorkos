@@ -68,6 +68,7 @@
  * sets either flag: unset → fully mocked, no binary, no provider, no spend.
  */
 import { afterAll, expect, onTestFinished, vi } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -134,6 +135,7 @@ vi.mock('../providers/check-dependencies.js', async (importOriginal) => {
 });
 
 import { OpenCodeRuntime } from '../opencode-runtime.js';
+import { LocalSessionAttachmentStore } from '../../../session/attachments/local-session-attachment-store.js';
 import {
   driveDurableTurn,
   drivePresenceTurn,
@@ -149,6 +151,7 @@ import {
   globalEvent,
   opencodeErrorTurn,
   opencodeSimpleTurn,
+  opencodeRepublishedImageTurn,
   serverConnected,
   sessionCompacted,
   sessionIdle,
@@ -280,10 +283,23 @@ const liveManager = LIVE
   ? new (await import('../server-manager.js')).OpenCodeServerManager()
   : null;
 
+/**
+ * Where the conformance runtime keeps images, in mocked mode.
+ *
+ * Wired only when mocked, and that asymmetry is the honest one: a live sidecar
+ * talking to a local model will not deterministically produce a picture, so the
+ * LIVE runtime declares `mediaOutput: 'none'` and the suite's media block takes
+ * its not-declared arm rather than asserting something the run cannot show.
+ */
+const ATTACHMENT_HOME = LIVE
+  ? null
+  : fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-opencode-conformance-media-'));
+
 afterAll(async () => {
   if (liveManager) await liveManager.shutdown();
   if (LIVE) fs.rmSync(PROJECT_DIR, { recursive: true, force: true });
   if (liveHome) fs.rmSync(liveHome, { recursive: true, force: true });
+  if (ATTACHMENT_HOME) fs.rmSync(ATTACHMENT_HOME, { recursive: true, force: true });
 });
 
 /**
@@ -383,7 +399,11 @@ let lastClient: ReturnType<typeof makeConformanceClient> | undefined;
 
 runtimeConformance(
   // Fresh runtime per test; the provider is the only dependency (ADR-0308).
-  () => new OpenCodeRuntime({ provider: LIVE ? liveManager! : makeMockedProvider() }),
+  () =>
+    new OpenCodeRuntime({
+      provider: LIVE ? liveManager! : makeMockedProvider(),
+      ...(ATTACHMENT_HOME ? { attachments: new LocalSessionAttachmentStore(ATTACHMENT_HOME) } : {}),
+    }),
   {
     name: LIVE_MODE.paid
       ? `OpenCodeRuntime (LIVE sidecar + ${PAID_MODEL} on OpenRouter) — AgentRuntime conformance`
@@ -409,6 +429,33 @@ runtimeConformance(
     // safe in LIVE mode too. OpenCode declares neither steer nor stage, so it
     // wires NO dispositionTurn: its C1 is the not-declared arm.
     terminalOnce: () => driveTerminalOnce(PROJECT_DIR),
+    // The media gate. Owns its own runtime because a media turn needs a
+    // differently-scripted sidecar than the default `opencodeSimpleTurn`: a
+    // tool that hands back a screenshot (the path OpenCode populates TODAY via
+    // `ToolStateCompleted.attachments`, and read nothing of before this change)
+    // plus a generated image published TWICE, so the suite's one-picture-one-
+    // announcement assertion is actually exercised rather than passing because
+    // nothing republished. Wired only when an attachment store is, which is what
+    // keeps the declaration and the proof in step.
+    ...(ATTACHMENT_HOME
+      ? {
+          mediaTurn: async () => {
+            const runtime = new OpenCodeRuntime({
+              provider: makeMockedProvider(opencodeRepublishedImageTurn(OC_SESSION_A)),
+              attachments: new LocalSessionAttachmentStore(ATTACHMENT_HOME),
+            });
+            const sessionId = randomUUID();
+            runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: PROJECT_DIR });
+            const events = [];
+            for await (const event of runtime.sendMessage(sessionId, 'take a screenshot', {
+              cwd: PROJECT_DIR,
+            })) {
+              events.push(event);
+            }
+            return events;
+          },
+        }
+      : {}),
     queueDurability: () => driveQueueDurability(),
     // BC-16: the sidecar's session list reports only created/updated times, and
     // ADR-0308 forbids reading its store directly, so the person's last message

@@ -22,6 +22,7 @@
 import type {
   AssistantMessage,
   Event,
+  FilePart,
   GlobalEvent,
   Message,
   Part,
@@ -485,6 +486,143 @@ export function opencodeSimpleTurn(
     partDelta(sessionID, partID, text.slice(0, mid)),
     partDelta(sessionID, partID, text.slice(mid)),
     partUpdated(textPart(sessionID, partID, text, { end: true })),
+    messageUpdated(assistantMessage(sessionID, { completed: true })),
+    statusEvent(sessionID, { type: 'idle' }),
+    sessionIdle(sessionID),
+  ];
+}
+
+/**
+ * A one-pixel PNG as a `data:` URI — the smallest thing that is genuinely a
+ * decodable image.
+ *
+ * Real bytes rather than a placeholder string, because every assertion about
+ * media in this adapter ends at a file on disk: a fake payload would prove the
+ * mapper routed something, and prove nothing about whether a person would see a
+ * picture.
+ */
+export const TINY_PNG_DATA_URL =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+/**
+ * Build a `file` part — the shape OpenCode uses for BOTH a user's attachment
+ * and (upstream, once anomalyco/opencode#12859 is fixed) a model-generated
+ * image.
+ */
+export function filePart(
+  sessionID: string,
+  id: string,
+  opts: { mime?: string; url?: string; filename?: string; messageID?: string } = {}
+): FilePart {
+  const { mime = 'image/png', url = TINY_PNG_DATA_URL, filename, messageID = 'msg_0001' } = opts;
+  return {
+    id,
+    sessionID,
+    messageID,
+    type: 'file',
+    mime,
+    url,
+    ...(filename !== undefined ? { filename } : {}),
+  };
+}
+
+/**
+ * Tool state: finished successfully, carrying non-text output in
+ * `attachments` — the field OpenCode populates TODAY for an MCP tool that
+ * returns an image or a screenshot, and which DorkOS read nothing of before
+ * ADR 260901-135657.
+ */
+export function toolStateCompletedWithAttachments(
+  input: Record<string, unknown>,
+  output: string,
+  attachments: FilePart[],
+  title = 'tool run'
+): ToolState {
+  return {
+    status: 'completed',
+    input,
+    output,
+    title,
+    metadata: {},
+    attachments,
+    time: { start: CREATED_AT, end: COMPLETED_AT },
+  };
+}
+
+/**
+ * A turn whose tool hands back an image alongside its text — the path that
+ * works today, with no dependency on the upstream `file`-part bug.
+ */
+export function opencodeToolImageTurn(sessionID: string): OpenCodeWireEvent[] {
+  const input = { url: 'https://example.test' };
+  return [
+    statusEvent(sessionID, { type: 'busy' }),
+    partUpdated(toolPart(sessionID, 'call_img', 'screenshot', toolStateRunning(input))),
+    partUpdated(
+      toolPart(
+        sessionID,
+        'call_img',
+        'screenshot',
+        toolStateCompletedWithAttachments(input, 'captured', [
+          filePart(sessionID, 'prt_file01', { filename: 'screenshot.png' }),
+        ])
+      )
+    ),
+    messageUpdated(assistantMessage(sessionID, { completed: true })),
+    statusEvent(sessionID, { type: 'idle' }),
+    sessionIdle(sessionID),
+  ];
+}
+
+/**
+ * A turn that produces two pictures and REPUBLISHES one of them — the shape the
+ * conformance media gate drives.
+ *
+ * Republication is the hazard the gate exists for: `message.part.updated`
+ * carries a cumulative snapshot and fires more than once for the same part, so
+ * a mapper without a single-shot guard announces one picture twice. The `file`
+ * part is republished specifically because it is the arm with no independent
+ * guard of its own — a tool part is already made single-shot by
+ * `endedToolCallIds`, so republishing only that would leave the gate passing
+ * for a reason unrelated to what it claims to check.
+ *
+ * Two DISTINCT images, so the assertion is "each picture announced once" rather
+ * than a magic count.
+ */
+export function opencodeRepublishedImageTurn(sessionID: string): OpenCodeWireEvent[] {
+  const input = { url: 'https://example.test' };
+  const generated = filePart(sessionID, 'prt_gen01', { filename: 'banana.png' });
+  return [
+    statusEvent(sessionID, { type: 'busy' }),
+    partUpdated(toolPart(sessionID, 'call_img', 'screenshot', toolStateRunning(input))),
+    partUpdated(
+      toolPart(
+        sessionID,
+        'call_img',
+        'screenshot',
+        toolStateCompletedWithAttachments(input, 'captured', [
+          filePart(sessionID, 'prt_shot', { filename: 'screenshot.png' }),
+        ])
+      )
+    ),
+    // The same generated image, published twice — the republication.
+    partUpdated(generated),
+    partUpdated(generated),
+    messageUpdated(assistantMessage(sessionID, { completed: true })),
+    statusEvent(sessionID, { type: 'idle' }),
+    sessionIdle(sessionID),
+  ];
+}
+
+/**
+ * A turn whose ONLY part is a generated image — the shape upstream will publish
+ * once #12859 is fixed, and the shape that used to make a whole turn disappear
+ * from history rather than merely lose its picture.
+ */
+export function opencodeGeneratedImageTurn(sessionID: string): OpenCodeWireEvent[] {
+  return [
+    statusEvent(sessionID, { type: 'busy' }),
+    partUpdated(filePart(sessionID, 'prt_gen01', { filename: 'banana.png' })),
     messageUpdated(assistantMessage(sessionID, { completed: true })),
     statusEvent(sessionID, { type: 'idle' }),
     sessionIdle(sessionID),

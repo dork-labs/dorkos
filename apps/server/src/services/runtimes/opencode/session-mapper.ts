@@ -29,12 +29,23 @@ import type {
   Session,
   HistoryMessage,
   HistoryToolCall,
+  ImagePart,
   MessagePart,
   TextPart,
   ToolCallPart,
 } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
 import { mapMessageError } from './history-error-part.js';
+// Direct module import, NOT the attachments barrel: the barrel re-exports the
+// local store, which imports `node:fs`, and this module's import graph is
+// filesystem-free by test guard (ADR-0308). `deriveSessionAttachmentId` needs
+// only `node:crypto`, which is already here.
+import { deriveSessionAttachmentId } from '../../session/attachments/session-attachment-id.js';
+import {
+  MAX_SESSION_ATTACHMENT_BYTES,
+  storableImageExtension,
+} from '../../session/attachments/session-media-types.js';
+import type { SessionAttachmentStore } from '../../session/attachments/session-attachment-store.js';
 import { SESSION_LIST_LIMIT, SESSION_REBUILD_LIMIT } from './runtime-constants.js';
 
 /**
@@ -237,26 +248,63 @@ function appendText(parts: MessagePart[], text: string): void {
 }
 
 /**
+ * Resolve one image a history read found into a renderable part, or `null` when
+ * it cannot be shown.
+ *
+ * Injected rather than imported so this module stays filesystem-free
+ * (ADR-0308): the resolver closes over the attachment store, which does touch
+ * the disk, and lives on the mapper INSTANCE.
+ */
+type HistoryMediaResolver = (
+  file: OpenCodeFilePart,
+  identity: readonly string[]
+) => Promise<ImagePart | null>;
+
+/** The `file` member of OpenCode's part union, named for readability. */
+type OpenCodeFilePart = Extract<OpenCodePart, { type: 'file' }>;
+
+/**
  * Project one OpenCode message (+ its parts) onto a `HistoryMessage`.
  *
- * Minimal-but-correct mapping (task 3.5): text, reasoning, and tool parts, plus
- * the message-level `error` a failed turn carries. Structural parts
- * (step-start/step-finish, snapshot, patch, agent, retry, subtask, file,
- * compaction) have no history projection and are skipped; messages left with no
- * mapped parts return `null` and are dropped, mirroring the Claude transcript
- * parser.
+ * Text, reasoning, tool and IMAGE parts. Structural parts (step-start/
+ * step-finish, snapshot, patch, agent, retry, subtask, compaction) have no
+ * history projection and are skipped; messages left with no mapped parts return
+ * `null` and are dropped, mirroring the Claude transcript parser.
  *
- * A message whose ONLY content is its error still returns a message. That is
- * the whole point of reading `error` here: OpenCode records a turn that failed
- * before the model said anything as an assistant message with zero parts, so
- * the parts-only reader dropped it and the failure vanished from every reopened
- * transcript — no error card, no sign-in prompt, no trace that the turn
- * happened at all (DOR-1666).
+ * **`file` parts used to be in that skipped list, and that was a bug with a
+ * sharp edge.** A turn whose only part was an image mapped to nothing, hit the
+ * empty check below, and vanished from the transcript entirely — not a missing
+ * picture in a visible turn, a missing turn. Images now map, and an image whose
+ * BYTES are gone still maps: {@link OpenCodeSessionMapper.historyMediaResolver}
+ * projects a part pointing at where they would be, so the reader gets an
+ * "image not available" row with the turn intact around it rather than a
+ * message that disappeared.
+ *
+ * The one surviving hole is narrow and deliberate: the resolver answers `null`
+ * for a media type the store could never have held (a generated SVG, AVIF, BMP
+ * or HEIC), so a turn whose ONLY output was one of those still maps to no parts
+ * and is still dropped here. Nothing produces that today — a tool attachment
+ * always contributes its `tool_call` part alongside, and OpenCode discards
+ * generated images upstream — but it is the case to fix when the allowlist
+ * widens.
+ *
+ * A message whose ONLY content is its message-level `error` still returns a
+ * message (DOR-1666): OpenCode records a turn that failed before the model
+ * said anything as an assistant message with zero parts, and dropping it
+ * erased the failure from every reopened transcript.
+ *
+ * Images ride the ASSISTANT parts array. A user's own attachment is also a
+ * `file` part, and it is deliberately not projected here: user history messages
+ * carry `content` and no parts at all in this mapper, so surfacing one would be
+ * a separate change to the input direction (see the module doc's note).
  */
-function mapHistoryMessage(entry: {
-  info: OpenCodeMessage;
-  parts: OpenCodePart[];
-}): HistoryMessage | null {
+async function mapHistoryMessage(
+  entry: {
+    info: OpenCodeMessage;
+    parts: OpenCodePart[];
+  },
+  resolveMedia: HistoryMediaResolver
+): Promise<HistoryMessage | null> {
   const { info, parts } = entry;
   const mappedParts: MessagePart[] = [];
   const toolCalls: HistoryToolCall[] = [];
@@ -275,12 +323,27 @@ function mapHistoryMessage(entry: {
       const mapped = mapToolPart(part);
       mappedParts.push(mapped.part);
       if (mapped.call) toolCalls.push(mapped.call);
+      // Whatever the tool returned that was not text. Read from the SAME field
+      // the live mapper reads (`ToolStateCompleted.attachments`) under the SAME
+      // identity components, so a picture streamed live and the one read back
+      // from history are one file at one URL, not two copies.
+      if (part.state.status === 'completed') {
+        for (const [index, attachment] of (part.state.attachments ?? []).entries()) {
+          const image = await resolveMedia(attachment, ['tool', part.callID, String(index)]);
+          if (image) mappedParts.push(image);
+        }
+      }
+    } else if (part.type === 'file' && info.role === 'assistant') {
+      const image = await resolveMedia(part, ['part', part.id]);
+      if (image) mappedParts.push(image);
     }
   }
 
   // The turn's failure, appended after whatever the agent managed to say —
   // the same order the log-backed history fold builds a failed turn in. Only
   // an assistant message can carry one; `mapMessageError` suppresses interrupts.
+  // (DOR-1666 — a message whose ONLY content is its error still returns a
+  // message, so a turn that failed before the model spoke survives a reload.)
   const errorPart = info.role === 'assistant' ? mapMessageError(info.error) : null;
   if (errorPart) mappedParts.push(errorPart);
 
@@ -335,7 +398,14 @@ export class OpenCodeSessionMapper {
    */
   constructor(
     private readonly provider: OpenCodeClientProvider,
-    private readonly store?: OpenCodeSessionMapStore
+    private readonly store?: OpenCodeSessionMapStore,
+    /**
+     * Where a history read re-materializes images, or `null` when the runtime
+     * was wired without a store. Nothing here writes bytes eagerly: a picture
+     * already on disk costs a `stat`, and one that is not gets written once,
+     * under the same deterministic id the live turn used.
+     */
+    private readonly attachments: SessionAttachmentStore | null = null
   ) {
     if (!store) return;
     for (const { sessionId, ocSessionId } of store.listAll()) {
@@ -699,12 +769,103 @@ export class OpenCodeSessionMapper {
       'session.messages'
     );
 
+    const resolveMedia = this.historyMediaResolver(sessionId);
     const messages: HistoryMessage[] = [];
     for (const entry of entries) {
-      const mapped = mapHistoryMessage(entry);
+      const mapped = await mapHistoryMessage(entry, resolveMedia);
       if (mapped) messages.push(mapped);
     }
     return messages;
+  }
+
+  /**
+   * A resolver that re-materializes this session's images through the
+   * attachment store.
+   *
+   * Idempotent and cheap on the common path: an image already on disk costs one
+   * `stat` (`peek`), and only a first read of a transcript actually decodes
+   * bytes. That is what makes reopening a session safe to do repeatedly — the
+   * deterministic attachment id means a second read finds the first read's file
+   * rather than writing a second one.
+   *
+   * **A picture that cannot be re-materialized still projects a part.** Not
+   * every source survives a history read: `storeHistoryImage` rebuilds only
+   * from a `data:` URI, because this module may not touch the disk (ADR-0308),
+   * so a `file://`-sourced image the retention sweep has since collected cannot
+   * be brought back here. Returning `null` for that case looked harmless and
+   * was not — a message whose ONLY part was that image maps to no parts,
+   * `mapHistoryMessage` drops it, and the whole turn disappears from the
+   * transcript. That is precisely the defect this change exists to fix, and it
+   * would have been reintroduced by its own sweep. So an unresolvable image
+   * projects a part pointing at where the bytes WOULD be (`urlFor`), the fetch
+   * 404s, and the reader gets the honest "this image is not available" row with
+   * the turn intact around it.
+   *
+   * `null` is reserved for what genuinely is not a picture at all: no store
+   * wired, a non-image mime, or a media type this store could never have held.
+   *
+   * @param sessionId - The DorkOS session whose history is being read.
+   */
+  private historyMediaResolver(sessionId: string): HistoryMediaResolver {
+    const store = this.attachments;
+    return async (file, identity) => {
+      if (!store) return null;
+      if (!file.mime.toLowerCase().startsWith('image/')) return null;
+      const attachmentId = deriveSessionAttachmentId(identity);
+      const alt = file.filename !== undefined ? { alt: file.filename } : {};
+      try {
+        const existing = await store.peek(sessionId, attachmentId, file.mime);
+        if (existing) {
+          // This transcript still references the picture, which makes it in
+          // use — say so, or retention reads a file nobody has rewritten since
+          // it was created as a file nobody wants (`SessionAttachmentStore.touch`).
+          void store
+            .touch(sessionId, attachmentId, storableImageExtension(file.mime) ?? '')
+            .catch(() => {});
+          return { type: 'image', attachmentId, ...existing, ...alt };
+        }
+        const written = await this.storeHistoryImage(store, sessionId, attachmentId, file);
+        if (written) return { type: 'image', attachmentId, ...written, ...alt };
+      } catch {
+        // Fall through to the placeholder: a read that failed is still a
+        // picture the transcript is entitled to mention.
+      }
+      const url = store.urlFor(sessionId, attachmentId, file.mime);
+      if (!url) return null;
+      return { type: 'image', attachmentId, url, mediaType: file.mime, size: 0, ...alt };
+    };
+  }
+
+  /**
+   * Write a history image the store has never seen, from the `data:` URI
+   * OpenCode recorded with it.
+   *
+   * Only `data:` — a `file://` source would mean reading the disk, which this
+   * module may not do (ADR-0308), and an `http(s)` one would mean an outbound
+   * request to an address a model chose. Both are handled on the LIVE path in
+   * `media-capture.ts`, which is allowed to do I/O; a history read that meets
+   * one it cannot decode simply shows no picture rather than pretending.
+   */
+  private async storeHistoryImage(
+    store: SessionAttachmentStore,
+    sessionId: string,
+    attachmentId: string,
+    file: OpenCodeFilePart
+  ): Promise<{ url: string; mediaType: string; size: number } | null> {
+    const comma = file.url.indexOf(',');
+    if (!file.url.startsWith('data:') || comma === -1) return null;
+    if (!file.url.slice(5, comma).includes(';base64')) return null;
+    // Measured on the ENCODED string, before `Buffer.from` allocates the whole
+    // picture just to discover it is too big. Base64 is 4/3 of its payload.
+    if (file.url.length - comma - 1 > Math.ceil((MAX_SESSION_ATTACHMENT_BYTES * 4) / 3) + 4) {
+      return null;
+    }
+    return store.put(
+      sessionId,
+      attachmentId,
+      file.mime,
+      Buffer.from(file.url.slice(comma + 1), 'base64')
+    );
   }
 
   /**
