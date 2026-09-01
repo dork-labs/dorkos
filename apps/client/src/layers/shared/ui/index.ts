@@ -384,5 +384,6 @@ export type { BottomSlotCandidate, BottomSlotProps } from './bottom-slot';
 // refused once, so they moved DOWN rather than sideways.
 export { OptionRow } from './option-row';
 export { CompactResultRow } from './compact-result-row';
+export { UnverifiedCatalogNotice } from './unverified-catalog-notice';
 export { TruncatedOutput } from './truncated-output';
 export type { SectionHeaderProps } from './section-header';

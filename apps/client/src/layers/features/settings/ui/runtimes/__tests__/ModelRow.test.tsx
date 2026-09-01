@@ -126,11 +126,27 @@ describe('ModelRow', () => {
     // connected every row arrives `unverified`, and a list that stays silent
     // about that reads as complete when it is a bounded guess (DOR-1674).
     renderRow({ models: MODELS.map((m) => ({ ...m, unverified: true })) });
+    const notice = screen.getByTestId('model-catalog-unverified');
+    expect(notice).toBeVisible();
+    // The admission reaches a screen reader too: the trigger describes itself
+    // by the notice, so navigating by control hears it, not only sees it.
+    expect(screen.getByTestId('runtime-model-select-claude-code')).toHaveAttribute(
+      'aria-describedby',
+      notice.getAttribute('id')
+    );
+  });
+
+  it('admits a mixed catalog when even one row is unconfirmed', () => {
+    // `some`, not `every`: a single unverified row already means the list
+    // contains guesses, and staying quiet about part of the list is the same
+    // false completeness as staying quiet about all of it.
+    renderRow({ models: [MODELS[0]!, { ...MODELS[1]!, unverified: true }] });
     expect(screen.getByTestId('model-catalog-unverified')).toBeVisible();
   });
 
   it('shows no unverified notice on a confirmed catalog', () => {
     renderRow();
+    expect(screen.getByTestId('runtime-model-select-claude-code')).toBeInTheDocument();
     expect(screen.queryByTestId('model-catalog-unverified')).not.toBeInTheDocument();
   });
 
@@ -138,9 +154,11 @@ describe('ModelRow', () => {
     // An absent or empty catalog is a warming one, not an unconfirmed one —
     // the notice names a fact about rows that exist, so no rows, no notice.
     renderRow({ models: undefined });
+    expect(screen.getByTestId('runtime-model-select-claude-code')).toBeInTheDocument();
     expect(screen.queryByTestId('model-catalog-unverified')).not.toBeInTheDocument();
     cleanup();
     renderRow({ models: [] });
+    expect(screen.getByTestId('runtime-model-select-claude-code')).toBeInTheDocument();
     expect(screen.queryByTestId('model-catalog-unverified')).not.toBeInTheDocument();
   });
 });

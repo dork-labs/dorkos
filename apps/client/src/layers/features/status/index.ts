@@ -17,7 +17,6 @@ export { RuntimeItem } from './ui/RuntimeItem';
 export { AutoModeConfirmDialog } from './ui/AutoModeConfirmDialog';
 export { AutonomyConfirmDialog } from './ui/AutonomyConfirmDialog';
 export { ModelConfigPopover } from './ui/ModelConfigPopover';
-export { UnverifiedCatalogNotice } from './ui/ModelSelectionList';
 export { ContextItem } from './ui/ContextItem';
 export type { ContextCompactAction } from './ui/ContextItem';
 export { UsageStatusItem, hasRenderableUsage } from './ui/UsageStatusItem';

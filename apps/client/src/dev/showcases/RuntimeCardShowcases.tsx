@@ -23,6 +23,7 @@
  * @module dev/showcases/RuntimeCardShowcases
  */
 import type { ReactNode } from 'react';
+import type { ModelOption } from '@dorkos/shared/types';
 import { ClaudeAccountsSection, PowerSourceSectionView } from '@/layers/features/settings';
 import { describePowerSource, renderRuntimeConnect } from '@/layers/features/runtime-connect';
 import { PlaygroundSection } from '../PlaygroundSection';
@@ -39,7 +40,7 @@ const OPENCODE_PROVIDER = 'ollama';
  * slice with every row marked `unverified`. The Model row must admit that
  * (DOR-1674), the same admission the composer picker makes (DOR-1660).
  */
-const UNVERIFIED_CATALOG = [
+const UNVERIFIED_CATALOG: ModelOption[] = [
   {
     value: 'anthropic/claude-sonnet-5',
     displayName: 'Claude Sonnet 5',

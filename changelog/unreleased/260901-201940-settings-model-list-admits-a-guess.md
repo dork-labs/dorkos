@@ -5,4 +5,4 @@ covers:
 
 ### Fixed
 
-- The Model dropdown in Settings → Runtimes now tells you when its list is a shortened, unconfirmed one. Before a provider is connected, the composer's model picker already said "connect a provider to see the models you actually have" — but the same list in Settings showed nothing, so it looked complete when it wasn't. Both places now say the same thing (DOR-1674)
+- The model lists in Settings → Runtimes and on an agent's settings now tell you when they are shortened, unconfirmed lists. When OpenCode can't find any of your credentials, the composer's model picker already admitted it offers "a short list of models nobody has confirmed you can run" — but the same list on those two surfaces showed no notice, so it looked complete when it wasn't. All three places now say the same thing (DOR-1674)

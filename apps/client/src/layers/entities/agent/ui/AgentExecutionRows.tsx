@@ -19,6 +19,7 @@ import {
   ResponsivePopoverContent,
   ResponsivePopoverTitle,
   ResponsivePopoverTrigger,
+  UnverifiedCatalogNotice,
 } from '@/layers/shared/ui';
 import { useConfig } from '@/layers/entities/config';
 import {
@@ -337,24 +338,30 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
 
   return (
     <div className={cn('grid grid-cols-2 gap-3', className)}>
-      <ExecutionRow
-        label="Model"
-        valueLabel={selectedModel?.displayName ?? effectiveModel ?? "Runtime's choice"}
-        options={[
-          ...(models ?? []).map((m) => ({
-            value: m.value,
-            label: m.displayName,
-            hint: m.description,
-          })),
-        ]}
-        selected={effectiveModel}
-        isSetHere={modelIsSetHere}
-        serverDefault={serverForRuntime?.model ?? null}
-        warning={breakageFor(['model-unavailable'])}
-        onSelect={(value) => onUpdate({ model: value })}
-        onInherit={() => onUpdate({ model: null })}
-        testId="agent-model-row"
-      />
+      {/* The wrapper is this cell of the grid; the notice rides under the row
+          when the catalog is the capped, unconfirmed slice (DOR-1674) — the
+          same admission the composer picker and the settings Model row make. */}
+      <div className="space-y-1.5">
+        <ExecutionRow
+          label="Model"
+          valueLabel={selectedModel?.displayName ?? effectiveModel ?? "Runtime's choice"}
+          options={[
+            ...(models ?? []).map((m) => ({
+              value: m.value,
+              label: m.displayName,
+              hint: m.description,
+            })),
+          ]}
+          selected={effectiveModel}
+          isSetHere={modelIsSetHere}
+          serverDefault={serverForRuntime?.model ?? null}
+          warning={breakageFor(['model-unavailable'])}
+          onSelect={(value) => onUpdate({ model: value })}
+          onInherit={() => onUpdate({ model: null })}
+          testId="agent-model-row"
+        />
+        {(models ?? []).some((m) => m.unverified) && <UnverifiedCatalogNotice />}
+      </div>
 
       <div className="space-y-1">
         <div className="flex items-center gap-1.5">

@@ -8,8 +8,8 @@
  *
  * @module features/settings/ui/runtimes/rows/ModelRow
  */
+import { useId } from 'react';
 import type { ModelOption } from '@dorkos/shared/types';
-import { UnverifiedCatalogNotice } from '@/layers/features/status';
 import { knownModelsFrom } from '@/layers/shared/lib';
 import {
   Select,
@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
   SettingRow,
+  UnverifiedCatalogNotice,
 } from '@/layers/shared/ui';
 
 /**
@@ -80,6 +81,10 @@ export function ModelRow({
   // same catalog and owes the same admission (DOR-1674). An absent or empty
   // catalog is a warming one, not an unconfirmed one — no rows, no notice.
   const unverifiedCatalog = (models ?? []).some((m) => m.unverified);
+  // The admission must reach a screen reader too: the trigger describes itself
+  // by the notice, so a person navigating by control hears that the list is a
+  // bounded guess instead of only seeing it.
+  const noticeId = useId();
 
   return (
     <SettingRow
@@ -93,8 +98,9 @@ export function ModelRow({
           onValueChange={(next) => onChange(next === INHERIT ? null : next)}
         >
           <SelectTrigger
-            className="w-52"
+            className="w-full"
             aria-label={`Default ${runtimeLabel} model`}
+            {...(unverifiedCatalog ? { 'aria-describedby': noticeId } : {})}
             data-testid={`runtime-model-select-${runtimeType}`}
           >
             <SelectValue />
@@ -114,7 +120,7 @@ export function ModelRow({
             )}
           </SelectContent>
         </Select>
-        {unverifiedCatalog && <UnverifiedCatalogNotice />}
+        {unverifiedCatalog && <UnverifiedCatalogNotice id={noticeId} />}
       </div>
     </SettingRow>
   );

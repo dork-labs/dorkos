@@ -108,6 +108,13 @@ describe('runtime card showcases', () => {
     expect(broken).toHaveTextContent('Your default runtime isn’t connected');
   });
 
+  it('admits the capped catalog in exactly one demo, and no other grows one', () => {
+    renderShowcases();
+    // One demo hands its card an all-unverified catalog (DOR-1674); every
+    // other card's mock catalog is confirmed, so exactly one admission renders.
+    expect(screen.getAllByTestId('model-catalog-unverified').length).toBe(1);
+  });
+
   it('keeps a retired model selectable rather than blanking the field', () => {
     renderShowcases();
 
