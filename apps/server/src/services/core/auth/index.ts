@@ -381,7 +381,12 @@ export { toNodeHandler, fromNodeHeaders };
 // The session gate + its shared credential verifier. `verifyRequestAuth` is the
 // single verification path reused by the rewritten MCP auth middleware (task
 // 1.4); `sessionGate` is mounted app-wide in `app.ts`.
-export { sessionGate, verifyRequestAuth, type RequestUser } from './session-gate.js';
+export {
+  sessionGate,
+  verifyRequestAuth,
+  type RequestUser,
+  type VerifyRequestAuthOptions,
+} from './session-gate.js';
 
 // The legacy MCP key migration (task 1.4). Re-exported so `index.ts` can run the
 // startup seed on a clean seam right after `initAuth`.

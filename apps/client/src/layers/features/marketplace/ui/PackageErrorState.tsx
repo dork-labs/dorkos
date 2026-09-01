@@ -1,5 +1,5 @@
 import { AlertTriangle, WifiOff } from 'lucide-react';
-import { Button } from '@/layers/shared/ui';
+import { Button, LinkifiedText } from '@/layers/shared/ui';
 
 /** Network-related error pattern — surfaces the offline icon. */
 const NETWORK_ERROR_RE = /network|fetch|offline/i;
@@ -31,7 +31,9 @@ export function PackageErrorState({ error, onRetry }: PackageErrorStateProps) {
     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
       <Icon className="text-muted-foreground mb-4 size-10" aria-hidden />
       <h3 className="mb-2 text-base font-semibold">{heading}</h3>
-      <p className="text-muted-foreground mb-4 max-w-sm text-sm">{error.message}</p>
+      <p className="text-muted-foreground mb-4 max-w-sm text-sm">
+        <LinkifiedText text={error.message} />
+      </p>
       <Button variant="outline" onClick={onRetry}>
         Try again
       </Button>

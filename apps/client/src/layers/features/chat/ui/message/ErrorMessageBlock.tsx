@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AlertTriangle, ChevronDown, LogIn, RotateCcw } from 'lucide-react';
 import type { ErrorCategory } from '@dorkos/shared/types';
-import { Button } from '@/layers/shared/ui';
+import { Button, LinkifiedText, containsUrl } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { useSettingsDeepLink } from '@/layers/shared/model';
 
@@ -48,6 +48,25 @@ const ERROR_COPY: Record<ErrorCategory, { heading: string; subtext: string; retr
   };
 
 /**
+ * Categories whose own copy explains the failure on its own, so the runtime's
+ * message does not take the subtext slot.
+ *
+ * `execution_error` is deliberately absent: "An error occurred during
+ * execution." only restates its own heading, so on that category the runtime's
+ * own words take the subtext slot and the generic sentence is the fallback for
+ * when there are none. Before this, an inline `execution_error` part silently
+ * replaced a specific server-authored message — "That model isn't available.
+ * Pick another one from the model menu." — with that placeholder, because only
+ * `TurnFailedNotice` passed `subtext` explicitly.
+ */
+const SELF_EXPLANATORY_CATEGORIES: ReadonlySet<ErrorCategory> = new Set([
+  'max_turns',
+  'budget_exceeded',
+  'output_format_error',
+  'auth_error',
+]);
+
+/**
  * Build the runtime-aware auth heading. Neutral across causes (expired,
  * revoked, invalid key), falling back to a generic name when unresolved.
  */
@@ -86,13 +105,21 @@ function AuthErrorActions({ onRetry }: { onRetry?: () => void }) {
 }
 
 interface ErrorMessageBlockProps {
+  /**
+   * What the runtime actually said. Never dropped: it takes the subtext slot
+   * unless the category's own copy explains the failure better, in which case
+   * it is shown on its own line beneath it.
+   */
   message: string;
   category?: ErrorCategory;
   details?: string;
   onRetry?: () => void;
   /** Override the category-derived heading. */
   heading?: string;
-  /** Override the category-derived subtext. */
+  /**
+   * Override the subtext line. A caller that already puts `message` here (e.g.
+   * `TurnFailedNotice`) does not get it repeated underneath.
+   */
   subtext?: string;
   /**
    * Display name of the runtime that failed (e.g. "Claude", "Codex").
@@ -102,10 +129,23 @@ interface ErrorMessageBlockProps {
 }
 
 /**
- * Inline error block rendered in the assistant message stream.
- * Shows category-specific heading/sub-text, optional retry button,
- * and collapsible raw error details. For `auth_error` it renders a primary
+ * Inline error block rendered in the assistant message stream — the single
+ * renderer for every chat-surfaced runtime error (inline error parts, the
+ * panel-level `TurnFailedNotice`, and transport errors from `ChatPanel`).
+ *
+ * Shows a category-specific heading, the failure text, an optional retry
+ * button, and collapsible raw details. For `auth_error` it renders a primary
  * "Fix sign-in" action that deep-links to Settings → Runtimes.
+ *
+ * **Nothing the runtime said is thrown away, and every URL in it is a real
+ * link.** Both were broken: friendly `auth_error` copy replaced the raw
+ * message outright (so an OpenRouter "add credits at <url>" arrived with the
+ * actionable half missing), the generic `execution_error` sentence shadowed
+ * server-authored copy on the inline path, and all three text slots rendered
+ * as inert text nodes — a URL in an error was something to retype by hand.
+ * Text renders through {@link LinkifiedText}: literal text with bare `http(s)`
+ * URLs as real anchors, deliberately NOT as markdown (see that module for why
+ * untrusted machine output is linkified rather than parsed).
  */
 export function ErrorMessageBlock({
   message,
@@ -124,7 +164,42 @@ export function ErrorMessageBlock({
   const derivedHeading = isAuthError ? authHeading(runtimeLabel) : copy?.heading;
   const derivedSubtext = isAuthError ? authSubtext(runtimeLabel) : copy?.subtext;
   const heading = headingOverride ?? derivedHeading ?? 'Error';
-  const subtext = subtextOverride ?? derivedSubtext ?? message;
+  const runtimeText = message.trim();
+  // Category copy that explains the failure keeps the subtext slot; anywhere
+  // else the runtime's own words win, with the category sentence as fallback.
+  const explainsItself = category !== undefined && SELF_EXPLANATORY_CATEGORIES.has(category);
+  const subtext =
+    subtextOverride ??
+    (explainsItself ? derivedSubtext : runtimeText || derivedSubtext) ??
+    runtimeText;
+  // `subtext` is trimmed before comparing because two of the three callers
+  // (`TurnFailedNotice`, `ChatPanel`) pass the SAME string as both `message`
+  // and `subtext`. Comparing a trimmed message against an untrimmed subtext
+  // made a provider message with a trailing newline — exactly the shape the
+  // `whitespace-pre-wrap` below exists for — print twice.
+  const subtextText = subtext.trim();
+  // What the runtime actually said, when it is worth a line of its own.
+  //
+  // **A link is the test, and it is not arbitrary.** For a category whose own
+  // sentence already explains the failure, the runtime message is usually a
+  // paraphrase of that sentence rather than news — and on claude-code, the
+  // DEFAULT runtime, it is not provider text at all: the server already
+  // substituted DorkOS's own copy ("Your sign-in stopped working. Sign in again
+  // to keep going." — `messaging/message-sender.ts`) and parked the raw string
+  // in `details`. Printing that under the friendly copy produced three lines
+  // saying one thing, which reads as three separate failures (DOR-1661 review).
+  // A link is the one thing a generic sentence structurally cannot carry, and
+  // losing it is what the operator actually reported. Everything else stays
+  // reachable under Details rather than being dropped.
+  const carriesLink = useMemo(() => containsUrl(runtimeText), [runtimeText]);
+  const isRedundant = !runtimeText || runtimeText === subtextText || runtimeText === heading;
+  const runtimeMessage = !isRedundant && (!explainsItself || carriesLink) ? runtimeText : null;
+  // Never lost: a message that earns no prose line joins the raw details
+  // instead of falling off the screen.
+  const detailsText =
+    isRedundant || runtimeMessage !== null || details?.includes(runtimeText)
+      ? details
+      : [details, runtimeText].filter(Boolean).join('\n');
   // When a category is provided, use its retryable flag. When no category,
   // trust the caller — if they passed onRetry, they want the button.
   const retryable = copy?.retryable ?? !!onRetry;
@@ -141,8 +216,18 @@ export function ErrorMessageBlock({
         <AlertTriangle className="text-destructive mt-0.5 size-4 shrink-0" />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">{heading}</p>
-          <p className="text-muted-foreground mt-0.5 text-sm">{subtext}</p>
-          {details && (
+          {/* `whitespace-pre-wrap` because this is machine output, not prose:
+              a multi-line provider message keeps its line breaks instead of
+              collapsing into one run-on sentence. */}
+          <p className="text-muted-foreground mt-0.5 text-sm whitespace-pre-wrap">
+            <LinkifiedText text={subtext} />
+          </p>
+          {runtimeMessage && (
+            <p className="text-muted-foreground mt-1 text-sm whitespace-pre-wrap">
+              <LinkifiedText text={runtimeMessage} />
+            </p>
+          )}
+          {detailsText && (
             <button
               type="button"
               onClick={() => setShowDetails(!showDetails)}
@@ -159,7 +244,7 @@ export function ErrorMessageBlock({
             </button>
           )}
           <AnimatePresence initial={false}>
-            {showDetails && details && (
+            {showDetails && detailsText && (
               <motion.div
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
@@ -168,7 +253,7 @@ export function ErrorMessageBlock({
                 className="overflow-hidden"
               >
                 <pre className="bg-muted/50 mt-1 max-h-40 overflow-auto rounded p-2 text-xs whitespace-pre-wrap">
-                  {details}
+                  <LinkifiedText text={detailsText} />
                 </pre>
               </motion.div>
             )}

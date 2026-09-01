@@ -4,6 +4,8 @@ The client has one place that decides which link schemes may ever be opened, fro
 
 **It does not cover chat markdown links.** Those are rendered and dispatched by Streamdown under a separate, looser policy — see [The chat markdown divergence](#the-chat-markdown-divergence-dor-547) below. Read this page as describing one of two link policies in the app, not the only one.
 
+**Nor does it cover links found inside error text.** Those are produced by `LinkifiedText`, which does its own URL detection and then reuses `MarkdownLink` — see [Links inside untrusted machine output](#links-inside-untrusted-machine-output) below. Three surfaces, one confirmation modal.
+
 ## The policy
 
 `DISPATCHABLE_PROTOCOLS` (`link-navigation.ts`) is:
@@ -70,6 +72,23 @@ A room message's whole row is wrapped in `EntryActionMenu`, whose desktop trigge
 
 **Desktop Electron scope note.** The Electron shell registers no `context-menu` handler on any `webContents` at all (only `apps/desktop/src/main/tray.ts`, the system tray icon — unrelated). It shows no native context menu for anything in the renderer, links included, on any surface — a pre-existing gap, unrelated to this fix, tracked separately.
 
+## Links inside untrusted machine output
+
+Error text is not prose and is not ours: a runtime error can be authored by a remote provider, and it routinely carries the one address that would fix the problem ("add credits at ..."). It used to reach the screen as an inert text node, so the address had to be retyped by hand.
+
+`apps/client/src/layers/shared/ui/linkified-text.tsx` renders those strings: **literal text, with bare `http:`/`https:` URLs turned into anchors, and nothing else interpreted.** It is deliberately NOT markdown, and that is the load-bearing part of this section:
+
+- **Fidelity.** Error strings contain `*`, `_`, backticks, `#`, `-`, `>`, JSON braces and newlines all the time. Markdown would restyle and restructure exactly the string a person is reading literally.
+- **No label/href divergence.** A markdown-rendered error could produce `[https://dorkos.ai/settings](https://attacker.example)` — a link whose visible label lies about where it goes, drawn inside DorkOS's own error chrome. Here every anchor's label is its **normalized** href, so the mismatch is not expressible. The URL scanner stops at `[` and `]` for the same reason: without that, `](` fused two hosts into one match.
+
+  **Normalized is the load-bearing word, and showing the raw string was not enough.** The browser rewrites an href before it requests it, so a label copied character-for-character from the provider can still name a different host than the one it opens: `https://dоrkos.ai` with a Cyrillic `о` (U+043E) is fetched as `https://xn--drkos-jye.ai`, `dorkos.ai。evil.example` collapses to the host `dorkos.ai.evil.example` under UTS46, and a U+202E override renders a `.exe` path as `.png`. `LinkifiedText` therefore renders `new URL(match).href` as both the label and the destination, so punycode and percent-encoding are visible to the reader. One shape survives normalization — `https://dorkos.ai@evil.example/x` normalizes to itself while resolving to `evil.example` — so URLs carrying userinfo are refused outright and stay plain text.
+
+- **No images, no HTML, no `allowedTags` question.** A markdown-rendered error could fire a tracking beacon by carrying an image. This surface has no element vocabulary at all.
+
+The anchor itself is not reinvented: `LinkifiedText` renders `MarkdownLink`, so the confirmation modal, `rel`, `target="_blank"` and the modified-click policy are identical to the markdown surfaces above, and the desktop shell's `setWindowOpenHandler` routes them the same way.
+
+Current callers: `ErrorMessageBlock` (every chat-surfaced runtime error), `TunnelError`, `PackageErrorState`, `AdapterCardError` and `RouteErrorFallback`. When adding one, pass the raw string — do not pre-format it.
+
 ## Adding a scheme
 
 Two edits, or the scheme silently half-works:
@@ -83,3 +102,4 @@ Two edits, or the scheme silently half-works:
 - `apps/client/src/layers/shared/lib/link-navigation.ts` — the contract itself (`classifyLink`, `DISPATCHABLE_PROTOCOLS`, `openLink`, `openExternalLink`).
 - `apps/client/src/layers/shared/ui/link-safety-modal.tsx` — the shared confirmation surface both policies render through.
 - `apps/client/src/layers/shared/ui/markdown-link.tsx` — the real-anchor `a` override every Streamdown instance in the app uses, unconditionally, instead of Streamdown's own button-rendering `linkSafety` handling (DOR-1272).
+- `apps/client/src/layers/shared/ui/linkified-text.tsx` — the linkify-only renderer for untrusted machine output (error messages), which reuses `MarkdownLink` for the anchor itself.

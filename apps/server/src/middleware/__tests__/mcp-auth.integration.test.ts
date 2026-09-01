@@ -37,6 +37,7 @@ vi.mock('../../services/core/auth/mcp-local-token.js', () => ({
 import { getAuth, initAuth, sessionGate, toNodeHandler } from '../../services/core/auth/index.js';
 import { createMcpAuth } from '../mcp-auth.js';
 import { configManager, initConfigManager } from '../../services/core/config-manager.js';
+import { logger } from '../../lib/logger.js';
 import { env } from '../../env.js';
 
 const DOMAIN = 'dork.test';
@@ -208,6 +209,30 @@ describe('createMcpAuth — /mcp end-to-end (integration)', () => {
       setLegacyKey('dork_mcp_legacy_compat');
       const res = await postMcp(app, { auth: 'Bearer dork_mcp_legacy_compat' }).send(MUTATING_CALL);
       expect(res.status).toBe(200);
+    });
+
+    it('logs no API-key failure for a local-token request, but still does for a real one', async () => {
+      // The operator-visible half of this fix. better-auth's apiKey plugin logs
+      // its own `error`-level "Failed to validate API key" through the DorkOS
+      // logger before returning `{ valid: false }`. Every JSON-RPC round trip to
+      // `/mcp` is a separate POST, so a session with the `dorkos` MCP server
+      // wired in produced roughly four of those per turn — all of them about a
+      // bearer that was never a Better Auth key and was about to be accepted.
+      const errors = vi.spyOn(logger, 'error').mockImplementation(() => {});
+      try {
+        const ok = await postMcp(app, { auth: `Bearer ${LOCAL_TOKEN}` }).send(MUTATING_CALL);
+        expect(ok.status).toBe(200);
+        expect(errors.mock.calls.flat().join(' ')).not.toContain('Failed to validate API key');
+
+        // The discriminating half: a bearer that really could have been a key
+        // must still report its failure, or this would just be muting the log.
+        errors.mockClear();
+        const bad = await postMcp(app, { auth: 'Bearer dork_not_a_real_key' }).send(MUTATING_CALL);
+        expect(bad.status).toBe(401);
+        expect(errors.mock.calls.flat().join(' ')).toContain('Failed to validate API key');
+      } finally {
+        errors.mockRestore();
+      }
     });
   });
 

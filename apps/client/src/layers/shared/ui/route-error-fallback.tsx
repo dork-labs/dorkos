@@ -3,6 +3,7 @@ import type { ErrorComponentProps } from '@tanstack/react-router';
 import { AlertTriangle, Check, Copy, X } from 'lucide-react';
 import { cn, isDynamicImportError, useCopyFeedback } from '@/layers/shared/lib';
 import { Button } from './button';
+import { LinkifiedText } from './linkified-text';
 
 /**
  * Default error fallback for route-level errors.
@@ -43,10 +44,15 @@ export function RouteErrorFallback({ error }: ErrorComponentProps) {
       <AlertTriangle className="text-muted-foreground size-10" />
       <div className="flex flex-col items-center gap-2 text-center">
         <h2 className="text-foreground text-lg font-semibold">Something went wrong</h2>
+        {/* The message linkifies; the dev stack trace below deliberately does
+            not — its `http://localhost:<port>/src/...` entries are source
+            locations, not somewhere to send a person. */}
         <p className="text-muted-foreground max-w-md text-sm">
-          {staleChunk
-            ? 'The app may have updated since you opened this tab. Reloading usually fixes it.'
-            : error.message}
+          {staleChunk ? (
+            'The app may have updated since you opened this tab. Reloading usually fixes it.'
+          ) : (
+            <LinkifiedText text={error.message} />
+          )}
         </p>
       </div>
 

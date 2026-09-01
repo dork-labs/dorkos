@@ -61,4 +61,14 @@ describe('TunnelError', () => {
     render(<TunnelError error="ERR_NGROK_105 bad auth" onRetry={vi.fn()} />);
     expect(screen.queryByText('ERR_NGROK_105 bad auth')).toBeNull();
   });
+
+  it('renders a URL in the error as a real link', () => {
+    render(
+      <TunnelError error="tunnel refused: see https://status.example/incidents" onRetry={vi.fn()} />
+    );
+    expect(screen.getByRole('link', { name: 'https://status.example/incidents' })).toHaveAttribute(
+      'href',
+      'https://status.example/incidents'
+    );
+  });
 });

@@ -24,7 +24,12 @@ export type McpAuthSurface = 'mcp' | 'a2a';
  *   1. `env.MCP_API_KEY` — a static override for headless deployments (exact,
  *      constant-time). Highest priority, un-revocable from the UI.
  *   2. A per-user Better Auth API key (or session cookie) via the shared
- *      {@link verifyRequestAuth} — the login-on identity path.
+ *      {@link verifyRequestAuth} — the login-on identity path. When the bearer
+ *      is this instance's own local MCP token the API-key half of that check is
+ *      skipped (it could not match, and the apiKey plugin logs an untagged
+ *      error on the way to saying so); the cookie half still runs, so which
+ *      acceptor allows a request — and the identity recorded for it — is
+ *      exactly what it was.
  *   3. Legacy compat window: the not-yet-seeded `config.mcp.apiKey`, accepted
  *      exactly until {@link seedLegacyMcpApiKey} folds it into a Better Auth key.
  *   4. The per-instance local MCP token from {@link getMcpLocalToken}, **only
@@ -68,8 +73,27 @@ export function createMcpAuth({
       return;
     }
 
+    // Acceptor 4's own test, hoisted so acceptor 2 can be told what this bearer
+    // is — same `!authEnabled` gate and same cached read (`getMcpLocalToken()`
+    // returns a value, never touching the filesystem), so it can only be true
+    // where acceptor 4 would itself have matched.
+    const localToken = authEnabled ? null : getMcpLocalToken();
+    const bearerIsLocalToken = !!localToken && !!token && constantTimeEquals(token, localToken);
+
     // 2. Per-user Better Auth API key or session cookie (shared verifier).
-    const identity = await verifyRequestAuth(req);
+    //
+    // The local token is minted into a `0600` file and never written to the
+    // `apikey` table, so it provably cannot verify as a per-user Better Auth
+    // key. Saying so skips a lookup that could only fail — and whose failure the
+    // apiKey plugin logs as its own untagged `error` line, roughly four per
+    // agent turn once `runtimes.dorkosTools` wires `/mcp` into a session. The
+    // cookie half of the verifier still runs, so the identity recorded below is
+    // unchanged. The legacy `config.mcp.apiKey` gets no such hint on purpose:
+    // `seedLegacyMcpApiKey` stores that exact value AS a Better Auth key, so
+    // there it is a real per-user credential acceptor 2 must still resolve.
+    const identity = await verifyRequestAuth(req, {
+      ...(bearerIsLocalToken ? { bearerIsNotAnApiKey: true } : {}),
+    });
     if (identity) {
       // Recorded, not just accepted. A capability that acts on somebody's own
       // data has to know WHICH person is asking, and this is the only place on
@@ -87,14 +111,12 @@ export function createMcpAuth({
       return;
     }
 
-    // 4. Per-instance local token — only when login is off (ADR-0320: the token
-    //    is inactive once login is on, yielding to per-user keys).
-    if (!authEnabled) {
-      const localToken = getMcpLocalToken();
-      if (localToken && token && constantTimeEquals(token, localToken)) {
-        next();
-        return;
-      }
+    // 4. Per-instance local token. Its `!authEnabled` gate (ADR-0320: the token
+    //    is inactive once login is on, yielding to per-user keys) lives in
+    //    `localToken` above, which is where acceptor 2 needed the same answer.
+    if (bearerIsLocalToken) {
+      next();
+      return;
     }
 
     // ── No acceptor matched ──────────────────────────────────────────────────

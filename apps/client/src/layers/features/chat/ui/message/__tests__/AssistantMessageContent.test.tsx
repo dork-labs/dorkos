@@ -345,3 +345,45 @@ describe('AssistantMessageContent — inline MCP sign-in (DOR-1004)', () => {
     expect(screen.getByTestId('mcp-signin-card')).toBeInTheDocument();
   });
 });
+
+describe('AssistantMessageContent — error parts keep the server-authored message', () => {
+  it('shows an execution_error message instead of generic category copy', () => {
+    // The inline path passes no `subtext`, so the model-unavailable remedy
+    // the server authored used to be replaced by "An error occurred during
+    // execution." before it reached the screen.
+    render(
+      <AssistantMessageContent
+        message={makeMessage([
+          {
+            type: 'error' as const,
+            message: "That model isn't available. Pick another one from the model menu.",
+            category: 'execution_error' as const,
+          },
+        ])}
+      />
+    );
+
+    expect(
+      screen.getByText("That model isn't available. Pick another one from the model menu.")
+    ).toBeInTheDocument();
+    expect(screen.queryByText('An error occurred during execution.')).not.toBeInTheDocument();
+  });
+
+  it('renders a URL in an error message as a real link', () => {
+    render(
+      <AssistantMessageContent
+        message={makeMessage([
+          {
+            type: 'error' as const,
+            message: 'Out of credits. Add more at https://openrouter.ai/settings/credits',
+            category: 'execution_error' as const,
+          },
+        ])}
+      />
+    );
+
+    expect(
+      screen.getByRole('link', { name: 'https://openrouter.ai/settings/credits' })
+    ).toHaveAttribute('href', 'https://openrouter.ai/settings/credits');
+  });
+});
