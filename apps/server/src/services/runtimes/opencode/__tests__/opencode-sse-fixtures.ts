@@ -415,16 +415,72 @@ export function globalEvent(directory: string, payload: OpenCodeWireEvent): Glob
 // === Scripted turns ===
 
 /**
- * A complete streamed text turn, exactly as the v1.17.13 server publishes it:
- * busy status → empty text-start snapshot → true increments as
- * `message.part.delta` → full-text end snapshot → completed assistant message
- * (usage) → idle status → `session.idle` terminal.
+ * A stand-in for the DorkOS context block `buildOpenCodeParts` prepends to every
+ * prompt — the real one runs to ~13 KB of `<gen_ui>`, `<agent_identity>`,
+ * `<room_tools>` and the rest.
  */
-export function opencodeSimpleTurn(sessionID: string, text: string): OpenCodeWireEvent[] {
+const INJECTED_CONTEXT_ECHO =
+  '<gen_ui>\nDorkOS generative UI lets you render native widgets.\n</gen_ui>\n\n' +
+  '<agent_identity>\nYou are DorkBot.\n</agent_identity>';
+
+/**
+ * The sidecar echoing back the prompt DorkOS just wrote.
+ *
+ * Not an embellishment — this is what the live wire does, verbatim in
+ * `fixtures/live-child-permission.jsonl` (lines 3→4→5): the user message is
+ * announced, then BOTH of its parts are republished as ordinary
+ * `message.part.updated` events — the injected DorkOS context carrying
+ * `synthetic: true`, then the person's pristine text carrying no flag at all.
+ *
+ * Scripting it is what makes the leak reachable in a mocked run. Turns that
+ * omit it cannot fail the conformance invariant that forbids a turn from
+ * speaking its own prompt back (DOR-1659), so they would pass it saying nothing.
+ *
+ * @param sessionID - The OpenCode session the prompt was written to.
+ * @param prompt - The person's message, exactly as DorkOS sent it.
+ */
+function opencodePromptEcho(sessionID: string, prompt: string): OpenCodeWireEvent[] {
+  const messageID = 'msg_0000';
+  return [
+    messageUpdated(userMessage(sessionID, messageID)),
+    partUpdated({
+      ...textPart(sessionID, 'prt_u0', INJECTED_CONTEXT_ECHO, { messageID }),
+      synthetic: true,
+    }),
+    partUpdated(textPart(sessionID, 'prt_u1', prompt, { messageID })),
+  ];
+}
+
+/**
+ * A complete streamed text turn, exactly as the v1.17.13 server publishes it:
+ * the sidecar's echo of the prompt ({@link opencodePromptEcho}) → busy status →
+ * the assistant `message.updated` announcing the message → empty text-start
+ * snapshot → true increments as `message.part.delta` → full-text end snapshot →
+ * the same message again, now completed (usage) → idle status → `session.idle`
+ * terminal.
+ *
+ * The two announcements are not decoration. Parts name only a `messageID`, so
+ * they are what tell the mapper which message is the assistant's and which is
+ * the prompt DorkOS wrote (`event-mapper.ts#isAssistantMessage`) — every one of
+ * these builders leads with the assistant's because the sidecar does.
+ *
+ * @param sessionID - The OpenCode session the turn runs in.
+ * @param text - What the assistant says.
+ * @param opts - `prompt` is the person's message the sidecar echoes back; it
+ *   must match what the caller actually sent for the echo to be honest.
+ */
+export function opencodeSimpleTurn(
+  sessionID: string,
+  text: string,
+  opts: { prompt?: string } = {}
+): OpenCodeWireEvent[] {
+  const { prompt = 'a prompt the person wrote' } = opts;
   const partID = 'prt_text01';
   const mid = Math.ceil(text.length / 2);
   return [
+    ...opencodePromptEcho(sessionID, prompt),
     statusEvent(sessionID, { type: 'busy' }),
+    messageUpdated(assistantMessage(sessionID)),
     partUpdated(textPart(sessionID, partID, '')),
     partDelta(sessionID, partID, text.slice(0, mid)),
     partDelta(sessionID, partID, text.slice(mid)),
@@ -440,6 +496,7 @@ export function opencodeToolTurn(sessionID: string): OpenCodeWireEvent[] {
   const input = { command: 'ls -la' };
   return [
     statusEvent(sessionID, { type: 'busy' }),
+    messageUpdated(assistantMessage(sessionID)),
     partUpdated(toolPart(sessionID, 'call_001', 'bash', toolStatePending(input))),
     partUpdated(toolPart(sessionID, 'call_001', 'bash', toolStateRunning(input))),
     partUpdated(
@@ -468,6 +525,7 @@ export function opencodeSubagentTurn(
   const metadata = taskToolMetadata(childSessionID, sessionID);
   return [
     statusEvent(sessionID, { type: 'busy' }),
+    messageUpdated(assistantMessage(sessionID)),
     partUpdated(taskToolPart(sessionID, 'call_task', toolStatePending(input))),
     partUpdated(taskToolPart(sessionID, 'call_task', toolStateRunning(input))),
     partUpdated(taskToolPart(sessionID, 'call_task', toolStateRunning(input), metadata)),
@@ -493,6 +551,7 @@ export function opencodeApprovalTurn(sessionID: string): OpenCodeWireEvent[] {
   const input = { command: 'rm -rf dist' };
   return [
     statusEvent(sessionID, { type: 'busy' }),
+    messageUpdated(assistantMessage(sessionID)),
     partUpdated(toolPart(sessionID, 'call_001', 'bash', toolStatePending(input))),
     permissionAsked(permissionRequest(sessionID, { id: 'per_0001', callID: 'call_001' })),
     permissionReplied(sessionID, 'per_0001', 'once'),
@@ -526,6 +585,7 @@ export function opencodeAbortedTurn(sessionID: string, partialText: string): Ope
   const partID = 'prt_text01';
   return [
     statusEvent(sessionID, { type: 'busy' }),
+    messageUpdated(assistantMessage(sessionID)),
     partUpdated(textPart(sessionID, partID, '')),
     partDelta(sessionID, partID, partialText),
     sessionError(sessionID, abortedError()),
@@ -546,6 +606,8 @@ export function interleavedGlobalStream(): GlobalEvent[] {
   return [
     globalEvent(DIRECTORY, statusEvent(a, { type: 'busy' })),
     globalEvent(DIRECTORY, statusEvent(b, { type: 'busy' })),
+    globalEvent(DIRECTORY, messageUpdated(assistantMessage(a))),
+    globalEvent(DIRECTORY, messageUpdated(assistantMessage(b))),
     globalEvent(DIRECTORY, partUpdated(textPart(a, 'prt_a1', ''))),
     globalEvent(DIRECTORY, partUpdated(textPart(b, 'prt_b1', ''))),
     globalEvent(DIRECTORY, partDelta(a, 'prt_a1', 'Alpha ')),

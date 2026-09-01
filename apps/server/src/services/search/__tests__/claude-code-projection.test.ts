@@ -38,6 +38,45 @@ function project(lines: string[], firstOrdinal = 0) {
 }
 
 describe('projecting Claude Code transcripts', () => {
+  // The birth turn wears the person's role and reaches this projection intact:
+  // `stripSystemTags` strips `<system-reminder>` and the eight `CONTEXT_TAG`
+  // wrappers, and `dork-kickoff` is not one of them (DOR-1659).
+  it('leaves the birth turn out — the kickoff is DorkOS asking, not the person', () => {
+    const projection = project([
+      said('<dork-kickoff>\nIntroduce yourself and offer a first action.\n</dork-kickoff>'),
+      answered([{ type: 'text', text: "Hi — I'm Keeper." }]),
+    ]);
+
+    expect(projection.messages).toEqual([
+      expect.objectContaining({ ordinal: 0, role: 'assistant', body: "Hi — I'm Keeper." }),
+    ]);
+    // Dropped as speech, not as a parse failure.
+    expect(projection.skipped).toBe(0);
+  });
+
+  it('drops the kickoff even when DorkOS prepended a context block to it', () => {
+    const projection = project([
+      said(
+        '<git_status>\nIs git repo: true\n</git_status>\n\n' +
+          '<dork-kickoff>\nIntroduce yourself.\n</dork-kickoff>'
+      ),
+    ]);
+
+    expect(projection.messages).toEqual([]);
+  });
+
+  it('still indexes a message that merely MENTIONS the kickoff tag', () => {
+    // The envelope predicate needs BOTH anchors: quoting the tag is real speech.
+    const projection = project([said('what does <dork-kickoff> mean in the source?')]);
+
+    expect(projection.messages).toEqual([
+      expect.objectContaining({
+        role: 'user',
+        body: 'what does <dork-kickoff> mean in the source?',
+      }),
+    ]);
+  });
+
   it('keeps what a person and an agent said, in prose', () => {
     const projection = project([
       said('what did we decide about dogs'),

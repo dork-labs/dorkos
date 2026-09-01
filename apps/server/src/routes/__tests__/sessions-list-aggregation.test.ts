@@ -163,14 +163,39 @@ const ocTextPart = (text: string, end = false) => ({
   time: { start: 1_720_000_000_000, ...(end ? { end: 1_720_000_009_000 } : {}) },
 });
 
+/**
+ * The assistant message the turn's parts belong to, announced (as the sidecar
+ * always does) before any of them arrives.
+ *
+ * Load-bearing: a part names only its `messageID`, so this announcement is what
+ * tells the adapter the parts below are the assistant's rather than the prompt
+ * DorkOS wrote — and parts it cannot attribute to the assistant are dropped
+ * (`event-mapper.ts#isAssistantMessage`, DOR-1659). Uncompleted here, so it
+ * carries no usage of its own; the terminal `session.idle` ends the turn.
+ */
+const ocAssistantMessage = () => ({
+  id: 'msg_a1',
+  sessionID: OC_SESSION_ID,
+  role: 'assistant',
+  time: { created: 1_720_000_000_000 },
+  parentID: 'msg_u1',
+  modelID: 'llama3.3:70b',
+  providerID: 'ollama',
+  mode: 'build',
+  path: { cwd: OPENCODE_DIRECTORY, root: OPENCODE_DIRECTORY },
+  cost: 0,
+  tokens: { input: 10, output: 3, reasoning: 0, cache: { read: 0, write: 0 } },
+});
+
 /** Wrap a wire event in the `/global/event` `{directory, payload}` envelope. */
 const ocEnvelope = (payload: unknown) => ({ directory: OPENCODE_DIRECTORY, payload });
 
 /**
  * One full scripted `/global/event` turn, exactly as the v1.17.13 sidecar
- * publishes it: connect marker → busy → empty text-start snapshot → true
- * increments as `message.part.delta` → full-text end snapshot → the
- * authoritative `session.idle` terminal.
+ * publishes it: connect marker → busy → the assistant `message.updated`
+ * announcing the message → empty text-start snapshot → true increments as
+ * `message.part.delta` → full-text end snapshot → the authoritative
+ * `session.idle` terminal.
  */
 const opencodeTurn = () => [
   ocEnvelope({ type: 'server.connected', properties: {} }),
@@ -178,6 +203,7 @@ const opencodeTurn = () => [
     type: 'session.status',
     properties: { sessionID: OC_SESSION_ID, status: { type: 'busy' } },
   }),
+  ocEnvelope({ type: 'message.updated', properties: { info: ocAssistantMessage() } }),
   ocEnvelope({ type: 'message.part.updated', properties: { part: ocTextPart('') } }),
   ocEnvelope({
     type: 'message.part.delta',

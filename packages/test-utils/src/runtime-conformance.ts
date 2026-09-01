@@ -90,6 +90,20 @@ export interface RuntimeConformanceOpts {
    */
   makeCompactingRuntime?: () => AgentRuntime;
   /**
+   * Why this runtime legitimately repeats the message it was triggered with
+   * back in its own output.
+   *
+   * Exactly one thing qualifies: a scripted fixture whose whole contract is to
+   * answer deterministically from what it was sent (test-mode's `Echo: …`). No
+   * runtime that reaches a real model qualifies — replaying the prompt is the
+   * DOR-1659 bug, not a style.
+   *
+   * Narrow on purpose: declaring it waives ONLY the trigger-content half of the
+   * check. The injected-context half still runs, because no runtime, scripted or
+   * not, may ever stream another person's `<room_context>` back into a room.
+   */
+  echoesTriggerReason?: string;
+  /**
    * Provided ONLY by LOG-BACKED runtimes (codex, opencode, test-mode) that
    * declare `logBackedHistory` and persist their completed turns to the durable
    * session-event store (DOR-189). Given a runtime, a fresh session id, and the
@@ -588,6 +602,50 @@ const PERMISSION_AXES = ['trust', 'working'];
 const TERMINAL_EVENT_TYPE = 'done';
 
 /**
+ * The blocks DorkOS wraps around a person's message before handing it to a
+ * runtime — the runtime-neutral agent context (`runtimes/shared/agent-context.ts`),
+ * the per-turn `AdditionalContext` entries (ADR-0273, `ContextKind`), OpenCode's
+ * `<gen_ui>` and `<room_tools>` preamble, and the `<dork-kickoff>` birth-turn
+ * envelope.
+ *
+ * Listed rather than imported: these tags are written as literals at the seams
+ * that build them, there is no shared registry to read, and a conformance suite
+ * that imported one adapter's constants would stop being runtime-neutral.
+ *
+ * The list is therefore best-effort, and safely so: a tag missing from it only
+ * makes this half of the check weaker, never wrong. The exact match on the
+ * trigger content beside it needs no list at all, and is the half that actually
+ * caught DOR-1659.
+ *
+ * `env` is the one entry a model could plausibly type on its own, so in LIVE
+ * mode it is the one that could fail on an honest answer. It stays because it
+ * names a block DorkOS really does inject and dropping it would trade real
+ * coverage for a hypothetical, and because the failure is self-describing: the
+ * assertion message names the tag, so an answer that genuinely said `<env>`
+ * reads as exactly that rather than as a mystery. Narrow the PROMPT before
+ * narrowing this list.
+ */
+const INJECTED_CONTEXT_TAGS = [
+  'gen_ui',
+  'agent_identity',
+  'agent_persona',
+  'agent_safety_boundaries',
+  'agent_memory',
+  'session_model',
+  'dorkos_context',
+  'user_profile',
+  'env',
+  'room_tools',
+  'room_context',
+  'relay_context',
+  'git_status',
+  'ui_state',
+  'staged_context',
+  'seed_context',
+  'dork-kickoff',
+];
+
+/**
  * The lifecycle that claims a turn is running RIGHT NOW — what the presence
  * strip renders as "working".
  *
@@ -956,6 +1014,7 @@ export function runtimeConformance(
     userLastMessageAtOmittedReason,
     systemPromptAppendTurns,
     systemPromptAppendUnprovenReason,
+    echoesTriggerReason,
   } = opts;
 
   /**
@@ -1447,6 +1506,52 @@ export function runtimeConformance(
         for (const event of events) {
           if (event.type !== 'operation_progress') continue;
           assertOperationProgress(event);
+        }
+      });
+
+      it('never speaks the trigger back, nor any context DorkOS wrapped around it', async () => {
+        // A turn's output is the model's answer. The prompt DorkOS wrote — the
+        // person's words plus whatever identity, environment and room context
+        // the adapter injected around them — is INPUT, and a runtime that
+        // replays it as output is not merely untidy: that stream is what a room
+        // post is collected from (`room-turn-runner.ts`), what a task-run
+        // summary's first 500 characters are taken from, and what the durable
+        // event log stores, so an echo puts other people's `<room_context>` text
+        // into a shared room and keeps it there. Caught for real in OpenCode
+        // (DOR-1659), where the sidecar publishes the user's own message parts
+        // on the same wire as the assistant's; asserted here for every runtime
+        // because nothing about the mistake is OpenCode-specific.
+        const runtime = makeRuntime();
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
+
+        const events = await drainTurn(runtime, sessionId);
+        const spoken = events
+          .filter((event) => event.type === 'text_delta' || event.type === 'thinking_delta')
+          .map((event) => (event.data as { text?: unknown }).text)
+          .filter((text): text is string => typeof text === 'string')
+          .join('');
+
+        // Every assertion below is a `not.toContain` on one string, so a fixture
+        // that stopped producing output would satisfy all of them saying
+        // nothing — the zero-subject shape REVIEW.md names. Prove there is a
+        // subject before judging it.
+        expect(
+          spoken,
+          'the turn produced no output at all — this check would pass vacuously'
+        ).not.toBe('');
+
+        if (echoesTriggerReason === undefined) {
+          expect(
+            spoken,
+            'the turn streamed the message it was triggered with back as its own output'
+          ).not.toContain(messageContent);
+        }
+        for (const tag of INJECTED_CONTEXT_TAGS) {
+          expect(
+            spoken,
+            `the turn streamed its injected <${tag}> context block back as its own output`
+          ).not.toContain(`<${tag}>`);
         }
       });
     });

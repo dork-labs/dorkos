@@ -16,7 +16,8 @@
  * - The client applies the same filter to its rendered list as a backstop
  *   (e.g. the in-process Direct transport, which bypasses HTTP routes).
  *
- * Suppression is deliberately narrow — three conditions, all required:
+ * Suppression in the RENDER path ({@link filterKickoffHistory}) is deliberately
+ * narrow — three conditions, all required:
  * 1. `role === 'user'` (an assistant message is never suppressed),
  * 2. the FIRST user record of the history only (the kickoff is by
  *    construction the birth session's opening turn),
@@ -26,11 +27,22 @@
  *    `</dork-kickoff>`. Either/or is not enough — a message that merely
  *    mentions, opens, or closes the tag is genuine content and stays visible.
  *
- * Accepted residual, documented honestly: a person who deliberately pastes a
- * complete, exact fence envelope as the entire FIRST user message of a session
- * is still suppressed. That is deliberate mimicry of the internal marker, not
- * accidental capture; no partial, quoted, or mid-conversation use of the tag
- * is ever affected.
+ * THE SEARCH INDEX APPLIES 1 AND 3, NEVER 2, and that is a real difference
+ * rather than an oversight. The three projections
+ * (`services/search/projections/{claude-code,codex,opencode}.ts`) call
+ * {@link isKickoffEnvelope} directly, because position is not a fact they hold:
+ * a projection reads records from a container it is walking incrementally by
+ * byte offset, so it has no history in hand to find a FIRST user record in, and
+ * re-reading the whole container to recover that position is the exact cost the
+ * frontier exists to avoid.
+ *
+ * So the two paths accept DIFFERENT residuals and the search one is wider.
+ * Render: a person who deliberately pastes a complete, exact fence envelope as
+ * the entire FIRST user message of a session has it hidden. Search: the same
+ * paste is unfindable ANYWHERE in a session — it still renders in the
+ * transcript, it just cannot be searched for. Both are deliberate mimicry of an
+ * internal marker rather than accidental capture, and on both paths a partial,
+ * quoted, or otherwise non-envelope use of the tag is never affected.
  *
  * @module shared/kickoff
  */

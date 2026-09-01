@@ -287,6 +287,14 @@ afterAll(async () => {
 });
 
 /**
+ * The prompt every conformance turn sends. Shared with the suite (via
+ * `messageContent`) and with the scripted turn's echo of it, so the sidecar
+ * mock cannot drift from what was actually sent — the invariant that forbids a
+ * turn from speaking its own prompt back is only as honest as that match.
+ */
+const CONFORMANCE_PROMPT = 'conformance ping';
+
+/**
  * Mock sidecar client for one conformance runtime. The conformance suite
  * drains `sendMessage` to completion and cannot push wire events mid-turn, so
  * every `/global/event` connection is minted with ONE full scripted turn
@@ -324,7 +332,7 @@ function makeConformanceClient(turn: OpenCodeWireEvent[]) {
           {
             info: userMessage(OC_SESSION_A, 'msg_0000'),
             parts: [
-              textPart(OC_SESSION_A, 'prt_u1', 'conformance ping', { messageID: 'msg_0000' }),
+              textPart(OC_SESSION_A, 'prt_u1', CONFORMANCE_PROMPT, { messageID: 'msg_0000' }),
             ],
           },
           {
@@ -351,7 +359,9 @@ function makeConformanceClient(turn: OpenCodeWireEvent[]) {
 
 /** Fresh mocked provider per runtime — task 3.6's verified construction seam. */
 function makeMockedProvider(
-  turn: OpenCodeWireEvent[] = opencodeSimpleTurn(OC_SESSION_A, 'pong from opencode')
+  turn: OpenCodeWireEvent[] = opencodeSimpleTurn(OC_SESSION_A, 'pong from opencode', {
+    prompt: CONFORMANCE_PROMPT,
+  })
 ): OpenCodeClientProvider {
   const client = makeConformanceClient(turn) as unknown as OpencodeClient;
   lastClient = client as unknown as ReturnType<typeof makeConformanceClient>;
@@ -381,6 +391,7 @@ runtimeConformance(
         ? 'OpenCodeRuntime (LIVE sidecar + local model) — AgentRuntime conformance'
         : 'OpenCodeRuntime (mocked sidecar) — AgentRuntime conformance',
     projectDir: PROJECT_DIR,
+    messageContent: CONFORMANCE_PROMPT,
     // OpenCode owns a durable native store (unlike stateless Codex), so a
     // completed turn MUST surface real history: scripted session.messages in
     // mocked mode, the sidecar's actual store in live mode.
@@ -428,7 +439,7 @@ runtimeConformance(
               throw new Error('OpenCode conformance: no mocked client to read the prompt off');
             }
             for (const systemPromptAppend of [first, second]) {
-              for await (const _event of runtime.sendMessage(sessionId, 'conformance ping', {
+              for await (const _event of runtime.sendMessage(sessionId, CONFORMANCE_PROMPT, {
                 cwd: PROJECT_DIR,
                 systemPromptAppend,
               })) {

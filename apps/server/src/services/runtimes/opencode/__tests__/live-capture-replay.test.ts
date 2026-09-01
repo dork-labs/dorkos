@@ -40,6 +40,18 @@ interface Capture {
  * Load a capture and recover its demux key from the capture itself: the parent
  * session is the only one that reports no `parentID`.
  */
+/**
+ * Every committed capture. Invariants that are about the WIRE rather than about
+ * one turn's shape are asserted against all of them.
+ */
+const CAPTURES = [
+  'live-cancel.jsonl',
+  'live-child-permission.jsonl',
+  'live-child-permission-stop.jsonl',
+  'live-child-tools.jsonl',
+  'live-delegate.jsonl',
+] as const;
+
 function loadCapture(name: string): Capture {
   const text = readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
   const events = text
@@ -106,6 +118,81 @@ function taskEvents(events: StreamEvent[]): StreamEvent[] {
   return events.filter((event) => event.type.startsWith('background_task_'));
 }
 
+/** Everything the turn would have rendered as the agent speaking or thinking. */
+function spokenText(events: StreamEvent[]): string {
+  return events
+    .filter((event) => event.type === 'text_delta' || event.type === 'thinking_delta')
+    .map((event) => (event.data as { text: string }).text)
+    .join('');
+}
+
+describe('live capture: the turn never speaks its own prompt back (DOR-1659)', () => {
+  /**
+   * The one capture that carries a real user message with its parts:
+   * `msg_ff0c2476…` is the DorkOS-written prompt, and the sidecar publishes BOTH
+   * of its parts as ordinary `message.part.updated` events — the injected DorkOS
+   * context (`synthetic: true`, opening `<gen_ui>`) and the person's pristine
+   * text. Before the role gate the mapper turned both into `text_delta`s, so the
+   * turn opened by reciting ~13 KB of its own context and then the prompt.
+   */
+  it('emits no injected context block and no echo of the prompt', async () => {
+    const spoken = spokenText(await replay('live-child-permission.jsonl'));
+
+    expect(spoken).not.toContain('<gen_ui>');
+    expect(spoken).not.toContain('DorkOS generative UI');
+    // The user's own text, verbatim from the capture's second user part.
+    expect(spoken).not.toContain('Call the task tool exactly once');
+    // Still a real turn: the assistant's own answer survives untouched.
+    expect(spoken).toContain('The directory contains one file named `note-a.txt`.');
+  });
+
+  /**
+   * The gate's load-bearing assumption, pinned so a wire change breaks a test
+   * rather than the product: a message's role is announced BEFORE any of its
+   * parts arrive. True of the user message (`live-child-permission` lines
+   * 3→4→5) and of the assistant's (8→14), which is why `isAssistantMessage` may
+   * fail closed on an id it has never heard of.
+   *
+   * Asserted across EVERY capture, not just the one that motivated the gate: the
+   * assumption is about the wire, so a probe of any turn shape is evidence about
+   * it, and a future capture recording a sidecar that stopped announcing first
+   * should fail here rather than silently mute that turn's output.
+   */
+  it.each(CAPTURES)('announces every message before any of its parts (%s)', async (name) => {
+    const capture = loadCapture(name);
+    const announced = new Set<string>();
+    let partsChecked = 0;
+
+    for (const event of capture.events) {
+      const payload = event.payload as {
+        type: string;
+        properties?: {
+          info?: { id: string; role?: string };
+          part?: { messageID: string };
+          messageID?: string;
+        };
+      };
+      const info = payload.properties?.info;
+      if (payload.type === 'message.updated' && info !== undefined) {
+        announced.add(info.id);
+        continue;
+      }
+      const messageId =
+        payload.type === 'message.part.updated'
+          ? payload.properties?.part?.messageID
+          : payload.type === 'message.part.delta'
+            ? payload.properties?.messageID
+            : undefined;
+      if (messageId === undefined) continue;
+      partsChecked += 1;
+      expect(announced).toContain(messageId);
+    }
+
+    // Never a vacuous pass: the capture must actually carry part events.
+    expect(partsChecked).toBeGreaterThan(0);
+  });
+});
+
 describe('live capture: user stops a turn with a subagent running', () => {
   it('reports the subagent as stopped', async () => {
     const events = await replay('live-cancel.jsonl');
@@ -163,9 +250,18 @@ describe('live capture: a subagent that finishes normally', () => {
     expect(events.filter((event) => event.type === 'background_task_done')).toHaveLength(1);
   });
 
+  /**
+   * The parent of this capture delegated and then said nothing of its own: its
+   * only `text` part is the USER's prompt, and everything it authored is
+   * `reasoning`. Until DOR-1659 this case asserted `text_delta`, and passed —
+   * on the leak. That is what an assertion written against a mapper that could
+   * not tell the prompt from the answer buys you, and why the streaming claim
+   * now names the events the parent actually produced.
+   */
   it('streams the parent turn and terminates on the parent session.idle', async () => {
     const events = await replay('live-delegate.jsonl');
-    expect(events.some((event) => event.type === 'text_delta')).toBe(true);
+    expect(events.some((event) => event.type === 'thinking_delta')).toBe(true);
+    expect(events.some((event) => event.type === 'text_delta')).toBe(false);
     expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
     expect(events.at(-1)!.type).toBe('done');
   });
