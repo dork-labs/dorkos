@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import type { AgentManifest, AgentManifestUpdate } from '@dorkos/shared/mesh-schemas';
 import type { EffortLevel } from '@dorkos/shared/types';
@@ -62,6 +62,7 @@ function ExecutionRow({
   testId,
   showHeader = true,
   className,
+  describedBy,
 }: {
   label: string;
   valueLabel: string;
@@ -75,6 +76,12 @@ function ExecutionRow({
   testId: string;
   /** Extra classes for the row's wrapper — how a caller spans it across the grid. */
   className?: string;
+  /**
+   * Id of an element that qualifies this row's value, put on the trigger as
+   * `aria-describedby`. The caller draws that element beneath the row, so
+   * without this a screen-reader user reaching the control never hears it.
+   */
+  describedBy?: string;
   /**
    * Draw the label and chip. Off when the caller already drew them because it
    * has to choose between this row and a truth sentence, and the label belongs
@@ -114,6 +121,7 @@ function ExecutionRow({
           <button
             type="button"
             className="border-input hover:bg-accent flex h-8 w-full items-center gap-1 rounded-md border px-2 text-sm transition-colors"
+            {...(describedBy ? { 'aria-describedby': describedBy } : {})}
             data-testid={testId}
           >
             <span
@@ -336,6 +344,14 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
     (knownAccounts.length > 1 || accountIsSetHere);
   const accountWarning = breakageFor(['account-unregistered']);
 
+  // With no provider connected the catalog arrives capped and every row marked
+  // unverified, and the notice under the row says so. The trigger points at it
+  // with `aria-describedby` — the same wiring the settings Model row uses — so
+  // a person navigating by control HEARS that the list is a bounded guess
+  // rather than only seeing the paragraph underneath (DOR-1674).
+  const catalogIsUnverified = (models ?? []).some((m) => m.unverified);
+  const unverifiedNoticeId = useId();
+
   return (
     <div className={cn('grid grid-cols-2 gap-3', className)}>
       {/* The wrapper is this cell of the grid; the notice rides under the row
@@ -359,8 +375,9 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
           onSelect={(value) => onUpdate({ model: value })}
           onInherit={() => onUpdate({ model: null })}
           testId="agent-model-row"
+          describedBy={catalogIsUnverified ? unverifiedNoticeId : undefined}
         />
-        {(models ?? []).some((m) => m.unverified) && <UnverifiedCatalogNotice />}
+        {catalogIsUnverified && <UnverifiedCatalogNotice id={unverifiedNoticeId} />}
       </div>
 
       <div className="space-y-1">

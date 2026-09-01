@@ -1,6 +1,8 @@
 ---
 covers:
   - 'fix(client): the settings Model row admits an unconfirmed catalog (DOR-1674)'
+  - 'fix(client): apply DOR-1674 adversarial-review findings'
+  - 'fix(client): thread the unverified-catalog admission to screen readers (DOR-1674)'
 ---
 
 ### Fixed
