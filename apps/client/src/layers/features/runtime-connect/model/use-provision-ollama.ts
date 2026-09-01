@@ -15,6 +15,7 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { RuntimeProvisionProgress } from '@dorkos/shared/transport';
 import type { OllamaProvisionResult } from '@dorkos/shared/runtime-connect';
+import { MODELS_KEY } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import { OLLAMA_DETECTION_KEY } from './use-opencode-provider';
 
@@ -60,6 +61,9 @@ export function useProvisionOllama(): UseProvisionOllama {
       // the true post-install state; a failed install leaves detection untouched.
       if (result.ok) {
         void queryClient.invalidateQueries({ queryKey: OLLAMA_DETECTION_KEY });
+        // A reachable Ollama changes the model menu too: the catalog can now be
+        // filtered to what is genuinely installed instead of guessed (DOR-1660).
+        void queryClient.invalidateQueries({ queryKey: [...MODELS_KEY] });
       }
     },
   });

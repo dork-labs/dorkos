@@ -73,6 +73,7 @@ import {
   getConnectedOpenCodeProvider,
 } from './providers/check-dependencies.js';
 import { detectOllama } from './providers/ollama.js';
+import { fetchOpenRouterCatalog, type OpenRouterCatalog } from './providers/openrouter.js';
 import {
   createOpenCodeEventContext,
   mapOpenCodeTurn,
@@ -100,7 +101,7 @@ import { OPENCODE_CAPABILITIES, STREAM_LIVE_TIMEOUT_MS } from './runtime-constan
 import { awaitAbortAck, delay } from './bounded-abort.js';
 import { buildOpenCodeParts, parseModelSelection } from './turn-input.js';
 import { resolveCompactionModel } from './compaction-model.js';
-import { projectModelOptions } from './providers/models.js';
+import { projectModelOptions, projectedProviderIds } from './providers/models.js';
 import { OpenCodeMcpManager } from './mcp-manager.js';
 
 /** Constructor dependencies for {@link OpenCodeRuntime} (composition root). */
@@ -778,8 +779,11 @@ export class OpenCodeRuntime implements AgentRuntime {
         await client.provider.list({ query: { directory: DEFAULT_CWD } }),
         'provider.list'
       );
-      const installedOllamaTags = await this.resolveInstalledOllamaTags(listed);
-      return projectModelOptions(listed, { installedOllamaTags });
+      const [installedOllamaTags, openRouterCatalog] = await Promise.all([
+        this.resolveInstalledOllamaTags(listed),
+        this.resolveOpenRouterCatalog(listed),
+      ]);
+      return projectModelOptions(listed, { installedOllamaTags, openRouterCatalog });
     } catch (err) {
       logger.warn('[OpenCodeRuntime] provider catalog unavailable', logError(err));
       return [];
@@ -788,8 +792,10 @@ export class OpenCodeRuntime implements AgentRuntime {
 
   /**
    * Installed Ollama tags for the honest-local-availability filter (spec §10),
-   * or `null` to skip filtering. Probes Ollama's `/api/tags` only when the
-   * catalog actually exposes the ollama provider; an unreachable Ollama
+   * or `null` to skip filtering. Probes Ollama's `/api/tags` only when an
+   * ollama model can actually reach the menu ({@link projectedProviderIds} —
+   * never `payload.all`, which lists every provider models.dev knows and so
+   * gates nothing); an unreachable Ollama
    * (`running: false`) returns `null` so the menu degrades to the full catalog
    * rather than emptying. A reachable Ollama returns its installed tag names
    * (possibly empty — honestly no local models installed yet).
@@ -798,10 +804,33 @@ export class OpenCodeRuntime implements AgentRuntime {
     payload: ProviderListResponse
   ): Promise<string[] | null> {
     const OLLAMA_PROVIDER_ID = 'ollama';
-    if (!payload.all.some((entry) => entry.id === OLLAMA_PROVIDER_ID)) return null;
+    if (!projectedProviderIds(payload).has(OLLAMA_PROVIDER_ID)) return null;
     const status = await detectOllama();
     if (!status.running) return null;
     return status.models.map((tag) => tag.name);
+  }
+
+  /**
+   * OpenRouter's live public model catalog for the honest-cloud-availability
+   * filter, or `null` to skip it. An unreachable OpenRouter returns `null` so
+   * the menu degrades to the sidecar's own (staler) catalog rather than
+   * emptying — the same rule as {@link resolveInstalledOllamaTags}, for the
+   * same reason.
+   *
+   * Gated on {@link projectedProviderIds}, NOT on `payload.all`. `all` is the
+   * whole models.dev universe — hundreds of providers, openrouter always among
+   * them — so a gate written against it never closes, and an Ollama-only user
+   * who has never touched OpenRouter would pay a network probe (on the model
+   * WRITE path, on a plane) for a provider whose models will not appear in
+   * their menu at all. `projectedProviderIds` asks the question that actually
+   * matters: will any openrouter model be in the list this projection returns?
+   */
+  private async resolveOpenRouterCatalog(
+    payload: ProviderListResponse
+  ): Promise<OpenRouterCatalog | null> {
+    const OPENROUTER_PROVIDER_ID = 'openrouter';
+    if (!projectedProviderIds(payload).has(OPENROUTER_PROVIDER_ID)) return null;
+    return fetchOpenRouterCatalog();
   }
 
   /**

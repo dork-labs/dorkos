@@ -9,6 +9,7 @@
  */
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { MODELS_KEY } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import type { RuntimeProvisionProgress, RuntimeProvisionResult } from '@dorkos/shared/transport';
 import { REQUIREMENTS_KEY } from './use-runtime-requirements';
@@ -58,6 +59,10 @@ export function useProvisionRuntime(runtimeType: string): UseProvisionRuntime {
     onSuccess: (result) => {
       if (result.ok) {
         void queryClient.invalidateQueries({ queryKey: [...REQUIREMENTS_KEY] });
+        // Installing the binary is what gives a runtime a model catalog at all:
+        // before it, `getSupportedModels()` answers `[]`. Any warm menu is now
+        // wrong and would stay wrong for the full 30-minute staleTime (DOR-1660).
+        void queryClient.invalidateQueries({ queryKey: [...MODELS_KEY] });
       }
     },
   });

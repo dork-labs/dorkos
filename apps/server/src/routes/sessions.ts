@@ -18,7 +18,7 @@ import {
   RecentSessionsQuerySchema,
   SessionDailyCountsQuerySchema,
 } from '@dorkos/shared/schemas';
-import type { PermissionMode, PermissionModeId } from '@dorkos/shared/types';
+import type { ModelOption, PermissionMode, PermissionModeId } from '@dorkos/shared/types';
 import type { AgentRuntime, PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { MeshCore } from '@dorkos/mesh';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
@@ -499,6 +499,51 @@ function rejectUndeclaredPermissionMode(
 }
 
 /**
+ * Check a requested model against the catalog its runtime offers, returning an
+ * operator-readable message when the runtime cannot run it (or `null` when the
+ * model is fine).
+ *
+ * The same argument as {@link rejectUndeclaredPermissionMode}: the wire carries
+ * any string, and only the session's runtime can say whether the model id it was
+ * handed is real. Persisting one it cannot run buys nothing — the turn fails
+ * later with "That model isn't available", by which point the person has already
+ * typed their message (DOR-1660).
+ *
+ * ## It degrades, on purpose
+ *
+ * An EMPTY catalog is not a claim that the runtime has no models — it is what a
+ * runtime returns when it cannot answer: an unreachable OpenCode sidecar, a
+ * claude-code warm-up that timed out, `test-mode`, which has no catalog at all.
+ * Refusing on an empty list would turn a probe failure into a locked picker. So
+ * an empty catalog accepts anything — exactly the way the OpenCode projection
+ * shows the full menu when its own probes fail — and a throwing
+ * `getSupportedModels` is read the same way.
+ *
+ * Matching allows `resolvedModel` as well as `value` because claude-code's
+ * catalog rows are ALIASES (`sonnet`, `opus`) naming the wire id they expand to;
+ * a session that persisted the wire id must keep working.
+ *
+ * WRITE PATH ONLY: a session already persisted on a now-absent model still loads
+ * and runs, and the picker surfaces it as unavailable so the person can choose.
+ *
+ * @param runtime - The runtime that owns the session being updated.
+ * @param model - The model id the request asks to store.
+ */
+async function rejectUnknownModel(runtime: AgentRuntime, model: string): Promise<string | null> {
+  let offered: ModelOption[];
+  try {
+    offered = await runtime.getSupportedModels();
+  } catch {
+    return null;
+  }
+  if (offered.length === 0) return null;
+  if (offered.some((option) => option.value === model || option.resolvedModel === model)) {
+    return null;
+  }
+  return `The ${runtime.type} runtime cannot run model '${model}'. Pick one from the model menu.`;
+}
+
+/**
  * The mode as its runtime declared it, or `undefined` for an id this runtime
  * does not offer (which {@link rejectUndeclaredPermissionMode} has already
  * refused by the time the door reads it).
@@ -637,6 +682,13 @@ router.patch('/:id', async (req, res) => {
         return sendError(res, 428, consentRequiredMessage(descriptor), AUTONOMY_ACK_REQUIRED_CODE);
       }
     }
+  }
+  // Same authority argument as the mode gate directly above, applied to the
+  // model: only the runtime can say whether the id it was handed is real, and it
+  // is asked HERE so every caller passes the same door.
+  if (model !== undefined) {
+    const modelError = await rejectUnknownModel(runtime, model);
+    if (modelError) return sendError(res, 400, modelError, 'UNSUPPORTED_MODEL');
   }
   // Past the gate the id is one THIS runtime declares, so it is a real mode by
   // the only definition that matters. `PermissionMode` is the narrower name the

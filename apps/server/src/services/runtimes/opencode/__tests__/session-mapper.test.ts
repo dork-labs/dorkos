@@ -771,6 +771,225 @@ describe('OpenCodeSessionMapper', () => {
       expect(history[0]).toMatchObject({ id: 'msg_real', content: 'actual question' });
     });
 
+    // A failed turn is recorded in OpenCode's store as an assistant message
+    // carrying `error` — often with NO parts at all. Measured on this machine's
+    // opencode.db: all six `APIError` rows have zero parts, and the message
+    // below is one of them, copied verbatim. The parts-only reader dropped
+    // them, so a reopened transcript showed the question and nothing after it
+    // (DOR-1666).
+    it('keeps a turn that failed with nothing said, as a typed error part', async () => {
+      const client = createMockClient();
+      client.session.create.mockResolvedValue({ data: ocSession({ id: 'ses_hist' }) });
+      client.session.messages.mockResolvedValue({
+        data: [
+          { info: userMessage(), parts: [textPart('Run the tests')] },
+          {
+            info: assistantMessage({
+              id: 'msg_failed',
+              error: {
+                name: 'APIError',
+                data: {
+                  message:
+                    'This request requires more credits, or fewer max_tokens. You requested up to 32000 tokens, but can only afford 2809. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account',
+                  statusCode: 402,
+                  isRetryable: false,
+                },
+              },
+            }),
+            parts: [],
+          },
+        ],
+      });
+      const mapper = new OpenCodeSessionMapper(createProvider(client));
+      await mapper.ensureSession(DORKOS_ID, { cwd: PROJECT_DIR });
+
+      const history = await mapper.getMessageHistory(PROJECT_DIR, DORKOS_ID);
+
+      expect(history).toHaveLength(2);
+      const failed = history[1]!;
+      expect(failed).toMatchObject({ id: 'msg_failed', role: 'assistant' });
+      // The provider's own words, link intact — that URL is the remedy.
+      expect(failed.parts).toEqual([
+        {
+          type: 'error',
+          message:
+            'This request requires more credits, or fewer max_tokens. You requested up to 32000 tokens, but can only afford 2809. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account',
+          category: 'execution_error',
+          details: '[APIError]',
+        },
+      ]);
+    });
+
+    // CONSTRUCTED, not measured: this machine's store holds zero
+    // `ProviderAuthError` rows, so the shape is built from the SDK's declared
+    // type. It is the case the ticket exists for — the one that earns the
+    // "Fix sign-in" affordance — so it is covered, labelled rather than
+    // presented as evidence.
+    it('carries auth_error through to history (constructed shape)', async () => {
+      const client = createMockClient();
+      client.session.create.mockResolvedValue({ data: ocSession({ id: 'ses_hist' }) });
+      client.session.messages.mockResolvedValue({
+        data: [
+          {
+            info: assistantMessage({
+              id: 'msg_auth',
+              error: {
+                name: 'ProviderAuthError',
+                data: { providerID: 'anthropic', message: 'OAuth token revoked' },
+              },
+            }),
+            parts: [],
+          },
+        ],
+      });
+      const mapper = new OpenCodeSessionMapper(createProvider(client));
+      await mapper.ensureSession(DORKOS_ID, { cwd: PROJECT_DIR });
+
+      const [failed] = await mapper.getMessageHistory(PROJECT_DIR, DORKOS_ID);
+
+      // `auth_error` is what turns the block into a "Fix sign-in" affordance.
+      expect(failed!.parts).toEqual([
+        {
+          type: 'error',
+          message: 'OAuth token revoked',
+          category: 'auth_error',
+          details: '[ProviderAuthError]',
+        },
+      ]);
+    });
+
+    // The blast radius of a throw here is the whole conversation, not one
+    // message: `getMessageHistory` throwing is caught by the runtime facade and
+    // turned into the log-backed EventLog fallback, which for a session adopted
+    // from the OpenCode TUI holds nothing at all. Before the payload was
+    // Zod-parsed, `{name:'APIError'}` with no `data` threw a TypeError here and
+    // blanked every message in the session. The sidecar is an unpinned external
+    // binary whose generated types this adapter has already caught being wrong
+    // (DOR-1147), so this is a shape that can really arrive.
+    it('an off-type error costs its own part, never the rest of the transcript', async () => {
+      const client = createMockClient();
+      client.session.create.mockResolvedValue({ data: ocSession({ id: 'ses_hist' }) });
+      client.session.messages.mockResolvedValue({
+        data: [
+          { info: userMessage({ id: 'msg_ask' }), parts: [textPart('Run the tests')] },
+          {
+            info: assistantMessage({ id: 'msg_said' }),
+            parts: [textPart('Here is the answer.')],
+          },
+          // Three shapes the declared type says are impossible.
+          {
+            // @ts-expect-error - `data` is required by the SDK type; the sidecar is not.
+            info: assistantMessage({ id: 'msg_nodata', error: { name: 'APIError' } }),
+            parts: [],
+          },
+          {
+            // @ts-expect-error - `error` is never null in the declared type.
+            info: assistantMessage({ id: 'msg_null', error: null }),
+            parts: [textPart('Partial work survives.')],
+          },
+          {
+            // @ts-expect-error - `data` is never null in the declared type.
+            info: assistantMessage({ id: 'msg_datanull', error: { name: 'APIError', data: null } }),
+            parts: [],
+          },
+        ],
+      });
+      const mapper = new OpenCodeSessionMapper(createProvider(client));
+      await mapper.ensureSession(DORKOS_ID, { cwd: PROJECT_DIR });
+
+      const history = await mapper.getMessageHistory(PROJECT_DIR, DORKOS_ID);
+
+      // Every readable message survived — the conversation is intact.
+      expect(history.map((m) => m.id)).toEqual([
+        'msg_ask',
+        'msg_said',
+        'msg_nodata',
+        'msg_null',
+        'msg_datanull',
+      ]);
+      expect(history[1]!.content).toBe('Here is the answer.');
+      // A nameable failure still names itself rather than disappearing.
+      expect(history[2]!.parts).toEqual([
+        { type: 'error', message: 'APIError', category: 'execution_error' },
+      ]);
+      // A null error is no error: the message keeps only its own text.
+      expect(history[3]!.parts?.map((p) => p.type)).toEqual(['text']);
+      expect(history[4]!.parts).toEqual([
+        { type: 'error', message: 'APIError', category: 'execution_error' },
+      ]);
+    });
+
+    it('appends the failure after whatever the agent managed to say', async () => {
+      const client = createMockClient();
+      client.session.create.mockResolvedValue({ data: ocSession({ id: 'ses_hist' }) });
+      client.session.messages.mockResolvedValue({
+        data: [
+          {
+            info: assistantMessage({
+              error: { name: 'APIError', data: { message: 'upstream 500', isRetryable: true } },
+            }),
+            parts: [
+              textPart('Starting now.'),
+              toolPart({
+                status: 'completed',
+                input: { command: 'pnpm test' },
+                output: 'all green',
+                title: 'pnpm test',
+                metadata: {},
+                time: { start: CREATED_MS, end: CREATED_MS + 100 },
+              }),
+            ],
+          },
+        ],
+      });
+      const mapper = new OpenCodeSessionMapper(createProvider(client));
+      await mapper.ensureSession(DORKOS_ID, { cwd: PROJECT_DIR });
+
+      const [message] = await mapper.getMessageHistory(PROJECT_DIR, DORKOS_ID);
+
+      expect(message!.parts?.map((p) => p.type)).toEqual(['text', 'tool_call', 'error']);
+      // The error part is not text, so it never leaks into the message content.
+      expect(message!.content).toBe('Starting now.');
+      expect(message!.parts?.[2]).toMatchObject({
+        type: 'error',
+        message: 'upstream 500',
+        category: 'execution_error',
+      });
+    });
+
+    it('shows no error for an interrupted turn — an abort is not a failure', async () => {
+      const client = createMockClient();
+      client.session.create.mockResolvedValue({ data: ocSession({ id: 'ses_hist' }) });
+      client.session.messages.mockResolvedValue({
+        data: [
+          {
+            info: assistantMessage({
+              id: 'msg_partial',
+              error: { name: 'MessageAbortedError', data: { message: 'Aborted' } },
+            }),
+            parts: [textPart('Half a thought')],
+          },
+          {
+            info: assistantMessage({
+              id: 'msg_silent',
+              error: { name: 'MessageAbortedError', data: { message: 'Aborted' } },
+            }),
+            parts: [],
+          },
+        ],
+      });
+      const mapper = new OpenCodeSessionMapper(createProvider(client));
+      await mapper.ensureSession(DORKOS_ID, { cwd: PROJECT_DIR });
+
+      const history = await mapper.getMessageHistory(PROJECT_DIR, DORKOS_ID);
+
+      // The partial answer survives on its own; the one that said nothing at
+      // all still drops, because an interrupt with no output IS nothing.
+      expect(history).toHaveLength(1);
+      expect(history[0]).toMatchObject({ id: 'msg_partial', content: 'Half a thought' });
+      expect(history[0]!.parts?.map((p) => p.type)).toEqual(['text']);
+    });
+
     it('re-lists to recover a derived binding in a fresh mapper (post-restart)', async () => {
       const client = createMockClient();
       client.session.list.mockResolvedValue({ data: [ocSession({ id: 'ses_prev' })] });

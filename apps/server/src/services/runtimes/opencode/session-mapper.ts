@@ -34,6 +34,7 @@ import type {
   ToolCallPart,
 } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
+import { mapMessageError } from './history-error-part.js';
 import { SESSION_LIST_LIMIT, SESSION_REBUILD_LIMIT } from './runtime-constants.js';
 
 /**
@@ -238,11 +239,19 @@ function appendText(parts: MessagePart[], text: string): void {
 /**
  * Project one OpenCode message (+ its parts) onto a `HistoryMessage`.
  *
- * Minimal-but-correct mapping (task 3.5): text, reasoning, and tool parts.
- * Structural parts (step-start/step-finish, snapshot, patch, agent, retry,
- * subtask, file, compaction) have no history projection and are skipped;
- * messages left with no mapped parts return `null` and are dropped, mirroring
- * the Claude transcript parser.
+ * Minimal-but-correct mapping (task 3.5): text, reasoning, and tool parts, plus
+ * the message-level `error` a failed turn carries. Structural parts
+ * (step-start/step-finish, snapshot, patch, agent, retry, subtask, file,
+ * compaction) have no history projection and are skipped; messages left with no
+ * mapped parts return `null` and are dropped, mirroring the Claude transcript
+ * parser.
+ *
+ * A message whose ONLY content is its error still returns a message. That is
+ * the whole point of reading `error` here: OpenCode records a turn that failed
+ * before the model said anything as an assistant message with zero parts, so
+ * the parts-only reader dropped it and the failure vanished from every reopened
+ * transcript — no error card, no sign-in prompt, no trace that the turn
+ * happened at all (DOR-1666).
  */
 function mapHistoryMessage(entry: {
   info: OpenCodeMessage;
@@ -268,6 +277,12 @@ function mapHistoryMessage(entry: {
       if (mapped.call) toolCalls.push(mapped.call);
     }
   }
+
+  // The turn's failure, appended after whatever the agent managed to say —
+  // the same order the log-backed history fold builds a failed turn in. Only
+  // an assistant message can carry one; `mapMessageError` suppresses interrupts.
+  const errorPart = info.role === 'assistant' ? mapMessageError(info.error) : null;
+  if (errorPart) mappedParts.push(errorPart);
 
   if (mappedParts.length === 0) return null;
 

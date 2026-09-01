@@ -837,6 +837,19 @@ export class CodexRuntime implements AgentRuntime {
    * the store is the completed-history source whether or not a projector is up
    * (each turn is flushed on `turn_end`), which fixes the post-restart
    * empty-transcript bug (was `peekProjector` → `[]`).
+   *
+   * **A failed turn cannot come back as agent speech here, and the reason is
+   * structural** (DOR-1666, the parity check against the claude-code gap where
+   * the CLI writes API failures into its JSONL as synthetic assistant
+   * messages). Every Codex failure has its own typed home in the SDK stream —
+   * `turn.failed`, an `ErrorItem`, or a `ThreadErrorEvent`; nothing delivers
+   * one as an `AgentMessageItem` — so the mapper classifies it exactly once
+   * into a typed `error` event, `turn_end` flushes that event with the rest of
+   * its turn, and `reconstructHistoryFromEvents` replays it as an `ErrorPart`
+   * carrying the same category. History inherits the live classification
+   * rather than re-deriving it, which is why the two can never disagree. Pinned
+   * by "reconstructs an auth-failed turn as a typed auth_error part" in
+   * `__tests__/codex-runtime.test.ts`.
    */
   async getMessageHistory(_projectDir: string, sessionId: string): Promise<HistoryMessage[]> {
     return readLogBackedHistory(sessionId);

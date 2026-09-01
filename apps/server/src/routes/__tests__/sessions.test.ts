@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, vi } from 'vitest';
-import type { PermissionMode, SessionSettings, StreamEvent } from '@dorkos/shared/types';
+import type {
+  ModelOption,
+  PermissionMode,
+  SessionSettings,
+  StreamEvent,
+} from '@dorkos/shared/types';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 
 // Mock boundary before importing app
@@ -712,8 +717,10 @@ describe('Sessions Routes', () => {
       });
     });
 
-    it('leaves non-mode settings unaffected by the capability gate', async () => {
-      // A PATCH that carries no permissionMode must never consult the gate.
+    it('leaves non-mode settings unaffected by the permission-mode gate', async () => {
+      // A PATCH that carries no permissionMode must never consult the mode gate.
+      // The model rides through because the fake offers no catalog, which the
+      // model gate reads as "cannot answer" — covered directly below.
       declareModes(['default']);
       fakeRuntime.updateSession.mockReturnValue({ updated: true });
       fakeRuntime.getSession.mockResolvedValue(null);
@@ -726,6 +733,119 @@ describe('Sessions Routes', () => {
         model: 'some-model',
         effort: undefined,
         fastMode: undefined,
+      });
+    });
+
+    // ---- The model gate (DOR-1660) ----
+    //
+    // Same authority argument as the permission-mode gate: the wire carries any
+    // string, only the runtime can say whether the model id is real, and a model
+    // it cannot run fails LATER — after the person has typed their message.
+    describe('the model gate', () => {
+      /** Point the fake's catalog at a fixed set of offered models. */
+      function offerModels(options: ModelOption[]): void {
+        fakeRuntime.getSupportedModels.mockResolvedValue(options);
+      }
+
+      beforeEach(() => {
+        fakeRuntime.updateSession.mockReturnValue({ updated: true });
+        fakeRuntime.getSession.mockResolvedValue(null);
+      });
+
+      it('returns 400 for a model the runtime does not offer', async () => {
+        offerModels([
+          { value: 'openrouter/anthropic/claude-opus-5', displayName: 'Opus 5', description: '' },
+        ]);
+
+        const res = await request(server)
+          .patch(`/api/sessions/${S1}`)
+          .send({ model: 'openrouter/anthropic/claude-opus-5-fast' });
+
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('UNSUPPORTED_MODEL');
+        // The message names the runtime and the model, and points somewhere.
+        expect(res.body.error).toContain('fake');
+        expect(res.body.error).toContain('openrouter/anthropic/claude-opus-5-fast');
+        // Nothing is persisted for a rejected model.
+        expect(fakeRuntime.updateSession).not.toHaveBeenCalled();
+      });
+
+      it('accepts every model the runtime does offer', async () => {
+        offerModels([
+          { value: 'openrouter/anthropic/claude-opus-5', displayName: 'Opus 5', description: '' },
+          { value: 'ollama/qwen2.5-coder:7b', displayName: 'Qwen', description: '' },
+        ]);
+
+        for (const model of ['openrouter/anthropic/claude-opus-5', 'ollama/qwen2.5-coder:7b']) {
+          fakeRuntime.updateSession.mockClear();
+          const res = await request(server).patch(`/api/sessions/${S1}`).send({ model });
+          expect(res.status, `PATCH to offered model '${model}'`).toBe(200);
+          expect(fakeRuntime.updateSession).toHaveBeenCalledWith(S1, {
+            permissionMode: undefined,
+            model,
+            effort: undefined,
+            fastMode: undefined,
+          });
+        }
+      });
+
+      it('accepts the wire id an alias row resolves to (claude-code aliases)', async () => {
+        // The catalog rows are aliases; a session may have persisted the wire id
+        // the alias expands to, and that must keep working.
+        offerModels([
+          {
+            value: 'sonnet',
+            resolvedModel: 'claude-sonnet-5',
+            displayName: 'Sonnet',
+            description: '',
+          },
+        ]);
+
+        const res = await request(server)
+          .patch(`/api/sessions/${S1}`)
+          .send({ model: 'claude-sonnet-5' });
+
+        expect(res.status).toBe(200);
+      });
+
+      it('accepts anything when the catalog is unavailable (empty)', async () => {
+        // An unreachable OpenCode sidecar, a timed-out claude-code warm-up, or
+        // test-mode all answer `[]`. Refusing on that would turn a probe failure
+        // into a locked picker.
+        offerModels([]);
+
+        const res = await request(server)
+          .patch(`/api/sessions/${S1}`)
+          .send({ model: 'anything/at-all' });
+
+        expect(res.status).toBe(200);
+        expect(fakeRuntime.updateSession).toHaveBeenCalledWith(S1, {
+          permissionMode: undefined,
+          model: 'anything/at-all',
+          effort: undefined,
+          fastMode: undefined,
+        });
+      });
+
+      it('accepts anything when the catalog probe throws', async () => {
+        fakeRuntime.getSupportedModels.mockRejectedValue(new Error('sidecar down'));
+
+        const res = await request(server)
+          .patch(`/api/sessions/${S1}`)
+          .send({ model: 'anything/at-all' });
+
+        expect(res.status).toBe(200);
+      });
+
+      it('never consults the catalog when the PATCH carries no model', async () => {
+        offerModels([{ value: 'only-this', displayName: 'Only', description: '' }]);
+
+        const res = await request(server)
+          .patch(`/api/sessions/${S1}`)
+          .send({ permissionMode: 'plan' });
+
+        expect(res.status).toBe(200);
+        expect(fakeRuntime.getSupportedModels).not.toHaveBeenCalled();
       });
     });
 

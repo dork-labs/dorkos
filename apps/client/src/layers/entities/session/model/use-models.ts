@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { MODELS_KEY } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import type { Transport } from '@dorkos/shared/transport';
 import type { ModelOption } from '@dorkos/shared/types';
@@ -20,7 +21,7 @@ export function modelsQueryOptions(
   const sessionId = opts?.sessionId;
   const runtime = opts?.runtime;
   return {
-    queryKey: ['models', runtime ?? null, sessionId ?? null] as const,
+    queryKey: [...MODELS_KEY, runtime ?? null, sessionId ?? null] as const,
     queryFn: () => transport.getModels({ sessionId, runtime }),
     staleTime: 30 * 60 * 1000,
   };
