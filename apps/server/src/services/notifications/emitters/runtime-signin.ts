@@ -39,23 +39,36 @@
  * screen for one dead credential. `session.error` arms the ladder directly for
  * the same reason, and this follows it.
  *
- * ## Why there is no "the write failed, un-latch it" path any more
+ * ## What a failed row write costs, stated plainly
  *
- * There was one under DOR-1654: the watch claims its episode BEFORE the sink
- * runs, so a `notify()` that then failed to store anything left the runtime
- * silent for an hour on the strength of a notification that never happened.
- * `notify()` still writes a row here and can still fail — what changed is that
- * the hour is gone. An episode is released by its RESOLUTION now, not by a
- * clock, so the case that release existed to rescue no longer costs an hour of
- * silence: the next failing turn re-stands the runtime immediately. That is also
- * the stronger property in general, a credential fixed at 3.10 and dead again at
- * 3.30 being heard at 3.30 rather than at 4.00.
+ * DOR-1654 had a release path here: the watch claims its episode BEFORE the sink
+ * runs, so a `notify()` that then stored nothing left the runtime silent for an
+ * hour on the strength of a notification that never happened, and giving the
+ * claim back handed the next failing turn another go.
  *
- * What a failed write does still cost is one episode's ROW, while the escalation
- * armed beside it goes out regardless — which is the right way round, since the
- * ladder is the leg that reaches somebody who is not here. The watch declines to
- * claim an episode at all when no sink is installed to hear it, covering the
- * only case where nothing whatsoever would have happened.
+ * There is no release now, and the cost is real rather than theoretical.
+ * `notify()` swallows a store failure and answers "nothing stored", and **later
+ * failing turns on the same runtime do not retry it** — they find the episode
+ * already claimed (`failingSince.has`) and return having done nothing. So a
+ * failed write loses that episode's row outright; the next row comes only with
+ * the NEXT episode, after this one resolves.
+ *
+ * That is a chosen trade rather than an oversight, because releasing the claim
+ * would strand the timer armed beside it. `armEscalation` files under the
+ * episode key (`signin:<runtime>:<since>`), and a resolution cancels only the
+ * key it resolves. Release, and the next failing turn mints a new episode under
+ * a new key: two live timers for one unbroken stretch of breakage, and the older
+ * one still firing after the operator has signed in — a phone telling somebody
+ * to go and fix the thing they just fixed. Cancelling the stranded timer as well
+ * would avoid that, but then one transient store error costs the PUSH as well as
+ * the row, and on a runtime whose only failing turn was a nightly job there is
+ * no later turn to correct it.
+ *
+ * So the escalation goes out regardless of whether the row landed, which is the
+ * right way round: the ladder is the leg that reaches somebody who is not here,
+ * and the row is the one they find later. The watch declines to claim an episode
+ * at all when no sink is installed to hear it, covering the only case where
+ * nothing whatsoever would have happened.
  *
  * Installed at boot beside the other emitters, in `index.ts`.
  *
