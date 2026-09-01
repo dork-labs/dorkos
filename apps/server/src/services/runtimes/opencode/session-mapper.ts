@@ -328,6 +328,8 @@ export class OpenCodeSessionMapper {
   private limitProven = false;
 
   /**
+   * Build a mapper over one sidecar client source, optionally durable.
+   *
    * @param provider - Sidecar client source
    * @param store - Durable binding store; when provided, persisted bindings
    *   hydrate the in-memory maps here so DorkOS-facing ids survive a server

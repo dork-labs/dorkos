@@ -36,7 +36,24 @@ export default [
     },
   },
 
-  // TSDoc enforcement (warn-first)
+  // TSDoc enforcement — AGENTS.md Hard Rule 4, "TSDoc on exports".
+  //
+  // These are `error`, not `warn` (DOR-627). Every one of them was `warn`
+  // until then, and every package's lint script is a bare `eslint .`, which
+  // exits 0 on warnings — so the rule this repo calls non-negotiable failed
+  // nothing, anywhere: not the lefthook pre-commit hook, not `pnpm verify`,
+  // not CI. "Enforced by `eslint-plugin-jsdoc`" was a statement about a
+  // plugin being installed. At `error` a missing or empty TSDoc block on an
+  // exported symbol fails `eslint`, which fails the `lint` workflow.
+  //
+  // Only the jsdoc rules were promoted. The other `warn`-severity rules in
+  // this file (`max-lines`, `no-restricted-syntax`, `no-unused-vars`) stay
+  // warnings and CI passes no `--max-warnings 0`: the repo carries ~210 of
+  // them, and clearing `max-lines` alone means splitting 49 large files.
+  // Turning the whole board red to enforce one Hard Rule would have blocked
+  // this change behind a refactor it has nothing to do with. The per-rule
+  // severity IS the gate here — anything meant to fail CI belongs at
+  // `error`, and a new `warn` rule is understood to fail nothing.
   {
     files: ['**/*.ts', '**/*.tsx'],
     plugins: { jsdoc },
@@ -48,7 +65,7 @@ export default [
     },
     rules: {
       'jsdoc/require-jsdoc': [
-        'warn',
+        'error',
         {
           require: {
             FunctionDeclaration: true,
@@ -60,13 +77,13 @@ export default [
           publicOnly: { esm: true, cjs: true, window: false },
         },
       ],
-      'jsdoc/require-description': 'warn',
-      'jsdoc/require-param-description': 'warn',
+      'jsdoc/require-description': 'error',
+      'jsdoc/require-param-description': 'error',
       'jsdoc/require-returns': 'off',
       'jsdoc/require-param-type': 'off',
       'jsdoc/require-returns-type': 'off',
-      'jsdoc/no-types': 'warn',
-      'jsdoc/check-tag-names': ['warn', { definedTags: ['vitest-environment'] }],
+      'jsdoc/no-types': 'error',
+      'jsdoc/check-tag-names': ['error', { definedTags: ['vitest-environment'] }],
     },
   },
 

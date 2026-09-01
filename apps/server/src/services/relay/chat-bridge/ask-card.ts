@@ -148,6 +148,9 @@ export class BridgedAskDelivery {
   private unsubscribe: (() => void) | undefined;
 
   /**
+   * Build a delivery bound to one set of seams. Listens for nothing until
+   * {@link BridgedAskDelivery.start} is called.
+   *
    * @param deps - The rooms, bridge and relay seams this needs.
    */
   constructor(private readonly deps: BridgedAskDeliveryDeps) {}

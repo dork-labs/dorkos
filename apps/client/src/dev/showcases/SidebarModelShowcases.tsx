@@ -603,6 +603,14 @@ export function SidebarUnreadTiersShowcase() {
   );
 }
 
+/** The zone the beat plays in, exactly as `SidebarZones` synthesizes it. */
+const ALL_CLEAR_ZONE: SidebarZoneModel = {
+  id: 'now',
+  label: ZONE_LABEL.now,
+  sections: [],
+  reason: 'zone:now',
+};
+
 /**
  * The four states Heads up passes through, side by side.
  *
@@ -613,14 +621,6 @@ export function SidebarUnreadTiersShowcase() {
  * shipped fixtures — never edits to them — so a reviewer can look at all four
  * at once and in both themes.
  */
-/** The zone the beat plays in, exactly as `SidebarZones` synthesizes it. */
-const ALL_CLEAR_ZONE: SidebarZoneModel = {
-  id: 'now',
-  label: ZONE_LABEL.now,
-  sections: [],
-  reason: 'zone:now',
-};
-
 export function SidebarNowStatesShowcase() {
   // Reasons default ON, exactly as the journeys showcase does. Two reasons: the
   // provenance is the point of this page, and the browser suite's axe coverage

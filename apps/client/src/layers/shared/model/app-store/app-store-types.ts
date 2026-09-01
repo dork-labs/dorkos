@@ -43,7 +43,7 @@ import type { ContextFile, RecentCwd } from './app-store-helpers';
  * every reader enforces it by construction: a pick is shown and sent only to the
  * session whose id it names, and a remount of that same session keeps it.
  *
- * @typeParam ValueKey - Name of the value field, so each pick reads in its own
+ * @template ValueKey - Name of the value field, so each pick reads in its own
  *   vocabulary (`type` for a runtime, `id` for an account) rather than a
  *   uniform `value` that says nothing at the call site.
  */

@@ -333,6 +333,13 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck:scripts
 
+      # STAYS HERE, deliberately (DOR-627). The `lint` workflow runs
+      # `turbo lint`, and turbo only runs tasks that belong to a workspace
+      # package. `scripts/` belongs to none — that is the same property the
+      # typecheck step above exists for — so `turbo lint` cannot reach these
+      # files no matter how it is invoked. This is the only ESLint pass over
+      # `scripts/` anywhere; folding it into the `lint` workflow would delete
+      # the coverage rather than move it.
       - name: Lint
         run: pnpm exec eslint scripts/
 

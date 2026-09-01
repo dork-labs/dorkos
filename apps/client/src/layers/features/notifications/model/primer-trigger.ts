@@ -46,7 +46,11 @@ export function armPermissionPrimer(): void {
   for (const listener of listeners) listener();
 }
 
-/** @internal Exported for testing only — puts the latch back down. */
+/**
+ * Put the primer latch back down so the next arm is seen as the first.
+ *
+ * @internal Exported for testing only.
+ */
 export function resetPermissionPrimerForTests(): void {
   armed = false;
   for (const listener of listeners) listener();
