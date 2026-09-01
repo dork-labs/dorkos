@@ -614,9 +614,15 @@ const ENTRIES: NotificationRegistryMap = {
     // it, and every one of the four is `standing` — the store that owns it
     // answers "is it still waiting?". Nothing owns "is this credential still
     // dead?": the only honest answer comes from trying another turn. So this is
-    // an `event` — the row IS the record — and `notable` is also the one tier
-    // the browser-banner surface draws (`use-browser-notifications.ts`), which
-    // is what reaches somebody who left the app open overnight.
+    // an `event` — the row IS the record.
+    //
+    // `notable` is also the only tier `use-browser-notifications.ts` will draw
+    // an OS banner for (`blocking` is left to the attention store, `quiet` is
+    // by definition not worth one). That is a possible second surface, not a
+    // promised one: the banner is additionally gated on the operator's
+    // `notifyOnTurnCompleteWhileAway` preference, on browser permission, and on
+    // the app being open at all. The inbox row is the surface this kind
+    // actually guarantees.
     kind: 'signin.required',
     tier: 'notable',
     storage: 'event',

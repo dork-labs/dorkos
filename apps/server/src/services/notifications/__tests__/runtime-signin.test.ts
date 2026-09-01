@@ -16,9 +16,18 @@
  * however many turns trip over the same credential.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFile } from 'node:fs/promises';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
+import { ClaudeCodeAdapter } from '@dorkos/relay';
+import type {
+  AgentRuntimeLike,
+  ClaudeCodeAdapterDeps,
+  RelayPublisher,
+  TraceStoreLike,
+} from '@dorkos/relay';
 import type { StreamEvent } from '@dorkos/shared/types';
+import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import { RuntimeRegistry } from '../../core/runtime-registry.js';
@@ -69,9 +78,11 @@ async function* executionErrorTurn(): AsyncGenerator<StreamEvent> {
 }
 
 /** A turn that THROWS its credential failure instead of yielding one. */
+const THROWN_AUTH_ERROR = new Error('401 Unauthorized: the OAuth token was revoked');
+
 async function* thrownAuthTurn(): AsyncGenerator<StreamEvent> {
   yield { type: 'text_delta', data: { text: 'starting' } } as StreamEvent;
-  throw new Error('401 Unauthorized: the OAuth token was revoked');
+  throw THROWN_AUTH_ERROR;
 }
 
 /** A turn that throws for an ordinary reason. */
@@ -126,8 +137,9 @@ describe('a runtime turn that fails on its sign-in', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].title).toBe('Claude needs you to sign in again');
     expect(rows[0].body).toBe('Scheduled tasks and agent replies keep failing until you sign in.');
-    // `notable` is the one tier the browser-banner surface draws, which is what
-    // reaches somebody who left the app open overnight.
+    // `notable` is the only tier an OS banner can be drawn for at all — see the
+    // registry entry for why that is a possible second surface rather than a
+    // promised one. The inbox row asserted above is the guaranteed surface.
     expect(rows[0].tier).toBe('notable');
     expect(rows[0].subject).toEqual({ type: 'system', id: 'claude-code' });
   });
@@ -168,6 +180,32 @@ describe('a runtime turn that fails on its sign-in', () => {
     expect(signinRows()).toHaveLength(2);
   });
 
+  it('does not go quiet for an hour when the row failed to save', async () => {
+    // The latch is claimed BEFORE the row is written — it has to be, or the
+    // concurrent case above is unfixable — so a claim is optimistic. `notify()`
+    // swallows a store failure and answers "nothing stored", and without the
+    // release that would silence this runtime for an hour on a notification
+    // that never happened.
+    const registry = new RuntimeRegistry();
+    const runtime = new FakeAgentRuntime('claude-code');
+    runtime.withScenarios([authErrorTurn, authErrorTurn]);
+    registry.register(runtime);
+
+    const insert = vi.spyOn(store, 'insert').mockImplementationOnce(() => {
+      throw new Error('database is locked');
+    });
+
+    for await (const _ of registry.get('claude-code').sendMessage('sess-1', 'hi', {}));
+    await flush();
+    expect(signinRows()).toHaveLength(0);
+
+    // The very next failing turn tries again rather than finding itself latched.
+    insert.mockRestore();
+    for await (const _ of registry.get('claude-code').sendMessage('sess-2', 'hi', {}));
+    await flush();
+    expect(signinRows()).toHaveLength(1);
+  });
+
   it('keeps each runtime separate — one dead sign-in is not the other', async () => {
     const registry = new RuntimeRegistry();
     await runTurn(registry, 'claude-code', authErrorTurn);
@@ -185,12 +223,17 @@ describe('a runtime turn that fails on its sign-in', () => {
     runtime.withScenarios([thrownAuthTurn]);
     registry.register(runtime);
 
-    await expect(async () => {
+    let caught: unknown;
+    try {
       for await (const _ of registry.get('claude-code').sendMessage('sess-1', 'hi', {}));
-    }).rejects.toThrow('401 Unauthorized');
+    } catch (err) {
+      caught = err;
+    }
     await flush();
 
-    // Re-thrown unchanged: the watch may never alter what a caller sees.
+    // The SAME error object, not merely one with the same message: the watch
+    // observes a turn and may never substitute what a caller sees.
+    expect(caught).toBe(THROWN_AUTH_ERROR);
     expect(signinRows()).toHaveLength(1);
   });
 });
@@ -244,5 +287,125 @@ describe('the watch itself', () => {
     expect(wrapped.type).toBe('claude-code');
     // Bound to the real instance, so a method that reads private state still works.
     expect(wrapped.getCapabilities()).toEqual(runtime.getCapabilities());
+  });
+});
+
+/**
+ * The relay leg, driven through the REAL {@link ClaudeCodeAdapter}.
+ *
+ * Being registered is not by itself enough — this is the case that proved it.
+ * `index.ts` kept its own reference to the `ClaudeCodeRuntime` it constructed
+ * (`relayAgentRuntime`) and appended it to the relay's runtime map AFTER the
+ * registry's entries, so last-write-wins put the RAW runtime under
+ * `claude-code`. From there it became `deps.agentManager` (`defaultRuntimeFor`
+ * reads that same map) and was re-forced over the map by the adapter's own
+ * constructor, so every Telegram/Slack-bridged turn ran unwatched.
+ *
+ * These two cases are deliberately a matched pair: the first pins the fix, the
+ * second pins the bug it fixes. Together they show the first can fail — the
+ * only difference between them is which object the map holds.
+ */
+describe('a relay-delivered turn on an expired claude-code sign-in', () => {
+  /** Everything the adapter needs beyond its runtimes. */
+  function adapterDeps(runtimes: Map<string, AgentRuntimeLike>): ClaudeCodeAdapterDeps {
+    const agentManager = runtimes.get('claude-code');
+    if (!agentManager) throw new Error('the fixture must put claude-code in the map');
+    return {
+      // Exactly how `adapter-factory.ts`'s `defaultRuntimeFor` picks it: off
+      // this very map. That is why fixing the map fixes `agentManager` too.
+      agentManager,
+      agentRuntimes: runtimes,
+      approvalAuthorizer: () => true,
+      traceStore: { insertSpan: vi.fn(), updateSpan: vi.fn() } as unknown as TraceStoreLike,
+      resolveExecutionSettings: vi.fn().mockResolvedValue({}),
+    };
+  }
+
+  /** A relay envelope addressed to a claude-code agent session. */
+  function envelope(): RelayEnvelope {
+    return {
+      id: 'msg-001',
+      subject: 'relay.agent.claude-code.session-1',
+      from: 'adapter:telegram',
+      replyTo: 'relay.human.telegram.tg-main.42',
+      budget: {
+        hopCount: 1,
+        maxHops: 5,
+        ancestorChain: [],
+        ttl: Date.now() + 300_000,
+        callBudgetRemaining: 10,
+      },
+      createdAt: new Date().toISOString(),
+      payload: { content: 'are you there?' },
+    } as unknown as RelayEnvelope;
+  }
+
+  /** Drive one relay message through a real adapter over the given map. */
+  async function deliverThrough(runtimes: Map<string, AgentRuntimeLike>): Promise<void> {
+    const adapter = new ClaudeCodeAdapter('claude-code', {}, adapterDeps(runtimes));
+    await adapter.start({
+      publish: vi.fn().mockResolvedValue({ messageId: 'r-1', deliveredTo: 1 }),
+      onSignal: vi.fn().mockReturnValue(() => {}),
+      subscribe: vi.fn().mockReturnValue(() => {}),
+    } as unknown as RelayPublisher);
+    await adapter.deliver(envelope().subject, envelope());
+    await flush();
+  }
+
+  /** A registry holding one claude-code runtime whose next turn dies on auth. */
+  function registryWithDeadSignin(): { registry: RuntimeRegistry; raw: FakeAgentRuntime } {
+    const registry = new RuntimeRegistry();
+    const raw = new FakeAgentRuntime('claude-code');
+    raw.withScenarios([authErrorTurn]);
+    registry.register(raw);
+    return { registry, raw };
+  }
+
+  it('tells the operator, because the relay map holds the WATCHED runtime', async () => {
+    const { registry, raw } = registryWithDeadSignin();
+
+    // The map exactly as `index.ts` builds it, `watchedRelayRuntime` and all.
+    await deliverThrough(
+      new Map<string, AgentRuntimeLike>([
+        ...registry.listRuntimes().map((r): [string, AgentRuntimeLike] => [r.type, r]),
+        [raw.type, registry.get(raw.type)],
+      ])
+    );
+
+    expect(signinRows()).toHaveLength(1);
+    expect(signinRows()[0].title).toBe('Claude needs you to sign in again');
+  });
+
+  it('is wired from the registry in the composition root, not from the raw reference', async () => {
+    // The pair above proves the DIFFERENCE matters; nothing in it reads
+    // `index.ts`, so nothing in it would notice the composition root going back
+    // to the raw reference. That regression is invisible — no test fails, the
+    // relay simply stops being watched again — so the one line that decides it
+    // is pinned here, the way this repo pins its other silent rules
+    // (`dispatcher-single-ingress.test.ts`).
+    const source = await readFile(new URL('../../../index.ts', import.meta.url).pathname, 'utf-8');
+    expect(
+      source,
+      'index.ts must not put the RAW relayAgentRuntime into the relay runtime map — ' +
+        'it wins on key collision and leaves every relay turn unwatched (DOR-1654).'
+    ).not.toContain('[relayAgentRuntime.type, relayAgentRuntime]');
+    expect(
+      source,
+      'the relay map’s default-runtime entry must be resolved through runtimeRegistry.'
+    ).toMatch(/runtimeRegistry\.get\(relayAgentRuntime\.type\)/);
+  });
+
+  it('is silent when the map holds the raw runtime — the regression this covers', async () => {
+    const { registry, raw } = registryWithDeadSignin();
+
+    // The map as it was built BEFORE the fix: the host's own reference wins.
+    await deliverThrough(
+      new Map<string, AgentRuntimeLike>([
+        ...registry.listRuntimes().map((r): [string, AgentRuntimeLike] => [r.type, r]),
+        [raw.type, raw],
+      ])
+    );
+
+    expect(signinRows()).toHaveLength(0);
   });
 });

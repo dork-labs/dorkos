@@ -29,10 +29,24 @@
  * What they DO share is `runtime.sendMessage()`, and — every one of them — a
  * runtime instance that came from `runtimeRegistry`. Tasks resolve one through
  * `SchedulerRuntimes`, rooms call `runtimeRegistry.get(...)`, and the relay is
- * handed `runtimeRegistry.listRuntimes()` at boot. So the registration seam is
- * the one place that sees them all, which is exactly the argument
- * `services/observability/trace-runtime.ts` already makes for tracing — this is
- * its sibling, wrapped at the same line, and deliberately shaped the same way.
+ * handed a map built from `runtimeRegistry.listRuntimes()` at boot. So the
+ * registration seam is the one place that sees them all, which is exactly the
+ * argument `services/observability/trace-runtime.ts` already makes for tracing —
+ * this is its sibling, wrapped at the same line, and deliberately shaped the
+ * same way.
+ *
+ * **Being registered is not by itself enough, and the relay is the proof.**
+ * A caller that kept its own reference to the runtime it constructed holds the
+ * RAW object, not the registry's wrapper, and turns taken through that
+ * reference are invisible here. `index.ts` had exactly one: the relay's runtime
+ * map appended `relayAgentRuntime` — the raw `ClaudeCodeRuntime` — after the
+ * registry's own entries, and last-write-wins replaced the wrapped claude-code
+ * entry with it. That flowed into `deps.agentManager` (`defaultRuntimeFor`
+ * reads that map) and was re-forced over the map by `ClaudeCodeAdapter`'s
+ * constructor, so every Telegram/Slack-bridged turn ran unwatched. Fixed at the
+ * map (`index.ts`, `watchedRelayRuntime`) and covered by
+ * `runtime-signin.test.ts`'s relay case. If another seam ever caches a runtime
+ * it built rather than asking the registry, it needs the same treatment.
  *
  * ## Why it says nothing itself, and why it lives here
  *
@@ -119,6 +133,22 @@ const reportedAt = new Map<string, number>();
  */
 export function setSigninFailureSink(next: SigninFailureSink | null): void {
   sink = next;
+}
+
+/**
+ * Give up the latch on a runtime, so the next failing turn reports it again.
+ *
+ * **The latch has to be claimed BEFORE the sink runs** — that is the whole
+ * point of it, since the race it closes is twenty concurrent turns arriving
+ * before any row exists. The cost is that a claim is optimistic: if the sink
+ * then fails to record anything, the runtime would sit silent for an hour on
+ * the strength of a notification that never happened. A sink that knows nothing
+ * was recorded calls this, and the next turn tries again.
+ *
+ * @param runtimeType - The runtime to un-latch.
+ */
+export function releaseSigninLatch(runtimeType: string): void {
+  reportedAt.delete(runtimeType);
 }
 
 /**

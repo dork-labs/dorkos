@@ -132,9 +132,18 @@ describe('RuntimeRegistry', () => {
   // two mocks share one type.
   describe('register and get', () => {
     it('registers and retrieves a runtime by type', () => {
-      const runtime = createMockRuntime('claude-code');
-      registry.register(runtime);
-      expect(registry.get('claude-code').type).toBe('claude-code');
+      // Two runtimes, so "the right one came back" is a real question. Asking
+      // only `get('claude-code').type === 'claude-code'` would compare the key
+      // to itself and pass however the registry mixed them up; the capability
+      // is what identifies WHICH instance answered.
+      const claude = createMockRuntime('claude-code', { supportsResume: true });
+      const opencode = createMockRuntime('opencode', { supportsResume: false });
+      registry.register(claude);
+      registry.register(opencode);
+
+      const found = registry.get('claude-code');
+      expect(found.type).toBe('claude-code');
+      expect(found.getCapabilities().supportsResume).toBe(true);
     });
 
     it('throws when getting an unregistered type', () => {
