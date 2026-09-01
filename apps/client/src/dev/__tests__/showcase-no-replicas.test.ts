@@ -179,3 +179,36 @@ describe('the Composer showcase renders the real components', () => {
     expect(source).toMatch(/import \{ MentionPalette.*\} from '@\/layers\/features\/mentions'/);
   });
 });
+
+describe('the model-picker showcase renders the real panel', () => {
+  const source = showcaseSource('showcases', 'ModelPickerShowcases.tsx');
+  const code = showcaseCode('showcases', 'ModelPickerShowcases.tsx');
+
+  it('opens the real ModelConfigPopover rather than a drawing of the panel', () => {
+    // This section exists to show the panel's WIDTH and its per-line overflow
+    // rules (DOR-1673) — the two things a replica would get right on the day it
+    // was written and wrong from the first time the real panel moved. It is
+    // also the section most tempting to fake: reaching a catalog needs a
+    // transport, and hand-drawing a list of cards is the shortcut.
+    expect(source).toContain('<ModelConfigPopover');
+    expect(source).toMatch(/from '@\/layers\/features\/status'/);
+  });
+
+  it('spells no panel width, card markup or overflow rule of its own', () => {
+    // Every one of these belongs to the real component. A copy here is a second
+    // source of truth for the exact facts this section is meant to demonstrate.
+    for (const owned of ['w-120', 'line-clamp-2', 'RadioGroup', 'dir="rtl"']) {
+      expect(code, `${owned} is the real panel's to spell, not the showcase's`).not.toContain(
+        owned
+      );
+    }
+  });
+
+  it('feeds the panel through a transport rather than through a models prop', () => {
+    // The catalog arrives the way it does in the app — `getModels` on a
+    // Transport — so the showcase exercises the panel's own fetching, empty and
+    // grouping paths instead of stepping around them.
+    expect(code).toContain('getModels');
+    expect(code).toMatch(/TransportProvider/);
+  });
+});

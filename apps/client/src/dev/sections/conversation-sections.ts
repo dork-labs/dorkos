@@ -671,6 +671,31 @@ export const CONVERSATION_SECTIONS: PlaygroundSection[] = [
       'controls',
     ],
   },
+  // ModelPickerShowcases — the panel behind the status line's model name, and
+  // the widths a stranger's catalog forces on it (DOR-1673).
+  {
+    id: 'model-picker',
+    title: 'Model picker',
+    page: 'conversation',
+    category: 'Status',
+    keywords: [
+      'model',
+      'picker',
+      'popover',
+      'panel',
+      'openrouter',
+      'opencode',
+      'catalog',
+      'width',
+      'overflow',
+      'truncate',
+      'ellipsis',
+      'tier',
+      'search',
+      'unverified',
+      'capability',
+    ],
+  },
   {
     id: 'sessioninspector',
     title: 'SessionInspector',

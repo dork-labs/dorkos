@@ -1076,6 +1076,213 @@ describe('ModelConfigPopover', () => {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // Text too wide for the panel (DOR-1673). Two problems, and widening only
+  // solves the first: an OpenRouter row carries a namespaced id and a sentence
+  // about what the model cannot do, and BOTH ran past 320px.
+  //
+  // jsdom measures nothing, so these assertions pin the *treatment* each line
+  // was given — which one may clip, which one may not, and from which end — and
+  // the layout itself was verified in a browser.
+  //
+  // One of them is load-bearing beyond styling. The id line must hold its text
+  // in ONE unbroken run, because a line split across two boxes is blockified by
+  // its parent, and a blockified box breaks text continuity: find-in-page stops
+  // matching the whole id and a copy comes back with a newline through the
+  // middle of it. That was measured in Chromium, not deduced. jsdom cannot see
+  // the consequence, but it CAN see the cause, and the shape below is what a
+  // split line fails.
+  // ---------------------------------------------------------------------------
+  describe('text too wide for the panel', () => {
+    const LONG_DESCRIPTION = 'OpenRouter · google/gemini-3-pro-image';
+    const PROSE_DESCRIPTION = 'Small, fast, and cost-efficient model for simpler tasks.';
+
+    /** An OpenRouter-shaped catalog: namespaced ids, and one model that warns. */
+    function mockOpenRouterModels() {
+      mockUseModels.mockImplementation(() => ({
+        data: [
+          {
+            value: 'openrouter/google/gemini-3-pro-image',
+            displayName: 'Google: Gemini 3 Pro Image Preview',
+            description: LONG_DESCRIPTION,
+            contextWindow: 1_000_000,
+            supportsEffort: false,
+            supportedEffortLevels: [] as EffortLevel[],
+            supportsFastMode: false,
+            supportsAutoMode: false,
+            supportsToolUse: true,
+            supportsImageOutput: true,
+          },
+          {
+            // A sentence, the way claude-code and codex describe a model.
+            value: 'gpt-oss-120b',
+            displayName: 'GPT OSS 120B',
+            description: PROSE_DESCRIPTION,
+            contextWindow: 128_000,
+            supportsEffort: false,
+            supportedEffortLevels: [] as EffortLevel[],
+            supportsFastMode: false,
+            supportsAutoMode: false,
+          },
+          {
+            // An Ollama id: the discriminating part is a `:` tag, with no slash
+            // anywhere in it.
+            value: 'deepseek-r1:70b-llama-distill-q4_K_M',
+            displayName: 'DeepSeek R1 70B',
+            description: 'ollama · deepseek-r1:70b-llama-distill-q4_K_M',
+            contextWindow: 131_000,
+            supportsEffort: false,
+            supportedEffortLevels: [] as EffortLevel[],
+            supportsFastMode: false,
+            supportsAutoMode: false,
+          },
+        ] as unknown[],
+        isLoading: false,
+        isError: false,
+        refetch: mockRefetch,
+      }));
+    }
+
+    /**
+     * The whole line as one unbroken run of text, or `null` if it is split.
+     *
+     * "Unbroken" means: at most one element between the line and its characters,
+     * and that element holding a single text node. Two side-by-side spans — the
+     * shape this replaced — return `null`, which is the point of the helper.
+     */
+    function unbrokenText(line: HTMLElement): string | null {
+      const inner = line.childNodes.length === 1 ? line.childNodes[0] : null;
+      if (!inner) return null;
+      if (inner.nodeType === Node.TEXT_NODE) return inner.textContent;
+      const nested = (inner as HTMLElement).childNodes;
+      if (nested.length !== 1 || nested[0].nodeType !== Node.TEXT_NODE) return null;
+      return nested[0].textContent;
+    }
+
+    beforeEach(mockOpenRouterModels);
+
+    it('gives the panel more room than the shared 320px default', () => {
+      render(
+        <ModelConfigPopover {...defaultProps({ model: 'openrouter/google/gemini-3-pro-image' })} />
+      );
+      const panel = screen.getByTestId('model-config-popover');
+      // 480px — enough for the longest capability note on one line.
+      expect(panel).toHaveClass('w-120');
+      // The default this replaces. Leaving both on would let tailwind-merge's
+      // ordering decide the width, which is not a decision anyone made.
+      expect(panel).not.toHaveClass('w-80');
+    });
+
+    it('eats the START of a model id, never its tail', () => {
+      render(
+        <ModelConfigPopover {...defaultProps({ model: 'openrouter/google/gemini-3-pro-image' })} />
+      );
+      // `title` carries the whole string, so it is also how the line is found.
+      const line = screen.getByTitle(LONG_DESCRIPTION);
+
+      // `dir="rtl"` is the entire mechanism: it moves the browser's own ellipsis
+      // to the other end of the line, so what gets dropped is the provider
+      // prefix every row shares rather than the id that says which model this is.
+      expect(line).toHaveAttribute('dir', 'rtl');
+      expect(line).toHaveClass('truncate');
+      // A right-to-left box would otherwise align a line that FITS to the right.
+      expect(line).toHaveClass('text-left');
+    });
+
+    it('keeps the id in one unbroken run of text, not two boxes', () => {
+      render(
+        <ModelConfigPopover {...defaultProps({ model: 'openrouter/google/gemini-3-pro-image' })} />
+      );
+      const line = screen.getByTitle(LONG_DESCRIPTION);
+
+      // The property that makes a copied id paste as one string and
+      // find-in-page match across the whole of it. Two boxes fail this.
+      expect(unbrokenText(line)).toBe(LONG_DESCRIPTION);
+      // And the run is put back in reading order, so an id ending in a bracket
+      // or a period is not reordered by the bidi algorithm.
+      const [inner] = Array.from(line.children) as HTMLElement[];
+      expect(inner.tagName).toBe('BDI');
+      expect(inner).toHaveAttribute('dir', 'ltr');
+    });
+
+    it('reads an Ollama `name:tag` id as an id, not as prose', () => {
+      const ollama = 'ollama · deepseek-r1:70b-llama-distill-q4_K_M';
+      render(
+        <ModelConfigPopover {...defaultProps({ model: 'deepseek-r1:70b-llama-distill-q4_K_M' })} />
+      );
+      // No slash anywhere in it: the tag after the colon is the discriminating
+      // half, and an end ellipsis would eat exactly that.
+      const line = screen.getByTitle(ollama);
+      expect(line).toHaveAttribute('dir', 'rtl');
+      expect(unbrokenText(line)).toBe(ollama);
+    });
+
+    it('leaves a prose description ellipsized at its end', () => {
+      render(<ModelConfigPopover {...defaultProps({ model: 'gpt-oss-120b' })} />);
+      const line = screen.getByTitle(PROSE_DESCRIPTION);
+      // A sentence loses nothing that identifies it when its tail goes, and
+      // starting one with an ellipsis reads as a mistake.
+      expect(line).toHaveClass('truncate');
+      expect(line).not.toHaveAttribute('dir');
+      expect(unbrokenText(line)).toBe(PROSE_DESCRIPTION);
+    });
+
+    it('wraps a model name to a second line rather than clipping its suffix', () => {
+      render(
+        <ModelConfigPopover {...defaultProps({ model: 'openrouter/google/gemini-3-pro-image' })} />
+      );
+      const name = screen.getByText('Google: Gemini 3 Pro Image Preview');
+      // `Preview`, `(free)` and `Thinking` all live at the END of a model name.
+      expect(name).not.toHaveClass('truncate');
+      expect(name).toHaveClass('line-clamp-2');
+    });
+
+    it('never truncates or clamps the line that says what a model cannot do', () => {
+      render(
+        <ModelConfigPopover {...defaultProps({ model: 'openrouter/google/gemini-3-pro-image' })} />
+      );
+      const warning = screen.getByTestId('model-limitation-openrouter/google/gemini-3-pro-image');
+      expect(warning).toHaveTextContent('Makes images, and DorkOS cannot show them yet.');
+      // Half a warning is worse than none, so it wraps and keeps every word.
+      for (const clipped of ['truncate', 'line-clamp-2', 'whitespace-nowrap']) {
+        expect(warning).not.toHaveClass(clipped);
+      }
+    });
+
+    it('gives the vanished saved id the same treatment, beside its own label', () => {
+      const vanished = 'openrouter/meta-llama/llama-3.1-nemotron-ultra-253b-v1';
+      render(<ModelConfigPopover {...defaultProps({ model: vanished })} />);
+      const banner = screen.getByTestId('model-unavailable-saved');
+      const line = screen.getByTitle(vanished);
+
+      expect(banner).toContainElement(line);
+      expect(line).toHaveAttribute('dir', 'rtl');
+      expect(unbrokenText(line)).toBe(vanished);
+      expect(banner).toHaveTextContent('(not available)');
+    });
+
+    it('keeps every part of this line shrinkable, beside a sibling that is not', () => {
+      // The failure this replaces (DOR-1673 review): the banner draws the id at
+      // `text-sm` next to a `shrink-0` label, and the old treatment protected a
+      // fixed 24-character tail. At 390px that tail took the row and left the
+      // head EIGHT pixels — too few to draw an ellipsis in — so the line began
+      // mid-word and never admitted it. Measured in a browser; jsdom counts
+      // characters and cannot see 8 pixels. What it CAN check is the cause: that
+      // nothing on this line refuses to shrink, so there is no per-line budget
+      // to get wrong in the first place.
+      const vanished = 'openrouter/meta-llama/llama-3.1-nemotron-ultra-253b-v1';
+      render(<ModelConfigPopover {...defaultProps({ model: vanished })} />);
+      const line = screen.getByTitle(vanished);
+
+      expect(line).toHaveClass('min-w-0');
+      expect(line).not.toHaveClass('shrink-0');
+      for (const child of Array.from(line.querySelectorAll('*'))) {
+        expect(child).not.toHaveClass('shrink-0');
+        expect(child).not.toHaveClass('whitespace-nowrap');
+      }
+    });
+  });
+
   describe('popover structure', () => {
     it('renders with data-testid model-config-popover', () => {
       render(<ModelConfigPopover {...defaultProps()} />);
