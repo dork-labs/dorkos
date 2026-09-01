@@ -18,13 +18,44 @@
  * Binary resolution reuses each adapter's own resolver (plain functions, not SDK
  * imports), so SDK confinement (Hard Rule #2) is unaffected.
  *
+ * ## Account pinning (DOR-1652)
+ *
+ * A `claude-code` login is spawned with `CLAUDE_CONFIG_DIR` explicitly pinned
+ * ({@link claudeConfigDirEnv}) to the account DorkOS runs a NEW session on by
+ * default — `runtimes.claudeCode.defaultAccount`, or the inherited
+ * `$CLAUDE_CONFIG_DIR`/`~/.claude` chain when nothing is configured (rungs 3-4
+ * of the account ladder in `claude-config-dir.ts`; see {@link
+ * resolveActiveClaudeRoot}). Without this the spawned `claude auth login`
+ * instead inherits whatever `CLAUDE_CONFIG_DIR` the SERVER PROCESS happens to
+ * have, which on a multi-account machine can silently re-authenticate the
+ * wrong account. Today's only caller (Settings → "Fix sign-in") carries no
+ * session identity, so this default is what it gets.
+ *
+ * An explicit {@link ResolveLoginCommandOptions.accountRoot} pins to a
+ * DIFFERENT, specific account instead — validated against {@link
+ * resolveClaudeRootSet} before anything spawns, so an unrecognized path is
+ * rejected rather than handed to a child process, and rejected outright for
+ * any runtime type other than `claude-code`. DOR-1651 (inline sign-in from a
+ * session's error card) is the intended consumer: it knows that session's
+ * actual bound account (rungs 1-2 of the ladder — a launch hint, an agent
+ * manifest, or the session's own persisted `accountRoot`) and will pass it
+ * through here so re-login targets THAT account rather than just the default.
+ * `codex` has no config-dir concept here and is unaffected: its `LoginCommand`
+ * carries no `env`, so it spawns exactly as it did before this seam existed.
+ *
  * @module services/runtimes/connect/delegated-login
  */
 import { spawn as nodeSpawn } from 'node:child_process';
+import path from 'node:path';
 import type { DelegatedLoginResult } from '@dorkos/shared/runtime-connect';
 import { logger } from '../../../lib/logger.js';
 import { resolveCodexBinaryPath } from '../codex/check-dependencies.js';
 import { resolveClaudeCliPath } from '../claude-code/sdk/sdk-utils.js';
+import {
+  claudeConfigDirEnv,
+  resolveActiveClaudeRoot,
+  resolveClaudeRootSet,
+} from '../claude-code/claude-config-dir.js';
 
 /** Injectable spawn seam (defaults to `node:child_process` spawn); tests pass a fake. */
 export type SpawnFn = typeof nodeSpawn;
@@ -44,15 +75,51 @@ export interface LoginCommand {
   binary: string;
   /** Argument vector that starts the vendor's login (no secret ever on argv). */
   args: string[];
+  /**
+   * Full environment for the spawned login, already merged over `process.env`
+   * — currently just the `claude-code` account pin ({@link claudeConfigDirEnv}).
+   * `undefined` when the runtime has no env override to apply (`codex`), in
+   * which case the child inherits `process.env` unmodified, exactly as before
+   * this seam existed.
+   */
+  env?: NodeJS.ProcessEnv;
+}
+
+/** Resolution options for {@link resolveLoginCommand}. */
+export interface ResolveLoginCommandOptions {
+  /**
+   * Pin the `claude-code` login to this account root instead of the account
+   * DorkOS runs new sessions on. Intended consumer: DOR-1651 (inline sign-in
+   * from a session's error card), which knows that session's actual bound
+   * account and can pass a root that differs from the default. Callers
+   * reaching this through {@link delegateRuntimeLogin} already have it
+   * validated against {@link resolveClaudeRootSet}, and rejected outright —
+   * never even reaching this function — for every runtime type other than
+   * `claude-code`.
+   */
+  accountRoot?: string;
 }
 
 /**
  * Resolve the login invocation for a runtime type, or `null` when its binary
  * cannot be found (the caller surfaces an honest "install first" state).
  *
+ * For `claude-code`, the spawn env pins `CLAUDE_CONFIG_DIR` to
+ * `opts.accountRoot` — or, when omitted, to {@link resolveActiveClaudeRoot},
+ * the account DorkOS runs a NEW session on. This is what makes "Fix sign-in"
+ * re-authenticate the account DorkOS would actually use, rather than
+ * whatever `CLAUDE_CONFIG_DIR` the server process happens to have inherited
+ * (DOR-1652). `opts.accountRoot` targets a DIFFERENT, already-decided account
+ * instead; its intended caller is DOR-1651 (inline sign-in from a session's
+ * error card), which knows that session's actual bound account.
+ *
  * @param type - Runtime type (`'claude-code'` | `'codex'`).
+ * @param opts - Resolution options (`accountRoot`, `claude-code` only).
  */
-export async function resolveLoginCommand(type: string): Promise<LoginCommand | null> {
+export async function resolveLoginCommand(
+  type: string,
+  opts: ResolveLoginCommandOptions = {}
+): Promise<LoginCommand | null> {
   switch (type) {
     case 'codex': {
       const binary = await resolveCodexBinaryPath();
@@ -60,11 +127,34 @@ export async function resolveLoginCommand(type: string): Promise<LoginCommand | 
     }
     case 'claude-code': {
       const binary = resolveClaudeCliPath();
-      return binary ? { binary, args: ['auth', 'login'] } : null;
+      if (!binary) return null;
+      const root = opts.accountRoot ?? resolveActiveClaudeRoot();
+      return {
+        binary,
+        args: ['auth', 'login'],
+        env: {
+          // eslint-disable-next-line no-restricted-syntax -- the CLI needs the full shell env (PATH, etc.) alongside the pinned account; see claude-code-runtime.ts for the identical pattern
+          ...process.env,
+          ...claudeConfigDirEnv(root),
+        },
+      };
     }
     default:
       return null;
   }
+}
+
+/**
+ * Whether `root` is one of the Claude account roots DorkOS actually knows
+ * about ({@link resolveClaudeRootSet}). Guards {@link delegateRuntimeLogin}'s
+ * optional `accountRoot` — an id or path from a future caller must never reach
+ * a spawn unvalidated.
+ *
+ * @param root - Candidate account root to check.
+ */
+function isKnownClaudeAccountRoot(root: string): boolean {
+  const target = path.resolve(root);
+  return resolveClaudeRootSet().some((known) => path.resolve(known) === target);
 }
 
 /**
@@ -86,7 +176,10 @@ export function runDelegatedLogin(
   return new Promise<DelegatedLoginResult>((resolve) => {
     let settled = false;
     let stderr = '';
-    const child = spawn(cmd.binary, cmd.args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    const child = spawn(cmd.binary, cmd.args, {
+      stdio: ['ignore', 'ignore', 'pipe'],
+      ...(cmd.env ? { env: cmd.env } : {}),
+    });
 
     const finish = (result: DelegatedLoginResult): void => {
       if (settled) return;
@@ -139,7 +232,10 @@ export function pipeSecretToChild(
   return new Promise<DelegatedLoginResult>((resolve) => {
     let settled = false;
     let stderr = '';
-    const child = spawn(cmd.binary, cmd.args, { stdio: ['pipe', 'ignore', 'pipe'] });
+    const child = spawn(cmd.binary, cmd.args, {
+      stdio: ['pipe', 'ignore', 'pipe'],
+      ...(cmd.env ? { env: cmd.env } : {}),
+    });
 
     const finish = (result: DelegatedLoginResult): void => {
       if (settled) return;
@@ -183,19 +279,46 @@ export function pipeSecretToChild(
  * detect completion. Returns an honest, binary-not-found state when the vendor
  * CLI is unresolvable (Codex install is handled in T0; Claude ships bundled).
  *
+ * `deps.accountRoot` pins a `claude-code` login to a specific account instead
+ * of the account DorkOS runs new sessions on. Its intended caller is DOR-1651
+ * (inline sign-in from a session's error card), which knows that session's
+ * actual bound account (DOR-1652 introduces the seam; DOR-1651 is the first
+ * caller to pass a non-default root). It is rejected outright for any type
+ * other than `claude-code` — accounts are a Claude-only concept here — and
+ * for `claude-code` it is validated against {@link resolveClaudeRootSet}
+ * BEFORE anything spawns: a root that resolver does not recognize resolves
+ * to an honest `{ ok: false }` rather than reaching a child process with an
+ * arbitrary caller-supplied path. Omitted, the login pins to {@link
+ * resolveActiveClaudeRoot} (see {@link resolveLoginCommand}) — the account
+ * DorkOS runs a new session on by default.
+ *
  * @param type - Runtime type (`'claude-code'` | `'codex'`).
- * @param deps - Injectable timeout + spawn seam + command resolver (for tests).
+ * @param deps - Injectable timeout + spawn seam + command resolver (for tests),
+ *   plus the optional account pin.
  */
 export async function delegateRuntimeLogin(
   type: string,
   deps: {
     timeoutMs?: number;
     spawn?: SpawnFn;
-    resolveCommand?: (type: string) => Promise<LoginCommand | null>;
+    resolveCommand?: (
+      type: string,
+      opts?: ResolveLoginCommandOptions
+    ) => Promise<LoginCommand | null>;
+    accountRoot?: string;
   } = {}
 ): Promise<DelegatedLoginResult> {
+  if (deps.accountRoot !== undefined) {
+    if (type !== 'claude-code') {
+      return { ok: false, error: `"${type}" does not support pinning a specific account.` };
+    }
+    if (!isKnownClaudeAccountRoot(deps.accountRoot)) {
+      return { ok: false, error: 'That Claude account is not recognized on this machine.' };
+    }
+  }
+
   const resolveCommand = deps.resolveCommand ?? resolveLoginCommand;
-  const cmd = await resolveCommand(type);
+  const cmd = await resolveCommand(type, { accountRoot: deps.accountRoot });
   if (!cmd) {
     return { ok: false, error: `The ${type} CLI is not available to sign in.` };
   }
