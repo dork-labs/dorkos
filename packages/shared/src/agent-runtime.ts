@@ -291,6 +291,21 @@ export interface DependencyCheck {
   installHint?: string;
   /** URL for more information. */
   infoUrl?: string;
+  /**
+   * When the sign-in behind this check runs out and a person has to renew it by
+   * hand, as an ISO-8601 instant.
+   *
+   * Present only when a runtime can read a REAL deadline off its own credential
+   * store, and only for a credential that actually has one — an API key never
+   * expires on a schedule, so it carries nothing here. Absent therefore means
+   * "no deadline is known", which is not the same as "nothing expires soon":
+   * consumers must treat absence exactly like a distant deadline and say
+   * nothing, or they will warn every user whose credential they cannot read.
+   *
+   * A deadline can be present on a `satisfied` check (the sign-in still works,
+   * and this is how long for) and on a `missing` one (it ran out at this time).
+   */
+  expiresAt?: string;
 }
 
 /**
