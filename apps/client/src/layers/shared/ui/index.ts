@@ -283,6 +283,7 @@ export { Toaster } from './sonner';
 export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from './tooltip';
 export { ConnectionStatusBanner } from './ConnectionStatusBanner';
 export { FeatureDisabledState } from './FeatureDisabledState';
+export { LinkifiedText, containsUrl } from './linkified-text';
 export { LinkSafetyModal } from './link-safety-modal';
 export { MarkdownContent } from './markdown-content';
 export { MarkdownErrorBoundary } from './markdown-error-boundary';

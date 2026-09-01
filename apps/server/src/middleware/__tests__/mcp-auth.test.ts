@@ -416,6 +416,130 @@ describe('createMcpAuth — surface "mcp", login off, each acceptor authorizes a
   });
 });
 
+describe('createMcpAuth — the API-key lookup is skipped only for the local token', () => {
+  // Acceptor 2 runs before acceptors 3 and 4, and stays there: it is the only
+  // place `/mcp` learns WHO is calling. What changed is that when the bearer is
+  // this instance's own local token — minted into a 0600 file, never written to
+  // the `apikey` table — the verifier is told not to bother asking the apiKey
+  // plugin. That lookup could only fail, and better-auth logs its own untagged
+  // `error` line on the way to failing, ~4 per agent turn once `/mcp` is wired
+  // into a session. The cookie half still runs, so nothing about who is allowed
+  // in, or who gets recorded, moves.
+
+  // The file-level `beforeEach` re-arms the mock's implementation but keeps its
+  // call history; these assertions are about the arguments of THIS request.
+  beforeEach(() => vi.mocked(verifyRequestAuth).mockClear());
+
+  it('tells the verifier the bearer is not an API key when it is the local token', async () => {
+    mockConfig({ authEnabled: false });
+    const next = vi.fn() as NextFunction;
+    const res = createMockRes();
+    await mcpAuth(
+      createMockReq({
+        authHeader: `Bearer ${LOCAL_TOKEN}`,
+        body: rpc('tools/call', 'create_extension'),
+      }) as Request,
+      res as Response,
+      next
+    );
+    expect(next).toHaveBeenCalled();
+    expect(verifyRequestAuth).toHaveBeenCalledWith(expect.anything(), {
+      bearerIsNotAnApiKey: true,
+    });
+  });
+
+  it('does NOT skip it for a bearer that could be a per-user key', async () => {
+    mockConfig({ authEnabled: false });
+    const next = vi.fn() as NextFunction;
+    const res = createMockRes();
+    await mcpAuth(
+      createMockReq({
+        authHeader: 'Bearer some_user_key',
+        body: rpc('tools/call', 'create_extension'),
+      }) as Request,
+      res as Response,
+      next
+    );
+    expect(verifyRequestAuth).toHaveBeenCalledWith(expect.anything(), {});
+  });
+
+  it('does NOT skip it for the legacy config key, which seeding stores AS a Better Auth key', async () => {
+    // `seedLegacyMcpApiKey` inserts that exact value into the `apikey` table, so
+    // the legacy bearer really can resolve to a person. Skipping the lookup here
+    // would silently drop `res.locals.user` for them.
+    mockConfig({ mcpApiKey: 'dork_mcp_legacy', authEnabled: false });
+    const next = vi.fn() as NextFunction;
+    const res = createMockRes();
+    await mcpAuth(
+      createMockReq({
+        authHeader: 'Bearer dork_mcp_legacy',
+        body: rpc('tools/call', 'create_extension'),
+      }) as Request,
+      res as Response,
+      next
+    );
+    expect(next).toHaveBeenCalled();
+    expect(verifyRequestAuth).toHaveBeenCalledWith(expect.anything(), {});
+  });
+
+  it('does NOT skip it when login is on, where the local token is inactive anyway', async () => {
+    // ADR-0320: acceptor 4 does not apply in login-on mode, so neither does the
+    // hint — a stale local token presented there is a real auth failure and the
+    // log line it produces is signal.
+    mockConfig({ authEnabled: true });
+    const next = vi.fn() as NextFunction;
+    const res = createMockRes();
+    await mcpAuth(
+      createMockReq({
+        authHeader: `Bearer ${LOCAL_TOKEN}`,
+        body: rpc('tools/call', 'create_extension'),
+      }) as Request,
+      res as Response,
+      next
+    );
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(401);
+    expect(verifyRequestAuth).toHaveBeenCalledWith(expect.anything(), {});
+  });
+
+  it('still records a cookie identity when the bearer is the local token', async () => {
+    // The half a straight acceptor reorder would have broken: acceptor 2 keeps
+    // its priority, so a request carrying both still resolves to the person.
+    mockConfig({ authEnabled: false });
+    vi.mocked(verifyRequestAuth).mockResolvedValue({ userId: 'owner-1', credential: 'cookie' });
+    const next = vi.fn() as NextFunction;
+    const res = createMockRes();
+    await mcpAuth(
+      createMockReq({
+        authHeader: `Bearer ${LOCAL_TOKEN}`,
+        body: rpc('tools/call', 'relay_send'),
+      }) as Request,
+      res as Response,
+      next
+    );
+    expect(next).toHaveBeenCalled();
+    expect(res.locals?.user).toEqual({ userId: 'owner-1', credential: 'cookie' });
+  });
+
+  it('does not consult the local token at all when the env key already matched', async () => {
+    // Acceptor 1 short-circuits before anything else, including the verifier.
+    (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'env-key';
+    mockConfig({ authEnabled: false });
+    const next = vi.fn() as NextFunction;
+    const res = createMockRes();
+    await mcpAuth(
+      createMockReq({
+        authHeader: 'Bearer env-key',
+        body: rpc('tools/call', 'create_extension'),
+      }) as Request,
+      res as Response,
+      next
+    );
+    expect(next).toHaveBeenCalled();
+    expect(verifyRequestAuth).not.toHaveBeenCalled();
+  });
+});
+
 describe('createMcpAuth — helpful 401 body', () => {
   it('names the token file path and the Authorization: Bearer header, never the token value', async () => {
     // The 401 must be a dead-end that helps, without leaking the secret.

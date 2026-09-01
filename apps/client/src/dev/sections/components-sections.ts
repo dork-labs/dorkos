@@ -323,6 +323,23 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     keywords: ['markdown', 'prose', 'render', 'static', 'streamdown', 'content'],
   },
   {
+    id: 'linkifiedtext',
+    title: 'LinkifiedText',
+    page: 'components',
+    category: 'Data Display',
+    keywords: [
+      'link',
+      'linkify',
+      'url',
+      'error',
+      'untrusted',
+      'anchor',
+      'homograph',
+      'punycode',
+      'spoof',
+    ],
+  },
+  {
     id: 'featuredisabledstate',
     title: 'FeatureDisabledState',
     page: 'components',

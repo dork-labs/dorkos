@@ -9,6 +9,7 @@ import {
   PathBreadcrumb,
   ScanLine,
   MarkdownContent,
+  LinkifiedText,
   FeatureDisabledState,
   IdentityAvatar,
   ScrollArea,
@@ -79,8 +80,24 @@ const agent = await runtime.spawn({
 `;
 
 /**
+ * Strings for the {@link LinkifiedText} showcase — each one a shape the
+ * component exists to handle, not decoration. The homograph and userinfo rows
+ * are the anti-spoofing cases: they must render as a visibly different host
+ * than the source string reads, or as no link at all.
+ */
+const LINKIFIED_SAMPLES = {
+  provider:
+    'This request requires more credits. Add credits at https://openrouter.ai/settings/credits and try again.',
+  notMarkdown:
+    'Parse failed at **line 12**: unexpected `}` in {"model": "gpt-5"} — see https://dorkos.ai/docs/errors',
+  // U+043E CYRILLIC SMALL LETTER O in place of the Latin "o".
+  homograph: 'Session expired. Sign in again at https://d\u043erkos.ai/settings',
+  userinfo: 'Upload failed. Retry against https://dorkos.ai@evil.example/settings',
+} as const;
+
+/**
  * Data display component showcases: PathBreadcrumb, ScanLine, MarkdownContent,
- * FeatureDisabledState, ScrollArea, and {@link IdentityAvatarShowcase}.
+ * LinkifiedText, FeatureDisabledState, ScrollArea, and {@link IdentityAvatarShowcase}.
  */
 export function DataDisplayShowcases() {
   const [isStreaming, setIsStreaming] = useState(true);
@@ -180,6 +197,46 @@ export function DataDisplayShowcases() {
       >
         <ShowcaseDemo>
           <MarkdownContent content={SAMPLE_MARKDOWN} />
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="LinkifiedText"
+        description="Untrusted machine output — error messages — with bare http(s) URLs as real links, and nothing else interpreted."
+      >
+        <ShowcaseLabel>What it is for: a provider error whose one remedy is a URL</ShowcaseLabel>
+        <ShowcaseDemo>
+          <p className="text-muted-foreground text-sm">
+            <LinkifiedText text={LINKIFIED_SAMPLES.provider} />
+          </p>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Markdown is NOT interpreted — the text is shown literally</ShowcaseLabel>
+        <ShowcaseDemo>
+          <p className="text-muted-foreground text-sm">
+            <LinkifiedText text={LINKIFIED_SAMPLES.notMarkdown} />
+          </p>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          Anti-spoofing: the label is the NORMALIZED destination. The host below reads
+          &quot;dorkos.ai&quot; in the source string; a Cyrillic о makes it something else, and the
+          link says so.
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <p className="text-muted-foreground text-sm">
+            <LinkifiedText text={LINKIFIED_SAMPLES.homograph} />
+          </p>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          A URL carrying credentials resolves to its LAST host, so it is refused and stays plain
+          text
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <p className="text-muted-foreground text-sm">
+            <LinkifiedText text={LINKIFIED_SAMPLES.userinfo} />
+          </p>
         </ShowcaseDemo>
       </PlaygroundSection>
 

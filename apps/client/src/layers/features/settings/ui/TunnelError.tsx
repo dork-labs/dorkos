@@ -1,6 +1,6 @@
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import { motion } from 'motion/react';
-import { Button } from '@/layers/shared/ui';
+import { Button, LinkifiedText } from '@/layers/shared/ui';
 import { friendlyErrorMessage } from '../lib/tunnel-utils';
 
 /**
@@ -39,7 +39,9 @@ export function TunnelError({ error, onRetry }: TunnelErrorProps) {
         <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-600 dark:text-red-400" />
         <div className="min-w-0 flex-1 space-y-2">
           <p className="text-sm font-medium text-red-800 dark:text-red-200">Tunnel failed</p>
-          <p className="text-xs text-red-700 dark:text-red-300">{message}</p>
+          <p className="text-xs text-red-700 dark:text-red-300">
+            <LinkifiedText text={message} />
+          </p>
           <Button
             variant="outline"
             size="sm"

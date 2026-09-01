@@ -4,6 +4,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/layers/shared/ui/collapsible';
+import { LinkifiedText } from '@/layers/shared/ui';
 import type { CatalogInstance } from '@dorkos/shared/relay-schemas';
 
 interface AdapterCardErrorProps {
@@ -45,8 +46,11 @@ export function AdapterCardError({ instance }: AdapterCardErrorProps) {
             </CollapsibleTrigger>
           </div>
           <CollapsibleContent>
+            {/* Only the expanded copy linkifies. The collapsed trigger above
+                is a `<button>`, and an anchor inside a button is invalid HTML
+                (and truncated to 200px there anyway). */}
             <div className="mt-1 rounded-md bg-red-50 p-2 font-mono text-xs text-red-700 dark:bg-red-950 dark:text-red-300">
-              {lastError}
+              <LinkifiedText text={lastError} />
             </div>
           </CollapsibleContent>
         </Collapsible>

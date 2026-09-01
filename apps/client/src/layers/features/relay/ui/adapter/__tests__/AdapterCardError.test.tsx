@@ -101,4 +101,19 @@ describe('AdapterCardError', () => {
       screen.queryByRole('button', { name: 'Toggle full error message' })
     ).not.toBeInTheDocument();
   });
+
+  it('renders a URL in the expanded error as a real link', () => {
+    render(
+      <AdapterCardError
+        instance={makeInstance({
+          lastError: 'Bot blocked. See https://core.telegram.org/bots/api#error',
+        })}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /toggle full error message/i }));
+    expect(
+      screen.getByRole('link', { name: 'https://core.telegram.org/bots/api#error' })
+    ).toHaveAttribute('href', 'https://core.telegram.org/bots/api#error');
+  });
 });

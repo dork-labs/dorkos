@@ -177,6 +177,16 @@ export const ERROR_PARTS: Record<string, ErrorPart> = {
     message: 'Failed to produce valid JSON after 3 retries',
     category: 'output_format_error',
   },
+  // The shape both error-rendering fixes are about: a provider auth failure
+  // whose ONE actionable instruction is a URL. The friendly "sign in again"
+  // copy shows, the provider's own words show under it, and the link is a real,
+  // clickable anchor rather than something to retype.
+  auth_error: {
+    type: 'error',
+    message:
+      'This request requires more credits. Add credits at https://openrouter.ai/settings/credits',
+    category: 'auth_error',
+  },
   uncategorized: {
     type: 'error',
     message: 'Something went wrong during processing.',

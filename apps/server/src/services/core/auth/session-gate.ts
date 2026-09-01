@@ -119,6 +119,28 @@ function extractBearerToken(authorization: string | undefined): string | null {
   return scheme === 'Bearer' && token ? token : null;
 }
 
+/** Options for {@link verifyRequestAuth}. */
+export interface VerifyRequestAuthOptions {
+  /**
+   * Set when the caller already knows the request's `Authorization: Bearer`
+   * value is one of this instance's own secrets rather than a per-user Better
+   * Auth API key — today only the per-instance local MCP token, which is minted
+   * into a `0600` file and never inserted into the `apikey` table.
+   *
+   * Skips the API-key leg. It could not have matched, and asking anyway is not
+   * free: better-auth's apiKey plugin logs its own untagged, `error`-level
+   * `"Failed to validate API key: … Invalid API key."` from plugin internals
+   * before returning `{ valid: false }` — it does not throw, so the debug-level
+   * catch below never gets the chance to quiet it. Every JSON-RPC round trip to
+   * `/mcp` is a separate POST (`initialize`, `tools/list`, each `tools/call`),
+   * so on a default install with `runtimes.dorkosTools` on, that was roughly
+   * four bogus error lines per agent turn drowning real failures in the log.
+   *
+   * The session-cookie leg still runs, so identity attribution is unchanged.
+   */
+  bearerIsNotAnApiKey?: boolean;
+}
+
 /**
  * Resolve the authenticated identity of a request from its credentials.
  *
@@ -145,11 +167,14 @@ function extractBearerToken(authorization: string | undefined): string | null {
  *
  * @param req - Anything carrying the request's headers — an Express `Request`,
  *   or the raw `IncomingMessage` of a WebSocket upgrade.
+ * @param options - See {@link VerifyRequestAuthOptions}. Omit unless the caller
+ *   already knows what the request's bearer is.
  * @returns The resolved identity and how it was proved, or `null` when
  *   unauthenticated.
  */
 export async function verifyRequestAuth(
-  req: Pick<Request, 'headers'>
+  req: Pick<Request, 'headers'>,
+  options: VerifyRequestAuthOptions = {}
 ): Promise<RequestUser | null> {
   const auth = getAuth();
   // Auth was never initialized (e.g. a unit test app built without initAuth):
@@ -168,8 +193,10 @@ export async function verifyRequestAuth(
     });
   }
 
-  // 2. Bearer API key — verified via the apiKey plugin.
-  const token = extractBearerToken(req.headers.authorization);
+  // 2. Bearer API key — verified via the apiKey plugin, unless the caller has
+  //    already established that this bearer is one of its own non-Better-Auth
+  //    secrets (see `bearerIsNotAnApiKey`).
+  const token = options.bearerIsNotAnApiKey ? null : extractBearerToken(req.headers.authorization);
   if (token) {
     try {
       const result = await auth.api.verifyApiKey({ body: { key: token } });
