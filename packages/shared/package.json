@@ -125,6 +125,10 @@
       "types": "./src/runtime-error-classification.ts",
       "default": "./dist/runtime-error-classification.js"
     },
+    "./run-outcome": {
+      "types": "./src/run-outcome.ts",
+      "default": "./dist/run-outcome.js"
+    },
     "./workspace": {
       "types": "./src/workspace.ts",
       "default": "./dist/workspace.js"

@@ -760,6 +760,172 @@ describe('TaskSchedulerService', () => {
     });
   });
 
+  describe('a run that hit an error says so (DOR-1658)', () => {
+    /** Run one turn to its terminal row and hand the row back. */
+    async function runTurn(
+      name: string,
+      turn: () => AsyncGenerator<StreamEvent>
+    ): Promise<TaskRun> {
+      vi.mocked(mockAgent.sendMessage).mockImplementation(turn);
+      const task = store.createTask(
+        taskInput({ name, prompt: 'test', cron: '0 * * * *', maxRuntime: null })
+      );
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const run = await service.triggerManualRun(task.id);
+      await vi.waitFor(() => {
+        expect(store.getRun(run!.id)!.finishedAt).not.toBeNull();
+      });
+      await service.stop();
+      return store.getRun(run!.id)!;
+    }
+
+    it('records a stream that errored and then ended as FAILED, with the message', async () => {
+      // The exact bug: the stream ends normally, nothing was stopped, and the
+      // run used to be filed as a success with no error line at all.
+      const finished = await runTurn('Broken', async function* () {
+        yield { type: 'text_delta', data: { text: 'starting' } };
+        yield {
+          type: 'error',
+          data: { message: 'API Error: 500 upstream', category: 'execution_error' },
+        };
+      });
+
+      expect(finished.status).toBe('failed');
+      expect(finished.error).toBe('API Error: 500 upstream');
+      // What it managed to say before it died is still worth keeping.
+      expect(finished.outputSummary).toBe('starting');
+    });
+
+    it('leads an expired sign-in with what to do about it', async () => {
+      const finished = await runTurn('Signout', async function* () {
+        yield {
+          type: 'error',
+          data: {
+            message: 'OAuth access token has been revoked',
+            category: 'auth_error',
+            code: 'authentication_failed',
+          },
+        };
+        yield { type: 'done', data: { sessionId: 's' } };
+      });
+
+      expect(finished.status).toBe('failed');
+      expect(finished.error).toBe('Sign in again: OAuth access token has been revoked');
+    });
+
+    it('fails a run whose runtime named its own terminal reason beside the error', async () => {
+      // The claude-code shape: a failing SDK result carries `terminal_reason`,
+      // which must not read as absolution.
+      const finished = await runTurn('NamedReason', async function* () {
+        yield { type: 'session_status', data: { sessionId: 's', terminalReason: 'model_error' } };
+        yield { type: 'error', data: { message: 'the model errored' } };
+        yield { type: 'done', data: { sessionId: 's' } };
+      });
+
+      expect(finished.status).toBe('failed');
+      expect(finished.error).toBe('the model errored');
+    });
+
+    it('still records a RECOVERED mid-turn error as completed', async () => {
+      // Non-terminal errors exist. A turn the runtime carried on from, and then
+      // finished, did the work — filing it as a failure would be the same lie
+      // pointing the other way.
+      const finished = await runTurn('Recovered', async function* () {
+        yield { type: 'error', data: { message: 'a tool blew up' } };
+        yield { type: 'text_delta', data: { text: 'carried on' } };
+        yield { type: 'session_status', data: { sessionId: 's', terminalReason: 'completed' } };
+        yield { type: 'done', data: { sessionId: 's' } };
+      });
+
+      expect(finished.status).toBe('completed');
+      expect(finished.error).toBeNull();
+    });
+
+    it('does not fail a run because the OPERATOR hook script exited non-zero', async () => {
+      // `hook_failure` is the runtime escalating the operator's own Stop /
+      // SubagentStop / SessionStart hook exiting non-zero; the turn then ends
+      // normally carrying the whole answer. Failing here is not merely untidy:
+      // a failed run raises `run.completed` with `relay: 'always'`, so it would
+      // be an unconditional ping about a run that did its job.
+      const finished = await runTurn('HookNoise', async function* () {
+        yield { type: 'text_delta', data: { text: 'the whole answer' } };
+        yield {
+          type: 'error',
+          data: { message: 'Hook "notify" failed (Stop)', code: 'hook_failure' },
+        };
+        yield { type: 'done', data: { sessionId: 's' } };
+      });
+
+      expect(finished.status).toBe('completed');
+      expect(finished.error).toBeNull();
+      expect(finished.outputSummary).toBe('the whole answer');
+    });
+
+    it('does not fail a run that deferred a tool after a recovered error', async () => {
+      // `tool_deferred` rides SDKResultSuccess: the turn handed work off and is
+      // coming back for it, so an error before the hand-off is not a failure.
+      const finished = await runTurn('Deferred', async function* () {
+        yield { type: 'error', data: { message: 'a tool blew up' } };
+        yield { type: 'text_delta', data: { text: 'handing off' } };
+        yield { type: 'session_status', data: { sessionId: 's', terminalReason: 'tool_deferred' } };
+        yield { type: 'done', data: { sessionId: 's' } };
+      });
+
+      expect(finished.status).toBe('completed');
+      expect(finished.error).toBeNull();
+    });
+
+    it('leaves a clean run exactly as it was', async () => {
+      const finished = await runTurn('Clean', async function* () {
+        yield { type: 'text_delta', data: { text: 'all done' } };
+        yield { type: 'done', data: { sessionId: 's' } };
+      });
+
+      expect(finished.status).toBe('completed');
+      expect(finished.error).toBeNull();
+      expect(finished.outputSummary).toBe('all done');
+    });
+
+    it('records a STOPPED run as cancelled even though its turn errored', async () => {
+      // A stop is the operator's action and has its own status; an error frame
+      // already latched must not turn it into a failure.
+      //
+      // The error frame is what makes this test discriminate. `parkedTurn()`
+      // alone emits none, so the run would read `cancelled` whatever the outcome
+      // tracker believed and the assertion could not fail — the stopped branch
+      // never calls `settle()` at all. Emitting a real failure BEFORE the park
+      // is what puts the two answers in genuine conflict, so this pins the
+      // branch ordering rather than restating it.
+      let signalParked!: () => void;
+      const parked = new Promise<void>((resolve) => {
+        signalParked = resolve;
+      });
+      vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
+        yield { type: 'text_delta', data: { text: 'starting' } };
+        yield { type: 'error', data: { message: 'API Error: 500 upstream' } };
+        signalParked();
+        await new Promise(() => {});
+      });
+      const turn = { parked };
+      const task = store.createTask(
+        taskInput({ name: 'StoppedNotFailed', prompt: 'test', cron: '0 * * * *', maxRuntime: 50 })
+      );
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const run = await service.triggerManualRun(task.id);
+      await turn.parked;
+
+      await vi.waitFor(
+        () => {
+          expect(store.getRun(run!.id)!.status).toBe('cancelled');
+        },
+        { timeout: 2000 }
+      );
+      expect(store.getRun(run!.id)!.error).toContain('time limit');
+
+      await service.stop();
+    });
+  });
+
   describe('getActiveRunCount()', () => {
     it('returns 0 when no runs are active', () => {
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);

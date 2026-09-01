@@ -54,7 +54,10 @@ export interface RunInterrupter {
  *
  * The relay dispatch path has its own copy of this loop
  * (`packages/relay/src/adapters/claude-code/task-handler.ts`) — it cannot
- * import from `apps/server`. Fix both if you fix one.
+ * import from `apps/server`. Fix both if you fix one. What the two do NOT
+ * duplicate is how they read the run's outcome off these events: that rule is
+ * `createRunOutcomeTracker` in `@dorkos/shared/run-outcome`, so the same stream
+ * can never settle as a failure on one path and a success on the other.
  *
  * @param stream - The agent's per-turn event stream.
  * @param signal - Aborts when the run is cancelled or out of time.

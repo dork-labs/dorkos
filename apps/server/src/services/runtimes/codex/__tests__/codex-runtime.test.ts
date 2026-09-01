@@ -20,6 +20,7 @@ import {
   codexThreadStarted,
   codexTurnStarted,
   codexItemUpdated,
+  codexFailedTurn,
   agentMessageItem,
   makeMockThread,
 } from './codex-scenarios.js';
@@ -1142,6 +1143,41 @@ describe('CodexRuntime', () => {
       expect(history.length).toBeGreaterThan(0);
       expect(history.some((m) => m.role === 'user' && m.content === 'hello')).toBe(true);
       expect(history.some((m) => m.role === 'assistant')).toBe(true);
+    });
+
+    // Codex has no vendor-error-as-agent-speech gap, and this is the proof
+    // (DOR-1666). Every Codex failure has a typed home in the SDK stream
+    // (`turn.failed`, `ErrorItem`, `ThreadErrorEvent` — there is no shape that
+    // delivers one as an `AgentMessageItem`), the mapper classifies it once,
+    // and the durable EventLog fold replays that classification verbatim. So
+    // the category a person saw live is the category a reload shows, and this
+    // asserts the whole chain rather than any one link.
+    it('reconstructs an auth-failed turn as a typed auth_error part, not agent speech', async () => {
+      const { runtime } = makeRuntime();
+      const sessionId = crypto.randomUUID();
+      sdkMocks.startThread.mockReturnValue(
+        makeMockThread(codexFailedTurn('401 Unauthorized: OAuth token revoked'))
+      );
+      const projector = getOrCreateProjector(sessionId, '/projects/demo');
+
+      await feedProjector(projector, runtime.sendMessage(sessionId, 'hello'), {
+        userMessage: 'hello',
+      });
+
+      const history = await runtime.getMessageHistory('/projects/demo', sessionId);
+      const assistant = history.find((m) => m.role === 'assistant');
+      expect(assistant).toBeDefined();
+      // The failure is an error PART, so it renders as an error card with the
+      // sign-in affordance — never as something the agent said.
+      expect(assistant!.content).toBe('');
+      expect(assistant!.parts).toEqual([
+        {
+          type: 'error',
+          message: '401 Unauthorized: OAuth token revoked',
+          category: 'auth_error',
+          details: '[turn_failed]',
+        },
+      ]);
     });
 
     it('returns empty history for a session that never streamed', async () => {
