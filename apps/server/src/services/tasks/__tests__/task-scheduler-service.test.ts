@@ -760,6 +760,122 @@ describe('TaskSchedulerService', () => {
     });
   });
 
+  describe('a run that hit an error says so (DOR-1658)', () => {
+    /** Run one turn to its terminal row and hand the row back. */
+    async function runTurn(
+      name: string,
+      turn: () => AsyncGenerator<StreamEvent>
+    ): Promise<TaskRun> {
+      vi.mocked(mockAgent.sendMessage).mockImplementation(turn);
+      const task = store.createTask(
+        taskInput({ name, prompt: 'test', cron: '0 * * * *', maxRuntime: null })
+      );
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const run = await service.triggerManualRun(task.id);
+      await vi.waitFor(() => {
+        expect(store.getRun(run!.id)!.finishedAt).not.toBeNull();
+      });
+      await service.stop();
+      return store.getRun(run!.id)!;
+    }
+
+    it('records a stream that errored and then ended as FAILED, with the message', async () => {
+      // The exact bug: the stream ends normally, nothing was stopped, and the
+      // run used to be filed as a success with no error line at all.
+      const finished = await runTurn('Broken', async function* () {
+        yield { type: 'text_delta', data: { text: 'starting' } };
+        yield {
+          type: 'error',
+          data: { message: 'API Error: 500 upstream', category: 'execution_error' },
+        };
+      });
+
+      expect(finished.status).toBe('failed');
+      expect(finished.error).toBe('API Error: 500 upstream');
+      // What it managed to say before it died is still worth keeping.
+      expect(finished.outputSummary).toBe('starting');
+    });
+
+    it('leads an expired sign-in with what to do about it', async () => {
+      const finished = await runTurn('Signout', async function* () {
+        yield {
+          type: 'error',
+          data: {
+            message: 'OAuth access token has been revoked',
+            category: 'auth_error',
+            code: 'authentication_failed',
+          },
+        };
+        yield { type: 'done', data: { sessionId: 's' } };
+      });
+
+      expect(finished.status).toBe('failed');
+      expect(finished.error).toBe('Sign in again: OAuth access token has been revoked');
+    });
+
+    it('fails a run whose runtime named its own terminal reason beside the error', async () => {
+      // The claude-code shape: a failing SDK result carries `terminal_reason`,
+      // which must not read as absolution.
+      const finished = await runTurn('NamedReason', async function* () {
+        yield { type: 'session_status', data: { sessionId: 's', terminalReason: 'model_error' } };
+        yield { type: 'error', data: { message: 'the model errored' } };
+        yield { type: 'done', data: { sessionId: 's' } };
+      });
+
+      expect(finished.status).toBe('failed');
+      expect(finished.error).toBe('the model errored');
+    });
+
+    it('still records a RECOVERED mid-turn error as completed', async () => {
+      // Non-terminal errors exist. A turn the runtime carried on from, and then
+      // finished, did the work — filing it as a failure would be the same lie
+      // pointing the other way.
+      const finished = await runTurn('Recovered', async function* () {
+        yield { type: 'error', data: { message: 'a tool blew up' } };
+        yield { type: 'text_delta', data: { text: 'carried on' } };
+        yield { type: 'session_status', data: { sessionId: 's', terminalReason: 'completed' } };
+        yield { type: 'done', data: { sessionId: 's' } };
+      });
+
+      expect(finished.status).toBe('completed');
+      expect(finished.error).toBeNull();
+    });
+
+    it('leaves a clean run exactly as it was', async () => {
+      const finished = await runTurn('Clean', async function* () {
+        yield { type: 'text_delta', data: { text: 'all done' } };
+        yield { type: 'done', data: { sessionId: 's' } };
+      });
+
+      expect(finished.status).toBe('completed');
+      expect(finished.error).toBeNull();
+      expect(finished.outputSummary).toBe('all done');
+    });
+
+    it('records a STOPPED run as cancelled even though its turn errored', async () => {
+      // A stop is the operator's action and has its own status; an error frame
+      // on the way out must not turn it into a failure.
+      const turn = parkedTurn();
+      vi.mocked(mockAgent.sendMessage).mockImplementation(turn.impl);
+      const task = store.createTask(
+        taskInput({ name: 'StoppedNotFailed', prompt: 'test', cron: '0 * * * *', maxRuntime: 50 })
+      );
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const run = await service.triggerManualRun(task.id);
+      await turn.parked;
+
+      await vi.waitFor(
+        () => {
+          expect(store.getRun(run!.id)!.status).toBe('cancelled');
+        },
+        { timeout: 2000 }
+      );
+      expect(store.getRun(run!.id)!.error).toContain('time limit');
+
+      await service.stop();
+    });
+  });
+
   describe('getActiveRunCount()', () => {
     it('returns 0 when no runs are active', () => {
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);

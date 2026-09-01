@@ -7,6 +7,7 @@ import { isTerminalRunStatus, type TaskStore } from './task-store.js';
 import type { ActivityService } from '../activity/activity-service.js';
 import { isRelayEnabled } from '../relay/relay-state.js';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
+import { createRunOutcomeTracker } from '@dorkos/shared/run-outcome';
 import { createTaggedLogger, logError } from '../../lib/logger.js';
 import { runInDispatch } from '../../lib/dispatch-context.js';
 import { recordDispatchEnd, recordDispatchStart } from '../observability/dispatch-buffers.js';
@@ -1174,6 +1175,11 @@ export class TaskSchedulerService {
     const startTime = Date.now();
     let outputChars = 0;
     let outputSummary = '';
+    // Whether the turn behind this run SETTLED to a failure — the question the
+    // run row asks and nothing on this path used to answer (DOR-1658). A run
+    // consumes `sendMessage` itself and attaches no projector, so the settling
+    // rule the session pipeline owns is applied here instead of inferred.
+    const outcome = createRunOutcomeTracker();
     // Which session this run runs on. A non-sticky run is isolated on the run's
     // own id, exactly as before; a sticky run resumes the real SDK session of the
     // task's previous run, so context carries across runs (DOR-1571). Declared out
@@ -1252,6 +1258,7 @@ export class TaskSchedulerService {
         combinedSignal,
         () => void interruptRun(agentManager, sessionId),
         (event) => {
+          outcome.observe(event);
           // Collect first 500 chars of text output as summary
           if (event.type === 'text_delta' && outputChars < 500) {
             const data = event.data as { text: string };
@@ -1295,16 +1302,26 @@ export class TaskSchedulerService {
         if (!operatorCancelled)
           emitRunActivity(this.activityService, task, run, 'cancelled', durationMs);
       } else {
+        // The stream ended on its own, which is NOT the same as the work having
+        // succeeded: a turn can stream a typed `error` and then end normally,
+        // and every such run used to be filed as a success (DOR-1658). Ask the
+        // tracker how the turn actually settled instead.
+        const failure = outcome.settle();
         this.store.updateRun(run.id, {
-          status: 'completed',
+          status: failure ? 'failed' : 'completed',
           finishedAt: new Date().toISOString(),
           durationMs,
           outputSummary: outputSummary.slice(0, 500),
+          ...(failure ? { error: failure } : {}),
           sessionId: persistedSessionId(),
         });
-        // The activity-feed event for a completed run rides the TaskStore
-        // run-terminal hook (DOR-1573), fired by the `updateRun('completed')`
-        // above — the one funnel both dispatch paths share.
+        // The activity-feed event for either outcome rides the TaskStore
+        // run-terminal hook (DOR-1573), fired by the `updateRun` above — the one
+        // funnel both dispatch paths share. A failed run also reaches the
+        // operator through `run.completed`, which is the run's own account of
+        // itself; the sign-in notification DOR-1654 raises is about the RUNTIME
+        // and its dead credential, so the two are complementary and neither is
+        // a duplicate of the other.
       }
     } catch (err) {
       const durationMs = Date.now() - startTime;
