@@ -120,6 +120,10 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
         promise: 'Edits files on its own and weighs each command, asking you about the risky ones.',
       },
     ],
+    // The SDK's deny tool result carries a free-text reason the agent receives
+    // verbatim (DOR-825). Declared explicitly, though it also happens to be
+    // the default, so the capability is documented rather than implied.
+    denyReason: true,
   },
   // Effort is real at the API here, and the per-model rungs come from the model
   // catalog (`ModelOption.supportedEffortLevels`) — both gates apply. The

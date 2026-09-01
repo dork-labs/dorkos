@@ -544,6 +544,15 @@ export interface InstalledPackage {
   name: string;
   version: string;
   type: MarketplacePackageType;
+  /**
+   * DorkOS extension: adapter type identifier from the installed manifest,
+   * mirroring `AggregatedPackage.adapterType` (e.g. `'slack'`, or the
+   * well-known `'connector'` value — `CONNECTOR_ADAPTER_TYPE` in
+   * `@dorkos/marketplace`). Present only for adapter packages whose manifest
+   * declares it; absent for every other package type, so the installed view
+   * can show the same CONNECTOR badge Browse already shows for it (DOR-710).
+   */
+  adapterType?: string;
   installPath: string;
   installedFrom?: string;
   installedAt?: string;

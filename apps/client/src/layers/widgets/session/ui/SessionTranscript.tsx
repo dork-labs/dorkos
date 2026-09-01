@@ -112,6 +112,14 @@ interface SessionTranscriptProps {
   /** Display name of the session's runtime (e.g. "Claude"), for auth-error copy. */
   runtimeLabel?: string;
   /**
+   * Whether this session's runtime can deliver a free-text deny reason to the
+   * agent. Threaded to every row's `MessageProvider` (DOR-825) — the composer's
+   * own approval card gets this from `SessionComposer`'s identical resolution;
+   * this is the SEPARATE path for a parked or batched approval the transcript
+   * renders directly, which never passes through the composer at all.
+   */
+  allowsDenyReason?: boolean;
+  /**
    * The row this transcript was ASKED to open on, read once (DOR-1579).
    *
    * It outranks the unread rule and the newest message because it is the only
@@ -147,6 +155,7 @@ export function SessionTranscript({
   inputZoneToolCallId = null,
   textEffect,
   runtimeLabel,
+  allowsDenyReason,
   landOnRow,
 }: SessionTranscriptProps) {
   // How long the transcript was when this mount first had one — the line between
@@ -310,6 +319,7 @@ export function SessionTranscript({
           inputZoneToolCallId={inputZoneToolCallId}
           textEffect={textEffect}
           runtimeLabel={runtimeLabel}
+          allowsDenyReason={allowsDenyReason}
           // Counted over the messages themselves, which is exactly the set of
           // articles this feed holds: the day and unread rules are separators
           // between articles, so numbering them would promise stops Page Down
@@ -333,6 +343,7 @@ export function SessionTranscript({
       inputZoneToolCallId,
       textEffect,
       runtimeLabel,
+      allowsDenyReason,
     ]
   );
 

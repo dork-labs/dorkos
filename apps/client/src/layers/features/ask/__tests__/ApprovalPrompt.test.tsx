@@ -102,6 +102,24 @@ describe('ApprovalPrompt', () => {
         expect(mockDenyTool).toHaveBeenCalledWith('session-1', 'tc-1', undefined);
       });
     });
+
+    it('hides the affordance entirely on a runtime with no channel for it (DOR-825)', () => {
+      // OpenCode's respond endpoint takes no free text, so a reason typed here
+      // would go nowhere — the field itself should not be offered, not merely
+      // fail to send.
+      render(<ApprovalPrompt {...baseProps} allowsDenyReason={false} />);
+      expect(screen.queryByRole('button', { name: /add a reason/i })).toBeNull();
+      expect(screen.queryByLabelText('Reason for denying')).toBeNull();
+    });
+
+    it('still denies cleanly, with no reason, when the affordance is hidden', async () => {
+      render(<ApprovalPrompt {...baseProps} allowsDenyReason={false} />);
+      fireEvent.click(screen.getByRole('button', { name: /^deny/i }));
+
+      await waitFor(() => {
+        expect(mockDenyTool).toHaveBeenCalledWith('session-1', 'tc-1', undefined);
+      });
+    });
   });
 
   describe('isActive prop', () => {

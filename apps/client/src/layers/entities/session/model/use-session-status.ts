@@ -17,7 +17,6 @@ import { resolvePermissionMode } from '../lib/permission-mode';
 import type {
   Session,
   SessionStatusEvent,
-  PermissionMode,
   EffortLevel,
   ModelOption,
   UpdateSessionRequest,
@@ -38,7 +37,15 @@ export interface UpdateSessionHandlers {
 }
 
 export interface SessionStatusData {
-  permissionMode: PermissionMode;
+  /**
+   * Any id the session's own runtime reports (DOR-851; `test-mode`'s ids sit
+   * outside the {@link PermissionMode} enum on purpose) — a display value read
+   * off descriptors downstream, or through `isBypassPermissionMode`, never
+   * compared against a literal. `string` rather than `PermissionMode` so
+   * every reader states that honestly instead of narrowing with a cast
+   * (DOR-820).
+   */
+  permissionMode: string;
   model: string;
   effort: EffortLevel | null;
   fastMode: boolean;
@@ -115,16 +122,14 @@ export function useSessionStatus(
 
   const statusData: SessionStatusData = {
     // `session.permissionMode` carries any id the session's own runtime
-    // reports (DOR-851; `test-mode`'s ids sit outside the enum on purpose).
-    // Safe to narrow back to `PermissionMode` here — this is a DISPLAY value
-    // read off descriptors downstream, or through `isBypassPermissionMode`
-    // (bypass-alias-aware, e.g. `always-allow`). A literal `=== 'bypassPermissions'`
-    // compare against it IS a bug (the session's status strip used to have one) — use
-    // `isBypassPermissionMode` for any bypass check, never a raw literal.
-    permissionMode: resolvePermissionMode(
-      overrides.permissionMode,
-      session?.permissionMode
-    ) as PermissionMode,
+    // reports (DOR-851; `test-mode`'s ids sit outside the `PermissionMode`
+    // enum on purpose), so `SessionStatusData.permissionMode` is `string`
+    // (DOR-820) — a DISPLAY value read off descriptors downstream, or through
+    // `isBypassPermissionMode` (bypass-alias-aware, e.g. `always-allow`). A
+    // literal `=== 'bypassPermissions'` compare against it IS a bug (the
+    // session's status strip used to have one) — use `isBypassPermissionMode`
+    // for any bypass check, never a raw literal.
+    permissionMode: resolvePermissionMode(overrides.permissionMode, session?.permissionMode),
     model,
     effort,
     fastMode,
@@ -150,7 +155,7 @@ export function useSessionStatus(
         // that rides the same rendering path as the runtime's own reported mode,
         // so the id passes through unchanged; nothing here reads meaning off the
         // name.
-        ...(opts.permissionMode ? { permissionMode: opts.permissionMode as PermissionMode } : {}),
+        ...(opts.permissionMode ? { permissionMode: opts.permissionMode } : {}),
         ...(opts.effort ? { effort: opts.effort } : {}),
         ...(opts.fastMode !== undefined ? { fastMode: opts.fastMode } : {}),
       };

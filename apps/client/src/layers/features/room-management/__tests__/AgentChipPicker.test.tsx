@@ -114,11 +114,13 @@ describe('AgentChipPicker faces', () => {
     // `kind="agent"` defaults to `variant="fill"`, which sets BOTH the disc's
     // background AND the fallback letter's own text colour from `color`.
     // Filled with the literal string `currentColor`, the letter's colour
-    // resolves to whatever `currentColor` had *already become* — its own
-    // just-written value — so the letter paints itself invisible on its own
-    // background (browser-verified; jsdom cannot see this). The explicit
-    // `variant="tint"` override for the no-visual fallback is what keeps this
-    // disc legible.
+    // would resolve to whatever `currentColor` had *already become* — its own
+    // just-written value — painting the letter invisible on its own
+    // background (browser-verified; jsdom cannot see this). No `variant`
+    // override needed here any more: `IdentityAvatar` itself declines fill
+    // when it cannot compute a readable foreground for the colour it was
+    // given, and `currentColor` is exactly such a colour (DOR-998) — this is
+    // what keeps this disc legible now.
     renderFresh();
 
     const disc = within(screen.getByRole('option', { name: 'Bo' })).getByText('B')

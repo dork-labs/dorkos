@@ -92,6 +92,15 @@ interface ApprovalPromptProps {
   approvalDecisionReason?: string;
   /** Whether "Always Allow" permission updates are available */
   approvalHasSuggestions?: boolean;
+  /**
+   * Whether this session's runtime can deliver a free-text deny reason to the
+   * agent (`RuntimeCapabilities.permissionModes.denyReason`). Defaults to
+   * `true` — most runtimes have the channel. `false` (OpenCode: its respond
+   * endpoint takes no free text) hides "Add a reason" and the field itself,
+   * rather than offering an affordance that would silently go nowhere
+   * (DOR-825).
+   */
+  allowsDenyReason?: boolean;
 }
 
 export interface ApprovalPromptHandle {
@@ -127,6 +136,7 @@ export function ApprovalPrompt({
   approvalBlockedPath,
   approvalDecisionReason,
   approvalHasSuggestions,
+  allowsDenyReason = true,
 }: ApprovalPromptProps) {
   const transport = useTransport();
   const reducedMotion = useReducedMotion();
@@ -481,8 +491,10 @@ export function ApprovalPrompt({
         {error && <p className="text-status-error text-2xs mb-2">{error}</p>}
         {/* The optional "why". Hidden until asked for, so the fast path — read
             the command, allow or deny — is untouched; revealed, it is one line
-            and the agent gets it with the refusal. */}
-        {reasonOpen && (
+            and the agent gets it with the refusal. Withheld entirely on a
+            runtime with no channel for one (DOR-825) — the field would
+            otherwise take a person's words and deliver them nowhere. */}
+        {allowsDenyReason && reasonOpen && (
           <div className="mb-2">
             <Input
               autoFocus
@@ -545,7 +557,7 @@ export function ApprovalPrompt({
             <X className="size-(--size-icon-xs)" /> Deny
             {isActive && <Kbd className="ml-1.5">Esc</Kbd>}
           </Button>
-          {!reasonOpen && (
+          {allowsDenyReason && !reasonOpen && (
             <button
               type="button"
               onClick={() => setReasonOpen(true)}

@@ -61,7 +61,7 @@ function formatTimestamp(iso: string): string {
  *
  * **It reads the permission summary itself, and its caller reads it too.** That
  * duplication is deliberate: `SessionRowFull` and `SessionRowSidebar` both need
- * `isUnsafe` for the full-power mark on the row face, and this needs the mode in
+ * `isFullPower` for the full-power mark on the row face, and this needs the mode in
  * words.
  * Both calls land on the same two cached reads — a `enabled: false` session
  * query and one `staleTime: Infinity` capability map the shell has already
@@ -78,7 +78,15 @@ export function SessionDetailsPanel({
   onFork,
   className,
 }: SessionDetailsPanelProps) {
-  const { permissionMode, isUnsafe } = useSessionPermissionSummary(session);
+  const { permissionMode, isFullPower } = useSessionPermissionSummary(session);
+  // The row mark above this panel already announces "Full power" (spec
+  // `full-power-defaults`, D8) — the technical mode name (`bypassPermissions`,
+  // `always-allow`, …) would be a second register for the same fact. Every
+  // OTHER mode still gets its own precise name here: only the bypass case
+  // collapses to the umbrella word the rest of the product already uses for it
+  // (DOR-1499). Non-bypass modes stay distinct on purpose (DOR-496) — this
+  // does not revive the old "is this bypass?" boolean that conflated them.
+  const permissionsValue = isFullPower ? 'Full power' : permissionModeLabel(permissionMode);
 
   return (
     <AnimatePresence initial={false}>
@@ -110,8 +118,8 @@ export function SessionDetailsPanel({
                 so they cannot be two colours (spec `full-power-defaults`, D8). */}
             <DetailRow
               label="Permissions"
-              value={permissionModeLabel(permissionMode)}
-              valueClassName={isUnsafe ? TRUST_TONE_TEXT.power : undefined}
+              value={permissionsValue}
+              valueClassName={isFullPower ? TRUST_TONE_TEXT.power : undefined}
             />
             {onFork && (
               <button

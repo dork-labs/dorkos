@@ -365,3 +365,18 @@ describe('the dial every runtime can offer', () => {
     expect(refined).toEqual(['claude-code/act']);
   });
 });
+
+describe('permissionModes.denyReason — whether a deny reason reaches the agent (DOR-825)', () => {
+  it('is false for OpenCode, whose respond endpoint takes no free text', () => {
+    expect(OPENCODE_CAPABILITIES.permissionModes.denyReason).toBe(false);
+  });
+
+  it('is declared true for every runtime whose deny path actually delivers one', () => {
+    // Not merely "not false" — an omitted field silently defaults to true on
+    // the client, so a runtime that never declares this at all would pass the
+    // negative check by accident. Claude-code and test-mode both have a real
+    // channel and say so.
+    expect(CLAUDE_CODE_CAPABILITIES.permissionModes.denyReason).toBe(true);
+    expect(TEST_MODE_CAPABILITIES.permissionModes.denyReason).toBe(true);
+  });
+});

@@ -67,6 +67,12 @@ interface SessionMessageProps {
   /** Display name of the session's runtime (e.g. "Claude"), for auth-error copy. */
   runtimeLabel?: string;
   /**
+   * Whether this session's runtime can deliver a free-text deny reason to the
+   * agent. Threaded to every `ApprovalPrompt` an assistant message renders
+   * directly — see `MessageContextValue.allowsDenyReason` (DOR-825).
+   */
+  allowsDenyReason?: boolean;
+  /**
    * Where this message sits in the transcript's feed, when it is rendering
    * inside one.
    *
@@ -94,6 +100,7 @@ export function SessionMessage({
   inputZoneToolCallId = null,
   textEffect,
   runtimeLabel,
+  allowsDenyReason,
   feedPosition,
 }: SessionMessageProps) {
   const domId = useId();
@@ -143,6 +150,7 @@ export function SessionMessage({
         inputZoneToolCallId,
         textEffect,
         runtimeLabel,
+        allowsDenyReason,
       }}
     >
       <Message.Root

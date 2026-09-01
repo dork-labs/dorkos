@@ -261,6 +261,44 @@ export function IdentityShapeMatrixShowcase() {
           })}
         </div>
       </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Declining fill (DOR-998) — a colour it cannot read a foreground for falls back to tint
+        rather than guessing
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        {/* Every disc here asks for `fill` (`kind="agent"` or the explicit
+            prop). The right three hand it a colour `readableForeground`
+            cannot parse — exactly the three real call sites this ticket
+            found doing that: `currentColor` (AgentChipPicker's unresolved
+            agent), a theme token (MessageAuthorAvatar's runtime-brand
+            fallback), and a `var()` wrapped in `hsl()` (identity-hover-card's
+            colourless-identity fallback). All three keep their fallback
+            letter legible by staying tint instead of painting it invisible. */}
+        <div className="flex flex-wrap items-end gap-6">
+          <div className="flex flex-col items-center gap-2">
+            <IdentityAvatar color="#6366f1" fallback="A" kind="agent" size="md" />
+            <span className="text-muted-foreground text-[10px]">real colour → fill</span>
+          </div>
+          <div className="flex flex-col items-center gap-2">
+            <IdentityAvatar color="currentColor" fallback="A" kind="agent" size="md" />
+            <span className="text-muted-foreground text-[10px]">currentColor → tint</span>
+          </div>
+          <div className="flex flex-col items-center gap-2">
+            <IdentityAvatar color="var(--color-orange-500)" fallback="A" kind="agent" size="md" />
+            <span className="text-muted-foreground text-[10px]">theme token → tint</span>
+          </div>
+          <div className="flex flex-col items-center gap-2">
+            <IdentityAvatar
+              color="hsl(var(--muted-foreground))"
+              fallback="A"
+              kind="agent"
+              size="md"
+            />
+            <span className="text-muted-foreground text-[10px]">hsl(var(...)) → tint</span>
+          </div>
+        </div>
+      </ShowcaseDemo>
     </PlaygroundSection>
   );
 }

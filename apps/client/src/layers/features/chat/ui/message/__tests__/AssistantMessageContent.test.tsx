@@ -33,13 +33,27 @@ vi.mock('../../tools/ToolCallCard', () => ({
 
 // Mock the Ask family — the three prompts and the receipt row the transcript
 // composes. One slice now, so one mock.
+//
+// `ApprovalPrompt` exposes `allowsDenyReason` as a data attribute (default
+// stringified, so an omitted prop and an explicit `true` read differently) —
+// the seam DOR-825's follow-up review found unwired: this component reads
+// `allowsDenyReason` off `MessageContext` and must pass exactly that value
+// through, never its own default.
 vi.mock('@/layers/features/ask', async () => {
   const actual =
     await vi.importActual<typeof import('@/layers/features/ask')>('@/layers/features/ask');
   return {
     ...actual,
-    ApprovalPrompt: ({ toolName }: { toolName: string }) => (
-      <div data-testid="tool-approval">{toolName}</div>
+    ApprovalPrompt: ({
+      toolName,
+      allowsDenyReason,
+    }: {
+      toolName: string;
+      allowsDenyReason?: boolean;
+    }) => (
+      <div data-testid="tool-approval" data-allows-deny-reason={String(allowsDenyReason)}>
+        {toolName}
+      </div>
     ),
     QuestionPrompt: () => <div data-testid="question-prompt" />,
   };
@@ -56,7 +70,11 @@ vi.mock('@/layers/features/approvals', () => ({
   ),
 }));
 
-// Mock MessageContext
+// Mock MessageContext. `allowsDenyReason` is read through a hoisted mutable
+// holder rather than baked into the return value, so a test can set what the
+// transcript would have resolved from capabilities without re-mocking the
+// whole module.
+const mockContext = vi.hoisted(() => ({ allowsDenyReason: undefined as boolean | undefined }));
 vi.mock('../MessageContext', () => ({
   useMessageContext: () => ({
     sessionId: 'test-session',
@@ -65,6 +83,9 @@ vi.mock('../MessageContext', () => ({
     onToolRef: undefined,
     focusedOptionIndex: -1,
     onToolDecided: undefined,
+    get allowsDenyReason() {
+      return mockContext.allowsDenyReason;
+    },
   }),
 }));
 
@@ -108,6 +129,43 @@ describe('AssistantMessageContent — multi-block part rendering', () => {
     expect(screen.getByText('First block')).toBeInTheDocument();
     expect(screen.getByText('Second block')).toBeInTheDocument();
     expect(screen.getByTestId('tool-call-card')).toBeInTheDocument();
+  });
+});
+
+describe('AssistantMessageContent — allowsDenyReason reaches a transcript-rendered approval (DOR-825)', () => {
+  afterEach(() => {
+    cleanup();
+    mockContext.allowsDenyReason = undefined;
+  });
+
+  /** A pending approval NOT in the input zone — the path this file owns. */
+  const pendingApprovalParts = [
+    {
+      type: 'tool_call' as const,
+      toolCallId: 'tc-parked',
+      toolName: 'Bash',
+      input: '{}',
+      status: 'pending' as const,
+      interactiveType: 'approval' as const,
+    },
+  ];
+
+  it('passes the runtime-resolved allowsDenyReason through, not the prop default', () => {
+    // The bug: this render path used to read nothing from context, so
+    // `ApprovalPrompt`'s own `= true` default always won — an OpenCode
+    // session (denyReason: false) still offered a reason field on a parked
+    // or batched approval rendered directly in the transcript.
+    mockContext.allowsDenyReason = false;
+    render(<AssistantMessageContent message={makeMessage(pendingApprovalParts)} />);
+
+    expect(screen.getByTestId('tool-approval')).toHaveAttribute('data-allows-deny-reason', 'false');
+  });
+
+  it('passes true through when the runtime has the channel', () => {
+    mockContext.allowsDenyReason = true;
+    render(<AssistantMessageContent message={makeMessage(pendingApprovalParts)} />);
+
+    expect(screen.getByTestId('tool-approval')).toHaveAttribute('data-allows-deny-reason', 'true');
   });
 });
 

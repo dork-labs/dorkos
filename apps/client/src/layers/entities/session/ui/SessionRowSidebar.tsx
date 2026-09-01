@@ -121,7 +121,7 @@ export function SessionRowSidebar({
 
   const border = useSessionBorderState(session.id);
   const signal = statusSignalForBorderKind(border.kind);
-  const { isUnsafe } = useSessionPermissionSummary(session);
+  const { isFullPower } = useSessionPermissionSummary(session);
   // Re-read on the shared minute tick, so "2m ago" does not go stale under a
   // reader who is looking straight at it.
   useNow(60_000);
@@ -283,7 +283,7 @@ export function SessionRowSidebar({
       }
       trailing={
         <>
-          {isUnsafe && (
+          {isFullPower && (
             // Presentational, unlike the full row's version of this mark, which
             // is a `<button>` carrying a tooltip. `trailing` renders inside the
             // row's own `<button>`, so the mark is an icon with a name.

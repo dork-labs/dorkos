@@ -153,13 +153,19 @@ export const SearchHitSchema = z
     /** ISO-8601, or `null` for a source that records no timestamp. */
     createdAt: z.string().nullable(),
     /**
-     * The matching words in their sentence, with every match wrapped in
-     * `<mark>…</mark>` and long text elided with `…`.
+     * The matching words in their sentence, with every match wrapped in a pair
+     * of sentinel control characters (U+0001/U+0002) and long text elided with
+     * `…`.
      *
      * **This is TEXT, not HTML.** The marks are the only markup in it and
-     * everything around them is whatever was typed, `<script>` included — so a
-     * renderer escapes the text and re-applies the marks, never assigns it to
-     * `innerHTML`.
+     * everything around them is whatever was typed, `<script>` — and even the
+     * literal text `<mark>` — included, so a renderer escapes the text and
+     * re-applies the marks, never assigns it to `innerHTML`. Control
+     * characters were chosen over a visible delimiter like `<mark>` precisely
+     * because a message body can contain that text; U+0001/U+0002 cannot
+     * reach here at all — the server's indexer strips both bytes from every
+     * message before it is indexed (DOR-1552), so this is an enforced
+     * invariant of the wire contract, not merely an assumption about it.
      */
     excerpt: z.string(),
   })

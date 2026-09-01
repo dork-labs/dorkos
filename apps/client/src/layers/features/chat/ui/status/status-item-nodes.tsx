@@ -4,7 +4,6 @@ import type {
   ContextUsage,
   GitStatusError,
   GitStatusResponse,
-  PermissionMode,
   UpdateSessionRequest,
   UsageStatus,
 } from '@dorkos/shared/types';
@@ -52,8 +51,14 @@ export interface StatusItemNodesInput {
   status: SessionStatusData;
   /** Apply a session change (model, effort, fast mode). */
   onUpdateSession: (opts: UpdateSessionRequest) => void;
-  /** Apply a permission-mode change, gated by the auto-mode confirmation. */
-  onChangeMode: (mode: PermissionMode) => void;
+  /**
+   * Apply a permission-mode change, gated by the auto-mode confirmation. Any
+   * id the runtime declares (DOR-811), matching `PermissionModeItem.onChangeMode`
+   * and `TrustDial.onChangeMode` — `string` rather than `PermissionMode` so
+   * the whole call chain states that honestly instead of narrowing with a
+   * cast (DOR-820).
+   */
+  onChangeMode: (mode: string) => void;
   /** Whether the active model can run the `auto` permission mode. */
   modelSupportsAutoMode: boolean;
   /**
@@ -206,11 +211,19 @@ export function buildStatusItemNodes(
   // Omitted here rather than built-but-relabeled: `selectPromotedItems` skips a
   // key with no node before it ever reaches the promotion rule, so leaving this
   // key absent is what frees its budget slot for `plan` instead of spending it on
-  // an empty chip (DOR-1236). The two rank the same severity
-  // (`PERMISSION_ELEVATED` / `PLAN_ACTIVE`, both 40) and the stable sort in
-  // `applyStatusBudget` breaks ties by registry order, which lists `permission`
-  // first — so a node built-but-empty here would still win the contested slot
-  // and push the one chip that IS news, `plan`, under the `⋯`.
+  // an empty chip (DOR-1236).
+  //
+  // Historically this also broke a SEVERITY tie: the registry used to derive
+  // `permission`'s severity from the mode's NAME, so Claude's `plan` id (not
+  // literally `'default'`) read as `PERMISSION_ELEVATED`, tying `PLAN_ACTIVE`
+  // (both 40) — and the stable sort in `applyStatusBudget` breaks ties by
+  // registry order, which lists `permission` first, so a node built-but-empty
+  // here would have won the contested slot and pushed `plan` under the `⋯`.
+  // `status-bar-registry.ts` now derives severity from the descriptor instead
+  // (DOR-820): `plan` is `stop: 'ask'`, the dial's safest position, so it reads
+  // QUIET on this item honestly — no tie to break any more. The omission
+  // stays anyway, because "planning" is still `plan`'s fact to report, not
+  // this item's, whatever its severity happens to resolve to.
   if (!input.plan?.active) {
     nodes.permission = (
       <PermissionModeItem

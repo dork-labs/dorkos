@@ -288,7 +288,11 @@ export function ClaudeAccountsSection() {
                 placeholder="Acme Corp"
                 value={newLabel}
                 onChange={(e) => setNewLabel(e.target.value)}
-                className="h-8 flex-1"
+                // Matches the Button beside it exactly (`h-11 md:h-8`) rather
+                // than Input's own default (`h-11 md:h-9`) or a flat `h-8` —
+                // either would leave this row's two controls a few pixels
+                // apart at one breakpoint or the other (DOR-771 review).
+                className="h-11 flex-1 md:h-8"
               />
               <Button size="sm" onClick={addAccount} disabled={!canAdd || updateConfig.isPending}>
                 Add

@@ -95,9 +95,9 @@ correct meaning of the door's second bullet, and #1240 corrected the copy to say
   vicinity. The Obsidian bridge pins `--color-status-success` flat (~3.30:1 on a white
   theme) and is the only shipped consumer of `SessionRowSidebar` — verify there.
 - **Vocabulary alignment** — session details said "Permissions: Bypass All" while the
-  mark announced full power; `useSessionPermissionSummary().isUnsafe` name is
-  register-stale (three callers, none row-only). Align when the Control Center vocabulary
-  settles; cosmetic, deferred.
+  mark announced full power. Fixed in DOR-1499: the details panel now says "Full power"
+  for any bypass-semantics mode, matching the mark, and `useSessionPermissionSummary()`'s
+  field is renamed `isFullPower` (its three callers, all updated).
 - **CLI full-power parity command** (deferred at spec time).
 - **Flaky tests to ticket** (surfaced under CI saturation; each passes in isolation):
   `apps/desktop/src/main/__tests__/agent-activity.test.ts:190` ("stops for good once

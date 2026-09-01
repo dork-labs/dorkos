@@ -135,6 +135,8 @@ capability flag.
   }
   ```
 
+  **`permissionModes.denyReason` gates the deny-reason text field on the client, not just the receipt's honesty above.** Optional, defaults to `true`. Set it `false` when your `approveTool` deny path has nowhere to deliver a free-text reason — OpenCode sets it `false` because `POST /session/{id}/permissions/{permissionID}` takes `once`/`reject` and nothing else. Leaving it unset on a runtime with no channel would show the field anyway and let a person type into a void; declaring it hides the affordance instead of offering one that silently goes nowhere (DOR-825).
+
   Two conformance assertions to know about: `default` must reference a declared descriptor, **and** that descriptor's `stop` must not be `'autonomy'` — a runtime whose fresh sessions start with the keys handed over fails. If yours genuinely must (test doubles), declare `autonomyDefaultReason` in your `runtimeConformance` call; it takes a sentence, not a boolean.
 
   `reach: 'read'` is load-bearing and narrow: it means no writes, no commands, **and no network**. The derivation rules treat a read-only mode as having nothing to warn about, so a mode that can still fetch a URL must declare `'edit'` or wider.

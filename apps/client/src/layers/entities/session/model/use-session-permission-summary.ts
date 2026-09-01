@@ -26,8 +26,13 @@ import { useSessionPermissionMode } from './use-session-detail';
 export interface SessionPermissionSummary {
   /** The mode id the session is running under. */
   permissionMode: PermissionMode;
-  /** The mode lets the agent act without asking first. */
-  isUnsafe: boolean;
+  /**
+   * The mode lets the agent act without asking first — the same fact every
+   * full-power surface (the dial, the status strip, the row mark) already
+   * names "full power". Kept as `isFullPower` here so a reader never has to
+   * translate between this hook's vocabulary and the mark it feeds.
+   */
+  isFullPower: boolean;
 }
 
 /**
@@ -74,9 +79,9 @@ export function useSessionPermissionSummary(session: Session): SessionPermission
   // unmarked — the same session described two ways in two places. That is the
   // moment to reconcile them, and the choice is one predicate for both, not a
   // third one here.
-  const isUnsafe = descriptor
+  const isFullPower = descriptor
     ? isBypassSemantics(descriptor)
     : isBypassPermissionMode(permissionMode);
 
-  return { permissionMode, isUnsafe };
+  return { permissionMode, isFullPower };
 }

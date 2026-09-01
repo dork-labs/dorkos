@@ -96,7 +96,18 @@ function parseHsl(body: string): RgbColor | null {
   return hslToRgb(hue, saturation, lightness);
 }
 
-/** Parses hex, `rgb()`/`rgba()`, and `hsl()`/`hsla()` — every format an identity colour in this cockpit is stored or hashed into (see `hashToHslColor`). Anything else returns `null`. */
+/**
+ * Parses hex, `rgb()`/`rgba()`, and `hsl()`/`hsla()` — every format an
+ * identity colour in this cockpit is stored or hashed into (see
+ * `hashToHslColor`). Anything else returns `null`, which now correctly
+ * declines `fill` rather than guessing (DOR-998) — including a CSS named
+ * colour (`'coral'`) or `oklch(...)`, neither of which any code path here
+ * writes, but a hand-edited `agent.json` could. `IdentityAvatar` falling
+ * back to `tint` for those is a safe, if slightly conservative, default;
+ * extending this parser to cover them would need a real OKLab→sRGB
+ * conversion and the 148-entry CSS keyword table, which is more than this
+ * function's callers currently need to carry.
+ */
 function parseCssColor(input: string): RgbColor | null {
   const value = input.trim();
   const hex = HEX_PATTERN.exec(value);
@@ -136,4 +147,24 @@ export function readableForeground(color: string): string {
   const rgb = parseCssColor(color);
   const luminance = rgb ? relativeLuminance(rgb) : 0;
   return luminance > LUMINANCE_THRESHOLD ? FOREGROUND_ON_LIGHT : FOREGROUND_ON_DARK;
+}
+
+/**
+ * Whether {@link readableForeground} can compute a REAL answer for `color`,
+ * as opposed to falling through to its dark-background default.
+ *
+ * `IdentityAvatar`'s `fill` variant reads this to decide whether filling is
+ * safe at all (DOR-998): `fill` sets both the disc's background and the
+ * fallback letter's colour from the same string, so a colour this cannot
+ * parse — `currentColor`, a theme token like `var(--color-orange-500)` or
+ * `hsl(var(--muted-foreground))` — makes `readableForeground` guess, and the
+ * guess can land on the same value the background itself resolves to,
+ * painting an invisible letter. `tint` has no such problem: its
+ * `color-mix()` is real CSS the browser resolves a `var()` token through
+ * correctly, so declining to `tint` costs nothing but the solid fill.
+ *
+ * @param color - The same string {@link readableForeground} would receive.
+ */
+export function canComputeReadableForeground(color: string): boolean {
+  return parseCssColor(color) !== null;
 }

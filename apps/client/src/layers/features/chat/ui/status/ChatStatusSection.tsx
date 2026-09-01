@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import type { SessionStatusEvent, ConnectionState, PermissionMode } from '@dorkos/shared/types';
+import type { SessionStatusEvent, ConnectionState } from '@dorkos/shared/types';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import { useAppStore } from '@/layers/shared/model';
 import {
@@ -213,7 +213,7 @@ export function ChatStatusSection({
    * The bounce is the recovery path, not a corner case.
    */
   const applyMode = useCallback(
-    (nextMode: PermissionMode) => {
+    (nextMode: string) => {
       const descriptor = declaredModes.find((d) => d.id === nextMode);
       const needsAck = descriptor !== undefined && needsConsentRitual(descriptor);
       // The promise is RETURNED, not swallowed, so a caller can tell a landed
@@ -245,7 +245,7 @@ export function ChatStatusSection({
   );
 
   const handleChangeMode = useCallback(
-    (nextMode: PermissionMode) => {
+    (nextMode: string) => {
       if (nextMode === 'auto' && !hasConfirmedAuto) {
         setAutoConfirmOpen(true);
         return;
@@ -318,7 +318,7 @@ export function ChatStatusSection({
       const applied = pendingAutonomy.id;
       void status
         .updateSession({
-          permissionMode: applied as PermissionMode,
+          permissionMode: applied,
           acknowledgedAutonomy: true,
         })
         .then((updated) => {
@@ -359,7 +359,7 @@ export function ChatStatusSection({
         // Through `applyMode` for the same reason as the restore below: a way of
         // working is never an autonomy stop today, so no flag is added, but the
         // writer stays one rather than two that must be kept in step.
-        applyMode(workingMode.id as PermissionMode);
+        applyMode(workingMode.id);
         return;
       }
       // A remembered mode is only worth restoring if it still exists. The
@@ -381,7 +381,7 @@ export function ChatStatusSection({
       // record), the server answers 428 and `applyMode`'s bounce turns that into
       // the dialog. Both outcomes are fine; writing the mode directly is what is
       // not, because then the refusal has nothing to open.
-      if (restored) applyMode(restored as PermissionMode);
+      if (restored) applyMode(restored);
     },
     [
       workingMode,

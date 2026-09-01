@@ -45,6 +45,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
     inputZoneToolCallId,
     textEffect,
     runtimeLabel,
+    allowsDenyReason,
   } = useMessageContext();
   const { expandToolCalls, autoHideToolCalls } = useAppStore();
   const parts = message.parts ?? [];
@@ -226,6 +227,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           approvalHasSuggestions={toolPart.approvalHasSuggestions}
           isActive={isActive}
           onDecided={onToolDecided ? () => onToolDecided(toolPart.toolCallId) : undefined}
+          allowsDenyReason={allowsDenyReason}
         />
       );
     }

@@ -215,6 +215,13 @@ export function ChatPanel({
   const runtimeChip = useRuntimeChip(sessionId ?? '');
   const activeCaps = useCapabilitiesForRuntime(runtimeChip.runtime);
   const runtimeLabel = runtimeChip.runtime ? getRuntimeDescriptor(runtimeChip.runtime).label : '';
+  // Whether a deny reason typed on a transcript-rendered approval reaches the
+  // agent at all (DOR-825). Same resolution `SessionComposer` does for the
+  // input-zone card — this is the SEPARATE path for a parked or batched
+  // approval the transcript renders directly, via `MessageContext`, which
+  // never passes through the composer. `true` while capabilities are still
+  // loading and for every runtime that has not opted out.
+  const allowsDenyReason = activeCaps?.permissionModes?.denyReason ?? true;
   // Compact gate injected into the send funnel: recognize + dispatch /compact
   // when supported, honestly refuse (toast, keep text) when the runtime declares
   // it unsupported. Optimistic while capabilities load — matching the palette
@@ -502,6 +509,7 @@ export function ChatPanel({
           onRetry={handleRetry}
           inputZoneToolCallId={activeInteraction?.toolCallId ?? null}
           runtimeLabel={runtimeAuthLabel}
+          allowsDenyReason={allowsDenyReason}
           {...(landOnRow === undefined ? {} : { landOnRow })}
         />
 

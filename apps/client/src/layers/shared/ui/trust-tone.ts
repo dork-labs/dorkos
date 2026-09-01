@@ -67,7 +67,7 @@ export const TRUST_TONE_TEXT: Record<TrustTone, string> = {
  *
  * This reads {@link isAutonomyStop} — where a mode SITS on the dial. The mark on
  * a session row asks a different question: `useSessionPermissionSummary`'s
- * `isUnsafe`, which is `isBypassSemantics` (never asks AND reaches everything).
+ * `isFullPower`, which is `isBypassSemantics` (never asks AND reaches everything).
  * `permission-semantics` keeps the two apart on purpose, and no shipped runtime
  * makes them disagree, because every declared autonomy stop also reaches
  * everything.

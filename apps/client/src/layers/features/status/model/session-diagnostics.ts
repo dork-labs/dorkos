@@ -15,7 +15,6 @@ import type {
   ConnectionState,
   ContextUsage,
   EffortLevel,
-  PermissionMode,
   SubagentInfo,
   UsageStatus,
 } from '@dorkos/shared/types';
@@ -97,8 +96,13 @@ export interface SessionDiagnostics {
   effort: EffortLevel | null;
   /** Whether fast mode is on for this session. */
   fastMode: boolean;
-  /** The session's permission mode. */
-  permissionMode: PermissionMode;
+  /**
+   * The session's permission mode — any id the runtime declares (DOR-811),
+   * wider than the shared `PermissionMode` enum's known names. `string`,
+   * matching `SessionStatusData`, so the diagnostics readout never narrows
+   * with a cast (DOR-820).
+   */
+  permissionMode: string;
   /** Context-window utilization percent (0-100), or `null` before the first reading. */
   contextPercent: number | null;
   /** Rich per-category context breakdown, or `null` until a live event carries one. */

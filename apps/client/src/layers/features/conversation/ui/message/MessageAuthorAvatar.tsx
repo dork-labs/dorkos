@@ -70,16 +70,15 @@ export interface MessageAuthorAvatarProps {
  * turns out to be (`readableForeground`), so nothing here has to repeat that
  * work.
  *
- * **Fill is skipped for a runtime-brand color.** `readableForeground` only
- * parses hex/`rgb()`/`hsl()`, and a runtime's accent is a theme token
- * (`var(--color-orange-500)`) — unparseable, so `fill` would always compute a
- * near-white foreground regardless of how light the token actually renders.
- * `tint` has no such problem (`color-mix` resolves a `var()` token fine), so
- * an agent whose color is a token falls back to tint rather than risk a
- * washed-out brand mark. This is the session-chat runtime-fallback case (a
- * session with no agent, `resolveMessageAuthor`'s `runtime` branch) — the
- * room feed never sets `runtime`, so its agents always resolve to a concrete
- * color and keep the fill.
+ * **A runtime-brand color falls back to tint on its own, with nothing to
+ * decide here.** A runtime's accent is a theme token (`var(--color-orange-500)`),
+ * which `IdentityAvatar` itself declines to fill — the primitive checks
+ * whether it can compute a readable foreground for whatever color it is
+ * given and steps back to `tint` when it cannot (DOR-998), rather than this
+ * call site re-deciding the same guard by hand. This is the session-chat
+ * runtime-fallback case (a session with no agent, `resolveMessageAuthor`'s
+ * `runtime` branch) — the room feed never sets `runtime`, so its agents
+ * always resolve to a concrete color and keep the fill.
  *
  * **Decorative until it is given somewhere to go.** The display name always
  * sits beside it, so on its own the mark is hidden from assistive technology.
@@ -103,13 +102,6 @@ export function MessageAuthorAvatar({
   const brand = author.emoji || !author.runtime ? null : getRuntimeDescriptor(author.runtime);
   const BrandMark = brand?.icon;
   const color = brand?.accent ?? author.color ?? hashToHslColor(author.id);
-  // See the fill-skip note above: a `var(...)` token can't be read by
-  // `readableForeground`, so it never gets the fill treatment.
-  const canFill = !color.trim().startsWith('var(');
-  // `kind` derives shape, fill and badge together. The one axis it can't
-  // decide alone is `variant`: the runtime-brand fill-skip case above steps
-  // an agent back to `tint`; every other identity leaves `kind` to choose.
-  const variant = author.kind === 'agent' && !canFill ? 'tint' : undefined;
   // No platform name to give it — see the doc above — so an origin object
   // with none still derives the Send badge without inventing a platform.
   const origin: IdentityOrigin | undefined = author.isExternal ? { platform: '' } : undefined;
@@ -151,7 +143,6 @@ export function MessageAuthorAvatar({
       fallback={BrandMark ? <BrandMark size={BRAND_MARK_SIZE} /> : initialOf(author.displayName)}
       kind={author.kind}
       origin={origin}
-      variant={variant}
       className={cn(
         'size-[var(--msg-gutter-width)]',
         // `focus-ring` is the house recipe and it is a box-shadow, so it traces

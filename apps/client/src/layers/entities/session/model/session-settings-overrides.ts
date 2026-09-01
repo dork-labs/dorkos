@@ -26,14 +26,19 @@
  * @module entities/session/model/session-settings-overrides
  */
 import { create } from 'zustand';
-import type { EffortLevel, PermissionMode } from '@dorkos/shared/types';
+import type { EffortLevel } from '@dorkos/shared/types';
 
 /** The session settings that can be optimistically ahead of the server. */
 export interface SessionSettingsOverride {
   /** User-selected model option value, pending server confirmation. */
   model?: string;
-  /** Pending permission mode. */
-  permissionMode?: PermissionMode;
+  /**
+   * Pending permission mode — any id the runtime declares (DOR-811), which is
+   * wider than {@link PermissionMode}'s known names. The picker already hands
+   * this hook descriptor ids verbatim, so `string` is the honest type rather
+   * than a cast at every writer (DOR-820).
+   */
+  permissionMode?: string;
   /** Pending reasoning effort. */
   effort?: EffortLevel;
   /** Pending fast-mode flag. */

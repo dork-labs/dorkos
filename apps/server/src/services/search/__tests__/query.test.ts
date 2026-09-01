@@ -16,7 +16,7 @@ import { readFileSync } from 'node:fs';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { messages, sql, type Db } from '@dorkos/db';
-import { searchMessages } from '../query.js';
+import { searchMessages, MATCH_OPEN, MATCH_CLOSE } from '../query.js';
 
 let db: Db;
 
@@ -279,7 +279,7 @@ describe('searchMessages — what a hit carries', () => {
       excerpts: true,
     });
 
-    expect(hit?.excerpt).toContain('<mark>scheduler</mark>');
+    expect(hit?.excerpt).toContain(`${MATCH_OPEN}scheduler${MATCH_CLOSE}`);
   });
 });
 

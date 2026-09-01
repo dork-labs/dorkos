@@ -47,7 +47,11 @@ export const BOOL_KEYS = {
   // turn-finished chime is `notifications.sounds.turnEnd` in config now, so it
   // follows a person between devices. The retired key is read once and deleted
   // by `entities/config/use-notification-prefs` (DOR-1385).
-  enableTasksNotifications: 'dorkos-enable-tasks-notifications',
+  // `dorkos-enable-tasks-notifications` is deliberately absent too: the toggle
+  // promised a toast when a scheduled task finished, but nothing in the
+  // client ever subscribed to task-run completion to render one. Removed
+  // rather than wired, since no such event exists yet (DOR-1522); the key is
+  // purged below.
   enableMessagePolling: 'dorkos-enable-message-polling',
   promoEnabled: 'dorkos-promo-enabled',
 } as const;
@@ -68,6 +72,11 @@ export const BOOL_KEYS = {
  * list of pins — which lives in server config (`ui.statusBar.pins`), not here,
  * so it syncs across clients. Purging the keys here covers a client that never
  * ran the release that lifted them into config.
+ *
+ * `dorkos-enable-tasks-notifications` backed a "show a toast when a scheduled
+ * task finishes" toggle that no code ever fulfilled — nothing subscribed to
+ * task-run completion to render the promised toast (DOR-1522). Removed
+ * rather than wired, since that event does not exist yet.
  */
 const ORPHANED_BOOL_KEYS = [
   'dorkos-enable-cross-client-sync',
@@ -83,6 +92,7 @@ const ORPHANED_BOOL_KEYS = [
   'dorkos-show-status-bar-permission',
   'dorkos-show-status-bar-sound',
   'dorkos-show-status-bar-polling',
+  'dorkos-enable-tasks-notifications',
 ] as const;
 
 /**
@@ -105,7 +115,6 @@ export const BOOL_DEFAULTS: Record<keyof typeof BOOL_KEYS, boolean> = {
   expandToolCalls: false,
   autoHideToolCalls: true,
   showTaskCelebrations: true,
-  enableTasksNotifications: true,
   enableMessagePolling: false,
   promoEnabled: true,
 };

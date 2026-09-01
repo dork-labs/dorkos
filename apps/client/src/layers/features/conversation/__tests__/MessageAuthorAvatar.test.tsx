@@ -89,13 +89,13 @@ describe('MessageAuthorAvatar', () => {
       expect(discOf(container).style.backgroundColor).toBe(probe.style.backgroundColor);
     });
 
-    it('falls back to tint for a runtime-brand agent — readableForeground cannot parse a var() token', () => {
+    it('falls back to tint for a runtime-brand agent — IdentityAvatar declines fill on an unparseable colour', () => {
       // The session-chat runtime-fallback case (`resolveMessageAuthor`'s
       // `runtime` branch: no agent, no stored color) resolves `color` to the
       // runtime's accent, a theme token like `var(--color-orange-500)`.
-      // `readableForeground` only parses hex/rgb()/hsl(), so a `fill` disc
-      // here would always compute a near-white foreground no matter how light
-      // that token actually renders — `tint` sidesteps the problem entirely.
+      // `IdentityAvatar` itself declines `kind="agent"`'s default fill when it
+      // cannot compute a readable foreground for the colour it was given
+      // (DOR-998) — this file no longer re-decides that guard by hand.
       const { container } = render(
         <MessageAuthorAvatar author={{ ...AGENT, runtime: 'claude-code' }} />
       );

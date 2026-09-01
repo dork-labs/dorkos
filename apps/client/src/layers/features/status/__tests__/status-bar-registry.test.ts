@@ -412,4 +412,92 @@ describe('STATUS_BAR_REGISTRY — permission severity comes from the mode’s me
     });
     expect(severityOf('permission', ctx)).toBe(severityOf('permission', withProfile));
   });
+
+  it('reads QUIET off a safe mode whose NAME merely differs from "default" (DOR-820)', () => {
+    // test-mode's always-deny is its SAFEST mode — sits at the dial's 'ask'
+    // stop — but its id is not literally 'default'. Judging by the name alone
+    // (the bug) would have shown PERMISSION_ELEVATED for the safest mode a
+    // runtime can offer.
+    const ctx = restingContext({
+      permissionMode: 'always-deny',
+      permissionDescriptor: descriptor({
+        id: 'always-deny',
+        stop: 'ask',
+        asks: 'always',
+        reach: 'read',
+      }),
+    });
+    expect(severityOf('permission', ctx)).toBe(
+      severityOf('permission', restingContext({ permissionMode: 'default' }))
+    );
+  });
+
+  it('still reads ELEVATED off the mode name when no descriptor has arrived yet', () => {
+    // The fallback path — same shape as the bypass check right above it —
+    // still has only the name to go on before the capability map lands.
+    const ctx = restingContext({ permissionMode: 'acceptEdits', permissionDescriptor: null });
+    expect(severityOf('permission', ctx)).toBeGreaterThan(
+      severityOf('permission', restingContext({ permissionMode: 'default' }))
+    );
+  });
+
+  // `promote` decides whether the item gets a slot AT ALL, and it used to
+  // switch on the mode's name exactly like the old `severity` did — the two
+  // agreed by accident, not by a shared rule, so a fix to only one of them
+  // would have reintroduced the disagreement DOR-820 exists to end. Asserted
+  // through `promotedKeys`, the same seam `describe('quiet by default')`
+  // uses above, not through `severity` again.
+  it('does NOT promote a safe mode whose NAME merely differs from "default"', () => {
+    const ctx = restingContext({
+      permissionMode: 'always-deny',
+      permissionDescriptor: descriptor({
+        id: 'always-deny',
+        stop: 'ask',
+        asks: 'always',
+        reach: 'read',
+      }),
+    });
+    expect(promotedKeys(ctx)).not.toContain('permission');
+  });
+
+  it('still promotes off the mode name when no descriptor has arrived yet', () => {
+    const ctx = restingContext({ permissionMode: 'acceptEdits', permissionDescriptor: null });
+    expect(promotedKeys(ctx)).toContain('permission');
+  });
+
+  it('promotes a genuinely elevated descriptor mode', () => {
+    const ctx = restingContext({
+      permissionMode: 'acceptEdits',
+      permissionDescriptor: descriptor({ stop: 'act', asks: 'when-risky', reach: 'edit' }),
+    });
+    expect(promotedKeys(ctx)).toContain('permission');
+  });
+
+  // The decision this ticket's review asked to be made explicit: Claude's
+  // `plan` descriptor is `stop: 'ask'` — the dial's SAFEST position,
+  // read-only by its own promise ("Reads and plans only. Nothing changes
+  // until you approve the plan.") — so reading it as QUIET here is not a
+  // regression, it is the descriptor telling the truth about a mode the old
+  // name-based check only ever flagged because its id was not literally
+  // "default". Surfacing "you are planning" is the SEPARATE `plan` item's
+  // job (its own `promote`/`severity`, keyed off `ctx.plan`, untouched by
+  // this file) — and `status-item-nodes.tsx` omits the Permissions item's
+  // rendered node entirely while a way of working holds the session, so the
+  // two items never compete for one narrow-bar slot regardless of what this
+  // one computes.
+  it('reads QUIET for Claude’s plan mode — read-only by its own descriptor, not a risk this item flags', () => {
+    const ctx = restingContext({
+      permissionMode: 'plan',
+      permissionDescriptor: descriptor({
+        id: 'plan',
+        stop: 'ask',
+        asks: 'always',
+        reach: 'read',
+      }),
+    });
+    expect(promotedKeys(ctx)).not.toContain('permission');
+    expect(severityOf('permission', ctx)).toBe(
+      severityOf('permission', restingContext({ permissionMode: 'default' }))
+    );
+  });
 });

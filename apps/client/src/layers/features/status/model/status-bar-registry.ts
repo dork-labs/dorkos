@@ -27,7 +27,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import { useCallback } from 'react';
-import type { ConnectionState, PermissionMode, UsageStatus } from '@dorkos/shared/types';
+import type { ConnectionState, UsageStatus } from '@dorkos/shared/types';
 import type { StatusBarPin } from '@dorkos/shared/config-schema';
 import { STATUS_BAR_PIN_KEYS } from '@dorkos/shared/config-schema';
 import { CONTEXT_ACTION_PERCENT, CONTEXT_PROMOTE_PERCENT } from '@/layers/entities/session';
@@ -72,8 +72,13 @@ export interface StatusPromotionContext {
   contextPercent: number | null;
   /** Live-sync connection state of this session's durable event stream. */
   connectionState: ConnectionState;
-  /** The session's permission mode. */
-  permissionMode: PermissionMode;
+  /**
+   * The session's permission mode — any id the runtime declares (DOR-811),
+   * wider than the shared `PermissionMode` enum's known names (test-mode's
+   * ids sit outside it on purpose). `string`, matching `SessionStatusData`,
+   * so nothing here narrows with a cast (DOR-820).
+   */
+  permissionMode: string;
   /**
    * That mode as its runtime declared it, or `null` while the capability map is
    * still arriving. What ranks the item is what the mode DOES, not what it is
@@ -268,6 +273,27 @@ const GROUP_LABELS: Record<StatusBarItemGroup, string> = {
 };
 
 /**
+ * Whether a permission mode sits off the dial's safest stop ('ask', which
+ * always asks first) — the one fact both the Permissions item's `promote`
+ * and `severity` need to agree on (DOR-820). Reads the descriptor when one
+ * has arrived, the same way the bypass check beside it prefers a descriptor
+ * over a name: PATCHing to a mode whose NAME merely differs from 'default'
+ * says nothing about what it DOES — test-mode's `always-deny` is its
+ * SAFEST mode and is not named 'default'. Falls back to the name only
+ * before the capability map lands.
+ *
+ * A single function rather than one check per caller on purpose: `promote`
+ * and `severity` disagreeing (one elevated, one not) is exactly the
+ * register-drift bug this ticket closed, and a shared predicate is what
+ * keeps a future edit from reintroducing it in only one of the two places.
+ */
+function isElevatedPermissionMode(ctx: StatusPromotionContext): boolean {
+  return ctx.permissionDescriptor
+    ? ctx.permissionDescriptor.stop !== 'ask'
+    : ctx.permissionMode !== 'default';
+}
+
+/**
  * Every status line item, in render order within its cluster.
  *
  * Promotion rules, per spec composer-status-redesign §4.1: `agent`, `model`, and
@@ -375,13 +401,31 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     cluster: 'right',
     group: 'session',
     icon: Shield,
-    promote: (ctx) => ctx.permissionMode !== 'default',
+    // Both PROMOTE (is this worth a slot at all) and SEVERITY (how urgent a
+    // slot) read the same fact, `isElevatedPermissionMode` — they used to
+    // agree by accident (both switched on the mode's name) and a fix to only
+    // one would have reintroduced the disagreement DOR-820 exists to end:
+    // test-mode's always-deny, its SAFEST mode, would have kept being
+    // PROMOTED even after its severity read QUIET.
+    //
+    // Claude's `plan` mode is `stop: 'ask'` — the dial's safest position,
+    // read-only by its own descriptor — so this now reads it as QUIET,
+    // same as an ordinary default session. That is intended, not a
+    // regression: `plan` is not a risk to flag on THIS item. The separate
+    // `plan` item above (well, below in file order, but the item that owns
+    // `ctx.plan`) is what tells a person planning is on, at its own
+    // `PLAN_ACTIVE` severity — and `status-item-nodes.tsx` omits this item's
+    // own rendered node entirely while a way of working holds the session,
+    // so the two never compete for one budget slot. Pinned in
+    // `status-bar-registry.test.ts` ("plan mode reads QUIET here, on
+    // purpose").
+    promote: (ctx) => isElevatedPermissionMode(ctx),
     severity: (ctx) => {
       const bypassed = ctx.permissionDescriptor
         ? isBypassSemantics(ctx.permissionDescriptor)
         : isBypassPermissionMode(ctx.permissionMode);
       if (bypassed) return SEVERITY.PERMISSION_BYPASS;
-      return ctx.permissionMode === 'default' ? SEVERITY.QUIET : SEVERITY.PERMISSION_ELEVATED;
+      return isElevatedPermissionMode(ctx) ? SEVERITY.PERMISSION_ELEVATED : SEVERITY.QUIET;
     },
   },
   {

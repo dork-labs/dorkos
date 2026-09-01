@@ -355,8 +355,8 @@ describe('SettingsDialog', () => {
     expect(toggle?.getAttribute('data-state')).toBe('checked');
   });
 
-  // Verifies Feature suggestions toggle appears between Scheduled run notifications and Show dev tools
-  it('positions Feature suggestions between Scheduled run notifications and Show dev tools', () => {
+  // Verifies Feature suggestions toggle appears between To-do celebrations and Show dev tools
+  it('positions Feature suggestions between To-do celebrations and Show dev tools', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
     navigateTo(/preferences/i);
     const panel = screen
@@ -365,12 +365,21 @@ describe('SettingsDialog', () => {
     const labels = Array.from(panel.querySelectorAll('[data-slot="field-label"]')).map(
       (el) => el.textContent
     );
-    const tasksIdx = labels.indexOf('Scheduled run notifications');
+    const celebrationsIdx = labels.indexOf('To-do celebrations');
     const promoIdx = labels.indexOf('Feature suggestions');
     const devToolsIdx = labels.indexOf('Show dev tools');
-    expect(tasksIdx).toBeGreaterThanOrEqual(0);
-    expect(promoIdx).toBeGreaterThan(tasksIdx);
+    expect(celebrationsIdx).toBeGreaterThanOrEqual(0);
+    expect(promoIdx).toBeGreaterThan(celebrationsIdx);
     expect(devToolsIdx).toBeGreaterThan(promoIdx);
+  });
+
+  // A setting whose description promised a toast no code ever rendered was
+  // removed rather than wired, since no runtime event exists yet to trigger
+  // one (DOR-1522).
+  it('does not offer a scheduled-run-notifications toggle that promises a toast nothing renders', () => {
+    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
+    navigateTo(/preferences/i);
+    expect(screen.queryByText('Scheduled run notifications')).toBeNull();
   });
 });
 

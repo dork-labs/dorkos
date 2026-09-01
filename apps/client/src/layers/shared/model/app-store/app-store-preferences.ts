@@ -37,8 +37,6 @@ export interface PreferencesSlice {
   setAutoHideToolCalls: (v: boolean) => void;
   showTaskCelebrations: boolean;
   setShowTaskCelebrations: (v: boolean) => void;
-  enableTasksNotifications: boolean;
-  setEnableTasksNotifications: (v: boolean) => void;
   enableMessagePolling: boolean;
   setEnableMessagePolling: (v: boolean) => void;
 
@@ -84,14 +82,6 @@ export const createPreferencesSlice: StateCreator<
   setShowTaskCelebrations: (v) => {
     writeBool(BOOL_KEYS.showTaskCelebrations, v);
     set({ showTaskCelebrations: v });
-  },
-  enableTasksNotifications: readBool(
-    BOOL_KEYS.enableTasksNotifications,
-    BOOL_DEFAULTS.enableTasksNotifications
-  ),
-  setEnableTasksNotifications: (v) => {
-    writeBool(BOOL_KEYS.enableTasksNotifications, v);
-    set({ enableTasksNotifications: v });
   },
   enableMessagePolling: readBool(
     BOOL_KEYS.enableMessagePolling,
