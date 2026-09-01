@@ -158,6 +158,66 @@ export function mcpToolCallItem(
   };
 }
 
+/**
+ * A one-pixel PNG, base64 — real bytes, because the attachment store writes them
+ * and the conformance suite reads back the size it wrote.
+ */
+export const TINY_PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+/**
+ * Build a completed `mcp_tool_call` item whose result carries an MCP
+ * `ImageContent` block — Codex's ONE media path.
+ *
+ * `@openai/codex-sdk`'s `ThreadItem` union has no image OUTPUT item of any kind
+ * (`local_image` exists only on `UserInput`, the input direction), so a
+ * generated picture cannot reach the adapter at all and there is nothing else
+ * to script. `McpToolCallItem.result.content` is typed as MCP's own
+ * `ContentBlock[]`, whose image member is
+ * `{ type: 'image', data: '<base64>', mimeType }`.
+ *
+ * @param id - The item id, which is also half the image's stable identity.
+ * @param opts - Optional media type, payload, and a trailing text block.
+ */
+export function mcpImageToolCallItem(
+  id: string,
+  opts: { mimeType?: string; base64?: string; text?: string } = {}
+): McpToolCallItem {
+  const { mimeType = 'image/png', base64 = TINY_PNG_BASE64, text } = opts;
+  return {
+    id,
+    type: 'mcp_tool_call',
+    server: 'screenshots',
+    tool: 'capture',
+    arguments: { url: 'https://example.test' },
+    result: {
+      content: [
+        { type: 'image', data: base64, mimeType },
+        ...(text !== undefined ? [{ type: 'text' as const, text }] : []),
+      ],
+      structured_content: null,
+    },
+    status: 'completed',
+  } as McpToolCallItem;
+}
+
+/**
+ * A turn whose MCP tool answers with a picture.
+ *
+ * @param repeatCompleted - Emit the terminal `item.completed` this many times,
+ *   to drive the re-delivery case the single-shot guard exists for.
+ */
+export function codexMcpImageTurn(repeatCompleted = 1): ThreadEvent[] {
+  const completed = mcpImageToolCallItem('mcp-img-1');
+  return [
+    codexThreadStarted(),
+    codexTurnStarted(),
+    codexItemStarted(mcpToolCallItem('mcp-img-1', { server: 'screenshots', tool: 'capture' })),
+    ...Array.from({ length: repeatCompleted }, () => codexItemCompleted(completed)),
+    codexTurnCompleted(),
+  ];
+}
+
 /** Build a `web_search` item. */
 export function webSearchItem(id: string, query: string): WebSearchItem {
   return { id, type: 'web_search', query };

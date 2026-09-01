@@ -49,3 +49,33 @@ Two subordinate decisions, both deviations from the nearest precedent, both deli
 - `http(s)` image sources are refused rather than fetched (SSRF), so a runtime that ever hands back a remote URL will show a sentence instead of a picture.
 - User-attached images (the INPUT direction) are still not projected into history. The schema does not block it — `HistoryMessage.parts` accepts an `image` for either role — but no adapter fills it.
 - **The seam ships with two of its three runtimes unfinished, and that deferral is tracked as DOR-1664** ("Claude Code and Codex silently drop non-text tool results"). Both drop sites are already located: `claude-code/sessions/transcript-parser.ts:112-119` (`extractToolResultContent`) and `codex/event-mapper.ts:405-415` (`extractMcpResultText`), each filtering tool-result content to `type === 'text'`. Both are fixable by calling into this seam — store the non-text block through `SessionAttachmentStore.put` under a `deriveSessionAttachmentId` of the runtime's own identity for it, and emit the same `image_attachment` — rather than by inventing a second one. Until that lands, the conformance suite reports both as a named gap on every run, which is the whole reason `mediaOutput` is a required declaration instead of an optional one.
+
+## Amendment (DOR-1664, same release)
+
+An ADR is a dated record and the text above stands as written. One fact in it
+stopped being true before it ever shipped, and both changes ride the same
+release, so a reader must not be left with the older half.
+
+**claude-code and codex adopted this seam.** The deferral described in Context,
+in Positive ("reports claude-code and codex as known-non-compliant by name") and
+in the final Negative bullet is closed. Both drop sites named there now call into
+this seam: `claude-code` reads image blocks on BOTH of its paths (the live SDK
+stream and the JSONL transcript) via `tool-result-images.ts` +
+`media-capture.ts`, and `codex` reads MCP `ImageContent` off
+`McpToolCallItem.result.content`. Both derive attachment ids from their own
+identity for the image exactly as this ADR requires — `tool_use_id` + block
+index, and `item.id` + block index. The `it.skip` naming them is gone, and all
+three adapters wire a `mediaTurn`.
+
+Two things the follow-up established that this ADR could not have known:
+
+- **`mediaOutput` is resolved per INSTANCE, not per runtime type.** All three
+  adapters answer `'attachments'` only when the composition root handed them a
+  `SessionAttachmentStore`, and `'none'` otherwise. The field is a promise about
+  keeping a picture, and a runtime wired with nowhere to put one must not make
+  it.
+- **Codex has a real ceiling, and it is not an adapter gap.**
+  `@openai/codex-sdk@0.147.0`'s `ThreadItem` union carries no image OUTPUT item
+  at all (`local_image` appears only on `UserInput`, the input direction), so
+  Codex cannot stream a generated picture however the adapter is written. An MCP
+  tool result is its only media path. Nobody should go looking for the other one.

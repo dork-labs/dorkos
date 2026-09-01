@@ -1,10 +1,16 @@
-import { afterAll, afterEach, beforeEach, expect, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { runtimeConformance } from '@dorkos/test-utils';
-import { wrapSdkQuery, sdkError, sdkSimpleText, sdkCompaction } from './sdk-scenarios.js';
+import {
+  wrapSdkQuery,
+  sdkError,
+  sdkSimpleText,
+  sdkCompaction,
+  sdkImageToolResult,
+} from './sdk-scenarios.js';
 
 // Purpose: ClaudeCodeRuntime must clear the SAME shared conformance gate as
 // the stateless TestModeRuntime (spec additional-agent-runtimes, task 1.5).
@@ -178,6 +184,7 @@ import {
 } from '../../../session/__tests__/durable-turn-harness.js';
 import { getOrCreateProjector, feedProjector } from '../../../session/index.js';
 import { FakeCli } from '../sessions/__tests__/fake-persistent-cli.js';
+import { LocalSessionAttachmentStore } from '../../../session/attachments/local-session-attachment-store.js';
 
 const mockedQuery = vi.mocked(query);
 
@@ -248,8 +255,20 @@ writeFileSync(
     .join('\n') + '\n'
 );
 
+/**
+ * Where the conformance runtime keeps images.
+ *
+ * A real store over a temp directory rather than a double: the media gate's
+ * whole claim is that the URL it announces is LIVE on arrival, and only a store
+ * that actually wrote bytes can support that. Wiring one is also what makes the
+ * runtime declare `mediaOutput: 'attachments'` — the declaration and the proof
+ * move together (`ClaudeCodeRuntime.getCapabilities`).
+ */
+const ATTACHMENT_HOME = mkdtempSync(join(tmpdir(), 'dorkos-conformance-claude-media-'));
+
 afterAll(() => {
   rmSync(account.root, { recursive: true, force: true });
+  rmSync(ATTACHMENT_HOME, { recursive: true, force: true });
 });
 
 /**
@@ -352,8 +371,36 @@ beforeEach(() => {
   );
 });
 
+// The half of the media declaration the conformance suite structurally cannot
+// reach: it builds ONE runtime, and this suite always builds it WITH a store.
+// `mediaOutput` is the promise "an image your tools return is kept", and a
+// runtime wired without somewhere to keep one must not make it — that honesty
+// is the entire reason the field is per-instance rather than a constant.
+// Without this, deleting the `if (!this.attachments)` guard so the adapter
+// always claims 'attachments' passes everything.
+describe('what claude-code says it does with media', () => {
+  it('promises nothing when it was wired nowhere to put a picture', () => {
+    const runtime = new ClaudeCodeRuntime('/tmp/dorkos-conformance', '/projects/conformance');
+    expect(runtime.getCapabilities().mediaOutput).toBe('none');
+  });
+
+  it('promises attachments once the composition root hands it a store', () => {
+    const runtime = new ClaudeCodeRuntime(
+      '/tmp/dorkos-conformance',
+      '/projects/conformance',
+      new LocalSessionAttachmentStore(ATTACHMENT_HOME)
+    );
+    expect(runtime.getCapabilities().mediaOutput).toBe('attachments');
+  });
+});
+
 runtimeConformance(
-  () => new ClaudeCodeRuntime('/tmp/dorkos-conformance', '/projects/conformance'),
+  () =>
+    new ClaudeCodeRuntime(
+      '/tmp/dorkos-conformance',
+      '/projects/conformance',
+      new LocalSessionAttachmentStore(ATTACHMENT_HOME)
+    ),
   {
     name: 'ClaudeCodeRuntime (mocked SDK) — AgentRuntime conformance',
     // The mocked SDK writes no JSONL transcript, so native history is [] here;
@@ -370,6 +417,47 @@ runtimeConformance(
     // not persist, DOR-189), which is exactly what `drivePresenceTurn` does.
     presenceTurn: (runtime, sessionId, content, probes) =>
       drivePresenceTurn(runtime, sessionId, content, '/projects/conformance', probes),
+    // The media gate. Owns its own scripted turn because a media turn needs a
+    // differently-scripted SDK than the default `sdkSimpleText` — a `Read` of a
+    // PNG, which is the most ordinary media case on the DEFAULT runtime and the
+    // one claude-code used to discard without a word.
+    //
+    // RE-DELIVERED ON PURPOSE. The gate's second half — one picture, one
+    // announcement — only bites when the driver actually publishes the same
+    // image twice; script it once and the case passes for a reason unrelated to
+    // the property it is named after. claude-code has no cumulative snapshot
+    // like OpenCode's `message.part.updated`, but it does re-deliver: the resume
+    // path can replay a turn's messages and the persistent pump runs many turns
+    // through one process. Two deliveries of one `tool_result` is that,
+    // scripted.
+    mediaTurn: async () => {
+      mockedQuery.mockImplementation(
+        () =>
+          wrapSdkQuery(
+            sdkImageToolResult(
+              'tool-image-1',
+              '/projects/conformance/shot.png',
+              'image/png',
+              undefined,
+              2
+            )
+          ) as unknown as ReturnType<typeof query>
+      );
+      const runtime = new ClaudeCodeRuntime(
+        '/tmp/dorkos-conformance',
+        '/projects/conformance',
+        new LocalSessionAttachmentStore(ATTACHMENT_HOME)
+      );
+      const sessionId = randomUUID();
+      runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: '/projects/conformance' });
+      const events = [];
+      for await (const event of runtime.sendMessage(sessionId, 'read the screenshot', {
+        cwd: '/projects/conformance',
+      })) {
+        events.push(event);
+      }
+      return events;
+    },
     // DOR-1293: a question NOBODY answered. See `seedExpiredQuestionHistory`.
     expiredQuestionHistory: (runtime, sessionId) => seedExpiredQuestionHistory(runtime, sessionId),
     // Claude-code declares `supportsPersistentSession`, so it owes the suite a

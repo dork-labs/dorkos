@@ -15,7 +15,7 @@ import {
   isPersonAuthoredUserRecord,
   stripSystemTags,
 } from './transcript-parser.js';
-import type { TranscriptLine } from './transcript-parser.js';
+import type { TranscriptImageRef, TranscriptLine } from './transcript-parser.js';
 import { classifyOrigin } from './classify-origin.js';
 import { deriveSessionTitle } from '../../shared/derive-title.js';
 import { projectSlug } from './project-slug.js';
@@ -713,8 +713,19 @@ export class TranscriptReader {
 
   /**
    * Read messages from an SDK session transcript.
+   *
+   * @param vaultRoot - The session's working directory.
+   * @param sessionId - SDK session UUID.
+   * @param images - Collects the images tool results carried, for the caller to
+   *   resolve through the attachment store. This class stays a JSONL parser and
+   *   learns nothing about where DorkOS keeps bytes — the same division that
+   *   keeps approval receipts out of here (see `getMessageHistory`).
    */
-  async readTranscript(vaultRoot: string, sessionId: string): Promise<HistoryMessage[]> {
+  async readTranscript(
+    vaultRoot: string,
+    sessionId: string,
+    images?: TranscriptImageRef[]
+  ): Promise<HistoryMessage[]> {
     await validateBoundaryOrDorkHome(vaultRoot);
     const filePath = await this.transcriptPath(vaultRoot, sessionId);
 
@@ -726,7 +737,7 @@ export class TranscriptReader {
     }
 
     const lines = content.split('\n').filter((l) => l.trim());
-    return parseTranscript(lines);
+    return parseTranscript(lines, images);
   }
 
   /**

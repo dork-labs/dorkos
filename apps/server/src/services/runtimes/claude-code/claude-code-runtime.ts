@@ -62,6 +62,9 @@ import { withClaudeConfigDir } from './claude-config-env-lock.js';
 import { logger } from '../../../lib/logger.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { TranscriptReader } from './sessions/transcript-reader.js';
+import type { TranscriptImageRef } from './sessions/transcript-parser.js';
+import { attachTranscriptImages } from './media-capture.js';
+import type { SessionAttachmentStore } from '../../session/attachments/index.js';
 import { SessionPumpRegistry } from './sessions/session-pump-registry.js';
 import { CommandRegistryService } from './tooling/command-registry.js';
 import { executeSdkQuery } from './messaging/message-sender.js';
@@ -176,7 +179,24 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   /** After a warm failure, skip re-probing the same cwd for this long. */
   private static readonly WARM_FAILURE_COOLDOWN_MS = 60_000;
 
-  constructor(dorkHome: string, cwd?: string) {
+  /**
+   * Where images this runtime's turns produce are stored, or `null` when the
+   * composition root wired none. What makes {@link getCapabilities} answer
+   * `mediaOutput: 'attachments'`.
+   */
+  private readonly attachments: SessionAttachmentStore | null;
+
+  /**
+   * Build the runtime over a data directory and a default working directory.
+   *
+   * @param dorkHome - The resolved data directory.
+   * @param cwd - The default working directory.
+   * @param attachments - Where a turn's images go. Omitted, the runtime
+   *   declares `mediaOutput: 'none'` and says so per image rather than dropping
+   *   one quietly — see {@link getCapabilities}.
+   */
+  constructor(dorkHome: string, cwd?: string, attachments?: SessionAttachmentStore) {
+    this.attachments = attachments ?? null;
     this.cwd = cwd ?? DEFAULT_CWD;
     this.claudeCliPath = resolveClaudeCliPath();
     this.cache = new RuntimeCache(dorkHome);
@@ -230,9 +250,18 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   // Capabilities
   // ---------------------------------------------------------------------------
 
-  /** Return static Claude Code capability flags. */
+  /**
+   * Return static Claude Code capability flags.
+   *
+   * `mediaOutput` is resolved per INSTANCE rather than baked into
+   * {@link CLAUDE_CODE_CAPABILITIES}, because it is the one capability here that
+   * depends on how the runtime was wired: with no attachment store there is
+   * nowhere to put an image, and claiming otherwise would be exactly the silent
+   * promise this field exists to end. Same arrangement as the OpenCode adapter.
+   */
   getCapabilities(): RuntimeCapabilities {
-    return CLAUDE_CODE_CAPABILITIES;
+    if (!this.attachments) return CLAUDE_CODE_CAPABILITIES;
+    return { ...CLAUDE_CODE_CAPABILITIES, mediaOutput: 'attachments' };
   }
 
   /** Check whether the Claude Code CLI binary is available and Claude is authenticated. */
@@ -388,6 +417,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       cwd: this.cwd,
       sessionCwd: session.cwd,
       claudeCliPath: this.spawnBinaryPath,
+      ...(this.attachments ? { attachments: this.attachments } : {}),
       meshCore: this.meshCore,
       bindingRouter: this.bindingRouter,
       bindingStore: this.bindingStore,
@@ -927,7 +957,14 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * interactions.
    */
   async getMessageHistory(projectDir: string, sessionId: string): Promise<HistoryMessage[]> {
-    const messages = await this.transcriptReader.readTranscript(projectDir, sessionId);
+    const images: TranscriptImageRef[] = [];
+    const messages = await this.transcriptReader.readTranscript(projectDir, sessionId, images);
+    // The same seam, for the same reason: the reader stays a JSONL parser, and
+    // what DorkOS did with the bytes a tool returned is overlaid back here.
+    // Re-materializing is idempotent — the attachment id is derived from the
+    // tool call, so reopening a transcript finds the first read's file instead
+    // of writing a second copy (`media-capture.ts`).
+    await attachTranscriptImages(this.attachments, sessionId, messages, images);
     return overlayApprovalReceipts(sessionId, messages);
   }
 

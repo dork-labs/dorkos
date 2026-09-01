@@ -25,7 +25,7 @@ import {
   buildPhantomCorrectionNote,
   PHANTOM_CORRECTIONS_MAX_PER_TURN,
 } from './phantom-cancellation.js';
-import { mapSdkMessage } from '../sdk/sdk-event-mapper.js';
+import { mapSdkMessageWithMedia } from '../media-capture.js';
 import { createTurnLiveness } from './turn-liveness.js';
 import { createDeferredClose, settleStdinAtDeadline, settleStdinAtResult } from './stdin-hold.js';
 import { createHeldUserPrompt } from '../sdk/sdk-utils.js';
@@ -254,9 +254,9 @@ export async function* executeSdkQuery(
         if (queuedEvent.type === 'done') emittedDone = true;
         // `interactive-handlers.ts` pushes approval/question/elicitation prompts
         // onto this queue directly — they never reach the guard through
-        // `mapSdkMessage` below, so this is the ONLY place on this path that can
-        // ever see one. Without this check `wasInteractive` could never become
-        // true here, and an interactive-only turn (nothing but an unanswered
+        // `mapSdkMessageWithMedia` below, so this is the ONLY place on this path
+        // that can ever see one. Without this check `wasInteractive` could never
+        // become true here, and an interactive-only turn (nothing but an unanswered
         // prompt, no content) would misreport as a dead stream (DOR-1240).
         if (isInteractiveEvent(queuedEvent)) wasInteractive = true;
         trackTurnWindow(queuedEvent);
@@ -438,7 +438,8 @@ export async function* executeSdkQuery(
       }
 
       let prevSdkId = session.sdkSessionId;
-      for await (const event of mapSdkMessage(
+      for await (const event of mapSdkMessageWithMedia(
+        opts.attachments ?? null,
         result.value,
         session,
         sessionId,

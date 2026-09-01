@@ -73,6 +73,8 @@ import { buildAgentContextAppend } from '../shared/agent-context.js';
 import { resolveAgentTokenEnv } from '../../core/agent-identity/index.js';
 import { checkCodexDependencies, resolveCodexBinaryPath } from './check-dependencies.js';
 import { createCodexEventContext, mapCodexThread } from './event-mapper.js';
+import { captureCodexMedia } from './media-capture.js';
+import type { SessionAttachmentStore } from '../../session/attachments/index.js';
 import { CodexSessionRegistry } from './session-registry.js';
 import {
   CodexThreadMap,
@@ -81,19 +83,18 @@ import {
 } from './thread-map.js';
 import { tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
 import { CODEX_CAPABILITIES, CODEX_MODELS } from './runtime-constants.js';
-import { CODEX_UI_MCP_SERVER } from './codex-ui-mcp-server.js';
 import {
   dorkosToolsPosture,
   resolveDorkosMcpInjection,
   type DorkosMcpInjection,
 } from '../shared/dorkos-mcp-injection.js';
 import { buildCodexOptions } from './codex-options.js';
-import { CODEX_DORKOS_TOOL_PREFIX, DORKOS_MCP_SERVER_NAME } from '../shared/dorkos-tool-names.js';
+import { CODEX_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
 import {
   buildRoomToolsBlock,
   roomReplyModeForToolCapableSession,
 } from '../shared/room-tools-context.js';
-import { toCodexMcpServers, type CodexMcpServerRecord } from './mcp-server-config.js';
+import { resolveManagedMcpServers, type CodexMcpServerRecord } from './mcp-server-config.js';
 import { buildCodexPrompt, projectThreadOptions } from './turn-input.js';
 import { enumerateCodexMcpServers } from './enumerate-mcp-servers.js';
 import { scanSkillCommands } from './scan-skill-commands.js';
@@ -140,6 +141,13 @@ export interface CodexRuntimeOptions {
    * the server's resolved workspace root.
    */
   defaultCwd?: string;
+  /**
+   * Where images this runtime's turns produce are stored (the local store over
+   * the resolved data directory in production). Omitted, the runtime declares
+   * `mediaOutput: 'none'` and says so per image rather than dropping one
+   * quietly — see {@link CodexRuntime.getCapabilities}.
+   */
+  attachments?: SessionAttachmentStore;
 }
 
 /**
@@ -197,7 +205,11 @@ export class CodexRuntime implements AgentRuntime {
    */
   private mcpStatusWarmedAt: number | null = null;
 
+  /** Where a turn's images go, or `null` when the composition root wired none. */
+  private readonly attachments: SessionAttachmentStore | null;
+
   constructor(options: CodexRuntimeOptions) {
+    this.attachments = options.attachments ?? null;
     this.threadMap = options.threadMap;
     this.defaultCwd = options.defaultCwd ?? DEFAULT_CWD;
     this.resolveBinary = options.resolveBinary ?? resolveCodexBinaryPath;
@@ -287,60 +299,6 @@ export class CodexRuntime implements AgentRuntime {
       this.sharedClient = { binary, client: new Codex(buildCodexOptions(binary, this.mcpUiUrl)) };
     }
     return this.sharedClient.client;
-  }
-
-  /**
-   * Resolve the agent's enabled managed MCP servers for a session cwd and map
-   * them to Codex config shape. Returns `{}` when no resolver is wired or the
-   * cwd hosts no agent manifest — the safe default (absence withholds). SSE
-   * servers have no Codex transport and are dropped with a one-line debug log,
-   * never mismapped.
-   *
-   * @param cwd - The session's working directory (the agent's workspace path).
-   */
-  private resolveManagedMcpServers(
-    cwd: string,
-    injectingDorkosTools: boolean
-  ): CodexMcpServerRecord {
-    if (!this.managedMcpServers) return {};
-    const neutral = this.managedMcpServers.injectableServersForCwd(cwd);
-    // `dorkos_ui` is always ours — it is injected on every turn. `dorkos` is
-    // ours only on the turns we actually inject it, which is why the set is
-    // built per turn rather than being a constant.
-    //
-    // Reserving it unconditionally was a REGRESSION on the default path: with
-    // the experiment off DorkOS wants nothing called `dorkos`, so dropping a
-    // person's own server of that name took something and gave nothing back,
-    // and it made the flag-OFF path stop being byte-identical to the one that
-    // shipped before this feature. It also disagreed with OpenCode, where the
-    // desired set simply has no `dorkos` entry when the experiment is off and a
-    // user's server of that name is therefore never touched. Same experiment,
-    // same name, two runtimes: they have to answer this the same way.
-    const reservedNames = new Set([CODEX_UI_MCP_SERVER]);
-    if (injectingDorkosTools) reservedNames.add(DORKOS_MCP_SERVER_NAME);
-    const { servers, skipped, reserved } = toCodexMcpServers(neutral, reservedNames);
-    if (skipped.length > 0) {
-      logger.debug('[CodexRuntime] skipped SSE managed MCP servers — Codex has no SSE transport', {
-        cwd,
-        skipped,
-      });
-    }
-    if (reserved.length > 0) {
-      // A WARN, not a debug: this is somebody's own server disappearing. The
-      // drop itself is correct and stays — DorkOS must own these names — but a
-      // person watching their tools vanish needs a line naming the collision
-      // and the remedy, which is the whole of DOR-1613's complaint about the
-      // silent version of this branch.
-      logger.warn(
-        `[CodexRuntime] managed MCP server(s) ${reserved
-          .map((name) => `"${name}"`)
-          .join(
-            ', '
-          )} use a name DorkOS reserves and were NOT injected — rename them to inject them`,
-        { cwd, reserved }
-      );
-    }
-    return servers;
   }
 
   // --- Session lifecycle ---
@@ -625,7 +583,11 @@ export class CodexRuntime implements AgentRuntime {
     // `config.mcp_servers` (spec `mcp-server-management` §6, DOR-892). Resolved
     // at turn time because the resolver keys on the session cwd; a non-agent
     // session has no manifest and contributes none.
-    const managedMcpServers = this.resolveManagedMcpServers(cwd, dorkosTools !== null);
+    const managedMcpServers = resolveManagedMcpServers(
+      this.managedMcpServers,
+      cwd,
+      dorkosTools !== null
+    );
 
     // Runtime-neutral DorkOS context (identity, persona, safety boundaries,
     // <dorkos_context>, <env>): the same blocks the Claude adapter injects, so a
@@ -685,6 +647,11 @@ export class CodexRuntime implements AgentRuntime {
           bound = true;
         }
         yield event;
+        // The async half of media mapping. `mapCodexThread` is pure and cannot
+        // store bytes, so it records what it saw on `ctx` and this drains it
+        // here — after the event it rode in on, so an image lands in the
+        // transcript exactly where the tool result that produced it did.
+        yield* captureCodexMedia(this.attachments, sessionId, ctx);
       }
     } finally {
       // Guard against clearing a NEWER turn's controller: this turn's entry
@@ -935,8 +902,18 @@ export class CodexRuntime implements AgentRuntime {
     return [];
   }
 
+  /**
+   * @inheritdoc
+   *
+   * `mediaOutput` is resolved per INSTANCE rather than baked into
+   * {@link CODEX_CAPABILITIES}, because it is the one capability here that
+   * depends on how the runtime was wired: with no attachment store there is
+   * nowhere to put an image, and claiming otherwise would be exactly the silent
+   * promise this field exists to end. Same arrangement as the OpenCode adapter.
+   */
   getCapabilities(): RuntimeCapabilities {
-    return CODEX_CAPABILITIES;
+    if (!this.attachments) return CODEX_CAPABILITIES;
+    return { ...CODEX_CAPABILITIES, mediaOutput: 'attachments' };
   }
 
   async checkDependencies(): Promise<DependencyCheck[]> {
