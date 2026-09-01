@@ -571,8 +571,19 @@ gh label create re-review    --description "Request another automated review pas
   and shell mistakes do surface; the review itself does not. Merge first, then
   exercise the merged version against a real PR with
   `gh workflow run claude-code-review.yml -f pr=<number>`.
-- **A red review check is not always a finding.** When the review itself breaks, it
-  posts a comment saying so and naming which of five things happened:
+- **A finished review is a green check, even when the action failed.** The action
+  re-counts turns after the run and fails the step if a clean run overshot
+  `--max-turns` — which used to red a review that had already posted its findings
+  and its tally, and merge-tail will not arm a PR with a red check. It no longer
+  does: when the review finished and its verdict is on the PR, the check goes green
+  and you get no comment at all, just a warning annotation on the Actions run
+  (DOR-1665). So a green `claude-code-review` check with a verdict comment under it
+  means the review really ran. What green does **not** prove is that a review
+  happened at all — the two blind spots above (a conflicted PR, a PR editing the
+  workflow) still produce green with nothing reviewed.
+- **A red review check is not always a finding.** When the review breaks in a way
+  that cost you the verdict, it posts a comment saying so and naming which of five
+  things happened:
   - **It never started.** It ended without naming a cause, after one turn or fewer
     and with nothing spent, so nothing in the PR was looked at. The Claude
     subscription behind `CLAUDE_CODE_OAUTH_TOKEN` hit its usage limit (clears on its
@@ -581,19 +592,19 @@ gh label create re-review    --description "Request another automated review pas
   - **It hit an error.** The run ended with an error it named itself — a usage limit
     crossed mid-review, or a tool or MCP server that failed to start. The comment
     quotes what it said. Not a turn-budget problem, and not about your code.
-  - **The review finished but the check is still red.** The review reported success,
-    so the failure is in the machinery around it (posting, cleanup, the runner). Any
-    verdict above is complete.
+  - **It finished but posted nothing.** The review reported success and no verdict
+    reached the PR, so nothing here has actually been reviewed. (If it finished
+    _and_ posted a verdict, the check is green — see above.)
   - **It could not tell.** The comment points you at the Actions log rather than
     guessing.
 
-  In the middle three, any verdict already posted stands. Read the comment before you
-  go hunting in your diff. The wording comes from
-  `scripts/classify-review-failure.sh`, and the shapes it must get right are pinned
-  by `scripts/test-review-classifier.sh` (run by `pnpm verify` and by the
-  `scripts-test` workflow) — DOR-457 was that comment confidently naming the wrong
-  cause nine times, and then doing it again for a different shape that had no
-  fixture, so add a fixture if you touch it.
+  In the middle two, whatever it already posted is worth reading, but the pass was
+  cut short, so a re-review is owed. Read the comment before you go hunting in your
+  diff. The wording comes from `scripts/classify-review-failure.sh`, and the shapes
+  it must get right are pinned by `scripts/test-review-classifier.sh` (run by
+  `pnpm verify` and by the `scripts-test` workflow) — DOR-457 was that comment
+  confidently naming the wrong cause nine times, and then doing it again for a
+  different shape that had no fixture, so add a fixture if you touch it.
 
 - **A red `typecheck` check is often the formatting gate, not types.** The
   required `typecheck` workflow runs `pnpm format:check` as its first step, so a
