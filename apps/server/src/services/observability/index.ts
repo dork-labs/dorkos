@@ -31,7 +31,7 @@ export { traceRuntime } from './trace-runtime.js';
 export {
   watchRuntimeSignin,
   setRuntimeSigninSink,
-  resetSigninLatch,
+  resetSigninEpisodes,
   type RuntimeSigninEvent,
   type RuntimeSigninSink,
 } from './runtime-signin-watch.js';

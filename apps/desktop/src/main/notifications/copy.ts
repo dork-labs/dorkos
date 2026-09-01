@@ -19,6 +19,9 @@ import type {
 /** Longest a reply field's placeholder is allowed to be before it's truncated. */
 const REPLY_PLACEHOLDER_MAX_LENGTH = 120;
 
+/** The Settings tab a dead sign-in opens. Mirrors the client's own constant. */
+const RUNTIMES_SETTINGS_TAB = 'runtimes';
+
 /**
  * What to call a session in a sentence — the working directory's own name,
  * the identity fallback every session surface uses when nothing has named the
@@ -158,6 +161,15 @@ export function standingCopy(event: StandingPendingEvent): NotificationCopy {
  * @param dto - The notification.
  */
 export function notificationDeepLink(dto: NotificationDTO): string {
+  // Settings → Runtimes, which is where signing in again actually happens. By
+  // subject type alone this is `system` and would land on `/`, leaving the one
+  // banner that has something to DO as the vaguest of the lot — and landing
+  // somewhere different from where the same condition's phone push goes
+  // (`standingDeepLink` in the server's `escalation-service.ts`) and where its
+  // inbox row goes (`notificationLink` in the client). Three surfaces, one
+  // destination.
+  if (dto.kind === 'signin.required') return `/?settings=${RUNTIMES_SETTINGS_TAB}`;
+
   switch (dto.subject.type) {
     case 'session':
       return `/session?session=${encodeURIComponent(dto.sessionId ?? dto.subject.id)}`;

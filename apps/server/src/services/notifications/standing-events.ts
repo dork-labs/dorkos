@@ -35,10 +35,13 @@
  * DOR-1570's scope, and the honest place to add it is here, in one line, when
  * somebody decides it earns a banner.
  *
- * `signin.required` IS announced (DOR-1657), and it is the case that needs this
- * most: it is the one standing kind no in-app surface derives, so the arrival on
- * the wire and the escalation clock it starts are the whole of what reaches
- * anybody while the credential is dead.
+ * `signin.required` is not announced either (DOR-1657), for a third reason: it
+ * is `standing-recorded`, so it writes a real row the moment it begins, and the
+ * desktop already draws a banner from that. The two paths have no dedupe between
+ * them — one is keyed on notification id, the other on `subjectKey` — so
+ * announcing here as well would put two banners on screen for one dead
+ * credential. It arms the ladder directly instead, exactly as `session.error`
+ * does.
  *
  * @module services/notifications/standing-events
  */

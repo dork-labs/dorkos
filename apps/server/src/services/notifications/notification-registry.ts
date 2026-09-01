@@ -13,8 +13,9 @@
  * - `tier` — how loud. A plain value where the answer is fixed, a function only
  *   where the payload genuinely changes it (one kind does).
  * - `storage` — `event` writes a row when it happens; `standing` writes nothing
- *   while the condition stands and one history row when it resolves. See
- *   {@link NotificationStorageRule}.
+ *   while the condition stands and one history row when it resolves;
+ *   `standing-recorded` writes on both edges, for the one condition whose own
+ *   store does not survive a restart. See {@link NotificationStorageRule}.
  * - `subjectType` + `locate` — what it is about, and the lens keys it files under.
  * - `title` / `body` — what a person reads. Typed against that kind's payload.
  * - `actions` — what they can do about it without leaving the surface.
@@ -231,6 +232,19 @@ export interface NotificationPayloads {
      * carried verbatim to the resolution, so both edges build the same key.
      */
     since: string;
+    /**
+     * When a turn got through again and ended the episode. ISO 8601 UTC, and
+     * present ONLY on the resolution edge.
+     *
+     * Its absence is what tells the two edges apart, which they have to be: this
+     * kind writes a row at both, and one `title` builder serves both. Without
+     * it the "it is working again" row would repeat the failure row's sentence
+     * word for word, and the inbox would show the same line twice for one
+     * episode. Deliberately NOT part of {@link dedupeKey} — an episode is
+     * identified by when it began, so both rows and the escalation timer file
+     * under one string.
+     */
+    clearedAt?: string;
   };
   /** DorkOS is running a version it was not running before. */
   'update.installed': {
@@ -260,15 +274,30 @@ export type NotificationPayload<K extends NotificationKind> = NotificationPayloa
  * `event` — an Activity notification. Something happened; the row IS the record.
  *
  * `standing` — an Attention notification. Something is stopped and waiting on a
- * person, and the store that owns it (interactions, tasks, session lifecycle,
- * the runtime sign-in watch)
+ * person, and the store that owns it (interactions, tasks, session lifecycle)
  * already answers "is it still waiting?" correctly. Writing a row while it stands
  * would create a second source of truth for the state the whole product is built
  * around, so nothing is written until it resolves — and then exactly one row,
  * carrying the outcome, so the history says what happened rather than going
  * quiet.
+ *
+ * `standing-recorded` — standing in every way that matters (it rides the
+ * escalation ladder, and it has a resolution edge), but it writes a row on BOTH
+ * edges rather than only the last one. Exactly one kind needs this, and the
+ * reason is that its owning store is the only one that does not survive a
+ * restart: `signin.required` is held in memory by
+ * `services/observability/runtime-signin-watch.ts`, so under plain `standing` a
+ * server that restarted overnight left no push, no row, and no trace at all that
+ * a credential had died at 3am. The row written at the raise edge is that trace.
+ *
+ * It is affordable here only because the wording can stay true forever — "your
+ * sign-in stopped working" reads as correctly a month later as it did that
+ * night. Reach for this rule only when BOTH halves hold: the condition has no
+ * durable owner, and its raise-edge wording never goes stale. A stored row
+ * insisting something "is waiting" when it was answered hours ago is exactly the
+ * failure `standing` exists to prevent, and `standing` is still the default.
  */
-export type NotificationStorageRule = 'event' | 'standing';
+export type NotificationStorageRule = 'event' | 'standing' | 'standing-recorded';
 
 /**
  * The kinds that describe a standing condition rather than an event.
@@ -285,8 +314,29 @@ export type NotificationStorageRule = 'event' | 'standing';
 export type StandingNotificationKind =
   'ask.pending' | 'schedule.parked' | 'approval.pending' | 'session.error' | 'signin.required';
 
-/** The kinds that record something that happened. Every kind that is not standing. */
-export type EventNotificationKind = Exclude<NotificationKind, StandingNotificationKind>;
+/**
+ * The standing kinds that ALSO write a row the moment they begin — the
+ * `standing-recorded` storage rule, which today is one kind.
+ *
+ * Named as its own type rather than folded into the union below because it is
+ * the single deliberate hole in an otherwise total split: these are the only
+ * kinds that legitimately reach BOTH `notify()` and `resolveStanding()`. A
+ * reviewer can read the exception in one line, and adding a second member is a
+ * diff that has to argue for itself.
+ */
+export type RecordedStandingKind = 'signin.required';
+
+/**
+ * The kinds that record something that happened — everything that is not
+ * standing, plus the standing kinds that record their own arrival.
+ *
+ * The union with {@link RecordedStandingKind} is what lets
+ * `notify('signin.required', …)` type-check while `notify('ask.pending', …)`
+ * still does not. The guarantee that matters is unharmed: a standing condition
+ * whose own store survives a restart still cannot be stored while it stands.
+ */
+export type EventNotificationKind =
+  Exclude<NotificationKind, StandingNotificationKind> | RecordedStandingKind;
 
 /**
  * Whether a kind may leave the app over a connected chat integration, and on what
@@ -622,41 +672,60 @@ const ENTRIES: NotificationRegistryMap = {
     // resolution edge. With an owner, the reservation is satisfied and the
     // storage discipline the ADR prescribes applies.
     //
-    // **What that buys, and what it costs.** It buys the phone: escalation
-    // carries standing kinds only, so this is what reaches somebody asleep at
-    // 3am with a dead token and a schedule about to run. It costs the inbox row
-    // that used to appear the moment it broke — a standing kind writes nothing
-    // while it stands (ADR 260819-234828), so the one row is written when it
-    // CLEARS. That is the better trade rather than merely the cheaper one: an
-    // event row saying "sign in again" in the present tense outlives the sign-in
-    // by however long the inbox keeps it, and is a second, staler source of
-    // truth for a state the watch already answers.
+    // **`standing-recorded`, not plain `standing`, and the restart is why.**
+    // Being standing buys the phone: escalation carries standing kinds only, so
+    // this is what reaches somebody asleep at 3am with a dead token and a
+    // schedule about to run. But a standing kind writes nothing while it stands,
+    // and this one's store is the only one held in MEMORY — so a server that
+    // restarted overnight would leave no push, no row, and no evidence at all
+    // that anything had broken. Writing the row at the raise edge is what keeps
+    // the record; see {@link NotificationStorageRule}.
+    //
+    // The staleness objection that argues for plain `standing` does not apply,
+    // because the wording below never goes stale: "stopped working" is as true
+    // next month as it was that night, and the resolution row that follows says
+    // plainly that it came back.
     kind: 'signin.required',
     tier: 'blocking',
-    storage: 'standing',
+    storage: 'standing-recorded',
     // `system`, not `agent` or `session`: a dead credential is not about the
     // turn that tripped over it. Clicking through opens Settings → Runtimes,
     // which is where signing in again actually happens.
     subjectType: 'system',
     locate: (p) => ({ subjectId: p.runtime }),
-    // Written to work on BOTH edges, because both read it: the arrival banner
-    // and the phone ping say it while it is true, and the history row carries it
-    // beside an outcome of `cleared`, exactly as `session.error`'s does.
-    title: (p) => `${runtimeDisplayName(p.runtime)} needs you to sign in again`,
-    body: () => 'Scheduled tasks and agent replies keep failing until you sign in.',
+    // **Past tense on both edges, because a stored row outlives what it
+    // describes.** `session.error` set the pattern with "stopped on an error",
+    // and the reason is the same: the raise row sits in the inbox long after
+    // somebody signs in, so a present-tense "needs you to sign in" would be
+    // telling them to do a thing they already did. `outcome` cannot rescue it —
+    // the client renders title and body, and nothing else.
+    //
+    // `clearedAt` is what lets one builder serve both rows. Without it the
+    // second row would repeat the first word for word.
+    title: (p) =>
+      p.clearedAt
+        ? `Your ${runtimeDisplayName(p.runtime)} sign-in is working again`
+        : `Your ${runtimeDisplayName(p.runtime)} sign-in stopped working`,
+    body: (p) =>
+      p.clearedAt ? undefined : 'Scheduled tasks and agent replies cannot run until you sign in.',
     // ONE per runtime per EPISODE, however many tasks, rooms and relay
     // deliveries trip over the same dead credential — the watch's own store is
     // what collapses them, synchronously, before any of them can say anything.
     // The `since` is what keeps a SECOND episode distinct from the first; see
     // the payload field for why the ledger makes that non-negotiable.
     dedupeKey: (p) => `signin:${p.runtime}:${p.since}`,
-    // No `dedupeWindowMs`, like every other standing kind: an episode key is
-    // unique to one episode, so nothing can collide with it whatever the window.
-    //
-    // Relay `never` governs the one HISTORY row, which is in-app news about
-    // something already fixed. The escalation ladder sends under its own
-    // `always` policy while the condition still stands — see
-    // `escalation-service.ts`.
+    // **Zero, and it has to be.** The two rows of one episode share this key by
+    // design — that shared string is what files them, the escalation timer and
+    // the resolution under one identity. Any positive window would therefore
+    // suppress the "working again" row whenever somebody fixed their sign-in
+    // faster than the window, which is a surface that silently comes and goes
+    // with how quickly the operator reacted. Nothing is lost: repeat suppression
+    // for this kind lives in the watch's episode store, which is synchronous and
+    // so catches the concurrent burst a store-based window never could.
+    dedupeWindowMs: 0,
+    // Relay `never` governs the stored rows, which are in-app history. The
+    // escalation ladder sends under its own `always` policy while the condition
+    // still stands — see `escalation-service.ts`.
     relay: 'never',
   },
 

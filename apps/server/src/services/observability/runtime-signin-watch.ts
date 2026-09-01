@@ -90,25 +90,26 @@
  *
  * This module is that owner. {@link failingSince} IS the store: a runtime is in
  * it when its last turn died on its sign-in and no turn since has gone through.
- * And the edge is the obvious one — **the next turn on that runtime that runs to
- * the end without a credential failure.** Nothing else can answer it honestly: a
+ * And the edge is **the next turn on that runtime that reaches the provider
+ * without a credential failure.** Nothing else can answer it honestly: a
  * credential is not something DorkOS can inspect, only something it can try.
  *
  * Three judgement calls in that sentence, each deliberate:
  *
- * - **"Runs to the end."** A turn that threw, or that the caller walked away
- *   from, proves nothing — `spawn ENOENT` never reached a provider at all. Only
- *   normal completion counts, which falls out of where the check sits rather
- *   than from a flag.
+ * - **"Reaches the provider"**, not "finishes". Finishing proves nothing, and
+ *   claude-code is the proof: it catches a pre-stream failure and yields a typed
+ *   `execution_error`, returning normally, so `spawn ENOENT` is indistinguishable
+ *   from a good turn by completion alone. Recovery therefore needs positive
+ *   evidence the model answered — see {@link PROVIDER_CONTACT_EVENTS}.
  * - **"Without a credential failure"** rather than "successfully". A turn that
- *   failed on a tool, a rate limit or a 500 still got past the sign-in, which is
- *   the only question here. Being stricter would leave conditions standing
- *   forever; being wrong in this direction costs one extra episode, because a
- *   sign-in that is still dead re-stands on the very next turn.
+ *   answered and then failed on a tool, a rate limit or a 500 still got past the
+ *   sign-in, which is the only question here. Being stricter would leave
+ *   conditions standing forever; being wrong this way costs one extra episode,
+ *   because a sign-in that is still dead re-stands on the very next turn.
  * - **A turn that was ALREADY RUNNING when the failure was noticed does not
  *   count.** It authenticated before the credential died, so its success is
  *   evidence about a moment that has already passed — and clearing on it would
- *   take the banner down while the sign-in is still broken.
+ *   take the notice down while the sign-in is still broken.
  *
  * @module services/observability/runtime-signin-watch
  */
@@ -156,11 +157,34 @@ let sink: RuntimeSigninSink | null = null;
  * read "nothing said yet" before any of them had said anything. A synchronous
  * in-memory claim closes that the moment the first one arrives.
  *
- * **Process-local and deliberately so.** It is bounded by the number of
- * registered runtimes (three) and needs no cleanup. Losing it on restart means a
- * runtime that is still broken re-stands on its next failing turn, under a new
- * episode key — one extra ping after a restart, which is the same bound the
- * escalation ladder already documents for its own in-memory timers.
+ * **Process-local, and that costs something worth naming.** Losing it on restart
+ * means a runtime that is still broken re-stands on its next failing turn under
+ * a NEW episode key — so a second inbox row and a second phone ping about one
+ * unbroken stretch of breakage. That is *not* the same bound the escalation
+ * ladder documents for its own in-memory timers: the ladder is saved by the
+ * ledger, which recognises a subject it has already escalated, and a new episode
+ * key is by construction a subject it has never seen. The row written at the
+ * raise edge is what keeps a restart from erasing the RECORD; nothing keeps it
+ * from repeating the alarm.
+ *
+ * Boot deliberately does not re-arm from the unresolved rows in the store, even
+ * though it could find them. An unresolved row means "nobody has seen a working
+ * turn on this runtime since", which is not the same as "the credential is still
+ * dead" — the operator may have fixed it while the server was down. Pushing on
+ * that guess is a false alarm, and a false alarm is worse than a late one here:
+ * the next failing turn re-stands the condition within one turn anyway.
+ *
+ * **Keyed by runtime TYPE, which is wrong for multi-account claude-code.** A
+ * credential belongs to an account root (`CLAUDE_CONFIG_DIR`), and DorkOS
+ * supports several; a clean turn on one account therefore clears a condition
+ * raised by another, reading as an all-clear that has not happened. It is not
+ * fixable from here: the account is a private field of `ClaudeCodeRuntime`'s
+ * session store, resolved asynchronously far deeper than this seam, and reaching
+ * it needs a new method on the shared `AgentRuntime` interface plus an
+ * implementation in all three runtimes. Scoped to claude-code — codex and
+ * opencode each have exactly one home directory. The failure mode is a premature
+ * all-clear, corrected by the next failing turn on the affected account, rather
+ * than permanent silence (DOR-1657 follow-up).
  */
 const failingSince = new Map<string, number>();
 
@@ -214,7 +238,11 @@ function noteSigninFailure(runtimeType: string): void {
 function noteSigninRecovery(runtimeType: string, turnStartedAt: number): void {
   const since = failingSince.get(runtimeType);
   if (since === undefined) return;
-  if (since > turnStartedAt) return;
+  // `>=`, not `>`: a turn that started in the very millisecond the failure was
+  // recorded cannot be shown to have authenticated after it, and the tie has to
+  // fall on the side that leaves the condition standing. A wrong all-clear
+  // silences a live problem; a wrong hold is corrected by the next turn.
+  if (since >= turnStartedAt) return;
 
   failingSince.delete(runtimeType);
   logger.info('[Runtimes] A turn went through on a sign-in that had failed', {
@@ -238,6 +266,56 @@ function report(event: RuntimeSigninEvent): boolean {
   }
 }
 
+/**
+ * The events that prove a turn actually reached the provider and was let in.
+ *
+ * **An allowlist, and fail-closed on purpose.** The obvious test — "the turn ran
+ * to the end without an auth error" — is WRONG, and claude-code is the proof:
+ * it catches a pre-stream failure and YIELDS a typed `execution_error`, then
+ * returns normally (`runtimes/claude-code/messaging/message-sender.ts`). A
+ * `spawn ENOENT`, a missing binary, a dead sidecar — every one of them looks
+ * bit-for-bit like a completed turn from out here, and none of them says a word
+ * about the credential. Resolving on one takes the banner down and cancels the
+ * phone ping while the sign-in is still dead.
+ *
+ * So the question is not "did it finish?" but "did the model answer?". Each
+ * member here is something only the provider can produce: words, thinking, a
+ * tool call it decided to make, or a prompt it raised mid-turn. Every one of
+ * them is emitted by all three runtimes (claude-code, codex, opencode).
+ *
+ * Deliberately EXCLUDED, having been checked rather than assumed:
+ * - `done` and `session_status` — terminal markers that ride the failure path
+ *   too. Codex emits `error` then `done`, and keeps `done` even when it
+ *   suppresses a duplicate error (`runtimes/codex/event-mapper.ts`).
+ * - `error` of any category — the case this whole allowlist exists for.
+ * - Everything DorkOS generates locally without asking a provider: hook events,
+ *   `memory_recall`, `context_usage`, `system_status`, `operation_progress`.
+ *
+ * A new event type that belongs here will not be in the set until somebody adds
+ * it, and that is the safe direction to be wrong in: the condition stays
+ * standing, which is self-correcting the moment any real content arrives. The
+ * opposite mistake is a silent all-clear on a sign-in that is still broken.
+ *
+ * The nearest sibling is `runtimes/claude-code/messaging/empty-stream-guard.ts`'s
+ * `CONTENT_EVENT_TYPES`, which asks a related but different question — "did this
+ * turn produce anything for the person who asked?". Not imported from there:
+ * that one is claude-code's own, and this observer is deliberately runtime-
+ * agnostic.
+ */
+const PROVIDER_CONTACT_EVENTS = new Set<string>([
+  'text_delta',
+  'subagent_text_delta',
+  'thinking_delta',
+  'tool_call_start',
+  'tool_call_delta',
+  'tool_call_end',
+  'tool_result',
+  'compact_boundary',
+  // The model answered by asking something back. It still answered.
+  'approval_required',
+  'question_prompt',
+]);
+
 /** Whether a stream event is a runtime saying its credential is no good. */
 function isAuthErrorEvent(event: StreamEvent): boolean {
   if (event.type !== 'error') return false;
@@ -255,10 +333,11 @@ function isAuthErrorEvent(event: StreamEvent): boolean {
  * `detectAuthError` is the same conservative test every mapper uses — and is
  * always re-thrown, so this can never change what a caller sees.
  *
- * The recovery line sits AFTER the `try`, which is what makes "ran to the end"
- * structural rather than a flag somebody has to remember to clear: a throw
- * leaves through the `catch`, and a caller that abandons the turn resumes the
- * generator with a return completion, and neither path reaches it.
+ * Recovery needs BOTH halves and neither is sufficient alone. The turn has to
+ * reach its end without a credential failure — the `catch` and an abandoning
+ * caller both skip the line below, so that half is structural — AND it has to
+ * have produced something only the provider could have produced. See
+ * {@link PROVIDER_CONTACT_EVENTS} for why finishing on its own proves nothing.
  */
 async function* watchTurn(
   runtimeType: string,
@@ -266,11 +345,14 @@ async function* watchTurn(
 ): AsyncGenerator<StreamEvent> {
   const startedAt = Date.now();
   let sawAuthError = false;
+  let reachedProvider = false;
   try {
     for await (const event of source) {
       if (isAuthErrorEvent(event)) {
         sawAuthError = true;
         noteSigninFailure(runtimeType);
+      } else if (PROVIDER_CONTACT_EVENTS.has(event.type)) {
+        reachedProvider = true;
       }
       yield event;
     }
@@ -279,7 +361,7 @@ async function* watchTurn(
     if (detectAuthError({ message })) noteSigninFailure(runtimeType);
     throw err;
   }
-  if (!sawAuthError) noteSigninRecovery(runtimeType, startedAt);
+  if (!sawAuthError && reachedProvider) noteSigninRecovery(runtimeType, startedAt);
 }
 
 /**
@@ -318,6 +400,6 @@ export function watchRuntimeSignin(runtime: AgentRuntime): AgentRuntime {
  *
  * @internal Exported for testing only.
  */
-export function resetSigninLatch(): void {
+export function resetSigninEpisodes(): void {
   failingSince.clear();
 }

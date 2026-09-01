@@ -5,8 +5,8 @@ covers:
 
 ### Added
 
-- A sign-in that stops working now reaches your phone. If a scheduled task or an agent reply dies because Claude, Codex or OpenCode needs you to sign in again, DorkOS says so on your desktop straight away, and pushes it to your phone if nobody has dealt with it after a few minutes. Tapping it opens the page where you sign in. This is the same ladder that already reaches you when an agent is stuck waiting on an answer, so the quiet hours setting you already chose applies here too (DOR-1657)
+- A sign-in that stops working can now reach your phone. If a scheduled task or an agent reply fails because Claude, Codex or OpenCode needs you to sign in again, DorkOS puts a note in your inbox right away, and if nobody has dealt with it after a couple of minutes it pushes to any device you have subscribed and to your connected chat apps. Tapping it opens the page where you sign in. You can change that wait, or turn it off entirely, under Settings, Notifications, in the same place that already decides how long anything else waits before trying another way of reaching you (DOR-1657)
 
 ### Changed
 
-- DorkOS now stops telling you about a broken sign-in the moment it starts working again. It watches for the next piece of work that gets through on that sign-in, takes the alert down, and files a note in your inbox saying it cleared. If the same sign-in breaks again later, you hear about it again right away rather than waiting out a quiet period (DOR-1657)
+- DorkOS now stops telling you about a broken sign-in once it is working again. It watches for the next piece of work that gets through on that sign-in, then files a second note saying it came back. If the same sign-in breaks again later, you hear about it again straight away rather than waiting out a quiet period. Notes about a sign-in are written in the past tense now ("Your Claude sign-in stopped working"), because a note you read the next morning should still say something true (DOR-1657)

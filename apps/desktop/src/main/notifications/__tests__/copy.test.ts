@@ -263,4 +263,17 @@ describe('notificationDeepLink', () => {
     });
     expect(notificationDeepLink(dto)).toBe('/');
   });
+
+  it('takes a dead sign-in to the tab that fixes it, not just to home', () => {
+    // Its subject type is `system`, so the switch above would land it on `/`
+    // with nothing to do there — while the same condition's phone push
+    // (`standingDeepLink`, server) and its inbox row (`notificationLink`,
+    // client) both open Settings, Runtimes. One condition, one destination.
+    const dto = notificationDto({
+      kind: 'signin.required',
+      tier: 'blocking',
+      subject: { type: 'system', id: 'claude-code' },
+    });
+    expect(notificationDeepLink(dto)).toBe('/?settings=runtimes');
+  });
 });
