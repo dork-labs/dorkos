@@ -160,6 +160,22 @@ describe('RuntimeCache', () => {
       expect(option.supportsImageOutput).toBe(false);
     });
 
+    it('claims vision only for a family DorkOS has verified, never for a stranger id', () => {
+      // The tool-use and image-output claims are structural (true of anything
+      // this SDK can drive); vision is a claim about verified model LINES. An
+      // id outside the inferTier vocabulary — a future line the SDK starts
+      // listing — must get the honest absence, not an inherited true
+      // (DOR-1672 review).
+      const option = mapSdkModelToModelOption({
+        value: 'claude-mythos-preview',
+        displayName: 'Mythos',
+        description: '',
+      });
+      expect(option.supportsToolUse).toBe(true);
+      expect(option.supportsImageOutput).toBe(false);
+      expect(option.supportsVision).toBeUndefined();
+    });
+
     it('invents no context window the SDK never reported', () => {
       // The other half of the same honesty rule, and the half that is easier to
       // get wrong later: `ModelInfo` carries neither `contextWindow` nor

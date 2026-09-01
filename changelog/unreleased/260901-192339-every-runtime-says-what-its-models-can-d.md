@@ -6,4 +6,4 @@ covers:
 
 ### Changed
 
-- Claude Code and Codex models now say what they can do: whether they can use tools, take images, and make pictures. Only OpenCode models did before. Nothing looks different in the app today, because the menu already read "no answer" as "this model can do the job" — what changes is that the answer is a stated fact for every runtime instead of a blank for two of them (DOR-1672)
+- Behind the scenes, Claude Code and Codex models now carry a stated answer to what they can do — use tools, take images, make pictures — instead of a blank. Only OpenCode models had one before. Nothing looks different in the app today, because the menu already treated a blank as "this model can do the job"; the answers are for what gets built on them next (DOR-1672)

@@ -27,6 +27,7 @@ import {
   PLUGIN_RELOAD_ACK_TIMEOUT_MS,
   requestWithinBound,
 } from '../sessions/bounded-control.js';
+import { CLAUDE_SDK_VERSION } from '../tooling/provision.js';
 import { logger } from '../../../../lib/logger.js';
 
 /** Subset of MessageSenderOpts that RuntimeCache populates. */
@@ -81,12 +82,8 @@ function inferTier(value: string): 'flagship' | 'balanced' | 'fast' | undefined 
  */
 const CLAUDE_MODEL_CAPABILITIES = {
   supportsToolUse: true,
-  supportsVision: true,
   supportsImageOutput: false,
-} as const satisfies Pick<
-  ModelOption,
-  'supportsToolUse' | 'supportsVision' | 'supportsImageOutput'
->;
+} as const satisfies Pick<ModelOption, 'supportsToolUse' | 'supportsImageOutput'>;
 
 /**
  * Map an SDK-reported model to a universal ModelOption.
@@ -115,11 +112,14 @@ const CLAUDE_MODEL_CAPABILITIES = {
  * - **`supportsImageOutput: false`** — structural. The Anthropic Messages API
  *   answers with text and thinking. There is no image-output modality for a
  *   Claude model to return, so this is a real `false`, not a default.
- * - **`supportsVision: true`** — the weakest of the three, and the only one that
- *   is a claim about Anthropic's model LINE rather than about this API: every
- *   Claude model Anthropic serves through this SDK accepts image input. It goes
- *   wrong the day Anthropic ships a text-only model into `supportedModels()`,
- *   which is the condition to watch on an SDK re-pin.
+ * - **`supportsVision: true`** — the weakest of the three, and the only one
+ *   gated rather than unconditional: it is a claim about models DorkOS has
+ *   actually verified, not about whatever id a future SDK lists. It is stamped
+ *   only when {@link inferTier} recognizes the id's family (fable/opus/sonnet/
+ *   haiku — the lines verified vision-capable); an unrecognized id gets the
+ *   honest absence, which every consumer already reads as unknown-and-capable.
+ *   Widening the vocabulary on an SDK re-pin is the deliberate act this gate
+ *   exists to force (DOR-1672 review).
  *
  * `contextWindow`/`maxOutputTokens` stay absent for the same reason, one step
  * further: the SDK does not report them and DorkOS has no defensible static
@@ -143,6 +143,10 @@ export function mapSdkModelToModelOption(m: SdkReportedModel): ModelOption {
     // supportsVision: m.supportsVision } : {})` so an SDK that reports nothing
     // for one model leaves the claim standing instead of blanking it.
     ...CLAUDE_MODEL_CAPABILITIES,
+    // Gated, not unconditional — see the supportsVision bullet above. `inferTier`
+    // is the vocabulary of families DorkOS has verified; an id outside it stays
+    // honestly absent.
+    ...(inferTier(m.value) !== undefined ? { supportsVision: true } : {}),
     value: m.value,
     resolvedModel: m.resolvedModel,
     displayName: m.displayName,
@@ -225,6 +229,12 @@ export class RuntimeCache {
       const raw = readFileSync(this.cachePath, 'utf-8');
       const parsed: ModelDiskCache = JSON.parse(raw);
       if (parsed.version !== 1 || !Array.isArray(parsed.models)) return false;
+      // The rows carry DorkOS's pin-scoped capability claims, not just SDK
+      // echoes — so a cache written by a different SDK pin may serve a claim
+      // the re-pin corrected, for up to a TTL. Version-match, don't wait it
+      // out (DOR-1672 review). Rows from before the field stamp 'unknown' and
+      // fail the match, which is the honest side.
+      if (parsed.sdkVersion !== CLAUDE_SDK_VERSION) return false;
       if (this.isDiskCacheStale(parsed.fetchedAt)) return false;
       this.cachedModels = parsed.models;
       logger.debug('[RuntimeCache] loaded models from disk cache', {
@@ -246,7 +256,7 @@ export class RuntimeCache {
       const cache: ModelDiskCache = {
         models: this.cachedModels ?? [],
         fetchedAt: new Date().toISOString(),
-        sdkVersion: 'unknown',
+        sdkVersion: CLAUDE_SDK_VERSION,
         version: 1,
       };
       writeFileSync(this.cachePath, JSON.stringify(cache, null, 2), 'utf-8');
