@@ -107,6 +107,13 @@ export interface IdentityFace {
  * **emoji**: a letter is honestly "we don't know this one's face", where an
  * invented emoji is a confident-looking face matching nothing.
  *
+ * That rung is rarer than it was. Since DOR-949 the server seeds a colour and
+ * an emoji onto every agent it creates, so an agent normally ARRIVES with a
+ * face and this ladder reads it off the record. The letter is now what people
+ * with no photo get, and what agents created before the seeding landed keep
+ * until somebody gives them a face — which is exactly the case it was written
+ * for: a real unknown, drawn as one.
+ *
  * Pure, layer-free and takes no agent types, which is the point: `MemberList`
  * lives in `entities/room` and may not import `entities/agent`, and that is
  * exactly why the two roster implementations diverged in the first place.

@@ -85,6 +85,10 @@
       "types": "./src/manifest.ts",
       "default": "./dist/manifest.js"
     },
+    "./agent-face": {
+      "types": "./src/agent-face.ts",
+      "default": "./dist/agent-face.js"
+    },
     "./logger": {
       "types": "./src/logger.ts",
       "default": "./dist/logger.js"

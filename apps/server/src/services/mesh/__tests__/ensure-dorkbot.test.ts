@@ -5,6 +5,7 @@ import os from 'os';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { readManifest } from '@dorkos/shared/manifest';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
+import { seedAgentFace, AGENT_COLOR_PRESETS, AGENT_EMOJI_SET } from '@dorkos/shared/agent-face';
 import { ensureDorkBot } from '../ensure-dorkbot.js';
 
 // Minimal MeshCore mock
@@ -73,6 +74,55 @@ describe('ensureDorkBot', () => {
 
     // Verify DB sync called
     expect(meshCore.syncFromDisk).toHaveBeenCalledWith(dorkbotDir);
+  });
+
+  // ── The face (DOR-949) ───────────────────────────────────────────────────
+
+  it('gives DorkBot a face on a fresh install', async () => {
+    await ensureDorkBot(meshCore, tmpDir);
+
+    const manifest = await readManifest(path.join(tmpDir, 'agents', 'dorkbot'));
+    expect(AGENT_COLOR_PRESETS.map((preset) => preset.hex)).toContain(manifest!.color);
+    expect(AGENT_EMOJI_SET).toContain(manifest!.icon);
+    expect({ color: manifest!.color, icon: manifest!.icon }).toEqual(seedAgentFace(manifest!.id));
+  });
+
+  // Red when the seed is applied on every boot instead of only at creation:
+  // a DorkBot the operator deliberately left faceless would acquire one on the
+  // next restart, and one they had re-faced would be re-faced back.
+  it('leaves an existing DorkBot face alone — the seed is creation-only', async () => {
+    const dorkbotDir = path.join(tmpDir, 'agents', 'dorkbot');
+    const dorkDir = path.join(dorkbotDir, '.dork');
+    await fs.mkdir(dorkDir, { recursive: true });
+
+    const existing: AgentManifest = {
+      id: 'faceless-id',
+      name: 'dorkbot',
+      displayName: 'DorkBot',
+      description: 'A DorkBot from before faces were seeded',
+      runtime: 'claude-code',
+      capabilities: ['tasks', 'summaries'],
+      behavior: { responseMode: 'always' },
+      traits: { ...DEFAULT_TRAITS },
+      conventions: { soul: true, nope: true, dorkosKnowledge: true },
+      registeredAt: '2026-01-01T00:00:00.000Z',
+      registeredBy: 'dorkos-system',
+      personaEnabled: true,
+      isSystem: true,
+      namespace: 'system',
+      enabledToolGroups: {},
+    };
+    await fs.writeFile(
+      path.join(dorkDir, 'agent.json'),
+      JSON.stringify(existing, null, 2),
+      'utf-8'
+    );
+
+    await ensureDorkBot(meshCore, tmpDir);
+
+    const manifest = await readManifest(dorkbotDir);
+    expect(manifest!.color).toBeUndefined();
+    expect(manifest!.icon).toBeUndefined();
   });
 
   // ── The memory file (DOR-632) ────────────────────────────────────────────

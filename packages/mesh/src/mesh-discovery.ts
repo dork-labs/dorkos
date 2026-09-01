@@ -9,6 +9,7 @@
 import path from 'path';
 import { monotonicFactory } from 'ulidx';
 import type { AgentManifest, AgentRuntime, DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
+import { seedAgentFace } from '@dorkos/shared/agent-face';
 import type { DiscoveryStrategy } from './types.js';
 import type { AgentRegistry, AgentRegistryEntry } from './agent-registry.js';
 import type { DenialList } from './denial-list.js';
@@ -285,8 +286,10 @@ export async function register(
     persona: overrides?.persona,
     personaEnabled: overrides?.personaEnabled ?? true,
     isSystem: overrides?.isSystem ?? false,
-    color: overrides?.color,
-    icon: overrides?.icon,
+    // A registered agent is a new agent to DorkOS, so it gets a face at birth
+    // like every other creation path (DOR-949) — whatever the caller chose,
+    // seeded from the agent's own id for whatever they did not.
+    ...seedAgentFace(id, { color: overrides?.color, icon: overrides?.icon }),
     model: overrides?.model,
     effort: overrides?.effort,
     enabledToolGroups: overrides?.enabledToolGroups ?? {},
@@ -335,8 +338,8 @@ export async function registerByPath(
     persona: partial.persona,
     personaEnabled: partial.personaEnabled ?? true,
     isSystem: partial.isSystem ?? false,
-    color: partial.color,
-    icon: partial.icon,
+    // See `register()` above — same seam, same reason (DOR-949).
+    ...seedAgentFace(id, { color: partial.color, icon: partial.icon }),
     model: partial.model,
     effort: partial.effort,
     enabledToolGroups: partial.enabledToolGroups ?? {},

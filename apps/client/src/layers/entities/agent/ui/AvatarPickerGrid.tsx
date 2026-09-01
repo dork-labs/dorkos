@@ -1,7 +1,7 @@
 import type { ComponentProps, ReactNode } from 'react';
 import { Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { cn, COLOR_PRESETS, EMOJI_SET } from '@/layers/shared/lib';
+import { cn, AGENT_COLOR_PRESETS, AGENT_EMOJI_SET } from '@/layers/shared/lib';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
 
 /** Stagger orchestration for the celebratory grids' entrance animation. */
@@ -105,7 +105,7 @@ const DEFAULT_AUTO_LABEL = 'Select default color';
 
 /**
  * The color-swatch row shared by every avatar color picker: the
- * auto-derived default plus the fixed {@link COLOR_PRESETS} palette. Was
+ * auto-derived default plus the fixed {@link AGENT_COLOR_PRESETS} palette. Was
  * duplicated near-verbatim between `IdentityTab` and `AvatarPickerPanel`
  * before DOR-970 collapsed it to one implementation. `celebratory` gates
  * every piece of chrome that differed between the two originals; layout,
@@ -144,7 +144,7 @@ export function AvatarColorGrid({
 
       <div className="bg-border mx-0.5 h-5 w-px" />
 
-      {COLOR_PRESETS.map((preset) => (
+      {AGENT_COLOR_PRESETS.map((preset) => (
         <StaggerItem key={preset.hex} celebratory={celebratory}>
           <ColorSwatch
             active={value === preset.hex}
@@ -257,7 +257,7 @@ export interface AvatarEmojiGridProps {
 
 /**
  * The emoji grid shared by every avatar icon picker, over the fixed
- * {@link EMOJI_SET}. See {@link AvatarColorGrid} for the collapse rationale.
+ * {@link AGENT_EMOJI_SET}. See {@link AvatarColorGrid} for the collapse rationale.
  */
 export function AvatarEmojiGrid({
   value,
@@ -269,7 +269,7 @@ export function AvatarEmojiGrid({
 }: AvatarEmojiGridProps) {
   return (
     <StaggerRoot celebratory={celebratory} className="grid grid-cols-6 gap-1.5">
-      {EMOJI_SET.map((emoji) => {
+      {AGENT_EMOJI_SET.map((emoji) => {
         const isActive = emoji === value;
         const isAutoDefault = emoji === autoEmoji && !hasOverride;
         const className = cn(

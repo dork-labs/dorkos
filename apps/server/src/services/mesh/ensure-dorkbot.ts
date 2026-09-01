@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { ulid } from 'ulidx';
 import { readManifest, writeManifest, MANIFEST_DIR } from '@dorkos/shared/manifest';
+import { seedAgentFace } from '@dorkos/shared/agent-face';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import {
   defaultSoulTemplate,
@@ -150,13 +151,19 @@ export async function ensureDorkBot(meshCore: MeshCore, dorkHome: string): Promi
   // Path 1: Fresh install — scaffold full workspace
   await fs.mkdir(path.join(dorkbotDir, '.dork'), { recursive: true });
 
+  const id = ulid();
   const manifest: AgentManifest = {
-    id: ulid(),
+    id,
     name: DORKBOT_AGENT_NAME,
     displayName: DORKBOT_DISPLAY_NAME,
     description: 'Your guide to DorkOS — helps you learn the platform and handles background jobs',
     runtime: 'claude-code',
     capabilities: ['tasks', 'summaries'],
+    // The first agent anyone meets, so it is the first that must have a face
+    // (DOR-949). Seeded from its own id like every other agent rather than
+    // pinned to one brand emoji: DorkBot is a member of the team the operator
+    // renames and re-faces at will, not a logo.
+    ...seedAgentFace(id),
     isSystem: true,
     namespace: 'system',
     behavior: { responseMode: 'always' },

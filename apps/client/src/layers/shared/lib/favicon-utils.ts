@@ -1,64 +1,12 @@
-export const EMOJI_SET = [
-  '\u{1F600}',
-  '\u{1F60E}',
-  '\u{1F916}',
-  '\u{1F98A}',
-  '\u{1F431}',
-  '\u{1F436}',
-  '\u{1F981}',
-  '\u{1F438}',
-  '\u{1F435}',
-  '\u{1F984}',
-  '\u{1F432}',
-  '\u{1F989}',
-  '\u{1F427}',
-  '\u{1F43C}',
-  '\u{1F98B}',
-  '\u{1F338}',
-  '\u{1F52E}',
-  '\u{1F3AF}',
-  '\u{1F680}',
-  '\u{26A1}',
-  '\u{1F30A}',
-  '\u{1F340}',
-  '\u{1F3A8}',
-  '\u{1F3B5}',
-  '\u{1F48E}',
-  '\u{1F525}',
-  '\u{1F308}',
-  '\u{2B50}',
-  '\u{1F9E0}',
-  '\u{1F47E}',
-];
+import { AGENT_EMOJI_SET, fnv1aHash } from '@dorkos/shared/agent-face';
 
 /**
- * The fixed palette an agent's avatar color picker offers alongside its
- * auto-derived default. Shared by every color-swatch picker — was
- * byte-identical duplicated at `IdentityTab.tsx` and `AvatarPickerPanel.tsx`
- * before this collapsed it to one definition (DOR-970).
+ * The curated sets an agent's face is drawn from, re-exported here because the
+ * SERVER seeds a face from them at creation (DOR-949) and the picker must offer
+ * the same ones back. `@dorkos/shared/agent-face` owns the definitions; a
+ * second copy on either side is how the two would come to disagree.
  */
-export const COLOR_PRESETS: { hex: string; name: string }[] = [
-  { hex: '#ef4444', name: 'Red' },
-  { hex: '#f97316', name: 'Orange' },
-  { hex: '#eab308', name: 'Yellow' },
-  { hex: '#22c55e', name: 'Green' },
-  { hex: '#06b6d4', name: 'Cyan' },
-  { hex: '#3b82f6', name: 'Blue' },
-  { hex: '#6366f1', name: 'Indigo' },
-  { hex: '#a855f7', name: 'Purple' },
-  { hex: '#ec4899', name: 'Pink' },
-  { hex: '#78716c', name: 'Stone' },
-];
-
-/** Compute a 32-bit FNV-1a hash of the given string. */
-export function fnv1aHash(str: string): number {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < str.length; i++) {
-    hash ^= str.charCodeAt(i);
-    hash = (hash * 0x01000193) >>> 0;
-  }
-  return hash;
-}
+export { AGENT_EMOJI_SET, AGENT_COLOR_PRESETS, fnv1aHash } from '@dorkos/shared/agent-face';
 
 /** Derive a deterministic HSL color string from a directory path. */
 export function hashToHslColor(cwd: string): string {
@@ -66,9 +14,9 @@ export function hashToHslColor(cwd: string): string {
   return `hsl(${hue}, 70%, 55%)`;
 }
 
-/** Pick a deterministic emoji from {@link EMOJI_SET} based on a directory path. */
+/** Pick a deterministic emoji from {@link AGENT_EMOJI_SET} based on a directory path. */
 export function hashToEmoji(cwd: string): string {
-  return EMOJI_SET[fnv1aHash(cwd) % EMOJI_SET.length];
+  return AGENT_EMOJI_SET[fnv1aHash(cwd) % AGENT_EMOJI_SET.length];
 }
 
 const FAVICON_SIZE = 32;

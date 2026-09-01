@@ -109,8 +109,8 @@ export {
 export { getToolLabel, getMcpServerBadge, parseMcpToolName } from './tool-labels';
 export { ToolArgumentsDisplay } from './tool-arguments-formatter';
 export {
-  EMOJI_SET,
-  COLOR_PRESETS,
+  AGENT_EMOJI_SET,
+  AGENT_COLOR_PRESETS,
   fnv1aHash,
   hashToHslColor,
   hashToEmoji,

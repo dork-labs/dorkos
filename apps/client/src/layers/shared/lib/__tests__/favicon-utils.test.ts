@@ -40,7 +40,7 @@ describe('hashToHslColor', () => {
 });
 
 describe('hashToEmoji', () => {
-  it('returns a single emoji character from EMOJI_SET', () => {
+  it('returns a single emoji character from AGENT_EMOJI_SET', () => {
     const emoji = hashToEmoji('/test');
     expect(emoji.length).toBeGreaterThanOrEqual(1);
     expect(emoji.length).toBeLessThanOrEqual(2);
