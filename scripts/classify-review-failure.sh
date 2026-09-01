@@ -18,6 +18,7 @@
 # Usage:
 #   scripts/classify-review-failure.sh class    <execution-file>
 #   scripts/classify-review-failure.sh reported <execution-file>
+#   scripts/classify-review-failure.sh stands   <execution-file> <verdict-posted>
 #
 # `class` prints exactly one word:
 #   no         The review never started: the run named no cause of its own, took
@@ -52,16 +53,41 @@
 # `errors` (an array) and no `result` at all. Read `result` first, fall back to
 # `errors`. Without the fallback every error_* subtype — the whole `died` and
 # `max_turns` space after DOR-457's re-ordering — would report nothing.
+#
+# `stands` answers the one question that may turn a FAILED review step into a
+# GREEN check (DOR-1665): did the review finish, and is its verdict really on the
+# PR? It prints `yes` only when both halves hold — the class is `completed`, and
+# the caller passes the literal `yes` for <verdict-posted> having verified the
+# reviewer's summary comment is there. Everything else prints `no`.
+#
+# Only `completed` may stand, and the distinction is the whole point. `max_turns`
+# and `died` are the run stating that it ended abnormally; a summary comment may
+# have landed first, but the pass was cut short, so a re-review is genuinely owed
+# and the check has to keep saying so. `completed` is the opposite shape: the
+# review's own result message says it ended cleanly and the action failed AROUND
+# it. That is the shipped case — after a run ends, the action re-checks
+# `num_turns` against `--max-turns` and throws if a clean run overshot
+# (base-action/src/run-claude-sdk.ts), which on PR #1409 turned a finished review
+# that had already posted "0 important, 1 nit" into a red check for being two
+# turns over a cap of 50.
+#
+# `yes` is deliberately the only accepted <verdict-posted> value, and an
+# unreadable log is deliberately `no`. Every way of getting this wrong therefore
+# lands on the OLD behaviour — a red check — rather than on a green one nobody
+# verified. A green check with no review posted is a failure mode this repo has
+# actually had, so it must not be reachable by a typo.
 
 set -uo pipefail
 
 usage() {
   echo "usage: $(basename "$0") class|reported <execution-file>" >&2
+  echo "       $(basename "$0") stands <execution-file> <verdict-posted>" >&2
   exit 2
 }
 
 mode=${1:-}
 file=${2:-}
+verdict=${3:-}
 [ -n "$mode" ] && [ -n "$file" ] || usage
 
 # Take the LAST result message: a run that retries can emit more than one, and
@@ -90,6 +116,22 @@ readonly CLASS_PROGRAM='
     end
 '
 
+# One code path for the class, so `class` and `stands` can never disagree about
+# how a run ended. Anything unexpected (empty output, a jq error, a hand-edited
+# log, a log the action never got round to writing) is `unknown`, whose comment
+# points at the Actions log instead of guessing — and which `stands` refuses.
+classify() {
+  local class=unknown
+  if [ -f "$1" ]; then
+    class=$(jq -r "$CLASS_PROGRAM" "$1" 2>/dev/null) || class=unknown
+  fi
+  case "$class" in
+    no | max_turns | died | completed | unknown) ;;
+    *) class=unknown ;;
+  esac
+  printf '%s\n' "$class"
+}
+
 # `.result` (SDKResultSuccess) or `.errors` (SDKResultError) — see the header.
 # `$r` is a jq variable, not a shell one, so the single quotes are the point.
 # shellcheck disable=SC2016
@@ -106,17 +148,19 @@ readonly REPORTED_PROGRAM='
 
 case "$mode" in
   class)
-    class=unknown
-    if [ -f "$file" ]; then
-      class=$(jq -r "$CLASS_PROGRAM" "$file" 2>/dev/null) || class=unknown
+    classify "$file"
+    ;;
+  stands)
+    # Both halves, and nothing less. The literal `yes` is the caller's assertion
+    # that it went and looked for the verdict on the PR; `completed` is the run's
+    # own statement that it finished. A missing argument, a `true`, a `YES`, an
+    # unreadable log or any other class all fall through to `no`, which is the
+    # red check this repo had before DOR-1665 — the safe direction.
+    if [ "$verdict" = yes ] && [ "$(classify "$file")" = completed ]; then
+      echo yes
+    else
+      echo no
     fi
-    # Anything unexpected (empty output, a jq error, a hand-edited log) reports
-    # `unknown`, whose comment points at the Actions log instead of guessing.
-    case "$class" in
-      no | max_turns | died | completed | unknown) ;;
-      *) class=unknown ;;
-    esac
-    echo "$class"
     ;;
   reported)
     [ -f "$file" ] || exit 0

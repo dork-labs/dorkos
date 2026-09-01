@@ -115,6 +115,66 @@ for shape in 'sk-ant-' 'ghs_'; do
 done
 
 # ─────────────────────────────────────────────────────────────────────────────
+# `stands` — the only thing that may turn a failed review step green (DOR-1665)
+#
+# The stakes are asymmetric and this table is where that asymmetry is written
+# down. Saying `no` too often costs a red check on a PR that was in fact
+# reviewed, which is the bug DOR-1665 filed: annoying, visible, recoverable.
+# Saying `yes` once too often certifies an unreviewed PR as reviewed, silently —
+# and a green check with no review posted is a failure mode this repo has
+# actually had. So `yes` needs BOTH halves and every other row is `no`.
+#
+# `max_turns` and `died` stay `no` even WITH a posted verdict, on purpose: those
+# are the run saying it ended abnormally, so a re-review is genuinely owed and
+# the check has to keep saying so. Only `completed` — the run's own result
+# message reporting a clean finish, with the action failing around it — may
+# stand. Widening that set is the mutation this table exists to catch.
+# `${2:-}` rather than `$2`, so the "caller omitted the argument" case below is
+# an assertion about the classifier rather than an unbound-variable crash here.
+stands() { bash "$classifier" stands "$1" "${2:-}"; }
+
+while read -r fixture posted expected; do
+  [ -n "${fixture:-}" ] || continue
+  check "stands($fixture, $posted)" "$expected" "$(stands "$fixtures/$fixture" "$posted")"
+done <<'STANDS'
+clean-success.json          yes  yes
+clean-success.json          no   no
+max-turns.json              yes  no
+max-turns-at-turn-one.json  yes  no
+died-mid-run.json           yes  no
+error-during-execution.json yes  no
+never-started.json          yes  no
+no-result-message.json      yes  no
+malformed.json              yes  no
+empty-array.json            yes  no
+STANDS
+
+# A log the action never got round to writing must not be able to vouch for a
+# review. It is the commonest failure of all, and `unknown` is not `completed`.
+check "stands(missing file, verdict posted)" no \
+  "$(stands "$fixtures/does-not-exist.json" yes)"
+
+# Only the literal `yes` counts. Everything else is the caller failing to answer
+# the question, which is not the same as answering it affirmatively — a mis-wired
+# workflow must land on the old red check, never on an unverified green one.
+for bogus in YES Yes true 1 posted ''; do
+  check "stands(clean-success.json, '$bogus')" no \
+    "$(stands "$fixtures/clean-success.json" "$bogus")"
+done
+check "stands(clean-success.json, argument omitted)" no \
+  "$(stands "$fixtures/clean-success.json")"
+
+# `class` and `stands` read the same execution file and must never disagree about
+# how a run ended; they share one code path so that they cannot. Assert it here
+# rather than trusting the sharing to survive an edit.
+for fixture in clean-success.json max-turns.json died-mid-run.json never-started.json; do
+  expected=no
+  [ "$(classify "$fixtures/$fixture")" = completed ] && expected=yes
+  check "stands agrees with class($fixture)" "$expected" \
+    "$(stands "$fixtures/$fixture" yes)"
+done
+
+# ─────────────────────────────────────────────────────────────────────────────
 # scripts/review-gh.sh — the reviewer's only GitHub access (DOR-464)
 #
 # The whole point of that script is that the reviewer supplies CONTENT and never
@@ -531,6 +591,176 @@ for pin in GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM; do
   check "workflow: review step pins $pin" present \
     "$(presence "$pin: /dev/null" "$(cat "$workflow")")"
 done
+
+# ── a finished review is a green check, and NOTHING else is (DOR-1665) ───────
+#
+# The workflow no longer lets the action's exit status be the check. That buys
+# back the review that PR #1409 lost — it posted "0 important, 1 nit" and then
+# went red because the action re-checks `num_turns` against `--max-turns` after
+# the run and found 52 against a cap of 50 — but it does it by making a FAILED
+# step survivable, so the wiring below is now the only thing between a broken
+# reviewer and a green check.
+#
+# Two directions to protect, and they fail in opposite ways:
+#   * drop `continue-on-error` and DOR-1665 comes back, loudly (red checks on
+#     reviewed PRs, and merge-tail will not arm them);
+#   * drop the gate and every failed review goes GREEN, silently — no review, no
+#     comment, nothing red anywhere. That one is unrecoverable by inspection,
+#     which is why the gate's whole block is pinned rather than merely detected.
+#
+# THIS IS THE THIRD INSTANCE of the mistake recorded above (v1 guarded a
+# deny-list of removed grants; v2 guarded one flag's contents), and it arrived the
+# same way: the first version of THIS fence pinned the gate's BODY and forgot its
+# WIRING. Three mutations passed 136 checks while failing the check open, and an
+# adversarial review found them, not this suite:
+#   * `steps.claude-review.outcome` -> `.conclusion` on the gate's `if:` — the
+#     plausible one-word tidy-up, and fatal. `conclusion` is what is left AFTER
+#     `continue-on-error` is applied, so it reads `success` on exactly the runs
+#     this gate exists for and the gate never fires.
+#   * `if: false` on the gate — the pinned body is untouched and never runs.
+#   * a JOB-level `continue-on-error: true` — the gate's `exit 1` happens and the
+#     job is green anyway.
+# So the rule for this section is the same one the block above states: pin the
+# PROPERTY (only a finished, verdict-posting review is green), not the one line
+# that currently implements it. Every check below names which mutation it stops.
+workflow_text=$(cat "$workflow")
+
+check "workflow: exactly one step's failure is survivable" 1 \
+  "$(grep -c '^        continue-on-error: true$' "$workflow")"
+
+check "workflow: the survivable step is the review itself" present \
+  "$(presence "$(printf '%s\n' '      - name: Claude Code review' \
+    '        id: claude-review' \
+    '        continue-on-error: true')" "$workflow_text")"
+
+# Mutation 3: a JOB-level `continue-on-error` (four-space indent) makes the whole
+# job survivable, so the gate's `exit 1` stops meaning anything. The count above
+# cannot see it — it is a different key at a different indent — and nothing else
+# in this file would notice a green job with a failed gate inside it.
+check "workflow: no job-level continue-on-error" 0 \
+  "$(grep -c '^    continue-on-error:' "$workflow")"
+
+# The gate reads the failure step's own answer. A mistyped step id yields an
+# empty string, which the block below treats as red — the safe direction — but it
+# would silently reinstate the bug, so pin both ends of the wire.
+check "workflow: the step that judges a failure is the one the gate reads" present \
+  "$(presence 'id: verdict' "$workflow_text")"
+# The needle is a literal GitHub Actions expression, so it must stay unexpanded.
+# shellcheck disable=SC2016
+check "workflow: the gate reads that step's verdict" present \
+  "$(presence 'STANDS: ${{ steps.verdict.outputs.stands }}' "$workflow_text")"
+
+# That verdict comes from the TRUSTED classifier materialized out of the default
+# branch, never from this file's own arithmetic — same rule as the classification
+# beside it, and for the same reason (nothing executed in that job may come from
+# the PR's checkout).
+# shellcheck disable=SC2016
+check "workflow: the verdict is the trusted classifier's call" present \
+  "$(presence 'stands=$(bash "$classifier" stands "$exec_file" "$posted")' "$workflow_text")"
+
+# What counts as a posted verdict. Loosening either half — the shapes a verdict
+# can take, or the requirement that a BOT wrote it — turns "someone said
+# something" into proof that a review happened.
+check "workflow: a verdict is one of these four shapes" present \
+  "$(presence "grep -qE '[0-9]+ important|[0-9]+ nits?|No blocking issues|No factual issues'" \
+    "$workflow_text")"
+check "workflow: only a bot's comment can be a verdict" present \
+  "$(presence 'select(.user.type == \"Bot\")' "$workflow_text")"
+
+# Those four shapes are not arbitrary — they are what REVIEW.md and the reviewer
+# prompt TELL the reviewer to write. That makes them a two-ended wire with no
+# runtime signal on either end: reword the instruction and the probe stops
+# recognising real verdicts (a red check on a PR that was reviewed), reword the
+# probe and it stops recognising the reviewer (the same, or worse, a green check
+# vouched for by something else). So assert both ends of each phrase: the
+# workflow's own regex still matches it, and the file that asks for it still asks.
+# The regex is re-extracted rather than re-typed, so this cannot pass by agreeing
+# with a copy of itself; the literal pin above is what says WHICH half changed.
+verdict_re=$(sed -n "s/.*grep -qE '\([^']*\)'.*/\1/p" "$workflow")
+check "workflow: the verdict regex was found" yes \
+  "$([ -n "$verdict_re" ] && echo yes || echo no)"
+
+# Flattened, because both producers are wrapped prose and the prompt already
+# splits "No blocking issues found" across two lines. How a sentence is wrapped in
+# the source has nothing to do with whether it still asks for that phrase, and a
+# check that says otherwise fails for the wrong reason.
+producer_text() {
+  case "$1" in
+    workflow) printf '%s\n' "$workflow_text" ;;
+    *) cat "$repo_root/$1" ;;
+  esac | tr '\n' ' ' | tr -s ' '
+}
+
+while IFS='|' read -r phrase producer; do
+  [ -n "${phrase:-}" ] || continue
+  check "the probe accepts '$phrase'" yes \
+    "$(printf '%s\n' "$phrase" | grep -qE "$verdict_re" && echo yes || echo no)"
+  check "$producer still asks for '$phrase'" present \
+    "$(presence "$phrase" "$(producer_text "$producer")")"
+done <<'PHRASES'
+2 important, 3 nits|REVIEW.md
+No factual issues found|REVIEW.md
+No blocking issues|REVIEW.md
+1 important, 3 nits|workflow
+No blocking issues found|workflow
+PHRASES
+
+# Mutations 1 and 2: the gate's WIRING, which decides whether the pinned body
+# below ever executes. `steps.claude-review.outcome` is the step's real result;
+# `.conclusion` is what survives `continue-on-error` and reads `success` on every
+# run this gate exists for, so that one-word swap switches the gate off while
+# leaving its body word-perfect. `if: false` does the same thing more bluntly.
+# Pinning the two lines together also pins that the `if:` belongs to THIS step.
+check "workflow: the gate opens on the review step's real outcome" present \
+  "$(presence "$(printf '%s\n' '      - name: Decide the check' \
+    "        if: steps.claude-review.outcome == 'failure'")" "$workflow_text")"
+
+# The gate itself, verbatim. Red is the default AND the fallthrough: the only way
+# out with status 0 is an explicit `yes`, so every unanticipated state — an empty
+# output, a classifier that could not be materialized, a class nobody has invented
+# yet — lands on `exit 1`.
+gate_block=$(
+  awk '
+    /^      - name: Decide the check$/ { instep = 1; next }
+    instep && /^        run: \|[[:space:]]*$/ { inrun = 1; next }
+    inrun {
+      if ($0 != "" && $0 !~ /^          /) exit
+      print
+      next
+    }
+    instep && /^      - name: / { exit }
+  ' "$workflow"
+)
+# The needle is a fragment of the workflow's shell, so `$STANDS` must stay
+# unexpanded — the single quotes are the point.
+# shellcheck disable=SC2016
+expected_gate=$(
+  printf '%s\n' \
+    '          if [ "$STANDS" = yes ]; then' \
+    '            echo "The review finished and its verdict is on the PR; only the machinery around it failed."' \
+    '            exit 0' \
+    '          fi' \
+    '          exit 1'
+)
+check "workflow: the check gate is exactly this, and its fallthrough is red" \
+  "$expected_gate" "$gate_block"
+
+# The gate above is only ever consulted on the events this workflow listens for,
+# so pin those too. `review` is deliberately NOT a required check and must never
+# report on `merge_group`: adding that trigger would run a full Claude review on
+# every merge-queue build, and the queue's combined tree is not what anyone asked
+# to have reviewed.
+on_triggers=$(
+  awk '
+    /^on:[[:space:]]*$/ { inon = 1; next }
+    inon {
+      if ($0 ~ /^[^[:space:]#]/) exit
+      if ($0 ~ /^  [a-z_]+:/) { sub(/:.*/, ""); sub(/^  /, ""); print }
+    }
+  ' "$workflow"
+)
+check "workflow: the review fires on these events and no others" \
+  "$(printf '%s\n' pull_request workflow_dispatch)" "$on_triggers"
 
 total=$((pass + fail))
 if [ "$fail" -gt 0 ]; then
