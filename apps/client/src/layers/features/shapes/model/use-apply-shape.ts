@@ -23,7 +23,8 @@ export interface ApplyShapeVars {
 }
 
 /**
- * Apply an installed Shape to the current workspace.
+ * Wires up the mutation that applies an installed Shape to the current
+ * workspace. Applies nothing on its own — call the returned `mutate`.
  *
  * @returns The apply mutation — `mutate({ name, label })` applies the Shape and
  *   resolves with the full {@link ApplyShapeResult} (chrome, warnings, offers).

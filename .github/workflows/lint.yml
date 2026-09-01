@@ -54,6 +54,15 @@ name: lint
 # `.turbo/cache`, so all 21 tasks execute here every time. Wiring up remote
 # caching later would make this comment false and this job silently skippable;
 # add the assertion in the same change.
+#
+# THE push-to-main LEG IS KEPT FOR PARITY WITH typecheck.yml, which still has
+# one, even though AGENTS.md's CI section retired the push leg for `test` on the
+# grounds that the merge queue already checked the exact tree content. Two
+# reasons it stays here: `lint` is not a required check yet, so unlike `test` it
+# is NOT guaranteed to have run against the combined tree the queue built; and
+# this job is ~40s, so re-running it on main is cheap insurance rather than the
+# multi-minute duplicate that argument was made about. Revisit if `lint` becomes
+# required — at that point the `test` reasoning applies to it unchanged.
 on:
   push:
     branches: [main]
@@ -81,8 +90,11 @@ permissions:
 jobs:
   lint:
     runs-on: ubuntu-latest
-    # A full cold lint (no turbo cache) measured ~4m30s on a warm developer
-    # machine; generous headroom for a colder/slower CI runner.
+    # A full cold lint (`turbo lint --force`, 21 packages, no cache) measured
+    # ~40s on an idle developer machine. The ceiling is deliberately far above
+    # that: the same command took over four minutes on the same machine while
+    # several agents were running, so the number to budget against is a loaded
+    # runner, not a quiet one. This is a stop for a hung run, not a perf budget.
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7

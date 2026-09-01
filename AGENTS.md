@@ -148,7 +148,7 @@ Open PRs from a worktree branch based on `origin/main`. **Direct pushes to `main
 
 ## Hard Rules
 
-Non-negotiable, enforced by ESLint/CI/convention. Rules 1-4 are ESLint `error`s, so they fail the lefthook pre-commit hook, `pnpm verify`, and the `lint` workflow (full monorepo, on PRs and in the merge queue). Rule 5 rides the `typecheck` workflow; 6-7 are hooks:
+Non-negotiable, enforced by ESLint/CI/convention. Rules 1-4 are ESLint `error`s, so they fail the lefthook pre-commit hook, `pnpm verify`, and the `lint` workflow (full monorepo, on PRs and in the merge queue). `lint` is **not yet a required check**, so a red `lint` does not by itself block a merge — but it does block the automated landing path, because `scripts/should-arm-automerge.sh` refuses to arm auto-merge while any check is failing or still pending, required or not. Rule 5 rides the `typecheck` workflow, which is required; 6-7 are hooks:
 
 1. **FSD layer violations are errors** — `no-restricted-imports` enforces the hierarchy
 2. **SDK imports confined** — each runtime SDK is banned outside its adapter dir: `@anthropic-ai/claude-agent-sdk` → `services/runtimes/claude-code/`, `@openai/codex-sdk` → `services/runtimes/codex/`, `@opencode-ai/sdk` → `services/runtimes/opencode/`

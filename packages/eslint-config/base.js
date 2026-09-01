@@ -60,7 +60,15 @@ export default [
     settings: {
       jsdoc: {
         mode: 'typescript',
-        tagNamePreference: { returns: 'returns' },
+        // `typeParam: 'typeParam'` maps the tag to itself, which is how this
+        // plugin is told "this tag is fine as written". Without it,
+        // `mode: 'typescript'` resolves `@typeParam` to its Closure spelling and
+        // check-tag-names reports "Replace @typeParam with @template" — at
+        // `error`, that BANS the correct TSDoc tag, in a repo whose Hard Rule 4
+        // is literally "TSDoc on exports". `definedTags` does not fix this: it
+        // governs unknown tags, not preference remapping of a known one.
+        // Both spellings now pass; `@template` is the older majority here.
+        tagNamePreference: { returns: 'returns', typeParam: 'typeParam' },
       },
     },
     rules: {
