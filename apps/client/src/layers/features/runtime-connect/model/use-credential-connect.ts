@@ -3,7 +3,8 @@
  *
  * Both flows resolve the same way a successful T0 provision does: on success
  * they invalidate the shared `['requirements']` key so the runtime flips to
- * Ready with no manual "Check again". The secret is passed once to the
+ * Ready with no manual "Check again", and `['models']` so the model menu shows
+ * what the new connection actually offers. The secret is passed once to the
  * transport and never returned, cached, or logged — the store response carries
  * only a reference.
  *
@@ -11,6 +12,7 @@
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { REQUIREMENTS_KEY } from '@/layers/entities/runtime';
+import { MODELS_KEY } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 
 /** The native paste-key connect: store an API key, flip the runtime to Ready. */
@@ -42,6 +44,9 @@ export function useStoreRuntimeCredential(type: string): UseStoreRuntimeCredenti
     mutationFn: (secret: string) => transport.storeRuntimeCredential(type, secret),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: [...REQUIREMENTS_KEY] });
+      // The catalog changed with the connection: a new provider's models are
+      // now offered, and the old ones may not be (DOR-1660).
+      void queryClient.invalidateQueries({ queryKey: [...MODELS_KEY] });
     },
   });
 
@@ -93,6 +98,9 @@ export function useDelegateRuntimeLogin(type: string): UseDelegateRuntimeLogin {
     onSuccess: (result) => {
       if (result.ok) {
         void queryClient.invalidateQueries({ queryKey: [...REQUIREMENTS_KEY] });
+        // The catalog changed with the connection: a new provider's models are
+        // now offered, and the old ones may not be (DOR-1660).
+        void queryClient.invalidateQueries({ queryKey: [...MODELS_KEY] });
       }
     },
   });

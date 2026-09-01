@@ -3841,8 +3841,22 @@ export const ModelOptionSchema = z
       description:
         'True when the model runs locally on this machine (e.g. Ollama), so nothing typed leaves the computer',
     }),
-    supportsVision: z.boolean().optional(),
-    supportsToolUse: z.boolean().optional(),
+    supportsVision: z.boolean().optional().openapi({
+      description:
+        'Whether the model accepts images as input. Absent means the runtime does not report it.',
+    }),
+    supportsToolUse: z.boolean().optional().openapi({
+      description:
+        'Whether the model can call tools. `false` means it can only chat — it cannot read files or run commands, so it cannot do agent work. Absent means the runtime does not report it, and the model is treated as capable.',
+    }),
+    supportsImageOutput: z.boolean().optional().openapi({
+      description:
+        'Whether the model returns generated images rather than only text. Absent means the runtime does not report it.',
+    }),
+    unverified: z.boolean().optional().openapi({
+      description:
+        'True when this row comes from a shortened, unconfirmed menu — the runtime found no connected provider, so it is offering a bounded guess rather than models it knows you can use. Surfaces have to say so instead of presenting the list as complete.',
+    }),
     supportsStreaming: z.boolean().optional(),
     supportsCodeExecution: z.boolean().optional(),
     isDeprecated: z.boolean().optional(),

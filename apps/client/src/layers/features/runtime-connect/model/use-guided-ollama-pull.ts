@@ -23,6 +23,7 @@ import type {
   OllamaPullResult,
 } from '@dorkos/shared/runtime-connect';
 import { REQUIREMENTS_KEY } from '@/layers/entities/runtime';
+import { MODELS_KEY } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import { OLLAMA_PROVIDER_ID } from './use-opencode-provider';
 
@@ -96,6 +97,9 @@ export function useGuidedOllamaPull(): UseGuidedOllamaPull {
     onSuccess: (result) => {
       if (result.ok) {
         void queryClient.invalidateQueries({ queryKey: [...REQUIREMENTS_KEY] });
+        // The catalog changed with the connection: a new provider's models are
+        // now offered, and the old ones may not be (DOR-1660).
+        void queryClient.invalidateQueries({ queryKey: [...MODELS_KEY] });
       }
     },
   });

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import * as React from 'react';
@@ -767,6 +767,170 @@ describe('ModelConfigPopover', () => {
         mockTieredModels(tenUntiered);
         render(<ModelConfigPopover {...defaultProps({ model: 'model-0' })} />);
         expect(screen.queryByTestId('model-search')).not.toBeInTheDocument();
+      });
+    });
+
+    // ---- Honesty about what a model can do (DOR-1660) ----
+    //
+    // The complaint this answers: "I select a model, use it, and I'm told it
+    // isn't available. I should know BEFORE I select it." So the picker keeps
+    // every model but says, on the card, what will go wrong.
+    describe('capability honesty', () => {
+      const limitedModels = [
+        buildModel({ value: 'model-frontier-a', displayName: 'Nova', tier: 'frontier' }),
+        // Cannot call a tool: grouped apart, whatever its tier claims.
+        buildModel({
+          value: 'model-chat-only',
+          displayName: 'Lyria',
+          tier: 'frontier',
+          supportsToolUse: false,
+        }),
+        // The operator's real case: tool-capable and picked on purpose, but it
+        // answers with pictures the app cannot show yet.
+        buildModel({
+          value: 'model-image',
+          displayName: 'Banana',
+          tier: 'solid-coder',
+          supportsToolUse: true,
+          supportsImageOutput: true,
+        }),
+      ];
+
+      beforeEach(() => mockTieredModels(limitedModels));
+
+      it('still offers a model that cannot do agent work, under its own heading', () => {
+        render(<ModelConfigPopover {...defaultProps({ model: 'model-frontier-a' })} />);
+
+        // Offered, not hidden — someone looking for it can still find it.
+        expect(screen.getByTestId('model-card-list')).toHaveTextContent('Lyria');
+        const group = screen.getByTestId('model-group-no-tools');
+        expect(group).toHaveTextContent("Can't do agent work");
+        // And it is NOT sitting in Frontier alongside the models that work.
+        const text = screen.getByTestId('model-card-list').textContent ?? '';
+        expect(text.indexOf('Nova')).toBeLessThan(text.indexOf("Can't do agent work"));
+        expect(text.indexOf("Can't do agent work")).toBeLessThan(text.indexOf('Lyria'));
+      });
+
+      it('says on the card why a tool-less model will not work', () => {
+        render(<ModelConfigPopover {...defaultProps({ model: 'model-frontier-a' })} />);
+
+        expect(screen.getByTestId('model-limitation-model-chat-only')).toHaveTextContent(
+          "Can't use tools, so it can't read files or run commands."
+        );
+      });
+
+      it('warns that an image model produces nothing the app can show yet', () => {
+        render(<ModelConfigPopover {...defaultProps({ model: 'model-frontier-a' })} />);
+
+        expect(screen.getByTestId('model-limitation-model-image')).toHaveTextContent(
+          'Makes images, and DorkOS cannot show them yet.'
+        );
+        // It CAN call tools, so it keeps its real tier rather than being demoted.
+        expect(screen.getByTestId('model-group-solid-coders')).toBeInTheDocument();
+      });
+
+      it('does not warn that OpenRouter\'s router "makes images"', () => {
+        // `openrouter/auto` declares image among its outputs because that is the
+        // union of everything it might route to. On a coding prompt it returns
+        // text every time, so an amber warning at the moment of choice would be
+        // misinformation about the most sensible OpenRouter default.
+        mockTieredModels([
+          buildModel({
+            value: 'openrouter/openrouter/auto',
+            displayName: 'Auto Router',
+            tier: 'frontier',
+            supportsToolUse: true,
+            supportsImageOutput: true,
+          }),
+        ]);
+        render(<ModelConfigPopover {...defaultProps({ model: 'openrouter/openrouter/auto' })} />);
+
+        expect(
+          screen.queryByTestId('model-limitation-openrouter/openrouter/auto')
+        ).not.toBeInTheDocument();
+      });
+
+      it('still groups a router apart when it genuinely cannot use tools', () => {
+        // The image waiver is not a blanket exemption.
+        mockTieredModels([
+          buildModel({
+            value: 'openrouter/auto',
+            displayName: 'Auto Router',
+            supportsToolUse: false,
+            supportsImageOutput: true,
+          }),
+        ]);
+        render(<ModelConfigPopover {...defaultProps({ model: 'openrouter/auto' })} />);
+
+        expect(screen.getByTestId('model-limitation-openrouter/auto')).toHaveTextContent(
+          "Can't use tools"
+        );
+      });
+
+      it('says nothing about a model with nothing to warn about', () => {
+        render(<ModelConfigPopover {...defaultProps({ model: 'model-frontier-a' })} />);
+
+        expect(screen.queryByTestId('model-limitation-model-frontier-a')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('model-group-no-tools')).toBeInTheDocument();
+      });
+
+      it('renders no warnings and no extra group for a catalog that reports nothing', () => {
+        // Absent capability metadata must never read as "cannot" — the common
+        // case for claude-code and codex, whose catalogs report neither field.
+        mockTieredModels(tieredModels);
+        render(<ModelConfigPopover {...defaultProps({ model: 'model-frontier-a' })} />);
+
+        expect(screen.queryByTestId('model-group-no-tools')).not.toBeInTheDocument();
+        expect(
+          screen
+            .getByTestId('model-card-list')
+            .querySelectorAll('[data-testid^="model-limitation-"]')
+        ).toHaveLength(0);
+      });
+    });
+
+    // ---- The shortened, unconfirmed menu (DOR-1660) ----
+    //
+    // When the runtime finds no connected provider it offers a bounded slice of
+    // every model it has heard of. Presenting that as the real list is the same
+    // bug this PR fixes, pointed backwards — and the search box turns it into an
+    // active falsehood.
+    describe('an unverified catalog', () => {
+      const unverifiedModels = [
+        buildModel({ value: 'a/one', displayName: 'Alpha', tier: 'frontier', unverified: true }),
+        buildModel({ value: 'b/two', displayName: 'Beta', tier: 'frontier', unverified: true }),
+      ];
+
+      it('says the list is short and unconfirmed, and names the fix', () => {
+        mockTieredModels(unverifiedModels);
+        render(<ModelConfigPopover {...defaultProps({ model: 'a/one' })} />);
+
+        expect(screen.getByTestId('model-catalog-unverified')).toHaveTextContent(
+          'This is a short list of models nobody has confirmed you can run. Connect a provider to see the ones you actually have.'
+        );
+      });
+
+      it('does not claim a model is missing when the list was only shortened', () => {
+        mockTieredModels(unverifiedModels);
+        render(<ModelConfigPopover {...defaultProps({ model: 'a/one' })} />);
+
+        // Before this, searching a shortened list for a model that genuinely IS
+        // in the catalog answered with a confident "No models match".
+        fireEvent.change(screen.getByTestId('model-search'), {
+          target: { value: 'a-model-that-was-cut' },
+        });
+        expect(screen.getByTestId('model-search-empty')).toHaveTextContent(
+          'No match in this shortened list. Connect a provider to search everything you can run.'
+        );
+      });
+
+      it('stays quiet, and keeps the plain empty copy, for a confirmed catalog', () => {
+        mockTieredModels(tieredModels);
+        render(<ModelConfigPopover {...defaultProps({ model: 'model-frontier-a' })} />);
+
+        expect(screen.queryByTestId('model-catalog-unverified')).not.toBeInTheDocument();
+        fireEvent.change(screen.getByTestId('model-search'), { target: { value: 'zzzzz' } });
+        expect(screen.getByTestId('model-search-empty')).toHaveTextContent('No models match');
       });
     });
 
