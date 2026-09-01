@@ -550,6 +550,108 @@ describe('OpenCodeRuntime', () => {
         body: { providerID: 'ollama', modelID: 'qwen2.5-coder:32b' },
       });
     });
+
+    /**
+     * Drive a compaction that FAILS, and report everything a caller could
+     * observe about how it failed.
+     *
+     * Both failure modes throw from inside the `trigger` callback
+     * `runOpenCodeTurn` awaits — one before `session.summarize` is reached (no
+     * model resolvable at any rung) and one after it answers an error. Whether
+     * those two surface identically is the question; nothing about "they are
+     * both throws in the same closure" proves the wrapping treats them alike,
+     * so this measures it instead of assuming it.
+     */
+    async function failedCompaction(
+      harness: ReturnType<typeof makeRuntime>,
+      sessionId: string
+    ): Promise<{
+      events: StreamEvent[];
+      message: string;
+      yieldedBeforeFailure: number;
+      turnRecordCleared: boolean;
+    }> {
+      const { events, finished } = consume(
+        harness.runtime.executeCommandIntent(sessionId, 'compact', { cwd: DIRECTORY })
+      );
+      await vi.waitFor(() => expect(harness.client.global.event).toHaveBeenCalled());
+      // Mark the stream live so the trigger fires immediately, rather than
+      // after the STREAM_LIVE_TIMEOUT_MS fallback.
+      harness.source.latest().push(globalEvent(DIRECTORY, serverConnected()));
+
+      let message = '';
+      try {
+        await finished;
+        message = '<the generator completed instead of failing>';
+      } catch (err) {
+        message = err instanceof Error ? err.message : String(err);
+      }
+      return {
+        events,
+        message,
+        yieldedBeforeFailure: events.length,
+        // `interruptQuery` answers false only when no turn is on record, so it
+        // reads the teardown the `finally` block owes either way.
+        turnRecordCleared: (await harness.runtime.interruptQuery(sessionId)) === false,
+      };
+    }
+
+    it('surfaces an unresolvable model exactly like a rejected summarize', async () => {
+      // The reviewer's doubt on #1426, made testable: `resolveCompactionModel`
+      // throws BEFORE `session.summarize` is called, so its failure never
+      // passes through the mapper that produces the error/done pair. If the two
+      // paths diverged — one rejecting the generator, the other yielding a
+      // mapped `error` + `done` — a caller would have to handle compaction
+      // failures two different ways depending on which rung ran out.
+
+      // Path A: the sidecar rejects a well-formed summarize.
+      const rejecting = makeRuntime();
+      const rejectingSession = nextSessionId();
+      rejecting.runtime.ensureSession(rejectingSession, {
+        permissionMode: 'default',
+        cwd: DIRECTORY,
+        model: 'anthropic/claude-sonnet-4-5',
+      });
+      rejecting.client.session.summarize.mockResolvedValue({
+        error: { name: 'BadRequest', data: { message: 'nope' } },
+      });
+
+      // Path B: nothing names a model — no session model, no history, no
+      // configured default — so the throw happens a step earlier.
+      const unresolvable = makeRuntime();
+      const unresolvableSession = nextSessionId();
+      unresolvable.runtime.ensureSession(unresolvableSession, {
+        permissionMode: 'default',
+        cwd: DIRECTORY,
+      });
+
+      const rejected = await failedCompaction(rejecting, rejectingSession);
+      const unnamed = await failedCompaction(unresolvable, unresolvableSession);
+
+      // The comparison is the point: same shape, same ordering, same terminal —
+      // asserted against each other, not against two hand-written expectations
+      // that could drift apart without anyone noticing.
+      expect({
+        events: unnamed.events,
+        yieldedBeforeFailure: unnamed.yieldedBeforeFailure,
+        turnRecordCleared: unnamed.turnRecordCleared,
+      }).toEqual({
+        events: rejected.events,
+        yieldedBeforeFailure: rejected.yieldedBeforeFailure,
+        turnRecordCleared: rejected.turnRecordCleared,
+      });
+
+      // And pin what that shape actually IS, so the equality above cannot be
+      // satisfied by both paths silently going quiet.
+      expect(rejected.yieldedBeforeFailure, 'a failed trigger must yield nothing').toBe(0);
+      expect(rejected.turnRecordCleared, 'the turn record must be torn down').toBe(true);
+      expect(rejected.message).toContain('OpenCode session.summarize failed');
+      expect(unnamed.message).toContain('Pick a model for the session');
+
+      // Path B must fail BEFORE the sidecar is asked to compact — sending a
+      // half-filled body would be the bug this whole ladder exists to avoid.
+      expect(unresolvable.client.session.summarize).not.toHaveBeenCalled();
+    });
   });
 
   describe('approvals', () => {
