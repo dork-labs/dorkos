@@ -3,10 +3,8 @@ covers:
   - 'feat(server,shared): auth errors speak DorkOS copy on every channel (DOR-1656)'
 ---
 
-### Changed
-
-- When an agent's sign-in stops working, you now get the same clear message every time — "Authentication failed. Re-authenticate Claude and try again." — instead of whichever raw error the tool happened to print. It names the agent that needs signing in (Claude, Codex, or OpenCode), and the original error is still there under "Details" (DOR-1656)
-
 ### Fixed
 
-- Codex and OpenCode now offer the "Fix sign-in" button when a sign-in dies mid-turn, instead of showing it as an ordinary crash with no way back in (DOR-1656)
+- When a Codex or OpenCode sign-in dies in the middle of a turn, you now get the "Fix sign-in" button instead of a generic crash message with no way forward (DOR-1656)
+- Codex sign-in trouble is caught on the path it actually takes. Before, a live Codex run that lost its sign-in showed the raw text the tool printed and offered nothing to click (DOR-1656)
+- Whatever the agent's own tool said about the failure is now kept under "Details" instead of being dropped (DOR-1656)

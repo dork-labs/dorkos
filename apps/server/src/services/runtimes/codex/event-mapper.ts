@@ -63,13 +63,21 @@ const CODEX_RUNTIME_TYPE = 'codex';
  * it, so all three go through here.
  *
  * @param message - The CLI's own failure text.
- * @param code - The channel's machine code, when it carries one.
+ * @param options - Which channel is asking: its machine `code`, and whether that
+ *   channel is `diagnostic` — one that also carries failures about something
+ *   OTHER than the session's own sign-in, which narrows what counts as a
+ *   credential signal (see `detectAuthError`'s `unambiguousOnly`).
  */
-function codexErrorCopy(message: string, code?: string): RuntimeErrorCopy {
+function codexErrorCopy(
+  message: string,
+  options: { code?: string; diagnostic?: boolean } = {}
+): RuntimeErrorCopy {
+  const { code, diagnostic = false } = options;
   return describeRuntimeError({
     runtimeType: CODEX_RUNTIME_TYPE,
     message,
     ...(code ? { code } : {}),
+    unambiguousOnly: diagnostic,
   });
 }
 
@@ -198,7 +206,12 @@ export function mapCodexEvent(event: ThreadEvent, ctx: CodexEventContext): Strea
         failedStatus,
         {
           type: 'error',
-          data: { ...codexErrorCopy(event.error.message, 'turn_failed'), code: 'turn_failed' },
+          // `turn.failed` is TERMINAL — it is the turn's own verdict, never a
+          // note about one tool — so the full signal set applies here.
+          data: {
+            ...codexErrorCopy(event.error.message, { code: 'turn_failed' }),
+            code: 'turn_failed',
+          },
         },
         { type: 'done', data: { sessionId: ctx.sessionId } },
       ];
@@ -255,7 +268,11 @@ export async function* mapCodexThread(
       yield {
         type: 'error',
         data: {
-          ...codexErrorCopy(err instanceof Error ? err.message : String(err), 'stream_error'),
+          // A thrown stream ENDED the turn, so like `turn.failed` it is the
+          // session's own failure and takes the full signal set.
+          ...codexErrorCopy(err instanceof Error ? err.message : String(err), {
+            code: 'stream_error',
+          }),
           code: 'stream_error',
         },
       };
@@ -303,6 +320,14 @@ function mapThreadItem(item: ThreadItem, phase: ItemPhase, ctx: CodexEventContex
       // here first and repeats it on `turn.failed`, which then dedupes itself
       // away — so this copy is the only copy a person reads (DOR-1656).
       //
+      // `diagnostic` because this channel is NOT only the session's verdict.
+      // The same item carries per-tool notes on a turn that goes on to succeed
+      // (NOTES.md records a live "Falling back from WebSockets to HTTPS..."
+      // item), so an MCP server's own "Failed to authenticate with server
+      // github" would otherwise be answered with sign-in advice about Codex
+      // while the Codex sign-in is fine. Narrowing costs us the vaguer wordings
+      // here; `turn.failed` still catches those when the turn really dies.
+      //
       // ONLY the auth case gains a `category`, and that asymmetry is deliberate:
       // an item error has always shipped without one, and the client renders a
       // category-less error by showing its `message` (ErrorMessageBlock falls
@@ -310,7 +335,7 @@ function mapThreadItem(item: ThreadItem, phase: ItemPhase, ctx: CodexEventContex
       // instead. Categorising an ordinary item failure would therefore HIDE the
       // only account of what went wrong. An auth failure has somewhere better to
       // send them, and its raw text survives in `details`.
-      const copy = codexErrorCopy(item.message);
+      const copy = codexErrorCopy(item.message, { diagnostic: true });
       if (copy.category !== 'auth_error') {
         return [{ type: 'error', data: { message: item.message, code: 'item_error' } }];
       }

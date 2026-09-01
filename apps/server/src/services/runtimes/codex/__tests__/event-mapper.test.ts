@@ -616,7 +616,7 @@ describe('mapCodexEvent', () => {
       const events = mapCodexEvent(codexTurnFailed(vendorText), makeContext());
       const error = events.find((e) => e.type === 'error');
       expect(error?.data).toMatchObject({
-        message: 'Authentication failed. Re-authenticate Codex and try again.',
+        message: 'Your Codex sign-in stopped working. Sign in again to keep going.',
         code: 'turn_failed',
         category: 'auth_error',
         details: vendorText,
@@ -733,8 +733,40 @@ describe('mapCodexThread', () => {
     const events = await drain(codexFailedTurnWithErrorItem(vendorText));
     expect(events.map((e) => e.type)).toEqual(['error', 'session_status', 'done']);
     expect(events[0]!.data).toMatchObject({
-      message: 'Authentication failed. Re-authenticate Codex and try again.',
+      message: 'Your Codex sign-in stopped working. Sign in again to keep going.',
       code: 'item_error',
+      category: 'auth_error',
+      details: vendorText,
+    });
+  });
+
+  it('leaves an auth-flavoured item about a TOOL alone (DOR-1656)', () => {
+    // The item channel is diagnostic: it carries per-tool notes on turns that go
+    // on to succeed, so a tool's own credential trouble must not be answered
+    // with sign-in advice about Codex. Stamping `auth_error` here would also
+    // hide the message itself, since the client shows category copy instead of
+    // `message` — the person would lose the only account of what broke and be
+    // sent to re-authenticate something that was never broken.
+    const events = mapCodexEvent(
+      codexItemCompleted(
+        errorThreadItem('e1', 'MCP error: Failed to authenticate with server github')
+      ),
+      makeContext()
+    );
+    expect(events[0]!.data).toEqual({
+      message: 'MCP error: Failed to authenticate with server github',
+      code: 'item_error',
+    });
+  });
+
+  it('still catches a TERMINAL auth failure whose wording is too vague for the item channel', () => {
+    // The narrowing above is a channel rule, not a weaker classifier: the same
+    // words on `turn.failed` are the turn's own verdict and still translate.
+    const vendorText = 'Failed to authenticate: your ChatGPT session could not be refreshed';
+    const events = mapCodexEvent(codexTurnFailed(vendorText), makeContext());
+    const error = events.find((e) => e.type === 'error');
+    expect(error?.data).toMatchObject({
+      message: 'Your Codex sign-in stopped working. Sign in again to keep going.',
       category: 'auth_error',
       details: vendorText,
     });
@@ -774,7 +806,7 @@ describe('mapCodexThread', () => {
     }
     const events = await drain(crashingStream());
     expect(events[0]!.data).toMatchObject({
-      message: 'Authentication failed. Re-authenticate Codex and try again.',
+      message: 'Your Codex sign-in stopped working. Sign in again to keep going.',
       code: 'stream_error',
       category: 'auth_error',
       details: vendorText,

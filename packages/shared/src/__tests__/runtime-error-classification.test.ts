@@ -89,6 +89,42 @@ describe('detectAuthError', () => {
       expect(detectAuthError({ message: 'boom', code: 'turn_failed' })).toBe(false);
     });
   });
+
+  describe('unambiguousOnly', () => {
+    // The channel this exists for is codex's error ITEM, which carries per-tool
+    // diagnostics on turns that go on to succeed. Sign-in advice stamped over a
+    // live turn's real error is worse than saying nothing.
+    const vagueButAuthFlavoured: Array<[string, string]> = [
+      ['an MCP server naming its own auth', 'MCP error: Failed to authenticate with server github'],
+      ['a tool discussing an oauth flow', 'The github tool needs an OAuth app configured'],
+      ['a tool naming an access token', 'Set GH_TOKEN: no access token found for this repo'],
+      ['a third-party key', 'weather-api returned: invalid api key'],
+    ];
+
+    it.each(vagueButAuthFlavoured)('ignores %s', (_label, message) => {
+      expect(detectAuthError({ message })).toBe(true);
+      expect(detectAuthError({ message, unambiguousOnly: true })).toBe(false);
+    });
+
+    const stillMatched: Array<[string, string]> = [
+      ['401 Unauthorized', 'stream error: unexpected status 401 Unauthorized'],
+      ['a revoked credential', 'OAuth access token has been revoked'],
+    ];
+
+    it.each(stillMatched)('still matches %s', (_label, message) => {
+      expect(detectAuthError({ message, unambiguousOnly: true })).toBe(true);
+    });
+
+    it('still trusts an exact code, which needs no corroboration from the text', () => {
+      expect(
+        detectAuthError({
+          message: 'the provider ended the session',
+          code: 'ProviderAuthError',
+          unambiguousOnly: true,
+        })
+      ).toBe(true);
+    });
+  });
 });
 
 describe('describeAuthError', () => {
@@ -101,9 +137,23 @@ describe('describeAuthError', () => {
     expect(describeAuthError('opencode')).not.toContain('Claude');
   });
 
-  it('is one sentence, identical in shape for every runtime', () => {
+  it('tells a login runtime to sign in again', () => {
+    expect(describeAuthError('claude-code')).toBe(
+      'Your Claude sign-in stopped working. Sign in again to keep going.'
+    );
     expect(describeAuthError('codex')).toBe(
-      'Authentication failed. Re-authenticate Codex and try again.'
+      'Your Codex sign-in stopped working. Sign in again to keep going.'
+    );
+  });
+
+  it('tells a provider-picker runtime about its PROVIDER, not a sign-in it does not have', () => {
+    // OpenCode has no login of its own: it borrows a model provider's
+    // credential, which is why reconnecting it opens the provider picker rather
+    // than a sign-in screen (runtimeAuthConnectKind). Telling somebody to "sign
+    // in to OpenCode again" would send them looking for a button that is not
+    // there. The closing instruction matches the one they will actually see.
+    expect(describeAuthError('opencode')).toBe(
+      "OpenCode's model provider stopped accepting its sign-in. Choose a model provider to keep going."
     );
   });
 
@@ -123,7 +173,8 @@ describe('describeRuntimeError', () => {
         code: 'ProviderAuthError',
       })
     ).toEqual({
-      message: 'Authentication failed. Re-authenticate OpenCode and try again.',
+      message:
+        "OpenCode's model provider stopped accepting its sign-in. Choose a model provider to keep going.",
       category: 'auth_error',
       details: 'AuthenticationError: 401 invalid x-api-key',
     });

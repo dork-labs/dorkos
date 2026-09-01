@@ -390,8 +390,12 @@ export function mapSessionError(error: OpenCodeSessionError | undefined): Stream
   }
   if (error.name === ABORT_ERROR_NAME) return [];
   const data: Record<string, unknown> = error.data;
-  const message =
-    typeof data.message === 'string' && data.message.length > 0 ? data.message : error.name;
+  // What the PROVIDER actually said, or nothing when it said nothing. The
+  // distinction matters below: falling back to the error name gives us a
+  // message, but not an account of the failure worth preserving.
+  const providerText =
+    typeof data.message === 'string' && data.message.length > 0 ? data.message : undefined;
+  const message = providerText ?? error.name;
   // An unavailable/unknown model is the one provider failure with a plain-language
   // remedy: pick another model. Map it to friendly copy pointing at the model menu
   // instead of leaking the raw sidecar/provider string (spec §11).
@@ -413,7 +417,18 @@ export function mapSessionError(error: OpenCodeSessionError | undefined): Stream
   // agent they happened to be running (DOR-1656). Provider auth messages are the
   // worst offenders here: they range from a bare error name to whatever string a
   // model host chose to return.
-  return [{ type: 'error', data: { ...openCodeErrorCopy(message, error.name), code: error.name } }];
+  const { details, ...copy } = openCodeErrorCopy(message, error.name);
+  // Keep `details` only when the provider genuinely said something. When it did
+  // not, `message` fell back to the error NAME, and repeating that name under a
+  // "Details" disclosure adds a control that reveals nothing the `code` field
+  // does not already carry.
+  const preserved = providerText === undefined ? undefined : details;
+  return [
+    {
+      type: 'error',
+      data: { ...copy, code: error.name, ...(preserved ? { details: preserved } : {}) },
+    },
+  ];
 }
 
 /** OpenCode todo status → DorkOS task status; `cancelled` entries are dropped. */

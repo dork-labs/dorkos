@@ -19,7 +19,7 @@
  *
  * @module runtime-error-classification
  */
-import { runtimeDisplayName } from './agent-runtime.js';
+import { runtimeAuthConnectKind, runtimeDisplayName } from './agent-runtime.js';
 import type { ErrorCategory } from './types.js';
 
 /**
@@ -45,14 +45,35 @@ const EXPIRABLE_CREDENTIAL =
   '(?:credential|api[_ ]?key|(?:auth|access|oauth|session|refresh|bearer)[_ ]?token)';
 
 /**
+ * The message signals strong enough to act on when the failure might not be
+ * about the SESSION's own sign-in at all.
+ *
+ * A runtime's TERMINAL failure is always about the session, so the broader set
+ * below is safe there. Some channels are not terminal: codex reports per-tool
+ * diagnostics on the same `error` item it reports a dying sign-in on, and a
+ * tool's own credential trouble ("Failed to authenticate with server github")
+ * would match `/authenticat/i` while the session's sign-in is perfectly fine.
+ * Telling somebody to sign in again over a live turn's real error is a worse
+ * failure than saying nothing, so those channels ask for these two instead.
+ *
+ * No message pattern is airtight on a diagnostic channel — a tool CAN return
+ * "401 Unauthorized" from a third-party call. This set is the narrowest one
+ * that still recognises the failure codex actually reports there, and the trade
+ * is deliberate: under-translate rather than over-translate.
+ */
+const UNAMBIGUOUS_AUTH_MESSAGE_PATTERNS: readonly RegExp[] = [
+  /unauthoris|unauthoriz/i, // unauthorized / unauthorised (covers "401 Unauthorized")
+  /revoked/i,
+];
+
+/**
  * Case-insensitive signals in a runtime error message that indicate an
  * authentication or credential failure. Kept conservative to avoid false
  * positives on ordinary execution errors, line numbers, and amounts.
  */
 const AUTH_MESSAGE_PATTERNS: readonly RegExp[] = [
+  ...UNAMBIGUOUS_AUTH_MESSAGE_PATTERNS,
   /oauth/i,
-  /unauthoris|unauthoriz/i, // unauthorized / unauthorised (covers "401 Unauthorized")
-  /revoked/i,
   /authenticat/i, // authenticate / authentication / failed to authenticate
   /access token/i,
   /invalid[_ ]?api[_ ]?key/i,
@@ -67,17 +88,33 @@ const AUTH_MESSAGE_PATTERNS: readonly RegExp[] = [
  * credential failure (an expired/revoked sign-in), rather than a generic
  * execution error. Matching is case-insensitive and conservative.
  *
- * @param input - The runtime error's human `message` and machine `code`/subtype.
+ * @param input - The runtime error's human `message` and machine `code`/subtype,
+ *   plus how sure the caller needs to be.
  */
-export function detectAuthError(input: { message?: string | null; code?: string | null }): boolean {
-  const { message, code } = input;
+export function detectAuthError(input: {
+  /** The runtime error's human text, if it carried any. */
+  message?: string | null;
+  /** The runtime error's machine code/subtype, if it carried one. */
+  code?: string | null;
+  /**
+   * Match message text only on {@link UNAMBIGUOUS_AUTH_MESSAGE_PATTERNS}. Set it
+   * on channels that also carry failures about something OTHER than the
+   * session's own sign-in (codex's per-item diagnostics), where a false positive
+   * stamps sign-in advice over a live turn's real error. Exact `code` matches
+   * are unaffected: a code from {@link AUTH_ERROR_SUBTYPES} names a credential
+   * failure outright and needs no corroboration.
+   */
+  unambiguousOnly?: boolean;
+}): boolean {
+  const { message, code, unambiguousOnly = false } = input;
 
   if (code && AUTH_ERROR_SUBTYPES.has(code)) return true;
 
   const haystack = `${message ?? ''}\n${code ?? ''}`;
   if (haystack.trim().length === 0) return false;
 
-  return AUTH_MESSAGE_PATTERNS.some((pattern) => pattern.test(haystack));
+  const patterns = unambiguousOnly ? UNAMBIGUOUS_AUTH_MESSAGE_PATTERNS : AUTH_MESSAGE_PATTERNS;
+  return patterns.some((pattern) => pattern.test(haystack));
 }
 
 /**
@@ -86,8 +123,8 @@ export function detectAuthError(input: { message?: string | null; code?: string 
  *
  * **Why one function rather than a string per call site.** A single expired
  * Claude Code sign-in used to reach people in two different voices depending on
- * which SDK channel reported it: the assistant-message channel said this
- * sentence, while the result channel forwarded the vendor's own text verbatim
+ * which SDK channel reported it: the assistant-message channel said DorkOS's own
+ * sentence, while the result channel forwarded the vendor's text verbatim
  * ("Failed to authenticate: OAuth session expired and could not be refreshed" —
  * a literal from the CLI binary). Same failure, same session, two products
  * talking. Vendor internals are also the wrong thing to lead with: they name
@@ -97,15 +134,32 @@ export function detectAuthError(input: { message?: string | null; code?: string 
  * `details`, which the client keeps behind a "Details" disclosure so debugging
  * loses nothing.
  *
- * The runtime NAMES ITSELF: an OpenCode credential failure must not tell
- * somebody to re-authenticate Claude. The name comes from
- * {@link runtimeDisplayName}, so a runtime is called the same thing here as it
- * is everywhere else in the app.
+ * **The runtime names ITSELF, and names the right remedy.** An OpenCode failure
+ * must not tell somebody to sign in to Claude — and it must not tell them to
+ * "sign in to OpenCode" either, because OpenCode has no single sign-in: it
+ * borrows a MODEL PROVIDER's credential, which is why reconnecting it opens the
+ * provider picker rather than a login ({@link runtimeAuthConnectKind}). So the
+ * sentence follows the connect kind, and its closing instruction matches the
+ * button a person will actually be looking for ("Sign in again" / "Choose a
+ * model provider"). The name comes from {@link runtimeDisplayName}, so a runtime
+ * is called the same thing here as everywhere else in the app.
+ *
+ * **Where this actually renders, so you do not chase it.** The chat panel does
+ * NOT paint this string: `ErrorMessageBlock` renders an `auth_error`'s own
+ * heading and subtext and falls back to the event's `message` only when no
+ * category is set. So this is the sentence every OTHER reader gets — an
+ * uncategorized surface, a transcript, a notification, an API consumer — and the
+ * one the panel would fall back to if its category copy ever went away. Editing
+ * it will not change what the chat panel shows; that copy lives in the client.
  *
  * @param runtimeType - Runtime type identifier (e.g. `'claude-code'`).
  */
 export function describeAuthError(runtimeType: string): string {
-  return `Authentication failed. Re-authenticate ${runtimeDisplayName(runtimeType)} and try again.`;
+  const name = runtimeDisplayName(runtimeType);
+  if (runtimeAuthConnectKind(runtimeType) === 'provider-picker') {
+    return `${name}'s model provider stopped accepting its sign-in. Choose a model provider to keep going.`;
+  }
+  return `Your ${name} sign-in stopped working. Sign in again to keep going.`;
 }
 
 /** The three error-event fields {@link describeRuntimeError} decides together. */
@@ -147,9 +201,13 @@ export function describeRuntimeError(input: {
   message: string;
   /** The backend's machine code/subtype for the failure, when it carried one. */
   code?: string | null;
+  /** Passed to {@link detectAuthError}; see that option for when to set it. */
+  unambiguousOnly?: boolean;
 }): RuntimeErrorCopy {
-  const { runtimeType, message, code } = input;
-  if (!detectAuthError({ message, code })) return { message, category: 'execution_error' };
+  const { runtimeType, message, code, unambiguousOnly = false } = input;
+  if (!detectAuthError({ message, code, unambiguousOnly })) {
+    return { message, category: 'execution_error' };
+  }
   return {
     message: describeAuthError(runtimeType),
     category: 'auth_error',

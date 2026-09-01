@@ -224,7 +224,7 @@ describe('mapResultEvent — error category classification', () => {
     );
     const data = errorData(events);
     expect(data?.category).toBe('auth_error');
-    expect(data?.message).toBe('Authentication failed. Re-authenticate Claude and try again.');
+    expect(data?.message).toBe('Your Claude sign-in stopped working. Sign in again to keep going.');
     // Translated, not deleted: the raw line stays reachable for debugging.
     expect(data?.details).toBe(vendorText);
   });

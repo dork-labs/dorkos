@@ -1014,7 +1014,8 @@ describe('mapOpenCodeEvent', () => {
         makeContext()
       );
       expect(events[0]!.data).toMatchObject({
-        message: 'Authentication failed. Re-authenticate OpenCode and try again.',
+        message:
+          "OpenCode's model provider stopped accepting its sign-in. Choose a model provider to keep going.",
         code: 'ProviderAuthError',
         category: 'auth_error',
         details: 'invalid api key',
@@ -1029,7 +1030,8 @@ describe('mapOpenCodeEvent', () => {
         makeContext()
       );
       expect(events[0]!.data).toMatchObject({
-        message: 'Authentication failed. Re-authenticate OpenCode and try again.',
+        message:
+          "OpenCode's model provider stopped accepting its sign-in. Choose a model provider to keep going.",
         code: 'ProviderAuthError',
         category: 'auth_error',
         details: 'the provider ended the session',
@@ -1048,6 +1050,22 @@ describe('mapOpenCodeEvent', () => {
       const events = mapOpenCodeEvent(sessionError(OC, outputLengthError()), makeContext());
       expect(events[0]!.data).toMatchObject({ code: 'MessageOutputLengthError' });
       expect((events[0]!.data as { message: string }).message.length).toBeGreaterThan(0);
+    });
+
+    it('opens no empty Details when a provider auth failure said nothing (DOR-1656)', () => {
+      // `details` exists to preserve what the provider said. With no message on
+      // the wire the fallback is the error NAME, and putting that behind a
+      // "Details" disclosure gives the person a control to click that reveals
+      // less than the code they can already see.
+      const events = mapOpenCodeEvent(
+        sessionError(OC, providerAuthError('anthropic', '')),
+        makeContext()
+      );
+      expect(events[0]!.data).toMatchObject({
+        code: 'ProviderAuthError',
+        category: 'auth_error',
+      });
+      expect((events[0]!.data as { details?: string }).details).toBeUndefined();
     });
 
     it('suppresses MessageAbortedError — the abort shape is a user interrupt, not a failure', () => {
@@ -1330,7 +1348,8 @@ describe('mapOpenCodeTurn', () => {
     }
     const events = await drain(crashing());
     expect(events[0]!.data).toMatchObject({
-      message: 'Authentication failed. Re-authenticate OpenCode and try again.',
+      message:
+        "OpenCode's model provider stopped accepting its sign-in. Choose a model provider to keep going.",
       code: 'stream_error',
       category: 'auth_error',
       details: vendorText,
