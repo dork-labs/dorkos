@@ -101,8 +101,10 @@ const CLAUDE_MODEL_CAPABILITIES = {
  * `ModelOption` carries `supportsToolUse` / `supportsVision` /
  * `supportsImageOutput` as a **tri-state**: `true` and `false` are claims, and
  * absent means "nobody checked". `ModelInfo` at the 0.3.224 pin reports exactly
- * the eight fields {@link SdkReportedModel} mirrors and nothing capability-shaped
- * beyond them, so the SDK cannot answer these three — re-check that on every SDK
+ * the nine fields {@link SdkReportedModel} mirrors (`value`, `resolvedModel`,
+ * `displayName`, `description`, `supportsEffort`, `supportedEffortLevels`,
+ * `supportsAdaptiveThinking`, `supportsFastMode`, `supportsAutoMode`) and nothing
+ * capability-shaped beyond them, so the SDK cannot answer these three — re-check that on every SDK
  * re-pin, and read from the SDK the moment it can. Until then the choice is
  * between a static claim and an honest absence, made per field rather than in
  * bulk, because a wrong `true` is worse than saying nothing:
@@ -131,6 +133,16 @@ const CLAUDE_MODEL_CAPABILITIES = {
  */
 export function mapSdkModelToModelOption(m: SdkReportedModel): ModelOption {
   return {
+    // FIRST on purpose, so that anything read from `m` below OVERRIDES a static
+    // claim rather than being silently overwritten by it. The doc above tells the
+    // next maintainer to read from the SDK the moment it can answer, and the
+    // natural edit is a `supportsVision: m.supportsVision` line grouped with its
+    // neighbours — which, with this spread last, would be discarded while both
+    // guarding tests still passed (they assert `true`, which is what the spread
+    // supplies). Add such a read as `...(m.supportsVision !== undefined ? {
+    // supportsVision: m.supportsVision } : {})` so an SDK that reports nothing
+    // for one model leaves the claim standing instead of blanking it.
+    ...CLAUDE_MODEL_CAPABILITIES,
     value: m.value,
     resolvedModel: m.resolvedModel,
     displayName: m.displayName,
@@ -140,7 +152,6 @@ export function mapSdkModelToModelOption(m: SdkReportedModel): ModelOption {
     supportsAdaptiveThinking: m.supportsAdaptiveThinking,
     supportsFastMode: m.supportsFastMode,
     supportsAutoMode: m.supportsAutoMode,
-    ...CLAUDE_MODEL_CAPABILITIES,
     provider: 'anthropic',
     family: extractFamily(m.value),
     tier: inferTier(m.value),

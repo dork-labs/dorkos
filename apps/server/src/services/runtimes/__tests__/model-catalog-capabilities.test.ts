@@ -53,15 +53,18 @@ describe('static model catalogs answer capability questions in booleans or not a
     });
   }
 
-  it('claims tool use and denies image output for every Codex model', () => {
-    // The claim this ticket added (DOR-1672). Codex drives a tool-calling agent
+  it('has every Codex model claim tool use and vision, and deny image output', () => {
+    // The claims this ticket added (DOR-1672). Codex drives a tool-calling agent
     // loop, so a model that could not call tools could not be in this catalog;
-    // and none of the GPT-5.x reasoning models returns generated images. Both are
-    // knowable, so both are stated rather than left blank.
+    // every GPT-5.x model accepts image input; and none of them returns generated
+    // images. All three are knowable, so all three are stated rather than left
+    // blank, and deleting any line from `CODEX_MODEL_CAPABILITIES` makes this red.
     //
-    // Deleting either line from `CODEX_MODEL_CAPABILITIES` makes this red. If a
-    // future model genuinely differs, override the flag on ITS entry — do not
-    // weaken the shared constant and do not delete this test.
+    // If a future catalog model genuinely differs, override the flag on ITS entry
+    // AND exempt that model here BY NAME. Do not relax the assertion for the whole
+    // catalog to accommodate one model — that trades a precise claim about five
+    // models for a vague one about all of them, which is how the flags drift back
+    // to meaningless.
     for (const model of CODEX_MODELS) {
       expect(model.supportsToolUse, `${model.value} must claim tool use`).toBe(true);
       expect(model.supportsImageOutput, `${model.value} must deny image output`).toBe(false);
