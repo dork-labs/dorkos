@@ -5,13 +5,15 @@
  * model is pulled, select it as OpenCode's provider with no account. The Direct
  * path stores an OpenAI-compatible provider key by reference and records the
  * provider + optional base URL. Both invalidate `['requirements']` so OpenCode
- * flips to Ready.
+ * flips to Ready, and `['models']` so the menu reflects the provider just
+ * selected.
  *
  * @module features/runtime-connect/model/use-opencode-provider
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { OllamaStatus } from '@dorkos/shared/runtime-connect';
 import { REQUIREMENTS_KEY } from '@/layers/entities/runtime';
+import { MODELS_KEY } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 
 /** Provider id recorded when connecting the Local (Ollama) path. */
@@ -75,6 +77,9 @@ export function useConnectOllama(): UseConnectOllama {
       transport.updateConfig({ runtimes: { opencode: { provider: OLLAMA_PROVIDER_ID } } }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: [...REQUIREMENTS_KEY] });
+      // The catalog changed with the connection: a new provider's models are
+      // now offered, and the old ones may not be (DOR-1660).
+      void queryClient.invalidateQueries({ queryKey: [...MODELS_KEY] });
     },
   });
 
@@ -129,6 +134,9 @@ export function useConnectDirectProvider(): UseConnectDirectProvider {
       transport.storeProviderCredential(providerId, key, baseURL?.trim() || null),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: [...REQUIREMENTS_KEY] });
+      // The catalog changed with the connection: a new provider's models are
+      // now offered, and the old ones may not be (DOR-1660).
+      void queryClient.invalidateQueries({ queryKey: [...MODELS_KEY] });
     },
   });
 

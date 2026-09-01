@@ -5,6 +5,7 @@
  */
 export { cn } from './utils';
 export { resolveApiBaseUrl } from './api-base-url';
+export { MODELS_KEY } from './models-query-key';
 export {
   getAuthRequired,
   setAuthRequired,

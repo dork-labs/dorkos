@@ -141,6 +141,21 @@ OpenCode reaches Ollama and any OpenAI-compatible endpoint through its own provi
   (e.g. `qwen2.5-coder:32b`) is a realistic floor for useful sessions.
 </Callout>
 
+### Models That Can't Do the Job
+
+A cloud gateway like OpenRouter offers hundreds of models, and not all of them can run a session.
+The model menu says so before you pick, rather than after:
+
+- Models that **can't use tools** sit under their own heading, **Can't do agent work**. They can
+  hold a conversation, but they can't read your files or run commands. They stay in the menu — if
+  you went looking for one, you should be able to find it.
+- Models that **make images** carry a note on the card. They work, but DorkOS can't display a
+  generated image yet, so a picture-making model looks like it answered with nothing. This note
+  goes away once DorkOS can show generated images (DOR-1663).
+
+If you pick a model your runtime can't run, DorkOS tells you straight away instead of saving the
+choice and failing on your next message.
+
 ## What to Expect
 
 Most people never hit the differences below. This section is the deep reference for anyone comparing runtimes closely, so it gets more technical than the rest of the page.

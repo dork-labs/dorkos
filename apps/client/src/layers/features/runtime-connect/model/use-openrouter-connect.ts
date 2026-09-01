@@ -3,15 +3,16 @@
  *
  * Two surfaces: the always-available paste-key path and the OAuth-PKCE path (a
  * browser-only, ToS-clean native flow). Every success invalidates
- * `['requirements']` so OpenCode flips to Ready. Keys are never returned or
- * cached — only references are persisted server-side.
+ * `['requirements']` so OpenCode flips to Ready and `['models']` so the model
+ * menu picks up the frontier catalog the key just unlocked. Keys are never
+ * returned or cached — only references are persisted server-side.
  *
  * @module features/runtime-connect/model/use-openrouter-connect
  */
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { REQUIREMENTS_KEY } from '@/layers/entities/runtime';
-import { openExternalLink } from '@/layers/shared/lib';
+import { MODELS_KEY, openExternalLink } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 
 /** The paste-key Gateway connect: validate + store an OpenRouter key. */
@@ -44,6 +45,9 @@ export function useStoreOpenRouterKey(): UseStoreOpenRouterKey {
     onSuccess: (result) => {
       if (result.ok) {
         void queryClient.invalidateQueries({ queryKey: [...REQUIREMENTS_KEY] });
+        // The catalog changed with the connection: a new provider's models are
+        // now offered, and the old ones may not be (DOR-1660).
+        void queryClient.invalidateQueries({ queryKey: [...MODELS_KEY] });
       }
     },
   });
@@ -126,6 +130,9 @@ export function useOpenRouterOAuth(): UseOpenRouterOAuth {
   useEffect(() => {
     if (status === 'connected') {
       void queryClient.invalidateQueries({ queryKey: [...REQUIREMENTS_KEY] });
+      // The catalog changed with the connection: a new provider's models are
+      // now offered, and the old ones may not be (DOR-1660).
+      void queryClient.invalidateQueries({ queryKey: [...MODELS_KEY] });
     }
   }, [status, queryClient]);
 

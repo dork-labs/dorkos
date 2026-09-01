@@ -11,9 +11,16 @@
  *    authorizes in a browser, and a loopback callback exchanges the returned code
  *    for a user-scoped key. {@link OpenRouterOAuthStore} + {@link exchangeCodeForKey}.
  *
- * A short-TTL cache fronts the public model catalog so the client dropdown does
- * not re-fetch on every open. Every network call is bounded so a slow/unreachable
- * OpenRouter degrades fast instead of hanging.
+ * A third, credential-free path lives here too: {@link fetchOpenRouterCatalog}
+ * reads OpenRouter's PUBLIC model list (`GET /api/v1/models`, no key) so the
+ * model picker can be honest about what OpenRouter actually serves today and
+ * what each of those models can do. A short-TTL cache fronts it so repeated
+ * picker opens do not re-fetch, and a FAILED probe is cached too so a
+ * write-path caller never re-pays a timeout it has just paid. Every network
+ * call here is bounded so a slow/unreachable OpenRouter degrades fast instead
+ * of hanging — for the catalog the bound covers the body read as well as the
+ * headers, because that response is ~700KB and a stalled body is just as much
+ * of a hang as a stalled connection.
  *
  * OAuth-PKCE contract (verified against OpenRouter's app-integration docs,
  * 2026-07): authorize at `https://openrouter.ai/auth?callback_url&code_challenge&
@@ -35,6 +42,7 @@ import { logger } from '../../../../lib/logger.js';
 const OPENROUTER_AUTH_URL = 'https://openrouter.ai/auth';
 const OPENROUTER_KEYS_EXCHANGE_URL = 'https://openrouter.ai/api/v1/auth/keys';
 const OPENROUTER_KEY_INFO_URL = 'https://openrouter.ai/api/v1/key';
+const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
 
 /** Provider id under which OpenRouter's key + selection are recorded. */
 const OPENROUTER_PROVIDER_ID = 'openrouter';
@@ -44,6 +52,42 @@ const OPENROUTER_FETCH_TIMEOUT_MS = 10_000;
 
 /** How long a started OAuth flow stays claimable before it is pruned. */
 const OAUTH_FLOW_TTL_MS = 10 * 60_000;
+
+/**
+ * How long a fetched public model catalog is served from cache before a
+ * re-fetch. Five minutes: long enough that opening the picker repeatedly costs
+ * one request, short enough that a model added upstream shows up the same
+ * session.
+ */
+const OPENROUTER_CATALOG_TTL_MS = 5 * 60_000;
+
+/**
+ * How long a FAILED catalog probe is remembered before another is attempted.
+ *
+ * Failures are cached, not just successes, and that is the whole point. This
+ * probe sits behind `getSupportedModels()`, which the model-write path calls on
+ * every model change — so an OpenRouter that is unreachable (a plane, a
+ * firewall that blackholes the host) would otherwise make every single model
+ * change pay the full {@link OPENROUTER_CATALOG_PROBE_TIMEOUT_MS} again. The
+ * sibling Ollama probe caches every result for exactly this reason
+ * (`ollama.ts`), and caching only successes was half of that pattern.
+ *
+ * Fifteen seconds, much shorter than the success TTL: a transient outage still
+ * self-heals within one picker open, while a sustained one is paid for once.
+ */
+const OPENROUTER_CATALOG_FAILURE_TTL_MS = 15_000;
+
+/**
+ * Bound on the public catalog probe — deliberately much tighter than
+ * {@link OPENROUTER_FETCH_TIMEOUT_MS}.
+ *
+ * The auth calls are user-initiated: someone pressed "Connect" and is watching,
+ * so ten seconds of patience is worth it. This probe is the opposite — nobody
+ * asked for it, it only ENRICHES a menu that works without it, and it runs on
+ * the write path. When it cannot answer quickly the honest move is to give up
+ * and show the sidecar's own catalog.
+ */
+const OPENROUTER_CATALOG_PROBE_TIMEOUT_MS = 4_000;
 
 /** Injectable `fetch` seam (defaults to global `fetch`); tests pass a mock. */
 export type FetchFn = typeof fetch;
@@ -93,6 +137,140 @@ async function boundedFetch(
     return await fetchImpl(url, { ...init, signal: controller.signal });
   } catch {
     throw new OpenRouterError('Could not reach OpenRouter. Check your network and try again.');
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// --- Public model catalog --------------------------------------------------
+
+/**
+ * What OpenRouter says one of its models can do (the fields the picker needs).
+ *
+ * Every field is TRI-STATE, exactly like the sidecar-side projection: `undefined`
+ * means OpenRouter did not tell us, and a caller must keep whatever it already
+ * believed rather than reading absence as `false`. This matters more here than
+ * it looks. These fields are read out of untyped JSON whose shape OpenRouter
+ * does not guarantee, so a renamed or dropped `supported_parameters` would, if
+ * absence collapsed to `false`, silently mark EVERY OpenRouter model as unable
+ * to do agent work — a total menu wipe dressed up as a successful probe.
+ */
+export interface OpenRouterCatalogEntry {
+  /** Whether the model accepts tool definitions — an agent turn is impossible without it. */
+  supportsTools?: boolean;
+  /** Whether the model accepts images as input. */
+  supportsVision?: boolean;
+  /** Whether the model answers with generated images rather than only text. */
+  supportsImageOutput?: boolean;
+}
+
+/** The live OpenRouter model catalog, keyed by model id (e.g. `anthropic/claude-opus-5`). */
+export type OpenRouterCatalog = ReadonlyMap<string, OpenRouterCatalogEntry>;
+
+/** The slice of `GET /api/v1/models` this module reads (verified live 2026-09-01). */
+interface OpenRouterModelsResponse {
+  data?: Array<{
+    id?: unknown;
+    supported_parameters?: unknown;
+    architecture?: { input_modalities?: unknown; output_modalities?: unknown };
+  }>;
+}
+
+interface CatalogCache {
+  /** The catalog, or `null` when the probe failed (failures are cached too). */
+  catalog: OpenRouterCatalog | null;
+  fetchedAt: number;
+}
+let catalogCache: CatalogCache | null = null;
+
+/** Reset the public-catalog cache — test-only seam (mirrors `resetOllamaCache`). */
+export function resetOpenRouterCatalogCache(): void {
+  catalogCache = null;
+}
+
+/**
+ * Whether an untyped JSON field says it contains `needle`.
+ *
+ * Tri-state on purpose: a value that is not an array is not a model that lacks
+ * the capability, it is OpenRouter not answering the question, and the two must
+ * never be confused. See {@link OpenRouterCatalogEntry}.
+ *
+ * @param value - The raw field from the response.
+ * @param needle - The member whose presence is the capability.
+ */
+function listIncludes(value: unknown, needle: string): boolean | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.includes(needle);
+}
+
+/**
+ * Fetch OpenRouter's PUBLIC model catalog — what it actually serves right now,
+ * and what each of those models can do.
+ *
+ * Credential-free (`GET /api/v1/models` needs no key), bounded, and throw-free:
+ * any failure — unreachable, non-2xx, unparseable, or an empty list — resolves
+ * to `null`, which every caller must read as "unknown", NOT as "nothing is
+ * available". A probe failure must never empty the model menu.
+ *
+ * Successes are cached for {@link OPENROUTER_CATALOG_TTL_MS} and FAILURES for
+ * {@link OPENROUTER_CATALOG_FAILURE_TTL_MS} — the short negative TTL is what
+ * stops a write-path caller re-paying a timeout it has already paid, while
+ * still letting a transient outage heal within one picker open.
+ *
+ * @param deps - Injectable `fetch` seam.
+ */
+export async function fetchOpenRouterCatalog(
+  deps: OpenRouterFetchDeps = {}
+): Promise<OpenRouterCatalog | null> {
+  if (catalogCache) {
+    const ttl = catalogCache.catalog
+      ? OPENROUTER_CATALOG_TTL_MS
+      : OPENROUTER_CATALOG_FAILURE_TTL_MS;
+    if (Date.now() - catalogCache.fetchedAt < ttl) return catalogCache.catalog;
+  }
+  const catalog = await probeOpenRouterCatalog(deps.fetchImpl ?? fetch);
+  catalogCache = { catalog, fetchedAt: Date.now() };
+  return catalog;
+}
+
+/**
+ * One bounded, throw-free catalog probe. `null` on any failure (see the caller's
+ * contract).
+ *
+ * Owns its own {@link AbortController} rather than reusing {@link boundedFetch},
+ * because that helper releases its timer once the RESPONSE resolves — correct
+ * for the small auth bodies it was written for, but this body is ~700KB and a
+ * stall part-way through it would otherwise fall through to undici's own
+ * multi-minute default. Here one signal covers the request and the body read.
+ */
+async function probeOpenRouterCatalog(fetchImpl: FetchFn): Promise<OpenRouterCatalog | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), OPENROUTER_CATALOG_PROBE_TIMEOUT_MS);
+  try {
+    const res = await fetchImpl(OPENROUTER_MODELS_URL, { signal: controller.signal });
+    if (!res.ok) return null;
+    const body = (await res.json()) as OpenRouterModelsResponse;
+    const entries = new Map<string, OpenRouterCatalogEntry>();
+    for (const model of body.data ?? []) {
+      if (typeof model?.id !== 'string' || model.id.length === 0) continue;
+      const tools = listIncludes(model.supported_parameters, 'tools');
+      const vision = listIncludes(model.architecture?.input_modalities, 'image');
+      const imageOutput = listIncludes(model.architecture?.output_modalities, 'image');
+      entries.set(model.id, {
+        ...(tools !== undefined ? { supportsTools: tools } : {}),
+        ...(vision !== undefined ? { supportsVision: vision } : {}),
+        ...(imageOutput !== undefined ? { supportsImageOutput: imageOutput } : {}),
+      });
+    }
+    // An empty list is a broken answer, not an honest "OpenRouter serves
+    // nothing" — reading it as truth would empty the menu, the exact failure
+    // this whole path exists to avoid. A SHORT-but-non-empty list is caught
+    // further on, by the coverage floor in the projection.
+    if (entries.size === 0) return null;
+    return entries;
+  } catch {
+    logger.debug('[OpenRouter] public model catalog unavailable');
+    return null;
   } finally {
     clearTimeout(timer);
   }
