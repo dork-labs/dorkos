@@ -69,6 +69,14 @@ const ALLOWED = new Map<string, string>([
       'the generator the dispatcher asked for so the span covers the real turn.',
   ],
   [
+    'apps/server/src/services/observability/runtime-signin-watch.ts',
+    'The sign-in watch, and a decorator on exactly the terms `trace-runtime.ts` ' +
+      'is one: it wraps the generator a caller already asked for so a dead ' +
+      'credential reaches the operator, and starts nothing of its own. It is ' +
+      'registered at the same seam (`RuntimeRegistry.register`), sits OUTSIDE ' +
+      'the tracing wrap, and re-yields every event untouched (DOR-1654).',
+  ],
+  [
     'apps/server/src/services/tasks/task-scheduler-service.ts',
     'A scheduled run is not a person-initiated turn and does not contend for a ' +
       'session: it mints a FRESH session per run (`sessionId = run.id`), consumes ' +

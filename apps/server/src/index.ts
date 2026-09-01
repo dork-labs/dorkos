@@ -74,6 +74,7 @@ import {
 } from './services/notifications/notification-service.js';
 import { watchSessionLifecycle } from './services/notifications/emitters/session-lifecycle.js';
 import { watchAskResolution } from './services/notifications/emitters/ask-resolution.js';
+import { watchRuntimeSigninFailures } from './services/notifications/emitters/runtime-signin.js';
 import { deadLetterPayload } from './services/notifications/emitters/dead-letter.js';
 import { agentLivenessObserver } from './services/notifications/emitters/agent-liveness.js';
 import { announceInstalledVersion } from './services/notifications/emitters/update-installed.js';
@@ -746,6 +747,9 @@ async function start() {
   watchSessionLifecycle();
   // How every Ask ended — including the ones nobody answered.
   watchAskResolution();
+  // A runtime whose sign-in stopped working, noticed at whichever turn trips
+  // over it first — including the 3am ones nobody is watching (DOR-1654).
+  watchRuntimeSigninFailures();
   // Nothing tells the server it was updated, so it compares versions on boot.
   void announceInstalledVersion(dorkHome);
   // "While you were away" — composed once the day's first activity arrives.

@@ -89,6 +89,7 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     reason: 'no endpoint accepted it',
   },
   'agent.unreachable': { agentId: 'agent-1', agentName: 'Ana' },
+  'signin.required': { runtime: 'claude-code' },
   'update.installed': { version: '0.61.0', previousVersion: '0.60.0' },
   'report.daily': {
     date: '2026-08-20',
@@ -110,6 +111,7 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'agent.note': 'notable',
   'dead-letter.created': 'quiet',
   'agent.unreachable': 'quiet',
+  'signin.required': 'notable',
   'update.installed': 'quiet',
   'report.daily': 'quiet',
 };
@@ -191,6 +193,7 @@ describe('notification registry', () => {
       'run.completed',
       'schedule.parked',
       'session.error',
+      'signin.required',
       'turn.completed',
       'update.installed',
     ]);

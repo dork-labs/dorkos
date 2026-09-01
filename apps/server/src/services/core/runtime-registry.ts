@@ -16,7 +16,7 @@ import {
 } from '../session/resolve-session-defaults.js';
 import { sessionMetadata, eq, inArray, isNull, sql, type Db, type SQL } from '@dorkos/db';
 import { logger } from '../../lib/logger.js';
-import { traceRuntime } from '../observability/index.js';
+import { traceRuntime, watchRuntimeSignin } from '../observability/index.js';
 
 /** Columns read from `session_metadata` for the settings projection. */
 type SettingsRow = {
@@ -160,7 +160,14 @@ export class RuntimeRegistry {
     // Wrap at the one registration seam so every runtime call is traced when
     // debug tracing is on, and left untouched (zero overhead) when off — no
     // span code leaks into the runtime adapters.
-    this.runtimes.set(runtime.type, traceRuntime(runtime));
+    //
+    // The sign-in watch wraps OUTSIDE the tracing one so it is always present:
+    // tracing returns the runtime untouched when it is off, and a credential
+    // failure has to reach the operator whether or not anybody turned tracing
+    // on. This is the one seam every turn passes through — the interactive
+    // composer, a room reply, a scheduled run and a relay delivery all resolve
+    // their runtime from here (DOR-1654).
+    this.runtimes.set(runtime.type, watchRuntimeSignin(traceRuntime(runtime)));
   }
 
   /**
