@@ -594,6 +594,10 @@ export function opencodeRepublishedImageTurn(sessionID: string): OpenCodeWireEve
   const generated = filePart(sessionID, 'prt_gen01', { filename: 'banana.png' });
   return [
     statusEvent(sessionID, { type: 'busy' }),
+    // Parts name only a messageID; this announcement is what tells the mapper
+    // they are the ASSISTANT's (DOR-1659) — without it every part below is
+    // un-attributed and dropped, and the media intents never record.
+    messageUpdated(assistantMessage(sessionID)),
     partUpdated(toolPart(sessionID, 'call_img', 'screenshot', toolStateRunning(input))),
     partUpdated(
       toolPart(
@@ -622,6 +626,8 @@ export function opencodeRepublishedImageTurn(sessionID: string): OpenCodeWireEve
 export function opencodeGeneratedImageTurn(sessionID: string): OpenCodeWireEvent[] {
   return [
     statusEvent(sessionID, { type: 'busy' }),
+    // Same attribution rule as the republished-image turn above (DOR-1659).
+    messageUpdated(assistantMessage(sessionID)),
     partUpdated(filePart(sessionID, 'prt_gen01', { filename: 'banana.png' })),
     messageUpdated(assistantMessage(sessionID, { completed: true })),
     statusEvent(sessionID, { type: 'idle' }),
