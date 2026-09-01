@@ -283,15 +283,15 @@ export function ModelConfigPopover({
         // "Can't use tools, so it can't read files or run commands." — on one
         // line, which is the measurement that picked the number.
         //
-        // Deliberately no `max-w-[calc(100vw-…)]` guard, unlike the two clamped
-        // panels above: this is a Popover only at 768px and up (`useIsMobile`), where
-        // the viewport is always more than 480px wide, so such a clamp could
-        // never fire. Below 768px this is a full-width sheet that ignores the
-        // caller's className outright. The one place a fixed 480 can outgrow
-        // what holds it is an embedded pane narrower than its window — Obsidian
-        // — and a `100vw` clamp does not help there either, because `vw` is the
-        // window, not the pane.
-        className="w-120 p-3"
+        // The viewport clamp rides along, like the two clamped panels above.
+        // "768px and up can always hold 480px" is only true at a 16px root:
+        // the breakpoint is a px media query while `w-120` is 30rem, so a
+        // raised browser font size scales the panel without moving the switch
+        // (root 24px puts a 720px panel in a 768px window). Below 768px this
+        // is a full-width sheet that ignores the caller's className outright.
+        // An embedded pane narrower than its window (Obsidian) is the one case
+        // the clamp still misses — `vw` is the window, not the pane.
+        className="w-120 max-w-[calc(100vw-1.5rem)] p-3"
         data-testid="model-config-popover"
       >
         <ResponsivePopoverTitle>Model</ResponsivePopoverTitle>

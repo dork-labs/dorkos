@@ -115,7 +115,14 @@ export const UNVERIFIED_CATALOG: ModelOption[] = OPENROUTER_CATALOG.slice(0, 5).
   unverified: true,
 }));
 
-/** What the panel looked like before OpenRouter: four short names, no search. */
+/**
+ * A first-party catalog: three short names, each with the tier the real
+ * claude-code mapper always stamps (`inferTier` — opus→flagship,
+ * sonnet→balanced, haiku→fast). The tiers matter for honesty: one tiered model
+ * is enough to flip `shouldUseTieredMenu`, so the app never draws this catalog
+ * as a flat list — a tierless fixture here would demo a menu the product does
+ * not have (DOR-1673 review).
+ */
 export const CLAUDE_CODE_CATALOG: ModelOption[] = [
   {
     value: 'claude-opus-4-6',
@@ -126,17 +133,20 @@ export const CLAUDE_CODE_CATALOG: ModelOption[] = [
     supportsEffort: true,
     supportedEffortLevels: ['low', 'medium', 'high'],
     supportsFastMode: true,
+    tier: 'flagship',
   },
   {
     value: 'claude-sonnet-4-6',
     displayName: 'Sonnet',
     description: 'Balanced performance',
     contextWindow: 200_000,
+    tier: 'balanced',
   },
   {
     value: 'claude-haiku-4-5',
     displayName: 'Haiku',
     description: 'Fastest responses',
     contextWindow: 200_000,
+    tier: 'fast',
   },
 ];

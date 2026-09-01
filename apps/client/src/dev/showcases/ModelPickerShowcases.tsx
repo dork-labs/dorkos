@@ -2,7 +2,7 @@
  * The model picker — the panel behind the model name in the status line.
  *
  * It is here because it is the one panel in the app that has to draw a
- * stranger's catalog. Claude Code offers four models with names like "Opus";
+ * stranger's catalog. Claude Code offers a few models with names like "Opus";
  * OpenRouter offers hundreds, with ids namespaced two levels deep and rows that
  * have to admit what the model cannot do. The second case is what set the
  * panel's width and its per-line overflow rules (DOR-1673), and neither is
@@ -88,7 +88,7 @@ export function ModelPickerShowcases() {
   return (
     <PlaygroundSection
       title="Model picker"
-      description="Click a model name to open the real panel. It is 480px wide on desktop and a full-width sheet below 768px — resize the browser window itself to see the second one, not the demo's viewport buttons, because the switch is a media query."
+      description="Click a model name to open the real panel. On desktop it opens at the width the panel picks for itself; on a phone-sized window it becomes a full-width sheet — resize the browser window itself to see the second one, not the demo's viewport buttons, because the switch is a media query."
     >
       <ShowcaseLabel>OpenRouter — long ids, and rows that admit their limits</ShowcaseLabel>
       <ShowcaseDemo>
@@ -108,7 +108,7 @@ export function ModelPickerShowcases() {
         />
       </ShowcaseDemo>
 
-      <ShowcaseLabel>Claude Code — four short names, no search</ShowcaseLabel>
+      <ShowcaseLabel>Claude Code — three short names in a tiered menu</ShowcaseLabel>
       <ShowcaseDemo>
         <PickerDemo models={CLAUDE_CODE_CATALOG} selected="claude-opus-4-6" />
       </ShowcaseDemo>
