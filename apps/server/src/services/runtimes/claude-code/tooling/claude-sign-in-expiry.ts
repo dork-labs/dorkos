@@ -51,8 +51,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { runBinaryProbe } from '../../shared/run-probe.js';
 import { logger } from '../../../../lib/logger.js';
-import { ambientClaudeConfigDir } from '../claude-config-env-lock.js';
-import { inheritedClaudeRoot } from '../claude-config-dir.js';
+import { claudeConfigDirEnv } from '../claude-config-dir.js';
 
 /** Hard bound on the credential-store read, matching the sibling CLI probes. */
 const EXPIRY_PROBE_TIMEOUT_MS = 5_000;
@@ -167,33 +166,40 @@ export function toIsoDeadline(epochMs: number): string | undefined {
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 }
 
-/** Read the raw credential store for the ambient account (macOS Keychain, or the file beside it). */
-async function readCredentialStore(): Promise<string> {
+/** Read the raw credential store for `root` (macOS Keychain, or the file beside it). */
+async function readCredentialStore(root: string): Promise<string> {
   if (process.platform === 'darwin') {
-    const service = claudeCredentialKeychainService(ambientClaudeConfigDir());
+    // Which Keychain BRANCH Claude Code takes is decided by whether it would see
+    // `CLAUDE_CONFIG_DIR` set for this root, not by the root itself — so ask the
+    // same function that builds the spawn env, rather than restating its rule.
+    const service = claudeCredentialKeychainService(claudeConfigDirEnv(root).CLAUDE_CONFIG_DIR);
     return runBinaryProbe(
       SECURITY_BINARY,
       ['find-generic-password', '-w', '-s', service],
       EXPIRY_PROBE_TIMEOUT_MS
     );
   }
-  return readFile(path.join(inheritedClaudeRoot(), CREDENTIALS_FILENAME), 'utf-8');
+  return readFile(path.join(root, CREDENTIALS_FILENAME), 'utf-8');
 }
 
 /**
- * Read the deadlines on the sign-in that `claude auth status` just reported on.
+ * Read the deadlines on the sign-in belonging to `root`.
  *
- * Resolves the SAME account that probe saw: it inherits the ambient environment,
- * so the ambient `CLAUDE_CONFIG_DIR` decides which store is read. Reading a
- * different account's store would attach one account's deadline to another
- * account's "signed in" answer.
+ * The account is passed in rather than resolved here, because it must be the
+ * SAME one the caller pinned its `claude auth status` probe to and the same one
+ * sessions actually launch on. Resolving the ambient environment here instead
+ * would let the card assert a dead sign-in for an account no session uses, on a
+ * machine where a chosen default account is signed in perfectly well.
  *
+ * @param root - Absolute Claude config directory whose sign-in to read.
  * @returns The deadlines, or `null` whenever they cannot be established — which
  *   callers must treat as "no information", never as a problem.
  */
-export async function readClaudeSignInDeadlines(): Promise<ClaudeSignInDeadlines | null> {
+export async function readClaudeSignInDeadlines(
+  root: string
+): Promise<ClaudeSignInDeadlines | null> {
   try {
-    return parseClaudeSignInDeadlines(await readCredentialStore());
+    return parseClaudeSignInDeadlines(await readCredentialStore(root));
   } catch (err) {
     // Expected and uninteresting on any machine that signs in another way (an
     // API key, a locked Keychain, a store this platform does not have), so this

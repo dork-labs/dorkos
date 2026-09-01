@@ -8,6 +8,7 @@ import {
 } from '../../../shared/run-probe.js';
 import { logger } from '../../../../../lib/logger.js';
 import { readClaudeSignInDeadlines } from '../claude-sign-in-expiry.js';
+import { resolveActiveClaudeRoot } from '../../claude-config-dir.js';
 import { checkClaudeDependencies } from '../check-dependency.js';
 
 // The dependency check must be fully async + bounded: bundled resolution is a
@@ -36,11 +37,18 @@ vi.mock('../claude-sign-in-expiry.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../claude-sign-in-expiry.js')>()),
   readClaudeSignInDeadlines: vi.fn(),
 }));
+// Account resolution reads real user config; stub it so these tests pin WHICH
+// account the two probes name rather than whatever this machine has configured.
+vi.mock('../../claude-config-dir.js', () => ({
+  resolveActiveClaudeRoot: vi.fn(),
+  claudeConfigDirEnv: vi.fn((root: string) => ({ CLAUDE_CONFIG_DIR: root })),
+}));
 
 const mockedBundled = vi.mocked(resolveClaudeBinaryBeforePath);
 const mockedFind = vi.mocked(findBinaryOnPath);
 const mockedProbe = vi.mocked(runBinaryProbe);
 const mockedDeadlines = vi.mocked(readClaudeSignInDeadlines);
+const mockedActiveRoot = vi.mocked(resolveActiveClaudeRoot);
 
 const BUNDLED = '/bundled/claude';
 const AUTH_CHECK_NAME = 'Claude Code authentication';
@@ -361,7 +369,9 @@ describe('checkClaudeDependencies — sign-in expiry', () => {
   });
 
   it('never reads a deadline for an inherited API key, whose sign-in has none', async () => {
-    bundledHost(() => JSON.stringify({ loggedIn: true, authMethod: 'api_key' }));
+    bundledHost(() =>
+      JSON.stringify({ loggedIn: true, authMethod: 'api_key', apiKeySource: 'ANTHROPIC_API_KEY' })
+    );
 
     const [, auth] = await checkClaudeDependencies({ config: stubConfig({}) });
 
@@ -370,6 +380,49 @@ describe('checkClaudeDependencies — sign-in expiry', () => {
     // Attributing the stored account's deadline to an env credential would warn
     // about an account that is not even in use, so the read must not happen.
     expect(mockedDeadlines).not.toHaveBeenCalled();
+  });
+
+  it('never demotes an operator whose env key is doing the work, however stale the stored sign-in', async () => {
+    // Measured against claude 2.1.224: an ANTHROPIC_API_KEY alongside a stored
+    // sign-in still reports `authMethod: "claude.ai"`, with `apiKeySource` set
+    // and null identity fields. Gating on `authMethod` alone would call this
+    // machine's sign-in "run out" and block a runtime whose every turn works.
+    bundledHost(() =>
+      JSON.stringify({
+        loggedIn: true,
+        authMethod: 'claude.ai',
+        apiKeySource: 'ANTHROPIC_API_KEY',
+        email: null,
+        subscriptionType: null,
+      })
+    );
+    mockedDeadlines.mockResolvedValue({
+      accessExpiresAt: NOW - 86_400_000,
+      renewableUntil: NOW - 1,
+    });
+
+    const [, auth] = await checkClaudeDependencies({ config: stubConfig({}) });
+
+    expect(auth.status).toBe('satisfied');
+    expect(auth.expiresAt).toBeUndefined();
+    expect(mockedDeadlines).not.toHaveBeenCalled();
+  });
+
+  it('asks about the account sessions actually launch on, not the ambient one', async () => {
+    bundledHost(() => LOGGED_IN_JSON);
+    mockedActiveRoot.mockReturnValue('/home/dev/.claude-work');
+
+    await checkClaudeDependencies({ config: stubConfig({}) });
+
+    // Both halves must name the same account: a `loggedIn` answer for one
+    // account and a deadline for another would describe nobody's sign-in.
+    expect(mockedDeadlines).toHaveBeenCalledWith('/home/dev/.claude-work');
+    expect(mockedProbe).toHaveBeenCalledWith(
+      BUNDLED,
+      ['auth', 'status', '--json'],
+      expect.any(Number),
+      expect.objectContaining({ CLAUDE_CONFIG_DIR: '/home/dev/.claude-work' })
+    );
   });
 
   it('never reads a deadline for an inherited OAuth token', async () => {

@@ -29,8 +29,17 @@ import { logger } from '../../../lib/logger.js';
  * @param binary - Absolute path or PATH name of the executable to run.
  * @param args - Argument vector (no shell, no interpolation — spec §Security).
  * @param timeoutMs - Hard upper bound on the probe.
+ * @param env - Full environment for the child. Omit to inherit this process's.
+ *   Pass one when the probe's answer depends on which account/config the child
+ *   resolves, so the probe describes the same account the real work will use
+ *   rather than whichever one the launching shell happened to export.
  */
-export function runBinaryProbe(binary: string, args: string[], timeoutMs: number): Promise<string> {
+export function runBinaryProbe(
+  binary: string,
+  args: string[],
+  timeoutMs: number,
+  env?: NodeJS.ProcessEnv
+): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     let settled = false;
     const finish = (fn: () => void): void => {
@@ -49,7 +58,12 @@ export function runBinaryProbe(binary: string, args: string[], timeoutMs: number
     execFile(
       binary,
       args,
-      { encoding: 'utf-8', timeout: timeoutMs, killSignal: 'SIGKILL' },
+      {
+        encoding: 'utf-8',
+        timeout: timeoutMs,
+        killSignal: 'SIGKILL',
+        ...(env ? { env } : {}),
+      },
       (err, stdout) => {
         if (err) return finish(() => reject(err));
         finish(() => resolve((typeof stdout === 'string' ? stdout : String(stdout)).trim()));

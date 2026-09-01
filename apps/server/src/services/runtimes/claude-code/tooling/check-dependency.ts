@@ -57,6 +57,7 @@ import {
   readClaudeSignInDeadlines,
   toIsoDeadline,
 } from './claude-sign-in-expiry.js';
+import { claudeConfigDirEnv, resolveActiveClaudeRoot } from '../claude-config-dir.js';
 
 /** Hard bound on each Claude CLI probe (the PATH locate, `--version`, and `auth status`). */
 const PROBE_TIMEOUT_MS = CLAUDE_PROBE_TIMEOUT_MS;
@@ -178,10 +179,31 @@ async function checkPersistedCredential(
 
 /**
  * The one sign-in method that carries a renewal deadline DorkOS can read: the
- * stored claude.ai subscription login. An inherited `ANTHROPIC_API_KEY` or
- * `CLAUDE_CODE_OAUTH_TOKEN` has none.
+ * stored claude.ai subscription login.
  */
 const SUBSCRIPTION_AUTH_METHOD = 'claude.ai';
+
+/**
+ * Whether the stored subscription sign-in is what will actually serve turns —
+ * the only case whose deadline is worth acting on.
+ *
+ * `authMethod` alone is NOT enough, and believing it was is a real trap. Measured
+ * against claude 2.1.224: with `ANTHROPIC_API_KEY` exported AND a stored sign-in
+ * present, the CLI reports `authMethod: "claude.ai"` WITH `apiKeySource:
+ * "ANTHROPIC_API_KEY"` (and null email/subscriptionType). `api_key` appears only
+ * when the config dir holds no stored sign-in at all. So gating on `authMethod`
+ * by itself would demote an operator with a working env key and a lapsed stored
+ * sign-in to "run out" — blocking a runtime on a machine where every turn works.
+ *
+ * `apiKeySource` is the crisp discriminator: present exactly when a key is in
+ * play, absent for a pure subscription sign-in and for an inherited
+ * `CLAUDE_CODE_OAUTH_TOKEN` (which reports `oauth_token` and has no deadline).
+ *
+ * @param status - What the CLI reported about this machine's sign-in.
+ */
+function usesStoredSubscription(status: ClaudeAuthStatus): boolean {
+  return status.authMethod === SUBSCRIPTION_AUTH_METHOD && status.apiKeySource === undefined;
+}
 
 /**
  * Describe a sign-in the CLI reports as working, adding its renewal deadline
@@ -194,14 +216,15 @@ const SUBSCRIPTION_AUTH_METHOD = 'claude.ai';
  * case through the SAME Connect path a signed-out CLI takes, so the fix a person
  * is offered is the fix they need.
  *
- * The deadline is only consulted for the subscription sign-in. Reading it for an
- * inherited env credential would describe a stored account that is not even the
- * one in use — and an unreadable deadline (`null`) always means "no information",
- * never a problem, so it leaves the answer exactly as the CLI reported it.
+ * Consulted only when the stored subscription sign-in is what serves turns (see
+ * {@link usesStoredSubscription}) — and an unreadable deadline (`null`) always
+ * means "no information", never a problem, so it leaves the answer exactly as
+ * the CLI reported it.
  *
  * @param status - What the CLI reported about this machine's sign-in.
+ * @param root - The Claude account this check is pinned to.
  */
-async function describeHostLogin(status: ClaudeAuthStatus): Promise<DependencyCheck> {
+async function describeHostLogin(status: ClaudeAuthStatus, root: string): Promise<DependencyCheck> {
   const name = AUTH_CHECK_NAME;
   const signedIn: DependencyCheck = {
     name,
@@ -209,9 +232,9 @@ async function describeHostLogin(status: ClaudeAuthStatus): Promise<DependencyCh
     status: 'satisfied',
   };
 
-  if (status.authMethod !== SUBSCRIPTION_AUTH_METHOD) return signedIn;
+  if (!usesStoredSubscription(status)) return signedIn;
 
-  const deadlines = await readClaudeSignInDeadlines();
+  const deadlines = await readClaudeSignInDeadlines(root);
   if (!deadlines) return signedIn;
 
   const expiresAt = toIsoDeadline(deadlines.renewableUntil);
@@ -235,12 +258,22 @@ async function describeHostLogin(status: ClaudeAuthStatus): Promise<DependencyCh
  * The eval harness asks that same probe the same question, so readiness here and
  * a credentialed eval boot can never disagree about this machine's sign-in.
  *
+ * Both this probe and the deadline read are pinned to `root`, the account
+ * sessions actually launch on. Left to inherit the ambient environment they
+ * would describe whichever account the launching shell exported, so an operator
+ * with a chosen default account could be told their sign-in had run out for an
+ * account no session uses.
+ *
  * @param binary - The resolved `claude` binary (or `null`).
+ * @param root - The Claude account to report on.
  */
-async function checkHostLogin(binary: string | null): Promise<DependencyCheck> {
-  const status = await readClaudeAuthStatus(binary);
+async function checkHostLogin(binary: string | null, root: string): Promise<DependencyCheck> {
+  const status = await readClaudeAuthStatus(binary, {
+    ...process.env,
+    ...claudeConfigDirEnv(root),
+  });
 
-  if (status?.loggedIn === true) return describeHostLogin(status);
+  if (status?.loggedIn === true) return describeHostLogin(status, root);
 
   return {
     name: AUTH_CHECK_NAME,
@@ -264,7 +297,9 @@ async function checkAuthState(
 ): Promise<DependencyCheck> {
   const persisted = await checkPersistedCredential(deps);
   if (persisted) return persisted;
-  return checkHostLogin(binary);
+  // Resolved here rather than passed down from the caller: it is only the host
+  // login rung that has an account, and only after the stored-key rung declines.
+  return checkHostLogin(binary, resolveActiveClaudeRoot(deps.config));
 }
 
 /**

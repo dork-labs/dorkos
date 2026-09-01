@@ -272,6 +272,17 @@ describe('RuntimeCardView', () => {
     );
   });
 
+  it('drops the countdown for a plain warning once the sign-in is out of time', () => {
+    // The card still reads Ready — truthfully, for a few more hours — so the
+    // line has to carry the whole message on its own.
+    renderCard({ expiringSignIn: { expiresAt: '2026-08-31T20:51:43.000Z', timeLeft: null } });
+
+    expect(screen.getByTestId('runtime-ready-claude-code')).toBeInTheDocument();
+    expect(screen.getByTestId('runtime-sign-in-expiring-claude-code')).toHaveTextContent(
+      'Your Claude Code sign-in is out of time and will stop working shortly. Sign in again to avoid an interruption.'
+    );
+  });
+
   it('says nothing about expiry when no deadline is known — which is most of the time', () => {
     renderCard();
 

@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { runBinaryProbe } from '../../../shared/run-probe.js';
-import { ambientClaudeConfigDir } from '../../claude-config-env-lock.js';
-import { inheritedClaudeRoot } from '../../claude-config-dir.js';
+import { claudeConfigDirEnv } from '../../claude-config-dir.js';
 import {
   claudeCredentialKeychainService,
   isSignInUnusable,
@@ -13,8 +12,7 @@ vi.mock('../../../shared/run-probe.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../shared/run-probe.js')>()),
   runBinaryProbe: vi.fn(),
 }));
-vi.mock('../../claude-config-env-lock.js', () => ({ ambientClaudeConfigDir: vi.fn() }));
-vi.mock('../../claude-config-dir.js', () => ({ inheritedClaudeRoot: vi.fn() }));
+vi.mock('../../claude-config-dir.js', () => ({ claudeConfigDirEnv: vi.fn() }));
 vi.mock('node:fs/promises', () => ({ readFile: vi.fn() }));
 vi.mock('../../../../../lib/logger.js', () => ({
   logger: { warn: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn() },
@@ -22,8 +20,12 @@ vi.mock('../../../../../lib/logger.js', () => ({
 }));
 
 const mockedProbe = vi.mocked(runBinaryProbe);
-const mockedAmbient = vi.mocked(ambientClaudeConfigDir);
-const mockedInherited = vi.mocked(inheritedClaudeRoot);
+const mockedConfigDirEnv = vi.mocked(claudeConfigDirEnv);
+
+/** A synthetic default account: the one Claude Code reaches with CLAUDE_CONFIG_DIR unset. */
+const DEFAULT_ROOT = '/home/dev/.claude';
+/** A synthetic non-default account, which Claude Code reaches with CLAUDE_CONFIG_DIR set. */
+const NAMED_ROOT = '/home/dev/.claude-work';
 
 /** Build a credential blob in the shape the Claude CLI actually stores. */
 function credentialBlob(claudeAiOauth: Record<string, unknown>): string {
@@ -171,12 +173,12 @@ describe('claudeCredentialKeychainService', () => {
   });
 
   it('suffixes with the first 8 hex of sha256(configDir) when it is set', () => {
-    // Pinned against real Keychain entries on the operator's machine.
-    expect(claudeCredentialKeychainService('/Users/doriancollier/.claude2')).toBe(
-      'Claude Code-credentials-c4dc3e45'
-    );
-    expect(claudeCredentialKeychainService('/Users/doriancollier/.claude3')).toBe(
-      'Claude Code-credentials-5c6a992c'
+    // The naming rule was confirmed against real Keychain entries; these paths
+    // are synthetic, and only the hash of the literal matters, so they pin the
+    // rule identically on any machine.
+    expect(claudeCredentialKeychainService(NAMED_ROOT)).toBe('Claude Code-credentials-685abfe8');
+    expect(claudeCredentialKeychainService('/home/dev/.claude-play')).toBe(
+      'Claude Code-credentials-5f3e7973'
     );
   });
 });
@@ -186,40 +188,57 @@ describe('readClaudeSignInDeadlines', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedAmbient.mockReturnValue(undefined);
-    mockedInherited.mockReturnValue('/home/u/.claude');
+    // The real function returns `undefined` for the default root and the path
+    // itself otherwise — that is the rule deciding which Keychain branch is read.
+    mockedConfigDirEnv.mockImplementation((root: string) => ({
+      CLAUDE_CONFIG_DIR: root === DEFAULT_ROOT ? undefined : root,
+    }));
   });
 
   afterEach(() => {
     setPlatform(realPlatform);
   });
 
-  it('reads the Keychain entry for the ambient account on macOS', async () => {
+  it('reads the Keychain entry for the account it was given on macOS', async () => {
     setPlatform('darwin');
-    mockedAmbient.mockReturnValue('/Users/doriancollier/.claude2');
     mockedProbe.mockResolvedValue(credentialBlob(HEALTHY));
 
-    await expect(readClaudeSignInDeadlines()).resolves.toEqual({
+    await expect(readClaudeSignInDeadlines(NAMED_ROOT)).resolves.toEqual({
       accessExpiresAt: 1788280376072,
       renewableUntil: 1789879864072,
     });
     expect(mockedProbe).toHaveBeenCalledWith(
       '/usr/bin/security',
-      ['find-generic-password', '-w', '-s', 'Claude Code-credentials-c4dc3e45'],
+      ['find-generic-password', '-w', '-s', 'Claude Code-credentials-685abfe8'],
       expect.any(Number)
     );
   });
 
-  it('reads the credentials file beside the ambient account off macOS', async () => {
+  it('reads the DEFAULT account from the unsuffixed Keychain entry', async () => {
+    // A chosen default account and the default account are different Keychain
+    // entries; reading the wrong one would describe someone else's sign-in.
+    setPlatform('darwin');
+    mockedProbe.mockResolvedValue(credentialBlob(HEALTHY));
+
+    await readClaudeSignInDeadlines(DEFAULT_ROOT);
+
+    expect(mockedProbe).toHaveBeenCalledWith(
+      '/usr/bin/security',
+      ['find-generic-password', '-w', '-s', 'Claude Code-credentials'],
+      expect.any(Number)
+    );
+  });
+
+  it('reads the credentials file beside that same account off macOS', async () => {
     setPlatform('linux');
     const { readFile } = await import('node:fs/promises');
     vi.mocked(readFile).mockResolvedValue(credentialBlob(HEALTHY) as never);
 
-    await expect(readClaudeSignInDeadlines()).resolves.toEqual({
+    await expect(readClaudeSignInDeadlines(NAMED_ROOT)).resolves.toEqual({
       accessExpiresAt: 1788280376072,
       renewableUntil: 1789879864072,
     });
-    expect(readFile).toHaveBeenCalledWith('/home/u/.claude/.credentials.json', 'utf-8');
+    expect(readFile).toHaveBeenCalledWith('/home/dev/.claude-work/.credentials.json', 'utf-8');
     expect(mockedProbe).not.toHaveBeenCalled();
   });
 
@@ -227,7 +246,7 @@ describe('readClaudeSignInDeadlines', () => {
     setPlatform('darwin');
     mockedProbe.mockRejectedValue(new Error('The specified item could not be found'));
 
-    await expect(readClaudeSignInDeadlines()).resolves.toBeNull();
+    await expect(readClaudeSignInDeadlines(NAMED_ROOT)).resolves.toBeNull();
   });
 
   it('answers "unknown" rather than throwing when the credentials file is absent', async () => {
@@ -235,6 +254,6 @@ describe('readClaudeSignInDeadlines', () => {
     const { readFile } = await import('node:fs/promises');
     vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'));
 
-    await expect(readClaudeSignInDeadlines()).resolves.toBeNull();
+    await expect(readClaudeSignInDeadlines(NAMED_ROOT)).resolves.toBeNull();
   });
 });

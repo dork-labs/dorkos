@@ -182,9 +182,19 @@ describe('selectExpiringSignIn', () => {
     expect(oneDay?.timeLeft).toBe('1 day');
   });
 
-  it('stays quiet for a deadline that has already passed — Connect says that better', () => {
-    // The server reports a run-out sign-in as `missing`, so the card already
-    // offers Connect. A countdown beside it would repeat that in the past tense.
+  it('speaks up LOUDEST in the last stretch: deadline passed, sign-in still working', () => {
+    // The renewal window has closed but the token in hand still works, so the
+    // server honestly reports `satisfied`. This is the few hours before the hard
+    // failure — the exact window the warning exists for, and the card would
+    // otherwise read a plain "Ready" right through it.
+    expect(
+      selectExpiringSignIn(withDeadline('2026-08-31T20:51:43.000Z'), 'claude-code', NOW)
+    ).toEqual({ expiresAt: '2026-08-31T20:51:43.000Z', timeLeft: null });
+  });
+
+  it('stays quiet once the check itself is failing — Connect says that better', () => {
+    // A sign-in fully out of road is reported `missing`, so the card already
+    // offers Connect. A countdown beside it would say the same thing twice.
     expect(
       selectExpiringSignIn(withDeadline('2026-08-31T20:51:43.000Z', 'missing'), 'claude-code', NOW)
     ).toBeNull();

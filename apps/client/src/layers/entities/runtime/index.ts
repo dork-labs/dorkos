@@ -20,7 +20,6 @@ export {
   selectUnsatisfiedDeps,
   selectRuntimeReadiness,
   selectExpiringSignIn,
-  SIGN_IN_WARNING_WINDOW_MS,
   REQUIREMENTS_KEY,
 } from './model/use-runtime-requirements';
 export type { RuntimeReadiness, ExpiringSignIn } from './model/use-runtime-requirements';

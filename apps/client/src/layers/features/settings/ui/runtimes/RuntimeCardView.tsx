@@ -60,6 +60,17 @@ const expiringSignInLine = (label: string, timeLeft: string) =>
   `Your ${label} sign-in runs out in ${timeLeft}. Sign in again before your agents stall.`;
 
 /**
+ * What a card says in the last stretch: the sign-in cannot renew itself any
+ * more, but the session in hand still works, so this is the final chance to fix
+ * it on purpose rather than mid-turn. Said in the present tense because the card
+ * still reads Ready and, for a little while longer, honestly so.
+ *
+ * @param label - The runtime's name, as a person calls it.
+ */
+const lapsedSignInLine = (label: string) =>
+  `Your ${label} sign-in is out of time and will stop working shortly. Sign in again to avoid an interruption.`;
+
+/**
  * What a card says instead of rows when the runtime has nowhere to keep them.
  *
  * @param label - The runtime's name, as a person calls it.
@@ -296,7 +307,9 @@ export function RuntimeCardView({
           data-testid={`runtime-sign-in-expiring-${type}`}
         >
           <CircleAlert className="mt-px size-3.5 shrink-0" aria-hidden />
-          {expiringSignInLine(descriptor.label, expiringSignIn.timeLeft)}
+          {expiringSignIn.timeLeft === null
+            ? lapsedSignInLine(descriptor.label)
+            : expiringSignInLine(descriptor.label, expiringSignIn.timeLeft)}
         </p>
       )}
 

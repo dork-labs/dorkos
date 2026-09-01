@@ -61,16 +61,27 @@ export interface ClaudeAuthStatus {
   /** Whether the CLI reports an authenticated session. */
   loggedIn: boolean;
   /**
-   * How the CLI is authenticated, verbatim from the CLI. Measured values:
-   * `claude.ai` (the stored subscription sign-in), `api_key` (an inherited
-   * `ANTHROPIC_API_KEY`), `oauth_token` (an inherited `CLAUDE_CODE_OAUTH_TOKEN`),
-   * `none` (signed out). Absent when the CLI does not report one.
+   * How the CLI is authenticated, verbatim from the CLI. Measured against claude
+   * 2.1.224: `claude.ai` (a stored subscription sign-in EXISTS in this config
+   * dir), `api_key` (an `ANTHROPIC_API_KEY` and NO stored sign-in),
+   * `oauth_token` (an inherited `CLAUDE_CODE_OAUTH_TOKEN`), `none` (signed out).
+   * Absent when the CLI does not report one.
    *
-   * This matters because only the stored `claude.ai` sign-in has a renewal
-   * deadline to read: attaching one to an inherited env credential would warn
-   * about an account that is not even in use.
+   * Read this as "what is stored", not "what will be used" — with both a stored
+   * sign-in and an env key present it still reports `claude.ai`, so it cannot on
+   * its own tell you whether the stored sign-in's deadline matters. Pair it with
+   * {@link ClaudeAuthStatus.apiKeySource}.
    */
   authMethod?: string;
+  /**
+   * The env var supplying an API key (e.g. `ANTHROPIC_API_KEY`), when one is in
+   * play. Absent for a pure subscription sign-in and for an inherited
+   * `CLAUDE_CODE_OAUTH_TOKEN`.
+   *
+   * This is what distinguishes "the stored sign-in is what serves turns" from
+   * "there is also a key here, so a lapsed stored sign-in is not a problem".
+   */
+  apiKeySource?: string;
 }
 
 /** Parse `claude auth status --json` output (reads two non-secret fields; no token material). */
@@ -78,10 +89,15 @@ function parseAuthStatus(statusJson: string): ClaudeAuthStatus | null {
   try {
     const parsed: unknown = JSON.parse(statusJson);
     if (typeof parsed !== 'object' || parsed === null) return null;
-    const { loggedIn, authMethod } = parsed as { loggedIn?: unknown; authMethod?: unknown };
+    const { loggedIn, authMethod, apiKeySource } = parsed as {
+      loggedIn?: unknown;
+      authMethod?: unknown;
+      apiKeySource?: unknown;
+    };
     return {
       loggedIn: loggedIn === true,
       ...(typeof authMethod === 'string' ? { authMethod } : {}),
+      ...(typeof apiKeySource === 'string' ? { apiKeySource } : {}),
     };
   } catch {
     return null;
@@ -109,15 +125,25 @@ function parseAuthStatus(statusJson: string): ClaudeAuthStatus | null {
  * to exactly one of these credentials and must not be attributed to the others.
  *
  * @param binary - The resolved `claude` binary (or `null` when none resolved).
+ * @param env - Full environment for the probe, which decides WHICH account it
+ *   reports on. Omit to inherit this process's, which is what the eval harness
+ *   wants ("can a subprocess I spawn reach a model?"); the readiness ladder
+ *   passes a pinned one so its answer describes the account sessions launch on.
  * @returns The reported status, or `null` when the CLI could not be asked at all
  *   (no binary, signed out — which exits non-zero — or a bounded-out probe).
  */
 export async function readClaudeAuthStatus(
-  binary: string | null
+  binary: string | null,
+  env?: NodeJS.ProcessEnv
 ): Promise<ClaudeAuthStatus | null> {
   if (!binary) return null;
   try {
-    const out = await runBinaryProbe(binary, ['auth', 'status', '--json'], CLAUDE_PROBE_TIMEOUT_MS);
+    const out = await runBinaryProbe(
+      binary,
+      ['auth', 'status', '--json'],
+      CLAUDE_PROBE_TIMEOUT_MS,
+      env
+    );
     return parseAuthStatus(out);
   } catch (err) {
     // Non-zero exit (signed out) or a bounded-out probe. Reported once per
