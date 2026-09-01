@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(client): make the model picker fit a stranger's catalog (DOR-1673)"
+  - 'fix(client): apply DOR-1673 adversarial-review findings'
 ---
 
 ### Fixed
