@@ -16,7 +16,6 @@
  * however many turns trip over the same credential.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { readFile } from 'node:fs/promises';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { ClaudeCodeAdapter } from '@dorkos/relay';
@@ -304,6 +303,13 @@ describe('the watch itself', () => {
  * These two cases are deliberately a matched pair: the first pins the fix, the
  * second pins the bug it fixes. Together they show the first can fail — the
  * only difference between them is which object the map holds.
+ *
+ * They build the map themselves, so neither reads `index.ts` and neither would
+ * notice the composition root going back to the raw reference. That half is
+ * pinned where every other claim about that wiring already lives:
+ * `apps/server/src/__tests__/relay-agent-manager-binding.test.ts`, which has
+ * the extraction helper to scope it to the `new AdapterManager(...)` call
+ * rather than the whole 2000-line file.
  */
 describe('a relay-delivered turn on an expired claude-code sign-in', () => {
   /** Everything the adapter needs beyond its runtimes. */
@@ -374,25 +380,6 @@ describe('a relay-delivered turn on an expired claude-code sign-in', () => {
 
     expect(signinRows()).toHaveLength(1);
     expect(signinRows()[0].title).toBe('Claude needs you to sign in again');
-  });
-
-  it('is wired from the registry in the composition root, not from the raw reference', async () => {
-    // The pair above proves the DIFFERENCE matters; nothing in it reads
-    // `index.ts`, so nothing in it would notice the composition root going back
-    // to the raw reference. That regression is invisible — no test fails, the
-    // relay simply stops being watched again — so the one line that decides it
-    // is pinned here, the way this repo pins its other silent rules
-    // (`dispatcher-single-ingress.test.ts`).
-    const source = await readFile(new URL('../../../index.ts', import.meta.url).pathname, 'utf-8');
-    expect(
-      source,
-      'index.ts must not put the RAW relayAgentRuntime into the relay runtime map — ' +
-        'it wins on key collision and leaves every relay turn unwatched (DOR-1654).'
-    ).not.toContain('[relayAgentRuntime.type, relayAgentRuntime]');
-    expect(
-      source,
-      'the relay map’s default-runtime entry must be resolved through runtimeRegistry.'
-    ).toMatch(/runtimeRegistry\.get\(relayAgentRuntime\.type\)/);
   });
 
   it('is silent when the map holds the raw runtime — the regression this covers', async () => {

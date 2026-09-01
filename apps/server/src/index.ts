@@ -1689,32 +1689,35 @@ async function start() {
       // object literal — the closure sees the widened `RelayCore | undefined`
       // declared type, not the guard.
       const relayCoreInstance = relayCore;
-      // **The relay's default runtime, resolved back through the REGISTRY.**
-      // `relayAgentRuntime` is the raw object this function constructed; the
-      // registry holds the wrapped one (tracing, and the sign-in watch). This
-      // entry is appended last and so wins on key collision, which means
-      // spelling it `relayAgentRuntime` put the RAW runtime in the map — and
-      // from there into `deps.agentManager` (`adapter-factory.ts`'s
-      // `defaultRuntimeFor` reads this very map) and back over the map again in
-      // `ClaudeCodeAdapter`'s constructor. Every relay turn on claude-code then
-      // ran unwatched, so a Telegram-bridged agent on an expired sign-in told
-      // nobody — the exact gap DOR-1654 exists to close.
-      //
-      // Resolved by TYPE, not by identity, so the map and `agentManager` are
-      // the SAME proxy instance: `register()` builds the wrapper once and
-      // stores it, so repeated `get()` calls return one reference and
-      // `ClaudeCodeAdapter`'s `r !== this.deps.agentManager` dedupe still holds.
-      //
-      // `setRelayBindingContext` below deliberately keeps the RAW
-      // `claudeRuntime` — it reaches for a ClaudeCodeRuntime-only method that
-      // is not part of `AgentRuntime`, so it wants the concrete object.
-      const watchedRelayRuntime = runtimeRegistry.has(relayAgentRuntime.type)
-        ? runtimeRegistry.get(relayAgentRuntime.type)
-        : relayAgentRuntime;
       adapterManager = new AdapterManager(adapterRegistry, adapterConfigPath, {
         agentRuntimes: new Map<string, AgentRuntimeLike>([
           ...runtimeRegistry.listRuntimes().map((r): [string, AgentRuntimeLike] => [r.type, r]),
-          [relayAgentRuntime.type, watchedRelayRuntime],
+          // **The relay's default runtime, keyed by its own type but resolved
+          // back through the REGISTRY.** `relayAgentRuntime` is the raw object
+          // this function constructed; the registry holds the WRAPPED one
+          // (tracing, and the DOR-1654 sign-in watch). This entry is appended
+          // last and so wins on key collision, which means spelling the VALUE
+          // `relayAgentRuntime` put the raw runtime in the map — and from there
+          // into `deps.agentManager`, since `adapter-factory.ts`'s
+          // `defaultRuntimeFor` reads this very map, and back over the map again
+          // in `ClaudeCodeAdapter`'s constructor. Every relay turn on claude-code
+          // then ran unwatched, so a Telegram-bridged agent on an expired
+          // sign-in told nobody: the exact gap DOR-1654 exists to close.
+          //
+          // Resolved by TYPE, not by identity, so this entry and `agentManager`
+          // are the SAME proxy instance — `register()` builds the wrapper once
+          // and stores it, so repeated `get()` calls return one reference and
+          // `ClaudeCodeAdapter`'s `r !== this.deps.agentManager` dedupe still
+          // holds. Both paths that assign `relayAgentRuntime` register it first,
+          // so this lookup cannot miss; if it ever did, throwing inside this
+          // `try` costs the relay and says so, which beats seeding an unwatched
+          // runtime in silence.
+          //
+          // `setRelayBindingContext` below deliberately keeps the RAW
+          // `claudeRuntime`, and that is not an oversight: it calls a
+          // ClaudeCodeRuntime-only method that is not part of `AgentRuntime`.
+          // Two consumers, two objects, on purpose.
+          [relayAgentRuntime.type, runtimeRegistry.get(relayAgentRuntime.type)],
         ]),
         traceStore,
         taskStore: taskStore,

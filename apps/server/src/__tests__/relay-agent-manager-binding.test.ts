@@ -7,10 +7,17 @@
  * adapter was read as Claude-specific. It is not: everything below it speaks
  * `AgentRuntimeLike` and `StreamEvent` alone, so the map now carries every
  * runtime this server registered and the adapter picks one per message. What
- * has not changed is where the relay's own default comes from: the concrete
- * runtime the composition root constructed — ClaudeCodeRuntime in production,
- * TestModeRuntime under `DORKOS_TEST_RUNTIME` — keyed by that runtime's own
+ * has not changed is which KEY the relay's own default is filed under: the
+ * concrete runtime the composition root constructed — ClaudeCodeRuntime in
+ * production, TestModeRuntime under `DORKOS_TEST_RUNTIME` — supplies its own
  * `type`, so the key is never a guess and never `getDefault()`.
+ *
+ * What DID change is the VALUE under that key (DOR-1654). It is now the
+ * REGISTRY's instance, not the raw object this file constructed, because
+ * `register()` wraps every runtime and only the wrapper notices a turn that
+ * fails on a dead sign-in. `setRelayBindingContext` still takes the raw
+ * `claudeRuntime`, and the two are deliberately different objects now — see
+ * the two-consumers test below for why neither can take the other's.
  *
  * It used to receive `runtimeRegistry.getDefault()` through an `as unknown as
  * AgentRuntimeLike` cast, which is the exact shape of "this compiles because I
@@ -119,15 +126,47 @@ describe('the Tasks scheduler asks the relay which runtimes it holds', () => {
 });
 
 describe('the relay adapter binds every registered runtime, not the default one', () => {
-  it('passes relayAgentRuntime keyed by its own type', () => {
+  it('keys the relay default by relayAgentRuntime.type', () => {
     // Keyed by `.type`, not a literal: the AdapterManager map is read back by
     // session dispatch and by the binding subsystem's session creator, both of
     // which look up a real runtime type. A hardcoded key that happens to be
     // wrong makes the runtime invisible to every lookup, and the relay goes
     // quiet without erroring — which is how test mode shipped with binding
     // routing dead.
-    expect(adapterManagerConstruction()).toMatch(
-      /\[relayAgentRuntime\.type,\s*relayAgentRuntime\]/
+    expect(adapterManagerConstruction()).toMatch(/\[relayAgentRuntime\.type,/);
+  });
+
+  it('carries the registry’s WATCHED runtime as that entry, never the raw object', () => {
+    // DOR-1654. The key was always right; the VALUE was not. `relayAgentRuntime`
+    // is the raw runtime this file constructed, while the registry holds the
+    // wrapped one (tracing, and the sign-in watch). Because this entry is
+    // appended last and wins its key, naming the raw object here put it in the
+    // map — and from there into `deps.agentManager`, since `adapter-factory.ts`'s
+    // `defaultRuntimeFor` reads this very map, and back over the map again in
+    // `ClaudeCodeAdapter`'s constructor. Every relay turn on claude-code then ran
+    // unwatched, so a Telegram or Slack bridged agent on an expired sign-in told
+    // nobody. That is precisely the gap the ticket exists to close, surviving on
+    // the one path nothing looked at.
+    //
+    // Resolved by TYPE rather than by identity so this entry and `agentManager`
+    // are the SAME proxy instance: `register()` builds the wrapper once and
+    // stores it, so repeated `get()` calls return one reference and the adapter's
+    // `r !== this.deps.agentManager` dedupe still holds.
+    //
+    // The behavioural half of this — a real `ClaudeCodeAdapter` delivering a real
+    // envelope, raising the notification over the watched map and staying silent
+    // over the raw one — lives in
+    // `services/notifications/__tests__/runtime-signin.test.ts`. This is the
+    // source half, because the wiring itself has no seam to construct.
+    const construction = adapterManagerConstruction();
+    expect(
+      construction,
+      'The relay default must be the registry’s wrapper, not the raw runtime this file ' +
+        'built. Spelling the value `relayAgentRuntime` reverts DOR-1654 on the relay path ' +
+        'with nothing else to notice: no test fails, the relay simply stops being watched.'
+    ).not.toMatch(/\[relayAgentRuntime\.type,\s*relayAgentRuntime\s*\]/);
+    expect(construction).toMatch(
+      /\[relayAgentRuntime\.type,\s*runtimeRegistry\.get\(relayAgentRuntime\.type\)\s*\]/
     );
   });
 
@@ -138,14 +177,33 @@ describe('the relay adapter binds every registered runtime, not the default one'
     expect(adapterManagerConstruction()).toMatch(/runtimeRegistry\.listRuntimes\(\)/);
   });
 
-  it('lists relayAgentRuntime AFTER the registry sweep so it wins its own key', () => {
-    // Map construction is last-write-wins. `relayAgentRuntime` is the instance
-    // `setRelayBindingContext` reaches into later, so the relay and that wiring
-    // must hold the same object — which only holds if its entry comes second.
-    const construction = adapterManagerConstruction();
-    expect(construction.indexOf('runtimeRegistry.listRuntimes()')).toBeLessThan(
-      construction.indexOf('[relayAgentRuntime.type, relayAgentRuntime]')
-    );
+  it('gives the relay the watched wrapper while the binding context keeps the raw runtime', () => {
+    // **Two consumers, two objects, on purpose** — and this used to be one
+    // object on purpose, which is why it is spelled out rather than left to
+    // read as an inconsistency.
+    //
+    // The old rule was "the relay and `setRelayBindingContext` must hold the
+    // SAME instance", enforced by listing `relayAgentRuntime` last so it won
+    // its own key. DOR-1654 retired that: the relay wants the registry's
+    // WRAPPED runtime so its turns are watched, while `setRelayBindingContext`
+    // calls a `ClaudeCodeRuntime`-only method that is not on `AgentRuntime` and
+    // therefore wants the concrete object. Neither can take the other's.
+    //
+    // Ordering is no longer what decides this. Both the registry sweep and the
+    // trailing entry now yield the same wrapped instance for that key, so the
+    // last-write-wins hazard that made ordering load-bearing is gone; what
+    // matters is only which OBJECT each consumer names.
+    expect(
+      source,
+      'setRelayBindingContext must be called on the concrete claudeRuntime. A registry ' +
+        'lookup here would hand it an AgentRuntime-shaped proxy that does not carry the ' +
+        'ClaudeCodeRuntime-only method it calls.'
+    ).toMatch(/claudeRuntime\.setRelayBindingContext\(/);
+    expect(
+      source,
+      'setRelayBindingContext must not be fed from the registry — that is the relay map’s ' +
+        'job, not this one’s.'
+    ).not.toMatch(/runtimeRegistry\.get\([^)]*\)\.setRelayBindingContext\(/);
   });
 
   it('does not use the deprecated single-agentManager field', () => {
