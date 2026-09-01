@@ -45,13 +45,29 @@ function trimToolOutput(value: string): string {
     : collapsed;
 }
 
-/** Format one message (plus its tool calls) into readable lines for the excerpt. */
+/**
+ * Format one message (its text, tool calls, and any failure) into readable
+ * lines for the excerpt.
+ *
+ * The failure is read from `parts`, because that is the only place it lives: a
+ * turn that failed before the model said anything has EMPTY `content` and no
+ * tool calls, so text-and-tools alone rendered it as a bare `assistant:` line.
+ * That is precisely the turn a person attaches a transcript to report, and the
+ * report arrived describing nothing (DOR-1666). Tool calls keep coming from
+ * `toolCalls` rather than `parts`, so a message carrying both is not printed
+ * twice.
+ */
 function formatMessage(message: HistoryMessage): string {
   const lines: string[] = [`${message.role}: ${message.content.trim()}`.trim()];
   for (const tool of message.toolCalls ?? []) {
     lines.push(`  [tool: ${tool.toolName}]`);
     if (tool.input) lines.push(`    input: ${trimToolOutput(tool.input)}`);
     if (tool.result) lines.push(`    result: ${trimToolOutput(tool.result)}`);
+  }
+  for (const part of message.parts ?? []) {
+    if (part.type !== 'error') continue;
+    const label = part.category === undefined ? 'error' : `error: ${part.category}`;
+    lines.push(`  [${label}] ${trimToolOutput(part.message)}`);
   }
   return lines.join('\n');
 }

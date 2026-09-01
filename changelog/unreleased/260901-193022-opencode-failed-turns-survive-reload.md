@@ -1,6 +1,7 @@
 ---
 covers:
-  - 'fix(server): OpenCode turns that failed no longer vanish when you reopen the chat (DOR-1666)'
+  - 'fix(server): OpenCode failed turns survive a reload (DOR-1666)'
+  - 'fix(server): a malformed error must cost one part, not the transcript (DOR-1666)'
 ---
 
 ### Fixed
