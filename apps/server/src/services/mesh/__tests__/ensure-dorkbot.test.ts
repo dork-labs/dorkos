@@ -89,8 +89,13 @@ describe('ensureDorkBot', () => {
 
   // Red when the seed is applied on every boot instead of only at creation:
   // a DorkBot the operator deliberately left faceless would acquire one on the
-  // next restart, and one they had re-faced would be re-faced back.
-  it('leaves an existing DorkBot face alone — the seed is creation-only', async () => {
+  // next restart. Both REWRITING paths are covered — the system-agent upgrade
+  // (Path 2) and the already-correct no-op (Path 4) — because a backfill added
+  // to either one is the bug, and Path 4 alone would not catch it.
+  it.each([
+    { path: 'the upgrade path', isSystem: false, namespace: undefined },
+    { path: 'the already-correct path', isSystem: true, namespace: 'system' },
+  ])('leaves an existing faceless DorkBot faceless on $path', async ({ isSystem, namespace }) => {
     const dorkbotDir = path.join(tmpDir, 'agents', 'dorkbot');
     const dorkDir = path.join(dorkbotDir, '.dork');
     await fs.mkdir(dorkDir, { recursive: true });
@@ -108,8 +113,8 @@ describe('ensureDorkBot', () => {
       registeredAt: '2026-01-01T00:00:00.000Z',
       registeredBy: 'dorkos-system',
       personaEnabled: true,
-      isSystem: true,
-      namespace: 'system',
+      isSystem,
+      ...(namespace ? { namespace } : {}),
       enabledToolGroups: {},
     };
     await fs.writeFile(

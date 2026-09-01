@@ -363,12 +363,14 @@ describe('createAgentWorkspace', () => {
     expect(AGENT_COLOR_PRESETS.map((preset) => preset.hex)).toContain(result.manifest.color);
   });
 
-  it('writes the seeded face to agent.json, not just to the response', async () => {
+  // The response is not the artifact: `agent.json` is the source of truth every
+  // other reader resolves a face from (ADR-0043), so the assertion is against
+  // what reached `writeManifest`, not against the object handed back.
+  it('writes the seeded face to agent.json', async () => {
     const result = await createAgentWorkspace({ name: 'written-face' }, mockMeshCore);
 
     const written = mockWriteManifest.mock.calls.at(-1)?.[1] as AgentManifest;
-    expect(written.color).toBe(result.manifest.color);
-    expect(written.icon).toBe(result.manifest.icon);
+    expect({ color: written.color, icon: written.icon }).toEqual(seedAgentFace(result.manifest.id));
   });
 
   it('records a model and an effort chosen at creation', async () => {
