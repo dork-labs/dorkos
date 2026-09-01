@@ -1347,6 +1347,46 @@ describe('getMessageHistory — images', () => {
     ]);
   });
 
+  it('a turn whose only output is an UNSTORABLE image type survives as an honest placeholder (DOR-1671)', async () => {
+    // SVG is refused by the store deliberately (serving it inline is a
+    // stored-XSS vector). The fix is not to allow it — it is to keep the turn,
+    // with a line saying an image DorkOS cannot show was made. The raw SVG
+    // bytes must never ride along.
+    const client = createMockClient();
+    serveAssistant(client, [
+      ocFilePart('prt_svg01', {
+        mime: 'image/svg+xml',
+        url: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
+        filename: 'diagram.svg',
+      }),
+    ]);
+    const attachments = createFakeAttachmentStore();
+    const mapper = new OpenCodeSessionMapper(createProvider(client), undefined, attachments);
+    await mapper.ensureSession(DORKOS_ID, { cwd: PROJECT_DIR });
+
+    const history = await mapper.getMessageHistory(PROJECT_DIR, DORKOS_ID);
+
+    expect(history).toHaveLength(1);
+    expect(history[0]!.parts).toEqual([
+      { type: 'text', text: expect.stringContaining('image/svg+xml') },
+    ]);
+    expect(JSON.stringify(history[0]!.parts)).not.toContain('base64');
+  });
+
+  it('a mapper with no attachment store keeps an image-only turn as a placeholder, not a hole', async () => {
+    const client = createMockClient();
+    serveAssistant(client, [ocFilePart('prt_gen02', { filename: 'banana.png' })]);
+    const mapper = new OpenCodeSessionMapper(createProvider(client));
+    await mapper.ensureSession(DORKOS_ID, { cwd: PROJECT_DIR });
+
+    const history = await mapper.getMessageHistory(PROJECT_DIR, DORKOS_ID);
+
+    expect(history).toHaveLength(1);
+    expect(history[0]!.parts).toEqual([
+      { type: 'text', text: expect.stringContaining("can't show") },
+    ]);
+  });
+
   it('re-materializes an image a tool returned, from `attachments`', async () => {
     const client = createMockClient();
     serveAssistant(client, [

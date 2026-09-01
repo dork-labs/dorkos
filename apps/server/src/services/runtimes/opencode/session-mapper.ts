@@ -258,7 +258,20 @@ function appendText(parts: MessagePart[], text: string): void {
 type HistoryMediaResolver = (
   file: OpenCodeFilePart,
   identity: readonly string[]
-) => Promise<ImagePart | null>;
+) => Promise<ImagePart | TextPart | null>;
+
+/**
+ * The honest remainder when a picture cannot be projected at all — no store to
+ * keep it, or a media type the store refuses (SVG is a stored-XSS vector, not
+ * an oversight). A turn whose only output was such an image used to map to no
+ * parts and vanish on reload (DOR-1671); it now keeps its place in the
+ * transcript with this line, and the raw bytes never ride along.
+ *
+ * @param mime - The image media type that cannot be shown.
+ */
+function unshowableImagePlaceholder(mime: string): TextPart {
+  return { type: 'text', text: `[Made an image DorkOS can't show (${mime})]` };
+}
 
 /** The `file` member of OpenCode's part union, named for readability. */
 type OpenCodeFilePart = Extract<OpenCodePart, { type: 'file' }>;
@@ -280,13 +293,11 @@ type OpenCodeFilePart = Extract<OpenCodePart, { type: 'file' }>;
  * "image not available" row with the turn intact around it rather than a
  * message that disappeared.
  *
- * The one surviving hole is narrow and deliberate: the resolver answers `null`
- * for a media type the store could never have held (a generated SVG, AVIF, BMP
- * or HEIC), so a turn whose ONLY output was one of those still maps to no parts
- * and is still dropped here. Nothing produces that today — a tool attachment
- * always contributes its `tool_call` part alongside, and OpenCode discards
- * generated images upstream — but it is the case to fix when the allowlist
- * widens.
+ * The last hole closed with DOR-1671: a media type the store could never have
+ * held (a generated SVG, AVIF, BMP or HEIC), or a mapper wired with no store at
+ * all, now degrades to {@link unshowableImagePlaceholder} instead of `null` —
+ * so a turn whose only output was such an image keeps its place here rather
+ * than mapping to no parts and being dropped.
  *
  * A message whose ONLY content is its message-level `error` still returns a
  * message (DOR-1666): OpenCode records a turn that failed before the model
@@ -801,16 +812,26 @@ export class OpenCodeSessionMapper {
    * 404s, and the reader gets the honest "this image is not available" row with
    * the turn intact around it.
    *
-   * `null` is reserved for what genuinely is not a picture at all: no store
-   * wired, a non-image mime, or a media type this store could never have held.
+   * `null` is reserved for what genuinely is not a picture at all: a non-image
+   * mime. A picture that cannot be projected — no store wired, or a media type
+   * the store deliberately refuses — degrades to the placeholder instead
+   * (DOR-1671), so the turn around it survives a reload.
    *
    * @param sessionId - The DorkOS session whose history is being read.
    */
   private historyMediaResolver(sessionId: string): HistoryMediaResolver {
     const store = this.attachments;
     return async (file, identity) => {
-      if (!store) return null;
-      if (!file.mime.toLowerCase().startsWith('image/')) return null;
+      const mime = file.mime.toLowerCase();
+      if (!mime.startsWith('image/')) return null;
+      // A picture with nowhere to live is still a picture the transcript is
+      // entitled to mention (DOR-1671): no store, or a media type the store
+      // deliberately refuses, degrades to the placeholder rather than to a
+      // dropped turn.
+      if (!store) return unshowableImagePlaceholder(file.mime);
+      if (storableImageExtension(file.mime) === null) {
+        return unshowableImagePlaceholder(file.mime);
+      }
       const attachmentId = deriveSessionAttachmentId(identity);
       const alt = file.filename !== undefined ? { alt: file.filename } : {};
       try {
