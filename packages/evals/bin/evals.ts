@@ -5,7 +5,8 @@
  *
  * Usage:
  *   dorkos-evals run --suite <name> --tier <tier> [--budget <usd>] [--out <dir>]
- *                    [--isolation auto|child-process|docker]
+ *                    [--runtime claude-code|codex|opencode] [--provider <id>]
+ *                    [--model <id>] [--isolation auto|child-process|docker]
  *   dorkos-evals sweep [--dry-run] [--force]
  *
  * `run` selects the suite's cases, runs each in its own sandbox + server under a
@@ -23,18 +24,39 @@
  * every one, `child-process` never does. Without a reachable docker daemon and
  * eval image the run degrades to child-process with a message, never a failure.
  *
+ * `--runtime` picks which agent runtime owns every session the run creates, and
+ * `--provider` / `--model` say which model that runtime should answer with. The
+ * `real-provider` tier defaults the triple to
+ * `--runtime opencode --provider openrouter --model openrouter/qwen/qwen3.7-flash`.
+ *
  * A credentialed tier reaches a model through `ANTHROPIC_API_KEY`, or
  * `CLAUDE_CODE_OAUTH_TOKEN`, or the `claude` sign-in on this machine — in that
  * order, and the run prints which one answered. Being signed in is enough to run
  * locally; see `packages/evals/README.md`. The docker tier is the exception: a
  * container cannot see the local sign-in, so it needs one of the two variables.
  *
+ * ANY run that reaches an external provider spends OUTSIDE a Claude
+ * subscription, and needs two deliberate acts: `DORKOS_EVALS_PAID_PROVIDER=1`
+ * AND `OPENROUTER_API_KEY`. That is `--tier real-provider`, and equally
+ * `--runtime opencode` or `--provider <id>` on ANY tier — the gate follows what
+ * the run reaches, not the tier name (`spendsOnExternalProvider` in
+ * `src/runner/credentials.ts`, which exists because keying it on the tier let a
+ * cheap-tier OpenCode run spend with the flag unset). Without the flag the run
+ * stops before it boots anything (exit 2, nothing billed); with the flag and no
+ * key every case is a runner error, never a pass. Such a run also refuses
+ * `--isolation docker`, whose containers have no network at all.
+ *
  * @module evals/bin
  */
 import path from 'node:path';
-import { RuntimeTierSchema, type RuntimeTier } from '../src/types.js';
+import {
+  EvalRuntimeSchema,
+  RuntimeTierSchema,
+  type EvalRuntime,
+  type RuntimeTier,
+} from '../src/types.js';
 import { selectSuite } from '../src/suite/index.js';
-import { runSuite } from '../src/runner/run-suite.js';
+import { PaidTierRefusedError, runSuite } from '../src/runner/run-suite.js';
 import { sweepStrays, formatSweepReport } from '../src/runner/sweep.js';
 import { parseBudgetUsd, VALUELESS_FLAG } from '../src/runner/budget.js';
 import {
@@ -51,6 +73,8 @@ interface Cli {
   budgetUsd?: number;
   outDir: string;
   model?: string;
+  runtime?: EvalRuntime;
+  provider?: string;
   isolation: IsolationTier;
   dryRun: boolean;
   force: boolean;
@@ -74,6 +98,11 @@ function parseArgs(rawArgv: string[]): Cli {
   }
   const tier = RuntimeTierSchema.parse(flags.get('tier') ?? 'test-mode');
   const budgetUsd = parseBudgetUsd(flags.get('budget'));
+  // Parsed rather than passed through: an unknown runtime would otherwise reach
+  // the server as a `runtime` hint and come back as a 400 on the first turn of
+  // every case, which reads as a harness fault rather than a typo.
+  const rawRuntime = flags.get('runtime');
+  const runtime = rawRuntime !== undefined ? EvalRuntimeSchema.parse(rawRuntime) : undefined;
   return {
     command,
     suite: flags.get('suite') ?? 'smoke',
@@ -81,6 +110,8 @@ function parseArgs(rawArgv: string[]): Cli {
     ...(budgetUsd !== undefined ? { budgetUsd } : {}),
     outDir: flags.get('out') ?? path.join(process.cwd(), '.evals-runs'),
     model: flags.get('model'),
+    ...(runtime ? { runtime } : {}),
+    provider: flags.get('provider'),
     isolation: parseIsolationTier(flags.get('isolation')),
     dryRun: flags.get('dry-run') !== undefined,
     force: flags.get('force') !== undefined,
@@ -101,6 +132,8 @@ async function runCommand(cli: Cli): Promise<void> {
     budgetUsd: cli.budgetUsd,
     outDir: cli.outDir,
     model: cli.model,
+    ...(cli.runtime ? { runtime: cli.runtime } : {}),
+    ...(cli.provider ? { provider: cli.provider } : {}),
     isolation: cli.isolation,
   });
 
@@ -134,7 +167,21 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (cli.command === 'run') return runCommand(cli);
+  if (cli.command === 'run') {
+    try {
+      return await runCommand(cli);
+    } catch (err) {
+      // A refusal is not a run that failed — nothing booted, nothing was billed,
+      // and there is no results.json to point at. Print the reason plainly and
+      // exit 2 (a usage problem), never 1 (a failing gate).
+      if (err instanceof PaidTierRefusedError) {
+        process.stderr.write(`${err.message}\n`);
+        process.exitCode = 2;
+        return;
+      }
+      throw err;
+    }
+  }
   if (cli.command === 'sweep') return sweepCommand(cli);
 
   process.stderr.write(

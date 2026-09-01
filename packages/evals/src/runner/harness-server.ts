@@ -29,6 +29,14 @@ import type { Server } from 'node:http';
 import { bootInProcessTestServer } from '@dorkos/server/harness-boot';
 import type { IsolationLauncher, ServerExit } from './isolation/index.js';
 import { ChildProcessLauncher } from './isolation/index.js';
+import { buildOpenCodeSandboxConfig, writeSandboxConfig } from './opencode-sandbox.js';
+import type { EvalRuntime } from '../types.js';
+
+/**
+ * The one runtime id this module CONFIGURES rather than merely names. The others
+ * need no setup beyond the credential env, so they pass straight through.
+ */
+const OPENCODE_RUNTIME: EvalRuntime = 'opencode';
 
 /** A running harness server, addressable by URL, with a teardown handle. */
 export interface HarnessServer {
@@ -243,8 +251,34 @@ export interface StartChildProcessServerOptions {
   dorkHome: string;
   /** Host to bind. Defaults to `127.0.0.1` (loopback only). */
   host?: string;
-  /** Cheap default model (`ANTHROPIC_MODEL`). Defaults to {@link DEFAULT_CHEAP_MODEL}. */
+  /**
+   * Cheap default model. On `claude-code` this is passed as `ANTHROPIC_MODEL`
+   * and defaults to {@link DEFAULT_CHEAP_MODEL}; on `opencode` it is the
+   * `provider/model` pin written into the sandbox config, and it has no default
+   * here (the caller owns the pin).
+   */
   model?: string;
+  /**
+   * The agent runtime this server should run sessions on. `claude-code`
+   * (default) needs no setup beyond the credential env. `opencode` is
+   * CONFIGURED rather than switched: the sandbox config names the provider, the
+   * binary and the model before the boot — see `runner/opencode-sandbox.ts`.
+   */
+  runtime?: EvalRuntime;
+  /**
+   * Model provider for a runtime that fronts several (`openrouter` on
+   * `opencode`). Ignored by `claude-code`, which reaches Anthropic directly.
+   *
+   * REQUIRED when `runtime` is `opencode`, and deliberately not defaulted — see
+   * {@link configureOpenCodeSandbox}.
+   */
+  provider?: string;
+  /**
+   * Absolute path to the `opencode` binary the sandboxed server must use.
+   * Required when `runtime` is `opencode` — a sandbox `DORK_HOME` holds no
+   * provisioned install, so the server cannot find one on its own.
+   */
+  openCodeBinaryPath?: string;
   /**
    * Extra environment for the launched server: the resolved model credential
    * (`ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`, from
@@ -257,6 +291,55 @@ export interface StartChildProcessServerOptions {
   readyTimeoutMs?: number;
   /** The isolation launcher. Defaults to {@link ChildProcessLauncher}. */
   launcher?: IsolationLauncher;
+}
+
+/**
+ * Write the sandbox config an OpenCode boot needs, before the server starts.
+ *
+ * Refuses rather than degrades when the caller gave no binary or no model. Both
+ * are things the run resolved (or failed to resolve) long before this point, and
+ * booting anyway would produce a server that registers OpenCode, accepts the
+ * session, and then fails every turn on a missing binary — a red about the
+ * harness wearing the costume of a red about the product.
+ *
+ * @param opts - The child-process boot options.
+ * @throws {Error} When `openCodeBinaryPath` or `model` is missing.
+ */
+async function configureOpenCodeSandbox(opts: StartChildProcessServerOptions): Promise<void> {
+  if (!opts.openCodeBinaryPath) {
+    throw new Error(
+      'An OpenCode harness boot needs `openCodeBinaryPath`: a sandbox DORK_HOME holds no ' +
+        'provisioned install, so the server would resolve no binary and fail every turn.'
+    );
+  }
+  if (!opts.model) {
+    throw new Error(
+      'An OpenCode harness boot needs a pinned `model` (as `provider/model`). Without one the ' +
+        'sidecar picks its own default, and a run cannot say what answered it.'
+    );
+  }
+  // NEVER default the provider here. Writing `providers.<id>` into the sandbox
+  // config is the moment this harness commits to spending somebody's provider
+  // account, and a default at THIS layer silently manufactures that commitment
+  // for a caller who never asked: it is precisely how `--tier claude-code-cheap
+  // --runtime opencode` reached OpenRouter with the spend gate unarmed. The
+  // caller resolves the provider alongside the gate (`run-suite.ts`) or this
+  // refuses. A missing provider is a harness bug, not a shape to paper over.
+  if (!opts.provider) {
+    throw new Error(
+      'An OpenCode harness boot needs an explicit `provider`. It is deliberately not defaulted ' +
+        'here: naming a provider is what commits the run to spending on one, and that decision ' +
+        'belongs beside the spend gate in `run-suite.ts`, never to a default in the boot path.'
+    );
+  }
+  await writeSandboxConfig(
+    opts.dorkHome,
+    buildOpenCodeSandboxConfig({
+      binaryPath: opts.openCodeBinaryPath,
+      provider: opts.provider,
+      model: opts.model,
+    })
+  );
 }
 
 /**
@@ -280,10 +363,16 @@ export async function startChildProcessServer(
   const launcher = opts.launcher ?? new ChildProcessLauncher();
   const port = await allocatePort(host);
 
-  const env: Record<string, string> = {
-    ANTHROPIC_MODEL: opts.model ?? DEFAULT_CHEAP_MODEL,
-    ...opts.env,
-  };
+  // `ANTHROPIC_MODEL` is claude-code's model selector and NOTHING else's. Setting
+  // it on an OpenCode boot would leave a Haiku id in the environment of a server
+  // that answers through OpenRouter — a value no code reads and every reader of a
+  // retained sandbox would be misled by.
+  const runsOpenCode = opts.runtime === OPENCODE_RUNTIME;
+  const env: Record<string, string> = runsOpenCode
+    ? { ...opts.env }
+    : { ANTHROPIC_MODEL: opts.model ?? DEFAULT_CHEAP_MODEL, ...opts.env };
+
+  if (runsOpenCode) await configureOpenCodeSandbox(opts);
 
   const launched = await launcher.launch({ dorkHome: opts.dorkHome, host, port, env });
 

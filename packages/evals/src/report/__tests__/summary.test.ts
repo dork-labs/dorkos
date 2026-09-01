@@ -412,3 +412,47 @@ describe('evaluateRunGate', () => {
     });
   });
 });
+
+/**
+ * A case skipped for the wrong RUNTIME is treated exactly like one skipped for
+ * the wrong tier: never started, so it neither gates nor stands in for coverage.
+ *
+ * The failure mode this pins is the nastiest shape a false green can take — a run
+ * whose only non-quarantined cases were never started reporting a confident pass
+ * — and it is a shape this file has already had to fix once, for the tier
+ * dimension.
+ */
+describe('a case skipped for the wrong runtime', () => {
+  it('is excluded from the gate entirely, exactly like a wrong-tier skip', () => {
+    const gate = evaluateRunGate(
+      summary([
+        result({ id: 'opencode-only', status: 'skipped-wrong-runtime', runtime: 'opencode' }),
+        result({ id: 'ran', status: 'pass' }),
+      ])
+    );
+    expect(gate.totalCases).toBe(1);
+    expect(gate.gatingCases).toBe(1);
+    expect(gate.failed).toBe(false);
+  });
+
+  it('fails the run when it is the ONLY thing that happened', () => {
+    // Otherwise a mis-typed `--runtime` exits 0 having tested nothing.
+    const gate = evaluateRunGate(
+      summary([result({ id: 'opencode-only', status: 'skipped-wrong-runtime' })])
+    );
+    expect(gate.failed).toBe(true);
+    expect(gate.reason).toContain('--runtime');
+  });
+
+  it('never renders as `quarantined`, so the row cannot claim coverage the footer denies', () => {
+    const table = formatSummaryTable(
+      summary([
+        result({ id: 'opencode-only', status: 'skipped-wrong-runtime', quarantined: true }),
+        result({ id: 'ran', status: 'pass' }),
+      ])
+    );
+    expect(table).toContain('skipped-wrong-runtime');
+    expect(table).not.toContain('quarantined:skipped-wrong-runtime');
+    expect(table).toContain('1 needing another runtime');
+  });
+});

@@ -66,16 +66,17 @@ export async function writeResults(runDir: string, summary: RunSummary): Promise
  * carry a rule that people are supposed to act on: nobody opens the JSON to
  * discover a question they did not know to ask.
  *
- * A `skipped-wrong-tier` row NEVER shows `quarantined`, even when the case it
- * skipped declares one: {@link evaluateRunGate} excludes every wrong-tier
- * result from `attempted` entirely, so it is not in the quarantined COUNT the
- * footer prints either. A row reading `quarantined:skipped-wrong-tier` beside
- * a footer reading "0 quarantined" was the same lie the retried/quarantined
- * fix above exists to prevent, just in the other direction — the row claiming
- * coverage the footer says nothing provided.
+ * A NEVER-STARTED row (`skipped-wrong-tier`, `skipped-wrong-runtime`) never
+ * shows `quarantined`, even when the case it skipped declares one:
+ * {@link evaluateRunGate} excludes every never-started result from `attempted`
+ * entirely, so it is not in the quarantined COUNT the footer prints either. A
+ * row reading `quarantined:skipped-wrong-tier` beside a footer reading
+ * "0 quarantined" was the same lie the retried/quarantined fix above exists to
+ * prevent, just in the other direction — the row claiming coverage the footer
+ * says nothing provided.
  */
 function statusLabel(result: EvalResult): string {
-  const showsQuarantined = result.quarantined && result.status !== 'skipped-wrong-tier';
+  const showsQuarantined = result.quarantined && !isNeverStarted(result);
   const qualifiers = [
     ...(showsQuarantined ? ['quarantined'] : []),
     ...(result.retried ? ['retried'] : []),
@@ -167,10 +168,27 @@ function retentionLine(result: EvalResult): string | undefined {
  *
  * Such a case is neither gating nor quarantined-reporting: it produced no
  * evidence at all, so counting it either way would misstate what the run
- * covered.
+ * covered. See {@link isNeverStarted} for the same fact about the runtime.
  */
 function isWrongTier(result: EvalResult): boolean {
   return result.status === 'skipped-wrong-tier';
+}
+
+/** Whether this case was never started because the run booted a different agent runtime. */
+function isWrongRuntime(result: EvalResult): boolean {
+  return result.status === 'skipped-wrong-runtime';
+}
+
+/**
+ * Whether this case produced no evidence at all because the run booted
+ * something it does not fit — the wrong tier, or the wrong agent runtime.
+ *
+ * One predicate for both, because everything downstream treats them
+ * identically: neither gates, neither reports, and counting either as coverage
+ * would let a run whose every case was skipped print a confident green.
+ */
+function isNeverStarted(result: EvalResult): boolean {
+  return isWrongTier(result) || isWrongRuntime(result);
 }
 
 /**
@@ -234,6 +252,7 @@ export function formatSummaryTable(summary: RunSummary): string {
   const errored = summary.results.filter((r) => r.status === 'error' && !r.quarantined).length;
   const skipped = summary.results.filter((r) => r.status === 'skipped-over-budget').length;
   const wrongTier = summary.results.filter(isWrongTier).length;
+  const wrongRuntime = summary.results.filter(isWrongRuntime).length;
   // Direction-aware (DOR-1228): every wrong-tier case in ONE run shares the
   // same missing direction relative to the tier the run booted, because a
   // case's declared tier only ever mismatches upward (needs a model this
@@ -245,6 +264,7 @@ export function formatSummaryTable(summary: RunSummary): string {
   const footer =
     `${passed} passed, ${failed} failed, ${errored} errored, ${skipped} skipped, ` +
     (wrongTier > 0 ? `${wrongTier} ${wrongTierLabel}, ` : '') +
+    (wrongRuntime > 0 ? `${wrongRuntime} needing another runtime, ` : '') +
     `${gate.quarantinedCases} quarantined (${gate.failingQuarantinedCases} of them failing)` +
     ` · $${summary.totalCostUsd.toFixed(4)} / $${summary.budgetUsd.toFixed(2)} budget`;
 
@@ -351,6 +371,16 @@ function unmeteredSpendLine(summary: RunSummary): string | undefined {
  */
 function noCasesStartedReason(summary: RunSummary): string {
   const count = summary.results.length;
+  // The runtime mismatch is checked first because it is the more specific fact:
+  // a run that booted a runtime can only be here because of it.
+  if (summary.results.every(isWrongRuntime)) {
+    return (
+      `This run started none of its ${count} selected case(s): every one of them is written ` +
+      `about a different agent runtime than the ${summary.runtime ?? 'one'} this run booted. ` +
+      'Point it at the right one with `--runtime`, or select a suite whose cases are ' +
+      'cross-runtime.'
+    );
+  }
   if (summary.tier === 'test-mode') {
     return (
       `This run started none of its ${count} selected case(s): every one of them declares a ` +
@@ -405,7 +435,7 @@ export function evaluateRunGate(summary: RunSummary): RunGateVerdict {
   // ran, so it can neither fail the run nor stand in for coverage. Counting it
   // as gating would be the nastiest version of that mistake — a run whose only
   // "gating" cases were never started would report a confident green.
-  const attempted = summary.results.filter((r) => !isWrongTier(r));
+  const attempted = summary.results.filter((r) => !isNeverStarted(r));
   const totalCases = attempted.length;
   const quarantined = attempted.filter((r) => r.quarantined);
   const gating = attempted.filter((r) => !r.quarantined);

@@ -14,18 +14,86 @@
 import path from 'node:path';
 import {
   describeCredentialSource,
+  DEFAULT_OPENROUTER_MODEL,
+  OPENROUTER_PROVIDER_ID,
+  PAID_PROVIDER_RUN_BUDGET_USD,
   type EvalCase,
   type EvalResult,
+  type EvalRuntime,
+  type EvalStatus,
   type RunSummary,
   type RuntimeTier,
 } from '../types.js';
 import { BudgetTracker, DEFAULT_RUN_BUDGET_USD } from './budget.js';
 import { runEval } from './run-eval.js';
 import { DEFAULT_CHEAP_MODEL } from './harness-server.js';
+import { noOpenCodeBinaryMessage, resolveHostOpenCodeBinary } from './opencode-sandbox.js';
 import { runWithInfrastructureRetry, transcriptNameForAttempt } from './retry.js';
 import { createLauncherResolver, type IsolationTier } from './isolation/resolve-launcher.js';
-import { resolveModelCredential } from './credentials.js';
+import {
+  paidProviderRefusesDockerMessage,
+  resolveModelCredential,
+  resolvePaidProviderCredential,
+  spendsOnExternalProvider,
+  type ModelCredential,
+} from './credentials.js';
 import { writeResults } from '../report/summary.js';
+
+/**
+ * The `real-provider` tier's default runtime. OpenCode is the only DorkOS
+ * runtime that fronts arbitrary providers (ADR-0308 + ADR-0315), so it is the
+ * only thing "reach OpenRouter" can currently mean — named here rather than
+ * assumed, so a second such runtime is a one-line change with a visible default.
+ */
+const PAID_PROVIDER_DEFAULT_RUNTIME: EvalRuntime = 'opencode';
+
+/**
+ * A paid run that must not start at all — nobody armed it, or it was asked for
+ * an isolation tier that cannot reach the network.
+ *
+ * Thrown BEFORE any sandbox, server or turn, and distinct from a per-case runner
+ * error on purpose: no case was attempted, so there is no `results.json` to
+ * write and nothing to report a verdict about. The CLI turns it into a message
+ * and a non-zero exit.
+ */
+export class PaidTierRefusedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PaidTierRefusedError';
+  }
+}
+
+/**
+ * The spend ceiling a run gets when nobody passed `--budget`.
+ *
+ * A FUNCTION rather than an inline ternary at the call site, and that is the
+ * whole point: arming a real paid run needs the module-scope opt-in flag, which
+ * no test can stub, so the paid branch of an inline expression is unreachable
+ * from the suite and executed by no test at all. Someone "simplifying" it back to
+ * `paid ? PAID… : DEFAULT…` would leave every test green while an armed
+ * `--tier claude-code-cheap --runtime opencode` run silently regained the $3
+ * ceiling — the exact bug this shape exists to prevent. Pulled out here, both
+ * branches are a four-line table test.
+ *
+ * The paid ceiling is a tripwire for a runaway loop, not an allowance: these
+ * turns cost fractions of a cent, so it sits two orders of magnitude under the
+ * credentialed default. It keys on the same predicate as the gate, because a run
+ * that spends on a provider is exactly the run that needs the tighter bound.
+ *
+ * @param tier - The tier the run booted.
+ * @param runtime - The agent runtime the run resolved, if any.
+ * @param provider - The provider the run resolved, if any.
+ * @returns The default per-run cap in USD.
+ */
+export function defaultRunBudgetUsd(
+  tier: RuntimeTier,
+  runtime: string | undefined,
+  provider: string | undefined
+): number {
+  return spendsOnExternalProvider(tier, runtime, provider)
+    ? PAID_PROVIDER_RUN_BUDGET_USD
+    : DEFAULT_RUN_BUDGET_USD;
+}
 
 /** Options for {@link runSuite}. */
 export interface RunSuiteOptions {
@@ -39,8 +107,20 @@ export interface RunSuiteOptions {
   runId?: string;
   /** Per-turn timeout guard in ms. */
   timeoutMs?: number;
-  /** Cheap model for the credentialed tiers (`ANTHROPIC_MODEL`); defaults per the boot. */
+  /**
+   * Model every credentialed case runs on (`--model`). Defaults per tier:
+   * {@link DEFAULT_CHEAP_MODEL} on claude-code, {@link DEFAULT_OPENROUTER_MODEL}
+   * on `real-provider`.
+   */
   model?: string;
+  /**
+   * The agent runtime every session binds to (`--runtime`). Defaults to
+   * {@link PAID_PROVIDER_DEFAULT_RUNTIME} on `real-provider` and to the server's
+   * own default (claude-code) everywhere else.
+   */
+  runtime?: EvalRuntime;
+  /** Model provider for a runtime that fronts several (`--provider`). */
+  provider?: string;
   /**
    * The isolation tier the credentialed evals boot through (`--isolation`).
    * `child-process` (default) spawns a Node subprocess; `docker` runs each eval
@@ -66,7 +146,10 @@ export interface RunSuiteResult {
 function skippedResult(
   evalCase: EvalCase,
   tier: RuntimeTier,
-  status: 'skipped-over-budget' | 'skipped-wrong-tier'
+  status: Extract<
+    EvalStatus,
+    'skipped-over-budget' | 'skipped-wrong-tier' | 'skipped-wrong-runtime'
+  >
 ): EvalResult {
   return {
     id: evalCase.id,
@@ -76,6 +159,11 @@ function skippedResult(
     // booted: on a wrong-tier skip they differ, and the row's job is to say
     // which tier this case would need.
     runtimeTier: status === 'skipped-wrong-tier' ? evalCase.runtimeTier : tier,
+    // Same reasoning one line up: a wrong-RUNTIME row's job is to name the
+    // runtime this case would need, not the one the run happened to boot.
+    ...(status === 'skipped-wrong-runtime' && evalCase.runtime
+      ? { runtime: evalCase.runtime }
+      : {}),
     costClass: evalCase.costClass,
     costUsd: 0,
     costUnmetered: false,
@@ -133,6 +221,32 @@ function tierMismatch(evalCase: EvalCase, tier: RuntimeTier): boolean {
   return needsCredentialedTier || needsTestMode;
 }
 
+/**
+ * Whether this case names a runtime it is ABOUT and the run booted a different
+ * one.
+ *
+ * The same enforced-rather-than-described rule as {@link tierMismatch}, one
+ * dimension over. A case that pins an OpenRouter model id run against
+ * `claude-code` would not be a weaker test; it would be a test of nothing whose
+ * red says "the model was not the one we pinned" about a runtime that was never
+ * asked to use it.
+ *
+ * Absent `runtime` never mismatches — that is the cross-runtime default, and the
+ * whole reason the `chat` suite exists.
+ *
+ * @param evalCase - The case being selected.
+ * @param runtime - The runtime the run booted, if any.
+ * @returns True when the case must be skipped.
+ */
+function runtimeMismatch(evalCase: EvalCase, runtime: EvalRuntime | undefined): boolean {
+  if (!evalCase.runtime) return false;
+  // A `test-mode` run boots no agent runtime at all; such a case is already
+  // skipped upward by `tierMismatch`, so this stays quiet rather than
+  // double-reporting the same skip under a second, less useful reason.
+  if (!runtime) return false;
+  return evalCase.runtime !== runtime;
+}
+
 /** Generate a filesystem-safe, sortable run id. */
 function defaultRunId(): string {
   return new Date().toISOString().replace(/[:.]/g, '-');
@@ -146,10 +260,9 @@ function defaultRunId(): string {
  * @returns The summary, run directory, and results path.
  */
 export async function runSuite(cases: EvalCase[], opts: RunSuiteOptions): Promise<RunSuiteResult> {
+  const paid = opts.tier === 'real-provider';
   const runId = opts.runId ?? defaultRunId();
   const runDir = path.join(opts.outDir, runId);
-  const budgetUsd = opts.budgetUsd ?? DEFAULT_RUN_BUDGET_USD;
-  const tracker = new BudgetTracker({ runBudgetUsd: budgetUsd });
   const startedAt = new Date().toISOString();
   // Resolves each case's isolation launcher, probing docker at most once per run
   // and degrading to the child-process tier (with a message) when unavailable.
@@ -159,18 +272,93 @@ export async function runSuite(cases: EvalCase[], opts: RunSuiteOptions): Promis
       process.stderr.write(`${message}\n`);
     });
 
+  // Docker eval containers have NO network by design (ADR 260725-133222) and
+  // this tier has to reach openrouter.ai. Refused BEFORE the money question,
+  // deliberately: this is a fault in the command that was typed, and it cannot
+  // be fixed by producing a key, so answering it first is the more useful order.
+  // `auto` never reaches for a container on this tier either — a silent degrade
+  // would hand an operator who asked for containment a bare-host turn.
+  if (
+    opts.isolation === 'docker' &&
+    spendsOnExternalProvider(opts.tier, opts.runtime, opts.provider)
+  ) {
+    throw new PaidTierRefusedError(paidProviderRefusesDockerMessage());
+  }
+  const isolation: IsolationTier | undefined = paid ? 'child-process' : opts.isolation;
+
+  // The runtime + provider + model triple, resolved ONCE so every case, the
+  // summary, and the sandbox config agree about what answered this run — and
+  // resolved BEFORE the credential question, because it is what decides which
+  // credential question to ask.
+  //
+  // Resolved to a CONCRETE runtime rather than left undefined on the credentialed
+  // tiers, and that matters twice over: the run can then RECORD what answered it,
+  // and `runtimeMismatch` below has something to compare a case's declared
+  // runtime against. Left undefined, a case written about OpenCode would run
+  // silently on claude-code and red about a model claude-code was never asked to
+  // use. `claude-code` is the honest default because it is the config schema's
+  // own (`runtimes.default`), which an eval sandbox boots with.
+  const runtime: EvalRuntime | undefined =
+    opts.tier === 'test-mode'
+      ? undefined
+      : (opts.runtime ?? (paid ? PAID_PROVIDER_DEFAULT_RUNTIME : 'claude-code'));
+  // An OpenCode boot ALWAYS names a provider, on every tier. Defaulting this
+  // only on `real-provider` was the hole: `--tier claude-code-cheap --runtime
+  // opencode` left it undefined here and `harness-server.ts` defaulted it back
+  // to `openrouter` on the way into the sandbox config, so the run wrote a
+  // provider credential reference with nobody having passed the spend gate.
+  const provider =
+    opts.provider ?? (paid || runtime === 'opencode' ? OPENROUTER_PROVIDER_ID : undefined);
+  const model =
+    opts.model ??
+    (opts.tier === 'test-mode'
+      ? undefined
+      : paid || runtime === 'opencode'
+        ? DEFAULT_OPENROUTER_MODEL
+        : DEFAULT_CHEAP_MODEL);
+
   // Resolve the model credential ONCE for the whole run: probing the local
   // `claude` sign-in costs a subprocess, and the answer cannot change mid-run.
   // `test-mode` needs no credential and never probes. A credentialed run that
   // resolves nothing still proceeds to `runEval`, which errors each case with the
   // fix-it message rather than silently passing.
-  const credential = opts.tier === 'test-mode' ? undefined : await resolveModelCredential();
+  //
+  // WHICH question gets asked follows the MONEY, not the tier string
+  // ({@link spendsOnExternalProvider}). Keying it on `tier === 'real-provider'`
+  // was a hole a reviewer walked straight through: `--tier claude-code-cheap
+  // --runtime opencode --model openrouter/…` reached OpenRouter with
+  // DORKOS_EVALS_PAID_PROVIDER never set, and then recorded
+  // `credentialSource: 'anthropic-…'`, so the run named the wrong bill as well
+  // as skipping the gate.
+  let credential: ModelCredential | undefined;
+  if (spendsOnExternalProvider(opts.tier, runtime, provider)) {
+    const gate = resolvePaidProviderCredential();
+    if (!gate.ok && gate.reason === 'no-opt-in') throw new PaidTierRefusedError(gate.message);
+    // `no-key` deliberately falls through with NO credential: `runEval`'s
+    // credential gate then errors every case with the fix-it message, so a run
+    // somebody armed can never report a pass it did not earn.
+    credential = gate.ok ? gate.credential : undefined;
+  } else if (opts.tier !== 'test-mode') {
+    credential = await resolveModelCredential();
+  }
   if (credential) {
     notify(`Reaching the model through ${describeCredentialSource(credential.source)}.`);
   }
 
+  const budgetUsd = opts.budgetUsd ?? defaultRunBudgetUsd(opts.tier, runtime, provider);
+  const tracker = new BudgetTracker({ runBudgetUsd: budgetUsd });
+
+  // An OpenCode sandbox cannot find a binary on its own — its DORK_HOME is
+  // empty and `opencode` is not on PATH on a machine that provisioned it
+  // through DorkOS. Resolved once, from the HOST home, before anything boots.
+  let openCodeBinaryPath: string | undefined;
+  if (runtime === 'opencode') {
+    openCodeBinaryPath = resolveHostOpenCodeBinary();
+    if (!openCodeBinaryPath) throw new PaidTierRefusedError(noOpenCodeBinaryMessage());
+  }
+
   const launchers = createLauncherResolver({
-    ...(opts.isolation ? { isolation: opts.isolation } : {}),
+    ...(isolation ? { isolation } : {}),
     runId,
     notify,
     // A container cannot see the machine's `claude` sign-in, so under `auto` a
@@ -185,6 +373,12 @@ export async function runSuite(cases: EvalCase[], opts: RunSuiteOptions): Promis
     // run ran out of money rather than that the tiers do not match.
     if (tierMismatch(evalCase, opts.tier)) {
       results.push(skippedResult(evalCase, opts.tier, 'skipped-wrong-tier'));
+      continue;
+    }
+    // Checked after the tier and before the budget, for the same reason: a case
+    // written about another runtime was never a spend question either.
+    if (runtimeMismatch(evalCase, runtime)) {
+      results.push(skippedResult(evalCase, opts.tier, 'skipped-wrong-runtime'));
       continue;
     }
     if (tracker.isOverRunBudget()) {
@@ -209,7 +403,10 @@ export async function runSuite(cases: EvalCase[], opts: RunSuiteOptions): Promis
             runDir,
             tracker,
             timeoutMs: opts.timeoutMs,
-            model: opts.model,
+            model,
+            ...(runtime ? { runtime } : {}),
+            ...(provider ? { provider } : {}),
+            ...(openCodeBinaryPath ? { openCodeBinaryPath } : {}),
             transcriptName: transcriptNameForAttempt(evalCase.id, attemptNumber),
             ...(launcher ? { launcher } : {}),
             ...(credential ? { credential } : {}),
@@ -223,11 +420,15 @@ export async function runSuite(cases: EvalCase[], opts: RunSuiteOptions): Promis
     runId,
     startedAt,
     tier: opts.tier,
-    // The RESOLVED model, and resolved the same way the boot resolves it
-    // (`startChildProcessServer` sets `ANTHROPIC_MODEL` to exactly this), so
-    // the recorded value is what answered rather than what was typed. Omitted
-    // on `test-mode`, which reaches no model.
-    ...(opts.tier === 'test-mode' ? {} : { model: opts.model ?? DEFAULT_CHEAP_MODEL }),
+    // The RESOLVED triple — model, runtime, provider — resolved ONCE above, so
+    // the recorded values are the ones the boot was handed rather than what was
+    // typed. A case that pinned its OWN model (`EvalCase.model`) is the one
+    // exception, and it is legible on that case's transcript rather than here:
+    // this line is about what the RUN was pointed at. Omitted on `test-mode`,
+    // which reaches no model and boots no agent runtime.
+    ...(model ? { model } : {}),
+    ...(runtime ? { runtime } : {}),
+    ...(provider ? { provider } : {}),
     ...(credential ? { credentialSource: credential.source } : {}),
     budgetUsd,
     totalCostUsd: tracker.totalCostUsd,

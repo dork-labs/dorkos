@@ -1,7 +1,7 @@
 /**
  * The drive loop: trigger a turn and collect it off the durable stream.
  *
- * One turn is: `POST /api/sessions/:id/messages { content, cwd }` (trigger-only,
+ * One turn is: `POST /api/sessions/:id/messages { content, cwd, runtime? }` (trigger-only,
  * 202, ADR-0264) → collect `GET /api/sessions/:id/events` until the turn's
  * terminal frame or a timeout/budget guard trips. On the durable per-session
  * stream the runtime's terminal `done` (the `runtimeConformance` guarantee) is
@@ -144,6 +144,29 @@ export interface DriveTurnOptions extends OpenStreamOptions {
    * a fresh id per turn, which is only safe for a single-turn drive.
    */
   clientId?: string;
+  /**
+   * Which agent runtime should own this session, sent as the `runtime` hint on
+   * the trigger body (`SendMessageRequestSchema`, ADR-0255).
+   *
+   * Honored on the message that CREATES the session and ignored on every later
+   * one — the stored `session_metadata` row is first-write-wins — so passing it
+   * on every turn of a conversation is correct and costs nothing. Omitted ⇒ the
+   * server decides (agent manifest, then `runtimes.default`).
+   *
+   * The sandbox config already sets `runtimes.default`, so this is belt AND
+   * braces on purpose: the default answers sessions the harness never creates
+   * directly, and the hint answers the ones it does, without either depending on
+   * the other having been read.
+   *
+   * One consequence worth naming: the hint OUTRANKS a seeded agent manifest's own
+   * `runtime` field (ADR-0255's order is hint > manifest > default). That is the
+   * intended reading — `--runtime` is a statement about this run, which is more
+   * specific than a fixture's preference — and it is a no-op today, because every
+   * manifest the suite seeds already says `claude-code`. A case that ever needs
+   * its manifest to win should say so out loud rather than rely on the hint being
+   * absent.
+   */
+  runtime?: string;
 }
 
 /** The result of one driven turn. */
@@ -449,7 +472,11 @@ export async function driveTurn(opts: DriveTurnOptions): Promise<DriveTurnResult
         'Content-Type': 'application/json',
         ...(opts.clientId ? { 'X-Client-Id': opts.clientId } : {}),
       },
-      body: JSON.stringify({ content: opts.content, cwd: opts.cwd }),
+      body: JSON.stringify({
+        content: opts.content,
+        cwd: opts.cwd,
+        ...(opts.runtime ? { runtime: opts.runtime } : {}),
+      }),
     })
   );
 }
@@ -559,6 +586,7 @@ export async function driveConversation(
       readyTimeoutMs: opts.readyTimeoutMs,
       abortWhen: opts.abortWhen,
       onFrames: opts.onFrames,
+      ...(opts.runtime ? { runtime: opts.runtime } : {}),
     });
     sessionId = turn.canonicalId;
     allFrames.push(...turn.frames);
