@@ -46,6 +46,63 @@ describe('buildTranscriptExcerpt', () => {
     expect(out).toContain('assistant: let me look');
   });
 
+  // A failed turn is exactly what someone attaches a transcript to report, and
+  // its whole content lives in an error PART — the message text is empty. Read
+  // from `content` and `toolCalls` alone, that turn rendered as a bare
+  // "assistant:" line and the bug report arrived describing nothing (DOR-1666).
+  it('renders an error-only turn as its failure, not a blank assistant line', () => {
+    const out =
+      buildTranscriptExcerpt([
+        msg('user', 'run the tests'),
+        {
+          id: 'assistant-failed',
+          role: 'assistant',
+          content: '',
+          parts: [{ type: 'error', message: 'OAuth token revoked', category: 'auth_error' }],
+        },
+      ]) ?? '';
+
+    expect(out).toContain('[error: auth_error] OAuth token revoked');
+    // The turn is no longer an empty line with a role on it.
+    expect(out).not.toMatch(/assistant:\s*$/);
+  });
+
+  it('renders an error that rides alongside text and tools', () => {
+    const out =
+      buildTranscriptExcerpt([
+        {
+          id: 'assistant-partial',
+          role: 'assistant',
+          content: 'Starting now.',
+          toolCalls: [{ toolCallId: 'c1', toolName: 'bash', status: 'complete', result: 'ok' }],
+          parts: [
+            { type: 'text', text: 'Starting now.' },
+            { type: 'error', message: 'upstream 500' },
+          ],
+        },
+      ]) ?? '';
+
+    expect(out).toContain('assistant: Starting now.');
+    expect(out).toContain('[tool: bash]');
+    // No category means no category label — nothing is invented.
+    expect(out).toContain('[error] upstream 500');
+  });
+
+  it('trims an oversized error message like any other attached output', () => {
+    const out =
+      buildTranscriptExcerpt([
+        {
+          id: 'assistant-long',
+          role: 'assistant',
+          content: '',
+          parts: [{ type: 'error', message: 'E'.repeat(MAX_TOOL_OUTPUT_CHARS + 200) }],
+        },
+      ]) ?? '';
+
+    expect(out).toContain('… [trimmed]');
+    expect(out).not.toContain('E'.repeat(MAX_TOOL_OUTPUT_CHARS + 1));
+  });
+
   it('keeps only the last N messages (turn-bounded, newest kept)', () => {
     const messages = Array.from({ length: DEFAULT_TRANSCRIPT_MAX_MESSAGES + 6 }, (_, i) =>
       msg(i % 2 === 0 ? 'user' : 'assistant', `line ${i}`)
