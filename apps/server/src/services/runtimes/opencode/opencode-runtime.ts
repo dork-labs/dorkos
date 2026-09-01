@@ -100,6 +100,7 @@ import {
 import { OPENCODE_CAPABILITIES, STREAM_LIVE_TIMEOUT_MS } from './runtime-constants.js';
 import { awaitAbortAck, delay } from './bounded-abort.js';
 import { buildOpenCodeParts, parseModelSelection } from './turn-input.js';
+import { resolveCompactionModel } from './compaction-model.js';
 import { projectModelOptions, projectedProviderIds } from './providers/models.js';
 import { OpenCodeMcpManager } from './mcp-manager.js';
 import { captureOpenCodeMedia } from './media-capture.js';
@@ -339,17 +340,20 @@ export class OpenCodeRuntime implements AgentRuntime {
 
   /**
    * Fulfill the runtime-fulfilled `compact` intent (ADR-0273) by triggering
-   * OpenCode's native sidecar compaction — `client.session.summarize` with the
-   * body omitted, so compaction uses the session's own model. OpenCode reports
-   * the result out-of-band as `session.compacted`, which the shared per-turn
-   * demux tap ({@link runOpenCodeTurn}) maps to `operation_progress` done +
-   * `compact_boundary` (event-mapper.ts) and {@link mapOpenCodeTurn} terminates
-   * on the trailing `session.idle`. Driving it through the same turn path is
-   * REQUIRED, not optional: there is no standing hub→projector subscription
-   * outside a turn, so the boundary reaches the durable projector only because
-   * this generator yields it. The `@opencode-ai/sdk` import stays confined to
-   * this directory (Hard Rule 2). `OPENCODE_CAPABILITIES.commandIntents` gates
-   * the route before this is ever called.
+   * OpenCode's native sidecar compaction — `client.session.summarize` carrying
+   * the `{providerID, modelID}` body the sidecar requires (DOR-1668; see
+   * {@link resolveCompactionModel} for why the SDK types that body as optional
+   * while the server rejects its absence, and for how the model is chosen).
+   * OpenCode reports the result out-of-band as `session.compacted`, which the
+   * shared per-turn demux tap ({@link runOpenCodeTurn}) maps to
+   * `operation_progress` done + `compact_boundary` (event-mapper.ts) and
+   * {@link mapOpenCodeTurn} terminates on the trailing `session.idle`. Driving
+   * it through the same turn path is REQUIRED, not optional: there is no
+   * standing hub→projector subscription outside a turn, so the boundary reaches
+   * the durable projector only because this generator yields it. The
+   * `@opencode-ai/sdk` import stays confined to this directory (Hard Rule 2).
+   * `OPENCODE_CAPABILITIES.commandIntents` gates the route before this is ever
+   * called.
    */
   async *executeCommandIntent(
     sessionId: string,
@@ -359,9 +363,22 @@ export class OpenCodeRuntime implements AgentRuntime {
     // NOTE: `opts.instructions` is deliberately ignored — `session.summarize`
     // takes no instruction parameter, so OpenCode compaction cannot be guided.
     // An honest per-runtime difference (claude-code forwards instructions).
+    //
+    // Settings are resolved the same way a prompt resolves them (registry →
+    // persisted store), because the model DorkOS would run the next TURN on is
+    // the first rung of the compaction model ladder.
+    const settings = await this.resolveTurnSettings(sessionId, opts);
     const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd ?? DEFAULT_CWD;
     yield* this.runOpenCodeTurn(sessionId, cwd, undefined, async (client, ocSessionId) => {
-      const summarized = await client.session.summarize({ path: { id: ocSessionId } });
+      const model = await resolveCompactionModel(client, {
+        ocSessionId,
+        cwd,
+        trackedModel: settings.model,
+      });
+      const summarized = await client.session.summarize({
+        path: { id: ocSessionId },
+        body: model,
+      });
       if (summarized.error !== undefined) {
         throw new Error(`OpenCode session.summarize failed: ${JSON.stringify(summarized.error)}`);
       }
@@ -760,11 +777,25 @@ export class OpenCodeRuntime implements AgentRuntime {
    * (Anthropic/OpenAI/Ollama/OpenAI-compatible endpoints, whatever the user
    * configured). Boots the sidecar when needed; an unreachable sidecar yields
    * an empty picker rather than an error.
+   *
+   * `query.directory` is load-bearing (NOTES.md §9). `GET /provider` reads
+   * `enabled_providers`/`disabled_providers` off the same per-directory config
+   * `GET /config` does, and resolves the directory as
+   * `query → x-opencode-directory → the SIDECAR's own process.cwd()`. Passing
+   * `DEFAULT_CWD` to `getClient` does NOT carry it: that argument is accepted
+   * and ignored (one shared sidecar, routed per request), and the client sets
+   * no directory header. Without the query the picker is built from whatever
+   * project the sidecar process happens to sit in — so a provider declared in
+   * THIS project's `opencode.json` would be missing from the menu, and one
+   * disabled here would still be offered.
    */
   async getSupportedModels(): Promise<ModelOption[]> {
     try {
       const client = await this.provider.getClient(DEFAULT_CWD);
-      const listed = unwrap(await client.provider.list(), 'provider.list');
+      const listed = unwrap(
+        await client.provider.list({ query: { directory: DEFAULT_CWD } }),
+        'provider.list'
+      );
       const [installedOllamaTags, openRouterCatalog] = await Promise.all([
         this.resolveInstalledOllamaTags(listed),
         this.resolveOpenRouterCatalog(listed),

@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260901-200750",
+      "slug": "pre-push-gate-relief",
+      "title": "Pre-push gate relief on shared-touching branches",
+      "created": "2026-09-01",
+      "status": "ideation"
+    },
+    {
       "id": "260828-010140",
       "slug": "tool-only-room-replies",
       "title": "Room replies go through tool calls only — silence, reactions and DMs become real choices",
