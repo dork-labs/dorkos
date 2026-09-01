@@ -9,52 +9,19 @@
  *
  * @module features/runtime-connect/ui/LoginConnect
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { Button, Label, PasswordInput } from '@/layers/shared/ui';
 import {
+  getLoginCopy,
   getRuntimeDescriptor,
   useDelegateRuntimeLogin,
   useStoreRuntimeCredential,
+  type LoginCopy,
   type RuntimeConnectSuccess,
 } from '@/layers/entities/runtime';
 import { loginConnectSuccess } from '../lib/connect-success';
 import { ConnectErrorRow, ConnectProgressRow, ConnectedRow } from './connect-feedback';
-
-/** Per-runtime copy for the login flow — honest, provider-specific wording. */
-interface LoginCopy {
-  /** Label on the delegated sign-in button. */
-  signInLabel: string;
-  /** One-line hint under the sign-in button. */
-  signInHint: string;
-  /** Status line shown while the delegated login is in flight. */
-  signInPending: string;
-  /** Label above the paste-key input. */
-  keyLabel: string;
-  /** Placeholder for the key input (a format hint, never a real key). */
-  keyPlaceholder: string;
-  /** Optional "get a key" link. */
-  getKeyUrl?: string;
-}
-
-const LOGIN_COPY: Record<string, LoginCopy> = {
-  'claude-code': {
-    signInLabel: 'Sign in',
-    signInHint: 'Use your Claude subscription or Anthropic account.',
-    signInPending: 'Waiting for sign-in to complete…',
-    keyLabel: 'Anthropic API key',
-    keyPlaceholder: 'sk-ant-…',
-    getKeyUrl: 'https://console.anthropic.com/settings/keys',
-  },
-  codex: {
-    signInLabel: 'Sign in with ChatGPT',
-    signInHint: 'Use your ChatGPT account.',
-    signInPending: 'Waiting for sign-in to complete…',
-    keyLabel: 'OpenAI API key',
-    keyPlaceholder: 'sk-…',
-    getKeyUrl: 'https://platform.openai.com/api-keys',
-  },
-};
 
 /**
  * The Codex/Claude connect surface: a delegated sign-in, with a paste-key path
@@ -76,12 +43,19 @@ export function LoginConnect({
   type: string;
   onConnected?: (success: RuntimeConnectSuccess) => void;
 }) {
-  const copy = LOGIN_COPY[type] ?? LOGIN_COPY['claude-code'];
+  const copy = getLoginCopy(type);
   const login = useDelegateRuntimeLogin(type);
   const [showKey, setShowKey] = useState(false);
+  // Fire the landing ONCE. `onConnected` is routinely an inline arrow, so a new
+  // identity every render re-runs this effect while `isSuccess` stays true —
+  // harmless for a dialog that only shows a success moment, but this callback
+  // re-sends turns in DOR-1650's shape, and re-sending a turn is not harmless.
+  const reported = useRef(false);
 
   useEffect(() => {
-    if (login.isSuccess) onConnected?.(loginConnectSuccess(getRuntimeDescriptor(type).label));
+    if (!login.isSuccess || reported.current) return;
+    reported.current = true;
+    onConnected?.(loginConnectSuccess(getRuntimeDescriptor(type).label));
   }, [login.isSuccess, onConnected, type]);
 
   return (
@@ -148,9 +122,13 @@ function PasteKeyForm({
 }) {
   const [key, setKey] = useState('');
   const store = useStoreRuntimeCredential(type);
+  // Once only, for the same reason the sign-in half latches (see above).
+  const reported = useRef(false);
 
   useEffect(() => {
-    if (store.isSuccess) onConnected?.(loginConnectSuccess(getRuntimeDescriptor(type).label));
+    if (!store.isSuccess || reported.current) return;
+    reported.current = true;
+    onConnected?.(loginConnectSuccess(getRuntimeDescriptor(type).label));
   }, [store.isSuccess, onConnected, type]);
 
   if (store.isPending) {

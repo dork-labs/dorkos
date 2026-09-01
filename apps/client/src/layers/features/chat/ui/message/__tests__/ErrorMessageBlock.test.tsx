@@ -23,21 +23,23 @@ vi.mock('@/layers/shared/model', async (importOriginal) => ({
   useSettingsDeepLink: () => ({ open: openSettings }),
 }));
 
-// The card resolves the failing runtime and that session's bound account from
-// the session-list cache. Mocking the LIST (not the two hooks that read it)
-// keeps `useSessionRuntime`/`useSessionAccount` running for real, so these
-// tests cover the lookup as well as the card.
-const { sessionRows } = vi.hoisted(() => ({ sessionRows: { current: [] as Session[] } }));
+// The card resolves the failing runtime off the session-list cache. Mocking the
+// LIST rather than a lookup helper keeps the card's own resolution running for
+// real, so these tests cover it too.
+const { sessionRows, sessionsLoading } = vi.hoisted(() => ({
+  sessionRows: { current: [] as Session[] },
+  sessionsLoading: { current: false },
+}));
 vi.mock('@/layers/entities/session/model/use-sessions', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/session/model/use-sessions')>()),
-  useSessions: () => ({ sessions: sessionRows.current, isLoading: false }),
+  useSessions: () => ({ sessions: sessionRows.current, isLoading: sessionsLoading.current }),
 }));
 
 const SESSION_ID = 'session-1';
 
 /** A session-list row carrying only what the auth card reads off it. */
-function sessionRow(runtime: string, account?: string): Session {
-  return { id: SESSION_ID, runtime, ...(account ? { account } : {}) } as Session;
+function sessionRow(runtime: string): Session {
+  return { id: SESSION_ID, runtime } as Session;
 }
 
 function deferred<T>() {
@@ -71,6 +73,7 @@ afterEach(() => {
   cleanup();
   openSettings.mockClear();
   sessionRows.current = [];
+  sessionsLoading.current = false;
 });
 
 describe('ErrorMessageBlock', () => {
@@ -397,13 +400,13 @@ describe('ErrorMessageBlock', () => {
   });
 
   describe('auth_error — inline sign-in (DOR-1651)', () => {
-    it('signs Claude Code in from the card, pinned to that session’s account', async () => {
+    it('signs Claude Code in from the card, naming the session to sign in for', async () => {
       // Purpose: the whole point of the card. The primary button runs the
-      // delegated login in place, and pins it to the account THIS session is
-      // bound to — signing into the default account instead would report
-      // success while the session kept failing (the DOR-1652 seam).
+      // delegated login in place, and names THIS session so the server pins the
+      // account it is bound to — signing into the default account instead would
+      // report success while the session kept failing (the DOR-1652 bug).
       const user = userEvent.setup();
-      sessionRows.current = [sessionRow('claude-code', '/Users/dev/.claude2')];
+      sessionRows.current = [sessionRow('claude-code')];
       const transport = renderBlock(
         <ErrorMessageBlock
           message="401 revoked"
@@ -416,40 +419,85 @@ describe('ErrorMessageBlock', () => {
       await user.click(screen.getByRole('button', { name: 'Sign in' }));
 
       expect(transport.delegateRuntimeLogin).toHaveBeenCalledWith('claude-code', {
-        accountRoot: '/Users/dev/.claude2',
+        sessionId: SESSION_ID,
+        accountRoot: undefined,
       });
       // It signed in HERE — it did not send the person to Settings.
       expect(openSettings).not.toHaveBeenCalled();
     });
 
-    it('sends no account pin when the session reports no account', async () => {
-      // Purpose: a single-account machine has no account to name, and an
-      // unrecognized root is refused server-side — so "unknown" must mean
-      // "sign into the usual account", not an invented value.
+    it('names the session for Codex too, and lets the server decide the account', async () => {
+      // Purpose: Codex has no config-dir account concept, but the client must
+      // not be the thing that knows that — sending the session id is always
+      // safe, and the server resolves it to no pin. Keeping the rule in one
+      // place is why the client no longer branches on runtime here.
       const user = userEvent.setup();
-      sessionRows.current = [sessionRow('claude-code')];
+      sessionRows.current = [sessionRow('codex')];
       const transport = renderBlock(
         <ErrorMessageBlock message="401" category="auth_error" sessionId={SESSION_ID} />
       );
 
-      await user.click(screen.getByRole('button', { name: 'Sign in' }));
+      await user.click(screen.getByRole('button', { name: 'Sign in with ChatGPT' }));
 
-      expect(transport.delegateRuntimeLogin).toHaveBeenCalledWith('claude-code', undefined);
+      expect(transport.delegateRuntimeLogin).toHaveBeenCalledWith('codex', {
+        sessionId: SESSION_ID,
+        accountRoot: undefined,
+      });
     });
 
-    it('signs Codex in inline, and never sends it an account pin', async () => {
-      // Purpose: Codex gets the same inline path, but it has no config-dir
-      // account concept — the server rejects the pin outright, so a stray
-      // account on the row must not turn a working sign-in into an error.
+    it('uses the same per-runtime wording Settings uses', async () => {
+      // Purpose: the copy table is shared (entities/runtime), so a person who
+      // reads "Sign in with ChatGPT" in Settings reads it here too. A private
+      // copy in either surface is how the two drift.
+      sessionRows.current = [sessionRow('codex')];
+      renderBlock(<ErrorMessageBlock message="401" category="auth_error" sessionId={SESSION_ID} />);
+
+      expect(
+        await screen.findByRole('button', { name: 'Sign in with ChatGPT' })
+      ).toBeInTheDocument();
+    });
+
+    it('keeps one login across an unmount, so scrolling away cannot start a second', async () => {
+      // Purpose: the card lives in a VIRTUALIZED transcript (overscan 5), so
+      // scrolling the failed turn out of view unmounts the row mid-login. With
+      // component-local mutation state the remounted row showed a pristine
+      // "Sign in" button and a second click spawned a second `claude auth
+      // login`. The state lives in the shared MutationCache for exactly this.
       const user = userEvent.setup();
-      sessionRows.current = [sessionRow('codex', '/Users/dev/.claude2')];
-      const transport = renderBlock(
-        <ErrorMessageBlock message="401" category="auth_error" sessionId={SESSION_ID} />
+      sessionRows.current = [sessionRow('claude-code')];
+      const login = deferred<DelegatedLoginResult>();
+      const delegateRuntimeLogin = vi.fn(() => login.promise);
+      const transport = createMockTransport({ delegateRuntimeLogin });
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+      });
+      const card = <ErrorMessageBlock message="401" category="auth_error" sessionId={SESSION_ID} />;
+      const wrap = (ui: React.ReactNode) => (
+        <QueryClientProvider client={queryClient}>
+          <TransportProvider transport={transport}>{ui}</TransportProvider>
+        </QueryClientProvider>
       );
+      const view = render(wrap(card));
 
       await user.click(screen.getByRole('button', { name: 'Sign in' }));
+      expect(await screen.findByText('Waiting for sign-in to complete…')).toBeInTheDocument();
 
-      expect(transport.delegateRuntimeLogin).toHaveBeenCalledWith('codex', undefined);
+      // Scroll it out of view and back: the row unmounts and remounts.
+      view.rerender(wrap(null));
+      view.rerender(wrap(card));
+
+      // Still pending — not a fresh, clickable "Sign in".
+      expect(await screen.findByText('Waiting for sign-in to complete…')).toBeInTheDocument();
+      expect(screen.getByTestId('auth-error-signin-button')).toBeDisabled();
+
+      await act(async () => {
+        login.resolve({ ok: true });
+      });
+      await waitFor(() => {
+        expect(screen.getByTestId('auth-error-signin-success')).toBeInTheDocument();
+      });
+      // One attempt, not two.
+      expect(delegateRuntimeLogin).toHaveBeenCalledTimes(1);
     });
 
     it('shows progress while the sign-in runs, then confirms it landed', async () => {
@@ -469,9 +517,17 @@ describe('ErrorMessageBlock', () => {
         { delegateRuntimeLogin: vi.fn(() => login.promise) }
       );
 
+      // The live region is mounted BEFORE there is anything to say, so the
+      // status change is announced rather than appearing with its container.
+      const status = screen.getByRole('status');
+      expect(status).toBeEmptyDOMElement();
+
       await user.click(screen.getByRole('button', { name: 'Sign in' }));
-      expect(await screen.findByTestId('auth-error-signin-pending')).toBeInTheDocument();
-      expect(screen.getByText('Waiting for sign-in to complete…')).toBeInTheDocument();
+      expect(await screen.findByText('Waiting for sign-in to complete…')).toBeInTheDocument();
+      // The button stays mounted and disabled — unmounting it would dump
+      // keyboard focus to <body> in the middle of the flow.
+      expect(screen.getByTestId('auth-error-signin-button')).toBeDisabled();
+      expect(document.body).not.toHaveFocus();
 
       await act(async () => {
         login.resolve({ ok: true });
@@ -567,14 +623,32 @@ describe('ErrorMessageBlock', () => {
     it('keeps the settings deep-link when no session is in context', async () => {
       // Purpose: with no session there is no way to know which runtime failed,
       // so there is nothing honest to sign into — fall back rather than guess.
+      //
+      // That this path also needs NO data providers cannot be shown here,
+      // because this file mocks `useSessions` and a mocked hook needs none
+      // either way. `ErrorMessageBlock-no-providers.test.tsx` proves it against
+      // the real session layer.
       const user = userEvent.setup();
-      const transport = renderBlock(<ErrorMessageBlock message="401" category="auth_error" />);
+      renderBlock(<ErrorMessageBlock message="401" category="auth_error" />);
 
       expect(screen.queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument();
       await user.click(screen.getByRole('button', { name: /fix sign-in/i }));
 
       expect(openSettings).toHaveBeenCalledWith('runtimes');
-      expect(transport.delegateRuntimeLogin).not.toHaveBeenCalled();
+    });
+
+    it('shows nothing while the session list is still loading', async () => {
+      // Purpose: "loading" is not "no runtime". Rendering the deep-link now and
+      // replacing it with a Sign in button a moment later is a control that
+      // moves under the cursor on every cold load.
+      sessionsLoading.current = true;
+      sessionRows.current = [];
+      renderBlock(<ErrorMessageBlock message="401" category="auth_error" sessionId={SESSION_ID} />);
+
+      expect(screen.queryByRole('button', { name: /fix sign-in/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument();
+      // The error itself still renders — only the actions wait.
+      expect(screen.getByText('Sign in to your agent again')).toBeInTheDocument();
     });
   });
 

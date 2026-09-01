@@ -6,25 +6,24 @@
  * that reaches for data and a router: the error chrome stays a presentational
  * component, and these hooks only run when a sign-in is actually on screen.
  *
+ * The split goes one level deeper than it looks. `SessionSigninActions` is
+ * where the session-list read lives, and it mounts ONLY when there is a session
+ * to read — so the no-session fallback needs neither a QueryClient nor a
+ * Transport, which is what lets a bare `<ErrorMessageBlock category="auth_error" />`
+ * render anywhere without providers.
+ *
  * @module features/chat/ui/message/AuthErrorActions
  */
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Check, Loader2, LogIn, RotateCcw } from 'lucide-react';
-import { runtimeAuthConnectKind } from '@dorkos/shared/agent-runtime';
+import { runtimeSupportsLogin } from '@dorkos/shared/agent-runtime';
 import { Button } from '@/layers/shared/ui';
 import { useSettingsDeepLink } from '@/layers/shared/model';
-import { useDelegateRuntimeLogin } from '@/layers/entities/runtime';
+import { getLoginCopy, useDelegateRuntimeLogin } from '@/layers/entities/runtime';
 import { useSessions } from '@/layers/entities/session';
 
 /** Settings tab that hosts runtime sign-in — where the quiet fallback link goes. */
 const RUNTIMES_SETTINGS_TAB = 'runtimes';
-
-/**
- * The runtime whose account pin the login endpoint accepts. Only Claude Code
- * keeps per-account config directories; the server rejects the pin for anything
- * else, so sending it elsewhere would turn a working sign-in into an error.
- */
-const ACCOUNT_PINNED_RUNTIME = 'claude-code';
 
 /** The quiet link under the auth actions — one destination, named by what it gets you. */
 function SettingsFallbackLink({ label }: { label: string }) {
@@ -48,10 +47,11 @@ function SettingsFallbackLink({ label }: { label: string }) {
  * was four steps deep at the exact moment someone was mid-thought, and the
  * inline card is the same pattern an OAuth-protected MCP server already gets.
  *
- * The login is pinned to the account THIS session is bound to, so on a machine
- * with more than one Claude account the person does not sign into the default
- * one, read "Signed in", and watch the session keep failing (DOR-1652 built the
- * pin; this is its first caller).
+ * The login is pinned to the account THIS session is bound to — resolved
+ * server-side from the session id, so it is right even for a first turn that
+ * failed before writing a transcript. Otherwise a person on a multi-account
+ * machine signs into the default account, reads "Signed in", and watches the
+ * session keep failing (DOR-1652 built the pin; this is its first caller).
  *
  * Every way the endpoint can refuse — it is loopback-only, and the Obsidian
  * embed declines it outright — arrives as this card's error state with a real
@@ -60,42 +60,28 @@ function SettingsFallbackLink({ label }: { label: string }) {
  */
 function InlineSigninActions({
   runtime,
-  accountRoot,
+  sessionId,
   onRetry,
   onSigninComplete,
 }: {
   runtime: string;
-  accountRoot: string | undefined;
+  sessionId: string;
   onRetry?: () => void;
   onSigninComplete?: () => void;
 }) {
-  const login = useDelegateRuntimeLogin(
-    runtime,
-    // Only Claude Code accepts the pin; sending it for Codex is a hard refusal.
-    runtime === ACCOUNT_PINNED_RUNTIME && accountRoot !== undefined ? { accountRoot } : undefined
-  );
+  const login = useDelegateRuntimeLogin(runtime, { sessionId });
+  const copy = getLoginCopy(runtime);
+  // Report the landing ONCE. `onSigninComplete` is the seam DOR-1650 uses to
+  // RE-SEND the failed turn, and callers pass inline arrows — a fresh identity
+  // every render would re-run this effect while `isSuccess` stays true and
+  // re-send the turn each time.
+  const reported = useRef(false);
 
   useEffect(() => {
-    // The seam DOR-1650 (auto-resume) picks up: a completed sign-in is exactly
-    // the moment the failed turn can be re-sent for the person. Nothing passes
-    // this yet — today they press Retry themselves.
-    if (login.isSuccess) onSigninComplete?.();
+    if (!login.isSuccess || reported.current) return;
+    reported.current = true;
+    onSigninComplete?.();
   }, [login.isSuccess, onSigninComplete]);
-
-  if (login.isPending) {
-    return (
-      <div
-        className="text-muted-foreground mt-3 flex items-center gap-2 text-sm"
-        data-testid="auth-error-signin-pending"
-        // The sign-in happens in another window; a spinner alone leaves a
-        // screen-reader user with no idea anything started.
-        role="status"
-      >
-        <Loader2 aria-hidden="true" className="size-3.5 shrink-0 animate-spin" />
-        Waiting for sign-in to complete…
-      </div>
-    );
-  }
 
   if (login.isSuccess) {
     return (
@@ -119,15 +105,34 @@ function InlineSigninActions({
 
   return (
     <div className="mt-3" data-testid="auth-error-signin">
+      {/* Mounted empty rather than conditionally rendered, so the live region
+          exists before its content changes — a region that appears WITH its
+          text is not announced by most screen readers. */}
+      <p className="text-muted-foreground mb-2 flex items-center gap-2 text-sm" role="status">
+        {login.isPending && (
+          <>
+            <Loader2 aria-hidden="true" className="size-3.5 shrink-0 animate-spin" />
+            {copy.signInPending}
+          </>
+        )}
+      </p>
       {login.isError && (
         <p className="text-destructive mb-2 text-sm" role="alert">
           {login.errorMessage}
         </p>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" onClick={login.login} className="gap-1.5">
+        {/* Stays mounted and disabled while the sign-in runs. Unmounting it
+            would dump keyboard focus to <body> mid-flow. */}
+        <Button
+          size="sm"
+          onClick={login.login}
+          disabled={login.isPending}
+          className="gap-1.5"
+          data-testid="auth-error-signin-button"
+        >
           <LogIn className="size-3" />
-          {login.isError ? 'Try again' : 'Sign in'}
+          {login.isError ? 'Try again' : copy.signInLabel}
         </Button>
         {onRetry && (
           <Button variant="outline" size="sm" onClick={onRetry} className="gap-1.5">
@@ -146,8 +151,8 @@ function InlineSigninActions({
 
 /**
  * Auth-error actions for a runtime with no sign-in to run — OpenCode, whose
- * "connect" is picking where the model comes from, not logging in. Signing in
- * inline would be a lie, so this keeps the deep-link to the picker.
+ * "connect" is picking where the model comes from, not logging in — and for
+ * every card with no session to sign in for.
  */
 function ProviderPickerActions({ onRetry }: { onRetry?: () => void }) {
   const { open: openSettings } = useSettingsDeepLink();
@@ -168,12 +173,44 @@ function ProviderPickerActions({ onRetry }: { onRetry?: () => void }) {
 }
 
 /**
+ * The half that reads data. Mounted only with a session id, so the session-list
+ * query — and the QueryClient and Transport it needs — are required only on the
+ * path that actually signs in.
+ */
+function SessionSigninActions({
+  sessionId,
+  onRetry,
+  onSigninComplete,
+}: {
+  sessionId: string;
+  onRetry?: () => void;
+  onSigninComplete?: () => void;
+}) {
+  const { sessions, isLoading } = useSessions();
+  const runtime = sessions.find((s) => s.id === sessionId)?.runtime;
+
+  // While the list is still loading the runtime is unknown, not absent —
+  // rendering the deep-link now would flip to a Sign in button a moment later.
+  // Hold the actions back rather than show one and replace it.
+  if (isLoading) return null;
+  if (!runtime || !runtimeSupportsLogin(runtime)) {
+    return <ProviderPickerActions onRetry={onRetry} />;
+  }
+  return (
+    <InlineSigninActions
+      runtime={runtime}
+      sessionId={sessionId}
+      onRetry={onRetry}
+      onSigninComplete={onSigninComplete}
+    />
+  );
+}
+
+/**
  * Actions for an auth error, routed by what the failing runtime can actually
- * do. Extracted so the router- and session-backed hooks are only invoked for
- * auth errors — non-auth error blocks stay router- and data-independent.
- *
- * With no session in context the runtime is unknown, so there is nothing
- * honest to sign into and the deep-link stays.
+ * do. With no session in context the runtime is unknown, so there is nothing
+ * honest to sign into and the deep-link stays — resolved here, before any hook,
+ * so that path stays free of data dependencies entirely.
  */
 export function AuthErrorActions({
   sessionId,
@@ -187,21 +224,10 @@ export function AuthErrorActions({
   /** Fires once a sign-in started here completes (the DOR-1650 seam). */
   onSigninComplete?: () => void;
 }) {
-  // Both facts come off the same server-authoritative session row, so they are
-  // read in one lookup: which runtime failed, and which account that session is
-  // bound to. `account` is set only for runtimes that have accounts at all.
-  const { sessions } = useSessions();
-  const row = sessionId ? sessions.find((s) => s.id === sessionId) : undefined;
-  const runtime = row?.runtime;
-  const accountRoot = row?.account;
-
-  if (!runtime || runtimeAuthConnectKind(runtime) !== 'login') {
-    return <ProviderPickerActions onRetry={onRetry} />;
-  }
+  if (!sessionId) return <ProviderPickerActions onRetry={onRetry} />;
   return (
-    <InlineSigninActions
-      runtime={runtime}
-      accountRoot={accountRoot}
+    <SessionSigninActions
+      sessionId={sessionId}
       onRetry={onRetry}
       onSigninComplete={onSigninComplete}
     />

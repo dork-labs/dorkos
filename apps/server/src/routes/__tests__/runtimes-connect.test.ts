@@ -26,6 +26,12 @@ vi.mock('../../services/runtimes/connect/delegated-login.js', async (orig) => {
   return { ...actual, delegateRuntimeLogin: vi.fn() };
 });
 
+// The session→account resolution is its own unit; here we only pin how the
+// route USES it (precedence, and the fall-through when it has no answer).
+vi.mock('../../services/runtimes/connect/resolve-session-account.js', () => ({
+  resolveAccountRootForSession: vi.fn(),
+}));
+
 // Preserve OpenRouterError, buildAuthorizeUrl, and the real flow store; mock the
 // network-touching actions.
 vi.mock('../../services/runtimes/opencode/providers/openrouter.js', async (orig) => {
@@ -56,6 +62,7 @@ import {
   ConnectError,
 } from '../../services/runtimes/connect/credentials.js';
 import { delegateRuntimeLogin } from '../../services/runtimes/connect/delegated-login.js';
+import { resolveAccountRootForSession } from '../../services/runtimes/connect/resolve-session-account.js';
 import {
   storeOpenRouterKeyReference,
   handleOpenRouterCallback,
@@ -270,6 +277,76 @@ describe('runtime connect endpoints', () => {
       const res = await request(server).post('/api/runtimes/claude-code/login').send({});
       expect(res.status).toBe(200);
       expect(delegateRuntimeLogin).toHaveBeenCalledWith('claude-code', { accountRoot: undefined });
+    });
+
+    describe('signing in for a session (DOR-1651)', () => {
+      it('resolves the account from the session id', async () => {
+        // Purpose: the chat card names a session, not a path. The server owns
+        // the launch ladder, so it is what turns one into the other — and it is
+        // right even for a first turn that failed before writing a transcript,
+        // which is the case the client's own `Session.account` cannot see.
+        vi.mocked(delegateRuntimeLogin).mockResolvedValue({ ok: true });
+        vi.mocked(resolveAccountRootForSession).mockResolvedValue('/Users/x/.claude2');
+
+        const res = await request(server)
+          .post('/api/runtimes/claude-code/login')
+          .send({ sessionId: 'session-1' });
+
+        expect(res.status).toBe(200);
+        expect(resolveAccountRootForSession).toHaveBeenCalledWith('session-1');
+        expect(delegateRuntimeLogin).toHaveBeenCalledWith('claude-code', {
+          accountRoot: '/Users/x/.claude2',
+        });
+      });
+
+      it('prefers the session over an explicit accountRoot', async () => {
+        // Purpose: the client sends what it knows; the server knows better. A
+        // stale `Session.account` on the wire must not beat a live resolution.
+        vi.mocked(delegateRuntimeLogin).mockResolvedValue({ ok: true });
+        vi.mocked(resolveAccountRootForSession).mockResolvedValue('/Users/x/.claude2');
+
+        await request(server)
+          .post('/api/runtimes/claude-code/login')
+          .send({ sessionId: 'session-1', accountRoot: '/Users/x/.claude-stale' });
+
+        expect(delegateRuntimeLogin).toHaveBeenCalledWith('claude-code', {
+          accountRoot: '/Users/x/.claude2',
+        });
+      });
+
+      it('falls through to the explicit accountRoot when the session resolves to nothing', async () => {
+        // Purpose: an unknown session, or a runtime with no account concept,
+        // degrades the pin — it never refuses a sign-in someone is waiting on.
+        vi.mocked(delegateRuntimeLogin).mockResolvedValue({ ok: true });
+        vi.mocked(resolveAccountRootForSession).mockResolvedValue(undefined);
+
+        await request(server)
+          .post('/api/runtimes/claude-code/login')
+          .send({ sessionId: 'unknown', accountRoot: '/Users/x/.claude2' });
+
+        expect(delegateRuntimeLogin).toHaveBeenCalledWith('claude-code', {
+          accountRoot: '/Users/x/.claude2',
+        });
+      });
+
+      it('never consults the resolver when no session was named', async () => {
+        vi.mocked(delegateRuntimeLogin).mockResolvedValue({ ok: true });
+
+        await request(server)
+          .post('/api/runtimes/claude-code/login')
+          .send({ accountRoot: '/Users/x/.claude2' });
+
+        expect(resolveAccountRootForSession).not.toHaveBeenCalled();
+      });
+
+      it('rejects a non-string sessionId with 400 and never calls the service', async () => {
+        const res = await request(server)
+          .post('/api/runtimes/claude-code/login')
+          .send({ sessionId: 42 });
+
+        expect(res.status).toBe(400);
+        expect(delegateRuntimeLogin).not.toHaveBeenCalled();
+      });
     });
 
     it('rejects a non-string accountRoot with 400 and never calls the service', async () => {

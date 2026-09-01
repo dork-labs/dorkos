@@ -57,7 +57,12 @@ import {
   resolveClaudeCliPath,
   createIdlePrompt,
 } from './sdk/sdk-utils.js';
-import { claudeConfigDirEnv, resolveActiveClaudeRoot } from './claude-config-dir.js';
+import { readManifest } from '@dorkos/shared/manifest';
+import {
+  claudeConfigDirEnv,
+  resolveActiveClaudeRoot,
+  resolveLaunchAccountRoot,
+} from './claude-config-dir.js';
 import { withClaudeConfigDir } from './claude-config-env-lock.js';
 import { logger } from '../../../lib/logger.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
@@ -681,6 +686,37 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         error: err instanceof Error ? err.message : String(err),
       });
     }
+  }
+
+  /**
+   * Which Claude account this session runs and bills on — the same answer
+   * `resolveLaunch` computes for a turn, for callers outside one.
+   *
+   * The ladder in full: the account disk has already bound to the session, else
+   * the launch ladder (agent manifest pin → configured default → inherited
+   * root). Running the launch half matters most for a session whose FIRST turn
+   * failed: it has no transcript, so nothing has bound it yet, and an agent
+   * pinned to a second account would otherwise resolve to the active one —
+   * which is the wrong-account bug one rung down from DOR-1652.
+   *
+   * Not on the `AgentRuntime` port: accounts are a Claude-Code-only concept, and
+   * widening the port for one runtime would oblige every other to answer a
+   * question it has no notion of.
+   *
+   * @param sessionId - DorkOS or SDK session id.
+   * @param projectDir - The session's working directory (keys both the
+   *   transcript probe and the agent manifest read).
+   * @returns An absolute Claude config directory.
+   */
+  async accountRootForSession(sessionId: string, projectDir: string): Promise<string> {
+    const settled = await this.sessionStore.settledAccountRoot(
+      sessionId,
+      this.transcriptReader,
+      projectDir
+    );
+    if (settled) return settled;
+    const manifest = await readManifest(projectDir).catch(() => null);
+    return resolveLaunchAccountRoot({ agentAccountId: manifest?.account });
   }
 
   /** @inheritdoc */

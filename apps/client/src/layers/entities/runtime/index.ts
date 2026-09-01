@@ -36,6 +36,8 @@ export {
   getRuntimeDescriptor,
 } from './config/runtime-descriptors';
 export type { RuntimeDescriptor, RuntimeSetupHint } from './config/runtime-descriptors';
+export { getLoginCopy } from './config/login-copy';
+export type { LoginCopy } from './config/login-copy';
 export { RuntimeMark } from './ui/RuntimeMark';
 export { RuntimeIdentity } from './ui/RuntimeIdentity';
 export { formatRuntimeIdentity, formatModelLabel } from './lib/runtime-identity';

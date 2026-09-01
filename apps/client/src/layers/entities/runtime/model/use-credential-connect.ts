@@ -18,8 +18,14 @@
  *
  * @module entities/runtime/model/use-credential-connect
  */
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { DelegateLoginOptions } from '@dorkos/shared/runtime-connect';
+import { useMemo } from 'react';
+import {
+  useMutation,
+  useMutationState,
+  useQueryClient,
+  type MutationState,
+} from '@tanstack/react-query';
+import type { DelegateLoginOptions, DelegatedLoginResult } from '@dorkos/shared/runtime-connect';
 import { MODELS_KEY } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import { REQUIREMENTS_KEY } from './use-runtime-requirements';
@@ -102,11 +108,25 @@ export interface UseDelegateRuntimeLogin {
  * button that does nothing. Reaching sign-in from a remote/tunnel client is
  * DOR-1655, not this hook.
  *
+ * ## The state is shared, not component-local
+ *
+ * A sign-in outlives the component that started it. The chat error card lives
+ * inside a VIRTUALIZED transcript (overscan 5): scroll the failed turn out of
+ * view mid-login and the row unmounts, taking a component-local `useMutation`
+ * with it — so scrolling back would show a pristine "Sign in" button and a
+ * second click would spawn a second `claude auth login`. The same is true of a
+ * second tab, and of two cards for the same runtime in one transcript.
+ *
+ * So the login is keyed into the shared `MutationCache` and read back with
+ * `useMutationState`: every card for the same `(type, account)` reads ONE
+ * attempt, a remounted row rejoins the one already running, and the pending
+ * state is what hides the button that would start another. The server holds
+ * the matching latch, because a client-side one cannot see other tabs.
+ *
  * @param type - Runtime type to sign in (`'claude-code'` | `'codex'`).
- * @param options - Optional `accountRoot` pinning the login to one account.
- *   Pass a session's own `account` so re-authenticating from that session signs
- *   back into the account it is bound to instead of the current default
- *   (DOR-1651). `claude-code` only — the server rejects the pin elsewhere.
+ * @param options - Which account to sign in. Prefer `sessionId` wherever a
+ *   session exists — the server resolves the account it is bound to, including
+ *   for a first turn that failed before writing a transcript (DOR-1651).
  */
 export function useDelegateRuntimeLogin(
   type: string,
@@ -114,11 +134,24 @@ export function useDelegateRuntimeLogin(
 ): UseDelegateRuntimeLogin {
   const transport = useTransport();
   const queryClient = useQueryClient();
-  const accountRoot = options?.accountRoot;
+  const { sessionId, accountRoot } = options ?? {};
+  // One key per sign-in TARGET: two cards for the same account share an
+  // attempt, while a different account stays its own (the server refuses to run
+  // those concurrently anyway, and its refusal must land on the card that asked).
+  const mutationKey = useMemo(
+    () => ['runtime-login', type, sessionId ?? '', accountRoot ?? ''] as const,
+    [type, sessionId, accountRoot]
+  );
 
   const mutation = useMutation({
+    mutationKey,
     mutationFn: () =>
-      transport.delegateRuntimeLogin(type, accountRoot === undefined ? undefined : { accountRoot }),
+      transport.delegateRuntimeLogin(
+        type,
+        sessionId === undefined && accountRoot === undefined
+          ? undefined
+          : { sessionId, accountRoot }
+      ),
     onSuccess: (result) => {
       if (result.ok) {
         void queryClient.invalidateQueries({ queryKey: [...REQUIREMENTS_KEY] });
@@ -129,15 +162,29 @@ export function useDelegateRuntimeLogin(
     },
   });
 
-  const failed = mutation.isError || mutation.data?.ok === false;
-  const rawError = mutation.isError
-    ? (mutation.error as Error).message
-    : (mutation.data?.error ?? null);
+  // Read from the cache, not from `mutation`: this instance may have mounted
+  // AFTER the login started (a re-rendered virtual row, a second tab), in which
+  // case its own observer has never run and only the cache knows.
+  const shared = useMutationState({
+    filters: { mutationKey, exact: true },
+    select: (m) => m.state as MutationState<DelegatedLoginResult, Error>,
+  });
+  const pending = shared.some((s) => s.status === 'pending');
+  const latest = shared[shared.length - 1];
+  const settled = pending ? undefined : latest;
+
+  const failed = !pending && (settled?.status === 'error' || settled?.data?.ok === false);
+  const rawError =
+    settled?.status === 'error' ? (settled.error?.message ?? null) : (settled?.data?.error ?? null);
 
   return {
-    login: () => mutation.mutate(),
-    isPending: mutation.isPending,
-    isSuccess: mutation.data?.ok === true,
+    // Never start a second attempt while one is running. The pending branch
+    // hides the button anyway; this closes the gap for a caller that does not.
+    login: () => {
+      if (!pending) mutation.mutate();
+    },
+    isPending: pending,
+    isSuccess: settled?.data?.ok === true,
     isError: failed,
     errorMessage: failed ? (rawError ?? 'Sign-in failed. Please try again.') : null,
   };

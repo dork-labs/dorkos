@@ -38,9 +38,21 @@ export interface StoreCredentialResult {
  */
 export interface DelegateLoginOptions {
   /**
-   * Absolute Claude config directory to sign into (the value a session reports
-   * as `Session.account`). Omit to sign into the account DorkOS runs new
-   * sessions on. Validated server-side against the known account roots.
+   * Sign back into the account THIS session is bound to. Preferred over
+   * {@link accountRoot} wherever a session exists, because only the server can
+   * answer it correctly: a session whose first turn failed has written no
+   * transcript, so the account is not yet visible to the client at all, and the
+   * server resolves it through the launch ladder (agent manifest pin included).
+   *
+   * Safe to send for any runtime — one with no account concept resolves to no
+   * pin rather than an error.
+   */
+  sessionId?: string;
+  /**
+   * Absolute Claude config directory to sign into, for callers with no session
+   * to name. Omit both fields to sign into the account DorkOS runs new sessions
+   * on. Validated server-side against the known account roots; `sessionId`
+   * wins when both are sent.
    */
   accountRoot?: string;
 }

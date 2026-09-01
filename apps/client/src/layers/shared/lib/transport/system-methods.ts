@@ -503,14 +503,14 @@ export function createSystemMethods(baseUrl: string) {
       type: string,
       options?: DelegateLoginOptions
     ): Promise<DelegatedLoginResult> {
-      // The body carries `accountRoot` only when the caller pinned one — the
-      // route rejects the pin outright for runtimes with no account concept, so
-      // an unpinned login must send no key at all rather than an explicit
-      // `undefined` (DOR-1651).
-      const body =
-        options?.accountRoot === undefined
-          ? undefined
-          : JSON.stringify({ accountRoot: options.accountRoot });
+      // Only the keys the caller actually set reach the wire — the route
+      // rejects a pin outright for runtimes with no account concept, so an
+      // unpinned login must send no key at all rather than an explicit
+      // `undefined` (DOR-1651). No key set at all sends no body.
+      const pin: Record<string, string> = {};
+      if (options?.sessionId !== undefined) pin.sessionId = options.sessionId;
+      if (options?.accountRoot !== undefined) pin.accountRoot = options.accountRoot;
+      const body = Object.keys(pin).length === 0 ? undefined : JSON.stringify(pin);
       return fetchJSON<DelegatedLoginResult>(
         baseUrl,
         `/runtimes/${encodeURIComponent(type)}/login`,
