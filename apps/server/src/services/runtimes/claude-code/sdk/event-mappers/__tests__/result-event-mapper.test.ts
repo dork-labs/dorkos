@@ -209,23 +209,24 @@ describe('mapResultEvent — error category classification', () => {
     return error?.data as Record<string, unknown> | undefined;
   }
 
-  it('tags a revoked-OAuth result as auth_error (the exact 401 example)', async () => {
+  it('answers a revoked-OAuth result in DorkOS words and keeps the CLI text in details', async () => {
+    // DOR-1656: this channel used to forward the CLI's own sentence verbatim
+    // while the assistant channel said something else for the same expiry, so
+    // which words a person met depended only on how the CLI reported it.
+    const vendorText =
+      'Claude Code returned an error result: Failed to authenticate. API Error: 401 OAuth access token has been revoked.';
     const events = await drain(
       mapResultEvent(
-        msg({
-          type: 'result',
-          subtype: 'error_during_execution',
-          errors: [
-            'Claude Code returned an error result: Failed to authenticate. API Error: 401 OAuth access token has been revoked.',
-          ],
-        }),
+        msg({ type: 'result', subtype: 'error_during_execution', errors: [vendorText] }),
         makeSession(),
         SESSION_ID
       )
     );
     const data = errorData(events);
     expect(data?.category).toBe('auth_error');
-    expect(data?.message).toContain('Failed to authenticate');
+    expect(data?.message).toBe('Authentication failed. Re-authenticate Claude and try again.');
+    // Translated, not deleted: the raw line stays reachable for debugging.
+    expect(data?.details).toBe(vendorText);
   });
 
   it('keeps a non-auth execution failure as execution_error', async () => {

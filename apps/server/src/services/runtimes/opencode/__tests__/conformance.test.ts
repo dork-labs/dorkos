@@ -159,14 +159,40 @@ import {
   opencodeErrorTurn,
   opencodeSimpleTurn,
   opencodeRepublishedImageTurn,
+  providerAuthError,
   serverConnected,
   sessionCompacted,
+  sessionError,
   sessionIdle,
   sessionInfo,
   statusEvent,
   textPart,
   userMessage,
 } from './opencode-sse-fixtures.js';
+
+/**
+ * The provider's own words for a dead credential — what the mocked sidecar is
+ * scripted with, and what a person must never be shown (DOR-1656).
+ */
+const OPENCODE_VENDOR_AUTH_TEXT =
+  'AuthenticationError: 401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}';
+
+/**
+ * A turn that fails on a dead provider credential: busy, a `session.error`
+ * carrying `ProviderAuthError`, then idle. `ProviderAuthError` is the shape the
+ * sidecar reports for every provider whose sign-in has stopped working, and its
+ * `data.message` is whatever that provider chose to say.
+ *
+ * @param sessionID - The sidecar session the failure belongs to.
+ */
+function opencodeAuthFailedTurn(sessionID: string): OpenCodeWireEvent[] {
+  return [
+    statusEvent(sessionID, { type: 'busy' }),
+    sessionError(sessionID, providerAuthError('anthropic', OPENCODE_VENDOR_AUTH_TEXT)),
+    statusEvent(sessionID, { type: 'idle' }),
+    sessionIdle(sessionID),
+  ];
+}
 
 /**
  * A turn that compacts before going idle. OpenCode reports compaction as a
@@ -524,6 +550,15 @@ runtimeConformance(
                 opencodeErrorTurn(OC_SESSION_A, 'Simulated OpenCode turn failure')
               ),
             }),
+          // DOR-1656: a dead provider credential. Scripted rather than live —
+          // a real sidecar's sign-in cannot be revoked on demand from here.
+          authFailure: {
+            vendorText: OPENCODE_VENDOR_AUTH_TEXT,
+            makeRuntime: () =>
+              new OpenCodeRuntime({
+                provider: makeMockedProvider(opencodeAuthFailedTurn(OC_SESSION_A)),
+              }),
+          },
           // A scripted compaction can't be forced against a live sidecar, so the
           // operation_progress gate runs only in mocked mode (DOR-110).
           makeCompactingRuntime: () =>

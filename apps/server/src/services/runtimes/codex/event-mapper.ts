@@ -39,9 +39,39 @@ import type {
 } from '@openai/codex-sdk';
 import type { StreamEvent, TaskItem } from '@dorkos/shared/types';
 import { UiCommandSchema } from '@dorkos/shared/schemas';
-import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
+import {
+  describeRuntimeError,
+  type RuntimeErrorCopy,
+} from '@dorkos/shared/runtime-error-classification';
 import { CODEX_UI_MCP_SERVER } from './codex-ui-mcp-server.js';
 import { recordCodexMedia, type CodexMediaState } from './media-capture.js';
+
+/**
+ * This adapter's runtime type — the identity {@link describeRuntimeError} turns
+ * into the name a person reads, so a Codex credential failure says "Codex" and
+ * never another runtime's name (DOR-1656).
+ */
+const CODEX_RUNTIME_TYPE = 'codex';
+
+/**
+ * What to show for one Codex failure: DorkOS's sentence when the CLI's words
+ * mean a dead sign-in (with those words kept in `details`), the CLI's words
+ * verbatim otherwise.
+ *
+ * Codex reports a failure through three channels — an error ITEM, `turn.failed`,
+ * and a thrown stream — and a person should not be able to tell which one caught
+ * it, so all three go through here.
+ *
+ * @param message - The CLI's own failure text.
+ * @param code - The channel's machine code, when it carries one.
+ */
+function codexErrorCopy(message: string, code?: string): RuntimeErrorCopy {
+  return describeRuntimeError({
+    runtimeType: CODEX_RUNTIME_TYPE,
+    message,
+    ...(code ? { code } : {}),
+  });
+}
 
 /** Tool name stamped on command_execution tool events. */
 export const SHELL_TOOL_NAME = 'Shell';
@@ -168,13 +198,7 @@ export function mapCodexEvent(event: ThreadEvent, ctx: CodexEventContext): Strea
         failedStatus,
         {
           type: 'error',
-          data: {
-            message: event.error.message,
-            code: 'turn_failed',
-            category: detectAuthError({ message: event.error.message, code: 'turn_failed' })
-              ? 'auth_error'
-              : 'execution_error',
-          },
+          data: { ...codexErrorCopy(event.error.message, 'turn_failed'), code: 'turn_failed' },
         },
         { type: 'done', data: { sessionId: ctx.sessionId } },
       ];
@@ -231,9 +255,8 @@ export async function* mapCodexThread(
       yield {
         type: 'error',
         data: {
-          message: err instanceof Error ? err.message : String(err),
+          ...codexErrorCopy(err instanceof Error ? err.message : String(err), 'stream_error'),
           code: 'stream_error',
-          category: 'execution_error',
         },
       };
     }
@@ -271,11 +294,28 @@ function mapThreadItem(item: ThreadItem, phase: ItemPhase, ctx: CodexEventContex
       return mapWebSearch(item, phase, ctx);
     case 'todo_list':
       return mapTodoList(item, ctx);
-    case 'error':
+    case 'error': {
       // Non-fatal error item — surfaced as a typed, NON-terminal error event.
-      // Remember the message: turn.failed dedupes against it (see mapCodexEvent).
+      // Remember the RAW message: turn.failed dedupes against it (see
+      // mapCodexEvent) and compares the CLI's text, not what a person is shown.
       ctx.lastErrorMessage = item.message;
-      return [{ type: 'error', data: { message: item.message, code: 'item_error' } }];
+      // The item is where a dead sign-in actually lands: live traffic reports it
+      // here first and repeats it on `turn.failed`, which then dedupes itself
+      // away — so this copy is the only copy a person reads (DOR-1656).
+      //
+      // ONLY the auth case gains a `category`, and that asymmetry is deliberate:
+      // an item error has always shipped without one, and the client renders a
+      // category-less error by showing its `message` (ErrorMessageBlock falls
+      // back to it) while a categorised one shows that category's fixed copy
+      // instead. Categorising an ordinary item failure would therefore HIDE the
+      // only account of what went wrong. An auth failure has somewhere better to
+      // send them, and its raw text survives in `details`.
+      const copy = codexErrorCopy(item.message);
+      if (copy.category !== 'auth_error') {
+        return [{ type: 'error', data: { message: item.message, code: 'item_error' } }];
+      }
+      return [{ type: 'error', data: { ...copy, code: 'item_error' } }];
+    }
     default: {
       const unhandled: never = item;
       void unhandled;

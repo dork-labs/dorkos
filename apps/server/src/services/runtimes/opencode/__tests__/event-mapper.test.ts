@@ -1006,15 +1006,18 @@ describe('mapOpenCodeEvent', () => {
       );
     });
 
-    it('carries provider auth failures with their error name as the code and tags them auth_error', () => {
+    it('answers a provider auth failure in DorkOS words naming OpenCode, keeping the provider text in details', () => {
+      // DOR-1656: one voice for a dead sign-in across every runtime — and it
+      // must name OPENCODE, never the runtime whose adapter the copy came from.
       const events = mapOpenCodeEvent(
         sessionError(OC, providerAuthError('anthropic', 'invalid api key')),
         makeContext()
       );
       expect(events[0]!.data).toMatchObject({
-        message: 'invalid api key',
+        message: 'Authentication failed. Re-authenticate OpenCode and try again.',
         code: 'ProviderAuthError',
         category: 'auth_error',
+        details: 'invalid api key',
       });
     });
 
@@ -1026,9 +1029,10 @@ describe('mapOpenCodeEvent', () => {
         makeContext()
       );
       expect(events[0]!.data).toMatchObject({
-        message: 'the provider ended the session',
+        message: 'Authentication failed. Re-authenticate OpenCode and try again.',
         code: 'ProviderAuthError',
         category: 'auth_error',
+        details: 'the provider ended the session',
       });
     });
 
@@ -1313,6 +1317,23 @@ describe('mapOpenCodeTurn', () => {
     expect(events[0]!.data).toMatchObject({
       message: 'sidecar exited unexpectedly',
       code: 'stream_error',
+    });
+  });
+
+  it('classifies a stream crash that is really a dead sign-in as auth_error (DOR-1656)', async () => {
+    // A credential failure can surface as a THROW rather than a session.error,
+    // and a hardcoded execution_error here leaves a person with no way back in.
+    const vendorText = 'AuthenticationError: 401 invalid x-api-key';
+    async function* crashing(): AsyncGenerator<OpenCodeWireEvent> {
+      yield statusEvent(OC, { type: 'busy' });
+      throw new Error(vendorText);
+    }
+    const events = await drain(crashing());
+    expect(events[0]!.data).toMatchObject({
+      message: 'Authentication failed. Re-authenticate OpenCode and try again.',
+      code: 'stream_error',
+      category: 'auth_error',
+      details: vendorText,
     });
   });
 

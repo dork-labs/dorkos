@@ -72,6 +72,7 @@ import {
   mapSessionError,
   mapSessionStatus,
   mapTodos,
+  openCodeErrorCopy,
   type EventPermissionAsked,
   type EventPermissionReplied,
   type OpenCodePermissionState,
@@ -340,9 +341,8 @@ export async function* mapOpenCodeTurn(
       yield {
         type: 'error',
         data: {
-          message: err instanceof Error ? err.message : String(err),
+          ...openCodeErrorCopy(err instanceof Error ? err.message : String(err), 'stream_error'),
           code: 'stream_error',
-          category: 'execution_error',
         },
       };
     }

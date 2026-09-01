@@ -44,7 +44,8 @@ import { recordPhantomCancellation } from '../../../observability/phantom-cancel
 // rather than restated so the loop's idea of "a window is open" cannot drift
 // from the normalizer's (DOR-1244).
 import { TURN_REOPENING_STREAM_EVENT_TYPES } from '../../../session/session-event-normalizer.js';
-import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
+import { describeAuthError, detectAuthError } from '@dorkos/shared/runtime-error-classification';
+import { CLAUDE_CODE_RUNTIME_TYPE } from '../sdk/sdk-error-mapping.js';
 
 // The vocabulary and the two small helpers both dispatch paths use. Re-exported
 // rather than moved-and-rewired: every import site in the tree names this
@@ -565,12 +566,17 @@ export async function* executeSdkQuery(
     // classify the raw thrown message: an auth failure earns the re-auth
     // category (and its "Fix sign-in" affordance) instead of the generic
     // overloaded copy. The raw message stays reachable via `details`.
+    //
+    // The sentence is the SHARED one, not a third wording of the same news
+    // (DOR-1656): this channel, the assistant channel and the result channel all
+    // report the same expiry, and a person should not be able to tell which one
+    // caught it.
     const isAuthError = detectAuthError({ message: errMsg });
     yield {
       type: 'error',
       data: {
         message: isAuthError
-          ? 'Your sign-in stopped working. Sign in again to keep going.'
+          ? describeAuthError(CLAUDE_CODE_RUNTIME_TYPE)
           : 'The agent stopped unexpectedly. The service may be temporarily overloaded — try again in a moment.',
         category: (isAuthError ? 'auth_error' : 'execution_error') as ErrorCategory,
         details: errMsg,

@@ -366,7 +366,10 @@ describe('sdk-event-mapper context usage capture', () => {
     const data = error?.data as ErrorEvent | undefined;
     expect(data?.category).toBe('auth_error');
     expect(data?.code).toBe('authentication_failed');
-    expect(data?.message).toContain('Re-authenticate');
+    // The EXACT sentence, not a keyword: it is the same one the result channel
+    // now says for the same expiry, and only equality can catch the two drifting
+    // apart again (DOR-1656).
+    expect(data?.message).toBe('Authentication failed. Re-authenticate Claude and try again.');
   });
 
   it('does not classify assistant content that merely discusses oauth tokens as an error', async () => {
@@ -632,14 +635,18 @@ describe('sdk-event-mapper result messages', () => {
     expect(err.details).toBe('API rate limit exceeded');
   });
 
-  it('reclassifies a revoked-OAuth result as auth_error (the exact 401 example)', async () => {
-    const msg = makeResultMessage('error_during_execution', [
-      'Claude Code returned an error result: Failed to authenticate. API Error: 401 OAuth access token has been revoked.',
-    ]);
+  it('reclassifies a revoked-OAuth result as auth_error and speaks DorkOS words', async () => {
+    const vendorText =
+      'Claude Code returned an error result: Failed to authenticate. API Error: 401 OAuth access token has been revoked.';
+    const msg = makeResultMessage('error_during_execution', [vendorText]);
     const events = await collectEvents(msg, session, sessionId, toolState);
 
     const err = events[2].data as ErrorEvent;
     expect(err.category).toBe('auth_error');
+    // The same sentence the assistant channel says for the same expiry
+    // (DOR-1656) — the raw CLI line survives in `details`.
+    expect(err.message).toBe('Authentication failed. Re-authenticate Claude and try again.');
+    expect(err.details).toBe(vendorText);
   });
 
   it('error_max_budget_usd maps to budget_exceeded category', async () => {

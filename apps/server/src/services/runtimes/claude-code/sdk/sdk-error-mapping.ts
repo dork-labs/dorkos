@@ -9,6 +9,14 @@
  */
 import type { ErrorCategory } from '@dorkos/shared/types';
 import { isInterruptedTerminalReason } from '@dorkos/shared/schemas';
+import { describeAuthError } from '@dorkos/shared/runtime-error-classification';
+
+/**
+ * This adapter's runtime type — the identity {@link describeAuthError} turns
+ * into the name a person reads ("Claude"), so every channel that reports a
+ * Claude Code credential failure names the same thing.
+ */
+export const CLAUDE_CODE_RUNTIME_TYPE = 'claude-code';
 
 /** What a non-success `result` needs to prove before its error frame is dropped. */
 export interface StoppedTurnEvidence {
@@ -103,7 +111,10 @@ export function describeAssistantError(error: string): string {
       return 'The selected model is unavailable. Pick a different model and try again.';
     case 'authentication_failed':
     case 'oauth_org_not_allowed':
-      return 'Authentication failed. Re-authenticate Claude Code and try again.';
+      // Shared, never re-typed: the result channel says this same sentence for
+      // the same expiry, and one copy is what keeps them from drifting apart
+      // again (DOR-1656).
+      return describeAuthError(CLAUDE_CODE_RUNTIME_TYPE);
     case 'billing_error':
       return 'There is a billing issue with your Claude account.';
     case 'invalid_request':

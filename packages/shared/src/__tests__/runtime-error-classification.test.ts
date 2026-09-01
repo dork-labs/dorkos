@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { AUTH_ERROR_SUBTYPES, detectAuthError } from '../runtime-error-classification.js';
+import {
+  AUTH_ERROR_SUBTYPES,
+  describeAuthError,
+  describeRuntimeError,
+  detectAuthError,
+} from '../runtime-error-classification.js';
 
 describe('detectAuthError', () => {
   it('matches the exact Claude Code 401 example', () => {
@@ -83,5 +88,66 @@ describe('detectAuthError', () => {
     it('does not match an unrelated code', () => {
       expect(detectAuthError({ message: 'boom', code: 'turn_failed' })).toBe(false);
     });
+  });
+});
+
+describe('describeAuthError', () => {
+  it('names the runtime that failed, never a hardcoded one', () => {
+    // The defect this pins: an OpenCode credential failure telling somebody to
+    // re-authenticate Claude.
+    expect(describeAuthError('claude-code')).toContain('Claude');
+    expect(describeAuthError('codex')).toContain('Codex');
+    expect(describeAuthError('opencode')).toContain('OpenCode');
+    expect(describeAuthError('opencode')).not.toContain('Claude');
+  });
+
+  it('is one sentence, identical in shape for every runtime', () => {
+    expect(describeAuthError('codex')).toBe(
+      'Authentication failed. Re-authenticate Codex and try again.'
+    );
+  });
+
+  it('falls back to the raw type for a runtime nobody has named yet', () => {
+    // Honest but plain, matching runtimeDisplayName — never a blank space where
+    // a name should be.
+    expect(describeAuthError('some-future-runtime')).toContain('some-future-runtime');
+  });
+});
+
+describe('describeRuntimeError', () => {
+  it('translates a credential failure and keeps the backend words in details', () => {
+    expect(
+      describeRuntimeError({
+        runtimeType: 'opencode',
+        message: 'AuthenticationError: 401 invalid x-api-key',
+        code: 'ProviderAuthError',
+      })
+    ).toEqual({
+      message: 'Authentication failed. Re-authenticate OpenCode and try again.',
+      category: 'auth_error',
+      details: 'AuthenticationError: 401 invalid x-api-key',
+    });
+  });
+
+  it('classifies on the CODE alone when the backend text says nothing useful', () => {
+    // A provider can end a session with generic words; the error NAME is then
+    // the only signal, and missing it costs the person their way back in.
+    const copy = describeRuntimeError({
+      runtimeType: 'opencode',
+      message: 'the provider ended the session',
+      code: 'ProviderAuthError',
+    });
+    expect(copy.category).toBe('auth_error');
+    expect(copy.details).toBe('the provider ended the session');
+  });
+
+  it('passes an ordinary failure through verbatim, with no details to duplicate it', () => {
+    expect(
+      describeRuntimeError({
+        runtimeType: 'codex',
+        message: 'Tool run_command exited with code 1',
+        code: 'turn_failed',
+      })
+    ).toEqual({ message: 'Tool run_command exited with code 1', category: 'execution_error' });
   });
 });
