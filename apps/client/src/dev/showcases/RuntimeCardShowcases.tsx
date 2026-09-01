@@ -34,6 +34,32 @@ import { MOCK_RETIRED_MODEL_ID, MOCK_SERVER_CONFIG_MULTI_ACCOUNT } from './setti
 /** The power source OpenCode's card names, worded the way the picker words it. */
 const OPENCODE_PROVIDER = 'ollama';
 
+/**
+ * The catalog a runtime offers before any provider is connected: a capped
+ * slice with every row marked `unverified`. The Model row must admit that
+ * (DOR-1674), the same admission the composer picker makes (DOR-1660).
+ */
+const UNVERIFIED_CATALOG = [
+  {
+    value: 'anthropic/claude-sonnet-5',
+    displayName: 'Claude Sonnet 5',
+    description: 'OpenRouter · anthropic/claude-sonnet-5',
+    unverified: true,
+  },
+  {
+    value: 'openai/gpt-5.2',
+    displayName: 'GPT-5.2',
+    description: 'OpenRouter · openai/gpt-5.2',
+    unverified: true,
+  },
+  {
+    value: 'google/gemini-3-pro',
+    displayName: 'Gemini 3 Pro',
+    description: 'OpenRouter · google/gemini-3-pro',
+    unverified: true,
+  },
+];
+
 /** Claude Code's declared accounts section, over a roster worth looking at. */
 function accountsSection(kind: string): ReactNode {
   return kind === 'claude-accounts' ? <ClaudeAccountsSection /> : null;
@@ -141,6 +167,18 @@ function OpenedSection() {
           effort={null}
           renderSection={powerSourceSection}
           sectionValues={{ 'opencode-power-source': describePowerSource(OPENCODE_PROVIDER) }}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>A capped, unconfirmed catalog says so under the Model row</ShowcaseLabel>
+      <ShowcaseDemo>
+        <LiveRuntimeCard
+          type="opencode"
+          expanded
+          model={null}
+          effort={null}
+          models={UNVERIFIED_CATALOG}
+          renderSection={unknownPowerSourceSection}
         />
       </ShowcaseDemo>
 

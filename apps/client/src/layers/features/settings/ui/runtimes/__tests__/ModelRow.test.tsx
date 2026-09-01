@@ -120,4 +120,27 @@ describe('ModelRow', () => {
     renderRow({ runtimeType: 'opencode', runtimeLabel: 'OpenCode' });
     expect(screen.getByText(/Which OpenCode model a new conversation starts on/)).toBeVisible();
   });
+
+  it('admits a capped, unconfirmed catalog instead of presenting it as the real list', () => {
+    // Same fact the composer picker surfaces (DOR-1660): with no provider
+    // connected every row arrives `unverified`, and a list that stays silent
+    // about that reads as complete when it is a bounded guess (DOR-1674).
+    renderRow({ models: MODELS.map((m) => ({ ...m, unverified: true })) });
+    expect(screen.getByTestId('model-catalog-unverified')).toBeVisible();
+  });
+
+  it('shows no unverified notice on a confirmed catalog', () => {
+    renderRow();
+    expect(screen.queryByTestId('model-catalog-unverified')).not.toBeInTheDocument();
+  });
+
+  it('accuses nothing while the catalog has not answered yet', () => {
+    // An absent or empty catalog is a warming one, not an unconfirmed one —
+    // the notice names a fact about rows that exist, so no rows, no notice.
+    renderRow({ models: undefined });
+    expect(screen.queryByTestId('model-catalog-unverified')).not.toBeInTheDocument();
+    cleanup();
+    renderRow({ models: [] });
+    expect(screen.queryByTestId('model-catalog-unverified')).not.toBeInTheDocument();
+  });
 });

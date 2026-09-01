@@ -157,8 +157,12 @@ function UnavailableSavedModel({ value }: { value: string }) {
  * that IS in the catalog returns "No models match" because the search only sees
  * the slice. The fix a person actually needs is naming the cause, so the line
  * ends on the action rather than the apology (DOR-1660).
+ *
+ * Exported because the settings Model row renders the same capped catalog and
+ * owes the person the same admission (DOR-1674) — one component, one sentence,
+ * so the two surfaces can never drift apart.
  */
-function UnverifiedCatalogNotice() {
+export function UnverifiedCatalogNotice() {
   return (
     <p
       className="text-muted-foreground border-border rounded-lg border border-dashed p-2 text-[11px] leading-snug"
