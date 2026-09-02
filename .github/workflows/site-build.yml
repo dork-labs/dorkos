@@ -146,30 +146,48 @@ jobs:
       #      `["@dorkos/site"]`). Turbo derives the site's dependency closure
       #      from the workspace graph, so there is no hand-maintained package
       #      list here to drift when the site gains an import.
-      #   2. Content roots OUTSIDE any package directory, which turbo's
-      #      file-to-package mapping cannot see. `docs/` is the one that
-      #      matters: the site prerenders every MDX file under it through
-      #      fumadocs, and docs-openapi-check.yml's header records a docs/ page
-      #      that broke the site build at prerender time. The workflow file
-      #      itself is included so an edit to this gate exercises it.
+      #   2. The PRERENDERED CONTENT ROOTS, which live OUTSIDE any package
+      #      directory and are therefore invisible to turbo's file-to-package
+      #      mapping. apps/site/source.config.ts declares BOTH of them, and
+      #      both are prerendered, so both can fail `next build`:
+      #        * `../../docs`  → fumadocs `docs`, rendered by the docs routes.
+      #          docs-openapi-check.yml's header records a docs page that
+      #          "broke the site build at prerender time".
+      #        * `../../blog`  → the `blogPosts` collection, whose zod
+      #          frontmatter schema (title/date/category enum) is enforced at
+      #          build, and whose 71 posts are all prerendered by
+      #          `generateStaticParams()` in
+      #          app/(marketing)/blog/[slug]/page.tsx. This repo ships a blog
+      #          post per release, so a blog-only commit is a routine shape —
+      #          and it is a shape turbo alone scores as zero affected
+      #          packages.
+      #      The workflow file itself is included so an edit to this gate
+      #      exercises it.
       #
-      # Deliberately NOT expanded into "every root path the site might read".
-      # This is the early-warning leg; the queue leg below builds
-      # unconditionally, so anything this misses is caught before merge anyway,
-      # minutes later rather than on the PR.
+      # KEEP THIS LIST IN STEP WITH apps/site/source.config.ts. A third
+      # collection added there with a `dir` outside apps/site is a third entry
+      # here; nothing enforces that automatically. The queue leg below builds
+      # unconditionally, so a missed root is a lost early warning on the PR,
+      # never a missed gate.
+      #
+      # `--no-renames` is load-bearing: with rename detection on, moving a file
+      # OUT of docs/ or blog/ reports only the DESTINATION path, so the very
+      # change that deletes a prerendered page scores as not touching it.
       - name: Decide whether this pull request can reach the site build
         id: scope
         if: ${{ github.event_name == 'pull_request' }}
         env:
           BASE: origin/${{ github.base_ref }}
         run: |
-          if git diff --name-only "$BASE"...HEAD | grep -qE '^(docs/|\.github/workflows/site-build\.yml$)'; then
-            echo 'docs/ or this workflow changed — building the site'
+          # pipefail so a turbo failure below fails this step instead of being
+          # swallowed by a jq that happily reads an empty stream and exits 0.
+          set -o pipefail
+          if git diff --no-renames --name-only "$BASE"...HEAD | grep -qE '^(docs/|blog/|\.github/workflows/site-build\.yml$)'; then
+            echo 'a prerendered content root (docs/, blog/) or this workflow changed — building the site'
             echo 'run=true' >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          TURBO_SCM_BASE="$BASE" pnpm exec turbo build --filter=@dorkos/site --affected --dry=json > turbo-affected.json
-          count=$(jq '.packages | length' turbo-affected.json)
+          count=$(TURBO_SCM_BASE="$BASE" pnpm exec turbo build --filter=@dorkos/site --affected --dry=json | jq '.packages | length')
           echo "turbo reports $count affected package(s) in the site's closure"
           if [ "$count" -gt 0 ]; then
             echo 'run=true' >> "$GITHUB_OUTPUT"
@@ -190,4 +208,4 @@ jobs:
       # check here is never mistaken for a build that passed.
       - name: Nothing in this pull request can reach the site build
         if: ${{ github.event_name == 'pull_request' && steps.scope.outputs.run != 'true' }}
-        run: echo 'No change in @dorkos/site or its dependency closure, and no change under docs/. The merge queue builds the site unconditionally.'
+        run: echo 'No change in @dorkos/site or its dependency closure, and no change under docs/ or blog/. The merge queue builds the site unconditionally.'
