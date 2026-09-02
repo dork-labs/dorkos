@@ -375,8 +375,15 @@ export function declaredScheme(href: string): string | null {
   return protocol.length <= MAX_REPORTABLE_SCHEME_LENGTH ? protocol : null;
 }
 
-/** The longest scheme worth repeating back to a person, in characters. */
-const MAX_REPORTABLE_SCHEME_LENGTH = 24;
+/**
+ * The longest scheme worth repeating back to a person, in characters.
+ *
+ * Generous on purpose. A reverse-DNS OAuth scheme
+ * (`com.mycompany.myapp.oauth:`) runs well past 24 characters and is exactly
+ * the case this message exists to serve — an MCP server naming a desktop
+ * sign-in link. 64 still refuses the 302-character abuse the review measured.
+ */
+const MAX_REPORTABLE_SCHEME_LENGTH = 64;
 
 /**
  * Whether `href` is an absolute `http:`/`https:` URL — the only thing the
@@ -401,6 +408,96 @@ export function isWebUrl(href: string): boolean {
   return protocol === 'http:' || protocol === 'https:';
 }
 
+/** The shell's `openExternal`, if this surface has one. */
+function desktopOpenExternal(): ((url: string) => Promise<boolean>) | undefined {
+  // Feature-detect the METHOD, not the bridge, matching every other consumer of
+  // `electronAPI` (`use-desktop-updater.ts`, `api-base-url.ts`,
+  // `use-electron-navigate.ts`). A host that exposes a partial bridge would
+  // otherwise throw instead of falling back to `window.open`.
+  return typeof window === 'undefined' ? undefined : window.electronAPI?.openExternal;
+}
+
+/** Why a link will not open, beyond the scheme allowlist's own verdicts. */
+export type LinkRefusal = BlockedLinkReason | 'desktop-shell';
+
+/**
+ * Why this link will not open **on this surface**, or `null` if it will.
+ *
+ * The one question every caller should ask, and the reason it exists is a bug
+ * this ticket shipped and then had to fix: the modal asked `classifyLink`
+ * (surface-blind) while dispatch also consulted {@link isWebUrl} (surface-aware),
+ * so a `mailto:` link in the desktop app still drew an "Open link" button and
+ * still declined when pressed. Two gates asked in two places will diverge; this
+ * is both of them, asked once.
+ *
+ * Returns the reason rather than a bare boolean so the modal's sentence and the
+ * toast's sentence come from {@link describeRefusal} — the same source. A
+ * boolean would have left the copy to be re-derived per surface, which is the
+ * failure this function exists to end.
+ *
+ * @param href - The link to test, exactly as authored.
+ */
+export function linkRefusalHere(href: string): LinkRefusal | null {
+  const link = classifyLink(href);
+  if (link.kind === 'blocked') return link.reason;
+  // The shell carries less than this module's allowlist does. Asked against the
+  // RESOLVED url, because that is what {@link openInBrowser} would hand it.
+  if (desktopOpenExternal() && !isWebUrl(link.url)) return 'desktop-shell';
+  return null;
+}
+
+/**
+ * The words for a refusal: a heading and the sentence under it.
+ *
+ * One source for both surfaces that report one — `reportRefusal`'s toast and
+ * `LinkSafetyModal`'s in-place explanation. They were separate strings for
+ * exactly one round, and in that round the desktop branch reused the generic
+ * title and produced "DorkOS doesn't open https: links", which is false: the
+ * web app opens them fine. Whose policy refused a link is part of the sentence,
+ * not a detail to be filled in later.
+ *
+ * @param reason - The verdict from {@link linkRefusalHere}.
+ * @param href - The refused link, for the scheme it names.
+ */
+export function describeRefusal(
+  reason: LinkRefusal,
+  href: string
+): { title: string; detail: string } {
+  const incomplete = 'That address is incomplete, so there is nowhere to send you.';
+  if (reason === 'unparsable') {
+    return { title: "DorkOS couldn't open that link", detail: incomplete };
+  }
+
+  const scheme = declaredScheme(href);
+  if (reason === 'desktop-shell') {
+    // A web link refused by the shell is the drift case (`openInBrowser`'s
+    // async branch), not a scheme it declines by policy. Blaming the scheme
+    // there would produce "http: links don't open in the desktop app", which is
+    // plainly false — so say only what is known.
+    if (!scheme || isWebUrl(href)) {
+      return {
+        title: "The desktop app couldn't open that link",
+        detail: 'The desktop app would not hand this one to your browser.',
+      };
+    }
+    return {
+      title: `The desktop app can't open ${scheme} links`,
+      detail: `${scheme} links open in a browser, but not in the desktop app, so nothing would happen.`,
+    };
+  }
+
+  if (!scheme) {
+    return {
+      title: "DorkOS couldn't open that link",
+      detail: 'Only web, email and phone links open from here.',
+    };
+  }
+  return {
+    title: `DorkOS doesn't open ${scheme} links`,
+    detail: `${scheme} links don't open from DorkOS, so nothing would happen.`,
+  };
+}
+
 /**
  * Say out loud that a link was refused — one message shape, every surface.
  *
@@ -414,31 +511,12 @@ export function isWebUrl(href: string): boolean {
  * rather than stacking another.
  *
  * @param href - The refused link.
- * @param reason - Why it was refused: a {@link classifyLink} verdict, or
- * `desktop-shell` for a link this policy allows that the Electron shell's
- * narrower http(s)-only guard declines (see {@link openInBrowser}).
+ * @param reason - Why it was refused, from {@link linkRefusalHere}.
  */
-function reportRefusal(href: string, reason: BlockedLinkReason | 'desktop-shell'): void {
+function reportRefusal(href: string, reason: LinkRefusal): void {
   console.warn(`[dorkos:link] refused to open ${reason} link:`, href);
-  if (reason === 'unparsable') {
-    toast.error("DorkOS couldn't open that link", {
-      id: REFUSAL_TOAST_ID,
-      description: 'That address is incomplete, so there is nowhere to send you.',
-    });
-    return;
-  }
-  const scheme = declaredScheme(href);
-  toast.error(scheme ? `DorkOS doesn't open ${scheme} links` : "DorkOS couldn't open that link", {
-    id: REFUSAL_TOAST_ID,
-    // Two different true statements. The seam's own allowlist is what a browser
-    // will carry; the desktop app carries less than that, and saying "only web,
-    // email and phone links open" while refusing an email link would be a
-    // sentence that argues with itself.
-    description:
-      reason === 'desktop-shell'
-        ? 'The desktop app opens web links only.'
-        : 'Only web, email and phone links open from here.',
-  });
+  const { title, detail } = describeRefusal(reason, href);
+  toast.error(title, { id: REFUSAL_TOAST_ID, description: detail });
 }
 
 /**
@@ -456,21 +534,26 @@ function reportRefusal(href: string, reason: BlockedLinkReason | 'desktop-shell'
  * gate of its own. `mailto:` and `tel:` clear {@link DISPATCHABLE_PROTOCOLS}
  * and are then dropped by the shell — which used to happen in total silence,
  * one process away, reproducing inside this fix the exact symptom DOR-547 was
- * filed about. Two answers now cover it: {@link isWebUrl} refuses them here,
- * synchronously, so the caller's return value is honest on desktop; and the
- * bridge itself resolves `false` on a decline, catching anything this mirror
- * and the shell's own predicate disagree about (a `HTTP://` spelling, say, or
- * a future widening on one side only).
+ * filed about. {@link linkRefusalHere} refuses them before dispatch — the same
+ * question the modal asks, so the button and the outcome agree — and the check
+ * is repeated here because this is the last place before the bridge and
+ * `openLink`/`openExternalLink` are callable without a modal.
+ *
+ * **The bridge answers with a boolean as well, and that is future-drift
+ * insurance, not a live second case.** Today the two predicates cannot
+ * disagree: everything reaching here has been through `new URL`, which
+ * lowercases the scheme, so a `HTTP://` spelling arrives normalised and clears
+ * the shell's `startsWith('http://')` exactly as it clears {@link isWebUrl}.
+ * They are still two predicates in two processes and two bundles, and the
+ * failure mode when one widens is silent — a link reported as opened that never
+ * opened, which is the whole bug class this ticket is about. The boolean makes
+ * that loud on the day it happens rather than on the day someone notices.
  *
  * @param url - A URL {@link classifyLink} has already accepted.
  * @returns `true` if it was handed onward, `false` if this surface refused it.
  */
 function openInBrowser(url: string): boolean {
-  // Feature-detect the METHOD, not the bridge, matching every other consumer of
-  // `electronAPI` (`use-desktop-updater.ts`, `api-base-url.ts`,
-  // `use-electron-navigate.ts`). A host that exposes a partial bridge would
-  // otherwise throw out of here instead of falling back to `window.open`.
-  const openExternal = typeof window === 'undefined' ? undefined : window.electronAPI?.openExternal;
+  const openExternal = desktopOpenExternal();
   if (openExternal) {
     if (!isWebUrl(url)) {
       reportRefusal(url, 'desktop-shell');

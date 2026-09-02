@@ -90,8 +90,10 @@ describe('MarkdownLink — a confirmed markdown link goes through the link seam 
 
     expect(open).toBeNull();
     expect(copy).toBeInTheDocument();
-    expect(screen.getByText(/DorkOS opens web, email and phone links/)).toBeInTheDocument();
-    expect(screen.getByText(/This is a irc: link/)).toBeInTheDocument();
+    expect(screen.getByText("DorkOS doesn't open irc: links")).toBeInTheDocument();
+    expect(
+      screen.getByText("irc: links don't open from DorkOS, so nothing would happen.")
+    ).toBeInTheDocument();
     expect(openSpy).not.toHaveBeenCalled();
   });
 
@@ -127,8 +129,22 @@ describe('MarkdownLink — a confirmed markdown link goes through the link seam 
     render(<MarkdownLink href={`${'a'.repeat(302)}://payload`}>click</MarkdownLink>);
 
     expect(clickAndInspect('click').open).toBeNull();
-    expect(screen.queryByText(/This is a aaa/)).not.toBeInTheDocument();
-    expect(screen.getByText(/address is incomplete/)).toBeInTheDocument();
+    // The heading and the sentence stay generic. The address block below them
+    // still shows the whole thing, deliberately — that is what "Copy link"
+    // hands over, and it wraps.
+    expect(screen.getByText("DorkOS couldn't open that link")).toBeInTheDocument();
+    expect(screen.getByText('Only web, email and phone links open from here.')).toBeInTheDocument();
+  });
+
+  it('still names a long-but-real OAuth scheme, which is who this message is for', () => {
+    // Reverse-DNS sign-in schemes run past any tight clamp, and an MCP server
+    // naming one is exactly the case worth explaining rather than generalising.
+    render(<MarkdownLink href="com.mycompany.myapp.oauth://authorize">sign in</MarkdownLink>);
+
+    expect(clickAndInspect('sign in').open).toBeNull();
+    expect(
+      screen.getByText("DorkOS doesn't open com.mycompany.myapp.oauth: links")
+    ).toBeInTheDocument();
   });
 });
 

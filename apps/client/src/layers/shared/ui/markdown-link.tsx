@@ -34,7 +34,7 @@
  * through that the seam refuses — now stop here, and say so.
  *
  * A scheme the seam refuses never reaches {@link confirmAndOpen} at all:
- * `LinkSafetyModal` asks `classifyLink` when it opens and, for a refused link,
+ * `LinkSafetyModal` asks `linkRefusalHere` when it opens and, for a refused link,
  * explains itself and offers only "Copy link". This handler's job is the click,
  * not the policy, and it stays on the seam so the two cannot drift.
  *

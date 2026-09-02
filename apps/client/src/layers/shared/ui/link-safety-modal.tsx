@@ -1,19 +1,7 @@
 import { createPortal } from 'react-dom';
 import { ExternalLink, Copy, X, ShieldAlert } from 'lucide-react';
 import type { LinkSafetyModalProps } from 'streamdown';
-import { classifyLink, declaredScheme, useCopyFeedback } from '@/layers/shared/lib';
-
-/**
- * The sentence under the heading: what is about to happen, or why nothing can.
- *
- * @param refused - Whether the link seam blocked this link.
- * @param scheme - The scheme the href declares, if it declares one.
- */
-function describeLink(refused: boolean, scheme: string | null): string {
-  if (!refused) return "You're about to visit an external website.";
-  if (!scheme) return 'That address is incomplete, so there is nowhere to send you.';
-  return `DorkOS opens web, email and phone links. This is a ${scheme} link, so nothing would happen.`;
-}
+import { describeRefusal, linkRefusalHere, useCopyFeedback } from '@/layers/shared/lib';
 
 /**
  * Portal-based external-link confirmation modal — the app's single link-safety
@@ -22,14 +10,17 @@ function describeLink(refused: boolean, scheme: string | null): string {
  * actions, MCP App iframes). Portalled to `document.body` to escape
  * transform-based containing blocks.
  *
- * **It asks the link seam before it offers to open anything** (DOR-547). A
- * scheme `classifyLink` refuses cannot be opened by pressing the button, so
- * offering the button would be a promise the next click breaks — the
- * confirm-then-decline shape this ticket existed to remove, moved one step
- * later rather than fixed. For a refused link the modal says so in place and
- * leads with "Copy link", which is the one thing that still works: the address
- * goes to the reader's clipboard, and whatever they use to open `irc:` links
- * can have it.
+ * **It asks the link seam before it offers to open anything** (DOR-547). A link
+ * `linkRefusalHere` refuses cannot be opened by pressing the button, so offering
+ * the button would be a promise the next click breaks — the confirm-then-decline
+ * shape this ticket existed to remove, moved one step later rather than fixed.
+ * For a refused link the modal says so in place and leads with "Copy link",
+ * which is the one thing that still works: the address goes to the reader's
+ * clipboard, and whatever they use to open `irc:` links can have it.
+ *
+ * The heading and the sentence both come from `describeRefusal`, so this surface
+ * and the toast cannot end up saying different things about the same link — they
+ * did for one round, and the desktop app told people it does not open `https:`.
  *
  * @param props - The link, the open state, and the close/confirm callbacks
  * Streamdown's `LinkSafetyModalProps` defines. `onConfirm` is unreachable for a
@@ -41,11 +32,22 @@ export function LinkSafetyModal({ url, isOpen, onClose, onConfirm }: LinkSafetyM
   const { copy } = useCopyFeedback({ toastOnSettle: true });
   if (!isOpen) return null;
 
-  // Asked on every render rather than memoised: `classifyLink` is a pure string
-  // parse, and the modal renders once per open.
-  const refused = classifyLink(url).kind === 'blocked';
-  const scheme = declaredScheme(url);
-  const description = describeLink(refused, scheme);
+  // Asked on every render rather than memoised: this is a pure string parse,
+  // and the modal renders once per open.
+  //
+  // `linkRefusalHere`, not `classifyLink` — the difference is the desktop app.
+  // `classifyLink` answers for the policy; this answers for the surface, which
+  // is narrower there. Asking the surface-blind question here is exactly the
+  // bug the first round of this fix shipped: `mailto:` cleared `classifyLink`,
+  // drew an "Open link" button, and then declined at dispatch.
+  const refusal = linkRefusalHere(url);
+  const refused = refusal !== null;
+  const { title, detail } = refusal
+    ? describeRefusal(refusal, url)
+    : {
+        title: 'Open external link?',
+        detail: "You're about to visit an external website.",
+      };
 
   return createPortal(
     <div
@@ -79,9 +81,9 @@ export function LinkSafetyModal({ url, isOpen, onClose, onConfirm }: LinkSafetyM
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2 text-lg font-semibold">
             {refused ? <ShieldAlert size={20} /> : <ExternalLink size={20} />}
-            <span>{refused ? "DorkOS can't open this link" : 'Open external link?'}</span>
+            <span>{title}</span>
           </div>
-          <p className="text-muted-foreground text-sm">{description}</p>
+          <p className="text-muted-foreground text-sm">{detail}</p>
         </div>
         <div className="bg-muted rounded-md p-3 font-mono text-sm break-all">{url}</div>
         <div className="flex gap-3">

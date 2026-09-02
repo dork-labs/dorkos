@@ -67,8 +67,10 @@ describe('LinkSafetyModal — a link the seam refuses (DOR-547)', () => {
     );
 
     expect(screen.getByRole('dialog', { name: /cannot be opened/i })).toBeInTheDocument();
-    expect(screen.getByText(/DorkOS can't open this link/)).toBeInTheDocument();
-    expect(screen.getByText(/This is a irc: link/)).toBeInTheDocument();
+    expect(screen.getByText("DorkOS doesn't open irc: links")).toBeInTheDocument();
+    expect(
+      screen.getByText("irc: links don't open from DorkOS, so nothing would happen.")
+    ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /open link/i })).toBeNull();
     expect(screen.getByRole('button', { name: /copy link/i })).toHaveClass(PRIMARY_CLASS);
   });
@@ -102,5 +104,62 @@ describe('LinkSafetyModal — a link the seam refuses (DOR-547)', () => {
 
     expect(screen.getByText(/address is incomplete/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /open link/i })).toBeNull();
+  });
+});
+
+describe('LinkSafetyModal — a link only THIS surface refuses (DOR-547 delta)', () => {
+  afterEach(() => {
+    delete window.electronAPI;
+  });
+
+  it('refuses a mailto: link in the desktop app, where the shell will not carry it', () => {
+    // The composition bug this round fixes. `mailto:` clears `classifyLink`, so
+    // a modal asking the surface-BLIND question drew "Open link" and then let
+    // dispatch decline — promise-then-refuse, one step later than the shape
+    // this ticket removed. `linkRefusalHere` asks the surface, so the button
+    // and the outcome agree.
+    window.electronAPI = { openExternal: vi.fn() } as unknown as ElectronAPI;
+
+    render(
+      <LinkSafetyModal url="mailto:hi@dorkos.ai" isOpen onClose={() => {}} onConfirm={() => {}} />
+    );
+
+    expect(screen.queryByRole('button', { name: /open link/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /copy link/i })).toHaveClass(PRIMARY_CLASS);
+    expect(screen.getByText("The desktop app can't open mailto: links")).toBeInTheDocument();
+    // Names the right policy. "DorkOS doesn't open mailto: links" would be
+    // false — the web app does.
+    expect(
+      screen.getByText(
+        'mailto: links open in a browser, but not in the desktop app, so nothing would happen.'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('still offers to open the same mailto: link with no desktop bridge in scope', () => {
+    // The web app and the phone surface, where a browser genuinely carries it.
+    // The desktop refusal above must stay a DESKTOP refusal.
+    render(
+      <LinkSafetyModal url="mailto:hi@dorkos.ai" isOpen onClose={() => {}} onConfirm={() => {}} />
+    );
+
+    expect(screen.getByRole('button', { name: /open link/i })).toHaveClass(PRIMARY_CLASS);
+    expect(screen.getByText(/about to visit an external website/i)).toBeInTheDocument();
+  });
+
+  it('still offers to open an https link in the desktop app', () => {
+    // The surface-aware gate must not swallow what the shell does carry.
+    window.electronAPI = { openExternal: vi.fn() } as unknown as ElectronAPI;
+
+    render(
+      <LinkSafetyModal
+        url="https://dorkos.ai/docs"
+        isOpen
+        onClose={() => {}}
+        onConfirm={() => {}}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: /open link/i })).toHaveClass(PRIMARY_CLASS);
   });
 });

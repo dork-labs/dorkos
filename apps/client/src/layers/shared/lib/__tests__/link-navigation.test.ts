@@ -52,7 +52,17 @@ describe('declaredScheme', () => {
     // scheme of any length out of one. The caller falls back to its generic
     // sentence rather than rendering a heading that never ends.
     expect(declaredScheme(`${'a'.repeat(302)}:payload`)).toBeNull();
-    expect(declaredScheme(`${'a'.repeat(23)}:payload`)).toBe(`${'a'.repeat(23)}:`);
+    // 64 characters including the colon is the boundary — kept.
+    expect(declaredScheme(`${'a'.repeat(63)}:payload`)).toBe(`${'a'.repeat(63)}:`);
+    expect(declaredScheme(`${'a'.repeat(64)}:payload`)).toBeNull();
+  });
+
+  it('keeps a real reverse-DNS OAuth scheme, which a tighter clamp would have eaten', () => {
+    // The case this message exists to serve: an MCP server naming a desktop
+    // sign-in link. Well past 24 characters, nowhere near abuse.
+    expect(declaredScheme('com.mycompany.myapp.oauth://authorize')).toBe(
+      'com.mycompany.myapp.oauth:'
+    );
   });
 
   it('answers null for anything that is not a URL at all', () => {
@@ -632,9 +642,14 @@ describe('link dispatch', () => {
       try {
         expect(openExternalLink('mailto:hi@dorkos.ai')).toBe(false);
         expect(openExternal).not.toHaveBeenCalled();
-        expect(toast.error).toHaveBeenCalledWith("DorkOS doesn't open mailto: links", {
+        // Whose policy refused it is part of the sentence. The generic title
+        // would have said "DorkOS doesn't open mailto: links", which is false
+        // on the web app and self-contradicting beside "opens web, email and
+        // phone links".
+        expect(toast.error).toHaveBeenCalledWith("The desktop app can't open mailto: links", {
           id: 'dorkos-link-refused',
-          description: 'The desktop app opens web links only.',
+          description:
+            'mailto: links open in a browser, but not in the desktop app, so nothing would happen.',
         });
       } finally {
         delete window.electronAPI;
@@ -651,18 +666,25 @@ describe('link dispatch', () => {
     });
 
     it('reports a shell decline the client-side mirror let through', async () => {
-      // Belt to the braces above: the two predicates can disagree (a `HTTP://`
-      // spelling passes `isWebUrl` and fails the shell's `startsWith`), and a
-      // decline must never be indistinguishable from a success.
+      // Drift insurance, not a live second case: everything reaching the bridge
+      // has been through `new URL`, so the two predicates cannot disagree today
+      // (a `HTTP://` spelling arrives lowercased and clears both). They are
+      // still two predicates in two processes, and the failure mode when one
+      // widens is a link reported as opened that never opened — the whole bug
+      // class this ticket is about. The boolean makes that loud on the day it
+      // happens.
+      //
+      // It also must not blame the scheme: this is a web link, and "http: links
+      // don't open in the desktop app" would be false.
       const openExternal = vi.fn().mockResolvedValue(false);
       window.electronAPI = { openExternal } as unknown as ElectronAPI;
       try {
-        openExternalLink('HTTP://dorkos.ai/docs');
+        openExternalLink('https://dorkos.ai/docs');
         await Promise.resolve();
         await Promise.resolve();
-        expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("doesn't open"), {
+        expect(toast.error).toHaveBeenCalledWith("The desktop app couldn't open that link", {
           id: 'dorkos-link-refused',
-          description: 'The desktop app opens web links only.',
+          description: 'The desktop app would not hand this one to your browser.',
         });
       } finally {
         delete window.electronAPI;
@@ -706,7 +728,7 @@ describe('link dispatch', () => {
 
       expect(toast.error).toHaveBeenCalledWith("DorkOS doesn't open irc: links", {
         id: 'dorkos-link-refused',
-        description: 'Only web, email and phone links open from here.',
+        description: "irc: links don't open from DorkOS, so nothing would happen.",
       });
     });
 
