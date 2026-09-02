@@ -21,13 +21,13 @@ Determine the current file's layer from its path, then enforce:
 | If editing in...   | Can import from...                                       | CANNOT import from...       |
 | ------------------ | -------------------------------------------------------- | --------------------------- |
 | `layers/shared/`   | Nothing in layers/ (base layer)                          | entities, features, widgets |
-| `layers/entities/` | `layers/shared/` only                                    | features, widgets           |
+| `layers/entities/` | `layers/shared/`, other entities (acyclic — see below)   | features, widgets           |
 | `layers/features/` | `layers/entities/`, `layers/shared/`                     | widgets, other features     |
 | `layers/widgets/`  | `layers/features/`, `layers/entities/`, `layers/shared/` | other widgets               |
 
-### Cross-Module Rule
+### Cross-Module Rule: Features
 
-Modules at the **same layer level** have restricted cross-imports:
+Sibling features are isolated from each other, but only in one direction:
 
 **UI composition across features: ALLOWED.** A feature's UI component may render a sibling feature's component for composition purposes (e.g., ChatPanel renders CommandPalette, StatusLine).
 
@@ -42,10 +42,46 @@ import { StatusLine } from '@/layers/features/status';
 // FORBIDDEN: Model/hook cross-import (business logic coupling)
 // In features/chat/model/use-chat-session.ts
 import { useFiles } from '@/layers/features/files'; // WRONG — lift to entities or shared
+```
 
-// FORBIDDEN: Entity importing sibling entity
-// In entities/session/model/hooks.ts
-import { useCommands } from '@/layers/entities/command'; // WRONG
+### Cross-Module Rule: Entities Form a DAG
+
+Entity slices **may** import each other. What they may never do is form a circle.
+
+Sibling features are isolated because a feature is a screen's worth of behaviour and two of them coupling is usually an accident. Entities are the opposite: they are the shared vocabulary, and some questions are genuinely about several of them at once. `attention` answers "what needs me right now?", which is a question about sessions, agents, tasks and mesh simultaneously. Forbidding the import would not remove the coupling — it would push that hook up into a feature, where only one screen could reach it.
+
+So the rule is direction, not isolation:
+
+1. **Import through the barrel.** `@/layers/entities/session`, never `@/layers/entities/session/model/...`. The barrel is the slice's contract; a deep import couples you to its file layout.
+2. **Composites consume foundations.** A foundational slice answers one question about one thing (`runtime`, `config`, `mesh`, `relay`, `tasks`, `room`, `interactions`). A composite slice aggregates several into one normalized answer. That direction needs no defence — it is the pattern.
+3. **A foundational slice reaching for another entity is the smell.** It usually means the aggregation belongs one level up, in a composite. If it really doesn't, say why in the PR — this is the case a reviewer should stop on.
+4. **Never close a circle.** Not through two slices, not through five, not through a lazy `import()`.
+
+Rule 4 is the one a reviewer cannot check by eye, so it is machine-checked: `import-x/no-cycle` runs at `error` over `src/layers/entities/**` in `apps/client/eslint.config.js`. A cycle cannot land, in this layer or inside a single slice.
+
+The graph as it stands (2026-09) — every slice not listed imports no other entity:
+
+| Slice       | Depends on                                               |
+| ----------- | -------------------------------------------------------- |
+| `session`   | `runtime`                                                |
+| `binding`   | `config`, `mesh`, `relay`, `runtime`                     |
+| `recents`   | `interactions`, `room`, `session`                        |
+| `agent`     | `config`, `mesh`, `relay`, `runtime`, `session`, `tasks` |
+| `attention` | `agent`, `mesh`, `session`, `tasks`                      |
+
+The table is in dependency order: every arrow points **upward**, to an earlier row or to an unlisted foundation, and never downward. That is what makes it a DAG. Adding an upward edge is ordinary work and needs no ceremony. A **downward** edge — `session` reaching for `attention`, say — is the move that closes a circle, and the linter will say so.
+
+```typescript
+// ALLOWED: composite consumes foundation, through the barrel
+// In entities/attention/model/use-attention-signals.ts
+import { useResolvedAgents } from '@/layers/entities/agent';
+
+// FORBIDDEN: deep import past the barrel
+import { useResolvedAgents } from '@/layers/entities/agent/model/use-resolved-agents'; // WRONG
+
+// FORBIDDEN: closes a cycle (agent already depends on config)
+// In entities/config/model/use-config.ts
+import { useAttentionSignals } from '@/layers/entities/attention'; // WRONG — lint error
 ```
 
 ## Import Conventions
