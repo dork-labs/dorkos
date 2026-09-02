@@ -54,8 +54,9 @@
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+
+import { codeOnly } from '../../../../../../../scripts/lib/code-only.mjs';
 
 /** `apps/server/src`, resolved from this file rather than from the cwd. */
 const SERVER_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
@@ -326,145 +327,35 @@ async function productionSources(dir: string): Promise<string[]> {
 const SOURCES = await productionSources(SERVER_SRC);
 
 /**
- * A file's CODE, with every comment and string removed, using TypeScript's own
- * parser.
- *
- * ## Why this is not a pair of regexes, which is what it used to be
- *
- * Comments can contain string delimiters and strings can contain comment
- * delimiters, so **no fixed order of independent regexes is correct** — each
- * order is blind to the other's mirror case, and both cases are live in this
- * repo:
- *
- * - Block-comments-first is fooled by a `/*` inside a LINE comment.
- *   `index.ts:322` ends a `//` comment with the route path `/api/auth/` + `*`,
- *   which opened a comment that ran to the next `*` + `/` **1,530 lines later**.
- *   Everything in between — including this file's own `applyShape(` subject —
- *   was invisible to the scan.
- * - Line-comments-first is fooled by a `/*` inside a STRING. `app.ts:145` is
- *   `app.all('/api/auth/*splat', …)`, and no `*` + `/` follows for the rest of
- *   the file: the entire router mount table vanished, `sessionGate`,
- *   `resolveAgentIdentity` and every `app.use('/api/…')` with it. An ungated
- *   route calling a protected effect anywhere below that line read as GREEN.
- * - And the "obvious" third order (strings, then line comments, then blocks) has
- *   the mirror bug one level up: an APOSTROPHE in prose opens a fake string.
- *   `services/workbench-serve/token.ts:7` says "the API's cookie/header", which
- *   swallows everything up to the next quote. That pipeline loses most of the
- *   content of 216 of 454 files.
- *
- * So the lexing is delegated to the real thing. `ts.createSourceFile` decides
- * what is a string, what is a comment, and — the part no regex can do at all —
- * whether a `/` opens a regular expression or is division. The literal ranges it
- * reports are blanked out in place (newlines preserved, so offsets and line
- * numbers still line up), and only THEN are comments removed.
- *
- * **Blanking literals first removes one hazard, not both.** It guarantees no
- * comment delimiter survives inside a STRING, so the block-comment replace below
- * cannot be opened by string content. It guarantees nothing about a delimiter
- * inside a COMMENT — comments are still matched by regex, so the two comment
- * forms must be removed in a way that cannot feed each other. That is why line
- * comments are stripped to end-of-line rather than by dropping whole lines; the
- * earlier whole-line version left a trailing comment's `/*` to open a fake block
- * span. See the comment at the `replace` calls for the reproduction.
- *
- * ## What it still cannot see
- *
- * The token inside a template literal's TEXT (`` `applyShape(` ``) is left
- * alone, so it would read as a call. That is a false POSITIVE — the safe
- * direction, and it fails loudly rather than silently. Aliasing
- * (`const f = applyShape; f()`) and dynamic dispatch remain out of reach, as the
- * module TSDoc says.
- *
- * Note which direction the literal-blanking can err in, because it is easy to
- * mis-tune: a call expression can never exist inside a string literal, so
- * blanking string content is INCAPABLE of hiding a call. A file that blanks to
- * almost nothing (`lib/git-safety.ts` is mostly a table of banned command
- * strings) is this working, not failing. Do not tune toward a retention floor —
- * that would mean deliberately leaving string content in, which is where the
- * false positives come from. The one over-blanking class that COULD hide a call
- * is a template substitution, and that is why only the literal chunks are blanked
- * while recursion continues into `${…}`.
- *
- * @param text - The file's full source.
- * @returns The same source with comments and string/regex literals blanked.
- */
-function codeOnly(text: string): string {
-  const source = ts.createSourceFile(
-    'scan.ts',
-    text,
-    ts.ScriptTarget.Latest,
-    false,
-    ts.ScriptKind.TS
-  );
-  const chars = [...text];
-
-  /** Blank a range, keeping newlines so positions and line numbers survive. */
-  const blank = (start: number, end: number): void => {
-    for (let i = start; i < end && i < chars.length; i++) {
-      if (chars[i] !== '\n' && chars[i] !== '\r') chars[i] = ' ';
-    }
-  };
-
-  const visit = (node: ts.Node): void => {
-    if (
-      ts.isStringLiteralLike(node) ||
-      ts.isRegularExpressionLiteral(node) ||
-      node.kind === ts.SyntaxKind.TemplateHead ||
-      node.kind === ts.SyntaxKind.TemplateMiddle ||
-      node.kind === ts.SyntaxKind.TemplateTail
-    ) {
-      blank(node.getStart(source), node.end);
-      // A template's SUBSTITUTIONS are ordinary expressions and can contain real
-      // calls, so only the literal chunks above are blanked; recursion continues.
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(source);
-
-  // Comments last. Line comments are removed to END OF LINE — not by dropping
-  // whole lines — and that distinction is the whole of the residual this closes.
-  //
-  // The whole-line filter (`!line.trim().startsWith('//')`) misses a TRAILING
-  // comment, so its `/*` survived into the block replace below and opened a span
-  // that the next genuine doc block closed, swallowing the code between:
-  //
-  //   export const a = 1; // route glob /api/auth/*
-  //   export function b() { return applyShape('victim'); }   // ← not reported
-  //   /** an ordinary doc block, which closes the fake span */
-  //
-  // Reproduced, and pinned to trailing comments specifically: the same file
-  // without that comment reports the call, and the sibling cases (a trailing
-  // `*/`, a string containing `/*`) were already correct.
-  //
-  // `\/\/.*$` was UNSAFE under every previous pipeline, which is exactly why it
-  // was not used: a string could contain `//` (every `https://` URL does), so it
-  // would have eaten real code. Literals are blanked by the parser BEFORE this
-  // line now, so no `//` can survive inside one and the objection is gone. Do not
-  // "simplify" this back to a line filter.
-  return chars
-    .join('')
-    .replace(/\/\/.*$/gm, '')
-    .replace(/\/\*[\s\S]*?\*\//g, '');
-}
-
-/**
  * Every source, read and lexed ONCE, as `[relative path, code-only text]`.
  *
+ * `codeOnly` is the repo's shared stripper (`scripts/lib/code-only.mjs`) — the
+ * one place that knows how to tell code from prose, because three guards each
+ * knowing it in a different, differently-broken way is what DOR-642 was. Read
+ * its module doc before changing anything about what this scan can see. What
+ * matters here: a token inside a comment or a string literal is not a call, and
+ * a token inside a template SUBSTITUTION is.
+ *
  * Hoisted because the corpus is static and the parser is not free: one lexing
- * pass over the 454 server sources costs ~970ms (the regex pipeline it replaced
- * cost ~29ms). `callersOf` used to re-read and re-lex all of them per protected
- * effect, so the twelve assertions below spent ~11.7s between them — against
- * vitest's 5s DEFAULT per-test timeout. Under load that failed three assertions
- * on time alone, which is a flaky CI job that says "ungated caller" when it means
- * "slow". Lexing once is ~12x cheaper and makes the whole file ~1s.
+ * pass over the 806 server sources costs ~1.3s (the regex pipeline it replaced
+ * cost ~29ms over the 454 sources there were then). `callersOf` used to re-read
+ * and re-lex all of them per protected effect, so the twelve assertions below
+ * spent ~11.7s between them — against vitest's 5s DEFAULT per-test timeout.
+ * Under load that failed three assertions on time alone, which is a flaky CI job
+ * that says "ungated caller" when it means "slow". Lexing once is ~12x cheaper
+ * and makes the whole file ~1s.
  *
  * The timeout is deliberately NOT raised instead: the work was gratuitous, and a
  * raised timeout would keep it while hiding the next regression in cost.
+ *
+ * What this lexing can and cannot see is asserted against this same corpus in
+ * `code-only-corpus.test.ts` beside this file — including that every source
+ * actually PARSES, since a file the parser chokes on scans as innocent.
  */
 const LEXED: readonly (readonly [string, string])[] = await Promise.all(
   SOURCES.map(
     async (file) =>
-      [path.relative(SERVER_SRC, file), codeOnly(await readFile(file, 'utf-8'))] as const
+      [path.relative(SERVER_SRC, file), codeOnly(await readFile(file, 'utf-8'), file)] as const
   )
 );
 
