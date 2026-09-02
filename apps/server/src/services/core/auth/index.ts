@@ -135,7 +135,33 @@ export function createAuth(db: Db, dorkHome: string) {
       cookieCache: { enabled: true, maxAge: 5 * 60 },
     },
     // Per-user scoped API keys (consumed by tasks 1.2 and 1.4).
-    plugins: [apiKey()],
+    //
+    // `rateLimit.enabled: false` is load-bearing, not a preference (DOR-489).
+    // The plugin's default is a per-key quota of 10 verifications per 24 hours,
+    // and it is written into every key's own columns at creation. The CLI holds
+    // no cookie — it presents its key on EVERY request — so with login on, the
+    // eleventh `dorkos` command of the day used to come back 401 Unauthorized,
+    // reading like a revoked key rather than a spent quota.
+    //
+    // A generous ceiling would only move the cliff, because the counter is a
+    // daily quota rather than a defence. It is consulted only AFTER a key has
+    // already been found and proved valid, so an unknown key never touches it
+    // and it stops no attacker; meanwhile one working session — a CLI loop, an
+    // agent driving the operator surface over `/mcp`, an SSE reconnect storm —
+    // is unbounded and entirely legitimate. Abuse protection is already a
+    // separate, per-IP layer that this does not touch — `middleware/
+    // auth-rate-limit.ts` on the credential endpoints and
+    // `middleware/mcp-rate-limit.ts` on `/mcp`.
+    //
+    // Turning it off at the PLUGIN level (rather than per key at creation) is
+    // also what makes the fix retroactive: `evaluateRateLimit` checks this
+    // option before it reads the row's `rateLimitEnabled` / `rateLimitMax`
+    // columns, so keys minted before this change — including the row
+    // `seedLegacyMcpApiKey` inserts — stop being throttled with no migration or
+    // backfill. The columns in `packages/db/src/schema/auth.ts` keep their
+    // now-inert defaults on purpose: rewriting a SQLite column default means
+    // rebuilding the table for zero behavior change.
+    plugins: [apiKey({ rateLimit: { enabled: false } })],
     // CSRF/origin surface: reuse the dynamic origin policy (loopback dev origins
     // + live tunnel origin) shared with the CORS allowlist.
     trustedOrigins: () => resolveTrustedOrigins(),

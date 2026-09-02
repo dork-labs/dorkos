@@ -7,7 +7,8 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
-import { createDb, runMigrations, user, type Db } from '@dorkos/db';
+import { createDb, runMigrations, user, apikey, eq, type Db } from '@dorkos/db';
+import { defaultKeyHasher } from '@better-auth/api-key';
 import { createAuth, toNodeHandler, isBetterAuthBaseUrlAdvisory } from '../index.js';
 import { initConfigManager } from '../../config-manager.js';
 import { env } from '../../../../env.js';
@@ -159,6 +160,107 @@ describe('Better Auth — local identity core (integration)', () => {
       warnSpy.mockRestore();
       expect(forwarded).not.toContain('Base URL is not set');
     }
+  });
+
+  describe('API keys are not throttled per key (DOR-489)', () => {
+    // The plugin's own default is 10 verifications per 24h per key, written into
+    // the key's columns at creation. The CLI carries no cookie and presents its
+    // key on every request, so that default turned the eleventh `dorkos` command
+    // of the day into a 401 that reads like a revoked key. These tests drive the
+    // real `auth.api` seam, not a stub: with `apiKey()` registered optionless
+    // they fail on verification 11.
+
+    /** Comfortably past the plugin's 10-per-day default — an ordinary session. */
+    const VERIFICATIONS = 25;
+
+    let keyDir: string;
+    let keyDb: Db;
+    let auth: ReturnType<typeof createAuth>;
+    const ownerId = 'rate-limit-owner';
+
+    beforeAll(() => {
+      keyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-auth-keys-'));
+      keyDb = createDb(path.join(keyDir, 'keys-test.db'));
+      runMigrations(keyDb);
+      // A key needs an owner to reference. Inserted directly rather than through
+      // sign-up: registration is owner-only and this db exists only to hold keys.
+      keyDb
+        .insert(user)
+        .values({
+          id: ownerId,
+          name: OWNER_NAME,
+          email: OWNER_EMAIL,
+          role: 'owner',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .run();
+      auth = createAuth(keyDb, keyDir);
+    });
+
+    afterAll(() => {
+      fs.rmSync(keyDir, { recursive: true, force: true });
+    });
+
+    /**
+     * Verify `key` {@link VERIFICATIONS} times and return the 1-based number of
+     * the first verification the server refused, or `null` when all succeeded.
+     * A rate-limited verification resolves to `{ valid: false }` rather than
+     * throwing, so both shapes are folded into one answer.
+     */
+    async function firstRejection(key: string): Promise<number | null> {
+      for (let attempt = 1; attempt <= VERIFICATIONS; attempt++) {
+        try {
+          const result = await auth.api.verifyApiKey({ body: { key } });
+          if (!result.valid) return attempt;
+        } catch {
+          return attempt;
+        }
+      }
+      return null;
+    }
+
+    it('accepts a freshly minted key far past the plugin default of ten a day', async () => {
+      const created = await auth.api.createApiKey({ body: { userId: ownerId, name: 'cli-key' } });
+
+      expect(await firstRejection(created.key)).toBeNull();
+    });
+
+    it('mints keys with per-key throttling off, so no new row carries a day quota', async () => {
+      const created = await auth.api.createApiKey({
+        body: { userId: ownerId, name: 'column-key' },
+      });
+
+      const row = keyDb.select().from(apikey).where(eq(apikey.id, created.id)).get();
+      expect(row?.rateLimitEnabled).toBe(false);
+    });
+
+    it('accepts a key that predates the fix, so no migration or backfill is owed', async () => {
+      // The shape `seedLegacyMcpApiKey` inserts and the shape every key created
+      // before this change already has on disk: the schema's rate-limit defaults,
+      // which say "10 per 24h". The plugin option is checked before those columns
+      // are read, so the row is exempt without being rewritten.
+      const plaintext = 'dork_mcp_legacy_key_from_before_the_fix';
+      const now = new Date();
+      keyDb
+        .insert(apikey)
+        .values({
+          id: 'legacy-key-row',
+          referenceId: ownerId,
+          name: 'Legacy MCP key',
+          key: await defaultKeyHasher(plaintext),
+          enabled: true,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+
+      const stored = keyDb.select().from(apikey).where(eq(apikey.id, 'legacy-key-row')).get();
+      expect(stored?.rateLimitEnabled).toBe(true);
+      expect(stored?.rateLimitMax).toBe(10);
+
+      expect(await firstRejection(plaintext)).toBeNull();
+    });
   });
 
   describe('isBetterAuthBaseUrlAdvisory', () => {
