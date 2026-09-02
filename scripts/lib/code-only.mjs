@@ -24,8 +24,9 @@
  *   An ungated route calling a protected effect below that line read as GREEN.
  * - **Strings first** has the mirror bug one level up: an APOSTROPHE in prose
  *   opens a fake string. `services/workbench-serve/token.ts:7` says "the API's
- *   cookie/header", which swallows everything up to the next quote. That
- *   pipeline lost most of the content of 216 of 454 server sources.
+ *   cookie/header", which swallows everything up to the next quote. When
+ *   DOR-642 measured it, that pipeline lost most of the content of 216 of the
+ *   454 server sources there were then.
  *
  * ## How this one is correct
  *
@@ -88,6 +89,12 @@ const SCRIPT_KIND_BY_EXTENSION = new Map([
   ['.jsx', ts.ScriptKind.JSX],
 ]);
 
+/** The JSX-accepting twin of a script kind, for the fallback below. */
+const JSX_TWIN = new Map([
+  [ts.ScriptKind.TS, ts.ScriptKind.TSX],
+  [ts.ScriptKind.JS, ts.ScriptKind.JSX],
+]);
+
 /**
  * How to lex a file, from its name.
  *
@@ -102,6 +109,22 @@ function scriptKindFor(fileName) {
   const dot = fileName.lastIndexOf('.');
   const extension = dot === -1 ? '' : fileName.slice(dot).toLowerCase();
   return SCRIPT_KIND_BY_EXTENSION.get(extension) ?? ts.ScriptKind.TS;
+}
+
+/**
+ * Parse once, reporting how badly it went.
+ *
+ * @param {string} text - The file's full source.
+ * @param {string} fileName - The name to parse under.
+ * @param {ts.ScriptKind} kind - How to lex it.
+ * @returns {{ source: ts.SourceFile, errors: number }} The tree and its parse-error count.
+ */
+function parseOnce(text, fileName, kind) {
+  const source = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, false, kind);
+  // `parseDiagnostics` is TypeScript-internal, so it is read defensively: a
+  // future release that renames it must degrade to "no errors seen" (the
+  // fallback below simply never fires) rather than throwing inside a hook.
+  return { source, errors: source.parseDiagnostics?.length ?? 0 };
 }
 
 /**
@@ -125,24 +148,48 @@ function isNonCodeLiteral(node) {
 }
 
 /**
- * A source file's code, with comments and literal text blanked to spaces.
+ * A source file's code, with comments and literal text blanked to spaces, plus
+ * how much of the file TypeScript could not parse.
  *
- * Line and column positions are preserved exactly, so a hit in the result maps
- * back to the same place in the input.
+ * `parseErrors` is the honesty channel. Everything this module knows comes from
+ * the parse, so a file the parser could not read is a file whose literal map is
+ * guesswork — and the failure is SILENT, which is the property that makes it
+ * dangerous. A caller scanning a corpus should assert this is zero across it;
+ * `codeOnly` drops it only because most callers have one file and no corpus to
+ * assert over.
+ *
+ * The concrete case, and the reason for the fallback below: JSX inside a `.ts`
+ * file. `apps/server/src/core-extensions/*` is written that way on purpose (the
+ * extension pipeline compiles it with esbuild at runtime, so it never meets the
+ * server's tsc, and the server tsconfig excludes it). Lexed as TS, `</p>` reads
+ * as the start of a regular expression, and everything up to the next `/`
+ * becomes literal text — so a call between two closing tags is blanked away and
+ * the scan over that file reports nothing, having seen nothing. Retrying as TSX
+ * fixes it, and 33 parse errors becoming 0 is what says the retry was right.
  *
  * @param {string} text - The file's full source.
  * @param {string} [fileName] - The file's name or path, which decides how it is
  *   lexed (`.tsx` and `.jsx` differ from `.ts` and `.js`). Defaults to TypeScript.
- * @returns {string} The same source, same length, with every non-code span blanked.
+ * @returns {{ code: string, parseErrors: number }} The blanked source (same
+ *   length as the input) and the parse-error count of the lexing that produced it.
  */
-export function codeOnly(text, fileName = 'scan.ts') {
-  const source = ts.createSourceFile(
-    fileName,
-    text,
-    ts.ScriptTarget.Latest,
-    false,
-    scriptKindFor(fileName)
-  );
+export function lex(text, fileName = 'scan.ts') {
+  const kind = scriptKindFor(fileName);
+  let parsed = parseOnce(text, fileName, kind);
+
+  // A `.ts` file holding JSX parses as a pile of errors and lexes to nonsense.
+  // Rather than keeping a list of directories that are secretly TSX — which
+  // rots, and is wrong the day somebody adds the next one — the parse is
+  // retried under the JSX-accepting twin and the better result wins. A file
+  // that is genuinely broken gets errors either way and keeps its original
+  // reading; only a file the twin can actually parse switches.
+  const twin = JSX_TWIN.get(kind);
+  if (parsed.errors > 0 && twin !== undefined) {
+    const retry = parseOnce(text, fileName, twin);
+    if (retry.errors < parsed.errors) parsed = retry;
+  }
+
+  const source = parsed.source;
 
   // `split('')` and NOT `[...text]`: TypeScript reports positions in UTF-16 code
   // units, and spreading a string yields CODE POINTS. One emoji anywhere above a
@@ -201,5 +248,22 @@ export function codeOnly(text, fileName = 'scan.ts') {
     }
   }
 
-  return chars.join('');
+  return { code: chars.join(''), parseErrors: parsed.errors };
+}
+
+/**
+ * A source file's code, with comments and literal text blanked to spaces.
+ *
+ * Line and column positions are preserved exactly, so a hit in the result maps
+ * back to the same place in the input. This is `lex` without the parse-error
+ * count — reach for `lex` when you scan a whole corpus, so an unparseable file
+ * cannot report "nothing found" and pass for a clean scan.
+ *
+ * @param {string} text - The file's full source.
+ * @param {string} [fileName] - The file's name or path, which decides how it is
+ *   lexed (`.tsx` and `.jsx` differ from `.ts` and `.js`). Defaults to TypeScript.
+ * @returns {string} The same source, same length, with every non-code span blanked.
+ */
+export function codeOnly(text, fileName = 'scan.ts') {
+  return lex(text, fileName).code;
 }

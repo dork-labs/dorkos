@@ -337,15 +337,20 @@ const SOURCES = await productionSources(SERVER_SRC);
  * a token inside a template SUBSTITUTION is.
  *
  * Hoisted because the corpus is static and the parser is not free: one lexing
- * pass over the 454 server sources costs ~970ms (the regex pipeline it replaced
- * cost ~29ms). `callersOf` used to re-read and re-lex all of them per protected
- * effect, so the twelve assertions below spent ~11.7s between them — against
- * vitest's 5s DEFAULT per-test timeout. Under load that failed three assertions
- * on time alone, which is a flaky CI job that says "ungated caller" when it means
- * "slow". Lexing once is ~12x cheaper and makes the whole file ~1s.
+ * pass over the 806 server sources costs ~1.3s (the regex pipeline it replaced
+ * cost ~29ms over the 454 sources there were then). `callersOf` used to re-read
+ * and re-lex all of them per protected effect, so the twelve assertions below
+ * spent ~11.7s between them — against vitest's 5s DEFAULT per-test timeout.
+ * Under load that failed three assertions on time alone, which is a flaky CI job
+ * that says "ungated caller" when it means "slow". Lexing once is ~12x cheaper
+ * and makes the whole file ~1s.
  *
  * The timeout is deliberately NOT raised instead: the work was gratuitous, and a
  * raised timeout would keep it while hiding the next regression in cost.
+ *
+ * What this lexing can and cannot see is asserted against this same corpus in
+ * `code-only-corpus.test.ts` beside this file — including that every source
+ * actually PARSES, since a file the parser chokes on scans as innocent.
  */
 const LEXED: readonly (readonly [string, string])[] = await Promise.all(
   SOURCES.map(

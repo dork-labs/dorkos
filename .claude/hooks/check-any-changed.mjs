@@ -29,6 +29,40 @@ async function readStdin() {
   });
 }
 
+/**
+ * The shared stripper, or `null` after saying — loudly — that the check is off.
+ *
+ * The stripper needs `typescript` from node_modules, and a checkout without one
+ * is a state this repo really reaches: a fresh worktree before `pnpm install`.
+ * Exiting 0 there is right (a hook that blocks every edit in a new worktree gets
+ * turned off), but doing it QUIETLY is not: the check would report nothing while
+ * looking exactly like a clean file, which is the silent-blind-spot shape this
+ * whole hook was just fixed for.
+ *
+ * There is deliberately NO degraded regex mode. The regexes this replaced are
+ * the defect — they hid real `any` behind an apostrophe — so falling back to
+ * them would trade a check that says it is off for one that lies. Off and loud
+ * beats on and wrong.
+ */
+async function loadStripper(filePath) {
+  try {
+    const { codeOnly } = await import('../../scripts/lib/code-only.mjs');
+    return codeOnly;
+  } catch (error) {
+    console.error('');
+    console.error('⚠️  THE `any` CHECK DID NOT RUN. This file was not checked:');
+    console.error(`   ${filePath}`);
+    console.error('');
+    console.error('   It needs `typescript` from node_modules, and loading it failed — usually a');
+    console.error('   fresh worktree that has never been installed.');
+    console.error(`   Cause: ${error.message}`);
+    console.error('');
+    console.error('   Fix: run `pnpm install` in this checkout, then edit the file again.');
+    console.error('');
+    return null;
+  }
+}
+
 // Find any violations in content
 function findAnyViolations(content, originalContent) {
   const violations = [];
@@ -107,15 +141,18 @@ async function main() {
     // before the patterns below run. This used to be a pair of regexes here —
     // strings, then comments — and an apostrophe in a TSDoc ("the API's
     // cookie/header") opened a fake string literal that blanked the code below
-    // it, hiding real `any` from the check (DOR-642). The shared stripper lexes
-    // with TypeScript's own parser instead, and preserves positions, so the line
-    // numbers reported below still point at the real lines.
+    // it, so the check read the wrong lines and reported the wrong ones
+    // (DOR-642). The shared stripper lexes with TypeScript's own parser instead,
+    // and preserves positions, so the line numbers below point at real lines.
     //
-    // Imported dynamically so a checkout with no `node_modules` (a fresh
-    // worktree, before `pnpm install`) reaches the catch below and warns rather
-    // than crashing with a module-resolution stack trace.
-    const { codeOnly } = await import('../../scripts/lib/code-only.mjs');
-    const strippedContent = codeOnly(originalContent, absolutePath);
+    // Imported dynamically because it needs `typescript` from node_modules, and
+    // a checkout without one is a real state here — a fresh worktree before
+    // `pnpm install`. That case is announced rather than swallowed; see below.
+    const stripper = await loadStripper(absolutePath);
+    if (!stripper) {
+      process.exit(0);
+    }
+    const strippedContent = stripper(originalContent, absolutePath);
 
     // Find violations
     const violations = findAnyViolations(strippedContent, originalContent);
