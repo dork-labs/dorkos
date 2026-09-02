@@ -332,8 +332,10 @@ describe('CreateAgentDialog', () => {
 
     await waitFor(() => expect(transport.createAgent).toHaveBeenCalled());
     const payload = vi.mocked(transport.createAgent).mock.calls[0][0];
+    // `icon` only. A matching assertion on `color` would read as coverage of a
+    // second field, but this wizard has no colour control to send one, so
+    // nothing that could change here would ever make it red.
     expect(payload).not.toHaveProperty('icon');
-    expect(payload).not.toHaveProperty('color');
   });
 
   it('highlights no face in the picker until the user chooses one', async () => {

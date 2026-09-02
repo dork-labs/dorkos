@@ -25,6 +25,7 @@ import {
 } from '@dorkos/shared/convention-files';
 import { DEFAULT_TRAITS, renderTraits } from '@dorkos/shared/trait-renderer';
 import { createMockTransport } from '@dorkos/test-utils';
+import { seedAgentFace } from '@dorkos/shared/agent-face';
 import { createQueryClientConfig } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
@@ -897,6 +898,33 @@ describe('the Appearance page', () => {
         screen.getByRole('button', { name: /Change Warden’s face and personality/ })
       ).toHaveFocus()
     );
+  });
+
+  // Red when this page derives the face a second way. It draws its OWN big disc
+  // above the picker, and the picker's auto swatch is an inch below it: two
+  // derivations put two faces for one agent on one screen, which is what a
+  // hashed pair did here for every agent created before faces were seeded
+  // (DOR-949). Warden's manifest carries neither `color` nor `icon`, so both
+  // are resolving through the fallback — the case that used to disagree.
+  it('draws the same seeded face the picker below it offers as auto', async () => {
+    await renderProfile(MANAGED, { start: 'appearance' });
+
+    const seeded = seedAgentFace(MANAGED.agent!.manifestId);
+    await screen.findByTestId('avatar-picker-panel');
+    const page = document.querySelector('[data-slot="profile-appearance"]')!;
+    const hero = page.querySelector('[data-slot="identity-avatar"]')!;
+
+    expect(hero.getAttribute('data-face')).toBe(seeded.icon);
+    expect(hero.getAttribute('style')).toContain(seeded.color);
+
+    // The other half of the invariant: the swatch that says "this is what you
+    // get if you clear the override" has to name that same colour. Compared
+    // through a probe because jsdom rewrites an inline hex as `rgb(...)`, while
+    // the custom property above keeps the hex it was given.
+    const probe = document.createElement('div');
+    probe.style.backgroundColor = seeded.color;
+    const autoSwatch = screen.getByRole('button', { name: 'Select unique auto-generated color' });
+    expect(autoSwatch.style.backgroundColor).toBe(probe.style.backgroundColor);
   });
 
   it('is not offered on DorkBot — its face is part of DorkOS', async () => {

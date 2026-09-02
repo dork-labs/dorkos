@@ -13,7 +13,7 @@
 import { useState } from 'react';
 import type { Traits } from '@dorkos/shared/mesh-schemas';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
-import { hashToEmoji, hashToHslColor } from '@/layers/shared/lib';
+import { seedAgentFace } from '@dorkos/shared/agent-face';
 import { IdentityAvatar, Skeleton } from '@/layers/shared/ui';
 import { AvatarPickerPanel, PersonalityPicker } from '@/layers/entities/agent';
 import { teamMemberFace } from '@/layers/entities/team';
@@ -50,8 +50,13 @@ export function AppearancePage({ member }: ProfilePageContentProps) {
   }
 
   const face = teamMemberFace(member);
-  const color = preview ?? agent.color ?? hashToHslColor(agent.id);
-  const emoji = agent.icon ?? hashToEmoji(agent.id);
+  // The same seeded face the picker below shows on its auto swatch (DOR-949),
+  // not a second derivation. This disc and that swatch are inches apart, so two
+  // answers here read as two different agents on one screen — which is exactly
+  // what a hashed pair did for every agent created before faces were seeded.
+  const auto = seedAgentFace(agent.id);
+  const color = preview ?? agent.color ?? auto.color;
+  const emoji = agent.icon ?? auto.icon;
 
   return (
     <div className="flex flex-col gap-5" data-slot="profile-appearance">
