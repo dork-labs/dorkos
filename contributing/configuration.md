@@ -328,7 +328,7 @@ The following settings are controlled exclusively by environment variables and h
 | Environment Variable      | Default                            | Description                                                                                                                                                                                                                                                         |
 | ------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DORKOS_RELAY_ENABLED`    | `true`                             | Enable the Relay message bus subsystem at the process level                                                                                                                                                                                                         |
-| `DORKOS_CORS_ORIGIN`      | localhost on DORKOS_PORT/VITE_PORT | CORS allowed origin(s). Set to `*` for wildcard or a comma-separated list to override.                                                                                                                                                                              |
+| `DORKOS_CORS_ORIGIN`      | localhost on DORKOS_PORT/VITE_PORT | CORS allowed origin(s) — a comma-separated list. `*` is ignored with a warning (see below).                                                                                                                                                                         |
 | `DORKOS_CLOUD_URL`        | `https://dorkos.ai`                | Base URL of the DorkOS cloud (dorkos.ai) that this instance device-links and heartbeats to. Override for local dev against a self-hosted `apps/site`. Read via `apps/server/src/env.ts`.                                                                            |
 | `DORKOS_VERSION_OVERRIDE` | (none)                             | Override the reported server version for testing upgrade UX. When set, dev mode detection is bypassed and this value is used as the current version. Example: `DORKOS_VERSION_OVERRIDE=0.1.0` simulates running an old version so the upgrade notification appears. |
 
@@ -1154,7 +1154,9 @@ This env var controls process-level Relay initialization and must be set before 
 
 ### DORKOS_CORS_ORIGIN
 
-Configures the `Access-Control-Allow-Origin` header on the Express server. When unset, defaults to localhost on `DORKOS_PORT` and `VITE_PORT` (code default 4241, dev convention 6241). Set to `*` for wildcard, or a comma-separated list of origins to allow multiple production origins.
+Configures the `Access-Control-Allow-Origin` header on the Express server. When unset, defaults to localhost on `DORKOS_PORT` and `VITE_PORT` (code default 4241, dev convention 6241), plus the live tunnel origin and same-origin requests. Set a comma-separated list of origins to allow multiple production origins.
+
+`*` is **not** accepted: it is ignored with a warning on both the HTTP path (`buildCors`) and the WebSocket path (`isTrustedUpgradeOrigin`), and the server falls back to the per-request policy. Login is off by default, so a wildcard would let any page the operator visits read and write the whole API cross-origin.
 
 ```bash
 export DORKOS_CORS_ORIGIN=https://myapp.example.com

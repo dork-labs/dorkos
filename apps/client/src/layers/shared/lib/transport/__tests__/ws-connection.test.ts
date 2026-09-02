@@ -149,6 +149,53 @@ describe('WSConnection', () => {
     conn.destroy();
   });
 
+  // The event name comes off the wire, and the handler map is a plain object,
+  // so an unguarded `handlers[frame.event]` reaches everything Object.prototype
+  // carries. Only a handler this client registered itself may ever be called.
+  it('never calls anything the handler map merely inherits', () => {
+    const inherited = vi.fn();
+    const handlers = Object.create({ text_delta: inherited }) as Record<
+      string,
+      (data: unknown) => void
+    >;
+    const conn = new WSConnection(TEST_URL, { eventHandlers: handlers });
+    conn.connect();
+    latest().open();
+
+    latest().deliver({ event: 'text_delta', data: { text: 'hi' } });
+
+    expect(inherited).not.toHaveBeenCalled();
+    conn.destroy();
+  });
+
+  it('ignores a frame naming a built-in member of the handler map', () => {
+    const conn = new WSConnection(TEST_URL, { eventHandlers: {} });
+    conn.connect();
+    latest().open();
+
+    expect(() => {
+      latest().deliver({ event: 'constructor', data: { text: 'hi' } });
+      latest().deliver({ event: 'toString', data: { text: 'hi' } });
+      latest().deliver({ event: '__proto__', data: { text: 'hi' } });
+    }).not.toThrow();
+
+    conn.destroy();
+  });
+
+  it('ignores a handler slot holding something that is not a function', () => {
+    const handlers = { text_delta: 'not a function' } as unknown as Record<
+      string,
+      (data: unknown) => void
+    >;
+    const conn = new WSConnection(TEST_URL, { eventHandlers: handlers });
+    conn.connect();
+    latest().open();
+
+    expect(() => latest().deliver({ event: 'text_delta', data: {} })).not.toThrow();
+
+    conn.destroy();
+  });
+
   it('retains a frame id even when no handler is registered for its event', () => {
     // The id IS the cursor. Dropping one because nothing listened to that event
     // would replay it on the next reconnect.
