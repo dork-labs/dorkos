@@ -1,0 +1,193 @@
+name: site-build
+
+# Runs the marketing site's REAL production build (`next build`, via
+# `turbo build --filter=@dorkos/site`) on pull requests and in the merge queue,
+# so a build-time break fails here instead of at Vercel deploy time.
+#
+# WHY THIS EXISTS: PR #743 shipped a page declaring `runtime = 'edge'` that
+# imported a node-only dependency. It passed typecheck, passed the unit suite,
+# passed review — and failed the Vercel `next build`, which blocked ALL
+# production deploys until hotfix #755 hours later. Nothing in CI had built the
+# site, so the first thing that ever compiled that page for the edge runtime was
+# the deploy. That is DOR-913.
+#
+# NOTHING ELSE COVERED THIS, and the near-misses are worth naming so nobody
+# concludes it was already covered:
+#
+#   * typecheck.yml runs `tsc --noEmit`. Type-checking a module never resolves
+#     it for a target runtime, so `runtime = 'edge'` beside `import 'node:fs'`
+#     is perfectly well-typed and perfectly unbuildable.
+#   * browser-test.yml builds `--filter=@dorkos/site^...` — the CARET-DOTS form,
+#     i.e. the site's DEPENDENCIES, so `turbo dev` can boot the site leg. The
+#     site itself is never built there; its e2e legs run the DEV server.
+#   * docs-openapi-check.yml only runs `generate:api-docs`. Its own header
+#     records this exact failure class ("a stale MDX page for a removed
+#     operation later broke the site build at prerender time") — it regenerates
+#     the MDX, but never compiles the site that renders it.
+#
+# WHAT THE BUILD ACTUALLY CATCHES, beyond the edge-runtime class: prerender
+# failures on the ~240 statically-generated pages (the docs-openapi-check case),
+# MDX/fumadocs source errors, Turbopack resolution failures, and a
+# `productionBrowserSourceMaps` post-build step that can fail the compile.
+#
+# NO SECRETS, DELIBERATELY, AND THE CODE IS WRITTEN TO KEEP IT THAT WAY.
+# apps/site/src/env.ts makes every variable optional or defaulted precisely so
+# "this schema still parses ... during `next build` (no secrets present)";
+# src/db/client.ts resolves DATABASE_URL inside `getDb()` at request time, and
+# four separate call sites carry a comment saying they do it so `next build`
+# never needs it; scripts/upload-sourcemaps.mjs skips its PostHog upload when
+# POSTHOG_PERSONAL_API_KEY / POSTHOG_PROJECT_ID are absent and still deletes the
+# maps. Verified locally on a clean environment: 5 tasks, exit 0, 5m10s, with
+# "[sourcemaps] skipped upload: no POSTHOG_PERSONAL_API_KEY" in the log. If a
+# future change makes this job need a secret, that change has also made the
+# public build depend on one — fix the code, do not add a secret here.
+#
+# `turbo build --filter=@dorkos/site`, NOT `pnpm --filter @dorkos/site build`.
+# Three reasons: turbo builds the site's workspace dependencies first (the site
+# imports @dorkos/icons and @dorkos/marketplace through their package exports,
+# which resolve to dist/ — absent on a fresh runner); turbo also runs the
+# `generate:api-docs` task the `build` task declares as a dependency in
+# turbo.json, which is what produces the API-reference MDX the build prerenders;
+# and a name that stops matching makes turbo exit 1 with "No package found with
+# name", where `pnpm --filter` prints "No projects matched the filters" and
+# exits 0 — the silent-no-op defect db-check.yml and desktop-renderer.yml both
+# document.
+#
+# TWO EVENTS, TWO DEPTHS, ONE JOB (the shape test.yml settles on):
+#
+#   * `merge_group`: builds the site UNCONDITIONALLY. The queue's combined tree
+#     — main plus everything ahead in the queue plus this PR — is the only place
+#     a two-PR interaction is visible, and the site has a live example of that
+#     class: a PR that removes an API operation and a PR that edits docs/ can
+#     each be green alone and combine into a prerender failure.
+#   * `pull_request`: builds only when the change can reach the site (see the
+#     scope step). This is the early-warning half — an author gets the answer on
+#     their own PR — and the queue is the authoritative half.
+#
+# THE SCOPE DECISION IS INSIDE THE JOB, NOT A WORKFLOW-LEVEL `paths:` FILTER,
+# and that is the whole reason this workflow can ever become a required check.
+# GitHub's troubleshooting-required-status-checks doc: a workflow skipped by
+# path filtering reports NOTHING (not success), and under the merge queue a
+# required check that never reports blocks the queue until
+# `check_response_timeout_minutes` (60) expires — the trade browser-test.yml's
+# header works through at length, and the deadlock desktop-renderer.yml accepts
+# by staying permanently non-required. Worse, a required check that never
+# reports ON THE PR keeps the PR out of the queue entirely (measured on PR
+# #1246, which sat armed and green and unqueueable for 15 hours). A skipped
+# STEP, by contrast, leaves the job green and the context reported. So this job
+# always runs, always reports `site-build`, and decides internally whether to
+# spend five minutes — which means promoting it to required is a
+# branch-protection change alone, with no edit to this file.
+#
+# THIS IS NOT A REQUIRED CHECK YET. Branch protection is the operator's, not an
+# agent's (the DOR-1519 precedent). Until the ruleset lists `site-build`, a red
+# here blocks `merge-tail.yml` from ARMING auto-merge — scripts/should-arm-
+# automerge.sh requires every check settled green — but it does not block the
+# queue, so a human can still merge past it. That is the same half-gate `lint`
+# lived in until 2026-09-02.
+on:
+  pull_request:
+  merge_group:
+
+# Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
+# hard cutoff for the Node 20 runtime (matches the other workflows here).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+# Cancel superseded runs for PR pushes only. Merge-group refs are unique per
+# build (gh-readonly-queue/main/pr-<n>-<sha>), so queue runs never share a group
+# and are never cancelled by this block — the queue supersedes builds by
+# dequeuing them. Deliberately IDENTICAL in form to test.yml (keep them in step).
+concurrency:
+  group: site-build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # THE ONE PRODUCER of the `site-build` context, on both events. Do not rename
+  # it, and do not split it into two same-named jobs under mutually exclusive
+  # `if`s — test.yml's header explains why one producer is the only shape whose
+  # required-check semantics are pinned down.
+  site-build:
+    runs-on: ubuntu-latest
+    # The full build measured 5m10s on a developer machine with the two
+    # dependency packages already cached. A runner is colder and slower, and
+    # there is no turbo remote cache in this repo (no TURBO_TOKEN, no
+    # remoteCache block), so every run here is cold. This bounds a hung
+    # Turbopack compile; it is not a performance budget.
+    timeout-minutes: 30
+    steps:
+      # fetch-depth: 0 so `origin/<base>` exists locally. The scope step below
+      # diffs against it and turbo's TURBO_SCM_BASE resolves it; at the default
+      # depth 1 neither can, and turbo would fall back to treating everything
+      # as changed.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Can this PR reach the site build at all? Two questions, because no
+      # single mechanism answers both:
+      #
+      #   1. Packages. `turbo build --filter=@dorkos/site --affected` INTERSECTS
+      #      the filter with the changed set (verified against turbo 2.10 on
+      #      this workspace: a packages/relay-only diff yields `"packages": []`,
+      #      an apps/site diff and a packages/marketplace diff each yield
+      #      `["@dorkos/site"]`). Turbo derives the site's dependency closure
+      #      from the workspace graph, so there is no hand-maintained package
+      #      list here to drift when the site gains an import.
+      #   2. Content roots OUTSIDE any package directory, which turbo's
+      #      file-to-package mapping cannot see. `docs/` is the one that
+      #      matters: the site prerenders every MDX file under it through
+      #      fumadocs, and docs-openapi-check.yml's header records a docs/ page
+      #      that broke the site build at prerender time. The workflow file
+      #      itself is included so an edit to this gate exercises it.
+      #
+      # Deliberately NOT expanded into "every root path the site might read".
+      # This is the early-warning leg; the queue leg below builds
+      # unconditionally, so anything this misses is caught before merge anyway,
+      # minutes later rather than on the PR.
+      - name: Decide whether this pull request can reach the site build
+        id: scope
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          BASE: origin/${{ github.base_ref }}
+        run: |
+          if git diff --name-only "$BASE"...HEAD | grep -qE '^(docs/|\.github/workflows/site-build\.yml$)'; then
+            echo 'docs/ or this workflow changed — building the site'
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          TURBO_SCM_BASE="$BASE" pnpm exec turbo build --filter=@dorkos/site --affected --dry=json > turbo-affected.json
+          count=$(jq '.packages | length' turbo-affected.json)
+          echo "turbo reports $count affected package(s) in the site's closure"
+          if [ "$count" -gt 0 ]; then
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'run=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      # The build. On `merge_group` this is unconditional; on `pull_request` it
+      # runs only when the scope step said the change can reach the site. A
+      # skipped step leaves this job GREEN and the `site-build` context
+      # reported — which is the property the header's required-check argument
+      # rests on.
+      - name: Build the site (next build)
+        if: ${{ github.event_name == 'merge_group' || steps.scope.outputs.run == 'true' }}
+        run: pnpm exec turbo build --filter=@dorkos/site
+
+      # Says out loud, in the log, that this run built nothing — so a green
+      # check here is never mistaken for a build that passed.
+      - name: Nothing in this pull request can reach the site build
+        if: ${{ github.event_name == 'pull_request' && steps.scope.outputs.run != 'true' }}
+        run: echo 'No change in @dorkos/site or its dependency closure, and no change under docs/. The merge queue builds the site unconditionally.'
