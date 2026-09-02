@@ -14,4 +14,4 @@ covers:
 
 ### Note for people upgrading
 
-- This works with OpenCode today for images that come back from a tool. Images an OpenCode model draws itself are still dropped by OpenCode before DorkOS ever sees them ([anomalyco/opencode#46600](https://github.com/anomalyco/opencode/issues/46600)); DorkOS is ready for them the day that's fixed. Claude Code and Codex don't carry images yet — that's next.
+- Images that come back from a tool now work on all three: Claude Code, Codex and OpenCode. Images an OpenCode model draws itself are still dropped by OpenCode before DorkOS ever sees them ([anomalyco/opencode#46600](https://github.com/anomalyco/opencode/issues/46600)); DorkOS is ready for them the day that's fixed.

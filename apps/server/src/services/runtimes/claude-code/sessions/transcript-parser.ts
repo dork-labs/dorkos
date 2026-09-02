@@ -10,6 +10,7 @@ import type {
 } from '@dorkos/shared/types';
 import { SDK_TOOL_NAMES } from '@dorkos/shared/constants';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
+import { extractToolResultImages, type ToolResultImage } from '../tool-result-images.js';
 import { mapSdkAnswersToIndices } from './question-answers.js';
 import { applyToolResult } from './tool-result-outcome.js';
 import { classifyOrigin } from './classify-origin.js';
@@ -80,6 +81,12 @@ export interface ContentBlock {
   tool_use_id?: string;
   content?: string | ContentBlock[];
   /**
+   * On an `image` block inside a tool result: where the bytes are. Verified
+   * against a real `Read` of a PNG — the SDK writes
+   * `{ type: 'base64', media_type: 'image/png', data: '<base64>' }`.
+   */
+  source?: { type?: string; media_type?: string; data?: string };
+  /**
    * On a `tool_result`: whether the call FAILED. The one machine-readable
    * signal separating a tool that ran from one that was denied, timed out,
    * withdrawn, or errored — everything else about which is prose, read by
@@ -108,7 +115,14 @@ export interface ContentBlock {
   exit_code?: number;
 }
 
-/** Extract text from a tool_result content block. */
+/**
+ * Extract text from a tool_result content block.
+ *
+ * Text ONLY, and that is now a statement rather than an omission: a tool result
+ * can also carry an `image` block, and {@link extractToolResultImages} is the
+ * sibling that reads those. Filtering them away here used to be the whole story
+ * — a `Read` of a PNG produced the empty string and the picture was gone.
+ */
 export function extractToolResultContent(content: string | ContentBlock[] | undefined): string {
   if (!content) return '';
   if (typeof content === 'string') return content;
@@ -357,12 +371,36 @@ export function buildCommandMessage(
 }
 
 /**
+ * One image a transcript read found, and the tool call it belongs behind.
+ *
+ * The anchor is a PART rather than a message id or an index, because object
+ * identity is the only thing that survives
+ * {@link mergeConsecutiveAssistantMessages}: it rebuilds the parts arrays but
+ * carries the part objects over by reference. `attachTranscriptImages`
+ * (`../media-capture.ts`) resolves the bytes and splices the picture in right
+ * after its tool call.
+ */
+export interface TranscriptImageRef {
+  /** The tool call whose result carried this image. */
+  readonly toolCallPart: ToolCallPart;
+  /** What the result carried, not yet stored. */
+  readonly image: ToolResultImage;
+}
+
+/**
  * Parse an array of JSONL lines into HistoryMessage objects.
  *
  * Implements a state machine that tracks pending slash commands, tool call
  * correlation, and Skill tool args across user/assistant message pairs.
+ *
+ * @param lines - The transcript's JSONL lines.
+ * @param images - Collects every image a tool result carried, in transcript
+ *   order, for the caller to resolve. Storing bytes is I/O and this function
+ *   does none, so it records WHERE each picture belongs and nothing more. Omit
+ *   it and images are simply not read — the behaviour every caller that does
+ *   not render a transcript still wants.
  */
-export function parseTranscript(lines: string[]): HistoryMessage[] {
+export function parseTranscript(lines: string[], images?: TranscriptImageRef[]): HistoryMessage[] {
   const messages: HistoryMessage[] = [];
   let pendingCommand: { commandName: string; commandArgs: string; uuid?: string } | null = null;
   let pendingSkillArgs: string | null = null;
@@ -414,6 +452,15 @@ export function parseTranscript(lines: string[]): HistoryMessage[] {
           if (block.type === 'tool_result' && block.tool_use_id) {
             hasToolResult = true;
             const resultText = extractToolResultContent(block.content);
+            // Whatever the result carried that was not text. Anchored to the
+            // tool call's PART so the caller can put the picture back exactly
+            // where it happened; see {@link TranscriptImageRef}.
+            const anchor = toolCallPartMap.get(block.tool_use_id);
+            if (images && anchor) {
+              for (const image of extractToolResultImages(block.tool_use_id, block.content)) {
+                images.push({ toolCallPart: anchor, image });
+              }
+            }
             applyToolResult({
               tc: toolCallMap.get(block.tool_use_id),
               tcPart: toolCallPartMap.get(block.tool_use_id),

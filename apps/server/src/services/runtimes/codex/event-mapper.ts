@@ -41,6 +41,7 @@ import type { StreamEvent, TaskItem } from '@dorkos/shared/types';
 import { UiCommandSchema } from '@dorkos/shared/schemas';
 import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
 import { CODEX_UI_MCP_SERVER } from './codex-ui-mcp-server.js';
+import { recordCodexMedia, type CodexMediaState } from './media-capture.js';
 
 /** Tool name stamped on command_execution tool events. */
 export const SHELL_TOOL_NAME = 'Shell';
@@ -56,7 +57,7 @@ type ItemPhase = 'started' | 'updated' | 'completed';
  * Per-turn mutable state threaded through the pure mapping functions —
  * the Codex analog of the Claude adapter's `ToolState` struct.
  */
-export interface CodexEventContext {
+export interface CodexEventContext extends CodexMediaState {
   /** DorkOS session id stamped onto session_status/error/done events. */
   readonly sessionId: string;
   /** Codex thread id; set when `thread.started` arrives (persisted by the thread map). */
@@ -94,6 +95,8 @@ export function createCodexEventContext(sessionId: string): CodexEventContext {
     lastTextById: new Map(),
     lastOutputById: new Map(),
     startedToolIds: new Set(),
+    pendingMedia: [],
+    recordedMediaKeys: new Set(),
   };
 }
 
@@ -402,7 +405,16 @@ function mapFileChange(
   return events;
 }
 
-/** Extract the display result of an MCP call: error message on failure, joined text blocks on success. */
+/**
+ * Extract the display result of an MCP call: error message on failure, joined
+ * text blocks on success.
+ *
+ * Text ONLY, and that is now a statement rather than an omission: MCP's
+ * `ImageContent` blocks are read by {@link recordCodexMedia} instead, which
+ * records them for `media-capture.ts` to store. Filtering them away here used to
+ * be the whole story — a tool that answered with a screenshot answered with
+ * nothing.
+ */
 function extractMcpResultText(item: McpToolCallItem): string | undefined {
   if (item.status === 'failed') return item.error?.message;
   const content = item.result?.content;
@@ -482,6 +494,12 @@ function mapMcpToolCall(
     if (result) {
       events.push({ type: 'tool_result', data: { toolCallId, toolName, result, status } });
     }
+    // Whatever the tool returned that was not text. Recorded, not stored: this
+    // mapper does no I/O, so `captureCodexMedia` drains the intent from the
+    // runtime's turn loop and announces the picture by URL. A result whose only
+    // block is an image produces no `tool_result` event at all (there is no text
+    // to put in one), which is exactly how it used to disappear.
+    recordCodexMedia(ctx, item.id, item.result?.content);
   }
   return events;
 }

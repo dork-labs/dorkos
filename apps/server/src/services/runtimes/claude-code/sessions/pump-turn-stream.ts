@@ -19,7 +19,7 @@
  * | a launch that fails            | `SessionCrashRecovery` — resume, or refuse         |
  *
  * So what is left here is the mapping itself, and it is deliberately the SAME
- * mapping: `mapSdkMessage`, the same canonical-id rebind ordering, the same
+ * mapping: `mapSdkMessageWithMedia`, the same canonical-id rebind ordering, the
  * content-event accounting and empty-stream guard (both imported from
  * `messaging/empty-stream-guard.ts`, so they cannot drift), the same terminal
  * `done`. A person must not be able to tell which path answered them.
@@ -73,7 +73,7 @@ import {
 } from '../messaging/empty-stream-guard.js';
 import type { MessageSenderOpts } from '../messaging/message-sender-shared.js';
 import { detectPhantomCancellations } from '../messaging/phantom-cancellation.js';
-import { mapSdkMessage } from '../sdk/sdk-event-mapper.js';
+import { mapSdkMessageWithMedia } from '../media-capture.js';
 import type { TurnWindow } from './session-turn-windows.js';
 
 /** What one window needs to become a turn on the durable stream. */
@@ -201,7 +201,14 @@ export async function* streamTurnWindow(args: PumpTurnStreamArgs): AsyncGenerato
       }
 
       let prevSdkId = session.sdkSessionId;
-      for await (const event of mapSdkMessage(message, session, sessionId, toolState, wasStopped)) {
+      for await (const event of mapSdkMessageWithMedia(
+        opts.attachments ?? null,
+        message,
+        session,
+        sessionId,
+        toolState,
+        wasStopped
+      )) {
         // BEFORE this event leaves the server: `trigger-turn` re-keys the
         // projector on every event it sees, and that announcement is how the
         // cockpit learns the id it POSTs its next message under. Handing the id
