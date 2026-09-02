@@ -64,7 +64,9 @@ Record the result as `PORTS_BUSY`. See tier 3 for why it matters.
 pnpm verify 2>&1 | tee "$RESULTS_DIR/$TIMESTAMP-verify.log"
 ```
 
-What it actually is (`package.json`): `pnpm test:scripts && turbo run typecheck lint --affected && turbo run test --affected -- --run`. So it is **affected-only** — it is the pre-PR loop-closer, not full coverage. That is exactly why tier 2 exists and why "verify passed" is never reported as "the suite passed".
+What it actually is (`package.json`): `pnpm test:scripts && export TURBO_SCM_BASE="$(git rev-parse --verify --quiet origin/main || echo main)" && turbo run typecheck lint --affected && turbo run test --affected -- --run`. So it is **affected-only** — it is the pre-PR loop-closer, not full coverage. That is exactly why tier 2 exists and why "verify passed" is never reported as "the suite passed".
+
+The `TURBO_SCM_BASE` pin (DOR-1717) is what makes "affected-only" mean anything here: turbo's default base is the _local_ `main` ref, which on a worktree machine trails `origin/main`, and diffing against it swept in everybody else's merges — a root-files-only tree resolved to the entire monorepo that way. Report the packages turbo actually selected, not the ones you expected it to.
 
 Verdict: exit code 0 → PASS. Non-zero → FAIL, and record the first failing package and the first real error line (not the last line, which is usually turbo's summary).
 
@@ -210,7 +212,8 @@ Flip `Status: IN PROGRESS` → `COMPLETE`, append the total duration, and print 
 
 ## Technical Notes
 
-- `pnpm verify` = `pnpm test:scripts && turbo run typecheck lint --affected && turbo run test --affected -- --run`; it also runs the shell-script test battery (`scripts/test-*.sh`), which is why it is tier 1 and not a subset of tier 2.
+- `pnpm verify` = `pnpm test:scripts && export TURBO_SCM_BASE="$(git rev-parse --verify --quiet origin/main || echo main)" && turbo run typecheck lint --affected && turbo run test --affected -- --run`; it also runs the shell-script test battery (`scripts/test-*.sh`), which is why it is tier 1 and not a subset of tier 2. The `export` (not a per-command env prefix) is deliberate — a prefix would cover only the first turbo call.
+- **Turbo's task count is not a suite count.** A `turbo test` plan folds in the `build` and `generate:api-docs` tasks each suite depends on: the full monorepo plan is 57 tasks, of which 23 are `test`. Quote both, or quote suites and say so.
 - `pnpm test` = `dotenv -- turbo test`; the `-- --run` passes vitest's non-watch flag through.
 - A stale `@dorkos/shared` dist produces false-red type errors outside a running dev session — if tier 1 fails with import/type errors in packages you did not touch, run `pnpm --filter @dorkos/shared build` and re-run before reporting a FAIL. A `TS6053` on a `@dorkos/typescript-config` extends means stale `node_modules` — run `pnpm install`.
 - Browser-test execution has its own CI assertion, `scripts/assert-browser-tests-executed.sh`, for the same cache-replay reason as the unit suite.
