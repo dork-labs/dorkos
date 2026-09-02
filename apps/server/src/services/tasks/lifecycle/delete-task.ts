@@ -46,8 +46,12 @@ export async function removeScheduledTaskFile(filePath: string | null): Promise<
   try {
     await shapeScheduleReceipts(resolveDorkHome(), logger).forget(dirPath);
   } catch (err) {
+    // Present tense on purpose: the directory is removed BELOW, and that step
+    // swallows its own failures — so a past-tense line here would assert a
+    // deletion that may not have happened, to the one person reading the log
+    // because something is already wrong.
     logger.error(
-      `[shape-schedule] Deleted ${dirPath} but could not drop it from the schedule receipt. ` +
+      `[shape-schedule] Could not drop ${dirPath} from the schedule receipt before removing it. ` +
         `A Shape may overwrite whatever is put at that name next. Remove the entry by hand.`,
       err
     );

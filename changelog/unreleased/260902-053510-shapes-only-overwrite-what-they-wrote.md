@@ -2,6 +2,7 @@
 covers:
   - 'fix(server): a Shape owns only the schedules it wrote, by receipt (DOR-1524)'
   - 'fix(server): drop the Shape write receipt wherever a schedule is deleted (DOR-1524)'
+  - 'fix(server): a failed receipt drop no longer claims the delete already happened (DOR-1524)'
 ---
 
 ### Fixed
