@@ -86,6 +86,17 @@ export async function resolveAgentTokenEnv(
  * way out of is not a limit. A directory that simply hosts no agent has no
  * recorded ceiling either, so it still passes nothing.
  *
+ * **The one gap that fallback cannot close, stated so nobody reads it as
+ * airtight:** it needs a PREVIOUS token to read a ceiling off. An agent whose
+ * manifest is unreadable on its very first spawn — one that has never minted —
+ * has no recorded ceiling anywhere, and takes `mint()`'s default. Closing that
+ * would mean a column on the derived Mesh row, which is the one thing this
+ * field deliberately does not have (an authorization answer must not come from a
+ * cache that can be stale); the honest alternative, refusing to spawn at all, is
+ * a worse failure for a file that is far more often absent than tampered with.
+ * The window is one spawn wide and only reachable by corrupting a manifest
+ * before the agent has ever run.
+ *
  * @param agentPath - Absolute path to the agent's project directory.
  * @param service - The identity service, for the last-recorded fallback.
  * @returns `{ tierCeiling }`, or `{}` when no ceiling is recorded anywhere.

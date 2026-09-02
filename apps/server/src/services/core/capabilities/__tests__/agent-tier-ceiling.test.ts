@@ -26,6 +26,11 @@ import {
   initCapabilityTierGate,
   resetCapabilityTierGate,
 } from '../tier-enforcement.js';
+import {
+  enforceToolGroupGrant,
+  initToolGroupGate,
+  resetToolGroupGate,
+} from '../tool-group-enforcement.js';
 import { ApprovalService } from '../../approvals/index.js';
 import { eventFanOut } from '../../event-fan-out.js';
 import {
@@ -62,6 +67,43 @@ const UNINSTALL = defineCapability({
   input: z.object({ name: z.string() }),
   output: z.unknown(),
   surfaces: { mcp: { toolName: 'demo_uninstall', servers: ['external'] } },
+  invoke: async () => ({ ok: true }),
+});
+
+/** An `act` capability — the rung a revoked agent must lose and a capped one keeps. */
+const RENAME = defineCapability({
+  id: 'demo.rename',
+  title: 'Rename a thing',
+  description: 'An act capability used to probe what revocation takes away.',
+  tier: 'act',
+  input: z.object({ name: z.string() }),
+  output: z.unknown(),
+  surfaces: { mcp: { toolName: 'demo_rename', servers: ['external'] } },
+  invoke: async () => ({ ok: true }),
+});
+
+/** An `observe` capability — reading, which no ceiling ever blocks. */
+const READ = defineCapability({
+  id: 'demo.read',
+  title: 'Read a thing',
+  description: 'An observe capability used to prove reading survives revocation.',
+  tier: 'observe',
+  input: z.object({}),
+  output: z.unknown(),
+  surfaces: { mcp: { toolName: 'demo_read', servers: ['external'] } },
+  invoke: async () => ({ ok: true }),
+});
+
+/** A capability behind the one per-agent tool group, for the grant drill. */
+const MANAGE_ROOMS = defineCapability({
+  id: 'demo.manage_rooms',
+  title: 'Manage rooms',
+  description: 'A capability gated on the rooms-management grant.',
+  tier: 'act',
+  toolGroup: 'roomsManage',
+  input: z.object({}),
+  output: z.unknown(),
+  surfaces: { mcp: { toolName: 'demo_manage_rooms', servers: ['external'] } },
   invoke: async () => ({ ok: true }),
 });
 
@@ -102,6 +144,7 @@ beforeEach(async () => {
 afterEach(async () => {
   resetAgentIdentityService();
   resetCapabilityTierGate();
+  resetToolGroupGate();
   vi.restoreAllMocks();
   await rm(agentPath, { recursive: true, force: true });
 });
@@ -153,6 +196,117 @@ describe('a ceiling set on the manifest reaches the gate', () => {
 
     expect(identity?.tierCeiling).toBe('observe');
     expect(decision.outcome).toBe('denied');
+  });
+});
+
+describe('revoking a capped agent shuts it off, and never widens it', () => {
+  // The inversion this closes, reproduced before it was fixed: `describeAgent`
+  // and `resolve` filtered revoked rows out, so a revoked agent resolved to
+  // `undefined`, `undefined` reads as "unidentified" at the gate, and an
+  // unidentified caller is capped at DEFAULT_ANONYMOUS_TIER_CEILING —
+  // `destructive`. Revoking an agent capped at `act` therefore let it reach
+  // MORE than before it was revoked.
+  it('does not hand a revoked agent the anonymous (widest) ceiling', async () => {
+    await updateAgentManifest({ agentPath, body: { tierCeiling: 'act' } });
+    await spawnAndResolve();
+
+    await service.revoke(agentPath);
+    const identity = await service.describeAgent(agentPath);
+
+    // Named, not erased — that is what lets the gate tell it from a stranger.
+    expect(identity?.agentPath).toBe(agentPath);
+    expect(identity?.inactive).toBe('revoked');
+  });
+
+  it('refuses an act call a revoked agent could make one moment earlier', async () => {
+    await updateAgentManifest({ agentPath, body: { tierCeiling: 'act' } });
+    await spawnAndResolve();
+    const before = enforceCapabilityTier({
+      action: RENAME,
+      identity: await service.describeAgent(agentPath),
+      input: { name: 'x' },
+      retryChannel: 'mcp-argument',
+    });
+    // Nothing to prove if the call was not allowed to begin with.
+    expect(before.outcome).toBe('allowed');
+
+    await service.revoke(agentPath);
+    const after = enforceCapabilityTier({
+      action: RENAME,
+      identity: await service.describeAgent(agentPath),
+      input: { name: 'x' },
+      retryChannel: 'mcp-argument',
+    });
+
+    expect(after.outcome).toBe('denied');
+    if (after.outcome !== 'denied') throw new Error('unreachable');
+    expect(after.payload.reason).toBe('tier_ceiling');
+    expect(after.payload.approvable).toBe(false);
+    expect(after.payload.message).toContain('access was turned off');
+  });
+
+  it('shuts off the bearer path too, not only the in-session one', async () => {
+    await updateAgentManifest({ agentPath, body: { tierCeiling: 'act' } });
+    const env = await resolveAgentTokenEnv(agentPath, 'Warden');
+    await service.revoke(agentPath);
+
+    const identity = await service.resolve(env[AGENT_TOKEN_ENV_VAR]!);
+
+    expect(identity?.inactive).toBe('revoked');
+    expect(
+      enforceCapabilityTier({
+        action: RENAME,
+        identity,
+        input: { name: 'x' },
+        retryChannel: 'mcp-argument',
+      }).outcome
+    ).toBe('denied');
+  });
+
+  it('still lets a revoked agent read, exactly as a stranger may', async () => {
+    await service.revoke(agentPath);
+    await spawnAndResolve();
+    await service.revoke(agentPath);
+
+    const decision = enforceCapabilityTier({
+      action: READ,
+      identity: await service.describeAgent(agentPath),
+      input: {},
+      retryChannel: 'mcp-argument',
+    });
+
+    expect(decision.outcome).toBe('allowed');
+  });
+
+  it('takes every tool-group grant away with it', async () => {
+    // The seam that would have quietly INVERTED the other way: this gate keyed
+    // on identity presence, and revoked identities used to be absent. Naming
+    // them would have handed a revoked agent every grant on its manifest.
+    initToolGroupGate({ grants: { holds: async () => true } });
+    await spawnAndResolve();
+    const live = await service.describeAgent(agentPath);
+    expect((await enforceToolGroupGrant({ action: MANAGE_ROOMS, identity: live })).outcome).toBe(
+      'allowed'
+    );
+
+    await service.revoke(agentPath);
+    const revoked = await service.describeAgent(agentPath);
+
+    const decision = await enforceToolGroupGrant({ action: MANAGE_ROOMS, identity: revoked });
+    expect(decision.outcome).toBe('denied');
+  });
+
+  it('gives a fresh spawn its identity back', async () => {
+    await updateAgentManifest({ agentPath, body: { tierCeiling: 'act' } });
+    await spawnAndResolve();
+    await service.revoke(agentPath);
+
+    // Revocation is agent-wide and permanent for the tokens it swept; a new
+    // spawn mints a new one, which is how an agent comes back.
+    const identity = await spawnAndResolve();
+
+    expect(identity?.inactive).toBeUndefined();
+    expect(identity?.tierCeiling).toBe('act');
   });
 });
 

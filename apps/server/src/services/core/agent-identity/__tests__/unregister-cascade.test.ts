@@ -38,8 +38,11 @@ describe('createAgentIdentityUnregisterCascade', () => {
     // The cascade fires the revoke and reports async — give the microtask a turn.
     await vi.waitFor(() => expect(logger.info).toHaveBeenCalled());
 
-    expect(await service.resolve(token)).toBeUndefined();
-    expect(await service.describeAgent(AGENT_PATH)).toBeUndefined();
+    // Marked revoked rather than erased (DOR-486): every gate fails closed on
+    // the mark, where `undefined` would have read as "unidentified" and bought
+    // the widest tier ceiling there is.
+    expect(await service.resolve(token)).toMatchObject({ inactive: 'revoked' });
+    expect(await service.describeAgent(AGENT_PATH)).toMatchObject({ inactive: 'revoked' });
   });
 
   it('leaves other agents untouched', async () => {
@@ -50,8 +53,9 @@ describe('createAgentIdentityUnregisterCascade', () => {
     cascade('agent-1', AGENT_PATH);
     await vi.waitFor(() => expect(logger.info).toHaveBeenCalled());
 
-    expect(await service.resolve(mine)).toBeUndefined();
-    expect(await service.resolve(theirs)).toBeDefined();
+    expect(await service.resolve(mine)).toMatchObject({ inactive: 'revoked' });
+    const other = await service.resolve(theirs);
+    expect(other?.inactive).toBeUndefined();
   });
 
   it('is a silent no-op when no identity service is configured', () => {

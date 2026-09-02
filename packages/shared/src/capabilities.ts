@@ -49,6 +49,17 @@ export const CAPABILITY_TIER_RANK: Record<CapabilityTier, number> = Object.fromE
 ) as Record<CapabilityTier, number>;
 
 /**
+ * The widest rung there is — the ceiling that restricts nothing.
+ *
+ * Named so the two "no extra limit" defaults below are one literal rather than
+ * two, while staying two POLICIES: they answer different questions and a future
+ * install may well want them to differ, which is exactly what
+ * `CapabilityTierGateOptions.anonymousTierCeiling` exists for.
+ */
+export const WIDEST_CAPABILITY_TIER: CapabilityTier =
+  CAPABILITY_TIERS[CAPABILITY_TIERS.length - 1]!;
+
+/**
  * What an agent with no recorded ceiling is allowed to reach: everything.
  *
  * The migration guarantee for {@link CAPABILITY_TIERS} as a per-agent limit
@@ -57,7 +68,7 @@ export const CAPABILITY_TIER_RANK: Record<CapabilityTier, number> = Object.fromE
  * reads as the widest rung, and a narrower one is only ever something somebody
  * chose.
  */
-export const DEFAULT_AGENT_TIER_CEILING: CapabilityTier = 'destructive';
+export const DEFAULT_AGENT_TIER_CEILING: CapabilityTier = WIDEST_CAPABILITY_TIER;
 
 /**
  * How each tier reads as a LIMIT on an agent, in the words a person sees.

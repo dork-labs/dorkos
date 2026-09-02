@@ -229,6 +229,17 @@ export async function updateAgentManifest(opts: {
   // The operator's own surface, `PATCH /api/mesh/agents/:id`, does not come
   // through here and sets any ceiling. **A cockpit that edits the ceiling must
   // use that route** — the same split `enabledToolGroups.roomsManage` uses.
+  //
+  // **The comparison and the write are not atomic**, and that is unchanged from
+  // every other guard on this seam: read, decide, write, with no lock over
+  // `.dork/agent.json`. Two PATCHes landing together can interleave so the later
+  // write is judged against a ceiling the earlier one already replaced. What the
+  // window CANNOT do is manufacture a widening out of nothing — every value that
+  // reaches the file passed this check against a real recorded ceiling, so the
+  // worst case is that a raise the operator made and a lowering the agent made
+  // resolve in the other order, and the operator's next write settles it. Closing
+  // it properly means file locking for the whole manifest, which is a change to
+  // this seam rather than to this field (DOR-486 review).
   if ('tierCeiling' in rawBody) {
     const current = existing.tierCeiling ?? DEFAULT_AGENT_TIER_CEILING;
     const requested = parsed.data.tierCeiling ?? DEFAULT_AGENT_TIER_CEILING;

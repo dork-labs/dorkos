@@ -325,6 +325,16 @@ function TierCeilingCard({ agent }: { agent: AgentManifest }) {
           Every agent starts with no extra limit, so nothing you already run changes until you set
           one here. An agent can tighten its own limit; only you can loosen it.
         </p>
+        {/* Said plainly rather than left for someone to discover: the cap holds
+            on the path an agent is meant to use, and an agent with a terminal
+            can step off that path. Same residual, and same remedy, as the grant
+            below — see `contributing/agent-operator-surface.md`. A limit whose
+            edge is unstated reads as a sandbox, and this is not one. */}
+        <p className="text-muted-foreground text-sm">
+          This covers what the agent asks DorkOS to do. An agent that can run terminal commands can
+          still act outside DorkOS &mdash; turn on Require login, in Settings under Security, to
+          close that door too.
+        </p>
       </FieldCardContent>
     </FieldCard>
   );

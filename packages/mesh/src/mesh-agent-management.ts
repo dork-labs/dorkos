@@ -19,7 +19,7 @@ import type { AgentRegistry, AgentRegistryEntry } from './agent-registry.js';
 import type { RelayBridge } from './relay-bridge.js';
 import { subjectForAgent } from './relay-bridge.js';
 import type { TopologyManager, TopologyView, CrossNamespaceRule } from './topology.js';
-import { readManifest, writeManifest, removeManifest } from './manifest.js';
+import { readManifest, probeManifest, writeManifest, removeManifest } from './manifest.js';
 import type { DiscoveryDeps } from './mesh-discovery.js';
 import { upsertAutoImported } from './mesh-discovery.js';
 
@@ -258,12 +258,24 @@ export function getProjectPath(deps: AgentManagementDeps, agentId: string): stri
  * Update mutable fields of a registered agent.
  *
  * ADR-0043: writes to `.dork/agent.json` first (canonical), then updates DB (cache).
- * If the manifest file is missing, reconstructs from the DB entry before writing.
+ * If the manifest file is ABSENT, reconstructs from the DB entry before writing.
+ *
+ * **An UNREADABLE manifest is refused rather than reconstructed** (DOR-486
+ * review). The DB row is a LOSSY cache — it has no column for
+ * `enabledToolGroups`, `mcpServers`, `workspace` or `tierCeiling` — so
+ * reconstructing from it turns any PATCH into a silent erase of every one of
+ * those, and for `tierCeiling` that erase WIDENS a security control: an agent
+ * capped at `observe` would come back uncapped because somebody renamed a
+ * display name while its manifest happened to be malformed. `probeManifest`
+ * separates "demonstrably gone" (reconstructing is the recovery path, and there
+ * is nothing to lose) from "here and unreadable" (reconstructing destroys), which
+ * `readManifest`'s single `null` cannot.
  *
  * @param deps - Agent management dependencies
  * @param agentId - The agent's ULID
  * @param partial - Fields to update (name, description, capabilities, etc.)
  * @returns The updated agent manifest, or undefined if not found
+ * @throws {Error} When the manifest is present but cannot be read or parsed.
  */
 export async function update(
   deps: AgentManagementDeps,
@@ -275,6 +287,16 @@ export async function update(
 
   // ADR-0043: read current manifest from disk, merge, write back
   const diskManifest = await readManifest(entry.projectPath);
+  if (!diskManifest) {
+    const probe = await probeManifest(entry.projectPath);
+    if (probe.state === 'unreadable') {
+      throw new Error(
+        `Refusing to update ${entry.projectPath}: its .dork/agent.json is present but ` +
+          `could not be read (${probe.detail}). Writing over it would erase the settings ` +
+          `only that file holds. Fix or remove the file, then try again.`
+      );
+    }
+  }
   const base = diskManifest ?? toManifest(entry);
   const merged: AgentManifest = { ...base, ...partial, id: agentId };
   await writeManifest(entry.projectPath, merged);

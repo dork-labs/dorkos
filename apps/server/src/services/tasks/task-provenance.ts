@@ -39,7 +39,14 @@ export async function resolveProposerName(
 
   try {
     const identity = await service.describeAgent(agentPath);
-    return identity?.displayName ?? null;
+    // A revoked agent is not credited, which is the behavior this has always
+    // had and a deliberate one: switching an agent off stops its name appearing
+    // beside work. It used to fall out of `describeAgent` answering `undefined`;
+    // that method now NAMES a revoked agent, because the capability gate has to
+    // tell one from a stranger (DOR-486), so the choice is made here instead —
+    // where it is a product decision rather than a side effect.
+    if (!identity || identity.inactive) return null;
+    return identity.displayName ?? null;
   } catch (err) {
     logger.debug('[Tasks] Could not resolve who proposed a schedule', {
       agentPath,

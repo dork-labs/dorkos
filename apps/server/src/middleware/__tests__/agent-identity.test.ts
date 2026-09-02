@@ -104,14 +104,24 @@ describe('resolveAgentIdentity', () => {
     expect(next).toHaveBeenCalledOnce();
   });
 
-  it('passes through with no identity for a revoked token', async () => {
+  it('passes through NAMING a revoked token, marked as shut off', async () => {
+    // Changed contract, and the change is the point (DOR-486). This used to
+    // resolve to `undefined`, which every consumer reads as "unidentified" — and
+    // an unidentified caller gets the WIDEST tier ceiling, so revoking a capped
+    // agent widened it. The identity is now carried and marked instead, and each
+    // consumer fails closed on the mark: the tier gate caps it at `observe`, the
+    // tool-group gate hands it no grant, and `room-caller.ts` still 401s.
     const token = await service.mint({ agentPath: AGENT_PATH, displayName: 'Researcher' });
     await service.revoke(AGENT_PATH);
     const { req, res, next } = makeReqRes({ 'x-dorkos-agent': token });
 
     await resolveAgentIdentity(req, res, next);
 
-    expect(getRequestAgentIdentity(res)).toBeUndefined();
+    expect(getRequestAgentIdentity(res)).toMatchObject({
+      agentPath: AGENT_PATH,
+      inactive: 'revoked',
+    });
+    // Still never rejects: identity is attribution, not authorization.
     expect(next).toHaveBeenCalledOnce();
   });
 
@@ -155,9 +165,11 @@ describe('resolveAgentIdentity — unresolved token visibility', () => {
     resetAgentIdentityService();
   });
 
-  it('logs a digest prefix, never the token, when a revoked token is presented', async () => {
-    const token = await service.mint({ agentPath: AGENT_PATH, displayName: 'Researcher' });
-    await service.revoke(AGENT_PATH);
+  it('logs a digest prefix, never the token, when an unknown token is presented', async () => {
+    // A token from NO agent, which is the case that still resolves to nothing.
+    // A revoked one no longer does — it resolves to a marked identity and is
+    // refused loudly at the gates, which is louder than a debug line (DOR-486).
+    const token = 'deadbeefdeadbeefdeadbeefdeadbeef';
     const { req, res, next } = makeReqRes({ 'x-dorkos-agent': token });
 
     await resolveAgentIdentity(req, res, next);
@@ -222,11 +234,9 @@ describe('presentsAgentIdentity', () => {
     expect(presentsAgentIdentity(req, res)).toBe(true);
   });
 
-  it('is true for a token that resolved to nothing, which is what a revoked agent looks like', async () => {
-    const service = initAgentIdentityService(createTestDb());
-    const token = await service.mint({ agentPath: AGENT_PATH, displayName: 'Researcher' });
-    await service.revoke(AGENT_PATH);
-    const { req, res, next } = makeReqRes({ 'x-dorkos-agent': token });
+  it('is true for a token that resolved to nothing, which is what an unknown token looks like', async () => {
+    initAgentIdentityService(createTestDb());
+    const { req, res, next } = makeReqRes({ 'x-dorkos-agent': 'deadbeefdeadbeefdeadbeefdeadbeef' });
     await resolveAgentIdentity(req, res, next);
 
     // Nothing resolved — so the narrow reader says "no agent here", and the

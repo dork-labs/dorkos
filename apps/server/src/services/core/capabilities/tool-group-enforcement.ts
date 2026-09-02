@@ -36,6 +36,7 @@
  * | Identified agent, grant `true`            | runs                             |
  * | Identified agent, grant `false` or absent | refused                          |
  * | Identity present but the lookup throws    | refused                          |
+ * | Identity revoked or expired               | refused, whatever the manifest says |
  * | Trusted caller                            | runs — see below                 |
  * | Unidentified                              | refused                          |
  *
@@ -216,7 +217,15 @@ export async function enforceToolGroupGrant(
   const group = action.toolGroup;
   if (!group) return { outcome: 'allowed' };
 
-  if (identity && (await holdsGrant(identity.agentPath, group))) {
+  // `!identity.inactive` is load-bearing, not defensive (DOR-486 review). Both
+  // resolvers used to answer `undefined` for a revoked or expired token, so this
+  // gate's "unidentified holds nothing" row covered them for free. They now
+  // resolve to a NAMED identity — which the tier gate needs, to tell a shut-off
+  // agent from a stranger — and without this check a revoked agent would keep
+  // every grant its manifest still lists. The row it belongs to is "identity
+  // present but not usable", and the fail direction is the one this whole module
+  // is built on: anything that is not a clear yes is a no.
+  if (identity && !identity.inactive && (await holdsGrant(identity.agentPath, group))) {
     return { outcome: 'allowed' };
   }
 

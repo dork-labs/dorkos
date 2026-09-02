@@ -516,8 +516,23 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
         .filter(([k]) => k in req.body)
         .map(([k, v]) => [k, v === null ? undefined : v])
     ) as Partial<AgentManifest>;
-    // ADR-0043: update() is async — writes to disk first, then DB
-    const updated = await meshCore.update(req.params.id, explicitFields);
+    // ADR-0043: update() is async — writes to disk first, then DB.
+    //
+    // It REFUSES when the manifest is present but unreadable, rather than
+    // rebuilding one from the DB row, because that row cannot carry
+    // `enabledToolGroups`, `mcpServers`, `workspace` or `tierCeiling` and the
+    // rebuild would erase all four (DOR-486 review). Answered as a 409 with the
+    // reason: the request is fine, the state on disk is not, and the operator
+    // can act on the sentence.
+    let updated;
+    try {
+      updated = await meshCore.update(req.params.id, explicitFields);
+    } catch (err) {
+      return res.status(409).json({
+        error: err instanceof Error ? err.message : String(err),
+        code: 'MANIFEST_UNREADABLE',
+      });
+    }
     if (!updated) {
       return res.status(404).json({ error: 'Agent not found' });
     }
