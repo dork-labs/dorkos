@@ -33,6 +33,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import {
   makeMockThread,
   codexFailedTurn,
+  codexFailedTurnWithErrorItem,
   codexMcpImageTurn,
   codexSimpleTurn,
 } from './codex-scenarios.js';
@@ -48,11 +49,29 @@ const LIVE = vi.hoisted(() => process.env.DORKOS_CODEX_LIVE === '1');
 
 /**
  * One-shot selector the mocked SDK reads at thread mint: when set, the next
- * minted thread streams the scripted failed turn, then the flag self-clears.
- * Matches makeFailingRuntime's "next sendMessage turn fails" contract (the
- * adapter mints exactly one thread per turn).
+ * minted thread streams a failed turn carrying THIS message, then the selector
+ * self-clears. Matches the "next sendMessage turn fails" contract both
+ * `makeFailingRuntime` and `authFailure` are written to (the adapter mints
+ * exactly one thread per turn).
+ *
+ * Two knobs rather than one boolean, because the two cases need different
+ * things. The message is carried because the credential-failure case asserts on
+ * the exact vendor text it scripted (DOR-1656). `withErrorItem` picks the SHAPE:
+ * a bare `turn.failed`, or the live-observed sequence where an error ITEM
+ * carries the failure first and `turn.failed` repeats it (NOTES.md, §Additional
+ * live-verified facts).
  */
-const failNextThread = vi.hoisted(() => ({ value: false }));
+const nextTurnFailure = vi.hoisted(() => ({
+  message: null as string | null,
+  withErrorItem: false,
+}));
+
+/**
+ * The vendor's own words for an expired Codex sign-in — what the mocked SDK is
+ * scripted with, and what a person must never be shown (DOR-1656).
+ */
+const CODEX_VENDOR_AUTH_TEXT =
+  'stream error: unexpected status 401 Unauthorized: missing bearer authentication in header';
 
 /**
  * Every prompt string the mocked SDK has been handed, in order.
@@ -78,7 +97,7 @@ const threadMints = vi.hoisted(() => [] as Array<'start' | 'resume'>);
  * One-shot selector for the media gate: when set, the next minted thread streams
  * a turn whose MCP tool answers with a picture, then the flag self-clears.
  *
- * The same shape as {@link failNextThread}, and for the same reason — the
+ * The same shape as {@link nextTurnFailure}, and for the same reason — the
  * adapter mints exactly one thread per turn, so a one-shot flag is how a driver
  * scripts THAT turn without disturbing every other case.
  */
@@ -94,9 +113,12 @@ function mintTurnEvents() {
     // passes for a reason unrelated to the property it is named after.
     return codexMcpImageTurn(2);
   }
-  if (!failNextThread.value) return codexSimpleTurn('pong');
-  failNextThread.value = false;
-  return codexFailedTurn('Simulated Codex turn failure');
+  const failure = nextTurnFailure.message;
+  if (failure === null) return codexSimpleTurn('pong');
+  const { withErrorItem } = nextTurnFailure;
+  nextTurnFailure.message = null;
+  nextTurnFailure.withErrorItem = false;
+  return withErrorItem ? codexFailedTurnWithErrorItem(failure) : codexFailedTurn(failure);
 }
 
 vi.mock('@openai/codex-sdk', async (importOriginal) => {
@@ -339,11 +361,34 @@ runtimeConformance(
             return [firstPrompt ?? '', secondPrompt ?? ''] as const;
           },
           makeFailingRuntime: () => {
-            failNextThread.value = true;
+            nextTurnFailure.message = 'Simulated Codex turn failure';
             return new CodexRuntime({
               threadMap: new CodexThreadMap(createTestDb()),
               ...(LIVE ? {} : { resolveBinary: async () => '/bin/codex' }),
             });
+          },
+          // DOR-1656: the same one-shot selector, scripted with the CLI's own
+          // words for an expired sign-in. A real revoked credential cannot be
+          // arranged against the live binary, so this rides the mocked arm.
+          //
+          // `withErrorItem` on purpose: this is the shape a real Codex auth
+          // failure takes (NOTES.md), and it is the harder one. The error ITEM
+          // reaches the person first and `turn.failed` then DEDUPES itself away
+          // against it, so the item's copy is the only copy anybody reads —
+          // a gate driven off the bare `turn.failed` shape would go green on an
+          // adapter that still leaked the CLI's words to every real user. Both
+          // branches are exercised here in one turn: the item's, and the dedupe
+          // that suppresses the second.
+          authFailure: {
+            vendorText: CODEX_VENDOR_AUTH_TEXT,
+            makeRuntime: () => {
+              nextTurnFailure.message = CODEX_VENDOR_AUTH_TEXT;
+              nextTurnFailure.withErrorItem = true;
+              return new CodexRuntime({
+                threadMap: new CodexThreadMap(createTestDb()),
+                ...(LIVE ? {} : { resolveBinary: async () => '/bin/codex' }),
+              });
+            },
           },
         }),
   }

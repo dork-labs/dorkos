@@ -27,6 +27,7 @@ import type {
   SessionSettingsPort,
 } from '@dorkos/shared/agent-runtime';
 import { needsConsentRitual } from '@dorkos/shared/permission-semantics';
+import { describeAuthError } from '@dorkos/shared/runtime-error-classification';
 import {
   ErrorEventSchema,
   OperationProgressEventSchema,
@@ -80,6 +81,39 @@ export interface RuntimeConformanceOpts {
    * env-gated live-binary smokes).
    */
   makeFailingRuntime?: () => AgentRuntime;
+  /**
+   * A turn that fails because the runtime's CREDENTIAL is expired, revoked or
+   * invalid — the gate behind "auth errors speak DorkOS copy on every channel
+   * and runtime" (DOR-1656).
+   *
+   * Wire it and the suite drives the turn, then holds the resulting `error`
+   * event to three rules: it is categorised `auth_error`, its `message` is the
+   * shared DorkOS sentence for THIS runtime
+   * ({@link describeAuthError}, which names the runtime rather than Claude),
+   * and the backend's own words survive in `details`.
+   *
+   * **Why the vendor text is supplied rather than inferred.** "The message is
+   * not vendor internals" is unfalsifiable without knowing what the vendor
+   * actually said — a suite that only checked the message was non-empty passes
+   * on the raw string it exists to reject. So the wiring names the exact text
+   * it scripted its backend with, and the suite checks that text landed in
+   * `details` while the message came from DorkOS. A wiring whose backend never
+   * emits the named string fails on `details`, so the two halves keep each
+   * other honest.
+   *
+   * Omit only when a credential failure cannot be scripted (a live-binary smoke
+   * cannot revoke a real sign-in on demand); the case then SKIPs by name rather
+   * than passing on an absence.
+   */
+  authFailure?: {
+    /** Produces a runtime whose next `sendMessage` turn fails on credentials. */
+    makeRuntime: () => AgentRuntime;
+    /**
+     * The VERBATIM backend text that failure carries — the vendor string that
+     * must never be what a person reads.
+     */
+    vendorText: string;
+  };
   /**
    * Factory producing a runtime whose next `sendMessage` turn emits a
    * COMPACTION operation via the standardized `operation_progress` contract
@@ -1016,6 +1050,7 @@ export function runtimeConformance(
     expectHistory = false,
     messageContent = 'conformance ping',
     makeFailingRuntime,
+    authFailure,
     makeCompactingRuntime,
     mediaTurn,
     durableHistory,
@@ -2011,6 +2046,68 @@ export function runtimeConformance(
         });
       });
     }
+
+    describe('credential failure', () => {
+      it('answers in DorkOS words that name this runtime, and keeps the backend text in details (DOR-1656)', async (ctx) => {
+        if (!authFailure) {
+          // A SKIP, not a pass: an `it` that returns early is
+          // indistinguishable from one that asserted something.
+          ctx.skip(
+            'no authFailure driver was wired for this runtime, so a credential failure could ' +
+              'not be scripted here (see RuntimeConformanceOpts.authFailure)'
+          );
+          return;
+        }
+
+        const runtime = authFailure.makeRuntime();
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
+
+        const events = await drainTurn(runtime, sessionId);
+
+        const errorEvent = events.find((event) => event.type === 'error');
+        expect(
+          errorEvent,
+          'a turn that failed on an expired credential must yield an `error` StreamEvent'
+        ).toBeDefined();
+
+        const parsed = ErrorEventSchema.safeParse(errorEvent!.data);
+        expect(
+          parsed.success,
+          `malformed error event data: ${parsed.success ? '' : parsed.error.message}`
+        ).toBe(true);
+        const data = parsed.data!;
+
+        // Without the category the client renders a generic failure with no way
+        // back — no "Fix sign-in", no route to Settings → Runtimes.
+        expect(
+          data.category,
+          'a credential failure must be categorised auth_error so the client can offer a way ' +
+            'back in, rather than a dead-end execution error'
+        ).toBe('auth_error');
+
+        // One voice. Equality rather than a keyword match, because "not the
+        // vendor's words" and "this runtime's own name" are the same claim, and
+        // a substring check on either half passes on copy that fails the other.
+        expect(
+          data.message,
+          'a person reading this must get DorkOS`s sentence naming THIS runtime, not the ' +
+            'backend`s internals and not another runtime`s name — share the copy via ' +
+            'describeAuthError(runtime.type) instead of writing a string here'
+        ).toBe(describeAuthError(runtime.type));
+
+        // Nothing is lost by speaking plainly: the backend's own words stay
+        // reachable behind the client's Details disclosure.
+        expect(
+          data.details ?? '',
+          'the backend`s own failure text must survive in `details` — replacing it in `message` ' +
+            'is a translation, not a deletion'
+        ).toContain(authFailure.vendorText);
+
+        // Failure must not break the every-path-ends-in-done contract.
+        expect(events[events.length - 1]!.type).toBe(TERMINAL_EVENT_TYPE);
+      });
+    });
 
     describe('interrupt semantics', () => {
       it('interruptQuery resolves to a boolean — false when no query is active', async () => {

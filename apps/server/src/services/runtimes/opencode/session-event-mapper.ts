@@ -43,7 +43,10 @@
 import { z } from 'zod';
 import type { AssistantMessage, Event, SessionStatus, Todo } from '@opencode-ai/sdk';
 import type { SessionTaskStatus, StreamEvent, TaskItem } from '@dorkos/shared/types';
-import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
+import {
+  describeRuntimeError,
+  type RuntimeErrorCopy,
+} from '@dorkos/shared/runtime-error-classification';
 import { SESSIONS } from '../../../config/constants.js';
 import { logger } from '../../../lib/logger.js';
 
@@ -74,6 +77,32 @@ const MODEL_UNAVAILABLE_PATTERNS: readonly RegExp[] = [
 /** Plain-language turn error for an unavailable model — points at the model menu (spec §11). */
 const MODEL_UNAVAILABLE_MESSAGE =
   "That model isn't available. Pick another one from the model menu.";
+
+/**
+ * This adapter's runtime type — the identity {@link describeRuntimeError} turns
+ * into the name a person reads, so an OpenCode credential failure says
+ * "OpenCode" and never another runtime's name (DOR-1656).
+ */
+const OPENCODE_RUNTIME_TYPE = 'opencode';
+
+/**
+ * What to show for one OpenCode failure: DorkOS's sentence when the provider's
+ * words mean a dead sign-in (with those words kept in `details`), the provider's
+ * words verbatim otherwise.
+ *
+ * Both channels a failure can arrive on — a `session.error` and a thrown
+ * subscription — go through here, so a person cannot tell which one caught it.
+ *
+ * @param message - The sidecar's or provider's own failure text.
+ * @param code - The channel's machine code (an error `name`), when it has one.
+ */
+export function openCodeErrorCopy(message: string, code?: string): RuntimeErrorCopy {
+  return describeRuntimeError({
+    runtimeType: OPENCODE_RUNTIME_TYPE,
+    message,
+    ...(code ? { code } : {}),
+  });
+}
 
 /** Whether a provider error message reads as an unavailable/unknown model. */
 function isModelUnavailableMessage(message: string): boolean {
@@ -361,8 +390,12 @@ export function mapSessionError(error: OpenCodeSessionError | undefined): Stream
   }
   if (error.name === ABORT_ERROR_NAME) return [];
   const data: Record<string, unknown> = error.data;
-  const message =
-    typeof data.message === 'string' && data.message.length > 0 ? data.message : error.name;
+  // What the PROVIDER actually said, or nothing when it said nothing. The
+  // distinction matters below: falling back to the error name gives us a
+  // message, but not an account of the failure worth preserving.
+  const providerText =
+    typeof data.message === 'string' && data.message.length > 0 ? data.message : undefined;
+  const message = providerText ?? error.name;
   // An unavailable/unknown model is the one provider failure with a plain-language
   // remedy: pick another model. Map it to friendly copy pointing at the model menu
   // instead of leaking the raw sidecar/provider string (spec §11).
@@ -378,14 +411,22 @@ export function mapSessionError(error: OpenCodeSessionError | undefined): Stream
       },
     ];
   }
+  // A credential failure gets DorkOS's own sentence naming OpenCode, with the
+  // provider's words demoted into `details` — the same treatment every runtime
+  // gives an expired sign-in, so what a person reads does not depend on which
+  // agent they happened to be running (DOR-1656). Provider auth messages are the
+  // worst offenders here: they range from a bare error name to whatever string a
+  // model host chose to return.
+  const { details, ...copy } = openCodeErrorCopy(message, error.name);
+  // Keep `details` only when the provider genuinely said something. When it did
+  // not, `message` fell back to the error NAME, and repeating that name under a
+  // "Details" disclosure adds a control that reveals nothing the `code` field
+  // does not already carry.
+  const preserved = providerText === undefined ? undefined : details;
   return [
     {
       type: 'error',
-      data: {
-        message,
-        code: error.name,
-        category: detectAuthError({ message, code: error.name }) ? 'auth_error' : 'execution_error',
-      },
+      data: { ...copy, code: error.name, ...(preserved ? { details: preserved } : {}) },
     },
   ];
 }

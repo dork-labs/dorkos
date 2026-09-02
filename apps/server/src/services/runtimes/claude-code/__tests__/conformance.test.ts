@@ -351,6 +351,14 @@ async function seedExpiredQuestionHistory(runtime: AgentRuntime, sessionId: stri
   return runtime.getMessageHistory(QUESTION_CWD, sessionId);
 }
 
+/**
+ * The vendor's own words for an expired sign-in, verbatim from the Claude Code
+ * CLI binary — what the credential-failure conformance case scripts the mocked
+ * SDK with, and what a person must never be shown (DOR-1656).
+ */
+const CLAUDE_VENDOR_AUTH_TEXT =
+  'Failed to authenticate: OAuth session expired and could not be refreshed';
+
 /** Warm processes this file booted, closed after each case so none leaks. */
 let warmCli: FakeCli | undefined;
 
@@ -628,6 +636,21 @@ runtimeConformance(
           >
       );
       return new ClaudeCodeRuntime('/tmp/dorkos-conformance', '/projects/conformance');
+    },
+    // One-shot CREDENTIAL failure (DOR-1656). The vendor sentence below is a
+    // literal from the Claude Code CLI binary, and it reaches DorkOS on the
+    // result message's `errors[]` — the channel that used to forward it to the
+    // person verbatim while the assistant-message channel said something else
+    // entirely for the same expiry.
+    authFailure: {
+      vendorText: CLAUDE_VENDOR_AUTH_TEXT,
+      makeRuntime: () => {
+        mockedQuery.mockImplementationOnce(
+          () =>
+            wrapSdkQuery(sdkError(CLAUDE_VENDOR_AUTH_TEXT)) as unknown as ReturnType<typeof query>
+        );
+        return new ClaudeCodeRuntime('/tmp/dorkos-conformance', '/projects/conformance');
+      },
     },
     // One-shot compacting turn: the SDK stream carries a `status: 'compacting'`,
     // a `compact_boundary`, and a resolving `compact_result: 'success'`, which the

@@ -1,8 +1,12 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent, TerminalReason, UsageStatus, UsageState } from '@dorkos/shared/types';
 import type { AgentSession } from '../../agent-types.js';
-import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
-import { isStoppedTurnResult, mapErrorCategory } from '../sdk-error-mapping.js';
+import { describeAuthError, detectAuthError } from '@dorkos/shared/runtime-error-classification';
+import {
+  CLAUDE_CODE_RUNTIME_TYPE,
+  isStoppedTurnResult,
+  mapErrorCategory,
+} from '../sdk-error-mapping.js';
 import { sumContextTokens } from '../context-tokens.js';
 
 /**
@@ -230,15 +234,23 @@ export async function* mapResultEvent(
       // Prefer the auth category when the failure text or subtype signals a
       // revoked/expired sign-in, so the client offers a re-auth affordance
       // instead of a generic execution error.
-      const category = detectAuthError({ message: errors?.join(' '), code: subtype })
-        ? 'auth_error'
-        : mapErrorCategory(subtype);
+      const isAuthError = detectAuthError({ message: errors?.join(' '), code: subtype });
+      // A credential failure gets DorkOS's own sentence, not the CLI's. The two
+      // SDK channels used to disagree about the SAME expiry: the assistant
+      // channel already spoke this sentence while this one forwarded the binary's
+      // internals verbatim ("Failed to authenticate: OAuth session expired and
+      // could not be refreshed"). Which one a person met depended only on which
+      // channel the CLI happened to report through (DOR-1656). Nothing is lost —
+      // `details` below already carries every raw error line.
+      const message = isAuthError
+        ? describeAuthError(CLAUDE_CODE_RUNTIME_TYPE)
+        : (errors?.[0] ?? 'An unexpected error occurred.');
       yield {
         type: 'error',
         data: {
-          message: errors?.[0] ?? 'An unexpected error occurred.',
+          message,
           code: subtype,
-          category,
+          category: isAuthError ? 'auth_error' : mapErrorCategory(subtype),
           details: errors?.join('\n'),
         },
       };

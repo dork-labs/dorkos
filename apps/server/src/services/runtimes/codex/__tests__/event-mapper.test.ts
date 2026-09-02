@@ -609,13 +609,18 @@ describe('mapCodexEvent', () => {
       ]);
     });
 
-    it('classifies an auth failure in turn.failed as auth_error', () => {
-      const events = mapCodexEvent(
-        codexTurnFailed('401 Unauthorized: your access token has been revoked'),
-        makeContext()
-      );
+    it('answers an auth failure in DorkOS words naming Codex, keeping the CLI text in details', () => {
+      // DOR-1656: one voice for a dead sign-in across every runtime — and it
+      // must name CODEX, never the runtime whose adapter the copy came from.
+      const vendorText = '401 Unauthorized: your access token has been revoked';
+      const events = mapCodexEvent(codexTurnFailed(vendorText), makeContext());
       const error = events.find((e) => e.type === 'error');
-      expect(error?.data).toMatchObject({ code: 'turn_failed', category: 'auth_error' });
+      expect(error?.data).toMatchObject({
+        message: 'Your Codex sign-in stopped working. Sign in again to keep going.',
+        code: 'turn_failed',
+        category: 'auth_error',
+        details: vendorText,
+      });
     });
 
     it('dedupes turn.failed but still emits the error-reason session_status before done', () => {
@@ -719,6 +724,54 @@ describe('mapCodexThread', () => {
     expect(events[1]!.data).toMatchObject({ terminalReason: 'error' });
   });
 
+  it('speaks DorkOS words when the error ITEM is the dead sign-in (DOR-1656)', async () => {
+    // This is the shape live traffic takes: the error item carries the failure
+    // and `turn.failed` repeats it, so the item's copy is the ONLY copy a person
+    // sees — the turn.failed branch dedupes itself away. Getting turn.failed
+    // right and leaving this raw would fix nothing in practice.
+    const vendorText = '401 Unauthorized: your access token has been revoked';
+    const events = await drain(codexFailedTurnWithErrorItem(vendorText));
+    expect(events.map((e) => e.type)).toEqual(['error', 'session_status', 'done']);
+    expect(events[0]!.data).toMatchObject({
+      message: 'Your Codex sign-in stopped working. Sign in again to keep going.',
+      code: 'item_error',
+      category: 'auth_error',
+      details: vendorText,
+    });
+  });
+
+  it('leaves an auth-flavoured item about a TOOL alone (DOR-1656)', () => {
+    // The item channel is diagnostic: it carries per-tool notes on turns that go
+    // on to succeed, so a tool's own credential trouble must not be answered
+    // with sign-in advice about Codex. Stamping `auth_error` here would also
+    // hide the message itself, since the client shows category copy instead of
+    // `message` — the person would lose the only account of what broke and be
+    // sent to re-authenticate something that was never broken.
+    const events = mapCodexEvent(
+      codexItemCompleted(
+        errorThreadItem('e1', 'MCP error: Failed to authenticate with server github')
+      ),
+      makeContext()
+    );
+    expect(events[0]!.data).toEqual({
+      message: 'MCP error: Failed to authenticate with server github',
+      code: 'item_error',
+    });
+  });
+
+  it('still catches a TERMINAL auth failure whose wording is too vague for the item channel', () => {
+    // The narrowing above is a channel rule, not a weaker classifier: the same
+    // words on `turn.failed` are the turn's own verdict and still translate.
+    const vendorText = 'Failed to authenticate: your ChatGPT session could not be refreshed';
+    const events = mapCodexEvent(codexTurnFailed(vendorText), makeContext());
+    const error = events.find((e) => e.type === 'error');
+    expect(error?.data).toMatchObject({
+      message: 'Your Codex sign-in stopped working. Sign in again to keep going.',
+      category: 'auth_error',
+      details: vendorText,
+    });
+  });
+
   it('appends terminal done when the stream dies after a stream-level error', async () => {
     const events = await drain(codexStreamErrorTurn('gone'));
     expect(events.map((e) => e.type)).toEqual(['system_status', 'done']);
@@ -740,6 +793,23 @@ describe('mapCodexThread', () => {
     expect(events[0]!.data).toMatchObject({
       message: 'codex process exited unexpectedly',
       code: 'stream_error',
+    });
+  });
+
+  it('classifies a stream crash that is really a dead sign-in as auth_error (DOR-1656)', async () => {
+    // A credential failure can surface as a THROW rather than a turn.failed,
+    // and a hardcoded execution_error here leaves a person with no way back in.
+    const vendorText = 'Error: 401 Unauthorized — your Codex access token has been revoked';
+    async function* crashingStream(): AsyncGenerator<ThreadEvent> {
+      yield codexThreadStarted();
+      throw new Error(vendorText);
+    }
+    const events = await drain(crashingStream());
+    expect(events[0]!.data).toMatchObject({
+      message: 'Your Codex sign-in stopped working. Sign in again to keep going.',
+      code: 'stream_error',
+      category: 'auth_error',
+      details: vendorText,
     });
   });
 
