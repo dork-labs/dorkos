@@ -216,9 +216,16 @@ async function runArm(plan: RunPlan): Promise<void> {
   let sampler: Sampler | undefined;
   let turns: TurnResult[] = [];
   let failure: unknown;
-  let validity: Validity = { overlap: undefined, invalidReason: undefined };
-  let canaries: CanaryReport[] = [];
-  let samples: readonly Sample[] = [];
+  // No initializers on these three, unlike `turns` above, and the asymmetry is
+  // real rather than an oversight: the inner catch below swallows into
+  // `failure` and lets execution continue, so all three are unconditionally
+  // reassigned (`samples`, then `canaries` and `validity`) before anything
+  // reads them — a default here would be dead on every path. `turns` keeps its
+  // `[]` because it IS read at that default, by the `turns.csv` write, whenever
+  // the boot or the turns themselves threw.
+  let validity: Validity;
+  let canaries: CanaryReport[];
+  let samples: readonly Sample[];
 
   // Everything from the first spawn onward sits inside try/finally: a throw
   // between here and teardown would otherwise strand a live server holding the

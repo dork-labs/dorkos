@@ -119,8 +119,10 @@ export function parseCanaryMap(
   let decoded: unknown;
   try {
     decoded = JSON.parse(raw);
-  } catch {
-    throw new Error('[q3] DORKOS_Q3_CANARY_MAP is not valid JSON');
+  } catch (err) {
+    // The SyntaxError names the offset it choked on, which is the only part of
+    // this that helps when the value came from a shell one-liner.
+    throw new Error('[q3] DORKOS_Q3_CANARY_MAP is not valid JSON', { cause: err });
   }
   const parsed = canaryMapSchema.safeParse(decoded);
   if (!parsed.success) {

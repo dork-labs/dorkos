@@ -178,7 +178,7 @@ function elideConsoleEntry(entry: DevtoolsConsoleEntry): DevtoolsConsoleEntry {
   const out: DevtoolsConsoleEntry = { ...entry, text: elideString(entry.text) };
   if (out.stack !== undefined) out.stack = elideString(out.stack);
   if (out.args !== undefined) {
-    let argChars = 0;
+    let argChars: number;
     try {
       argChars = JSON.stringify(out.args)?.length ?? 0;
     } catch {

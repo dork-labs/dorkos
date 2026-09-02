@@ -579,7 +579,7 @@ describe('OpenCodeRuntime', () => {
       // after the STREAM_LIVE_TIMEOUT_MS fallback.
       harness.source.latest().push(globalEvent(DIRECTORY, serverConnected()));
 
-      let message = '';
+      let message: string;
       try {
         await finished;
         message = '<the generator completed instead of failing>';

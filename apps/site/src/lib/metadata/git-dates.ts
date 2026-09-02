@@ -39,7 +39,7 @@ export function gitLastModified(relPath: string): string | undefined {
     }).trim();
     result = out.length > 0 ? out : null;
   } catch {
-    result = null;
+    // Not a git checkout, or the file has no history — the null default stands.
   }
   gitDateCache.set(relPath, result);
   return result ?? undefined;

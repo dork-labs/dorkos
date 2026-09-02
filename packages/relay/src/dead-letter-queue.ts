@@ -236,7 +236,7 @@ export class DeadLetterQueue {
    */
   async purge(options: PurgeOptions): Promise<PurgeResult> {
     const cutoffTime = Date.now() - options.maxAgeMs;
-    let purged = 0;
+    let purged: number;
 
     if (options.endpointHash) {
       purged = await this.purgeEndpoint(options.endpointHash, cutoffTime);

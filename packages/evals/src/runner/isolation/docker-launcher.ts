@@ -471,7 +471,8 @@ export class DockerLauncher implements IsolationLauncher {
       // remove it here — the caller never got a handle to kill.
       await this.docker.run(['rm', '--force', containerId], { timeoutMs: REMOVE_GRACE_MS });
       throw new Error(
-        `Could not open the container namespace proxy on ${spec.host}:${String(spec.port)}: ${err instanceof Error ? err.message : String(err)}`
+        `Could not open the container namespace proxy on ${spec.host}:${String(spec.port)}: ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err }
       );
     }
 

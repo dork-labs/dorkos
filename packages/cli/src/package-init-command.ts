@@ -2,6 +2,7 @@ import { parseArgs } from 'node:util';
 
 import { createPackage } from '@dorkos/marketplace/scaffolder';
 import { PackageTypeSchema, type PackageType } from '@dorkos/marketplace/package-types';
+import { rethrowUnknownOption } from './lib/parse-args-error.js';
 import {
   MARKETPLACE_CATEGORIES,
   MarketplaceCategorySchema,
@@ -108,15 +109,7 @@ export function parsePackageInitArgs(rawArgs: string[]): PackageInitArgs {
       strict: true,
     });
   } catch (err) {
-    if (
-      err instanceof TypeError &&
-      (err as NodeJS.ErrnoException).code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION'
-    ) {
-      const match = err.message.match(/Unknown option '([^']+)'/);
-      const option = match?.[1] ?? 'unknown';
-      throw new Error(`Unknown option for 'package init': ${option}\n${USAGE_LINE}`);
-    }
-    throw err;
+    rethrowUnknownOption(err, 'package init', USAGE_LINE);
   }
 
   const { values, positionals } = parsed;

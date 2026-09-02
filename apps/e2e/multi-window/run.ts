@@ -153,7 +153,7 @@ async function runtimeRecorded(
   // recorded" — observed live, one window in two. Give it a bounded moment to
   // catch up, and only then report disagreement.
   const deadline = Date.now() + 15_000;
-  let last: boolean | null = null;
+  let last: boolean | null;
   do {
     let res: Response;
     try {
@@ -201,10 +201,12 @@ async function discoverAgents(): Promise<string[]> {
   let res: Response;
   try {
     res = await fetch(`${API}/api/config`);
-  } catch {
+  } catch (err) {
     // Undici's raw `fetch failed` + AggregateError buries the one fact that
-    // matters, which is that nothing is listening.
-    throw new Error(`Could not reach ${API} — start an instance, or pass --api`);
+    // matters, which is that nothing is listening. It stays reachable as the
+    // cause, though — the message is what gets read first, not the only thing
+    // kept, and a DNS failure looks identical to a refused port without it.
+    throw new Error(`Could not reach ${API} — start an instance, or pass --api`, { cause: err });
   }
   if (!res.ok)
     throw new Error(`GET /api/config answered ${res.status} — is ${API} a DorkOS server?`);
@@ -395,9 +397,9 @@ async function main(): Promise<void> {
   const ownName = w.agentDir.split('/').pop() ?? '';
   const otherDir = agents.find((a) => a !== w.agentDir);
   let backOk = false;
-  let backDetail = 'not attempted';
+  let backDetail: string;
   let awayOk = false;
-  let awayDetail = 'not attempted';
+  let awayDetail: string;
 
   if (!otherDir) {
     // With one agent there is nothing to switch TO, and clicking your own row

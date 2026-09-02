@@ -21,6 +21,7 @@ import { parseArgs } from 'node:util';
 import { ApiError, apiCall } from '../lib/api-client.js';
 import { fetchFullCatalog, type FullCatalog } from '../lib/capability-catalog.js';
 import { printJson } from '../lib/operator-output.js';
+import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
 /** Help text for `dorkos call` (`--help`), rendered by the `cli.ts` interceptor. */
 export const CALL_HELP = `Usage: dorkos call <capability-id> [options]
@@ -81,14 +82,7 @@ export function parseCallArgs(rawArgs: string[]): CallArgs {
       strict: true,
     });
   } catch (err) {
-    if (
-      err instanceof TypeError &&
-      (err as NodeJS.ErrnoException).code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION'
-    ) {
-      const match = err.message.match(/Unknown option '([^']+)'/);
-      throw new Error(`Unknown option for 'call': ${match?.[1] ?? 'unknown'}\n${usage}`);
-    }
-    throw err;
+    rethrowUnknownOption(err, 'call', usage);
   }
 
   const { values, positionals } = parsed;
@@ -111,7 +105,8 @@ export function parseCallArgs(rawArgs: string[]): CallArgs {
       rawInput = fs.readFileSync(file === '-' ? 0 : file, 'utf-8');
     } catch (err) {
       throw new Error(
-        `Cannot read --input-file '${file}': ${err instanceof Error ? err.message : String(err)}`
+        `Cannot read --input-file '${file}': ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err }
       );
     }
   }
@@ -122,7 +117,8 @@ export function parseCallArgs(rawArgs: string[]): CallArgs {
       input = JSON.parse(rawInput);
     } catch (err) {
       throw new Error(
-        `Invalid JSON input: ${err instanceof Error ? err.message : String(err)}\n${usage}`
+        `Invalid JSON input: ${err instanceof Error ? err.message : String(err)}\n${usage}`,
+        { cause: err }
       );
     }
   }

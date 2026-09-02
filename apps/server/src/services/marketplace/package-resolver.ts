@@ -301,8 +301,8 @@ async function resolveLocal(input: string): Promise<ResolvedPackageSource> {
   let info;
   try {
     info = await stat(absolute);
-  } catch {
-    throw new Error(`Local package path does not exist: ${absolute}`);
+  } catch (err) {
+    throw new Error(`Local package path does not exist: ${absolute}`, { cause: err });
   }
   if (!info.isDirectory()) {
     throw new Error(`Local package path is not a directory: ${absolute}`);

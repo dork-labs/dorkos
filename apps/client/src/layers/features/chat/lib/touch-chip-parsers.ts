@@ -338,7 +338,7 @@ export function parseDeletedPaths(command: string): string[] {
       const words = shellWords(segment.trim());
       if (words.length === 0) continue;
 
-      let cursor = 0;
+      let cursor: number;
       if (words[0] === 'git' && words[1] === 'rm') cursor = 2;
       else if (words[0] === 'rm') cursor = 1;
       else continue;
