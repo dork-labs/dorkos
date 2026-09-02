@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(server,client,shared): the workspaces page shows your real worktrees (DOR-1056)'
+  - 'fix(server,client,shared): the workspaces scan stops guessing (DOR-1056 review)'
 ---
 
 ### Changed
