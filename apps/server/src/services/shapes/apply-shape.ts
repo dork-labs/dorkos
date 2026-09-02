@@ -207,11 +207,11 @@ export interface ShapeAgentRegistryLike {
  *
  * - `agentId === null` — the schedule is global (unbound). A *Shape* schedule
  *   is only ever global when its target agent was absent at apply time (§7).
- * - `shapeOrigin` — the provenance marker stamped into the schedule file at
- *   creation (`origin: shape` + `shape: <name>` frontmatter). A user can
- *   create their own global schedule with a colliding name via the tasks API,
- *   so name + unbound alone is NOT proof a schedule belongs to a Shape —
- *   re-bind requires the marker too, and never touches user-created schedules.
+ * - `shapeOrigin` — the Shape that actually WROTE this schedule's directory,
+ *   read from the write receipt (DOR-1524). A user can create their own global
+ *   schedule with a colliding name via the tasks API, so name + unbound alone
+ *   is NOT proof a schedule belongs to a Shape — re-bind requires the receipt
+ *   too, and never touches a schedule DorkOS did not stand up itself.
  */
 export interface ExistingSchedule {
   /** The schedule name — its identity across every scope. */
@@ -221,10 +221,10 @@ export interface ExistingSchedule {
   /** Whether the schedule is currently enabled. */
   enabled: boolean;
   /**
-   * The name of the Shape that created this schedule, read from the schedule
-   * file's provenance marker — or `null` when the schedule carries no marker
-   * (user-created) or is agent-bound (re-bind never considers those, so the
-   * service may skip reading their files).
+   * The name of the Shape whose apply wrote this schedule's directory, from the
+   * write receipt — or `null` when no Shape wrote it (a person's own schedule)
+   * or the schedule is agent-bound (re-bind never considers those, so the
+   * service may skip the lookup).
    */
   shapeOrigin: string | null;
 }
@@ -234,6 +234,40 @@ export interface ScheduleOrigin {
   /** The Shape (package name) standing this schedule up. */
   shape: string;
 }
+
+/**
+ * Why a Shape's schedule was not written. A refusal is never a failure of the
+ * apply — it is DorkOS declining to touch something that is not its own — but it
+ * IS something the person has to be told, in the words that match what they will
+ * find on disk. One generic "already taken" line for all of these sent people
+ * looking for a skill file that was not there (DOR-1524).
+ */
+export type ScheduleWriteRefusal =
+  | {
+      /** Somebody else's skill occupies the target name. */
+      reason: 'occupied';
+      /** The directory that stopped the write. */
+      targetDir: string;
+    }
+  | {
+      /** The target name is a link into a package's own checkout. */
+      reason: 'symlink';
+      /** The link that stopped the write. */
+      targetDir: string;
+    }
+  | {
+      /** An empty directory sits at the target name and no Shape wrote it. */
+      reason: 'empty-directory';
+      /** The empty directory that stopped the write. */
+      targetDir: string;
+    }
+  | {
+      /** Scheduled tasks are turned off in this install, so nothing can be written. */
+      reason: 'schedules-disabled';
+    };
+
+/** What a Shape's attempt to write one schedule ended in. */
+export type ScheduleWriteOutcome = { created: true } | ({ created: false } & ScheduleWriteRefusal);
 
 /** How a global (unbound) schedule is re-bound to a now-present agent. */
 export interface ScheduleRebind {
@@ -254,39 +288,39 @@ export interface ScheduleRebind {
  */
 export interface ShapeScheduleServiceLike {
   /**
-   * @returns Every existing schedule (name + binding + enabled + provenance),
+   * @returns Every existing schedule (name + binding + enabled + owner),
    *   across all scopes (global + agents).
    */
   listSchedules(): Promise<ExistingSchedule[]> | ExistingSchedule[];
   /**
    * @param req - The task-creation request built from a Shape schedule.
-   * @param origin - Provenance to stamp into the schedule file (`origin: shape`
-   *   + `shape: <name>`) — the marker the re-bind flow later gates on.
-   * @returns Whether the schedule exists afterwards. `false` means the target
-   *   name on disk belongs to somebody else's skill and nothing was written; a
-   *   caller must not delete anything on the strength of a create that refused.
+   * @param origin - The Shape standing this schedule up. Recorded in the write
+   *   receipt, which is what every later ownership question is answered from,
+   *   and stamped into the file as a marker for anybody reading it by hand.
+   * @returns Whether the schedule exists afterwards, and when it does not, why.
+   *   A refusal means nothing was written; a caller must not delete anything on
+   *   the strength of a create that refused.
    */
-  createSchedule(req: CreateTaskRequest, origin?: ScheduleOrigin): Promise<boolean>;
+  createSchedule(req: CreateTaskRequest, origin?: ScheduleOrigin): Promise<ScheduleWriteOutcome>;
   /**
    * Re-target a global (unbound) schedule to a now-present agent and set its
    * enabled state — the second half of the global → agent flip. A no-op when
    * the named schedule is absent, already agent-bound (so an explicitly
-   * user-disabled bound schedule is never force-enabled), or missing the Shape
-   * provenance marker (so a user's own global schedule with a colliding name
-   * is never hijacked).
+   * user-disabled bound schedule is never force-enabled), or absent from the
+   * write receipt (so a user's own global schedule with a colliding name, or a
+   * copy of a Shape's that DorkOS never wrote, is never hijacked).
    *
    * @param name - The existing schedule's name.
    * @param rebind - The agent id to bind to and the resulting enabled state.
    */
   rebindSchedule(name: string, rebind: ScheduleRebind): Promise<void>;
   /**
-   * Delete every schedule stamped with this Shape's provenance marker
-   * (`origin: shape` + `shape: <shapeName>`), across both global and
-   * agent-bound scopes. Full teardown per schedule — file, task-store row, and
-   * scheduler registration — so nothing keeps firing after its Shape is gone.
-   * Fail-closed: a schedule whose marker is missing, unreadable, or names a
-   * different Shape is left untouched, so a user's own schedule that collides on
-   * name is never deleted.
+   * Delete every schedule this Shape's applies actually wrote, across both
+   * global and agent-bound scopes. Full teardown per schedule — file, task-store
+   * row, and scheduler registration — so nothing keeps firing after its Shape is
+   * gone. Fail-closed: a directory the write receipt does not name for this
+   * Shape is left untouched, so neither a user's own schedule that collides on
+   * name nor their adapted copy of one of this Shape's is ever deleted.
    *
    * @param shapeName - The owning Shape whose schedules to delete.
    * @param keepNames - When given, schedules whose name is in this set are
@@ -459,11 +493,11 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
       // A schedule with this name already exists (possibly created
       // globally-disabled by an earlier apply of THIS Shape, when its agent was
       // missing). If the agent is now present, the schedule is still unbound
-      // (global), and its provenance marker names this Shape, re-target it to
+      // (global), and the write receipt names this Shape, re-target it to
       // the agent and enable it (only when the manifest asks to start enabled).
       // An already-bound schedule is left untouched — a user who disabled their
       // own bound schedule keeps that choice — and a global schedule WITHOUT
-      // this Shape's provenance (a user's own, or another Shape's) is never
+      // this Shape's receipt entry (a user's own, or another Shape's) is never
       // touched: a name collision must not hijack it.
       //
       // Nothing here re-reads `permissionMode`: the existing schedule already
@@ -525,13 +559,9 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
     // schedule that was never written. The operator was told they had a job on a
     // clock that did not exist, which is the one outcome worse than not having
     // it (review, PROBE-C).
-    const created = await deps.scheduleService.createSchedule(request, { shape: name });
-    if (!created) {
-      warnings.push(
-        `Schedule '${schedule.name}' was not created: something else in that project already ` +
-          `has a skill called '${storedName}'. DorkOS left your file alone. Rename the skill, or ` +
-          `remove it, and apply this Shape again.`
-      );
+    const outcome = await deps.scheduleService.createSchedule(request, { shape: name });
+    if (!outcome.created) {
+      warnings.push(describeScheduleRefusal(schedule.name, storedName, outcome));
       // Kept out of BOTH ledgers deliberately. `schedulesCreated` is what the
       // API reports back, and `existingByName` is what the rest of this apply
       // believes about the world — a phantom entry there would make a later
@@ -551,8 +581,8 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
   // version of this Shape may have created a schedule the current manifest
   // renamed or dropped; the create/rebind loop above never removes anything, so
   // without this sweep a v1 schedule would keep firing alongside v2's. Delete
-  // every schedule carrying THIS Shape's provenance marker whose name is not in
-  // the currently-declared set — provenance-gated (a user's own and other
+  // every schedule the receipt names for THIS Shape whose name is not in
+  // the currently-declared set — receipt-gated (a user's own and other
   // Shapes' schedules are safe) and swept across global + agent-bound scopes.
   // The names just created/rebound are the declared set, so they are kept.
   //
@@ -625,6 +655,49 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
     warnings,
     offeredAgents,
   };
+}
+
+/**
+ * The plain-English line a person reads when a Shape declined to write one of
+ * its schedules. Each refusal names what is actually in the way and what to do
+ * about it, because "already taken" sent people looking for a skill file that,
+ * in the empty-directory case, was never there (DOR-1524).
+ *
+ * None of these is permanent: clear what is in the way and apply the Shape
+ * again, and the schedule is created.
+ *
+ * @param declaredName - The schedule's name as the manifest declares it.
+ * @param storedName - The name it would be stored under (its slug).
+ * @param refusal - Why the write was declined.
+ * @returns The warning to surface on the apply result.
+ */
+function describeScheduleRefusal(
+  declaredName: string,
+  storedName: string,
+  refusal: ScheduleWriteRefusal
+): string {
+  const prefix = `Schedule '${declaredName}' was not created`;
+  switch (refusal.reason) {
+    case 'occupied':
+      return (
+        `${prefix}: something else in that project already has a skill called '${storedName}'. ` +
+        `DorkOS left your file alone. Rename the skill, or remove it, and apply this Shape again.`
+      );
+    case 'symlink':
+      return (
+        `${prefix}: '${storedName}' is a shortcut to a skill another package owns ` +
+        `(${refusal.targetDir}). Writing there would change that package's own copy, so DorkOS ` +
+        `left it alone. Remove the shortcut and apply this Shape again.`
+      );
+    case 'empty-directory':
+      return (
+        `${prefix}: there is an empty folder called '${storedName}' where it would go ` +
+        `(${refusal.targetDir}). DorkOS did not write into it, in case you put it there. Delete ` +
+        `the folder and apply this Shape again.`
+      );
+    case 'schedules-disabled':
+      return `${prefix}: scheduled tasks are turned off in this install.`;
+  }
 }
 
 /**
