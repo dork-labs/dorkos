@@ -78,7 +78,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { OpencodeClient, GlobalEvent } from '@opencode-ai/sdk';
+import type { OpencodeClient, GlobalEvent, Message, Part } from '@opencode-ai/sdk';
 import { runtimeConformance } from '@dorkos/test-utils';
 
 /**
@@ -145,6 +145,7 @@ import { LocalSessionAttachmentStore } from '../../../session/attachments/local-
 import {
   driveDurableTurn,
   drivePresenceTurn,
+  driveReloadedHistory,
   driveTerminalOnce,
   driveQueueDurability,
 } from '../../../session/__tests__/durable-turn-harness.js';
@@ -191,6 +192,41 @@ function opencodeAuthFailedTurn(sessionID: string): OpenCodeWireEvent[] {
     sessionError(sessionID, providerAuthError('anthropic', OPENCODE_VENDOR_AUTH_TEXT)),
     statusEvent(sessionID, { type: 'idle' }),
     sessionIdle(sessionID),
+  ];
+}
+
+/**
+ * What the sidecar's durable store holds for a session — the shape
+ * `session.messages` answers with, and the one `getMessageHistory` reads.
+ */
+type StoredMessages = Array<{ info: Message; parts: Part[] }>;
+
+/**
+ * How the sidecar's own store records that same credential failure, and what a
+ * reopened session is therefore read out of (DOR-1678).
+ *
+ * The person's message survives with its parts; the assistant message carries
+ * the failure on `error` and has NO parts at all, because the turn died before
+ * the model said anything. That is the measured shape class — every `APIError`
+ * row in this machine's `opencode.db` has zero parts — and it is what made the
+ * failure vanish from reopened transcripts entirely before DOR-1666, since a
+ * parts-only reader had nothing to map.
+ *
+ * @param sessionID - The sidecar session the stored turn belongs to.
+ */
+function opencodeAuthFailedStore(sessionID: string): StoredMessages {
+  return [
+    {
+      info: userMessage(sessionID, 'msg_0000'),
+      parts: [textPart(sessionID, 'prt_u1', CONFORMANCE_PROMPT, { messageID: 'msg_0000' })],
+    },
+    {
+      info: assistantMessage(sessionID, {
+        id: 'msg_auth',
+        error: providerAuthError('anthropic', OPENCODE_VENDOR_AUTH_TEXT),
+      }),
+      parts: [],
+    },
   ];
 }
 
@@ -354,7 +390,7 @@ const CONFORMANCE_PROMPT = 'conformance ping';
  * demux key is strict string equality on `{directory, sessionID}`, and any
  * drift drops every event.
  */
-function makeConformanceClient(turn: OpenCodeWireEvent[]) {
+function makeConformanceClient(turn: OpenCodeWireEvent[], stored?: StoredMessages) {
   const info = sessionInfo(OC_SESSION_A, PROJECT_DIR);
   return {
     global: {
@@ -376,8 +412,12 @@ function makeConformanceClient(turn: OpenCodeWireEvent[]) {
       list: vi.fn(async () => ({ data: [] })),
       // The turn as read back from the sidecar's durable store — OpenCode has
       // real native history, so the suite runs with `expectHistory: true`.
+      // A caller that scripted a FAILED turn passes what that failure was
+      // stored as instead: the sidecar records the outcome it actually had,
+      // and a store still answering with a tidy success would make any
+      // assertion about a reopened failed turn meaningless.
       messages: vi.fn(async () => ({
-        data: [
+        data: stored ?? [
           {
             info: userMessage(OC_SESSION_A, 'msg_0000'),
             parts: [
@@ -410,9 +450,10 @@ function makeConformanceClient(turn: OpenCodeWireEvent[]) {
 function makeMockedProvider(
   turn: OpenCodeWireEvent[] = opencodeSimpleTurn(OC_SESSION_A, 'pong from opencode', {
     prompt: CONFORMANCE_PROMPT,
-  })
+  }),
+  stored?: StoredMessages
 ): OpenCodeClientProvider {
-  const client = makeConformanceClient(turn) as unknown as OpencodeClient;
+  const client = makeConformanceClient(turn, stored) as unknown as OpencodeClient;
   lastClient = client as unknown as ReturnType<typeof makeConformanceClient>;
   return {
     getClient: async () => client,
@@ -556,8 +597,20 @@ runtimeConformance(
             vendorText: OPENCODE_VENDOR_AUTH_TEXT,
             makeRuntime: () =>
               new OpenCodeRuntime({
-                provider: makeMockedProvider(opencodeAuthFailedTurn(OC_SESSION_A)),
+                provider: makeMockedProvider(
+                  opencodeAuthFailedTurn(OC_SESSION_A),
+                  // The store answers with what the failure was RECORDED as,
+                  // not the default success transcript — see
+                  // `opencodeAuthFailedStore`.
+                  opencodeAuthFailedStore(OC_SESSION_A)
+                ),
               }),
+            // DOR-1678, the reload half. OpenCode owns a native store, so the
+            // reopen path reads the sidecar rather than the EventLog — which is
+            // why this goes through `getMessageHistory` (the call the reopen
+            // makes) instead of the log-backed reader.
+            hydratedHistory: (runtime, sessionId, content) =>
+              driveReloadedHistory(runtime, sessionId, content, PROJECT_DIR),
           },
           // A scripted compaction can't be forced against a live sidecar, so the
           // operation_progress gate runs only in mocked mode (DOR-110).
