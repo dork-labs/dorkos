@@ -114,7 +114,14 @@ export function createServerConfigWriter(dorkHome: string, logLevel: number): Cl
       await openAuditLog(dorkHome, logLevel);
       const { applyGuardedConfigWrite, LOCAL_OPERATOR_AUTHORITY } =
         await import('../server/services/core/operator/config-write.js');
-      return applyGuardedConfigWrite({ patch, authority: LOCAL_OPERATOR_AUTHORITY, source });
+      return applyGuardedConfigWrite({
+        patch,
+        authority: LOCAL_OPERATOR_AUTHORITY,
+        source,
+        // The terminal IS the person — the same argument `LOCAL_OPERATOR_AUTHORITY`
+        // makes above, applied to "who wrote this" rather than to "may they".
+        writer: { kind: 'operator' },
+      });
     },
   };
 }

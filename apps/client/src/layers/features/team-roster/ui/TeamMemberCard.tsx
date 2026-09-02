@@ -5,7 +5,7 @@ import { Badge, IdentityAvatar, IDENTITY_BADGE_WAKE } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { platformLabel } from '@/layers/entities/room';
-import { teamMemberFace, teamMemberLabel } from '@/layers/entities/team';
+import { nameProvenanceNote, teamMemberFace, teamMemberLabel } from '@/layers/entities/team';
 
 /**
  * The second line under a name: what is true of this identity and nothing else.
@@ -179,6 +179,7 @@ export function TeamMemberCard({
   className,
 }: TeamMemberCardProps) {
   const face = teamMemberFace(member);
+  const suggestedName = nameProvenanceNote(member);
 
   return (
     <motion.article
@@ -334,6 +335,17 @@ export function TeamMemberCard({
         {member.handle !== null && (
           <p data-slot="team-member-handle" className="text-muted-foreground truncate text-xs">
             @{member.handle}
+          </p>
+        )}
+        {/* Where the name came from, when it was not this person (DOR-1022).
+            Directly under the name and above the "what is true of this
+            identity" line, because it is a fact ABOUT the name rather than
+            another fact about the row — and in the same muted `text-xs` as
+            everything else in this stack, so it informs without competing with
+            the name it is describing. */}
+        {suggestedName && (
+          <p data-slot="team-member-name-source" className="text-muted-foreground truncate text-xs">
+            {suggestedName}
           </p>
         )}
         <p className="text-muted-foreground mt-1.5 truncate text-xs">{secondaryLine(member)}</p>

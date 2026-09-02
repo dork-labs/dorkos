@@ -20,6 +20,7 @@ export {
   teamMemberLabel,
 } from './lib/team-roster-selectors';
 export { teamMemberFace } from './lib/team-member-face';
+export { nameProvenanceNote } from './lib/name-provenance';
 export type {
   TeamGrouping,
   TeamKindFilter,

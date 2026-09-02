@@ -183,6 +183,28 @@ export const TeamPersonFactsSchema = z
      * has one branch ("last seen X" or the fallback line) rather than two.
      */
     lastSeenAt: z.string().nullable(),
+    /**
+     * That this person's name was an agent's suggestion, and whose (DOR-1022).
+     *
+     * **Three states, and the difference between two of them is the whole
+     * point**, so read it with `=== undefined` rather than `??`:
+     *
+     * - **absent** — draw no hint. Either a person saved this name, or this
+     *   install has no record of who did. Every install that had a name before
+     *   provenance was recorded lands here, which is why "no record" must never
+     *   be rendered as "an agent did it".
+     * - **`null`** — an agent wrote it and this install cannot say which. The
+     *   writing agent's identity token had expired or was never minted;
+     *   attribution is best-effort, and the hint is worth drawing without it.
+     * - **a name** — that agent wrote it. `'DorkBot'` on nearly every install.
+     *
+     * Present ONLY on the viewer's own row, like `email` above: the stored
+     * display name is the OPERATOR's, so it is a fact about nobody else.
+     *
+     * Sanitized before it is sent (`sanitizeIdentity`): an agent chose this
+     * string and a surface prints it inside a sentence DorkOS wrote.
+     */
+    nameSuggestedBy: z.string().min(1).nullable().optional(),
   })
   .openapi('TeamPersonFacts');
 

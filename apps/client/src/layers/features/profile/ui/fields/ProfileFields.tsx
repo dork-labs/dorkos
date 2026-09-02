@@ -18,7 +18,7 @@ import {
   Input,
   SettingRow,
 } from '@/layers/shared/ui';
-import { teamMemberFace } from '@/layers/entities/team';
+import { nameProvenanceNote, teamMemberFace } from '@/layers/entities/team';
 import {
   avatarErrorMessage,
   handleErrorMessage,
@@ -178,14 +178,30 @@ export function ProfileNameField({ member }: ProfileFieldProps) {
   const storedName =
     member.displayName === OPERATOR_FALLBACK_DISPLAY_NAME ? '' : member.displayName;
   const [name, setName] = useServerSeededDraft(storedName);
+  // Empty is refused by the server and by `ProfileUpdateRequestSchema`, so the
+  // button stays disabled for it. An UNCHANGED name is different and is
+  // deliberately still saveable: pressing Save is how somebody says "yes, that
+  // one is mine" and clears a "Suggested by …" note (DOR-1022). Without the
+  // note there is nothing to clear, so the button reverts to needing a change
+  // rather than inviting a save that does nothing visible.
+  const suggestedName = nameProvenanceNote(member);
   const nameChanged = name.trim().length > 0 && name.trim() !== storedName;
+  const canSave = name.trim().length > 0 && (nameChanged || suggestedName !== null);
 
   return (
     <FieldCard>
       <FieldCardContent className="space-y-3">
         <SettingRow
           label="Display name"
-          description="What DorkOS calls you."
+          // The field itself explains why it already has a value it was never
+          // told about — this is the surface where a person does something
+          // about it, so the note lives in the description rather than as a
+          // fourth line under the input.
+          description={
+            suggestedName
+              ? `What DorkOS calls you. ${suggestedName} — save it to make it yours.`
+              : 'What DorkOS calls you.'
+          }
           orientation="vertical"
         >
           <div className="flex gap-2">
@@ -198,7 +214,7 @@ export function ProfileNameField({ member }: ProfileFieldProps) {
             />
             <Button
               size="sm"
-              disabled={!nameChanged || updateName.isPending}
+              disabled={!canSave || updateName.isPending}
               onClick={() => updateName.mutate(name.trim())}
             >
               Save

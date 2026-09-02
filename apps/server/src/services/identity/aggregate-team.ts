@@ -43,6 +43,8 @@ import type {
   TeamSourceWarning,
 } from '@dorkos/shared/team-schemas';
 import type { AgentHealthStatus, AgentRuntime } from '@dorkos/shared/mesh-schemas';
+import type { DisplayNameSource } from '@dorkos/shared/config-schema';
+import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../lib/logger.js';
 import { authorOrigin, isOwnerRecord, type AuthorRecord } from '../rooms/author-registry.js';
 import type { ActiveClaimView } from '../rooms/room-claims.js';
@@ -253,6 +255,15 @@ export interface TeamRosterSources {
   account: () => OperatorAccount | null;
   /** `config.profile.displayName` — "what the user likes to be called". */
   configDisplayName: () => string | null;
+  /**
+   * `config.profile.displayNameSource` — who wrote that name (DOR-1022), or
+   * `null` when this install has no record.
+   *
+   * Injected beside the name rather than derived from it, because the two are
+   * one fact read from one place and a roster that fetched them separately could
+   * show a stamp for a name it is no longer displaying.
+   */
+  configDisplayNameSource: () => DisplayNameSource | null;
   /** `config.agents.defaultAgent`, or `null` when nothing is configured. */
   defaultAgentName: () => string | null;
   /** Per-source budget; defaults to {@link TEAM_SOURCE_TIMEOUT_MS}. */
@@ -332,12 +343,69 @@ function readValue<T>(
 }
 
 /**
+ * What the operator's own row says about their name beyond the name itself.
+ *
+ * Two facts a roster carries about one person, bundled because they travel
+ * together and a fourth positional parameter on {@link personRow} would have
+ * been the fifth.
+ */
+interface OperatorRowFacts {
+  /** The name resolved for the operator. */
+  name: string;
+  /** Their address, when known. */
+  email: string | undefined;
+  /**
+   * The `person.nameSuggestedBy` value for their row — see that field's doc for
+   * why `undefined` and `null` mean different things.
+   */
+  nameSuggestedBy: string | null | undefined;
+}
+
+/**
+ * Whether an agent suggested the stored display name, and which agent — in the
+ * three states {@link TeamPersonFacts.nameSuggestedBy} carries (DOR-1022).
+ *
+ * **`operator` and "no record" collapse to the same answer, deliberately.** A
+ * name a person saved needs no hint, and a name this install cannot attribute
+ * must not get one: every install that had a name before provenance existed
+ * reads `null` here, and labelling those "Suggested by DorkBot" would be a
+ * confident guess exactly where there is nothing to be confident about.
+ *
+ * `undefined` rather than a boolean pair, so the field is simply ABSENT from the
+ * payload in the common case rather than present and false.
+ *
+ * @param source - The stored `profile.displayNameSource`.
+ * @param displayName - The name the roster will actually show. A stamp for a
+ *   name the operator no longer has — cleared account name, a `null` profile
+ *   name falling through to `'You'` — describes a value nobody is looking at.
+ * @param configDisplayName - The stored `profile.displayName` the stamp is ABOUT.
+ * @returns The value for `person.nameSuggestedBy`.
+ */
+function nameSuggestedBy(
+  source: DisplayNameSource | null,
+  displayName: string,
+  configDisplayName: string | null
+): string | null | undefined {
+  if (source === null || source.kind !== 'agent') return undefined;
+  // The stamp describes `profile.displayName`, and that is only what the roster
+  // shows when the precedence actually landed on it — an account name overrules
+  // it (`resolveOperatorProfile`), and a hint under somebody else's name would
+  // be attributing the wrong string.
+  if (configDisplayName === null || configDisplayName.trim() !== displayName) return undefined;
+  // Sanitized on the way out as well as on the way in: the stored value predates
+  // nothing, but it is an agent-chosen string headed for a sentence DorkOS wrote,
+  // and this is the boundary that hands it to a renderer.
+  return source.agentName ? (sanitizeIdentity(source.agentName) ?? null) : null;
+}
+
+/**
  * Project one active human author onto a roster row.
  *
  * @param record - The author row.
  * @param isSelf - Whether this is the operator reading the roster.
- * @param operatorName - The name resolved for the operator.
- * @param operatorEmail - The operator's address, when known.
+ * @param operator - The facts that belong to the operator's own row and to no
+ *   other: their resolved name, their address, and whether an agent suggested
+ *   that name.
  * @param now - The moment this roster was read, which is when the operator was
  *   last seen: they are here, by construction. Everybody else's `lastSeenAt` is
  *   `null` — see the field's doc for why the room log is not read for it.
@@ -345,10 +413,10 @@ function readValue<T>(
 function personRow(
   record: AuthorRecord,
   isSelf: boolean,
-  operatorName: string,
-  operatorEmail: string | undefined,
+  operator: OperatorRowFacts,
   now: string
 ): TeamMember {
+  const { name: operatorName, email: operatorEmail } = operator;
   return {
     id: record.id,
     kind: 'human',
@@ -372,6 +440,13 @@ function personRow(
       // No backend on this install declares roles yet.
       role: null,
       ...(isSelf && operatorEmail ? { email: operatorEmail } : {}),
+      // The operator's own row and no other: the stored display name is theirs,
+      // so who wrote it is a fact about nobody else on this roster. Spread the
+      // same way `email` is, so the key is absent rather than `undefined` — and
+      // absent is a meaning here, not just a shape (DOR-1022).
+      ...(isSelf && operator.nameSuggestedBy !== undefined
+        ? { nameSuggestedBy: operator.nameSuggestedBy }
+        : {}),
       lastSeenAt: isSelf ? now : null,
     },
   };
@@ -539,6 +614,15 @@ export async function aggregateTeamRoster(sources: TeamRosterSources): Promise<T
   // and the default-agent mark. Neither costs a single row.
   const account = readValue(OPERATOR_SOURCE, sources.account, null, warnings);
   const configDisplayName = readValue(CONFIG_SOURCE, sources.configDisplayName, null, warnings);
+  // Degrades to `null`, which is "no record" and draws no hint — the same
+  // direction every other loss here takes: a config this roster could not read
+  // costs a line of small print, never a row.
+  const configNameSource = readValue(
+    CONFIG_SOURCE,
+    sources.configDisplayNameSource,
+    null,
+    warnings
+  );
   const defaultAgentName = readValue(CONFIG_SOURCE, sources.defaultAgentName, null, warnings);
 
   // A pure comparison against rows already in hand — see `TeamRosterSources.account`
@@ -549,8 +633,13 @@ export async function aggregateTeamRoster(sources: TeamRosterSources): Promise<T
     self?.displayName ?? null
   );
 
+  const operatorRowFacts: OperatorRowFacts = {
+    name: operator.displayName,
+    email: operator.email,
+    nameSuggestedBy: nameSuggestedBy(configNameSource, operator.displayName, configDisplayName),
+  };
   const personRows = people.value.map((record) =>
-    personRow(record, record.id === self?.id, operator.displayName, operator.email, now)
+    personRow(record, record.id === self?.id, operatorRowFacts, now)
   );
   // The operator first — and this really does move a row: `listActive` orders by
   // `created_at`, and a bridged group seen before login was enabled leaves an

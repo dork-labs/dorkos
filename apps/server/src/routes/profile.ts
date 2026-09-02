@@ -20,6 +20,7 @@
  */
 import { Router, type Request, type Response } from 'express';
 import multer from 'multer';
+import type { DisplayNameSource } from '@dorkos/shared/config-schema';
 import {
   ProfileUpdateRequestSchema,
   type ProfileAvatarResponse,
@@ -70,9 +71,20 @@ export interface ProfileRouterDeps {
   /**
    * Write `config.profile.displayName` — the SECOND thing that precedence
    * reads, and the only durable one on an install with login off, which is the
-   * default (ADR-0320).
+   * default (ADR-0320) — together with the record of who wrote it.
+   *
+   * **One call, both leaves, and that is a requirement rather than a
+   * convenience** (DOR-1022). A name and a stale stamp of its previous author
+   * are a contradiction, so an implementation that wrote them separately would
+   * leave a window in which the roster draws "Suggested by DorkBot" under a name
+   * the person had just saved.
+   *
+   * @param displayName - What the person wants to be called.
+   * @param source - Who wrote it. Always `{ kind: 'operator' }` from this route;
+   *   the parameter exists so the rule is the ROUTE's and stays testable, rather
+   *   than living in whatever wired the writer.
    */
-  setProfileDisplayName: (displayName: string) => void;
+  setProfileDisplayName: (displayName: string, source: DisplayNameSource) => void;
 }
 
 /**
@@ -216,7 +228,13 @@ export function createProfileRouter(deps: ProfileRouterDeps): Router {
     }
 
     if (owner) deps.setAccountName(owner.id, body.displayName);
-    deps.setProfileDisplayName(body.displayName);
+    // `operator` unconditionally, INCLUDING when the string does not change
+    // (DOR-1022). This route is the one surface where a person says what they
+    // want to be called, so pressing Save is the gesture that answers "is that
+    // name yours?" — and re-saving the name already in the field is exactly how
+    // somebody dismisses a "Suggested by DorkBot" hint on a name they are happy
+    // with. Gating the stamp on a value change would leave that hint permanent.
+    deps.setProfileDisplayName(body.displayName, { kind: 'operator' });
 
     // Echoed rather than re-resolved: both sources above the author record now
     // hold this string, so the precedence cannot answer with anything else.

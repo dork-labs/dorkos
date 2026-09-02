@@ -65,6 +65,7 @@ describe('GET /api/team', () => {
         ownerAccount: () => ({ id: OWNER_USER_ID, name: 'Dorian' }),
         ownerEmail: () => 'dorian@dorkos.ai',
         configDisplayName: () => null,
+        configDisplayNameSource: () => null,
         defaultAgentName: () => 'ana',
         ...overrides,
       })
@@ -312,6 +313,7 @@ describe('GET /api/team/:memberId/rooms', () => {
         ownerAccount: () => ({ id: OWNER_USER_ID, name: 'Dorian' }),
         ownerEmail: () => 'dorian@dorkos.ai',
         configDisplayName: () => null,
+        configDisplayNameSource: () => null,
         defaultAgentName: () => 'ana',
         ...overrides,
       })

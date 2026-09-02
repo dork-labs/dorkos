@@ -146,6 +146,16 @@ function fullyPopulatedConfig(): Record<string, unknown> {
       fullPowerDecidedAt: '2026-08-22T11:15:00.000Z',
       fullPowerChoice: 'full',
     },
+    profile: {
+      roles: ['Engineer'],
+      tools: ['Linear'],
+      displayName: 'Dorian',
+      // The `agent` branch of the provenance union, because it is the only one
+      // that carries both leaves — an `operator` value has no `agentName`, so a
+      // fixture built on it would leave that path unexercised (DOR-1022).
+      displayNameSource: { kind: 'agent', agentName: 'DorkBot' },
+      rolePromptDismissedAt: '2026-08-05T12:00:00.000Z',
+    },
     workbench: { defaultViewers: { csv: 'file' }, terminalGraceTtlMinutes: 10, autoOpenDiff: true },
     tunnel: {
       enabled: true,

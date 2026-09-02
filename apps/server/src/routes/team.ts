@@ -22,6 +22,7 @@
  * @module routes/team
  */
 import { Router, type Request, type Response } from 'express';
+import type { DisplayNameSource } from '@dorkos/shared/config-schema';
 import { logError, logger } from '../lib/logger.js';
 import { sendError } from '../lib/route-utils.js';
 import type { AuthorRegistry } from '../services/rooms/author-registry.js';
@@ -97,6 +98,8 @@ export interface TeamRouterDeps {
   ownerEmail: (userId: string) => string | null;
   /** `config.profile.displayName`. */
   configDisplayName: () => string | null;
+  /** `config.profile.displayNameSource` — who wrote that name (DOR-1022). */
+  configDisplayNameSource: () => DisplayNameSource | null;
   /** `config.agents.defaultAgent`. */
   defaultAgentName: () => string | null;
 }
@@ -151,6 +154,7 @@ export function createTeamRouter(deps: TeamRouterDeps): Router {
           return { id: owner.id, name: owner.name, email: deps.ownerEmail(owner.id) };
         },
         configDisplayName: () => deps.configDisplayName(),
+        configDisplayNameSource: () => deps.configDisplayNameSource(),
         defaultAgentName: () => deps.defaultAgentName(),
       });
 

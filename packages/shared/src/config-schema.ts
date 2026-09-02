@@ -269,6 +269,39 @@ export type ToursState = z.infer<typeof ToursStateSchema>;
 export const TOURS_DEFAULTS: ToursState = ToursStateSchema.parse({});
 
 /**
+ * Where the stored {@link UserProfileSchema} `displayName` came from (DOR-1022).
+ *
+ * `displayName` stays agent-writable, because DorkBot saving "call me Dorian"
+ * mid-conversation is the onboarding flow rather than a loophole in it. What was
+ * missing is the other half: the name an agent chose then seeded the roster, the
+ * account menu and the Settings field with no sign it was not the person's own.
+ * This records who wrote the value that is stored right now, so a surface can
+ * say "Suggested by DorkBot" until the person saves a name themselves.
+ *
+ * **`null` means "no record", and it is deliberately NOT read as "an agent did
+ * it".** Every install that had a name before this field existed carries `null`,
+ * and flagging a name somebody has answered to for months would be a worse lie
+ * than staying quiet. So only `{ kind: 'agent' }` ever draws a hint.
+ *
+ * `agentName` is nullable because attribution is best-effort: the writing agent
+ * is named from its resolved identity, and an agent whose identity token this
+ * install cannot resolve still wrote the name. A surface says "an agent" rather
+ * than inventing one.
+ */
+export const DisplayNameSourceSchema = z.discriminatedUnion('kind', [
+  /** A person saved it — through Settings › Profile, the config door or the CLI. */
+  z.object({ kind: z.literal('operator') }),
+  /** An agent wrote it through `config_patch`, and which one if this install knows. */
+  z.object({
+    kind: z.literal('agent'),
+    agentName: z.string().trim().min(1).max(80).nullable(),
+  }),
+]);
+
+/** Where the stored display name came from (see {@link DisplayNameSourceSchema}). */
+export type DisplayNameSource = z.infer<typeof DisplayNameSourceSchema>;
+
+/**
  * What the user has told DorkOS about themselves (spec `user-profile-onboarding`).
  *
  * **Local-only by tested invariant, not by promise:** the telemetry heartbeat
@@ -278,9 +311,12 @@ export const TOURS_DEFAULTS: ToursState = ToursStateSchema.parse({});
  * into every session's agent context, and the pure role → recommendations
  * mapping in `@dorkos/shared/profile-recommendations`.
  *
- * All four leaves are `expose` + `agent-writable` on purpose: agents knowing
- * and updating the profile IS the feature (DorkBot saves "call me Dorian" or
- * "I also use Figma" via `config_patch` mid-conversation).
+ * The first four leaves are `expose` + `agent-writable` on purpose: agents
+ * knowing and updating the profile IS the feature (DorkBot saves "call me
+ * Dorian" or "I also use Figma" via `config_patch` mid-conversation).
+ * {@link displayNameSource} is the one exception, and the reason is in its own
+ * doc: it is the RECORD of who wrote a field rather than a preference, so an
+ * agent able to write it could sign the person's name to its own suggestion.
  */
 export const UserProfileSchema = z.object({
   /** What kind of work the user does. Free-form, but onboarding offers ROLE_CANON. */
@@ -295,6 +331,15 @@ export const UserProfileSchema = z.object({
     .default(() => []),
   /** What the user likes to be called. Optional; never required. */
   displayName: z.string().trim().min(1).max(80).nullable().default(null),
+  /**
+   * Who wrote the {@link displayName} that is stored right now, or `null` when
+   * this install has no record (see {@link DisplayNameSourceSchema}).
+   *
+   * Machine-managed on every path — the profile route, the config door and the
+   * `config_patch` tool all stamp it as a side effect of writing the name, and
+   * no surface asks a person to choose it.
+   */
+  displayNameSource: DisplayNameSourceSchema.nullable().default(null),
   /**
    * ISO timestamp when the one-time existing-user prompt was dismissed
    * ("don't ask again"). Machine-managed; null = never dismissed.
@@ -2036,6 +2081,7 @@ export const UserConfigSchema = z.object({
     roles: [],
     tools: [],
     displayName: null,
+    displayNameSource: null,
     rolePromptDismissedAt: null,
   })),
   agentContext: z

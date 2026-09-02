@@ -504,6 +504,12 @@ router.patch('/', (req, res) => {
       patch: req.body,
       authority: requestConfigWriteAuthority(req, res),
       source: 'PATCH /api/config',
+      // A person, at their own settings. The residual this inherits under the
+      // login-off posture — the server cannot tell the app from any other local
+      // process — is stated in full in `display-name-provenance.ts`; it is the
+      // same one `caller-authority.ts` already accepts, and the agent-facing
+      // door is `config_patch`, which says `agent`.
+      writer: { kind: 'operator' },
     });
 
     if (!result.ok) {

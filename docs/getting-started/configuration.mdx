@@ -870,6 +870,12 @@ Tell DorkBot what kind of work you do, and every agent on this machine knows who
       type: 'string | null',
       default: 'null',
     },
+    'profile.displayNameSource': {
+      description:
+        'Who chose the name above: you, or an agent that suggested it. Set automatically; you never edit it. When an agent picked the name, your team page and account menu say "Suggested by DorkBot" until you save a name yourself. Local-only; never included in any telemetry payload.',
+      type: 'object | null',
+      default: 'null',
+    },
     'profile.rolePromptDismissedAt': {
       description:
         'When you told DorkBot "don\'t ask again" about your work. Set automatically; you never edit it. Local-only; never included in any telemetry payload.',
