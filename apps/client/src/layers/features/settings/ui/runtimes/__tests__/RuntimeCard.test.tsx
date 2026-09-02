@@ -407,6 +407,61 @@ describe('RuntimeCard — write paths', () => {
   });
 });
 
+describe('RuntimeCard — the sign-in expiry warning', () => {
+  /**
+   * Requirements whose auth check reports a deadline `daysOut` days away.
+   *
+   * A minute of slack past the day boundary keeps the countdown off the edge:
+   * exactly 48h would round down to "1 day" the moment a millisecond passed
+   * between building this and reading it.
+   */
+  function requirementsExpiringIn(daysOut: number) {
+    const expiresAt = new Date(Date.now() + daysOut * 86_400_000 + 60_000).toISOString();
+    return {
+      runtimes: {
+        'claude-code': {
+          state: 'ready',
+          dependencies: [
+            { name: 'Claude Code CLI', description: 'Powers agent sessions.', status: 'satisfied' },
+            {
+              name: 'Claude Code authentication',
+              description: 'Signed in to Claude.',
+              status: 'satisfied',
+              expiresAt,
+            },
+          ],
+        },
+      },
+    };
+  }
+
+  it('warns on the card when the server reports a sign-in close to running out', async () => {
+    // The seam, end to end through the real container: what the transport
+    // returns reaches the banner. The view and the selector are each tested
+    // alone; only this asserts they are actually wired to each other.
+    renderCard(
+      { type: 'claude-code' },
+      { checkRequirements: vi.fn().mockResolvedValue(requirementsExpiringIn(2)) }
+    );
+
+    expect(await screen.findByTestId('runtime-sign-in-expiring-claude-code')).toHaveTextContent(
+      'Your Claude Code sign-in runs out in 2 days. Sign in again before your agents stall.'
+    );
+  });
+
+  it('stays silent when the deadline is further out than the warning window', async () => {
+    // A sign-in lasts weeks, so this is the ordinary state. A card that warned
+    // here would carry the line for most of a sign-in's life and be ignored.
+    renderCard(
+      { type: 'claude-code' },
+      { checkRequirements: vi.fn().mockResolvedValue(requirementsExpiringIn(19)) }
+    );
+
+    expect(await screen.findByTestId('runtime-card-claude-code')).toBeInTheDocument();
+    expect(screen.queryByTestId('runtime-sign-in-expiring-claude-code')).not.toBeInTheDocument();
+  });
+});
+
 describe('RuntimeCard — the summary line', () => {
   it('names a configured model from the catalog once it has arrived', async () => {
     renderCard(

@@ -34,6 +34,7 @@ export const PLAYGROUND_CAPABILITIES: Record<string, RuntimeCapabilities> = {
     supportsPersistentSession: false,
     supportsSteer: false,
     supportsContextStaging: false,
+    mediaOutput: 'none',
     nativeContext: [],
     permissionModes: {
       supported: true,
@@ -105,6 +106,7 @@ export const PLAYGROUND_CAPABILITIES: Record<string, RuntimeCapabilities> = {
     supportsPersistentSession: false,
     supportsSteer: false,
     supportsContextStaging: false,
+    mediaOutput: 'none',
     nativeContext: [],
     logBackedHistory: true,
     permissionModes: {
@@ -157,6 +159,7 @@ export const PLAYGROUND_CAPABILITIES: Record<string, RuntimeCapabilities> = {
     supportsPersistentSession: false,
     supportsSteer: false,
     supportsContextStaging: false,
+    mediaOutput: 'none',
     nativeContext: [],
     logBackedHistory: true,
     permissionModes: {

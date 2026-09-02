@@ -149,6 +149,12 @@ import { createSearchRouter } from './routes/search.js';
 import { resolveCaller } from './routes/room-caller.js';
 import { LocalAvatarStore } from './services/identity/local-avatar-store.js';
 import { LocalRoomAttachmentStore } from './services/rooms/attachments/local-room-attachment-store.js';
+import {
+  LocalSessionAttachmentStore,
+  SESSION_ATTACHMENT_SWEEP_INTERVAL_MS,
+  setSessionAttachmentStore,
+  sweepSessionAttachments,
+} from './services/session/attachments/index.js';
 import { createDiscoveryRouter } from './routes/discovery.js';
 import { createTemplateRouter } from './routes/templates.js';
 import { createAdminRouter } from './routes/admin.js';
@@ -419,6 +425,7 @@ let attachAgentTaskRoots: ((projectPath: string, agentId: string) => Promise<voi
 let searchIndexer: SearchIndexer | undefined;
 let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
 let dailySnapshotInterval: ReturnType<typeof setInterval> | undefined;
+let sessionAttachmentSweepInterval: ReturnType<typeof setInterval> | undefined;
 // Embedded-terminal PTY manager (ADR 260708-185521). Always-on, boundary-confined;
 // the WebSocket byte channel is attached to the HTTP server after listen().
 let terminalManager: TerminalManager | undefined;
@@ -981,6 +988,16 @@ async function start() {
       logger.warn('[Startup] Plugin activation scan failed (will retry on next install)', { err });
     });
 
+    // Where images a turn produces live is chosen HERE and nowhere else: the
+    // adapters and the serving route depend on the `SessionAttachmentStore`
+    // interface and never build a path, so the day those bytes live somewhere
+    // other than this machine, this line is what changes. Same doctrine as the
+    // room attachment store below. Registered for the route, and handed to
+    // every adapter that can produce media — an adapter given none declares
+    // `mediaOutput: 'none'` rather than promising something it cannot keep.
+    const sessionAttachmentStore = new LocalSessionAttachmentStore(dorkHome);
+    setSessionAttachmentStore(sessionAttachmentStore);
+
     // --- Codex runtime (spec additional-agent-runtimes, ADR-0309) ---
     // Gated on `runtimes.codex.enabled` config. Must register BEFORE
     // sessionListBroadcaster.start() below — runtimes registered after
@@ -1056,6 +1073,11 @@ async function start() {
             // Durable sessionId <-> OpenCode-session-id map on the shared Drizzle
             // handle, so DorkOS-facing ids survive a server restart (DOR-251).
             sessionMap: new OpenCodeSessionMap(db),
+            // Where images a turn produces are kept. Wiring it here is what
+            // makes the runtime declare `mediaOutput: 'attachments'` — the
+            // composition root owns the deployment decision, and the adapter
+            // reports what it was actually given (ADR 260901-135657).
+            attachments: sessionAttachmentStore,
           });
           // Durable per-session settings hydrate/write-through (ADR-0260), same
           // port the Claude adapter uses.
@@ -3577,6 +3599,19 @@ async function start() {
     takeDailySnapshot(db, backupsDir);
   }, INTERVALS.DAILY_SNAPSHOT_CHECK_MS);
 
+  // Somebody has to own the disk that session images sit on. Once at boot, so a
+  // server that is restarted daily still collects, then daily for one that is
+  // never restarted. Never awaited and never allowed to reject: a sweep is
+  // housekeeping, and housekeeping does not get to delay a boot or take a
+  // process down (`session-attachment-sweep.ts`).
+  const sweepImages = () => {
+    void sweepSessionAttachments({ dorkHome }).catch((err: unknown) => {
+      logger.warn('[session-attachments] sweep failed', { err });
+    });
+  };
+  sweepImages();
+  sessionAttachmentSweepInterval = setInterval(sweepImages, SESSION_ATTACHMENT_SWEEP_INTERVAL_MS);
+
   // Start ngrok tunnel if enabled. The exposure guard (task 1.3) also gates the
   // boot-time autostart: skip (and log) rather than expose without a login.
   if (env.TUNNEL_ENABLED) {
@@ -3639,6 +3674,9 @@ async function shutdownServices() {
   }
   if (dailySnapshotInterval) {
     clearInterval(dailySnapshotInterval);
+  }
+  if (sessionAttachmentSweepInterval) {
+    clearInterval(sessionAttachmentSweepInterval);
   }
   // Kill any live PTYs so shutdown never leaves an orphaned shell.
   terminalManager?.destroyAll();

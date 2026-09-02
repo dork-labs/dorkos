@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-import type { ExecutionDefaults } from '@dorkos/shared/types';
+import type { ExecutionDefaults, ModelOption } from '@dorkos/shared/types';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { AgentExecutionRows } from '../ui/AgentExecutionRows';
@@ -55,16 +55,12 @@ const DEFAULTS: ExecutionDefaults = {
   ],
 };
 
-const MODELS = [
-  { value: 'opus', displayName: 'Opus', description: '', supportsEffort: true, trustStop: null },
-  {
-    value: 'sonnet',
-    displayName: 'Sonnet',
-    description: '',
-    supportsEffort: true,
-    trustStop: null,
-  },
-  { value: 'haiku', displayName: 'Haiku', description: '', supportsEffort: false, trustStop: null },
+// Typed, so a catalog a case hands in is the shape the wire really carries —
+// which is how `unverified` became addable here at all.
+const MODELS: ModelOption[] = [
+  { value: 'opus', displayName: 'Opus', description: '', supportsEffort: true },
+  { value: 'sonnet', displayName: 'Sonnet', description: '', supportsEffort: true },
+  { value: 'haiku', displayName: 'Haiku', description: '', supportsEffort: false },
 ];
 
 function manifest(extra: Partial<AgentManifest> = {}): AgentManifest {
@@ -132,7 +128,7 @@ const TWO_ACCOUNTS: ClaudeCodeConfig = {
 function renderRows(
   agent: AgentManifest,
   executionDefaults: ExecutionDefaults = DEFAULTS,
-  models: typeof MODELS = MODELS,
+  models: ModelOption[] = MODELS,
   capabilities: ReturnType<typeof capabilityMap> | typeof WITHHELD = capabilityMap(false),
   claudeCode: ClaudeCodeConfig | undefined = undefined
 ) {
@@ -251,6 +247,36 @@ describe('AgentExecutionRows', () => {
     expect(await screen.findByTestId('agent-effort-unsupported-model')).toHaveTextContent(
       "This model doesn't take an effort setting"
     );
+  });
+
+  // ── The capped catalog has to admit itself here too (DOR-1674) ────────────
+  it('admits an unconfirmed catalog, and points the row at the admission', async () => {
+    // With no provider connected every row arrives `unverified`, and a list
+    // that stays silent about that reads as complete when it is a guess.
+    renderRows(
+      manifest(),
+      DEFAULTS,
+      MODELS.map((m) => ({ ...m, unverified: true }))
+    );
+    const notice = await screen.findByTestId('model-catalog-unverified');
+    expect(notice).toBeVisible();
+    // Seeing it is not enough: the trigger describes itself by the notice, so a
+    // person navigating by control hears the admission rather than only the
+    // model name.
+    expect(screen.getByTestId('agent-model-row')).toHaveAttribute(
+      'aria-describedby',
+      notice.getAttribute('id')
+    );
+  });
+
+  it('shows no unverified notice on a confirmed catalog', async () => {
+    renderRows(manifest());
+    // The row itself has to have rendered its catalog before the absence below
+    // means anything — a notice missing from a page that drew nothing proves
+    // nothing at all.
+    await waitFor(() => expect(screen.getByTestId('agent-model-row')).toHaveTextContent('Opus'));
+    expect(screen.queryByTestId('model-catalog-unverified')).not.toBeInTheDocument();
+    expect(screen.getByTestId('agent-model-row')).not.toHaveAttribute('aria-describedby');
   });
 
   // ── B1: a warming catalog is not evidence that a model is gone ─────────────

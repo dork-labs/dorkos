@@ -47,6 +47,7 @@ const CLAUDE_CODE_PROFILE: RuntimeCapabilities = {
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
+  mediaOutput: 'none',
   nativeContext: [],
   permissionModes: {
     supported: true,
@@ -111,6 +112,7 @@ const CODEX_PROFILE: RuntimeCapabilities = {
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
+  mediaOutput: 'none',
   nativeContext: [],
   permissionModes: {
     supported: true,
@@ -162,6 +164,7 @@ const OPENCODE_PROFILE: RuntimeCapabilities = {
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
+  mediaOutput: 'none',
   nativeContext: [],
   permissionModes: {
     supported: true,

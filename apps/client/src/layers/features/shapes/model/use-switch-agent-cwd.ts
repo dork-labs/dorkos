@@ -13,7 +13,9 @@ import { useAppStore, useTransport } from '@/layers/shared/model';
 import { switchAgentCwd } from '@/layers/entities/session';
 
 /**
- * @returns A callback that switches the cockpit to an agent's working
+ * Switch the app to an agent's working directory.
+ *
+ * @returns A callback that switches the app to an agent's working
  *   directory, reading the store fresh per call.
  */
 export function useSwitchAgentCwd(): (cwd: string) => void {

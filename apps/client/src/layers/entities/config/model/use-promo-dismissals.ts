@@ -88,7 +88,12 @@ function forgetSessionDismissal(id: string): void {
   for (const listener of sessionListeners) listener();
 }
 
-/** @internal Exported for testing only — resets the once-per-load import latch. */
+/**
+ * Reset the once-per-load legacy promo import latch and forget every
+ * session-scoped dismissal.
+ *
+ * @internal Exported for testing only.
+ */
 export function resetLegacyPromoImportForTests(): void {
   legacyImportAttempted = false;
   sessionDismissed = [];

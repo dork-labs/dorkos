@@ -30,6 +30,7 @@ import { needsConsentRitual } from '@dorkos/shared/permission-semantics';
 import {
   ErrorEventSchema,
   OperationProgressEventSchema,
+  SessionImageEventSchema,
   SessionSchema,
   StreamEventSchema,
   UsageStatusSchema,
@@ -118,6 +119,22 @@ export interface RuntimeConformanceOpts {
     sessionId: string,
     content: string
   ) => Promise<HistoryMessage[]>;
+  /**
+   * Drives ONE turn whose model or tools produce an IMAGE, and returns every
+   * StreamEvent it yielded.
+   *
+   * Provided only by runtimes that declare `mediaOutput` other than `'none'`.
+   * Keyed on the declaration, not on the driver: a runtime that claims it
+   * carries media and wires no driver FAILS rather than skipping, because a
+   * silent skip about media is the exact failure this whole invariant exists to
+   * end — before it, no runtime declared anything about media, all three
+   * dropped every image, and the suite reported the same green for all of them.
+   *
+   * Owns its own setup (like `terminalOnce`), because a media turn needs a
+   * differently-scripted backend than the suite's default runtime carries.
+   */
+  mediaTurn?: () => Promise<StreamEvent[]>;
+
   /**
    * Drives ONE turn that ASKS a question nobody answers, lets the ask expire,
    * closes the turn, and returns the history a reopened session would be
@@ -1000,6 +1017,7 @@ export function runtimeConformance(
     messageContent = 'conformance ping',
     makeFailingRuntime,
     makeCompactingRuntime,
+    mediaTurn,
     durableHistory,
     expiredQuestionHistory,
     presenceTurn,
@@ -1554,6 +1572,130 @@ export function runtimeConformance(
           ).not.toContain(`<${tag}>`);
         }
       });
+    });
+
+    describe('media a turn produces (DOR-1663)', () => {
+      // Before this block the conformance suite contained no occurrence of
+      // "image", "attachment", "media" or "mime" at all. Every runtime dropped
+      // every picture a model or a tool produced, none of them said so, and the
+      // suite reported the identical green for all three — which is how a
+      // person paid for an image, saw a turn finish, and never found out where
+      // it went. The point of what follows is that the three runtimes must stop
+      // looking the same from the outside.
+
+      const declaresMedia = (runtime: AgentRuntime): boolean =>
+        runtime.getCapabilities().mediaOutput !== 'none';
+
+      it('declares what it does with media, one way or the other', () => {
+        const capabilities = makeRuntime().getCapabilities();
+        expect(
+          capabilities.mediaOutput,
+          'every runtime must say what happens to an image its model or its tools produce — ' +
+            "'none' is a perfectly good answer, and silence is not"
+        ).toBeDefined();
+        expect(['none', 'attachments']).toContain(capabilities.mediaOutput);
+      });
+
+      // Keyed on the CAPABILITY, not on the driver — the same rule (and the
+      // same reasoning) as the `warmSession` case below.
+      it('a runtime declaring media output wires a `mediaTurn` driver', () => {
+        const runtime = makeRuntime();
+        if (!declaresMedia(runtime)) {
+          expect(
+            mediaTurn,
+            "a `mediaTurn` driver was wired by a runtime that declares `mediaOutput: 'none'"
+          ).toBeUndefined();
+          return;
+        }
+        expect(
+          mediaTurn,
+          'this runtime declares it carries media but wired no `mediaTurn` driver, so nothing ' +
+            'here would prove the claim (see RuntimeConformanceOpts.mediaTurn)'
+        ).toBeDefined();
+      });
+
+      if (mediaTurn) {
+        it('announces an image as a REFERENCE, never as bytes on the stream', async () => {
+          const events = await mediaTurn();
+          const images = events.filter((event) => event.type === 'image_attachment');
+          expect(
+            images.length,
+            'a runtime that declares it carries media must emit an `image_attachment` for a turn ' +
+              'that produced one'
+          ).toBeGreaterThan(0);
+
+          // ONE PICTURE, ONE ANNOUNCEMENT. A backend that republishes its part
+          // snapshots — OpenCode's `message.part.updated` is cumulative and
+          // fires repeatedly for the same part — will announce the same image
+          // more than once unless the adapter guards it, and a client that
+          // appends a part per event then draws it twice. Stated as "no
+          // duplicate ids" rather than a count so it holds for a turn that
+          // legitimately produced several pictures.
+          //
+          // This only bites if the driver actually republishes. A driver whose
+          // scripted backend publishes each part once passes here for a reason
+          // unrelated to the property.
+          const ids = images.map(
+            (event) => (event.data as { attachmentId?: unknown }).attachmentId
+          );
+          expect(
+            new Set(ids).size,
+            `the same picture was announced more than once (${JSON.stringify(ids)}) — one image, ` +
+              'one `image_attachment`, however many times the backend republishes the part'
+          ).toBe(ids.length);
+
+          for (const image of images) {
+            const parsed = SessionImageEventSchema.safeParse(image.data);
+            expect(parsed.success, `image_attachment payload is malformed: ${image.data}`).toBe(
+              true
+            );
+            if (!parsed.success) continue;
+            // The invariant the whole design turns on. This stream is replayed
+            // in full on every reconnect, and its replay buffers hold a bounded
+            // WINDOW — so an inlined picture is re-sent forever and spends on
+            // itself the window the turn's own words needed.
+            expect(
+              parsed.data.url.startsWith('data:'),
+              'an image must be announced by URL, not inlined as a data: payload — the session ' +
+                'stream is replayed whole, and its replay buffers hold a bounded window that ' +
+                'inlined pictures would spend on themselves instead of on the transcript'
+            ).toBe(false);
+            expect(
+              parsed.data.mediaType.startsWith('image/'),
+              'an image_attachment must declare an image media type'
+            ).toBe(true);
+          }
+        });
+      } else {
+        it('an ordinary turn from a runtime declaring no media output emits none', async ({
+          skip,
+        }) => {
+          const runtime = makeRuntime();
+          if (declaresMedia(runtime)) {
+            skip('runtime declares media output — the case above proves it instead');
+            return;
+          }
+          const sessionId = nextSessionId();
+          runtime.ensureSession(sessionId, sessionOpts(runtime));
+
+          const events = await drainTurn(runtime, sessionId);
+          expect(
+            events.filter((event) => event.type === 'image_attachment'),
+            "a runtime declaring `mediaOutput: 'none'` must not emit image_attachment — if it " +
+              'started carrying media, the declaration is what has to change first'
+          ).toEqual([]);
+        });
+
+        it.skip(
+          "SKIPPED: this runtime declares `mediaOutput: 'none'`, so nothing here proves it can " +
+            'carry an image a turn produced. claude-code and codex are known-non-compliant on ' +
+            'purpose — both meet media today and discard it (claude-code filters tool results to ' +
+            'text in `extractToolResultContent`; codex does the same in `extractMcpResultText`) — ' +
+            'and this line is where that stays visible until they adopt the attachment seam ' +
+            '(ADR 260901-135657)',
+          () => {}
+        );
+      }
     });
 
     describe('a session that holds its process open (C4, C5)', () => {

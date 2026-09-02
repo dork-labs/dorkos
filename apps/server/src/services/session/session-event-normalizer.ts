@@ -26,6 +26,7 @@
  *
  * @module services/session/session-event-normalizer
  */
+import { isNonFatalErrorCode } from '@dorkos/shared/run-outcome';
 import type { StreamEvent, TerminalReason } from '@dorkos/shared/types';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { RawSessionEvent, SessionStateProjector } from './session-state-projector.js';
@@ -192,6 +193,24 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
         ...(data.exitCode !== undefined ? { exitCode: Number(data.exitCode) } : {}),
       };
       return update;
+    }
+
+    // An image the turn produced. The adapter has ALREADY stored the bytes by
+    // the time this arrives, so the event is a reference and this hop is a
+    // straight field copy — see `sessionImageShape` for why the bytes never
+    // ride the stream. Defensive reads like every other case here: a malformed
+    // event becomes a reference to nothing, which the renderer degrades on,
+    // rather than throwing inside a live turn.
+    case 'image_attachment': {
+      const image: RawOf<'image_attachment'> = {
+        type: 'image_attachment',
+        attachmentId: String(data.attachmentId ?? ''),
+        url: String(data.url ?? ''),
+        mediaType: String(data.mediaType ?? ''),
+        size: Number(data.size ?? 0),
+        ...(data.alt !== undefined ? { alt: String(data.alt) } : {}),
+      };
+      return image;
     }
 
     case 'memory_recall': {
@@ -620,6 +639,15 @@ function readTerminalReason(event: StreamEvent): TerminalReason | undefined {
 }
 
 /**
+ * Read the `code` off an `error` StreamEvent's data, if it carried one — the
+ * field {@link isNonFatalErrorCode} classifies.
+ */
+function readErrorCode(event: StreamEvent): string | undefined {
+  const code = ((event.data ?? {}) as StreamData).code;
+  return typeof code === 'string' ? code : undefined;
+}
+
+/**
  * The normalized event types that REOPEN a turn window when they arrive after
  * the window already closed (DOR-1100).
  *
@@ -792,7 +820,18 @@ export async function feedProjector(
   // Error latch: a turn that carried a typed `error` but whose runtime never
   // attached an explicit terminalReason (OpenCode/Codex crash paths) must still
   // close as `turn_end{terminalReason:'error'}` so it settles to the error
-  // lifecycle. Explicit reasons always win; the latch only fills undefined.
+  // lifecycle. Explicit reasons always win; the latch only fills undefined —
+  // the SDK's own reason is the diagnostic the terminal-reason chip shows, and
+  // overwriting `model_error` with a generic `error` would throw it away. What
+  // that reason MEANS for the lifecycle is the projector's
+  // `deriveTurnEndLifecycle`, not this line (DOR-1676).
+  //
+  // A SURVIVABLE error never reaches the latch. A `hook_failure` is the
+  // operator's own script exiting non-zero, and the turn then ends normally
+  // carrying the whole answer — latching it closed a perfectly good turn as
+  // `terminalReason: 'error'` whenever no explicit reason came, which the
+  // session then reported as a failed turn and escalated. Same denylist, same
+  // direction, as the projector's frame test.
   let sawError = false;
   const closeTurn = (): void => {
     // No open window: a second `done`, or a `finally` after one already closed.
@@ -828,7 +867,7 @@ export async function feedProjector(
       if (!turnOpen && TURN_REOPENING_STREAM_EVENT_TYPES.has(event.type)) reopenTurn();
       const reason = readTerminalReason(event);
       if (reason !== undefined) terminalReason = reason;
-      if (event.type === 'error') sawError = true;
+      if (event.type === 'error' && !isNonFatalErrorCode(readErrorCode(event))) sawError = true;
       if (event.type === 'done') {
         closeTurn();
         continue;

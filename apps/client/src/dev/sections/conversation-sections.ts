@@ -111,6 +111,13 @@ export const CONVERSATION_SECTIONS: PlaygroundSection[] = [
     keywords: ['staged', 'context', 'add', 'note', 'fold', 'next', 'reply', 'disposition'],
   },
   {
+    id: 'messageimage',
+    title: 'MessageImage',
+    page: 'conversation',
+    category: 'Messages',
+    keywords: ['image', 'picture', 'attachment', 'media', 'generated', 'screenshot', 'png'],
+  },
+  {
     id: 'messageauthoravatar',
     title: 'MessageAuthorAvatar',
     page: 'conversation',
@@ -669,6 +676,31 @@ export const CONVERSATION_SECTIONS: PlaygroundSection[] = [
       'reveal',
       'ellipsis',
       'controls',
+    ],
+  },
+  // ModelPickerShowcases — the panel behind the status line's model name, and
+  // the widths a stranger's catalog forces on it (DOR-1673).
+  {
+    id: 'model-picker',
+    title: 'Model picker',
+    page: 'conversation',
+    category: 'Status',
+    keywords: [
+      'model',
+      'picker',
+      'popover',
+      'panel',
+      'openrouter',
+      'opencode',
+      'catalog',
+      'width',
+      'overflow',
+      'truncate',
+      'ellipsis',
+      'tier',
+      'search',
+      'unverified',
+      'capability',
     ],
   },
   {

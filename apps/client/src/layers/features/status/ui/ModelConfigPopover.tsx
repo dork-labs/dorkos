@@ -169,9 +169,9 @@ export interface ModelConfigPopoverProps {
 }
 
 /**
- * Model configuration popover for the status bar. Opens a ~320px-wide panel
- * above the trigger with grouped card selection for models, effort levels,
- * and mode toggles; stays open until the user clicks outside or hits Escape.
+ * Model configuration popover for the status bar. Opens a panel above the
+ * trigger with grouped card selection for models, effort levels, and mode
+ * toggles; stays open until the user clicks outside or hits Escape.
  */
 export function ModelConfigPopover({
   model,
@@ -264,7 +264,34 @@ export function ModelConfigPopover({
       <ResponsivePopoverContent
         side="top"
         align="start"
-        className="w-80 p-3"
+        // Wider than the shared 320px default, and widened HERE rather than in
+        // `ResponsivePopoverContent`. Thirteen other panels share that
+        // primitive; nine of them sit at 320px or narrower and a tenth asks for
+        // no fixed width at all, and none of the ten want what this panel wants,
+        // so the width belongs to the call site (design-system.md: retime a
+        // shared primitive at the call site, not in the primitive). The three
+        // that DO reach for extra room — the live lane at 352px, the Control
+        // Center at 384px, and the inbox bell at exactly 480px — all reach from
+        // their own call sites, which is the precedent followed here; only their
+        // viewport clamp is left out, for the reason given below. The inbox bell
+        // is the closest of the three: its `w-[min(30rem,…)]` is this number.
+        //
+        // What needs the room is the content: an OpenRouter row carries a model
+        // name, a namespaced id, a context-window badge and a plain-language
+        // note about what the model cannot do, and at 320px the id and the note
+        // both ran out of line (DOR-1673). 480px puts the longest note —
+        // "Can't use tools, so it can't read files or run commands." — on one
+        // line, which is the measurement that picked the number.
+        //
+        // The viewport clamp rides along, like the two clamped panels above.
+        // "768px and up can always hold 480px" is only true at a 16px root:
+        // the breakpoint is a px media query while `w-120` is 30rem, so a
+        // raised browser font size scales the panel without moving the switch
+        // (root 24px puts a 720px panel in a 768px window). Below 768px this
+        // is a full-width sheet that ignores the caller's className outright.
+        // An embedded pane narrower than its window (Obsidian) is the one case
+        // the clamp still misses — `vw` is the window, not the pane.
+        className="w-120 max-w-[calc(100vw-1.5rem)] p-3"
         data-testid="model-config-popover"
       >
         <ResponsivePopoverTitle>Model</ResponsivePopoverTitle>

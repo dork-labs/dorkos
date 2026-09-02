@@ -9,6 +9,7 @@ import type {
 import type { StreamEvent } from '@dorkos/shared/types';
 import { wrapKickoff, filterKickoffHistory } from '@dorkos/shared/kickoff';
 import { SESSIONS } from '../../../../config/constants.js';
+import { DEFAULT_CWD } from '../../../../lib/resolve-root.js';
 import {
   getOrCreateProjector,
   disposeProjector,
@@ -30,6 +31,7 @@ import {
   serverConnected,
   sessionInfo,
   sessionIdle,
+  sessionCompacted,
   sessionError,
   abortedError,
   statusEvent,
@@ -131,6 +133,7 @@ function createMockClient() {
       update: vi.fn(async () => ({ data: sessionInfo(OC_SESSION_A, DIRECTORY) })),
       fork: vi.fn(async () => ({ data: sessionInfo(OC_SESSION_B, DIRECTORY) })),
       promptAsync: vi.fn(async () => ({})),
+      summarize: vi.fn(async () => ({ data: true })),
       abort: vi.fn(async () => ({ data: true })),
       todo: vi.fn(async () => ({ data: [] })),
     },
@@ -476,6 +479,178 @@ describe('OpenCodeRuntime', () => {
         connection.push(globalEvent(DIRECTORY, event));
       }
       await finished;
+    });
+  });
+
+  describe('executeCommandIntent — compact (DOR-1668)', () => {
+    /**
+     * Drive a compaction to the point where the sidecar accepted it, then run
+     * it out through the compacted → idle terminal.
+     *
+     * NOTE ON WHAT THESE CASES CAN AND CANNOT PROVE. They pin that DorkOS SENDS
+     * a `{providerID, modelID}` body — our side of the contract. They do NOT
+     * prove the sidecar REQUIRES one: this client is a mock, and a mock accepts
+     * whatever it is handed, which is exactly how the missing body shipped
+     * (`@opencode-ai/sdk` types the payload `body?:`, so omitting it compiled
+     * and mocked green while every real `/compact` answered
+     * `BadRequest: Expected object, got undefined`). The requirement itself is
+     * the shipped server's, and only a live sidecar can answer for it — see the
+     * live arm in `conformance.test.ts`.
+     */
+    async function compact(
+      harness: ReturnType<typeof makeRuntime>,
+      sessionId: string
+    ): Promise<StreamEvent[]> {
+      const { finished } = consume(
+        harness.runtime.executeCommandIntent(sessionId, 'compact', { cwd: DIRECTORY })
+      );
+      await vi.waitFor(() => expect(harness.client.global.event).toHaveBeenCalled());
+      const connection = harness.source.latest();
+      connection.push(globalEvent(DIRECTORY, serverConnected()));
+      await vi.waitFor(() => expect(harness.client.session.summarize).toHaveBeenCalled());
+      connection.push(globalEvent(DIRECTORY, sessionCompacted(OC_SESSION_A)));
+      connection.push(globalEvent(DIRECTORY, sessionIdle(OC_SESSION_A)));
+      return finished;
+    }
+
+    it('sends the model body the sidecar requires, and yields the boundary', async () => {
+      const harness = makeRuntime();
+      const sessionId = nextSessionId();
+      harness.runtime.ensureSession(sessionId, {
+        permissionMode: 'default',
+        cwd: DIRECTORY,
+        model: 'anthropic/claude-sonnet-4-5',
+      });
+
+      const events = await compact(harness, sessionId);
+
+      expect(harness.client.session.summarize).toHaveBeenCalledWith({
+        path: { id: OC_SESSION_A },
+        body: { providerID: 'anthropic', modelID: 'claude-sonnet-4-5' },
+      });
+      expect(events.some((event) => event.type === 'compact_boundary')).toBe(true);
+      expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
+    });
+
+    it('compacts on the model a restart-hydrated session was left running', async () => {
+      // The session is untracked (post-restart), so the model has to come back
+      // out of the durable settings store the way a prompt's would — otherwise
+      // compaction silently runs on a different model than the conversation.
+      const harness = makeRuntime();
+      const sessionId = nextSessionId();
+      harness.settingsPort.getSessionSettings.mockResolvedValue({
+        permissionMode: 'default',
+        model: 'ollama/qwen2.5-coder:32b',
+      });
+
+      await compact(harness, sessionId);
+
+      expect(harness.client.session.summarize).toHaveBeenCalledWith({
+        path: { id: OC_SESSION_A },
+        body: { providerID: 'ollama', modelID: 'qwen2.5-coder:32b' },
+      });
+    });
+
+    /**
+     * Drive a compaction that FAILS, and report everything a caller could
+     * observe about how it failed.
+     *
+     * Both failure modes throw from inside the `trigger` callback
+     * `runOpenCodeTurn` awaits — one before `session.summarize` is reached (no
+     * model resolvable at any rung) and one after it answers an error. Whether
+     * those two surface identically is the question; nothing about "they are
+     * both throws in the same closure" proves the wrapping treats them alike,
+     * so this measures it instead of assuming it.
+     */
+    async function failedCompaction(
+      harness: ReturnType<typeof makeRuntime>,
+      sessionId: string
+    ): Promise<{
+      events: StreamEvent[];
+      message: string;
+      yieldedBeforeFailure: number;
+      turnRecordCleared: boolean;
+    }> {
+      const { events, finished } = consume(
+        harness.runtime.executeCommandIntent(sessionId, 'compact', { cwd: DIRECTORY })
+      );
+      await vi.waitFor(() => expect(harness.client.global.event).toHaveBeenCalled());
+      // Mark the stream live so the trigger fires immediately, rather than
+      // after the STREAM_LIVE_TIMEOUT_MS fallback.
+      harness.source.latest().push(globalEvent(DIRECTORY, serverConnected()));
+
+      let message = '';
+      try {
+        await finished;
+        message = '<the generator completed instead of failing>';
+      } catch (err) {
+        message = err instanceof Error ? err.message : String(err);
+      }
+      return {
+        events,
+        message,
+        yieldedBeforeFailure: events.length,
+        // `interruptQuery` answers false only when no turn is on record, so it
+        // reads the teardown the `finally` block owes either way.
+        turnRecordCleared: (await harness.runtime.interruptQuery(sessionId)) === false,
+      };
+    }
+
+    it('surfaces an unresolvable model exactly like a rejected summarize', async () => {
+      // The reviewer's doubt on #1426, made testable: `resolveCompactionModel`
+      // throws BEFORE `session.summarize` is called, so its failure never
+      // passes through the mapper that produces the error/done pair. If the two
+      // paths diverged — one rejecting the generator, the other yielding a
+      // mapped `error` + `done` — a caller would have to handle compaction
+      // failures two different ways depending on which rung ran out.
+
+      // Path A: the sidecar rejects a well-formed summarize.
+      const rejecting = makeRuntime();
+      const rejectingSession = nextSessionId();
+      rejecting.runtime.ensureSession(rejectingSession, {
+        permissionMode: 'default',
+        cwd: DIRECTORY,
+        model: 'anthropic/claude-sonnet-4-5',
+      });
+      rejecting.client.session.summarize.mockResolvedValue({
+        error: { name: 'BadRequest', data: { message: 'nope' } },
+      });
+
+      // Path B: nothing names a model — no session model, no history, no
+      // configured default — so the throw happens a step earlier.
+      const unresolvable = makeRuntime();
+      const unresolvableSession = nextSessionId();
+      unresolvable.runtime.ensureSession(unresolvableSession, {
+        permissionMode: 'default',
+        cwd: DIRECTORY,
+      });
+
+      const rejected = await failedCompaction(rejecting, rejectingSession);
+      const unnamed = await failedCompaction(unresolvable, unresolvableSession);
+
+      // The comparison is the point: same shape, same ordering, same terminal —
+      // asserted against each other, not against two hand-written expectations
+      // that could drift apart without anyone noticing.
+      expect({
+        events: unnamed.events,
+        yieldedBeforeFailure: unnamed.yieldedBeforeFailure,
+        turnRecordCleared: unnamed.turnRecordCleared,
+      }).toEqual({
+        events: rejected.events,
+        yieldedBeforeFailure: rejected.yieldedBeforeFailure,
+        turnRecordCleared: rejected.turnRecordCleared,
+      });
+
+      // And pin what that shape actually IS, so the equality above cannot be
+      // satisfied by both paths silently going quiet.
+      expect(rejected.yieldedBeforeFailure, 'a failed trigger must yield nothing').toBe(0);
+      expect(rejected.turnRecordCleared, 'the turn record must be torn down').toBe(true);
+      expect(rejected.message).toContain('OpenCode session.summarize failed');
+      expect(unnamed.message).toContain('Pick a model for the session');
+
+      // Path B must fail BEFORE the sidecar is asked to compact — sending a
+      // half-filled body would be the bug this whole ladder exists to avoid.
+      expect(unresolvable.client.session.summarize).not.toHaveBeenCalled();
     });
   });
 
@@ -1421,6 +1596,24 @@ describe('OpenCodeRuntime', () => {
       });
       expect(models[1]).toMatchObject({ value: 'ollama/llama3.3:70b', provider: 'ollama' });
       expect(models[1]!.isDefault).toBeUndefined();
+    });
+
+    it('scopes the provider catalog to the working directory, not the sidecar cwd', async () => {
+      // `GET /provider` reads enabled/disabled providers off the same
+      // per-directory config `GET /config` does, and falls back to the
+      // SIDECAR's own process.cwd() when no directory is given. Handing a cwd
+      // to `getClient` does not carry it — that argument is accepted and
+      // ignored, and the client sends no directory header — so an unscoped
+      // read builds the model picker from whatever project the sidecar process
+      // happens to sit in (NOTES.md §9).
+      const { runtime, client } = makeRuntime();
+      client.provider.list.mockResolvedValue({ data: { all: [], default: {}, connected: [] } });
+
+      await runtime.getSupportedModels();
+
+      expect(client.provider.list).toHaveBeenCalledWith({
+        query: { directory: DEFAULT_CWD },
+      });
     });
 
     it('filters ollama models to installed tags when Ollama is running (spec §10)', async () => {

@@ -27,6 +27,7 @@ import {
   PLUGIN_RELOAD_ACK_TIMEOUT_MS,
   requestWithinBound,
 } from '../sessions/bounded-control.js';
+import { CLAUDE_SDK_VERSION } from '../tooling/provision.js';
 import { logger } from '../../../../lib/logger.js';
 
 /** Subset of MessageSenderOpts that RuntimeCache populates. */
@@ -74,15 +75,78 @@ function inferTier(value: string): 'flagship' | 'balanced' | 'fast' | undefined 
 }
 
 /**
+ * What every Claude model the SDK offers can do, asserted by DorkOS rather than
+ * read from the SDK. The reasoning for each field — and what would falsify it —
+ * is in {@link mapSdkModelToModelOption}. One constant so a correction is one
+ * edit, and so the claim is visible instead of buried in an object literal.
+ */
+const CLAUDE_MODEL_CAPABILITIES = {
+  supportsToolUse: true,
+  supportsImageOutput: false,
+} as const satisfies Pick<ModelOption, 'supportsToolUse' | 'supportsImageOutput'>;
+
+/**
  * Map an SDK-reported model to a universal ModelOption.
  *
  * Takes the full {@link SdkReportedModel} shape so every capability field the
  * SDK reports survives into the cache — both persistence paths (the warm-up
  * probe and the per-send refresh) must feed this mapper the SDK's objects
  * whole, never a re-picked subset.
+ *
+ * ## The three capability flags are DorkOS's claims, not the SDK's
+ *
+ * `ModelOption` carries `supportsToolUse` / `supportsVision` /
+ * `supportsImageOutput` as a **tri-state**: `true` and `false` are claims, and
+ * absent means "nobody checked". `ModelInfo` at the 0.3.224 pin reports exactly
+ * the nine fields {@link SdkReportedModel} mirrors (`value`, `resolvedModel`,
+ * `displayName`, `description`, `supportsEffort`, `supportedEffortLevels`,
+ * `supportsAdaptiveThinking`, `supportsFastMode`, `supportsAutoMode`) and nothing
+ * capability-shaped beyond them, so the SDK cannot answer these three — re-check that on every SDK
+ * re-pin, and read from the SDK the moment it can. Until then the choice is
+ * between a static claim and an honest absence, made per field rather than in
+ * bulk, because a wrong `true` is worse than saying nothing:
+ *
+ * - **`supportsToolUse: true`** — structural, not a guess. The Claude Agent SDK
+ *   IS a tool-calling agent loop, and `supportedModels()` lists the models it
+ *   can drive; a model that could not call a tool could not be in this list.
+ * - **`supportsImageOutput: false`** — structural. The Anthropic Messages API
+ *   answers with text and thinking. There is no image-output modality for a
+ *   Claude model to return, so this is a real `false`, not a default.
+ * - **`supportsVision: true`** — the weakest of the three, and the only one
+ *   gated rather than unconditional: it is a claim about models DorkOS has
+ *   actually verified, not about whatever id a future SDK lists. It is stamped
+ *   only when {@link inferTier} recognizes the id's family (fable/opus/sonnet/
+ *   haiku — the lines verified vision-capable); an unrecognized id gets the
+ *   honest absence, which every consumer already reads as unknown-and-capable.
+ *   Widening the vocabulary on an SDK re-pin is the deliberate act this gate
+ *   exists to force (DOR-1672 review).
+ *
+ * `contextWindow`/`maxOutputTokens` stay absent for the same reason, one step
+ * further: the SDK does not report them and DorkOS has no defensible static
+ * value either, so claude-code entries never carry them and every consumer
+ * treats that as unknown. Other runtimes populate them on ModelOption directly.
+ *
+ * Model entries persisted by an older build predate these flags and read back as
+ * absent. That needs no migration and no cache-version bump: absent is a legal
+ * tri-state value meaning unknown, every consumer already reads it that way, and
+ * the disk cache expires on its own TTL.
  */
 export function mapSdkModelToModelOption(m: SdkReportedModel): ModelOption {
   return {
+    // FIRST on purpose, so that anything read from `m` below OVERRIDES a static
+    // claim rather than being silently overwritten by it. The doc above tells the
+    // next maintainer to read from the SDK the moment it can answer, and the
+    // natural edit is a `supportsVision: m.supportsVision` line grouped with its
+    // neighbours — which, with this spread last, would be discarded while both
+    // guarding tests still passed (they assert `true`, which is what the spread
+    // supplies). Add such a read as `...(m.supportsVision !== undefined ? {
+    // supportsVision: m.supportsVision } : {})` so an SDK that reports nothing
+    // for one model leaves the claim standing instead of blanking it.
+    ...CLAUDE_MODEL_CAPABILITIES,
+    // Gated, not unconditional — see the supportsVision bullet above. `inferTier`
+    // is the vocabulary of families DorkOS has verified; an id outside it stays
+    // honestly absent.
+    ...(inferTier(m.value) !== undefined ? { supportsVision: true } : {}),
     value: m.value,
     resolvedModel: m.resolvedModel,
     displayName: m.displayName,
@@ -92,9 +156,6 @@ export function mapSdkModelToModelOption(m: SdkReportedModel): ModelOption {
     supportsAdaptiveThinking: m.supportsAdaptiveThinking,
     supportsFastMode: m.supportsFastMode,
     supportsAutoMode: m.supportsAutoMode,
-    // contextWindow/maxOutputTokens: the Claude SDK's supportedModels() does not
-    // report them, so claude-code entries never carry them. Other runtimes
-    // populate them on ModelOption directly.
     provider: 'anthropic',
     family: extractFamily(m.value),
     tier: inferTier(m.value),
@@ -168,6 +229,12 @@ export class RuntimeCache {
       const raw = readFileSync(this.cachePath, 'utf-8');
       const parsed: ModelDiskCache = JSON.parse(raw);
       if (parsed.version !== 1 || !Array.isArray(parsed.models)) return false;
+      // The rows carry DorkOS's pin-scoped capability claims, not just SDK
+      // echoes — so a cache written by a different SDK pin may serve a claim
+      // the re-pin corrected, for up to a TTL. Version-match, don't wait it
+      // out (DOR-1672 review). Rows from before the field stamp 'unknown' and
+      // fail the match, which is the honest side.
+      if (parsed.sdkVersion !== CLAUDE_SDK_VERSION) return false;
       if (this.isDiskCacheStale(parsed.fetchedAt)) return false;
       this.cachedModels = parsed.models;
       logger.debug('[RuntimeCache] loaded models from disk cache', {
@@ -189,7 +256,7 @@ export class RuntimeCache {
       const cache: ModelDiskCache = {
         models: this.cachedModels ?? [],
         fetchedAt: new Date().toISOString(),
-        sdkVersion: 'unknown',
+        sdkVersion: CLAUDE_SDK_VERSION,
         version: 1,
       };
       writeFileSync(this.cachePath, JSON.stringify(cache, null, 2), 'utf-8');

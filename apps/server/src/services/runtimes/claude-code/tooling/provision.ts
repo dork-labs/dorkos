@@ -36,6 +36,15 @@ import { logger, logError } from '../../../../lib/logger.js';
  * (`apps/server/package.json`), so the provisioned CLI and the SDK that drives
  * it can never drift. A future SDK bump updates this in lockstep (a test fails
  * red otherwise).
+ *
+ * That forced edit makes this the right place to say what else a re-pin has to
+ * re-check, because nothing else reds on its own: `mapSdkModelToModelOption`
+ * (`../messaging/runtime-cache.ts`) ASSERTS `supportsToolUse` / `supportsVision`
+ * / `supportsImageOutput` for every Claude model rather than reading them,
+ * because `ModelInfo` reports nothing capability-shaped. Re-read that TSDoc on
+ * every bump: if the new SDK reports any of them, read it instead of claiming
+ * it; if Anthropic ships a text-only model, the `supportsVision` claim is the
+ * one that goes wrong first.
  */
 export const CLAUDE_SDK_VERSION = '0.3.224';
 

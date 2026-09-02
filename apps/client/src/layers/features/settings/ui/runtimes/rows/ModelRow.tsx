@@ -8,6 +8,7 @@
  *
  * @module features/settings/ui/runtimes/rows/ModelRow
  */
+import { useId } from 'react';
 import type { ModelOption } from '@dorkos/shared/types';
 import { knownModelsFrom } from '@/layers/shared/lib';
 import {
@@ -17,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
   SettingRow,
+  UnverifiedCatalogNotice,
 } from '@/layers/shared/ui';
 
 /**
@@ -74,39 +76,52 @@ export function ModelRow({
 }: ModelRowProps) {
   const known = knownModelsFrom(models);
   const gone = value !== null && known !== undefined && !known.includes(value);
+  // With no provider connected the catalog arrives capped and every row marked
+  // unverified. The composer picker admits that (DOR-1660); this row renders the
+  // same catalog and owes the same admission (DOR-1674). An absent or empty
+  // catalog is a warming one, not an unconfirmed one — no rows, no notice.
+  const unverifiedCatalog = (models ?? []).some((m) => m.unverified);
+  // The admission must reach a screen reader too: the trigger describes itself
+  // by the notice, so a person navigating by control hears that the list is a
+  // bounded guess instead of only seeing it.
+  const noticeId = useId();
 
   return (
     <SettingRow
       label="Model"
       description={`Which ${runtimeLabel} model a new conversation starts on. Leave it on Runtime's choice to let ${runtimeLabel} decide.`}
     >
-      <Select
-        value={value ?? INHERIT}
-        disabled={disabled}
-        onValueChange={(next) => onChange(next === INHERIT ? null : next)}
-      >
-        <SelectTrigger
-          className="w-52"
-          aria-label={`Default ${runtimeLabel} model`}
-          data-testid={`runtime-model-select-${runtimeType}`}
+      <div className="w-52 space-y-1.5">
+        <Select
+          value={value ?? INHERIT}
+          disabled={disabled}
+          onValueChange={(next) => onChange(next === INHERIT ? null : next)}
         >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={INHERIT}>Runtime&apos;s choice</SelectItem>
-          {(models ?? []).map((model) => (
-            <SelectItem key={model.value} value={model.value}>
-              {model.displayName}
-            </SelectItem>
-          ))}
-          {/* Set but absent from the catalog: still an item, or the field would
+          <SelectTrigger
+            className="w-full"
+            aria-label={`Default ${runtimeLabel} model`}
+            {...(unverifiedCatalog ? { 'aria-describedby': noticeId } : {})}
+            data-testid={`runtime-model-select-${runtimeType}`}
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={INHERIT}>Runtime&apos;s choice</SelectItem>
+            {(models ?? []).map((model) => (
+              <SelectItem key={model.value} value={model.value}>
+                {model.displayName}
+              </SelectItem>
+            ))}
+            {/* Set but absent from the catalog: still an item, or the field would
               show a value the list cannot express. A catalog that has not
               answered yet gets the same item without the accusation. */}
-          {value !== null && !(models ?? []).some((m) => m.value === value) && (
-            <SelectItem value={value}>{gone ? `${value} (no longer offered)` : value}</SelectItem>
-          )}
-        </SelectContent>
-      </Select>
+            {value !== null && !(models ?? []).some((m) => m.value === value) && (
+              <SelectItem value={value}>{gone ? `${value} (no longer offered)` : value}</SelectItem>
+            )}
+          </SelectContent>
+        </Select>
+        {unverifiedCatalog && <UnverifiedCatalogNotice id={noticeId} />}
+      </div>
     </SettingRow>
   );
 }

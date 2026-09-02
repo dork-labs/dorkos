@@ -19,9 +19,10 @@ export {
   isRuntimeReady,
   selectUnsatisfiedDeps,
   selectRuntimeReadiness,
+  selectExpiringSignIn,
   REQUIREMENTS_KEY,
 } from './model/use-runtime-requirements';
-export type { RuntimeReadiness } from './model/use-runtime-requirements';
+export type { RuntimeReadiness, ExpiringSignIn } from './model/use-runtime-requirements';
 export { useProvisionRuntime } from './model/use-provision-runtime';
 export type { UseProvisionRuntime } from './model/use-provision-runtime';
 export {

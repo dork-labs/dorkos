@@ -82,6 +82,8 @@ export class ExtensionEventBridge {
   private readonly now: () => number;
 
   /**
+   * Build a bridge and connect it to a stream source immediately.
+   *
    * @param source - Stream taps (the shared `streamManager` in production).
    * @param options - Optional overrides; `now` seams the clock for tests.
    */

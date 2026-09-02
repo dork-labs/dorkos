@@ -250,6 +250,8 @@ export class RoomCollector {
   private opened = 0;
 
   /**
+   * Build a collector over one set of ceilings and one turn runner.
+   *
    * @param opts.window - The live collect ceilings, read per burst.
    * @param opts.run - Turn completed collections into turns, one turn apiece.
    *   Called with everything whose window closed at the same instant, so the

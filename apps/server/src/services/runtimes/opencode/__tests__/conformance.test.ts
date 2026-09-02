@@ -30,7 +30,13 @@
  * A key with no flag arms nothing: plenty of people leave `OPENROUTER_API_KEY`
  * exported, and having one is not the same as deciding to spend.
  *
- * FREE mode's model comes from OpenCode's own config — e.g. `ollama pull
+ * FREE mode honors an `OPENCODE_CONFIG` file too (the sidecar merges it), which is the tidiest way to
+ * pin a local model for one run without touching your own OpenCode config:
+ *
+ *     DORKOS_OPENCODE_LIVE=1 OPENCODE_CONFIG=/tmp/local.json pnpm vitest run …
+ *
+ * where `local.json` declares an `ollama` provider over `http://127.0.0.1:11434/v1` and names one of
+ * its models as `model`. Otherwise FREE mode's model comes from OpenCode's own config — e.g. `ollama pull
  * qwen2.5-coder:32b` and an `ollama` provider in `opencode.json` with that model
  * as the default — so the identical conformance assertions stream a real turn
  * from a genuinely local model with no proprietary API in the loop.
@@ -67,7 +73,8 @@
  * → ask) gates every mutation — a live run cannot write unattended. CI never
  * sets either flag: unset → fully mocked, no binary, no provider, no spend.
  */
-import { afterAll, expect, onTestFinished, vi } from 'vitest';
+import { afterAll, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -134,6 +141,7 @@ vi.mock('../providers/check-dependencies.js', async (importOriginal) => {
 });
 
 import { OpenCodeRuntime } from '../opencode-runtime.js';
+import { LocalSessionAttachmentStore } from '../../../session/attachments/local-session-attachment-store.js';
 import {
   driveDurableTurn,
   drivePresenceTurn,
@@ -141,6 +149,7 @@ import {
   driveQueueDurability,
 } from '../../../session/__tests__/durable-turn-harness.js';
 import { TurnEventQueue } from '../global-event-hub.js';
+import type { StreamEvent } from '@dorkos/shared/types';
 import type { OpenCodeWireEvent } from '../event-mapper.js';
 import type { OpenCodeClientProvider } from '../session-mapper.js';
 import {
@@ -149,6 +158,7 @@ import {
   globalEvent,
   opencodeErrorTurn,
   opencodeSimpleTurn,
+  opencodeRepublishedImageTurn,
   serverConnected,
   sessionCompacted,
   sessionIdle,
@@ -280,10 +290,23 @@ const liveManager = LIVE
   ? new (await import('../server-manager.js')).OpenCodeServerManager()
   : null;
 
+/**
+ * Where the conformance runtime keeps images, in mocked mode.
+ *
+ * Wired only when mocked, and that asymmetry is the honest one: a live sidecar
+ * talking to a local model will not deterministically produce a picture, so the
+ * LIVE runtime declares `mediaOutput: 'none'` and the suite's media block takes
+ * its not-declared arm rather than asserting something the run cannot show.
+ */
+const ATTACHMENT_HOME = LIVE
+  ? null
+  : fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-opencode-conformance-media-'));
+
 afterAll(async () => {
   if (liveManager) await liveManager.shutdown();
   if (LIVE) fs.rmSync(PROJECT_DIR, { recursive: true, force: true });
   if (liveHome) fs.rmSync(liveHome, { recursive: true, force: true });
+  if (ATTACHMENT_HOME) fs.rmSync(ATTACHMENT_HOME, { recursive: true, force: true });
 });
 
 /**
@@ -383,7 +406,11 @@ let lastClient: ReturnType<typeof makeConformanceClient> | undefined;
 
 runtimeConformance(
   // Fresh runtime per test; the provider is the only dependency (ADR-0308).
-  () => new OpenCodeRuntime({ provider: LIVE ? liveManager! : makeMockedProvider() }),
+  () =>
+    new OpenCodeRuntime({
+      provider: LIVE ? liveManager! : makeMockedProvider(),
+      ...(ATTACHMENT_HOME ? { attachments: new LocalSessionAttachmentStore(ATTACHMENT_HOME) } : {}),
+    }),
   {
     name: LIVE_MODE.paid
       ? `OpenCodeRuntime (LIVE sidecar + ${PAID_MODEL} on OpenRouter) — AgentRuntime conformance`
@@ -409,6 +436,33 @@ runtimeConformance(
     // safe in LIVE mode too. OpenCode declares neither steer nor stage, so it
     // wires NO dispositionTurn: its C1 is the not-declared arm.
     terminalOnce: () => driveTerminalOnce(PROJECT_DIR),
+    // The media gate. Owns its own runtime because a media turn needs a
+    // differently-scripted sidecar than the default `opencodeSimpleTurn`: a
+    // tool that hands back a screenshot (the path OpenCode populates TODAY via
+    // `ToolStateCompleted.attachments`, and read nothing of before this change)
+    // plus a generated image published TWICE, so the suite's one-picture-one-
+    // announcement assertion is actually exercised rather than passing because
+    // nothing republished. Wired only when an attachment store is, which is what
+    // keeps the declaration and the proof in step.
+    ...(ATTACHMENT_HOME
+      ? {
+          mediaTurn: async () => {
+            const runtime = new OpenCodeRuntime({
+              provider: makeMockedProvider(opencodeRepublishedImageTurn(OC_SESSION_A)),
+              attachments: new LocalSessionAttachmentStore(ATTACHMENT_HOME),
+            });
+            const sessionId = randomUUID();
+            runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: PROJECT_DIR });
+            const events = [];
+            for await (const event of runtime.sendMessage(sessionId, 'take a screenshot', {
+              cwd: PROJECT_DIR,
+            })) {
+              events.push(event);
+            }
+            return events;
+          },
+        }
+      : {}),
     queueDurability: () => driveQueueDurability(),
     // BC-16: the sidecar's session list reports only created/updated times, and
     // ADR-0308 forbids reading its store directly, so the person's last message
@@ -519,3 +573,64 @@ runtimeConformance(
         }),
   }
 );
+
+/**
+ * Compaction, against a REAL sidecar (DOR-1668).
+ *
+ * `POST /session/{id}/summarize` requires a `{providerID, modelID}` body, but
+ * `@opencode-ai/sdk` types every payload as `body?:` — so DorkOS shipped
+ * `session.summarize({ path })` with no body, the mocked run stayed green, and
+ * every real `/compact` answered
+ * `{"name":"BadRequest","data":{"message":"Expected object, got undefined","kind":"Payload"}}`.
+ * No mock can catch that class of bug: a mock accepts whatever it is handed.
+ *
+ * The shared `command intents (DOR-109)` gate already drives `compact` in both
+ * modes, but it settles for "a terminal event arrived". This case exists to say
+ * the requirement out loud and to make a live run fail LOUDLY on it: the trigger
+ * throws inside `runOpenCodeTurn`, so a rejected body rejects this generator —
+ * the assertions below are only reached when the sidecar accepted the payload.
+ *
+ * It runs a real turn first, deliberately. That gives the session a model to
+ * compact ON (the second rung of {@link resolveCompactionModel}, and the same
+ * rung OpenCode's own automatic compaction uses) and something to compact.
+ */
+describe.skipIf(!LIVE)('OpenCode compaction against a live sidecar (DOR-1668)', () => {
+  it('the sidecar ACCEPTS the summarize body — unprovable in the mocked run', async () => {
+    const runtime = new OpenCodeRuntime({ provider: liveManager! });
+    const sessionId = '5c1d0b9a-7e42-4f31-9c8b-1668000000ab';
+    runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: PROJECT_DIR });
+
+    for await (const _event of runtime.sendMessage(sessionId, CONFORMANCE_PROMPT, {
+      cwd: PROJECT_DIR,
+    })) {
+      // Drained: this turn only exists to give compaction a conversation.
+    }
+
+    const events: StreamEvent[] = [];
+    for await (const event of runtime.executeCommandIntent(sessionId, 'compact', {
+      cwd: PROJECT_DIR,
+    })) {
+      events.push(event);
+    }
+
+    // Reaching here at all is the first finding: a rejected payload would have
+    // thrown out of the loop above with the sidecar's own message attached.
+    const failures = events.filter((event) => event.type === 'error');
+    expect(failures, 'the sidecar reported the compaction turn as failed').toEqual([]);
+    expect(
+      events.filter((event) => event.type === 'done'),
+      'a compaction must terminate exactly once, like any other turn'
+    ).toHaveLength(1);
+    // And the second: what the OPERATOR sees. A `/compact` that the sidecar
+    // accepted but that surfaced no boundary would look, in the app, like
+    // nothing happened. Safe to demand: OpenCode publishes `session.compacted`
+    // on every compaction whose assistant message did not error, and the
+    // assertion above has already excluded that branch. Nothing else in the
+    // suite proves this live — the shared DOR-109 gate settles for
+    // `compact_boundary` OR a terminal, so a terminal alone satisfies it.
+    expect(
+      events.filter((event) => event.type === 'compact_boundary'),
+      'a real compaction must surface exactly one boundary the operator can see'
+    ).toHaveLength(1);
+  });
+});

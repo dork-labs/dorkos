@@ -291,6 +291,21 @@ export interface DependencyCheck {
   installHint?: string;
   /** URL for more information. */
   infoUrl?: string;
+  /**
+   * When the sign-in behind this check runs out and a person has to renew it by
+   * hand, as an ISO-8601 instant.
+   *
+   * Present only when a runtime can read a REAL deadline off its own credential
+   * store, and only for a credential that actually has one — an API key never
+   * expires on a schedule, so it carries nothing here. Absent therefore means
+   * "no deadline is known", which is not the same as "nothing expires soon":
+   * consumers must treat absence exactly like a distant deadline and say
+   * nothing, or they will warn every user whose credential they cannot read.
+   *
+   * A deadline can be present on a `satisfied` check (the sign-in still works,
+   * and this is how long for) and on a `missing` one (it ran out at this time).
+   */
+  expiresAt?: string;
 }
 
 /**
@@ -647,11 +662,38 @@ export interface RuntimeCapabilities {
   logBackedHistory?: boolean;
 
   /**
+   * What this runtime does with media its model or its tools produce.
+   *
+   * Required — compile-time forcing, per the `commandIntents` precedent above —
+   * because the failure this replaces was SILENT. Every runtime dropped
+   * generated images on the floor and none of them said so, so all three looked
+   * identical from the outside and a person who asked for a picture got a turn
+   * that finished, cost money, and showed nothing (DOR-1663, ADR 260901-135657). A
+   * declaration is
+   * what turns that into something the conformance suite can hold a runtime to.
+   *
+   * - `'none'` — media a turn produces is not carried. Honest, and correct for
+   *   an adapter that has not been taught the seam yet.
+   * - `'attachments'` — media is stored through a `SessionAttachmentStore` and
+   *   announced as an `image_attachment` event referencing the stored bytes.
+   *
+   * The declaration is per INSTANCE, not per class: an adapter wired without an
+   * attachment store cannot carry media and must say `'none'`.
+   */
+  mediaOutput: RuntimeMediaOutput;
+
+  /**
    * Runtime-specific extension point for metadata that does not fit the
    * common shape. Consumers must validate what they read — see ADR 0256.
    */
   features: Record<string, unknown>;
 }
+
+/**
+ * What a runtime does with an image its model or its tools produce. See
+ * {@link RuntimeCapabilities.mediaOutput}.
+ */
+export type RuntimeMediaOutput = 'none' | 'attachments';
 
 /**
  * How warm a session's backing process is, for a runtime that keeps one alive

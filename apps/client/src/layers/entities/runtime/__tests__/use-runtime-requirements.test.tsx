@@ -13,6 +13,7 @@ import {
   isRuntimeReady,
   selectUnsatisfiedDeps,
   selectRuntimeReadiness,
+  selectExpiringSignIn,
 } from '../model/use-runtime-requirements';
 
 function createWrapper(transport: Transport) {
@@ -103,6 +104,112 @@ describe('selectUnsatisfiedDeps', () => {
     expect(selectUnsatisfiedDeps(mixedRequirements, 'claude-code')).toEqual([]);
     expect(selectUnsatisfiedDeps(mixedRequirements, 'nope')).toEqual([]);
     expect(selectUnsatisfiedDeps(undefined, 'codex')).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// selectExpiringSignIn — the quiet warning before a sign-in runs out
+// ---------------------------------------------------------------------------
+describe('selectExpiringSignIn', () => {
+  const NOW = Date.parse('2026-09-01T13:00:00.000Z');
+
+  /** Requirements whose Claude auth check reports a deadline at `expiresAt`. */
+  function withDeadline(
+    expiresAt: string,
+    status: 'satisfied' | 'missing' = 'satisfied'
+  ): SystemRequirements {
+    return {
+      runtimes: {
+        'claude-code': {
+          dependencies: [
+            { name: 'Claude Code CLI', description: 'Powers agent sessions.', status: 'satisfied' },
+            {
+              name: 'Claude Code authentication',
+              description: 'Signed in to Claude.',
+              status,
+              expiresAt,
+            },
+          ],
+        },
+      },
+    };
+  }
+
+  it('speaks up once the deadline is inside the warning window', () => {
+    const expiry = selectExpiringSignIn(
+      withDeadline('2026-09-03T13:00:00.000Z'),
+      'claude-code',
+      NOW
+    );
+    expect(expiry).toEqual({ expiresAt: '2026-09-03T13:00:00.000Z', timeLeft: '2 days' });
+  });
+
+  it('stays quiet while the deadline is further out than the window', () => {
+    // Measured shape of a healthy sign-in: ~19 days of runway. Warning here would
+    // leave the line on screen for most of a sign-in's life.
+    expect(
+      selectExpiringSignIn(withDeadline('2026-09-20T04:51:04.000Z'), 'claude-code', NOW)
+    ).toBeNull();
+  });
+
+  it('counts down in the coarsest unit a person would use', () => {
+    const hours = selectExpiringSignIn(
+      withDeadline('2026-09-01T18:00:00.000Z'),
+      'claude-code',
+      NOW
+    );
+    expect(hours?.timeLeft).toBe('5 hours');
+
+    const oneHour = selectExpiringSignIn(
+      withDeadline('2026-09-01T14:00:00.000Z'),
+      'claude-code',
+      NOW
+    );
+    expect(oneHour?.timeLeft).toBe('1 hour');
+
+    const minutes = selectExpiringSignIn(
+      withDeadline('2026-09-01T13:20:00.000Z'),
+      'claude-code',
+      NOW
+    );
+    expect(minutes?.timeLeft).toBe('under an hour');
+
+    const oneDay = selectExpiringSignIn(
+      withDeadline('2026-09-02T14:00:00.000Z'),
+      'claude-code',
+      NOW
+    );
+    expect(oneDay?.timeLeft).toBe('1 day');
+  });
+
+  it('speaks up LOUDEST in the last stretch: deadline passed, sign-in still working', () => {
+    // The renewal window has closed but the token in hand still works, so the
+    // server honestly reports `satisfied`. This is the few hours before the hard
+    // failure — the exact window the warning exists for, and the card would
+    // otherwise read a plain "Ready" right through it.
+    expect(
+      selectExpiringSignIn(withDeadline('2026-08-31T20:51:43.000Z'), 'claude-code', NOW)
+    ).toEqual({ expiresAt: '2026-08-31T20:51:43.000Z', timeLeft: null });
+  });
+
+  it('stays quiet once the check itself is failing — Connect says that better', () => {
+    // A sign-in fully out of road is reported `missing`, so the card already
+    // offers Connect. A countdown beside it would say the same thing twice.
+    expect(
+      selectExpiringSignIn(withDeadline('2026-08-31T20:51:43.000Z', 'missing'), 'claude-code', NOW)
+    ).toBeNull();
+  });
+
+  it('stays quiet when no deadline is reported at all', () => {
+    // Most credentials have none — an API key never expires on a schedule — and
+    // absence must never read as a problem.
+    expect(selectExpiringSignIn(mixedRequirements, 'claude-code', NOW)).toBeNull();
+    expect(selectExpiringSignIn(undefined, 'claude-code', NOW)).toBeNull();
+    expect(selectExpiringSignIn(mixedRequirements, 'nope', NOW)).toBeNull();
+  });
+
+  it('stays quiet on a deadline it cannot read as a date', () => {
+    expect(selectExpiringSignIn(withDeadline('whenever'), 'claude-code', NOW)).toBeNull();
   });
 });
 

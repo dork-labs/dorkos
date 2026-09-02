@@ -111,6 +111,47 @@ describe('ServerTab', () => {
     expect(screen.getByText('1m 30s')).toBeInTheDocument();
   });
 
+  it('keeps a truncated path reading left-to-right inside its rtl span (DOR-1686)', async () => {
+    // The row clips paths at the FRONT — the leaf is what tells two projects
+    // apart — and `dir="rtl"` is how the browser is asked to put the ellipsis
+    // there. The cost is that a neutral character at either edge is claimed by
+    // that rtl paragraph and painted at the opposite end. The fixture below is
+    // the reachable case: measured in Chromium, `/Users/kai/code/agent (v2)`
+    // painted as `Users/kai/code/agent (v2)/`. Note the `)` did NOT move — a
+    // matched bracket pair is exempt under UBA rule N0 — so it is the LEADING
+    // `/` that is the defect here. A trailing `.` or `-`, or an UNPAIRED `)`,
+    // moves too. A `bdi` isolates the value from all of it.
+    //
+    // **jsdom does no bidi layout, so this cannot prove the pixels.** What it
+    // pins is the structure the browser needs: the rtl span with its front
+    // ellipsis is still there, and the whole value sits inside an explicitly
+    // ltr `bdi`. Only a browser can show the glyph order.
+    const path = '/Users/kai/code/agent (v2)';
+    renderWithConfig(
+      vi.fn().mockResolvedValue({
+        version: '1.2.3',
+        isDevMode: false,
+        port: PORT,
+        uptime: 90,
+        workingDirectory: path,
+        dorkHome: '/Users/kai/.dork',
+        boundary: '/Users/kai',
+        nodeVersion: 'v22.0.0',
+      })
+    );
+
+    const isolated = await screen.findByText(path);
+    expect(isolated.tagName).toBe('BDI');
+    expect(isolated).toHaveAttribute('dir', 'ltr');
+    // Whole value inside the isolate, not just part of it — a `bdi` around
+    // half the string would reorder the other half.
+    expect(isolated.textContent).toBe(path);
+    expect(isolated.parentElement).toHaveAttribute('dir', 'rtl');
+    // `truncate` is half the mechanism: without it the rtl box never clips, and
+    // the front ellipsis this row exists for is gone while `dir` still passes.
+    expect(isolated.parentElement).toHaveClass('truncate');
+  });
+
   it('says the server is unreachable instead of going blank', async () => {
     // This tab is now the only place to find your address, so someone whose
     // server is mid-restart after a crash opens it exactly when it has nothing

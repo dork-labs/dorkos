@@ -415,6 +415,8 @@ So `services/runtimes/test-mode/held-process.ts` is bookkeeping, not a second pu
 
 The opt-in is per SESSION (`POST /api/test/persistent { sessionId, enabled }`), because the test-mode server is shared by four concurrent Playwright projects and a process-wide switch would warm a neighbour's chats. `GET /api/test/persistent` reads warmth and the two per-session answers off the runtime itself — there is no product API for warmth, which is exactly why a browser needs this one. The `warm-echo` scenario names in its own answer which path served the turn (`HELD-PROCESS-TURN-2` versus `NO-HELD-PROCESS`) and where staged words came from (`staged-native:` versus `staged-folded:`), so a spec that quietly ran on the other path goes red instead of passing. `apps/e2e/tests/chat/held-process.ts` is the consumer.
 
+**`mediaOutput` is required, and `'none'` is a real answer.** Say what happens to an image your model or your tools produce: `'attachments'` when you store it through a `SessionAttachmentStore` and emit an `image_attachment` event referencing the stored bytes, `'none'` when you do not carry it. Declare it from what your adapter DOES, not from what its backend could do — claude-code and codex both meet media today (a `Read` of a PNG, an MCP tool returning an image) and both discard it, so both declare `'none'` and the conformance suite reports them as a named gap rather than a silent pass. Declaring `'attachments'` obliges you to wire the `mediaTurn` opt: a turn that really produces an image, drained through your real adapter, so the suite can check the picture is announced by URL and never inlined as bytes. That last rule is the load-bearing one — the session stream is replayed whole on every reconnect, and its replay buffers hold a bounded window (capped in both events and bytes), so an inlined image is re-sent forever and spends on itself the window the turn's own words needed (ADR 260901-135657). Never put base64 in a part or an event; put it behind the store and carry the URL the store answered.
+
 A runtime that declares `logBackedHistory: true` must also pass the `durableHistory` opt — wire it to `driveDurableTurn` (`apps/server/src/services/session/__tests__/durable-turn-harness.ts`), which runs one real turn through the projector → durable store path, drops the projector (the restart analog), and asserts history reconstructs from the store (DOR-189). All three log-backed suites show the wiring.
 
 ### Disposition honesty and cwd resolution (C1, C2, C3, C6, C7, C9, C10)
@@ -463,6 +465,18 @@ path and sidecar port, and `configManager` is undefined until something calls
 `initConfigManager` — so the live branch writes a THROWAWAY `DORK_HOME` with just
 the section it needs and points the manager at that. Reading the real `~/.dork`
 would be a test that can write to a person's settings.
+
+**And there is a class of bug ONLY the live smoke can catch: a request field the
+SDK types as optional and the server requires.** Generated SDK clients (hey-api,
+which is what `@opencode-ai/sdk` uses) mark every request payload `body?:`
+whether or not the endpoint needs one, so the compiler cannot tell a genuinely
+optional body from a required one — and neither can a mocked client, which
+accepts whatever it is handed. DorkOS shipped exactly that: `/compact` was broken
+on every OpenCode session for as long as it existed, with a fully green suite,
+because `session.summarize` was called with no body (DOR-1668; the audit of every
+call is `services/runtimes/opencode/NOTES.md` §9). **A `body?:` in generated
+types proves nothing.** Check the server's own contract, and put anything you
+cannot check that way through the live arm.
 
 ### 5. Add the ESLint SDK-confinement boundary (Hard Rule #2)
 
