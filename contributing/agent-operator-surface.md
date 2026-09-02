@@ -171,6 +171,14 @@ Three things follow, and each is load-bearing rather than incidental:
 
 Do not read this as a general licence. Adding a second such group is a decision about a boundary, not a toggle: read ADR `260726-171347` on why the four keys beside it deliberately shape documentation only, and ADR-0070 on what happens when a switch appears to be a boundary and is not.
 
+#### The tier ceiling is the same doctrine keyed on a DIRECTION (DOR-486)
+
+`tierCeiling` on `.dork/agent.json` is the cap the tier gate compares every capability against, and it is settable: the cockpit's agent Tools tab and `dorkos agent update --ceiling <observe|act|destructive>` both write it, and `resolveAgentTokenEnv` reads it off the manifest so every token a spawn mints carries it. Absent means `destructive`, so no agent that predates the field loses anything.
+
+The guard it needs is not "who may name this field" but "which way may this field move". `updateAgentManifest` — the agent-reachable path again — accepts a LOWERING and refuses anything that widens, `null` included, with `OPERATOR_ONLY`. An agent narrowing itself is giving something up, which is safe and occasionally exactly right; an agent widening itself is handing back what a person took away, which is the config-write-policy rule verbatim (_a field is operator-only when changing it alone widens a security control_). The operator's `PATCH /api/mesh/agents/:id` sets any rung and does not come through there, which is why the cockpit's ceiling control and the CLI flag both use it.
+
+Two properties are worth stating because they are easy to lose. The manifest FILE is the only place the ceiling is read from — the SQLite `agents` cache has no column for it, exactly as it has none for `enabledToolGroups` — and an unreadable manifest falls back to the agent's last recorded ceiling rather than to the default, because a limit you can delete your way out of is not a limit.
+
 ### The REST doors, and the one way past the gate
 
 Two routes reach a guarded effect without going through a capability, and both shipped ungated:

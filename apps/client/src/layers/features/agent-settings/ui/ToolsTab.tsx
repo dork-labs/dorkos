@@ -6,6 +6,11 @@ import {
   Button,
   FieldCard,
   FieldCardContent,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   SettingRow,
   Switch,
   Tooltip,
@@ -13,6 +18,7 @@ import {
   TooltipTrigger,
 } from '@/layers/shared/ui';
 import type { AgentManifest, EnabledToolGroups } from '@dorkos/shared/mesh-schemas';
+import { DEFAULT_AGENT_TIER_CEILING, type CapabilityTier } from '@dorkos/shared/capabilities';
 import { toolNamesForDomain, type ToolDomainKey } from '@dorkos/shared/mcp-tool-groups';
 import { useRelayEnabled } from '@/layers/entities/relay';
 import { useTasksEnabled } from '@/layers/entities/tasks';
@@ -254,6 +260,77 @@ function ManageRoomsCard({
 }
 
 /**
+ * The outermost fence around an agent: the most it may ever do (DOR-486).
+ *
+ * Not a tool group and not a grant — a CAP. Every capability DorkOS exposes
+ * carries a rung, and a capability above this one is refused outright, with the
+ * refusal saying plainly that nobody can approve it. That is the difference
+ * worth showing: the switch below can be answered by a person saying yes, and
+ * this cannot.
+ *
+ * **Written through the operator's route, never the agent self-edit route**, for
+ * the same reason the grant below it is: the self-edit route refuses any change
+ * that WIDENS a ceiling, whoever sends it, so an agent cannot hand itself back
+ * what a person took away. Lowering is the one direction an agent may take on
+ * its own. The cockpit is the person, so it uses `PATCH /api/mesh/agents/:id`
+ * and can set any rung.
+ *
+ * The two invalidations are the ones `ManageRoomsCard` explains: this card's
+ * `agent` comes from `useCurrentAgent`, which the mesh mutation knows nothing
+ * about, so without them the select would snap back after a successful save.
+ */
+function TierCeilingCard({ agent }: { agent: AgentManifest }) {
+  const updateAgent = useUpdateMeshAgent();
+  const queryClient = useQueryClient();
+  const ceiling = agent.tierCeiling ?? DEFAULT_AGENT_TIER_CEILING;
+
+  const onChange = useCallback(
+    (value: string) => {
+      updateAgent.mutate(
+        { id: agent.id, updates: { tierCeiling: value as CapabilityTier } },
+        {
+          onSettled: () => {
+            void queryClient.invalidateQueries({ queryKey: agentKeys.all });
+            void queryClient.invalidateQueries({ queryKey: TEAM_ROSTER_KEY });
+          },
+        }
+      );
+    },
+    [agent.id, queryClient, updateAgent]
+  );
+
+  return (
+    <FieldCard>
+      <FieldCardContent className="space-y-3">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <span className="text-sm font-medium">The most this agent can ever do</span>
+            <p className="text-muted-foreground text-sm">
+              Anything past this line is refused, and no approval can unlock it. Use it when you
+              want an agent that reads your work but can never take anything away.
+            </p>
+          </div>
+          <Select value={ceiling} onValueChange={onChange} disabled={updateAgent.isPending}>
+            <SelectTrigger className="w-56" aria-label="The most this agent can ever do">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="observe">Read only</SelectItem>
+              <SelectItem value="act">Change things, never delete</SelectItem>
+              <SelectItem value="destructive">No extra limit</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <p className="text-muted-foreground text-sm">
+          Every agent starts with no extra limit, so nothing you already run changes until you set
+          one here. An agent can tighten its own limit; only you can loosen it.
+        </p>
+      </FieldCardContent>
+    </FieldCard>
+  );
+}
+
+/**
  * Tools tab for agent configuration: per-agent tool group overrides and
  * MCP server overview.
  */
@@ -382,9 +459,12 @@ export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
         </FieldCard>
       )}
 
-      {/* Outside the runtime branch above, deliberately: this grant is enforced
-          for every runtime, including the ones that cannot take DorkOS tools
-          in-session and reach them over the external MCP server instead. */}
+      {/* Outside the runtime branch above, deliberately: the cap and the grant
+          are enforced for every runtime, including the ones that cannot take
+          DorkOS tools in-session and reach them over the external MCP server
+          instead. */}
+      <TierCeilingCard agent={agent} />
+
       <ManageRoomsCard agent={agent} supportsDorkTools={supportsDorkTools} />
 
       <AgentMcpServers agent={agent} projectPath={projectPath} />

@@ -139,7 +139,11 @@
  *
  * @module services/core/capabilities/tier-enforcement
  */
-import type { CapabilityTier } from '@dorkos/shared/capabilities';
+import {
+  CAPABILITY_CEILING_PHRASE,
+  CAPABILITY_TIER_RANK,
+  type CapabilityTier,
+} from '@dorkos/shared/capabilities';
 
 import { isTrustedCaller } from './trusted-caller.js';
 // Type-only, so the value-level dependency stays one-directional: `registry.ts`
@@ -544,8 +548,14 @@ export function resetCapabilityTierGate(): void {
   gate = undefined;
 }
 
-/** Tier ordering, so a ceiling can be compared against a capability's tier. */
-const TIER_RANK: Record<CapabilityTier, number> = { observe: 0, act: 1, destructive: 2 };
+/**
+ * Tier ordering, so a ceiling can be compared against a capability's tier.
+ *
+ * Shared with the guard that decides whether a change to a per-agent ceiling
+ * widens it (`operator/agent-updater.ts`), because two tables that disagree
+ * would mean an agent could set a fence this module then reads differently.
+ */
+const TIER_RANK = CAPABILITY_TIER_RANK;
 
 /** How a capability's own tier reads in a message written for a model or a person. */
 const TIER_PHRASE: Record<CapabilityTier, string> = {
@@ -555,11 +565,7 @@ const TIER_PHRASE: Record<CapabilityTier, string> = {
 };
 
 /** How a tier reads as a LIMIT on an agent, which is a different sentence. */
-const CEILING_PHRASE: Record<CapabilityTier, string> = {
-  observe: 'reading only',
-  act: 'changes that can be undone',
-  destructive: 'anything',
-};
+const CEILING_PHRASE = CAPABILITY_CEILING_PHRASE;
 
 /**
  * The plain sentence a person reads on the approval card.
