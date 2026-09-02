@@ -18,7 +18,7 @@ import { CODEX_UI_MCP_SERVER } from './codex-ui-mcp-server.js';
 import { DORKOS_MCP_SERVER_NAME } from '../shared/dorkos-tool-names.js';
 import { type DorkosMcpInjection } from '../shared/dorkos-mcp-injection.js';
 import { dorkosHeaderEnv, dorkosHeaderEnvNames } from './dorkos-header-env.js';
-import { type CodexMcpServerRecord } from './mcp-server-config.js';
+import { type CodexManagedMcpServers, type CodexMcpServerRecord } from './mcp-server-config.js';
 
 /**
  * Build the {@link CodexOptions} for the SDK `Codex` client.
@@ -34,21 +34,23 @@ import { type CodexMcpServerRecord } from './mcp-server-config.js';
  * {@link buildMcpServersConfig} for the merge and the shadowing guarantee.
  * `config` is omitted entirely when no source contributes a server.
  *
- * `CodexOptions.env` has two sources, and both are secrets that must not travel
- * any other way: `extraEnv` (the agent's `DORKOS_AGENT_TOKEN`) and the `dorkos`
- * server's two header values, which are placed under the variable names
- * `env_http_headers` points Codex at. Setting `env` at all stops the SDK
+ * `CodexOptions.env` has three sources, and every one of them is a secret that
+ * must not travel any other way: `extraEnv` (the agent's `DORKOS_AGENT_TOKEN`),
+ * the `dorkos` server's two header values, and every HTTP header the agent's own
+ * managed servers carry (DOR-993) — all placed under the variable names their
+ * `env_http_headers` entries point Codex at. Setting `env` at all stops the SDK
  * inheriting `process.env` wholesale, so this function spreads the parent
  * environment back in explicitly (see {@link inheritedEnv}) before layering
- * those on top. With neither source, `env` stays unset — the SDK's own
+ * those on top. With no source at all, `env` stays unset — the SDK's own
  * inherit-everything path.
  *
  * @param binaryPath - Absolute path to the `codex` binary, or null/undefined
  * @param mcpUiUrl - Loopback URL of the scoped `dorkos_ui` MCP server, or undefined
  * @param extraEnv - Extra environment entries for the `codex exec` subprocess
  *   (the agent's identity token). Omitted or empty contributes none.
- * @param managedServers - The agent's enabled managed MCP servers, already
- *   converted to Codex config shape. Omitted or empty adds none.
+ * @param managed - The agent's enabled managed MCP servers, already converted to
+ *   Codex config shape: `servers` goes into `config`, `env` into the subprocess
+ *   environment. Omitted or empty adds none.
  * @param dorkosTools - The resolved `dorkos` tool server, or null/undefined to
  *   inject none. Its URL goes into `config`; its header VALUES go into `env`,
  *   never into `config`, because `config` becomes visible argv.
@@ -57,12 +59,16 @@ export function buildCodexOptions(
   binaryPath?: string | null,
   mcpUiUrl?: string,
   extraEnv?: Record<string, string>,
-  managedServers?: CodexMcpServerRecord,
+  managed?: CodexManagedMcpServers,
   dorkosTools?: DorkosMcpInjection | null
 ): CodexOptions {
-  const env = { ...(extraEnv ?? {}), ...dorkosHeaderEnv(dorkosTools) };
+  const env = {
+    ...(extraEnv ?? {}),
+    ...(managed?.env ?? {}),
+    ...dorkosHeaderEnv(dorkosTools),
+  };
   const hasExtraEnv = Object.keys(env).length > 0;
-  const mcpServers = buildMcpServersConfig(mcpUiUrl, managedServers, dorkosTools);
+  const mcpServers = buildMcpServersConfig(mcpUiUrl, managed?.servers, dorkosTools);
   return {
     ...(binaryPath ? { codexPathOverride: binaryPath } : {}),
     ...(mcpServers ? { config: { mcp_servers: mcpServers } } : {}),
@@ -80,9 +86,10 @@ export function buildCodexOptions(
  * adapter's `mergeSessionMcpServers` gives, and defense in depth on top of the
  * converter already dropping (and now reporting) the reserved names.
  *
- * The `dorkos` entry is streamable HTTP with `http_headers`, which is the only
- * transport that can carry the bearer and the agent identity — see
- * {@link resolveDorkosMcpInjection} for why both are mandatory. Codex's MCP
+ * The `dorkos` entry is streamable HTTP carrying the bearer and the agent
+ * identity — see {@link resolveDorkosMcpInjection} for why both are mandatory —
+ * and it names them by environment variable rather than value, the same rule the
+ * managed-server converter now follows for every header it maps. Codex's MCP
  * client sends no `Origin`, so it clears `validateMcpOrigin` through the
  * non-browser early return, exactly as `dorkos_ui` already does.
  *
