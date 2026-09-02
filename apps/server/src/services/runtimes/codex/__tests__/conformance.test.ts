@@ -23,13 +23,19 @@
  * Turns run in the 'default' permission mode → read-only sandbox, so a live
  * run cannot write outside its temp cwd.
  */
-import { afterAll, expect, vi } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { runtimeConformance } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { makeMockThread, codexFailedTurn, codexSimpleTurn } from './codex-scenarios.js';
+import {
+  makeMockThread,
+  codexFailedTurn,
+  codexMcpImageTurn,
+  codexSimpleTurn,
+} from './codex-scenarios.js';
 import {
   driveDurableTurn,
   drivePresenceTurn,
@@ -68,8 +74,26 @@ const sdkPrompts = vi.hoisted(() => [] as string[]);
  */
 const threadMints = vi.hoisted(() => [] as Array<'start' | 'resume'>);
 
-/** Default success turn, or (one-shot) the scripted failed turn. */
+/**
+ * One-shot selector for the media gate: when set, the next minted thread streams
+ * a turn whose MCP tool answers with a picture, then the flag self-clears.
+ *
+ * The same shape as {@link failNextThread}, and for the same reason — the
+ * adapter mints exactly one thread per turn, so a one-shot flag is how a driver
+ * scripts THAT turn without disturbing every other case.
+ */
+const imageNextThread = vi.hoisted(() => ({ value: false }));
+
+/** Default success turn, or (one-shot) a scripted failed or image-bearing turn. */
 function mintTurnEvents() {
+  if (imageNextThread.value) {
+    imageNextThread.value = false;
+    // The terminal `item.completed` REPUBLISHED, on purpose. The gate's second
+    // half — one picture, one announcement — only bites when the driver
+    // actually publishes the same image twice; script it once and the case
+    // passes for a reason unrelated to the property it is named after.
+    return codexMcpImageTurn(2);
+  }
   if (!failNextThread.value) return codexSimpleTurn('pong');
   failNextThread.value = false;
   return codexFailedTurn('Simulated Codex turn failure');
@@ -140,6 +164,7 @@ vi.mock('../check-dependencies.js', async (importOriginal) => {
 
 import { CodexRuntime } from '../codex-runtime.js';
 import { CodexThreadMap } from '../thread-map.js';
+import { LocalSessionAttachmentStore } from '../../../session/attachments/local-session-attachment-store.js';
 
 // A real `codex exec` turn needs an EXISTING working directory; mocked turns
 // never touch the filesystem, so the fixed fake path keeps them hermetic.
@@ -153,8 +178,55 @@ if (LIVE) {
   vi.setConfig({ testTimeout: 180_000, hookTimeout: 180_000 });
 }
 
+/**
+ * Where the conformance runtime keeps images, in mocked mode.
+ *
+ * Wired only when mocked, and that asymmetry is the honest one: a live `codex`
+ * binary has no MCP server configured to answer with a picture, so the LIVE
+ * runtime declares `mediaOutput: 'none'` and the suite's media block takes its
+ * not-declared arm rather than asserting something the run cannot show.
+ *
+ * A real store over a temp directory rather than a double: the gate's whole
+ * claim is that the URL it announces is LIVE on arrival, and only a store that
+ * actually wrote bytes can support that.
+ */
+const ATTACHMENT_HOME = LIVE
+  ? null
+  : fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-codex-conformance-media-'));
+
 afterAll(() => {
   if (LIVE) fs.rmSync(projectDir, { recursive: true, force: true });
+  if (ATTACHMENT_HOME) fs.rmSync(ATTACHMENT_HOME, { recursive: true, force: true });
+});
+
+// The half of the media declaration the conformance suite structurally cannot
+// reach: it builds ONE runtime, and in mocked mode always builds it WITH a
+// store. `mediaOutput` is the promise "an image your tools return is kept", and
+// a runtime wired without somewhere to keep one must not make it. Without this,
+// deleting the `if (!this.attachments)` guard so the adapter always claims
+// 'attachments' passes everything.
+describe('what codex says it does with media', () => {
+  it('promises nothing when it was wired nowhere to put a picture', () => {
+    const runtime = new CodexRuntime({
+      threadMap: new CodexThreadMap(createTestDb()),
+      resolveBinary: async () => '/bin/codex',
+    });
+    expect(runtime.getCapabilities().mediaOutput).toBe('none');
+  });
+
+  it('promises attachments once the composition root hands it a store', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-codex-media-decl-'));
+    try {
+      const runtime = new CodexRuntime({
+        threadMap: new CodexThreadMap(createTestDb()),
+        resolveBinary: async () => '/bin/codex',
+        attachments: new LocalSessionAttachmentStore(home),
+      });
+      expect(runtime.getCapabilities().mediaOutput).toBe('attachments');
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
 });
 
 runtimeConformance(
@@ -166,6 +238,7 @@ runtimeConformance(
       // LIVE runs resolve the real binary through the shared ladder (the
       // default); mocked runs never spawn anything, so any path will do.
       ...(LIVE ? {} : { resolveBinary: async () => '/bin/codex' }),
+      ...(ATTACHMENT_HOME ? { attachments: new LocalSessionAttachmentStore(ATTACHMENT_HOME) } : {}),
     }),
   {
     name: LIVE
@@ -191,6 +264,30 @@ runtimeConformance(
     // half is skipped by name.
     terminalOnce: () => driveTerminalOnce(projectDir),
     queueDurability: () => driveQueueDurability(),
+    // The media gate. Codex has NO generated-image path — `ThreadItem` carries
+    // no image output item at all — so an MCP tool result is the only thing
+    // there is to script, and it is what the adapter now reads.
+    ...(ATTACHMENT_HOME
+      ? {
+          mediaTurn: async () => {
+            imageNextThread.value = true;
+            const runtime = new CodexRuntime({
+              threadMap: new CodexThreadMap(createTestDb()),
+              resolveBinary: async () => '/bin/codex',
+              attachments: new LocalSessionAttachmentStore(ATTACHMENT_HOME),
+            });
+            const sessionId = randomUUID();
+            runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: projectDir });
+            const events = [];
+            for await (const event of runtime.sendMessage(sessionId, 'take a screenshot', {
+              cwd: projectDir,
+            })) {
+              events.push(event);
+            }
+            return events;
+          },
+        }
+      : {}),
     // BC-16: the Codex SDK exposes no thread read or listing API, so everything
     // a codex session knows about itself is what DorkOS wrote down. Its
     // in-memory registry does see each delivered message — but `recordMessage`

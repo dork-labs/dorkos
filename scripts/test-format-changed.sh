@@ -25,7 +25,7 @@
 # `Stop` hook, exit 2 blocks the turn from ending and any other non-zero shows
 # the operator an error. This is a cosmetic pass backstopped twice downstream
 # (lefthook pre-commit `prettier --write` with `stage_fixed: true`, and CI
-# `prettier --check .` inside the required `typecheck` workflow), so failing
+# `prettier --check .` inside the required `lint` workflow), so failing
 # loudly is strictly worse than not running at all.
 #
 #   bash scripts/test-format-changed.sh
