@@ -209,6 +209,7 @@ export class EndpointRegistry {
     // default to ~/.dork). `wx` fails when the file exists, so exactly one caller
     // claims and every other one is told whose it is.
     const claimed = owner !== undefined && recordedOwner === undefined;
+    let lostRace = false;
     if (claimed) {
       try {
         await writeFile(join(maildirPath, OWNER_FILENAME), owner, {
@@ -217,11 +218,22 @@ export class EndpointRegistry {
         });
       } catch (err) {
         if (!isEexist(err)) throw err;
-        // Lost the race. The winner's claim stands; re-read and defer to it.
-        const winner = await readOwner(maildirPath);
-        if (winner !== owner) {
-          throw new Error(`Endpoint belongs to another owner: ${subject}`, { cause: err });
-        }
+        // Lost the race, which is the protocol working rather than a failure —
+        // so the EEXIST is fully HANDLED here and goes no further. It is
+        // deliberately not chained onto the throw below: that error reports a
+        // fact read from disk ("someone else owns this"), and the errno is only
+        // how we found out to go and look. Attaching it would dress a normal
+        // race up as the underlying fault and tell a reader nothing they could
+        // act on — the owner's name is the actionable part, and it is already in
+        // the message.
+        lostRace = true;
+      }
+    }
+    if (lostRace) {
+      // The winner's claim stands; re-read and defer to it.
+      const winner = await readOwner(maildirPath);
+      if (winner !== owner) {
+        throw new Error(`Endpoint belongs to another owner: ${subject}`);
       }
     }
 

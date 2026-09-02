@@ -83,9 +83,10 @@ export async function runArchive(args: ArchiveArgs, outputDir: string = OUTPUT_D
   let manifest: PublishedManifest;
   try {
     manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8')) as PublishedManifest;
-  } catch {
+  } catch (err) {
     throw new Error(
-      `no published manifest at ${manifestPath} — run \`capture\` or \`capture:process\` first`
+      `no published manifest at ${manifestPath} — run \`capture\` or \`capture:process\` first`,
+      { cause: err }
     );
   }
 

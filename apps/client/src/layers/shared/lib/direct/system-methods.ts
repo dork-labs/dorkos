@@ -618,6 +618,17 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
       try {
         current = await fs.default.readFile(resolved, 'utf8');
       } catch (err) {
+        // The ENOENT rides along as `cause`, and it carries the resolved
+        // absolute path while the message deliberately does not. That is fine
+        // HERE and the reason is the boundary check above, not the wording:
+        // control only reaches this line once `resolved` is proven to sit inside
+        // `root`, so the path in the cause is one the caller just named, inside
+        // their own working directory. `DirectTransport` is in-process anyway —
+        // caller and callee are the same Obsidian/Electron process.
+        //
+        // The throw where vagueness IS load-bearing is `Access denied: path
+        // outside working directory` above: that one fires on paths the caller
+        // may not be entitled to know about, and it carries no cause.
         if ((err as NodeJS.ErrnoException).code === 'ENOENT')
           throw new Error('File not found', { cause: err });
         throw err;

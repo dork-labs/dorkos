@@ -113,7 +113,14 @@ router.get('/dispatches', (req, res) => {
     claims = rooms.listActiveClaims();
     holds = rooms.listHolds();
   } catch {
-    // No room service wired, or it is mid-crash — the empty defaults stand.
+    // No room service wired, or it is mid-crash. Whatever was gathered before
+    // the throw is kept and reported — so if `listActiveClaims()` returned and
+    // `listHolds()` threw, you get the real claims beside an empty `holds`,
+    // rather than both blanked (which is what the earlier `claims = []; holds =
+    // []` here did). That is deliberate for this endpoint: it is read during an
+    // incident, and half an answer beats none. It does mean an empty array is
+    // "nothing to report" and "could not be read" at once — acceptable for a
+    // debug view, and the reason nothing else should copy this shape.
   }
   res.json({ claims, holds, recent: recentDispatches(readLimit(req.query.limit)) });
 });

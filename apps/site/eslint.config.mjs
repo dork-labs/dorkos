@@ -1,8 +1,24 @@
+import js from '@eslint/js';
 import { defineConfig, globalIgnores } from 'eslint/config';
 import nextVitals from 'eslint-config-next/core-web-vitals';
 import nextTs from 'eslint-config-next/typescript';
 
 const eslintConfig = defineConfig([
+  // Core `eslint:recommended` (DOR-169). `eslint-config-next` brings its own
+  // baseline and does NOT include this one, so until now the site was the one
+  // package in the monorepo missing it — not just ESLint 10's new arrivals
+  // (`preserve-caught-error`, `no-useless-assignment`, `no-unassigned-vars`) but
+  // long-standing correctness rules like `no-dupe-keys` and `no-fallthrough`.
+  //
+  // FIRST in the array, before `nextTs`, and the order is load-bearing: core
+  // recommended turns on `no-unused-vars` and `no-undef`, both of which are
+  // wrong for TypeScript (the compiler owns them, and `no-undef` cannot see
+  // ambient DOM types like `RequestInit`). typescript-eslint's overrides inside
+  // `nextTs` switch them back off — but only for config that came before it.
+  // Appending this at the end instead produced 170 errors, essentially all of
+  // them those two rules firing on TS they should never have judged.
+  js.configs.recommended,
+
   ...nextVitals,
   ...nextTs,
   // `eslint-config-next` pulls in eslint-plugin-react and leaves its version
@@ -14,18 +30,11 @@ const eslintConfig = defineConfig([
   // the plugin fixes it. Keep this in step with `react` in `package.json`.
   { settings: { react: { version: '19.2' } } },
 
-  // The three rules ESLint 10 added to `eslint:recommended`, enabled by hand
-  // (DOR-169). Every other package in this monorepo gets them through
-  // `js.configs.recommended` in `@dorkos/eslint-config/base`; this app is the
-  // one that does not extend it, because `eslint-config-next` brings its own
-  // baseline and does NOT include core recommended. Without this block the
-  // error-cause gate would cover the whole repo except the marketing site,
-  // which is the kind of hole that only shows up the day it matters.
   {
     rules: {
-      'preserve-caught-error': 'error',
-      'no-useless-assignment': 'error',
-      'no-unassigned-vars': 'error',
+      // Matches the monorepo-wide setting in `@dorkos/eslint-config/base`; see
+      // the comment there for why the default is a bypass rather than a default.
+      'preserve-caught-error': ['error', { requireCatchParameter: true }],
     },
   },
   // Override default ignores of eslint-config-next.

@@ -407,11 +407,16 @@ export class PackageFetcher {
     } catch (rootErr) {
       try {
         return await readFile(claudePluginPath, 'utf-8');
-      } catch {
+      } catch (pluginErr) {
+        // Two failures, and both survive: the root attempt as prose in the
+        // message, the `.claude-plugin` attempt as the cause. Chaining the
+        // second one is the deliberate half — it is the layout registries
+        // actually use, so it is the failure worth the stack trace.
         throw new Error(
           `Failed to read local marketplace at ${rootPath} or ${claudePluginPath}: ${
             rootErr instanceof Error ? rootErr.message : String(rootErr)
-          }`
+          }`,
+          { cause: pluginErr }
         );
       }
     }

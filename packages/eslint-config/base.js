@@ -14,6 +14,24 @@ export default [
   // Base JS rules
   js.configs.recommended,
 
+  // `preserve-caught-error` arrives in ESLint 10's recommended set, but its
+  // default leaves a one-keystroke bypass: with `requireCatchParameter: false`,
+  // `catch (err) { throw new Error(msg) }` is an error while `catch { throw new
+  // Error(msg) }` is silently fine — drop the binding and the rule stops
+  // looking. That is the opposite of what this gate is for, since a throw that
+  // never named the error it was handling has lost strictly more than one that
+  // named it and forgot to pass it on (DOR-169).
+  //
+  // This does NOT demand a parameter on every catch. The option is only
+  // consulted inside the rule's `ThrowStatement` handler, so a catch that logs
+  // and continues, or swallows deliberately, keeps its bare `catch {}` — the
+  // repo has many, and they stay untouched. It fires only where a catch throws.
+  {
+    rules: {
+      'preserve-caught-error': ['error', { requireCatchParameter: true }],
+    },
+  },
+
   // TypeScript rules (syntax-only, no type-checking)
   ...tseslint.configs.recommended,
 

@@ -95,8 +95,10 @@ export async function* parseSSEStream<T = unknown>(
     let data: T;
     try {
       data = JSON.parse(rawData) as T;
-    } catch {
-      if (errorMode === 'throw') throw new Error('Malformed SSE JSON');
+    } catch (err) {
+      // Only the `throw` mode keeps the error; the lenient mode deliberately
+      // discards it and hands the caller the raw text instead.
+      if (errorMode === 'throw') throw new Error('Malformed SSE JSON', { cause: err });
       data = rawData as T;
     }
     const event: SSEEvent<T> = { type: eventType || 'message', data };
