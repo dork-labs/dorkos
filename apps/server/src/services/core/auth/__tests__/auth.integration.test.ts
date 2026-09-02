@@ -204,15 +204,18 @@ describe('Better Auth — local identity core (integration)', () => {
 
     /**
      * Verify `key` {@link VERIFICATIONS} times and return the 1-based number of
-     * the first verification the server refused, or `null` when all succeeded.
-     * A rate-limited verification resolves to `{ valid: false }` rather than
-     * throwing, so both shapes are folded into one answer.
+     * the first verification that did not hand back the owner, or `null` when
+     * all of them did. A rate-limited verification resolves to `{ valid: false }`
+     * rather than throwing, so both shapes are folded into one answer.
      */
     async function firstRejection(key: string): Promise<number | null> {
       for (let attempt = 1; attempt <= VERIFICATIONS; attempt++) {
         try {
           const result = await auth.api.verifyApiKey({ body: { key } });
-          if (!result.valid) return attempt;
+          // Resolving to the owner is part of "accepted": `session-gate.ts`
+          // requires a non-empty `referenceId`, so a bare `valid: true` with no
+          // key attached would still 401 the caller.
+          if (!result.valid || result.key?.referenceId !== ownerId) return attempt;
         } catch {
           return attempt;
         }

@@ -145,13 +145,15 @@ export function createAuth(db: Db, dorkHome: string) {
     //
     // A generous ceiling would only move the cliff, because the counter is a
     // daily quota rather than a defence. It is consulted only AFTER a key has
-    // already been found and proved valid, so an unknown key never touches it
-    // and it stops no attacker; meanwhile one working session — a CLI loop, an
-    // agent driving the operator surface over `/mcp`, an SSE reconnect storm —
-    // is unbounded and entirely legitimate. Abuse protection is already a
-    // separate, per-IP layer that this does not touch — `middleware/
-    // auth-rate-limit.ts` on the credential endpoints and
-    // `middleware/mcp-rate-limit.ts` on `/mcp`.
+    // been found and proved valid, so guessing never touches it. What it did
+    // cap is a STOLEN valid key, at ten calls a day — which buys nothing worth
+    // the cost: ten calls are plenty to read anything worth reading, it slowed
+    // the rightful owner by exactly as much, and a leaked key is answered by
+    // revoking it. Meanwhile one working session — a CLI loop, an agent driving
+    // the operator surface over `/mcp`, an SSE reconnect storm — is unbounded
+    // and entirely legitimate. Guessing is answered by a separate per-IP layer
+    // this does not touch: `middleware/auth-rate-limit.ts` on the credential
+    // endpoints and `middleware/mcp-rate-limit.ts` on `/mcp`.
     //
     // Turning it off at the PLUGIN level (rather than per key at creation) is
     // also what makes the fix retroactive: `evaluateRateLimit` checks this
