@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import type { EventEmitter } from 'node:events';
+import { EventEmitter } from 'node:events';
+import chokidar, { type FSWatcher } from 'chokidar';
 import { AccessControl } from '../access-control.js';
 import type { RelayAccessRule } from '@dorkos/shared/relay-schemas';
 import type { AccessControlLogger } from '../access-control.js';
@@ -10,6 +11,19 @@ import type { AccessControlLogger } from '../access-control.js';
 /** Reach into the private chokidar watcher to simulate an EMFILE-style failure. */
 function getWatcher(acl: AccessControl): EventEmitter {
   return (acl as unknown as { watcher: EventEmitter }).watcher;
+}
+
+/**
+ * Replace chokidar with a watcher that never reaches `ready`.
+ *
+ * A real watcher goes ready within a millisecond of construction, so it cannot
+ * hold open the two cases below — a failure before readiness, and a close that
+ * beats it. Restored by `vi.restoreAllMocks()` in `afterEach`.
+ */
+function useNeverReadyWatcher(): EventEmitter {
+  const fake = Object.assign(new EventEmitter(), { close: () => Promise.resolve() });
+  vi.spyOn(chokidar, 'watch').mockReturnValue(fake as unknown as FSWatcher);
+  return fake;
 }
 
 /** A spy logger satisfying the {@link AccessControlLogger} surface. */
@@ -46,6 +60,45 @@ function makeRule(
   return { from, to, action, priority };
 }
 
+/** Wait for a specified number of milliseconds. */
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** How long {@link waitUntil} gives the watcher before giving up. */
+const RELOAD_TIMEOUT_MS = 5000;
+/** How often it re-checks while waiting. */
+const RELOAD_POLL_MS = 50;
+
+/**
+ * Poll until `predicate` holds, or fail loudly.
+ *
+ * The change under test is made exactly once, before this is called; only its
+ * observation is outstanding. That single write is enough because
+ * `whenWatcherReady()` does not resolve until the watcher is actually
+ * delivering — a helper that re-applied its write to paper over a missed event
+ * would report a watcher that drops events as healthy, which is the bug these
+ * tests exist to catch.
+ *
+ * @param predicate - The condition being waited on.
+ * @param what - Named in the failure message, so a timeout says what was lost.
+ * @param timeoutMs - Budget for this wait. Two waits in one test must sum to
+ *   less than the test's own timeout, or the vitest timeout fires first and
+ *   swallows the specific message.
+ */
+async function waitUntil(
+  predicate: () => boolean,
+  what: string,
+  timeoutMs = RELOAD_TIMEOUT_MS
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await wait(RELOAD_POLL_MS);
+  }
+  throw new Error(`timed out after ${timeoutMs}ms waiting for ${what}`);
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -60,6 +113,7 @@ describe('AccessControl', () => {
 
   afterEach(() => {
     acl?.close();
+    vi.restoreAllMocks();
     // Clean up tmp directory
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -414,28 +468,18 @@ describe('AccessControl', () => {
       // Pre-create the file so chokidar watches an existing file (fires 'change' not 'add')
       writeRulesFile(tmpDir, []);
       acl = new AccessControl(tmpDir);
-
-      // Give chokidar time to initialize its watcher
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await acl.whenWatcherReady();
 
       // Initially no rules
       expect(acl.checkAccess('relay.a', 'relay.b').allowed).toBe(true);
 
-      // Write a deny rule externally
+      // Write a deny rule externally — once. The watcher is live, so a second
+      // write would only hide it dropping the first.
       writeRulesFile(tmpDir, [makeRule('relay.a', 'relay.b', 'deny', 10)]);
-
-      // Poll until chokidar detects the change
-      // awaitWriteFinish: stabilityThreshold=100ms + pollInterval=50ms + chokidar overhead
-      const maxWaitMs = 3000;
-      const pollMs = 100;
-      const start = Date.now();
-
-      while (Date.now() - start < maxWaitMs) {
-        if (!acl.checkAccess('relay.a', 'relay.b').allowed) {
-          break;
-        }
-        await new Promise((resolve) => setTimeout(resolve, pollMs));
-      }
+      await waitUntil(
+        () => !acl.checkAccess('relay.a', 'relay.b').allowed,
+        'the externally written deny rule to be picked up'
+      );
 
       expect(acl.checkAccess('relay.a', 'relay.b').allowed).toBe(false);
     }, 10_000);
@@ -511,14 +555,12 @@ describe('AccessControl', () => {
       acl = new AccessControl(tmpDir);
       expect(acl.isQuarantined()).toBe(true);
 
-      // Let chokidar finish attaching before the file moves under it.
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await acl.whenWatcherReady();
       writeRulesFile(tmpDir, [makeRule('relay.a', 'relay.b', 'deny', 10)]);
-
-      const start = Date.now();
-      while (Date.now() - start < 3000 && acl.isQuarantined()) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
+      await waitUntil(
+        () => !acl.isQuarantined(),
+        'the quarantine to lift after the file was repaired'
+      );
 
       expect(acl.isQuarantined()).toBe(false);
       // The repaired rules are in effect, and unrelated traffic flows again.
@@ -553,33 +595,39 @@ describe('AccessControl', () => {
     it('accepts writes again once the file is repaired', async () => {
       writeRaw(tmpDir, '{{{');
       acl = new AccessControl(tmpDir);
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      writeRulesFile(tmpDir, []);
 
-      const start = Date.now();
-      while (Date.now() - start < 3000 && acl.isQuarantined()) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
+      await acl.whenWatcherReady();
+      writeRulesFile(tmpDir, []);
+      await waitUntil(
+        () => !acl.isQuarantined(),
+        'the quarantine to lift after the file was repaired'
+      );
 
       expect(() => acl.addRule(makeRule('relay.a', 'relay.b', 'deny', 10))).not.toThrow();
       expect(readRulesFile(tmpDir)).toHaveLength(1);
     }, 10_000);
 
     it('recovers when the broken file is deleted', async () => {
-      writeRaw(tmpDir, '{{{');
       acl = new AccessControl(tmpDir);
-      expect(acl.isQuarantined()).toBe(true);
+      await acl.whenWatcherReady();
 
-      // Let chokidar finish attaching before the file moves under it.
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      // The broken state is established THROUGH the watcher rather than at
+      // construction: a write the watcher demonstrably delivered is proof the
+      // deletion below will be delivered too, and a deletion gets no second
+      // chance — `rm` on an already-absent file emits nothing at all.
+      writeRaw(tmpDir, '{{{');
+      await waitUntil(() => acl.isQuarantined(), 'the broken file to quarantine the evaluator');
+
       fs.rmSync(path.join(tmpDir, 'access-rules.json'));
+      // Deliberately shorter than the two waits' shared test timeout, so a real
+      // unlink regression fails with the message below rather than with vitest's
+      // generic "test timed out".
+      await waitUntil(
+        () => !acl.isQuarantined(),
+        'the quarantine to lift after the file was deleted',
+        3000
+      );
 
-      const start = Date.now();
-      while (Date.now() - start < 3000 && acl.isQuarantined()) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-
-      expect(acl.isQuarantined()).toBe(false);
       expect(acl.checkAccess('relay.a', 'relay.b').allowed).toBe(true);
     }, 10_000);
   });
@@ -702,6 +750,35 @@ describe('AccessControl', () => {
         aclB.close();
         fs.rmSync(otherDir, { recursive: true, force: true });
       }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // whenWatcherReady — the gate hot-reload callers use instead of sleeping.
+  // Its happy path is exercised by every hot-reload test above; what is pinned
+  // here is that it can never leave a caller waiting for an event that is not
+  // coming.
+  // -------------------------------------------------------------------------
+
+  describe('whenWatcherReady', () => {
+    it('resolves when the watcher fails before it ever goes ready', async () => {
+      const fake = useNeverReadyWatcher();
+      acl = new AccessControl(tmpDir, createSpyLogger());
+
+      // EMFILE and friends emit 'error' and no 'ready' at all. If startup were
+      // settled only by 'ready', this await would never return.
+      fake.emit('error', Object.assign(new Error('EMFILE'), { code: 'EMFILE' }));
+
+      await expect(acl.whenWatcherReady()).resolves.toBeUndefined();
+    });
+
+    it('resolves when the evaluator is closed before the watcher goes ready', async () => {
+      useNeverReadyWatcher();
+      acl = new AccessControl(tmpDir);
+
+      acl.close();
+
+      await expect(acl.whenWatcherReady()).resolves.toBeUndefined();
     });
   });
 
