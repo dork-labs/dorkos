@@ -4,7 +4,6 @@ import type { AgentRuntime } from '@dorkos/shared/mesh-schemas';
 import { useQuery } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
 import type { WizardStep, ConflictStatus } from '../lib/wizard-types';
-import { DEFAULT_AGENT_FACE } from '../lib/agent-faces';
 import { configKeys } from '@/layers/entities/config';
 import type { Transport } from '@dorkos/shared/transport';
 
@@ -40,11 +39,18 @@ interface UseConfigureFormOptions {
    */
   seedDisplayName?: string | null;
   /**
-   * Emoji to seed the face picker with on entering the naming step (a
-   * template's icon, or the default). Only seeds while the user has not yet
-   * chosen a face of their own.
+   * Emoji to seed the face picker with on entering the naming step — a
+   * template's or an offer's own icon, and `null` when nothing chose one. Only
+   * seeds while the user has not yet chosen a face of their own.
+   *
+   * **`null` has to stay out of the field, not become a default face.** The
+   * wizard used to seed a fixed 🤖 here, which the submit path could not tell
+   * from a face somebody picked, so every agent made in this wizard was sent
+   * with `icon: "🤖"` and the server's own seeding never ran (DOR-949). An
+   * unchosen face is an EMPTY field; the 🤖 lives in the preview as the
+   * placeholder it always was.
    */
-  faceSeed?: string;
+  faceSeed?: string | null;
   /** Runtime to seed the picker with (a seed's runtime, or `claude-code`). */
   runtimeSeed?: AgentRuntime;
 }
@@ -58,7 +64,7 @@ export function useConfigureForm({
   step,
   templateName,
   seedDisplayName = null,
-  faceSeed = DEFAULT_AGENT_FACE,
+  faceSeed = null,
   runtimeSeed = 'claude-code',
 }: UseConfigureFormOptions) {
   const transport = useTransport();
@@ -167,7 +173,9 @@ export function useConfigureForm({
   // the ref is what tells this render from the one before it.
   const seededFace = useRef<string | null>(null);
   useEffect(() => {
-    if (step !== 'naming' || iconUserSet) return;
+    // No seed means nobody chose a face, and the field stays empty so the
+    // server can seed one from the agent's own id (DOR-949).
+    if (step !== 'naming' || iconUserSet || !faceSeed) return;
     const seed = `${step}|${faceSeed}`;
     if (seededFace.current === seed) return;
     seededFace.current = seed;

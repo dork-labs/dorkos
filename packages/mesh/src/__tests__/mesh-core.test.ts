@@ -12,6 +12,7 @@ import { writeManifest } from '../manifest.js';
 import * as manifestModule from '../manifest.js';
 import * as reconcilerModule from '../reconciler.js';
 import type { AgentManifest, DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
+import { seedAgentFace, AGENT_COLOR_PRESETS, AGENT_EMOJI_SET } from '@dorkos/shared/agent-face';
 import type { ScanEvent } from '../discovery/types.js';
 
 /** Collect only candidate events from a discover() stream. */
@@ -306,6 +307,78 @@ describe('registerByPath', () => {
     const agents = mesh.list();
     expect(agents).toHaveLength(1);
     expect(agents[0].id).toBe(manifest.id);
+
+    mesh.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The seeded face (DOR-949)
+// ---------------------------------------------------------------------------
+
+describe('agent face at registration', () => {
+  it('gives a registerByPath agent a face from the curated sets', async () => {
+    const base = await makeTempDir();
+    const projectDir = path.join(base, 'faceless-project');
+    await fs.mkdir(projectDir, { recursive: true });
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
+
+    const manifest = await mesh.registerByPath(projectDir, {
+      name: 'manual-agent',
+      runtime: 'claude-code',
+    });
+
+    expect({ color: manifest.color, icon: manifest.icon }).toEqual(seedAgentFace(manifest.id));
+    expect(AGENT_COLOR_PRESETS.map((preset) => preset.hex)).toContain(manifest.color);
+    expect(AGENT_EMOJI_SET).toContain(manifest.icon);
+
+    // On disk and in the registry row too — the manifest is the source of
+    // truth (ADR-0043) and the row is what every listing surface reads.
+    const onDisk = JSON.parse(
+      await fs.readFile(path.join(projectDir, '.dork', 'agent.json'), 'utf-8')
+    ) as AgentManifest;
+    expect({ color: onDisk.color, icon: onDisk.icon }).toEqual(seedAgentFace(manifest.id));
+    expect(mesh.list()[0].icon).toBe(manifest.icon);
+
+    mesh.close();
+  });
+
+  it('keeps a face the caller supplied to registerByPath', async () => {
+    const base = await makeTempDir();
+    const projectDir = path.join(base, 'faced-project');
+    await fs.mkdir(projectDir, { recursive: true });
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
+
+    const manifest = await mesh.registerByPath(projectDir, {
+      name: 'chosen-face',
+      runtime: 'claude-code',
+      color: '#123456',
+      icon: '🦕',
+    });
+
+    expect(manifest.color).toBe('#123456');
+    expect(manifest.icon).toBe('🦕');
+
+    mesh.close();
+  });
+
+  it('gives a discovered-then-registered agent a face, and keeps an overridden one', async () => {
+    const base = await makeTempDir();
+    const projects = path.join(base, 'projects');
+    const { projectA } = await setupProjects(projects);
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
+
+    const candidates = await collectCandidates(mesh.discover([projects]));
+    const candidate = candidates.find((c) => c.path === projectA);
+    const manifest = await mesh.register(candidate!);
+
+    expect({ color: manifest.color, icon: manifest.icon }).toEqual(seedAgentFace(manifest.id));
+
+    // The override arm of the same seam: an explicit face wins over the seed.
+    const other = candidates.find((c) => c.path !== projectA);
+    const overridden = await mesh.register(other!, { icon: '🦕', color: '#123456' });
+    expect(overridden.icon).toBe('🦕');
+    expect(overridden.color).toBe('#123456');
 
     mesh.close();
   });

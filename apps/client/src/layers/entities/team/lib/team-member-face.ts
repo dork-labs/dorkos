@@ -4,7 +4,8 @@
  * @module entities/team/lib/team-member-face
  */
 import type { TeamMember } from '@dorkos/shared/team-schemas';
-import { hashToEmoji, resolveIdentityFace, type IdentityFace } from '@/layers/shared/lib';
+import { seedAgentFace } from '@dorkos/shared/agent-face';
+import { resolveIdentityFace, type IdentityFace } from '@/layers/shared/lib';
 
 /**
  * Turn a `TeamMember` into the face `IdentityAvatar` draws.
@@ -36,7 +37,7 @@ import { hashToEmoji, resolveIdentityFace, type IdentityFace } from '@/layers/sh
  * emoji beside somebody's name claims a face nobody chose.
  *
  * It is also not routed through the `override` slot, which outranks a record's
- * own emoji. A hash is the weakest source there is and must lose to anything
+ * own emoji. A seeded pick is the weakest source there is and must lose to anything
  * the agent actually chose.
  *
  * @param member - Any row from the team roster, yours or anyone else's.
@@ -48,7 +49,8 @@ export function teamMemberFace(member: TeamMember): IdentityFace {
   // through to the letter and quietly defeat the invariant above. Nothing
   // produces `emoji: ''` today — `aggregate-team` strips empties — which is
   // exactly why the failure would be silent if that ever changed.
-  const emoji = member.emoji || (member.kind === 'agent' ? hashToEmoji(member.id) : undefined);
+  const emoji =
+    member.emoji || (member.kind === 'agent' ? seedAgentFace(member.id).icon : undefined);
   return resolveIdentityFace({
     record: {
       id: member.id,

@@ -17,7 +17,6 @@ import { useCreateAgent } from '../model/use-create-agent';
 import { useConfigureForm } from '../model/use-configure-form';
 import type { WizardStep, SelectedTemplate } from '../lib/wizard-types';
 import { STEP_HEADERS } from '../lib/wizard-types';
-import { DEFAULT_AGENT_FACE } from '../lib/agent-faces';
 import { resolveSuggestionPool } from '../lib/name-suggestions';
 import { buildKickoffMessage, type KickoffOrigin } from '@dorkos/shared/kickoff-prompts';
 import { AgentGallery } from './AgentGallery';
@@ -59,10 +58,12 @@ export function CreateAgentDialog() {
   // (e.g. a marketplace agent package) seeds the face.
   const seedIcon =
     seed?.template.icon && isSingleEmoji(seed.template.icon) ? seed.template.icon : undefined;
+  // `null` when nothing chose a face. It must not fall back to a default emoji:
+  // the wizard would then submit that default as though the user had picked it,
+  // and every agent made here would wear the same face instead of the one the
+  // server seeds from its id (DOR-949).
   const faceSeed =
-    template?.icon && isSingleEmoji(template.icon)
-      ? template.icon
-      : (seedIcon ?? DEFAULT_AGENT_FACE);
+    template?.icon && isSingleEmoji(template.icon) ? template.icon : (seedIcon ?? null);
   const runtimeSeed = seed?.template.runtime ?? 'claude-code';
 
   const form = useConfigureForm({

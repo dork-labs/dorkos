@@ -103,6 +103,8 @@ vi.mock('fs/promises', () => ({
 }));
 
 import { createAgentWorkspace, AgentCreationError } from '../agent-creator.js';
+import { seedAgentFace, AGENT_COLOR_PRESETS, AGENT_EMOJI_SET } from '@dorkos/shared/agent-face';
+import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -333,10 +335,54 @@ describe('createAgentWorkspace', () => {
     expect(result.manifest.icon).toBe('🦊');
   });
 
-  it('omits the icon when no face is chosen', async () => {
-    const result = await createAgentWorkspace({ name: 'faceless-agent' }, mockMeshCore);
+  it('persists a chosen colour on the manifest', async () => {
+    const result = await createAgentWorkspace(
+      { name: 'painted-agent', color: '#123456' },
+      mockMeshCore
+    );
 
-    expect(result.manifest.icon).toBeUndefined();
+    expect(result.manifest.color).toBe('#123456');
+  });
+
+  it('seeds a face from the curated sets when none is chosen (DOR-949)', async () => {
+    const result = await createAgentWorkspace({ name: 'unfaced-agent' }, mockMeshCore);
+
+    expect(AGENT_COLOR_PRESETS.map((preset) => preset.hex)).toContain(result.manifest.color);
+    expect(AGENT_EMOJI_SET).toContain(result.manifest.icon);
+    // The seed is a pure function of the agent's own id, so the manifest that
+    // reaches disk is the one a later reader can reproduce.
+    expect({ color: result.manifest.color, icon: result.manifest.icon }).toEqual(
+      seedAgentFace(result.manifest.id)
+    );
+  });
+
+  // The API takes a raw body, so `{"icon": ""}` is a shape a caller can really
+  // send. It must not read as "I chose this face" — that would suppress the
+  // seed and create an agent with a blank avatar. Refused at the schema, where
+  // the caller still has somebody to be told.
+  it.each([
+    { field: 'icon', body: { name: 'blank-face', icon: '' } },
+    { field: 'color', body: { name: 'blank-face', color: '' } },
+  ])('refuses an empty $field rather than creating a faceless agent', async ({ body }) => {
+    await expect(createAgentWorkspace(body, mockMeshCore)).rejects.toThrow(AgentCreationError);
+    expect(mockWriteManifest).not.toHaveBeenCalled();
+  });
+
+  it('seeds only the half the caller left out', async () => {
+    const result = await createAgentWorkspace({ name: 'half-faced', icon: '🦊' }, mockMeshCore);
+
+    expect(result.manifest.icon).toBe('🦊');
+    expect(AGENT_COLOR_PRESETS.map((preset) => preset.hex)).toContain(result.manifest.color);
+  });
+
+  // The response is not the artifact: `agent.json` is the source of truth every
+  // other reader resolves a face from (ADR-0043), so the assertion is against
+  // what reached `writeManifest`, not against the object handed back.
+  it('writes the seeded face to agent.json', async () => {
+    const result = await createAgentWorkspace({ name: 'written-face' }, mockMeshCore);
+
+    const written = mockWriteManifest.mock.calls.at(-1)?.[1] as AgentManifest;
+    expect({ color: written.color, icon: written.icon }).toEqual(seedAgentFace(result.manifest.id));
   });
 
   it('records a model and an effort chosen at creation', async () => {

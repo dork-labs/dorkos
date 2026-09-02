@@ -15,6 +15,7 @@ import { z } from 'zod';
 import path from 'path';
 import { ulid } from 'ulidx';
 import { readManifest, writeManifest } from '@dorkos/shared/manifest';
+import { seedAgentFace } from '@dorkos/shared/agent-face';
 import { ResolveAgentsRequestSchema, CreateAgentRequestSchema } from '@dorkos/shared/mesh-schemas';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import {
@@ -130,12 +131,17 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
           .json({ error: 'Agent already exists at this path', agent: existing });
       }
 
+      const id = ulid();
       const manifest: AgentManifest = {
-        id: ulid(),
+        id,
         name: name ?? path.basename(agentPath),
         description: description ?? '',
         runtime: runtime ?? 'claude-code',
         capabilities: [],
+        // A face at birth, the same as every other creation path (DOR-949).
+        // This route mints its own manifest rather than going through
+        // `createAgentWorkspace`, so it seeds its own.
+        ...seedAgentFace(id),
         behavior: { responseMode: 'always' },
         registeredAt: new Date().toISOString(),
         registeredBy: 'dorkos-ui',

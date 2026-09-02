@@ -157,10 +157,17 @@ export function NamingStep({
           </div>
         </div>
 
-        {/* Face */}
+        {/* Face — nothing is highlighted until the user picks one, because
+            nothing has been chosen. The placeholder in the preview card is a
+            stand-in, not a selection (DOR-949). */}
         <div className="space-y-2">
-          <Label className="text-sm">Face</Label>
-          <FacePicker value={form.icon || DEFAULT_AGENT_FACE} onChange={form.setIcon} />
+          <div className="flex items-baseline gap-2">
+            <Label className="text-sm">Face</Label>
+            {!form.icon && (
+              <span className="text-muted-foreground text-xs">Picked for you if you skip this</span>
+            )}
+          </div>
+          <FacePicker value={form.icon} onChange={form.setIcon} />
         </div>
 
         {/* Details — directory, runtime, folder name */}

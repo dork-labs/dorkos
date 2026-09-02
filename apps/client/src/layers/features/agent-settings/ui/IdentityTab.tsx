@@ -1,12 +1,7 @@
 import { useState, useCallback, useMemo, type KeyboardEvent } from 'react';
 import { X } from 'lucide-react';
-import {
-  cn,
-  getAgentDisplayName,
-  hashToHslColor,
-  hashToEmoji,
-  formatRelativeTime,
-} from '@/layers/shared/lib';
+import { cn, getAgentDisplayName, formatRelativeTime } from '@/layers/shared/lib';
+import { seedAgentFace } from '@dorkos/shared/agent-face';
 import { useDebouncedInput } from '@/layers/shared/model';
 import {
   AgentIdentity,
@@ -49,9 +44,11 @@ export function IdentityTab({ agent, onUpdate }: IdentityTabProps) {
   const isSystem = agent.isSystem === true;
   const visual = resolveAgentVisual(agent);
 
-  // Compute the deterministic defaults from the agent's ID
-  const autoColor = useMemo(() => hashToHslColor(agent.id), [agent.id]);
-  const autoEmoji = useMemo(() => hashToEmoji(agent.id), [agent.id]);
+  // The face DorkOS seeds for this agent — what clearing an override returns
+  // it to, and the same function the server ran at creation (DOR-949).
+  const auto = useMemo(() => seedAgentFace(agent.id), [agent.id]);
+  const autoColor = auto.color;
+  const autoEmoji = auto.icon;
 
   // Tag (capabilities) input state
   const [tagInput, setTagInput] = useState('');

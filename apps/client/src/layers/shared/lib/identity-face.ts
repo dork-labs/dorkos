@@ -5,6 +5,7 @@
  */
 import type { AuthorKind } from '@dorkos/shared/room-schemas';
 import type { IdentityOrigin } from './identity-origin';
+import { seedAgentFace } from '@dorkos/shared/agent-face';
 import { hashToHslColor } from './favicon-utils';
 import { initialOf } from './initial-of';
 
@@ -94,6 +95,25 @@ export interface IdentityFace {
 }
 
 /**
+ * The colour an identity falls back to when no source had one.
+ *
+ * An **agent** falls back to the face DorkOS would have seeded for it, because
+ * since DOR-949 that is the colour it would actually be wearing — every agent
+ * created since then has one on its manifest, and running the same function
+ * here means a roster row and the agent's own profile cannot disagree about the
+ * colour of an agent whose manifest has not been read yet.
+ *
+ * Everyone else keeps the hashed hue. People have no seeded face and never
+ * will: their colour is a render cache on their author row, and a palette
+ * built for agents is not the right vocabulary for the humans beside them.
+ *
+ * @param record - The identity being drawn.
+ */
+function fallbackColor(record: IdentityRecord): string {
+  return record.kind === 'agent' ? seedAgentFace(record.id).color : hashToHslColor(record.id);
+}
+
+/**
  * Resolve one identity's face from the fragments a caller happens to hold.
  *
  * Precedence, highest first: an explicit `override` (an agent's own manifest
@@ -107,6 +127,13 @@ export interface IdentityFace {
  * **emoji**: a letter is honestly "we don't know this one's face", where an
  * invented emoji is a confident-looking face matching nothing.
  *
+ * That rung is rarer than it was. Since DOR-949 the server seeds a colour and
+ * an emoji onto every agent it creates, so an agent normally ARRIVES with a
+ * face and this ladder reads it off the record. The letter is now what people
+ * with no photo get, and what agents created before the seeding landed keep
+ * until somebody gives them a face — which is exactly the case it was written
+ * for: a real unknown, drawn as one.
+ *
  * Pure, layer-free and takes no agent types, which is the point: `MemberList`
  * lives in `entities/room` and may not import `entities/agent`, and that is
  * exactly why the two roster implementations diverged in the first place.
@@ -117,7 +144,7 @@ export function resolveIdentityFace(input: IdentityFaceInput): IdentityFace {
   const { record, override, origin } = input;
   return {
     kind: record.kind,
-    color: override?.color ?? record.color ?? hashToHslColor(record.id),
+    color: override?.color ?? record.color ?? fallbackColor(record),
     emoji: override?.emoji ?? record.emoji,
     imageUrl: override?.imageUrl ?? record.imageUrl,
     fallback: initialOf(record.displayName),

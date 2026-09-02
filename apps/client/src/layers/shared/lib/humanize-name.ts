@@ -48,14 +48,8 @@ export function packageDisplayLabel(pkg: { name: string; displayName?: string })
 }
 
 /**
- * True when a string is a single emoji grapheme (including variation-selector
- * and ZWJ sequences). A package's `icon` may be an emoji or an arbitrary
- * identifier; only an emoji is a valid seed for the face picker.
- *
- * @param value - Candidate icon string.
+ * Re-exported from `@dorkos/shared/agent-face`, which owns it because the
+ * SERVER needs the same gate: the marketplace install path asks it whether a
+ * package's `icon` is a face it can put on an agent (DOR-949).
  */
-export function isSingleEmoji(value: string): boolean {
-  const trimmed = value.trim();
-  if (!trimmed) return false;
-  return /^\p{Extended_Pictographic}[\u{FE0F}\u{200D}\p{Extended_Pictographic}]*$/u.test(trimmed);
-}
+export { isSingleEmoji } from '@dorkos/shared/agent-face';

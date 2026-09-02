@@ -9,6 +9,7 @@ import type { AuthorOrigin, RoomEntry, RoomRosterEntry } from '@dorkos/shared/ro
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { authorColor } from '@/layers/entities/room';
+import { seedAgentFace } from '@dorkos/shared/agent-face';
 import { Conversation } from '@/layers/features/conversation';
 import { ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
 import { RoomFlow } from '../ui/RoomFlow';
@@ -841,13 +842,16 @@ describe('toMessageAuthor', () => {
     expect(author.color).toBe('hsl(210 70% 55%)');
   });
 
-  it('falls back to the hashed color and no emoji when the roster stores neither — the common case', () => {
-    // ~16% of agents have an icon and ~5% a color (verified live), so this
-    // path — not the one above — is what most agents actually render through.
+  it('falls back to the seeded color and no emoji when the roster stores neither', () => {
+    // The path every agent created before faces were seeded still renders
+    // through. Its colour is the one DorkOS would have seeded for that id
+    // (DOR-949) — the same colour the roster and the sidebar give it — while the
+    // EMOJI stays absent, because a letter is honest about a face nobody knows
+    // and an invented emoji is not.
     const authors = authorsById([member('ana', 'Ana')]);
     const author = toMessageAuthor('ana', authors);
     expect(author.emoji).toBeUndefined();
-    expect(author.color).toBe(authorColor('ana'));
+    expect(author.color).toBe(seedAgentFace('ana').color);
   });
 
   it('marks a bridged member external, and a local one not', () => {
@@ -917,6 +921,9 @@ describe('toMessageAuthor', () => {
 
     expect(toMessageAuthor('dorian', authors, faces).emoji).toBeUndefined();
     expect(toMessageAuthor('bo', authors, faces).emoji).toBeUndefined();
-    expect(toMessageAuthor('bo', authors, faces).color).toBe(authorColor('bo'));
+    expect(toMessageAuthor('bo', authors, faces).color).toBe(seedAgentFace('bo').color);
+    // A person keeps the hashed hue: the seeded palette is the agents' own
+    // vocabulary, and DorkOS never picks a face for a human being.
+    expect(toMessageAuthor('dorian', authors, faces).color).toBe(authorColor('dorian'));
   });
 });

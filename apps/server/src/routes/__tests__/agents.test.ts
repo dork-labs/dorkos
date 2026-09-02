@@ -81,6 +81,7 @@ import { createAgentsRouter } from '../agents.js';
 import { setOnAgentCreated } from '../../services/core/agent-created-hook.js';
 import { validateBoundary, validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import { seedAgentFace } from '@dorkos/shared/agent-face';
 
 // Build a minimal Express app with just the agents router
 const app = express();
@@ -214,6 +215,21 @@ describe('Agents Routes', () => {
           id: 'MOCK_ULID_001',
           name: 'my-project',
         })
+      );
+    });
+
+    it('gives the registered agent a face from the curated sets (DOR-949)', async () => {
+      mockReadManifest.mockResolvedValue(null);
+
+      const res = await request(app).post('/api/agents').send({ path: '/home/user/my-project' });
+
+      expect(res.status).toBe(201);
+      expect({ color: res.body.color, icon: res.body.icon }).toEqual(seedAgentFace(res.body.id));
+      // On disk too, not just in the response — the manifest is the source of
+      // truth every other reader resolves the face from (ADR-0043).
+      expect(mockWriteManifest).toHaveBeenCalledWith(
+        '/home/user/my-project',
+        expect.objectContaining(seedAgentFace(res.body.id))
       );
     });
 

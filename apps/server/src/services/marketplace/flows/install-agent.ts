@@ -17,6 +17,7 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { AgentPackageManifest } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
+import { isSingleEmoji } from '@dorkos/shared/agent-face';
 import type { createAgentWorkspace } from '../../core/agent-creator.js';
 import { atomicMove } from '../lib/atomic-move.js';
 import { installRootDirForType } from '../lib/install-roots.js';
@@ -130,6 +131,12 @@ export class AgentInstallFlow {
       name: manifest.name,
       description: manifest.description,
       traits: manifest.agentDefaults?.traits,
+      // The package author's own face, when they shipped one. The manifest's
+      // `icon` is documented as "an emoji OR an icon identifier", so only an
+      // emoji can be worn — anything else (`"package"`, a file name) is not a
+      // face, and leaving the key off lets the creator seed one instead
+      // (DOR-949).
+      ...(manifest.icon && isSingleEmoji(manifest.icon) ? { icon: manifest.icon } : {}),
       skipTemplateDownload: true,
     });
 

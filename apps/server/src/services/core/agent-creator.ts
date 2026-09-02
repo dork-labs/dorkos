@@ -13,6 +13,7 @@ import path from 'path';
 import { z } from 'zod';
 import { ulid } from 'ulidx';
 import { writeManifest, MANIFEST_DIR, MANIFEST_FILE } from '@dorkos/shared/manifest';
+import { seedAgentFace } from '@dorkos/shared/agent-face';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { CreateAgentOptionsSchema } from '@dorkos/shared/mesh-schemas';
 import type { AgentManifest, CreateAgentOptions } from '@dorkos/shared/mesh-schemas';
@@ -213,6 +214,11 @@ async function undoScaffold(
  * block); `capabilities` and `runtime` are recorded on the manifest as-is —
  * this is how a Shape's offered agent arrives fully shaped rather than blank.
  *
+ * The agent's face — `color` and `icon` — is always written. A caller's own
+ * choice is kept (a face a person picked, or the emoji a marketplace package
+ * ships); anything they left out is seeded from the curated sets
+ * (`seedAgentFace`), so a new agent shows a real face instead of a letter.
+ *
  * When `opts.skipTemplateDownload` is true, the function assumes `directory`
  * already exists on disk and is pre-populated with the agent's template
  * contents (used by the marketplace install pipeline after copying a package
@@ -348,16 +354,24 @@ export async function createAgentWorkspace(
       dorkosKnowledge: true,
     };
 
+    const id = ulid();
+    // Every agent is born with a face (DOR-949): the one chosen in the naming
+    // step (M3) or shipped by a marketplace package, and a deterministic pick from the
+    // curated sets for whatever was left unchosen. Seeded here rather than left
+    // to each reader's own fallback so the app, the roster aggregator and the
+    // author registry all show the SAME face, and so `agent.json` says what the
+    // agent looks like instead of leaving every surface to guess.
+    const face = seedAgentFace(id, { color: opts.color, icon: opts.icon });
+
     const manifest: AgentManifest = {
-      id: ulid(),
+      id,
       name: opts.name,
       displayName: opts.displayName,
       description: opts.description ?? '',
       runtime: opts.runtime ?? 'claude-code',
       capabilities: opts.capabilities ?? [],
-      // The emoji face chosen in the naming step (M3), or seeded from a
-      // template — persisted so the agent's visual identity survives creation.
-      ...(opts.icon ? { icon: opts.icon } : {}),
+      color: face.color,
+      icon: face.icon,
       // Written only when asked for. An absent key is what "inherit the server
       // default" looks like on disk, so writing the resolved value here instead
       // would freeze today's default into every agent ever created.
