@@ -177,6 +177,13 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
     it.each([
       ['trailing slash', '/api/health/deep/'],
       ['doubled trailing slash', '/api/health/deep//'],
+      // The normalizer's trailing-slash strip was `/\/+$/` — quadratic in shape
+      // on the pre-auth path every request takes (CodeQL js/polynomial-redos).
+      // The collapse before it means a single `\/$/` answers identically, and
+      // these longer runs are what says so.
+      ['tripled trailing slash', '/api/health/deep///'],
+      ['a long run of trailing slashes', `/api/health/deep${'/'.repeat(2_000)}`],
+      ['internal and trailing runs', '/api/health//deep//'],
       ['uppercase', '/API/HEALTH/DEEP'],
       ['mixed case with trailing slash', '/Api/Health/Deep/'],
     ])('gates /api/health/deep spelled with a %s', async (_name, path) => {

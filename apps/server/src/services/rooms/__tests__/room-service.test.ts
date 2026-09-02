@@ -87,6 +87,27 @@ describe('RoomService', () => {
       expect(room.archived).toBe(false);
     });
 
+    // The slug derivation trimmed hyphens with `^-+|-+$`, which CodeQL flags as
+    // quadratic (js/polynomial-redos) and which the collapse on the line above
+    // defuses — an invariant invisible from the line it protects, on a path
+    // where a title arrives from a request. `^-|-$` answers identically; these
+    // are the cases that say so, including the 80-character truncation, which
+    // is the one place a trailing hyphen can appear after the trim.
+    it.each([
+      ['--- Backend ---', 'backend'],
+      ['!!!Backend!!!', 'backend'],
+      ['Backend - - - Work', 'backend-work'],
+      ['   Backend   ', 'backend'],
+      [`${'a'.repeat(79)} b`, 'a'.repeat(79)],
+      [`${'a'.repeat(80)}b`, 'a'.repeat(80)],
+    ])('derives the slug for the hyphen-heavy title %j', (title, expected) => {
+      const room = service.createRoom(
+        { kind: 'channel', title, members: [], agentPaths: [] },
+        human
+      );
+      expect(room.slug).toBe(expected);
+    });
+
     it('refuses a second live channel on the same slug', () => {
       service.createRoom(
         { kind: 'channel', slug: 'general', title: 'General', members: [], agentPaths: [] },

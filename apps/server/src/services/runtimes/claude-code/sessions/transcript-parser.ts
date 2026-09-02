@@ -9,7 +9,7 @@ import type {
   CompactMetadata,
 } from '@dorkos/shared/types';
 import { SDK_TOOL_NAMES } from '@dorkos/shared/constants';
-import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
+import { CONTEXT_TAG, stripInjectedTagBlocks } from '@dorkos/shared/additional-context';
 import { extractToolResultImages, type ToolResultImage } from '../tool-result-images.js';
 import { apiErrorCode, buildApiErrorPart, isApiErrorRecord } from '../sdk/api-error-record.js';
 import { mapSdkAnswersToIndices } from './question-answers.js';
@@ -157,15 +157,30 @@ export function extractTextContent(content: string | ContentBlock[]): string {
     .join('\n');
 }
 
-/** Extract command name and args from a command metadata message. */
+/**
+ * Extract command name and args from a command metadata message.
+ *
+ * The args are read by index rather than with `<command-args>([\s\S]*?)</…>`,
+ * whose lazy body rescanned to the end of the text from every unclosed open —
+ * quadratic on text that embeds whatever a person typed after a slash command
+ * (CodeQL js/polynomial-redos). The `<command-name>` regex is left alone:
+ * `[^<]+` followed by `<` is deterministic, so it was never the problem.
+ *
+ * @param text - Raw command-metadata record content.
+ * @returns The command name and its trimmed args, or null when there is no name.
+ */
 export function extractCommandMeta(
   text: string
 ): { commandName: string; commandArgs: string } | null {
   const nameMatch = text.match(/<command-name>\/?([^<]+)<\/command-name>/);
   if (!nameMatch) return null;
   const commandName = '/' + nameMatch[1].replace(/^\//, '');
-  const argsMatch = text.match(/<command-args>([\s\S]*?)<\/command-args>/);
-  const commandArgs = argsMatch ? argsMatch[1].trim() : '';
+  const open = '<command-args>';
+  // No close after the FIRST open means no close after any later open either,
+  // so the regex's "advance one character and retry" could never find one.
+  const start = text.indexOf(open);
+  const end = start === -1 ? -1 : text.indexOf('</command-args>', start + open.length);
+  const commandArgs = end === -1 ? '' : text.slice(start + open.length, end).trim();
   return { commandName, commandArgs };
 }
 
@@ -173,21 +188,46 @@ export function extractCommandMeta(
  * Extract the inner text of a `<local-command-stdout>` / `<local-command-stderr>`
  * wrapper, the form the SDK uses to persist a local slash command's output.
  *
+ * The lookups reproduce
+ * `<local-command-(stdout|stderr)>([\s\S]*)</local-command-\1>` exactly, and by
+ * index rather than by regex because that form was quadratic on content
+ * repeating the marker — which captured stdout very much can be (CodeQL
+ * js/polynomial-redos). `indexOf` on the open tag is its leftmost match;
+ * `lastIndexOf` on the close is its GREEDY body, which ran to the end and
+ * backtracked to the last close. Taking the SMALLER of the two stream positions
+ * reproduces the alternation, which matched wherever a tag appeared first
+ * rather than preferring `stdout` — records carry one stream or the other in
+ * practice, but a helper that simply checked `stdout` first would answer
+ * differently on content carrying both, and silently.
+ *
  * @param content - Raw `local_command` system-record content.
  * @returns The captured output text, or null when `content` is not such a
  *   wrapper (e.g. a `<local-command-caveat>` note), so callers can skip it.
  * @internal Exported for testing only.
  */
 export function extractLocalCommandOutput(content: string): string | null {
-  const match = content.match(/<local-command-(stdout|stderr)>([\s\S]*)<\/local-command-\1>/);
-  return match ? match[2] : null;
+  let best: { at: number; from: number; to: number } | null = null;
+  for (const stream of ['stdout', 'stderr'] as const) {
+    const open = `<local-command-${stream}>`;
+    const at = content.indexOf(open);
+    const to = content.lastIndexOf(`</local-command-${stream}>`);
+    if (at === -1 || to < at + open.length) continue;
+    if (!best || at < best.at) best = { at, from: at + open.length, to };
+  }
+  return best ? content.slice(best.from, best.to) : null;
 }
 
 /**
  * Strip system-injected tags from rendered text: the `<system-reminder>` block
- * plus every {@link CONTEXT_TAG} value (git_status, ui_state, queue_note, env,
- * relay_context, …). Driving the loop off `CONTEXT_TAG` means this can NEVER
- * drift from the adapter's `renderContextEntry` formatter — adding a
+ * plus every `CONTEXT_TAG` value (git_status, ui_state, queue_note, env,
+ * relay_context, …).
+ *
+ * The strip itself is {@link stripInjectedTagBlocks} in `@dorkos/shared`, the
+ * one implementation this and the kickoff suppression seam share — they were
+ * the same eight lines twice, and the shared one is a linear `indexOf` scan
+ * rather than the quadratic `<tag>[\s\S]*?</tag>` both used to run (CodeQL
+ * js/polynomial-redos). Driving the loop off `CONTEXT_TAG` there means this can
+ * NEVER drift from the adapter's `renderContextEntry` formatter — adding a
  * `ContextKind` is automatically stripped here with no edit.
  *
  * NOTE: two relay mechanisms coexist by design (codebase comment-why rule).
@@ -199,12 +239,7 @@ export function extractLocalCommandOutput(content: string): string | null {
  * can never disagree on the tag name.
  */
 export function stripSystemTags(text: string): string {
-  let result = text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '');
-  for (const tag of Object.values(CONTEXT_TAG)) {
-    const re = new RegExp(`<${tag}>[\\s\\S]*?<\\/${tag}>`, 'g');
-    result = result.replace(re, '');
-  }
-  return result.trim();
+  return stripInjectedTagBlocks(text);
 }
 
 /**

@@ -9,16 +9,19 @@
  * the legacy shape: a request must never accept a value the file it is written
  * into would reject.
  */
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
+import { z } from 'zod';
 import {
   UpdateTaskRequestSchema,
   CreateTaskRequestSchema,
   TASK_DURATION_PATTERN,
+  TASK_DURATION_MAX,
   TASK_DESCRIPTION_MAX,
 } from '@dorkos/shared/schemas';
 import { SkillFrontmatterSchema, SkillNameSchema } from '../schema.js';
 import { ScheduleBlockSchema } from '../schedule-schema.js';
-import { DurationSchema } from '../duration.js';
+import { DurationSchema, DURATION_MAX_LENGTH } from '../duration.js';
 import { slugify, validateSlug } from '../slug.js';
 
 describe('task name drift — UpdateTaskRequest.name (@dorkos/shared) vs the SKILL.md name rule', () => {
@@ -64,6 +67,15 @@ describe('task name drift — UpdateTaskRequest.name (@dorkos/shared) vs the SKI
   });
 });
 
+/** A minimal create body, plus whatever the case under test wants to vary. */
+const taskBody = (overrides: Record<string, unknown>) => ({
+  name: 'nightly',
+  description: 'sweep',
+  prompt: 'go',
+  target: 'global',
+  ...overrides,
+});
+
 describe('request-vs-frontmatter drift — the fields POST /api/tasks writes into a SKILL.md', () => {
   // `CreateTaskRequestSchema` accepts a body, the route writes it into a SKILL.md
   // and reads it straight back. A field the request accepts and the frontmatter
@@ -91,6 +103,68 @@ describe('request-vs-frontmatter drift — the fields POST /api/tasks writes int
         `duration mirror disagrees on ${JSON.stringify(value)}`
       ).toEqual({ value, accepted: DurationSchema.safeParse(value).success });
     }
+  });
+
+  it('the duration LENGTH cap in shared matches this package DurationSchema', () => {
+    // The pattern mirror above says nothing about length, and `\d+` will happily
+    // match half a megabyte of digits — which is how a request that looked like
+    // a valid duration reached `parseDuration` and froze the event loop
+    // (CodeQL js/polynomial-redos). Derived from both sides, so a change to
+    // either cap fires here rather than drifting.
+    expect(TASK_DURATION_MAX).toBe(DURATION_MAX_LENGTH);
+    const atCap = `${'9'.repeat(TASK_DURATION_MAX - 1)}s`;
+    const overCap = `${'9'.repeat(TASK_DURATION_MAX)}s`;
+    expect(DurationSchema.safeParse(atCap).success, 'at the cap').toBe(true);
+    expect(DurationSchema.safeParse(overCap).success, 'one over the cap').toBe(false);
+    expect(CreateTaskRequestSchema.safeParse(taskBody({ maxRuntime: atCap })).success).toBe(true);
+    expect(CreateTaskRequestSchema.safeParse(taskBody({ maxRuntime: overCap })).success).toBe(
+      false
+    );
+  });
+
+  // The MCP tools are a THIRD write path into the same SKILL.md, and they build
+  // their own argument schema rather than reusing the request one — so the cap
+  // has to be mirrored onto it too, or the tool accepts a duration the file
+  // cannot be read back with. That is the exact failure this suite exists for,
+  // and adding the cap on only two of the three seams is what would create it.
+  // `DURATION_ARG` is restated here, from the same two exports the real one
+  // uses, because `@dorkos/skills` cannot import the server.
+  it('the MCP tools duration argument carries the same cap as the file schema', () => {
+    const DURATION_ARG = z
+      .string()
+      .min(1)
+      .max(TASK_DURATION_MAX)
+      .regex(TASK_DURATION_PATTERN)
+      .optional();
+    const atCap = `${'9'.repeat(TASK_DURATION_MAX - 1)}s`;
+    const overCap = `${'9'.repeat(TASK_DURATION_MAX)}s`;
+    for (const [value, accepted] of [
+      [atCap, true],
+      [overCap, false],
+    ] as const) {
+      expect(DURATION_ARG.safeParse(value).success, `arg on ${value.length} chars`).toBe(accepted);
+      expect(DurationSchema.safeParse(value).success, `file on ${value.length} chars`).toBe(
+        accepted
+      );
+    }
+  });
+
+  it('the real MCP DURATION_ARG source carries .max, not just the pattern', () => {
+    // The restated schema above proves the RULE; this proves the shipped tool
+    // actually spells it, since a mirror nobody applied is not a mirror.
+    const source = readFileSync(
+      new URL(
+        '../../../../apps/server/src/services/runtimes/claude-code/mcp-tools/task-tools.ts',
+        import.meta.url
+      ),
+      'utf8'
+    );
+    const start = source.indexOf('const DURATION_ARG');
+    expect(start, 'DURATION_ARG must still exist under that name').toBeGreaterThan(-1);
+    // The whole declaration, not its first line — it spans several.
+    const declaration = source.slice(start, source.indexOf(';', start));
+    expect(declaration).toContain('TASK_DURATION_MAX');
+    expect(declaration).toContain('TASK_DURATION_PATTERN');
   });
 
   it('the description cap in shared matches this package frontmatter', () => {

@@ -12,7 +12,12 @@
  */
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import { EffortLevelSchema, TaskNameSchema, TASK_DURATION_PATTERN } from '@dorkos/shared/schemas';
+import {
+  EffortLevelSchema,
+  TaskNameSchema,
+  TASK_DURATION_PATTERN,
+  TASK_DURATION_MAX,
+} from '@dorkos/shared/schemas';
 import type { EffortLevel, UpdateTaskRequest } from '@dorkos/shared/types';
 import { slugify } from '@dorkos/skills/slug';
 import type { McpToolDeps } from './types.js';
@@ -126,8 +131,22 @@ export const PARKED_SCHEDULE_SURFACE_HINT =
  * rather than rejecting the call — and the same string written into the file
  * makes the file unreadable to every later sync. `tasks_create` used to accept
  * the argument and hardcode `null` in its place; it honors it now (DOR-1568).
+ *
+ * Capped as well as shaped. The pattern says nothing about LENGTH and `\d+` will
+ * match half a megabyte of digits, so without {@link TASK_DURATION_MAX} this
+ * tool accepted a duration that `ScheduleBlockSchema` then refuses to read back
+ * — the same unreadable-file bug one paragraph up, reached through the argument
+ * that was supposed to prevent it. These tools are a THIRD write path into the
+ * same SKILL.md beside the two request schemas, so the cap belongs on all three
+ * or on none; `packages/skills/src/__tests__/task-request-drift.test.ts` fails
+ * if this line stops spelling it.
  */
-const DURATION_ARG = z.string().min(1).regex(TASK_DURATION_PATTERN).optional();
+const DURATION_ARG = z
+  .string()
+  .min(1)
+  .max(TASK_DURATION_MAX)
+  .regex(TASK_DURATION_PATTERN)
+  .optional();
 
 /**
  * The description `tasks_create` gives the `target` argument.

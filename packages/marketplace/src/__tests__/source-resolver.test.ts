@@ -38,6 +38,42 @@ describe('resolvePluginSource — relative-path source', () => {
     });
   });
 
+  // `pluginRoot` arrives in a manifest fetched from whatever marketplace the
+  // operator added, and the guards check its shape but never its length. The
+  // trailing-slash strip was `/\/+$/`, which retries at every offset of the run
+  // (CodeQL js/polynomial-redos); the lookbehind form pins the attempt to the
+  // run's start, which is where the leftmost match already began.
+  it.each([
+    ['./plugins//', 'plugins/foo'],
+    ['./plugins///', 'plugins/foo'],
+    ['plugins/', 'plugins/foo'],
+    ['./a/b//', 'a/b/foo'],
+  ])('normalizes every trailing slash on pluginRoot %j', (pluginRoot, path) => {
+    expect(resolvePluginSource('foo', { marketplaceRoot: '/mp', pluginRoot })).toEqual({
+      type: 'relative-path',
+      path,
+      marketplaceRoot: '/mp',
+    });
+  });
+
+  it('resolves a pluginRoot with a huge INTERNAL slash run quickly', () => {
+    // The run must NOT be at the end. A trailing run is the cheap case for both
+    // forms (`$` pins the engine straight to it), so timing one measures
+    // nothing — an earlier version of this test did exactly that and passed at
+    // 0.06ms against the unfixed regex. With the run followed by one more
+    // character every start position has to fail, which is the quadratic the
+    // alert names: 3868ms before the lookbehind, 0.32ms after.
+    const pluginRoot = `./plugins${'/'.repeat(100_000)}x`;
+    const started = performance.now();
+    const result = resolvePluginSource('foo', { marketplaceRoot: '/mp', pluginRoot });
+    expect(performance.now() - started).toBeLessThan(100);
+    expect(result).toEqual({
+      type: 'relative-path',
+      path: `plugins${'/'.repeat(100_000)}x/foo`,
+      marketplaceRoot: '/mp',
+    });
+  });
+
   it('throws on absolute pluginRoot', () => {
     expect(() =>
       resolvePluginSource('foo', {

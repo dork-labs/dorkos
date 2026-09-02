@@ -5,6 +5,8 @@ import {
   UserConfigSchema,
   USER_CONFIG_DEFAULTS,
   healClaudeAccountRename,
+  slugifyAccountId,
+  claudeAccountId,
   settleLegacyAccountAlias,
   SENSITIVE_CONFIG_KEYS,
   LOG_LEVEL_MAP,
@@ -1945,5 +1947,67 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
     expect(() =>
       UserConfigSchema.parse({ version: 1, extensions: { approvedToRun: 'my-ext' } })
     ).toThrow();
+  });
+});
+
+// Both helpers had a regex CodeQL flags as quadratic (js/polynomial-redos):
+// `^-+|-+$` after a collapse, and `[/\\]+$` on an uncapped path out of
+// `~/.dork/config.json`. Neither was exploitable — the collapse makes hyphen
+// runs impossible, and the config is operator-written — but the invariant that
+// defused the first one is invisible from the line it protects, and the fixes
+// are one character each. These cases pin the answers so the rewrites cannot
+// have moved one.
+describe('slugifyAccountId', () => {
+  it.each([
+    ['Work Account', 'work-account'],
+    ['  spaced  ', 'spaced'],
+    ['---dashes---', 'dashes'],
+    ['!!!', ''],
+    ['', ''],
+    ['-', ''],
+    ['a-', 'a'],
+    ['-a', 'a'],
+    ['-a-', 'a'],
+    ['a - - b', 'a-b'],
+    ['Ünïcödé', 'n-c-d'],
+    ['2026 review', '2026-review'],
+  ])('slugifies %j to %j', (input, expected) => {
+    expect(slugifyAccountId(input)).toBe(expected);
+  });
+});
+
+describe('claudeAccountId', () => {
+  it('prefers the label', () => {
+    expect(claudeAccountId({ label: 'Work Account', path: '/home/me/.claude', taken: [] })).toBe(
+      'work-account'
+    );
+  });
+
+  it.each([
+    ['/home/me/.claude', 'claude'],
+    ['/home/me/.claude/', 'claude'],
+    ['/home/me/.claude///', 'claude'],
+    ['C:\\Users\\me\\.claude\\\\', 'claude'],
+    ['/', 'account'],
+    ['///', 'account'],
+  ])('falls back to the basename of %j, ignoring trailing separators', (path, expected) => {
+    expect(claudeAccountId({ label: null, path, taken: [] })).toBe(expected);
+  });
+
+  it('uniquifies against ids already taken', () => {
+    expect(claudeAccountId({ label: 'work', path: '/x', taken: ['work', 'work-2'] })).toBe(
+      'work-3'
+    );
+  });
+
+  it('handles a path with a huge INTERNAL separator run quickly', () => {
+    // The run is followed by one more character on purpose. A run at the very
+    // end is the cheap case for both the old and the new form, so timing one
+    // proves nothing; with something after it, every start position must fail,
+    // which is the quadratic — 5181ms before the lookbehind, 0.43ms after.
+    const path = `/home/me/.claude${'/'.repeat(100_000)}x`;
+    const started = performance.now();
+    expect(claudeAccountId({ label: null, path, taken: [] })).toBe('x');
+    expect(performance.now() - started).toBeLessThan(100);
   });
 });

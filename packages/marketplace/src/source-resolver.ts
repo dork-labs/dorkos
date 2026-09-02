@@ -162,7 +162,12 @@ function normalizePluginRoot(pluginRoot: string | undefined): string {
   if (pluginRoot.includes('..')) {
     throw new ResolvePluginSourceError('pluginRoot must not contain ".."');
   }
-  return stripLeadingDotSlash(pluginRoot).replace(/\/+$/, '');
+  // The lookbehind pins the attempt to the START of the trailing slash run,
+  // which is where the leftmost match already began — same result, without
+  // retrying at every offset of the run. `pluginRoot` comes out of a manifest
+  // fetched from whatever marketplace the operator added, and the guards above
+  // check its shape but never its length (CodeQL js/polynomial-redos).
+  return stripLeadingDotSlash(pluginRoot).replace(/(?<!\/)\/+$/, '');
 }
 
 function stripLeadingDotSlash(value: string): string {

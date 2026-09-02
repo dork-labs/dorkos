@@ -205,6 +205,22 @@ describe('slugifyAgentName', () => {
     expect(slugifyAgentName(' - hello - ')).toBe('hello');
   });
 
+  // The trim used to be `^-+|-+$`, which CodeQL flags as quadratic
+  // (js/polynomial-redos). The collapse above it makes a hyphen run impossible,
+  // so `^-|-$` answers identically — these cases are the proof, and the timed
+  // one is what a long run costs now.
+  it.each([
+    ['---', 'agent'],
+    ['-', 'agent'],
+    ['a---b', 'a-b'],
+    ['---a---', 'a'],
+    ['- - -', 'agent'],
+    ['a - - - b', 'a-b'],
+    ['!!!hello!!!', 'hello'],
+  ])('slugifies the hyphen-heavy %j to %j', (input, expected) => {
+    expect(slugifyAgentName(input)).toBe(expected);
+  });
+
   it('truncates to 64 characters', () => {
     const long = 'a'.repeat(100);
     const result = slugifyAgentName(long);

@@ -268,6 +268,12 @@ function shorten(line: string): string {
  * nothing at all, when everything in it has been forgotten.
  */
 function normalizeTail(content: string): string {
-  const trimmed = content.replace(/\s+$/u, '');
+  // `trimEnd()`, not `/\s+$/u`: that regex retried at every offset of an
+  // internal whitespace run whenever the file did NOT end in whitespace, which
+  // is quadratic on a memory file full of blank lines (CodeQL
+  // js/polynomial-redos). The two strip exactly the same characters — JS
+  // defines regex `\s` as WhiteSpace ∪ LineTerminator, which is what `trimEnd`
+  // removes, and `$` without `/m` only ever anchors at end of input.
+  const trimmed = content.trimEnd();
   return trimmed === '' ? '' : `${trimmed}\n`;
 }

@@ -45,7 +45,11 @@ export function slugifyAgentName(displayName: string): string {
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+    // `^-|-$`, not `^-+|-+$`: the collapse above turns every run of
+    // non-alphanumerics into ONE hyphen, so a run can never reach here — and
+    // `-+$` would retry at every offset of one if it ever did (quadratic,
+    // CodeQL js/polynomial-redos). Same answer, no trap for the next editor.
+    .replace(/^-|-$/g, '');
 
   // Must start with a letter
   if (slug && /^[0-9]/.test(slug)) slug = `a-${slug}`;

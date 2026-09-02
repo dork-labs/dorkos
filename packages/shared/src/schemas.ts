@@ -4342,6 +4342,19 @@ export type TaskTemplate = z.infer<typeof TaskTemplateSchema>;
 export const TASK_DURATION_PATTERN = /^(?:\d+h)?(?:\d+m)?(?:\d+s)?$/;
 
 /**
+ * Mirrors `DURATION_MAX_LENGTH` in `@dorkos/skills` (`duration.ts`).
+ *
+ * The pattern above says nothing about LENGTH, and `\d+` is happy to match half
+ * a megabyte of digits. `'9'.repeat(500_000) + 'h'` therefore passed every check
+ * this schema made and was handed straight to `parseDuration`, which is the
+ * whole exploit — a duration nobody could mean, sized to be expensive rather
+ * than to say a time. A real one is a handful of characters.
+ *
+ * @see {@link TASK_DURATION_PATTERN} for why these mirrors exist.
+ */
+export const TASK_DURATION_MAX = 32;
+
+/**
  * Mirrors `SkillFrontmatterSchema.description`'s cap in `@dorkos/skills`.
  *
  * @see {@link TASK_DURATION_PATTERN} for why these mirrors exist.
@@ -4371,9 +4384,16 @@ export const CreateTaskRequestSchema = z
     enabled: z.boolean().optional().default(true),
     /**
      * A duration like `5m`, `1h`, `30s`, `2h30m`. Validated to the same shape
-     * the frontmatter accepts — see {@link TASK_DURATION_PATTERN}.
+     * the frontmatter accepts — see {@link TASK_DURATION_PATTERN} — and to the
+     * same length, see {@link TASK_DURATION_MAX}.
      */
-    maxRuntime: z.string().min(1).regex(TASK_DURATION_PATTERN).nullable().optional(),
+    maxRuntime: z
+      .string()
+      .min(1)
+      .max(TASK_DURATION_MAX)
+      .regex(TASK_DURATION_PATTERN)
+      .nullable()
+      .optional(),
     /**
      * Whether every run resumes one persistent session (DOR-1571). Omitted means
      * off — the isolated-per-run default. See {@link TaskSchema.sticky}.
@@ -4550,9 +4570,17 @@ export const UpdateTaskRequestSchema = z
      * security bug and not a convenience. Two things went wrong with a value
      * this used to wave through: `parseDuration('10 minutes')` returns 0, which
      * takes the run's time limit off altogether, and the same string written to
-     * the SKILL.md makes the file unreadable to every later sync.
+     * the SKILL.md makes the file unreadable to every later sync. Capped at
+     * {@link TASK_DURATION_MAX} for a third reason: shape alone let a caller
+     * send half a megabyte of digits.
      */
-    maxRuntime: z.string().min(1).regex(TASK_DURATION_PATTERN).nullable().optional(),
+    maxRuntime: z
+      .string()
+      .min(1)
+      .max(TASK_DURATION_MAX)
+      .regex(TASK_DURATION_PATTERN)
+      .nullable()
+      .optional(),
     /**
      * Turn session-resume on or off for this schedule (DOR-1571). See
      * {@link TaskSchema.sticky}.
