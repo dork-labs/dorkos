@@ -23,7 +23,7 @@ export function CloseSection({ slideId = 'close' }: CloseSectionProps) {
       >
         <motion.p
           variants={REVEAL}
-          className="text-warm-gray mb-8 text-[clamp(14px,1.8vw,18px)] leading-[1.7]"
+          className="text-cream-tertiary/60 mb-8 text-[clamp(14px,1.8vw,18px)] leading-[1.7]"
         >
           This isn&rsquo;t about what I built.
         </motion.p>

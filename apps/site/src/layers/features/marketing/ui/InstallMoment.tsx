@@ -314,7 +314,7 @@ function TerminalHero({ isInView }: { isInView: boolean }) {
         dark ground moves the wrong way. Pointing these at the token would drop
         them from 3.87:1 to 2.97:1. They are terminal chrome rendered at low
         contrast on purpose, and they are part of the dark-ground muted-text
-        debt audited under DOR-1512 — if that audit settles on a dark-surface
+        debt audited under DOR-1700 — if that audit settles on a dark-surface
         idiom, these move to it rather than to the light-ground token.
       */}
       <div className="mb-3">

@@ -36,7 +36,7 @@ export function JustPromptsSection({ slideId = 'prompts' }: JustPromptsSectionPr
           >
             Platforms will just be prompts.
           </motion.h2>
-          <motion.p variants={REVEAL} className="text-warm-gray text-[13px]">
+          <motion.p variants={REVEAL} className="text-cream-tertiary/60 text-[13px]">
             All open source. Here&apos;s what it actually is.
           </motion.p>
         </motion.div>
@@ -60,7 +60,7 @@ export function JustPromptsSection({ slideId = 'prompts' }: JustPromptsSectionPr
                 {item.lhs}
               </span>
               <span className="text-brand-orange text-[20px] font-light">=</span>
-              <span className="text-warm-gray min-w-[160px] text-left font-mono text-[14px]">
+              <span className="text-cream-tertiary/60 min-w-[160px] text-left font-mono text-[14px]">
                 {item.rhs}
               </span>
             </motion.div>
@@ -78,7 +78,10 @@ export function JustPromptsSection({ slideId = 'prompts' }: JustPromptsSectionPr
           <motion.p variants={REVEAL} className="text-cream-white mb-2 text-[16px] font-medium">
             Platforms will just be prompts.
           </motion.p>
-          <motion.p variants={REVEAL} className="text-warm-gray text-[14px] leading-relaxed">
+          <motion.p
+            variants={REVEAL}
+            className="text-cream-tertiary/60 text-[14px] leading-relaxed"
+          >
             Code isn&apos;t the scarce thing anymore. Knowing what to ask &mdash;&mdash; and what to
             remember &mdash;&mdash; is.
           </motion.p>
