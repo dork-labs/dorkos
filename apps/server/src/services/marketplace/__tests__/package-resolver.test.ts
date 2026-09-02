@@ -22,6 +22,8 @@ import {
   PackageNotFoundError,
   PackageResolver,
 } from '../package-resolver.js';
+import { InvalidPackageNameError } from '../lib/package-paths.js';
+import { BoundaryError, initBoundary } from '../../../lib/boundary.js';
 
 /** Build a stub `MarketplaceSourceManager` whose methods can be configured per-test. */
 function buildSourceManagerStub(opts?: {
@@ -71,6 +73,9 @@ describe('PackageResolver', () => {
 
   beforeEach(async () => {
     scratchDir = await mkdtemp(join(tmpdir(), 'package-resolver-'));
+    // The resolver confines local-path installs to the directory boundary, so
+    // the fixture directory has to BE the boundary for these tests.
+    await initBoundary(scratchDir);
   });
 
   afterEach(async () => {
@@ -112,6 +117,29 @@ describe('PackageResolver', () => {
 
       await expect(resolver.resolve(missing)).rejects.toThrow(/not a directory|does not exist/i);
     });
+
+    // Without this, a remote caller learns whether any absolute path on the
+    // server exists (the `stat` answers differently), and any directory that
+    // happens to carry a package manifest gets its whole file listing returned
+    // by the install preview — before anyone consents to anything.
+    it('refuses a local path outside the directory boundary', async () => {
+      const outside = await mkdtemp(join(tmpdir(), 'package-resolver-outside-'));
+      try {
+        const resolver = new PackageResolver(buildSourceManagerStub(), buildCacheStub());
+
+        await expect(resolver.resolve(outside)).rejects.toThrow(BoundaryError);
+      } finally {
+        await rm(outside, { recursive: true, force: true });
+      }
+    });
+
+    it('refuses an out-of-boundary path BEFORE asking whether it exists', async () => {
+      const resolver = new PackageResolver(buildSourceManagerStub(), buildCacheStub());
+
+      // A path that does not exist and is out of bounds must answer the same
+      // way as one that does exist, or the refusal is itself the oracle.
+      await expect(resolver.resolve('/definitely/not/here-12345')).rejects.toThrow(BoundaryError);
+    });
   });
 
   describe('git shorthand resolution', () => {
@@ -135,6 +163,35 @@ describe('PackageResolver', () => {
       expect(result.kind).toBe('git');
       expect(result.packageName).toBe('pkg');
       expect(result.gitUrl).toBe('https://github.com/x/y');
+    });
+
+    it('keeps accepting repo-shaped names that are only ever cache keys', async () => {
+      const resolver = new PackageResolver(buildSourceManagerStub(), buildCacheStub());
+
+      const result = await resolver.resolve('My.Repo_v2@https://github.com/x/y');
+
+      expect(result.packageName).toBe('My.Repo_v2');
+    });
+
+    // The resolved name becomes the cache key `${name}@${sha}` under
+    // `<cacheRoot>/packages/`, where the cache does an `rm -rf` and a `rename`.
+    // A name with a separator in it therefore plants a cloned, attacker-authored
+    // git tree anywhere on disk, so the resolver refuses it at the parse.
+    it.each([
+      ['a/../../../../x@https://host/repo', 'the cache-key escape'],
+      ['nested/name@https://host/repo', 'forward slash'],
+      ['..@https://host/repo', 'bare parent'],
+      ['nested\\name@https://host/repo', 'backslash'],
+    ])('refuses %s (%s)', async (input) => {
+      const resolver = new PackageResolver(buildSourceManagerStub(), buildCacheStub());
+
+      await expect(resolver.resolve(input)).rejects.toThrow(InvalidPackageNameError);
+    });
+
+    it('refuses a traversal name arriving through the `github:` shorthand', async () => {
+      const resolver = new PackageResolver(buildSourceManagerStub(), buildCacheStub());
+
+      await expect(resolver.resolve('github:dorkos/..')).rejects.toThrow(InvalidPackageNameError);
     });
   });
 

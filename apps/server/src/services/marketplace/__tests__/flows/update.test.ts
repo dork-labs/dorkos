@@ -275,6 +275,35 @@ describe('UpdateFlow', () => {
     expect(ctx.installer.update).not.toHaveBeenCalled();
   });
 
+  // The manifest is read off disk with no schema validation, and the name it
+  // yields is handed to `installer.update()` — which uninstalls by name, and
+  // joins that name into dorkHome. The directory entry name is the honest
+  // fallback: it is a real directory that was actually walked, so it cannot
+  // climb anywhere.
+  it('falls back to the directory name when the manifest name is not a package name', async () => {
+    const marketplaceJson = buildMarketplaceJson([{ name: 'honest-plugin', version: '2.0.0' }]);
+    const ctx = await buildDeps({ marketplaceJson });
+    cleanupDirs.push(ctx.dorkHome);
+    const installRoot = path.join(ctx.dorkHome, 'plugins', 'honest-plugin');
+    await mkdir(path.join(installRoot, '.dork'), { recursive: true });
+    await writeFile(
+      path.join(installRoot, '.dork', 'manifest.json'),
+      JSON.stringify({
+        ...buildPluginManifest({ name: 'honest-plugin', version: '1.0.0' }),
+        name: '../../../../etc/cron.d',
+      }),
+      'utf-8'
+    );
+
+    const flow = new UpdateFlow(ctx.deps);
+    const result = await flow.run({ apply: true });
+
+    expect(result.checks[0]?.packageName).toBe('honest-plugin');
+    expect(ctx.installer.update).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'honest-plugin' })
+    );
+  });
+
   it('reports update available but does not install in advisory mode', async () => {
     const marketplaceJson = buildMarketplaceJson([{ name: 'outdated-plugin', version: '2.0.0' }]);
     const ctx = await buildDeps({ marketplaceJson });

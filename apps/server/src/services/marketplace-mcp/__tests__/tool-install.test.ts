@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 
+import { initBoundary } from '../../../lib/boundary.js';
 import { createInstallHandler, InstallInputSchema } from '../tool-install.js';
 import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
 import { SHAPE_PROJECT_PATH_IGNORED_WARNING } from '../../marketplace/flows/install-shape.js';
@@ -195,12 +199,50 @@ function parseToolPayload<T = unknown>(result: { content: { type: 'text'; text: 
   return JSON.parse(result.content[0].text) as T;
 }
 
+/**
+ * Point the directory boundary at a fresh temp root and return an in-bounds
+ * project path under it. The install handler confines `projectPath` the same
+ * way the HTTP route does, so tests that pass one have to be inside a boundary.
+ */
+async function boundedProjectPath(): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), 'mcp-install-boundary-'));
+  await initBoundary(root);
+  return join(root, 'some-project');
+}
+
 describe('InstallInputSchema', () => {
   it('exports a Zod-compatible shape with name + optional fields', () => {
     expect(InstallInputSchema).toHaveProperty('name');
     expect(InstallInputSchema).toHaveProperty('marketplace');
     expect(InstallInputSchema).toHaveProperty('projectPath');
     expect(InstallInputSchema).toHaveProperty('confirmationToken');
+  });
+});
+
+describe('createInstallHandler — path safety', () => {
+  it('refuses a projectPath outside the directory boundary, before any preview', async () => {
+    const installer = createStubInstaller({
+      preview: previewResult({ name: 'sentry' }),
+      install: installResult({ packageName: 'sentry' }),
+    });
+    const provider = new InAppConfirmationProvider(vi.fn());
+    const deps = createStubDeps({ confirmationProvider: provider, installer });
+    await boundedProjectPath();
+    const outside = await mkdtemp(join(tmpdir(), 'mcp-install-outside-'));
+
+    try {
+      const handler = createInstallHandler(deps);
+      const result = await handler({ name: 'sentry', projectPath: outside });
+
+      expect(result.isError).toBe(true);
+      expect(parseToolPayload<{ code: string }>(result).code).toBe('OUTSIDE_BOUNDARY');
+      // The preview clones the package to disk, so refusing after it would
+      // have done the fetch for a request that was never going to be honored.
+      expect(installer.preview).not.toHaveBeenCalled();
+      expect(installer.install).not.toHaveBeenCalled();
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 });
 
@@ -274,18 +316,19 @@ describe('createInstallHandler — in-app approve happy path', () => {
   });
 
   it('forwards marketplace and projectPath to installer.install()', async () => {
+    const projectPath = await boundedProjectPath();
     const handler = createInstallHandler(deps);
     await handler({
       name: 'sentry',
       marketplace: 'dorkos-community',
-      projectPath: '/tmp/some-project',
+      projectPath,
     });
 
     expect(installer.install).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'sentry',
         marketplace: 'dorkos-community',
-        projectPath: '/tmp/some-project',
+        projectPath,
       })
     );
   });
@@ -322,7 +365,10 @@ describe('createInstallHandler — in-app approve happy path', () => {
     deps = createStubDeps({ confirmationProvider: provider, installer });
 
     const handler = createInstallHandler(deps);
-    const result = await handler({ name: 'linear-ops', projectPath: '/tmp/some-project' });
+    const result = await handler({
+      name: 'linear-ops',
+      projectPath: await boundedProjectPath(),
+    });
 
     const payload = parseToolPayload<{ status: string; warnings: string[] }>(result);
     expect(payload.status).toBe('installed');

@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
+import { initBoundary } from '../../../lib/boundary.js';
 import { createUninstallHandler, UninstallInputSchema } from '../tool-uninstall.js';
 import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
 import {
@@ -119,6 +123,53 @@ describe('UninstallInputSchema', () => {
     expect(UninstallInputSchema).toHaveProperty('purge');
     expect(UninstallInputSchema).toHaveProperty('projectPath');
     expect(UninstallInputSchema).toHaveProperty('confirmationToken');
+  });
+
+  // The tool's own schema is what the capability registry parses agent input
+  // with, so a traversal name never becomes a tool call at all.
+  it('refuses a traversal name at the schema, and keeps real names', () => {
+    expect(UninstallInputSchema.name.safeParse('sentry').success).toBe(true);
+    expect(UninstallInputSchema.name.safeParse('../../victim').success).toBe(false);
+    expect(UninstallInputSchema.name.safeParse('/etc/passwd').success).toBe(false);
+  });
+});
+
+describe('createUninstallHandler — path safety', () => {
+  let confirmationProvider: FakeConfirmationProvider;
+  let uninstallFlow: MarketplaceMcpDeps['uninstallFlow'];
+  let deps: MarketplaceMcpDeps;
+
+  beforeEach(async () => {
+    confirmationProvider = new FakeConfirmationProvider();
+    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
+    uninstallFlow = createStubUninstallFlow({ result: uninstallResult({ packageName: 'sentry' }) });
+    deps = createStubDeps({ confirmationProvider, uninstallFlow });
+    await initBoundary(await mkdtemp(join(tmpdir(), 'mcp-uninstall-boundary-')));
+  });
+
+  it('refuses a traversal name without ever asking the person to confirm', async () => {
+    const handler = createUninstallHandler(deps);
+    const result = await handler({ name: '../../victim' });
+
+    expect(result.isError).toBe(true);
+    expect(parseToolPayload<{ code: string }>(result).code).toBe('INVALID_NAME');
+    expect(confirmationProvider.requestInstallConfirmation).not.toHaveBeenCalled();
+    expect(uninstallFlow.uninstall).not.toHaveBeenCalled();
+  });
+
+  it('refuses a projectPath outside the directory boundary', async () => {
+    const outside = await mkdtemp(join(tmpdir(), 'mcp-uninstall-outside-'));
+    try {
+      const handler = createUninstallHandler(deps);
+      const result = await handler({ name: 'sentry', projectPath: outside });
+
+      expect(result.isError).toBe(true);
+      expect(parseToolPayload<{ code: string }>(result).code).toBe('OUTSIDE_BOUNDARY');
+      expect(confirmationProvider.requestInstallConfirmation).not.toHaveBeenCalled();
+      expect(uninstallFlow.uninstall).not.toHaveBeenCalled();
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 });
 
@@ -372,14 +423,17 @@ describe('createUninstallHandler — purge flag', () => {
     });
     const deps = createStubDeps({ confirmationProvider, uninstallFlow });
 
+    // An in-bounds project path: the handler confines projectPath the same way
+    // the HTTP route does, so the boundary has to contain it.
+    const boundary = await mkdtemp(join(tmpdir(), 'mcp-uninstall-boundary-'));
+    await initBoundary(boundary);
+    const projectPath = join(boundary, 'some-project');
+
     const handler = createUninstallHandler(deps);
-    await handler({ name: 'sentry', projectPath: '/tmp/some-project' });
+    await handler({ name: 'sentry', projectPath });
 
     expect(uninstallFlow.uninstall).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'sentry',
-        projectPath: '/tmp/some-project',
-      })
+      expect.objectContaining({ name: 'sentry', projectPath })
     );
   });
 });

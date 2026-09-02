@@ -34,6 +34,7 @@ import { fileURLToPath } from 'node:url';
 import { noopLogger } from '@dorkos/shared/logger';
 import type { Logger } from '@dorkos/shared/logger';
 import type { AdapterManager } from '../../relay/adapter-manager.js';
+import { initBoundary } from '../../../lib/boundary.js';
 import { ConflictDetector } from '../conflict-detector.js';
 import { MarketplaceCache } from '../marketplace-cache.js';
 import { MarketplaceInstaller } from '../marketplace-installer.js';
@@ -226,6 +227,10 @@ describe('marketplace install pipeline — integration', () => {
     // install-plugin / install-skill-pack / install-adapter has a
     // parent that already exists on the first run.
     await mkdir(path.join(dorkHome, 'plugins'), { recursive: true });
+    // Local-path installs are boundary-confined, and every fixture this file
+    // installs from lives under `FIXTURES_DIR` — so that is the boundary. What
+    // the boundary REFUSES is `package-resolver.test.ts`'s subject.
+    await initBoundary(FIXTURES_DIR);
   });
 
   afterEach(async () => {

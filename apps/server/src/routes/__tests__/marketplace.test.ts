@@ -27,6 +27,10 @@ vi.mock('../../lib/boundary.js', async (importActual) => {
 });
 
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
+import {
+  InvalidPackageNameError,
+  PathEscapeError,
+} from '../../services/marketplace/lib/package-paths.js';
 import { MarketplaceSourceManager } from '../../services/marketplace/marketplace-source-manager.js';
 import { MarketplaceCache } from '../../services/marketplace/marketplace-cache.js';
 import type { PackageFetcher } from '../../services/marketplace/package-fetcher.js';
@@ -924,6 +928,37 @@ describe('Marketplace Routes', () => {
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
     });
+
+    // A containment assertion fires deep in the cache, where its message names
+    // the cache root — which spells dorkHome, which spells the operator's
+    // username. The body says the path was refused; it does not say where.
+    it('refuses an escaped path without telling the caller where the cache lives', async () => {
+      installer.preview.mockRejectedValue(
+        new PathEscapeError('/Users/realperson/.dork/cache/marketplace/packages', 'evil')
+      );
+
+      const res = await request(app)
+        .post('/api/marketplace/packages/sample-plugin/preview')
+        .send({});
+
+      expect(res.status).toBe(400);
+      expect(JSON.stringify(res.body)).not.toContain('realperson');
+      expect(JSON.stringify(res.body)).not.toContain('.dork');
+    });
+
+    // The other half of the pair: a bad NAME is echoed back, because the only
+    // thing that message contains is what the caller just sent, and saying
+    // which name was rejected is what makes the 400 actionable.
+    it('names the rejected package name, which the caller supplied itself', async () => {
+      installer.preview.mockRejectedValue(new InvalidPackageNameError('Bad Name', 'must be kebab'));
+
+      const res = await request(app)
+        .post('/api/marketplace/packages/sample-plugin/preview')
+        .send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('Bad Name');
+    });
   });
 
   describe('POST /packages/:name/install', () => {
@@ -1322,10 +1357,13 @@ describe('Marketplace Routes', () => {
         preservedData: [],
       });
 
+      // The param used to be a path-shaped install identifier here. It cannot
+      // be any more — an uninstall name is joined straight into dorkHome, so
+      // the route now takes canonical package names only — but the regression
+      // this test guards is unchanged: the event carries what the flow
+      // resolved, never what the URL said.
       await request(app)
-        .post(
-          `/api/marketplace/packages/${encodeURIComponent('./local/clones/sample-plugin')}/uninstall`
-        )
+        .post('/api/marketplace/packages/sample-plugin-alias/uninstall')
         .send({ projectPath: '/some/project' });
 
       expect(onPluginsChanged.mock.calls[0][0]).toEqual({
@@ -1333,6 +1371,27 @@ describe('Marketplace Routes', () => {
         packageName: 'sample-plugin',
         action: 'uninstall',
       });
+    });
+
+    // Express decodes `:name` after routing, so `..%2F..%2Fvictim` arrives as
+    // `../../victim` and used to be joined straight into dorkHome. The route
+    // refuses it before the tier gate, so no approval card is ever raised for
+    // an uninstall that could not name a real package.
+    it.each([
+      ['..%2F..%2Fvictim', 'encoded parent traversal'],
+      ['..%2Fetc', 'encoded single climb'],
+      ['%2Fetc%2Fpasswd', 'encoded absolute path'],
+      ['a%2F..%2F..%2F..%2Fetc', 'embedded traversal'],
+      ['Sample-Plugin', 'uppercase — never an install directory'],
+    ])('refuses %s with 400 (%s) and never reaches the flow', async (rawName) => {
+      const res = await request(app)
+        .post(`/api/marketplace/packages/${rawName}/uninstall`)
+        .send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/package name/i);
+      expect(uninstallFlow.uninstall).not.toHaveBeenCalled();
+      expect(onPluginsChanged).not.toHaveBeenCalled();
     });
 
     it('returns 404 when the package is not installed', async () => {
@@ -1462,6 +1521,22 @@ describe('Marketplace Routes', () => {
       expect(res.status).toBe(403);
       expect(installer.install).not.toHaveBeenCalled();
       expect(onPluginsChanged).not.toHaveBeenCalled();
+    });
+
+    // Preview is the one route of the four that is NOT tier-gated, and it is
+    // the one that reads: `PermissionPreviewBuilder` joins `projectPath` into
+    // an install root and the conflict detector walks it, so an unbounded
+    // preview answers "does this directory exist, and what is in it" for any
+    // absolute path — with no approval card in the way.
+    it('preview returns 403 and never previews when projectPath is outside the boundary', async () => {
+      rejectBoundaryOnce();
+
+      const res = await request(app)
+        .post('/api/marketplace/packages/sample-plugin/preview')
+        .send({ projectPath: '/etc/evil' });
+
+      expect(res.status).toBe(403);
+      expect(installer.preview).not.toHaveBeenCalled();
     });
 
     it('uninstall returns 403 when projectPath is outside the boundary', async () => {

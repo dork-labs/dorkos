@@ -25,6 +25,7 @@
 import { mkdir, mkdtemp, readFile, rename, writeFile, readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseMarketplaceJsonLenient, type MarketplaceJson } from '@dorkos/marketplace';
+import { assertContainedIn } from './lib/package-paths.js';
 
 /** Default TTL for cached `marketplace.json` documents (1 hour). */
 const DEFAULT_TTL_MS = 60 * 60 * 1000;
@@ -372,14 +373,33 @@ export class MarketplaceCache {
     await rm(this.cacheRoot, { recursive: true, force: true });
   }
 
-  /** Compute the directory path for a marketplace's cached document. */
+  /**
+   * Compute the directory path for a marketplace's cached document.
+   *
+   * @throws {PathEscapeError} When the name would place the directory outside
+   *   the cache.
+   */
   private marketplaceDir(marketplaceName: string): string {
-    return join(this.cacheRoot, 'marketplaces', marketplaceName);
+    const root = join(this.cacheRoot, 'marketplaces');
+    return assertContainedIn(root, join(root, marketplaceName));
   }
 
-  /** Compute the directory path for a content-addressable package clone. */
+  /**
+   * Compute the directory path for a content-addressable package clone.
+   *
+   * The containment assertion is the belt to the resolver's braces. Both halves
+   * of this key are caller-influenced — the package name comes from the install
+   * identifier, the SHA from a remote git server — and the directory it names
+   * is one an `rm(recursive)` and a `rename` land on, so escaping the cache
+   * plants (or deletes) a tree anywhere on disk. Callers upstream validate the
+   * name; this is the check that still holds when a new one does not.
+   *
+   * @throws {PathEscapeError} When the key would place the directory outside
+   *   the cache.
+   */
   private packageDir(packageName: string, commitSha: string): string {
-    return join(this.cacheRoot, 'packages', `${packageName}@${commitSha}`);
+    const root = join(this.cacheRoot, 'packages');
+    return assertContainedIn(root, join(root, `${packageName}@${commitSha}`));
   }
 }
 

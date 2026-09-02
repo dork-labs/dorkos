@@ -16,6 +16,8 @@ import { basename, isAbsolute, resolve as resolvePath } from 'node:path';
 import type { MarketplaceJsonEntry, PluginSource } from '@dorkos/marketplace';
 import type { MarketplaceCache } from './marketplace-cache.js';
 import type { MarketplaceSourceManager } from './marketplace-source-manager.js';
+import { assertPathSegment } from './lib/package-paths.js';
+import { validateBoundary } from '../../lib/boundary.js';
 
 /** Discriminator for the kind of source a resolved package was found in. */
 export type PackageSourceKind = 'marketplace' | 'git' | 'local';
@@ -133,7 +135,7 @@ export class PackageResolver {
    * Supported input formats (checked in order):
    * 1. `./relative/path`, `../up`, `/abs/path`, or `C:\drive\path` →
    *    local directory. Resolved to an absolute path; the directory must
-   *    exist on disk.
+   *    exist on disk AND fall within the configured directory boundary.
    * 2. `github:user/repo` → expanded to `https://github.com/user/repo`.
    *    Kind = `git`. `packageName` = repo segment.
    * 3. `name@<git url>` → direct git URL. Kind = `git`. `packageName` =
@@ -153,6 +155,9 @@ export class PackageResolver {
    * @throws {MarketplaceNotFoundError} An explicit marketplace name does not exist.
    * @throws {PackageNotFoundError} The package cannot be located.
    * @throws {AmbiguousPackageError} A bare name matches multiple marketplaces.
+   * @throws {InvalidPackageNameError} A git/URL input's package name is not a
+   *   single traversal-free path segment (it becomes a cache directory name).
+   * @throws {BoundaryError} A local path falls outside the directory boundary.
    */
   async resolve(input: string): Promise<ResolvedPackageSource> {
     if (isLocalPathInput(input)) {
@@ -170,8 +175,12 @@ export class PackageResolver {
       const right = input.slice(atIdx + 1);
       if (isParseableUrl(right)) {
         return {
+          // Nothing downstream re-parses this name, and the cache turns it
+          // into a directory under `<cacheRoot>/packages/` that it will
+          // `rm -rf` and `rename` onto — so a name carrying a separator plants
+          // a cloned, package-author-controlled tree outside the cache.
           kind: 'git',
-          packageName: left,
+          packageName: assertPathSegment(left),
           pluginSource: { source: 'url', url: right },
           gitUrl: right,
         };
@@ -291,13 +300,28 @@ function isLocalPathInput(input: string): boolean {
 }
 
 /**
- * Resolve a local-path input. Verifies the directory exists and returns
- * a `local`-kind descriptor. The thrown error is a plain `Error` (not a
- * typed error) because user-provided paths failing here means
- * "directory missing", not "package not found".
+ * Resolve a local-path input. Confines the path to the directory boundary,
+ * verifies the directory exists, and returns a `local`-kind descriptor. The
+ * "missing directory" error is a plain `Error` (not a typed error) because a
+ * user-provided path failing there means "directory missing", not "package not
+ * found".
+ *
+ * The boundary check runs BEFORE the `stat`, and that order is the point.
+ * Installing from a path on your own disk is a real thing operators do, so the
+ * policy is the same one every other raw-path surface in the server already
+ * enforces — the configured boundary, which defaults to the home directory of
+ * whoever started DorkOS and narrows to `DORKOS_BOUNDARY` in a hosted or Docker
+ * deployment. Below that line, `stat` answers differently for a path that
+ * exists than for one that does not, which hands a remote caller a filesystem
+ * existence oracle; and any directory that happens to carry a package manifest
+ * gets a full recursive file listing returned by the install preview, before
+ * anyone has consented to an install.
+ *
+ * @throws {BoundaryError} When the path resolves outside the directory boundary.
  */
 async function resolveLocal(input: string): Promise<ResolvedPackageSource> {
   const absolute = resolvePath(input);
+  await validateBoundary(absolute);
   let info;
   try {
     info = await stat(absolute);
@@ -320,7 +344,9 @@ function resolveGithubShorthand(match: RegExpExecArray): ResolvedPackageSource {
   const cloneUrl = `https://github.com/${user}/${repo}`;
   return {
     kind: 'git',
-    packageName: repo,
+    // Same cache-key reasoning as the `name@<url>` branch above. The shorthand
+    // regex already rules out a `/`, so this is what is left: `.` and `..`.
+    packageName: assertPathSegment(repo),
     pluginSource: { source: 'url', url: cloneUrl },
     gitUrl: cloneUrl,
   };
