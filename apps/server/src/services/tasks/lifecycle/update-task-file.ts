@@ -36,6 +36,7 @@ import {
   pluginRoots,
   touchesFile,
 } from '../task-file-update.js';
+import { logger } from '../../../lib/logger.js';
 
 /** The collaborators a file rewrite needs. */
 export interface TaskFileUpdateDeps {
@@ -237,6 +238,17 @@ export async function applyTaskFileUpdate(
         error: describeTaskFileFailure('read', existing.filePath, diskReason(err)),
       };
     }
+    // Said out loud, because this branch is the DOR-1625 bug reinstated for one
+    // task: the row changes and no file records it. That is right for a task
+    // whose file is genuinely gone, and wrong for one whose file is missing for
+    // a moment — an unmounted volume, a checkout mid-`git`, a syncing folder —
+    // where the file comes back holding the OLD values and the next sweep undoes
+    // the edit with nothing anywhere saying why. One line naming the path is what
+    // makes that diagnosable instead of mysterious.
+    logger.warn('[tasks] updated the row alone: no file at this path', {
+      taskId: existing.id,
+      filePath: existing.filePath,
+    });
     return { ok: true, changesFile };
   }
 

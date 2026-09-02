@@ -139,6 +139,53 @@ describe('tasks_update writes the SKILL.md, not just the row', () => {
     expect(row.cron).toBe('0 5 * * *');
   });
 
+  /** Create the base task and put it through the person's approval. */
+  async function createApprovedTask(): Promise<string> {
+    const id = await createTask();
+    // The transition IS the approval, and it stamps the content key the arm gate
+    // reads later (`TaskStore.recordApproval`).
+    store.updateTask(id, { status: 'active' });
+    return id;
+  }
+
+  it('SAYS an edit costs the schedule its approval, and it really does', async () => {
+    // Writing the file is what makes the arm gate see new content, so the fix
+    // above brought this consequence with it: the person approved a prompt, this
+    // is a different one, and the next sync parks the task until they read it.
+    // Correct, and silent until now — the reply handed back a row still saying
+    // `active`, so an agent reported a live schedule that was about to stop.
+    const id = await createApprovedTask();
+
+    const { isError, payload } = await call('tasks_update', { id, prompt: 'do something else' });
+
+    expect(isError).toBe(false);
+    expect(payload.needsReapproval).toBe(true);
+    expect(String(payload.note)).toContain('approve it again');
+    // The row the reply carries still says active, which is exactly why the note
+    // has to be there.
+    expect((payload.schedule as Task).status).toBe('active');
+
+    // And the note is TRUE: this is the sweep it warns about.
+    await reconcile();
+    expect(store.getTask(id)!.status).toBe('pending_approval');
+  });
+
+  it('says nothing of the sort for an edit that keeps the approved work', async () => {
+    // The negative control, and it is the half that makes the disclosure worth
+    // anything: a note on every update is a note nobody reads. `maxRuntime` is
+    // written to the file but is not part of the content key, so the grant holds.
+    const id = await createApprovedTask();
+
+    const { isError, payload } = await call('tasks_update', { id, maxRuntime: '15m' });
+
+    expect(isError).toBe(false);
+    expect(payload.needsReapproval).toBeUndefined();
+    expect(payload.note).toBeUndefined();
+
+    await reconcile();
+    expect(store.getTask(id)!.status).toBe('active');
+  });
+
   it('writes the prompt into the body and the cron into the schedule block', async () => {
     const id = await createTask();
     await call('tasks_update', { id, prompt: 'a different job', cron: '30 4 * * 1' });
@@ -162,7 +209,10 @@ describe('tasks_update writes the SKILL.md, not just the row', () => {
 
     const content = await fs.readFile(skillPath(), 'utf-8');
     expect(content).toMatch(/^ {2}timezone: Europe\/Berlin$/m);
-    expect(content).not.toContain('null');
+    // Anchored on the field rather than on the word: `null` anywhere in a body a
+    // person wrote is none of this test's business, and a merge that wrote
+    // `timezone: null` is the shape that makes the file unreadable for good.
+    expect(content).not.toMatch(/^\s*timezone:\s*(null|~)\s*$/m);
 
     await reconcile();
     expect(store.getTask(id)!.timezone).toBe('Europe/Berlin');
@@ -174,7 +224,10 @@ describe('tasks_update writes the SKILL.md, not just the row', () => {
     const { isError, payload } = await call('tasks_update', { id, cron: 'every other tuesday' });
 
     expect(isError).toBe(true);
-    expect(String(payload.error).length).toBeGreaterThan(0);
+    // Pinned on the wording, not on "some error": the agent reads this sentence
+    // and either writes a real cron next or asks the person.
+    expect(String(payload.error)).toContain('is not a schedule DorkOS can read');
+    expect(String(payload.error)).toContain('every other tuesday');
     expect(store.getTask(id)!.cron).toBe('0 3 * * *');
     expect(await fs.readFile(skillPath(), 'utf-8')).not.toContain('every other tuesday');
   });

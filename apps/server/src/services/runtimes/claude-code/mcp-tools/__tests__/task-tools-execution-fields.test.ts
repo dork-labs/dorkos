@@ -158,9 +158,11 @@ describe('tasks_create / tasks_update carry runtime, model and effort', () => {
     expect(store.getTask(id)).toMatchObject({ runtime: null, model: null });
     // Cleared means the KEY is gone, not written as `null`: the frontmatter
     // schema rejects a literal null and an unreadable file stops syncing for good.
+    // Anchored on the block lines, so a prompt body that happens to say "model:"
+    // cannot pass or fail this for us.
     const content = await fs.readFile(skillPath(), 'utf-8');
-    expect(content).not.toContain('runtime:');
-    expect(content).not.toContain('model:');
+    expect(content).not.toMatch(/^ {2}runtime:/m);
+    expect(content).not.toMatch(/^ {2}model:/m);
   });
 
   it('still refuses permissionMode and status alongside them', async () => {

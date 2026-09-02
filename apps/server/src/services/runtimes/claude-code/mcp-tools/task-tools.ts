@@ -75,6 +75,35 @@ export const PARKED_SCHEDULE_NOTE =
   'were done.';
 
 /**
+ * What `tasks_update` tells an agent when its edit costs the schedule its
+ * approval (DOR-1625 review).
+ *
+ * A person's approval is keyed on the schedule's CONTENT — the prompt and the
+ * cron (`scheduleContentKey`) — so changing either means nobody has read this
+ * piece of work. The next sync therefore parks the task at `pending_approval`,
+ * within seconds via the file watcher and within five minutes regardless.
+ *
+ * That is the right behavior and it is NOT what the reply looked like. The row
+ * is written before any of that happens, so the schedule this tool hands back
+ * still says `status: 'active'` — an agent read it, reported "updated the
+ * schedule", and ended the turn, leaving a person to discover a stopped cron on
+ * their own. Re-issuing the approval here instead is not an option: only a
+ * caller that cleared the agent bar may do that (`routes/tasks.ts` re-approves
+ * for a trusted caller alone), and doing it from an MCP tool would be exactly
+ * the substitution the bypass clamp exists to refuse.
+ *
+ * So the edit lands, and the reply says what it cost. Worded like
+ * {@link PARKED_SCHEDULE_NOTE}, and for the same reason: DorkOS raises the
+ * approval on its own, and the one thing only the agent can do is say so out
+ * loud.
+ */
+export const REAPPROVAL_NOTE =
+  'This edit changed what the schedule DOES, so the person has to approve it again. Within a ' +
+  'few minutes DorkOS will stop the schedule and put it back in front of them — your change is ' +
+  'saved, it just will not run until they say yes. Tell them so in your reply: name the ' +
+  'scheduled task and say it is waiting on them. Do not end the turn as if the work were done.';
+
+/**
  * The extra sentence for an agent that is in a live DorkOS session, where it can
  * put the approval in front of the person rather than only describing it.
  *
@@ -566,10 +595,18 @@ export function createUpdateScheduleHandler(deps: McpToolDeps) {
     // approved work, so it never clamps — a legitimate on/off toggle keeps the
     // grant. The change must be REAL: a field re-sent at its current value is not
     // a new piece of work, mirroring the route's `!== existing` predicate.
-    const changesApprovedWork =
+    //
+    // The two predicates are separate because the gates they feed are not the
+    // same width. `scheduleContentKey` is `[prompt, cron]` and nothing else, so
+    // those two alone decide whether a person's APPROVAL still covers this
+    // schedule ({@link REAPPROVAL_NOTE}); the clamp below is deliberately wider,
+    // because a rename changes what the unattended run is told without touching
+    // the key.
+    const changesApprovedContent =
       (args.prompt !== undefined && args.prompt !== existing.prompt) ||
-      (args.cron !== undefined && (args.cron ?? '') !== (existing.cron ?? '')) ||
-      (args.name !== undefined && args.name !== existing.name);
+      (args.cron !== undefined && (args.cron ?? '') !== (existing.cron ?? ''));
+    const changesApprovedWork =
+      changesApprovedContent || (args.name !== undefined && args.name !== existing.name);
     if (changesApprovedWork) {
       const clamp = clampSchedulePermissionMode(existing.permissionMode);
       if (clamp.clamped) patch.permissionMode = clamp.mode;
@@ -610,7 +647,16 @@ export function createUpdateScheduleHandler(deps: McpToolDeps) {
     // told it worked, and watch it keep running at the old time (DOR-1493).
     deps.resolveTaskRegistrar?.()?.syncTask(updated.id);
     broadcastTasksChanged();
-    return jsonContent({ schedule: updated });
+
+    // The row this hands back still says `active`, and within minutes it will
+    // not be — so say so here rather than let an agent report a live schedule
+    // that is about to stop. Only a task that HELD an approval can lose one; a
+    // schedule already parked, or paused, has nothing to disclose.
+    const losesApproval = changesApprovedContent && existing.status === 'active';
+    return jsonContent({
+      schedule: updated,
+      ...(losesApproval && { needsReapproval: true, note: REAPPROVAL_NOTE }),
+    });
   };
 }
 
@@ -704,7 +750,9 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
     ),
     tool(
       'tasks_update',
-      'Update an existing scheduled task. Only the fields you send are changed.',
+      'Update an existing scheduled task. Only the fields you send are changed. Changing the ' +
+        'prompt or the cron of a task the person already approved means they have to approve it ' +
+        'again, and it stops running until they do.',
       {
         id: z.string().describe('Schedule ID to update'),
         // Bounded to the SKILL.md slug rule, exactly as `UpdateTaskRequest.name`
