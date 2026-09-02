@@ -56,17 +56,42 @@ activity feed under your name. Editable fields:
 - \`traits\`: personality trait scores.
 - \`conventions\`: working conventions.
 - \`color\` and \`icon\`: visual identity (pass an empty value or \`null\` to clear).
-- \`nopeContent\`: full NOPE.md body (the "never do this" list).
 
 Target the agent with \`agent_id\` OR \`cwd\` (the tool and the capability input), or
 \`--path <dir>\` (the CLI).
 
 The slug (\`name\`) is immutable. You cannot rename an agent by editing it.
 
+NOPE.md is NOT on this list, and neither is \`conventions.nope\`. \`update_agent\`
+refuses a patch that names either one and changes nothing at all. See the next
+section.
+
+## Change safety boundaries (tier: destructive)
+
+NOPE.md is the list of things an agent must not do, and its runtime is handed it
+every turn. Changing it is its own capability, \`update_agent_boundaries\`
+(\`dorkos call operator.update_agent_boundaries --input '<json>'\`), and it is
+\`destructive\` tier: it does NOT run until a person approves the change, yours
+included. That is deliberate: an agent quietly editing its own limits is the one
+edit nobody would see.
+
+Two fields, either or both:
+
+- \`nopeContent\`: the new text. It replaces the whole file rather than adding to
+  it, so read what is there now and send the complete new text.
+- \`enabled\`: whether the agent is given NOPE.md at all. \`false\` mutes the
+  boundaries without deleting them, which is why it needs the same approval as a
+  rewrite.
+
+Say plainly what you want to change and why before you ask; a person is about to
+read the whole new text on a card and decide.
+
 ## Self-edit etiquette
 
 Editing YOUR OWN agent is fine and expected: when the user says "be more concise"
-or "stop doing X", update your own SOUL.md/NOPE.md or traits directly.
+or "stop doing X", update your own SOUL.md or traits directly. Any change to your
+boundaries (the text, or whether you are given them) goes through
+\`update_agent_boundaries\` and waits for a person.
 
 Before editing a DIFFERENT agent's manifest or personality, confirm with the user
 first. Changing another agent's identity is a bigger action than tuning your own.

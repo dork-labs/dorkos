@@ -109,7 +109,7 @@ Cursor and Windsurf use the same `url` + `headers` shape under their own config 
 
 ### What it exposes
 
-Connecting gives a client DorkOS's full external tool surface: 55 tools in total, covering sessions, scheduled tasks, Relay messaging, agent bindings, Mesh discovery, agent/extension management, the operator surface, and the marketplace. Seven read-only resources round it out, for browsing sessions, agents, skills, and the capability catalog without a tool round-trip.
+Connecting gives a client DorkOS's full external tool surface: 57 tools in total, covering sessions, scheduled tasks, Relay messaging, agent bindings, Mesh discovery, agent/extension management, the operator surface, agent memory, and the marketplace. Seven read-only resources round it out, for browsing sessions, agents, skills, and the capability catalog without a tool round-trip.
 
 | Domain              | Tools | Examples                                                                                           |
 | ------------------- | ----- | -------------------------------------------------------------------------------------------------- |
@@ -119,11 +119,12 @@ Connecting gives a client DorkOS's full external tool surface: 55 tools in total
 | Bindings            | 3     | `binding_list`, `binding_create`, `binding_delete`                                                 |
 | Mesh (discovery)    | 8     | `mesh_discover`, `mesh_register`, `mesh_list`, `mesh_status`, `mesh_query_topology`                |
 | Agents & extensions | 7     | `create_agent`, `list_extensions`, `create_extension`, `test_extension`                            |
-| Operator            | 6     | `activity_list`, `config_get`, `config_patch`, `check_update`, `agents_recent_activity`            |
+| Operator            | 7     | `activity_list`, `config_get`, `config_patch`, `check_update`, `update_agent_boundaries`           |
+| Memory              | 1     | `memory_write`                                                                                     |
 | Self-description    | 1     | `list_capabilities`                                                                                |
 | Marketplace         | 8     | `marketplace_search`, `marketplace_install`, `marketplace_uninstall`, `marketplace_create_package` |
 
-The last three rows (operator, self-description, marketplace: 15 tools) are generated from the Capability Registry, so they are reachable by id through `dorkos call`. The other 40 are registered directly on this server and are not. `list_capabilities` says which is which, so a client never has to infer it.
+The last four rows (operator, memory, self-description, marketplace: 17 tools) are generated from the Capability Registry, so they are reachable by id through `dorkos call`. The other 40 are registered directly on this server and are not. `list_capabilities` says which is which, so a client never has to infer it.
 
 Being off the registry does not mean running unasked. All 40 of them carry a permission tier too, and the same approval gate reads it: `tasks_delete` and `mesh_unregister` are `destructive` and answer with a pending approval instead of doing the work. A destructive tool advertises an `approvalToken` argument, so a client can tell one from its own schema without asking.
 

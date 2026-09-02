@@ -79,7 +79,7 @@ Certain tools are always auto-approved regardless of permission mode. Two differ
 
 Some of these do change things. `relay_inbox` with `ack: true` permanently deletes the messages it returns, and `relay_register_endpoint` creates a mailbox. They are auto-approved anyway because an agent polls its inbox constantly: a card on every poll would arrive dozens of times an hour, and a person who learns to click through those cards stops reading every other card too. What protects you instead is that the server decides who a call comes from, and an agent can only read or clear an inbox that belongs to it, so the worst an `ack` can destroy is the agent's own mail. Relay access control (`relay/access-rules.json`) governs which agents may message each other.
 
-These tools never produce an approval card. That list is short and hand-picked, not a rule about DorkOS tools in general: everything else an agent can ask DorkOS for prompts like any other tool, and the three things an agent cannot take back stop and ask you no matter which permission mode the session is in. See [Action approvals](/docs/guides/action-approvals).
+These tools never produce an approval card. That list is short and hand-picked, not a rule about DorkOS tools in general: everything else an agent can ask DorkOS for prompts like any other tool, and the four things an agent cannot take back stop and ask you no matter which permission mode the session is in. See [Action approvals](/docs/guides/action-approvals).
 
 ## Always Allow
 

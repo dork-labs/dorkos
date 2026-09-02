@@ -177,6 +177,22 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
           >
             {approval.summary}
           </p>
+          {/* The one argument that IS the decision, shown whole (DOR-1698).
+              The summary above caps every value at 80 characters so no argument
+              can crowd out another — right for a package name, wrong when the
+              value is the new text of a file. It is rendered preformatted and
+              scrollable rather than clamped: a person answering this has to be
+              able to read all of it, and a long one must not push the buttons
+              off the card. `whitespace-pre-wrap` keeps the author's own line
+              breaks without letting a single long line widen the layout. */}
+          {approval.detail !== undefined && (
+            <pre
+              data-slot="approval-detail"
+              className="border-border/60 bg-muted/40 text-muted-foreground mt-1.5 max-h-56 overflow-auto rounded-md border p-2 font-mono text-xs break-words whitespace-pre-wrap"
+            >
+              {approval.detail}
+            </pre>
+          )}
           <div className="mt-1.5 flex min-w-0 items-center gap-2">
             <RequestingAgent
               requestedBy={approval.requestedBy}

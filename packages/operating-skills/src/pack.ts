@@ -170,8 +170,18 @@ export interface OperatingSkill {
  *   the user so, minutes before the schedule stopped. The reply carries
  *   `needsReapproval: true` for exactly that moment, and a stale page is an agent
  *   that does not know to look for it.
+ * - 16: NOPE.md is no longer an `update_agent` field, and neither is the switch
+ *   that decides whether the agent is given it. Both moved to
+ *   `update_agent_boundaries` at tier `destructive`, so a boundary change now
+ *   waits on a person (DOR-1698), and `managing-agents` says so. Same shape as
+ *   the 15 entry: an agent seeded at 15 carries a page listing `nopeContent`
+ *   among the fields it may edit, which is now FALSE — that patch is refused
+ *   whole, so the agent would lose the rest of its edit too and read its own page
+ *   to conclude the tool is broken. The page it needs, naming the capability that
+ *   does work, its two fields, and the approval it waits on, only reaches it on a
+ *   bump.
  */
-export const OPERATING_SKILLS_VERSION = 15;
+export const OPERATING_SKILLS_VERSION = 16;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

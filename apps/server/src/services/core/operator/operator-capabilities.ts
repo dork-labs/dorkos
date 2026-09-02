@@ -12,15 +12,17 @@
  * surface, per ADR 260723-013236 (superseded by 260725-152018).
  *
  * The four read-only observability capabilities carry `readOnlyCarveOut: true`;
- * the two mutations (`operator.update_agent`, `operator.config_patch`) do not —
- * they require the local token on the login-off external `/mcp` surface.
+ * the three mutations (`operator.update_agent`,
+ * `operator.update_agent_boundaries`, `operator.config_patch`) do not — they
+ * require the local token on the login-off external `/mcp` surface.
  *
  * @module services/core/operator/operator-capabilities
  */
 import { z } from 'zod';
 import { ListActivityQuerySchema } from '@dorkos/shared/activity-schemas';
 import { RecentSessionsQuerySchema } from '@dorkos/shared/schemas';
-import { TraitsSchema, ConventionsSchema } from '@dorkos/shared/mesh-schemas';
+import { TraitsSchema } from '@dorkos/shared/mesh-schemas';
+import { NOPE_MAX_CHARS, SOUL_MAX_CHARS } from '@dorkos/shared/convention-files';
 
 import { defineCapability, type CapabilityDomain } from '../capabilities/index.js';
 import type { CapabilityDeps } from '../capabilities/index.js';
@@ -28,12 +30,14 @@ import { unwrapMcpEnvelope } from '../capabilities/mcp-envelope.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
 import {
   createUpdateAgentHandler,
+  createUpdateAgentBoundariesHandler,
   createActivityListHandler,
   createConfigGetHandler,
   createConfigPatchHandler,
   createCheckUpdateHandler,
   createAgentsRecentActivityHandler,
   type UpdateAgentArgs,
+  type UpdateAgentBoundariesArgs,
 } from './operator-tool-handlers.js';
 
 /**
@@ -182,7 +186,15 @@ export const operatorDomain: CapabilityDomain = {
       title: 'Update agent',
       description:
         "Edit an agent's manifest and personality: displayName, description, persona, personaEnabled, " +
-        'traits, conventions, color, icon, and SOUL.md (soulContent) / NOPE.md (nopeContent) content. ' +
+        'traits, conventions, color, icon, and SOUL.md (soulContent) content. ' +
+        // The other tool is named as a searchable ENDING, never bare: this same
+        // string is served to the external `/mcp` server, where a person's
+        // harness chooses the prefix, so a bare name is uncallable on
+        // claude-code and unreliable everywhere else (DOR-1292). The form is
+        // enforced by `messaging/__tests__/context-tool-names.test.ts`.
+        "NOPE.md (the agent's safety boundaries) is NOT edited here, and neither is the switch that " +
+        'decides whether the agent is given it. Both live on the boundaries tool, whose name ends in ' +
+        '`update_agent_boundaries`; it asks a person first. ' +
         'Target the agent by agent_id or cwd. The slug (name) is immutable, and system agents (e.g. DorkBot) ' +
         'reject identity changes. Editing your OWN agent is fine; before editing a DIFFERENT agent, confirm with the user first.',
       tier: 'act',
@@ -199,11 +211,57 @@ export const operatorDomain: CapabilityDomain = {
           .optional()
           .describe('Whether the persona/SOUL block is injected'),
         traits: TraitsSchema.optional().describe('Personality trait scores'),
-        conventions: ConventionsSchema.optional().describe('Working conventions'),
+        // Spelled out rather than reusing `ConventionsSchema`, for two reasons
+        // that both matter here (DOR-1698).
+        //
+        // 1. Every key of that schema carries a Zod `.default(true)`, so a parse
+        //    of `{soul: false}` hands the handler all four flags and "did the
+        //    caller name `nope`" becomes unanswerable — the guard below would
+        //    have to refuse every conventions write or none.
+        // 2. `nope` is `z.unknown()` so the guard sees it whatever it holds. A
+        //    `z.boolean()` would turn `{nope: null}` into a ZodError about types
+        //    that never mentions where the switch actually lives.
+        conventions: z
+          .object({
+            soul: z.boolean().optional().describe('Whether SOUL.md is injected'),
+            memory: z
+              .boolean()
+              .optional()
+              .describe("Whether the agent's own MEMORY.md is injected"),
+            dorkosKnowledge: z
+              .boolean()
+              .optional()
+              .describe('Whether the DorkOS knowledge block is injected'),
+            nope: z
+              .unknown()
+              .optional()
+              .describe(
+                'Refused here. Whether NOPE.md is injected is changed with the boundaries tool, ' +
+                  'whose name ends in `update_agent_boundaries`; it asks a person first.'
+              ),
+          })
+          .optional()
+          .describe('Which convention files are injected'),
         color: z.string().nullable().optional().describe('Accent color (null clears it)'),
         icon: z.string().nullable().optional().describe('Icon name (null clears it)'),
-        soulContent: z.string().max(4000).optional().describe('Full SOUL.md content'),
-        nopeContent: z.string().max(2000).optional().describe('Full NOPE.md content'),
+        soulContent: z.string().max(SOUL_MAX_CHARS).optional().describe('Full SOUL.md content'),
+        // Declared only so it can be REFUSED, and the declaration is what makes
+        // the refusal possible: `registry.invoke` parses the input before the
+        // handler runs, and `z.object` strips what it does not declare — so a
+        // field simply deleted here would be dropped in silence, and an agent
+        // that sent it would report a boundary edit that never happened
+        // (the DOR-1253 shape, on the one file that says what it must not do).
+        //
+        // `z.unknown()` for the same reason `conventions.nope` is: the answer to
+        // `{nopeContent: null}` has to be the pointer to the gated capability,
+        // not a type error that never mentions it.
+        nopeContent: z
+          .unknown()
+          .optional()
+          .describe(
+            'Refused here. Change NOPE.md with the boundaries tool, whose name ends in ' +
+              '`update_agent_boundaries`; it asks a person first.'
+          ),
       }),
       output: z.unknown(),
       surfaces: {
@@ -216,6 +274,72 @@ export const operatorDomain: CapabilityDomain = {
       invoke: async (deps, input) =>
         unwrapMcpEnvelope(
           await createUpdateAgentHandler(requireOperatorDeps(deps))(input as UpdateAgentArgs)
+        ),
+    }),
+    // NOPE.md gets its own capability because a tier is per-capability, not
+    // per-field (DOR-1698). It rode `update_agent` at tier `act`, so an agent
+    // could rewrite the file that is fed to its own runtime as
+    // `safetyBoundaries` every turn, silently, on the sanctioned surface. The
+    // operator's ruling was to gate it rather than refuse it outright: a
+    // deliberate boundary edit is a real thing to want, and a person should see
+    // it and grant it. Everything else `update_agent` writes stays at `act`.
+    defineCapability({
+      id: 'operator.update_agent_boundaries',
+      title: "Change an agent's safety boundaries",
+      description:
+        "Change an agent's NOPE.md, the safety boundaries its runtime is given every turn as the " +
+        'list of things it must not do. Two changes ride this one tool because they have the same ' +
+        'effect: nopeContent replaces the whole file (not an append, so read what is there now and ' +
+        'send the complete new text), and enabled: false stops the file being given to the agent at ' +
+        'all while leaving it on disk. Send either or both. Target the agent by agent_id or cwd. ' +
+        'A person approves every call, your own boundaries included, so say plainly what you want to ' +
+        'change and why before you ask.',
+      tier: 'destructive',
+      input: z.object({
+        ...agentSelectorSchema,
+        nopeContent: z
+          .string()
+          .max(NOPE_MAX_CHARS)
+          .optional()
+          .describe('Full NOPE.md content, replacing whatever is there now'),
+        // The mute, on the same gate as the rewrite because it is the STRONGER
+        // of the two: the file survives, and the agent is simply never given it
+        // (`runtimes/shared/agent-context.ts` skips the whole
+        // `<agent_safety_boundaries>` block on `conventions.nope !== true`).
+        // Leaving it on `update_agent` at tier `act` would have left a quieter
+        // door to the same outcome, which is the defect this split exists to
+        // close (DOR-1698).
+        enabled: z
+          .boolean()
+          .optional()
+          .describe(
+            'Whether the agent is given NOPE.md at all. false mutes the boundaries without ' +
+              'deleting them; true puts them back.'
+          ),
+      }),
+      output: z.unknown(),
+      // The selector and the mute go on the card's SENTENCE; the boundary text
+      // itself goes in `approvalDetailField` below, because a card sentence caps
+      // every value at 80 characters and the whole point of this approval is
+      // reading the text.
+      approvalDisplayFields: ['enabled', 'agent_id', 'cwd'],
+      // The one field a person has to read in full before answering. Review
+      // reproduced the attack this closes: 2000 characters of NOPE.md whose
+      // first 80 are the current boundaries verbatim, with the part that undoes
+      // them past the clamp. The operator approved text they could not see.
+      approvalDetailField: 'nopeContent',
+      surfaces: {
+        mcp: {
+          toolName: 'update_agent_boundaries',
+          servers: ['in-session', 'external'],
+          annotations: { idempotentHint: true },
+        },
+      },
+      invoke: async (deps, input) =>
+        unwrapMcpEnvelope(
+          await createUpdateAgentBoundariesHandler(requireOperatorDeps(deps))(
+            input as UpdateAgentBoundariesArgs
+          )
         ),
     }),
     defineCapability({

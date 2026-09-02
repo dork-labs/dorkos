@@ -138,6 +138,36 @@ export interface CapabilityDefinition<
    */
   approvalDisplayFields?: readonly string[];
   /**
+   * The ONE input field a person has to read in full before answering, as a
+   * dotted path. Its value is carried to the card verbatim, beside the summary
+   * sentence rather than inside it.
+   *
+   * This exists because {@link approvalDisplayFields} cannot answer the question
+   * for every capability, and the gap is a real one rather than a cosmetic one
+   * (DOR-1698). A summary value is capped at 80 characters so that no single
+   * argument can crowd out another, which is right when the value is a package
+   * name and wrong when the value IS the decision — the new text of the file
+   * that tells an agent what it must not do. Review reproduced the attack: 2,000
+   * characters whose first 80 were the current boundaries verbatim, with the
+   * part that undid them past the clamp, approved by an operator who could not
+   * see it.
+   *
+   * Rules, all of them checked by the conformance suite:
+   *
+   * - Only a `destructive` capability may declare one. A tier that does not stop
+   *   has no card to put it on.
+   * - It must name a real top-level field of the capability's own `input`.
+   * - It must NOT also appear in {@link approvalDisplayFields}: the point is one
+   *   full rendering, not a truncated copy beside a complete one.
+   * - Its name must not read as a secret, for the same reason the display fields'
+   *   do not — this value reaches the global event stream and the agent-readable
+   *   pending list.
+   *
+   * Bounded at `APPROVAL_DETAIL_MAX_LENGTH` where it is stored, so a capability
+   * whose field could exceed that must cap its own input lower.
+   */
+  approvalDetailField?: string;
+  /**
    * Draw an inline CARD in the conversation this capability was called from
    * (DOR-1004) — a surface the person acts on, in the chat, instead of a link
    * pasted into the agent's reply.

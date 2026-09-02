@@ -191,8 +191,16 @@ describe('in-session tool exposure', () => {
     // block names either of these, which is what makes deferring them safe
     // rather than merely cheap. Both counts moving by the same two is what says
     // no schema quietly joined the always-loaded set.
-    expect(tools).toHaveLength(95);
-    expect(deferred).toHaveLength(87);
+    //
+    // 95 → 96 for `update_agent_boundaries`, the NOPE.md write split out of
+    // `update_agent` so it can be tier `destructive` (DOR-1698). It lands in the
+    // DEFERRED column: rewriting an agent's safety boundaries is a deliberate,
+    // rare act that a person has to approve anyway, so the turn that reaches for
+    // it can afford the ToolSearch hop — and no prompt block names it, which is
+    // the rule `context-tool-names.test.ts` owns. Both counts moving by one is
+    // what says it did not quietly join the always-loaded set.
+    expect(tools).toHaveLength(96);
+    expect(deferred).toHaveLength(88);
   });
 
   it('gives every advertised tool something to be found by', async () => {

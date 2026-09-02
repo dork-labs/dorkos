@@ -561,6 +561,15 @@ All fields are optional. The `enabledToolGroups` object controls per-agent tool 
 
 Both are **refused, not stripped**: a partial write that silently dropped the field would let a caller report the change as done. Naming `roomsManage` at all — `true`, `false`, or `null` — refuses the whole patch, so a client that reads the stored `enabledToolGroups` object and spreads it into an unrelated toggle must use the operator route too. The other four keys stay writable here.
 
+**Two more fields are refused on the `update_agent` MCP tool ONLY, and are accepted here** (DOR-1698). The split is deliberate and the direction matters: this route is how the cockpit's own Safety Boundaries editor saves, and a person editing their agent's boundaries in the app is the case that must stay free.
+
+| Field              | Refused on                                                                | Where an agent does it instead     |
+| ------------------ | ------------------------------------------------------------------------- | ---------------------------------- |
+| `nopeContent`      | `operator.update_agent` (tier `act`) — the NOPE.md body                   | `operator.update_agent_boundaries` |
+| `conventions.nope` | `operator.update_agent` (tier `act`) — whether NOPE.md is injected at all | `operator.update_agent_boundaries` |
+
+`operator.update_agent_boundaries` is tier `destructive`, so an agent changing either one waits for a person's approval, and the card carries the full new text rather than a preview. Both are refused the same way `roomsManage` is — present at any value, whole patch rejected — so an agent cannot be told half a change landed. See `contributing/agent-operator-surface.md`.
+
 **Responses:**
 
 - `200` - Updated `AgentManifest`

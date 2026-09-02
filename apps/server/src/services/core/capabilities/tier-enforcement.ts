@@ -148,6 +148,7 @@ import type { CapabilityInvocationContext, CapabilityRegistry } from './registry
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
 import {
   hashApprovalInput,
+  readApprovalInputPath,
   redactSecretsInText,
   renderRequesterLabel,
   summaryFields,
@@ -192,6 +193,12 @@ export interface GatedAction {
   tier: CapabilityTier;
   /** The input fields the approval card may show. Required on `destructive`. */
   approvalDisplayFields?: readonly string[];
+  /**
+   * The one input field whose FULL value the card carries, when the action
+   * declares one (DOR-1698). Read here rather than by a surface, so every
+   * channel that reaches this gate produces the same card.
+   */
+  approvalDetailField?: string;
 }
 
 /** The MCP tool argument a retry passes its approval token in. */
@@ -601,6 +608,29 @@ export function describeGatedAttempt(
   return redactSecretsInText(`${who}wants to run "${action.title}"${detail}`);
 }
 
+/**
+ * The verbatim value the card shows beside the summary, when the action declares
+ * a detail field and the input actually carries a string there.
+ *
+ * Only a string qualifies. An object or a number rendered into a card would be
+ * `[object Object]` or a bare digit sitting under a heading promising the full
+ * text, which is worse than showing nothing — and the conformance suite already
+ * requires the declared field to be a real one, so a non-string here means the
+ * caller simply did not send it (every detail field is optional today).
+ *
+ * Not swept or capped here: `ApprovalService.request` owns both, so every
+ * producer of a detail passes through one place, exactly as summaries do.
+ *
+ * @param action - The action being gated.
+ * @param input - The parsed input the approval binds to.
+ * @returns The value to store, or `undefined`.
+ */
+function detailFor(action: GatedAction, input: unknown): string | undefined {
+  if (!action.approvalDetailField) return undefined;
+  const value = readApprovalInputPath(input, action.approvalDetailField);
+  return typeof value === 'string' ? value : undefined;
+}
+
 /** The label an approval records for who asked, or its absence for an anonymous one. */
 function requesterLabel(identity?: AgentIdentity): string | undefined {
   if (!identity) return undefined;
@@ -905,9 +935,11 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
   const ask = (reason: FreshAskReason): TierEnforcementDecision => {
     let ticket: ApprovalTicket;
     try {
+      const detail = detailFor(action, input);
       ticket = gate!.approvals.request({
         ...binding,
         summary: describeGatedAttempt(action, input, identity),
+        ...(detail !== undefined ? { detail } : {}),
         ...(requestedBy ? { requestedBy } : {}),
         // The raw path alongside the display label, because a standing
         // permission keys on the agent and a label is not a key. An anonymous

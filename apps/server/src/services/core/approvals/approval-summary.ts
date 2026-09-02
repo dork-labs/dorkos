@@ -172,11 +172,16 @@ function renderFieldName(field: string): string {
  * capability whose input is not flat still gets a card that says what will
  * happen, rather than the useless `details` a nested object renders as.
  *
+ * Exported because `approvalDetailField` addresses the input the same way, and
+ * the gate resolves that one (`tier-enforcement.ts`). One reader for both, so a
+ * path that means one thing on the card's sentence cannot mean another on its
+ * detail block.
+ *
  * @param input - The parsed input.
  * @param path - A dotted field path.
  * @returns The value at that path, or `undefined`.
  */
-function readInputPath(input: unknown, path: string): unknown {
+export function readApprovalInputPath(input: unknown, path: string): unknown {
   let current: unknown = input;
   for (const segment of path.split('.')) {
     if (current === null || typeof current !== 'object' || Array.isArray(current)) return undefined;
@@ -205,7 +210,7 @@ export function summaryFields(
   if (displayFields) {
     return displayFields.map((field) => ({
       field: renderFieldName(field),
-      value: renderSummaryValue(readInputPath(input, field)),
+      value: renderSummaryValue(readApprovalInputPath(input, field)),
     }));
   }
   if (!input || typeof input !== 'object' || Array.isArray(input)) return [];

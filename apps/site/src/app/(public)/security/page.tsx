@@ -97,16 +97,17 @@ export default function SecurityPage() {
 
         <section className="space-y-4">
           <h2 className="text-charcoal font-mono text-xl font-semibold">
-            Three things an agent cannot do without asking you
+            Four things an agent cannot do without asking you
           </h2>
           <p className="text-warm-gray leading-relaxed">
             Your agents can operate DorkOS itself, not just write code. Most of what they do is easy
-            to take back, so it just happens and lands in your activity feed. Three things are not
+            to take back, so it just happens and lands in your activity feed. Four things are not
             easy to take back, and DorkOS stops and asks first: removing an installed package,
-            deleting a scheduled task, and removing an agent. Installing a package or creating one
-            asks too, because both bring new code onto your machine. You get a card describing
-            exactly what would run, written by DorkOS rather than by the agent, and an agent that
-            identifies itself is refused when it tries to answer its own card.
+            deleting a scheduled task, removing an agent, and changing an agent&apos;s safety
+            boundaries. Installing a package or creating one asks too, because both bring new code
+            onto your machine. You get a card describing exactly what would run, written by DorkOS
+            rather than by the agent, and an agent that identifies itself is refused when it tries
+            to answer its own card.
           </p>
           <p className="text-warm-gray leading-relaxed">
             Here is the limit, because it matters more than the feature. With no login, which is how

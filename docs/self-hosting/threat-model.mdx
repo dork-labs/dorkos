@@ -90,9 +90,9 @@ Agents do not only write code here. They can create agents, schedule work, chang
 | Changes things   | Runs, and lands in your activity feed, named to the agent when DorkOS knows which asked. |
 | Cannot be undone | Does not run. It returns a pending approval, and waits for somebody to answer.           |
 
-Three actions carry the last label today: removing an installed package, deleting a scheduled task, and removing an agent. Installing a package and creating one also wait, through the marketplace's own confirmation, because both bring new code onto your machine.
+Four actions carry the last label today: removing an installed package, deleting a scheduled task, removing an agent, and changing an agent's safety boundaries. Installing a package and creating one also wait, through the marketplace's own confirmation, because both bring new code onto your machine.
 
-The gate is not advice. It sits at the composition root of the two tool servers that carry these actions, and inside the capability registry, below every caller, so a session's permission mode cannot reach it: an agent in bypass-permissions mode still stops at these three. A new tool with no declared label fails the server build rather than running unlabelled.
+The gate is not advice. It sits at the composition root of the two tool servers that carry these actions, and inside the capability registry, below every caller, so a session's permission mode cannot reach it: an agent in bypass-permissions mode still stops at these four. A new tool with no declared label fails the server build rather than running unlabelled.
 
 There is a third, much smaller tool server, for Codex sessions, and it is outside that gate. It carries exactly one tool, for changing what the app is showing you, which is in the middle group above and would not stop to ask in any case. Nothing that changes your files or your setup is reachable through it.
 

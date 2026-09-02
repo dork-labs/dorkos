@@ -34,13 +34,20 @@ const registry = composeRegistry([operatorDomain, marketplaceDomain], {
   marketplaceDeps: {} as MarketplaceMcpDeps,
 });
 
-/** The exact tool set both MCP servers advertised before the migration. */
+/**
+ * The exact tool set both MCP servers advertise.
+ *
+ * It started as the pre-migration set and has grown by exactly one since:
+ * `update_agent_boundaries`, the NOPE.md write split out of `update_agent` so it
+ * can be tier `destructive` (DOR-1698).
+ */
 const EXPECTED_TOOL_NAMES = [
   'activity_list',
   'config_get',
   'check_update',
   'agents_recent_activity',
   'update_agent',
+  'update_agent_boundaries',
   'config_patch',
   'marketplace_search',
   'marketplace_get',
@@ -127,6 +134,15 @@ const EXPECTED_ANNOTATIONS: Record<string, ToolAnnotations> = {
     idempotentHint: true,
     openWorldHint: false,
   },
+  // mutateDeleteLocal — a NOPE.md write replaces the whole file, so the text it
+  // overwrites is gone (DOR-1698). `destructiveHint` is derived from the tier,
+  // and that derivation is the assertion worth having here.
+  update_agent_boundaries: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
   // mutateCreateOpenWorld
   marketplace_install: {
     readOnlyHint: false,
@@ -164,14 +180,14 @@ const EXPECTED_CARVE_OUT = [
 ].sort();
 
 describe('operator + marketplace MCP projection', () => {
-  it('advertises the same 14 tools on the in-session server', () => {
+  it('advertises the same 15 tools on the in-session server', () => {
     const names = capabilitiesForMcpServer(registry, 'in-session')
       .map((c) => c.surfaces.mcp!.toolName)
       .sort();
     expect(names).toEqual(EXPECTED_TOOL_NAMES);
   });
 
-  it('advertises the same 14 tools on the external server', () => {
+  it('advertises the same 15 tools on the external server', () => {
     const names = capabilitiesForMcpServer(registry, 'external')
       .map((c) => c.surfaces.mcp!.toolName)
       .sort();

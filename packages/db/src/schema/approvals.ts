@@ -57,6 +57,23 @@ export const approvals = sqliteTable(
     /** One plain sentence describing what the operator is about to allow. */
     summary: text('summary').notNull(),
 
+    /**
+     * The one argument a person has to read IN FULL before answering, verbatim,
+     * or null when the capability declares none (DOR-1698).
+     *
+     * Separate from `summary` because the two answer different questions and are
+     * bounded differently. The summary is a glanceable sentence, capped at 500
+     * characters with every value inside it capped at 80 — which is right for
+     * "which package", and wrong for "here is the new text of the file that
+     * tells your agent what it must not do". Review reproduced the failure: a
+     * 2000-character NOPE.md whose first 80 characters were the current
+     * boundaries verbatim, with the part that undid them past the clamp.
+     *
+     * Only a capability that declares `approvalDetailField` produces one, so
+     * this stays null for every approval that existed before it.
+     */
+    detail: text('detail'),
+
     /** Opaque label for who asked — an agent path, a display name, or null. */
     requestedBy: text('requested_by'),
 
