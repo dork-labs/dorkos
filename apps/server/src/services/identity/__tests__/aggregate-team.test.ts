@@ -694,6 +694,44 @@ describe('aggregateTeamRoster', () => {
       expect(self?.person && 'nameSuggestedBy' in self.person).toBe(false);
     });
 
+    it('says nothing when the account name merely EQUALS the agent-written one', async () => {
+      // The false positive a string comparison produces (review finding 6): the
+      // shown name equals the stored profile name, so "did the profile rung
+      // win?" answered yes — while the login is what actually supplied it and no
+      // agent has ever touched the name a person is looking at. The rung answers
+      // this correctly and a comparison cannot.
+      const { members } = await aggregateTeamRoster(
+        sources({
+          account: () => ({ id: OWNER_USER_ID, name: 'Dorian', email: 'dorian@dorkos.ai' }),
+          configDisplayName: () => 'Dorian',
+          configDisplayNameSource: () => ({ kind: 'agent', agentName: 'DorkBot' }),
+        })
+      );
+      const self = members.find((m) => m.isSelf);
+      expect(self?.displayName).toBe('Dorian');
+      expect(self?.person && 'nameSuggestedBy' in self.person).toBe(false);
+    });
+
+    it.each([
+      ['a collapsed double space', 'Dorian  C', 'Dorian C'],
+      ['a stripped zero-width character', 'Dorian​', 'Dorian'],
+    ])(
+      'still draws the note for a name the sanitizer rewrote: %s',
+      async (_case, stored, shown) => {
+        // The suppression attack (review blocker 1), executed. Both strings pass
+        // the schema and are RENDERED differently from what is stored, so a
+        // roster that asked "does the shown name equal the stored one" answered
+        // no and hid the note — letting one `config_patch` set the name AND
+        // silence the signal about it, in a single character.
+        const self = await selfRow({
+          configDisplayName: () => stored,
+          configDisplayNameSource: () => ({ kind: 'agent', agentName: 'DorkBot' }),
+        });
+        expect(self?.displayName).toBe(shown);
+        expect(self?.person?.nameSuggestedBy).toBe('DorkBot');
+      }
+    );
+
     it('carries it on the self row and on nobody else', async () => {
       registry.resolveExternal({
         platformType: 'telegram',

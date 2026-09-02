@@ -88,7 +88,7 @@ describe('applyGuardedConfigWrite', () => {
           patch: { runtimes: { claudeCode: { defaultTrustStop: 'act' } } },
           authority: LOCAL_OPERATOR_AUTHORITY,
           source: 'dorkos config set',
-          writer: { kind: 'operator' },
+          writer: { kind: 'unattributed' },
         });
         expect(result.ok).toBe(true);
       });
@@ -110,7 +110,7 @@ describe('applyGuardedConfigWrite', () => {
           patch: { runtimes: { claudeCode: { defaultTrustStop: 'autonomy' } } },
           authority: LOCAL_OPERATOR_AUTHORITY,
           source: 'dorkos config set',
-          writer: { kind: 'operator' },
+          writer: { kind: 'unattributed' },
         });
 
         expect(result.ok).toBe(false);
@@ -136,14 +136,14 @@ describe('applyGuardedConfigWrite', () => {
         patch: { ui: { autonomyAcknowledgedAt: '2026-08-16T09:00:00.000Z' } },
         authority: LOCAL_OPERATOR_AUTHORITY,
         source: 'dorkos config set',
-        writer: { kind: 'operator' },
+        writer: { kind: 'unattributed' },
       });
 
       const result = applyGuardedConfigWrite({
         patch: { runtimes: { claudeCode: { defaultTrustStop: 'autonomy' } } },
         authority: LOCAL_OPERATOR_AUTHORITY,
         source: 'dorkos config set',
-        writer: { kind: 'operator' },
+        writer: { kind: 'unattributed' },
       });
 
       expect(result.ok).toBe(true);
@@ -164,7 +164,7 @@ describe('applyGuardedConfigWrite', () => {
         patch: { approvals: { standingGrants: false } },
         authority: LOCAL_OPERATOR_AUTHORITY,
         source: 'dorkos config set',
-        writer: { kind: 'operator' },
+        writer: { kind: 'unattributed' },
       });
 
       expect(result.ok).toBe(true);
@@ -176,7 +176,7 @@ describe('applyGuardedConfigWrite', () => {
         patch: { server: { port: 'notanumber' } },
         authority: LOCAL_OPERATOR_AUTHORITY,
         source: 'dorkos config set',
-        writer: { kind: 'operator' },
+        writer: { kind: 'unattributed' },
       });
 
       expect(result.ok).toBe(false);
@@ -241,13 +241,13 @@ describe('applyGuardedConfigWrite', () => {
       });
     }
 
-    /** One `PATCH /api/config` write, as a person makes it. */
-    function personWrites(displayName: string | null) {
+    /** One write through a general config door — `PATCH /api/config` or the CLI. */
+    function configDoorWrites(displayName: string | null) {
       return applyGuardedConfigWrite({
         patch: { profile: { displayName } },
         authority: LOCAL_OPERATOR_AUTHORITY,
         source: 'PATCH /api/config',
-        writer: { kind: 'operator' },
+        writer: { kind: 'unattributed' },
       });
     }
 
@@ -261,23 +261,32 @@ describe('applyGuardedConfigWrite', () => {
       });
     });
 
-    it('stamps the person that saved a name through the config door', () => {
-      expect(personWrites('Dorian').ok).toBe(true);
-      expect(storedName()).toEqual({ displayName: 'Dorian', source: { kind: 'operator' } });
+    it('records nobody for a name a general config door changed', () => {
+      // Neither `PATCH /api/config` nor `dorkos config set` can say who is
+      // behind it, so neither may claim the person. `null` is "no record": no
+      // note is drawn and nobody is credited.
+      expect(configDoorWrites('Dorian').ok).toBe(true);
+      expect(storedName()).toEqual({ displayName: 'Dorian', source: null });
     });
 
-    it('lets a person’s save clear an agent’s stamp for good, unchanged value and all', () => {
-      // The dismissal path, end to end through the real store: DorkBot proposes,
-      // the person saves the very same string, and the record flips to theirs.
+    it('cannot launder an agent’s stamp back through the unattributed door', () => {
+      // The attack, end to end against the real store: DorkBot sets the name and
+      // raises the note, then the same agent `curl`s the identical value at
+      // `PATCH /api/config` — which with login off admits any local caller —
+      // hoping to be read as the person. The write moves nothing, so it says
+      // nothing, and the agent's stamp is exactly where it was.
       expect(agentWrites('Dorian').ok).toBe(true);
-      expect(personWrites('Dorian').ok).toBe(true);
-      expect(storedName()).toEqual({ displayName: 'Dorian', source: { kind: 'operator' } });
+      expect(configDoorWrites('Dorian').ok).toBe(true);
+      expect(storedName()).toEqual({
+        displayName: 'Dorian',
+        source: { kind: 'agent', agentName: 'DorkBot' },
+      });
     });
 
-    it('does not re-stamp when an agent re-sends the name the person confirmed', () => {
-      expect(personWrites('Dorian').ok).toBe(true);
+    it('does not re-stamp when an agent re-sends a name already stored', () => {
       expect(agentWrites('Dorian').ok).toBe(true);
-      expect(storedName()).toEqual({ displayName: 'Dorian', source: { kind: 'operator' } });
+      expect(agentWrites('Dorian', 'Impostor').ok).toBe(true);
+      expect(storedName().source).toEqual({ kind: 'agent', agentName: 'DorkBot' });
     });
 
     it('records an agent it could not identify rather than nothing', () => {

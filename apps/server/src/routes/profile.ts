@@ -30,6 +30,7 @@ import { logError, logger } from '../lib/logger.js';
 import { parseBody, sendError } from '../lib/route-utils.js';
 import type { AuthorRecord, AuthorRegistry } from '../services/rooms/author-registry.js';
 import { sendRoomError } from './room-error-response.js';
+import { OPERATOR_SAVE_SOURCE } from '../services/identity/display-name-provenance.js';
 import {
   InvalidAvatarIdError,
   MAX_AVATAR_BYTES,
@@ -228,13 +229,14 @@ export function createProfileRouter(deps: ProfileRouterDeps): Router {
     }
 
     if (owner) deps.setAccountName(owner.id, body.displayName);
-    // `operator` unconditionally, INCLUDING when the string does not change
-    // (DOR-1022). This route is the one surface where a person says what they
-    // want to be called, so pressing Save is the gesture that answers "is that
-    // name yours?" — and re-saving the name already in the field is exactly how
-    // somebody dismisses a "Suggested by DorkBot" hint on a name they are happy
-    // with. Gating the stamp on a value change would leave that hint permanent.
-    deps.setProfileDisplayName(body.displayName, { kind: 'operator' });
+    // The one door that can name a person, so the one door that records one
+    // (DOR-1022). Unconditional — including when the string does not change,
+    // because re-saving the name already in the field is exactly how somebody
+    // dismisses a "Suggested by DorkBot" note on a name they are happy with.
+    // The constant is imported rather than written inline so all three doors'
+    // rules live in one module; `display-name-provenance.ts` states why this is
+    // the only one entitled to `operator`.
+    deps.setProfileDisplayName(body.displayName, OPERATOR_SAVE_SOURCE);
 
     // Echoed rather than re-resolved: both sources above the author record now
     // hold this string, so the precedence cannot answer with anything else.

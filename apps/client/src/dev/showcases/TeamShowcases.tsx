@@ -9,10 +9,13 @@ import { TeamPage } from '@/layers/widgets/team';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
-import { MOCK_TEAM_ROSTER } from '../mock-samples';
+import { MOCK_TEAM_ROSTER, withSuggestedName } from '../mock-samples';
 import { createPlaygroundTransport } from '../playground-transport';
 
 const byId = (id: string): TeamMember => MOCK_TEAM_ROSTER.find((member) => member.id === id)!;
+
+/** The operator's own row — the only one a provenance note is ever drawn on. */
+const SELF = MOCK_TEAM_ROSTER.find((member) => member.isSelf)!;
 
 /**
  * The playground's Transport answers `null` for everything, which a page that
@@ -114,6 +117,19 @@ export function TeamShowcases() {
         <ShowcaseLabel>A long name, no handle, and an agent nobody owns</ShowcaseLabel>
         <ShowcaseDemo>
           <CardRow ids={['agent-cartographer', 'agent-dorkbot']} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          A name an agent suggested (DOR-1022) — drawn only on your own row, and only until you save
+          a name yourself in Settings › Profile. The third card is the common state, for contrast:
+          no note is the normal case, and a name this install has no record of gets none either.
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="grid gap-3 md:grid-cols-3">
+            <TeamMemberCard member={withSuggestedName(SELF, 'DorkBot')} />
+            <TeamMemberCard member={withSuggestedName(SELF, null)} />
+            <TeamMemberCard member={SELF} />
+          </div>
         </ShowcaseDemo>
       </PlaygroundSection>
     </>

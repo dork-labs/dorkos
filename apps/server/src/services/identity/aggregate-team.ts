@@ -51,6 +51,7 @@ import type { ActiveClaimView } from '../rooms/room-claims.js';
 import {
   resolveOperatorProfile,
   type OperatorAccount,
+  type OperatorNameRung,
   type OperatorProfile,
 } from './operator-profile.js';
 
@@ -374,27 +375,33 @@ interface OperatorRowFacts {
  * `undefined` rather than a boolean pair, so the field is simply ABSENT from the
  * payload in the common case rather than present and false.
  *
+ * **The rung, never a string comparison.** The stamp is about
+ * `profile.displayName`, so the hint only belongs on a roster that is actually
+ * showing that rung — an account name outranks it. Asking "does the shown name
+ * equal the stored one" answers that question wrong in BOTH directions, which is
+ * why {@link resolveOperatorProfile} reports the rung instead:
+ *
+ * - False negative: the shown name has been through `sanitizeIdentity`, so a
+ *   stored `'Dorian  C'` renders as `'Dorian C'` and compares unequal. An agent
+ *   could set the name AND suppress the note in one `config_patch` by including
+ *   a double space or one zero-width character.
+ * - False positive: an account name that happens to equal the agent-written
+ *   profile name compares equal, and the hint is drawn for a name the login
+ *   supplied and no agent touched.
+ *
  * @param source - The stored `profile.displayNameSource`.
- * @param displayName - The name the roster will actually show. A stamp for a
- *   name the operator no longer has — cleared account name, a `null` profile
- *   name falling through to `'You'` — describes a value nobody is looking at.
- * @param configDisplayName - The stored `profile.displayName` the stamp is ABOUT.
+ * @param nameRung - Which source the roster's name actually came from.
  * @returns The value for `person.nameSuggestedBy`.
  */
 function nameSuggestedBy(
   source: DisplayNameSource | null,
-  displayName: string,
-  configDisplayName: string | null
+  nameRung: OperatorNameRung
 ): string | null | undefined {
+  if (nameRung !== 'profile') return undefined;
   if (source === null || source.kind !== 'agent') return undefined;
-  // The stamp describes `profile.displayName`, and that is only what the roster
-  // shows when the precedence actually landed on it — an account name overrules
-  // it (`resolveOperatorProfile`), and a hint under somebody else's name would
-  // be attributing the wrong string.
-  if (configDisplayName === null || configDisplayName.trim() !== displayName) return undefined;
-  // Sanitized on the way out as well as on the way in: the stored value predates
-  // nothing, but it is an agent-chosen string headed for a sentence DorkOS wrote,
-  // and this is the boundary that hands it to a renderer.
+  // Sanitized on the way out as well as on the way in: the stored value is an
+  // agent-chosen string headed for a sentence DorkOS wrote, and this is the
+  // boundary that hands it to a renderer.
   return source.agentName ? (sanitizeIdentity(source.agentName) ?? null) : null;
 }
 
@@ -636,7 +643,7 @@ export async function aggregateTeamRoster(sources: TeamRosterSources): Promise<T
   const operatorRowFacts: OperatorRowFacts = {
     name: operator.displayName,
     email: operator.email,
-    nameSuggestedBy: nameSuggestedBy(configNameSource, operator.displayName, configDisplayName),
+    nameSuggestedBy: nameSuggestedBy(configNameSource, operator.nameRung),
   };
   const personRows = people.value.map((record) =>
     personRow(record, record.id === self?.id, operatorRowFacts, now)

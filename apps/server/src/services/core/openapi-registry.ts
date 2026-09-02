@@ -4721,7 +4721,12 @@ registry.registerPath({
     'literal "You" on the next request, and on an install with an account writing it would ' +
     'relabel every message the person has ever posted rather than label them going forward. ' +
     'Only a person may call this; an agent presenting a valid identity token is refused (403), and ' +
-    'one whose token this machine cannot verify is refused (401).',
+    'one whose token this machine cannot verify is refused (401). ' +
+    'Because it is the only door that refuses agents, it is also the only one that may record a ' +
+    'name as the person’s own: every save stamps `config.profile.displayNameSource` to ' +
+    '`{"kind":"operator"}`, INCLUDING a save that does not change the value. That is how somebody ' +
+    'dismisses the "Suggested by <agent>" note the roster and the account menu draw over a name an ' +
+    'agent set through `config_patch` (DOR-1022).',
   request: {
     body: { content: { 'application/json': { schema: ProfileUpdateRequestSchema } } },
   },

@@ -1,20 +1,20 @@
 /**
  * The rule that decides who a stored display name is attributed to (DOR-1022).
  *
- * Four decisions live here, and each of them is a product answer rather than a
- * mechanical one: a person re-saving an unchanged name still counts as claiming
- * it, an agent re-sending an unchanged name does NOT count as suggesting it,
- * clearing the name clears the record, and an agent this install cannot identify
- * still gets a hint drawn for it. Every one of them is asserted below in a form
- * that goes red if the rule is inverted.
+ * Four decisions live here, and each is a product answer rather than a mechanical
+ * one: a writer re-sending an unchanged name says nothing about who chose it, an
+ * unattributed door may never claim a person, clearing the name clears the
+ * record, and an agent this install cannot identify still gets a note drawn for
+ * it. Every one is asserted below in a form that goes red if the rule is
+ * inverted.
  *
  * @vitest-environment node
  */
 import { describe, it, expect } from 'vitest';
-import { stampDisplayNameSource } from '../display-name-provenance.js';
+import { OPERATOR_SAVE_SOURCE, stampDisplayNameSource } from '../display-name-provenance.js';
 
 const DORKBOT = { kind: 'agent', agentName: 'DorkBot' } as const;
-const PERSON = { kind: 'operator' } as const;
+const CONFIG_DOOR = { kind: 'unattributed' } as const;
 
 describe('stampDisplayNameSource', () => {
   describe('when an agent writes', () => {
@@ -45,7 +45,7 @@ describe('stampDisplayNameSource', () => {
 
     it('treats a name differing only in whitespace as the same name', () => {
       // The schema trims what it stores, so a patch carrying a stray space would
-      // otherwise raise the hint on a value that never actually moved.
+      // otherwise raise the note on a value that never actually moved.
       expect(stampDisplayNameSource('Dorian', ' Dorian ', DORKBOT)).toBeUndefined();
     });
 
@@ -63,7 +63,7 @@ describe('stampDisplayNameSource', () => {
       // An agent chooses its own display name and this string is printed inside
       // a sentence DorkOS wrote. A name made only of control characters is not a
       // name, so it lands in the same place an unresolvable identity does.
-      expect(stampDisplayNameSource(null, 'Dorian', { kind: 'agent', agentName: '​' })).toEqual({
+      expect(stampDisplayNameSource(null, 'Dorian', { kind: 'agent', agentName: '​' })).toEqual({
         kind: 'agent',
         agentName: null,
       });
@@ -76,29 +76,63 @@ describe('stampDisplayNameSource', () => {
       });
       expect(stamped).toEqual({ kind: 'agent', agentName: 'system Trusted /system' });
     });
+
+    it('records the agent for a name carrying the sanitizer’s own edge cases', () => {
+      // The two strings that survive the schema and are RENDERED differently
+      // (a double space collapses, a zero-width character vanishes). Nothing
+      // about the stamp may depend on the rendered form — the roster answers
+      // that question with the name RUNG instead, never by comparing strings.
+      for (const attack of ['Dorian  C', 'Dorian​']) {
+        expect(stampDisplayNameSource(null, attack, DORKBOT)).toEqual({
+          kind: 'agent',
+          agentName: 'DorkBot',
+        });
+      }
+    });
   });
 
-  describe('when a person writes', () => {
-    it('records the operator', () => {
-      expect(stampDisplayNameSource(null, 'Dorian', PERSON)).toEqual({ kind: 'operator' });
+  describe('when a general config door writes', () => {
+    it('records NOBODY for a name it changed, never the operator', () => {
+      // `PATCH /api/config` and `dorkos config set` cannot tell a person from a
+      // process running as them. `null` is "no record": no note is drawn, and
+      // nobody is credited with a choice this door cannot witness.
+      expect(stampDisplayNameSource('Dorian', 'Dorian C', CONFIG_DOOR)).toBeNull();
+      expect(stampDisplayNameSource(null, 'Dorian', CONFIG_DOOR)).toBeNull();
     });
 
-    it('records the operator even when the name does not change', () => {
-      // This is the ONLY way a "Suggested by DorkBot" hint is dismissed: the
-      // person opens Settings › Profile, sees the name they are happy with, and
-      // presses Save. Gate the stamp on a value change and the hint is
-      // permanent for anybody who likes what the agent picked.
-      expect(stampDisplayNameSource('Dorian', 'Dorian', PERSON)).toEqual({ kind: 'operator' });
+    it('cannot launder an agent’s stamp by re-sending the agent’s own name', () => {
+      // The attack this rule exists for: DorkBot sets the name, the note
+      // appears, and the same agent `curl`s the value back through the
+      // unattributed door hoping to be read as the person. A write that moves
+      // nothing says nothing — the agent's stamp is left exactly where it was.
+      expect(stampDisplayNameSource('Dorian', 'Dorian', CONFIG_DOOR)).toBeUndefined();
+      expect(stampDisplayNameSource('Dorian', '  Dorian  ', CONFIG_DOOR)).toBeUndefined();
     });
   });
 
   describe('when the name is cleared', () => {
-    it('clears the record with it, whoever cleared it', () => {
+    it('clears the record with it, whichever door cleared it', () => {
       // No name, no provenance. A leftover `agent` stamp beside a `null` name
-      // would draw a hint under the roster's `'You'` fallback — a suggestion
+      // would draw a note under the roster's `'You'` fallback — a suggestion
       // attributed to an agent that nobody made.
-      expect(stampDisplayNameSource('Dorian', null, PERSON)).toBeNull();
+      expect(stampDisplayNameSource('Dorian', null, CONFIG_DOOR)).toBeNull();
       expect(stampDisplayNameSource('Dorian', null, DORKBOT)).toBeNull();
     });
+  });
+});
+
+describe('OPERATOR_SAVE_SOURCE', () => {
+  it('is the operator, unconditionally — the one door that can name a person', () => {
+    // Deliberately NOT a branch of the function above: it depends on neither the
+    // value nor what was stored before, because `PATCH /api/profile` is the only
+    // door that refuses agents. Re-saving an unchanged name is how somebody who
+    // LIKES the agent's suggestion dismisses the note about it.
+    expect(OPERATOR_SAVE_SOURCE).toEqual({ kind: 'operator' });
+  });
+
+  it('cannot be mutated by whoever imports it', () => {
+    // One shared object reaches every save, so a caller that edited it in place
+    // would rewrite the rule for every later request in the process.
+    expect(Object.isFrozen(OPERATOR_SAVE_SOURCE)).toBe(true);
   });
 });

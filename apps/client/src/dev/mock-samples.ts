@@ -1007,6 +1007,25 @@ export const MOCK_IDENTITIES: Record<string, MockIdentity> = {
  * handle, an agent that belongs to nobody (the system one), an agent with no
  * handle at all, and a name long enough to need truncating.
  */
+/**
+ * The operator's own row on the rare install where an agent picked the name
+ * (DOR-1022) — a derived variant rather than a second row in the roster below.
+ *
+ * `isSelf` is true for exactly one row and the fixture must keep that property,
+ * so this is spread over the real self row at the demo that wants it. The COMMON
+ * state stays primary: `MOCK_TEAM_ROSTER` carries no `nameSuggestedBy`, which is
+ * what a person who saved their own name — or upgraded from before this was
+ * recorded — actually sees.
+ *
+ * @param member - The operator's own roster row.
+ * @param agentName - Who suggested the name, or `null` for an agent this install
+ *   cannot identify (which renders "Suggested by an agent").
+ * @returns The same row, carrying the provenance the payload would.
+ */
+export function withSuggestedName(member: TeamMember, agentName: string | null): TeamMember {
+  return { ...member, person: { ...member.person!, nameSuggestedBy: agentName } };
+}
+
 export const MOCK_TEAM_ROSTER: TeamMember[] = [
   {
     id: 'person-dorian',
