@@ -83,7 +83,9 @@ export async function seedLegacyMcpApiKey(db: Db): Promise<void> {
           createdAt: now,
           updatedAt: now,
           // configId, rate-limit fields, requestCount, remaining, expiresAt all
-          // take their schema defaults — identical to what createApiKey inserts.
+          // take their schema defaults. The rate-limit ones read as "10 per 24h"
+          // and never apply: the plugin is configured with `rateLimit.enabled:
+          // false`, which short-circuits before those columns are read (DOR-489).
         })
         .run();
     }

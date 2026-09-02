@@ -12,6 +12,13 @@
  * The `user.role` column marks the first registered user as `'owner'` and keeps
  * the schema multi-user-capable for the future invites spec.
  *
+ * `apikey.rate_limit_*` is the one place this file no longer mirrors the auth
+ * config, deliberately. The server registers the plugin with
+ * `rateLimit.enabled: false` (DOR-489), which short-circuits before any of those
+ * columns is read, so the "10 per 24h" defaults below are inert for every key —
+ * old rows included. Changing a SQLite column default means rebuilding the
+ * table, and it would buy no behavior, so they stay as written.
+ *
  * @module db/schema/auth
  */
 import { relations, sql } from 'drizzle-orm';
@@ -116,6 +123,11 @@ export const apikey = sqliteTable(
     refillAmount: integer('refill_amount'),
     lastRefillAt: integer('last_refill_at', { mode: 'timestamp_ms' }),
     enabled: integer('enabled', { mode: 'boolean' }).default(true),
+    // The next three are INERT — read no meaning into "10 per 24h". The server
+    // registers the api-key plugin with `rateLimit: { enabled: false }`
+    // (`apps/server/src/services/core/auth/index.ts`), which short-circuits
+    // before any of them is read, for every key old and new. See the @module
+    // doc above for why they still say this. (DOR-489)
     rateLimitEnabled: integer('rate_limit_enabled', {
       mode: 'boolean',
     }).default(true),
