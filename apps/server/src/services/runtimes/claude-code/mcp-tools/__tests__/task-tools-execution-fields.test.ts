@@ -129,17 +129,23 @@ describe('tasks_create / tasks_update carry runtime, model and effort', () => {
     expect(await fs.readFile(skillPath(), 'utf-8')).not.toContain('runtime:');
   });
 
-  it('changes them through tasks_update', async () => {
-    // The ROW, which is what this handler writes — see the note below.
+  it('changes them through tasks_update, in the row AND in the file', async () => {
     const { payload } = await call('tasks_create', { ...BASE, runtime: 'codex' });
     const id = (payload.schedule as Task).id;
 
     const updated = await call('tasks_update', { id, runtime: 'opencode', model: 'zen' });
     expect(updated.isError).toBe(false);
     expect(store.getTask(id)).toMatchObject({ runtime: 'opencode', model: 'zen' });
+
+    // The file is the source of truth, so the row alone is a change with a
+    // five-minute fuse on it — see the DOR-1625 suite for the sweep that used to
+    // light it.
+    const content = await fs.readFile(skillPath(), 'utf-8');
+    expect(content).toMatch(/^ {2}runtime: opencode$/m);
+    expect(content).toMatch(/^ {2}model: zen$/m);
   });
 
-  it('CLEARS an override with null', async () => {
+  it('CLEARS an override with null, in the row AND in the file', async () => {
     const { payload } = await call('tasks_create', {
       ...BASE,
       runtime: 'codex',
@@ -150,29 +156,13 @@ describe('tasks_create / tasks_update carry runtime, model and effort', () => {
     await call('tasks_update', { id, runtime: null, model: null });
 
     expect(store.getTask(id)).toMatchObject({ runtime: null, model: null });
-  });
-
-  it('does NOT rewrite the SKILL.md — the whole tool is row-only, and that is a standing gap', async () => {
-    // CHARACTERIZED, not endorsed. `createUpdateScheduleHandler` writes the row
-    // and never the file — it says so in its own comment, in the paragraph about
-    // the clamp window — and that is true of EVERY field it takes, `prompt` and
-    // `cron` included, since long before these three. The reconciler re-reads
-    // each skills root every five minutes and upserts what it finds, so any
-    // `tasks_update` edit to a file-backed field is reverted inside that window.
-    //
-    // Left standing on purpose: closing it changes a shared handler PR1 does not
-    // otherwise touch, and it would need the same package-owned and arm-blocker
-    // checks `PATCH /api/tasks/:id` runs before it opens somebody's file. This
-    // case makes the gap a recorded decision rather than a later discovery, and
-    // it FAILS the day somebody closes it — which is the moment to delete it and
-    // assert the file instead.
-    const { payload } = await call('tasks_create', { ...BASE, runtime: 'codex' });
-    const id = (payload.schedule as Task).id;
-    await call('tasks_update', { id, runtime: 'opencode' });
-
+    // Cleared means the KEY is gone, not written as `null`: the frontmatter
+    // schema rejects a literal null and an unreadable file stops syncing for good.
+    // Anchored on the block lines, so a prompt body that happens to say "model:"
+    // cannot pass or fail this for us.
     const content = await fs.readFile(skillPath(), 'utf-8');
-    expect(content).toMatch(/^ {2}runtime: codex$/m);
-    expect(content).not.toContain('opencode');
+    expect(content).not.toMatch(/^ {2}runtime:/m);
+    expect(content).not.toMatch(/^ {2}model:/m);
   });
 
   it('still refuses permissionMode and status alongside them', async () => {

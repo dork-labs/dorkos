@@ -1,7 +1,7 @@
 ---
 id: 260823-194809
 title: Universal scheduled tasks — any skill can be scheduled
-status: specified
+status: implemented
 created: 2026-08-23
 ---
 

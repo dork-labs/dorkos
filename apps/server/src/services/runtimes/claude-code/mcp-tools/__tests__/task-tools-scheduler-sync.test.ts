@@ -2,12 +2,15 @@
  * The `tasks_*` MCP tools keep the RUNNING cron jobs in step, not just the rows
  * (DOR-1493).
  *
- * These handlers write rows and nothing else — they never rewrite the SKILL.md,
- * so the file watcher does not fire for them and the reconciler is up to five
- * minutes away. Until this landed, an agent could change a schedule's cron
- * through `tasks_update`, be told it worked, and watch the task go on firing at
- * the old time until the next server restart; and `tasks_delete` left a job
- * firing against a row that no longer existed.
+ * A row is not a running job. Until this landed, an agent could change a
+ * schedule's cron through `tasks_update`, be told it worked, and watch the task
+ * go on firing at the old time until the next server restart; and `tasks_delete`
+ * left a job firing against a row that no longer existed.
+ *
+ * The tasks here have a `filePath` pointing at a file that does not exist, which
+ * is the legacy DB-only case: these handlers write the SKILL.md too since
+ * DOR-1625, and the point of this suite is the SCHEDULER, so the file half is
+ * deliberately out of the frame. `task-tools-update-file.test.ts` owns it.
  *
  * Driven through `getTasksTools`, the array a real session is handed, and against
  * a real {@link TaskRegistrar} over a stand-in scheduler that records what it was

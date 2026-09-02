@@ -18,16 +18,24 @@
  * end.
  *
  * So the rule lives here, in the one package that can ask the real question, and
- * `routes/tasks.ts` calls it before it writes anything.
+ * every writer that can put a cron where something will act on it asks before it
+ * writes. It began as the API's door alone and is now six:
  *
- * **This is the API's door, and only the API's door.** A schedule that arrives
- * any other way — a SKILL.md somebody hand-edited, a row an older build wrote —
- * never reaches this module. `TaskSchedulerService.registerTask` does not call
- * it; it catches croner's throw where the throw happens, which is the only
- * containment that also covers whatever croner refuses that this module has not
- * thought to ask about. The two layers therefore have to agree, and
- * `__tests__/cron-validation.test.ts` holds them to it by putting every case
- * through both.
+ * - both create doors, through `lifecycle/create-task.ts`;
+ * - both update doors — `PATCH /api/tasks/:id` and, since DOR-1625, the
+ *   `tasks_update` MCP handler, which only got away without it while it wrote
+ *   nothing to disk;
+ * - discovery reading a SKILL.md somebody hand-edited
+ *   (`skills-root-discovery.ts`), whose answer becomes the parked row's problem;
+ * - the arm blocker a person's approval runs through (`task-file-update.ts`);
+ * - the marketplace's package validation.
+ *
+ * **What still does not call it is the scheduler itself.**
+ * `TaskSchedulerService.registerTask` catches croner's throw where the throw
+ * happens, which is the only containment that also covers whatever croner
+ * refuses that this module has not thought to ask about. The two layers
+ * therefore have to agree, and `__tests__/cron-validation.test.ts` holds them to
+ * it by putting every case through both.
  *
  * @module services/tasks/cron-validation
  */
