@@ -1,16 +1,16 @@
 name: dependabot-lockfile-format
 
-# Reformats `pnpm-lock.yaml` on Dependabot PRs so the required `typecheck`
+# Reformats `pnpm-lock.yaml` on Dependabot PRs so the required `lint`
 # workflow's formatting gate (DOR-485) doesn't fail on them. DOR-1554.
 #
 # THE PROBLEM: `pnpm install`/`pnpm update` regenerates pnpm-lock.yaml in
 # pnpm's own compact style (single-line flow mappings, double-quoted keys),
 # not Prettier's. `pnpm format:check` (`prettier --check .`) in
-# typecheck.yml gates every PR on the WHOLE repo being Prettier-formatted,
+# lint.yml gates every PR on the WHOLE repo being Prettier-formatted,
 # lockfile included — see the "ALSO RUNS THE FORMATTING GATE (DOR-485)"
 # comment there for why that gate exists and why it lives in a required
 # check rather than its own workflow. Dependabot always regenerates the
-# lockfile compact, so every Dependabot PR lands red on `typecheck`, and
+# lockfile compact, so every Dependabot PR lands red on `lint`, and
 # Dependabot has no way to run `pnpm format` on its own output. Observed on
 # PR #1286: a routine electron bump, red on nothing but this, diffing
 # 3,430/-8,893 lines of pure whitespace noise against the real change.
@@ -49,7 +49,7 @@ name: dependabot-lockfile-format
 #     runs here, so none of the PR's (Dependabot-proposed, but still
 #     externally-influenced) dependency graph's postinstall scripts ever
 #     execute in this job. That matters because THIS job holds
-#     MERGE_TAIL_TOKEN; typecheck.yml's `pull_request` job also runs
+#     MERGE_TAIL_TOKEN; lint.yml's `pull_request` job also runs
 #     `pnpm install --frozen-lockfile` against the same untrusted lockfile,
 #     but only ever holds the secret-less, read-only Dependabot token —
 #     see above.
@@ -81,12 +81,12 @@ name: dependabot-lockfile-format
 # default `GITHUB_TOKEN` (documented, and load-bearing for merge-tail.yml's
 # own design — see its header). If this job pushed the reformatted commit
 # with `github.token`, the push would silently succeed but the
-# `typecheck` `pull_request` trigger would NOT re-fire on the new commit —
+# `lint` `pull_request` trigger would NOT re-fire on the new commit —
 # the required check would keep showing the OLD (failing) commit's result,
 # or nothing at all, and the PR would be stuck exactly as before, just less
 # visibly. A push authenticated with a real PAT is not treated as
 # actions-originated and does re-trigger `pull_request` workflows normally,
-# which is what actually flips `typecheck` green. `MERGE_TAIL_TOKEN` is
+# which is what actually flips `lint` green. `MERGE_TAIL_TOKEN` is
 # this repo's one existing "PAT with repo-write scope for a bot-shaped
 # job" secret (see merge-tail.yml); reusing it avoids provisioning a
 # second credential for the same class of problem. If it is ever unset,
@@ -134,7 +134,7 @@ jobs:
       - name: Check MERGE_TAIL_TOKEN is available
         run: |
           if [ -z "${{ secrets.MERGE_TAIL_TOKEN }}" ]; then
-            echo "::error::MERGE_TAIL_TOKEN is not set. Pushing the reformatted lockfile with the default GITHUB_TOKEN would not re-trigger the typecheck required check (GitHub suppresses workflow runs for GITHUB_TOKEN-authored pushes), leaving the PR stuck red with no visible fix. Add a repo-scoped PAT as MERGE_TAIL_TOKEN (same secret merge-tail.yml uses) to enable this workflow."
+            echo "::error::MERGE_TAIL_TOKEN is not set. Pushing the reformatted lockfile with the default GITHUB_TOKEN would not re-trigger the lint required check (GitHub suppresses workflow runs for GITHUB_TOKEN-authored pushes), leaving the PR stuck red with no visible fix. Add a repo-scoped PAT as MERGE_TAIL_TOKEN (same secret merge-tail.yml uses) to enable this workflow."
             exit 1
           fi
 
@@ -187,7 +187,7 @@ jobs:
           # (a dedented line here would break the `run: |` block).
           git commit \
             -m "style: prettier-format pnpm-lock.yaml" \
-            -m "Dependabot regenerates this file in pnpm's compact style; this repo's required typecheck workflow gates on Prettier formatting (DOR-485). Reformatted automatically by .github/workflows/dependabot-lockfile-format.yml (DOR-1554)."
+            -m "Dependabot regenerates this file in pnpm's compact style; this repo's required lint workflow gates on Prettier formatting (DOR-485). Reformatted automatically by .github/workflows/dependabot-lockfile-format.yml (DOR-1554)."
           # Push to the PR's actual branch name, not the detached HEAD this
           # job checked out (see the checkout step: we checked out a SHA).
           git push origin "HEAD:${HEAD_REF}"
