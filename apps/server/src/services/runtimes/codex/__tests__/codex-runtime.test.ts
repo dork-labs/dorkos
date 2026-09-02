@@ -1170,12 +1170,17 @@ describe('CodexRuntime', () => {
       // The failure is an error PART, so it renders as an error card with the
       // sign-in affordance — never as something the agent said.
       expect(assistant!.content).toBe('');
+      // The WORDS are DorkOS's, and the CLI's are kept beside them (DOR-1656):
+      // a reload shows the same sentence the live turn did, naming Codex rather
+      // than reprinting the vendor's 401. What this case is actually about —
+      // typed part, auth_error category, nothing attributed to the agent — is
+      // unchanged; only the copy moved.
       expect(assistant!.parts).toEqual([
         {
           type: 'error',
-          message: '401 Unauthorized: OAuth token revoked',
+          message: 'Your Codex sign-in stopped working. Sign in again to keep going.',
           category: 'auth_error',
-          details: '[turn_failed]',
+          details: '[turn_failed] 401 Unauthorized: OAuth token revoked',
         },
       ]);
     });

@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(server,shared): auth errors speak DorkOS copy on every channel (DOR-1656)'
+  - "fix(server,shared): plainer sign-in copy, and stop guessing on codex's diagnostic channel (DOR-1656)"
 ---
 
 ### Fixed
