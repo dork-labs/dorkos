@@ -361,6 +361,74 @@ export class NotificationStore {
   }
 
   /**
+   * The subjects of one `standing-recorded` kind whose newest row is still an
+   * unresolved raise — the conditions this history claims are live.
+   *
+   * **Written for the restart case.** A `standing-recorded` kind writes a row
+   * when the condition begins and a second one when it ends, and the store that
+   * knows it ended is held in MEMORY (`runtime-signin-watch.ts`). A server that
+   * restarted mid-episode therefore has a raise row nothing will ever resolve:
+   * the memory store is empty, so the recovery edge no longer fires, and every
+   * surface reading history — the Inbox, the web app's standing banner — goes on
+   * reporting a condition that may have been fixed hours ago. This is the read
+   * that lets boot find those rows and close them.
+   *
+   * Newest-row-per-subject rather than "every row with no `resolvedAt`", because
+   * a subject that broke, was fixed, and broke again has an older raise row that
+   * is genuinely resolved by the row after it. Only the newest row per subject
+   * says anything about now.
+   *
+   * The payload comes back raw: this store never parses one, and the caller
+   * knows the shape its own kind writes.
+   *
+   * **`createdAt` rides along because the payload cannot be relied on.** Rows
+   * written by an older version of a kind carry an older payload shape — the
+   * first `signin.required` rows ever written (DOR-1654) had no episode stamp in
+   * theirs at all — and a row whose JSON no longer parses carries nothing. A
+   * caller that needs a timestamp to close a row with must have one that is
+   * always there, and the row's own creation time is that: a column, never
+   * absent, and within milliseconds of what the payload would have said.
+   *
+   * @param kind - The kind to look at.
+   * @returns One entry per subject whose newest row is unresolved, each with
+   *   when that row was written and the payload it was written from (or
+   *   `undefined` if it carried none, or carried JSON this process can no longer
+   *   read).
+   */
+  unresolvedStandingSubjects(
+    kind: NotificationKind
+  ): Array<{ subjectId: string; createdAt: string; payload: unknown }> {
+    const rows = this.db
+      .select({
+        subjectId: notifications.subjectId,
+        createdAt: notifications.createdAt,
+        resolvedAt: notifications.resolvedAt,
+        dataJson: notifications.dataJson,
+      })
+      .from(notifications)
+      .where(eq(notifications.kind, kind))
+      // Descending id is descending time (ULID), so the first row seen for a
+      // subject is its newest.
+      .orderBy(desc(notifications.id))
+      .all();
+
+    const newest = new Map<
+      string,
+      { createdAt: string; resolvedAt: string | null; dataJson: string | null }
+    >();
+    for (const row of rows) {
+      if (!newest.has(row.subjectId)) newest.set(row.subjectId, row);
+    }
+    return [...newest.entries()]
+      .filter(([, row]) => row.resolvedAt === null)
+      .map(([subjectId, row]) => ({
+        subjectId,
+        createdAt: row.createdAt,
+        payload: parsePayload(row.dataJson),
+      }));
+  }
+
+  /**
    * How many notifications of each (kind, tier, outcome) were raised at or
    * after `since` — the one read the daily Shift Report composes from.
    *
@@ -709,5 +777,24 @@ function entrySeqOf(dataJson: string | null): number {
     return typeof payload.entrySeq === 'number' ? payload.entrySeq : Number.POSITIVE_INFINITY;
   } catch {
     return Number.POSITIVE_INFINITY;
+  }
+}
+
+/**
+ * Read a stored payload back, or `undefined` when there is nothing readable
+ * there.
+ *
+ * Undefined rather than a throw: {@link NotificationStore.unresolvedStandingSubjects}
+ * is a boot-time repair read, and one row whose JSON this process cannot parse
+ * must not stop the others from being repaired. That caller pairs this with the
+ * row's `createdAt`, which is a column and therefore always there, so an
+ * unreadable payload costs precision and never the repair itself.
+ */
+function parsePayload(dataJson: string | null): unknown {
+  if (!dataJson) return undefined;
+  try {
+    return JSON.parse(dataJson);
+  } catch {
+    return undefined;
   }
 }

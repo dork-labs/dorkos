@@ -15,5 +15,6 @@ export {
   MemoryProviderBenchedBanner,
   type MemoryProviderBenchedBannerProps,
 } from './ui/MemoryProviderBenchedBanner';
+export { RuntimeSigninBanner, type RuntimeSigninBannerProps } from './ui/RuntimeSigninBanner';
 /** @internal Exported for the app-shell placement regression test only. */
 export { BANNER_PRIORITY, type BannerDescriptor } from './model/banner-descriptor';

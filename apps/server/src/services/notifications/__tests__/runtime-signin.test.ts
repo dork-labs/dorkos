@@ -43,7 +43,11 @@ import type {
 import { eventFanOut } from '../../core/event-fan-out.js';
 import { RuntimeRegistry } from '../../core/runtime-registry.js';
 import { NotificationStore } from '../notification-store.js';
-import { NotificationService, setNotificationService } from '../notification-service.js';
+import {
+  NotificationService,
+  getNotificationService,
+  setNotificationService,
+} from '../notification-service.js';
 import { EscalationService, setEscalationService } from '../escalation-service.js';
 import type { WebPushChannel } from '../channels/web-push.js';
 import { resetSigninEpisodes, setRuntimeSigninSink } from '../../observability/index.js';
@@ -570,6 +574,214 @@ describe('a sign-in that dies again after being fixed', () => {
     await drain(registry, 'claude-code', 'sess-3');
 
     expect(raisedRows()).toHaveLength(2);
+  });
+});
+
+/**
+ * The restart hole, and the boot repair that closes it (DOR-1680).
+ *
+ * The episode store is in MEMORY, so a server killed between the two edges of
+ * one episode leaves a raise row that nothing can ever resolve: the next clean
+ * turn finds no episode and returns having written nothing. The Inbox survived
+ * that — a row is a record, written in the past tense — but the web app's
+ * standing banner reads the same rows as the present tense, so the row would
+ * claim a dead sign-in for the rest of the install's life.
+ *
+ * Simulated by doing to this process exactly what a restart does: drop the sink,
+ * clear the episode store, and run the boot wiring again over the same database.
+ */
+describe('a server restart that stranded an episode', () => {
+  /** What a restart leaves behind: the same store, an empty memory. */
+  function restart(): void {
+    setRuntimeSigninSink(null);
+    resetSigninEpisodes();
+    watchRuntimeSigninFailures();
+  }
+
+  /**
+   * A raise row exactly as DOR-1654 (PR #1409) wrote them: payload `{ runtime }`
+   * and nothing else, because `since` did not exist yet.
+   *
+   * **These rows are real, on installs that exist.** `signin.required` shipped
+   * as a plain event first and became standing-recorded in DOR-1657; every row
+   * written in between — including on this repo's own dogfood install, which ran
+   * that build for about seventeen hours — carries no episode stamp. They can
+   * never be resolved by a turn (the kind was not standing when they were
+   * written), so if the boot repair skips them they are permanent, and the
+   * banner with them.
+   */
+  function seedLegacyRaiseRow(runtime: string): void {
+    store.insert({
+      kind: 'signin.required',
+      tier: 'blocking',
+      subjectType: 'system',
+      subjectId: runtime,
+      title: `Your ${runtime} sign-in stopped working`,
+      payload: { runtime },
+      dedupeKey: `signin:${runtime}`,
+    });
+  }
+
+  it('closes the raise row nobody is left to answer', async () => {
+    const registry = registryRunning('claude-code', [authErrorTurn]);
+    await drain(registry, 'claude-code', 'sess-1');
+    expect(raisedRows()).toHaveLength(1);
+    expect(clearedRows()).toEqual([]);
+
+    restart();
+    await flush();
+
+    const [closed, ...rest] = clearedRows();
+    expect(rest).toEqual([]);
+    expect(closed.outcome).toBe('cleared');
+    // The newest row for this runtime is now a resolved one, which is the exact
+    // question every reader asks — the Inbox, and the web app's standing banner
+    // (`widgets/app-banner`, whose predicate is "newest row per runtime, live
+    // while `outcome !== 'cleared'`").
+    expect(signinRows()[0].id).toBe(closed.id);
+  });
+
+  it('says a restart closed it, never that the sign-in works again', async () => {
+    // The one thing boot must not do. It has no evidence the credential was
+    // fixed — only that nothing in this process can ever find out — so an
+    // all-clear here would be DorkOS asserting something nobody checked.
+    const registry = registryRunning('claude-code', [authErrorTurn]);
+    await drain(registry, 'claude-code', 'sess-1');
+
+    restart();
+    await flush();
+
+    const [closed] = clearedRows();
+    expect(closed.title).toBe('DorkOS restarted while your Claude sign-in was broken');
+    expect(closed.title).not.toContain('working again');
+    expect(closed.body).toContain('the next task or reply will say so');
+  });
+
+  it('says it quietly: nothing announced, nothing pushed, nothing unread', async () => {
+    const registry = registryRunning('claude-code', [authErrorTurn]);
+    await drain(registry, 'claude-code', 'sess-1');
+    sendToAll.mockClear();
+
+    restart();
+    await flush();
+
+    const [closed] = clearedRows();
+    // `cleared` lands the row already read, so a restart cannot light the bell.
+    expect(closed.readAt).toBeDefined();
+    expect(sendToAll).not.toHaveBeenCalled();
+    expect(announced()).toEqual([]);
+  });
+
+  it('leaves alone an episode that already resolved before the restart', async () => {
+    const registry = registryRunning('claude-code', [authErrorTurn, cleanTurn]);
+    await drain(registry, 'claude-code', 'sess-1');
+    vi.advanceTimersByTime(1000);
+    await drain(registry, 'claude-code', 'sess-2');
+    expect(clearedRows()).toHaveLength(1);
+
+    restart();
+    await flush();
+
+    // Still one. The repair reads the NEWEST row per runtime, so an old raise
+    // row that its own resolution already answered is not an orphan.
+    expect(clearedRows()).toHaveLength(1);
+  });
+
+  it('leaves alone a runtime that is failing in THIS process', async () => {
+    // Boot is not the only caller: the emitter is installed by a composition
+    // root that could run again, and a row for a condition standing right now
+    // must not be closed out from under it.
+    const registry = registryRunning('claude-code', [authErrorTurn]);
+    await drain(registry, 'claude-code', 'sess-1');
+
+    // No `resetSigninEpisodes()` — the episode is still claimed in memory.
+    watchRuntimeSigninFailures();
+    await flush();
+
+    expect(clearedRows()).toEqual([]);
+  });
+
+  it('closes nothing when there is nothing to close', async () => {
+    restart();
+    await flush();
+
+    expect(signinRows()).toEqual([]);
+  });
+
+  it('closes a row from before episodes existed, which carries no `since` at all', async () => {
+    // The rows DOR-1654 wrote (PR #1409). Nothing about them can ever be
+    // resolved by a turn, so skipping them here makes the banner permanent on
+    // exactly the installs that have one.
+    seedLegacyRaiseRow('claude-code');
+    expect(raisedRows()).toHaveLength(1);
+
+    restart();
+    await flush();
+
+    const [closed, ...rest] = clearedRows();
+    expect(rest).toEqual([]);
+    expect(closed.outcome).toBe('cleared');
+    // Stamped from the row's own `createdAt`, since its payload had nothing —
+    // and the newest row for the runtime is now this one, which is what the
+    // banner predicate reads.
+    expect(signinRows()[0].id).toBe(closed.id);
+  });
+
+  it('closes a row whose stored payload can no longer be parsed', async () => {
+    // Same failure mode from a different cause: the payload column is JSON
+    // written by an older build, and a row nothing can read is still a row a
+    // surface draws.
+    store.insert({
+      kind: 'signin.required',
+      tier: 'blocking',
+      subjectType: 'system',
+      subjectId: 'codex',
+      title: 'Your codex sign-in stopped working',
+      payload: undefined,
+      dedupeKey: 'signin:codex:legacy',
+    });
+
+    restart();
+    await flush();
+
+    expect(clearedRows().map((row) => row.subject.id)).toEqual(['codex']);
+  });
+
+  it('is idempotent: a second restart writes nothing more', async () => {
+    seedLegacyRaiseRow('claude-code');
+    const registry = registryRunning('codex', [authErrorTurn]);
+    await drain(registry, 'codex', 'sess-1');
+
+    restart();
+    await flush();
+    expect(clearedRows()).toHaveLength(2);
+
+    restart();
+    await flush();
+
+    // The rows it closed are no longer the newest unresolved ones, so the second
+    // boot finds nothing — a machine that restarts nightly does not accumulate a
+    // resolution row per boot.
+    expect(clearedRows()).toHaveLength(2);
+  });
+
+  it('boots the watch anyway when the repair read fails', async () => {
+    // A locked database at exactly this moment (SQLITE_BUSY) must cost the
+    // tidy-up, never the watch: a throw out of here would take the whole
+    // installation with it and leave every runtime unwatched (DOR-584's shape).
+    const service = getNotificationService();
+    if (!service) throw new Error('the harness must wire a service');
+    vi.spyOn(service, 'unresolvedStanding').mockImplementation(() => {
+      throw new Error('database is locked');
+    });
+
+    expect(() => restart()).not.toThrow();
+    await flush();
+
+    // And the sink really is installed: a failing turn still writes its row.
+    const registry = registryRunning('claude-code', [authErrorTurn]);
+    await drain(registry, 'claude-code', 'sess-1');
+    expect(raisedRows()).toHaveLength(1);
   });
 });
 

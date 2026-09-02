@@ -245,6 +245,17 @@ export interface NotificationPayloads {
      * under one string.
      */
     clearedAt?: string;
+    /**
+     * True when boot closed this episode rather than a working turn ending it.
+     *
+     * **The one resolution DorkOS cannot vouch for.** The episode store is in
+     * memory, so a server killed mid-episode leaves a raise row no recovery edge
+     * will ever answer, and boot closes it so history stops reading as the
+     * present tense (`emitters/runtime-signin.ts`). What boot knows is that
+     * nobody can find out any more — not that the sign-in works. So the row says
+     * that instead of claiming an all-clear it has not seen.
+     */
+    closedAtBoot?: boolean;
   };
   /** DorkOS is running a version it was not running before. */
   'update.installed': {
@@ -702,12 +713,23 @@ const ENTRIES: NotificationRegistryMap = {
     //
     // `clearedAt` is what lets one builder serve both rows. Without it the
     // second row would repeat the first word for word.
-    title: (p) =>
-      p.clearedAt
-        ? `Your ${runtimeDisplayName(p.runtime)} sign-in is working again`
-        : `Your ${runtimeDisplayName(p.runtime)} sign-in stopped working`,
-    body: (p) =>
-      p.clearedAt ? undefined : 'Scheduled tasks and agent replies cannot run until you sign in.',
+    //
+    // The third sentence is the restart case, and it is deliberately NOT the
+    // all-clear: boot closes an episode it can never see the end of, and saying
+    // "working again" there would be DorkOS asserting something nobody checked.
+    title: (p) => {
+      const name = runtimeDisplayName(p.runtime);
+      if (!p.clearedAt) return `Your ${name} sign-in stopped working`;
+      return p.closedAtBoot
+        ? `DorkOS restarted while your ${name} sign-in was broken`
+        : `Your ${name} sign-in is working again`;
+    },
+    body: (p) => {
+      if (!p.clearedAt) return 'Scheduled tasks and agent replies cannot run until you sign in.';
+      return p.closedAtBoot
+        ? 'It stopped tracking that. If the sign-in is still broken, the next task or reply will say so.'
+        : undefined;
+    },
     // ONE per runtime per EPISODE, however many tasks, rooms and relay
     // deliveries trip over the same dead credential — the watch's own store is
     // what collapses them, synchronously, before any of them can say anything.

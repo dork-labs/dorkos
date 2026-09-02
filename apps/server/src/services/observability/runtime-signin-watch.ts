@@ -174,6 +174,12 @@ let sink: RuntimeSigninSink | null = null;
  * that guess is a false alarm, and a false alarm is worse than a late one here:
  * the next failing turn re-stands the condition within one turn anyway.
  *
+ * It does the other half, though: boot CLOSES those rows rather than leaving
+ * them (`emitters/runtime-signin.ts`). Not re-arming is only half an answer
+ * while a surface reads history as the present tense — the web app's standing
+ * banner does exactly that — so a row this process can never resolve would
+ * otherwise claim a dead sign-in forever.
+ *
  * **Keyed by runtime TYPE, which is wrong for multi-account claude-code.** A
  * credential belongs to an account root (`CLAUDE_CONFIG_DIR`), and DorkOS
  * supports several; a clean turn on one account therefore clears a condition
@@ -393,6 +399,20 @@ export function watchRuntimeSignin(runtime: AgentRuntime): AgentRuntime {
       return typeof value === 'function' ? value.bind(target) : value;
     },
   });
+}
+
+/**
+ * Whether this process is currently holding an episode open for a runtime.
+ *
+ * The one read of {@link failingSince} from outside, and it exists for boot:
+ * `emitters/runtime-signin.ts` closes the raise rows a restart orphaned, and it
+ * must not close one for a runtime that has ALREADY failed again since this
+ * process started — that row is about now, not about the last process.
+ *
+ * @param runtimeType - The runtime to ask about.
+ */
+export function isSigninFailing(runtimeType: string): boolean {
+  return failingSince.has(runtimeType);
 }
 
 /**

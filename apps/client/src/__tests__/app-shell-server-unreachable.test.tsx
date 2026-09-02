@@ -165,6 +165,23 @@ vi.mock('@/layers/entities/tasks', async (importOriginal) => ({
   useTasksSync: () => {},
 }));
 
+// The shell's banner slot reads the Inbox, to raise a standing row while a
+// runtime's sign-in is dead (`widgets/app-banner`, DOR-1680). That hook
+// subscribes to the `notification` stream like the rest of this section, and a
+// server that will not answer has no notifications to give anyway.
+vi.mock('@/layers/entities/notifications', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/notifications')>()),
+  useNotifications: () => ({
+    notifications: [],
+    unreadCount: 0,
+    isLoading: false,
+    isError: true,
+    hasMore: false,
+    loadMore: () => {},
+    isLoadingMore: false,
+  }),
+}));
+
 vi.mock('@/layers/widgets/pulse', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/widgets/pulse')>()),
   usePulseFreshness: () => {},

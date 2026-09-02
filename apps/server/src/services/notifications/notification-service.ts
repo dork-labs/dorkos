@@ -239,6 +239,25 @@ export class NotificationService {
   }
 
   /**
+   * The subjects of one standing kind whose history still reads as live — a
+   * raise row with nothing after it.
+   *
+   * For the boot repair a `standing-recorded` kind needs: its "is it still
+   * waiting?" store is in memory, so a restart mid-episode leaves a raise row
+   * that no recovery edge will ever answer. See
+   * {@link NotificationStore.unresolvedStandingSubjects}.
+   *
+   * @param kind - The standing kind to look at.
+   */
+  unresolvedStanding(kind: StandingNotificationKind): Array<{
+    subjectId: string;
+    createdAt: string;
+    payload: unknown;
+  }> {
+    return this.store.unresolvedStandingSubjects(kind);
+  }
+
+  /**
    * Mark one notification read, and tell every other window.
    *
    * @param id - The notification to mark.
@@ -550,6 +569,27 @@ export async function resolveStanding<K extends StandingNotificationKind>(
     return { notification: null, deduped: false };
   }
   return current.resolveStanding(kind, payload, opts);
+}
+
+/**
+ * Which subjects of a standing kind history still shows as live, from anywhere.
+ *
+ * An empty list, not a throw, before boot has wired a service: the one caller is
+ * a boot-time repair, and "nothing to repair" is the honest answer when there is
+ * no store to read.
+ *
+ * @param kind - The standing kind to look at.
+ */
+export function unresolvedStanding(kind: StandingNotificationKind): Array<{
+  subjectId: string;
+  createdAt: string;
+  payload: unknown;
+}> {
+  if (!current) {
+    logger.debug('[Notifications] Nothing read: no service is wired', { kind });
+    return [];
+  }
+  return current.unresolvedStanding(kind);
 }
 
 /**
