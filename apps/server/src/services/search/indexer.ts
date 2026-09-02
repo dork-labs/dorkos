@@ -11,7 +11,6 @@
 import type { Db } from '@dorkos/db';
 import { logger } from '../../lib/logger.js';
 import { sweepFileSource } from './jsonl-frontier.js';
-import { SEARCH_SOURCES } from './registry.js';
 import { sweepRowSource } from './row-frontier.js';
 import { sweepSnapshotSource } from './snapshot-frontier.js';
 import type { SearchSource, SourceFailure } from './types.js';
@@ -102,16 +101,18 @@ export class SearchIndexer {
    *
    * @param db - The database, opened through `createDb` so `recursive_triggers`
    *   is on.
-   * @param sources - Which sources to sweep. Defaults to the whole registry.
-   *   A test that cares about one source passes just that one: the default set
-   *   reaches the filesystem, and a room test has no business reading the
-   *   operator's transcripts.
+   * @param sources - Which sources to sweep. **Required, with no default**
+   *   (DOR-1551). It used to default to the whole registry, which made "sweep
+   *   the operator's real transcripts" the thing that happened when a caller
+   *   said nothing — and the browser suite's servers were exactly such callers.
+   *   The set a run may read is now a decision somebody makes out loud:
+   *   `selectSearchSources()` at boot, one named source in a test.
    * @param intervalMs - Sweep cadence. Defaults to
    *   {@link SEARCH_RECONCILE_INTERVAL_MS}.
    */
   constructor(
     private readonly db: Db,
-    private readonly sources: readonly SearchSource[] = SEARCH_SOURCES,
+    private readonly sources: readonly SearchSource[],
     private readonly intervalMs: number = SEARCH_RECONCILE_INTERVAL_MS
   ) {}
 

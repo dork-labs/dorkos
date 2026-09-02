@@ -310,7 +310,7 @@ import {
 } from './services/rooms/ensure-team-room.js';
 import { createMomentDetectors } from './services/rooms/moments/index.js';
 import { registerLocalCommunity } from './services/communities/index.js';
-import { SearchIndexer } from './services/search/index.js';
+import { SearchIndexer, selectSearchSources } from './services/search/index.js';
 import { TerminalManager, terminalUpgradeRoute } from './services/terminal/index.js';
 import { attachUpgradeRouter } from './services/core/streams/upgrade-router.js';
 import { durableStreamRoutes } from './routes/stream-sockets.js';
@@ -1435,7 +1435,21 @@ async function start() {
   // cheap: the sweep is one GROUP BY per source plus a read of whatever is new,
   // and an install with nothing in it does no work at all. Nothing a person can
   // reach queries these rows yet.
-  searchIndexer = new SearchIndexer(db);
+  //
+  // The ONE place `DORKOS_SEARCH_NO_EXTERNAL_HISTORY` is read (DOR-1551). A
+  // throwaway `DORK_HOME` isolates what DorkOS owns; it does not move
+  // `~/.claude`, `$CODEX_HOME` or OpenCode's store, so a harness that must read
+  // nobody's history says so and gets the `corpus: 'dorkos'` sources only. Unset
+  // on every real install, where the full set is the documented coverage.
+  const searchSources = selectSearchSources({
+    excludeExternalHistory: env.DORKOS_SEARCH_NO_EXTERNAL_HISTORY,
+  });
+  if (env.DORKOS_SEARCH_NO_EXTERNAL_HISTORY) {
+    logger.info('[Search] indexing this data directory only; no external history will be read', {
+      sources: searchSources.map((source) => source.id),
+    });
+  }
+  searchIndexer = new SearchIndexer(db, searchSources);
   searchIndexer.start();
 
   // Initialize Tasks scheduler if enabled

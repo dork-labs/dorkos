@@ -47,6 +47,9 @@ import type { FileSource, RowContainer, RowSource, SearchSource, SnapshotSource 
 export const roomsSource: RowSource = {
   id: 'rooms',
   mechanism: 'rows',
+  // `room_entries` is a table in the database this server owns, so a server
+  // pointed at a throwaway `DORK_HOME` reads a throwaway room log.
+  corpus: 'dorkos',
 
   listContainers(db: Db): RowContainer[] {
     // One GROUP BY answers discovery AND change detection. A LEFT JOIN so a room
@@ -116,6 +119,11 @@ export function createClaudeCodeSource(resolveProjectsRoots: () => readonly stri
   return {
     id: 'claude-code',
     mechanism: 'jsonl',
+    // Claude Code's own history, wherever Claude Code keeps it. Marked
+    // `external` even when a test hands it fixture roots: the corpus tag
+    // describes the SOURCE, and the roots are a parameter precisely because
+    // this one would otherwise reach the operator's home.
+    corpus: 'external',
     discover: (known) => discoverClaudeCodeTranscripts(resolveProjectsRoots(), known),
     project: projectClaudeCodeLines,
   };
@@ -176,6 +184,9 @@ export function createCodexSource(resolveRolloutRoots: () => readonly string[]):
   return {
     id: 'codex',
     mechanism: 'jsonl',
+    // `$CODEX_HOME`, which is another program's directory under the operator's
+    // home and moves with neither `DORK_HOME` nor this process.
+    corpus: 'external',
     discover: (known) => discoverCodexRollouts(resolveRolloutRoots(), known),
     project: projectCodexLines,
   };
@@ -202,6 +213,10 @@ export function createOpenCodeSource(
   return {
     id: 'opencode',
     mechanism: 'sqlite-snapshot',
+    // OpenCode's own store, resolved from `$OPENCODE_DB`/`$XDG_DATA_HOME` and
+    // copied before it is read — a copy of somebody else's history is still
+    // somebody else's history.
+    corpus: 'external',
     open: () => {
       const storePath = resolveStorePath();
       // Resolved to nothing, or nothing at the path: OpenCode may never have run
@@ -263,7 +278,12 @@ export const codexSource: FileSource = createCodexSource(() => resolveCodexRollo
 export const openCodeSource: SnapshotSource = createOpenCodeSource(resolveOpenCodeStorePath);
 
 /**
- * Every source the indexer sweeps.
+ * Every source that exists — **not always every source a run sweeps.**
+ *
+ * A server started with `DORKOS_SEARCH_NO_EXTERNAL_HISTORY=true` sweeps only the
+ * `corpus: 'dorkos'` rows; {@link selectSearchSources} is what applies that, and
+ * `apps/server/src/index.ts` is the one place that reads the flag. See that
+ * function for why the flag exists and why a normal install never sets it.
  *
  * Four entries over three mechanisms. Claude Code and Codex share M1 (append-only
  * JSONL tailed at a byte offset); the room log is M2 (rows above a monotonic
@@ -288,3 +308,45 @@ export const SEARCH_SOURCES: readonly SearchSource[] = [
   codexSource,
   openCodeSource,
 ];
+
+/**
+ * The sources a run may sweep, once the "read nobody's history" decision is
+ * applied (DOR-1551).
+ *
+ * **What this exists to stop.** Pointing a server at a throwaway `DORK_HOME`
+ * isolates everything DorkOS owns and nothing else. The browser suite gives each
+ * Express leg its own wiped-per-boot home under `/tmp` (DOR-1223) — and the
+ * index went on resolving `~/.claude`, `$CODEX_HOME` and OpenCode's store from
+ * the operator's home REGARDLESS, so every `pnpm test:browser` full-text-copied
+ * the operator's real transcripts (~9,250 Claude Code messages, measured
+ * 2026-08-25) into a world-readable temp directory. Read-only against the
+ * originals, and still a searchable copy of everything that person ever said,
+ * written by a test run they did not think was reading anything.
+ *
+ * **Excluded by property, never by name.** The filter reads
+ * {@link SourceCorpus}, which every registry row is required to declare, so a
+ * fifth source is covered on the day it lands rather than on the day somebody
+ * remembers this function exists.
+ *
+ * **A normal install never sets the flag**, so message search keeps the coverage
+ * it documents: the copy in the search box promises Claude Code, Codex and
+ * OpenCode conversations, and nothing here narrows that for anyone who is not a
+ * test harness. This is a gate on a test-only environment variable, not a
+ * default — do not "restore" the excluded sources by deleting the call.
+ *
+ * @param options - The decision.
+ * @param options.excludeExternalHistory - Drop every source whose corpus is
+ *   another program's history on this machine. Set from
+ *   `DORKOS_SEARCH_NO_EXTERNAL_HISTORY` at boot.
+ * @param sources - Which registry to filter. Defaults to {@link SEARCH_SOURCES};
+ *   a parameter so a test can prove the filter on sources pointed at fixtures
+ *   rather than at the operator's real history.
+ * @returns The sources to sweep, in registry order.
+ */
+export function selectSearchSources(
+  options: { excludeExternalHistory: boolean },
+  sources: readonly SearchSource[] = SEARCH_SOURCES
+): readonly SearchSource[] {
+  if (!options.excludeExternalHistory) return sources;
+  return sources.filter((source) => source.corpus !== 'external');
+}

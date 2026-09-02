@@ -213,6 +213,18 @@ const serverEnvSchema = z.object({
   // per-data-directory lock that stops two servers from sharing one `~/.dork`.
   // The lock is already inert under NODE_ENV=test.
   DORKOS_SKIP_INSTANCE_LOCK: boolFlag,
+  // Message search — index ONLY what this server's own DORK_HOME holds, never
+  // another program's history on the machine (DOR-1551). Off by default, so a
+  // normal install keeps the coverage the search box promises: Claude Code,
+  // Codex and OpenCode conversations, wherever those programs keep them.
+  //
+  // Set by a harness whose data directory is a throwaway. Pointing a server at
+  // `/tmp/dorkos-cockpit-4245` isolates everything DorkOS owns and nothing
+  // else — the index still resolved `~/.claude` from the operator's home, so
+  // every browser-suite run copied their real transcripts into that temp dir.
+  // `apps/e2e/playwright.config.ts` sets this on both Express legs; nothing
+  // else in the repo does. See services/search/registry.ts `selectSearchSources`.
+  DORKOS_SEARCH_NO_EXTERNAL_HISTORY: boolFlag,
   // Activity feed — retention period for pruning (defaults to 30 days in service)
   DORKOS_ACTIVITY_RETENTION_DAYS: z.coerce.number().int().min(1).optional(),
   // Test mode — TestModeRuntime is registered instead of ClaudeCodeRuntime

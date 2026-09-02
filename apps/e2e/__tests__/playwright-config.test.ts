@@ -1,24 +1,25 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 
 /**
- * Guards the invariant DOR-1243 depends on: every `webServer` leg in
- * `playwright.config.ts` carries a DISTINCT `timeout`. Playwright's own
- * readiness-timeout error names only the millisecond number — `Timed out
- * waiting 180000ms from config.webServer.` — never the leg (verified against
- * the installed `playwright@1.59.1`: `webServerPlugin.js`'s
- * `_waitForProcess` throws that string with no access to the leg's `name`).
- * A duplicate timeout would make a future CI timeout ambiguous between two
- * legs; this test fails loudly the moment that happens instead of leaving it
- * to be rediscovered the next time the marketing-site leg goes red.
+ * Guards the two invariants `playwright.config.ts` cannot state in code —
+ * distinct readiness timeouts (DOR-1243), and a data directory no run may leak
+ * out of (DOR-1223, DOR-1551).
+ *
+ * The second group exists because those lines fail NOTHING if they are deleted.
+ * A suite whose legs quietly stopped isolating themselves goes green while
+ * copying somebody's history into `/tmp`, which is exactly how DOR-1551 lived
+ * unnoticed through every browser-suite run for weeks.
  *
  * `E2E_SITE` is set before the config module is imported so the Marketing
- * Site leg — normally opt-in — is included: it is one of the five legs this
- * invariant covers, and skipping it here would leave its timeout unchecked.
+ * Site leg — normally opt-in — is included: it is one of the five legs the
+ * timeout invariant covers, and skipping it here would leave its timeout
+ * unchecked.
  *
  * @module __tests__/playwright-config
  */
 describe('playwright.config.ts webServer legs', () => {
   let timeouts: number[];
+  let commands: string[];
 
   beforeAll(async () => {
     // Deliberate direct process.env access: this package has no env.ts (see
@@ -30,6 +31,7 @@ describe('playwright.config.ts webServer legs', () => {
     const webServer = config.webServer;
     const legs = Array.isArray(webServer) ? webServer : webServer ? [webServer] : [];
     timeouts = legs.map((leg) => leg.timeout ?? 0);
+    commands = legs.map((leg) => leg.command);
   });
 
   it('gives every leg a distinct readiness timeout', () => {
@@ -38,5 +40,61 @@ describe('playwright.config.ts webServer legs', () => {
     // because E2E_SITE was set above before the config was imported.
     expect(timeouts.length).toBe(5);
     expect(new Set(timeouts).size).toBe(timeouts.length);
+  });
+});
+
+/**
+ * Every leg that keeps a data directory, and where it keeps it.
+ *
+ * Keyed off `DORK_HOME=` rather than off a leg's `name`, so a third API leg
+ * added later is covered on the day it lands rather than on the day somebody
+ * remembers this file.
+ *
+ * @param commands - The `webServer` commands, as the config built them.
+ */
+function dataDirectories(commands: string[]): { command: string; dorkHome: string }[] {
+  return commands.flatMap((command) => {
+    const match = /DORK_HOME=(\S+)/.exec(command);
+    return match ? [{ command, dorkHome: match[1]! }] : [];
+  });
+}
+
+describe('every leg that stores data isolates it', () => {
+  let legs: { command: string; dorkHome: string }[];
+
+  beforeAll(async () => {
+    // eslint-disable-next-line no-restricted-syntax -- see the note above
+    process.env.E2E_SITE = '1';
+    const { default: config } = await import('../playwright.config.js');
+    const webServer = config.webServer;
+    const all = Array.isArray(webServer) ? webServer : webServer ? [webServer] : [];
+    legs = dataDirectories(all.map((leg) => leg.command));
+  });
+
+  it('finds the two Express legs, so the assertions below have something to check', () => {
+    // Without this the whole group passes vacuously the day the `DORK_HOME=`
+    // spelling changes — `flatMap` over no matches asserts nothing.
+    expect(legs).toHaveLength(2);
+    for (const leg of legs) expect(leg.dorkHome).toMatch(/^\/tmp\/dorkos-/);
+  });
+
+  it('creates each data directory empty and mode 0700 before the leg boots', () => {
+    // `/tmp` is world-readable, and this directory holds the run's message-search
+    // index, its `mcp-local-token` and its `better-auth-secret`. At the default
+    // `umask 022` the server created it 0755 (DOR-1551).
+    for (const leg of legs) {
+      expect(leg.command).toContain(`rm -rf ${leg.dorkHome}`);
+      expect(leg.command).toContain(`mkdir -m 700 -p ${leg.dorkHome}`);
+    }
+  });
+
+  it('tells each leg to index its own data directory and nothing else', () => {
+    // `DORK_HOME` isolates what DorkOS owns; it does not move `~/.claude`,
+    // `$CODEX_HOME` or OpenCode's store. Without this flag the message-search
+    // sweep copied the operator's real transcripts into the throwaway directory
+    // on every run of the suite (DOR-1551).
+    for (const leg of legs) {
+      expect(leg.command).toContain('DORKOS_SEARCH_NO_EXTERNAL_HISTORY=true');
+    }
   });
 });

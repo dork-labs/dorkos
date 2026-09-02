@@ -34,8 +34,17 @@ import {
  * @module capture/boot
  */
 
-/** Environment shared by the spawned processes. */
-function baseEnv(): NodeJS.ProcessEnv {
+/**
+ * Environment shared by the spawned processes.
+ *
+ * Exported so `__tests__/capture-boot.test.ts` can assert the isolation flags
+ * are still on it. Deleting one of them fails nothing at capture time — the run
+ * goes green and the screenshots look identical — which is exactly how the
+ * message-search leak below survived unnoticed.
+ *
+ * @returns The child processes' environment.
+ */
+export function baseEnv(): NodeJS.ProcessEnv {
   return {
     // eslint-disable-next-line no-restricted-syntax -- capture harness has no env.ts; the child processes need the inherited environment
     ...process.env,
@@ -52,6 +61,15 @@ function baseEnv(): NodeJS.ProcessEnv {
     DORKOS_PORT: String(SERVER_PORT),
     VITE_PORT: String(VITE_PORT),
     DORK_HOME: CAPTURE_HOME,
+    // Index this run's own data directory and NOTHING ELSE (DOR-1551), and it
+    // is the same privacy guarantee the boundary below makes, closed on the
+    // other side. `DORK_HOME` isolates what DorkOS owns; it does not move
+    // `~/.claude`, `$CODEX_HOME` or OpenCode's store, all of which the
+    // message-search sweep resolves from the operator's home. Measured on this
+    // machine before the fix: 13,564 claude-code + 214 codex + 50 opencode REAL
+    // messages, full-text-indexed into `~/.dork-capture` by a run whose whole
+    // job is taking marketing screenshots.
+    DORKOS_SEARCH_NO_EXTERNAL_HISTORY: 'true',
     // Confine the server's directory boundary to the capture world. This is a
     // privacy guarantee: the onboarding discovery step can auto-start its scan
     // before the client's config query resolves, and that fallback sweeps the

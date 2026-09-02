@@ -129,6 +129,31 @@ export interface RowContainer {
 }
 
 /**
+ * Whose history a source reads — the DorkOS data directory, or another
+ * program's store on the same machine (DOR-1551).
+ *
+ * `'dorkos'` means the corpus lives inside the `DORK_HOME` this process owns,
+ * so it exists only because DorkOS wrote it. `'external'` means the corpus is
+ * resolved from the operator's home directory instead — `~/.claude/projects`,
+ * `$CODEX_HOME`, OpenCode's store — and is therefore the same corpus no matter
+ * which `DORK_HOME` the server was pointed at.
+ *
+ * **That difference is the whole reason this field exists.** Pointing a server
+ * at a throwaway data directory isolates everything DorkOS owns and nothing
+ * else: the browser suite gave each Express leg its own `/tmp` home (DOR-1223),
+ * and the index went on full-text-copying ~9,250 of the operator's real Claude
+ * Code messages into it on every run. {@link SearchSource} carries the answer so
+ * a run that must not read anybody's history can drop those sources by property
+ * rather than by name.
+ *
+ * **Required rather than optional, and that is the point.** An optional field
+ * defaults to "not external", so a fifth source added years from now would leak
+ * silently and go on leaking until somebody re-measured. Required means the
+ * compiler asks the question at the moment the row is written.
+ */
+export type SourceCorpus = 'dorkos' | 'external';
+
+/**
  * **M2** — a source whose containers are rows above a monotonic watermark
  * (spec §3). The room log uses it, and any future DorkOS-owned table would.
  *
@@ -145,6 +170,9 @@ export interface RowSource {
    * the indexer guessing from the shape of the record (spec §3).
    */
   readonly mechanism: 'rows';
+
+  /** Whose history this reads — see {@link SourceCorpus}. */
+  readonly corpus: SourceCorpus;
 
   /** Every container that exists right now, with its current high-water ordinal. */
   listContainers(db: Db): RowContainer[];
@@ -328,6 +356,9 @@ export interface FileSource {
    */
   readonly mechanism: 'jsonl';
 
+  /** Whose history this reads — see {@link SourceCorpus}. */
+  readonly corpus: SourceCorpus;
+
   /**
    * Every file that should be indexed right now, across every root this source
    * reads, and every one that should not.
@@ -412,6 +443,9 @@ export interface SnapshotSource {
    * the indexer guessing from the shape of the record (spec §3).
    */
   readonly mechanism: 'sqlite-snapshot';
+
+  /** Whose history this reads — see {@link SourceCorpus}. */
+  readonly corpus: SourceCorpus;
 
   /**
    * Copy the store, open the copy read-only, and hand back a reader.

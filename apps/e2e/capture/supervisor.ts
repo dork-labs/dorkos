@@ -26,6 +26,41 @@ const LOG_DIR = path.join(CAPTURE_HOME, 'logs');
 /** Append-only diagnostics log for boot/teardown/reconcile lifecycle events. */
 const LOG_FILE = path.join(LOG_DIR, 'capture.log');
 
+/**
+ * The mode `CAPTURE_HOME` is created with: readable by the person running the
+ * capture and nobody else (DOR-1551).
+ *
+ * This directory is a full DorkOS data directory — the capture run's SQLite
+ * database, its `mcp-local-token`, its `better-auth-secret` — and it sits
+ * directly in the operator's home, where the default `umask 022` made it `0755`
+ * and every account on the machine could read all of it.
+ */
+export const CAPTURE_HOME_MODE = 0o700;
+
+/**
+ * Create this shard's `CAPTURE_HOME` (or fix the mode of one that already
+ * exists), and return.
+ *
+ * **Every path that can bring this directory into being goes through here**, and
+ * that is the point: `log()` creates it as a side effect of `logs/`,
+ * {@link writePidfile} creates it before the first pidfile, and `seed.ts`
+ * recreates it after each wipe. A mode set in only some of those places is a
+ * mode that depends on which ran first.
+ *
+ * The `chmod` is not redundant with the `mkdir` mode. `mkdir` applies its mode
+ * only to a directory it actually creates, and only after `umask` has taken bits
+ * OUT of it — so a `~/.dork-capture` left `0755` by an older release would keep
+ * that mode forever.
+ *
+ * @param dir - Which directory. Defaults to this shard's `CAPTURE_HOME`; a
+ *   parameter so a test can prove the mode without creating the operator's real
+ *   capture home.
+ */
+export function ensureCaptureHome(dir: string = CAPTURE_HOME): void {
+  fs.mkdirSync(dir, { recursive: true, mode: CAPTURE_HOME_MODE });
+  fs.chmodSync(dir, CAPTURE_HOME_MODE);
+}
+
 /** SIGTERM→SIGKILL grace while reconciling a stale stack. */
 const RECONCILE_TERM_WAIT_MS = 400;
 /** Settle time after killing a stale stack, letting the OS release its ports. */
@@ -42,6 +77,10 @@ const PORT_PROBE_TIMEOUT_MS = 500;
  */
 export function log(message: string): void {
   try {
+    // Before `logs/`, because a recursive mkdir of a subdirectory is one of the
+    // ways this whole tree gets created, and it would create the parent at
+    // whatever `umask` says.
+    ensureCaptureHome();
     fs.mkdirSync(LOG_DIR, { recursive: true });
     fs.appendFileSync(LOG_FILE, `${new Date().toISOString()} ${message}\n`);
   } catch {
@@ -73,7 +112,7 @@ export function parsePidfile(content: string): number[] {
 /** Record the live stack's process-group pids so a crashed run can be reconciled next boot. */
 export function writePidfile(pids: readonly number[]): void {
   try {
-    fs.mkdirSync(CAPTURE_HOME, { recursive: true });
+    ensureCaptureHome();
     fs.writeFileSync(PIDFILE, formatPidfile(pids));
   } catch {
     // A missing pidfile only costs us reconciliation on the next run; never fatal.
