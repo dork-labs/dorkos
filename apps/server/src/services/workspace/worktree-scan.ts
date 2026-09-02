@@ -20,7 +20,11 @@
  */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import type { WorktreeScanEntry, WorktreeScanResult } from '@dorkos/shared/workspace';
+import type {
+  WorktreeScanEntry,
+  WorktreeScanResult,
+  WorktreeScanWarning,
+} from '@dorkos/shared/workspace';
 import { runGit } from './providers/git.js';
 
 /**
@@ -41,16 +45,27 @@ interface StatusSummary {
   branch: string | null;
   ahead: number | null;
   behind: number | null;
+  upstreamGone: boolean;
   changedFiles: number;
 }
 
 /**
  * Parse the porcelain v1 status of a checkout.
  *
- * The `--branch` header is the first line and carries three shapes:
- * `## HEAD (no branch)` (detached), `## main` (no upstream), and
- * `## main...origin/main [ahead 1, behind 2]`. Every later line is one changed
- * or untracked path.
+ * The `--branch` header is the first line and has five shapes worth telling
+ * apart. Every later line is one changed or untracked path.
+ *
+ * - `## HEAD (no branch)` — detached.
+ * - `## No commits yet on main` — a real branch that has no commits.
+ * - `## main` — a branch tracking nothing.
+ * - `## main...origin/main [ahead 1, behind 2]` — tracking, with a divergence.
+ * - `## main...origin/main [gone]` — tracking a branch that no longer exists,
+ *   which is what git says once a merged pull request's remote branch is
+ *   deleted. This one is the trap: it looks exactly like a tracking branch, so
+ *   reading it as one reports `0 ahead, 0 behind` and the page renders "In sync"
+ *   about a remote that is not there. On the machine this was built for, 19 of
+ *   27 checkouts print `[gone]`, so getting it wrong would have made most of
+ *   the page a confident lie.
  *
  * @param stdout - Raw output of `git status --porcelain=v1 --branch`.
  * @internal Exported for testing only.
@@ -59,14 +74,22 @@ export function parseStatusSummary(stdout: string): StatusSummary {
   const lines = stdout.split('\n').filter((line) => line.length > 0);
   const header = lines.find((line) => line.startsWith('## ')) ?? '';
   const changedFiles = lines.filter((line) => !line.startsWith('## ')).length;
+  const noComparison = { ahead: null, behind: null, upstreamGone: false, changedFiles };
 
   // A detached HEAD has no branch to name, and `HEAD (no branch)` is git's
   // literal wording for it — not a branch called "HEAD".
   if (header.startsWith('## HEAD (no branch)')) {
-    return { branch: null, ahead: null, behind: null, changedFiles };
+    return { branch: null, ...noComparison };
   }
 
   const body = header.slice('## '.length);
+
+  // An unborn branch. The name is a real branch name and worth showing; what it
+  // lacks is commits, which the empty last-commit column already says. Without
+  // this the whole sentence lands in the branch column, beside a branch icon.
+  const unborn = /^No commits yet on (.+)$/.exec(body);
+  if (unborn) return { branch: unborn[1] ?? null, ...noComparison };
+
   const trackingStart = body.indexOf(' [');
   const refs = trackingStart === -1 ? body : body.slice(0, trackingStart);
   const tracking = trackingStart === -1 ? '' : body.slice(trackingStart);
@@ -76,12 +99,15 @@ export function parseStatusSummary(stdout: string): StatusSummary {
   // "ahead/behind of nothing" is unknown rather than zero.
   const separator = refs.indexOf('...');
   const branch = separator === -1 ? refs : refs.slice(0, separator);
-  const hasUpstream = separator !== -1;
+  const upstreamGone = /\[gone\]/.test(tracking);
+  // A branch whose upstream was deleted has nothing to be in sync WITH, so it
+  // counts as untracked for the numbers and is reported separately for a label.
+  const hasUpstream = separator !== -1 && !upstreamGone;
 
   const ahead = hasUpstream ? Number(/ahead (\d+)/.exec(tracking)?.[1]) || 0 : null;
   const behind = hasUpstream ? Number(/behind (\d+)/.exec(tracking)?.[1]) || 0 : null;
 
-  return { branch: branch.length > 0 ? branch : null, ahead, behind, changedFiles };
+  return { branch: branch.length > 0 ? branch : null, ahead, behind, upstreamGone, changedFiles };
 }
 
 /**
@@ -111,6 +137,7 @@ async function inspectCheckout(checkoutPath: string, project: string): Promise<W
     changedFiles: null,
     ahead: null,
     behind: null,
+    upstreamGone: false,
     lastCommitAt: null,
     readable: false,
   };
@@ -143,6 +170,7 @@ async function inspectCheckout(checkoutPath: string, project: string): Promise<W
       changedFiles: summary.changedFiles,
       ahead: summary.ahead,
       behind: summary.behind,
+      upstreamGone: summary.upstreamGone,
       lastCommitAt: lastCommit.trim() || null,
       readable: true,
     };
@@ -151,16 +179,36 @@ async function inspectCheckout(checkoutPath: string, project: string): Promise<W
   }
 }
 
-/** List the immediate subdirectories of `dir`, or nothing if it cannot be read. */
-async function listSubdirectories(dir: string): Promise<string[]> {
+/** The immediate subdirectories of a directory, or the reason there are none. */
+interface DirListing {
+  names: string[];
+  /** An errno code when the directory could not be opened at all. */
+  error: string | null;
+}
+
+/**
+ * List the immediate subdirectories of `dir`.
+ *
+ * A directory that cannot be OPENED is different in kind from one that is
+ * empty: it hides however many checkouts were inside it, and returning `[]` for
+ * both makes those checkouts vanish from the page with nothing to show for it
+ * (an unreadable project folder silently dropped 7 real checkouts). `ENOENT` is
+ * the one exception — a root nobody has created yet is the ordinary empty
+ * state, not a fault worth reporting.
+ */
+async function listSubdirectories(dir: string): Promise<DirListing> {
   try {
     const entries = await fs.readdir(dir, { withFileTypes: true });
-    return entries
-      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
-      .map((entry) => entry.name)
-      .sort();
-  } catch {
-    return [];
+    return {
+      names: entries
+        .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+        .map((entry) => entry.name)
+        .sort(),
+      error: null,
+    };
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code ?? 'UNKNOWN';
+    return { names: [], error: code === 'ENOENT' ? null : code };
   }
 }
 
@@ -189,17 +237,23 @@ async function mapBounded<T, R>(
  * both the managed provider and the operator's `gtr` flow write. A directory
  * with no `.git` entry is not a checkout and is skipped silently (the root
  * accumulates scratch folders); anything with a `.git` is reported, readable or
- * not. Results are ordered by project, then newest commit first.
+ * not. A directory that could not be opened at all is reported in `warnings`,
+ * because whatever it held is missing from the list. Results are ordered by
+ * project, then newest commit first.
  *
  * @param root - The resolved workspace root (`workspace.rootPath ?? <dorkHome>/workspaces`).
  */
 export async function scanWorktrees(root: string): Promise<WorktreeScanResult> {
-  const projects = await listSubdirectories(root);
+  const warnings: WorktreeScanWarning[] = [];
+  const rootListing = await listSubdirectories(root);
+  if (rootListing.error) warnings.push({ path: root, reason: rootListing.error });
 
   const candidates: Array<{ path: string; project: string }> = [];
-  for (const project of projects) {
+  for (const project of rootListing.names) {
     const projectDir = path.join(root, project);
-    for (const name of await listSubdirectories(projectDir)) {
+    const listing = await listSubdirectories(projectDir);
+    if (listing.error) warnings.push({ path: projectDir, reason: listing.error });
+    for (const name of listing.names) {
       const checkoutPath = path.join(projectDir, name);
       // A worktree carries a `.git` FILE (a pointer), a clone a `.git` DIRECTORY.
       // Either counts; neither means this is just a folder someone left here.
@@ -218,14 +272,18 @@ export async function scanWorktrees(root: string): Promise<WorktreeScanResult> {
   worktrees.sort((a, b) => {
     if (a.project !== b.project) return a.project.localeCompare(b.project);
     // Newest work first; a checkout with no readable commit date sorts last
-    // rather than jumping to the top of its project.
-    if (a.lastCommitAt !== b.lastCommitAt) {
-      if (!a.lastCommitAt) return 1;
-      if (!b.lastCommitAt) return -1;
-      return b.lastCommitAt.localeCompare(a.lastCommitAt);
+    // rather than jumping to the top of its project. Compared as instants, not
+    // as strings: `%cI` carries each committer's UTC offset, so two commits a
+    // minute apart in different zones sort backwards under a text compare.
+    const at = a.lastCommitAt ? Date.parse(a.lastCommitAt) : null;
+    const bt = b.lastCommitAt ? Date.parse(b.lastCommitAt) : null;
+    if (at !== bt) {
+      if (at === null) return 1;
+      if (bt === null) return -1;
+      return bt - at;
     }
     return a.name.localeCompare(b.name);
   });
 
-  return { root, worktrees };
+  return { root, worktrees, warnings };
 }

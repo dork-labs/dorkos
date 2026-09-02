@@ -38,6 +38,7 @@ function makeWorktree(over: Partial<WorktreeScanEntry>): WorktreeScanEntry {
     changedFiles: 0,
     ahead: 0,
     behind: 0,
+    upstreamGone: false,
     lastCommitAt: new Date().toISOString(),
     readable: true,
     ...over,
@@ -45,9 +46,16 @@ function makeWorktree(over: Partial<WorktreeScanEntry>): WorktreeScanEntry {
 }
 
 function renderWithScan(result: Partial<WorktreeScanResult>) {
-  const transport = createMockTransport({
-    scanWorktrees: vi.fn().mockResolvedValue({ root: '/root', worktrees: [], ...result }),
-  }) as Transport;
+  return renderWithTransport(
+    createMockTransport({
+      scanWorktrees: vi
+        .fn()
+        .mockResolvedValue({ root: '/root', worktrees: [], warnings: [], ...result }),
+    }) as Transport
+  );
+}
+
+function renderWithTransport(transport: Transport) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
@@ -120,6 +128,18 @@ describe('WorkspacesPage', () => {
     expect(screen.queryByText(/ahead/)).not.toBeInTheDocument();
   });
 
+  it('says a checkout whose upstream is gone is done, not in sync', async () => {
+    renderWithScan({
+      worktrees: [makeWorktree({ upstreamGone: true, ahead: null, behind: null })],
+    });
+
+    // The single most common state in a real workspaces folder: the PR merged
+    // and the remote branch was deleted. Calling that "In sync" is the lie this
+    // page exists to stop telling.
+    expect(await screen.findByText('Branch merged or deleted')).toBeInTheDocument();
+    expect(screen.queryByText('In sync')).not.toBeInTheDocument();
+  });
+
   it('still lists a checkout git could not read, and marks it as such', async () => {
     renderWithScan({
       worktrees: [
@@ -157,6 +177,31 @@ describe('WorkspacesPage', () => {
     // Read-only is the whole point: a page that lists other agents' live trees
     // must not put a destructive control next to them.
     expect(within(container).queryAllByRole('button')).toHaveLength(0);
+  });
+
+  it('says the scan failed rather than claiming there is nothing', async () => {
+    const transport = createMockTransport({
+      scanWorktrees: vi.fn().mockRejectedValue(new Error('Failed to fetch')),
+    }) as Transport;
+
+    renderWithTransport(transport);
+
+    // A dropped connection must never render as "No worktrees yet" — that is a
+    // confident claim about a folder the app never managed to read.
+    expect(await screen.findByText('Couldn’t check your worktrees')).toBeInTheDocument();
+    expect(screen.queryByText('No worktrees yet')).not.toBeInTheDocument();
+  });
+
+  it('warns that the list is incomplete when a folder could not be opened', async () => {
+    renderWithScan({
+      worktrees: [makeWorktree({})],
+      warnings: [{ path: '/home/me/.dork/workspaces/locked', reason: 'EACCES' }],
+    });
+
+    expect(await screen.findByText(/couldn’t be opened/i)).toBeInTheDocument();
+    expect(screen.getByText(/~\/\.dork\/workspaces\/locked \(EACCES\)/)).toBeInTheDocument();
+    // The checkouts it DID find still render — a partial answer beats none.
+    expect(screen.getByText('DOR-84')).toBeInTheDocument();
   });
 
   it('shows an honest empty state naming where it looked', async () => {

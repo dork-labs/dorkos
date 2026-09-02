@@ -8,7 +8,7 @@
  * working in, and one broken checkout must not take the page down.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtemp, rm, writeFile, mkdir, realpath, stat, utimes } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, mkdir, realpath, stat, utimes, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -193,18 +193,168 @@ describe('scanWorktrees', () => {
 
   it('returns an empty scan for a root that does not exist', async () => {
     const missing = path.join(fx.base, 'no-such-root');
-    await expect(scanWorktrees(missing)).resolves.toEqual({ root: missing, worktrees: [] });
+    // A root nobody has created yet is the ordinary empty state, not a fault —
+    // so it reports no warning, unlike a root that exists but will not open.
+    await expect(scanWorktrees(missing)).resolves.toEqual({
+      root: missing,
+      worktrees: [],
+      warnings: [],
+    });
   });
 
-  it('orders checkouts by project, then newest commit first', async () => {
-    const { worktrees } = await scanWorktrees(fx.root);
-    const dates = worktrees.map((w) => w.lastCommitAt);
+  it('reports no warnings when every directory opened', async () => {
+    await expect(scanWorktrees(fx.root)).resolves.toMatchObject({ warnings: [] });
+  });
+});
 
-    // Readable rows carry dates in non-increasing order; the unreadable one has
-    // no date and sorts last rather than jumping to the top.
-    const readableDates = dates.filter((d): d is string => d !== null);
-    expect([...readableDates].sort().reverse()).toEqual(readableDates);
-    expect(dates[dates.length - 1]).toBeNull();
+describe('scanWorktrees degradation', () => {
+  let base: string;
+
+  beforeAll(async () => {
+    base = await realpath(await mkdtemp(path.join(tmpdir(), 'ws-degrade-')));
+  }, 60_000);
+
+  afterAll(async () => {
+    // Restore the mode first, or the recursive remove cannot descend into it.
+    await chmod(path.join(base, 'locked', 'workspaces', 'sealed'), 0o755).catch(() => {});
+    await rm(base, { recursive: true, force: true });
+  });
+
+  it('reports a real deleted upstream instead of calling it in sync', async () => {
+    const home = path.join(base, 'gone');
+    const root = path.join(home, 'workspaces');
+    const source = path.join(home, 'source');
+    const origin = path.join(home, 'origin.git');
+    await mkdir(path.join(root, 'core'), { recursive: true });
+
+    git(['init', '--bare', '-b', 'main', origin], home);
+    await mkdir(source, { recursive: true });
+    git(['clone', origin, source], home);
+    git(['config', 'user.email', 't@example.com'], source);
+    git(['config', 'user.name', 'Test'], source);
+    await writeFile(path.join(source, 'README.md'), '# s\n');
+    git(['add', '.'], source);
+    git(['commit', '-m', 'init'], source);
+    git(['push', '-u', 'origin', 'main'], source);
+
+    // Branch, push it so it has a real upstream, then delete the remote branch —
+    // exactly what happens when a pull request merges and GitHub tidies up.
+    const merged = path.join(root, 'core', 'merged');
+    git(['worktree', 'add', merged, '-b', 'feat/merged'], source);
+    git(['push', '-u', 'origin', 'feat/merged'], merged);
+    git(['push', 'origin', '--delete', 'feat/merged'], merged);
+
+    const { worktrees } = await scanWorktrees(root);
+    const row = worktrees.find((w) => w.name === 'merged');
+
+    expect(row?.upstreamGone).toBe(true);
+    // The lie this guards: reading `[gone]` as a tracking branch reports 0/0,
+    // which the page renders as "In sync" with a branch that is not there.
+    expect(row?.ahead).toBeNull();
+    expect(row?.behind).toBeNull();
+    expect(row?.branch).toBe('feat/merged');
+  });
+
+  it('warns instead of silently dropping the checkouts in an unreadable folder', async () => {
+    const home = path.join(base, 'locked');
+    const root = path.join(home, 'workspaces');
+    const source = path.join(home, 'source');
+    const sealed = path.join(root, 'sealed');
+    await mkdir(sealed, { recursive: true });
+    await mkdir(source, { recursive: true });
+
+    git(['init', '-b', 'main', '.'], source);
+    git(['config', 'user.email', 't@example.com'], source);
+    git(['config', 'user.name', 'Test'], source);
+    await writeFile(path.join(source, 'README.md'), '# s\n');
+    git(['add', '.'], source);
+    git(['commit', '-m', 'init'], source);
+    git(['worktree', 'add', path.join(sealed, 'hidden'), '-b', 'wt/hidden'], source);
+
+    await chmod(sealed, 0o000);
+
+    const result = await scanWorktrees(root);
+
+    // Returning `[]` for a folder that could not be OPENED is how a real
+    // project directory once dropped 7 checkouts with nothing to show for it.
+    expect(result.worktrees).toHaveLength(0);
+    expect(result.warnings).toEqual([{ path: sealed, reason: 'EACCES' }]);
+  });
+});
+
+/**
+ * Ordering gets its own root. The shared fixture above commits everything in
+ * the same second and in one project, so its rows could be shuffled without a
+ * single assertion noticing. These commits are minutes apart, in two projects,
+ * and one pair is deliberately written in different time zones.
+ */
+describe('scanWorktrees ordering', () => {
+  let base: string;
+  let root: string;
+
+  /** Commit with an exact committer date — `%cI`, the field the scan sorts on. */
+  function commitAt(cwd: string, message: string, iso: string): void {
+    execFileSync('git', ['commit', '--allow-empty', '-m', message, '--date', iso], {
+      cwd,
+      stdio: 'pipe',
+      env: { ...process.env, GIT_COMMITTER_DATE: iso },
+    });
+  }
+
+  beforeAll(async () => {
+    base = await realpath(await mkdtemp(path.join(tmpdir(), 'ws-order-')));
+    root = path.join(base, 'workspaces');
+    const source = path.join(base, 'source');
+    await mkdir(source, { recursive: true });
+    await mkdir(path.join(root, 'alpha'), { recursive: true });
+    await mkdir(path.join(root, 'beta'), { recursive: true });
+
+    git(['init', '-b', 'main', '.'], source);
+    git(['config', 'user.email', 't@example.com'], source);
+    git(['config', 'user.name', 'Test'], source);
+    commitAt(source, 'root', '2026-01-01T00:00:00+00:00');
+
+    // `oldest` and `newest` are hours apart, so any comparator gets them right.
+    // `zoned-*` is the real test: written as text, `2026-06-02T01:00:00+05:00`
+    // sorts ABOVE `2026-06-01T23:00:00+00:00`, but as instants it is three
+    // hours EARLIER (20:00Z vs 23:00Z). A string compare gets this pair
+    // backwards, which is why the comparator parses both sides.
+    const trees: Array<[string, string, string]> = [
+      ['alpha', 'oldest', '2026-06-01T09:00:00+00:00'],
+      ['alpha', 'zoned-earlier', '2026-06-02T01:00:00+05:00'],
+      ['alpha', 'zoned-later', '2026-06-01T23:00:00+00:00'],
+      ['alpha', 'newest', '2026-06-03T09:00:00+00:00'],
+      ['beta', 'only', '2026-06-04T09:00:00+00:00'],
+    ];
+    for (const [project, name, iso] of trees) {
+      const dir = path.join(root, project, name);
+      git(['worktree', 'add', dir, '-b', `wt/${name}`], source);
+      commitAt(dir, name, iso);
+    }
+
+    // No commits at all, so no date to sort by. It must sort last within its
+    // project rather than floating to the top.
+    const undated = path.join(root, 'alpha', 'undated');
+    git(['worktree', 'add', '--detach', undated], source);
+  }, 60_000);
+
+  afterAll(async () => {
+    await rm(base, { recursive: true, force: true });
+  });
+
+  it('sorts by project, then newest commit first, dateless last', async () => {
+    const { worktrees } = await scanWorktrees(root);
+
+    expect(worktrees.map((w) => `${w.project}/${w.name}`)).toEqual([
+      'alpha/newest',
+      'alpha/zoned-later',
+      'alpha/zoned-earlier',
+      'alpha/oldest',
+      // `undated` sits on the root commit, the oldest date in the fixture, so
+      // it lands last in alpha either way — asserted by position, not by luck.
+      'alpha/undated',
+      'beta/only',
+    ]);
   });
 });
 
@@ -214,6 +364,7 @@ describe('parseStatusSummary', () => {
       branch: 'main',
       ahead: 3,
       behind: 2,
+      upstreamGone: false,
       changedFiles: 2,
     });
   });
@@ -234,6 +385,21 @@ describe('parseStatusSummary', () => {
       branch: 'solo',
       ahead: null,
       behind: null,
+      upstreamGone: false,
+      changedFiles: 0,
+    });
+  });
+
+  it('never reports a deleted upstream as zero divergence', () => {
+    // git's wording once a merged PR's remote branch is deleted. It looks like
+    // a tracking branch, so reading it as one yields `0 ahead, 0 behind` and the
+    // page says "In sync" about a remote that no longer exists. 19 of the 27
+    // real checkouts on the machine this was built for print exactly this.
+    expect(parseStatusSummary('## feat/x...origin/feat/x [gone]\n')).toEqual({
+      branch: 'feat/x',
+      ahead: null,
+      behind: null,
+      upstreamGone: true,
       changedFiles: 0,
     });
   });
@@ -243,6 +409,19 @@ describe('parseStatusSummary', () => {
       branch: null,
       ahead: null,
       behind: null,
+      upstreamGone: false,
+      changedFiles: 1,
+    });
+  });
+
+  it('pulls the branch name out of an unborn checkout', () => {
+    // Without this the whole sentence lands in the branch column, rendered
+    // beside a branch icon as though "No commits yet on main" were a ref.
+    expect(parseStatusSummary('## No commits yet on main\n?? a\n')).toEqual({
+      branch: 'main',
+      ahead: null,
+      behind: null,
+      upstreamGone: false,
       changedFiles: 1,
     });
   });

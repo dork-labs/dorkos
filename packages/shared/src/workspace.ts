@@ -252,6 +252,14 @@ export const WorktreeScanEntrySchema = z
     ahead: z.number().int().nullable(),
     /** Commits the upstream has that this branch does not; `null` with no upstream. */
     behind: z.number().int().nullable(),
+    /**
+     * The branch tracks an upstream that no longer exists — git's `[gone]`.
+     * Almost always means the pull request merged and the remote branch was
+     * deleted, which makes this the single most useful "done with it" signal in
+     * the scan. Distinct from having no upstream at all: `ahead`/`behind` are
+     * `null` in both cases, but only one of them says the work landed.
+     */
+    upstreamGone: z.boolean(),
     /** ISO timestamp of the newest commit on HEAD. */
     lastCommitAt: z.string().nullable(),
     /** False when git could not describe this checkout — the row is a stub. */
@@ -262,6 +270,25 @@ export const WorktreeScanEntrySchema = z
 /** One checkout found by the adoption scan — see {@link WorktreeScanEntrySchema}. */
 export type WorktreeScanEntry = z.infer<typeof WorktreeScanEntrySchema>;
 
+/**
+ * A directory the scan could not list. Reported rather than skipped: a folder
+ * that fails to open hides however many checkouts were inside it, and a scan
+ * that quietly returns fewer rows is exactly the kind of lie this page exists to
+ * stop telling. A root that simply does not exist yet is NOT a warning — that is
+ * the ordinary empty state.
+ */
+export const WorktreeScanWarningSchema = z
+  .object({
+    /** Absolute path of the directory that could not be listed. */
+    path: z.string(),
+    /** Why it could not be read — an errno code such as `EACCES`. */
+    reason: z.string(),
+  })
+  .openapi('WorktreeScanWarning');
+
+/** A directory the scan could not list — see {@link WorktreeScanWarningSchema}. */
+export type WorktreeScanWarning = z.infer<typeof WorktreeScanWarningSchema>;
+
 /** The result of one adoption scan: the root that was scanned and what it holds. */
 export const WorktreeScanResultSchema = z
   .object({
@@ -269,6 +296,8 @@ export const WorktreeScanResultSchema = z
     root: z.string(),
     /** Every checkout found, newest commit first within each project. */
     worktrees: z.array(WorktreeScanEntrySchema),
+    /** Directories that could not be listed, and so may hide checkouts. */
+    warnings: z.array(WorktreeScanWarningSchema),
   })
   .openapi('WorktreeScanResult');
 

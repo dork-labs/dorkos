@@ -40,7 +40,7 @@ Open the **Workspaces** tab on Home to see the real copies of your code sitting 
 - **Folder**: the copy's name, and where it is on disk.
 - **Branch**: the branch it has checked out. A copy parked on a specific commit instead of a branch reads "No branch".
 - **Changes**: how many files hold edits you haven't committed. "Clean" means none.
-- **Compared to remote**: how many commits it is ahead of or behind the branch it tracks. A branch that tracks nothing shows a dash, because there is nothing to compare it against.
+- **Compared to remote**: how many commits it is ahead of or behind the branch it tracks. A branch that tracks nothing shows a dash, because there is nothing to compare it against. "Branch merged or deleted" means the branch it followed is gone from the remote, which usually means the pull request merged. Those are the copies you can most safely clean up.
 - **Last commit**: when work last landed there, so you can spot copies you're done with.
 
 <Callout type="info">
@@ -49,6 +49,8 @@ Open the **Workspaces** tab on Home to see the real copies of your code sitting 
 </Callout>
 
 A folder DorkOS can't read shows up too, marked "Can't read", instead of quietly disappearing. That usually means the original repo moved or was deleted. It's the one folder you most want to know about, so it always gets a row.
+
+The page also refuses to guess when it doesn't know. If a whole folder can't be opened, a note at the top says the list may be incomplete and names the folder. If the scan itself fails, you get "Couldn't check your worktrees" rather than an empty list, because "you have none" and "we couldn't look" are very different answers.
 
 ## Knowing which workspace you're in
 

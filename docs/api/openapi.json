@@ -9831,11 +9831,18 @@
             "items": {
               "$ref": "#/components/schemas/WorktreeScanEntry"
             }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorktreeScanWarning"
+            }
           }
         },
         "required": [
           "root",
-          "worktrees"
+          "worktrees",
+          "warnings"
         ]
       },
       "WorktreeScanEntry": {
@@ -9880,6 +9887,9 @@
               "null"
             ]
           },
+          "upstreamGone": {
+            "type": "boolean"
+          },
           "lastCommitAt": {
             "type": [
               "string",
@@ -9899,8 +9909,24 @@
           "changedFiles",
           "ahead",
           "behind",
+          "upstreamGone",
           "lastCommitAt",
           "readable"
+        ]
+      },
+      "WorktreeScanWarning": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "reason"
         ]
       },
       "ActorType": {

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
-import type { WorktreeScanEntry } from '@dorkos/shared/workspace';
+import type { WorktreeScanEntry, WorktreeScanWarning } from '@dorkos/shared/workspace';
 
 /** Query key for the worktree adoption scan. */
 export const worktreeScanQueryKey = ['workspaces', 'scan'] as const;
@@ -20,8 +20,9 @@ const SCAN_STALE_MS = 60_000;
 export function useWorktreeScan(): {
   root: string | null;
   worktrees: WorktreeScanEntry[];
+  warnings: WorktreeScanWarning[];
   isLoading: boolean;
-  error: unknown;
+  isError: boolean;
 } {
   const transport = useTransport();
   const query = useQuery({
@@ -32,7 +33,10 @@ export function useWorktreeScan(): {
   return {
     root: query.data?.root ?? null,
     worktrees: query.data?.worktrees ?? [],
+    warnings: query.data?.warnings ?? [],
     isLoading: query.isLoading,
-    error: query.error,
+    // A failed scan is not an empty one. The page has to be able to tell them
+    // apart, or a dropped connection renders as "you have no worktrees".
+    isError: query.isError,
   };
 }

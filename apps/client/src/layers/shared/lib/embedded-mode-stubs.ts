@@ -879,7 +879,7 @@ export const cloudStubs = {
  */
 export const workspaceStubs = {
   async scanWorktrees(): Promise<WorktreeScanResult> {
-    return { root: '', worktrees: [] };
+    return { root: '', worktrees: [], warnings: [] };
   },
 
   async resolveWorkspace(_absPath: string): Promise<Workspace | null> {

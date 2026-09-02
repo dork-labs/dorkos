@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { FolderGit2, GitBranch } from 'lucide-react';
+import { FolderGit2, GitBranch, TriangleAlert } from 'lucide-react';
 import { formatRelativeTime, shortenHomePath } from '@/layers/shared/lib';
 import {
   Badge,
@@ -26,9 +26,14 @@ function changesLabel(worktree: WorktreeScanEntry): string {
 /**
  * What the Sync column says. A branch with no upstream reports neither number,
  * and "in sync" would be a claim about a comparison that was never made.
+ *
+ * A deleted upstream gets its own words rather than the same dash: it almost
+ * always means the pull request merged and the branch was cleaned up, which
+ * makes it the clearest "you can let this one go" signal on the page.
  */
 function syncLabel(worktree: WorktreeScanEntry): string {
-  const { ahead, behind } = worktree;
+  const { ahead, behind, upstreamGone } = worktree;
+  if (upstreamGone) return 'Branch merged or deleted';
   if (ahead === null || behind === null) return UNKNOWN;
   if (ahead === 0 && behind === 0) return 'In sync';
   return [ahead > 0 && `${ahead} ahead`, behind > 0 && `${behind} behind`]
@@ -64,7 +69,9 @@ function WorktreeRow({ worktree }: { worktree: WorktreeScanEntry }) {
         )}
       </TableCell>
 
-      <TableCell className={hasChanges ? 'text-amber-600' : 'text-muted-foreground'}>
+      <TableCell
+        className={hasChanges ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground'}
+      >
         <span className="text-xs whitespace-nowrap">{changesLabel(worktree)}</span>
       </TableCell>
 
@@ -127,7 +134,7 @@ function ProjectSection({
  * it. Deliberately read-only: it shows what is there and changes nothing.
  */
 export function WorkspacesPage() {
-  const { root, worktrees, isLoading } = useWorktreeScan();
+  const { root, worktrees, warnings, isLoading, isError } = useWorktreeScan();
 
   const byProject = useMemo(() => {
     const map = new Map<string, WorktreeScanEntry[]>();
@@ -156,8 +163,35 @@ export function WorkspacesPage() {
         they never edit the same files at once. This page only reads them.
       </p>
 
+      {warnings.length > 0 && (
+        <div className="mb-6 rounded-lg border border-amber-600/40 bg-amber-500/10 p-4">
+          <p className="text-sm font-medium">Some folders couldn&rsquo;t be opened</p>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Anything inside them is missing from this list, so it may be incomplete.
+          </p>
+          <ul className="text-muted-foreground mt-2 space-y-0.5 text-xs">
+            {warnings.map((warning) => (
+              <li key={warning.path} className="truncate" title={warning.path}>
+                {shortenHomePath(warning.path)} ({warning.reason})
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {isLoading ? (
         <p className="text-muted-foreground text-sm">Looking for your worktrees…</p>
+      ) : isError ? (
+        // Never the empty state on failure. "No worktrees yet" would be a
+        // confident claim about a folder we did not manage to read at all.
+        <div className="bg-card rounded-xl border p-10 text-center">
+          <TriangleAlert className="text-muted-foreground/60 mx-auto size-8" />
+          <p className="mt-3 font-medium">Couldn&rsquo;t check your worktrees</p>
+          <p className="text-muted-foreground mt-1 text-sm">
+            The scan didn&rsquo;t finish, so this list would be wrong. This usually means the DorkOS
+            server isn&rsquo;t reachable. It will try again on its own.
+          </p>
+        </div>
       ) : byProject.length === 0 ? (
         <div className="bg-card rounded-xl border p-10 text-center">
           <FolderGit2 className="text-muted-foreground/60 mx-auto size-8" />

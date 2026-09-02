@@ -20,13 +20,19 @@ apps/server/src/services/workspace/
   port-env.ts                              # writes the allocated block into the workspace .env
   workspace-service.ts                     # the WorkspaceManager (ensure/list/resolve/remove/…)
   workspace-reconciler.ts                  # 5-min cache↔manifest sync
+  worktree-scan.ts                         # read-only adoption scan of the root (DOR-1056)
   index.ts                                 # createWorkspaceSubsystem() + get/setWorkspaceManager()
 apps/server/src/routes/workspaces.ts       # /api/workspaces
-apps/client/src/layers/entities/workspace  # useWorkspaces, useWorkspaceForSession
+apps/client/src/layers/entities/workspace  # useWorktreeScan, useWorkspaceForSession
 apps/client/.../features/status/GitStatusItem.tsx     # the session-view indicator
-apps/client/.../widgets/workspaces         # the /workspaces page
-apps/client/.../features/workspace-management         # pin + dirty-safe remove
+apps/client/.../widgets/workspaces         # the /workspaces page (read-only)
 ```
+
+The app reads workspaces and never mutates them: `Transport` carries only
+`scanWorktrees` and `resolveWorkspace`. Provisioning, pinning, and removal stay
+HTTP-only (`POST /api/workspaces`, `/:id/pin`, `DELETE /:id`) for tools, scripts,
+and the session `workspaceKey` rung — so no click in the UI can delete a
+checkout another agent is working in (DOR-1056).
 
 ## Key seams
 
