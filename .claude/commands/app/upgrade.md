@@ -570,7 +570,7 @@ Each mode ends with a concise report:
 
 - **The repo keeps `pnpm-lock.yaml` Prettier-formatted.** Any `pnpm install`
   rewrites it compact and CI's `format:check` (first step of the required
-  `typecheck` workflow) fails. Run `pnpm exec prettier --write pnpm-lock.yaml`
+  `lint` workflow) fails. Run `pnpm exec prettier --write pnpm-lock.yaml`
   after every install, before judging the diff (an 11k-line "phantom diff" is
   this, not a real change).
 - **`pnpm.overrides` rewrite our own workspace specs too.** An override pinned at

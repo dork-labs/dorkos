@@ -1,7 +1,7 @@
 name: typecheck
 
 # Type-checks every package that declares a `typecheck` script, on every PR
-# and on push to main. See the KNOWN GAPS note below for what this does not
+# and in the merge queue. See the KNOWN GAPS note below for what this does not
 # cover. (The formatting gate that used to ride this workflow moved to
 # lint.yml in the DOR-627 follow-up, 2026-09-02 — see that file's header.)
 #
@@ -66,9 +66,13 @@ name: typecheck
 # that combined tree, so the interaction is checked before anything lands rather
 # than discovered on `main` afterwards.
 #
+# THE push-to-main LEG IS DROPPED (DOR-627 follow-up, 2026-09-02), matching
+# `test` and now `lint`: this job is already required and already reports on
+# `merge_group`, so the queue guarantees every commit that reaches `main`
+# already ran it against the exact combined tree (squash rewrites the SHA,
+# not the content). A push-to-main re-run would have been a same-answer
+# rerun of a check the queue had already settled.
 on:
-  push:
-    branches: [main]
   pull_request:
   merge_group:
 
@@ -77,13 +81,13 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
-# Cancel superseded runs on the same ref for PRs only. For push events, group
-# by SHA instead of ref: GitHub only lets one run per group be *pending* at a
-# time, so several quick merges to main sharing a `typecheck-refs/heads/main`
-# group would cancel each other's queued runs and only the final push would
-# actually get checked. Per-SHA groups give every push-to-main its own slot.
+# Cancel superseded runs for PR pushes only. Merge-group refs are unique per
+# build (gh-readonly-queue/main/pr-<n>-<sha>), so queue runs never share a
+# group and are never cancelled by this block — the queue supersedes builds by
+# dequeuing them. (Copied deliberately from test.yml, now that push-to-main is
+# dropped here too — same reasoning, same fix.)
 concurrency:
-  group: typecheck-${{ github.event_name == 'push' && github.sha || github.ref }}
+  group: typecheck-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
