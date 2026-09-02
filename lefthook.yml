@@ -14,11 +14,60 @@ pre-commit:
       run: bash scripts/check-dir-size.sh
       fail_text: 'Directory has too many files — split into subdirectories.'
     lint:
-      run: pnpm lint
-      fail_text: 'Lint errors found — fix them before committing.'
+      # AFFECTED-ONLY, on purpose (DOR-833). This command and the typecheck
+      # below were a bare `pnpm lint` / `pnpm typecheck`, walking every package
+      # in the workspace on every commit — including commits that touch only
+      # docs, a spec, a changelog fragment or this file. That cost 23 minutes
+      # (lint 481s + typecheck 898s) on 2026-07-27 with five agent sessions
+      # sharing the box; agents stalled mid-commit and burned turns polling a
+      # gate that could not finish.
+      #
+      # `--affected` is the mode `pnpm verify` and the pre-push gate below both
+      # already use: turbo diffs against a base ref and runs the changed
+      # packages AND everything that imports them, so a one-line edit in
+      # packages/relay still pulls in server, client, mesh and the rest.
+      # Only the flag is precedent, though — neither of those two pins a base,
+      # so both inherit the staleness described below and scope far less than
+      # they read as scoping.
+      #
+      # Measured 2026-09-02, cold turbo cache, both variants interleaved so the
+      # machine's load hit them equally, best of the repeats:
+      #   * commit touching only root files (this one, or any docs/spec commit)
+      #     — 369s before, 1s after, at load ~210.
+      #   * one-line commit in packages/cli — 115s before (lint 58 + typecheck
+      #     57), 103s after (62 + 41), at load 26-128. Scoping does little for
+      #     a package whose dependency closure is most of the repo; the win is
+      #     concentrated in commits that touch few packages or none.
+      # On a fully warm cache both variants replay in about a second, so this
+      # changes nothing for the second commit in a row.
+      #
+      # TURBO_SCM_BASE is set because turbo's default base is the LOCAL `main`
+      # branch, and here that ref only moves when a human pulls while every
+      # worktree branch is cut straight from `origin/main` — so it sits dozens
+      # of commits behind and the diff against it sweeps in everybody else's
+      # merges. Measured the same day with one staged line in packages/relay:
+      # against local `main` turbo called all 24 packages affected, i.e. no
+      # scoping at all; against `origin/main` it called 11. The `main` fallback
+      # covers a clone with no `origin` remote.
+      #
+      # Uncommitted files count as changed, so the staged edit this hook exists
+      # to gate is always in scope. A file you changed but did not stage is in
+      # scope too — over-inclusive, which is the safe direction for a gate.
+      #
+      # No `dotenv --` wrapper (the old `pnpm typecheck` had one): neither task
+      # declares any `env` in turbo.json, so nothing about them depends on
+      # .env, and `pnpm verify` already runs both without it.
+      #
+      # The whole tree is still checked before anything lands: `lint` and
+      # `typecheck` are required merge-queue checks and run unscoped there, so
+      # a break that only appears once two branches combine is caught by the
+      # queue rather than by this hook.
+      run: TURBO_SCM_BASE="$(git rev-parse --verify --quiet origin/main || echo main)" pnpm exec turbo lint --affected
+      fail_text: 'Lint failed — see the errors above, or turbo could not resolve the diff base / is not installed.'
     typecheck:
-      run: pnpm typecheck
-      fail_text: 'Type errors found — fix them before committing.'
+      # Affected-only against origin/main — see the lint command above for why.
+      run: TURBO_SCM_BASE="$(git rev-parse --verify --quiet origin/main || echo main)" pnpm exec turbo typecheck --affected
+      fail_text: 'Typecheck failed — see the errors above, or turbo could not resolve the diff base / is not installed.'
 
 pre-push:
   commands:
@@ -45,6 +94,15 @@ pre-push:
       # still pulls in server, client, mesh and the rest that import it.
       # A push that touches only docs, specs or a workflow runs nothing at
       # all, in about a second.
+      #
+      # That last sentence only holds once the base is pinned, which this
+      # command does NOT do — see the pre-commit lint comment above. Turbo's
+      # default base is the local `main` branch, which on a worktree machine
+      # trails origin/main by dozens of commits, so the diff sweeps in other
+      # people's merges and this gate silently resolves to nearly everything.
+      # Measured 2026-09-02 on a docs-only tree: 24 packages / 57 test tasks
+      # against the default base, 1 package / 0 tasks with the base pinned to
+      # origin/main. Left alone here on purpose — a follow-up ticket owns it.
       #
       # THREE THINGS THIS GATE NO LONGER CATCHES, all covered by the
       # full-monorepo `test` workflow (.github/workflows/test.yml) — the split
