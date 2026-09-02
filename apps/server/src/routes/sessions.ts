@@ -515,14 +515,8 @@ function rejectUndeclaredPermissionMode(
  *
  * ## It degrades, on purpose
  *
- * An EMPTY catalog is not a claim that the runtime has no models — it is what a
- * runtime returns when it cannot answer: an unreachable OpenCode sidecar, a
- * claude-code warm-up that timed out, `test-mode`, which has no catalog at all.
- * Refusing on an empty list would turn a probe failure into a locked picker. So
- * an empty catalog accepts anything — exactly the way the OpenCode projection
- * shows the full menu when its own probes fail — and a throwing
- * `getSupportedModels` is read the same way.
- *
+ * A catalog only convicts when it is fit to — {@link catalogUnfitToConvict} is
+ * that whole question, and both of its answers land here as an accepted write.
  * Matching allows `resolvedModel` as well as `value` because claude-code's
  * catalog rows are ALIASES (`sonnet`, `opus`) naming the wire id they expand to;
  * a session that persisted the wire id must keep working.
@@ -538,13 +532,71 @@ async function rejectUnknownModel(runtime: AgentRuntime, model: string): Promise
   try {
     offered = await runtime.getSupportedModels();
   } catch {
+    logger.debug('[model gate] declined: the catalog probe threw', {
+      runtime: runtime.type,
+      model,
+    });
     return null;
   }
-  if (offered.length === 0) return null;
+  const unfit = catalogUnfitToConvict(offered);
+  if (unfit) {
+    logger.debug(`[model gate] declined: ${unfit}`, { runtime: runtime.type, model });
+    return null;
+  }
   if (offered.some((option) => option.value === model || option.resolvedModel === model)) {
     return null;
   }
   return `The ${runtime.type} runtime cannot run model '${model}'. Pick one from the model menu.`;
+}
+
+/**
+ * Why this catalog has no standing to refuse a model, or `null` when it does.
+ *
+ * Absence from a catalog is only evidence against a model when the catalog is
+ * both COMPLETE and CONFIRMED. Two states fail that, and they are the same
+ * epistemic state wearing different clothes — no usable evidence — so the gate
+ * declines in both rather than convicting on a guess. The string is the reason,
+ * logged by {@link rejectUnknownModel}: the two declines are indistinguishable
+ * from outside (each one accepts the write), so the reason has to be said
+ * somewhere or the next person debugging a "why did this go through" has to
+ * re-derive it.
+ *
+ * **Empty** is not a claim that the runtime has no models — it is what a runtime
+ * returns when it cannot answer: an unreachable OpenCode sidecar, a claude-code
+ * warm-up that timed out, `test-mode`, which has no catalog at all. Refusing on
+ * an empty list would turn a probe failure into a locked picker. (A throwing
+ * `getSupportedModels` is read the same way, at the call site.)
+ *
+ * **Unverified** is the same failure with rows in it. When OpenCode reports no
+ * connected provider it still offers a menu — the models.dev universe, sorted
+ * and cut to the highest-signal 200, every row marked `unverified` (DOR-1660).
+ * That list is explicitly a guess, and the UI says so out loud on three surfaces
+ * (`UnverifiedCatalogNotice`). An operator who supplied credentials through
+ * provider env vars can genuinely run a model that sorted past the cut, and the
+ * gate used to answer "the opencode runtime cannot run" it — DOR-1660's
+ * complaint ("it offers models that cannot run") inverted at a new door.
+ *
+ * ## Why ANY unverified row is enough, not only an all-unverified list
+ *
+ * The flag describes the MENU, not the row: per its schema, an `unverified` row
+ * "comes from a shortened, unconfirmed menu". One such row is therefore testimony
+ * that a shortened menu fed this list, and a shortened menu's ABSENCES prove
+ * nothing — which is the only thing the gate reads a catalog for. It is also the
+ * definition every client surface already uses (`models.some((m) =>
+ * m.unverified)` in `ModelRow`, `ModelSelectionList`, `AgentExecutionRows`), so
+ * the server refuses exactly when the picker is not warning the person. Today's
+ * only producer is all-or-nothing, so `some` and `every` agree on real data;
+ * `some` is the reading that stays honest if a future producer mixes a confirmed
+ * spine with guessed additions.
+ *
+ * @param offered - The catalog rows the runtime answered with.
+ */
+function catalogUnfitToConvict(offered: ModelOption[]): string | null {
+  if (offered.length === 0) return 'the runtime offered no catalog';
+  if (offered.some((option) => option.unverified)) {
+    return 'the catalog is a shortened, unconfirmed menu';
+  }
+  return null;
 }
 
 /**
