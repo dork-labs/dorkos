@@ -13855,50 +13855,13 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
-            },
-            "required": false,
-            "name": "subject",
-            "in": "query"
-          },
-          {
-            "schema": {
               "type": "string",
-              "enum": [
-                "new",
-                "cur",
-                "failed"
-              ]
+              "pattern": "^(adapter:)?[A-Za-z0-9_*>-]+(\\.[A-Za-z0-9_*>-]+)*$",
+              "description": "Only list dead letters filed for this endpoint hash."
             },
             "required": false,
-            "name": "status",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": false,
-            "name": "from",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": false,
-            "name": "cursor",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100,
-              "default": 50
-            },
-            "required": false,
-            "name": "limit",
+            "description": "Only list dead letters filed for this endpoint hash.",
+            "name": "endpointHash",
             "in": "query"
           }
         ],
