@@ -25,6 +25,7 @@ import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { apiCall, ApiError } from '../lib/api-client.js';
 import { printError, printJson } from '../lib/operator-output.js';
+import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
 /** Help text for `dorkos version` (`--help`). */
 const VERSION_USAGE = `Usage: dorkos version [--check]
@@ -78,14 +79,7 @@ export function parseVersionArgs(rawArgs: string[]): VersionArgs {
       strict: true,
     });
   } catch (err) {
-    if (
-      err instanceof TypeError &&
-      (err as NodeJS.ErrnoException).code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION'
-    ) {
-      const match = err.message.match(/Unknown option '([^']+)'/);
-      throw new Error(`Unknown option for 'version': ${match?.[1] ?? 'unknown'}\n${usage}`);
-    }
-    throw err;
+    rethrowUnknownOption(err, 'version', usage);
   }
   return { check: Boolean(parsed.values.check), json: Boolean(parsed.values.json) };
 }

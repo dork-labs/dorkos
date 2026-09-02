@@ -19,6 +19,7 @@ import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import { isUnattendedAutonomy } from '@dorkos/shared/permission-semantics';
 import { apiCall } from '../lib/api-client.js';
 import { printError, printJson, renderTable } from '../lib/operator-output.js';
+import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
 /** Help text for `dorkos task` (no subcommand or `--help`). */
 const TASK_USAGE = `Usage: dorkos task <subcommand> [options]
@@ -174,20 +175,6 @@ function jsonOf(values: Record<string, unknown>): boolean {
   return Boolean(values.json);
 }
 
-/** Map an `ERR_PARSE_ARGS_UNKNOWN_OPTION` into a friendly per-subcommand error. */
-function rethrowUnknownOption(err: unknown, subcommand: string, usage: string): never {
-  if (
-    err instanceof TypeError &&
-    (err as NodeJS.ErrnoException).code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION'
-  ) {
-    const match = err.message.match(/Unknown option '([^']+)'/);
-    throw new Error(
-      `Unknown option for 'task ${subcommand}': ${match?.[1] ?? 'unknown'}\n${usage}`
-    );
-  }
-  throw err;
-}
-
 /**
  * Parse the argv slice after `dorkos task create`.
  *
@@ -219,7 +206,7 @@ export function parseTaskCreateArgs(rawArgs: string[]): TaskCreateArgs {
       strict: true,
     });
   } catch (err) {
-    rethrowUnknownOption(err, 'create', usage);
+    rethrowUnknownOption(err, 'task create', usage);
   }
   const { values } = parsed;
   const name = typeof values.name === 'string' ? values.name : undefined;
@@ -271,7 +258,7 @@ export function parseTaskRunsArgs(rawArgs: string[]): TaskRunsArgs {
       strict: true,
     });
   } catch (err) {
-    rethrowUnknownOption(err, 'runs', usage);
+    rethrowUnknownOption(err, 'task runs', usage);
   }
   const { values } = parsed;
   let limit: number | undefined;

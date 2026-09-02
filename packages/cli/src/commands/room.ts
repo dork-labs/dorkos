@@ -28,6 +28,7 @@ import { Readable } from 'node:stream';
 import { finished, pipeline } from 'node:stream/promises';
 import { apiCall, apiRequest } from '../lib/api-client.js';
 import { printError } from '../lib/operator-output.js';
+import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
 /** Help text for `dorkos room` (no subcommand or `--help`). */
 export const ROOM_USAGE = `Usage: dorkos room <subcommand> [options]
@@ -87,14 +88,7 @@ export function parseRoomExportArgs(rawArgs: string[]): RoomExportArgs {
       strict: true,
     });
   } catch (err) {
-    if (
-      err instanceof TypeError &&
-      (err as NodeJS.ErrnoException).code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION'
-    ) {
-      const match = err.message.match(/Unknown option '([^']+)'/);
-      throw new Error(`Unknown option for 'room export': ${match?.[1] ?? 'unknown'}\n${usage}`);
-    }
-    throw err;
+    rethrowUnknownOption(err, 'room export', usage);
   }
   const room = parsed.positionals[0];
   if (!room) throw new Error(`Name the room you want to export.\n${usage}`);

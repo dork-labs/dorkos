@@ -590,14 +590,12 @@ export class RelayPublishPipeline {
     //    not re-delivered to a late subscriber and does not manufacture a dead
     //    letter for every message in an unbound chat.
     let matchedSubscribers = 0;
-    let handledSubscribers = 0;
     let refusal: string | undefined;
     if (matchingEndpoints.length === 0) {
       const dispatch = await this.dispatchToSubscribers(envelope, subject);
       matchedSubscribers = dispatch.matched;
-      handledSubscribers = dispatch.handled;
       refusal = dispatch.refusal;
-      deliveredTo += handledSubscribers;
+      deliveredTo += dispatch.handled;
     }
 
     // 9. Buffer for late subscribers when no handlers matched.

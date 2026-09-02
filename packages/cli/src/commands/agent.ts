@@ -21,6 +21,7 @@
 import { parseArgs } from 'node:util';
 import { apiCall } from '../lib/api-client.js';
 import { printError, printJson, renderTable } from '../lib/operator-output.js';
+import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
 /** Help text for `dorkos agent` (no subcommand or `--help`). */
 const AGENT_USAGE = `Usage: dorkos agent <subcommand> [options]
@@ -104,20 +105,6 @@ function jsonOf(values: Record<string, unknown>): boolean {
   return Boolean(values.json);
 }
 
-/** Map an `ERR_PARSE_ARGS_UNKNOWN_OPTION` into a friendly per-subcommand error. */
-function rethrowUnknownOption(err: unknown, subcommand: string, usage: string): never {
-  if (
-    err instanceof TypeError &&
-    (err as NodeJS.ErrnoException).code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION'
-  ) {
-    const match = err.message.match(/Unknown option '([^']+)'/);
-    throw new Error(
-      `Unknown option for 'agent ${subcommand}': ${match?.[1] ?? 'unknown'}\n${usage}`
-    );
-  }
-  throw err;
-}
-
 /**
  * Parse the argv slice after `dorkos agent create`.
  *
@@ -142,7 +129,7 @@ export function parseAgentCreateArgs(rawArgs: string[]): AgentCreateArgs {
       strict: true,
     });
   } catch (err) {
-    rethrowUnknownOption(err, 'create', usage);
+    rethrowUnknownOption(err, 'agent create', usage);
   }
   const { values } = parsed;
   const name = typeof values.name === 'string' ? values.name : undefined;
@@ -187,7 +174,7 @@ export function parseAgentUpdateArgs(rawArgs: string[]): AgentUpdateArgs {
       strict: true,
     });
   } catch (err) {
-    rethrowUnknownOption(err, 'update', usage);
+    rethrowUnknownOption(err, 'agent update', usage);
   }
   const { values } = parsed;
   const path = typeof values.path === 'string' ? values.path : undefined;

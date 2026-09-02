@@ -109,7 +109,7 @@ function quote(text: string): string {
 
 /** Derive a short human-readable label for a tool call from its name and JSON input. */
 export function getToolLabel(toolName: string, input: string): string {
-  let parsed: Record<string, unknown> | null = null;
+  let parsed: Record<string, unknown> | null;
   try {
     parsed = JSON.parse(input);
   } catch {

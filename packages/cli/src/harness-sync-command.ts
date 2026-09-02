@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
+import { rethrowUnknownOption } from './lib/parse-args-error.js';
 
 import {
   applyPlan,
@@ -80,15 +81,7 @@ export function parseHarnessSyncArgs(rawArgs: string[]): HarnessSyncArgs {
       strict: true,
     });
   } catch (err) {
-    if (
-      err instanceof TypeError &&
-      (err as NodeJS.ErrnoException).code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION'
-    ) {
-      const match = err.message.match(/Unknown option '([^']+)'/);
-      const option = match?.[1] ?? 'unknown';
-      throw new Error(`Unknown option for 'harness sync': ${option}\n${USAGE_LINE}`);
-    }
-    throw err;
+    rethrowUnknownOption(err, 'harness sync', USAGE_LINE);
   }
 
   const { values } = parsed;

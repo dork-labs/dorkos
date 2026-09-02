@@ -26,6 +26,7 @@
 import { parseArgs } from 'node:util';
 import { apiCall } from '../lib/api-client.js';
 import { printError, printJson, renderTable } from '../lib/operator-output.js';
+import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
 /** Help text for `dorkos activity` (`--help`), rendered by the `cli.ts` interceptor. */
 export const ACTIVITY_HELP = `Usage: dorkos activity [options]
@@ -91,14 +92,7 @@ export function parseActivityArgs(rawArgs: string[]): ActivityArgs {
       strict: true,
     });
   } catch (err) {
-    if (
-      err instanceof TypeError &&
-      (err as NodeJS.ErrnoException).code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION'
-    ) {
-      const match = err.message.match(/Unknown option '([^']+)'/);
-      throw new Error(`Unknown option for 'activity': ${match?.[1] ?? 'unknown'}\n${usage}`);
-    }
-    throw err;
+    rethrowUnknownOption(err, 'activity', usage);
   }
   const { values } = parsed;
   let limit: number | undefined;

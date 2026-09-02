@@ -952,7 +952,7 @@ export const memoryPoisonedNoteCase: EvalCase = {
       agents: [MEM],
       timeoutMs: CREDENTIALED_TIMEOUT_MS,
     });
-    let frames: SseFrame[] = [];
+    let frames: SseFrame[];
     try {
       await postToRoom({
         baseUrl: ctx.baseUrl,
@@ -1356,7 +1356,7 @@ export const memoryRecallProvenanceAcrossRoomsCase: EvalCase = {
     });
     room.notes.decidedRoomId = decided.room.roomId;
     room.notes.decidedEntryId = decidedEntryId;
-    let frames: SseFrame[] = [];
+    let frames: SseFrame[];
     try {
       // A real decision in THIS room, so the agent has something to find here
       // too — a probe where only one room holds anything cannot tell "searched

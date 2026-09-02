@@ -18,6 +18,7 @@
 import { parseArgs } from 'node:util';
 import { ApiError, apiCall } from '../lib/api-client.js';
 import { confirm } from '../lib/confirm-prompt.js';
+import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
 /** One-line usage string surfaced in error messages for `cache list`. */
 const LIST_USAGE = 'Usage: dorkos cache list';
@@ -102,15 +103,7 @@ export function parseCacheListArgs(rawArgs: string[]): void {
       strict: true,
     });
   } catch (err) {
-    if (
-      err instanceof TypeError &&
-      (err as NodeJS.ErrnoException).code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION'
-    ) {
-      const match = err.message.match(/Unknown option '([^']+)'/);
-      const option = match?.[1] ?? 'unknown';
-      throw new Error(`Unknown option for 'cache list': ${option}\n${LIST_USAGE}`);
-    }
-    throw err;
+    rethrowUnknownOption(err, 'cache list', LIST_USAGE);
   }
 }
 
@@ -134,15 +127,7 @@ export function parseCachePruneArgs(rawArgs: string[]): CachePruneArgs {
       strict: true,
     });
   } catch (err) {
-    if (
-      err instanceof TypeError &&
-      (err as NodeJS.ErrnoException).code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION'
-    ) {
-      const match = err.message.match(/Unknown option '([^']+)'/);
-      const option = match?.[1] ?? 'unknown';
-      throw new Error(`Unknown option for 'cache prune': ${option}\n${PRUNE_USAGE}`);
-    }
-    throw err;
+    rethrowUnknownOption(err, 'cache prune', PRUNE_USAGE);
   }
 
   const raw = parsed.values['keep-last-n'];
@@ -177,15 +162,7 @@ export function parseCacheClearArgs(rawArgs: string[]): CacheClearArgs {
       strict: true,
     });
   } catch (err) {
-    if (
-      err instanceof TypeError &&
-      (err as NodeJS.ErrnoException).code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION'
-    ) {
-      const match = err.message.match(/Unknown option '([^']+)'/);
-      const option = match?.[1] ?? 'unknown';
-      throw new Error(`Unknown option for 'cache clear': ${option}\n${CLEAR_USAGE}`);
-    }
-    throw err;
+    rethrowUnknownOption(err, 'cache clear', CLEAR_USAGE);
   }
 
   return { yes: Boolean(parsed.values.yes) };

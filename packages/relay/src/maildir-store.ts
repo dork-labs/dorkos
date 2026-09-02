@@ -501,7 +501,7 @@ export class MaildirStore {
    */
   async getNewestActivityMs(endpointHash: string): Promise<number | null> {
     const base = this.endpointDir(endpointHash);
-    let newest: number | null = null;
+    let newest: number | null;
 
     try {
       const rootStat = await fs.stat(base);

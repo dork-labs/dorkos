@@ -225,7 +225,9 @@ export async function applyTaskFileUpdate(
   const changesFile = touchesFile(data, existing);
   if (!existing.filePath || !(changesFile || arming)) return { ok: true, changesFile };
 
-  let content: string | null = null;
+  // No initializer: every catch path returns, so a value here could never be
+  // read - and ESLint 10's no-useless-assignment now says so.
+  let content: string;
   try {
     content = await fs.readFile(existing.filePath, 'utf-8');
   } catch (err) {

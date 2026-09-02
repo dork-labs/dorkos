@@ -14,6 +14,7 @@
  */
 import { parseArgs } from 'node:util';
 import { ApiError, apiCall } from '../lib/api-client.js';
+import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
 /** Parsed CLI arguments accepted by {@link runUninstall}. */
 export interface UninstallArgs {
@@ -83,15 +84,7 @@ export function parseUninstallArgs(rawArgs: string[]): UninstallArgs {
       strict: true,
     });
   } catch (err) {
-    if (
-      err instanceof TypeError &&
-      (err as NodeJS.ErrnoException).code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION'
-    ) {
-      const match = err.message.match(/Unknown option '([^']+)'/);
-      const option = match?.[1] ?? 'unknown';
-      throw new Error(`Unknown option for 'uninstall': ${option}\n${USAGE_LINE}`);
-    }
-    throw err;
+    rethrowUnknownOption(err, 'uninstall', USAGE_LINE);
   }
 
   const { values, positionals } = parsed;

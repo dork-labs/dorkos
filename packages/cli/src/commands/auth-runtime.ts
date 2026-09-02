@@ -105,7 +105,7 @@ export function resolveCredentialPrompt(): CredentialPrompt {
         // value is actually needed (not covered by a flag).
         raw = readFileSync(0, 'utf8');
       } catch {
-        raw = '';
+        // Nothing piped in — the empty default stands.
       }
       stdinPrompt = createStdinPrompt(raw);
     }

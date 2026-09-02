@@ -407,8 +407,10 @@ function assertExternalsArePackaged(specifiers: string[]): void {
 function verifyBundleLoadable(outfile: string, metafile: Metafile): void {
   try {
     execFileSync(process.execPath, ['--check', outfile], { stdio: 'inherit' });
-  } catch {
-    throw new Error(`Emitted bundle is not parseable as ESM: ${outfile} (see the error above).`);
+  } catch (err) {
+    throw new Error(`Emitted bundle is not parseable as ESM: ${outfile} (see the error above).`, {
+      cause: err,
+    });
   }
 
   const specifiers = collectRuntimeSpecifiers(metafile);
@@ -418,12 +420,13 @@ function verifyBundleLoadable(outfile: string, metafile: Metafile): void {
       stdio: 'inherit',
       env: { ...process.env, DORKOS_BUNDLE_SPECIFIERS: JSON.stringify(specifiers) },
     });
-  } catch {
+  } catch (err) {
     throw new Error(
       'The emitted bundle imports packages that do not resolve from its own directory ' +
         '(listed above). A packaged app would die at fork() time with ERR_MODULE_NOT_FOUND. ' +
         `Add the package to apps/desktop/package.json's dependencies, or fix the spelling in ` +
-        `this script's \`external\` list.`
+        `this script's \`external\` list.`,
+      { cause: err }
     );
   }
   assertExternalsArePackaged(specifiers);

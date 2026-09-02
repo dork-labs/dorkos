@@ -304,11 +304,11 @@ export async function apiRequest(
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    throw new Error(`Cannot reach DorkOS server at ${url}: ${message}`);
+    throw new Error(`Cannot reach DorkOS server at ${url}: ${message}`, { cause: err });
   }
 
   if (!res.ok) {
-    let parsed: ApiErrorBody = {};
+    let parsed: ApiErrorBody;
     try {
       parsed = (await res.json()) as ApiErrorBody;
     } catch {

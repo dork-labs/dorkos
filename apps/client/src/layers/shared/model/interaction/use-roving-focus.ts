@@ -369,7 +369,7 @@ export function useRovingFocus(options?: {
       // No wrapping. The first and last are the ends of the section, and a
       // reader who arrows past one should be told by nothing happening rather
       // than be teleported to the other end of a list they cannot see all of.
-      let next: number | null = null;
+      let next: number | null;
       switch (event.key) {
         case 'ArrowDown':
           next = Math.min(index + 1, stops.length - 1);

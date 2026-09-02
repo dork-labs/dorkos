@@ -216,7 +216,7 @@ function NavigationLayoutSidebarKeyboardHandler({
 
       const tabArray = Array.from(tabs);
       const currentIndex = tabArray.findIndex((t) => t.getAttribute('data-value') === value);
-      let nextIndex = currentIndex;
+      let nextIndex: number;
 
       switch (e.key) {
         case 'ArrowDown':

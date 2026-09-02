@@ -17,7 +17,26 @@ export default [
     },
     settings: {
       react: {
-        version: 'detect',
+        // An explicit version, NOT `'detect'` (DOR-169). Under ESLint 10
+        // `'detect'` crashes the whole lint run before a single file is
+        // reported: eslint-plugin-react resolves the version by calling
+        // `context.getFilename()` (`lib/util/version.js`), one of the
+        // deprecated `context` methods ESLint 10 removed, and that call site is
+        // the one place in the plugin with no `sourceCode`-first fallback. The
+        // failure is a `TypeError: contextOrFilename.getFilename is not a
+        // function` inside whichever rule happened to initialise first, so it
+        // reads like a broken rule rather than a version lookup.
+        //
+        // The plugin declares no ESLint 10 peer (7.37.5 caps at `^9.7`) and has
+        // no release that fixes this, so pinning is the fix, not a stopgap.
+        // Everything else in the plugin routes through the guarded shim in
+        // `lib/util/eslint.js` and works on 10; `jsx-filename-extension` is the
+        // only other unguarded caller and this config does not enable it.
+        //
+        // Keep this in step with the `react` version in `apps/client` and
+        // `apps/site` — the plugin reads it to gate rules on React features, so
+        // a stale value silently applies an older React's rule set.
+        version: '19.2',
       },
     },
     rules: {

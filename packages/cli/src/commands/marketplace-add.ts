@@ -14,6 +14,7 @@
  */
 import { parseArgs } from 'node:util';
 import { ApiError, apiCall } from '../lib/api-client.js';
+import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
 /** Parsed CLI arguments accepted by {@link runMarketplaceAdd}. */
 export interface MarketplaceAddArgs {
@@ -56,15 +57,7 @@ export function parseMarketplaceAddArgs(rawArgs: string[]): MarketplaceAddArgs {
       strict: true,
     });
   } catch (err) {
-    if (
-      err instanceof TypeError &&
-      (err as NodeJS.ErrnoException).code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION'
-    ) {
-      const match = err.message.match(/Unknown option '([^']+)'/);
-      const option = match?.[1] ?? 'unknown';
-      throw new Error(`Unknown option for 'marketplace add': ${option}\n${USAGE_LINE}`);
-    }
-    throw err;
+    rethrowUnknownOption(err, 'marketplace add', USAGE_LINE);
   }
 
   const { values, positionals } = parsed;
