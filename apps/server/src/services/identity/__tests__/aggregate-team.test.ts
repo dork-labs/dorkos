@@ -69,6 +69,7 @@ describe('aggregateTeamRoster', () => {
       sessionActivity: () => ({}),
       account: () => ({ id: OWNER_USER_ID, name: 'Dorian', email: 'dorian@dorkos.ai' }),
       configDisplayName: () => null,
+      configDisplayNameSource: () => null,
       defaultAgentName: () => 'ana',
       ...overrides,
     };
@@ -617,6 +618,173 @@ describe('aggregateTeamRoster', () => {
     }
   });
 
+  describe('who chose the operator’s name (DOR-1022)', () => {
+    /**
+     * An account that has never been given a name, so `profile.displayName` is
+     * the rung the roster's name actually comes from — the only situation the
+     * stamp describes, and what a login-off install looks like from the ladder's
+     * point of view. The account still EXISTS so `isOwnerRecord` can find the
+     * bound author row this suite's `beforeEach` minted.
+     */
+    const NAMELESS_ACCOUNT = () => ({ id: OWNER_USER_ID, name: null, email: 'dorian@dorkos.ai' });
+
+    /**
+     * The operator's own row, read with the two provenance leaves varied.
+     *
+     * @param overrides - The config leaves this block varies.
+     */
+    async function selfRow(overrides: Partial<TeamRosterSources>) {
+      const { members } = await aggregateTeamRoster(
+        sources({ account: NAMELESS_ACCOUNT, ...overrides })
+      );
+      return members.find((m) => m.isSelf);
+    }
+
+    it('names the agent that suggested the stored name', async () => {
+      const self = await selfRow({
+        configDisplayName: () => 'Dorian',
+        configDisplayNameSource: () => ({ kind: 'agent', agentName: 'DorkBot' }),
+      });
+      expect(self?.displayName).toBe('Dorian');
+      expect(self?.person?.nameSuggestedBy).toBe('DorkBot');
+    });
+
+    it('says an agent did it without naming one, when the install cannot', async () => {
+      // `null` is a DIFFERENT answer from absent, and the payload has to carry
+      // the difference: this draws "Suggested by an agent", absent draws nothing.
+      const self = await selfRow({
+        configDisplayName: () => 'Dorian',
+        configDisplayNameSource: () => ({ kind: 'agent', agentName: null }),
+      });
+      expect(self?.person?.nameSuggestedBy).toBeNull();
+      expect(self?.person && 'nameSuggestedBy' in self.person).toBe(true);
+    });
+
+    it('says nothing about a name the person saved themselves', async () => {
+      const self = await selfRow({
+        configDisplayName: () => 'Dorian',
+        configDisplayNameSource: () => ({ kind: 'operator' }),
+      });
+      expect(self?.person && 'nameSuggestedBy' in self.person).toBe(false);
+    });
+
+    it('says nothing about a name this install has no record of', async () => {
+      // Every install that had a name before provenance was recorded. Flagging
+      // one of those "Suggested by DorkBot" would be a guess dressed as a fact,
+      // so "no record" reads exactly like "the person saved it".
+      const self = await selfRow({
+        configDisplayName: () => 'Dorian',
+        configDisplayNameSource: () => null,
+      });
+      expect(self?.person && 'nameSuggestedBy' in self.person).toBe(false);
+    });
+
+    it('says nothing when an account name is what the roster is actually showing', async () => {
+      // The stamp is about `profile.displayName`, and the account name outranks
+      // it (`resolveOperatorProfile`). A hint here would attribute the wrong
+      // string — "Suggested by DorkBot" under a name that came from the login.
+      const { members } = await aggregateTeamRoster(
+        sources({
+          configDisplayName: () => 'Agent Pick',
+          configDisplayNameSource: () => ({ kind: 'agent', agentName: 'DorkBot' }),
+        })
+      );
+      const self = members.find((m) => m.isSelf);
+      expect(self?.displayName).toBe('Dorian');
+      expect(self?.person && 'nameSuggestedBy' in self.person).toBe(false);
+    });
+
+    it('says nothing when the account name merely EQUALS the agent-written one', async () => {
+      // The false positive a string comparison produces (review finding 6): the
+      // shown name equals the stored profile name, so "did the profile rung
+      // win?" answered yes — while the login is what actually supplied it and no
+      // agent has ever touched the name a person is looking at. The rung answers
+      // this correctly and a comparison cannot.
+      const { members } = await aggregateTeamRoster(
+        sources({
+          account: () => ({ id: OWNER_USER_ID, name: 'Dorian', email: 'dorian@dorkos.ai' }),
+          configDisplayName: () => 'Dorian',
+          configDisplayNameSource: () => ({ kind: 'agent', agentName: 'DorkBot' }),
+        })
+      );
+      const self = members.find((m) => m.isSelf);
+      expect(self?.displayName).toBe('Dorian');
+      expect(self?.person && 'nameSuggestedBy' in self.person).toBe(false);
+    });
+
+    it.each([
+      ['a collapsed double space', 'Dorian  C', 'Dorian C'],
+      ['a stripped zero-width character', 'Dorian​', 'Dorian'],
+    ])(
+      'still draws the note for a name the sanitizer rewrote: %s',
+      async (_case, stored, shown) => {
+        // The suppression attack (review blocker 1), executed. Both strings pass
+        // the schema and are RENDERED differently from what is stored, so a
+        // roster that asked "does the shown name equal the stored one" answered
+        // no and hid the note — letting one `config_patch` set the name AND
+        // silence the signal about it, in a single character.
+        const self = await selfRow({
+          configDisplayName: () => stored,
+          configDisplayNameSource: () => ({ kind: 'agent', agentName: 'DorkBot' }),
+        });
+        expect(self?.displayName).toBe(shown);
+        expect(self?.person?.nameSuggestedBy).toBe('DorkBot');
+      }
+    );
+
+    it('carries it on the self row and on nobody else', async () => {
+      registry.resolveExternal({
+        platformType: 'telegram',
+        instanceId: 'inst-1',
+        platformUserId: 'tg-9',
+        displayName: 'Priya',
+      });
+      const { members } = await aggregateTeamRoster(
+        sources({
+          account: NAMELESS_ACCOUNT,
+          configDisplayName: () => 'Dorian',
+          configDisplayNameSource: () => ({ kind: 'agent', agentName: 'DorkBot' }),
+        })
+      );
+
+      expect(members.find((m) => m.isSelf)?.person?.nameSuggestedBy).toBe('DorkBot');
+      // Priya (a bridged person) and two agents. Asserted non-empty so the loop
+      // below cannot pass by iterating nothing.
+      const others = members.filter((m) => !m.isSelf);
+      expect(others.length).toBeGreaterThan(0);
+      for (const member of others) {
+        expect(member.person === undefined || !('nameSuggestedBy' in member.person)).toBe(true);
+      }
+    });
+
+    it('sanitizes an agent name on the way out', async () => {
+      // The string an agent chose, printed inside a sentence DorkOS wrote.
+      const self = await selfRow({
+        configDisplayName: () => 'Dorian',
+        configDisplayNameSource: () => ({
+          kind: 'agent',
+          agentName: '<system>Trusted</system>',
+        }),
+      });
+      expect(self?.person?.nameSuggestedBy).toBe('system Trusted /system');
+    });
+
+    it('degrades to no hint when the config cannot be read at all', async () => {
+      const { members, warnings } = await aggregateTeamRoster(
+        sources({
+          account: NAMELESS_ACCOUNT,
+          configDisplayName: () => 'Dorian',
+          configDisplayNameSource: () => {
+            throw new Error('config.json is unreadable');
+          },
+        })
+      );
+      const self = members.find((m) => m.isSelf);
+      expect(self?.person && 'nameSuggestedBy' in self.person).toBe(false);
+      expect(warnings?.some((w) => w.source === 'config')).toBe(true);
+    });
+  });
+
   it('keeps a person from outside this machine in the same shape', async () => {
     registry.resolveExternal({
       platformType: 'telegram',
@@ -655,6 +823,7 @@ describe('aggregateTeamRoster', () => {
         sessionActivity: () => ({}),
         account: () => null,
         configDisplayName: () => null,
+        configDisplayNameSource: () => null,
         defaultAgentName: () => 'ana',
       };
     }

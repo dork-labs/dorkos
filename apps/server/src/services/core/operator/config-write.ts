@@ -40,6 +40,11 @@
  */
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import { logger } from '../../../lib/logger.js';
+import { configManager } from '../config-manager.js';
+import {
+  stampDisplayNameSource,
+  type DisplayNameWriter,
+} from '../../identity/display-name-provenance.js';
 import { applyConfigPatch, deepMerge, describeConfigWrite } from './config-patch.js';
 import {
   describeOperatorOnlyRefusal,
@@ -234,6 +239,63 @@ export interface GuardedConfigWrite {
    * "what wrote it?", so keep it specific enough to act on.
    */
   source: string;
+  /**
+   * Whether a person or an agent is making this write (DOR-1022).
+   *
+   * Required rather than defaulted, and that is the whole point of putting it
+   * here: `source` is a sentence for a log and nothing may branch on it, so a
+   * new door would otherwise inherit whichever answer the default happened to
+   * be. The type forces the author to say.
+   *
+   * Read by exactly one thing today — the display-name provenance stamp — and
+   * deliberately NOT a second copy of {@link ConfigWriteAuthority}. That pair
+   * answers "may you", which OPERATOR_TOOL_AUTHORITY happens to answer the same
+   * way an agent-writer would; this answers "who are you", and the two would
+   * come apart the moment a second non-human authority existed.
+   */
+  writer: DisplayNameWriter;
+}
+
+/**
+ * The `profile.displayNameSource` half of a patch that carries a display name,
+ * or `undefined` when this write is no reason to touch the record (DOR-1022).
+ *
+ * ## Why it reads the PATCH rather than diffing the write
+ *
+ * The rule needs "what did this caller ask for", not "what changed". A patch
+ * that names `profile.displayName` at all is a claim about the name — including
+ * a person re-saving the one already in the field, which is exactly how they
+ * say "that one is mine" and the only gesture that dismisses the hint. A diff
+ * cannot see that gesture, because nothing moved.
+ *
+ * `undefined` from either step means the same thing and is passed straight
+ * through: the caller did not name the field, or
+ * {@link stampDisplayNameSource} judged this write not to be a new claim.
+ *
+ * @param patch - The merged patch, as it will be applied.
+ * @param writer - Who is making the write.
+ * @returns A patch fragment to fold in, or `undefined`.
+ */
+function displayNameSourcePatch(
+  patch: Record<string, unknown>,
+  writer: DisplayNameWriter
+): Record<string, unknown> | undefined {
+  const profile = patch.profile;
+  if (profile == null || typeof profile !== 'object' || Array.isArray(profile)) return undefined;
+  if (!('displayName' in profile)) return undefined;
+
+  const requested = (profile as Record<string, unknown>).displayName;
+  // A patch naming the field with something that is neither a name nor `null`
+  // is about to fail validation. Deciding provenance for it would be deciding
+  // about a write that never happens.
+  if (requested !== null && typeof requested !== 'string') return undefined;
+
+  const source = stampDisplayNameSource(
+    configManager.get('profile').displayName,
+    requested,
+    writer
+  );
+  return source === undefined ? undefined : { profile: { displayNameSource: source } };
 }
 
 /**
@@ -274,7 +336,7 @@ export interface GuardedConfigWrite {
  * @returns The stored config on success, or the refusal to answer with.
  */
 export function applyGuardedConfigWrite(write: GuardedConfigWrite): GuardedConfigWriteResult {
-  const { patch: requested, authority, source } = write;
+  const { patch: requested, authority, source, writer } = write;
 
   const loginRequired = findLoginRequiredPaths(requested);
   if (loginRequired.length > 0) {
@@ -292,9 +354,19 @@ export function applyGuardedConfigWrite(write: GuardedConfigWrite): GuardedConfi
   // it: two writes would leave a window in which a session could be born
   // bypassed with no acknowledgement on file.
   const demotion = demoteAutonomyDefaultsOnAckClear(requested);
-  const patch = demotion
+  const afterDemotion = demotion
     ? deepMerge(requested as Record<string, unknown>, demotion)
     : (requested as Record<string, unknown>);
+
+  // …and so is the display-name provenance stamp, for a milder version of the
+  // same reason (DOR-1022): folded in, the name and the record of who wrote it
+  // land in one write, so no reader can catch a new name still carrying the
+  // previous writer's stamp. It rides ABOVE the caller's patch for a second
+  // reason too — `profile.displayNameSource` is `operator-only`, so a patch that
+  // named it was already refused above, and nothing a caller sent can be
+  // overwritten here.
+  const provenance = displayNameSourcePatch(afterDemotion, writer);
+  const patch = provenance ? deepMerge(afterDemotion, provenance) : afterDemotion;
 
   // Asked of the MERGED patch: a Reset that demotes a stop in the same breath
   // is not a request for autonomy.

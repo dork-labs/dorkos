@@ -88,6 +88,7 @@ describe('applyGuardedConfigWrite', () => {
           patch: { runtimes: { claudeCode: { defaultTrustStop: 'act' } } },
           authority: LOCAL_OPERATOR_AUTHORITY,
           source: 'dorkos config set',
+          writer: { kind: 'unattributed' },
         });
         expect(result.ok).toBe(true);
       });
@@ -109,6 +110,7 @@ describe('applyGuardedConfigWrite', () => {
           patch: { runtimes: { claudeCode: { defaultTrustStop: 'autonomy' } } },
           authority: LOCAL_OPERATOR_AUTHORITY,
           source: 'dorkos config set',
+          writer: { kind: 'unattributed' },
         });
 
         expect(result.ok).toBe(false);
@@ -134,12 +136,14 @@ describe('applyGuardedConfigWrite', () => {
         patch: { ui: { autonomyAcknowledgedAt: '2026-08-16T09:00:00.000Z' } },
         authority: LOCAL_OPERATOR_AUTHORITY,
         source: 'dorkos config set',
+        writer: { kind: 'unattributed' },
       });
 
       const result = applyGuardedConfigWrite({
         patch: { runtimes: { claudeCode: { defaultTrustStop: 'autonomy' } } },
         authority: LOCAL_OPERATOR_AUTHORITY,
         source: 'dorkos config set',
+        writer: { kind: 'unattributed' },
       });
 
       expect(result.ok).toBe(true);
@@ -160,6 +164,7 @@ describe('applyGuardedConfigWrite', () => {
         patch: { approvals: { standingGrants: false } },
         authority: LOCAL_OPERATOR_AUTHORITY,
         source: 'dorkos config set',
+        writer: { kind: 'unattributed' },
       });
 
       expect(result.ok).toBe(true);
@@ -171,6 +176,7 @@ describe('applyGuardedConfigWrite', () => {
         patch: { server: { port: 'notanumber' } },
         authority: LOCAL_OPERATOR_AUTHORITY,
         source: 'dorkos config set',
+        writer: { kind: 'unattributed' },
       });
 
       expect(result.ok).toBe(false);
@@ -190,6 +196,7 @@ describe('applyGuardedConfigWrite', () => {
         patch: { runtimes: { claudeCode: { defaultTrustStop: 'act' } } },
         authority: OPERATOR_TOOL_AUTHORITY,
         source: 'the config_patch tool',
+        writer: { kind: 'agent', agentName: 'DorkBot' },
       });
 
       expect(result.ok).toBe(false);
@@ -207,12 +214,129 @@ describe('applyGuardedConfigWrite', () => {
           patch: { ui: { theme: 'dark' } },
           authority: OPERATOR_TOOL_AUTHORITY,
           source: 'the config_patch tool',
+          writer: { kind: 'agent', agentName: 'DorkBot' },
         });
         expect(result.ok).toBe(true);
       });
 
       expect(configManager.get('ui').theme).toBe('dark');
       expect(lines).toContain('[Config] Patched by the config_patch tool: ui.theme');
+    });
+  });
+
+  describe('the display-name receipt (DOR-1022)', () => {
+    /** What is stored right now, both leaves, off the real ConfigManager. */
+    function storedName(): { displayName: string | null; source: unknown } {
+      const profile = configManager.get('profile');
+      return { displayName: profile.displayName, source: profile.displayNameSource };
+    }
+
+    /** One `config_patch` write, as DorkBot makes it. */
+    function agentWrites(displayName: string | null, agentName: string | null = 'DorkBot') {
+      return applyGuardedConfigWrite({
+        patch: { profile: { displayName } },
+        authority: OPERATOR_TOOL_AUTHORITY,
+        source: 'the config_patch tool',
+        writer: { kind: 'agent', agentName },
+      });
+    }
+
+    /** One write through a general config door — `PATCH /api/config` or the CLI. */
+    function configDoorWrites(displayName: string | null) {
+      return applyGuardedConfigWrite({
+        patch: { profile: { displayName } },
+        authority: LOCAL_OPERATOR_AUTHORITY,
+        source: 'PATCH /api/config',
+        writer: { kind: 'unattributed' },
+      });
+    }
+
+    it('stamps the agent that set a name, in the SAME write as the name', () => {
+      // One write, both leaves: read back off the manager, a new name is never
+      // seen carrying the previous writer's stamp.
+      expect(agentWrites('Dorian').ok).toBe(true);
+      expect(storedName()).toEqual({
+        displayName: 'Dorian',
+        source: { kind: 'agent', agentName: 'DorkBot' },
+      });
+    });
+
+    it('records nobody for a name a general config door changed', () => {
+      // Neither `PATCH /api/config` nor `dorkos config set` can say who is
+      // behind it, so neither may claim the person. `null` is "no record": no
+      // note is drawn and nobody is credited.
+      expect(configDoorWrites('Dorian').ok).toBe(true);
+      expect(storedName()).toEqual({ displayName: 'Dorian', source: null });
+    });
+
+    it('cannot launder an agent’s stamp back through the unattributed door', () => {
+      // The attack, end to end against the real store: DorkBot sets the name and
+      // raises the note, then the same agent `curl`s the identical value at
+      // `PATCH /api/config` — which with login off admits any local caller —
+      // hoping to be read as the person. The write moves nothing, so it says
+      // nothing, and the agent's stamp is exactly where it was.
+      expect(agentWrites('Dorian').ok).toBe(true);
+      expect(configDoorWrites('Dorian').ok).toBe(true);
+      expect(storedName()).toEqual({
+        displayName: 'Dorian',
+        source: { kind: 'agent', agentName: 'DorkBot' },
+      });
+    });
+
+    it('does not re-stamp when an agent re-sends a name already stored', () => {
+      expect(agentWrites('Dorian').ok).toBe(true);
+      expect(agentWrites('Dorian', 'Impostor').ok).toBe(true);
+      expect(storedName().source).toEqual({ kind: 'agent', agentName: 'DorkBot' });
+    });
+
+    it('records an agent it could not identify rather than nothing', () => {
+      expect(agentWrites('Dorian', null).ok).toBe(true);
+      expect(storedName().source).toEqual({ kind: 'agent', agentName: null });
+    });
+
+    it('clears the record when the name itself is cleared', () => {
+      expect(agentWrites('Dorian').ok).toBe(true);
+      expect(agentWrites(null).ok).toBe(true);
+      expect(storedName()).toEqual({ displayName: null, source: null });
+    });
+
+    it('leaves the record alone for a patch that never names the display name', () => {
+      expect(agentWrites('Dorian').ok).toBe(true);
+      const result = applyGuardedConfigWrite({
+        patch: { profile: { roles: ['Engineer'] } },
+        authority: OPERATOR_TOOL_AUTHORITY,
+        source: 'the config_patch tool',
+        writer: { kind: 'agent', agentName: 'DorkBot' },
+      });
+      expect(result.ok).toBe(true);
+      expect(configManager.get('profile').roles).toEqual(['Engineer']);
+      expect(storedName().source).toEqual({ kind: 'agent', agentName: 'DorkBot' });
+    });
+
+    it('refuses an agent that tries to sign its own suggestion as the person’s', async () => {
+      // The whole hint is worthless if the agent that raised it can clear it.
+      // `profile.displayNameSource` is `operator-only`, so the patch is refused
+      // WHOLE — the name it was smuggled in beside is not written either.
+      const { OPERATOR_ONLY_CONFIG_CODE } = await import('../config-write-policy.js');
+      expect(agentWrites('Dorian').ok).toBe(true);
+
+      const result = applyGuardedConfigWrite({
+        patch: { profile: { displayName: 'Dorian C', displayNameSource: { kind: 'operator' } } },
+        authority: OPERATOR_TOOL_AUTHORITY,
+        source: 'the config_patch tool',
+        writer: { kind: 'agent', agentName: 'DorkBot' },
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('unreachable');
+      expect(result.kind).toBe('refused');
+      if (result.kind !== 'refused') throw new Error('unreachable');
+      expect(result.refusal.code).toBe(OPERATOR_ONLY_CONFIG_CODE);
+      expect(result.refusal.paths).toContain('profile.displayNameSource.kind');
+      expect(storedName()).toEqual({
+        displayName: 'Dorian',
+        source: { kind: 'agent', agentName: 'DorkBot' },
+      });
     });
   });
 

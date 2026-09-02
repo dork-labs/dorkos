@@ -2928,6 +2928,7 @@ async function start() {
       // `config.profile.displayName` is what the user likes to be called — the
       // second rung of the operator-name precedence, under the account name.
       configDisplayName: () => configManager.getAll().profile.displayName,
+      configDisplayNameSource: () => configManager.getAll().profile.displayNameSource,
       defaultAgentName: () => configManager.getAll().agents.defaultAgent,
     })
   );
@@ -2945,9 +2946,13 @@ async function start() {
       ownerAccount: () => readOwnerAccount(),
       setAccountImage: (userId, imageUrl) => setUserImage(userId, imageUrl),
       setAccountName: (userId, name) => setUserName(userId, name),
-      setProfileDisplayName: (displayName) => {
+      setProfileDisplayName: (displayName, source) => {
         const before = configManager.get('profile');
-        configManager.setDot('profile.displayName', displayName);
+        // The name and the record of who wrote it go in ONE write, so no reader
+        // can catch the new name still carrying the previous writer's stamp.
+        // `set` rather than two `setDot`s for exactly that reason (DOR-1022);
+        // WHICH source is the route's call, not this line's.
+        configManager.set('profile', { ...before, displayName, displayNameSource: source });
         logConfigWrite('the profile route', 'profile', before, configManager.get('profile'));
       },
     })

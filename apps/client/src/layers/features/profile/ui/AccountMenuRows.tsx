@@ -20,7 +20,7 @@ import {
   ResponsiveDropdownMenuItem,
   ResponsiveDropdownMenuSeparator,
 } from '@/layers/shared/ui';
-import { teamMemberFace } from '@/layers/entities/team';
+import { nameProvenanceNote, teamMemberFace } from '@/layers/entities/team';
 
 /** Props for {@link AccountMenuRows}. */
 export interface AccountMenuRowsProps {
@@ -77,6 +77,7 @@ export function AccountMenuRows({
   showViewProfile = true,
 }: AccountMenuRowsProps) {
   const face = teamMemberFace(member);
+  const suggestedName = nameProvenanceNote(member);
 
   return (
     <>
@@ -97,6 +98,17 @@ export function AccountMenuRows({
           {/* Absent rather than a bare `@` — a handle nobody has reaches nobody. */}
           {member.handle !== null && (
             <p className="text-muted-foreground truncate text-xs">@{member.handle}</p>
+          )}
+          {/* This menu is the "who am I" surface, so a name an agent proposed
+              says so here too (DOR-1022). Below the handle: the handle is how
+              somebody reaches you, and this is a note about the line above it. */}
+          {suggestedName && (
+            <p
+              data-slot="account-menu-name-source"
+              className="text-muted-foreground truncate text-xs"
+            >
+              {suggestedName}
+            </p>
           )}
         </div>
       </div>

@@ -146,7 +146,15 @@ describe('UserConfigSchema', () => {
         runtimeDefaultSetAt: null,
       },
       tours: { seen: [], declined: [] },
-      profile: { roles: [], tools: [], displayName: null, rolePromptDismissedAt: null },
+      profile: {
+        roles: [],
+        tools: [],
+        displayName: null,
+        // No record of who chose the name, which is what a fresh install
+        // honestly knows and what draws no "Suggested by …" note (DOR-1022).
+        displayNameSource: null,
+        rolePromptDismissedAt: null,
+      },
       agentContext: { relayTools: true, meshTools: true, adapterTools: true, tasksTools: true },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
@@ -521,7 +529,15 @@ describe('USER_CONFIG_DEFAULTS', () => {
         runtimeDefaultSetAt: null,
       },
       tours: { seen: [], declined: [] },
-      profile: { roles: [], tools: [], displayName: null, rolePromptDismissedAt: null },
+      profile: {
+        roles: [],
+        tools: [],
+        displayName: null,
+        // No record of who chose the name, which is what a fresh install
+        // honestly knows and what draws no "Suggested by …" note (DOR-1022).
+        displayNameSource: null,
+        rolePromptDismissedAt: null,
+      },
       agentContext: { relayTools: true, meshTools: true, adapterTools: true, tasksTools: true },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },

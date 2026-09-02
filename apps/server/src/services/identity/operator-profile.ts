@@ -40,10 +40,34 @@ import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
  */
 export { OPERATOR_FALLBACK_DISPLAY_NAME };
 
+/**
+ * Which rung of the ladder below the shown name actually came from.
+ *
+ * Reported rather than re-derived, because the only other way to ask is to
+ * compare the shown name back against each source — and that comparison is
+ * WRONG, not merely awkward: every rung is sanitized on the way out
+ * (`sanitizeIdentity` collapses whitespace runs and strips `<>`, control and
+ * invisible characters), so a stored `'Dorian  C'` is shown as `'Dorian C'` and
+ * matches no source string at all. A caller keying behaviour off that comparison
+ * silently changes its mind when a name contains a double space or a zero-width
+ * character — which an agent can put there through `config_patch` (DOR-1022).
+ */
+export type OperatorNameRung =
+  /** The owner account's `user.name`. */
+  | 'account'
+  /** `config.profile.displayName`. */
+  | 'profile'
+  /** The stored author record — usually the literal `'You'`. */
+  | 'author'
+  /** {@link OPERATOR_FALLBACK_DISPLAY_NAME}; this install knows no name. */
+  | 'fallback';
+
 /** The operator, as a roster row renders them. */
 export interface OperatorProfile {
   /** Their real name where this install knows one, the fallback where it does not. */
   displayName: string;
+  /** Where {@link displayName} came from. See {@link OperatorNameRung}. */
+  nameRung: OperatorNameRung;
   /** Their address — carried on the self row and nowhere else. */
   email?: string;
 }
@@ -101,6 +125,11 @@ function firstNamed(...candidates: (string | null | undefined)[]): string | unde
  * function adds only the fallbacks a roster row needs and a receipt must not
  * have.
  *
+ * It also reports WHICH rung won, in {@link OperatorProfile.nameRung}. That is
+ * the only honest way for a caller to ask, because the name it gets back has
+ * been through `sanitizeIdentity` and no longer equals any source string — see
+ * {@link OperatorNameRung}.
+ *
  * @param sources - Where the name may come from.
  * @param authorDisplayName - The operator's stored author `displayName`, or
  *   `null` when the roster could not read the `authors` table. Third in
@@ -111,11 +140,16 @@ export function resolveOperatorProfile(
   authorDisplayName: string | null
 ): OperatorProfile {
   const account = sources.account();
-  const displayName =
-    resolveAnswererName(sources) ?? firstNamed(authorDisplayName) ?? OPERATOR_FALLBACK_DISPLAY_NAME;
-
   const email = account?.email?.trim();
-  return { displayName, ...(email ? { email } : {}) };
+  const named = { ...(email ? { email } : {}) };
+
+  const answerer = resolveAnswererRung(sources);
+  if (answerer) return { displayName: answerer.name, nameRung: answerer.rung, ...named };
+
+  const stored = firstNamed(authorDisplayName);
+  if (stored) return { displayName: stored, nameRung: 'author', ...named };
+
+  return { displayName: OPERATOR_FALLBACK_DISPLAY_NAME, nameRung: 'fallback', ...named };
 }
 
 /**
@@ -150,10 +184,33 @@ export function resolveOperatorProfile(
  * @returns The name to print, or `undefined` when this install knows none.
  */
 export function resolveAnswererName(sources: AnswererNameSources): string | undefined {
+  return resolveAnswererRung(sources)?.name;
+}
+
+/**
+ * The two real rungs, resolved together with the answer to "which one was it".
+ *
+ * One walk rather than two, so the name a caller shows and the rung it reasons
+ * about can never come from different reads of the same sources — the config is
+ * read through a thunk, and asking twice is asking two questions.
+ *
+ * @param sources - Where the name may come from.
+ * @returns The winning rung and its sanitized name, or `undefined` when neither
+ *   rung has one.
+ */
+function resolveAnswererRung(
+  sources: AnswererNameSources
+): { name: string; rung: 'account' | 'profile' } | undefined {
   // Each rung is sanitized BEFORE the precedence runs, not after it picks. A
   // name made entirely of control characters is not a name, so it has to fall
   // through to the next source rather than winning and then vanishing.
-  return firstNamed(asLabel(sources.account()?.name), asLabel(sources.configDisplayName()));
+  const account = firstNamed(asLabel(sources.account()?.name));
+  if (account) return { name: account, rung: 'account' };
+
+  const profile = firstNamed(asLabel(sources.configDisplayName()));
+  if (profile) return { name: profile, rung: 'profile' };
+
+  return undefined;
 }
 
 /** One name source, sanitized for a line DorkOS wrote. `undefined` if empty after. */

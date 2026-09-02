@@ -173,6 +173,14 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'profile.roles',
   'profile.tools',
   'profile.displayName',
+  // Who wrote the stored display name (DOR-1022). The default is `null` — "no
+  // record" — and null draws no hint, which is the quiet side rather than the
+  // protective one: this leaf guards nothing, sends nothing, and bounds nothing.
+  // A wipe losing it costs one line of small print under a name, and there is no
+  // `PROTECTIVE_CARRYOVERS` rule for the same reason there is none on
+  // `profile.displayName` itself — nothing here has a more-protective direction.
+  'profile.displayNameSource.kind',
+  'profile.displayNameSource.agentName',
   'profile.rolePromptDismissedAt',
   'agents.defaultDirectory',
   'agents.defaultAgent',

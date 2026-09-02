@@ -504,6 +504,14 @@ router.patch('/', (req, res) => {
       patch: req.body,
       authority: requestConfigWriteAuthority(req, res),
       source: 'PATCH /api/config',
+      // This route cannot say WHO is calling it, and does not pretend to. With
+      // local login off — the default — the server cannot tell the app from any
+      // other process running as the same user, so claiming `operator` here
+      // would let an agent `curl` its own suggestion back through this door and
+      // launder the stamp. `display-name-provenance.ts` carries the full
+      // reasoning; the door a person's name-save actually uses is
+      // `PATCH /api/profile`, which refuses agents.
+      writer: { kind: 'unattributed' },
     });
 
     if (!result.ok) {
