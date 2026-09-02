@@ -160,8 +160,18 @@ export interface OperatingSkill {
  *   (an absent file is always written) and keep BOTH stale sibling lists. A
  *   silent partial is worse than a visible no-op, which is why the resolution of
  *   this conflict is a re-bump and never a keep-mine.
+ * - 15: editing an approved task's prompt or cron sends it back for approval, and
+ *   `scheduling-tasks` says so (DOR-1625). The page previously said the approval
+ *   gate "covers approving a NEW task only", which was true while `tasks_update`
+ *   wrote the row and never the SKILL.md; now that it writes the file, the arm
+ *   gate sees new content and parks the task on the next sync. So an agent seeded
+ *   at 14 carries a sentence that is now FALSE, which is worse than an omission:
+ *   it would read its own page, conclude the schedule is still running, and tell
+ *   the user so, minutes before the schedule stopped. The reply carries
+ *   `needsReapproval: true` for exactly that moment, and a stale page is an agent
+ *   that does not know to look for it.
  */
-export const OPERATING_SKILLS_VERSION = 14;
+export const OPERATING_SKILLS_VERSION = 15;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

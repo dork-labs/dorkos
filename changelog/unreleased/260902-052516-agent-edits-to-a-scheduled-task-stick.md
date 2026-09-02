@@ -2,6 +2,7 @@
 covers:
   - "fix(server): an agent's edit to a scheduled task reaches its file (DOR-1625)"
   - "fix(server,operating-skills): say when an agent's edit costs a schedule its approval (DOR-1625 review)"
+  - 'fix(operating-skills): bump the pack version so the corrected page reaches seeded agents (DOR-1625)'
 ---
 
 ### Fixed
