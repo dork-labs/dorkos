@@ -25,7 +25,11 @@ import { TaskStore } from '../../tasks/task-store.js';
 import { TaskRegistrar, type SchedulerRegistrationTarget } from '../../tasks/task-registrar.js';
 import { readRawFrontmatter } from '@dorkos/skills/parser';
 import { ShapeScheduleService } from '../shape-schedule-service.js';
-import { SCHEDULE_RECEIPT_FILENAME } from '../schedule-write-receipt.js';
+import {
+  SCHEDULE_RECEIPT_FILENAME,
+  resetShapeScheduleReceipts,
+} from '../schedule-write-receipt.js';
+import { removeScheduledTaskFile } from '../../tasks/lifecycle/delete-task.js';
 
 // Wraps the real parser so every existing test in this file keeps exercising
 // the genuine read-your-own-write round trip; only the fallback-path test
@@ -92,6 +96,12 @@ describe('ShapeScheduleService.rebindSchedule (integration)', () => {
     db = createTestDb();
     store = new TaskStore(db);
     dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'dork-shape-sched-'));
+    // The whole process shares one data directory in production, and the
+    // shared delete seam (`removeScheduledTaskFile`) resolves it rather than
+    // being handed one — so the receipt it drops entries from is the receipt
+    // this service reads. Pointing DORK_HOME at the same tmpdir is what makes
+    // that true here too.
+    vi.stubEnv('DORK_HOME', dorkHome);
     agentDir = path.join(dorkHome, 'agents', 'linear-tender');
     await fs.mkdir(agentDir, { recursive: true });
 
@@ -120,6 +130,8 @@ describe('ShapeScheduleService.rebindSchedule (integration)', () => {
   });
 
   afterEach(async () => {
+    resetShapeScheduleReceipts();
+    vi.unstubAllEnvs();
     await fs.rm(dorkHome, { recursive: true, force: true });
   });
 
@@ -376,6 +388,12 @@ describe('ShapeScheduleService.createSchedule — every declarable permission mo
     db = createTestDb();
     store = new TaskStore(db);
     dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'dork-shape-mode-'));
+    // The whole process shares one data directory in production, and the
+    // shared delete seam (`removeScheduledTaskFile`) resolves it rather than
+    // being handed one — so the receipt it drops entries from is the receipt
+    // this service reads. Pointing DORK_HOME at the same tmpdir is what makes
+    // that true here too.
+    vi.stubEnv('DORK_HOME', dorkHome);
     service = new ShapeScheduleService({
       taskStore: store,
       registrar: new TaskRegistrar({
@@ -394,6 +412,8 @@ describe('ShapeScheduleService.createSchedule — every declarable permission mo
   });
 
   afterEach(async () => {
+    resetShapeScheduleReceipts();
+    vi.unstubAllEnvs();
     await fs.rm(dorkHome, { recursive: true, force: true });
   });
 
@@ -460,6 +480,12 @@ describe('ShapeScheduleService.createSchedule — the fallback path (DOR-823)', 
     db = createTestDb();
     store = new TaskStore(db);
     dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'dork-shape-fallback-'));
+    // The whole process shares one data directory in production, and the
+    // shared delete seam (`removeScheduledTaskFile`) resolves it rather than
+    // being handed one — so the receipt it drops entries from is the receipt
+    // this service reads. Pointing DORK_HOME at the same tmpdir is what makes
+    // that true here too.
+    vi.stubEnv('DORK_HOME', dorkHome);
     service = new ShapeScheduleService({
       taskStore: store,
       registrar: new TaskRegistrar({
@@ -478,6 +504,8 @@ describe('ShapeScheduleService.createSchedule — the fallback path (DOR-823)', 
   });
 
   afterEach(async () => {
+    resetShapeScheduleReceipts();
+    vi.unstubAllEnvs();
     vi.mocked(parseSkillFile).mockClear();
     await fs.rm(dorkHome, { recursive: true, force: true });
   });
@@ -526,6 +554,12 @@ describe('ShapeScheduleService.deleteSchedulesForShape (integration)', () => {
     db = createTestDb();
     store = new TaskStore(db);
     dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'dork-shape-del-'));
+    // The whole process shares one data directory in production, and the
+    // shared delete seam (`removeScheduledTaskFile`) resolves it rather than
+    // being handed one — so the receipt it drops entries from is the receipt
+    // this service reads. Pointing DORK_HOME at the same tmpdir is what makes
+    // that true here too.
+    vi.stubEnv('DORK_HOME', dorkHome);
     agentDir = path.join(dorkHome, 'agents', 'linear-tender');
     await fs.mkdir(agentDir, { recursive: true });
 
@@ -554,6 +588,8 @@ describe('ShapeScheduleService.deleteSchedulesForShape (integration)', () => {
   });
 
   afterEach(async () => {
+    resetShapeScheduleReceipts();
+    vi.unstubAllEnvs();
     await fs.rm(dorkHome, { recursive: true, force: true });
   });
 
@@ -705,19 +741,9 @@ describe('ShapeScheduleService — ownership is the write receipt, not the marke
     });
   }
 
-  beforeEach(async () => {
-    db = createTestDb();
-    store = new TaskStore(db);
-    dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'dork-shape-receipt-'));
-    agentDir = path.join(dorkHome, 'agents', 'linear-tender');
-    await fs.mkdir(agentDir, { recursive: true });
-    logger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      debug: vi.fn(),
-      error: vi.fn(),
-    } as unknown as Logger;
-    service = new ShapeScheduleService({
+  /** A service over this test's data directory — call it again for a restart. */
+  function makeService(): ShapeScheduleService {
+    return new ShapeScheduleService({
       taskStore: store,
       registrar: new TaskRegistrar({
         store,
@@ -729,9 +755,33 @@ describe('ShapeScheduleService — ownership is the write receipt, not the marke
       dorkHome,
       logger,
     });
+  }
+
+  beforeEach(async () => {
+    db = createTestDb();
+    store = new TaskStore(db);
+    dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'dork-shape-receipt-'));
+    // The whole process shares one data directory in production, and the
+    // shared delete seam (`removeScheduledTaskFile`) resolves it rather than
+    // being handed one — so the receipt it drops entries from is the receipt
+    // this service reads. Pointing DORK_HOME at the same tmpdir is what makes
+    // that true here too.
+    vi.stubEnv('DORK_HOME', dorkHome);
+    agentDir = path.join(dorkHome, 'agents', 'linear-tender');
+    await fs.mkdir(agentDir, { recursive: true });
+    logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      debug: vi.fn(),
+      error: vi.fn(),
+    } as unknown as Logger;
+    service = makeService();
   });
 
   afterEach(async () => {
+    resetShapeScheduleReceipts();
+    vi.mocked(parseSkillFile).mockClear();
+    vi.unstubAllEnvs();
     await fs.rm(dorkHome, { recursive: true, force: true });
   });
 
@@ -882,5 +932,84 @@ describe('ShapeScheduleService — ownership is the write receipt, not the marke
     expect(await exists(copied)).toBe(true);
     expect(await exists(path.join(agentDir, '.agents', 'skills', 'copied-tick'))).toBe(false);
     expect(store.getTasks()[0].agentId).toBeNull();
+  });
+
+  it("a schedule deleted from the tasks UI stops being the Shape's", async () => {
+    // THE ONE A REVIEWER REPRODUCED. `DELETE /api/tasks/:id` and the
+    // `tasks_delete` MCP tool both remove a schedule directory through
+    // `removeScheduledTaskFile` — the exact call made below. Before the receipt
+    // was dropped there too, deleting a Shape's schedule from the tasks UI left
+    // the claim behind: the person put their own skill at the freed name, and
+    // the next re-apply wrote straight over it.
+    await service.createSchedule(tick('inbox-tick', 'global'), { shape: 'linear-ops' });
+    const row = store.getTasks()[0];
+
+    // Exactly what the route does: the file half through the shared seam, then
+    // the row.
+    await removeScheduledTaskFile(row.filePath);
+    store.deleteTask(row.id);
+
+    // The person now uses that name for something of their own.
+    const mine = path.join(dorkHome, 'skills', 'inbox-tick');
+    await fs.mkdir(mine, { recursive: true });
+    await fs.writeFile(
+      path.join(mine, 'SKILL.md'),
+      '---\nname: inbox-tick\ndescription: mine now\n---\nMy words.',
+      'utf-8'
+    );
+
+    const outcome = await service.createSchedule(tick('inbox-tick', 'global'), {
+      shape: 'linear-ops',
+    });
+
+    expect(outcome).toEqual({ created: false, reason: 'occupied', targetDir: mine });
+    expect(await fs.readFile(path.join(mine, 'SKILL.md'), 'utf-8')).toContain('My words.');
+  });
+
+  it('keeps an adapted copy safe even after the receipt file is deleted', async () => {
+    // The receipt is primary state, not a cache, and deleting it used to re-arm
+    // the marker-based adoption — handing the Shape every marked file on the
+    // machine again. Now it fails CLOSED in both directions: nothing is owned,
+    // so nothing is torn down, and the person's copy is untouched.
+    await service.createSchedule(tick('inbox-tick', 'global'), { shape: 'linear-ops' });
+    const skillsDir = path.join(agentDir, '.agents', 'skills');
+    const copied = await writeMarkedSkill(skillsDir, 'my-own-tick', 'My own words.');
+    rowFor(copied, 'my-own-tick');
+
+    await fs.rm(path.join(dorkHome, SCHEDULE_RECEIPT_FILENAME));
+    resetShapeScheduleReceipts();
+    const afterDeletion = makeService(); // a restart
+
+    expect(await afterDeletion.deleteSchedulesForShape('linear-ops')).toEqual([]);
+    expect(await fs.readFile(copied, 'utf-8')).toContain('shape: linear-ops');
+    expect(await exists(path.join(dorkHome, 'skills', 'inbox-tick', 'SKILL.md'))).toBe(true);
+  });
+
+  it('drops the receipt entry before the directory, not after', async () => {
+    // The receipt is keyed on the RESOLVED path, and a path that no longer
+    // exists cannot be resolved — so a forget made after the delete falls back
+    // to the unresolved spelling and misses. This fixture is the case where the
+    // two spellings differ: forcing `parseSkillFile` to fail sends the create
+    // down the fallback branch, which stores the UNRESOLVED filePath on the row
+    // while the receipt still holds the resolved one (every macOS temp dir is a
+    // symlink). Swap the two statements in `removeScheduledTaskFile` and this
+    // test goes red; nothing else in the suite does.
+    vi.mocked(parseSkillFile).mockReturnValueOnce({
+      ok: false,
+      error: 'forced parse failure (ordering fixture)',
+      filePath: '(fixture)',
+    });
+    await service.createSchedule(tick('inbox-tick', 'global'), { shape: 'linear-ops' });
+
+    const row = store.getTasks()[0];
+    const unresolved = path.join(dorkHome, 'skills', 'inbox-tick', 'SKILL.md');
+    // The fixture is only meaningful while the row's path and the receipt's key
+    // are different strings.
+    expect(row.filePath).toBe(unresolved);
+    expect((await readReceipt())[0].dir).not.toBe(path.dirname(unresolved));
+
+    await service.deleteSchedulesForShape('linear-ops');
+
+    expect(await readReceipt()).toEqual([]);
   });
 });

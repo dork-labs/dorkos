@@ -43,7 +43,7 @@ import type { MeshCore } from '@dorkos/mesh';
 import type { CreateTaskRequest } from '@dorkos/shared/schemas';
 import type { Task } from '@dorkos/shared/types';
 import type { Logger } from '@dorkos/shared/logger';
-import { writeSkillFile, deleteSkillDir } from '@dorkos/skills/writer';
+import { writeSkillFile } from '@dorkos/skills/writer';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { hasSchedule, scheduleToFrontmatter, type ScheduleBlock } from '@dorkos/skills';
@@ -64,7 +64,8 @@ import type {
   ScheduleWriteRefusal,
   ShapeScheduleServiceLike,
 } from './apply-shape.js';
-import { ShapeScheduleReceipts } from './schedule-write-receipt.js';
+import { removeScheduledTaskFile } from '../tasks/lifecycle/delete-task.js';
+import { shapeScheduleReceipts, type ShapeScheduleReceipts } from './schedule-write-receipt.js';
 
 /** Constructor dependencies for {@link ShapeScheduleService}. */
 export interface ShapeScheduleServiceDeps {
@@ -94,7 +95,7 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
    * @param deps - Task store, scheduler seam, mesh, data directory, and logger.
    */
   constructor(private readonly deps: ShapeScheduleServiceDeps) {
-    this.receipts = new ShapeScheduleReceipts({ dorkHome: deps.dorkHome, logger: deps.logger });
+    this.receipts = shapeScheduleReceipts(deps.dorkHome, deps.logger);
   }
 
   /**
@@ -462,18 +463,12 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
     // escalation buzzing a phone about a schedule that is gone (DOR-1387
     // review). A no-op for the ordinary active schedule this usually removes.
     resolveParkedScheduleRemoved(task);
-    if (task.filePath) {
-      const dirPath = path.dirname(task.filePath);
-      // Dropped from the receipt BEFORE the directory goes, because the receipt
-      // is keyed on the resolved path and a path that no longer exists cannot be
-      // resolved. Load-bearing rather than tidy: a stale entry would let the
-      // next re-apply overwrite a skill a person creates at that same name, on
-      // the strength of a write that has already been undone.
-      await this.receipts.forget(dirPath);
-      await deleteSkillDir(path.dirname(dirPath), path.basename(dirPath)).catch(() => {
-        // File may already be gone — the row + registration are what mattered.
-      });
-    }
+    // Through the SAME seam the tasks route and the `tasks_delete` MCP tool use,
+    // so a schedule directory is removed — and dropped from the write receipt —
+    // in exactly one place. A Shape teardown with its own copy of that logic was
+    // how the two other delete paths came to leave stale claims behind
+    // (DOR-1524 review).
+    await removeScheduledTaskFile(task.filePath);
   }
 
   /**

@@ -96,7 +96,11 @@ schedule:
   shape: <shape-name>
 ```
 
-That marker is a **label, not a claim**. Ownership — may this apply overwrite that directory, may this teardown delete it, may this schedule be re-homed — is answered from the **write receipt** (`schedule-write-receipt.ts`, DOR-1524): a JSON index at `{dorkHome}/shape-schedule-receipts.json` recording every schedule directory a Shape's apply actually wrote, and which Shape wrote it. `ownerOf(dir)` **fails closed**: a directory the receipt does not name answers `null`, which every caller reads as "not a Shape's — do not touch." A receipt entry is dropped the moment its schedule is torn down, so the name is free again.
+That marker is a **label, not a claim**. Ownership — may this apply overwrite that directory, may this teardown delete it, may this schedule be re-homed — is answered from the **write receipt** (`schedule-write-receipt.ts`, DOR-1524): a JSON index at `{dorkHome}/shape-schedule-receipts.json` recording every schedule directory a Shape's apply actually wrote, and which Shape wrote it. `ownerOf(dir)` **fails closed**: a directory the receipt does not name answers `null`, which every caller reads as "not a Shape's — do not touch."
+
+The receipt is **primary state, not a cache**: nothing on disk can reconstruct it, which is the whole point, since the files themselves carry only a marker anybody could have copied. Deleting it is destructive and unsupported, but bounded — with it gone nothing is owned, so no re-apply overwrites anything and no teardown deletes anything. A person's files are never at risk; what is lost is DorkOS's ability to clean up after itself.
+
+**A receipt entry is dropped in exactly one place: `removeScheduledTaskFile` (`services/tasks/lifecycle/delete-task.ts`).** That is the single seam through which every schedule directory is removed — the tasks route's `DELETE /api/tasks/:id`, the `tasks_delete` MCP tool, and the Shape teardown all call it — so a schedule the person deletes from the tasks UI stops being the Shape's the same moment its files go. Putting the drop at each caller instead is what left stale claims behind: the person reused the freed name for a skill of their own and the next re-apply wrote over it. Order matters inside that seam, and it is asserted by a test: the receipt is keyed on the RESOLVED directory, and a path that no longer exists cannot be resolved, so the entry goes before the directory does.
 
 ### Why the receipt, and not the marker (and never the name)
 
@@ -115,7 +119,9 @@ The invariant in one line: **DorkOS overwrites and deletes only what DorkOS wrot
 
 ### Installs that predate the receipt
 
-The receipt did not exist before DOR-1524, so an upgrading install has Shape schedules on disk with nothing written down about them. On the first Shape operation after the upgrade, `ensureAdopted` seeds the receipt from the frontmatter markers of the schedules in the task store — the same evidence the old code acted on, so nothing changes for that user and an uninstall still tears their timers down. The receipt is then written **even if nothing was adopted**, because its existence is what records that adoption already happened. From that moment no marker ever grants ownership again: a file that appears afterwards claiming to be a Shape's is not, whatever its frontmatter says. A pre-upgrade copy stays exposed for one adoption pass, which is exactly the exposure the old code gave it anyway.
+The receipt did not exist before DOR-1524, so an upgrading install has Shape schedules on disk with nothing written down about them. On the first Shape operation after the upgrade, `ensureAdopted` seeds the receipt from the frontmatter markers of the schedules in the task store — the same evidence the old code acted on, so nothing changes for that user and an uninstall still tears their timers down. From that moment no marker ever grants ownership again: a file that appears afterwards claiming to be a Shape's is not, whatever its frontmatter says. A pre-upgrade copy is exposed to that single pass, which is exactly the exposure the old code gave it anyway.
+
+**That "once" is recorded in its own file, `{dorkHome}/.shape-schedule-ownership-migrated`, not in the receipt.** Keying it on the receipt's existence meant deleting a file that reads like a cache re-ran a migration that hands ownership to whatever frontmatter is lying around — including the person's adapted copy, making it destroyable all over again. A receipt that exists without the marker file counts as adopted too (and gets the marker written), so adoption never runs on an install that already has ownership facts to lose.
 
 ### The global → agent flip
 
@@ -171,12 +177,18 @@ await extensionManager.enable(id); // in install-shape.ts activate()
 
 // ❌ Deciding a schedule is a Shape's by its name, or by the marker in its file.
 if (task.name === schedule.name && task.agentId === null) delete task;
-const origin = await readShapeOrigin(task.filePath); // a copy carries this too
+if ((await readShapeOrigin(task.filePath)) === shapeName) teardown(task); // a copy carries this too
 // ✅ Gate on the write receipt for THIS shape. A user can create a global
 //    schedule with a colliding name, and can copy a Shape's schedule file
 //    frontmatter and all; only the receipt records what DorkOS actually wrote.
-const origin = await receipts.ownerOf(path.dirname(task.filePath));
-if (origin === shapeName) teardown(task);
+const owner = await receipts.ownerOf(path.dirname(task.filePath));
+if (owner === shapeName) teardown(task);
+
+// ❌ Deleting a schedule directory anywhere but the shared seam.
+await deleteSkillDir(parent, name); // the receipt still claims it
+// ✅ Go through `removeScheduledTaskFile` — the one place a schedule directory
+//    is removed, and therefore the one place the receipt entry is dropped.
+await removeScheduledTaskFile(task.filePath);
 
 // ❌ Checking schedule existence by name + target.
 schedules.find((s) => s.name === slug && s.agentId === agentId);
@@ -194,18 +206,18 @@ for (const id of manifest.activates) await extensionManager.disable(id);
 
 Every seam has a co-located suite. The pure engines run against fakes; the flows run against a temp `dorkHome`.
 
-| Suite                                                                           | Covers                                                                                                          |
-| ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `apps/server/src/services/shapes/__tests__/apply-shape.test.ts`                 | Apply: fatal-vs-degrade, extension swap, schedule create/re-bind/reconcile, offers, active write, slug keying.  |
-| `apps/server/src/services/shapes/__tests__/shape-schedule-service.test.ts`      | File-first create, receipt-gated overwrite/teardown, adapted-copy survival, empty-dir refusal, re-bind move.    |
-| `apps/server/src/services/shapes/__tests__/schedule-write-receipt.test.ts`      | The receipt file: durability across restart, path-spelling matches, concurrent writes, unreadable-file failure. |
-| `apps/server/src/services/shapes/__tests__/rebind-schedules.test.ts`            | Agent-create seam: matchName + receipt + still-global gating; user/other-Shape schedules untouched.             |
-| `apps/server/src/services/marketplace/__tests__/flows/install-shape.test.ts`    | Stage-not-activate; no extension enable at install.                                                             |
-| `apps/server/src/services/marketplace/__tests__/flows/uninstall.test.ts`        | Teardown: schedules always, extensions + active-clear only when active, `deactivateShape: false` suppression.   |
-| `apps/server/src/services/marketplace/__tests__/flows/update.test.ts`           | Advisory-by-default; apply → replace path.                                                                      |
-| `apps/server/src/routes/__tests__/shapes.test.ts`                               | Route wiring, slug validation, 404 mapping.                                                                     |
-| `apps/client/src/layers/features/shapes/__tests__/ShapeSwitcherDialog.test.tsx` | Single apply surface, arrival offer + schedule-summary line, focus highlight, degradation notes.                |
-| `apps/client/src/layers/entities/shapes/__tests__/apply-shape-*.test.ts`        | The reusable apply action + client-side layout apply.                                                           |
+| Suite                                                                           | Covers                                                                                                                              |
+| ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/server/src/services/shapes/__tests__/apply-shape.test.ts`                 | Apply: fatal-vs-degrade, extension swap, schedule create/re-bind/reconcile, offers, active write, slug keying.                      |
+| `apps/server/src/services/shapes/__tests__/shape-schedule-service.test.ts`      | File-first create, receipt-gated overwrite/teardown, adapted-copy survival, empty-dir refusal, re-bind move.                        |
+| `apps/server/src/services/shapes/__tests__/schedule-write-receipt.test.ts`      | The receipt file: durability across restart, path-spelling matches, concurrent writes, adoption run-once, unreadable-file handling. |
+| `apps/server/src/services/shapes/__tests__/rebind-schedules.test.ts`            | Agent-create seam: matchName + receipt + still-global gating; user/other-Shape schedules untouched.                                 |
+| `apps/server/src/services/marketplace/__tests__/flows/install-shape.test.ts`    | Stage-not-activate; no extension enable at install.                                                                                 |
+| `apps/server/src/services/marketplace/__tests__/flows/uninstall.test.ts`        | Teardown: schedules always, extensions + active-clear only when active, `deactivateShape: false` suppression.                       |
+| `apps/server/src/services/marketplace/__tests__/flows/update.test.ts`           | Advisory-by-default; apply → replace path.                                                                                          |
+| `apps/server/src/routes/__tests__/shapes.test.ts`                               | Route wiring, slug validation, 404 mapping.                                                                                         |
+| `apps/client/src/layers/features/shapes/__tests__/ShapeSwitcherDialog.test.tsx` | Single apply surface, arrival offer + schedule-summary line, focus highlight, degradation notes.                                    |
+| `apps/client/src/layers/entities/shapes/__tests__/apply-shape-*.test.ts`        | The reusable apply action + client-side layout apply.                                                                               |
 
 ```bash
 pnpm vitest run apps/server/src/services/shapes                         # apply + schedule + re-bind

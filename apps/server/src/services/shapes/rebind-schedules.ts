@@ -45,13 +45,14 @@ export interface RebindShapeSchedulesDeps {
  *  1. its `agentRef` resolves to a Shape agent entry whose `matchName` matches
  *     `agent` — the same rule apply-shape uses ({@link matchesAgentByName});
  *  2. a schedule with that name currently exists global (unbound); and
- *  3. that schedule's provenance marker names THIS Shape — a user can create
- *     their own global schedule with a colliding name via the tasks API, so
- *     name + unbound alone never proves ownership.
+ *  3. the write receipt names THIS Shape as the one that wrote that schedule's
+ *     directory — a user can create their own global schedule with a colliding
+ *     name via the tasks API, and can copy a Shape's schedule file frontmatter
+ *     and all, so neither the name nor the file's own marker proves ownership.
  *
  * A schedule that is already agent-bound is never touched, so a user who
- * disabled their own bound schedule keeps that choice; an unmarked or
- * other-Shape schedule is never touched either. Nothing is created — this only
+ * disabled their own bound schedule keeps that choice; a schedule the receipt
+ * does not name, or names for another Shape, is never touched either. Nothing is created — this only
  * re-targets copies an earlier apply already stood up.
  *
  * @param agent - The just-created / just-registered agent.
@@ -79,8 +80,8 @@ export async function rebindShapeSchedulesForAgent(
       if (!satisfiedRefs.has(schedule.agentRef)) continue;
       const existing = existingByName.get(schedule.name);
       // Only re-bind a schedule that exists, is still unbound (global), and
-      // carries THIS Shape's provenance marker. An absent one was never
-      // created; an already-bound one is left as-is; an unmarked or
+      // that THIS Shape's apply actually wrote. An absent one was never
+      // created; an already-bound one is left as-is; an unreceipted or
       // other-Shape one is not ours to move.
       if (!existing || existing.agentId !== null || existing.shapeOrigin !== shape.name) continue;
 

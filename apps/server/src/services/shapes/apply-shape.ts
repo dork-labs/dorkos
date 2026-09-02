@@ -288,7 +288,7 @@ export interface ScheduleRebind {
  */
 export interface ShapeScheduleServiceLike {
   /**
-   * @returns Every existing schedule (name + binding + enabled + provenance),
+   * @returns Every existing schedule (name + binding + enabled + owner),
    *   across all scopes (global + agents).
    */
   listSchedules(): Promise<ExistingSchedule[]> | ExistingSchedule[];
@@ -306,22 +306,21 @@ export interface ShapeScheduleServiceLike {
    * Re-target a global (unbound) schedule to a now-present agent and set its
    * enabled state — the second half of the global → agent flip. A no-op when
    * the named schedule is absent, already agent-bound (so an explicitly
-   * user-disabled bound schedule is never force-enabled), or missing the Shape
-   * provenance marker (so a user's own global schedule with a colliding name
-   * is never hijacked).
+   * user-disabled bound schedule is never force-enabled), or absent from the
+   * write receipt (so a user's own global schedule with a colliding name, or a
+   * copy of a Shape's that DorkOS never wrote, is never hijacked).
    *
    * @param name - The existing schedule's name.
    * @param rebind - The agent id to bind to and the resulting enabled state.
    */
   rebindSchedule(name: string, rebind: ScheduleRebind): Promise<void>;
   /**
-   * Delete every schedule stamped with this Shape's provenance marker
-   * (`origin: shape` + `shape: <shapeName>`), across both global and
-   * agent-bound scopes. Full teardown per schedule — file, task-store row, and
-   * scheduler registration — so nothing keeps firing after its Shape is gone.
-   * Fail-closed: a schedule whose marker is missing, unreadable, or names a
-   * different Shape is left untouched, so a user's own schedule that collides on
-   * name is never deleted.
+   * Delete every schedule this Shape's applies actually wrote, across both
+   * global and agent-bound scopes. Full teardown per schedule — file, task-store
+   * row, and scheduler registration — so nothing keeps firing after its Shape is
+   * gone. Fail-closed: a directory the write receipt does not name for this
+   * Shape is left untouched, so neither a user's own schedule that collides on
+   * name nor their adapted copy of one of this Shape's is ever deleted.
    *
    * @param shapeName - The owning Shape whose schedules to delete.
    * @param keepNames - When given, schedules whose name is in this set are
@@ -494,11 +493,11 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
       // A schedule with this name already exists (possibly created
       // globally-disabled by an earlier apply of THIS Shape, when its agent was
       // missing). If the agent is now present, the schedule is still unbound
-      // (global), and its provenance marker names this Shape, re-target it to
+      // (global), and the write receipt names this Shape, re-target it to
       // the agent and enable it (only when the manifest asks to start enabled).
       // An already-bound schedule is left untouched — a user who disabled their
       // own bound schedule keeps that choice — and a global schedule WITHOUT
-      // this Shape's provenance (a user's own, or another Shape's) is never
+      // this Shape's receipt entry (a user's own, or another Shape's) is never
       // touched: a name collision must not hijack it.
       //
       // Nothing here re-reads `permissionMode`: the existing schedule already
@@ -582,8 +581,8 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
   // version of this Shape may have created a schedule the current manifest
   // renamed or dropped; the create/rebind loop above never removes anything, so
   // without this sweep a v1 schedule would keep firing alongside v2's. Delete
-  // every schedule carrying THIS Shape's provenance marker whose name is not in
-  // the currently-declared set — provenance-gated (a user's own and other
+  // every schedule the receipt names for THIS Shape whose name is not in
+  // the currently-declared set — receipt-gated (a user's own and other
   // Shapes' schedules are safe) and swept across global + agent-bound scopes.
   // The names just created/rebound are the declared set, so they are kept.
   //
