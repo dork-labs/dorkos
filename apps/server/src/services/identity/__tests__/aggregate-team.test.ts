@@ -42,6 +42,24 @@ const ANA: TeamAgentSource = {
   lastSeenAt: '2026-08-10T12:00:00.000Z',
 };
 
+/** Where Bo lives — a directory Ana's fixtures never touch. */
+const BO_PATH = '/Users/dorian/agents/bo';
+
+/**
+ * Bo — an agent whose author row is minted inside a test rather than in
+ * `beforeEach`, so the ORDER of mesh registration and author mint is the
+ * variable under test (DOR-1023).
+ */
+const BO: TeamAgentSource = {
+  id: 'agent-bo',
+  name: 'bo-the-builder',
+  displayName: 'Bo',
+  runtime: 'claude-code',
+  projectPath: BO_PATH,
+  registeredAt: '2026-08-01T00:00:00.000Z',
+  healthStatus: 'active',
+};
+
 /** DorkBot — the system agent, which belongs to the install and not to a person. */
 const DORKBOT: TeamAgentSource = {
   id: 'agent-dorkbot',
@@ -99,12 +117,12 @@ describe('aggregateTeamRoster', () => {
      * than a fixture id — and the test that asserts what the mesh STRIPS keeps
      * a table holding only its own agent.
      */
-    function registerInMesh(id: string, projectPath: string): void {
+    function registerInMesh(id: string, projectPath: string, name = 'ana'): void {
       const now = new Date().toISOString();
       db.insert(agents)
         .values({
           id,
-          name: 'ana',
+          name,
           displayName: 'Ana',
           runtime: 'claude-code',
           projectPath,
@@ -174,6 +192,67 @@ describe('aggregateTeamRoster', () => {
       // occupancy stamp, so a join that widened to "any author at this
       // directory" would hand over the name AND the photo together.
       expect(successor?.imageUrl).toBeUndefined();
+    });
+
+    it('carries the handle the registry MINTED, with nothing set by hand (DOR-1023)', async () => {
+      // Every other case here calls `setHandle`, so all of them would stay green
+      // if minting stopped producing a handle at all — which is the shape
+      // DOR-1023 was filed against: rosters showed `handle: null` for every
+      // agent while the tests were green. So this one never touches the column:
+      // it registers the agent, resolves it the way a room does, and reads what
+      // came out the far end.
+      registerInMesh(BO.id, BO_PATH, 'bo-the-builder');
+      const minted = registry.resolveAgent(BO_PATH, 'Bo');
+
+      const { members } = await aggregateTeamRoster(
+        sources({
+          listAgents: () => [BO],
+          listAgentAuthors: () => registry.listActive('agent'),
+        })
+      );
+
+      // Derived from `agents.name` rather than the display name, because that is
+      // the string an `@` actually reaches (see `AuthorRegistry.agentNameOf`).
+      expect(minted.handle).toBe('bo-the-builder');
+      expect(members.find((m) => m.id === BO.id)?.handle).toBe('bo-the-builder');
+    });
+
+    it('adopts an author row minted before its agent was registered (DOR-1023)', async () => {
+      // The production shape behind DOR-1023, and the one ordering no fixture
+      // reproduces: an author row minted while the mesh had nobody at that
+      // directory gets NO occupancy stamp, so the roster's join has nothing to
+      // match and the agent renders address-less — even though the same row
+      // carries a perfectly good handle that room rosters were already showing.
+      const orphan = registry.resolveAgent(BO_PATH, 'Bo');
+      expect(orphan.handle).toBe('bo');
+      expect(orphan.mintedForManifestId).toBeNull();
+
+      const stranded = await aggregateTeamRoster(
+        sources({
+          listAgents: () => [BO],
+          listAgentAuthors: () => registry.listActive('agent'),
+        })
+      );
+      expect(stranded.members.find((m) => m.id === BO.id)?.handle).toBeNull();
+
+      // What closes it is the registry's adoption branch: the agent registers,
+      // the next ordinary resolve stamps the row it already had, and the join
+      // starts matching. Remove that branch and this assertion goes red.
+      registerInMesh(BO.id, BO_PATH, 'bo-the-builder');
+      const adopted = registry.resolveAgent(BO_PATH, 'Bo');
+      expect(adopted.id).toBe(orphan.id);
+      expect(adopted.mintedForManifestId).toBe(BO.id);
+
+      const healed = await aggregateTeamRoster(
+        sources({
+          listAgents: () => [BO],
+          listAgentAuthors: () => registry.listActive('agent'),
+        })
+      );
+      // The address it always had, now reachable from the roster — and NOT
+      // re-derived from the name the mesh row brought, because a handle people
+      // already use is not a cache (see `AuthorRecord.handle`).
+      expect(healed.members.find((m) => m.id === BO.id)?.handle).toBe('bo');
     });
   });
 
