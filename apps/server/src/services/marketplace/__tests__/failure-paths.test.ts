@@ -25,6 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { noopLogger } from '@dorkos/shared/logger';
 import type { Logger } from '@dorkos/shared/logger';
 import type { AdapterManager } from '../../relay/adapter-manager.js';
+import { initBoundary } from '../../../lib/boundary.js';
 import { ConflictDetector } from '../conflict-detector.js';
 import { MarketplaceCache } from '../marketplace-cache.js';
 import {
@@ -263,6 +264,11 @@ describe('marketplace install pipeline — failure paths', () => {
     dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-fail-home-'));
     // Pre-seed an empty `plugins/` so rename activation has a parent dir.
     await mkdir(path.join(dorkHome, 'plugins'), { recursive: true });
+    // Local-path installs are boundary-confined. Most fixtures here live under
+    // `FIXTURES_DIR`; the one test that builds its package in the temp dir
+    // re-points the boundary at it. What the boundary REFUSES is
+    // `package-resolver.test.ts`'s subject.
+    await initBoundary(FIXTURES_DIR);
   });
 
   afterEach(async () => {
@@ -365,6 +371,9 @@ describe('marketplace install pipeline — failure paths', () => {
     // to throw via the harness spy.
     const packagePath = await buildActivatableFixture('activation-fail-plugin');
     scratchDirs.push(path.dirname(packagePath));
+    // This one fixture is built in the temp dir rather than shipped under
+    // FIXTURES_DIR, so the boundary follows it.
+    await initBoundary(path.dirname(packagePath));
 
     // Pre-create a sentinel file in `dorkHome` so we can prove the
     // rollback did not sweep unrelated state on the way out.
