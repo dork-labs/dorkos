@@ -45,17 +45,47 @@ interface AgentPathLike {
 }
 
 /**
- * One agent's own manifest `runtime`, looked up by the id a form field holds.
+ * Any agent in the picker list, looked up by id, answered with its own manifest
+ * `runtime` (ADR-0043).
  *
  * The whole picker list is resolved in one request rather than the selected
  * agent on its own, because that is the query the sidebar and the Settings
  * exceptions strip already hold — a per-selection key would mint a second cache
  * and a fresh round trip on every change of agent.
  *
+ * A lookup rather than a single answer, because the form has to price a change
+ * BEFORE it commits one: picking an agent moves the runtime a task inherits, and
+ * a consent door cannot be opened over a runtime nobody has resolved yet
+ * (DOR-1637). The candidate's answer is already in the same response as the
+ * selected agent's, so asking about it costs nothing.
+ *
  * `null` covers three different unknowns on purpose, and every caller treats
  * them the same way: no agent is selected, the manifest names no runtime, or the
  * resolve has not answered yet. None of them is a runtime, so none of them may
  * be presented as one.
+ *
+ * @param agents - The picker's agents, each with the project path its manifest lives in.
+ */
+export function useAgentRuntimes(
+  agents: readonly AgentPathLike[]
+): (agentId: string | undefined) => string | null {
+  // Keyed on the joined paths rather than the array identity: callers build
+  // this list with `?? []` off a query result, so the array is a fresh object
+  // on most renders while its contents are unchanged.
+  const pathsKey = agents.map((a) => a.projectPath).join('\n');
+  const paths = useMemo(() => (pathsKey ? pathsKey.split('\n') : []), [pathsKey]);
+  const { data: resolvedAgents } = useResolvedAgents(paths);
+  return (agentId) => {
+    const path = agentId ? agents.find((a) => a.id === agentId)?.projectPath : undefined;
+    return path ? (resolvedAgents?.[path]?.runtime ?? null) : null;
+  };
+}
+
+/**
+ * One agent's own manifest `runtime`, looked up by the id a form field holds.
+ *
+ * The single-answer form of {@link useAgentRuntimes}, for the callers that only
+ * ever ask about the agent they already hold.
  *
  * @param agents - The picker's agents, each with the project path its manifest lives in.
  * @param agentId - The selected agent's id, or `''`/undefined for none.
@@ -64,14 +94,7 @@ export function useAgentRuntime(
   agents: readonly AgentPathLike[],
   agentId: string | undefined
 ): string | null {
-  // Keyed on the joined paths rather than the array identity: callers build
-  // this list with `?? []` off a query result, so the array is a fresh object
-  // on most renders while its contents are unchanged.
-  const pathsKey = agents.map((a) => a.projectPath).join('\n');
-  const paths = useMemo(() => (pathsKey ? pathsKey.split('\n') : []), [pathsKey]);
-  const { data: resolvedAgents } = useResolvedAgents(paths);
-  const selectedPath = agentId ? agents.find((a) => a.id === agentId)?.projectPath : undefined;
-  return selectedPath ? (resolvedAgents?.[selectedPath]?.runtime ?? null) : null;
+  return useAgentRuntimes(agents)(agentId);
 }
 
 /**
@@ -131,6 +154,17 @@ export interface TaskExecution {
    * person has not chosen yet, and clearing the override is one of the choices.
    */
   inheritedRuntime: string | null;
+  /**
+   * The same question {@link TaskExecution.inheritedRuntime} answers, asked
+   * about an agent nobody has picked yet: what a task with no runtime override
+   * lands on when its target agent names `candidateRuntime`.
+   *
+   * Exposed because changing the AGENT moves the inherited runtime exactly as
+   * changing the override does, and the form has to know where it lands before
+   * the change commits (DOR-1637). Re-deriving the agent tier's tolerance rule
+   * at the call site is how one route ends up gated and the other not.
+   */
+  inheritedRuntimeFor: (candidateRuntime: string | null) => string | null;
   /** The runtime select's options, primaries first, registered only. */
   runtimeOptions: ExecutionOption[];
   /** What the runtime select's "don't override" option reads as. */
@@ -168,9 +202,12 @@ export function useTaskExecution(input: TaskExecutionInput): TaskExecution {
   // a runtime this build cannot run falls through to the default rather than
   // failing a run it never asked to own, and the caption has to say the same
   // thing the run will do.
-  const agentTierApplies =
-    agentRuntime !== null && registered !== undefined && registered.includes(agentRuntime);
-  const inheritedRuntime = agentTierApplies ? agentRuntime : defaultRuntime;
+  const isRegistered = (type: string | null): type is string =>
+    type !== null && registered !== undefined && registered.includes(type);
+  const inheritedRuntimeFor = (candidateRuntime: string | null): string | null =>
+    isRegistered(candidateRuntime) ? candidateRuntime : defaultRuntime;
+  const agentTierApplies = isRegistered(agentRuntime);
+  const inheritedRuntime = inheritedRuntimeFor(agentRuntime);
   const effectiveRuntime = runtime || inheritedRuntime;
 
   // Only ask a runtime this machine has actually registered: the catalog route
@@ -272,6 +309,7 @@ export function useTaskExecution(input: TaskExecutionInput): TaskExecution {
   return {
     effectiveRuntime,
     inheritedRuntime,
+    inheritedRuntimeFor,
     runtimeOptions,
     inheritRuntimeLabel,
     modelOptions,
