@@ -1,6 +1,6 @@
 ---
 covers:
-  - 'feat(server,client,shared): read-only adoption scan for real worktrees (DOR-1056)'
+  - 'feat(server,client,shared): the workspaces page shows your real worktrees (DOR-1056)'
 ---
 
 ### Changed
