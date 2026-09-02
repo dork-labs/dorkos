@@ -205,7 +205,7 @@ export class NotificationService {
     // schedule somebody just approved is the interruption the tiering exists to
     // prevent.
     //
-    // Fired for ALL four standing kinds this function serves, including the two
+    // Fired for EVERY standing kind this function serves, including the two
     // that are never announced via `standing_pending`: `ask.pending` (its
     // arrival rides `interaction_pending`, and its resolution rides
     // `interaction_resolved`) and `session.error` (out of DOR-1570's scope, not

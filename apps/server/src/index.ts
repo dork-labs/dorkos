@@ -1928,10 +1928,16 @@ async function start() {
   }
 
   // Catch up the escalation ladder on what was already waiting when this process
-  // started (ADR 260819-234829). Parked schedules are the only standing
-  // condition that OUTLIVES a restart — an Ask lives in a projector, which is
-  // rebuilt from a transcript on demand, so a cold boot genuinely has none to
-  // find and the live seam picks up each one as its session rehydrates. The
+  // started (ADR 260819-234829). Parked schedules are one of the two standing
+  // conditions a cold boot can still FIND — pending approvals are the other, and
+  // they get the same treatment further down. An Ask lives in a projector, which
+  // is rebuilt from a transcript on demand, so a cold boot genuinely has none to
+  // find and the live seam picks up each one as its session rehydrates. A dead
+  // runtime sign-in is a third case and a deliberate non-participant: its state
+  // is process-local, and its stored rows say only that a credential failed at
+  // some point, never that it is still failing — so re-arming from them would
+  // buzz a phone about a sign-in the operator may well have fixed while the
+  // server was down (see `services/observability/runtime-signin-watch.ts`). The
   // ledger makes this idempotent, and the service's own catch-up window keeps a
   // schedule that has been parked for a week from buzzing a phone on every
   // restart.

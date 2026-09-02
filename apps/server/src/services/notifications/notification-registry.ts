@@ -13,8 +13,9 @@
  * - `tier` — how loud. A plain value where the answer is fixed, a function only
  *   where the payload genuinely changes it (one kind does).
  * - `storage` — `event` writes a row when it happens; `standing` writes nothing
- *   while the condition stands and one history row when it resolves. See
- *   {@link NotificationStorageRule}.
+ *   while the condition stands and one history row when it resolves;
+ *   `standing-recorded` writes on both edges, for the one condition whose own
+ *   store does not survive a restart. See {@link NotificationStorageRule}.
  * - `subjectType` + `locate` — what it is about, and the lens keys it files under.
  * - `title` / `body` — what a person reads. Typed against that kind's payload.
  * - `actions` — what they can do about it without leaving the surface.
@@ -212,11 +213,38 @@ export interface NotificationPayloads {
    * Deliberately says NOTHING about the turn that discovered it. An expired
    * credential is a fact about the RUNTIME — every agent on it is stopped, not
    * just the one that happened to notice — so the payload carries the runtime
-   * and nothing else, and the dedupe key below is the runtime alone.
+   * and the episode, and nothing about the session that tripped over it.
    */
   'signin.required': {
-    /** The runtime type, e.g. `claude-code`. Also what tells two of these apart. */
+    /** The runtime type, e.g. `claude-code`. */
     runtime: string;
+    /**
+     * When THIS sign-in episode started. ISO 8601 UTC.
+     *
+     * **Not decoration — it is the episode's identity**, for exactly the reason
+     * `session.error` carries one. A credential can expire, be renewed, and
+     * expire again, and those are two different things to be told about. Keyed
+     * on the runtime alone, the escalation ledger's "already escalated?" check
+     * would read the first episode's row forever and silently suppress every
+     * later phone ping (DOR-1387's shape, avoided here by construction).
+     *
+     * Stamped once by the watch that noticed (`runtime-signin-watch.ts`) and
+     * carried verbatim to the resolution, so both edges build the same key.
+     */
+    since: string;
+    /**
+     * When a turn got through again and ended the episode. ISO 8601 UTC, and
+     * present ONLY on the resolution edge.
+     *
+     * Its absence is what tells the two edges apart, which they have to be: this
+     * kind writes a row at both, and one `title` builder serves both. Without
+     * it the "it is working again" row would repeat the failure row's sentence
+     * word for word, and the inbox would show the same line twice for one
+     * episode. Deliberately NOT part of {@link dedupeKey} — an episode is
+     * identified by when it began, so both rows and the escalation timer file
+     * under one string.
+     */
+    clearedAt?: string;
   };
   /** DorkOS is running a version it was not running before. */
   'update.installed': {
@@ -252,8 +280,24 @@ export type NotificationPayload<K extends NotificationKind> = NotificationPayloa
  * around, so nothing is written until it resolves — and then exactly one row,
  * carrying the outcome, so the history says what happened rather than going
  * quiet.
+ *
+ * `standing-recorded` — standing in every way that matters (it rides the
+ * escalation ladder, and it has a resolution edge), but it writes a row on BOTH
+ * edges rather than only the last one. Exactly one kind needs this, and the
+ * reason is that its owning store is the only one that does not survive a
+ * restart: `signin.required` is held in memory by
+ * `services/observability/runtime-signin-watch.ts`, so under plain `standing` a
+ * server that restarted overnight left no push, no row, and no trace at all that
+ * a credential had died at 3am. The row written at the raise edge is that trace.
+ *
+ * It is affordable here only because the wording can stay true forever — "your
+ * sign-in stopped working" reads as correctly a month later as it did that
+ * night. Reach for this rule only when BOTH halves hold: the condition has no
+ * durable owner, and its raise-edge wording never goes stale. A stored row
+ * insisting something "is waiting" when it was answered hours ago is exactly the
+ * failure `standing` exists to prevent, and `standing` is still the default.
  */
-export type NotificationStorageRule = 'event' | 'standing';
+export type NotificationStorageRule = 'event' | 'standing' | 'standing-recorded';
 
 /**
  * The kinds that describe a standing condition rather than an event.
@@ -268,10 +312,31 @@ export type NotificationStorageRule = 'event' | 'standing';
  * two cannot drift.
  */
 export type StandingNotificationKind =
-  'ask.pending' | 'schedule.parked' | 'approval.pending' | 'session.error';
+  'ask.pending' | 'schedule.parked' | 'approval.pending' | 'session.error' | 'signin.required';
 
-/** The kinds that record something that happened. Every kind that is not standing. */
-export type EventNotificationKind = Exclude<NotificationKind, StandingNotificationKind>;
+/**
+ * The standing kinds that ALSO write a row the moment they begin — the
+ * `standing-recorded` storage rule, which today is one kind.
+ *
+ * Named as its own type rather than folded into the union below because it is
+ * the single deliberate hole in an otherwise total split: these are the only
+ * kinds that legitimately reach BOTH `notify()` and `resolveStanding()`. A
+ * reviewer can read the exception in one line, and adding a second member is a
+ * diff that has to argue for itself.
+ */
+export type RecordedStandingKind = 'signin.required';
+
+/**
+ * The kinds that record something that happened — everything that is not
+ * standing, plus the standing kinds that record their own arrival.
+ *
+ * The union with {@link RecordedStandingKind} is what lets
+ * `notify('signin.required', …)` type-check while `notify('ask.pending', …)`
+ * still does not. The guarantee that matters is unharmed: a standing condition
+ * whose own store survives a restart still cannot be stored while it stands.
+ */
+export type EventNotificationKind =
+  Exclude<NotificationKind, StandingNotificationKind> | RecordedStandingKind;
 
 /**
  * Whether a kind may leave the app over a connected chat integration, and on what
@@ -343,18 +408,6 @@ export const DEFAULT_DEDUPE_WINDOW_MS = 5 * 60 * 1000;
 
 /** How long an unreachable agent stays quiet before it is worth saying again. */
 const UNREACHABLE_DEDUPE_WINDOW_MS = 60 * 60 * 1000;
-
-/**
- * How long a dead sign-in stays quiet before it is worth saying again.
- *
- * An hour, for the same reason {@link UNREACHABLE_DEDUPE_WINDOW_MS} is an hour,
- * arrived at from the other side: an expired credential does not flap, it simply
- * stays broken, so every task and every room turn for the rest of the night
- * would raise the identical row. Wide enough that a nightly schedule produces
- * one, short enough that somebody who signed in, walked away, and had it expire
- * again the next morning is told the second time too.
- */
-const SIGNIN_DEDUPE_WINDOW_MS = 60 * 60 * 1000;
 
 /**
  * How long a day's Shift Report stays deduped once raised.
@@ -609,40 +662,70 @@ const ENTRIES: NotificationRegistryMap = {
     // sees EVERY turn on every runtime — the interactive composer, a room reply,
     // a 3am scheduled run and an agent-to-agent relay delivery alike.
     //
-    // **`notable`, not `blocking`, and the difference is the whole point.**
-    // `blocking` is reserved here for a condition a person can END by answering
-    // it, and every one of the four is `standing` — the store that owns it
-    // answers "is it still waiting?". Nothing owns "is this credential still
-    // dead?": the only honest answer comes from trying another turn. So this is
-    // an `event` — the row IS the record.
+    // **Standing since DOR-1657, and `blocking` with it.** DOR-1654 shipped this
+    // as a plain `event` for one stated reason: `blocking` is reserved for a
+    // condition a person can END, every such kind is `standing`, and a standing
+    // kind needs a store that answers "is it still waiting?" — which nothing
+    // owned for a credential. `runtime-signin-watch.ts` is now that store: a
+    // runtime stands in it while its last turn died on its sign-in and no turn
+    // since has gone through, and the next clean turn on that runtime is the
+    // resolution edge. With an owner, the reservation is satisfied and the
+    // storage discipline the ADR prescribes applies.
     //
-    // `notable` is also the only tier `use-browser-notifications.ts` will draw
-    // an OS banner for (`blocking` is left to the attention store, `quiet` is
-    // by definition not worth one). That is a possible second surface, not a
-    // promised one: the banner is additionally gated on the operator's
-    // `notifyOnTurnCompleteWhileAway` preference, on browser permission, and on
-    // the app being open at all. The inbox row is the surface this kind
-    // actually guarantees.
+    // **`standing-recorded`, not plain `standing`, and the restart is why.**
+    // Being standing buys the phone: escalation carries standing kinds only, so
+    // this is what reaches somebody asleep at 3am with a dead token and a
+    // schedule about to run. But a standing kind writes nothing while it stands,
+    // and this one's store is the only one held in MEMORY — so a server that
+    // restarted overnight would leave no push, no row, and no evidence at all
+    // that anything had broken. Writing the row at the raise edge is what keeps
+    // the record; see {@link NotificationStorageRule}.
+    //
+    // The staleness objection that argues for plain `standing` does not apply,
+    // because the wording below never goes stale: "stopped working" is as true
+    // next month as it was that night, and the resolution row that follows says
+    // plainly that it came back.
     kind: 'signin.required',
-    tier: 'notable',
-    storage: 'event',
+    tier: 'blocking',
+    storage: 'standing-recorded',
     // `system`, not `agent` or `session`: a dead credential is not about the
     // turn that tripped over it. Clicking through opens Settings → Runtimes,
     // which is where signing in again actually happens.
     subjectType: 'system',
     locate: (p) => ({ subjectId: p.runtime }),
-    title: (p) => `${runtimeDisplayName(p.runtime)} needs you to sign in again`,
-    body: () => 'Scheduled tasks and agent replies keep failing until you sign in.',
-    // ONE per runtime, however many tasks, rooms and relay deliveries trip over
-    // the same dead credential. Held for an hour for the reason
-    // `agent.unreachable` holds its own: a nightly schedule with a dozen tasks
-    // would otherwise fill the inbox with one row per task, all saying the
-    // single thing the operator already knows.
-    dedupeKey: (p) => `signin:${p.runtime}`,
-    dedupeWindowMs: SIGNIN_DEDUPE_WINDOW_MS,
-    // No agent to route through — the payload deliberately carries none — and
-    // `dispatchRelay` needs one, so `always` here would be a promise that is
-    // silently never kept. Reaching a phone about this is DOR-1655.
+    // **Past tense on both edges, because a stored row outlives what it
+    // describes.** `session.error` set the pattern with "stopped on an error",
+    // and the reason is the same: the raise row sits in the inbox long after
+    // somebody signs in, so a present-tense "needs you to sign in" would be
+    // telling them to do a thing they already did. `outcome` cannot rescue it —
+    // the client renders title and body, and nothing else.
+    //
+    // `clearedAt` is what lets one builder serve both rows. Without it the
+    // second row would repeat the first word for word.
+    title: (p) =>
+      p.clearedAt
+        ? `Your ${runtimeDisplayName(p.runtime)} sign-in is working again`
+        : `Your ${runtimeDisplayName(p.runtime)} sign-in stopped working`,
+    body: (p) =>
+      p.clearedAt ? undefined : 'Scheduled tasks and agent replies cannot run until you sign in.',
+    // ONE per runtime per EPISODE, however many tasks, rooms and relay
+    // deliveries trip over the same dead credential — the watch's own store is
+    // what collapses them, synchronously, before any of them can say anything.
+    // The `since` is what keeps a SECOND episode distinct from the first; see
+    // the payload field for why the ledger makes that non-negotiable.
+    dedupeKey: (p) => `signin:${p.runtime}:${p.since}`,
+    // **Zero, and it has to be.** The two rows of one episode share this key by
+    // design — that shared string is what files them, the escalation timer and
+    // the resolution under one identity. Any positive window would therefore
+    // suppress the "working again" row whenever somebody fixed their sign-in
+    // faster than the window, which is a surface that silently comes and goes
+    // with how quickly the operator reacted. Nothing is lost: repeat suppression
+    // for this kind lives in the watch's episode store, which is synchronous and
+    // so catches the concurrent burst a store-based window never could.
+    dedupeWindowMs: 0,
+    // Relay `never` governs the stored rows, which are in-app history. The
+    // escalation ladder sends under its own `always` policy while the condition
+    // still stands — see `escalation-service.ts`.
     relay: 'never',
   },
 
@@ -726,6 +809,11 @@ export const NOTIFICATION_REGISTRY_KINDS: readonly NotificationKind[] = NOTIFICA
  * one. Its resolution edge disarms the ladder and announces
  * `standing_resolved`, and writes nothing — see
  * `emitters/capability-approval.ts`.
+ *
+ * `signin.required` joined them in DOR-1657. Its raise edge is a failing turn
+ * and its resolution edge is the next turn on that runtime that gets through,
+ * both seen by `services/observability/runtime-signin-watch.ts` — see
+ * `emitters/runtime-signin.ts`.
  */
 export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'ask.pending',

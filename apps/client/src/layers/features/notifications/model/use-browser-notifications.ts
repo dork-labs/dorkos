@@ -68,6 +68,15 @@ interface OpenNotification {
  * acted on is the kind of noise that teaches people to ignore the ones that can.
  * It is in the Inbox, where it belongs. Widening either source to include it is a
  * product decision, not a bug fix.
+ *
+ * **`signin.required` reaches neither for the same reason** (DOR-1657): it is
+ * `blocking`, so the tier filter drops it, and `useBlockingArrivals` does not
+ * know about it. It is not silent, though — it writes a real inbox row the
+ * moment it happens, the escalation ladder pushes it to a subscribed phone, and
+ * the desktop shell banners the row. What the WEB app does not draw is this
+ * in-page banner, so a dead sign-in reaches a web-only operator through the bell
+ * rather than over whatever they are looking at. Widening either source to cover
+ * it is the same product decision as for `session.error`.
  */
 export function useBrowserNotifications(): void {
   const { permission } = useBrowserNotificationPermission();

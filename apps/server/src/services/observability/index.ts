@@ -30,11 +30,10 @@ export {
 export { traceRuntime } from './trace-runtime.js';
 export {
   watchRuntimeSignin,
-  setSigninFailureSink,
-  releaseSigninLatch,
-  resetSigninLatch,
-  SIGNIN_LATCH_WINDOW_MS,
-  type SigninFailureSink,
+  setRuntimeSigninSink,
+  resetSigninEpisodes,
+  type RuntimeSigninEvent,
+  type RuntimeSigninSink,
 } from './runtime-signin-watch.js';
 export { traceRelay } from './trace-relay.js';
 export { SPAN, ATTR } from './attributes.js';

@@ -89,7 +89,7 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     reason: 'no endpoint accepted it',
   },
   'agent.unreachable': { agentId: 'agent-1', agentName: 'Ana' },
-  'signin.required': { runtime: 'claude-code' },
+  'signin.required': { runtime: 'claude-code', since: '2026-08-20T03:00:00.000Z' },
   'update.installed': { version: '0.61.0', previousVersion: '0.60.0' },
   'report.daily': {
     date: '2026-08-20',
@@ -111,7 +111,7 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'agent.note': 'notable',
   'dead-letter.created': 'quiet',
   'agent.unreachable': 'quiet',
-  'signin.required': 'notable',
+  'signin.required': 'blocking',
   'update.installed': 'quiet',
   'report.daily': 'quiet',
 };
@@ -119,13 +119,17 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
 /**
  * The kinds ADR 260819-234828 says are standing conditions — the three it named,
  * plus `approval.pending`, which DOR-1570 brought onto the same discipline so a
- * destructive capability waiting on a person can reach the escalation ladder.
+ * destructive capability waiting on a person can reach the escalation ladder,
+ * plus `signin.required`, which DOR-1657 did the same for once the sign-in watch
+ * gained a store that answers "is this credential still dead?" and an edge where
+ * it stops being one.
  */
 const STANDING: NotificationKind[] = [
   'ask.pending',
   'schedule.parked',
   'approval.pending',
   'session.error',
+  'signin.required',
 ];
 
 describe('notification registry', () => {
@@ -202,9 +206,39 @@ describe('notification registry', () => {
     expect(reserved).toEqual([]);
   });
 
-  it('stores exactly the standing kinds only on resolution', () => {
-    const standing = NOTIFICATION_KINDS.filter((k) => notificationEntry(k).storage === 'standing');
+  it('treats exactly the standing kinds as standing conditions', () => {
+    const standing = NOTIFICATION_KINDS.filter((k) =>
+      notificationEntry(k).storage.startsWith('standing')
+    );
     expect([...standing].sort()).toEqual([...STANDING].sort());
+  });
+
+  it('lets exactly one kind record its own arrival, and says which', () => {
+    // `standing-recorded` is the deliberate hole in the storage split: a kind
+    // that reaches BOTH `notify()` and `resolveStanding()`. It is affordable
+    // only for a condition with no durable owner AND wording that never goes
+    // stale, so a second member here is a decision somebody has to defend
+    // rather than a line that drifts in.
+    const recorded = NOTIFICATION_KINDS.filter(
+      (k) => notificationEntry(k).storage === 'standing-recorded'
+    );
+    expect(recorded).toEqual(['signin.required']);
+  });
+
+  it('words a recorded standing kind so both of its rows stay true', () => {
+    // Both rows of one episode outlive the moment they describe, and the client
+    // renders title and body and nothing else — no outcome, no resolved-at. So
+    // the raise row has to read correctly long after somebody signed in, and
+    // the two rows have to read DIFFERENTLY or the inbox shows one line twice.
+    const entry = notificationEntry('signin.required');
+    const raised = { runtime: 'claude-code', since: '2026-08-20T03:00:00.000Z' };
+    const cleared = { ...raised, clearedAt: '2026-08-20T08:00:00.000Z' };
+
+    expect(entry.title(raised)).toBe('Your Claude sign-in stopped working');
+    expect(entry.title(cleared)).toBe('Your Claude sign-in is working again');
+    expect(entry.title(raised)).not.toBe(entry.title(cleared));
+    // One episode, so one key — the ladder arms and disarms on this string.
+    expect(entry.dedupeKey(raised)).toBe(entry.dedupeKey(cleared));
   });
 
   it('lets a failed run reach out unconditionally and a successful one only on opt-in', () => {

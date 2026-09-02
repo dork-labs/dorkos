@@ -16,8 +16,9 @@
  * cancelled only by an ACT, and there are two of them:
  *
  * 1. **The condition resolved.** The Ask was answered, the schedule approved or
- *    rejected, the error cleared. `NotificationService.resolveStanding` disarms
- *    for all three kinds in one place.
+ *    rejected, the error cleared, a turn got through on the runtime whose
+ *    sign-in had died. `NotificationService.resolveStanding` disarms for every
+ *    standing kind in one place.
  * 2. **A delivery was marked seen or acted on** — a chat button pressed, a push
  *    tapped. Checked against the ledger at fire time, but **dormant**: nothing
  *    in production writes those marks yet, so it always answers "no" today. It
@@ -56,7 +57,7 @@
  *
  * ## Why the registry's `relay` policy is not consulted
  *
- * All three standing kinds declare `relay: 'never'`. That policy is about the
+ * Every standing kind declares `relay: 'never'`. That policy is about the
  * one HISTORY row they write when they resolve — "your ask expired" does not
  * belong on Telegram. Escalation is the opposite case and a separately decided
  * one: the ADR says Blocking conditions reach the phone after the delay, so this
@@ -106,6 +107,16 @@ const PUBLISH_BUDGET = { maxHops: 2, callBudgetRemaining: 1 } as const;
 
 /** How long the publish stays valid for, from the moment it is handed over. */
 const PUBLISH_TTL_MS = 30_000;
+
+/**
+ * The Settings tab a dead sign-in opens.
+ *
+ * Mirrors the client's own constant in `entities/notifications/lib/
+ * notification-presentation.ts`. Not imported from there — this is the server
+ * side of the boundary, and the tab id is one short string rather than a
+ * contract worth a shared module.
+ */
+const RUNTIMES_SETTINGS_TAB = 'runtimes';
 
 /**
  * How far back a boot may reach when catching up on conditions that were already
@@ -383,7 +394,11 @@ export class EscalationService {
  * session's working directory (`agent-path-lookup.ts`, DOR-1408), but that
  * resolution is itself best-effort: it comes up empty for a directory that
  * names no registered agent, or if a session event races Mesh wiring the
- * lookup in at boot. Without a fallback, a subject-less condition — still the
+ * lookup in at boot. `signin.required` never names one at all, and that is a
+ * decision rather than a gap — a dead credential stops every agent on the
+ * runtime, so picking one of them to be "the" subject would be arbitrary; it
+ * relies on this fallback by design. Without a fallback, a subject-less
+ * condition — still the
  * routine case on an install where that resolution misses — would leave the
  * headline promise ("a blocked agent reaches your pocket") never reaching
  * Telegram at all.
@@ -433,6 +448,12 @@ export function standingDeepLink<K extends StandingNotificationKind>(
   // an unregister — is decided on the same card in the bell, and the bell is on
   // every route. Home is where it is unmissable.
   if (kind === 'approval.pending') return '/';
+  // Settings → Runtimes, which is where signing in again actually happens. The
+  // same destination the inbox row's own link takes (`notificationLink` in
+  // `entities/notifications/lib/notification-presentation.ts`) and the same one
+  // the chat's "Fix sign-in" button opens, so a phone tap, a desktop click and
+  // an in-app click all land on the button that fixes it.
+  if (kind === 'signin.required') return `/?settings=${RUNTIMES_SETTINGS_TAB}`;
   const sessionId = (payload as NotificationPayload<'ask.pending'>).sessionId;
   return `/session?session=${encodeURIComponent(sessionId)}`;
 }
