@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { MarketplaceJson } from '@dorkos/marketplace';
 import { MarketplaceCache } from '../marketplace-cache.js';
+import { PathEscapeError } from '../lib/package-paths.js';
 
 /** Build a minimal valid MarketplaceJson document for round-trip tests. */
 function buildMarketplaceJson(name = 'dorkos-community'): MarketplaceJson {
@@ -158,6 +159,32 @@ describe('MarketplaceCache', () => {
 
       expect(path).toBe(join(cache.cacheRoot, 'packages', 'code-review-suite@a3f4b21'));
       await expect(access(path)).resolves.toBeUndefined();
+    });
+  });
+
+  // The cache is the last thing standing between a package name and an
+  // `rm -rf` + `rename` on disk, so it re-checks containment itself rather
+  // than trusting whoever computed the key.
+  describe('cache-key containment', () => {
+    it.each([
+      ['a/../../../../x', 'deadbeef'],
+      ['../escape', 'deadbeef'],
+      // The SHA half of the key is remote-supplied too, and it needs one more
+      // `..` than the name does: `pkg@..` is itself a segment to climb out of.
+      ['pkg', '../../../escape'],
+    ])('refuses to derive a package directory from %j @ %j', async (name, sha) => {
+      await expect(cache.getPackage(name, sha)).rejects.toThrow(PathEscapeError);
+      await expect(cache.putPackage(name, sha)).rejects.toThrow(PathEscapeError);
+      await expect(cache.materializePackage(name, sha, async () => {})).rejects.toThrow(
+        PathEscapeError
+      );
+    });
+
+    it('refuses to derive a marketplace directory that climbs out of the cache', async () => {
+      await expect(cache.readMarketplace('../../escape')).rejects.toThrow(PathEscapeError);
+      await expect(cache.writeMarketplace('../../escape', buildMarketplaceJson())).rejects.toThrow(
+        PathEscapeError
+      );
     });
   });
 

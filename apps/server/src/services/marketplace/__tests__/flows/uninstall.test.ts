@@ -26,6 +26,7 @@ import {
   type UninstallShapeDeactivator,
   type UninstallShapeScheduleTeardown,
 } from '../../flows/uninstall.js';
+import { InvalidPackageNameError } from '../../lib/package-paths.js';
 
 /** Construct a no-op logger that satisfies the {@link Logger} interface. */
 function buildLogger(): Logger {
@@ -538,6 +539,53 @@ describe('UninstallFlow', () => {
     );
     expect(deps.extensionManager.disable).not.toHaveBeenCalled();
     expect(deps.adapterManager.removeAdapter).not.toHaveBeenCalled();
+  });
+
+  describe('package-name traversal', () => {
+    // The name reaches `path.join(dorkHome, dir, name)` and, one step later,
+    // an atomicMove of whatever it found into a tmpdir that is then deleted.
+    // A name that climbs therefore aims a recursive delete at any directory
+    // the caller likes, so the flow refuses it before it touches disk at all.
+    it.each([
+      ['../../victim'],
+      ['..'],
+      ['a/../../../etc'],
+      ['/etc'],
+      ['..\\..\\windows'],
+      ['pkg\0'],
+    ])('refuses to uninstall %j and touches nothing on disk', async (name) => {
+      const deps = await buildDeps();
+      cleanupDirs.push(deps.dorkHome);
+      // A real sibling of dorkHome that a `../` name would reach.
+      const victim = path.join(path.dirname(deps.dorkHome), 'uninstall-victim');
+      cleanupDirs.push(victim);
+      await mkdir(victim, { recursive: true });
+      await writeFile(path.join(victim, 'keep.txt'), 'still here', 'utf-8');
+
+      const flow = new UninstallFlow(deps);
+      await expect(flow.uninstall({ name })).rejects.toThrow(InvalidPackageNameError);
+
+      expect(await pathExists(path.join(victim, 'keep.txt'))).toBe(true);
+      expect(deps.extensionManager.disable).not.toHaveBeenCalled();
+      expect(deps.adapterManager.removeAdapter).not.toHaveBeenCalled();
+    });
+
+    it('refuses a traversal name aimed at a project-local plugin root', async () => {
+      const deps = await buildDeps();
+      cleanupDirs.push(deps.dorkHome);
+      const projectPath = await mkdtemp(path.join(tmpdir(), 'uninstall-project-'));
+      cleanupDirs.push(projectPath);
+      const victim = path.join(projectPath, 'src');
+      await mkdir(victim, { recursive: true });
+      await writeFile(path.join(victim, 'index.ts'), 'export {};', 'utf-8');
+
+      const flow = new UninstallFlow(deps);
+      await expect(flow.uninstall({ name: '../../src', projectPath })).rejects.toThrow(
+        InvalidPackageNameError
+      );
+
+      expect(await pathExists(path.join(victim, 'index.ts'))).toBe(true);
+    });
   });
 
   it('rolls back from staging when extensionManager.disable throws mid-uninstall', async () => {

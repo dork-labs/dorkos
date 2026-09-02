@@ -40,6 +40,10 @@ import {
 } from '../services/marketplace/flows/uninstall.js';
 import type { UpdateFlow } from '../services/marketplace/flows/update.js';
 import {
+  assertPackageName,
+  MarketplacePathError,
+} from '../services/marketplace/lib/package-paths.js';
+import {
   installCountsProvider,
   enrichWithInstallCounts,
 } from '../services/marketplace/install-counts.js';
@@ -193,6 +197,18 @@ function mapErrorToStatus(err: unknown): { status: number; body: Record<string, 
   if (err instanceof InvalidPackageError) {
     return { status: 400, body: { error: err.message, errors: err.errors } };
   }
+  // A name or derived path the caller may not use. It is the caller's input
+  // that is wrong, so 400 — never the 500 an unmapped throw would produce.
+  if (err instanceof MarketplacePathError) {
+    return { status: 400, body: { error: err.message } };
+  }
+  // Reached when the boundary refusal comes from INSIDE the install pipeline —
+  // a `./local/path` install identifier pointing outside the boundary — rather
+  // than from the body's `projectPath`, which each handler checks up front with
+  // its own message.
+  if (err instanceof BoundaryError) {
+    return { status: 403, body: { error: 'Access denied: path outside directory boundary' } };
+  }
   if (err instanceof ConflictError) {
     return { status: 409, body: { error: err.message, conflicts: err.conflicts } };
   }
@@ -319,6 +335,37 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     decision: Exclude<TierEnforcementDecision, { outcome: 'allowed' }>
   ): Response =>
     res.status(decision.outcome === 'approval_required' ? 202 : 403).json(decision.payload);
+
+  /**
+   * Confine a body-supplied `projectPath` to the directory boundary, answering
+   * `403` with a message that names the field.
+   *
+   * Kept separate from the catch blocks below so a boundary refusal raised
+   * DEEPER in the install pipeline — a `./local/path` install identifier
+   * pointing off the boundary, refused by the package resolver — is not
+   * mislabelled as a `projectPath` problem. That one falls through to
+   * {@link mapErrorToStatus}.
+   *
+   * @param res - The response to answer on.
+   * @param projectPath - The body's `projectPath`, when it sent one.
+   * @returns The sent `403` when refused, otherwise `undefined`. Callers must
+   *   `return` a truthy result so the effect below never runs.
+   */
+  const refuseOutOfBoundsProjectPath = async (
+    res: Response,
+    projectPath: string | undefined
+  ): Promise<Response | undefined> => {
+    if (!projectPath) return undefined;
+    try {
+      await validateBoundary(projectPath);
+      return undefined;
+    } catch (err) {
+      if (err instanceof BoundaryError) {
+        return res.status(403).json({ error: 'Access denied: projectPath outside boundary' });
+      }
+      throw err;
+    }
+  };
 
   /**
    * Refuse a package-source write unless the caller is the operator (DOR-502).
@@ -643,9 +690,8 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     }
 
     try {
-      if (parsed.data.projectPath) {
-        await validateBoundary(parsed.data.projectPath);
-      }
+      const refused = await refuseOutOfBoundsProjectPath(res, parsed.data.projectPath);
+      if (refused) return refused;
       // `marketplace.install` is tier `act`, so this passes for every caller
       // today and no approval card appears for a person clicking Install. It is
       // gated anyway so the route answers to the capability's declared tier
@@ -671,9 +717,6 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       });
       return res.json(result);
     } catch (err) {
-      if (err instanceof BoundaryError) {
-        return res.status(403).json({ error: 'Access denied: projectPath outside boundary' });
-      }
       logger.error(`[Marketplace] Failed to install package ${req.params.name}`, err);
       const mapped = mapErrorToStatus(err);
       return res.status(mapped.status).json(mapped.body);
@@ -689,10 +732,22 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
         .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
     }
 
+    // Ahead of the tier gate on purpose. Unlike every other route here, this
+    // one's `:name` is not an install identifier to be resolved — it is joined
+    // straight into `dorkHome` by the flow, and Express decodes params after
+    // routing, so `..%2F..%2Fvictim` arrives as a working climb. Refusing it
+    // here also means no approval card is ever raised for an uninstall that
+    // could not name a real package.
     try {
-      if (parsed.data.projectPath) {
-        await validateBoundary(parsed.data.projectPath);
-      }
+      assertPackageName(req.params.name);
+    } catch (err) {
+      const mapped = mapErrorToStatus(err);
+      return res.status(mapped.status).json(mapped.body);
+    }
+
+    try {
+      const refused = await refuseOutOfBoundsProjectPath(res, parsed.data.projectPath);
+      if (refused) return refused;
       // The door DOR-467 closed. `marketplace.uninstall` is the one `destructive`
       // capability, and this route used to remove a package with no tier check,
       // no approval and no attribution — which is what `dorkos uninstall`, the
@@ -719,9 +774,6 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       });
       return res.json(result);
     } catch (err) {
-      if (err instanceof BoundaryError) {
-        return res.status(403).json({ error: 'Access denied: projectPath outside boundary' });
-      }
       logger.error(`[Marketplace] Failed to uninstall package ${req.params.name}`, err);
       const mapped = mapErrorToStatus(err);
       return res.status(mapped.status).json(mapped.body);
@@ -738,9 +790,8 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     }
 
     try {
-      if (parsed.data.projectPath) {
-        await validateBoundary(parsed.data.projectPath);
-      }
+      const refused = await refuseOutOfBoundsProjectPath(res, parsed.data.projectPath);
+      if (refused) return refused;
       // Only an APPLIED update is an effect. Without `apply` this route reports
       // what a newer version would change and touches nothing, so gating it would
       // be gating a read. An applied update reinstalls the package in place
@@ -773,9 +824,6 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       }
       return res.json(result);
     } catch (err) {
-      if (err instanceof BoundaryError) {
-        return res.status(403).json({ error: 'Access denied: projectPath outside boundary' });
-      }
       logger.error(`[Marketplace] Failed to update package ${req.params.name}`, err);
       const mapped = mapErrorToStatus(err);
       return res.status(mapped.status).json(mapped.body);

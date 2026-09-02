@@ -1322,10 +1322,13 @@ describe('Marketplace Routes', () => {
         preservedData: [],
       });
 
+      // The param used to be a path-shaped install identifier here. It cannot
+      // be any more — an uninstall name is joined straight into dorkHome, so
+      // the route now takes canonical package names only — but the regression
+      // this test guards is unchanged: the event carries what the flow
+      // resolved, never what the URL said.
       await request(app)
-        .post(
-          `/api/marketplace/packages/${encodeURIComponent('./local/clones/sample-plugin')}/uninstall`
-        )
+        .post('/api/marketplace/packages/sample-plugin-alias/uninstall')
         .send({ projectPath: '/some/project' });
 
       expect(onPluginsChanged.mock.calls[0][0]).toEqual({
@@ -1333,6 +1336,27 @@ describe('Marketplace Routes', () => {
         packageName: 'sample-plugin',
         action: 'uninstall',
       });
+    });
+
+    // Express decodes `:name` after routing, so `..%2F..%2Fvictim` arrives as
+    // `../../victim` and used to be joined straight into dorkHome. The route
+    // refuses it before the tier gate, so no approval card is ever raised for
+    // an uninstall that could not name a real package.
+    it.each([
+      ['..%2F..%2Fvictim', 'encoded parent traversal'],
+      ['..%2Fetc', 'encoded single climb'],
+      ['%2Fetc%2Fpasswd', 'encoded absolute path'],
+      ['a%2F..%2F..%2F..%2Fetc', 'embedded traversal'],
+      ['Sample-Plugin', 'uppercase — never an install directory'],
+    ])('refuses %s with 400 (%s) and never reaches the flow', async (rawName) => {
+      const res = await request(app)
+        .post(`/api/marketplace/packages/${rawName}/uninstall`)
+        .send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/package name/i);
+      expect(uninstallFlow.uninstall).not.toHaveBeenCalled();
+      expect(onPluginsChanged).not.toHaveBeenCalled();
     });
 
     it('returns 404 when the package is not installed', async () => {

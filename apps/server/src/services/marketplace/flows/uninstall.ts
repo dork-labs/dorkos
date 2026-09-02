@@ -29,6 +29,7 @@ import type { Logger } from '@dorkos/shared/logger';
 import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace';
 import type { MarketplacePackageManifest, PackageType } from '@dorkos/marketplace';
 import { INSTALL_ROOTS_WITH_TYPE } from '../lib/install-roots.js';
+import { assertPackageName } from '../lib/package-paths.js';
 import { readInstallMetadata } from '../installed-metadata.js';
 
 /** Staging directory prefix used by the uninstall flow. */
@@ -161,11 +162,22 @@ export class UninstallFlow {
   /**
    * Locate, stage, and remove the named package.
    *
+   * The name is checked before anything touches disk. Every path this flow
+   * builds — the probe roots in {@link UninstallFlow.candidatePaths}, and the
+   * staging directory named after the package — interpolates `req.name`, and
+   * `path.join` collapses a `..` without complaint. So a name that climbs used
+   * to aim this flow's atomic-move-then-recursive-delete at any directory the
+   * caller named, and the callers are the network: the `:name` route param and
+   * the `marketplace_uninstall` MCP tool. Both validate too; this is the guard
+   * that holds when a future caller forgets to (`lib/package-paths.ts`).
+   *
    * @param req - Uninstall request — name, optional purge flag, optional project path.
    * @returns The uninstall result, including any data paths preserved on disk.
+   * @throws {InvalidPackageNameError} If the name is not a canonical package name.
    * @throws {PackageNotInstalledError} If no install matches the requested name.
    */
   async uninstall(req: UninstallRequest): Promise<UninstallResult> {
+    assertPackageName(req.name);
     const located = await this.locate(req);
     const stagingDir = await mkdtemp(path.join(tmpdir(), `${STAGING_DIR_PREFIX}${req.name}-`));
     const stagingPath = path.join(stagingDir, 'pkg');
