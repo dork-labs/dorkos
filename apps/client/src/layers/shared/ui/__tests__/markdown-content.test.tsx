@@ -147,11 +147,12 @@ describe('MarkdownContent — links stay real anchors, unconditionally (DOR-1272
   });
 
   it('a modifier-clicked non-http(s) link still confirms — no OS handoff with zero warning', () => {
-    // `tel:` is one of the schemes Streamdown's own sanitizer still allows
-    // through as a real link (`contributing/link-dispatch-policy.md`'s DOR-547
-    // section), so it reaches `MarkdownLink` same as an `https:` link would.
-    // A cmd-click on it must not skip confirmation: unlike a new browser tab,
-    // it would reach the OS's phone-dialer handler with no warning at all.
+    // `tel:` is a real, dispatchable link on both gates it passes — Streamdown's
+    // sanitizer allows it through, and so does the seam's own allowlist
+    // (`contributing/link-dispatch-policy.md`) — so it reaches `MarkdownLink`
+    // same as an `https:` link would. A cmd-click on it must still not skip
+    // confirmation: unlike a new browser tab, it would reach the OS's
+    // phone-dialer handler with no warning at all.
     render(<MarkdownContent content="Call [support](tel:+15551234567)" />);
     const link = screen.getByRole('link', { name: 'support' });
 

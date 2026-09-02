@@ -25,12 +25,24 @@
  * NOT resolved against the page, so it always confirms too (should-fix 3,
  * DOR-1272 round 2).
  *
+ * **A confirmed click leaves through the app's one link seam** (DOR-547):
+ * `openExternalLink`, the same call every other confirmed link makes, rather
+ * than the raw `window.open` this used to run. Chat markdown is the
+ * highest-volume agent-authored link surface in the product, and it used to be
+ * the one surface running a different scheme policy from everything else.
+ * `irc:`, `ircs:` and `xmpp:` — the only schemes Streamdown's sanitizer lets
+ * through that the seam refuses — now stop here, and say so.
+ *
+ * The refusal happens **after** the confirmation rather than instead of it, on
+ * purpose: the modal is also where "Copy link" lives, which is the one useful
+ * thing left for a link DorkOS will not open.
+ *
  * Passed to `Streamdown` as `components={{ a: MarkdownLink }}` — see
  * `contributing/link-dispatch-policy.md` for how this fits the rest of the
  * app's link-dispatch policy.
  */
 import { memo, useCallback, useState, type ComponentProps, type MouseEvent } from 'react';
-import { cn } from '@/layers/shared/lib';
+import { cn, openExternalLink } from '@/layers/shared/lib';
 import { LinkSafetyModal } from './link-safety-modal';
 
 type MarkdownLinkProps = Omit<ComponentProps<'a'>, 'onClick'> & {
@@ -51,6 +63,14 @@ type MarkdownLinkProps = Omit<ComponentProps<'a'>, 'onClick'> & {
  * here would make it look "safe" to bypass confirmation on. Failing the parse
  * instead means those hrefs always confirm, same as any other non-http(s)
  * scheme.
+ *
+ * **Deliberately narrower than the seam's own allowlist**, and not a second
+ * copy of it. This does not answer "may DorkOS open this?" — `classifyLink`
+ * does, on the confirmed path. It answers "may the browser have this click
+ * without asking?", and the honest answer is only for a scheme whose worst
+ * case is a new browser tab. `mailto:` and `tel:` are dispatchable through the
+ * seam yet still confirm here, because a cmd-click that silently opened a mail
+ * composer or a dialer is not what the reader asked for.
  *
  * @param href - The anchor's `href`, as Streamdown parsed it.
  */
@@ -93,7 +113,17 @@ function MarkdownLinkImpl({ href, className, children, node: _node, ...rest }: M
 
   const closeConfirm = useCallback(() => setIsConfirmOpen(false), []);
   const confirmAndOpen = useCallback(() => {
-    if (href) window.open(href, '_blank', 'noopener,noreferrer');
+    // The app's one link policy, same as every other confirmed link
+    // (`widget-context.tsx`, `McpAppFrame.tsx`) — DOR-547. This was a raw
+    // `window.open` until the seam could explain a refusal out loud; routing
+    // here before that landed would have turned "you confirmed, now open" into
+    // silence for any scheme the allowlist refuses.
+    //
+    // `openExternalLink`, not `openLink`: the modal's contract is "this leaves
+    // what you are looking at", so a markdown link that happens to name one of
+    // our own routes still opens a tab rather than navigating the reply out
+    // from under the reader.
+    if (href) openExternalLink(href);
     setIsConfirmOpen(false);
   }, [href]);
 

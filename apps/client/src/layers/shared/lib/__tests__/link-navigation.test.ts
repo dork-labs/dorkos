@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { toast } from 'sonner';
 import {
   APP_ROUTE_PATHS,
   classifyLink,
@@ -15,6 +16,8 @@ import {
 } from '../link-navigation';
 import { setPlatformAdapter } from '../platform';
 import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
+
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 const ORIGIN = 'http://localhost:4242';
 const FROM = `${ORIGIN}/team?view=topology`;
@@ -103,6 +106,30 @@ describe('classifyLink', () => {
       kind: 'external',
       url: 'mailto:hi@dorkos.ai',
     });
+  });
+
+  it('treats tel: as dispatchable — the same case as mailto:, and the reason chat phone links still work', () => {
+    // Added with DOR-547, when markdown links joined this policy. A browser
+    // hands `tel:` to the OS dialer from any page, so an agent writing a phone
+    // number as a link produces one that goes somewhere on the web and phone
+    // surfaces — which it did before this list governed markdown, and must
+    // still do after.
+    expect(classifyLink('tel:+15551234567', FROM)).toEqual({
+      kind: 'external',
+      url: 'tel:+15551234567',
+    });
+  });
+
+  it('still refuses the chat-only schemes the markdown sanitizer permits', () => {
+    // `irc:`, `ircs:` and `xmpp:` are the whole of what Streamdown's sanitizer
+    // allows and this list does not. Before DOR-547 they dispatched from chat
+    // markdown and nowhere else; now they are refused everywhere, out loud.
+    for (const href of ['irc://irc.example.com/dorkos', 'ircs://irc.example.com', 'xmpp:a@b.com']) {
+      expect(classifyLink(href, FROM), href).toEqual({
+        kind: 'blocked',
+        reason: 'unsupported-scheme',
+      });
+    }
   });
 
   it('blocks a file: target from the http cockpit — opening one is a guaranteed no-op', () => {
@@ -235,6 +262,7 @@ describe('link dispatch', () => {
   }
 
   beforeEach(() => {
+    vi.mocked(toast.error).mockClear();
     navigated = [];
     tabCleanups = [];
     unregister = registerLinkNavigator((navigation) => navigated.push(navigation));
@@ -553,6 +581,73 @@ describe('link dispatch', () => {
       expect(openExternalLink('http://')).toBe(false);
       // A file: target from the http cockpit cannot open, so it must not claim to.
       expect(openExternalLink('file:///Users/kai/authorize.html')).toBe(false);
+    });
+  });
+
+  describe('a refusal says so (DOR-547)', () => {
+    it('names the scheme it will not open', () => {
+      // The seam owns the policy, so it owns the sentence. Before this, a
+      // refused click was a console warning and nothing the person could see —
+      // identical, from their side, to a link that was simply broken.
+      openExternalLink('irc://irc.example.com/dorkos');
+
+      expect(toast.error).toHaveBeenCalledWith("DorkOS doesn't open irc: links", {
+        id: 'dorkos-link-refused',
+        description: 'Only web, email and phone links open from here.',
+      });
+    });
+
+    it('says something different when the address is broken rather than refused', () => {
+      openExternalLink('http://');
+
+      expect(toast.error).toHaveBeenCalledWith("DorkOS couldn't open that link", {
+        id: 'dorkos-link-refused',
+        description: 'That address is incomplete, so there is nowhere to send you.',
+      });
+    });
+
+    it('names the scheme the href itself declares, never one it inherited', () => {
+      // These tests run from an `http:` page, where a relative href inherits a
+      // dispatchable scheme and is never refused. The case this pins matters in
+      // the Obsidian embed, whose page is `app://obsidian.md/…`: there a
+      // relative href resolves to `app:` and IS refused, and naming that scheme
+      // would report a word the reader never saw in the link they clicked.
+      // Reachable here only through `classifyLink`, which takes its base as an
+      // argument — dispatch reads `window.location`, which jsdom pins per file.
+      expect(classifyLink('/team', 'app://obsidian.md/index.html')).toEqual({
+        kind: 'blocked',
+        reason: 'unsupported-scheme',
+      });
+      // The href in that case declares no scheme of its own, so the message
+      // falls back to the same sentence a broken address gets. An explicit one
+      // is named.
+      openExternalLink('app://obsidian.md/team');
+      expect(toast.error).toHaveBeenCalledWith("DorkOS doesn't open app: links", expect.anything());
+    });
+
+    it('reuses one toast slot, so a second refused click replaces the first message', () => {
+      openExternalLink('irc://irc.example.com/dorkos');
+      openExternalLink('xmpp:someone@example.com');
+
+      expect(toast.error).toHaveBeenCalledTimes(2);
+      const ids = vi.mocked(toast.error).mock.calls.map(([, options]) => options?.id);
+      expect(new Set(ids).size).toBe(1);
+    });
+
+    it('stays quiet when there is no refusal to report', () => {
+      openExternalLink('https://dorkos.ai/docs');
+      openLink('/tasks');
+      expect(toast.error).not.toHaveBeenCalled();
+    });
+
+    it('stays quiet for a missing router, which is a wiring bug and not a refusal', () => {
+      // The embed mounts no router on purpose. Telling its reader "DorkOS
+      // couldn't open that link" every time would be reporting our own
+      // architecture at them.
+      unregister();
+      expect(openLink('/tasks')).toBe(false);
+      expect(warnSpy).toHaveBeenCalled();
+      expect(toast.error).not.toHaveBeenCalled();
     });
   });
 

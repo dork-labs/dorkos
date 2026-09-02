@@ -8,8 +8,10 @@
  * `http://localhost:<port>` origin, so the shell's window-open guard — doing
  * exactly its job — sends the cockpit to Chrome. Classification now happens
  * once, here, and every navigation the app's own code initiates routes through
- * it. **Markdown links do not**: Streamdown renders and dispatches those under
- * its own policy (see {@link DISPATCHABLE_PROTOCOLS}).
+ * it — **markdown links in chat and in `MarkdownContent` included**, since
+ * DOR-547. `MarkdownLink` confirms a click and then hands the href to
+ * {@link openExternalLink}, so there is one link policy in the product rather
+ * than two that disagree (see {@link DISPATCHABLE_PROTOCOLS}).
  *
  * An internal link can land in three places, chosen by
  * {@link OpenLinkOptions.target}: in place (the default), in another tab, or in
@@ -35,9 +37,10 @@
  *   window-open guards watch for; they hand it to the system browser, which is
  *   the right home for it.
  * - **Blocked** — unparsable input, and any scheme outside
- *   {@link DISPATCHABLE_PROTOCOLS}. Dispatch is a no-op. This matters because
- *   untrusted surfaces (gen-ui widgets, MCP App iframes, MCP elicitation) ask
- *   us to open links.
+ *   {@link DISPATCHABLE_PROTOCOLS}. Nothing opens, and the person is told why
+ *   in one sentence rather than left watching a click do nothing. This matters
+ *   because untrusted surfaces (gen-ui widgets, MCP App iframes, MCP
+ *   elicitation, and every link an agent writes in chat) ask us to open links.
  *
  * The router is registered once from the app entry ({@link registerLinkNavigator}).
  * The Obsidian embed deliberately mounts no router, so internal dispatch there
@@ -46,7 +49,14 @@
  *
  * @module shared/lib/link-navigation
  */
+import { toast } from 'sonner';
 import { getPlatform, isDesktopShell } from './platform';
+
+/**
+ * One toast slot for every refusal anywhere in the app. A second refused click
+ * replaces the first message instead of stacking a near-identical one beside it.
+ */
+const REFUSAL_TOAST_ID = 'dorkos-link-refused';
 
 /**
  * Every path the cockpit's router serves — the definition of "internal".
@@ -100,22 +110,34 @@ const APP_ROUTE_SET: ReadonlySet<string> = new Set(APP_ROUTE_PATHS);
  *   revised alongside this work; encoding a downstream gap here would be
  *   wrong, and nothing in the app links `mailto:` yet, so no reported outcome
  *   hangs on it.
+ * - `tel:` — the same case as `mailto:`, added when markdown links joined this
+ *   policy (DOR-547). A browser hands `tel:` to the OS dialer from any page,
+ *   and the phone surface is a real one: an agent writing "call
+ *   [support](tel:+15551234567)" produced a working link before this list
+ *   governed markdown, and refusing it now would take that away for no safety
+ *   gain — `tel:` carries no script and reaches nothing but the dialer, behind
+ *   a confirmation the reader has to press. The desktop shell declines it, the
+ *   same one-sided gap `mailto:` already documents, and declined it before
+ *   this too: the raw `window.open` markdown used to dispatch hit the shell's
+ *   http(s)-only window-open guard and did nothing. So no surface loses
+ *   anything it had.
  *
  * Add a scheme only when something in the app actually opens one — and note
  * that this list is defense in depth, not the only defense: the desktop shell's
  * window-open handler is currently stricter still (`http(s)` only, everything
  * else denied outright).
  *
- * **This policy does not govern markdown links.** Streamdown renders chat and
- * `MarkdownContent` anchors and dispatches them itself, under `rehype-sanitize`'s
- * schema, which blocks `javascript:`/`data:`/`file:`/`vbscript:`/`blob:` but
- * permits `irc:`, `ircs:`, `xmpp:` and `tel:` — schemes this list refuses. The
- * two policies are knowingly divergent; reconciling them is filed separately.
+ * **This policy governs markdown links too, since DOR-547.** Streamdown's
+ * `rehype-sanitize` pass still runs first and strips
+ * `javascript:`/`data:`/`file:`/`vbscript:`/`blob:` hrefs before an anchor is
+ * ever rendered; what it permits and this list does not — `irc:`, `ircs:`,
+ * `xmpp:` — is now refused here, out loud, at dispatch. Two link policies that
+ * disagreed became one.
  *
  * Full write-up, including the desktop shell's stricter layer on top of this
  * one: `contributing/link-dispatch-policy.md`.
  */
-const DISPATCHABLE_PROTOCOLS: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:']);
+const DISPATCHABLE_PROTOCOLS: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:', 'tel:']);
 
 /**
  * Whether this scheme can be dispatched from a page at `base`.
@@ -317,6 +339,56 @@ export function supportsSeparateWindow(): boolean {
 }
 
 /**
+ * The scheme an href names **for itself**, or `null` if it names none.
+ *
+ * Parsed with no base on purpose. A relative href (`/tasks`) inherits the
+ * page's scheme when resolved, and in the Obsidian embed that is `app:` — so
+ * resolving here would answer a refusal with "DorkOS doesn't open app: links",
+ * naming a scheme the person never saw and cannot act on. Unresolved, the same
+ * href simply has no scheme to name and gets the generic sentence instead.
+ *
+ * @param href - The refused link, exactly as the caller passed it.
+ */
+function declaredScheme(href: string): string | null {
+  try {
+    return new URL(href.trim()).protocol;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Say out loud that a link was refused — one message shape, every surface.
+ *
+ * A refusal used to be a console warning and nothing else, so a click on an
+ * `irc:` link in a chat answer did exactly what a click on a broken one did:
+ * nothing, with no way to tell which had happened (DOR-547). The seam owns the
+ * policy, so it owns the sentence too; a per-surface copy of this message would
+ * drift from the allowlist the first time the allowlist moved.
+ *
+ * One `id` for every refusal, so clicking a second bad link replaces the toast
+ * rather than stacking another.
+ *
+ * @param href - The refused link.
+ * @param reason - Why {@link classifyLink} refused it.
+ */
+function reportRefusal(href: string, reason: BlockedLinkReason): void {
+  console.warn(`[dorkos:link] refused to open ${reason} link:`, href);
+  if (reason === 'unparsable') {
+    toast.error("DorkOS couldn't open that link", {
+      id: REFUSAL_TOAST_ID,
+      description: 'That address is incomplete, so there is nowhere to send you.',
+    });
+    return;
+  }
+  const scheme = declaredScheme(href);
+  toast.error(scheme ? `DorkOS doesn't open ${scheme} links` : "DorkOS couldn't open that link", {
+    id: REFUSAL_TOAST_ID,
+    description: 'Only web, email and phone links open from here.',
+  });
+}
+
+/**
  * Hand a URL to the browser: a new tab on the web, the system browser on desktop.
  *
  * The desktop shell gets its own bridge because `window.open` cannot keep the
@@ -390,15 +462,17 @@ export interface OpenLinkOptions {
  * @param href - The link to open.
  * @param options - Target and history intent.
  * @returns `true` if the link was dispatched, `false` if it was refused or
- * there was no router to route it through. **Check this before telling the user
- * anything happened** — a refusal is silent otherwise, and a UI that reports
- * success it did not verify is how "nothing opened" becomes "you're signed in".
+ * there was no router to route it through. A refusal announces itself
+ * ({@link reportRefusal}), so the person is never left watching a click do
+ * nothing — but **still check this before telling them something happened**:
+ * "we could not open that" and "you're signed in" are different sentences, and
+ * a UI that reports success it did not verify is how one becomes the other.
  */
 export function openLink(href: string, options: OpenLinkOptions = {}): boolean {
   const link = classifyLink(href);
 
   if (link.kind === 'blocked') {
-    console.warn(`[dorkos:link] refused to open ${link.reason} link:`, href);
+    reportRefusal(href, link.reason);
     return false;
   }
 
@@ -482,21 +556,21 @@ export function openLink(href: string, options: OpenLinkOptions = {}): boolean {
  * navigate the view out from under the reader. Works with no router registered, so it behaves
  * identically in the router-less Obsidian embed.
  *
- * **Not every link in the product comes through here.** Markdown links in chat
- * and in static `MarkdownContent` are rendered by Streamdown, which owns its own
- * anchor, its own confirm handler, and its own `window.open` — see the note on
- * {@link DISPATCHABLE_PROTOCOLS} about where the two policies diverge. Do not
- * read this module as covering agent-authored prose links.
+ * **Markdown links come through here too** (DOR-547). `MarkdownLink` — the
+ * anchor every Streamdown instance in the app renders, in chat and in static
+ * `MarkdownContent` alike — confirms the click and then calls this, so an
+ * agent-authored prose link clears exactly the gate a first-party button does.
  *
  * @param href - The link to hand to the browser.
  * @returns `true` if the link was handed to the browser, `false` if its scheme
- * is outside {@link DISPATCHABLE_PROTOCOLS} or it could not be parsed. Callers
- * that then report an outcome to the user must gate on this.
+ * is outside {@link DISPATCHABLE_PROTOCOLS} or it could not be parsed. A
+ * refusal tells the person why on its own; callers that report an outcome of
+ * their own must still gate it on this.
  */
 export function openExternalLink(href: string): boolean {
   const link = classifyLink(href);
   if (link.kind === 'blocked') {
-    console.warn(`[dorkos:link] refused to open ${link.reason} link:`, href);
+    reportRefusal(href, link.reason);
     return false;
   }
   openInBrowser(link.url);

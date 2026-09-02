@@ -188,9 +188,10 @@ export function TouchChipStrip({ parts, sessionId, turnActive = false }: TouchCh
       // and leaving is what `openExternalLink` gates, against the scheme
       // allowlist every other exit in the app shares. This used to be a bare
       // `window.open`, which is the allowlist bypass DOR-921 named
-      // (`contributing/link-dispatch-policy.md`). A refused scheme is a no-op
-      // here, the same answer every other caller of the seam gives; the chip's
-      // tooltip still carries the full target, so the record is not lost.
+      // (`contributing/link-dispatch-policy.md`). A refused scheme opens
+      // nothing and says so, the same answer every other caller of the seam
+      // gives since DOR-547; the chip's tooltip still carries the full target,
+      // so the record is not lost either.
       if (embedded) {
         openExternalLink(chip.fullTarget);
         return;
