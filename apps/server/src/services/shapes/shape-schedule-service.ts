@@ -10,9 +10,14 @@
  * HTTP concerns.
  *
  * Shape-created schedules are stamped with a provenance marker inside their
- * `schedule:` block (`origin: shape` + `shape: <name>`). The re-bind flow gates
- * on that marker — never on name alone — so a user's own schedule that happens
- * to share a Shape schedule's name is never touched.
+ * `schedule:` block (`origin: shape` + `shape: <name>`), so anybody opening the
+ * file can see where it came from. The marker is a LABEL, not a claim: since
+ * DOR-1524 every ownership decision — may this apply overwrite that directory,
+ * may this teardown delete it, may this schedule be re-homed — is answered from
+ * the write receipt instead ({@link ShapeScheduleReceipts}), which records the
+ * directories an apply actually wrote. A marker travels with the bytes, so a
+ * copy of a Shape's schedule carries one; a receipt entry does not, so your copy
+ * is yours.
  *
  * ## What DOR-1486 changed here, and why this service still owns it
  *
@@ -55,8 +60,11 @@ import type {
   ExistingSchedule,
   ScheduleOrigin,
   ScheduleRebind,
+  ScheduleWriteOutcome,
+  ScheduleWriteRefusal,
   ShapeScheduleServiceLike,
 } from './apply-shape.js';
+import { ShapeScheduleReceipts } from './schedule-write-receipt.js';
 
 /** Constructor dependencies for {@link ShapeScheduleService}. */
 export interface ShapeScheduleServiceDeps {
@@ -77,26 +85,37 @@ export interface ShapeScheduleServiceDeps {
  * like the tasks router. `target` is a concrete agent id or `'global'`.
  */
 export class ShapeScheduleService implements ShapeScheduleServiceLike {
-  constructor(private readonly deps: ShapeScheduleServiceDeps) {}
+  /** The record of which schedule directories a Shape's apply actually wrote. */
+  private readonly receipts: ShapeScheduleReceipts;
 
   /**
-   * Every existing schedule (name + binding + enabled + provenance), across all
+   * Build the service, opening the write receipt over the same data directory.
+   *
+   * @param deps - Task store, scheduler seam, mesh, data directory, and logger.
+   */
+  constructor(private readonly deps: ShapeScheduleServiceDeps) {
+    this.receipts = new ShapeScheduleReceipts({ dorkHome: deps.dorkHome, logger: deps.logger });
+  }
+
+  /**
+   * Every existing schedule (name + binding + enabled + owner), across all
    * scopes (global + agents). The apply flow checks existence by NAME only — a
    * Shape schedule's target flips from `'global'` to a concrete agent id once
    * the offered agent appears, so a per-target check would miss the earlier
-   * global copy and duplicate the schedule on re-apply. `shapeOrigin` is read
-   * from each global schedule's file (the frontmatter provenance marker);
-   * agent-bound schedules skip the file read — re-bind never considers them.
+   * global copy and duplicate the schedule on re-apply. `shapeOrigin` comes from
+   * the write receipt; agent-bound schedules skip the lookup — re-bind never
+   * considers them.
    *
    * @returns Every existing schedule's name, binding, enabled state, and origin.
    */
   async listSchedules(): Promise<ExistingSchedule[]> {
+    await this.ensureAdopted();
     return Promise.all(
       this.deps.taskStore.getTasks().map(async (t) => ({
         name: t.name,
         agentId: t.agentId ?? null,
         enabled: t.enabled,
-        shapeOrigin: t.agentId ? null : await this.readShapeOrigin(t.filePath),
+        shapeOrigin: t.agentId ? null : await this.ownerOf(t.filePath),
       }))
     );
   }
@@ -110,15 +129,23 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
    * the target directory is checked on DISK before anything is written, because
    * the apply flow's own existence check is by ROW and a person's hand-written
    * skill has no row. Re-applying a Shape over its own schedule is still an
-   * ordinary overwrite — that is the marker's other job.
+   * ordinary overwrite — the receipt is what says the directory is its own.
+   *
+   * A successful write is recorded in the receipt, and that recording is the
+   * whole basis of every later ownership decision about the directory.
    *
    * @param req - The task-creation request built from a Shape schedule.
-   * @param origin - Shape provenance to stamp into the file's frontmatter.
-   * @returns Whether the schedule now exists. `false` means the target was
-   *   somebody else's and nothing was written — the caller must not then delete
+   * @param origin - The Shape standing this schedule up: recorded in the receipt
+   *   and stamped into the file's frontmatter as a human-readable label.
+   * @returns Whether the schedule now exists, and when it does not, why. A
+   *   refusal means nothing was written — the caller must not then delete
    *   anything on the strength of it (see {@link rebindSchedule}).
    */
-  async createSchedule(req: CreateTaskRequest, origin?: ScheduleOrigin): Promise<boolean> {
+  async createSchedule(
+    req: CreateTaskRequest,
+    origin?: ScheduleOrigin
+  ): Promise<ScheduleWriteOutcome> {
+    await this.ensureAdopted();
     const slug = slugify(req.name);
     let skillsDir: string;
     let agentId: string | null = null;
@@ -164,18 +191,23 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
     };
 
     // Nothing is written until the target is known to be ours to write.
-    if (!(await this.claimTarget(path.join(skillsDir, slug), slug, origin))) return false;
+    const refusal = await this.claimTarget(skillsDir, slug, origin);
+    if (refusal) return { created: false, ...refusal };
 
     const filePath = await writeSkillFile(skillsDir, slug, frontmatter, req.prompt);
+    // The REAL directory, because that is what the watcher reading this same
+    // file moments from now will key its row on — and what the receipt has to
+    // name, so an entry written here is found by a lookup made from a row.
+    const resolvedDir = path.join(await resolveRootPath(skillsDir), slug);
+    if (origin) await this.receipts.record(resolvedDir, origin.shape);
+
     const content = await fs.readFile(filePath, 'utf-8');
     const parsed = parseSkillFile(filePath, content, SkillFrontmatterSchema);
-    // Keyed on the REAL path, because that is what the watcher reading this same
-    // file moments from now will key its row on.
     const discovered = parsed.ok
       ? readScheduleFromSkill(parsed.definition, {
           scope: projectPath ? 'project' : 'global',
           projectPath,
-          resolvedPath: path.join(await resolveRootPath(skillsDir), slug, SKILL_FILENAME),
+          resolvedPath: path.join(resolvedDir, SKILL_FILENAME),
         })
       : null;
 
@@ -205,11 +237,12 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
         });
 
     this.deps.registrar.syncTask(schedule.id);
-    return true;
+    return { created: true };
   }
 
   /**
-   * Whether `<skillsDir>/<slug>/` is this Shape's to write into.
+   * Whether `<skillsDir>/<slug>/` is this Shape's to write into — `null` to go
+   * ahead, or the reason it was refused.
    *
    * ## Why a disk check, when the apply flow already checks for a collision
    *
@@ -223,14 +256,22 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
    * owns) is what turned a documented last-write-wins edge into data loss, so
    * the guard moved with it.
    *
-   * Three answers:
+   * Four answers:
    *
    * - **Nothing there** — free.
    * - **This Shape's own schedule** — free, and an ordinary re-apply. Decided by
-   *   the provenance marker via {@link readShapeOrigin}, which fails closed, so
-   *   an unreadable file is somebody else's by default.
+   *   the write receipt, which records the directories this Shape's applies
+   *   actually wrote. Not by the file's own frontmatter: a copy of a Shape's
+   *   schedule carries the same marker, and a person's adaptation of one is not
+   *   the Shape's to overwrite (DOR-1524).
+   * - **An empty directory** — refused, because DorkOS did not put it there and
+   *   an empty directory in a skills root is somebody's half-finished skill as
+   *   often as it is nothing. It used to be refused in a log line alone, which
+   *   left the apply looking like it had worked; the reason now reaches the
+   *   person as a warning naming the folder, so clearing it is a ten-second job
+   *   rather than a mystery.
    * - **Anything else** — refused, and said out loud. A symlink is refused
-   *   FIRST and unconditionally, marker or no marker: a `pkg__name` link is how
+   *   FIRST and unconditionally, receipt or no receipt: a `pkg__name` link is how
    *   Harness Sync projects an installed package's skill, and writing through it
    *   edits the package's own checkout — shared by every agent that installed it,
    *   invisible in the cockpit, and gone at the next update.
@@ -239,23 +280,25 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
    * the arrangement alive at a name the Shape does not know, so the next apply
    * finds nothing by that name and stands up a second one; and a person who
    * named a skill has a claim on that name that a package does not get to
-   * out-vote. The Shape is simply short one schedule, and the log says which.
+   * out-vote. The Shape is simply short one schedule, and the person is told
+   * which one and what is in its way.
    *
-   * @param targetDir - The directory the schedule would be written into.
-   * @param slug - Its name, for the log line.
+   * @param skillsDir - The skills root the schedule would be written into.
+   * @param slug - Its name (also the directory name).
    * @param origin - The Shape asking, when one is.
-   * @returns Whether to go ahead.
+   * @returns `null` to go ahead, or why the write was refused.
    */
   private async claimTarget(
-    targetDir: string,
+    skillsDir: string,
     slug: string,
     origin?: ScheduleOrigin
-  ): Promise<boolean> {
+  ): Promise<ScheduleWriteRefusal | null> {
+    const targetDir = path.join(skillsDir, slug);
     let stat;
     try {
       stat = await fs.lstat(targetDir);
     } catch {
-      return true; // Nothing there.
+      return null; // Nothing there.
     }
 
     if (stat.isSymbolicLink()) {
@@ -263,17 +306,25 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
         `[shape-schedule] Refusing to write '${slug}' — ${targetDir} is a link to a skill DorkOS ` +
           `does not own (an installed package's, most likely)`
       );
-      return false;
+      return { reason: 'symlink', targetDir };
     }
 
-    const owner = await this.readShapeOrigin(path.join(targetDir, SKILL_FILENAME));
-    if (origin && owner === origin.shape) return true;
+    const owner = await this.receipts.ownerOf(targetDir);
+    if (origin && owner === origin.shape) return null;
+
+    if (!owner && stat.isDirectory() && (await isEmptyDir(targetDir))) {
+      this.deps.logger.warn(
+        `[shape-schedule] Refusing to write '${slug}' — ${targetDir} is an empty directory no ` +
+          `Shape created`
+      );
+      return { reason: 'empty-directory', targetDir };
+    }
 
     this.deps.logger.warn(
       `[shape-schedule] Refusing to write '${slug}' — ${targetDir} already holds a skill this ` +
         `Shape did not create${owner ? ` (it belongs to '${owner}')` : ''}`
     );
-    return false;
+    return { reason: 'occupied', targetDir };
   }
 
   /**
@@ -285,9 +336,9 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
    * so this writes the agent-scoped copy first, then removes the old global one
    * to leave exactly one schedule. A no-op — leaving the global copy untouched —
    * when the named schedule is absent, is already agent-bound (respecting an
-   * explicit user disable), carries no Shape provenance marker (defense in
-   * depth: a user's colliding schedule is never hijacked, even if a caller
-   * skipped its own gate), or the agent has no resolvable project path.
+   * explicit user disable), is not in the write receipt (defense in depth: a
+   * user's colliding schedule is never hijacked, even if a caller skipped its
+   * own gate), or the agent has no resolvable project path.
    *
    * The write-then-delete move is NOT atomic. If the process dies between the
    * two steps, both copies exist under one name — harmless, because the stale
@@ -300,15 +351,16 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
    * @param rebind - The agent id to bind to and the resulting enabled state.
    */
   async rebindSchedule(name: string, rebind: ScheduleRebind): Promise<void> {
+    await this.ensureAdopted();
     const existing = this.deps.taskStore.getTasks().find((t) => t.name === name);
     // Nothing to move, or the schedule already found its home — respect it.
     if (!existing || existing.agentId) return;
 
-    // Provenance guard: only a schedule a Shape created may be re-homed.
-    const shapeOrigin = await this.readShapeOrigin(existing.filePath);
+    // Ownership guard: only a schedule a Shape's apply actually wrote is re-homed.
+    const shapeOrigin = await this.ownerOf(existing.filePath);
     if (!shapeOrigin) {
       this.deps.logger.warn(
-        `[shape-schedule] Refusing to re-bind '${name}' — no Shape provenance marker (user-created?)`
+        `[shape-schedule] Refusing to re-bind '${name}' — no Shape wrote it (user-created?)`
       );
       return;
     }
@@ -325,9 +377,9 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
     }
 
     // Write the agent-scoped copy (new file path → new row) and register it.
-    // The provenance marker travels with the schedule — it stays a Shape
-    // schedule in its new home.
-    const created = await this.createSchedule(
+    // The write is receipted at its new path, so ownership travels with the
+    // schedule — it stays this Shape's in its new home.
+    const outcome = await this.createSchedule(
       {
         name: existing.name,
         description: existing.description ?? '',
@@ -342,11 +394,13 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
     );
 
     // The copy is what makes the teardown below safe to do. If the agent's
-    // skills root already held a skill of that name, nothing was written — and
-    // tearing the global copy down anyway would delete the only copy there is.
-    if (!created) {
+    // skills root already held something at that name, nothing was written —
+    // and tearing the global copy down anyway would delete the only copy there
+    // is.
+    if (!outcome.created) {
       this.deps.logger.warn(
-        `[shape-schedule] Left '${name}' where it is — the agent's skills root already has a skill by that name`
+        `[shape-schedule] Left '${name}' where it is — the agent's skills root already has ` +
+          `something at that name (${outcome.reason})`
       );
       return;
     }
@@ -357,13 +411,14 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
   }
 
   /**
-   * Delete every schedule created by a given Shape (its provenance marker names
-   * it), across both global and agent-bound scopes — the teardown that keeps a
-   * Shape's schedules from outliving the Shape. Reads each schedule file's
-   * marker directly (agent-bound schedules were moved into their agent's root by
-   * {@link rebindSchedule}, so a scope-blind scan is required) and fails closed:
-   * a missing, unreadable, or mismatched marker leaves the schedule alone, so a
-   * user's own schedule that collides on name is never deleted.
+   * Delete every schedule a given Shape's applies actually wrote, across both
+   * global and agent-bound scopes — the teardown that keeps a Shape's schedules
+   * from outliving the Shape. Ownership comes from the write receipt, looked up
+   * per schedule directory (agent-bound schedules were moved into their agent's
+   * root by {@link rebindSchedule}, so a scope-blind scan is required), and
+   * fails closed: a directory the receipt does not name is left alone. That is
+   * what makes a person's own copy of a Shape's schedule safe — the copy carries
+   * the same frontmatter marker, but no Shape ever wrote it (DOR-1524).
    *
    * @param shapeName - The owning Shape whose schedules to delete.
    * @param keepNames - Stored schedule names (`slugify`'d, matching `task.name`)
@@ -376,11 +431,12 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
     shapeName: string,
     keepNames?: ReadonlySet<string>
   ): Promise<string[]> {
+    await this.ensureAdopted();
     const deleted: string[] = [];
     for (const task of this.deps.taskStore.getTasks()) {
       if (keepNames?.has(task.name)) continue;
-      // Provenance guard: only a schedule this exact Shape created is removed.
-      const origin = await this.readShapeOrigin(task.filePath);
+      // Ownership guard: only a directory this exact Shape wrote is removed.
+      const origin = await this.ownerOf(task.filePath);
       if (origin !== shapeName) continue;
       await this.teardownSchedule(task);
       deleted.push(task.name);
@@ -408,6 +464,12 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
     resolveParkedScheduleRemoved(task);
     if (task.filePath) {
       const dirPath = path.dirname(task.filePath);
+      // Dropped from the receipt BEFORE the directory goes, because the receipt
+      // is keyed on the resolved path and a path that no longer exists cannot be
+      // resolved. Load-bearing rather than tidy: a stale entry would let the
+      // next re-apply overwrite a skill a person creates at that same name, on
+      // the strength of a write that has already been undone.
+      await this.receipts.forget(dirPath);
       await deleteSkillDir(path.dirname(dirPath), path.basename(dirPath)).catch(() => {
         // File may already be gone — the row + registration are what mattered.
       });
@@ -415,24 +477,69 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
   }
 
   /**
-   * Read the Shape provenance marker from a schedule's SKILL.md. Fail-closed:
-   * any read/parse failure or missing marker returns `null`, which the re-bind
-   * flow treats as "not a Shape schedule — do not touch".
+   * The Shape whose apply wrote a schedule's directory, from the write receipt.
+   * Fail-closed: no receipt entry (and a schedule with no file at all) answers
+   * `null`, which every caller reads as "not a Shape's — do not touch".
    *
-   * @param filePath - The schedule's SKILL.md path.
-   * @returns The owning Shape's name, or `null` when unmarked/unreadable.
+   * @param filePath - The schedule's SKILL.md path, when it has one.
+   * @returns The owning Shape's name, or `null`.
    */
-  private async readShapeOrigin(filePath: string): Promise<string | null> {
-    try {
-      const content = await fs.readFile(filePath, 'utf-8');
-      const parsed = parseSkillFile(filePath, content, SkillFrontmatterSchema, {
-        requireNameMatch: false,
-      });
-      if (!parsed.ok || !hasSchedule(parsed.definition.meta)) return null;
-      const { origin, shape } = parsed.definition.meta.schedule;
-      return origin === 'shape' ? (shape ?? null) : null;
-    } catch {
-      return null;
-    }
+  private async ownerOf(filePath: string | null | undefined): Promise<string | null> {
+    if (!filePath) return null;
+    return this.receipts.ownerOf(path.dirname(filePath));
+  }
+
+  /**
+   * Bring an install that predates the write receipt under it, once.
+   *
+   * The receipt did not exist before DOR-1524, so an install upgrading into it
+   * has Shape schedules on disk that nothing has written down. Their frontmatter
+   * markers are the only evidence there is, and they are exactly the evidence
+   * the old code acted on — so they seed the receipt, and from that moment on no
+   * marker is ever consulted again. See
+   * {@link ShapeScheduleReceipts.adoptOnce}.
+   */
+  private async ensureAdopted(): Promise<void> {
+    await this.receipts.adoptOnce(async () => {
+      const owned: { dir: string; shape: string }[] = [];
+      for (const task of this.deps.taskStore.getTasks()) {
+        if (!task.filePath) continue;
+        const shape = await readLegacyShapeMarker(task.filePath);
+        if (shape) owned.push({ dir: path.dirname(task.filePath), shape });
+      }
+      return owned;
+    });
+  }
+}
+
+/** Whether a directory holds nothing at all (an unreadable one counts as not empty). */
+async function isEmptyDir(dir: string): Promise<boolean> {
+  try {
+    return (await fs.readdir(dir)).length === 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Read the Shape provenance marker from a schedule's SKILL.md — the pre-receipt
+ * notion of ownership, kept for the one-time adoption in
+ * {@link ShapeScheduleService.ensureAdopted} and used nowhere else. Fail-closed:
+ * any read/parse failure or missing marker returns `null`.
+ *
+ * @param filePath - The schedule's SKILL.md path.
+ * @returns The Shape named by the marker, or `null` when unmarked/unreadable.
+ */
+async function readLegacyShapeMarker(filePath: string): Promise<string | null> {
+  try {
+    const content = await fs.readFile(filePath, 'utf-8');
+    const parsed = parseSkillFile(filePath, content, SkillFrontmatterSchema, {
+      requireNameMatch: false,
+    });
+    if (!parsed.ok || !hasSchedule(parsed.definition.meta)) return null;
+    const { origin, shape } = parsed.definition.meta.schedule;
+    return origin === 'shape' ? (shape ?? null) : null;
+  } catch {
+    return null;
   }
 }

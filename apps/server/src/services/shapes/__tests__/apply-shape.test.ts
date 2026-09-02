@@ -18,6 +18,8 @@ import {
   ShapeNotInstalledError,
   type ApplyShapeDeps,
   type RegisteredAgentView,
+  type ScheduleWriteOutcome,
+  type ScheduleWriteRefusal,
 } from '../apply-shape.js';
 
 /** Parse a partial manifest through the union so all defaults + cross-field rules apply. */
@@ -79,7 +81,7 @@ interface FakeSchedule {
   /** `null` = global (unbound); a concrete id = agent-bound. */
   agentId: string | null;
   enabled: boolean;
-  /** The provenance marker: the creating Shape's name, or `null` = user-created. */
+  /** The Shape whose apply wrote it, or `null` = nobody's but the user's. */
   shapeOrigin: string | null;
 }
 
@@ -92,10 +94,10 @@ function makeDeps(opts: {
   registeredAgents?: RegisteredAgentView[];
   existingSchedules?: FakeSchedule[];
   /**
-   * Make every `createSchedule` REFUSE, the way the real service does when the
-   * target name on disk already belongs to somebody else's skill.
+   * Make every `createSchedule` REFUSE for this reason, the way the real
+   * service does when something it does not own sits at the target name.
    */
-  refusesCreate?: boolean;
+  refusesCreate?: ScheduleWriteRefusal['reason'];
   autoFollowAgent?: boolean;
   /** The currently-active Shape name — the swap turns off its extensions. */
   activeShape?: string;
@@ -111,29 +113,35 @@ function makeDeps(opts: {
   // The fake store, keyed by name (the real service's cross-scope identity).
   const schedules: FakeSchedule[] = (opts.existingSchedules ?? []).map((s) => ({ ...s }));
 
-  const createSchedule = vi.fn(async (req: CreateTaskRequest, origin?: { shape: string }) => {
-    // A refusal writes NOTHING and records nothing — the real service returns
-    // early, before the file and before the row.
-    if (opts.refusesCreate) return false;
-    // Mirror production: the real service stores each schedule under
-    // `slugify(req.name)` and upserts by file path (slug + scope), so a manifest
-    // that declares "Inbox Tick" lands as "inbox-tick" and re-creating it is
-    // idempotent rather than a duplicate.
-    const name = slugify(req.name);
-    const agentId = req.target === 'global' ? null : req.target;
-    const entry: FakeSchedule = {
-      name,
-      agentId,
-      enabled: req.enabled ?? true,
-      shapeOrigin: origin?.shape ?? null,
-    };
-    const existing = schedules.find((s) => s.name === name && s.agentId === agentId);
-    if (existing) Object.assign(existing, entry);
-    else schedules.push(entry);
-    // The real service answers `false` when the target name on disk belongs to
-    // somebody else's skill; this fake has no disk, so it always succeeds.
-    return true;
-  });
+  const createSchedule = vi.fn(
+    async (req: CreateTaskRequest, origin?: { shape: string }): Promise<ScheduleWriteOutcome> => {
+      // A refusal writes NOTHING and records nothing — the real service returns
+      // early, before the file and before the row.
+      if (opts.refusesCreate) {
+        return opts.refusesCreate === 'schedules-disabled'
+          ? { created: false, reason: 'schedules-disabled' }
+          : { created: false, reason: opts.refusesCreate, targetDir: '/skills/inbox-tick' };
+      }
+      // Mirror production: the real service stores each schedule under
+      // `slugify(req.name)` and upserts by file path (slug + scope), so a manifest
+      // that declares "Inbox Tick" lands as "inbox-tick" and re-creating it is
+      // idempotent rather than a duplicate.
+      const name = slugify(req.name);
+      const agentId = req.target === 'global' ? null : req.target;
+      const entry: FakeSchedule = {
+        name,
+        agentId,
+        enabled: req.enabled ?? true,
+        shapeOrigin: origin?.shape ?? null,
+      };
+      const existing = schedules.find((s) => s.name === name && s.agentId === agentId);
+      if (existing) Object.assign(existing, entry);
+      else schedules.push(entry);
+      // The real service refuses when something it does not own sits at the
+      // target name on disk; this fake has no disk, so it always succeeds.
+      return { created: true };
+    }
+  );
   const rebindSchedule = vi.fn(
     async (name: string, rebind: { agentId: string; enabled: boolean }) => {
       const existing = schedules.find((s) => s.name === name);
@@ -733,7 +741,7 @@ describe('applyShape', () => {
     const shared = makeDeps({
       manifest: shapeWithSchedule({ permissionMode: 'acceptEdits', startEnabled: true }),
       registeredAgents: [LINEAR_TENDER_AGENT],
-      refusesCreate: true,
+      refusesCreate: 'occupied',
     });
 
     const result = await applyShape('s', shared.deps);
@@ -747,6 +755,46 @@ describe('applyShape', () => {
     expect(result.ok && result.applied.schedulesCreated).toEqual([]);
     // Nor recorded as existing, which is what the rest of the apply reads.
     expect(shared.schedules).toEqual([]);
+  });
+
+  it('says which folder is in the way when an empty directory holds the name', async () => {
+    // An empty directory used to be refused in a log line nobody reads, so the
+    // apply came back clean and the schedule simply never existed — on every
+    // apply, forever (DOR-1524). Each refusal now names what is actually there,
+    // because "something else has a skill called inbox-tick" sent people looking
+    // for a file that was not there.
+    const shared = makeDeps({
+      manifest: shapeWithSchedule({ permissionMode: 'acceptEdits', startEnabled: true }),
+      registeredAgents: [LINEAR_TENDER_AGENT],
+      refusesCreate: 'empty-directory',
+    });
+
+    const result = await applyShape('s', shared.deps);
+
+    const warning = result.warnings.find((w) => w.startsWith("Schedule 'inbox-tick' was not"));
+    expect(warning).toContain('empty folder');
+    expect(warning).toContain('/skills/inbox-tick');
+    // Not the words for the other refusal: a person told the wrong thing is in
+    // the way looks in the wrong place.
+    expect(warning).not.toContain('already has a skill');
+    expect(result.ok && result.applied.schedulesCreated).toEqual([]);
+  });
+
+  it('does not blame a skill collision when schedules are turned off entirely', async () => {
+    // The no-op service DorkOS falls back to when Tasks is disabled refuses
+    // every write. It has no disk and no collision to report, and saying one
+    // exists would be a plain untruth.
+    const shared = makeDeps({
+      manifest: shapeWithSchedule({ permissionMode: 'acceptEdits', startEnabled: true }),
+      registeredAgents: [LINEAR_TENDER_AGENT],
+      refusesCreate: 'schedules-disabled',
+    });
+
+    const result = await applyShape('s', shared.deps);
+
+    expect(result.warnings).toContainEqual(
+      "Schedule 'inbox-tick' was not created: scheduled tasks are turned off in this install."
+    );
   });
 
   it('tells the author when a manifest still carries the retired startDisabled key', async () => {

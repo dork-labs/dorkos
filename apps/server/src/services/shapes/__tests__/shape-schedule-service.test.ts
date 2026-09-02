@@ -25,6 +25,7 @@ import { TaskStore } from '../../tasks/task-store.js';
 import { TaskRegistrar, type SchedulerRegistrationTarget } from '../../tasks/task-registrar.js';
 import { readRawFrontmatter } from '@dorkos/skills/parser';
 import { ShapeScheduleService } from '../shape-schedule-service.js';
+import { SCHEDULE_RECEIPT_FILENAME } from '../schedule-write-receipt.js';
 
 // Wraps the real parser so every existing test in this file keeps exercising
 // the genuine read-your-own-write round trip; only the fallback-path test
@@ -248,11 +249,11 @@ describe('ShapeScheduleService.rebindSchedule (integration)', () => {
     await fs.writeFile(path.join(skillDir, 'SKILL.md'), mine, 'utf-8');
     await fs.writeFile(path.join(skillDir, 'reference.md'), 'notes I wrote', 'utf-8');
 
-    const created = await service.createSchedule(tick('inbox-tick', 'agent-tender'), {
+    const outcome = await service.createSchedule(tick('inbox-tick', 'agent-tender'), {
       shape: 'linear-ops',
     });
 
-    expect(created).toBe(false);
+    expect(outcome).toEqual({ created: false, reason: 'occupied', targetDir: skillDir });
     // Untouched, both files.
     expect(await fs.readFile(path.join(skillDir, 'SKILL.md'), 'utf-8')).toBe(mine);
     expect(await fs.readFile(path.join(skillDir, 'reference.md'), 'utf-8')).toBe('notes I wrote');
@@ -289,11 +290,15 @@ describe('ShapeScheduleService.rebindSchedule (integration)', () => {
     await fs.mkdir(path.join(agentDir, '.agents', 'skills'), { recursive: true });
     await fs.symlink(packageSkill, path.join(agentDir, '.agents', 'skills', 'inbox-tick'));
 
-    const created = await service.createSchedule(tick('inbox-tick', 'agent-tender'), {
+    const outcome = await service.createSchedule(tick('inbox-tick', 'agent-tender'), {
       shape: 'linear-ops',
     });
 
-    expect(created).toBe(false);
+    expect(outcome).toEqual({
+      created: false,
+      reason: 'symlink',
+      targetDir: path.join(agentDir, '.agents', 'skills', 'inbox-tick'),
+    });
     expect(await fs.readFile(path.join(packageSkill, 'SKILL.md'), 'utf-8')).toBe(shipped);
     expect(store.getTasks()).toHaveLength(0);
   });
@@ -306,7 +311,7 @@ describe('ShapeScheduleService.rebindSchedule (integration)', () => {
       { shape: 'linear-ops' }
     );
 
-    expect(again).toBe(true);
+    expect(again).toEqual({ created: true });
     expect(store.getTasks()).toHaveLength(1);
     expect(store.getTasks()[0].prompt).toBe('run one tick, differently');
   });
@@ -314,11 +319,15 @@ describe('ShapeScheduleService.rebindSchedule (integration)', () => {
   it('refuses a schedule another Shape already owns by that name', async () => {
     await service.createSchedule(tick('inbox-tick', 'agent-tender'), { shape: 'other-shape' });
 
-    const created = await service.createSchedule(tick('inbox-tick', 'agent-tender'), {
+    const outcome = await service.createSchedule(tick('inbox-tick', 'agent-tender'), {
       shape: 'linear-ops',
     });
 
-    expect(created).toBe(false);
+    expect(outcome).toEqual({
+      created: false,
+      reason: 'occupied',
+      targetDir: path.join(agentDir, '.agents', 'skills', 'inbox-tick'),
+    });
     expect(store.getTasks()).toHaveLength(1);
   });
 
@@ -495,7 +504,7 @@ describe('ShapeScheduleService.createSchedule — the fallback path (DOR-823)', 
     };
     const created = await service.createSchedule(request, { shape: 'linear-ops' });
 
-    expect(created).toBe(true);
+    expect(created).toEqual({ created: true });
     const row = store.getTasks().find((t) => t.name === request.name);
     // Not 'bypassPermissions': a package-declared schedule cannot self-elevate,
     // and a parse failure on the fallback path is not an exemption from that.
@@ -628,5 +637,250 @@ describe('ShapeScheduleService.deleteSchedulesForShape (integration)', () => {
     expect(removed).toEqual([]);
     expect(store.getTasks().map((t) => t.name)).toEqual(['inbox-tick']);
     expect(await exists(path.join(dorkHome, 'skills', 'inbox-tick', 'SKILL.md'))).toBe(true);
+  });
+});
+
+describe('ShapeScheduleService — ownership is the write receipt, not the marker (DOR-1524)', () => {
+  let db: Db;
+  let store: TaskStore;
+  let dorkHome: string;
+  let agentDir: string;
+  let logger: Logger;
+  let service: ShapeScheduleService;
+
+  /** Where the receipt lives for this test's data directory. */
+  function receiptPath(): string {
+    return path.join(dorkHome, SCHEDULE_RECEIPT_FILENAME);
+  }
+
+  /** The receipt's entries, or `[]` when no receipt has been written yet. */
+  async function readReceipt(): Promise<{ dir: string; shape: string }[]> {
+    try {
+      return JSON.parse(await fs.readFile(receiptPath(), 'utf-8')).entries;
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * A schedule file carrying a Shape's frontmatter marker, written by hand — a
+   * copy a person made, or a schedule an older DorkOS left behind. Nothing about
+   * writing it goes through the service, which is the point: no receipt entry.
+   */
+  async function writeMarkedSkill(skillsDir: string, slug: string, body: string): Promise<string> {
+    const dir = path.join(skillsDir, slug);
+    await fs.mkdir(dir, { recursive: true });
+    const file = path.join(dir, 'SKILL.md');
+    await fs.writeFile(
+      file,
+      [
+        '---',
+        `name: ${slug}`,
+        'description: a schedule with a Shape marker in it',
+        'schedule:',
+        "  cron: '*/15 * * * *'",
+        '  origin: shape',
+        '  shape: linear-ops',
+        '---',
+        body,
+      ].join('\n'),
+      'utf-8'
+    );
+    return fs.realpath(file);
+  }
+
+  /** Put a hand-written schedule file into the task store, the way a sync would. */
+  function rowFor(filePath: string, name: string): void {
+    store.createTask({
+      name,
+      description: 'a schedule with a Shape marker in it',
+      prompt: 'run one tick',
+      cron: '*/15 * * * *',
+      timezone: null,
+      agentId: null,
+      enabled: false,
+      maxRuntime: null,
+      permissionMode: 'acceptEdits',
+      filePath,
+    });
+  }
+
+  beforeEach(async () => {
+    db = createTestDb();
+    store = new TaskStore(db);
+    dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'dork-shape-receipt-'));
+    agentDir = path.join(dorkHome, 'agents', 'linear-tender');
+    await fs.mkdir(agentDir, { recursive: true });
+    logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      debug: vi.fn(),
+      error: vi.fn(),
+    } as unknown as Logger;
+    service = new ShapeScheduleService({
+      taskStore: store,
+      registrar: new TaskRegistrar({
+        store,
+        scheduler: { isStarted: true, registerTask: vi.fn(() => true), unregisterTask: vi.fn() },
+      }),
+      meshCore: {
+        getProjectPath: (id: string) => (id === 'agent-tender' ? agentDir : undefined),
+      } as unknown as MeshCore,
+      dorkHome,
+      logger,
+    });
+  });
+
+  afterEach(async () => {
+    await fs.rm(dorkHome, { recursive: true, force: true });
+  });
+
+  it('records the directory it wrote, and forgets it when the schedule is torn down', async () => {
+    await service.createSchedule(tick('inbox-tick', 'global'), { shape: 'linear-ops' });
+
+    const written = await fs.realpath(path.join(dorkHome, 'skills', 'inbox-tick'));
+    expect(await readReceipt()).toEqual([
+      expect.objectContaining({ dir: written, shape: 'linear-ops' }),
+    ]);
+
+    await service.deleteSchedulesForShape('linear-ops');
+
+    // Forgotten, and that is load-bearing rather than tidy: the next thing at
+    // this name belongs to whoever puts it there.
+    expect(await readReceipt()).toEqual([]);
+    await fs.mkdir(path.join(dorkHome, 'skills', 'inbox-tick'), { recursive: true });
+    await fs.writeFile(
+      path.join(dorkHome, 'skills', 'inbox-tick', 'SKILL.md'),
+      '---\nname: inbox-tick\ndescription: mine now\n---\nMine.',
+      'utf-8'
+    );
+    const again = await service.createSchedule(tick('inbox-tick', 'global'), {
+      shape: 'linear-ops',
+    });
+    expect(again.created).toBe(false);
+  });
+
+  it('does not write over a copy of its own schedule that a person adapted', async () => {
+    // THE CASE THE MARKER CANNOT ANSWER. A marker travels with the bytes, so a
+    // person who copies a Shape's schedule as a starting point and keeps the
+    // frontmatter has a file that SAYS it is the Shape's. It is not: no apply
+    // ever wrote it, so no receipt names it, so the Shape keeps its hands off.
+    // Under the old marker check this file was overwritten without a word.
+    await service.listSchedules(); // the receipt exists; adoption is behind us
+    const skillsDir = path.join(agentDir, '.agents', 'skills');
+    const copied = await writeMarkedSkill(skillsDir, 'inbox-tick', 'My own words.');
+    await fs.writeFile(path.join(skillsDir, 'inbox-tick', 'reference.md'), 'my notes', 'utf-8');
+    const before = await fs.readFile(copied, 'utf-8');
+    expect(before).toContain('shape: linear-ops');
+
+    const outcome = await service.createSchedule(tick('inbox-tick', 'agent-tender'), {
+      shape: 'linear-ops',
+    });
+
+    expect(outcome).toEqual({
+      created: false,
+      reason: 'occupied',
+      targetDir: path.join(skillsDir, 'inbox-tick'),
+    });
+    expect(await fs.readFile(copied, 'utf-8')).toBe(before);
+    expect(await fs.readFile(path.join(skillsDir, 'inbox-tick', 'reference.md'), 'utf-8')).toBe(
+      'my notes'
+    );
+  });
+
+  it("does not delete a person's adapted copy when the Shape is torn down", async () => {
+    // The other half of the same case, and the worse one: teardown removes the
+    // whole directory. The Shape's own schedule goes; the copy — same marker,
+    // different path, no receipt entry — stays, reference files and all.
+    await service.createSchedule(tick('inbox-tick', 'global'), { shape: 'linear-ops' });
+    const skillsDir = path.join(agentDir, '.agents', 'skills');
+    const copied = await writeMarkedSkill(skillsDir, 'my-own-tick', 'My own words.');
+    await fs.writeFile(path.join(skillsDir, 'my-own-tick', 'reference.md'), 'my notes', 'utf-8');
+    rowFor(copied, 'my-own-tick');
+
+    const removed = await service.deleteSchedulesForShape('linear-ops');
+
+    expect(removed).toEqual(['inbox-tick']);
+    expect(await exists(path.join(dorkHome, 'skills', 'inbox-tick', 'SKILL.md'))).toBe(false);
+    // Still there, still saying `shape: linear-ops` — which is exactly why the
+    // marker could not have been what saved it.
+    expect(await fs.readFile(copied, 'utf-8')).toContain('shape: linear-ops');
+    expect(await fs.readFile(path.join(skillsDir, 'my-own-tick', 'reference.md'), 'utf-8')).toBe(
+      'my notes'
+    );
+    expect(store.getTasks().map((t) => t.name)).toEqual(['my-own-tick']);
+  });
+
+  it('refuses an empty directory with a reason, and writes once it is cleared', async () => {
+    // An empty directory has no SKILL.md, so it had no marker, so it read as
+    // somebody else's forever — refused on every apply with nothing but a log
+    // line to explain it. It is still refused (DorkOS did not put it there), but
+    // now it says which folder is in the way, and clearing the folder is all it
+    // takes.
+    const targetDir = path.join(agentDir, '.agents', 'skills', 'inbox-tick');
+    await fs.mkdir(targetDir, { recursive: true });
+
+    const refused = await service.createSchedule(tick('inbox-tick', 'agent-tender'), {
+      shape: 'linear-ops',
+    });
+
+    expect(refused).toEqual({ created: false, reason: 'empty-directory', targetDir });
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('empty directory'));
+    expect(store.getTasks()).toHaveLength(0);
+
+    await fs.rmdir(targetDir);
+    const created = await service.createSchedule(tick('inbox-tick', 'agent-tender'), {
+      shape: 'linear-ops',
+    });
+
+    expect(created).toEqual({ created: true });
+    expect(await exists(path.join(targetDir, 'SKILL.md'))).toBe(true);
+  });
+
+  it('adopts a marker-only install once, so an uninstall still tears its timers down', async () => {
+    // An install that predates the receipt has Shape schedules on disk and
+    // nothing written down about them. Their markers are the only evidence
+    // there is — and the evidence the old code acted on — so the first
+    // operation seeds the receipt from them and nothing changes for that user.
+    const legacy = await writeMarkedSkill(path.join(dorkHome, 'skills'), 'legacy-tick', 'Tick.');
+    rowFor(legacy, 'legacy-tick');
+    expect(await exists(receiptPath())).toBe(false);
+
+    const removed = await service.deleteSchedulesForShape('linear-ops');
+
+    expect(removed).toEqual(['legacy-tick']);
+    expect(await exists(legacy)).toBe(false);
+    // The receipt now exists, which is what records that adoption already ran.
+    expect(await exists(receiptPath())).toBe(true);
+  });
+
+  it('grants nothing to a marker written after the receipt exists', async () => {
+    // The trust set closes at adoption. A file that appears afterwards claiming
+    // to be a Shape's — a copy, or an outright forgery — is not the Shape's, and
+    // no teardown touches it.
+    await service.listSchedules(); // any operation adopts and writes the receipt
+    expect(await exists(receiptPath())).toBe(true);
+
+    const forged = await writeMarkedSkill(path.join(dorkHome, 'skills'), 'forged-tick', 'Mine.');
+    rowFor(forged, 'forged-tick');
+
+    expect(await service.deleteSchedulesForShape('linear-ops')).toEqual([]);
+    expect(await exists(forged)).toBe(true);
+    expect(store.getTasks().map((t) => t.name)).toEqual(['forged-tick']);
+  });
+
+  it('re-binds only what it wrote: a marked copy in the global root is left alone', async () => {
+    // `rebindSchedule` moves a schedule out of the global root and into an
+    // agent's — a write AND a delete. Gated on the receipt for the same reason
+    // the other two are.
+    await service.listSchedules(); // the receipt exists; adoption is behind us
+    const copied = await writeMarkedSkill(path.join(dorkHome, 'skills'), 'copied-tick', 'Mine.');
+    rowFor(copied, 'copied-tick');
+
+    await service.rebindSchedule('copied-tick', { agentId: 'agent-tender', enabled: true });
+
+    expect(await exists(copied)).toBe(true);
+    expect(await exists(path.join(agentDir, '.agents', 'skills', 'copied-tick'))).toBe(false);
+    expect(store.getTasks()[0].agentId).toBeNull();
   });
 });

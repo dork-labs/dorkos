@@ -75,7 +75,7 @@ function makeScheduleService(initial: ExistingSchedule[]) {
     rebindSchedule,
     service: {
       listSchedules: () => schedules.map((s) => ({ ...s })),
-      createSchedule: vi.fn(async () => true),
+      createSchedule: vi.fn(async () => ({ created: true }) as const),
       rebindSchedule,
       deleteSchedulesForShape: vi.fn(async () => []),
     },

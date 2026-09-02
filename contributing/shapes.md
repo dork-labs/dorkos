@@ -2,7 +2,7 @@
 
 ## Overview
 
-A Shape is the fifth marketplace package type (`type: 'shape'`, DOR-355): a "place" that composes existing extensions, agents, schedules, and workspace chrome into one installable unit. This guide covers the Shape lifecycle that spans two service domains — the marketplace install/uninstall/update flows and the dedicated `services/shapes/` apply engine — and the invariants that keep it safe, above all the provenance rule that stops a name collision from ever deleting a user's own schedule.
+A Shape is the fifth marketplace package type (`type: 'shape'`, DOR-355): a "place" that composes existing extensions, agents, schedules, and workspace chrome into one installable unit. This guide covers the Shape lifecycle that spans two service domains — the marketplace install/uninstall/update flows and the dedicated `services/shapes/` apply engine — and the invariants that keep it safe, above all the write-receipt rule that stops a Shape from ever overwriting or deleting a file it did not write.
 
 The one idea that explains most of the design: **installing a Shape is not applying it.** Install stages files; apply is the separate, person-scoped act that turns the place on. Every seam below follows from that split.
 
@@ -86,7 +86,9 @@ A Shape holds agents by _affinity, not ownership_. Each `agents[]` entry is reso
 
 This is the safety-critical part of Shapes. Read it before touching schedule code.
 
-A Shape schedule is an ordinary scheduled task (`services/tasks/`), created file-first by `ShapeScheduleService` (`shape-schedule-service.ts`) exactly like the tasks router does. It is stored under `slugify(name)` in the global skills root `{dorkHome}/skills/<slug>/` or, once bound, the agent's `{projectPath}/.agents/skills/<slug>/` — an ordinary skill file with a `schedule:` block, discovered by the same watcher as every other schedule (DOR-1486). Because it arrives through discovery, it **parks for approval** rather than arming itself: applying a Shape is a person's decision to install an arrangement, not their decision to start an unattended job on a clock. The one thing that makes it a _Shape_ schedule is a **provenance marker** stamped into its `schedule:` block at creation:
+A Shape schedule is an ordinary scheduled task (`services/tasks/`), created file-first by `ShapeScheduleService` (`shape-schedule-service.ts`) exactly like the tasks router does. It is stored under `slugify(name)` in the global skills root `{dorkHome}/skills/<slug>/` or, once bound, the agent's `{projectPath}/.agents/skills/<slug>/` — an ordinary skill file with a `schedule:` block, discovered by the same watcher as every other schedule (DOR-1486). Because it arrives through discovery, it **parks for approval** rather than arming itself: applying a Shape is a person's decision to install an arrangement, not their decision to start an unattended job on a clock.
+
+The file carries a **provenance marker** in its `schedule:` block, so anybody who opens it can see where it came from:
 
 ```yaml
 schedule:
@@ -94,27 +96,37 @@ schedule:
   shape: <shape-name>
 ```
 
-`readShapeOrigin` reads that marker and **fails closed**: any read failure, parse failure, or missing marker returns `null`, which every caller treats as "not a Shape schedule — do not touch."
+That marker is a **label, not a claim**. Ownership — may this apply overwrite that directory, may this teardown delete it, may this schedule be re-homed — is answered from the **write receipt** (`schedule-write-receipt.ts`, DOR-1524): a JSON index at `{dorkHome}/shape-schedule-receipts.json` recording every schedule directory a Shape's apply actually wrote, and which Shape wrote it. `ownerOf(dir)` **fails closed**: a directory the receipt does not name answers `null`, which every caller reads as "not a Shape's — do not touch." A receipt entry is dropped the moment its schedule is torn down, so the name is free again.
 
-### Why the marker, and not the name
+### Why the receipt, and not the marker (and never the name)
 
-A user can create their own global schedule with a colliding name through the tasks API. So **name + unbound is never proof a schedule belongs to a Shape.** Both mutating operations gate on the marker naming _this exact Shape_:
+A user can create their own global schedule with a colliding name through the tasks API, so **name + unbound is never proof a schedule belongs to a Shape.** But the marker is not proof either, because a marker travels with the bytes:
 
-- **Re-bind** (`rebindSchedule`) refuses to move a schedule with no marker, or one bound already, or one whose agent has no project path.
-- **Teardown** (`deleteSchedulesForShape`) skips any schedule whose marker is missing, unreadable, or names a different Shape.
+- Copy a Shape's schedule as a starting point for your own, keep the frontmatter, adapt the prompt — and a marker-gated teardown deletes your directory, because your file says it belongs to that Shape. It does not: no apply ever wrote it.
+- An **empty directory** at the target name has no file, so it has no marker, so a marker-gated apply read it as somebody else's forever — refused on every run, with only a log line to explain it.
 
-The invariant in one line: **a name collision must never delete or hijack a user's schedule.** Every change to re-bind or teardown must preserve it, and the tests below assert it directly.
+What a marker cannot express is the fact the destructive operations need: _this apply wrote this path_. So all three mutating operations gate on the receipt naming _this exact Shape_:
+
+- **Overwrite** (`claimTarget`) writes only into a directory the receipt names as this Shape's, or one that is not there at all. A symlink is refused first and unconditionally (writing through a `pkg__name` link would edit an installed package's own checkout). An empty directory is refused too — DorkOS did not put it there — but the refusal now reaches the person as an apply warning naming the folder, so clearing it is a ten-second job rather than a mystery.
+- **Re-bind** (`rebindSchedule`) refuses to move a schedule the receipt does not name, or one bound already, or one whose agent has no project path.
+- **Teardown** (`deleteSchedulesForShape`) skips any schedule whose directory the receipt does not name for this Shape.
+
+The invariant in one line: **DorkOS overwrites and deletes only what DorkOS wrote.** Every change to create, re-bind, or teardown must preserve it, and the tests below assert it directly.
+
+### Installs that predate the receipt
+
+The receipt did not exist before DOR-1524, so an upgrading install has Shape schedules on disk with nothing written down about them. On the first Shape operation after the upgrade, `ensureAdopted` seeds the receipt from the frontmatter markers of the schedules in the task store — the same evidence the old code acted on, so nothing changes for that user and an uninstall still tears their timers down. The receipt is then written **even if nothing was adopted**, because its existence is what records that adoption already happened. From that moment no marker ever grants ownership again: a file that appears afterwards claiming to be a Shape's is not, whatever its frontmatter says. A pre-upgrade copy stays exposed for one adoption pass, which is exactly the exposure the old code gave it anyway.
 
 ### The global → agent flip
 
 A Shape schedule bound to an agent that does not exist yet is created **global + disabled** (a warning is recorded). It flips to agent-bound + enabled through one of two seams:
 
-1. **Re-apply.** On the next `applyShape`, step 5 finds the existing global copy, confirms the agent now exists and the marker matches this Shape, and re-binds it.
-2. **Agent creation.** The user should not have to re-apply. `rebindShapeSchedulesForAgent` (`rebind-schedules.ts`), wired at the agent-create/register seam in the routes/index layer, scans installed Shapes for schedules waiting on the new agent (matched by `matchName` + marker + still-global) and flips them.
+1. **Re-apply.** On the next `applyShape`, step 5 finds the existing global copy, confirms the agent now exists and the receipt names this Shape, and re-binds it.
+2. **Agent creation.** The user should not have to re-apply. `rebindShapeSchedulesForAgent` (`rebind-schedules.ts`), wired at the agent-create/register seam in the routes/index layer, scans installed Shapes for schedules waiting on the new agent (matched by `matchName` + receipt + still-global) and flips them.
 
 Existence is checked by schedule **name (the slug) across every scope — never by name + target.** A Shape schedule's target legitimately flips `global → agentId` between applies, so a per-target check would miss the earlier global copy and create a duplicate. `createSchedule`/`listSchedules` speak slugs, so apply matches on `slugify(schedule.name)`; a non-kebab manifest name ("Inbox Tick" → "inbox-tick") that keyed off the raw name would miss its stored copy and the flip would silently never fire (fixed in #372).
 
-`rebindSchedule` physically **moves** the file from the global skills root into the agent's `.agents/skills/` (on-disk location is what makes a schedule agent-owned): write the agent-scoped copy first, then tear down the global one. The move is deliberately not atomic — if the process dies between the two writes, both copies exist under one name, but the stale one is global + disabled (never fires), the reconciler re-syncs both as-is, and the next apply/agent-create sees the agent-bound copy first and no-ops. Worst case is a leftover disabled global schedule the user can delete.
+`rebindSchedule` physically **moves** the file from the global skills root into the agent's `.agents/skills/` (on-disk location is what makes a schedule agent-owned): write the agent-scoped copy first — receipted at its new path, so ownership travels with it — then tear down the global one. The move is deliberately not atomic — if the process dies between the two writes, both copies exist under one name, but the stale one is global + disabled (never fires), the reconciler re-syncs both as-is, and the next apply/agent-create sees the agent-bound copy first and no-ops. Worst case is a leftover disabled global schedule the user can delete.
 
 ## Extension swap semantics and the manual-enable caveat
 
@@ -126,13 +138,13 @@ Applying a Shape is a **swap, not an accumulation** (`apply-shape.ts` step 2a). 
 
 `UpdateFlow` (`flows/update.ts`) is advisory by default (ADR-0233). With `apply: true` it delegates to the installer's `update()`, which runs uninstall-without-purge → reinstall. The crucial detail for Shapes: that internal uninstall sets **`deactivateShape: false`**, which suppresses `teardownShape` entirely. During a version replace the schedules are **not** deleted, the extensions stay on, and the active pointer is preserved — because the same Shape lands back at the same path moments later. That flag is installer-only; the HTTP uninstall body schema does not expose it, so an external uninstall always gets the honest clear-on-remove behavior.
 
-Reconciliation of a renamed/dropped schedule therefore happens at the next **apply**, not at update: `applyShape` step 6 calls `deleteSchedulesForShape(name, declaredScheduleNames)` where `declaredScheduleNames` is the set of currently-declared names in **slug** form. Provenance-marked schedules whose slug is not in that set are swept (across global + agent-bound scopes); the just-created/re-bound names are kept. Match on the slug, not the raw name, or the sweep would delete the very schedule this apply just created.
+Reconciliation of a renamed/dropped schedule therefore happens at the next **apply**, not at update: `applyShape` step 6 calls `deleteSchedulesForShape(name, declaredScheduleNames)` where `declaredScheduleNames` is the set of currently-declared names in **slug** form. Receipted schedules whose slug is not in that set are swept (across global + agent-bound scopes); the just-created/re-bound names are kept. Match on the slug, not the raw name, or the sweep would delete the very schedule this apply just created.
 
 ## Uninstall teardown
 
 `UninstallFlow.teardownShape` (`flows/uninstall.ts`) runs when a `type: 'shape'` package is removed and `deactivateShape !== false`:
 
-1. **Delete the Shape's schedules — always, active or not.** `deleteSchedulesForShape(shapeName)` with no `keepNames` removes every provenance-marked schedule across scopes, so a Shape's tick never keeps firing after the Shape is gone.
+1. **Delete the Shape's schedules — always, active or not.** `deleteSchedulesForShape(shapeName)` with no `keepNames` removes every directory the receipt names for this Shape, across scopes, so a Shape's tick never keeps firing after the Shape is gone.
 2. **If this is the active Shape:** disable the extensions it turned on (`manifest.activates`, the reverse of apply's enable step) and `clearActiveShape()` so the pointer never dangles at a deleted install.
 
 A **non-active** Shape's uninstall deletes its schedules but leaves extensions alone — they were never turned on by this Shape's apply, and the active Shape may depend on them. Both Shape-aware hooks (`shapeScheduleTeardown`, `shapeDeactivator`) are optional on the deps; a Shape-unaware caller simply skips those steps.
@@ -157,11 +169,13 @@ await extensionManager.enable(id); // in install-shape.ts activate()
 // ✅ Install stages only. Extensions are enabled by applyShape, so installing
 //    several Shapes never piles their extensions on at once.
 
-// ❌ Deciding a schedule is a Shape's by its name (or name + unbound).
+// ❌ Deciding a schedule is a Shape's by its name, or by the marker in its file.
 if (task.name === schedule.name && task.agentId === null) delete task;
-// ✅ Gate on the provenance marker for THIS shape. A user can create a global
-//    schedule with a colliding name; name is never proof of ownership.
-const origin = await readShapeOrigin(task.filePath);
+const origin = await readShapeOrigin(task.filePath); // a copy carries this too
+// ✅ Gate on the write receipt for THIS shape. A user can create a global
+//    schedule with a colliding name, and can copy a Shape's schedule file
+//    frontmatter and all; only the receipt records what DorkOS actually wrote.
+const origin = await receipts.ownerOf(path.dirname(task.filePath));
 if (origin === shapeName) teardown(task);
 
 // ❌ Checking schedule existence by name + target.
@@ -180,17 +194,18 @@ for (const id of manifest.activates) await extensionManager.disable(id);
 
 Every seam has a co-located suite. The pure engines run against fakes; the flows run against a temp `dorkHome`.
 
-| Suite                                                                           | Covers                                                                                                         |
-| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `apps/server/src/services/shapes/__tests__/apply-shape.test.ts`                 | Apply: fatal-vs-degrade, extension swap, schedule create/re-bind/reconcile, offers, active write, slug keying. |
-| `apps/server/src/services/shapes/__tests__/shape-schedule-service.test.ts`      | File-first create, provenance stamping, `readShapeOrigin` fail-closed, re-bind move, teardown.                 |
-| `apps/server/src/services/shapes/__tests__/rebind-schedules.test.ts`            | Agent-create seam: matchName + marker + still-global gating; user/other-Shape schedules untouched.             |
-| `apps/server/src/services/marketplace/__tests__/flows/install-shape.test.ts`    | Stage-not-activate; no extension enable at install.                                                            |
-| `apps/server/src/services/marketplace/__tests__/flows/uninstall.test.ts`        | Teardown: schedules always, extensions + active-clear only when active, `deactivateShape: false` suppression.  |
-| `apps/server/src/services/marketplace/__tests__/flows/update.test.ts`           | Advisory-by-default; apply → replace path.                                                                     |
-| `apps/server/src/routes/__tests__/shapes.test.ts`                               | Route wiring, slug validation, 404 mapping.                                                                    |
-| `apps/client/src/layers/features/shapes/__tests__/ShapeSwitcherDialog.test.tsx` | Single apply surface, arrival offer + schedule-summary line, focus highlight, degradation notes.               |
-| `apps/client/src/layers/entities/shapes/__tests__/apply-shape-*.test.ts`        | The reusable apply action + client-side layout apply.                                                          |
+| Suite                                                                           | Covers                                                                                                          |
+| ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `apps/server/src/services/shapes/__tests__/apply-shape.test.ts`                 | Apply: fatal-vs-degrade, extension swap, schedule create/re-bind/reconcile, offers, active write, slug keying.  |
+| `apps/server/src/services/shapes/__tests__/shape-schedule-service.test.ts`      | File-first create, receipt-gated overwrite/teardown, adapted-copy survival, empty-dir refusal, re-bind move.    |
+| `apps/server/src/services/shapes/__tests__/schedule-write-receipt.test.ts`      | The receipt file: durability across restart, path-spelling matches, concurrent writes, unreadable-file failure. |
+| `apps/server/src/services/shapes/__tests__/rebind-schedules.test.ts`            | Agent-create seam: matchName + receipt + still-global gating; user/other-Shape schedules untouched.             |
+| `apps/server/src/services/marketplace/__tests__/flows/install-shape.test.ts`    | Stage-not-activate; no extension enable at install.                                                             |
+| `apps/server/src/services/marketplace/__tests__/flows/uninstall.test.ts`        | Teardown: schedules always, extensions + active-clear only when active, `deactivateShape: false` suppression.   |
+| `apps/server/src/services/marketplace/__tests__/flows/update.test.ts`           | Advisory-by-default; apply → replace path.                                                                      |
+| `apps/server/src/routes/__tests__/shapes.test.ts`                               | Route wiring, slug validation, 404 mapping.                                                                     |
+| `apps/client/src/layers/features/shapes/__tests__/ShapeSwitcherDialog.test.tsx` | Single apply surface, arrival offer + schedule-summary line, focus highlight, degradation notes.                |
+| `apps/client/src/layers/entities/shapes/__tests__/apply-shape-*.test.ts`        | The reusable apply action + client-side layout apply.                                                           |
 
 ```bash
 pnpm vitest run apps/server/src/services/shapes                         # apply + schedule + re-bind

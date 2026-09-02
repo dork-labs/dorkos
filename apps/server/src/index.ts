@@ -2799,7 +2799,7 @@ async function start() {
         })
       : {
           listSchedules: () => [],
-          createSchedule: async () => false,
+          createSchedule: async () => ({ created: false, reason: 'schedules-disabled' }),
           rebindSchedule: async () => undefined,
           deleteSchedulesForShape: async () => [],
         };
