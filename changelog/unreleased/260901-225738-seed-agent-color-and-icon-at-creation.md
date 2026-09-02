@@ -2,6 +2,7 @@
 covers:
   - 'feat(server,shared,client,mesh): seed a color and an emoji face onto every new agent (DOR-949)'
   - 'fix(client,server,shared,mesh): let the seeded face reach the agents the app creates (DOR-949)'
+  - 'fix(client): one seeded face on the Appearance page, and an honest fragment (DOR-949)'
 ---
 
 ### Added
