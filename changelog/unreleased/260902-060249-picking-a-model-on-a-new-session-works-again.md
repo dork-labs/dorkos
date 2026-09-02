@@ -1,0 +1,8 @@
+---
+covers:
+  - 'fix(server,client,shared): let a new session take a model for the runtime you picked'
+---
+
+### Fixed
+
+- Picking a model on a brand-new session works again. We broke this in the last release: if you started a session, switched it from Claude Code to OpenCode, and then chose a model, DorkOS refused with "The claude-code runtime cannot run model ..." — naming a runtime you had not picked. A new session doesn't belong to any runtime until you send your first message, and the check was guessing which one it would be, then holding you to the guess. It now checks against the runtime you actually chose, and when nobody has said yet, it saves your choice instead of refusing it. Picking a model an installed runtime genuinely can't run is still caught, as before

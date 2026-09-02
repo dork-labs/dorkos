@@ -3848,6 +3848,9 @@
           },
           "acknowledgedAutonomy": {
             "type": "boolean"
+          },
+          "runtime": {
+            "type": "string"
           }
         }
       },

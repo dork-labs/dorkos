@@ -450,6 +450,25 @@ export const UpdateSessionRequestSchema = SessionSettingsSchema.extend({
    * see `ui.autonomyAcknowledgedAt` for what this does and does not defend.
    */
   acknowledgedAutonomy: z.boolean().optional(),
+  /**
+   * The runtime the caller believes this session will run on — a HINT, never a
+   * binding.
+   *
+   * It exists for the one moment where the server cannot know the answer and
+   * the caller can: a session that has not sent its first message has no owner
+   * in `session_metadata`, so the server can only infer one. Somebody who has
+   * just picked OpenCode in the runtime chip and is now picking a model from
+   * OpenCode's menu knows better than that inference does, and this is how they
+   * say so — otherwise the model gate judges an OpenCode model against
+   * Claude Code's catalog and refuses it.
+   *
+   * **It cannot bind a session and cannot re-bind one.** Runtime ownership is
+   * first-write-wins and belongs to the first turn (ADR-0255); nothing on this
+   * route writes the `runtime` column. On a session that already has an owner
+   * this field is ignored outright — the owner is a fact, and a hint does not
+   * get to argue with it.
+   */
+  runtime: z.string().optional(),
 }).openapi('UpdateSessionRequest');
 
 export type UpdateSessionRequest = z.infer<typeof UpdateSessionRequestSchema>;
