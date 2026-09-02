@@ -59,14 +59,18 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   // History reconstructs from the DorkOS EventLog (no thread-read API), so the
   // platform persists it to the durable session-event store (DOR-189).
   logBackedHistory: true,
-  // Honest, and half of it is not fixable here. `@openai/codex-sdk`'s
-  // `ThreadItem` union carries no image OUTPUT item at all, so Codex cannot
-  // stream a generated picture through this SDK however the adapter is written
-  // (`local_image` appears only on `UserInput` — the input direction). Its one
-  // real media path is an MCP tool result, and `extractMcpResultText`
-  // (`event-mapper.ts`) filters those to `block.type === 'text'` and drops the
-  // image. That half is fixable on the seam this declaration belongs to;
-  // `'none'` keeps it visible until it is (ADR 260901-135657).
+  // The FLOOR, not the answer: `CodexRuntime.getCapabilities` overrides it to
+  // `'attachments'` whenever the composition root handed the runtime a
+  // `SessionAttachmentStore`. Wired without one there is nowhere to put a
+  // picture, and `'none'` is then the truth.
+  //
+  // Half of the gap was never fixable here and still is not.
+  // `@openai/codex-sdk@0.147.0`'s `ThreadItem` union carries no image OUTPUT
+  // item at all, so Codex cannot stream a generated picture through this SDK
+  // however the adapter is written (`local_image` appears only on `UserInput` —
+  // the input direction). An MCP tool result is its ONE media path, and that
+  // half now works: `media-capture.ts` reads MCP `ImageContent` blocks that
+  // `extractMcpResultText` used to filter away (ADR 260901-135657, DOR-1664).
   mediaOutput: 'none',
   permissionModes: {
     supported: true,
