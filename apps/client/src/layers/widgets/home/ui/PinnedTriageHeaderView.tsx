@@ -363,9 +363,13 @@ export function PinnedTriageHeaderView({
   // here (`useScheduleApprovalCards`), so the count below stays above zero for
   // exactly as long as the card needs to say what happened.
   //
-  // Capability approvals are the one kind still exposed to it: `approvals`
-  // comes straight off the pending list with no equivalent hold. That is older
-  // than this change and out of its scope.
+  // **Capability approvals were the last kind exposed to it, and are not any
+  // more** (DOR-1411). Their host merges the still-settling ones into
+  // `approvals` the same way (`useApprovalCards`), so all three kinds now
+  // outlive the refetch that answers them. The brief overcount that buys — a
+  // held card is counted in the summary below for the beat it stays drawn — is
+  // the same trade the schedules make, and it never SAYS anything new: the
+  // sentence a reader was already hearing simply ends 0.6s later.
   const showsWaiting =
     approvals.length > 0 ||
     asks.length > 0 ||

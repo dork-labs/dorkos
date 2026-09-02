@@ -13,6 +13,7 @@ import {
   FailedRunDetailSheet,
   OfflineAgentDetailSheet,
 } from '@/layers/features/dashboard-attention';
+import { useApprovalCards } from '@/layers/features/approvals';
 import { useOpenNotification } from '@/layers/features/inbox';
 import { useScheduleApprovalCards } from '@/layers/features/schedule-approval';
 import { useMarkRead } from '@/layers/entities/notifications';
@@ -106,6 +107,11 @@ export function PinnedTriageHeader({
   // without it the group unmounts around its own receipt (see
   // `settling-approvals`).
   const shownSchedules = useScheduleApprovalCards(schedules);
+  // The same hold for the capability approvals, which were the last kind
+  // without one (DOR-1411): answering the last one drops it from the pending
+  // list on the next refetch, and the view's `approvals.length > 0` guard took
+  // the `AnimatePresence` down with it before the exit could run.
+  const shownApprovals = useApprovalCards(approvals);
 
   const closeDetail = useCallback(() => {
     void navigate({ to: '/', search: {} });
@@ -114,7 +120,7 @@ export function PinnedTriageHeader({
   return (
     <>
       <PinnedTriageHeaderView
-        approvals={approvals}
+        approvals={shownApprovals}
         asks={interactions}
         settlingAsks={settlingAsks}
         askAgentNames={askAgentNames}

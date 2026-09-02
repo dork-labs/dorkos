@@ -69,6 +69,7 @@ import {
   discardPendingRejections,
   discardSettlingSchedules,
 } from '@/layers/features/schedule-approval';
+import { discardSettlingApprovals } from '@/layers/features/approvals';
 import { InboxBell } from '../ui/InboxBell';
 
 /**
@@ -83,15 +84,22 @@ import { InboxBell } from '../ui/InboxBell';
  */
 function SettledProbe() {
   const { data: config } = useConfig();
-  const { isLoading } = usePendingApprovals();
+  const { approvals, isLoading } = usePendingApprovals();
   const { permissions } = useStandingPermissions();
   const { isLoading: inboxLoading } = useNotifications();
   return (
-    <span data-testid="settled">
-      {`${config ? 'cfg' : 'nocfg'}:${isLoading ? 'loading' : 'loaded'}:${permissions.length}:${
-        inboxLoading ? 'inbox-loading' : 'inbox-loaded'
-      }`}
-    </span>
+    <>
+      <span data-testid="settled">
+        {`${config ? 'cfg' : 'nocfg'}:${isLoading ? 'loading' : 'loaded'}:${permissions.length}:${
+          inboxLoading ? 'inbox-loading' : 'inbox-loaded'
+        }`}
+      </span>
+      {/* How many approvals the SERVER currently reports. The settling test
+          needs to know the refetch has LANDED, not merely that it was asked
+          for — `toHaveBeenCalledTimes` fires when the fetch starts, before the
+          cache is rewritten and long before the popover re-renders off it. */}
+      <span data-testid="pending-approvals">{`pending:${approvals.length}`}</span>
+    </>
   );
 }
 
@@ -249,6 +257,7 @@ describe('InboxBell', () => {
     // pending would fire its DELETE inside a later, unrelated case.
     discardPendingRejections();
     discardSettlingSchedules();
+    discardSettlingApprovals();
     vi.useRealTimers();
     vi.clearAllMocks();
   });
@@ -637,6 +646,45 @@ describe('InboxBell', () => {
     expect(screen.getByRole('heading', { name: 'Needs You' })).toBeInTheDocument();
   });
 
+  it('keeps the answered approval on screen once the server stops listing it', async () => {
+    // The same disappearance, one card kind later (DOR-1411): answering is
+    // optimistic, the refetch that follows drops the request from the pending
+    // list, and the `approvals.length > 0` guard below took the whole
+    // `ApprovalList` — `AnimatePresence` and all — out of the tree with it. An
+    // exit nothing is watching for never runs, so the receipt lived for one
+    // round trip and the only confirmation an answer gets was a flicker.
+    //
+    // Driven through the REAL hold: nothing about `settling-approvals` is
+    // mocked here. Seeded defect: revert `shownApprovals` to `approvals` in
+    // either the section's guard or the list it hands down, and this reds.
+    const listPendingApprovals = vi.fn().mockResolvedValue({ approvals: [buildApproval()] });
+    const grantApproval = vi.fn().mockImplementation(async () => {
+      // The server has recorded the answer, so the pending list comes back
+      // empty on the invalidation that follows.
+      listPendingApprovals.mockResolvedValue({ approvals: [] });
+      return { ok: true, approvalId: '01JZ0000000000000000000001', outcome: 'granted' };
+    });
+    renderIndicator({ listPendingApprovals, grantApproval });
+
+    await userEvent.click(await screen.findByTestId('inbox-bell'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Allow' }));
+
+    // Waits for the queue to be genuinely EMPTY — the cache rewritten and the
+    // popover re-rendered off it. Without the hold the card is already gone by
+    // this line.
+    await screen.findByText('pending:0');
+
+    // Still saying what happened, inside a section that has not collapsed.
+    expect(screen.getByText('Allowed')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Needs You' })).toBeInTheDocument();
+
+    // And it does let go: a hold that never released would pin a decided card
+    // to the panel forever.
+    await waitFor(() => expect(screen.queryByText('Allowed')).not.toBeInTheDocument(), {
+      timeout: 4_000,
+    });
+  });
+
   it('adds the parked schedule to the approvals already waiting', async () => {
     // The discriminating half: one capability approval plus one parked
     // schedule is two, not one. A count that forgot the schedules would still
@@ -710,6 +758,7 @@ describe('InboxBell — history and read state', () => {
     // pending would fire its DELETE inside a later, unrelated case.
     discardPendingRejections();
     discardSettlingSchedules();
+    discardSettlingApprovals();
     vi.useRealTimers();
     vi.clearAllMocks();
   });
@@ -937,6 +986,7 @@ describe('InboxBell — opening a bell that has nothing to say', () => {
     // pending would fire its DELETE inside a later, unrelated case.
     discardPendingRejections();
     discardSettlingSchedules();
+    discardSettlingApprovals();
     vi.useRealTimers();
     vi.clearAllMocks();
   });
@@ -1027,6 +1077,7 @@ describe('InboxBell — what the panel says', () => {
     // pending would fire its DELETE inside a later, unrelated case.
     discardPendingRejections();
     discardSettlingSchedules();
+    discardSettlingApprovals();
     vi.useRealTimers();
     vi.clearAllMocks();
   });

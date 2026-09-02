@@ -23,6 +23,18 @@ export { ApprovalList } from './ui/ApprovalList';
 // person answers on the home tab, resolving the same approval.
 export { ApprovalCard } from './ui/ApprovalCard';
 export { ApprovalsUnavailable } from './ui/ApprovalsUnavailable';
+// Every surface that lists approvals composes this, so an answered card holds
+// its receipt for the same beat on all of them — see the module for the
+// disappearance it closes. The two writers (`holdDecidedApproval`,
+// `releaseDecidedApproval`) stay off the barrel deliberately, and so do the two
+// per-card reads (`useRecordedApprovalDecision`, `useSettlingApprovals`): only
+// the card and the list inside this slice ever touch them, and a surface that
+// could reach the writers from the public API could pin a card nobody decided.
+export {
+  APPROVAL_RECEIPT_SETTLE_MS,
+  discardSettlingApprovals,
+  useApprovalCards,
+} from './model/settling-approvals';
 // Who asked, drawn once for the whole cockpit. A parked schedule is a different
 // object from a capability approval — a `Task`, not a ULID-keyed hold — but the
 // question its card answers ("which agent is this, and do we actually know?") is
