@@ -17,58 +17,77 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
  * None of them raised an error. So a green `pnpm lint` is NOT evidence the rule
  * ran — only a cycle it actually catches is, which is what this fixture is.
  *
- * The fixture lives under `src/layers/entities/` on purpose: the rule is scoped
- * to that path, and `no-cycle` resolves real files off disk, so a virtual
- * `lintText` path would prove nothing.
+ * The fixture is shaped like a REAL cross-entity cycle, and that shape is the
+ * point. A two-file relative cycle (`a.ts` <-> `b.ts`) is depth 1 and would stay
+ * green under a `maxDepth: 1` rule option while every genuine cycle went
+ * undetected — the perf note in `eslint.config.js` makes adding `maxDepth` a
+ * plausible future edit, so the guard has to be sensitive to it. Every real
+ * cross-entity cycle closes through the `@/` alias and two barrels, so this one
+ * does too: x/index -> x/model/a -> @/…/y -> y/index -> y/model/b -> @/…/x, a
+ * depth-4 walk that also proves alias resolution works.
+ *
+ * The slices sit at the TOP level of `entities/`, not nested under one fixture
+ * root, because a nested `@/layers/entities/__dag-fixture__/y` would itself trip
+ * the barrel-only restriction in `eslint.config.js`. Real slices are top-level;
+ * the fixture matches.
  */
 const CLIENT_ROOT = resolve(__dirname, '..');
-const FIXTURE_DIR = resolve(CLIENT_ROOT, 'src/layers/entities/__dag-fixture__');
+const ENTITIES = resolve(CLIENT_ROOT, 'src/layers/entities');
+/** Every fixture slice, for creation and for teardown. Kept in sync with `.gitignore`. */
+const FIXTURE_SLICES = ['__dag-fixture-x__', '__dag-fixture-y__', '__dag-fixture-ok__'];
 
-/** Lint one fixture file through the app's real flat config. */
-async function lintFixture(file: string): Promise<ESLint.LintResult[]> {
-  const eslint = new ESLint({ cwd: CLIENT_ROOT });
-  return eslint.lintFiles([resolve(FIXTURE_DIR, file)]);
+/** Write one fixture slice: a barrel re-exporting a single `model/` module. */
+function writeSlice(slice: string, moduleName: string, moduleSource: string): void {
+  const dir = resolve(ENTITIES, slice);
+  mkdirSync(resolve(dir, 'model'), { recursive: true });
+  writeFileSync(
+    resolve(dir, 'index.ts'),
+    `export { ${moduleName} } from './model/${moduleName}';\n`,
+    'utf-8'
+  );
+  writeFileSync(resolve(dir, 'model', `${moduleName}.ts`), moduleSource, 'utf-8');
 }
 
-const cycleErrors = (results: ESLint.LintResult[]): Linter.LintMessage[] =>
-  results.flatMap((r) => r.messages).filter((m) => m.ruleId === 'import-x/no-cycle');
+/** Lint one fixture file through the app's real flat config. */
+async function lintSliceEntry(slice: string): Promise<Linter.LintMessage[]> {
+  const eslint = new ESLint({ cwd: CLIENT_ROOT });
+  const results = await eslint.lintFiles([resolve(ENTITIES, slice, 'index.ts')]);
+  return results.flatMap((r) => r.messages);
+}
+
+const cycleErrors = (messages: Linter.LintMessage[]): Linter.LintMessage[] =>
+  messages.filter((m) => m.ruleId === 'import-x/no-cycle');
 
 describe('cross-entity DAG lint rule', () => {
   beforeAll(() => {
-    mkdirSync(FIXTURE_DIR, { recursive: true });
-    // `acyclic.ts` depends on `leaf.ts` and nothing depends back on it.
-    writeFileSync(resolve(FIXTURE_DIR, 'leaf.ts'), 'export const leaf = () => 1;\n', 'utf-8');
-    writeFileSync(
-      resolve(FIXTURE_DIR, 'acyclic.ts'),
-      "import { leaf } from './leaf';\nexport const acyclic = () => leaf();\n",
-      'utf-8'
+    // x and y close a circle through each other's barrels, via the `@/` alias.
+    writeSlice(
+      '__dag-fixture-x__',
+      'x',
+      "import { y } from '@/layers/entities/__dag-fixture-y__';\nexport const x = () => y();\n"
     );
-    // A two-hop circle: `a -> b -> a`.
-    writeFileSync(
-      resolve(FIXTURE_DIR, 'cycle-a.ts'),
-      "import { b } from './cycle-b';\nexport const a = () => b();\n",
-      'utf-8'
+    writeSlice(
+      '__dag-fixture-y__',
+      'y',
+      "import { x } from '@/layers/entities/__dag-fixture-x__';\nexport const y = () => x();\n"
     );
-    writeFileSync(
-      resolve(FIXTURE_DIR, 'cycle-b.ts'),
-      "import { a } from './cycle-a';\nexport const b = () => a();\n",
-      'utf-8'
-    );
-    // Reaches a real sibling slice through the `@/` alias and the barrel — the
-    // exact import shape every cross-entity edge uses.
-    writeFileSync(
-      resolve(FIXTURE_DIR, 'alias.ts'),
-      "import { sessionKeys } from '@/layers/entities/session';\nexport const alias = () => sessionKeys;\n",
-      'utf-8'
+    // The control: same alias, same barrel shape, real sibling slice, no circle
+    // back — `session` cannot reach a fixture slice.
+    writeSlice(
+      '__dag-fixture-ok__',
+      'ok',
+      "import { sessionKeys } from '@/layers/entities/session';\nexport const ok = () => sessionKeys;\n"
     );
   });
 
   afterAll(() => {
-    rmSync(FIXTURE_DIR, { recursive: true, force: true });
+    for (const slice of FIXTURE_SLICES) {
+      rmSync(resolve(ENTITIES, slice), { recursive: true, force: true });
+    }
   });
 
-  it('reports a cycle as an error, not a warning', async () => {
-    const errors = cycleErrors(await lintFixture('cycle-a.ts'));
+  it('reports a cycle that closes through the alias and two barrels', async () => {
+    const errors = cycleErrors(await lintSliceEntry('__dag-fixture-x__'));
 
     expect(errors).toHaveLength(1);
     // severity 2 = error. The lint gate only fails on errors, so a warning here
@@ -76,26 +95,28 @@ describe('cross-entity DAG lint rule', () => {
     expect(errors[0].severity).toBe(2);
   });
 
-  it('leaves an acyclic dependency alone', async () => {
-    // The other half of the discrimination: a rule that flagged everything would
-    // pass the test above while telling us nothing.
-    expect(cycleErrors(await lintFixture('acyclic.ts'))).toHaveLength(0);
+  it('leaves an acyclic cross-slice dependency alone', async () => {
+    // The other half of the discrimination: a rule that flagged every alias
+    // import would pass the test above while telling us nothing. This also
+    // fails if the resolver breaks in the direction of over-reporting.
+    expect(cycleErrors(await lintSliceEntry('__dag-fixture-ok__'))).toHaveLength(0);
   });
 
-  it('resolves the @/ alias, so cross-slice hops are actually walked', async () => {
-    // The resolver is the piece most likely to break silently on a dependency
-    // bump, and when it breaks `no-cycle` still reports nothing at all. The two
-    // tests above cannot see that: they only exercise relative imports, which
-    // the built-in node resolution handles. So pin the alias directly — if
-    // `@/layers/entities/session` stops resolving, this goes red while every
-    // other signal stays green.
-    const eslint = new ESLint({
-      cwd: CLIENT_ROOT,
-      overrideConfig: { rules: { 'import-x/no-unresolved': 'error' } },
-    });
-    const [result] = await eslint.lintFiles([resolve(FIXTURE_DIR, 'alias.ts')]);
-    const unresolved = result.messages.filter((m) => m.ruleId === 'import-x/no-unresolved');
+  it('does not let a deep import past a sibling barrel through', async () => {
+    // The direction rule's other machine-checked half: siblings are reachable
+    // only via their barrel.
+    const dir = resolve(ENTITIES, '__dag-fixture-ok__', 'model');
+    writeFileSync(
+      resolve(dir, 'deep.ts'),
+      "import { sessionKeys } from '@/layers/entities/session/api/query-keys';\nexport const deep = () => sessionKeys;\n",
+      'utf-8'
+    );
 
-    expect(unresolved).toHaveLength(0);
+    const eslint = new ESLint({ cwd: CLIENT_ROOT });
+    const [result] = await eslint.lintFiles([resolve(dir, 'deep.ts')]);
+    const restricted = result.messages.filter((m) => m.ruleId === 'no-restricted-imports');
+
+    expect(restricted).toHaveLength(1);
+    expect(restricted[0].severity).toBe(2);
   });
 });

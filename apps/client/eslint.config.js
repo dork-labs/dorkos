@@ -112,6 +112,18 @@ export default defineConfig([
               group: ['@/layers/widgets/*', '@/layers/widgets'],
               message: 'FSD violation: entities/ cannot import from widgets/',
             },
+            // Barrel-only, the other half of the DAG rule below. A sibling's
+            // barrel is its contract; reaching past it couples you to its file
+            // layout and hides the edge from anyone reading the graph.
+            //
+            // This does NOT reach `vi.mock('@/layers/entities/x/model/y')`,
+            // which is a call rather than an import declaration — deliberate,
+            // and the carve-out is written down in `.claude/rules/fsd-layers.md`.
+            {
+              group: ['@/layers/entities/*/**'],
+              message:
+                'FSD violation: import a sibling entity through its barrel (@/layers/entities/<slice>), never an internal path.',
+            },
           ],
         },
       ],

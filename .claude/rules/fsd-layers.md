@@ -27,7 +27,7 @@ Determine the current file's layer from its path, then enforce:
 
 ### Cross-Module Rule: Features
 
-Sibling features are isolated from each other, but only in one direction:
+Sibling features are isolated — but the isolation is about business logic, not composition:
 
 **UI composition across features: ALLOWED.** A feature's UI component may render a sibling feature's component for composition purposes (e.g., ChatPanel renders CommandPalette, StatusLine).
 
@@ -52,7 +52,10 @@ Sibling features are isolated because a feature is a screen's worth of behaviour
 
 So the rule is direction, not isolation:
 
-1. **Import through the barrel.** `@/layers/entities/session`, never `@/layers/entities/session/model/...`. The barrel is the slice's contract; a deep import couples you to its file layout.
+1. **Import through the barrel.** `@/layers/entities/session`, never `@/layers/entities/session/model/...`. The barrel is the slice's contract; a deep import couples you to its file layout. ESLint enforces this one too.
+
+   The exception is `vi.mock()`, which needs the concrete module path — mocking a barrel replaces every export in it, not the one you meant to stub. So `vi.mock('@/layers/entities/session/model/use-recent-sessions')` is correct and stays. The lint rule does not see it, because `vi.mock()` is a call and not an import declaration; that is the carve-out, and it is the only one.
+
 2. **Composites consume foundations.** A foundational slice answers one question about one thing (`runtime`, `config`, `mesh`, `relay`, `tasks`, `room`, `interactions`). A composite slice aggregates several into one normalized answer. That direction needs no defence — it is the pattern.
 3. **A foundational slice reaching for another entity is the smell.** It usually means the aggregation belongs one level up, in a composite. If it really doesn't, say why in the PR — this is the case a reviewer should stop on.
 4. **Never close a circle.** Not through two slices, not through five, not through a lazy `import()`.
