@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server,db): API keys are not throttled to ten uses a day (DOR-489)'
+  - 'fix(server,db): address review nits on the API-key rate-limit fix (DOR-489)'
 ---
 
 ### Fixed
