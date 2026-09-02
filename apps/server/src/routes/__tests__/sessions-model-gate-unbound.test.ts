@@ -354,13 +354,19 @@ describe('PATCH /api/sessions/:id — the model gate on a catalog that admits it
     expect(rowFor(BOUND_OPENCODE)?.model).toBe(CUT_MODEL);
   });
 
-  it('still accepts a model the unverified menu DOES list', async () => {
+  it('accepts a model a TRUSTWORTHY catalog lists, reaching the membership check', async () => {
+    // The discriminating partner of the refusal above: same verified 200-row
+    // catalog, and the ONLY thing that changes is whether the model is in it.
+    // Asking this against the UNVERIFIED catalog would prove nothing — that
+    // answer comes back 200 from the guess short-circuit without the membership
+    // check ever running, so it would pass even if matching were deleted.
     bindSession(BOUND_OPENCODE, 'opencode');
-    opencode.getSupportedModels.mockResolvedValue(UNVERIFIED_CATALOG);
+    const verified = asVerified(UNVERIFIED_CATALOG);
+    opencode.getSupportedModels.mockResolvedValue(verified);
 
-    const res = await patch(BOUND_OPENCODE, { model: UNVERIFIED_CATALOG[0].value });
+    const res = await patch(BOUND_OPENCODE, { model: verified[0].value });
 
     expect(res.status).toBe(200);
-    expect(rowFor(BOUND_OPENCODE)?.model).toBe(UNVERIFIED_CATALOG[0].value);
+    expect(rowFor(BOUND_OPENCODE)?.model).toBe(verified[0].value);
   });
 });

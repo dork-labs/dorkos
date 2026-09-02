@@ -517,6 +517,7 @@ function rejectUndeclaredPermissionMode(
  *
  * A catalog only convicts when it is fit to — {@link catalogUnfitToConvict} is
  * that whole question, and both of its answers land here as an accepted write.
+ *
  * Matching allows `resolvedModel` as well as `value` because claude-code's
  * catalog rows are ALIASES (`sonnet`, `opus`) naming the wire id they expand to;
  * a session that persisted the wire id must keep working.
@@ -557,9 +558,12 @@ async function rejectUnknownModel(runtime: AgentRuntime, model: string): Promise
  * epistemic state wearing different clothes — no usable evidence — so the gate
  * declines in both rather than convicting on a guess. The string is the reason,
  * logged by {@link rejectUnknownModel}: the two declines are indistinguishable
- * from outside (each one accepts the write), so the reason has to be said
- * somewhere or the next person debugging a "why did this go through" has to
- * re-derive it.
+ * from outside (each one accepts the write), so the reason is worth saying
+ * rather than leaving the next person debugging a "why did this go through" to
+ * re-derive it. At `debug`, which means DEV ONLY — the default level is `info`
+ * in production, so this line is dropped there. That is the right trade for a
+ * path whose outcome is a successful write: nothing is being diagnosed in
+ * production from its absence, and an operator who needs it can raise the level.
  *
  * **Empty** is not a claim that the runtime has no models — it is what a runtime
  * returns when it cannot answer: an unreachable OpenCode sidecar, a claude-code

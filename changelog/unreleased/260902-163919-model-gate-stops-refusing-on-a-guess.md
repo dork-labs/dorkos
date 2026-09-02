@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): a catalog that admits it is a guess cannot refuse a model (DOR-1688)'
+  - 'fix(server): make the membership test discriminating and the log claim honest (DOR-1688)'
 ---
 
 ### Fixed
