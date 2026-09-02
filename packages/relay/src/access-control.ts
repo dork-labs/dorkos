@@ -40,6 +40,17 @@ export type AccessControlLogger = Partial<RelayLogger>;
 const RULES_FILENAME = 'access-rules.json';
 
 /**
+ * How long the rules file must sit unchanged before the watcher reads it.
+ *
+ * Exported because anything that writes the file and then waits to observe the
+ * reload has to leave it alone for longer than this, or chokidar's
+ * `awaitWriteFinish` restarts its stability timer and never emits at all.
+ *
+ * @internal Exported for testing only.
+ */
+export const RULES_WRITE_STABILITY_MS = 100;
+
+/**
  * Sort comparator for access rules — highest priority first.
  *
  * @param a - First rule
@@ -78,7 +89,8 @@ function parseRules(raw: string): RelayAccessRule[] | null {
  * Lifecycle:
  * 1. Construct with a data directory path
  * 2. Rules are loaded synchronously from `access-rules.json` on construction
- * 3. A chokidar watcher hot-reloads rules when the file changes on disk
+ * 3. A chokidar watcher hot-reloads rules when the file changes on disk;
+ *    {@link whenWatcherReady} says when that watcher has attached
  * 4. Call {@link close} to stop watching and release resources
  *
  * @example
@@ -95,6 +107,10 @@ export class AccessControl {
   private rules: RelayAccessRule[] = [];
   private watcher: FSWatcher | null = null;
   private readonly rulesPath: string;
+  /** Resolves once the hot-reload watcher has settled — see {@link whenWatcherReady}. */
+  private readonly watcherReady: Promise<void>;
+  /** Resolver for {@link watcherReady}; nulled the moment it settles, so it settles once. */
+  private settleWatcherReady: (() => void) | null = null;
   /**
    * Why the rules file could not be read, when it exists but is unreadable.
    *
@@ -118,7 +134,35 @@ export class AccessControl {
     this.rulesPath = path.join(dataDir, RULES_FILENAME);
     this.logger = logger;
     this.loadRules();
-    this.startWatcher();
+    this.watcherReady = this.startWatcher();
+  }
+
+  /**
+   * Wait until the hot-reload watcher has finished starting up.
+   *
+   * Rules are loaded synchronously in the constructor, so an evaluator answers
+   * correctly the instant it exists; this concerns hot-reload only. Callers
+   * that are about to change `access-rules.json` and expect the change to be
+   * picked up — tests, above all — gate on this instead of sleeping.
+   *
+   * It resolves and never rejects, in three cases: chokidar reported `ready`;
+   * the watcher failed before it ever went ready (an EMFILE-style failure emits
+   * `error` and no `ready` at all, so without this the promise would hang
+   * forever); or {@link close} was called first, after which `ready` is never
+   * coming.
+   *
+   * Note the limit of what `ready` promises. chokidar reports it as soon as it
+   * has attached its listeners, which on macOS is a few milliseconds before
+   * libuv's FSEvents stream actually starts delivering; a write landing inside
+   * that window is dropped rather than delivered late. So this is a gate on
+   * "the watcher is attached", not a guarantee that the very next write is
+   * seen — a caller that must observe its own write should repeat it until it
+   * does.
+   *
+   * @returns A promise that resolves once the watcher has settled.
+   */
+  whenWatcherReady(): Promise<void> {
+    return this.watcherReady;
   }
 
   /**
@@ -222,6 +266,9 @@ export class AccessControl {
       void this.watcher.close();
       this.watcher = null;
     }
+    // A closed watcher never emits 'ready', so anyone still awaiting startup
+    // would wait for an event that is not coming.
+    this.finishWatcherStartup();
   }
 
   // ---------------------------------------------------------------------------
@@ -340,19 +387,39 @@ export class AccessControl {
   }
 
   /**
+   * Settle {@link watcherReady} exactly once, from whichever end got there
+   * first — `ready`, a pre-ready failure, or {@link close}.
+   */
+  private finishWatcherStartup(): void {
+    const settle = this.settleWatcherReady;
+    this.settleWatcherReady = null;
+    settle?.();
+  }
+
+  /**
    * Start a chokidar watcher on the rules file for hot-reload.
    *
    * When the file changes on disk (e.g., edited externally or by
    * another process), the rules are reloaded automatically.
+   *
+   * @returns The promise behind {@link whenWatcherReady}.
    */
-  private startWatcher(): void {
+  private startWatcher(): Promise<void> {
+    const ready = new Promise<void>((resolve) => {
+      this.settleWatcherReady = resolve;
+    });
+
     this.watcher = chokidar.watch(this.rulesPath, {
       persistent: true,
       ignoreInitial: true,
       awaitWriteFinish: {
-        stabilityThreshold: 100,
+        stabilityThreshold: RULES_WRITE_STABILITY_MS,
         pollInterval: 50,
       },
+    });
+
+    this.watcher.on('ready', () => {
+      this.finishWatcherStartup();
     });
 
     this.watcher.on('change', () => {
@@ -371,6 +438,12 @@ export class AccessControl {
       this.loadRules();
     });
 
+    // A watcher that fails before it goes ready (e.g. EMFILE) never emits
+    // 'ready' at all, so the startup promise is settled from the error handler
+    // too — otherwise every caller awaiting it would hang forever. Settling
+    // rather than rejecting matches what a failed watcher actually costs:
+    // rules already loaded keep being enforced, only hot-reload is gone.
+    //
     // Without this handler a watcher failure (e.g. EMFILE) has nowhere to go
     // but the process-wide unhandled-error path. Rules already loaded keep
     // being enforced and a quarantine already in force stays in force; what
@@ -381,6 +454,7 @@ export class AccessControl {
     // latch cannot silence another's.
     const seenCodes = new Set<string>();
     this.watcher.on('error', (err) => {
+      this.finishWatcherStartup();
       const code = (err as NodeJS.ErrnoException)?.code ?? 'unknown';
       if (seenCodes.has(code)) return;
       seenCodes.add(code);
@@ -398,5 +472,7 @@ export class AccessControl {
         }
       );
     });
+
+    return ready;
   }
 }
