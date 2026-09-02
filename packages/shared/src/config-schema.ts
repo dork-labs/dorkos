@@ -981,10 +981,15 @@ export type ClaudeCodeAccount = z.infer<typeof ClaudeCodeAccountSchema>;
  * @returns The kebab slug, possibly empty.
  */
 export function slugifyAccountId(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      // `^-|-$`, not `^-+|-+$`: the collapse above leaves hyphen runs of length
+      // one, so the `+` can never do anything except retry at every offset of a
+      // run that cannot exist (quadratic, CodeQL js/polynomial-redos).
+      .replace(/^-|-$/g, '')
+  );
 }
 
 /**
@@ -1009,7 +1014,10 @@ export function claudeAccountId(opts: {
 }): string {
   const basename =
     opts.path
-      .replace(/[/\\]+$/, '')
+      // The lookbehind pins the attempt to the START of the trailing separator
+      // run, which is where the leftmost match already began — same result,
+      // without retrying at every offset of the run (CodeQL js/polynomial-redos).
+      .replace(/(?<![/\\])[/\\]+$/, '')
       .split(/[/\\]/)
       .pop() ?? '';
   const base = slugifyAccountId(opts.label ?? '') || slugifyAccountId(basename) || 'account';

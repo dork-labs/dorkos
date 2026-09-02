@@ -196,6 +196,43 @@ interface RawFrame {
 }
 
 /**
+ * Longest line `parseStack` will try to read as a frame.
+ *
+ * Defence in depth, NOT the fix — the patterns below are linear on their own.
+ * A bound alone was tried first and was not enough, which is worth recording:
+ * `^at\s+(.+?)\s+\((.+?):(\d+):(\d+)\)$` has TWO lazy groups either side of a
+ * `\s+`, making it cubic rather than quadratic, so a 20 kB body packed with
+ * lines sitting just under this cap still cost ~11 SECONDS of blocked event
+ * loop with the bound in place. `POST /api/errors` accepts exactly that from
+ * any caller that can reach the server.
+ *
+ * A real V8 frame is a function name and a path, so 1 kB is far past anything
+ * genuine — the only lines this drops were never frames.
+ */
+const MAX_FRAME_LINE_LENGTH = 1024;
+
+/**
+ * The two shapes a V8 frame line takes: `at fn (file:line:col)` and
+ * `at file:line:col`.
+ *
+ * The name group is `(\S(?:.*\S)?)` rather than a lazy `(.+?)`, and that is the
+ * ReDoS fix (CodeQL js/polynomial-redos). `.` matches a space, so a lazy `.+?`
+ * beside a `\s+` left the engine trying every way of splitting a whitespace run
+ * between them — with two such groups in the first pattern that is cubic. On
+ * the route's worst case (20 kB of lines at {@link MAX_FRAME_LINE_LENGTH}) the
+ * old form took ~4900ms and this one takes ~0.1ms; on a 20 kB line with no cap
+ * at all it stays under a millisecond.
+ *
+ * Requiring the name to START and END with a non-space removes the ambiguity
+ * without changing what a real stack parses to. Verified over 1,235,314
+ * exhaustive inputs: the ONLY behaviour that moves is a "filename" ending in
+ * whitespace (`at foo :1:1`), which V8 never emits and which the old pattern
+ * captured WITH its trailing space — a junk filename either way.
+ */
+const FRAME_WITH_FUNCTION = /^at\s+(\S(?:.*\S)?)\s+\((.+?):(\d+):(\d+)\)$/;
+const FRAME_WITHOUT_FUNCTION = /^at\s+(\S(?:.*\S)?):(\d+):(\d+)$/;
+
+/**
  * Parse a V8 stack string into raw frames. Handles the two common shapes:
  * `at fn (file:line:col)` and `at file:line:col`.
  *
@@ -206,8 +243,9 @@ function parseStack(stack: string): RawFrame[] {
   for (const line of stack.split('\n')) {
     const trimmed = line.trim();
     if (!trimmed.startsWith('at ')) continue;
-    const withFn = /^at\s+(.+?)\s+\((.+?):(\d+):(\d+)\)$/.exec(trimmed);
-    const withoutFn = /^at\s+(.+?):(\d+):(\d+)$/.exec(trimmed);
+    if (trimmed.length > MAX_FRAME_LINE_LENGTH) continue;
+    const withFn = FRAME_WITH_FUNCTION.exec(trimmed);
+    const withoutFn = FRAME_WITHOUT_FUNCTION.exec(trimmed);
     if (withFn) {
       frames.push({
         function: withFn[1],

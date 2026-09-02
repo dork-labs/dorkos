@@ -61,4 +61,4 @@ export {
 
 // Utilities
 export { validateSlug, slugify, humanize } from './slug.js';
-export { DurationSchema, parseDuration, formatDuration } from './duration.js';
+export { DurationSchema, DURATION_MAX_LENGTH, parseDuration, formatDuration } from './duration.js';

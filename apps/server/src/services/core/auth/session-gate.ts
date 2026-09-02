@@ -91,7 +91,12 @@ const GATED_HEALTH_PATHS = ['/api/health/deep'];
  */
 function isGatedHealthPath(path: string): boolean {
   const collapsed = path.replace(/\/{2,}/g, '/');
-  const normalized = collapsed.length > 1 ? collapsed.replace(/\/+$/, '') : collapsed;
+  // `\/$`, not `\/+$`: the collapse on the line above leaves no run of two
+  // slashes for the `+` to consume, so it could only ever retry at every offset
+  // of a run that cannot exist — quadratic in shape (CodeQL js/polynomial-redos)
+  // on the pre-auth path every request takes, which is the last place to leave
+  // one standing.
+  const normalized = collapsed.length > 1 ? collapsed.replace(/\/$/, '') : collapsed;
   return GATED_HEALTH_PATHS.some(
     (gated) => normalized === gated || normalized.startsWith(`${gated}/`)
   );

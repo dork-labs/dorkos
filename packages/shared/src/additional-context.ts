@@ -809,6 +809,67 @@ export const CONTEXT_TAG = {
   seed_context: 'seed_context',
 } satisfies Record<ContextKind, string>;
 
+/**
+ * Remove every `<tag>…</tag>` block from `text`, leaving an unmatched open tag
+ * (and everything after it) in place.
+ *
+ * A linear `indexOf` scan, not a regex, and that is the whole point. The
+ * `<tag>[\s\S]*?</tag>` form this replaces is quadratic on input where opens
+ * outnumber closes: the lazy body scans to the end of the string from EVERY
+ * open before giving up, so a megabyte of repeated `<system-reminder>` costs
+ * ~1e10 character steps and freezes the event loop for one request
+ * (CodeQL js/polynomial-redos). Message content is exactly that kind of input —
+ * a person can paste anything into it.
+ *
+ * Behaviour matches the regex it replaced case for case, including the awkward
+ * ones: an open with no close is left alone, a close with no open is left
+ * alone, and the FIRST close after an open ends the block (so `<a><a>x</a>`
+ * strips whole). Pinned by the table in
+ * `src/__tests__/additional-context.test.ts`.
+ *
+ * @param text - The text to strip blocks out of.
+ * @param tag - The tag name, without angle brackets (e.g. `git_status`).
+ * @returns `text` with every closed block removed.
+ */
+export function stripTagBlocks(text: string, tag: string): string {
+  const open = `<${tag}>`;
+  const close = `</${tag}>`;
+  let out = '';
+  let cursor = 0;
+  for (;;) {
+    const start = text.indexOf(open, cursor);
+    if (start === -1) break;
+    const end = text.indexOf(close, start + open.length);
+    // No close after this open means no close after any LATER open either, so
+    // the regex's "advance one character and retry" could never find one.
+    if (end === -1) break;
+    out += text.slice(cursor, start);
+    cursor = end + close.length;
+  }
+  return out + text.slice(cursor);
+}
+
+/**
+ * Remove every server-injected block from message content: `<system-reminder>`
+ * plus each {@link CONTEXT_TAG} wrapper (git_status, ui_state, …), then trim.
+ *
+ * The ONE implementation of a strip that two callers need — the kickoff
+ * suppression seam (`isKickoffEnvelope`) and the claude-code render strip
+ * (`stripSystemTags`) — so the two can never disagree about what counts as
+ * injected. Driven off `CONTEXT_TAG`, so a new {@link ContextKind} is stripped
+ * on both sides with no edit here.
+ *
+ * @param text - Raw message content as a runtime stored it.
+ * @returns The content with injected blocks removed, trimmed.
+ */
+export function stripInjectedTagBlocks(text: string): string {
+  let result = stripTagBlocks(text, 'system-reminder');
+  for (const tag of Object.values(CONTEXT_TAG)) {
+    result = stripTagBlocks(result, tag);
+  }
+  return result.trim();
+}
+
 /** Zod schema for {@link GitStatusData}. */
 export const GitStatusDataSchema = z.object({
   isRepo: z.boolean(),

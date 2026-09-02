@@ -5464,8 +5464,12 @@ function slugify(title: string): string | null {
     title
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
+      // Single `-`, not `-+`: the collapse above leaves hyphen runs of length
+      // one, so the `+` could only retry at every offset of a run that cannot
+      // exist — quadratic in shape (CodeQL js/polynomial-redos), and this one
+      // sits on a request path where a title arrives uncapped.
+      .replace(/^-|-$/g, '')
       .slice(0, 80)
-      .replace(/-+$/, '') || null
+      .replace(/-$/, '') || null
   );
 }

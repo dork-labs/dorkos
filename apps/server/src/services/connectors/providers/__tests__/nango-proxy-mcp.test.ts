@@ -88,6 +88,37 @@ describe('NangoProxyMcp — bearer gate', () => {
     expect(unknownAccount.status).toBe(401);
   });
 
+  // The header is parsed BEFORE any credential is checked, so its parser is
+  // the one piece of this endpoint an unauthenticated caller reaches. The old
+  // `/^Bearer\s+(.+)$/i` was quadratic — `\s+` and `.` both match a space, so a
+  // long run has many splits to try (CodeQL js/polynomial-redos). The rewrite
+  // requires the credential to START with a non-space, which kills the
+  // ambiguity. The one value that parses differently is a whitespace-only
+  // credential, and these cases show why that costs nothing.
+  it.each([
+    ['a whitespace-only credential', `Bearer${' '.repeat(8)}`],
+    ['a tab-only credential', 'Bearer\t\t'],
+    ['a long run of spaces and nothing else', `Bearer${' '.repeat(4_000)}`],
+    ['a long run of spaces before a wrong token', `Bearer${' '.repeat(4_000)}nope`],
+  ])('401s on %s', async (_label, header) => {
+    const { app, path } = mountedAccount(() => Promise.resolve({ status: 200, body: '' }));
+    const started = performance.now();
+    const res = await rpc(app, path, header, toolCall({ method: 'GET', path: 'x' }));
+    const elapsed = performance.now() - started;
+    expect(res.status).toBe(401);
+    // Whatever the parser does with these, it must not sit there doing it.
+    expect(elapsed).toBeLessThan(500);
+  });
+
+  it('still accepts the real token, including with extra whitespace after the scheme', async () => {
+    const { app, path, token } = mountedAccount(() => Promise.resolve({ status: 200, body: 'ok' }));
+    const bare = token.replace(/^Bearer\s+/i, '');
+    for (const header of [token, `Bearer   ${bare}`, `bearer\t${bare}`]) {
+      const res = await rpc(app, path, header, toolCall({ method: 'GET', path: 'x' }));
+      expect(res.status, `header ${JSON.stringify(header.slice(0, 12))}…`).toBe(200);
+    }
+  });
+
   it('keeps the same token across re-registration (a live session connection stays valid)', () => {
     const wrapper = new NangoProxyMcp({ localOrigin: 'http://127.0.0.1:4242' });
     const client = fakeClient(() => Promise.resolve({ status: 200, body: '' }));

@@ -124,6 +124,66 @@ describe('scrubStack', () => {
   it('returns [] for an undefined stack', () => {
     expect(scrubStack(undefined, '/srv/dorkos')).toEqual([]);
   });
+
+  // `POST /api/errors` takes a 20 kB `stack` from anyone who can reach the
+  // server, and the two frame regexes both had a `\s+` overlapping a lazy
+  // `.+?` — so one absurdly long line cost about a second of blocked event
+  // loop, free to repeat (CodeQL js/polynomial-redos). The guard is a length
+  // bound per line, and no real V8 frame comes anywhere near it.
+  it('skips a line far longer than any real stack frame', () => {
+    const monstrous = `    at ${'a'.repeat(2_000)} (/srv/dorkos/x.ts:1:1)`;
+    const stack = ['Error: boom', monstrous, '    at ok (/srv/dorkos/y.ts:2:2)'].join('\n');
+    const frames = scrubStack(stack, '/srv/dorkos');
+    expect(frames).toHaveLength(1);
+    expect(frames[0]).toMatchObject({ function: 'ok', filename: 'y.ts' });
+  });
+
+  it('still parses a long-but-plausible frame line', () => {
+    const deep = `/srv/dorkos/${'nested/'.repeat(100)}x.ts`;
+    expect(deep.length).toBeLessThan(1_024);
+    const frames = scrubStack(`Error: boom\n    at fn (${deep}:3:4)`, '/srv/dorkos');
+    expect(frames).toHaveLength(1);
+    expect(frames[0]).toMatchObject({ function: 'fn', lineno: 3, colno: 4 });
+  });
+
+  it("scrubs the route's true worst case — 20 kB packed with lines at the length cap — fast", () => {
+    // THE case that matters, and the one an earlier version of this test missed.
+    // A single 20 kB line is skipped by the length guard, so timing it measures
+    // the guard firing and says nothing about the regexes. The real attack packs
+    // the same budget with lines that each sit just UNDER the cap, so every one
+    // of them is handed to both patterns. `^at\s+(.+?)\s+\((.+?)…` has two lazy
+    // groups next to a `\s+`, which is CUBIC, not quadratic: at 1024 characters
+    // one line cost ~290ms and a full 20 kB body ~11s of blocked event loop —
+    // measured through this exported function, with the length guard in place.
+    const line = `at ${' '.repeat(1_020)}x`; // exactly MAX_FRAME_LINE_LENGTH
+    const stack = Array.from({ length: Math.floor(20_000 / 1_025) }, () => line).join('\n');
+    expect(stack.length).toBeLessThanOrEqual(20_000); // the route's own cap
+    const started = performance.now();
+    const frames = scrubStack(stack, '/srv/dorkos');
+    const elapsed = performance.now() - started;
+    expect(frames).toEqual([]);
+    expect(elapsed).toBeLessThan(100);
+  });
+
+  it('stays fast on a hostile line even with no length cap in play', () => {
+    // The length guard is defence in depth, not the fix — so the patterns have
+    // to be linear on their own. One 20 kB line, well past the cap, proves it.
+    const hostile = `at ${' '.repeat(19_990)}x`;
+    const started = performance.now();
+    expect(scrubStack(`Error\n    ${hostile}`, '/srv/dorkos')).toEqual([]);
+    expect(performance.now() - started).toBeLessThan(100);
+  });
+
+  it('still reads a normal frame whose filename has no trailing space', () => {
+    // The rewrite requires the captured name to start AND end with a non-space.
+    // Over 1,235,314 exhaustive inputs the ONLY behaviour that moved was a
+    // "filename" ending in whitespace (`at foo :1:1`), which no real V8 frame
+    // produces — and which the old pattern captured WITH the trailing space.
+    expect(scrubStack('Error\n    at /srv/dorkos/x.ts:1:2', '/srv/dorkos')).toMatchObject([
+      { filename: 'x.ts', lineno: 1, colno: 2, function: '<anonymous>' },
+    ]);
+    expect(scrubStack('Error\n    at /srv/dorkos/x.ts :1:2', '/srv/dorkos')).toEqual([]);
+  });
 });
 
 const ALLOWED_EVENT_KEYS = [

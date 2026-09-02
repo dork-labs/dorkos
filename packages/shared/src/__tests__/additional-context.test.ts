@@ -3,6 +3,8 @@ import {
   CONTEXT_TAG,
   ClientContextSchema,
   AdditionalContextEntrySchema,
+  stripTagBlocks,
+  stripInjectedTagBlocks,
   type ContextKind,
 } from '../additional-context.js';
 import { SendMessageRequestSchema, SEED_CONTEXT_MAX_LENGTH } from '../schemas.js';
@@ -263,5 +265,70 @@ describe('SendMessageRequestSchema context wiring (DOR migration)', () => {
     expect(
       SendMessageRequestSchema.safeParse({ content: 'hi', seedContext: tooLong.slice(1) }).success
     ).toBe(true);
+  });
+});
+
+describe('stripTagBlocks — the linear replacement for the lazy tag-strip regex', () => {
+  // These strips run on message content a caller supplied, so the old
+  // `<tag>[\s\S]*?</tag>` form was quadratic on repeated unclosed opens
+  // (CodeQL js/polynomial-redos). The rewrite must be behaviour-identical, so
+  // every case below is checked against the regex it replaced.
+  const legacy = (text: string, tag: string): string =>
+    text.replace(new RegExp(`<${tag}>[\\s\\S]*?<\\/${tag}>`, 'g'), '');
+
+  it.each([
+    ['no tags at all', 'plain text'],
+    ['one closed block', 'a<A>inner</A>b'],
+    ['two closed blocks', '<A>one</A>middle<A>two</A>tail'],
+    ['an unclosed open', '<A>never closed'],
+    ['a closed block then an unclosed open', '<A>a</A>b<A>c'],
+    ['nested-looking opens', '<A><A>x</A>'],
+    ['a truly nested pair', '<A><A>x</A></A>'],
+    ['a close with no open', '</A>orphan'],
+    ['a close before its open', '</A>x<A>y'],
+    ['empty block', '<A></A>'],
+    ['a wall of unclosed opens', '<A>'.repeat(50)],
+    ['a wall of opens with one close at the end', `${'<A>'.repeat(50)}x</A>`],
+  ])('matches the regex it replaced: %s', (_label, input) => {
+    expect(stripTagBlocks(input, 'A')).toBe(legacy(input, 'A'));
+  });
+
+  it('handles a real multi-character tag name the same way', () => {
+    const input = '<system-reminder>hi</system-reminder>keep<system-reminder>unclosed';
+    expect(stripTagBlocks(input, 'system-reminder')).toBe(legacy(input, 'system-reminder'));
+    expect(stripTagBlocks(input, 'system-reminder')).toBe('keep<system-reminder>unclosed');
+  });
+
+  it('strips a wall of unclosed opens in linear time', () => {
+    // 60k unclosed opens is ~1 MB — what the old lazy regex needed ~1e10
+    // character steps for, and what a single POST body can carry.
+    const hostile = '<system-reminder>'.repeat(60_000);
+    const started = performance.now();
+    const result = stripTagBlocks(hostile, 'system-reminder');
+    const elapsed = performance.now() - started;
+    expect(result).toBe(hostile);
+    expect(elapsed).toBeLessThan(100);
+  });
+});
+
+describe('stripInjectedTagBlocks', () => {
+  it('removes the system-reminder block and every context tag, then trims', () => {
+    const text = [
+      '<system-reminder>be nice</system-reminder>',
+      `<${CONTEXT_TAG.git_status}>clean</${CONTEXT_TAG.git_status}>`,
+      `<${CONTEXT_TAG.ui_state}>{}</${CONTEXT_TAG.ui_state}>`,
+      '  the real message  ',
+    ].join('\n');
+    expect(stripInjectedTagBlocks(text)).toBe('the real message');
+  });
+
+  it('leaves an unclosed open in place, exactly as the regex form did', () => {
+    expect(stripInjectedTagBlocks('<system-reminder>hello')).toBe('<system-reminder>hello');
+  });
+
+  it('strips every context tag the map defines, so a new kind needs no edit here', () => {
+    for (const tag of Object.values(CONTEXT_TAG)) {
+      expect(stripInjectedTagBlocks(`<${tag}>x</${tag}>body`)).toBe('body');
+    }
   });
 });

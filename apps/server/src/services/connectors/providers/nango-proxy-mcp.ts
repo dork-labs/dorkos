@@ -195,14 +195,33 @@ export class NangoProxyMcp {
     return router;
   }
 
-  /** Resolve the account IFF the bearer token matches (timing-safe). */
+  /**
+   * Resolve the account IFF the bearer token matches (timing-safe).
+   *
+   * The credential must START with a non-space (`\S.*` rather than `.+`).
+   * `\s+` and `.` both match a space, so the old form had to try every way of
+   * splitting a whitespace run between them (CodeQL js/polynomial-redos).
+   * Demanding a non-space first makes every non-maximal split fail immediately.
+   *
+   * How reachable that actually was, stated honestly: the blow-up needs the run
+   * to be followed by a character `.` cannot match, which in practice means a
+   * CR or LF — and Node's HTTP parser will not put one inside a header value.
+   * Measured on the raw pattern, `'Bearer' + 16k spaces + '\n'` costs ~230ms
+   * while the same header WITHOUT a terminator costs 0.01ms. So this is a real
+   * quadratic on a pre-auth parser rather than a live remote DoS, and it is
+   * fixed because the next caller of this pattern may not have Node in front.
+   *
+   * The only value that now parses differently is an all-whitespace credential,
+   * which used to capture a lone space. Tokens here are 32 random bytes in hex,
+   * so such a value could never have matched one — the 401 is the same 401.
+   */
   private _authorize(
     accountId: string,
     authorization: string | undefined
   ): RegisteredAccount | undefined {
     const account = this._accounts.get(accountId);
     if (!account) return undefined;
-    const presented = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+    const presented = authorization?.match(/^Bearer\s+(\S.*)$/i)?.[1];
     if (!presented) return undefined;
     const expected = Buffer.from(account.token);
     const actual = Buffer.from(presented);

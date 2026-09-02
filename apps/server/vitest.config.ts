@@ -62,8 +62,10 @@ export default defineConfig({
     //   and both were measured: adding a 7th permission mode AND letting
     //   `enforceCapabilityTier` return `allowed` for it fails 1 of 7 with the alias and
     //   passes green with the alias removed; adding a `ContextKind` AND replacing
-    //   `stripSystemTags`' `Object.values(CONTEXT_TAG)` loop with a hardcoded 5-name
-    //   array fails 1 of 55 with the alias and passes green without it. The generated
+    //   the `Object.values(CONTEXT_TAG)` loop that `stripSystemTags` runs on — it
+    //   lives in `stripInjectedTagBlocks` in `@dorkos/shared` now, the one copy the
+    //   kickoff seam shares — with a hardcoded 5-name array fails 1 of 55 with the
+    //   alias and passes green without it. The generated
     //   case IS the catch, and the alias is what generates it. Load-bearing, not
     //   decorative.
     // - `untrusted-text` backs the room-context fence tests, and it is the entry

@@ -4805,6 +4805,7 @@
               "null"
             ],
             "minLength": 1,
+            "maxLength": 32,
             "pattern": "^(?:\\d+h)?(?:\\d+m)?(?:\\d+s)?$"
           },
           "sticky": {
@@ -4897,6 +4898,7 @@
               "null"
             ],
             "minLength": 1,
+            "maxLength": 32,
             "pattern": "^(?:\\d+h)?(?:\\d+m)?(?:\\d+s)?$"
           },
           "sticky": {

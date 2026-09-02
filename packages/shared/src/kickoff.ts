@@ -46,7 +46,7 @@
  *
  * @module shared/kickoff
  */
-import { CONTEXT_TAG } from './additional-context.js';
+import { stripInjectedTagBlocks } from './additional-context.js';
 
 /** The tag name that fences an auto-first-turn kickoff instruction. */
 export const KICKOFF_TAG = 'dork-kickoff';
@@ -69,24 +69,6 @@ export function wrapKickoff(instruction: string): string {
 }
 
 /**
- * Remove the known server-injected context blocks from message content: every
- * {@link CONTEXT_TAG} wrapper (git_status, ui_state, …) plus
- * `<system-reminder>`. Driven off `CONTEXT_TAG` so a new `ContextKind` is
- * stripped here automatically — the same no-drift guarantee the claude-code
- * render strip (`stripSystemTags`) relies on.
- *
- * @param text - Raw message content as a runtime stored it.
- * @returns The content with injected blocks removed, trimmed.
- */
-function stripInjectedContext(text: string): string {
-  let result = text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '');
-  for (const tag of Object.values(CONTEXT_TAG)) {
-    result = result.replace(new RegExp(`<${tag}>[\\s\\S]*?<\\/${tag}>`, 'g'), '');
-  }
-  return result.trim();
-}
-
-/**
  * Whether message content is EXACTLY a kickoff envelope: after stripping the
  * known injected context blocks, the remainder starts with the open tag AND
  * ends with the close tag. Both anchors are required — content that merely
@@ -102,7 +84,7 @@ function stripInjectedContext(text: string): string {
  * @returns True when the content is shaped exactly like a kickoff envelope.
  */
 export function isKickoffEnvelope(content: string): boolean {
-  const core = stripInjectedContext(content);
+  const core = stripInjectedTagBlocks(content);
   return core.startsWith(OPEN_TAG) && core.endsWith(CLOSE_TAG);
 }
 

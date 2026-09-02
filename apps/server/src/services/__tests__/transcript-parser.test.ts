@@ -5,6 +5,7 @@ import {
   parseTranscript,
   buildCommandMessage,
   extractLocalCommandOutput,
+  extractCommandMeta,
 } from '../runtimes/claude-code/sessions/transcript-parser.js';
 import { applyToolResult } from '../runtimes/claude-code/sessions/tool-result-outcome.js';
 // These cases are about SHAPE — a typed error part instead of assistant text —
@@ -1157,5 +1158,111 @@ describe('parseTranscript synthetic API-error notices (DOR-1649)', () => {
     ];
 
     expect(parseTranscript(lines)).toHaveLength(0);
+  });
+});
+
+describe('transcript parsing stays linear on hostile text (js/polynomial-redos)', () => {
+  // Transcript text is a mix of what a person typed and what a tool printed,
+  // and it lives in a file with no size cap. Three parsers here used regexes
+  // that were quadratic when opening tags outnumbered closing ones, so a
+  // pasted wall of markers made EVERY later render of that session slow.
+  // Each case pins the answer AND the time.
+  const budgetMs = 200;
+
+  const timed = <T>(fn: () => T): { result: T; elapsed: number } => {
+    const started = performance.now();
+    const result = fn();
+    return { result, elapsed: performance.now() - started };
+  };
+
+  it('strips system tags out of a wall of unclosed opens quickly', () => {
+    const hostile = '<system-reminder>'.repeat(50_000);
+    const { result, elapsed } = timed(() => stripSystemTags(hostile));
+    expect(result).toBe(hostile);
+    expect(elapsed).toBeLessThan(budgetMs);
+  });
+
+  it('reads command args out of a wall of unclosed opens quickly', () => {
+    const hostile = `<command-name>/go</command-name>${'<command-args>'.repeat(50_000)}`;
+    const { result, elapsed } = timed(() => extractCommandMeta(hostile));
+    expect(result).toEqual({ commandName: '/go', commandArgs: '' });
+    expect(elapsed).toBeLessThan(budgetMs);
+  });
+
+  it('reads local-command output out of a wall of unclosed opens quickly', () => {
+    const hostile = '<local-command-stdout>'.repeat(50_000);
+    const { result, elapsed } = timed(() => extractLocalCommandOutput(hostile));
+    expect(result).toBeNull();
+    expect(elapsed).toBeLessThan(budgetMs);
+  });
+});
+
+describe('extractCommandMeta — behaviour preserved by the linear rewrite', () => {
+  it('reads name and args out of a normal command record', () => {
+    expect(
+      extractCommandMeta('<command-name>/flow</command-name><command-args> verify </command-args>')
+    ).toEqual({ commandName: '/flow', commandArgs: 'verify' });
+  });
+
+  it('returns empty args when the args block is absent', () => {
+    expect(extractCommandMeta('<command-name>/flow</command-name>')).toEqual({
+      commandName: '/flow',
+      commandArgs: '',
+    });
+  });
+
+  it('returns empty args when the args block is opened but never closed', () => {
+    expect(extractCommandMeta('<command-name>/flow</command-name><command-args>oops')).toEqual({
+      commandName: '/flow',
+      commandArgs: '',
+    });
+  });
+
+  it('takes the FIRST args block when several are present', () => {
+    expect(
+      extractCommandMeta(
+        '<command-name>/flow</command-name><command-args>one</command-args><command-args>two</command-args>'
+      )
+    ).toEqual({ commandName: '/flow', commandArgs: 'one' });
+  });
+
+  it('returns null when there is no command name', () => {
+    expect(extractCommandMeta('<command-args>orphan</command-args>')).toBeNull();
+  });
+});
+
+describe('extractLocalCommandOutput — behaviour preserved by the linear rewrite', () => {
+  it('keeps the LAST closing tag as the end of the body, as the greedy regex did', () => {
+    expect(
+      extractLocalCommandOutput(
+        '<local-command-stdout>a</local-command-stdout>b</local-command-stdout>'
+      )
+    ).toBe('a</local-command-stdout>b');
+  });
+
+  it('reads the stream whose open tag comes FIRST, not stdout by default', () => {
+    // The regex alternation matched at the leftmost position; a helper that
+    // always checked stdout first would answer differently here.
+    expect(
+      extractLocalCommandOutput(
+        '<local-command-stderr>err</local-command-stderr><local-command-stdout>out</local-command-stdout>'
+      )
+    ).toBe('err');
+  });
+
+  it('ignores a close tag that sits before its open', () => {
+    expect(extractLocalCommandOutput('</local-command-stdout>x<local-command-stdout>y')).toBeNull();
+  });
+
+  it('falls through to stderr when stdout is opened but never closed', () => {
+    expect(
+      extractLocalCommandOutput(
+        '<local-command-stdout>unclosed<local-command-stderr>err</local-command-stderr>'
+      )
+    ).toBe('err');
+  });
+
+  it('reads an empty body', () => {
+    expect(extractLocalCommandOutput('<local-command-stdout></local-command-stdout>')).toBe('');
   });
 });

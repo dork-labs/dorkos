@@ -331,3 +331,29 @@ describe('a note is one line', () => {
     expect(added[0]!.match(/\(noted in /g)).toHaveLength(1);
   });
 });
+
+describe('the tail is normalized to exactly one newline', () => {
+  // `normalizeTail` used `/\s+$/u`, which retried at every offset of an
+  // internal whitespace run when the file did not end in whitespace —
+  // quadratic on a memory full of blank lines (CodeQL js/polynomial-redos).
+  // `trimEnd()` strips exactly the same characters, and these cases pin it.
+  it.each([
+    ['trailing newlines', '\n\n\n'],
+    ['trailing spaces', '   '],
+    ['trailing tabs and newlines', '\t\n \r\n'],
+    ['nothing to trim', ''],
+  ])('adds one newline after %s', (_label, tail) => {
+    const next = applyMemoryOp(memory(tail), { action: 'add', text: 'a new note' });
+    expect(next.endsWith('- a new note\n')).toBe(true);
+    expect(next.endsWith('\n\n')).toBe(false);
+    expect(next).toContain('- Priya prefers short replies');
+  });
+
+  it('normalizes a memory carrying 200k blank lines in well under 100ms', () => {
+    const content = `${memory()}${'\n'.repeat(200_000)}x`;
+    const started = performance.now();
+    const next = applyMemoryOp(content, { action: 'add', text: 'another' });
+    expect(performance.now() - started).toBeLessThan(100);
+    expect(next.endsWith('- another\n')).toBe(true);
+  });
+});
