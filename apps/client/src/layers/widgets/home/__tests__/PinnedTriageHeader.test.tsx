@@ -40,11 +40,13 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 });
 
 import { TransportProvider, useEventSubscription } from '@/layers/shared/model';
+import { usePendingApprovals } from '@/layers/entities/attention';
 import { useSessionListStore } from '@/layers/entities/session';
 import {
   discardPendingRejections,
   discardSettlingSchedules,
 } from '@/layers/features/schedule-approval';
+import { discardSettlingApprovals } from '@/layers/features/approvals';
 import { PinnedTriageHeader } from '../ui/PinnedTriageHeader';
 import { PinnedTriageHeaderView, type TriagePresenceSlot } from '../ui/PinnedTriageHeaderView';
 
@@ -251,6 +253,20 @@ function setLifecycles(entries: Record<string, 'blocked' | 'error'>) {
 }
 
 /**
+ * How many approvals the SERVER currently reports, drawn beside the header.
+ *
+ * The settling tests need to know that the refetch has LANDED, not merely that
+ * it was requested — `toHaveBeenCalledTimes` fires when the fetch starts, which
+ * is before the cache is rewritten and long before the header re-renders. This
+ * reads the same cache entry the header does, so a test can wait for the queue
+ * to be genuinely empty and only then ask what is still on screen.
+ */
+function PendingApprovalsProbe() {
+  const { approvals } = usePendingApprovals();
+  return <span data-testid="pending-approvals">{`pending:${approvals.length}`}</span>;
+}
+
+/**
  * Render the header inside a router, because the attention rows navigate and the
  * detail sheets read the URL they navigate to. The search schema is deliberately
  * permissive: this file pins the header's behaviour, and the real schema is the
@@ -275,7 +291,12 @@ function renderHeader(
     getParentRoute: () => rootRoute,
     path: '/',
     validateSearch: (search: Record<string, unknown>) => search,
-    component: () => <PinnedTriageHeader {...props} />,
+    component: () => (
+      <>
+        <PendingApprovalsProbe />
+        <PinnedTriageHeader {...props} />
+      </>
+    ),
   });
   const router = createRouter({
     routeTree: rootRoute.addChildren([indexRoute]),
@@ -381,6 +402,7 @@ describe('PinnedTriageHeader while the composer has the caret', () => {
     cleanup();
     discardPendingRejections();
     discardSettlingSchedules();
+    discardSettlingApprovals();
     viewport.mobile = false;
     vi.clearAllMocks();
   });
@@ -494,6 +516,7 @@ describe('PinnedTriageHeader at its height cap', () => {
     // here would fire its DELETE in the middle of a later, unrelated case.
     discardPendingRejections();
     discardSettlingSchedules();
+    discardSettlingApprovals();
     vi.clearAllMocks();
   });
 
@@ -639,6 +662,7 @@ describe('PinnedTriageHeader', () => {
     // here would fire its DELETE in the middle of a later, unrelated case.
     discardPendingRejections();
     discardSettlingSchedules();
+    discardSettlingApprovals();
     vi.clearAllMocks();
   });
 
@@ -749,11 +773,57 @@ describe('PinnedTriageHeader', () => {
 
     listPendingApprovals.mockResolvedValue({ approvals: [] });
     settle();
-    await waitFor(() => expect(document.querySelector('[data-slot="approval-card"]')).toBeNull());
+    // The card outlives the refetch by its receipt's hold now (DOR-1411), so
+    // the retirement is a beat later than the drain rather than in the same
+    // frame — hence the longer window than `waitFor`'s one-second default.
+    await waitFor(() => expect(document.querySelector('[data-slot="approval-card"]')).toBeNull(), {
+      timeout: 4_000,
+    });
     // The last thing waiting was answered, so the header goes with it.
     await waitFor(() => expect(header()).toBeNull());
     // Answering is not navigating: the feed underneath must not move.
     expect(router.state.location.pathname).toBe('/');
+  });
+
+  it('keeps the answered approval on screen once the server stops listing it', async () => {
+    // The disappearance this closes: answering is optimistic, and the refetch
+    // that follows drops the request from the pending list — which used to take
+    // the card AND the "Waiting On You" group around it out of the tree in the
+    // same frame, because the whole list is drawn behind an
+    // `approvals.length > 0` guard. An exit nothing is watching for never runs,
+    // so the receipt was gone in one round trip and the answer looked like a
+    // disappearance (DOR-1411).
+    //
+    // Driven through the REAL hold: nothing about `settling-approvals` is
+    // mocked here. Seeded defect: revert `shownApprovals` to `approvals` in
+    // either the header's guard or the list it hands down, and this reds.
+    const listPendingApprovals = vi.fn().mockResolvedValue({ approvals: [buildApproval()] });
+    const grantApproval = vi.fn().mockImplementation(async () => {
+      // The server has recorded the answer, so the pending list comes back
+      // empty on the invalidation that follows.
+      listPendingApprovals.mockResolvedValue({ approvals: [] });
+      return { ok: true, approvalId: '01JZ0000000000000000000001', outcome: 'granted' };
+    });
+    renderHeader({ listPendingApprovals, grantApproval });
+
+    await screen.findByText('Uninstall a marketplace package');
+    await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
+
+    // Waits for the queue to be genuinely EMPTY — the cache rewritten and the
+    // header re-rendered off it — rather than for the refetch to have been
+    // asked for. Without the hold the card is already gone by this line.
+    await screen.findByText('pending:0');
+
+    // Still there, still saying what happened, inside a group that has not
+    // collapsed around it.
+    expect(screen.getByText('Allowed')).toBeInTheDocument();
+    expect(screen.getByText('Waiting On You')).toBeInTheDocument();
+
+    // And it does let go: a hold that never released would pin a decided card
+    // to the header forever. The window is the hold plus the card's own melt.
+    await waitFor(() => expect(screen.queryByText('Allowed')).not.toBeInTheDocument(), {
+      timeout: 4_000,
+    });
   });
 
   it('says so when the approval list cannot be read, rather than looking like silence', async () => {

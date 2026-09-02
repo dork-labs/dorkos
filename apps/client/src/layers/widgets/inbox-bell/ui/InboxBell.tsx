@@ -29,6 +29,7 @@ import {
   ApprovalsUnavailable,
   StandingPermissionList,
   StandingPermissionsUnavailable,
+  useApprovalCards,
   useStandingPermissions,
 } from '@/layers/features/approvals';
 import { usePinnedDrainBeat } from '../model/use-pinned-drain-beat';
@@ -211,6 +212,12 @@ export function InboxBell() {
   // server's parked list within a frame, which would take the card AND this
   // group out of the tree before the receipt could be read.
   const shownSchedules = useScheduleApprovalCards(schedules);
+  // …and for the capability approvals, which were the last kind still exposed
+  // to it (DOR-1411): answering the last one drops it from the pending list on
+  // the next refetch, and the `approvals.length > 0` guard below took the
+  // `AnimatePresence` down with it, so the exit never ran. Not counted — the
+  // badge and the sentences below still read the live lists.
+  const shownApprovals = useApprovalCards(approvals);
   // What to call each asking agent. The wire carries ids only, so the roster is
   // joined here — the same join the sidebar's rows make.
   const agentNames = useAskAgentNames(asks);
@@ -292,7 +299,11 @@ export function InboxBell() {
   // off `NotificationCenter` instead (see `usePinnedDrainBeat`).
   const beating = usePinnedDrainBeat(waitingCount + settling.length, open);
   const showsPinned =
-    waitingCount > 0 || settling.length > 0 || shownSchedules.length > 0 || isError;
+    waitingCount > 0 ||
+    settling.length > 0 ||
+    shownSchedules.length > 0 ||
+    shownApprovals.length > 0 ||
+    isError;
 
   const pill = resolvePill({
     waitingCount,
@@ -391,7 +402,7 @@ export function InboxBell() {
                       }
                     />
                   )}
-                  {approvals.length > 0 && <ApprovalList approvals={approvals} />}
+                  {shownApprovals.length > 0 && <ApprovalList approvals={shownApprovals} />}
 
                   {/* Parked schedules, last of the three waiting groups: nothing
                       is on a clock here — a proposal keeps until it is decided,

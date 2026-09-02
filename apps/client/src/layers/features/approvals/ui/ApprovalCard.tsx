@@ -8,6 +8,12 @@ import { AskCard, askExitTransition, formatTimeLeft } from '@/layers/features/as
 import { formatTrustWindow } from '../lib/format-trust-window';
 import { agentLabelFrom } from '../lib/agent-label';
 import { useGrantApproval, useDenyApproval } from '../model/use-approval-decision';
+import {
+  holdDecidedApproval,
+  releaseDecidedApproval,
+  useHeldApprovalDecision,
+  type ApprovalDecision,
+} from '../model/settling-approvals';
 import { useStandingGrantPolicy } from '../model/use-standing-grant-policy';
 import { RequestingAgent } from './RequestingAgent';
 
@@ -22,9 +28,6 @@ const TIER_LABEL = {
   act: 'Changes things',
   destructive: 'Cannot be undone',
 } as const;
-
-/** What a person answered, once they have. */
-type Decision = 'granted' | 'denied';
 
 /** The touch target a small button gets on a phone, without growing the button. */
 const TOUCH_TARGET = 'relative after:absolute after:-inset-3 md:after:hidden';
@@ -82,7 +85,13 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
   const deciding = grant.isPending || deny.isPending;
   const { canGrant, windowMinutes } = useStandingGrantPolicy();
   const reducedMotion = useReducedMotion();
-  const [decision, setDecision] = useState<Decision | null>(null);
+  const [answered, setAnswered] = useState<ApprovalDecision | null>(null);
+  // The same answer, as the hold remembers it. Local state is the fast path and
+  // this is what survives a remount: the copy that was answered can be unmounted
+  // by the refetch, and the card the hold puts back in its place is a fresh one
+  // with no state of its own.
+  const held = useHeldApprovalDecision(approval.approvalId);
+  const decision = answered ?? held ?? null;
 
   /**
    * Show the answer, tell the list focus is about to lose its button, and send
@@ -90,10 +99,21 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
    * says what went wrong, and the buttons have to be answerable again for that
    * sentence to be actionable.
    */
-  const answer = (kind: Decision, send: (onError: () => void) => void) => {
-    setDecision(kind);
+  const answer = (kind: ApprovalDecision, send: (onError: () => void) => void) => {
+    setAnswered(kind);
     onDecided?.(approval.approvalId);
-    send(() => setDecision(null));
+    // Hold the card on screen BEFORE the mutation settles. The race being lost
+    // is the refetch that drops this request from the pending list and unmounts
+    // the list around its own receipt — waiting for the mutation would be
+    // waiting for the very thing that ends the card (see `settling-approvals`).
+    holdDecidedApproval(approval, kind);
+    send(() => {
+      // The hold goes with the receipt it was holding for: the card is
+      // answerable again, and a stale hold would draw it twice — once from the
+      // server's list and once from ours.
+      releaseDecidedApproval(approval.approvalId);
+      setAnswered(null);
+    });
   };
 
   // Both conditions are needed and neither implies the other. `canGrant` is a

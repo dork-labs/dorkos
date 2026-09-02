@@ -305,6 +305,10 @@ vi.mock('@/layers/features/approvals', () => ({
   // An empty list keeps the marker's appearance driven solely by the pending
   // queue, which is what every assertion below is written against.
   useStandingPermissions: () => ({ permissions: [], isLoading: false, isError: false }),
+  // Identity, because the receipt hold is not what this suite is about — and
+  // identity IS what the real hook returns while nothing has just been
+  // answered, so the marker stays driven solely by the pending queue.
+  useApprovalCards: (approvals: Array<{ approvalId: string }>) => approvals,
 }));
 
 vi.mock('@/layers/features/command-palette', () => ({

@@ -35,7 +35,7 @@ import {
   useSettlingAsks,
 } from '@/layers/entities/attention';
 import { AskList } from '@/layers/features/ask';
-import { ApprovalList, ApprovalsUnavailable } from '@/layers/features/approvals';
+import { ApprovalList, ApprovalsUnavailable, useApprovalCards } from '@/layers/features/approvals';
 
 /** Nothing covered — one shared array, so an empty slot never rebuilds the model. */
 const NOTHING_COVERED: readonly string[] = [];
@@ -89,6 +89,10 @@ export function useNowAttentionSlot(): NowAttentionSlot {
   // both guard against the same way: hold the slot, and the AskList render,
   // open for as long as anything is settling.
   const settling = useSettlingAsks();
+  // The same hold for the approvals themselves (DOR-1411). Answering the last
+  // one drops it from the pending list on the next refetch, and `nothingToSay`
+  // below then unmounts this whole slot in the frame its receipt would draw.
+  const shownApprovals = useApprovalCards(approvals);
   const agentNames = useAskAgentNames(asks);
   const navigate = useNavigate();
 
@@ -104,7 +108,7 @@ export function useNowAttentionSlot(): NowAttentionSlot {
   );
 
   const nothingToSay =
-    !isError && approvals.length === 0 && asks.length === 0 && settling.length === 0;
+    !isError && shownApprovals.length === 0 && asks.length === 0 && settling.length === 0;
   if (nothingToSay) return { slot: null, coveredSignalIds: NOTHING_COVERED };
 
   return {
@@ -124,7 +128,7 @@ export function useNowAttentionSlot(): NowAttentionSlot {
             }}
           />
         )}
-        {approvals.length > 0 && <ApprovalList approvals={approvals} />}
+        {shownApprovals.length > 0 && <ApprovalList approvals={shownApprovals} />}
       </div>
     ),
   };
