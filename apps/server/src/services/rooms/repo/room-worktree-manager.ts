@@ -145,6 +145,34 @@
  * `SKILL.md` rather than `.agents/skills/`, because that directory is where the
  * ROOM authors its own skills and hiding it would hide their work.
  *
+ * **Seeding widened what the projection writes, and the block had to widen with
+ * it.** The projection used to return early unless `.agents/skills/` existed, so
+ * in a room that authored no skills it did nothing at all. Seeding creates that
+ * directory in every worktree, so the projection now runs in every worktree —
+ * and it makes more than skill symlinks. `planInstruction` scaffolds
+ * `.claude/CLAUDE.md` whenever the tree root has an `AGENTS.md`, which is a room
+ * shape spec `project-rooms` D14 plans for; that is
+ * {@link SCAFFOLDED_INSTRUCTION_EXCLUDES}, asked of the planner rather than
+ * spelled here.
+ *
+ * The list is complete for the harnesses DorkOS scaffolds
+ * ({@link AGENT_WORKSPACE_HARNESSES} — claude-code alone), and that completeness
+ * is pinned by a test that runs the REAL planner over a created worktree and
+ * asks `git check-ignore` about every target it plans. A new engine target
+ * reddens it; nobody has to remember this paragraph.
+ *
+ * **A room that commits its own `.agents/harness.manifest.json` enabling other
+ * harnesses is outside that guarantee, deliberately.** The projection respects a
+ * hand-authored manifest, so such a room can draw `GEMINI.md`,
+ * `.github/copilot-instructions.md` or a generated hooks file into its
+ * worktrees. Those are not added here: each is a path a PERSON may author, and
+ * the module's rule is that excluding a file DorkOS might not have written would
+ * hide somebody's work and then let the reap delete it. So they stay visible,
+ * the worktree reads dirty, and it is spared rather than removed — the
+ * conservative direction, and a visible one. Widening this block is the wrong
+ * repair if that ever needs fixing; narrowing what the projection does in a room
+ * worktree is the right one.
+ *
  * **An exclude cannot hide a TRACKED file**, which is what makes these entries
  * safe: a room that commits its own harness manifest keeps working on it
  * normally.
@@ -157,12 +185,14 @@ import path from 'node:path';
 import type { RoomContextFiles } from '@dorkos/shared/additional-context';
 import { slugifyAgentName } from '@dorkos/shared/validation';
 import { OPERATING_SKILLS_PACK } from '@dorkos/operating-skills';
+import { planInstruction } from '@dorkos/harness';
 import { logger } from '../../../lib/logger.js';
 import { RoomError } from '../room-errors.js';
 import { PROJECTED_ATTACHMENTS_ROOT } from '../attachments/attachment-paths.js';
 import {
   projectAgentWorkspace,
   seedAgentWorkspace,
+  AGENT_WORKSPACE_HARNESSES,
   type AgentWorkspaceProjection,
 } from '../../harness/project-agent-workspace.js';
 import type { RoomRepoStore } from './room-repo-store.js';
@@ -237,13 +267,50 @@ const DORKOS_TEMP_DIR = path.posix.dirname(PROJECTED_ATTACHMENTS_ROOT);
  * (`@dorkos/operating-skills`, `seed.ts` → `writeSkillFile`), never the skill's
  * directory and certainly never `.agents/skills/` — that directory is where a
  * room authors skills of its own (§3.8), and hiding it would hide a member's
- * work from `git status` and then let the reap delete it. A room that authors a
- * skill sharing a pack name keeps it (the seeder `preserve`s it) and, being
- * committed, keeps showing up too: an exclude cannot hide a TRACKED file.
+ * work from `git status` and then let the reap delete it.
+ *
+ * **These seven names are RESERVED inside a room worktree, and the cost is real
+ * rather than theoretical.** The usual escape — an exclude cannot hide a TRACKED
+ * file — covers a room that COMMITTED a skill at one of these paths: the seeder
+ * preserves the content, git keeps reporting it, everything works. It does not
+ * cover an UNCOMMITTED one. An agent that writes `.agents/skills/reading-
+ * activity/SKILL.md` in its worktree and does not commit it has written a file
+ * this block hides: `git status` reports nothing, the tree reads idle and clean,
+ * and the reap removes the working copy with that file in it. Nothing warns.
+ *
+ * That is accepted rather than overlooked, because every alternative is worse:
+ * excluding nothing makes EVERY worktree permanently dirty, and excluding the
+ * directory hides strictly more of the room's work. The narrowest possible list
+ * is what keeps the exposure to seven known names — which is also why it must
+ * never be widened to the directory as a convenience.
  */
 const SEEDED_PACK_EXCLUDES: readonly string[] = OPERATING_SKILLS_PACK.map(
   (skill) => `/.agents/skills/${skill.name}/SKILL.md`
 );
+
+/**
+ * The `info/exclude` lines that hide the instruction pointer the projection
+ * scaffolds — asked of the PLANNER, never spelled here.
+ *
+ * `planInstruction` writes `.claude/CLAUDE.md` whenever the tree root carries an
+ * `AGENTS.md`, which spec `project-rooms` D14 plans for. That scaffold used to be
+ * unreachable: the projection returned early unless `.agents/skills/` existed, so
+ * only a room that authored skills of its own ever got that far. Seeding creates
+ * that directory in EVERY worktree, so the projection now always runs — and the
+ * path it writes was hidden by nothing, leaving `?? .claude/` on every tree in
+ * such a room. Never reaped, never mergeable.
+ *
+ * Derived by running the planner and reading the target back, rather than
+ * repeating the literal: the engine owns where a harness's pointer goes, and a
+ * second copy of that decision here would be silently wrong the day it moved.
+ * {@link AGENT_WORKSPACE_HARNESSES} is the same list the projection scaffolds
+ * for, so the question asked here is exactly the question answered there.
+ */
+const SCAFFOLDED_INSTRUCTION_EXCLUDES: readonly string[] = AGENT_WORKSPACE_HARNESSES.map(
+  (harness) => planInstruction(harness, true).target
+)
+  .filter((target): target is string => target !== undefined)
+  .map((target) => `/${target}`);
 
 /**
  * The `info/exclude` block that keeps what DorkOS writes out of `git status`.
@@ -265,6 +332,7 @@ const EXCLUDE_BLOCK = [
   '/.claude/skills/',
   '/.agents/harness.manifest.json',
   `/${DORKOS_TEMP_DIR}/`,
+  ...SCAFFOLDED_INSTRUCTION_EXCLUDES,
   ...SEEDED_PACK_EXCLUDES,
   '# --- end DorkOS ---',
 ].join('\n');
@@ -614,12 +682,21 @@ export class RoomWorktreeManager {
    * `dorkos uninstall` was ungated, v6 that `tasks_delete` carried no gate — and
    * a standing room worktree is precisely where an agent works for a long time.
    *
-   * **The exclude block is refreshed BEFORE anything is written**, and the order
-   * is load-bearing rather than tidy. This worktree's repo may carry a block
-   * from a release that predates {@link SEEDED_PACK_EXCLUDES}, and seeding into
-   * it would leave every worktree in that room permanently dirty: never reaped,
-   * never mergeable. Writing what must be hidden before hiding it is the same
-   * mistake in the other direction, so the block goes first.
+   * **The exclude block is refreshed here at all** because this worktree's repo
+   * may carry a block from a release that predates
+   * {@link SEEDED_PACK_EXCLUDES}: `ensureProjectionExcluded` otherwise runs only
+   * at create, so seeding into a tree made by an older release would leave every
+   * worktree in that room permanently dirty — never reaped, never mergeable.
+   * That refresh is load-bearing.
+   *
+   * Its ORDER relative to the seeding is only tidy, and is deliberately not
+   * claimed as more. Both writes complete before this method returns, and
+   * nothing reads `git status` in between — the reap takes its own pass, and a
+   * turn has not started yet. Swapping them would leave a window where the tree
+   * reads dirty rather than clean, and a reap landing in that window SPARES the
+   * tree, which is the safe direction anyway. Stating it as load-bearing when it
+   * is not would teach the next reader to discount every other claim in this
+   * file that IS.
    *
    * Re-projection is conditional on the seeder having actually written, so a
    * worktree already on the current pack costs one `git rev-parse` and seven

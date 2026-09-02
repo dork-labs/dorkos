@@ -25,10 +25,21 @@
  *   sentinel reddens the same test the other way: the previous release's block
  *   is not found, a second one is appended, and the file carries two.
  * - Dropping the pack lines from `EXCLUDE_BLOCK` — or hand-listing them and
- *   missing one — reddens "seeds the agent's own operating skills into the tree
- *   the turn runs in, and the tree still reads clean". Measured: seven `??
- *   .agents/` entries, so the tree is dirty from birth and can never be reaped
- *   or merged. That is the DOR-1640 invariant, and it is why the list is derived.
+ *   missing one — reddens 19 tests, most of the reap suite among them. Measured:
+ *   the tree is dirty from birth, so it can never be reaped or merged. That is
+ *   the DOR-1640 invariant, and it is why the list is derived.
+ * - Dropping `SCAFFOLDED_INSTRUCTION_EXCLUDES` reddens "stays clean when the
+ *   room's files carry an AGENTS.md". Seeding made the projection run in EVERY
+ *   worktree (it used to return early with no `.agents/skills/`), which reached
+ *   a `.claude/CLAUDE.md` scaffold nothing was hiding.
+ *
+ * **One test in here is written not to name a path at all.** "hides EVERY path
+ * the real projection plan targets" runs the production planner over the tree
+ * production made and asks `git check-ignore` about every target it plans. The
+ * two tests above it each pin one KNOWN target, and the defect they were written
+ * for was a target nobody had thought of — so the guard against the next one
+ * cannot be another literal. Add a scaffold or a generated file to the harness
+ * engine and it reddens, naming the uncovered path.
  * - Dropping the digest from `slugFor` reddens "two agents with one name get
  *   two worktrees".
  * - Branching unconditionally (`-b` always) reddens "re-attaches a branch the
@@ -54,6 +65,7 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { OPERATING_SKILLS_PACK } from '@dorkos/operating-skills';
+import { project } from '@dorkos/harness';
 import { rooms, type Db } from '@dorkos/db';
 import type { Room } from '@dorkos/shared/room-schemas';
 import { ROOM_REPO_CAP_DEFAULTS } from '@dorkos/shared/room-repo';
@@ -398,6 +410,90 @@ describe('RoomWorktreeManager', () => {
       // THE invariant. A clean status is what gates the reap AND §3.6's merge,
       // so a pack that arrives by dirtying the tree costs the agent its work
       // instead of teaching it anything.
+      expect(await git(['status', '--porcelain=v1'], handle.path)).toBe('');
+    });
+
+    it('stays clean when the room’s files carry an AGENTS.md', async () => {
+      // The projection writes more than skill symlinks. `planInstruction`
+      // scaffolds `.claude/CLAUDE.md` whenever the tree root has an AGENTS.md,
+      // and spec `project-rooms` D14 plans for exactly that room shape.
+      //
+      // Before seeding, `projectAgentWorkspace` returned early on a missing
+      // `.agents/skills/`, so a room with no skills of its own never reached the
+      // scaffold. Seeding creates that directory unconditionally, so the
+      // projection now runs in EVERY worktree — which turns a path that used to
+      // be unreachable into `?? .claude/` on every tree in the install.
+      await service.enable(ROOM_ID, OPERATOR);
+      const repoDir = store.repoPath(ROOM_ID);
+      await writeFile(path.join(repoDir, 'AGENTS.md'), '# How we work in this room\n', 'utf-8');
+      await commitAll(repoDir, 'add AGENTS.md', { name: 'D', email: 'd@dorkos.local' }, scratch);
+
+      const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
+
+      // The scaffold landed — this is not a test that suppressed it…
+      expect(existsSync(path.join(handle.path, '.claude', 'CLAUDE.md'))).toBe(true);
+      // …and it is hidden, so the reap and the §3.6 merge still work.
+      expect(await git(['status', '--porcelain=v1'], handle.path)).toBe('');
+    });
+
+    it('hides EVERY path the real projection plan targets, whatever the plan grows', async () => {
+      // The guard the two tests above cannot be: they each pin one known target,
+      // and the defect they were written for was a target nobody had thought of.
+      // So this one does not name paths at all. It runs the SAME planner
+      // production runs, over the tree production made, and asks git — not a
+      // reimplementation of gitignore semantics — whether each planned target is
+      // hidden. A new scaffold or generated file in the harness engine reddens
+      // this without anybody remembering the exclude block exists.
+      //
+      // The fixture turns on everything the plan branches on: authored skills,
+      // an AGENTS.md to point at, and a `.claude/settings.json` for the hooks
+      // path to read.
+      await service.enable(ROOM_ID, OPERATOR);
+      const repoDir = store.repoPath(ROOM_ID);
+      await mkdir(path.join(repoDir, '.agents', 'skills', 'house-style'), { recursive: true });
+      await writeFile(
+        path.join(repoDir, '.agents', 'skills', 'house-style', 'SKILL.md'),
+        '# house style\n',
+        'utf-8'
+      );
+      await writeFile(path.join(repoDir, 'AGENTS.md'), '# how we work\n', 'utf-8');
+      await mkdir(path.join(repoDir, '.claude'), { recursive: true });
+      await writeFile(
+        path.join(repoDir, '.claude', 'settings.json'),
+        JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'true' }] }] } }),
+        'utf-8'
+      );
+      await commitAll(
+        repoDir,
+        'a room with everything',
+        { name: 'D', email: 'd@d.local' },
+        scratch
+      );
+
+      const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
+
+      const plan = project(handle.path, { allowPluginHooks: () => false });
+      const targets = [
+        ...new Set(plan.actions.map((a) => a.target).filter((t) => t !== undefined)),
+      ];
+      // A plan with nothing in it would pass this test vacuously.
+      expect(targets.length).toBeGreaterThan(0);
+
+      const visible: string[] = [];
+      for (const target of targets) {
+        // Tracked files are the room's own and are SUPPOSED to be visible; an
+        // exclude cannot hide one anyway. Everything else DorkOS wrote, so it
+        // must be ignored.
+        const tracked = (await git(['ls-files', '--', target], handle.path)) !== '';
+        if (tracked) continue;
+        const ignored = await git(['check-ignore', '--', target], handle.path).then(
+          () => true,
+          () => false
+        );
+        if (!ignored) visible.push(target);
+      }
+      expect(visible).toEqual([]);
+      // …and the whole point of all of it, asked the way the reap asks it.
       expect(await git(['status', '--porcelain=v1'], handle.path)).toBe('');
     });
 

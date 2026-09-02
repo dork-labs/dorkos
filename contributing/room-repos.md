@@ -273,7 +273,18 @@ Two rules follow, and both are pinned by test:
   hand-written list that falls one skill behind leaves every worktree in the install permanently
   dirty. Each entry names the one `SKILL.md` the seeder writes, never `.agents/skills/` — that
   directory is where the room authors skills of its own, and a room-authored skill sharing a pack
-  name is preserved, never overwritten.
+  name is preserved, never overwritten. The cost, accepted and documented at the constant: those
+  seven names are reserved, so an UNCOMMITTED room-authored file at one of them is hidden from
+  `git status` and goes with the tree when the reap takes it.
+- **Seeding widened the projection, so the block covers its scaffolds too.** The projection used to
+  return early without an `.agents/skills/`; now it always runs, and it writes more than skill
+  symlinks — `planInstruction` scaffolds `.claude/CLAUDE.md` whenever the tree root has an
+  `AGENTS.md`. That entry is obtained by running the planner, never spelled. Completeness is pinned
+  by a test that runs the real planner over a created worktree and asks `git check-ignore` about
+  every target, so a new engine target reddens without anybody remembering this page. A room that
+  commits a manifest enabling other harnesses is outside the guarantee on purpose: `GEMINI.md` and
+  friends are paths a person may author, so they stay visible (dirty ⇒ spared, never deleted).
+  Narrow the room projection if that ever needs fixing; do not widen this block.
 - **`repo/` is never seeded.** No turn runs in the integration tree, and its contents are the room's
   committed files.
 

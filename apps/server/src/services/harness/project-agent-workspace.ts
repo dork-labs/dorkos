@@ -97,8 +97,13 @@ const AGENT_SKILLS_DIR = join('.agents', 'skills');
  * harnesses read `.agents/skills/` natively. Enabling more would add no skill
  * coverage and would make this unattended pass generate hook files. See the
  * module docs.
+ *
+ * Exported because it decides more than the scaffold: it is the harness set
+ * whose projection TARGETS a caller has to account for. `room-worktree-manager`
+ * derives its `info/exclude` entries by running the planner over this list, so
+ * the two can never disagree about which harnesses DorkOS writes files for.
  */
-const AGENT_WORKSPACE_HARNESSES: readonly HarnessId[] = ['claude-code'];
+export const AGENT_WORKSPACE_HARNESSES: readonly HarnessId[] = ['claude-code'];
 
 /**
  * No installed package may contribute hooks to an agent-workspace projection.
