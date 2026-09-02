@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import http from 'node:http';
 import type { Request, Response } from 'express';
 import express from 'express';
 import request from 'supertest';
@@ -28,8 +29,30 @@ vi.mock('../../../lib/logger.js', () => ({
   },
 }));
 
+// The real limiter's behaviour is pinned in
+// `middleware/__tests__/extension-proxy-rate-limit.test.ts`. Here it stands in
+// as a spy so these tests can prove WHERE it is mounted — ahead of the handler,
+// so a refusal costs no outbound request — without driving 120 requests.
+const limiter = vi.hoisted(() => ({ seen: [] as string[], refuse: false }));
+
+vi.mock('../../../middleware/extension-proxy-rate-limit.js', () => ({
+  EXTENSION_PROXY_RATE_LIMIT_DEFAULT: 120,
+  buildExtensionProxyRateLimiter:
+    () =>
+    (req: Request, res: Response, next: () => void): void => {
+      limiter.seen.push(req.url);
+      if (limiter.refuse) {
+        res.status(429).json({ error: 'Too many requests', code: 'PROXY_RATE_LIMITED' });
+        return;
+      }
+      next();
+    },
+}));
+
 // Import after mocks
-import { createProxyRouter } from '../extension-proxy.js';
+import { createProxyRouter, STRIPPED_HEADERS } from '../extension-proxy.js';
+import { logger } from '../../../lib/logger.js';
+import { AGENT_IDENTITY_HEADER } from '../../../middleware/agent-identity.js';
 
 // --- Helpers ---
 
@@ -89,6 +112,28 @@ function makeRes(): Response & {
   return res as unknown as Response & typeof res;
 }
 
+/**
+ * GET one path with a raw HTTP client, so the request line reaches the server
+ * exactly as written — no client-side path normalization.
+ *
+ * @param app - The Express app to listen on an ephemeral port.
+ * @param rawPath - The request target, sent verbatim.
+ */
+function rawGetStatus(app: express.Express, rawPath: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = app.listen(0, () => {
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      http
+        .get({ host: '127.0.0.1', port, path: rawPath }, (res) => {
+          res.resume();
+          res.on('end', () => server.close(() => resolve(res.statusCode ?? 0)));
+        })
+        .on('error', (err) => server.close(() => reject(err)));
+    });
+  });
+}
+
 /** Shape of an Express Router's internal route stack. */
 interface RouterStack {
   stack: Array<{
@@ -98,13 +143,18 @@ interface RouterStack {
   }>;
 }
 
-/** Extract the route handler from the router created by createProxyRouter. */
+/**
+ * Extract the proxy handler from the router created by createProxyRouter.
+ *
+ * The last entry in the route's stack — the rate limiter is mounted ahead of it.
+ */
 function getProxyHandler(
   config: DataProxyConfig = DEFAULT_CONFIG
 ): (req: Request, res: Response) => Promise<void> {
   const router = createProxyRouter('test-ext', config, '/fake/dork-home');
   const routerInternal = router as unknown as RouterStack;
-  return routerInternal.stack[0].route.stack[0].handle;
+  const routeStack = routerInternal.stack[0].route.stack;
+  return routeStack[routeStack.length - 1].handle;
 }
 
 // --- Tests ---
@@ -115,6 +165,8 @@ describe('createProxyRouter', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     originalFetch = globalThis.fetch;
+    limiter.seen = [];
+    limiter.refuse = false;
   });
 
   afterEach(() => {
@@ -556,6 +608,453 @@ describe('createProxyRouter', () => {
         'https://api.example.com/v1/issues/123?state=open',
         expect.any(Object)
       );
+    });
+  });
+
+  // The proxy authenticates itself to the upstream with the extension's own
+  // stored secret. Anything the CALLER sent to prove who they are to DorkOS is
+  // a credential for DorkOS, not for the upstream, and must not leave with the
+  // request — the session cookie above all.
+  describe('caller credentials are not forwarded upstream', () => {
+    it('strips the caller cookie, Authorization and DorkOS agent token', async () => {
+      mockSecretGet.mockResolvedValue('tok');
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        status: 200,
+        headers: new Headers(),
+        text: () => Promise.resolve('ok'),
+      });
+
+      const handler = getProxyHandler({ ...DEFAULT_CONFIG, authHeader: 'X-Api-Key' });
+      await handler(
+        makeReq({
+          headers: {
+            'content-type': 'application/json',
+            cookie: 'dorkos.session_token=secret-session',
+            authorization: 'Bearer dorkos-api-key',
+            'x-dorkos-agent': 'agent-token',
+            'x-custom': 'keep-me',
+          } as Record<string, string>,
+        }),
+        makeRes()
+      );
+
+      const callHeaders = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].headers;
+      expect(callHeaders).not.toHaveProperty('cookie');
+      expect(callHeaders).not.toHaveProperty('authorization');
+      expect(callHeaders).not.toHaveProperty('x-dorkos-agent');
+      expect(callHeaders).toHaveProperty('x-custom', 'keep-me');
+      expect(callHeaders).toHaveProperty('X-Api-Key', 'Bearer tok');
+    });
+
+    // The list holds a hardcoded copy of the agent-identity header name. If
+    // that constant is ever renamed, this fails instead of the proxy quietly
+    // resuming the leak.
+    it('strips the real AGENT_IDENTITY_HEADER, not a copy that can drift', () => {
+      expect(STRIPPED_HEADERS.has(AGENT_IDENTITY_HEADER)).toBe(true);
+    });
+
+    it('leaves only the injected credential when the upstream header is Authorization', async () => {
+      mockSecretGet.mockResolvedValue('upstream-token');
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        status: 200,
+        headers: new Headers(),
+        text: () => Promise.resolve('ok'),
+      });
+
+      const handler = getProxyHandler();
+      await handler(
+        makeReq({
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer dorkos-api-key',
+          } as Record<string, string>,
+        }),
+        makeRes()
+      );
+
+      // Both spellings would survive into the same `Headers` object and be
+      // joined with a comma, handing the upstream the caller's DorkOS key too.
+      const callHeaders = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].headers;
+      expect(Object.keys(callHeaders).filter((k) => k.toLowerCase() === 'authorization')).toEqual([
+        'Authorization',
+      ]);
+      expect(callHeaders.Authorization).toBe('Bearer upstream-token');
+    });
+  });
+
+  // The caller controls the whole sub-path, and `fetch` normalizes dot segments
+  // before it opens the connection — so an unchecked `..` reaches endpoints
+  // above the configured base path, carrying the injected credential.
+  describe('path confinement under the baseUrl prefix', () => {
+    const SCOPED: DataProxyConfig = { ...DEFAULT_CONFIG, baseUrl: 'https://api.example.com/v1' };
+
+    /** Mock a successful upstream so a call that gets through is visible. */
+    function armFetch(): void {
+      mockSecretGet.mockResolvedValue('tok');
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        status: 200,
+        headers: new Headers(),
+        text: () => Promise.resolve('ok'),
+      });
+    }
+
+    it('forwards a path that stays under the prefix', async () => {
+      armFetch();
+
+      const handler = getProxyHandler(SCOPED);
+      await handler(makeReq({ params: { splat: ['issues', '123'] } }), makeRes());
+
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        'https://api.example.com/v1/issues/123',
+        expect.any(Object)
+      );
+    });
+
+    it('keeps a filename that merely contains dots', async () => {
+      armFetch();
+
+      const handler = getProxyHandler(SCOPED);
+      await handler(makeReq({ params: { splat: ['files', 'a..b.json'] } }), makeRes());
+
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        'https://api.example.com/v1/files/a..b.json',
+        expect.any(Object)
+      );
+    });
+
+    it('refuses a "../" escape without calling the upstream', async () => {
+      armFetch();
+
+      const handler = getProxyHandler(SCOPED);
+      const res = makeRes();
+      await handler(makeReq({ params: { splat: ['..', 'admin'] } }), res);
+
+      expect(res._status).toBe(400);
+      expect((res._body as { code: string }).code).toBe('PROXY_PATH_NOT_ALLOWED');
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+
+    it('refuses an escape that arrived percent-encoded (%2f decoded into one segment)', async () => {
+      armFetch();
+
+      // Express decodes each path segment, so `..%2f..%2fadmin` reaches the
+      // handler as a single segment that already contains separators.
+      const handler = getProxyHandler(SCOPED);
+      const res = makeRes();
+      await handler(makeReq({ params: { splat: ['../../admin'] } }), res);
+
+      expect(res._status).toBe(400);
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+
+    it('refuses a query string smuggled through the path', async () => {
+      armFetch();
+
+      const handler = getProxyHandler(SCOPED);
+      const res = makeRes();
+      await handler(makeReq({ params: { splat: ['issues?admin=1'] } }), res);
+
+      expect(res._status).toBe(400);
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+
+    it('refuses a fragment smuggled through the path', async () => {
+      armFetch();
+
+      const handler = getProxyHandler(SCOPED);
+      const res = makeRes();
+      await handler(makeReq({ params: { splat: ['issues#frag'] } }), res);
+
+      expect(res._status).toBe(400);
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+
+    // Sent down a raw socket rather than through supertest: superagent
+    // normalizes `%2e%2e` in the path before it ever leaves the client, so
+    // supertest cannot express this request. A raw client can, and Express
+    // decodes the segments back into `..` on arrival.
+    it('refuses `%2e%2e` traversal driven through the real router', async () => {
+      armFetch();
+
+      const app = express();
+      app.use(createProxyRouter('test-ext', SCOPED, '/fake/dork-home'));
+
+      const status = await rawGetStatus(app, '/proxy/%2e%2e/%2e%2e/admin');
+
+      expect(status).toBe(400);
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+
+    it('refuses `..%2f` traversal driven through the real router', async () => {
+      armFetch();
+
+      const app = express();
+      app.use(createProxyRouter('test-ext', SCOPED, '/fake/dork-home'));
+
+      const res = await request(app).get('/proxy/..%2f..%2fadmin');
+
+      expect(res.status).toBe(400);
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+
+    it('refuses a climb whose landing segment reads like another host', async () => {
+      armFetch();
+
+      const handler = getProxyHandler(SCOPED);
+      const res = makeRes();
+      await handler(makeReq({ params: { splat: ['..', '..', '@evil.example.com', 'x'] } }), res);
+
+      expect(res._status).toBe(400);
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+
+    // The companion fact: a caller cannot move the AUTHORITY at all, whatever
+    // it writes, because the sub-path is appended to a fixed base. This one
+    // stays on the manifest host and so is allowed — the test exists to pin
+    // that the host really is unreachable rather than merely refused.
+    it('keeps a `//host`-shaped path on the manifest origin instead of hopping to it', async () => {
+      armFetch();
+
+      const handler = getProxyHandler(SCOPED);
+      await handler(makeReq({ params: { splat: ['', 'evil.example.com', 'x'] } }), makeRes());
+
+      const called = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(new URL(called).origin).toBe('https://api.example.com');
+    });
+
+    // A prefix compare that forgets the separator lets `/v1` admit `/v1evil`,
+    // which is a different resource tree on the same host.
+    it('refuses a sibling path that merely starts with the base prefix', async () => {
+      armFetch();
+
+      const handler = getProxyHandler(SCOPED);
+      const res = makeRes();
+      await handler(makeReq({ params: { splat: ['..', 'v1evil', 'secrets'] } }), res);
+
+      expect(res._status).toBe(400);
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+
+    // The two checks are not redundant: the first runs on the NORMALIZED URL,
+    // the rewrite runs on the RAW string, so a caller path that cancels itself
+    // out passes the first check and is un-cancelled by an ordinary
+    // prefix-stripping rule.
+    it('re-checks after pathRewrite, which can push a validated path back out', async () => {
+      armFetch();
+
+      const handler = getProxyHandler({ ...SCOPED, pathRewrite: { '/v1/legacy/': '/v1/' } });
+      const res = makeRes();
+      await handler(makeReq({ params: { splat: ['legacy', '..', 'admin'] } }), res);
+
+      expect(res._status).toBe(400);
+      expect((res._body as { code: string }).code).toBe('PROXY_PATH_NOT_ALLOWED');
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+
+    it('still applies a pathRewrite that stays inside the base', async () => {
+      armFetch();
+
+      const handler = getProxyHandler({ ...SCOPED, pathRewrite: { '/v1/legacy/': '/v1/' } });
+      await handler(makeReq({ params: { splat: ['legacy', 'issues'] } }), makeRes());
+
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        'https://api.example.com/v1/issues',
+        expect.any(Object)
+      );
+    });
+  });
+
+  describe('a baseUrl carrying a query or fragment', () => {
+    it('drops it once at router creation instead of failing every request', async () => {
+      mockSecretGet.mockResolvedValue('tok');
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        status: 200,
+        headers: new Headers(),
+        text: () => Promise.resolve('ok'),
+      });
+
+      const handler = getProxyHandler({
+        ...DEFAULT_CONFIG,
+        baseUrl: 'https://api.example.com/v1?token=leftover#frag',
+      });
+      const res = makeRes();
+      await handler(makeReq({ params: { splat: ['issues'] } }), res);
+
+      expect(res._status).toBe(200);
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        'https://api.example.com/v1/issues',
+        expect.any(Object)
+      );
+      expect(vi.mocked(logger.warn).mock.calls.map(String).join('\n')).toContain('baseUrl');
+    });
+  });
+
+  describe('redirects', () => {
+    it('asks fetch not to follow them', async () => {
+      mockSecretGet.mockResolvedValue('tok');
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        status: 200,
+        headers: new Headers(),
+        text: () => Promise.resolve('ok'),
+      });
+
+      const handler = getProxyHandler();
+      await handler(makeReq(), makeRes());
+
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ redirect: 'manual' })
+      );
+    });
+
+    it('hands the redirect back to the caller instead of chasing it', async () => {
+      mockSecretGet.mockResolvedValue('tok');
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        status: 302,
+        headers: new Headers({ location: 'http://169.254.169.254/latest/meta-data/' }),
+        text: () => Promise.resolve(''),
+      });
+
+      const handler = getProxyHandler();
+      const res = makeRes();
+      await handler(makeReq(), res);
+
+      expect(res._status).toBe(302);
+      expect(res._headers.Location).toBe('http://169.254.169.254/latest/meta-data/');
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // Driven against a REAL upstream with the REAL `fetch`. The mocked `fetch`
+  // everywhere else accepts any headers object, so it cannot reproduce what
+  // undici does with a `Content-Length` that disagrees with the body — which is
+  // the whole failure this covers.
+  describe('against a real upstream', () => {
+    /** A server that records one request and answers 200. */
+    async function upstream(): Promise<{
+      url: string;
+      received: Promise<{ body: string; headers: http.IncomingHttpHeaders }>;
+      close: () => void;
+    }> {
+      let resolve!: (value: { body: string; headers: http.IncomingHttpHeaders }) => void;
+      const received = new Promise<{ body: string; headers: http.IncomingHttpHeaders }>((r) => {
+        resolve = r;
+      });
+      const server = http.createServer((req, res) => {
+        let body = '';
+        req.on('data', (chunk) => {
+          body += String(chunk);
+        });
+        req.on('end', () => {
+          resolve({ body, headers: req.headers });
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end('{"ok":true}');
+        });
+      });
+      await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      return {
+        url: `http://127.0.0.1:${port}`,
+        received,
+        close: () => server.close(),
+      };
+    }
+
+    it('forwards an empty POST as {} without the caller Content-Length breaking it', async () => {
+      mockSecretGet.mockResolvedValue('tok');
+      const up = await upstream();
+      try {
+        const handler = getProxyHandler({ ...DEFAULT_CONFIG, baseUrl: up.url });
+        const res = makeRes();
+        await handler(
+          makeReq({
+            method: 'POST',
+            params: { splat: ['things'] },
+            // What a browser actually sends for `POST {}` — 2 bytes here, but a
+            // caller that pretty-printed its JSON sends a bigger number, and
+            // either way it describes the caller's bytes, not ours.
+            headers: {
+              'content-type': 'application/json',
+              'content-length': '4096',
+              host: 'localhost:6242',
+            } as Record<string, string>,
+          }),
+          res
+        );
+
+        const got = await up.received;
+        expect(got.body).toBe('{}');
+        expect(got.headers['content-length']).toBe('2');
+        expect(res._status).toBe(200);
+        expect(res._body).toBe('{"ok":true}');
+      } finally {
+        up.close();
+      }
+    });
+
+    it('forwards a real body and reaches the upstream with the injected credential', async () => {
+      mockSecretGet.mockResolvedValue('tok');
+      const up = await upstream();
+      try {
+        const handler = getProxyHandler({ ...DEFAULT_CONFIG, baseUrl: up.url });
+        const res = makeRes();
+        await handler(
+          makeReq({
+            method: 'POST',
+            params: { splat: ['things'] },
+            body: { query: 'x' },
+            headers: {
+              'content-type': 'application/json',
+              'content-length': '9999',
+              cookie: 'dorkos.session_token=secret-session',
+            } as Record<string, string>,
+          }),
+          res
+        );
+
+        const got = await up.received;
+        expect(got.body).toBe('{"query":"x"}');
+        expect(got.headers.authorization).toBe('Bearer tok');
+        expect(got.headers.cookie).toBeUndefined();
+        expect(res._status).toBe(200);
+      } finally {
+        up.close();
+      }
+    });
+  });
+
+  describe('rate limiting', () => {
+    it('runs the limiter ahead of the proxy handler', async () => {
+      mockSecretGet.mockResolvedValue('tok');
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        status: 200,
+        headers: new Headers(),
+        text: () => Promise.resolve('ok'),
+      });
+
+      const app = express();
+      app.use(createProxyRouter('test-ext', DEFAULT_CONFIG, '/fake/dork-home'));
+
+      await request(app).get('/proxy/graphql');
+
+      expect(limiter.seen).toEqual(['/proxy/graphql']);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('costs no upstream request when the limiter refuses', async () => {
+      mockSecretGet.mockResolvedValue('tok');
+      globalThis.fetch = vi.fn();
+      limiter.refuse = true;
+
+      const app = express();
+      app.use(createProxyRouter('test-ext', DEFAULT_CONFIG, '/fake/dork-home'));
+
+      const res = await request(app).get('/proxy/graphql');
+
+      expect(res.status).toBe(429);
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+      expect(mockSecretGet).not.toHaveBeenCalled();
     });
   });
 });

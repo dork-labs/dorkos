@@ -122,6 +122,35 @@ export function toStreamSocketUrl(url: string, lastEventId?: string | null): str
 }
 
 /**
+ * Call the handler registered for one event name, and nothing else.
+ *
+ * The event name comes from the stream and the handler map is a plain object,
+ * so a bare `handlers[event]` also reaches every member the map merely
+ * INHERITS: `constructor` invokes `Object`, `__proto__` is not callable at all
+ * and throws out of the loop that reads events, killing the stream. Nothing
+ * legitimate is lost by requiring an own, callable property — that is exactly
+ * what `StreamManager` registers.
+ *
+ * Shared with `transport-stream-pump.ts`, which feeds the same handler maps
+ * from the embedded Transport instead of a socket, so both readers of those
+ * maps dispatch by one rule.
+ *
+ * @param handlers - The caller's handler map, keyed by event name.
+ * @param event - The event name the frame carried.
+ * @param data - The frame payload to hand the handler.
+ */
+export function dispatchFrame(
+  handlers: Record<string, (data: unknown) => void>,
+  event: string,
+  data: unknown
+): void {
+  if (!Object.hasOwn(handlers, event)) return;
+  const handler = handlers[event];
+  if (typeof handler !== 'function') return;
+  handler(data);
+}
+
+/**
  * A single durable stream socket with full resilience: full-jitter exponential
  * backoff, a silence watchdog, page-visibility release, and a state machine
  * (connecting → connected → reconnecting → disconnected).
@@ -211,7 +240,7 @@ export class WSConnection {
       // would silently replay it on the next reconnect.
       if (frame.id !== undefined) this.lastEventId = frame.id;
       if (frame.event === STREAM_HEARTBEAT_EVENT) return;
-      this.options.eventHandlers[frame.event]?.(frame.data);
+      dispatchFrame(this.options.eventHandlers, frame.event, frame.data);
     };
 
     socket.onerror = (): void => {

@@ -1028,7 +1028,7 @@ This replaced the previous pattern where each route computed its own fallback pa
 
 ### CORS Configuration (`DORKOS_CORS_ORIGIN`)
 
-The server reads `DORKOS_CORS_ORIGIN` from the environment to configure CORS allowed origins. When unset, defaults to the Vite dev server origin. This allows production deployments to restrict cross-origin access without code changes.
+The server reads `DORKOS_CORS_ORIGIN` from the environment to configure CORS allowed origins — a comma-separated list. When unset, defaults to the Vite dev server origin. This allows production deployments to restrict cross-origin access without code changes. A `*` is not an allowlist and is ignored with a warning, on the HTTP path and the WebSocket path alike.
 
 ### Dynamic Model List (`GET /api/models`)
 

@@ -17,6 +17,8 @@
 import type { ConnectionState } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 
+import { dispatchFrame } from './ws-connection';
+
 /** The narrow Transport surface the pumps consume (the stream contract). */
 export type TransportStreams = Pick<
   Transport,
@@ -97,7 +99,9 @@ export class TransportSessionStreamPump extends TransportStreamPump {
         const { value, done } = await this.iterator.next();
         if (done || signal.aborted) break;
         const event = value as { type: string };
-        eventHandlers[event.type]?.(event);
+        // Same rule the socket reader uses: only an own, callable handler runs.
+        // The type comes off the stream, and these maps are plain objects.
+        dispatchFrame(eventHandlers, event.type, event);
       }
       if (!signal.aborted) onStateChange?.('disconnected');
     } catch (err) {
@@ -140,7 +144,9 @@ export class TransportListStreamPump extends TransportStreamPump {
         const { value, done } = await this.iterator.next();
         if (done || signal.aborted) break;
         const event = value as { type: string };
-        eventHandlers[event.type]?.(event);
+        // Same rule the socket reader uses: only an own, callable handler runs.
+        // The type comes off the stream, and these maps are plain objects.
+        dispatchFrame(eventHandlers, event.type, event);
       }
       if (!signal.aborted) onStateChange?.('disconnected');
     } catch (err) {

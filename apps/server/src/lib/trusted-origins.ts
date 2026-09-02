@@ -361,16 +361,18 @@ function isIpLiteralHost(hostHeader: string | undefined): boolean {
  *    operator who needs a name has `DORKOS_TRUSTED_HOSTS`, which the proxy docs
  *    already tell them to set and which feeds the PAIRED branch below.
  *
- *    **`DORKOS_CORS_ORIGIN='*'` is deliberately not honoured**, one of the
- *    places this is stricter than CORS rather than equal to it. The wildcard
- *    is tolerable on HTTP only because a wildcard `Access-Control-Allow-Origin`
- *    is invalid for credentialed requests, so browsers reject it whatever the
- *    server says (`app.ts`). A WebSocket handshake has no such backstop:
- *    cookies attach automatically and there is no ACAO to reject. Honouring it
- *    would have meant that with login ON plus `*`, the HTTP API stayed closed
- *    to a cross-origin page while every durable stream and the terminal were
- *    wide open to it. The wildcard is treated as "no list", so the other
- *    branches still decide.
+ *    **`DORKOS_CORS_ORIGIN='*'` is not honoured**, and since 2026-09 that is
+ *    no longer a place this is stricter than CORS — `buildCors` now ignores the
+ *    wildcard too, for the reason this branch always had. The old argument for
+ *    honouring it on HTTP was that a wildcard `Access-Control-Allow-Origin` is
+ *    invalid for credentialed requests, so browsers reject it whatever the
+ *    server says; that covers only the credentialed case, and login is off by
+ *    default, so the wildcard handed the whole API to any page the operator
+ *    visited. A WebSocket handshake never had even that backstop: cookies
+ *    attach automatically and there is no ACAO to reject. Both surfaces now
+ *    treat the wildcard as "no list", so the other branches still decide, and
+ *    both trim the value first so a padded `" * "` cannot mean one thing here
+ *    and another there.
  * 4. **Same-origin with this very request** — the `Origin` equals
  *    `<scheme>://<Host>` for the `Host` this request asked for. This is the
  *    branch that covers reverse proxies, LAN addresses and `https://` without
@@ -436,8 +438,11 @@ export function isTrustedUpgradeOrigin(facts: UpgradeOriginFacts): boolean {
   // An explicit `DORKOS_CORS_ORIGIN` list makes branch 4 unreachable, as it does
   // in `buildCors` — which switches to a static allowlist and drops its own
   // same-origin branch. Split and trimmed the same way, and the wildcard is
-  // treated as no list at all (see the doc).
-  const configured = facts.configuredOrigins;
+  // treated as no list at all (see the doc). The value is trimmed FIRST, so a
+  // padded `" * "` means what the operator typed on both surfaces; without it,
+  // that typo became a one-entry list here while `buildCors` read it as the
+  // wildcard, which blacks out the app's own socket while HTTP keeps working.
+  const configured = facts.configuredOrigins?.trim();
   if (configured && configured !== '*') {
     return configured
       .split(',')

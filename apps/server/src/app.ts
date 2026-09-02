@@ -46,11 +46,24 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /**
  * Build the CORS middleware.
  *
- * `DORKOS_CORS_ORIGIN` is the manual override (a `*` wildcard or a
- * comma-separated allowlist). Without it, origins are resolved per request: the
- * static loopback origins plus the live tunnel origin (so a tunnel that connects
- * after boot is trusted without a restart), plus any request whose `Origin` is
- * same-origin with the request itself.
+ * `DORKOS_CORS_ORIGIN` is the manual override: a comma-separated allowlist.
+ * Without it, origins are resolved per request: the static loopback origins plus
+ * the live tunnel origin (so a tunnel that connects after boot is trusted
+ * without a restart), plus any request whose `Origin` is same-origin with the
+ * request itself.
+ *
+ * A `*` is **not** an allowlist and is ignored, exactly as
+ * `isTrustedUpgradeOrigin` has always ignored it on the WebSocket path. The
+ * argument that once justified honouring it here — a wildcard
+ * `Access-Control-Allow-Origin` is invalid for credentialed requests, so
+ * browsers reject it — only covers the credentialed case, and the shipped
+ * default posture is `auth.enabled: false`, where the API asks for no
+ * credential at all. In that posture a wildcard turns any page the operator
+ * visits into a full API client for their DorkOS: it reads sessions, files and
+ * diffs cross-origin and POSTs turns back. The operator gets one warning line
+ * naming the variable and what to set instead, and the request falls through to
+ * the per-request policy below, so an install that reached for `*` to fix a
+ * proxy keeps working for every origin that is genuinely its own.
  *
  * The same-origin check exists because the server's loopback allowlist is keyed
  * to the port it listens on *inside* its own process. When the host port is
@@ -69,14 +82,22 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * needs `req.protocol` and `req.headers.host`.
  */
 function buildCors(): express.RequestHandler {
+  // Trimmed, so a value that is whitespace around a wildcard (or whitespace
+  // around nothing) is read as what the operator meant rather than becoming a
+  // one-entry allowlist of `" * "` that matches no origin at all and warns
+  // about nothing. `isTrustedUpgradeOrigin` treats the socket side the same way.
   // eslint-disable-next-line no-restricted-syntax -- DORKOS_CORS_ORIGIN is not in env.ts (optional CORS override, not worth validating)
-  const envOrigin = process.env.DORKOS_CORS_ORIGIN;
+  const envOrigin = process.env.DORKOS_CORS_ORIGIN?.trim();
 
-  // Explicit wildcard opt-in.
-  if (envOrigin === '*') return cors({ origin: '*', credentials: true });
-
-  // User-specified origins (comma-separated) — static, no per-request check.
-  if (envOrigin) {
+  // A wildcard is no list at all — say so once, then resolve per request.
+  if (envOrigin === '*') {
+    logger.warn(
+      '[CORS] DORKOS_CORS_ORIGIN="*" is ignored: a wildcard would let any web page ' +
+        'you visit read and write this DorkOS. Set it to the exact origins that need ' +
+        'access instead (comma-separated, e.g. https://dorkos.example.com) and restart.'
+    );
+  } else if (envOrigin) {
+    // User-specified origins (comma-separated) — static, no per-request check.
     const origins = envOrigin.split(',').map((o) => o.trim());
     return cors({ origin: origins, credentials: true });
   }
@@ -148,12 +169,20 @@ export function createApp() {
   // `credentials: true` sends Access-Control-Allow-Credentials: true so the
   // browser accepts cross-origin responses to the client's `credentials:
   // 'include'` fetches (auth cookies) — the desktop dev renderer (a distinct
-  // Vite origin) is the sole cross-origin surface; the web cockpit is
-  // same-origin via the Vite proxy. Note: this doesn't affect the explicit
-  // `DORKOS_CORS_ORIGIN='*'` opt-in above — wildcard ACAO is invalid for
-  // credentialed requests per the fetch spec, so browsers reject it
-  // regardless of this flag; that path stays wildcard for non-credentialed use.
+  // Vite origin) is the sole cross-origin surface; the web app is same-origin
+  // via the Vite proxy. Credentials only ever ride an origin this server named,
+  // because no branch of `buildCors` answers with a wildcard.
   app.use(buildCors());
+
+  // Never let a browser guess the type of anything this server sends. Set
+  // app-wide rather than per response so a route added later inherits it. The
+  // routes that already set the same header byte-for-byte (files, diffs, room
+  // exports and attachments, avatars, workbench) keep their own line, because
+  // each documents why sniffing would be dangerous for that exact payload.
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    next();
+  });
 
   // Host allowlist on the API surface (DOR-532). CORS alone cannot stop DNS
   // rebinding: a page at `http://evil.com:4242` that re-points `evil.com` at

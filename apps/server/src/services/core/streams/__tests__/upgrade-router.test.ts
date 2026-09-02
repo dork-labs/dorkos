@@ -713,13 +713,11 @@ describe('attachUpgradeRouter', () => {
     });
 
     it('a padded wildcard denies a stranger, matching HTTP rather than inverting it', async () => {
-      // `buildCors` does not trim before its `=== '*'` check, so `" * "` becomes
-      // a one-entry list matching the literal `*` — which no real origin is.
-      // The identical typo therefore fails closed on both surfaces. What it
-      // costs is stated in the predicate test beside this one: being a LIST, it
-      // also suppresses the same-origin branch, so it blacks out the cockpit's
-      // own socket while HTTP keeps working. Another invisible-outage typo,
-      // just not a security one.
+      // Both surfaces trim before the `=== '*'` check, so `" * "` is read as
+      // the wildcard and the wildcard is no list at all. A stranger is still
+      // refused — nothing else admits it — and, per the predicate test beside
+      // this one, the app's own origin keeps its socket, which an untrimmed
+      // read used to take away while HTTP kept working.
       process.env.DORKOS_CORS_ORIGIN = ' * ';
       try {
         await listen([acceptingRoute]);
