@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(client): changing a scheduled task's agent asks before it stops the run asking (DOR-1637)"
+  - 'fix(client): an agent pick waits for the runtime it cannot price yet, rather than guessing (DOR-1637)'
 ---
 
 ### Fixed

@@ -148,6 +148,11 @@ export function usePostureConsent(input: PostureConsentInput): PostureConsent {
         setPending({ descriptor: widening, apply });
         return;
       }
+      // Clearing on the way through, not only on the way out: today the door is
+      // modal so nothing else can be guarded while one waits, but this is a
+      // reusable API and a door left holding a change nobody answered is the
+      // kind of state that gets applied later by accident.
+      setPending(null);
       apply();
     },
     // The rule is `needsConsentRitual` — the server's own — not a stop
@@ -158,6 +163,7 @@ export function usePostureConsent(input: PostureConsentInput): PostureConsent {
         setPending({ descriptor, apply });
         return;
       }
+      setPending(null);
       apply();
     },
     dismiss: () => setPending(null),

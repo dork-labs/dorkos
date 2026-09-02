@@ -20,6 +20,7 @@ import { AgentPicker } from './AgentPicker';
 import { TaskExecutionFields } from './TaskExecutionFields';
 import { useAgentRuntimes, useTaskExecution } from './use-task-execution';
 import { usePostureConsent } from './use-posture-consent';
+import { useAgentPick } from './use-agent-pick';
 
 export type DialogStep = 'preset-picker' | 'form';
 
@@ -233,8 +234,8 @@ export function ScheduleForm({
   // Every picker agent's own runtime, off the manifest that owns it (ADR-0043).
   // The whole list rather than the selected one, because the agent picker below
   // has to know what a candidate agent would run on before it commits the pick.
-  const runtimeForAgent = useAgentRuntimes(agents);
-  const agentRuntime = runtimeForAgent(agentId);
+  const agentRuntimes = useAgentRuntimes(agents);
+  const agentRuntime = agentRuntimes.runtimeFor(agentId);
 
   const execution = useTaskExecution({
     runtime: runtimeOverride,
@@ -258,6 +259,20 @@ export function ScheduleForm({
     effectiveRuntime: execution.effectiveRuntime,
   });
   const descriptors = consent.descriptors;
+
+  // A pick is priced against the candidate agent's OWN runtime, and waits when
+  // that is not known yet rather than guessing — see `use-agent-pick`, which
+  // owns that policy and the reason it is not optional.
+  //
+  // A task with its own runtime override inherits nothing, so the agent cannot
+  // move its posture there: that pick finds no widening and simply happens.
+  const agentPick = useAgentPick({
+    runtimes: agentRuntimes,
+    onResolved: (nextAgentId, candidateRuntime) => {
+      const nextRuntime = runtimeOverride || execution.inheritedRuntimeFor(candidateRuntime);
+      consent.guardRuntime(nextRuntime, () => form.setFieldValue('agentId', nextAgentId));
+    },
+  });
 
   return (
     <form.AppForm>
@@ -290,24 +305,30 @@ export function ScheduleForm({
                   // pick cannot change what runs. A door in front of a change
                   // that will not happen asks somebody to agree to a claim that
                   // is not true.
-                  //
-                  // A task with its own runtime override inherits nothing, so
-                  // the agent cannot move its posture there either — that pick
-                  // finds no widening and simply happens.
                   onValueChange={(id) => {
                     const nextAgentId = id ?? '';
                     if (editTask) {
                       field.handleChange(nextAgentId);
                       return;
                     }
-                    const nextRuntime =
-                      runtimeOverride ||
-                      execution.inheritedRuntimeFor(runtimeForAgent(nextAgentId));
-                    consent.guardRuntime(nextRuntime, () => field.handleChange(nextAgentId));
+                    agentPick.pick(nextAgentId);
                   }}
                 />
               )}
             </form.AppField>
+            {/* Said out loud, because the alternative is a click that appears
+                to do nothing. Both branches are true of a held pick: the agent
+                has not changed, and one of them will resolve itself. */}
+            {agentPick.isWaiting && (
+              <p
+                data-testid="agent-pick-waiting"
+                className="text-muted-foreground text-xs leading-relaxed"
+              >
+                {agentPick.unreadable
+                  ? 'DorkOS can’t read what that agent runs on, so the agent hasn’t been changed. Try again in a moment.'
+                  : 'Checking what that agent runs on…'}
+              </p>
+            )}
           </div>
 
           {/* ── Essential fields ── */}

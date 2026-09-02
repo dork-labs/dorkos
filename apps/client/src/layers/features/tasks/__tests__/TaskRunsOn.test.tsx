@@ -17,6 +17,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { PermissionMode } from '@dorkos/shared/types';
+import { UpdateTaskRequestSchema } from '@dorkos/shared/schemas';
 import { createMockTransport, createMockSchedule } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { configKeys } from '@/layers/entities/config';
@@ -514,9 +515,9 @@ describe('the task form Runs-on controls', () => {
     /**
      * Open the agent dropdown and choose `name`.
      *
-     * Waits on the RUNTIME caption first, not on the picker: the picker only
-     * needs the mesh list, while the gate needs the manifests behind it, and a
-     * pick made in between reads every candidate's runtime as unknown.
+     * Waits on the RUNTIME caption first, which lands only once the manifests
+     * do. The window BEFORE that — picker clickable, runtimes still unknown — is
+     * its own case, driven deliberately in "before the manifests land" below.
      */
     async function pickAgent(from: string, to: string) {
       await expectSelected('task-runtime-select', from);
@@ -664,12 +665,147 @@ describe('the task form Runs-on controls', () => {
 
       fireEvent.click(screen.getByText('Save'));
       await waitFor(() => expect(updateTask).toHaveBeenCalled());
-      // The reason there was nothing to consent to. Should an update ever learn
-      // to carry a target, this goes red and the gate above has to grow an edit
-      // branch with it.
       const body = updateTask.mock.calls[0]?.[1] as Record<string, unknown>;
       expect(body).not.toHaveProperty('target');
       expect(body).not.toHaveProperty('agentId');
+      // The reason there is nothing to consent to, read off the SCHEMA and not
+      // off this form's own send. Should an update ever learn to carry a target,
+      // this goes red and the gate above has to grow an edit branch with it —
+      // which the assertions on the body alone would not, because they only
+      // restate what the form happens to do today.
+      const updatable = Object.keys(UpdateTaskRequestSchema.shape);
+      expect(updatable).not.toContain('target');
+      expect(updatable).not.toContain('agentId');
+    });
+
+    it('does not ask when the task pins its own runtime, whatever the agent runs on', async () => {
+      // An override outranks the agent (spec `task-runtime-model` §2.4), so the
+      // pick cannot move what this task runs on and there is nothing to consent
+      // to. Without the short-circuit the gate prices the pick against the
+      // AGENT's runtime, opens a door over a change that will not happen, and
+      // gets a "yes" for a posture the task never takes.
+      const createTask = vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-new' }));
+      const transport = transportWithAgentPerRuntime({ createTask });
+      renderNewTaskOnClaude(transport);
+
+      // Pinned to the runtime the task is already on, so the pin itself is not a
+      // widening and needs no door of its own.
+      await expectSelected('task-runtime-select', "Agent's runtime (Claude Code)");
+      await pick('task-runtime-select', 'Claude Code');
+      await expectSelected('task-runtime-select', 'Claude Code');
+
+      fireEvent.click(screen.getByText('claude-bot'));
+      fireEvent.click(await screen.findByText('codex-bot'));
+
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      await screen.findByText('codex-bot');
+      expect(screen.getByTestId('task-runtime-select')).toHaveTextContent('Claude Code');
+
+      fillRequiredFields();
+      fireEvent.click(screen.getByText('Create'));
+      await waitFor(() =>
+        expect(createTask).toHaveBeenCalledWith(
+          expect.objectContaining({ target: CODEX_AGENT.id, runtime: 'claude-code' })
+        )
+      );
+    }, 20_000);
+
+    describe('before the manifests land', () => {
+      // The picker is clickable the moment the agent LIST arrives, and the
+      // manifests behind it are a SECOND round trip — so there is a guaranteed
+      // window in which every candidate's runtime reads as unknown. Taking
+      // unknown for "names no runtime" resolves it to the server default, which
+      // is the runtime the task is already on: no widening found, pick applied,
+      // door never opened. That is the defect with the fix removed.
+
+      /** A transport whose manifests answer only when the test says so. */
+      function transportWithHeldManifests(overrides: Partial<Transport> = {}) {
+        let release!: () => void;
+        const held = new Promise<Record<string, AgentManifest>>((resolve) => {
+          release = () =>
+            resolve({
+              [CLAUDE_AGENT.projectPath]: agentManifest(CLAUDE_AGENT, 'claude-code'),
+              [CODEX_AGENT.projectPath]: agentManifest(CODEX_AGENT, 'codex'),
+              [OPENCODE_AGENT.projectPath]: agentManifest(OPENCODE_AGENT, 'opencode'),
+            });
+        });
+        const transport = transportWithAgentPerRuntime({
+          resolveAgents: vi.fn().mockReturnValue(held),
+          ...overrides,
+        });
+        return { transport, release };
+      }
+
+      /** Wait for the agent list, then pick the Codex agent while runtimes are unknown. */
+      async function pickCodexInTheWindow() {
+        // The picker's own readiness, and nothing downstream of it: waiting on
+        // the runtime caption here would wait out the very window under test.
+        fireEvent.click(await screen.findByText('claude-bot'));
+        fireEvent.click(await screen.findByText('codex-bot'));
+      }
+
+      it('cannot apply a widening pick while the candidate runtime is unknown', async () => {
+        const createTask = vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-new' }));
+        const { transport } = transportWithHeldManifests({ createTask });
+        renderNewTaskOnClaude(transport);
+
+        await pickCodexInTheWindow();
+
+        // Held, and said out loud rather than looking like a dead click.
+        expect(await screen.findByTestId('agent-pick-waiting')).toHaveTextContent(
+          /Checking what that agent runs on/
+        );
+        expect(screen.getByText('claude-bot')).toBeInTheDocument();
+        expect(screen.queryByText('codex-bot')).toBeNull();
+
+        // All the way to the wire, which is where the reviewer's repro landed:
+        // filing the task in this window used to send the Codex agent with a
+        // mode that never asks on it, with no door in between.
+        fillRequiredFields();
+        fireEvent.click(screen.getByText('Create'));
+        await waitFor(() => expect(createTask).toHaveBeenCalled());
+        expect(createTask).toHaveBeenCalledWith(
+          expect.objectContaining({ target: CLAUDE_AGENT.id })
+        );
+      });
+
+      it('asks as soon as the candidate runtime lands', async () => {
+        // Held, not dropped: waiting is the policy, so the pick is still the
+        // person's and it goes through the door the moment it can be priced.
+        const { transport, release } = transportWithHeldManifests();
+        renderNewTaskOnClaude(transport);
+
+        await pickCodexInTheWindow();
+        await screen.findByTestId('agent-pick-waiting');
+        expect(screen.queryByRole('alertdialog')).toBeNull();
+
+        release();
+
+        const door = await screen.findByRole('alertdialog');
+        expect(door).toHaveTextContent('Turn on Act');
+        await confirmConsent('Turn on Act');
+        await expectSelected('task-runtime-select', "Agent's runtime (Codex)");
+        expect(screen.queryByTestId('agent-pick-waiting')).toBeNull();
+      });
+
+      it('says so, and changes nothing, when the manifests cannot be read at all', async () => {
+        // The other end of the same window. Waiting forever with no explanation
+        // is a dead control; the agent stays as it was either way.
+        const transport = transportWithAgentPerRuntime({
+          resolveAgents: vi.fn().mockRejectedValue(new Error('mesh unreachable')),
+        });
+        renderNewTaskOnClaude(transport);
+
+        await pickCodexInTheWindow();
+
+        await waitFor(() =>
+          expect(screen.getByTestId('agent-pick-waiting')).toHaveTextContent(
+            /can’t read what that agent runs on/
+          )
+        );
+        expect(screen.getByText('claude-bot')).toBeInTheDocument();
+        expect(screen.queryByText('codex-bot')).toBeNull();
+      });
     });
   });
 
