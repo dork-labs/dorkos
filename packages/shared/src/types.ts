@@ -49,6 +49,8 @@ export type {
   TerminalReason,
   MemoryRecallEvent,
   TextPart,
+  ImagePart,
+  SessionImageEvent,
   ToolCallPart,
   ToolApprovalOutcome,
   QuestionOutcome,

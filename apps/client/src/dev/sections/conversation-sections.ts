@@ -111,6 +111,13 @@ export const CONVERSATION_SECTIONS: PlaygroundSection[] = [
     keywords: ['staged', 'context', 'add', 'note', 'fold', 'next', 'reply', 'disposition'],
   },
   {
+    id: 'messageimage',
+    title: 'MessageImage',
+    page: 'conversation',
+    category: 'Messages',
+    keywords: ['image', 'picture', 'attachment', 'media', 'generated', 'screenshot', 'png'],
+  },
+  {
     id: 'messageauthoravatar',
     title: 'MessageAuthorAvatar',
     page: 'conversation',

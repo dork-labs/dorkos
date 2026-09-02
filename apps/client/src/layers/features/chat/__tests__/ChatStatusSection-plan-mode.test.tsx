@@ -54,6 +54,7 @@ const CLAUDE_CAPS: RuntimeCapabilities = {
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
+  mediaOutput: 'none',
   nativeContext: [],
   permissionModes: {
     supported: true,

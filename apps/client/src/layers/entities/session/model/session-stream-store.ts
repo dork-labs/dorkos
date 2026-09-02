@@ -319,6 +319,10 @@ const TURN_EVENT_TYPES: ReadonlySet<SessionEvent['type']> = new Set([
   'todo_update',
   'hook_update',
   'memory_recall',
+  // An image the turn produced (ADR 260901-135657). Rides the turn so it renders inline
+  // where it happened, and is re-projected from a cold snapshot like every
+  // other durable part — the reference is tiny and the bytes are a cached fetch.
+  'image_attachment',
   // Retained so the live turn feeds `useSystemStatusEvents` (session-hook flashes
   // → status strip). The bubble projection produces no part for a `system_status`,
   // so this adds no stray parts. Without it the strip's producer is starved live

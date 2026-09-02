@@ -872,3 +872,105 @@ describe('reconstructHistoryFromEvents — compaction boundaries', () => {
     ]);
   });
 });
+
+describe('reconstructHistoryFromEvents — images (DOR-1663)', () => {
+  /** One `image_attachment` as it rides the durable stream: a reference. */
+  const IMAGE = {
+    type: 'image_attachment' as const,
+    attachmentId: 'abc123',
+    url: '/api/sessions/s1/attachments/abc123.png',
+    mediaType: 'image/png',
+    size: 2048,
+    alt: 'banana.png',
+  };
+
+  it('rebuilds a picture the turn produced', () => {
+    // OpenCode declares `logBackedHistory: true` so this loader is the fallback
+    // when its sidecar read fails. An `image_attachment` not handled here is a
+    // picture that exists on disk and is reachable from nothing — the same
+    // silent drop the whole feature exists to end, on a path DorkOS fully owns.
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'draw me a banana' },
+        { seq: 2, type: 'text_delta', text: 'Here you go.' },
+        { seq: 3, ...IMAGE },
+        { seq: 4, type: 'turn_end' }
+      )
+    );
+
+    expect(messages).toHaveLength(2);
+    const assistant = messages[1]!;
+    expect(assistant.content).toBe('Here you go.');
+    expect(assistant.parts).toEqual([
+      { type: 'text', text: 'Here you go.' },
+      {
+        type: 'image',
+        attachmentId: 'abc123',
+        url: '/api/sessions/s1/attachments/abc123.png',
+        mediaType: 'image/png',
+        size: 2048,
+        alt: 'banana.png',
+      },
+    ]);
+  });
+
+  it('emits an assistant message for a turn whose ONLY output was a picture', () => {
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'draw me a banana' },
+        { seq: 2, ...IMAGE },
+        { seq: 3, type: 'turn_end' }
+      )
+    );
+
+    expect(messages).toHaveLength(2);
+    expect(messages[1]!.parts?.map((p) => p.type)).toEqual(['image']);
+  });
+
+  it('rebuilds the turn WHOLE when it carries an image — text and tools included', () => {
+    // The client renders from `parts` exclusively when present, so emitting
+    // parts for an image-bearing turn and forgetting its text would DELETE the
+    // text. This is the case that catches that.
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'go' },
+        { seq: 2, type: 'text_delta', text: 'running the tool' },
+        { seq: 3, type: 'tool_call', toolCallId: 'tc1', toolName: 'screenshot', status: 'running' },
+        {
+          seq: 4,
+          type: 'tool_result',
+          toolCallId: 'tc1',
+          toolName: 'screenshot',
+          result: 'captured',
+          status: 'complete',
+        },
+        { seq: 5, ...IMAGE },
+        { seq: 6, type: 'turn_end' }
+      )
+    );
+
+    expect(messages[1]!.parts?.map((p) => p.type)).toEqual(['text', 'tool_call', 'image']);
+  });
+
+  it('leaves an image-free turn parts-less, byte-identical to before', () => {
+    // The reconstruction of an ordinary turn must not change shape.
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'Hello' },
+        { seq: 2, type: 'text_delta', text: 'Hi' },
+        { seq: 3, type: 'turn_end' }
+      )
+    );
+
+    expect(messages[1]).toEqual({ id: 'assistant-1', role: 'assistant', content: 'Hi' });
+  });
+
+  it('carries only a reference — the durable stream never holds the bytes', () => {
+    const messages = reconstructHistoryFromEvents(
+      events({ seq: 1, type: 'turn_start' }, { seq: 2, ...IMAGE }, { seq: 3, type: 'turn_end' })
+    );
+
+    expect(JSON.stringify(messages)).not.toContain('base64');
+    expect(JSON.stringify(messages)).not.toContain('data:');
+  });
+});

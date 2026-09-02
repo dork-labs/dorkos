@@ -20,13 +20,14 @@
  *
  * @module services/runtimes/opencode/part-event-mapper
  */
-import type { Event, ToolPart } from '@opencode-ai/sdk';
+import type { Event, FilePart, ToolPart } from '@opencode-ai/sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
 import {
   TASK_TOOL_NAME,
   mapSubagentTaskPart,
   type OpenCodeSubagentState,
 } from './subagent-mapper.js';
+import type { OpenCodeMediaState } from './media-capture.js';
 
 /**
  * The true text-increment wire event at v1.17.13, published on every
@@ -52,7 +53,7 @@ export interface EventMessagePartDelta {
  * the single-shot tool guards, plus the subagent bookkeeping a `task` part
  * writes through. The event mapper's `OpenCodeEventContext` extends it.
  */
-export interface OpenCodePartState extends OpenCodeSubagentState {
+export interface OpenCodePartState extends OpenCodeSubagentState, OpenCodeMediaState {
   /** Last-seen cumulative text per text/reasoning part id (delta baseline). */
   readonly lastTextByPartId: Map<string, string>;
   /** Part kind per part id, learned from snapshots — routes `message.part.delta`. */
@@ -86,12 +87,66 @@ export function mapPartSnapshot(
       return emitTextSuffix(part.id, 'reasoning', part.text, state);
     case 'tool':
       return mapToolPart(part, state);
+    case 'file':
+      // An image the turn produced. Recorded, not emitted: storing bytes is
+      // I/O and this function is pure, so `media-capture.ts` drains the record
+      // from the runtime's async loop. This part used to fall through to the
+      // default arm below, whose comment called it "turn bookkeeping" —
+      // which is how a picture a model spent real money generating was thrown
+      // away without a word (upstream drops it first, at
+      // anomalyco/opencode#12859, so this arm is what makes DorkOS correct the
+      // moment that lands and correct today for any build that does emit it).
+      //
+      // Role filtering is NOT this function's job, exactly as it is not for
+      // `text` above: a user's own attachment is also a `file` part, and
+      // whatever the event mapper decides about whose parts reach the stream
+      // governs both arms identically.
+      recordMedia(state, part);
+      return [];
     default:
-      // step-start/step-finish/snapshot/patch/agent/retry/compaction/file/
-      // subtask parts are turn bookkeeping: usage rides message.updated,
-      // retries ride session.status, and file changes ride their tool parts.
+      // step-start/step-finish/snapshot/patch/agent/retry/compaction/subtask
+      // parts are turn bookkeeping: usage rides message.updated, retries ride
+      // session.status, and file changes ride their tool parts.
       return [];
   }
+}
+
+/**
+ * Record one `file` part as an image to be stored after the fact.
+ *
+ * Non-images are skipped here rather than deeper down, because a `file` part is
+ * also how OpenCode carries a text attachment, and there is nothing for a
+ * transcript to render in a `.txt` it already has the contents of.
+ *
+ * The identity components are what make the write idempotent: the same part,
+ * read again from history after a restart, hashes to the same attachment id and
+ * lands at the same URL rather than writing a second copy (see
+ * `deriveSessionAttachmentId`).
+ *
+ * @param state - The turn's media bookkeeping (mutated).
+ * @param part - The `file` part OpenCode published.
+ * @param identity - Override the identity components. Tool attachments pass
+ *   their call id and index, because an attachment on a tool result has no part
+ *   id of its own that survives a history read.
+ */
+function recordMedia(state: OpenCodePartState, part: FilePart, identity?: readonly string[]): void {
+  if (!part.mime.toLowerCase().startsWith('image/')) return;
+  const components = identity ?? ['part', part.id];
+  // Single-shot per identity, for the same reason `endedToolCallIds` guards the
+  // terminal tool pair: `message.part.updated` republishes a CUMULATIVE
+  // snapshot, and an image announced twice is drawn twice. The store already
+  // deduped the BYTES — the id is derived, so three snapshots wrote one file at
+  // one URL — but the client's fold appends a part per EVENT with no upsert, so
+  // the guard has to be here. See `OpenCodeMediaState.recordedMediaKeys`.
+  const key = components.join('\u0000');
+  if (state.recordedMediaKeys.has(key)) return;
+  state.recordedMediaKeys.add(key);
+  state.pendingMedia.push({
+    mime: part.mime,
+    url: part.url,
+    ...(part.filename !== undefined ? { filename: part.filename } : {}),
+    identity: components,
+  });
 }
 
 /**
@@ -203,6 +258,19 @@ function mapToolCall(part: ToolPart, ctx: OpenCodePartState): StreamEvent[] {
           data: { toolCallId, toolName: part.tool, result: state.output, status: 'complete' },
         });
       }
+      // `state.output` is the tool's TEXT. Anything else it returned rides
+      // `attachments`, which OpenCode populates today — an MCP tool handing back
+      // an image, a screenshot — and which this mapper read nothing of, so
+      // those pictures were dropped on a path that has never depended on the
+      // upstream `file`-part bug at all (ADR 260901-135657). Recorded here and
+      // stored by `media-capture.ts`, for the same purity reason as above.
+      //
+      // Indexed identity, not the attachment's own `id`: an attachment is
+      // re-read from the tool part on every history load, and the call id plus
+      // its position in the array is the pair that is stable across those reads.
+      state.attachments?.forEach((attachment, index) => {
+        recordMedia(ctx, attachment, ['tool', toolCallId, String(index)]);
+      });
       return events;
     }
     case 'error': {

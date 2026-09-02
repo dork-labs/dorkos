@@ -4,6 +4,7 @@ import { AssistantMessageContent } from '@/layers/features/chat/ui/message/Assis
 import { MessageProvider } from '@/layers/features/chat/ui/message/MessageContext';
 import { PermissionDeniedChip } from '@/layers/features/chat/ui/message/PermissionDeniedChip';
 import { StagedContextNote } from '@/layers/features/chat/ui/message/StagedContextNote';
+import { MessageImage } from '@/layers/features/chat/ui/message/MessageImage';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -355,8 +356,57 @@ export function MessageShowcases() {
         </ShowcaseDemo>
       </PlaygroundSection>
 
+      <MessageImageShowcase />
+
       <MessageAuthorAvatarShowcase />
     </>
+  );
+}
+
+/**
+ * A picture the agent made, in the transcript where it happened.
+ *
+ * The URL here points at a static asset ONLY because the playground has no
+ * session behind it. In the product it is always a
+ * `/api/sessions/…/attachments/…` URL that the attachment store answered: the
+ * bytes live behind that store and never travel on the session's event stream,
+ * which is replayed whole on every reconnect through a bounded window
+ * (ADR 260901-135657).
+ */
+function MessageImageShowcase() {
+  return (
+    <PlaygroundSection
+      title="MessageImage"
+      description="What an agent's picture looks like where it was made. Inline in the bubble rather than on the canvas: the canvas is where you go to inspect a file the session touched, while this is part of what the agent said, so it sits in reading order beside the sentence that introduced it. The second state is the one that matters most — an image that will not load says so, because a picture that is silently not there is the exact failure this surface exists to end."
+    >
+      <ShowcaseLabel>An image the agent produced</ShowcaseLabel>
+      <ShowcaseDemo>
+        <MessageImage
+          part={{
+            type: 'image',
+            attachmentId: 'showcase-ok',
+            url: '/icon-512.png',
+            mediaType: 'image/png',
+            size: 4231,
+            alt: 'A picture the agent made',
+          }}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>The bytes are gone — said out loud, not left blank</ShowcaseLabel>
+      <ShowcaseDemo>
+        <MessageImage
+          part={{
+            type: 'image',
+            attachmentId: 'showcase-missing',
+            url: '/api/sessions/showcase/attachments/missing.png',
+            mediaType: 'image/png',
+            size: 2048,
+            alt: 'banana.png',
+          }}
+        />
+      </ShowcaseDemo>
+    </PlaygroundSection>
   );
 }
 

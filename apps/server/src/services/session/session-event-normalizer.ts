@@ -195,6 +195,24 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
       return update;
     }
 
+    // An image the turn produced. The adapter has ALREADY stored the bytes by
+    // the time this arrives, so the event is a reference and this hop is a
+    // straight field copy — see `sessionImageShape` for why the bytes never
+    // ride the stream. Defensive reads like every other case here: a malformed
+    // event becomes a reference to nothing, which the renderer degrades on,
+    // rather than throwing inside a live turn.
+    case 'image_attachment': {
+      const image: RawOf<'image_attachment'> = {
+        type: 'image_attachment',
+        attachmentId: String(data.attachmentId ?? ''),
+        url: String(data.url ?? ''),
+        mediaType: String(data.mediaType ?? ''),
+        size: Number(data.size ?? 0),
+        ...(data.alt !== undefined ? { alt: String(data.alt) } : {}),
+      };
+      return image;
+    }
+
     case 'memory_recall': {
       const recall: RawOf<'memory_recall'> = {
         type: 'memory_recall',
