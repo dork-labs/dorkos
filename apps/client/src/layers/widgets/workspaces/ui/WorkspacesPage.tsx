@@ -165,9 +165,10 @@ export function WorkspacesPage() {
 
       {warnings.length > 0 && (
         <div className="mb-6 rounded-lg border border-amber-600/40 bg-amber-500/10 p-4">
-          <p className="text-sm font-medium">Some folders couldn&rsquo;t be opened</p>
+          <p className="text-sm font-medium">Some folders couldn&rsquo;t be read</p>
           <p className="text-muted-foreground mt-1 text-sm">
-            Anything inside them is missing from this list, so it may be incomplete.
+            Anything inside them is missing from this list, so it may be incomplete. The same
+            happens when a shortcut points at something that&rsquo;s gone.
           </p>
           <ul className="text-muted-foreground mt-2 space-y-0.5 text-xs">
             {warnings.map((warning) => (

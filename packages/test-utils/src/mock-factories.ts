@@ -337,13 +337,11 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getGitStatus: vi.fn().mockResolvedValue({ error: 'not_git_repo' as const }),
     // Workspaces (DOR-84, DOR-1056) — the scan answers "nothing found" so a
     // component under test renders its empty state unless the test overrides it.
-    scanWorktrees: vi
-      .fn()
-      .mockResolvedValue({
-        root: '/tmp/ws',
-        worktrees: [],
-        warnings: [],
-      } satisfies WorktreeScanResult),
+    scanWorktrees: vi.fn().mockResolvedValue({
+      root: '/tmp/ws',
+      worktrees: [],
+      warnings: [],
+    } satisfies WorktreeScanResult),
     resolveWorkspace: vi.fn().mockResolvedValue(null),
     // Rooms (spec `rooms`) — every read answers empty so a component under test
     // renders its empty state unless the test overrides it.

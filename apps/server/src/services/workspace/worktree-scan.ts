@@ -231,6 +231,7 @@ async function listSubdirectories(dir: string): Promise<DirListing> {
       }
     }
 
+    brokenSymlinks.sort((a, b) => a.name.localeCompare(b.name));
     return { names: names.sort(), error: null, brokenSymlinks };
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code ?? 'UNKNOWN';

@@ -198,7 +198,7 @@ describe('WorkspacesPage', () => {
       warnings: [{ path: '/home/me/.dork/workspaces/locked', reason: 'EACCES' }],
     });
 
-    expect(await screen.findByText(/couldn’t be opened/i)).toBeInTheDocument();
+    expect(await screen.findByText(/couldn’t be read/i)).toBeInTheDocument();
     expect(screen.getByText(/~\/\.dork\/workspaces\/locked \(EACCES\)/)).toBeInTheDocument();
     // The checkouts it DID find still render — a partial answer beats none.
     expect(screen.getByText('DOR-84')).toBeInTheDocument();

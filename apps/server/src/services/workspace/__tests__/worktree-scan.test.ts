@@ -323,23 +323,69 @@ describe('scanWorktrees degradation', () => {
     expect(warnings).toEqual([]);
   });
 
-  it('warns on a dangling symlink instead of silently dropping it', async () => {
+  it('warns on dangling symlinks, sorted by name, instead of silently dropping them', async () => {
     // A symlink whose target has been moved or deleted. `fs.stat` on it fails,
     // so the scan cannot know whether it was ever a directory — the same
     // "hides whatever it held" problem an unopenable folder poses, and it
     // gets the same answer: report it, don't drop it.
+    //
+    // `Zebra`/`ant` is not a cosmetic choice: on this machine's filesystem,
+    // `readdir` already returns entries in raw byte order (`Zebra` before
+    // `ant`, capital letters sort first), which happens to equal the sorted
+    // order for names that differ only in case-insensitive letter position.
+    // Pairing a leading capital with a leading lowercase makes byte order and
+    // `localeCompare` order disagree — `readdir` still yields `Zebra` before
+    // `ant`, but `localeCompare` puts `ant` first — so this assertion can only
+    // pass if the code actually sorts by name.
     const home = path.join(base, 'dangling');
     const root = path.join(home, 'workspaces');
     const project = path.join(root, 'core');
     await mkdir(project, { recursive: true });
 
-    const brokenLink = path.join(project, 'ghost');
-    await symlink(path.join(home, 'does-not-exist'), brokenLink, 'dir');
+    const zebraLink = path.join(project, 'Zebra');
+    const antLink = path.join(project, 'ant');
+    await symlink(path.join(home, 'does-not-exist'), zebraLink, 'dir');
+    await symlink(path.join(home, 'also-does-not-exist'), antLink, 'dir');
 
     const result = await scanWorktrees(root);
 
     expect(result.worktrees).toHaveLength(0);
-    expect(result.warnings).toEqual([{ path: brokenLink, reason: 'ENOENT' }]);
+    expect(result.warnings).toEqual([
+      { path: antLink, reason: 'ENOENT' },
+      { path: zebraLink, reason: 'ENOENT' },
+    ]);
+  });
+
+  it('adopts a symlinked PROJECT folder, not just a symlinked checkout', async () => {
+    // The scan walks two levels — root/project/checkout — and a symlink can
+    // stand in at either one. This pins the level the other adoption test
+    // does not: `root/core` itself is a symlink to a real project directory
+    // living elsewhere.
+    const home = path.join(base, 'symlinked-project');
+    const root = path.join(home, 'workspaces');
+    const realProject = path.join(home, 'real-project');
+    const source = path.join(home, 'source');
+    await mkdir(root, { recursive: true });
+    await mkdir(realProject, { recursive: true });
+    await mkdir(source, { recursive: true });
+
+    git(['init', '-b', 'main', '.'], source);
+    git(['config', 'user.email', 't@example.com'], source);
+    git(['config', 'user.name', 'Test'], source);
+    await writeFile(path.join(source, 'README.md'), '# s\n');
+    git(['add', '.'], source);
+    git(['commit', '-m', 'init'], source);
+    git(['worktree', 'add', path.join(realProject, 'checkout'), '-b', 'feat/proj-linked'], source);
+
+    await symlink(realProject, path.join(root, 'core'), 'dir');
+
+    const { worktrees, warnings } = await scanWorktrees(root);
+    const checkout = worktrees.find((w) => w.name === 'checkout');
+
+    expect(checkout).toBeDefined();
+    expect(checkout?.project).toBe('core');
+    expect(checkout?.readable).toBe(true);
+    expect(warnings).toEqual([]);
   });
 });
 
