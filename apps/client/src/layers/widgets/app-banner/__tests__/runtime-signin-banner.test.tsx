@@ -115,6 +115,23 @@ describe('deadSigninRuntimes', () => {
     expect(deadSigninRuntimes(rows)).toEqual([]);
   });
 
+  it('drops a runtime the server closed at boot after a restart', () => {
+    // The other half of DOR-1680, and the reason this banner is not permanent.
+    // The episode store is in memory, so a server killed mid-episode can never
+    // see the recovery edge; boot writes a resolution row instead
+    // (`emitters/runtime-signin.ts`), saying a restart cleared it rather than
+    // claiming an all-clear. Its title differs from the recovery row's — the
+    // predicate must key on `outcome`, which both carry, and never on words.
+    const bootClosed = signinRow('claude-code', '2026-09-01T11:00:00.000Z', {
+      title: 'DorkOS restarted while your Claude sign-in was broken',
+      resolvedAt: '2026-09-01T11:00:00.000Z',
+      outcome: 'cleared',
+      readAt: '2026-09-01T11:00:00.000Z',
+    });
+    const rows = [bootClosed, signinRow('claude-code', '2026-09-01T10:00:00.000Z')];
+    expect(deadSigninRuntimes(rows)).toEqual([]);
+  });
+
   it('keeps a runtime whose raise row was read while it was still dead', () => {
     // The mirror case: opening the Inbox marks the raise row read. That is not
     // a recovery, and the banner must not take it for one.
@@ -255,7 +272,7 @@ describe('runtime-signin descriptor', () => {
       <RuntimeSigninBanner runtimes={['claude-code', 'codex', 'opencode', 'a-future-runtime']} />
     );
     expect(screen.getByRole('alert')).toHaveTextContent(
-      'Your Claude, Codex, OpenCode and 1 more sign-ins stopped working.'
+      'Your Claude, Codex and OpenCode sign-ins stopped working, and 1 more.'
     );
   });
 

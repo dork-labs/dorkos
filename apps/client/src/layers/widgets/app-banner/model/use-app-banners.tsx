@@ -69,6 +69,13 @@ function useMemoryProviderBenchedDescriptor(): BannerDescriptor | null {
  * key, and its own paged request rather than a sieve over the bell's first page
  * (see `NotificationLens.kinds`), so a busy morning cannot push the one row that
  * matters off the end of a page this hook never scrolls.
+ *
+ * It reads only the first page (25 rows) and never calls `loadMore`, which
+ * bounds this: a runtime whose newest sign-in row has 25 newer sign-in rows
+ * above it — more than a dozen full break-and-fix episodes on OTHER runtimes,
+ * with none of its own — would fall off the page and stop being drawn. Silence
+ * is the right direction to fail in for a row that cannot be dismissed, and the
+ * next failing turn on that runtime puts a fresh row back at the top.
  */
 const SIGNIN_LENS: NotificationLens = { kinds: ['signin.required'] };
 

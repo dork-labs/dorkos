@@ -62,12 +62,29 @@ export interface RuntimeSigninBannerProps {
  * try to say it a third time, and it stays useful on a phone regardless: knowing
  * your agents are stuck is worth having wherever you are.
  *
+ * ## When it goes away, stated precisely
+ *
+ * Not when you sign in — DorkOS cannot inspect a credential, only try it. The
+ * server clears the condition on **the next turn that reaches the provider** on
+ * that runtime (`services/observability/runtime-signin-watch.ts`), so the row
+ * can outlive the fix by however long it takes for something to run: a message,
+ * a room reply, a scheduled task. That is the honest bound, and the direction to
+ * be wrong in — an all-clear DorkOS has not seen would silence a sign-in that is
+ * still dead.
+ *
+ * The other exit is a restart. The episode store is in memory, so a server
+ * killed mid-episode could never see its recovery edge; boot therefore closes
+ * the row it can no longer answer (`emitters/runtime-signin.ts`), saying that a
+ * restart is what cleared it rather than claiming an all-clear. Without that,
+ * this banner would stand forever on the strength of a row nothing could
+ * resolve.
+ *
  * ## Why it cannot be dismissed
  *
- * The condition is standing, not an announcement: it is true until somebody
- * signs in, and the server retires it on the next clean turn all by itself. A
- * dismiss button would let the one signal a web-only operator has be hidden
- * while their agents are still stuck.
+ * The condition is standing, not an announcement: it is true until one of the
+ * two exits above, and both are the server's to take. A dismiss button would let
+ * the one signal a web-only operator has be hidden while their agents are still
+ * stuck.
  *
  * @param runtimes - Runtime types whose sign-in is dead.
  */
@@ -77,9 +94,11 @@ export function RuntimeSigninBanner({ runtimes }: RuntimeSigninBannerProps) {
 
   const named = runtimes.slice(0, NAMED_LIMIT).map(runtimeDisplayName);
   const remaining = runtimes.length - named.length;
-  if (remaining > 0) named.push(`${remaining} more`);
 
+  // The remainder is a trailing clause, not another name in the list: "Claude,
+  // Codex and 1 more sign-ins" is not a sentence anybody says.
   const subject = runtimes.length === 1 ? `${named[0]} sign-in` : `${joinNames(named)} sign-ins`;
+  const rest = remaining > 0 ? `, and ${remaining} more` : '';
 
   return (
     <Banner
@@ -91,8 +110,8 @@ export function RuntimeSigninBanner({ runtimes }: RuntimeSigninBannerProps) {
         </Button>
       }
     >
-      Your <span className="font-medium">{subject}</span> stopped working. Agents and scheduled
-      tasks stay stuck until you sign in again.
+      Your <span className="font-medium">{subject}</span> stopped working{rest}. Agents and
+      scheduled tasks stay stuck until you sign in again.
     </Banner>
   );
 }
