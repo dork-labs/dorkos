@@ -45,6 +45,8 @@ export interface McpTextEnvelope {
  */
 export class CapabilityToolError extends Error {
   /**
+   * Wrap an error payload a capability handler returned.
+   *
    * @param payload - The plain error payload the handler produced.
    */
   constructor(public readonly payload: unknown) {

@@ -79,9 +79,17 @@ name: typecheck
 # without blocking the merge until someone added it to branch protection — and a
 # gate on a non-required check is not a gate, which is the same "looks enforced,
 # isn't" failure this exists to fix. This job also already installs the
-# dependencies prettier needs. ESLint is still ungated the same way and is a
-# bigger job than this one (severities, --max-warnings, an existing backlog):
-# tracked as DOR-627, and if that lands a real `lint` job, move this step there.
+# dependencies prettier needs.
+#
+# DOR-627 landed the `lint` workflow this step was once earmarked to move into,
+# and DELIBERATELY LEFT THIS STEP HERE. The move is gated on `lint` joining the
+# required contexts on `main`, which is a branch-protection setting no PR can
+# make; at the time of writing `lint` is not among them. Moving the formatting
+# gate onto `lint` before that happens would take a gate that blocks merges
+# today and park it on one that does not — reintroducing exactly the hole
+# DOR-485 closed, for as long as nobody gets around to the settings change.
+# Move it once `lint` is required, and not before. (Read the live list from the
+# ruleset rather than trusting any enumeration in a comment; it changes.)
 on:
   push:
     branches: [main]

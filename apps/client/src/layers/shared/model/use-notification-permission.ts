@@ -69,7 +69,11 @@ function notifyPermissionChanged(): void {
   for (const listener of listeners) listener();
 }
 
-/** @internal Exported for testing only — re-reads the platform value. */
+/**
+ * Re-read the platform permission value and notify every subscriber.
+ *
+ * @internal Exported for testing only.
+ */
 export function refreshNotificationPermissionForTests(): void {
   snapshot = readPermission();
   for (const listener of listeners) listener();

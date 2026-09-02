@@ -22,12 +22,21 @@ export function sendMessage(sessionId: string, signal?: AbortSignal): Promise<vo
 
 FSD barrel files get a module-level TSDoc comment (`@module entities/session`) describing purpose and layer role.
 
-Mark exports that exist only for tests with `@internal`:
+Mark exports that exist only for tests with `@internal`. It needs a description of
+its own — every jsdoc rule is `error` since DOR-627, and a block that is nothing but
+tags fails `jsdoc/require-description`, so the tag goes _after_ the sentence:
 
 ```typescript
-/** @internal Exported for testing only. */
+/**
+ * Parse `git status --porcelain` output into a structured response.
+ *
+ * @internal Exported for testing only.
+ */
 export function parsePorcelainOutput(stdout: string): GitStatusResponse {
 ```
+
+Type parameters use the TSDoc spelling `@typeParam`. `@template` is the older
+Closure spelling and still passes, but `@typeParam` is what new code should use.
 
 Inline comments: only where code can't speak for itself — magic numbers, ordering dependencies, workarounds (link the issue/PR), why-not-what. Never restate the next line.
 

@@ -572,7 +572,11 @@ export class NotificationStore {
     return row?.value ?? 0;
   }
 
-  /** @internal Exported for tests: read the ledger for one notification. */
+  /**
+   * Read the delivery ledger for one notification.
+   *
+   * @internal Exported for tests.
+   */
   deliveriesFor(notificationId: string): Array<{ channel: string; detail: unknown }> {
     return this.db
       .select()
@@ -585,7 +589,11 @@ export class NotificationStore {
       }));
   }
 
-  /** @internal Exported for tests: read specific rows back. */
+  /**
+   * Read specific notification rows back by id.
+   *
+   * @internal Exported for tests.
+   */
   byIds(ids: string[]): NotificationDTO[] {
     if (ids.length === 0) return [];
     return this.db

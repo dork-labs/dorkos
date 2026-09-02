@@ -144,7 +144,11 @@ export function clearUiStateSendCache(sessionId: string): void {
   lastSentUiState.delete(sessionId);
 }
 
-/** @internal Clear the entire last-sent cache. Test-only. */
+/**
+ * Clear the entire last-sent cache, for every session at once.
+ *
+ * @internal Exported for testing only.
+ */
 export function resetUiStateSendCache(): void {
   lastSentUiState.clear();
 }

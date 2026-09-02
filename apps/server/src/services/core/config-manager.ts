@@ -3936,6 +3936,14 @@ export interface ConfigChange {
 /** Called after a settings write lands. See {@link ConfigManager.onChange}. */
 export type ConfigChangeListener = (change: ConfigChange) => void;
 
+/**
+ * Reads and writes the persistent user settings at `~/.dork/config.json`.
+ *
+ * The `conf`-backed store is the durable half; {@link UserConfigSchema} is the
+ * authoritative shape, and every schema change ships a semver-keyed migration
+ * (see `contributing/configuration.md`). Writes notify
+ * {@link ConfigChangeListener}s with the sections they touched.
+ */
 export class ConfigManager {
   private store: Conf<UserConfig>;
   private _isFirstRun = false;
