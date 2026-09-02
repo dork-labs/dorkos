@@ -29,6 +29,7 @@ import type {
   Session,
   HistoryMessage,
   HistoryToolCall,
+  ErrorPart,
   ImagePart,
   MessagePart,
   TextPart,
@@ -43,6 +44,7 @@ import { mapMessageError } from './history-error-part.js';
 import { deriveSessionAttachmentId } from '../../session/attachments/session-attachment-id.js';
 import {
   MAX_SESSION_ATTACHMENT_BYTES,
+  displayableMime,
   storableImageExtension,
 } from '../../session/attachments/session-media-types.js';
 import type { SessionAttachmentStore } from '../../session/attachments/session-attachment-store.js';
@@ -258,7 +260,27 @@ function appendText(parts: MessagePart[], text: string): void {
 type HistoryMediaResolver = (
   file: OpenCodeFilePart,
   identity: readonly string[]
-) => Promise<ImagePart | null>;
+) => Promise<ImagePart | ErrorPart | null>;
+
+/**
+ * The honest remainder when a picture cannot be projected at all — no store to
+ * keep it, or a media type the store refuses (SVG is a stored-XSS vector, not
+ * an oversight). A turn whose only output was such an image used to map to no
+ * parts and vanish on reload (DOR-1671); it now keeps its place in the
+ * transcript with this part, and the raw bytes never ride along.
+ *
+ * A typed `error` part, not prose, for the live path's own reason
+ * (`media-capture.ts`): prose in the transcript reads as something the model
+ * said, ends up in the message `content`, and gets quoted back in excerpts as
+ * the agent's words. An error part renders as the same chip the live stream
+ * shows, so the two surfaces of one turn tell one story.
+ *
+ * @param message - What a person is told in place of the image, worded
+ *   identically to the live path's `mediaError` copy for the same condition.
+ */
+function unshowableImagePart(message: string): ErrorPart {
+  return { type: 'error', message, category: 'execution_error' };
+}
 
 /** The `file` member of OpenCode's part union, named for readability. */
 type OpenCodeFilePart = Extract<OpenCodePart, { type: 'file' }>;
@@ -280,13 +302,11 @@ type OpenCodeFilePart = Extract<OpenCodePart, { type: 'file' }>;
  * "image not available" row with the turn intact around it rather than a
  * message that disappeared.
  *
- * The one surviving hole is narrow and deliberate: the resolver answers `null`
- * for a media type the store could never have held (a generated SVG, AVIF, BMP
- * or HEIC), so a turn whose ONLY output was one of those still maps to no parts
- * and is still dropped here. Nothing produces that today — a tool attachment
- * always contributes its `tool_call` part alongside, and OpenCode discards
- * generated images upstream — but it is the case to fix when the allowlist
- * widens.
+ * The last hole closed with DOR-1671: a media type the store could never have
+ * held (a generated SVG, AVIF, BMP or HEIC), or a mapper wired with no store at
+ * all, now degrades to {@link unshowableImagePart} instead of `null` —
+ * so a turn whose only output was such an image keeps its place here rather
+ * than mapping to no parts and being dropped.
  *
  * A message whose ONLY content is its message-level `error` still returns a
  * message (DOR-1666): OpenCode records a turn that failed before the model
@@ -803,16 +823,33 @@ export class OpenCodeSessionMapper {
    * 404s, and the reader gets the honest "this image is not available" row with
    * the turn intact around it.
    *
-   * `null` is reserved for what genuinely is not a picture at all: no store
-   * wired, a non-image mime, or a media type this store could never have held.
+   * `null` is reserved for what genuinely is not a picture at all: a non-image
+   * mime. A picture that cannot be projected — no store wired, or a media type
+   * the store deliberately refuses — degrades to the placeholder instead
+   * (DOR-1671), so the turn around it survives a reload.
    *
    * @param sessionId - The DorkOS session whose history is being read.
    */
   private historyMediaResolver(sessionId: string): HistoryMediaResolver {
     const store = this.attachments;
     return async (file, identity) => {
-      if (!store) return null;
-      if (!file.mime.toLowerCase().startsWith('image/')) return null;
+      const mime = file.mime.toLowerCase();
+      if (!mime.startsWith('image/')) return null;
+      // A picture with nowhere to live is still a picture the transcript is
+      // entitled to mention (DOR-1671): no store, or a media type the store
+      // deliberately refuses, degrades to the typed placeholder rather than to
+      // a dropped turn. Copy matches the live path's mediaError for the same
+      // condition, so live and reload tell one story.
+      if (!store) {
+        return unshowableImagePart(
+          'This agent is not set up to keep images, so one was not saved.'
+        );
+      }
+      if (storableImageExtension(file.mime) === null) {
+        return unshowableImagePart(
+          `A session cannot store ${displayableMime(file.mime)} — only PNG, JPEG, GIF and WebP images.`
+        );
+      }
       const attachmentId = deriveSessionAttachmentId(identity);
       const alt = file.filename !== undefined ? { alt: file.filename } : {};
       try {
@@ -833,7 +870,10 @@ export class OpenCodeSessionMapper {
         // picture the transcript is entitled to mention.
       }
       const url = store.urlFor(sessionId, attachmentId, file.mime);
-      if (!url) return null;
+      // With the unstorable-type case answered above, `urlFor` can only refuse
+      // here on a malformed id — practically unreachable for derived hex ids,
+      // but the honest degradation is the same either way: never a dropped turn.
+      if (!url) return unshowableImagePart('An image was produced but could not be saved.');
       return { type: 'image', attachmentId, url, mediaType: file.mime, size: 0, ...alt };
     };
   }
