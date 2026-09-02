@@ -32,14 +32,6 @@
  *   room's files carry an AGENTS.md". Seeding made the projection run in EVERY
  *   worktree (it used to return early with no `.agents/skills/`), which reached
  *   a `.claude/CLAUDE.md` scaffold nothing was hiding.
- *
- * **One test in here is written not to name a path at all.** "hides EVERY path
- * the real projection plan targets" runs the production planner over the tree
- * production made and asks `git check-ignore` about every target it plans. The
- * two tests above it each pin one KNOWN target, and the defect they were written
- * for was a target nobody had thought of — so the guard against the next one
- * cannot be another literal. Add a scaffold or a generated file to the harness
- * engine and it reddens, naming the uncovered path.
  * - Dropping the digest from `slugFor` reddens "two agents with one name get
  *   two worktrees".
  * - Branching unconditionally (`-b` always) reddens "re-attaches a branch the
@@ -47,6 +39,14 @@
  * - Dropping the directory stamp reddens "refreshes the idle clock".
  * - Dropping the busy gate reddens "SPARES AN ANCIENT WORKTREE ITS AGENT IS
  *   WORKING IN".
+ *
+ * **One test in here is written not to name a path at all.** "hides EVERY path
+ * the real projection plan targets" runs the production planner over the tree
+ * production made and asks `git check-ignore` about every target it plans. The
+ * two exclude tests above each pin one KNOWN target, and the defect they were
+ * written for was a target nobody had thought of — so the guard against the next
+ * one cannot be another literal. Add a scaffold or a generated file to the
+ * harness engine and it reddens, naming the uncovered path.
  *
  * **Idle is driven by an injected clock, never by aged mtimes.** An earlier
  * version of this suite made a worktree "ancient" by writing its file mtimes

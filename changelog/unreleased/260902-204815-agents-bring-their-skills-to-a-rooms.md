@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): seed the operating-skills pack into room worktrees (DOR-1640)'
+  - 'fix(server): hide every path the room-worktree projection writes, not just skills (DOR-1640)'
 ---
 
 ### Fixed
