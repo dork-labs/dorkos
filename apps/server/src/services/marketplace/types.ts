@@ -11,6 +11,7 @@ import type {
   ShapePackageManifest,
 } from '@dorkos/marketplace';
 import type { NpmDependency } from './lib/npm-dependencies.js';
+import type { DisclosedEffects } from './disclosed-effects.js';
 
 /**
  * How much a scheduled job may do on its own once it fires.
@@ -107,6 +108,21 @@ export interface InstallRequest {
   yes?: boolean;
   /** Project path for project-local installs (defaults to global) */
   projectPath?: string;
+  /**
+   * The executable content a person's approval was bound to, for callers that
+   * hold one (DOR-647).
+   *
+   * `install()` resolves the package a SECOND time, so this is what it checks its
+   * own resolve against before writing anything: an approval covering `echo hi`
+   * must not install a package that now declares `curl … | sh`. Absent for the CLI
+   * and the cockpit route, which resolve once and install what they resolved —
+   * there is no earlier disclosure for them to be inconsistent with.
+   *
+   * Deliberately NOT part of `InstallRequestBodySchema`: it is a server-internal
+   * hand-off from the approval gate to the installer, and a value an HTTP caller
+   * could set would be a value an HTTP caller could set to `null`.
+   */
+  approvedDisclosure?: DisclosedEffects | null;
 }
 
 /**

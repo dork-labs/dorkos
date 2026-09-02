@@ -29,9 +29,11 @@ import { z } from 'zod';
 
 import {
   ConflictError,
+  DisclosureChangedError,
   InvalidPackageError,
   type PreviewResult,
 } from '../marketplace/marketplace-installer.js';
+import { disclosedEffectsOf } from '../marketplace/disclosed-effects.js';
 import type { InstallResult } from '../marketplace/types.js';
 import { BoundaryError, validateBoundary } from '../../lib/boundary.js';
 
@@ -194,8 +196,12 @@ export function createInstallHandler(deps: MarketplaceMcpDeps) {
         status: 'requires_confirmation',
         preview: preview.preview,
         confirmationToken: confirmation.token,
-        message:
-          'User must confirm install before proceeding. Re-call this tool with the confirmationToken once the user has approved.',
+        // A `reason` means this card REPLACED an approval that no longer covered
+        // the install — a stale token, or a package whose declared commands moved
+        // between the card and the retry. Leading with it is the difference
+        // between "still waiting" and "what you were approved for is not what
+        // this is any more".
+        message: `${confirmation.reason ? `${confirmation.reason} ` : ''}User must confirm install before proceeding. Re-call this tool with the confirmationToken once the user has approved.`,
       });
     }
     if (confirmation.status === 'declined') {
@@ -211,6 +217,12 @@ export function createInstallHandler(deps: MarketplaceMcpDeps) {
         name: args.name,
         marketplace: args.marketplace,
         projectPath: args.projectPath,
+        // What the approval actually covered. `install()` resolves the package a
+        // second time and re-checks its own resolve against this before writing
+        // anything, which closes the window between THIS preview and that one
+        // (DOR-647). Passed even on the `preApproved` path: the tier gate's yes is
+        // still a yes about the package as it stood when this preview was built.
+        approvedDisclosure: disclosedEffectsOf(preview.preview),
       });
       return jsonContent({
         status: 'installed',
@@ -223,6 +235,15 @@ export function createInstallHandler(deps: MarketplaceMcpDeps) {
         warnings: result.warnings,
       });
     } catch (err) {
+      // The package that resolved for the install is not the one that was
+      // approved. Its own code, not `INSTALL_FAILED`: nothing is broken, and the
+      // agent's next move is to ask again rather than to retry the same call.
+      if (err instanceof DisclosureChangedError) {
+        return errorContent(err, 'DISCLOSURE_CHANGED', {
+          approved: err.approved,
+          resolved: err.resolved,
+        });
+      }
       if (err instanceof ConflictError) {
         return errorContent(err, 'CONFLICT', { conflicts: err.conflicts });
       }

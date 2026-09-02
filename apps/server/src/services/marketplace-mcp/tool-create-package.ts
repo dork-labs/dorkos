@@ -138,8 +138,9 @@ export function createCreatePackageHandler(deps: MarketplaceMcpDeps) {
       return jsonContent({
         status: 'requires_confirmation',
         confirmationToken: confirmation.token,
-        message:
-          'User must confirm package creation before files are written. Re-call with the token after approval.',
+        // A `reason` means this card replaced an approval that no longer covered
+        // the request; see the same branch in `tool-install.ts`.
+        message: `${confirmation.reason ? `${confirmation.reason} ` : ''}User must confirm package creation before files are written. Re-call with the token after approval.`,
       });
     }
 

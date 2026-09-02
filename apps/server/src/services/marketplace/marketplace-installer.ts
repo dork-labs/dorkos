@@ -41,6 +41,11 @@ import { reportInstallEvent, type InstallEvent } from './telemetry-hook.js';
 import { writeInstallMetadata } from './installed-metadata.js';
 import { materializePackageSchedules } from './lib/materialize-schedules.js';
 import { validatePackageSchedules } from './lib/validate-package-schedules.js';
+import {
+  describeDisclosedEffects,
+  disclosedEffectsOf,
+  sameDisclosedEffects,
+} from './disclosed-effects.js';
 import { RELATIVE_PATH_SENTINEL_SHA } from './source-resolvers/relative-path.js';
 import type { ConflictReport, InstallRequest, InstallResult, PermissionPreview } from './types.js';
 import { cp, mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
@@ -87,6 +92,43 @@ export class ConflictError extends Error {
       .join('\n');
     super(`Install blocked by conflicts:\n${errorLines}`);
     this.name = 'ConflictError';
+  }
+}
+
+/**
+ * Thrown when the package resolved for the INSTALL declares different executable
+ * content than the one a person approved (DOR-647).
+ *
+ * The approval binding closes the window between the card and the retry. This
+ * closes the one after it: `install()` resolves and stages the package a second
+ * time, so a source that served A while the card was being read can serve B while
+ * the install runs, and everything up to this point would still be consistent.
+ * The comparison costs nothing — `install()` already builds a preview here for the
+ * conflict gate — and it is the last point at which refusing still means nothing
+ * has been written.
+ *
+ * Distinct from {@link ConflictError} and {@link InvalidPackageError} because it
+ * is neither: the package is valid and uncontested, it is simply not the one that
+ * was agreed to.
+ */
+export class DisclosureChangedError extends Error {
+  /**
+   * Build the error from what the person approved and what arrived instead.
+   *
+   * @param approved - Plain-language description of the disclosed effects the
+   *   approval was bound to.
+   * @param resolved - The same description for the package that just resolved.
+   */
+  constructor(
+    public readonly approved: string,
+    public readonly resolved: string
+  ) {
+    super(
+      `This package is not the one that was approved. The approval covered ${approved}; the ` +
+        `copy that resolved just now declares ${resolved}. Nothing was installed. Ask again to ` +
+        `see what it declares now.`
+    );
+    this.name = 'DisclosureChangedError';
   }
 }
 
@@ -236,6 +278,27 @@ export class MarketplaceInstaller implements InstallerLike {
       const preview = await this.deps.previewBuilder.build(staged.packagePath, staged.manifest, {
         projectPath: req.projectPath,
       });
+
+      // The last window (DOR-647). This preview is a SECOND resolve of the
+      // package: the approval bound what the first one disclosed, so a source that
+      // served one thing while a person read the card and another while the
+      // install runs would slip through everything upstream. Free to check — the
+      // preview above is built for the conflict gate anyway — and this is the last
+      // moment at which refusing still means nothing has been written.
+      //
+      // Only when the caller actually carries an approval. The CLI and the
+      // cockpit's `act`-tier route resolve once and install from what they
+      // resolved, so there is no earlier disclosure to be inconsistent with, and
+      // inventing one would refuse installs nobody ever approved anything about.
+      if (req.approvedDisclosure !== undefined) {
+        const resolvedDisclosure = disclosedEffectsOf(preview);
+        if (!sameDisclosedEffects(req.approvedDisclosure, resolvedDisclosure)) {
+          throw new DisclosureChangedError(
+            describeDisclosedEffects(req.approvedDisclosure),
+            describeDisclosedEffects(resolvedDisclosure)
+          );
+        }
+      }
 
       if (!req.force && preview.conflicts.some((c) => c.level === 'error')) {
         throw new ConflictError(preview.conflicts);
