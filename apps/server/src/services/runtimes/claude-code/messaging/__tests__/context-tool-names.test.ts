@@ -551,6 +551,16 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       // strictly stronger, because it also proves each prefix resolves to real
       // advertised tools rather than merely proving the source is quiet.
       if (name === 'room-tools-context.ts') continue;
+      // `room-context-block.ts` joined it for the same structural reason, and
+      // the same trade (DOR-1643). Its tool-only closing directive interpolates
+      // `${toolPrefix}post_to_room` from a prefix the CALLER supplies — the
+      // identical template shape, flagged by a raw-source scan for prose that is
+      // correct on every runtime. What it is exempted in exchange for is
+      // stronger than a source scan: `room-context-runtime-neutrality.test.ts`
+      // renders a tool-only turn through all three real adapters and checks the
+      // name each one actually emits, which also proves each adapter passes its
+      // own prefix rather than defaulting to none.
+      if (name === 'room-context-block.ts') continue;
       const source = stripComments(await readFile(join(dir, name), 'utf8'));
       if (source.includes(IN_SESSION_TOOL_PREFIX)) {
         offenders.push(`${name}: spells ${IN_SESSION_TOOL_PREFIX}`);

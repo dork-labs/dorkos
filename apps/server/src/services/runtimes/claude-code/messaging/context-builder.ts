@@ -729,7 +729,11 @@ export function renderContextEntry(entry: AdditionalContextEntry): string {
       // Shared with the Codex and OpenCode adapters on purpose: the body carries
       // an untrusted-input fence, and a security surface written three times is
       // one that holds in one place and leaks in the other two.
-      return wrapTag(tag, formatRoomContext(entry.data));
+      //
+      // The prefix is the one thing the shared writer cannot know: it names the
+      // posting tool in the tool-only closing directive, and this runtime spells
+      // it differently from OpenCode (DOR-1292).
+      return wrapTag(tag, formatRoomContext(entry.data, { toolPrefix: IN_SESSION_TOOL_PREFIX }));
     case 'seed_context':
       // Shared for the same reason, one step milder: the body carries the
       // sentence that tells the reader the person cannot see this block, and

@@ -122,3 +122,57 @@ describe('every runtime fences a room message the same way', () => {
     expect(parts[parts.length - 1].text).toBe(USER_TEXT);
   });
 });
+
+/**
+ * The tool-only closing directive names the posting tool, and every runtime
+ * spells it differently (DOR-1643, DOR-1292).
+ *
+ * This is what `room-context-block.ts` is exempted from the source scan in
+ * `claude-code/messaging/__tests__/context-tool-names.test.ts` in exchange for,
+ * and it is the stronger check: it renders through the three REAL adapters, so
+ * an adapter that forgot to pass its prefix fails here even though the shared
+ * writer is blameless.
+ */
+const DM_UNDER_THE_FLIP: AdditionalContextEntry = {
+  ...ENTRY,
+  data: {
+    ...ENTRY.data,
+    room: { id: 'room-1', kind: 'dm', name: 'Dorian', bridged: false },
+    replyMode: 'tool-only',
+  },
+};
+
+describe('a tool-only turn is told the posting tool by its own runtime name', () => {
+  it('claude-code', () => {
+    const rendered = renderContextEntry(DM_UNDER_THE_FLIP);
+    expect(rendered).toContain('mcp__dorkos__post_to_room(roomId: "room-1", text: <your answer>)');
+  });
+
+  it('codex', () => {
+    const prompt = buildCodexPrompt(USER_TEXT, { additionalContext: [DM_UNDER_THE_FLIP] });
+    expect(prompt).toContain('mcp__dorkos__post_to_room(roomId: "room-1", text: <your answer>)');
+  });
+
+  it('opencode, which spells the same tool differently', () => {
+    const parts = buildOpenCodeParts(USER_TEXT, { additionalContext: [DM_UNDER_THE_FLIP] });
+    const rendered = parts.map((part) => part.text).join('\n\n');
+    expect(rendered).toContain('dorkos_post_to_room(roomId: "room-1", text: <your answer>)');
+    // The wrong prefix here is uncallable and silent, which is the DOR-1292
+    // failure this whole arrangement exists to make impossible.
+    expect(rendered).not.toContain('mcp__dorkos__post_to_room');
+  });
+
+  it('and no runtime is left describing a tool it could have named', () => {
+    // The undefined-prefix fallback is honest, but an adapter falling into it is
+    // a regression: every production call site knows its own prefix.
+    for (const rendered of [
+      renderContextEntry(DM_UNDER_THE_FLIP),
+      buildCodexPrompt(USER_TEXT, { additionalContext: [DM_UNDER_THE_FLIP] }),
+      buildOpenCodeParts(USER_TEXT, { additionalContext: [DM_UNDER_THE_FLIP] })
+        .map((part) => part.text)
+        .join('\n\n'),
+    ]) {
+      expect(rendered).not.toContain('the posting tool, with roomId');
+    }
+  });
+});

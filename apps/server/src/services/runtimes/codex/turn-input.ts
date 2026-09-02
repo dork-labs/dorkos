@@ -17,6 +17,7 @@ import type { AdditionalContextEntry } from '@dorkos/shared/additional-context';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import type { EffortLevel, SessionSettings } from '@dorkos/shared/types';
 import { GEN_UI_CONTEXT } from '../shared/gen-ui-context.js';
+import { CODEX_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
 import { formatRoomContext } from '../shared/room-context-block.js';
 import { formatSeedContext } from '../shared/seed-context-block.js';
 import { formatStagedContext } from '../shared/staged-context-block.js';
@@ -115,7 +116,10 @@ function renderContextEntry(entry: AdditionalContextEntry): string {
 function renderContextBody(entry: AdditionalContextEntry): string {
   switch (entry.kind) {
     case 'room_context':
-      return formatRoomContext(entry.data);
+      // The prefix Codex qualifies plugin-provided MCP tools with, so the
+      // tool-only closing directive can name the posting tool rather than
+      // describe it. Never guessed here: it is the shared constant (DOR-1292).
+      return formatRoomContext(entry.data, { toolPrefix: CODEX_DORKOS_TOOL_PREFIX });
     case 'seed_context':
       return formatSeedContext(entry.data);
     case 'staged_context':

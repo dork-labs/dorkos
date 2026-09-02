@@ -1102,11 +1102,23 @@ function preamble(data: RoomContextData, where: string, nonce: string): string[]
   // it may not, because there is nobody else the question could have been for.
   // Only said when it is true: in text mode the reply posts itself, so there is
   // nothing to instruct.
+  //
+  // **And it names the ASSOCIATION, not just the obligation** (DOR-1643). Live
+  // DM probes found an agent that formed a complete answer, narrated it into a
+  // session nobody reads, and then reached for the posting tool to be sociable —
+  // so "answering is not optional" was being satisfied by a gesture while the
+  // answer itself went nowhere. The sentence that closes that says the answer you
+  // work out IS the thing you post, and it says it as a fact about where words go
+  // rather than by naming a verb: naming a tool here would guess at the session's
+  // tools and its prefix (DOR-1292), which `room-tools-context.ts` knows and this
+  // runtime-neutral block does not.
   if (data.replyMode === 'tool-only' && data.room.kind !== 'channel') {
     lines.push(
       `This is a direct message, so answering is not optional: a person wrote here and ` +
-        `nobody else can answer for you. Post something, or put a reaction on their message ` +
-        `if that genuinely says it all.`
+        `nobody else can answer for you. Whatever answer you work out this turn, posting it ` +
+        `is how you answer them — an answer you only write back in this session is one they ` +
+        `never got. If their message asked nothing at all, a reaction on it, or nothing, is ` +
+        `the whole reply.`
     );
   }
   lines.push(`Members: ${data.members.map(memberLine).join(', ')}.`);
@@ -1274,8 +1286,16 @@ function fenced(data: RoomContextData, nonce: string): string | null {
  * @param opts.nonce - Nonce override. Tests pin it so the block can be
  *   snapshotted; production mints a fresh one per render, which is what stops a
  *   member forging the closing marker in a message body.
+ * @param opts.toolPrefix - What this runtime puts in front of a `dorkos` MCP
+ *   tool name, so the tool-only closing directive can name the verb instead of
+ *   describing it. **Never guess it**: pass the constant for the runtime you are
+ *   rendering for, exactly as `buildRoomToolsBlock` requires. Omitted, the
+ *   directive says "the posting tool" — true on every runtime, and weaker.
  */
-export function formatRoomContext(data: RoomContextData, opts: { nonce?: string } = {}): string {
+export function formatRoomContext(
+  data: RoomContextData,
+  opts: { nonce?: string; toolPrefix?: string } = {}
+): string {
   // **Minted here rather than where the fence is built, because it is no longer
   // only the fence's.** The same per-turn secret marks the gathered ordinals,
   // the two sub-block headings and — since DOR-1263 — every id label, in the
@@ -1324,5 +1344,96 @@ export function formatRoomContext(data: RoomContextData, opts: { nonce?: string 
   // beside the text it describes; this carries it when there is not.
   else if (data.room.bridged) blocks.push(BRIDGED_FENCE_NOTE);
 
+  // **Last, and the position is the point** (DOR-1643). The preamble already
+  // says the turn's words are not posted; a live DM probe showed a model read
+  // that, form a complete answer, and write it out anyway without one thought
+  // about a tool — its whole reasoning trace was about the question. Between
+  // that sentence and the person's message sit the roster, the headroom line
+  // and, in a busy room, the entire fenced backlog. So the instruction that
+  // governs what the turn DOES is restated where nothing can come between it
+  // and the message it governs, which is as close to the decision as a prompt
+  // can get.
+  //
+  // Outside the fence, exactly as `BRIDGED_FENCE_NOTE` is: this is DorkOS's own
+  // text about the turn, not anybody's words.
+  if (data.replyMode === 'tool-only') blocks.push(closingDirective(data, opts.toolPrefix));
+
   return blocks.join('\n\n');
+}
+
+/**
+ * The last line a tool-only turn reads before the message it is answering.
+ *
+ * Two forms rather than one with a clause, because what the agent is being told
+ * differs: in a direct message there is an answer owed and the only question is
+ * how it travels, and in a channel the decision to speak is still the agent's.
+ * A single sentence covering both would have to hedge the DM's obligation into
+ * a conditional, which is the hedge that produced the inversion this closes.
+ *
+ * **It names the tool when the caller supplied a prefix, and this block's own
+ * runtime-neutrality rule is what makes that safe rather than what forbids it.**
+ * The rule has always been "never GUESS a prefix" — `buildRoomToolsBlock` names
+ * all four tools and takes the prefix as an argument for exactly this reason. A
+ * directive that says "the posting tool" asks a model holding a hundred-odd
+ * tools to go and work out which one, at the moment it is deciding whether to
+ * bother; the DOR-1643 probes show it does not bother. Without a prefix the
+ * neutral phrasing stands, so a caller that has no prefix to give still gets a
+ * true sentence.
+ *
+ * @param data - The turn's room context.
+ * @param toolPrefix - This runtime's `dorkos` MCP tool prefix, or undefined.
+ * @returns The closing directive.
+ */
+function closingDirective(data: RoomContextData, toolPrefix?: string): string {
+  // The call, spelled out with THIS room's id already in it. Naming the tool was
+  // not enough on its own (DOR-1643, run 3): a model that has decided its answer
+  // is written still has to assemble a call to send it, and every step between
+  // deciding and calling is a step at which it stops. There is nothing to
+  // assemble here.
+  const call =
+    toolPrefix === undefined
+      ? `the posting tool, with roomId "${data.room.id}"`
+      : `${toolPrefix}post_to_room(roomId: "${data.room.id}", text: <your answer>)`;
+  // **Two branches, both spelled as an action, and the ANSWERING one last. Both
+  // halves of that shape were paid for in live runs.** A single unconditional
+  // imperative with the exception trailing it answered a bare "thanks!" with
+  // "Welcome! Let me know if you want to dig into the importer details." — the
+  // DOR-1643 pleasantry, reproduced. Inverting it, so the exception came first
+  // and the call was what was left over, restored restraint and lost the
+  // answer: the turn went back to writing its answer out and calling nothing.
+  //
+  // Neither ordering is the fix, because the failure is not about order. A
+  // conditional needs the branch it is NOT taking to be as concrete as the one
+  // it is, or the concrete half wins whatever the condition says. So each
+  // branch names its own ending, and the one that ends in a tool call goes last
+  // — the closest thing to the decision, in the position the whole directive
+  // was moved here to occupy.
+  const [quiet, speak] =
+    data.room.kind === 'channel'
+      ? [
+          `You have nothing to add: post nothing, and end the turn.`,
+          `You decided to say something: call ${call}. Anything you write instead of ` +
+            `calling it reaches nobody.`,
+        ]
+      : [
+          // The banned phrasings are QUOTED, and that is what a prohibition has
+          // to do to beat politeness. "Post nothing" lost twice to a model that
+          // did not think a warm sign-off counted as a message; "Anytime! Let
+          // me know if you need anything else on the importer." is what it
+          // posted, and naming it is the difference between a rule and a hope.
+          `They asked for nothing back — a thanks, an acknowledgment, a heads-up with no ` +
+            `question in it: post nothing. React to their message, or end the turn. ` +
+            `"Anytime", "you're welcome", "let me know if you need anything else" are ` +
+            `messages, and posting one here is the noise this whole arrangement exists to ` +
+            `spare people.`,
+          // "or asked you to look at something" is not padding: the ambiguous
+          // seed ("can you take a look at that when you get a chance") was read
+          // as work to start rather than a message to answer, and the turn went
+          // off to reason about the repo and wrote its reply to nobody.
+          `They asked you anything at all — a question, or to look at something: call ` +
+            `${call}. That call is the only thing they will ever see; anything you write ` +
+            `here instead of calling it reaches nobody, and going off to work without it ` +
+            `leaves them in silence.`,
+        ];
+  return `Before you end this turn, exactly one of these two:\n- ${quiet}\n- ${speak}`;
 }
