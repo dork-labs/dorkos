@@ -4,7 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { EventEmitter } from 'node:events';
 import chokidar, { type FSWatcher } from 'chokidar';
-import { AccessControl, RULES_WRITE_STABILITY_MS } from '../access-control.js';
+import { AccessControl } from '../access-control.js';
 import type { RelayAccessRule } from '@dorkos/shared/relay-schemas';
 import type { AccessControlLogger } from '../access-control.js';
 
@@ -65,60 +65,38 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** How long the hot-reload helpers below give the watcher before giving up. */
+/** How long {@link waitUntil} gives the watcher before giving up. */
 const RELOAD_TIMEOUT_MS = 5000;
-/**
- * How long each helper round waits before re-checking.
- *
- * Derived from the watcher's own stability threshold rather than picked: a
- * repeated write must leave the file untouched for longer than that threshold,
- * or `awaitWriteFinish` keeps restarting its timer and never emits anything.
- */
-const RELOAD_POLL_MS = RULES_WRITE_STABILITY_MS + 150;
+/** How often it re-checks while waiting. */
+const RELOAD_POLL_MS = 50;
 
 /**
  * Poll until `predicate` holds, or fail loudly.
  *
- * Used where the change under test has already been made and only its
- * observation is outstanding — never as a stand-in for a fixed sleep.
- */
-async function waitUntil(predicate: () => boolean, what: string): Promise<void> {
-  const deadline = Date.now() + RELOAD_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    if (predicate()) return;
-    await wait(RELOAD_POLL_MS);
-  }
-  throw new Error(`timed out after ${RELOAD_TIMEOUT_MS}ms waiting for ${what}`);
-}
-
-/**
- * Drive a hot-reload: apply `stimulus`, and re-apply it until `predicate` holds.
+ * The change under test is made exactly once, before this is called; only its
+ * observation is outstanding. That single write is enough because
+ * `whenWatcherReady()` does not resolve until the watcher is actually
+ * delivering — a helper that re-applied its write to paper over a missed event
+ * would report a watcher that drops events as healthy, which is the bug these
+ * tests exist to catch.
  *
- * `AccessControl.whenWatcherReady()` says the watcher has attached, which is
- * the gate these tests need in place of a sleep — but attached is not yet
- * delivering. Measured on macOS with chokidar 5: a write issued in the same
- * tick as `ready` is dropped outright, one issued 5ms later always arrives. A
- * dropped event never arrives late, so polling alone would burn the whole
- * timeout. Re-applying closes that window without guessing at a duration, so
- * `stimulus` must be idempotent — writing the same bytes again.
- *
- * The re-apply comes after the check, never before, so a run that succeeds on
- * the first stimulus leaves no second write in flight to reload the evaluator
- * again behind the test's back.
+ * @param predicate - The condition being waited on.
+ * @param what - Named in the failure message, so a timeout says what was lost.
+ * @param timeoutMs - Budget for this wait. Two waits in one test must sum to
+ *   less than the test's own timeout, or the vitest timeout fires first and
+ *   swallows the specific message.
  */
-async function waitForReload(
-  stimulus: () => void,
+async function waitUntil(
   predicate: () => boolean,
-  what: string
+  what: string,
+  timeoutMs = RELOAD_TIMEOUT_MS
 ): Promise<void> {
-  const deadline = Date.now() + RELOAD_TIMEOUT_MS;
-  stimulus();
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    await wait(RELOAD_POLL_MS);
     if (predicate()) return;
-    stimulus();
+    await wait(RELOAD_POLL_MS);
   }
-  throw new Error(`timed out after ${RELOAD_TIMEOUT_MS}ms waiting for ${what}`);
+  throw new Error(`timed out after ${timeoutMs}ms waiting for ${what}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -495,9 +473,10 @@ describe('AccessControl', () => {
       // Initially no rules
       expect(acl.checkAccess('relay.a', 'relay.b').allowed).toBe(true);
 
-      // Write a deny rule externally
-      await waitForReload(
-        () => writeRulesFile(tmpDir, [makeRule('relay.a', 'relay.b', 'deny', 10)]),
+      // Write a deny rule externally — once. The watcher is live, so a second
+      // write would only hide it dropping the first.
+      writeRulesFile(tmpDir, [makeRule('relay.a', 'relay.b', 'deny', 10)]);
+      await waitUntil(
         () => !acl.checkAccess('relay.a', 'relay.b').allowed,
         'the externally written deny rule to be picked up'
       );
@@ -577,8 +556,8 @@ describe('AccessControl', () => {
       expect(acl.isQuarantined()).toBe(true);
 
       await acl.whenWatcherReady();
-      await waitForReload(
-        () => writeRulesFile(tmpDir, [makeRule('relay.a', 'relay.b', 'deny', 10)]),
+      writeRulesFile(tmpDir, [makeRule('relay.a', 'relay.b', 'deny', 10)]);
+      await waitUntil(
         () => !acl.isQuarantined(),
         'the quarantine to lift after the file was repaired'
       );
@@ -618,8 +597,8 @@ describe('AccessControl', () => {
       acl = new AccessControl(tmpDir);
 
       await acl.whenWatcherReady();
-      await waitForReload(
-        () => writeRulesFile(tmpDir, []),
+      writeRulesFile(tmpDir, []);
+      await waitUntil(
         () => !acl.isQuarantined(),
         'the quarantine to lift after the file was repaired'
       );
@@ -633,21 +612,20 @@ describe('AccessControl', () => {
       await acl.whenWatcherReady();
 
       // The broken state is established THROUGH the watcher rather than at
-      // construction, because a deletion cannot be re-applied the way a write
-      // can: `rm` on an already-absent file emits nothing, so if the unlink
-      // were lost in the attach window there would be no second chance. A
-      // write the watcher demonstrably saw proves it is delivering, and the
-      // deletion below is then safe to make exactly once.
-      await waitForReload(
-        () => writeRaw(tmpDir, '{{{'),
-        () => acl.isQuarantined(),
-        'the broken file to quarantine the evaluator'
-      );
+      // construction: a write the watcher demonstrably delivered is proof the
+      // deletion below will be delivered too, and a deletion gets no second
+      // chance — `rm` on an already-absent file emits nothing at all.
+      writeRaw(tmpDir, '{{{');
+      await waitUntil(() => acl.isQuarantined(), 'the broken file to quarantine the evaluator');
 
       fs.rmSync(path.join(tmpDir, 'access-rules.json'));
+      // Deliberately shorter than the two waits' shared test timeout, so a real
+      // unlink regression fails with the message below rather than with vitest's
+      // generic "test timed out".
       await waitUntil(
         () => !acl.isQuarantined(),
-        'the quarantine to lift after the file was deleted'
+        'the quarantine to lift after the file was deleted',
+        3000
       );
 
       expect(acl.checkAccess('relay.a', 'relay.b').allowed).toBe(true);

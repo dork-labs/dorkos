@@ -40,15 +40,16 @@ export type AccessControlLogger = Partial<RelayLogger>;
 const RULES_FILENAME = 'access-rules.json';
 
 /**
- * How long the rules file must sit unchanged before the watcher reads it.
+ * How long to wait after chokidar's `ready` before reporting the watcher live.
  *
- * Exported because anything that writes the file and then waits to observe the
- * reload has to leave it alone for longer than this, or chokidar's
- * `awaitWriteFinish` restarts its stability timer and never emits at all.
- *
- * @internal Exported for testing only.
+ * Covers the gap between chokidar attaching its listeners and the platform
+ * actually delivering events — the `ready` handler below carries the
+ * measurement behind it. Five times the gap observed on an idle machine,
+ * because the gap grows with load: at zero grace the hot-reload tests drop a
+ * write roughly two runs in three under a load average around 130, and hold at
+ * this value. Paid once per evaluator, and never on the answer path.
  */
-export const RULES_WRITE_STABILITY_MS = 100;
+const READY_DELIVERY_GRACE_MS = 25;
 
 /**
  * Sort comparator for access rules — highest priority first.
@@ -90,7 +91,7 @@ function parseRules(raw: string): RelayAccessRule[] | null {
  * 1. Construct with a data directory path
  * 2. Rules are loaded synchronously from `access-rules.json` on construction
  * 3. A chokidar watcher hot-reloads rules when the file changes on disk;
- *    {@link whenWatcherReady} says when that watcher has attached
+ *    {@link whenWatcherReady} says when that watcher is live
  * 4. Call {@link close} to stop watching and release resources
  *
  * @example
@@ -138,28 +139,25 @@ export class AccessControl {
   }
 
   /**
-   * Wait until the hot-reload watcher has finished starting up.
+   * Wait until the hot-reload watcher is actually delivering events.
    *
    * Rules are loaded synchronously in the constructor, so an evaluator answers
-   * correctly the instant it exists; this concerns hot-reload only. Callers
-   * that are about to change `access-rules.json` and expect the change to be
-   * picked up — tests, above all — gate on this instead of sleeping.
+   * correctly the instant it exists; this concerns hot-reload only. A caller
+   * about to change `access-rules.json` and expect that change to be picked up
+   * gates on this instead of sleeping, and a single write after it resolves is
+   * enough — the gap between chokidar's `ready` and the platform delivering is
+   * absorbed inside the class rather than left to each caller to guess at.
    *
-   * It resolves and never rejects, in three cases: chokidar reported `ready`;
-   * the watcher failed before it ever went ready (an EMFILE-style failure emits
-   * `error` and no `ready` at all, so without this the promise would hang
-   * forever); or {@link close} was called first, after which `ready` is never
-   * coming.
-   *
-   * Note the limit of what `ready` promises. chokidar reports it as soon as it
-   * has attached its listeners, which on macOS is a few milliseconds before
-   * libuv's FSEvents stream actually starts delivering; a write landing inside
-   * that window is dropped rather than delivered late. So this is a gate on
-   * "the watcher is attached", not a guarantee that the very next write is
-   * seen — a caller that must observe its own write should repeat it until it
-   * does.
+   * It resolves and never rejects, in three cases: the watcher went ready and
+   * is live; the watcher failed before it ever went ready (an EMFILE-style
+   * failure emits `error` and no `ready` at all, so without this the promise
+   * would hang forever); or {@link close} was called first, after which `ready`
+   * is never coming.
    *
    * @returns A promise that resolves once the watcher has settled.
+   * @internal Nothing in production awaits this — `RelayCore` builds the
+   *   evaluator synchronously and never blocks on hot-reload — so it exists for
+   *   tests, and for any future caller that must not race the watcher.
    */
   whenWatcherReady(): Promise<void> {
     return this.watcherReady;
@@ -413,13 +411,21 @@ export class AccessControl {
       persistent: true,
       ignoreInitial: true,
       awaitWriteFinish: {
-        stabilityThreshold: RULES_WRITE_STABILITY_MS,
+        stabilityThreshold: 100,
         pollInterval: 50,
       },
     });
 
     this.watcher.on('ready', () => {
-      this.finishWatcherStartup();
+      // Deliberately a beat after 'ready', not on it. chokidar reports ready as
+      // soon as it has attached its listeners, but libuv's FSEvents stream
+      // starts delivering a moment later: measured on macOS, a write issued in
+      // the same tick as 'ready' is dropped outright — not delivered late —
+      // while one issued 5ms on is always seen. Settling on the bare event
+      // would hand callers a gate that lies, so the grace period is spent here,
+      // once, instead of every caller having to guess at a sleep. Unref'd
+      // because a pending grace timer must never hold a process open.
+      setTimeout(() => this.finishWatcherStartup(), READY_DELIVERY_GRACE_MS).unref?.();
     });
 
     this.watcher.on('change', () => {
@@ -438,12 +444,6 @@ export class AccessControl {
       this.loadRules();
     });
 
-    // A watcher that fails before it goes ready (e.g. EMFILE) never emits
-    // 'ready' at all, so the startup promise is settled from the error handler
-    // too — otherwise every caller awaiting it would hang forever. Settling
-    // rather than rejecting matches what a failed watcher actually costs:
-    // rules already loaded keep being enforced, only hot-reload is gone.
-    //
     // Without this handler a watcher failure (e.g. EMFILE) has nowhere to go
     // but the process-wide unhandled-error path. Rules already loaded keep
     // being enforced and a quarantine already in force stays in force; what
@@ -452,6 +452,11 @@ export class AccessControl {
     // boolean: a benign EACCES must never suppress the EMFILE storm that
     // follows it. The Set lives in this per-instance closure, so one relay's
     // latch cannot silence another's.
+    //
+    // Startup is settled here too, because such a failure emits 'error' and no
+    // 'ready' at all — without it, every caller awaiting the watcher would hang
+    // forever. Settling rather than rejecting matches what the failure actually
+    // costs: enforcement continues, only hot-reload is gone.
     const seenCodes = new Set<string>();
     this.watcher.on('error', (err) => {
       this.finishWatcherStartup();
