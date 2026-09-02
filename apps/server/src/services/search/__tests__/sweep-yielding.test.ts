@@ -49,15 +49,25 @@ const CONTAINERS = 500;
  * Not a bound on anything the sweep promises — nothing below is asserted in
  * time, so raising this weakens no check. It exists because the WORK here is
  * genuinely large (500 synchronous SQLite writes, 200 files created and read),
- * and a machine already running other suites stretches it: measured at 320ms
- * idle and 3.5s under 24 concurrent vitest processes, with vitest's 5s default
- * sitting inside that range.
+ * and a machine already running other suites stretches it past vitest's 5s
+ * default: the slowest of these tests measured 8.2s under 40 concurrent vitest
+ * processes, and the pre-fix file was reproduced hitting the 5s runner timeout
+ * at only 10-way concurrency. Both are reds with the sweep working correctly.
  */
 const SLOW_UNDER_LOAD_MS = 60_000;
 
 /** A running count of event-loop turns. */
 interface EventLoopTurnCounter {
-  /** Turns the loop has taken since counting started. */
+  /**
+   * Begin counting.
+   *
+   * Turns the loop took before this call are not counted, which is what lets a
+   * test open the count immediately before the loop it means to measure rather
+   * than banking the I/O turns of whatever ran first.
+   */
+  start: () => void;
+
+  /** Turns the loop has taken since {@link EventLoopTurnCounter.start}. */
   readonly turns: number;
 
   /** Stop counting, so the pump does not outlive the test. */
@@ -65,7 +75,7 @@ interface EventLoopTurnCounter {
 }
 
 /**
- * Count turns of the event loop until the returned handle is stopped.
+ * A counter of event-loop turns, created stopped.
  *
  * A `setImmediate` re-queued from inside the check phase runs on the NEXT turn
  * of the loop and never the current one, so a self-rescheduling chain of them
@@ -73,16 +83,19 @@ interface EventLoopTurnCounter {
  * one turn per container, because that is what `yieldToEventLoop` costs — and
  * unlike a millisecond, a loaded machine cannot make the sweep spend fewer.
  */
-function countEventLoopTurns(): EventLoopTurnCounter {
+function eventLoopTurnCounter(): EventLoopTurnCounter {
   let turns = 0;
-  let running = true;
+  let running = false;
   const pump = (): void => {
     if (!running) return;
     turns += 1;
     setImmediate(pump);
   };
-  setImmediate(pump);
   return {
+    start: () => {
+      running = true;
+      setImmediate(pump);
+    },
     get turns() {
       return turns;
     },
@@ -142,7 +155,8 @@ describe('a wide row sweep', () => {
     async () => {
       let containersRead = 0;
       let firstTurnAtContainer: number | null = null;
-      const loop = countEventLoopTurns();
+      const loop = eventLoopTurnCounter();
+      loop.start();
       const source = wideSource(() => {
         containersRead += 1;
         if (loop.turns > 0 && firstTurnAtContainer === null) firstTurnAtContainer = containersRead;
@@ -162,11 +176,12 @@ describe('a wide row sweep', () => {
       expect(firstTurnAtContainer).toBeLessThan(CONTAINERS);
       // And it is a turn PER CONTAINER, not one turn somewhere in the middle —
       // the difference between a sweep that shares the process and one that
-      // pauses once. Floored at half rather than pinned at `CONTAINERS` so the
-      // exact turn the sweep's own promise resolves on cannot decide the result;
-      // a sweep that stopped yielding spends none of these, and one that yielded
-      // every tenth container would spend 50.
-      expect(loop.turns).toBeGreaterThanOrEqual(CONTAINERS / 2);
+      // pauses once. Measured at exactly `CONTAINERS`; the five turns of slack
+      // are so that the exact turn the sweep's own promise resolves on cannot
+      // decide the result, and nothing more. A floor of half would have been the
+      // more comfortable number and is the wrong one: yielding every OTHER
+      // container scores exactly 250 and would have passed it.
+      expect(loop.turns).toBeGreaterThanOrEqual(CONTAINERS - 5);
     },
     SLOW_UNDER_LOAD_MS
   );
@@ -247,6 +262,7 @@ describe('a wide file sweep', () => {
       // so it runs first in the same check phase — at file 1 when the loop yields,
       // and not until the whole sweep is over when it does not.
       let loopRanDuringSweep = false;
+      const loop = eventLoopTurnCounter();
       const observed: FileSource = {
         ...source,
         discover: async (known) => {
@@ -254,11 +270,19 @@ describe('a wide file sweep', () => {
           setImmediate(() => {
             loopRanDuringSweep = true;
           });
+          // **Counting opens HERE, and that placement is the whole assertion.**
+          // Discovery reaches a real filesystem, so it spends plenty of turns of
+          // its own that have nothing to do with the file loop: started before
+          // `sweepFileSource` instead, the counter banks ~249 of them and clears
+          // any floor below that even with the per-file yield deleted — a check
+          // that cannot fail for the mutation it exists to catch. Opened one
+          // step before the loop it measures, every turn it sees was bought by
+          // `yieldToEventLoop`.
+          loop.start();
           return discovery;
         },
       };
 
-      const loop = countEventLoopTurns();
       let second;
       try {
         second = await sweepFileSource(db, observed, '2026-08-26T10:05:00.000Z');
@@ -269,9 +293,10 @@ describe('a wide file sweep', () => {
       expect(second.indexed).toBe(0);
       expect(second.containers).toBe(files);
       expect(loopRanDuringSweep).toBe(true);
-      // The same turn-per-container floor the row sweep asserts, for the same
-      // reason: one turn somewhere is not the claim, a turn between files is.
-      expect(loop.turns).toBeGreaterThanOrEqual(files / 2);
+      // The same turn-per-file floor the row sweep asserts, for the same reason:
+      // one turn somewhere is not the claim, a turn between FILES is. Measured
+      // at exactly `files`, with the same five turns of slack and no more.
+      expect(loop.turns).toBeGreaterThanOrEqual(files - 5);
     },
     SLOW_UNDER_LOAD_MS
   );
