@@ -860,13 +860,13 @@ describe('the task form Runs-on controls', () => {
       }, 20_000);
 
       it('does not bring a spent pick back when the manifests are read again', async () => {
-        // "The manifests are known" is not a one-way door. The resolve query
-        // re-mints its key whenever the roster changes, holds no placeholder
-        // data, and refetches on window focus — so `known` goes false→true again
-        // and again over one form's life. A pick left latched fires on every one
-        // of those edges: it clobbers whatever the person chose in between, and
-        // it can re-apply one they REFUSED at the door — silently, if the mode
-        // has moved since so it no longer widens.
+        // "The manifests are known" is not a one-way door. The resolve query is
+        // keyed on the project paths, so every change to the roster re-mints the
+        // key, and a fresh key starts with no data — `known` goes false→true
+        // again with each of those. A pick left latched fires on every one of
+        // those edges: it clobbers whatever the person chose in between, and it
+        // can re-apply one they REFUSED at the door — silently, if the mode has
+        // moved since so it no longer widens.
         //
         // The second agent here is the point — a later pick must not be undone
         // by an earlier one — and it is also why this case cannot stand in for

@@ -20,12 +20,17 @@
  * So a pick made in that window is HELD — not dropped, and not applied — until
  * the manifests answer, and then priced and either made or asked about. It is
  * spent EXACTLY ONCE, which is a rule with teeth: "the manifests are known" is
- * not a one-way door. The resolve query re-mints its key whenever the agent
- * roster changes and holds no placeholder data, and it refetches on window
- * focus, so `known` goes false→true again and again over a form's life. A pick
- * left latched fires on every one of those edges — clobbering a later pick the
- * person actually made, or re-applying one they had already turned down at the
- * consent door.
+ * not a one-way door. The resolve query is keyed on the project paths, so every
+ * change to the agent roster re-mints the key — and a fresh key starts with no
+ * data, because the query holds no placeholder. So `known` goes false→true again
+ * with each of those, over a form's life. A pick left latched fires on every one
+ * of those edges — clobbering a later pick the person actually made, or
+ * re-applying one they had already turned down at the consent door.
+ *
+ * A background refetch is NOT one of those edges, which is worth knowing before
+ * reaching for one to reproduce this: TanStack keeps the previous data while a
+ * refetch is in flight, so `known` stays true throughout and the effect never
+ * re-runs. Only a key that has never been answered reads as unknown.
  *
  * A pick that can never be priced is DROPPED and said so, rather than held
  * against a resolve that may succeed much later and apply a choice from another
