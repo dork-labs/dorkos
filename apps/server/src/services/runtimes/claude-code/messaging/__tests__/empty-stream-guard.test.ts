@@ -17,6 +17,20 @@ describe('isContentEvent', () => {
   it('does not accept a compaction boundary that carries no metadata', () => {
     expect(isContentEvent({ type: 'compact_boundary', data: {} })).toBe(false);
   });
+
+  // DOR-1664: a tool result whose only block is an image maps to NO
+  // `tool_result` event — there is no text to put in one — so a turn whose
+  // whole product was a picture reached this guard with nothing else to show
+  // for itself. Counting the picture is what stops the guard putting "the
+  // agent did not respond" underneath the image it just drew.
+  it('accepts a picture the turn produced', () => {
+    expect(
+      isContentEvent({
+        type: 'image_attachment',
+        data: { attachmentId: 'a', url: '/api/x.png', mediaType: 'image/png', size: 10 },
+      })
+    ).toBe(true);
+  });
 });
 
 describe('isInteractiveEvent', () => {

@@ -53,14 +53,17 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
   // adapter DOES, and it now does both.
   supportsSteer: true,
   supportsContextStaging: true,
-  // Honest, and currently WRONG in the sense that matters: claude-code CAN meet
-  // media, and throws it away. `extractToolResultContent`
-  // (`sessions/transcript-parser.ts`) filters a tool result down to
-  // `b.type === 'text'`, so a `Read` of a PNG is discarded without a word —
-  // the most ordinary media case of all three runtimes, on the DEFAULT runtime.
-  // The seam it needs now exists (`services/session/attachments/`); until the
-  // adapter is taught to use it, saying `'none'` is what keeps the gap visible
-  // instead of silent (ADR 260901-135657).
+  // The FLOOR, not the answer: `ClaudeCodeRuntime.getCapabilities` overrides it
+  // to `'attachments'` whenever the composition root handed the runtime a
+  // `SessionAttachmentStore`. Wired without one there is nowhere to put a
+  // picture, and `'none'` is then the truth.
+  //
+  // What it used to mean: a `Read` of a PNG produced an image block that both
+  // readers filtered away (`extractToolResultText` live,
+  // `extractToolResultContent` in the transcript), so the most ordinary media
+  // case of all three runtimes was discarded without a word on the DEFAULT
+  // runtime. `tool-result-images.ts` + `media-capture.ts` read it now, on both
+  // paths (ADR 260901-135657, DOR-1664).
   mediaOutput: 'none',
   // Native git is suppressed via `excludeDynamicSections` (ADR-0273 A2), so the
   // server injects all context kinds from the bag — none are runtime-native.

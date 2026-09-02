@@ -26,7 +26,7 @@
 #   1. lefthook `pre-commit` → `prettier --write {staged_files}` with
 #      `stage_fixed: true` (lefthook.yml) — nothing gets committed unformatted.
 #   2. CI `prettier --check .` (`pnpm format:check`) inside the REQUIRED
-#      `typecheck` workflow (.github/workflows/typecheck.yml, DOR-485) — the
+#      `lint` workflow (.github/workflows/lint.yml, DOR-485) — the
 #      unforgeable gate.
 #
 # So the trade was: a real, reproduced edit-failure mode in exchange for a tidy

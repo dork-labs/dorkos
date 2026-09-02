@@ -606,11 +606,12 @@ gh label create re-review    --description "Request another automated review pas
   confidently naming the wrong cause nine times, and then doing it again for a
   different shape that had no fixture, so add a fixture if you touch it.
 
-- **A red `typecheck` check is often the formatting gate, not types.** The
-  required `typecheck` workflow runs `pnpm format:check` as its first step, so a
-  prettier miss reports under the typecheck name — the log's turbo section can say
-  "31 successful" while the check is red from the step above it. Read the log
-  before assuming type errors. Two related traps: a local whole-repo
+- **A red `lint` check is often the formatting gate, not ESLint.** The
+  required `lint` workflow runs `pnpm format:check` as its first step (moved
+  there from `typecheck` in the DOR-627 follow-up, 2026-09-02), so a prettier
+  miss reports under the lint name — the log's turbo section can print
+  everything successful while the check is red from the step above it. Read
+  the log before assuming lint errors. Two related traps: a local whole-repo
   `format:check` on a branch behind `main` reports files that are not yours
   (merge `origin/main` in before believing it), and a merge commit made with
   `LEFTHOOK=0` skips the format hook, so merge-combined files reach CI

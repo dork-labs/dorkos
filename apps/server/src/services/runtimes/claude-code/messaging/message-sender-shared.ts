@@ -20,6 +20,7 @@ import { editBaselineStore } from '../../../diff/index.js';
 import type { AdapterManager } from '../../../relay/adapter-manager.js';
 import type { BindingRouter } from '../../../relay/binding-router.js';
 import type { BindingStore } from '../../../relay/binding-store.js';
+import type { SessionAttachmentStore } from '../../../session/attachments/index.js';
 import type { AgentSession } from '../agent-types.js';
 import type { ClaudeAgentSdkPlugin } from './plugin-activation.js';
 import type { ModelThinkingCapability } from './thinking-config.js';
@@ -74,6 +75,18 @@ export interface MessageSenderOpts {
   cwd: string;
   sessionCwd?: string;
   claudeCliPath?: string;
+  /**
+   * Where images a turn's tools hand back are stored, or absent when the
+   * composition root wired none.
+   *
+   * Carried here rather than reached for globally because BOTH dispatch paths
+   * read it — `message-sender.ts` on the resume-per-message path and
+   * `sessions/pump-turn-stream.ts` on the persistent pump — and one options
+   * bundle is what keeps them from disagreeing. Absent, the runtime declares
+   * `mediaOutput: 'none'` and says so once per image rather than dropping one
+   * quietly (`media-capture.ts`).
+   */
+  attachments?: SessionAttachmentStore;
   meshCore?: AgentRegistryPort | null;
   bindingRouter?: BindingRouter;
   bindingStore?: BindingStore;

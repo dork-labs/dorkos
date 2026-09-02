@@ -1580,8 +1580,15 @@ export function runtimeConformance(
       // every picture a model or a tool produced, none of them said so, and the
       // suite reported the identical green for all three — which is how a
       // person paid for an image, saw a turn finish, and never found out where
-      // it went. The point of what follows is that the three runtimes must stop
+      // it went. The point of what follows is that the runtimes must stop
       // looking the same from the outside.
+      //
+      // All three production adapters now declare `mediaOutput: 'attachments'`
+      // and drive a `mediaTurn` (DOR-1664), so the `else` arm below is reached
+      // only by a runtime that genuinely carries no media — today, test-mode,
+      // whose scripted turns have none. It asserts the ABSENCE rather than
+      // skipping, so a runtime that starts carrying pictures without saying so
+      // fails here.
 
       const declaresMedia = (runtime: AgentRuntime): boolean =>
         runtime.getCapabilities().mediaOutput !== 'none';
@@ -1685,16 +1692,6 @@ export function runtimeConformance(
               'started carrying media, the declaration is what has to change first'
           ).toEqual([]);
         });
-
-        it.skip(
-          "SKIPPED: this runtime declares `mediaOutput: 'none'`, so nothing here proves it can " +
-            'carry an image a turn produced. claude-code and codex are known-non-compliant on ' +
-            'purpose — both meet media today and discard it (claude-code filters tool results to ' +
-            'text in `extractToolResultContent`; codex does the same in `extractMcpResultText`) — ' +
-            'and this line is where that stays visible until they adopt the attachment seam ' +
-            '(ADR 260901-135657)',
-          () => {}
-        );
       }
     });
 

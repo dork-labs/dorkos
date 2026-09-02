@@ -8,6 +8,7 @@ import {
   buildTaskIdAssignedEvent,
   buildTaskRemovedEvent,
 } from '../build-task-event.js';
+import { recordToolResultImages } from '../../tool-result-images.js';
 import { logger } from '../../../../../lib/logger.js';
 
 /** Extract text from a tool_result content field (file-local, loosely-typed for SDK messages). */
@@ -199,6 +200,26 @@ export async function* mapMessageEvent(
     if (Array.isArray(contentBlocks)) {
       for (const block of contentBlocks as Array<Record<string, unknown>>) {
         if (block.type === 'tool_result' && typeof block.tool_use_id === 'string') {
+          // Whatever the result carried that was NOT text. Recorded, not
+          // stored: this mapper does no I/O, so `media-capture.ts` drains the
+          // intent from the turn loop and announces the picture by URL.
+          //
+          // This is the `Read`-a-PNG case, and it is the reason the whole
+          // change exists. `extractToolResultText` below answers '' for a
+          // result whose only block is an image, so the `if (resultText)`
+          // guard emits nothing at all — the picture used to end here,
+          // silently, on the DEFAULT runtime.
+          //
+          // ABOVE the summary skip, deliberately. A `tool_use_summary` replaces
+          // a tool result's TEXT with a sentence; it does not replace a
+          // picture, and there is nowhere else the bytes appear. Recording
+          // after the skip would mean the day the SDK starts summarizing
+          // image-bearing results, the image silently disappears again — the
+          // exact regression this change exists to end. Announcing it twice is
+          // not the risk: the identity is the tool call plus the block index,
+          // and `recordToolResultImages` is single-shot on that.
+          recordToolResultImages(toolState, block.tool_use_id, block.content);
+
           // Skip tools already resolved via tool_use_summary (built-in tools)
           if (toolState.resolvedResultIds.has(block.tool_use_id)) continue;
 

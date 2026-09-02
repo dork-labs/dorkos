@@ -23,13 +23,27 @@ import type {
 
 /**
  * Event types that are, on their own, proof the turn said or did something —
- * the agent's words, its thinking, a tool it called, a result it got back.
+ * the agent's words, its thinking, a tool it called, a result it got back, a
+ * picture it produced.
+ *
+ * `image_attachment` is here because a picture is something a person can see.
+ *
+ * Be precise about how much work it does: in the ORDINARY turn the tool call
+ * that produced the image already emitted `tool_call_start`, which counts, so
+ * the guard was never going to fire anyway. What this entry covers is the turn
+ * where it did not — a `tool_result` arriving without its own start frame
+ * (a re-delivered or replayed result, a window that opened mid-call), where a
+ * result carrying ONLY an image maps to no `tool_result` event either, because
+ * there is no text to put in one. That turn's whole visible product is the
+ * picture, and without this line the guard would print "the agent did not
+ * respond" underneath it — the `/compact` defect (DOR-1235) in a new costume.
  */
 const CONTENT_EVENT_TYPES = new Set<string>([
   'text_delta',
   'tool_call_start',
   'tool_result',
   'thinking_delta',
+  'image_attachment',
 ]);
 
 /**

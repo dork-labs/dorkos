@@ -1,7 +1,7 @@
 name: lint
 
-# Runs ESLint across every package in the monorepo on every PR, in the merge
-# queue, and on push to main (DOR-627).
+# Runs ESLint across every package in the monorepo, and checks Prettier
+# formatting, on every PR and in the merge queue (DOR-627).
 #
 # Before this workflow existed, the only ESLint anywhere in CI was
 # `pnpm exec eslint scripts/` in scripts-test.yml — the root `scripts/`
@@ -39,6 +39,23 @@ name: lint
 # forbids are, individually, both green. Only a full run against the tree they
 # combine into can see it, which is what a merge-queue build is.
 #
+# ALSO RUNS THE FORMATTING GATE (DOR-485, moved here in the DOR-627
+# follow-up, 2026-09-02). AGENTS.md Hard Rule 5 says "Prettier + Tailwind
+# class sorting are automatic — never hand-sort," which reads as a guarantee.
+# It was not one until DOR-485: formatting was enforced only by the lefthook
+# pre-commit hook, so `git commit --no-verify`, a hook failure, a fresh clone
+# that never ran `pnpm install`, or an agent that bypasses the hook landed
+# unformatted code silently. PR #463 merged a test file that was
+# prettier-unformatted, seven lines over 100 columns, and #515 merged a stray
+# double blank line; nothing objected to either.
+#
+# DOR-485 put the step in typecheck.yml because `lint` did not exist yet, and
+# a gate on a non-required check is not a gate — `typecheck` was already
+# required. That reasoning flipped the day `lint` itself joined the ruleset's
+# required contexts (2026-09-02): the step now belongs with the rest of the
+# style gate it is philosophically part of, rather than riding a workflow it
+# has nothing else to do with.
+#
 # NO build step: the shared config is syntax-only (`tseslint.configs.recommended`,
 # no type-aware rules), so ESLint never reads a dependency's dist and nothing
 # here needs `^build`. `turbo.json` declares `lint` with `dependsOn: ["^lint"]`
@@ -55,17 +72,15 @@ name: lint
 # caching later would make this comment false and this job silently skippable;
 # add the assertion in the same change.
 #
-# THE push-to-main LEG IS KEPT FOR PARITY WITH typecheck.yml, which still has
-# one, even though AGENTS.md's CI section retired the push leg for `test` on the
-# grounds that the merge queue already checked the exact tree content. Two
-# reasons it stays here: `lint` is not a required check yet, so unlike `test` it
-# is NOT guaranteed to have run against the combined tree the queue built; and
-# this job is ~40s, so re-running it on main is cheap insurance rather than the
-# multi-minute duplicate that argument was made about. Revisit if `lint` becomes
-# required — at that point the `test` reasoning applies to it unchanged.
+# THE push-to-main LEG IS DROPPED (DOR-627 follow-up, 2026-09-02), matching
+# `test`: `lint` joined the ruleset's required contexts, so the merge queue
+# now guarantees every commit that reaches `main` already ran this job
+# against the exact combined tree (squash rewrites the SHA, not the content).
+# The leg was kept until now for the opposite reason AGENTS.md's CI section
+# gives for retiring it on `test` — `lint` was not yet required, so the queue
+# could not make that guarantee, and a ~40s re-run on main was cheap insurance
+# against the gap. That gap is closed.
 on:
-  push:
-    branches: [main]
   pull_request:
   merge_group:
 
@@ -74,14 +89,13 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
-# Cancel superseded runs on the same ref for PRs only. For push events, group by
-# SHA instead of ref: GitHub only lets one run per group be *pending* at a time,
-# so several quick merges to main sharing a `lint-refs/heads/main` group would
-# cancel each other's queued runs and only the final push would be checked.
-# Per-SHA groups give every push-to-main its own slot. (Copied deliberately from
-# typecheck.yml — same failure mode, same fix.)
+# Cancel superseded runs for PR pushes only. Merge-group refs are unique per
+# build (gh-readonly-queue/main/pr-<n>-<sha>), so queue runs never share a
+# group and are never cancelled by this block — the queue supersedes builds by
+# dequeuing them. (Copied deliberately from test.yml, now that push-to-main is
+# dropped here too — same reasoning, same fix.)
 concurrency:
-  group: lint-${{ github.event_name == 'push' && github.sha || github.ref }}
+  group: lint-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -91,10 +105,13 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     # A full cold lint (`turbo lint --force`, 21 packages, no cache) measured
-    # ~40s on an idle developer machine. The ceiling is deliberately far above
-    # that: the same command took over four minutes on the same machine while
-    # several agents were running, so the number to budget against is a loaded
-    # runner, not a quiet one. This is a stop for a hung run, not a perf budget.
+    # ~40s on an idle developer machine, and `prettier --check .` over ~7,300
+    # files measured 2m17s there (the same numbers typecheck.yml carried before
+    # the DOR-627 follow-up moved the formatting step here). The ceiling is
+    # deliberately far above that combined total: the same lint command took
+    # over four minutes on the same machine while several agents were running,
+    # so the number to budget against is a loaded runner, not a quiet one.
+    # This is a stop for a hung run, not a perf budget.
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
@@ -108,6 +125,16 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # `pnpm format:check` (`prettier --check .`), never `npx prettier`: npx
+      # resolves a different binary than pnpm does in this workspace, and only
+      # `pnpm exec` matches what the lefthook pre-commit hook runs. A backstop
+      # that resolves differently from the hook it backs up can pass where the
+      # hook would reformat, which is the same class of gap as having no gate.
+      # Runs first so the cheap-to-fix failure is the first thing in the log:
+      # `pnpm format` fixes every one of them.
+      - name: Formatting gate — prettier --check (DOR-485)
+        run: pnpm format:check
+
       # `--continue` so one package's errors don't hide another's: a run that
       # stops at the first red package makes fixing lint an N-round loop.
       #
@@ -117,5 +144,9 @@ jobs:
       # log without blocking. The per-rule severity in
       # packages/eslint-config/base.js is the gate — anything meant to fail CI
       # belongs at `error` there, not behind a flag added here.
+      #
+      # `if: !cancelled()` so a formatting failure above still reports every
+      # lint error in the same run, for the same reason `--continue` does.
       - name: Lint every package
+        if: ${{ !cancelled() }}
         run: pnpm exec turbo lint --continue
