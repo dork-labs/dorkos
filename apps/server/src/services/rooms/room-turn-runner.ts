@@ -38,7 +38,6 @@ import { randomUUID } from 'node:crypto';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { Room } from '@dorkos/shared/room-schemas';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
-import { readManifest } from '@dorkos/shared/manifest';
 import {
   isBlockingInteractionEvent,
   type BlockingInteractionEventType,
@@ -49,7 +48,7 @@ import { ROOMS } from '../../config/constants.js';
 import { projectRoomAttachments } from './attachments/attachment-projection.js';
 import { getRoomAttachmentStore, tryGetRoomRepoService } from './index.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
-import { resolveAgentRuntimeType } from '../runtimes/shared/resolve-agent-runtime-type.js';
+import { resolveTurnRuntimeType } from '../runtimes/shared/resolve-agent-runtime-type.js';
 import { configManager } from '../core/config-manager.js';
 import {
   dispatchMessage,
@@ -293,13 +292,46 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // up; the one it was meant for is the turn that was already running when
       // it was pressed, never this one.
       stopsWaitingForATurn.delete(sessionId);
-      const runtimeType = await resolveAgentRuntimeType(request.agentPath);
+      // **The runtime that started this conversation is the one that finishes
+      // it** (ADR-0255, DOR-764). Read off the session's binding, and off the
+      // agent's manifest only for a session nobody owns yet — which is a first
+      // turn, and the reason this is not simply `resolveForSession`: an unbound
+      // id resolves through the registry's legacy claude-code inference, so a
+      // codex agent's opening room turn would run on the wrong program.
+      //
+      // Re-reading the manifest every turn, as this line did, meant an edit made
+      // mid-conversation silently moved the room's remaining turns onto a
+      // different runtime — one holding none of that session's history, while
+      // `session_metadata` still named the old owner (`persistSessionRuntime`
+      // refuses to re-bind). The manifest governs the NEXT session now, exactly
+      // as it does for the cockpit, the relay and every scheduled run.
+      //
+      // `request.sessionId`, not the minted `sessionId` above: an id this line
+      // just invented has nothing to consult, and asking about it would spend a
+      // read to be told so.
+      const runtimeType = await resolveTurnRuntimeType({
+        sessionId: request.sessionId,
+        agentPath: request.agentPath,
+      });
       // Resolve the runtime WITHOUT writing anything. `persistSessionRuntime`
       // used to run here, before the turn was known to have started, so a
       // runtime that reliably throws left one orphan `session_metadata` row (and
       // one projector) per room message: `bindRoomSession` is never reached, the
       // next trigger mints a fresh UUID, and the dead row stays forever. The
       // registry's own docs warn about exactly this ghost-row shape.
+      //
+      // **A session bound to a runtime this build does not have refuses, every
+      // turn, and the room says the turn failed.** `get` throws first, so the
+      // guard below is unreachable against the real registry and stands only for
+      // the stub in the tests. Refusing is the right answer — the alternative is
+      // resuming somebody's conversation on a program that holds none of it —
+      // but it is not self-healing, because nothing clears a `(room, agent)`
+      // binding except removing that agent from the room. The recovery is
+      // therefore one of two operator actions: re-enable the runtime the
+      // conversation started on, or remove and re-add the agent, which drops the
+      // binding and lets its next turn start a fresh session on whatever the
+      // manifest now says. That second one is also how a deliberate runtime
+      // change is applied to a room that is already running.
       const runtime = runtimeRegistry.get(runtimeType);
       if (!runtime) throw new Error(`Runtime '${runtimeType}' is not registered`);
 
@@ -741,13 +773,22 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
     },
 
     async interrupt({ sessionId, agentPath }): Promise<boolean> {
-      // The runtime is resolved from the AGENT, exactly as `run` resolves it,
-      // rather than from the session's registry row: a first turn's row is
-      // written after the turn starts, so a halt arriving early would otherwise
-      // find nothing to stop.
-      const runtime = runtimeRegistry.get(await resolveAgentRuntimeType(agentPath));
+      // Exactly as `run` resolves it, and that is the whole requirement: a stop
+      // aimed at a runtime other than the one running the turn stops nothing.
+      // The session's own binding answers first, and the agent's manifest only
+      // where there is no binding to read — a first turn's row is written after
+      // the turn starts, so a halt arriving early would otherwise find nothing
+      // to stop.
+      //
+      // A session bound to a runtime this build does not have throws here rather
+      // than answering, the same refusal `run` gives it and with the same two
+      // recoveries (re-enable the runtime, or remove and re-add the agent) — see
+      // the note above the identical `get` in `run`. Nothing was running to stop
+      // in that state anyway, since no turn could have started.
+      const runtime = runtimeRegistry.get(await resolveTurnRuntimeType({ sessionId, agentPath }));
       // No runtime is no stop: nothing was reached, and saying so is the whole
-      // point of answering at all (DOR-1425).
+      // point of answering at all (DOR-1425). Unreachable against the real
+      // registry, whose `get` throws; the tests' stub is what returns nothing.
       if (!runtime) return false;
       const stopped = await runtime.interruptQuery(sessionId);
       logger.info('[rooms] interrupted a turn', { sessionId, stopped });
