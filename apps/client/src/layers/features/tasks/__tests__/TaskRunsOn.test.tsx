@@ -10,7 +10,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, cleanup, within, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -474,10 +474,20 @@ describe('the task form Runs-on controls', () => {
     const CODEX_AGENT = { id: 'agent-codex', name: 'codex-bot', projectPath: '/projects/worker' };
     const OPENCODE_AGENT = { id: 'agent-oc', name: 'oc-bot', projectPath: '/projects/docs' };
 
+    /** A fourth agent, only ever used to GROW the roster mid-test. */
+    const EXTRA_AGENT = { id: 'agent-extra', name: 'extra-bot', projectPath: '/projects/extra' };
+
     /** One of the agents above, as the manifest that names its runtime. */
     function agentManifest(agent: { id: string; name: string }, runtime: string): AgentManifest {
       return { ...manifest(runtime), id: agent.id, name: agent.name };
     }
+
+    /** What `resolveAgents` answers with, keyed the way the transport keys it. */
+    const MANIFESTS: Record<string, AgentManifest> = {
+      [CLAUDE_AGENT.projectPath]: agentManifest(CLAUDE_AGENT, 'claude-code'),
+      [CODEX_AGENT.projectPath]: agentManifest(CODEX_AGENT, 'codex'),
+      [OPENCODE_AGENT.projectPath]: agentManifest(OPENCODE_AGENT, 'opencode'),
+    };
 
     /**
      * A mesh holding one agent per product runtime.
@@ -492,11 +502,7 @@ describe('the task form Runs-on controls', () => {
         listMeshAgentPaths: vi
           .fn()
           .mockResolvedValue({ agents: [CLAUDE_AGENT, CODEX_AGENT, OPENCODE_AGENT] }),
-        resolveAgents: vi.fn().mockResolvedValue({
-          [CLAUDE_AGENT.projectPath]: agentManifest(CLAUDE_AGENT, 'claude-code'),
-          [CODEX_AGENT.projectPath]: agentManifest(CODEX_AGENT, 'codex'),
-          [OPENCODE_AGENT.projectPath]: agentManifest(OPENCODE_AGENT, 'opencode'),
-        }),
+        resolveAgents: vi.fn().mockResolvedValue(MANIFESTS),
         ...overrides,
       });
     }
@@ -718,22 +724,48 @@ describe('the task form Runs-on controls', () => {
       // is the runtime the task is already on: no widening found, pick applied,
       // door never opened. That is the defect with the fix removed.
 
+      /** A manifests answer that arrives only when the test says so. */
+      function heldManifests() {
+        let release!: () => void;
+        const promise = new Promise<Record<string, AgentManifest>>((resolve) => {
+          release = () => resolve(MANIFESTS);
+        });
+        return { promise, release };
+      }
+
       /** A transport whose manifests answer only when the test says so. */
       function transportWithHeldManifests(overrides: Partial<Transport> = {}) {
-        let release!: () => void;
-        const held = new Promise<Record<string, AgentManifest>>((resolve) => {
-          release = () =>
-            resolve({
-              [CLAUDE_AGENT.projectPath]: agentManifest(CLAUDE_AGENT, 'claude-code'),
-              [CODEX_AGENT.projectPath]: agentManifest(CODEX_AGENT, 'codex'),
-              [OPENCODE_AGENT.projectPath]: agentManifest(OPENCODE_AGENT, 'opencode'),
-            });
-        });
+        const { promise, release } = heldManifests();
         const transport = transportWithAgentPerRuntime({
-          resolveAgents: vi.fn().mockReturnValue(held),
+          resolveAgents: vi.fn().mockReturnValue(promise),
           ...overrides,
         });
         return { transport, release };
+      }
+
+      /**
+       * Make the manifests be read AGAIN, the way the app really does it.
+       *
+       * The resolve query is keyed on the project paths, so gaining an agent
+       * re-mints the key — and the query holds no placeholder data, so the new
+       * key starts with none and `known` is false until it answers. That is the
+       * false→true edge, and holding the second answer open is what makes it
+       * observable: resolving it inside one batch collapses both renders into
+       * one, and a test that cannot see the edge cannot claim anything about it.
+       *
+       * @param transport - The mock whose next answers are being staged.
+       * @param client - The query client the form is mounted against.
+       */
+      async function beginSecondRead(transport: Transport, client: QueryClient) {
+        const { promise, release } = heldManifests();
+        transport.resolveAgents = vi.fn().mockReturnValue(promise);
+        transport.listMeshAgentPaths = vi
+          .fn()
+          .mockResolvedValue({ agents: [CLAUDE_AGENT, CODEX_AGENT, OPENCODE_AGENT, EXTRA_AGENT] });
+        await act(async () => {
+          await client.invalidateQueries({ predicate: (q) => q.queryKey[0] === 'mesh' });
+        });
+        return release;
       }
 
       /** Wait for the agent list, then pick the Codex agent while runtimes are unknown. */
@@ -788,24 +820,94 @@ describe('the task form Runs-on controls', () => {
         expect(screen.queryByTestId('agent-pick-waiting')).toBeNull();
       });
 
-      it('says so, and changes nothing, when the manifests cannot be read at all', async () => {
-        // The other end of the same window. Waiting forever with no explanation
-        // is a dead control; the agent stays as it was either way.
+      it('does not bring a spent pick back when the manifests are read again', async () => {
+        // "The manifests are known" is not a one-way door. The resolve query
+        // re-mints its key whenever the roster changes, holds no placeholder
+        // data, and refetches on window focus — so `known` goes false→true again
+        // and again over one form's life. A pick left latched fires on every one
+        // of those edges: it clobbers whatever the person chose in between, and
+        // it can re-apply one they REFUSED at the door — silently, if the mode
+        // has moved since so it no longer widens.
+        const createTask = vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-new' }));
+        const { transport, release } = transportWithHeldManifests({ createTask });
+        let client!: QueryClient;
+        renderNewTaskOnClaude(transport, (c) => {
+          client = c;
+        });
+
+        // A pick made inside the window, priced when the manifests land — and
+        // turned down.
+        await pickCodexInTheWindow();
+        release();
+        const door = await screen.findByRole('alertdialog');
+        await user.click(within(door).getByRole('button', { name: 'Cancel' }));
+        await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+
+        // Then a different agent, which needs no door of its own.
+        fireEvent.click(screen.getByText('claude-bot'));
+        fireEvent.click(await screen.findByText('oc-bot'));
+        await expectSelected('task-runtime-select', "Agent's runtime (OpenCode)");
+
+        // The manifests are read again — the everyday event, not an exotic one.
+        const releaseSecond = await beginSecondRead(transport, client);
+        // The edge itself, proven rather than assumed: with no manifest in hand
+        // the caption cannot name the agent's runtime and falls back to the
+        // server default. If this never reads, `known` never went false and the
+        // rest of this test is measuring nothing.
+        await expectSelected('task-runtime-select', 'Server default (Claude Code)');
+        releaseSecond();
+
+        // The refused pick does not come back to life, and the one the person
+        // actually made is still theirs.
+        await expectSelected('task-runtime-select', "Agent's runtime (OpenCode)");
+        expect(screen.queryByRole('alertdialog')).toBeNull();
+        fillRequiredFields();
+        fireEvent.click(screen.getByText('Create'));
+        await waitFor(() => expect(createTask).toHaveBeenCalled());
+        expect(createTask).toHaveBeenCalledWith(
+          expect.objectContaining({ target: OPENCODE_AGENT.id })
+        );
+      }, 20_000);
+
+      it('says so, and lets the pick go, when the manifests cannot be read at all', async () => {
+        // The other end of the same window: not slow, unanswerable. Holding it
+        // anyway would leave a choice from one minute of somebody's attention
+        // primed to apply itself whenever the resolve eventually recovers, so
+        // the pick is dropped and the sentence says what to do about it.
+        const createTask = vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-new' }));
         const transport = transportWithAgentPerRuntime({
+          createTask,
           resolveAgents: vi.fn().mockRejectedValue(new Error('mesh unreachable')),
         });
-        renderNewTaskOnClaude(transport);
+        let client!: QueryClient;
+        renderNewTaskOnClaude(transport, (c) => {
+          client = c;
+        });
 
         await pickCodexInTheWindow();
 
         await waitFor(() =>
           expect(screen.getByTestId('agent-pick-waiting')).toHaveTextContent(
-            /can’t read what that agent runs on/
+            /couldn’t read what that agent runs on/
           )
         );
         expect(screen.getByText('claude-bot')).toBeInTheDocument();
         expect(screen.queryByText('codex-bot')).toBeNull();
-      });
+
+        // And it stays let go: a read that recovers later answers nobody's
+        // outstanding question, because there is none.
+        const releaseSecond = await beginSecondRead(transport, client);
+        releaseSecond();
+
+        await expectSelected('task-runtime-select', "Agent's runtime (Claude Code)");
+        expect(screen.queryByRole('alertdialog')).toBeNull();
+        fillRequiredFields();
+        fireEvent.click(screen.getByText('Create'));
+        await waitFor(() => expect(createTask).toHaveBeenCalled());
+        expect(createTask).toHaveBeenCalledWith(
+          expect.objectContaining({ target: CLAUDE_AGENT.id })
+        );
+      }, 20_000);
     });
   });
 

@@ -317,15 +317,15 @@ export function ScheduleForm({
               )}
             </form.AppField>
             {/* Said out loud, because the alternative is a click that appears
-                to do nothing. Both branches are true of a held pick: the agent
-                has not changed, and one of them will resolve itself. */}
-            {agentPick.isWaiting && (
+                to do nothing. The agent is unchanged in both cases; what
+                differs is whether waiting will fix it, so each says which. */}
+            {(agentPick.isWaiting || agentPick.wasDropped) && (
               <p
                 data-testid="agent-pick-waiting"
                 className="text-muted-foreground text-xs leading-relaxed"
               >
-                {agentPick.unreadable
-                  ? 'DorkOS can’t read what that agent runs on, so the agent hasn’t been changed. Try again in a moment.'
+                {agentPick.wasDropped
+                  ? 'DorkOS couldn’t read what that agent runs on, so the agent hasn’t been changed. Choose it again to retry.'
                   : 'Checking what that agent runs on…'}
               </p>
             )}
