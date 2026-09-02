@@ -2009,12 +2009,28 @@ describe('the closing directive a tool-only turn reads last (DOR-1643)', () => {
     // strongest position in the block — and "post nothing, and end the turn"
     // read from there by an agent somebody has just named licenses exactly the
     // disappearing act the room-participation spec is written against.
-    const block = formatRoomContext(context({ replyMode: 'tool-only' }), { nonce: NONCE });
+    const block = formatRoomContext(context({ replyMode: 'tool-only' }), {
+      nonce: NONCE,
+      toolPrefix: 'mcp__dorkos__',
+    });
     expect(block).not.toContain('You have nothing to add: post nothing');
     expect(block).toContain(
-      '- You are not going to answer: react to their message, or send a short "I don\'t know"'
+      '- You are not going to answer: react to their message, or call mcp__dorkos__' +
+        `post_to_room(roomId: "${ROOM_ID}", text: <a short "I don't know">)`
     );
     expect(block).toContain('Vanishing is not one of your options here.');
+  });
+
+  it('spells the call in the decline branch too, not only in the answer branch', () => {
+    // The feature's own lesson, applied rather than restated: leaving the agent
+    // to assemble the call is the exact step the probes show it does not take,
+    // and declining is the ending it reaches for when least sure of itself.
+    const block = formatRoomContext(context({ replyMode: 'tool-only' }), {
+      nonce: NONCE,
+      toolPrefix: 'mcp__dorkos__',
+    });
+    expect(block).toContain(`text: <a short "I don't know">)`);
+    expect(block).toContain('text: <your answer>)');
   });
 
   it('still lets a named agent answer with a reaction alone', () => {

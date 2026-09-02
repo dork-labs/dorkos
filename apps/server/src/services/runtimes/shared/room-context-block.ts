@@ -1390,10 +1390,16 @@ function closingDirective(data: RoomContextData, toolPrefix?: string): string {
   // is written still has to assemble a call to send it, and every step between
   // deciding and calling is a step at which it stops. There is nothing to
   // assemble here.
-  const call =
+  //
+  // Parameterised on the TEXT placeholder, because the decline branch needs the
+  // call too and "text: <your answer>" is the wrong slot to offer an agent that
+  // has just decided it has no answer. A branch that spells the call for one
+  // ending and describes it for the other teaches the lesson backwards.
+  const callWith = (placeholder: string): string =>
     toolPrefix === undefined
       ? `the posting tool, with roomId "${data.room.id}"`
-      : `${toolPrefix}post_to_room(roomId: "${data.room.id}", text: <your answer>)`;
+      : `${toolPrefix}post_to_room(roomId: "${data.room.id}", text: ${placeholder})`;
+  const call = callWith('<your answer>');
   // **Two branches, both spelled as an action, and the ANSWERING one last. Both
   // halves of that shape were paid for in live runs.** A single unconditional
   // imperative with the exception trailing it answered a bare "thanks!" with
@@ -1409,7 +1415,7 @@ function closingDirective(data: RoomContextData, toolPrefix?: string): string {
   // — the closest thing to the decision, in the position the whole directive
   // was moved here to occupy.
   const [quiet, speak] =
-    data.room.kind === 'channel' ? channelBranches(data, call) : dmBranches(call);
+    data.room.kind === 'channel' ? channelBranches(data, callWith) : dmBranches(call);
   return `Before you end this turn, exactly one of these two:\n- ${quiet}\n- ${speak}`;
 }
 
@@ -1430,19 +1436,30 @@ function closingDirective(data: RoomContextData, toolPrefix?: string): string {
  * stop; what it forbids is vanishing, which is the only ending a person who
  * named you cannot read.
  *
+ * **The addressed branch spells its call too**, and that is this feature's own
+ * lesson applied rather than restated: "send a short 'I don't know'" leaves the
+ * agent to assemble the call, and assembling the call is the exact step the
+ * DOR-1643 probes show it does not take. A directive that spells the call for
+ * the answer and merely describes it for the decline would make declining the
+ * harder of the two, which is backwards — the decline is the one an agent
+ * reaches for when it is already least sure of itself.
+ *
  * @param data - The turn's room context.
- * @param call - The rendered posting call.
+ * @param callWith - Renders the posting call around a given `text` placeholder.
  * @returns The quiet branch and the speaking branch, in that order.
  */
-function channelBranches(data: RoomContextData, call: string): [string, string] {
+function channelBranches(
+  data: RoomContextData,
+  callWith: (placeholder: string) => string
+): [string, string] {
   return [
     data.addressing.addressedNow
-      ? `You are not going to answer: react to their message, or send a short "I don't ` +
-        `know" — they named you, so going quiet leaves them waiting on you. Vanishing is ` +
-        `not one of your options here.`
+      ? `You are not going to answer: react to their message, or call ` +
+        `${callWith(`<a short "I don't know">`)} — they named you, so going quiet leaves ` +
+        `them waiting on you. Vanishing is not one of your options here.`
       : `You have nothing to add: post nothing, and end the turn.`,
-    `You decided to say something: call ${call}. Anything you write instead of calling it ` +
-      `reaches nobody.`,
+    `You decided to say something: call ${callWith('<your answer>')}. Anything you write ` +
+      `instead of calling it reaches nobody.`,
   ];
 }
 

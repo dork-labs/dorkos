@@ -310,9 +310,16 @@ function identifierTokens(text: string): string[] {
  *
  * @param kind - Channel or direct message.
  * @param replyMode - Whether the turn's own words are posted.
+ * @param addressedNow - Whether the triggering message named this agent. The
+ *   channel closing directive branches on it, and the UNADDRESSED branch is the
+ *   one a matrix pinned to `true` never renders.
  * @returns The fixture.
  */
-function roomContextFixture(kind: 'dm' | 'channel', replyMode: RoomReplyMode): RoomContextData {
+function roomContextFixture(
+  kind: 'dm' | 'channel',
+  replyMode: RoomReplyMode,
+  addressedNow = true
+): RoomContextData {
   return {
     room: {
       id: '01M0ROOM0000000000000000BD',
@@ -357,7 +364,7 @@ function roomContextFixture(kind: 'dm' | 'channel', replyMode: RoomReplyMode): R
       responseMode: 'always',
       engagedUntil: null,
       engagedPostsLeft: null,
-      addressedNow: true,
+      addressedNow,
     },
     budget: {
       automaticRepliesLeftInThisRoomThisHour: 41,
@@ -744,16 +751,21 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // only the DM would leave the channel directive unscanned, and a fixture
     // that covered only `'tool-only'` would leave the text-mode preamble
     // unscanned — and text mode is where most turns still are.
+    // The fifth tuple is not symmetry for its own sake. The channel directive
+    // branches on `addressing.addressedNow`, so a matrix pinned to `true` never
+    // renders the UNADDRESSED quiet branch at all — and a mutation of that
+    // branch passed this scan silently until it was added.
     const shapes = [
-      ['dm, tool-only', 'dm', 'tool-only'],
-      ['channel, tool-only', 'channel', 'tool-only'],
-      ['dm, text', 'dm', 'text'],
-      ['channel, text', 'channel', 'text'],
+      ['dm, tool-only', 'dm', 'tool-only', true],
+      ['channel, tool-only, addressed', 'channel', 'tool-only', true],
+      ['channel, tool-only, unaddressed', 'channel', 'tool-only', false],
+      ['dm, text', 'dm', 'text', true],
+      ['channel, text', 'channel', 'text', true],
     ] as const;
 
     for (const [runtime, prefix] of prefixes) {
-      for (const [shape, kind, replyMode] of shapes) {
-        const rendered = formatRoomContext(roomContextFixture(kind, replyMode), {
+      for (const [shape, kind, replyMode, addressedNow] of shapes) {
+        const rendered = formatRoomContext(roomContextFixture(kind, replyMode, addressedNow), {
           nonce: 'aaaa1111',
           toolPrefix: prefix,
         });
