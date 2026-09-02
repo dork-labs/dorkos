@@ -266,7 +266,12 @@ import { resolveDorkHome } from './lib/dork-home.js';
 import { acquireInstanceLock } from './lib/instance-lock.js';
 import { localDialHost } from './lib/local-dial-host.js';
 import { SERVER_VERSION } from './lib/version.js';
-import { createWorkspaceSubsystem, setWorkspaceManager } from './services/workspace/index.js';
+import {
+  createWorkspaceSubsystem,
+  resolveWorkspaceRoot,
+  setWorkspaceManager,
+  setWorkspaceRoot,
+} from './services/workspace/index.js';
 import {
   createRoomSubsystem,
   resolveOperatorAuthor,
@@ -1110,6 +1115,10 @@ async function start() {
   // bind via cwd; the manager allocates collision-free port blocks and owns the
   // lifecycle. Attached sessions are resolved from the runtime's session list.
   const workspaceConfig = configManager.get('workspace');
+  // The adoption scan reads the root directly, so it is registered whether or
+  // not the managed layer is enabled: which checkouts exist on disk is true
+  // either way, and that honesty is the whole point of the /workspaces page.
+  setWorkspaceRoot(resolveWorkspaceRoot({ dorkHome, config: workspaceConfig }));
   if (workspaceConfig.enabled) {
     const { service: workspaceService, reconciler: workspaceReconciler } = createWorkspaceSubsystem(
       {

@@ -93,12 +93,7 @@ import type {
   RoomMainRepairResult,
   RoomRepoStatus,
 } from '@dorkos/shared/room-repo';
-import type {
-  Workspace,
-  WorkspaceWithSessions,
-  EnsureWorkspaceRequest,
-  RemoveResult,
-} from '@dorkos/shared/workspace';
+import type { Workspace, WorktreeScanResult } from '@dorkos/shared/workspace';
 import type {
   ConnectorAccountsResponse,
   ConnectorConnectPollResponse,
@@ -878,29 +873,17 @@ export const cloudStubs = {
 };
 
 /**
- * Workspace stubs — the WorkspaceManager is a server-only subsystem (it shells
- * out to git and owns the data dir), so the in-process Obsidian transport reports
- * "no workspaces" and refuses mutations.
+ * Workspace stubs — workspaces are a server-only subsystem (they shell out to
+ * git and own the data dir), so the in-process Obsidian transport reports that
+ * it found nothing rather than pretending to scan a root it cannot reach.
  */
 export const workspaceStubs = {
-  async listWorkspaces(_projectKey?: string): Promise<WorkspaceWithSessions[]> {
-    return [];
+  async scanWorktrees(): Promise<WorktreeScanResult> {
+    return { root: '', worktrees: [], warnings: [] };
   },
 
   async resolveWorkspace(_absPath: string): Promise<Workspace | null> {
     return null;
-  },
-
-  async ensureWorkspace(_req: EnsureWorkspaceRequest): Promise<Workspace> {
-    throw new Error('Workspaces are not supported in embedded mode');
-  },
-
-  async pinWorkspace(_id: string, _pinned: boolean): Promise<Workspace> {
-    throw new Error('Workspaces are not supported in embedded mode');
-  },
-
-  async removeWorkspace(_id: string, _force?: boolean): Promise<RemoveResult> {
-    throw new Error('Workspaces are not supported in embedded mode');
   },
 };
 

@@ -9830,6 +9830,115 @@
           "removed"
         ]
       },
+      "WorktreeScanResult": {
+        "type": "object",
+        "properties": {
+          "root": {
+            "type": "string"
+          },
+          "worktrees": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorktreeScanEntry"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorktreeScanWarning"
+            }
+          }
+        },
+        "required": [
+          "root",
+          "worktrees",
+          "warnings"
+        ]
+      },
+      "WorktreeScanEntry": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "repoPath": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "changedFiles": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "ahead": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "behind": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "upstreamGone": {
+            "type": "boolean"
+          },
+          "lastCommitAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "readable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "name",
+          "project",
+          "repoPath",
+          "branch",
+          "changedFiles",
+          "ahead",
+          "behind",
+          "upstreamGone",
+          "lastCommitAt",
+          "readable"
+        ]
+      },
+      "WorktreeScanWarning": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "reason"
+        ]
+      },
       "ActorType": {
         "type": "string",
         "enum": [
@@ -21752,6 +21861,37 @@
           },
           "403": {
             "description": "Only the operator may remove a push device",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/scan": {
+      "get": {
+        "tags": [
+          "Workspaces"
+        ],
+        "summary": "List the real checkouts on disk",
+        "description": "Read-only scan of the workspace root. Reports every git checkout found there — branch, uncommitted changes, ahead/behind, last commit — without writing to any of them. A checkout git cannot describe is reported with `readable: false` rather than dropped.",
+        "responses": {
+          "200": {
+            "description": "The scanned root and what it holds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorktreeScanResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The scan could not run",
             "content": {
               "application/json": {
                 "schema": {

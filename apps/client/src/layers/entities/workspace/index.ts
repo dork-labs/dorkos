@@ -1,17 +1,16 @@
 /**
- * Workspace entity — domain hooks for server-managed isolated workspaces (DOR-84).
+ * Workspace entity — domain hooks for isolated checkouts (DOR-84, DOR-1056).
  *
  * @module entities/workspace
  */
-export { useWorkspaces, useInvalidateWorkspaces, workspacesQueryKey } from './model/use-workspaces';
+export { useWorktreeScan, worktreeScanQueryKey } from './model/use-worktree-scan';
 export { useWorkspaceForSession } from './model/use-workspace-for-session';
 export { derivePorts } from '@dorkos/shared/workspace';
 export type {
   Workspace,
-  WorkspaceWithSessions,
   WorkspaceStatus,
   WorkspaceProviderType,
-  AttachedSession,
-  RemoveResult,
   WorkspacePorts,
+  WorktreeScanEntry,
+  WorktreeScanResult,
 } from '@dorkos/shared/workspace';

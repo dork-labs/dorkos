@@ -6,7 +6,11 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { EnsureWorkspaceRequestSchema, derivePorts } from '@dorkos/shared/workspace';
-import { getWorkspaceManager } from '../services/workspace/index.js';
+import {
+  getWorkspaceManager,
+  getWorkspaceRoot,
+  scanWorktrees,
+} from '../services/workspace/index.js';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 
@@ -29,6 +33,20 @@ router.get('/', async (req, res) => {
     res.json({ workspaces });
   } catch (err) {
     logger.error('[workspaces] GET / failed', { err });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * Read-only adoption scan (DOR-1056): every real checkout under the workspace
+ * root, with the facts git can answer cheaply. Declared before `/:id` so the
+ * literal path wins over the parameter.
+ */
+router.get('/scan', async (_req, res) => {
+  try {
+    res.json(await scanWorktrees(getWorkspaceRoot()));
+  } catch (err) {
+    logger.error('[workspaces] GET /scan failed', { err });
     res.status(500).json({ error: 'Internal server error' });
   }
 });

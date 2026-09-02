@@ -83,6 +83,7 @@ import {
   ClaimUnclaimedChatRequestSchema,
   ClaimUnclaimedChatResponseSchema,
 } from '@dorkos/shared/relay-schemas';
+import { WorktreeScanResultSchema } from '@dorkos/shared/workspace';
 import {
   AgentManifestSchema,
   DiscoveryCandidateSchema,
@@ -4991,6 +4992,27 @@ registry.registerPath({
     },
     403: {
       description: 'Only the operator may remove a push device',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/workspaces/scan',
+  tags: ['Workspaces'],
+  summary: 'List the real checkouts on disk',
+  description:
+    'Read-only scan of the workspace root. Reports every git checkout found there — ' +
+    'branch, uncommitted changes, ahead/behind, last commit — without writing to any of them. ' +
+    'A checkout git cannot describe is reported with `readable: false` rather than dropped.',
+  responses: {
+    200: {
+      description: 'The scanned root and what it holds',
+      content: { 'application/json': { schema: WorktreeScanResultSchema } },
+    },
+    500: {
+      description: 'The scan could not run',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
