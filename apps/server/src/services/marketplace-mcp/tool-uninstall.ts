@@ -18,8 +18,10 @@
  * @module services/marketplace-mcp/tool-uninstall
  */
 import { z } from 'zod';
+import { PackageNameSchema } from '@dorkos/marketplace';
 
 import { PackageNotInstalledError, type UninstallResult } from '../marketplace/flows/uninstall.js';
+import { BoundaryError, validateBoundary } from '../../lib/boundary.js';
 
 import type { MarketplaceMcpDeps } from './marketplace-mcp-tools.js';
 import type { MarketplaceConfirmationContext } from './confirmation-provider.js';
@@ -30,7 +32,11 @@ import type { MarketplaceConfirmationContext } from './confirmation-provider.js'
  * shape used by `@modelcontextprotocol/sdk`.
  */
 export const UninstallInputSchema = {
-  name: z.string().describe('Package name to uninstall'),
+  // The canonical package-name schema, not a bare string: this name is joined
+  // straight into `dorkHome` by the uninstall flow, and an installed package's
+  // directory is always its (schema-validated) manifest name, so nothing looser
+  // could ever name a real install.
+  name: PackageNameSchema.describe('Package name to uninstall'),
   purge: z
     .boolean()
     .optional()
@@ -96,6 +102,30 @@ function errorContent(err: unknown, code: string, extras: Record<string, unknown
  */
 export function createUninstallHandler(deps: MarketplaceMcpDeps) {
   return async (args: UninstallToolArgs, context?: MarketplaceConfirmationContext) => {
+    // 0. Path safety, BEFORE the confirmation. Both checks refuse arguments no
+    //    approval could make safe, so asking a person about them would be a
+    //    card for an action that is not going to happen either way. The name is
+    //    already pinned by `UninstallInputSchema`, and the flow checks it again
+    //    — this is the middle layer, and the only one that runs when a handler
+    //    is called directly. `projectPath` has no other check on this path at
+    //    all: the HTTP route confines it and, until now, the tool did not.
+    if (!PackageNameSchema.safeParse(args.name).success) {
+      return errorContent(new Error(`Invalid package name: ${args.name}`), 'INVALID_NAME');
+    }
+    if (args.projectPath !== undefined) {
+      try {
+        await validateBoundary(args.projectPath);
+      } catch (err) {
+        if (err instanceof BoundaryError) {
+          return errorContent(
+            new Error('Access denied: projectPath outside directory boundary'),
+            'OUTSIDE_BOUNDARY'
+          );
+        }
+        throw err;
+      }
+    }
+
     // 1. Resolve confirmation. A supplied token comes from a previous
     //    `requires_confirmation` response — never issue a fresh request when
     //    the agent is resuming an out-of-band flow.

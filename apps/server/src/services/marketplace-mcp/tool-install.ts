@@ -33,6 +33,7 @@ import {
   type PreviewResult,
 } from '../marketplace/marketplace-installer.js';
 import type { InstallResult } from '../marketplace/types.js';
+import { BoundaryError, validateBoundary } from '../../lib/boundary.js';
 
 import type {
   ConfirmationResult,
@@ -148,6 +149,26 @@ async function resolveConfirmation(
  */
 export function createInstallHandler(deps: MarketplaceMcpDeps) {
   return async (args: InstallToolArgs, context?: MarketplaceConfirmationContext) => {
+    // 0. Confine `projectPath` to the directory boundary, ahead of the preview.
+    //    The HTTP install route has always done this; the tool passed the path
+    //    straight through, so an agent could aim a project-local install at any
+    //    directory on the machine. Ahead of the preview because the preview
+    //    clones the package to disk and then asks a person to approve it —
+    //    neither is worth doing for a request that cannot be honored.
+    if (args.projectPath !== undefined) {
+      try {
+        await validateBoundary(args.projectPath);
+      } catch (err) {
+        if (err instanceof BoundaryError) {
+          return errorContent(
+            new Error('Access denied: projectPath outside directory boundary'),
+            'OUTSIDE_BOUNDARY'
+          );
+        }
+        throw err;
+      }
+    }
+
     // 1. Build the preview FIRST so resolve/fetch/validation errors short-
     //    circuit before any user prompt or disk mutation. The preview is
     //    also what the confirmation provider hands to the UI so the user
