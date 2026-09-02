@@ -184,10 +184,20 @@ interface DirListing {
   names: string[];
   /** An errno code when the directory could not be opened at all. */
   error: string | null;
+  /**
+   * Symlinks whose target could not be resolved (dangling target, permission
+   * denied, a symlink loop, …), each paired with the errno code that explains
+   * why. `entry.isDirectory()` reports `false` for every symlink regardless of
+   * its target, so a symlinked project or checkout folder — the shape `ln -s`
+   * and some `gtr` layouts produce — needs its own resolution, and a resolution
+   * that fails is reported here rather than silently dropped.
+   */
+  brokenSymlinks: Array<{ name: string; reason: string }>;
 }
 
 /**
- * List the immediate subdirectories of `dir`.
+ * List the immediate subdirectories of `dir`, treating a symlink to a
+ * directory as a directory.
  *
  * A directory that cannot be OPENED is different in kind from one that is
  * empty: it hides however many checkouts were inside it, and returning `[]` for
@@ -199,16 +209,32 @@ interface DirListing {
 async function listSubdirectories(dir: string): Promise<DirListing> {
   try {
     const entries = await fs.readdir(dir, { withFileTypes: true });
-    return {
-      names: entries
-        .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
-        .map((entry) => entry.name)
-        .sort(),
-      error: null,
-    };
+    const names: string[] = [];
+    const brokenSymlinks: Array<{ name: string; reason: string }> = [];
+
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) continue;
+      if (entry.isDirectory()) {
+        names.push(entry.name);
+        continue;
+      }
+      if (!entry.isSymbolicLink()) continue;
+
+      try {
+        const target = await fs.stat(path.join(dir, entry.name));
+        if (target.isDirectory()) names.push(entry.name);
+        // A symlink to a file is not a checkout candidate; skip it silently,
+        // same as any other non-directory entry.
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code ?? 'UNKNOWN';
+        brokenSymlinks.push({ name: entry.name, reason: code });
+      }
+    }
+
+    return { names: names.sort(), error: null, brokenSymlinks };
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code ?? 'UNKNOWN';
-    return { names: [], error: code === 'ENOENT' ? null : code };
+    return { names: [], error: code === 'ENOENT' ? null : code, brokenSymlinks: [] };
   }
 }
 
@@ -234,12 +260,15 @@ async function mapBounded<T, R>(
  * Scan the workspace root for real checkouts.
  *
  * Walks two levels — `<root>/<project>/<checkout>` — because that is the layout
- * both the managed provider and the operator's `gtr` flow write. A directory
- * with no `.git` entry is not a checkout and is skipped silently (the root
- * accumulates scratch folders); anything with a `.git` is reported, readable or
- * not. A directory that could not be opened at all is reported in `warnings`,
- * because whatever it held is missing from the list. Results are ordered by
- * project, then newest commit first.
+ * both the managed provider and the operator's `gtr` flow write. A symlink to a
+ * directory counts as a directory at both levels, so a symlinked project or
+ * checkout folder is walked rather than silently skipped. A directory with no
+ * `.git` entry is not a checkout and is skipped silently (the root accumulates
+ * scratch folders); anything with a `.git` is reported, readable or not. A
+ * directory that could not be opened at all — or a symlink whose target could
+ * not be resolved, such as a dangling one — is reported in `warnings`, because
+ * whatever it held (or would have held) is missing from the list. Results are
+ * ordered by project, then newest commit first.
  *
  * @param root - The resolved workspace root (`workspace.rootPath ?? <dorkHome>/workspaces`).
  */
@@ -247,12 +276,18 @@ export async function scanWorktrees(root: string): Promise<WorktreeScanResult> {
   const warnings: WorktreeScanWarning[] = [];
   const rootListing = await listSubdirectories(root);
   if (rootListing.error) warnings.push({ path: root, reason: rootListing.error });
+  for (const broken of rootListing.brokenSymlinks) {
+    warnings.push({ path: path.join(root, broken.name), reason: broken.reason });
+  }
 
   const candidates: Array<{ path: string; project: string }> = [];
   for (const project of rootListing.names) {
     const projectDir = path.join(root, project);
     const listing = await listSubdirectories(projectDir);
     if (listing.error) warnings.push({ path: projectDir, reason: listing.error });
+    for (const broken of listing.brokenSymlinks) {
+      warnings.push({ path: path.join(projectDir, broken.name), reason: broken.reason });
+    }
     for (const name of listing.names) {
       const checkoutPath = path.join(projectDir, name);
       // A worktree carries a `.git` FILE (a pointer), a clone a `.git` DIRECTORY.

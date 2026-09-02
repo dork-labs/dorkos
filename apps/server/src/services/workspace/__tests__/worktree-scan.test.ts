@@ -8,7 +8,17 @@
  * working in, and one broken checkout must not take the page down.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtemp, rm, writeFile, mkdir, realpath, stat, utimes, chmod } from 'node:fs/promises';
+import {
+  mkdtemp,
+  rm,
+  writeFile,
+  mkdir,
+  realpath,
+  stat,
+  utimes,
+  chmod,
+  symlink,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -279,6 +289,57 @@ describe('scanWorktrees degradation', () => {
     // project directory once dropped 7 checkouts with nothing to show for it.
     expect(result.worktrees).toHaveLength(0);
     expect(result.warnings).toEqual([{ path: sealed, reason: 'EACCES' }]);
+  });
+
+  it('adopts a symlinked checkout directory instead of skipping it', async () => {
+    // The layout some `gtr` setups and manual `ln -s` adoption produce: the
+    // real checkout lives elsewhere, and the project folder only holds a
+    // symlink to it. `entry.isDirectory()` is false for a symlink no matter
+    // what it points at, so without a fallback this checkout is invisible.
+    const home = path.join(base, 'symlinked');
+    const root = path.join(home, 'workspaces');
+    const project = path.join(root, 'core');
+    const source = path.join(home, 'source');
+    const realCheckout = path.join(home, 'real-checkout');
+    await mkdir(project, { recursive: true });
+    await mkdir(source, { recursive: true });
+
+    git(['init', '-b', 'main', '.'], source);
+    git(['config', 'user.email', 't@example.com'], source);
+    git(['config', 'user.name', 'Test'], source);
+    await writeFile(path.join(source, 'README.md'), '# s\n');
+    git(['add', '.'], source);
+    git(['commit', '-m', 'init'], source);
+    git(['worktree', 'add', realCheckout, '-b', 'feat/linked'], source);
+
+    await symlink(realCheckout, path.join(project, 'linked'), 'dir');
+
+    const { worktrees, warnings } = await scanWorktrees(root);
+    const linked = worktrees.find((w) => w.name === 'linked');
+
+    expect(linked).toBeDefined();
+    expect(linked?.readable).toBe(true);
+    expect(linked?.branch).toBe('feat/linked');
+    expect(warnings).toEqual([]);
+  });
+
+  it('warns on a dangling symlink instead of silently dropping it', async () => {
+    // A symlink whose target has been moved or deleted. `fs.stat` on it fails,
+    // so the scan cannot know whether it was ever a directory — the same
+    // "hides whatever it held" problem an unopenable folder poses, and it
+    // gets the same answer: report it, don't drop it.
+    const home = path.join(base, 'dangling');
+    const root = path.join(home, 'workspaces');
+    const project = path.join(root, 'core');
+    await mkdir(project, { recursive: true });
+
+    const brokenLink = path.join(project, 'ghost');
+    await symlink(path.join(home, 'does-not-exist'), brokenLink, 'dir');
+
+    const result = await scanWorktrees(root);
+
+    expect(result.worktrees).toHaveLength(0);
+    expect(result.warnings).toEqual([{ path: brokenLink, reason: 'ENOENT' }]);
   });
 });
 
