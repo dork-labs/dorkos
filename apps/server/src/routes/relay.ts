@@ -16,6 +16,7 @@ import {
   SendMessageRequestSchema,
   MessageListQuerySchema,
   InboxQuerySchema,
+  DeadLetterQuerySchema,
   EndpointRegistrationSchema,
 } from '@dorkos/shared/relay-schemas';
 import { initSSEStream } from '../services/core/streams/stream-adapter.js';
@@ -400,7 +401,13 @@ export function createRelayRouter(
 
   // GET /dead-letters — List dead-letter messages
   router.get('/dead-letters', async (_req, res) => {
-    const endpointHash = _req.query.endpointHash as string | undefined;
+    const result = DeadLetterQuerySchema.safeParse(_req.query);
+    if (!result.success) {
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
+    }
+    const { endpointHash } = result.data;
     const deadLetters = await relayCore.getDeadLetters(endpointHash ? { endpointHash } : undefined);
     return res.json(deadLetters);
   });

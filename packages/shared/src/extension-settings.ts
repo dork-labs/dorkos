@@ -10,6 +10,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withFileLock } from './atomic-write.js';
+import { assertValidExtensionId } from './extension-id.js';
 
 /**
  * Plaintext per-extension settings store using JSON files.
@@ -20,7 +21,15 @@ import { withFileLock } from './atomic-write.js';
 export class ExtensionSettingsStore {
   private readonly filePath: string;
 
+  /**
+   * Bind a store to one extension's settings file.
+   *
+   * @param dorkHome - Resolved data directory.
+   * @param extensionId - The extension whose settings this store reads and writes.
+   * @throws {InvalidExtensionIdError} If the id could name a file outside `dorkHome`.
+   */
   constructor(dorkHome: string, extensionId: string) {
+    assertValidExtensionId(extensionId);
     const dir = join(dorkHome, 'extension-settings');
     this.filePath = join(dir, `${extensionId}.json`);
   }

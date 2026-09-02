@@ -14,11 +14,10 @@
  *
  * @module relay/dead-letter-queue
  */
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { MaildirStore } from './maildir-store.js';
 import type { SqliteIndex } from './sqlite-index.js';
+import type { RelayLogger } from './types.js';
 
 // === Types ===
 
@@ -56,12 +55,8 @@ export interface DeadLetterQueueOptions {
   /** The SqliteIndex instance for status tracking. */
   sqliteIndex: SqliteIndex;
 
-  /**
-   * Root directory for all mailboxes.
-   * Must match the MaildirStore's rootDir so we can resolve file paths
-   * for purge operations.
-   */
-  rootDir: string;
+  /** Optional logger. Used to report rows a purge sweep had to skip. */
+  logger?: RelayLogger;
 
   /**
    * Optional observer invoked exactly once whenever a message is dead-lettered
@@ -129,7 +124,7 @@ export interface PurgeResult {
  *
  * @example
  * ```ts
- * const dlq = new DeadLetterQueue({ maildirStore, sqliteIndex, rootDir });
+ * const dlq = new DeadLetterQueue({ maildirStore, sqliteIndex });
  *
  * // Reject a message
  * const result = await dlq.reject('a1b2c3', envelope, 'budget exceeded');
@@ -144,13 +139,13 @@ export interface PurgeResult {
 export class DeadLetterQueue {
   private readonly maildirStore: MaildirStore;
   private readonly sqliteIndex: SqliteIndex;
-  private readonly rootDir: string;
+  private readonly logger: RelayLogger;
   private readonly onDeadLetter?: (notice: DeadLetterNotice) => void;
 
   constructor(options: DeadLetterQueueOptions) {
     this.maildirStore = options.maildirStore;
     this.sqliteIndex = options.sqliteIndex;
-    this.rootDir = options.rootDir;
+    this.logger = options.logger ?? { debug() {}, info() {}, warn() {}, error() {} };
     this.onDeadLetter = options.onDeadLetter;
   }
 
@@ -345,11 +340,26 @@ export class DeadLetterQueue {
 
     let purged = 0;
     for (const msg of failed) {
-      const shouldPurge = await this.isOlderThan(msg.endpointHash, msg.id, cutoffTime);
-      if (!shouldPurge) continue;
+      // One unusable row must not stop the whole phase. Both calls below reach
+      // the Maildir by the row's own endpoint hash, and that hash is now checked
+      // for containment — so a row carrying a hash no mailbox could have (a
+      // hand-edited index, a format change) throws here. `RelayGc.guard` does
+      // catch that, but it catches it around the ENTIRE phase and the next sweep
+      // re-reads the same row, so one bad row stopped dead-letter purging for
+      // good rather than once. Skipping per row keeps the phase moving; the row
+      // stays `failed` in the index and is retried on the next sweep.
+      try {
+        const shouldPurge = await this.isOlderThan(msg.endpointHash, msg.id, cutoffTime);
+        if (!shouldPurge) continue;
 
-      await this.removeDeadLetter(msg.endpointHash, msg.id);
-      purged++;
+        await this.removeDeadLetter(msg.endpointHash, msg.id);
+        purged++;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.warn(
+          `DeadLetterQueue: skipped purging ${msg.id} in ${msg.endpointHash}: ${message}`
+        );
+      }
     }
 
     return purged;
@@ -395,30 +405,15 @@ export class DeadLetterQueue {
    * @param messageId - The message ID to remove.
    */
   async removeDeadLetter(endpointHash: string, messageId: string): Promise<void> {
-    // Delete envelope file from Maildir failed/
-    const failedDir = path.join(this.rootDir, endpointHash, 'failed');
-    await silentUnlink(path.join(failedDir, `${messageId}.json`));
-    await silentUnlink(path.join(failedDir, `${messageId}.reason.json`));
+    // Delete envelope file and sidecar from Maildir failed/. Routed through the
+    // store rather than rebuilt here so the endpoint-hash containment check
+    // guarding every other Maildir path applies to deletes too.
+    await this.maildirStore.deleteMessageFile(endpointHash, 'failed', messageId);
 
     // Remove the index row directly, keyed by (id, endpointHash) so only this
     // endpoint's dead-letter row is removed. (Previously this poisoned the row
     // with an epoch-0 expiresAt and called deleteExpired(1) to sweep it — an
     // oblique hack that also clobbered the row's subject/sender before deletion.)
     this.sqliteIndex.deleteMessage(messageId, endpointHash);
-  }
-}
-
-// === File Helpers ===
-
-/**
- * Unlink a file, silently ignoring ENOENT errors.
- *
- * @param filePath - Absolute path to unlink.
- */
-async function silentUnlink(filePath: string): Promise<void> {
-  try {
-    await fs.unlink(filePath);
-  } catch {
-    // Ignore — file may not exist or was already removed
   }
 }

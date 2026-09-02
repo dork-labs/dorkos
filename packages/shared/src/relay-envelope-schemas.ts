@@ -248,6 +248,31 @@ export const InboxQuerySchema = z
 
 export type InboxQuery = z.infer<typeof InboxQuerySchema>;
 
+/**
+ * Every shape a real endpoint hash takes, and nothing else.
+ *
+ * The registry stores an endpoint's subject verbatim as its hash (dot-separated
+ * tokens, which may include the `*` and `>` wildcards), the publisher uses the
+ * synthetic `*`, and adapter delivery uses `adapter:<subject>`. All of them are
+ * a single directory name under the mailbox root, so this pattern admits no
+ * separator, no `.` or `..` segment, and no empty string — a filter value that
+ * would climb out of the mailbox root is a 400, not a read.
+ */
+export const ENDPOINT_HASH_REGEX = /^(adapter:)?[A-Za-z0-9_*>-]+(\.[A-Za-z0-9_*>-]+)*$/;
+
+/** Query parameters for listing dead letters, optionally scoped to one endpoint. */
+export const DeadLetterQuerySchema = z
+  .object({
+    endpointHash: z
+      .string()
+      .regex(ENDPOINT_HASH_REGEX)
+      .optional()
+      .openapi({ description: 'Only list dead letters filed for this endpoint hash.' }),
+  })
+  .openapi('DeadLetterQuery');
+
+export type DeadLetterQuery = z.infer<typeof DeadLetterQuerySchema>;
+
 export const EndpointRegistrationSchema = z
   .object({
     subject: z.string().min(1),

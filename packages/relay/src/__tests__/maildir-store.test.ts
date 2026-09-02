@@ -630,3 +630,81 @@ describe('concurrent safety', () => {
     expect(successes).toHaveLength(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Endpoint-hash containment
+// ---------------------------------------------------------------------------
+
+describe('MaildirStore — endpoint hash containment', () => {
+  // Every shape a real endpoint hash takes: EndpointRegistry sets `hash: subject`
+  // verbatim, RelayPublisher uses the synthetic '*', and adapter delivery uses
+  // `adapter:<subject>`. All of them must keep working.
+  const LEGITIMATE_HASHES = [
+    'relay.agent.dorkbot',
+    'relay.human.console.main',
+    'simple',
+    'with_underscore-and-hyphen',
+    'relay.agent.*',
+    'relay.agent.>',
+    '*',
+    'adapter:relay.telegram.inbound',
+    'adapter:*',
+  ];
+
+  const ESCAPING_HASHES = [
+    '..',
+    '../outside',
+    '../../../../etc',
+    'nested/deeper',
+    'relay.agent/../..',
+    '.',
+    '',
+    // These two resolve back INSIDE the root, so resolution alone waves them
+    // through — the separator check is the only thing that refuses them, and a
+    // hash is a single directory name or it is not a hash.
+    'ok/../ok',
+    'trailing/',
+  ];
+
+  it.each(LEGITIMATE_HASHES)('accepts the legitimate hash %j', async (hash) => {
+    await store.ensureMaildir(hash);
+    const failed = await store.listFailed(hash);
+    expect(failed).toEqual([]);
+
+    const delivered = await store.deliver(hash, makeEnvelope());
+    expect(delivered.ok).toBe(true);
+    expect(await store.listNew(hash)).toEqual(['01JKABCDEFGH']);
+  });
+
+  it.each(ESCAPING_HASHES)('refuses the escaping hash %j', async (hash) => {
+    await expect(store.ensureMaildir(hash)).rejects.toThrow(/endpoint hash/i);
+    await expect(store.listFailed(hash)).rejects.toThrow(/endpoint hash/i);
+    await expect(store.readDeadLetter(hash, 'anything')).rejects.toThrow(/endpoint hash/i);
+    await expect(store.readEnvelope(hash, 'failed', 'anything')).rejects.toThrow(/endpoint hash/i);
+    await expect(store.removeMaildir(hash)).rejects.toThrow(/endpoint hash/i);
+    await expect(store.deleteMessageFile(hash, 'failed', 'anything')).rejects.toThrow(
+      /endpoint hash/i
+    );
+    await expect(store.getMessageCtimeMs(hash, 'failed', 'anything')).rejects.toThrow(
+      /endpoint hash/i
+    );
+    await expect(store.getNewestActivityMs(hash)).rejects.toThrow(/endpoint hash/i);
+  });
+
+  it('never reads a file outside the mailbox root', async () => {
+    const outside = path.join(tmpRoot, '..', 'relay-escape-target');
+    await fs.mkdir(path.join(outside, 'failed'), { recursive: true });
+    await fs.writeFile(
+      path.join(outside, 'failed', 'secret.reason.json'),
+      JSON.stringify({ reason: 'leaked' })
+    );
+
+    try {
+      const escape = path.join('..', 'relay-escape-target');
+      await expect(store.listFailed(escape)).rejects.toThrow(/endpoint hash/i);
+      await expect(store.readDeadLetter(escape, 'secret')).rejects.toThrow(/endpoint hash/i);
+    } finally {
+      await fs.rm(outside, { recursive: true, force: true });
+    }
+  });
+});

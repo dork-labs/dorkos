@@ -546,12 +546,33 @@ export class MaildirStore {
   // --- Private Helpers ---
 
   /**
-   * Resolve the base directory for an endpoint's Maildir.
+   * Resolve the base directory for an endpoint's Maildir, refusing any hash
+   * that would land outside the mailbox root.
+   *
+   * An endpoint hash is always a single directory name: the endpoint registry
+   * stores the subject verbatim, the publisher uses the synthetic `*`, and
+   * adapter delivery uses `adapter:<subject>` — none of which contain a path
+   * separator. So a hash has to clear two bars, and it takes both: no separator
+   * at all, AND the resolved directory's parent must BE the root.
+   *
+   * Neither bar alone is enough. Resolution on its own accepts `a/../b` and
+   * `a/`, which land back inside the root but are not the single name a hash is
+   * meant to be; the separator check on its own accepts `..`, which has no
+   * separator and climbs anyway.
+   *
+   * Without this a caller-supplied hash reached `fs.readdir`/`fs.readFile` and
+   * could read any `<dir>/failed/` on the machine.
    *
    * @param endpointHash - The hash identifying the endpoint.
+   * @throws If the hash is not a single directory name directly under the root.
    */
   private endpointDir(endpointHash: string): string {
-    return path.join(this.rootDir, endpointHash);
+    const root = path.resolve(this.rootDir);
+    const dir = path.resolve(root, endpointHash);
+    if (/[/\\]/.test(endpointHash) || path.dirname(dir) !== root) {
+      throw new Error(`Invalid endpoint hash: ${endpointHash}`);
+    }
+    return dir;
   }
 
   /**

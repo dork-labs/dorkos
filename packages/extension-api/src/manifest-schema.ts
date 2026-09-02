@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { EXTENSION_ID_REGEX } from '@dorkos/shared/extension-id';
 import { EXTENSION_EVENT_DECLARATIONS } from './extension-events.js';
 
 /**
@@ -133,15 +134,11 @@ export const StorageDeclarationSchema = z
   });
 
 /**
- * Allowed shape of an extension id: lowercase letters, digits, and hyphens,
- * starting with a letter or digit.
- *
- * The id doubles as the extension's directory name, so this pattern is also the
- * rule that keeps a scaffolded extension inside the extensions folder. It
- * admits no dot, slash, backslash, or non-ASCII character, which is every way a
- * name could climb out of its parent directory.
+ * Re-exported from `@dorkos/shared/extension-id`, which owns the single
+ * definition: the stores that name a file after an extension id sit below this
+ * package, so the rule has to live below them both.
  */
-export const EXTENSION_ID_REGEX = /^[a-z0-9][a-z0-9-]*$/;
+export { EXTENSION_ID_REGEX };
 
 /** Zod schema for `extension.json` manifest files. */
 export const ExtensionManifestSchema = z.object({

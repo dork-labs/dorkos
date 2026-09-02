@@ -74,6 +74,7 @@ import {
   SendMessageRequestSchema as RelaySendMessageRequestSchema,
   MessageListQuerySchema,
   InboxQuerySchema,
+  DeadLetterQuerySchema,
   EndpointRegistrationSchema,
   RelayFlowEventSchema,
   RelayFlowDirectionSchema,
@@ -1765,7 +1766,7 @@ registry.registerPath({
   tags: ['Relay'],
   summary: 'List dead-letter messages',
   request: {
-    query: MessageListQuerySchema,
+    query: DeadLetterQuerySchema,
   },
   responses: {
     200: {

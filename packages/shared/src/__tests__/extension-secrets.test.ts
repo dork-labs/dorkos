@@ -4,6 +4,7 @@ import { statSync, existsSync } from 'fs';
 import path from 'path';
 import os from 'os';
 import { ExtensionSecretStore, resetKeyCache } from '../extension-secrets.js';
+import { InvalidExtensionIdError } from '../extension-id.js';
 
 // === Helpers ===
 
@@ -460,4 +461,23 @@ describe('ExtensionSecretStore', () => {
       expect(values).toEqual(Array.from({ length: 10 }, (_, i) => `value-${i}`));
     });
   });
+});
+
+describe('ExtensionSecretStore — extension id containment', () => {
+  const ESCAPING_IDS = ['../outside', '..', 'nested/deeper', 'UPPER', 'has space', '', '.hidden'];
+
+  it.each(ESCAPING_IDS)('refuses the id %j', async (id) => {
+    const dorkHome = await makeTempDir();
+    expect(() => new ExtensionSecretStore(id, dorkHome)).toThrow(InvalidExtensionIdError);
+  });
+
+  it.each(['runtime-credentials', 'mcp-oauth', 'test-ext', 'ext1', '0abc'])(
+    'accepts the real store id %j',
+    async (id) => {
+      const dorkHome = await makeTempDir();
+      const store = new ExtensionSecretStore(id, dorkHome);
+      await store.set('key', 'value');
+      expect(await store.get('key')).toBe('value');
+    }
+  );
 });
