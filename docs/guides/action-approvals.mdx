@@ -9,9 +9,9 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Action Approvals
 
-Your agents can run DorkOS for you: make agents, schedule work, change settings, add and remove packages. Most of that is easy to take back. Three things are not: removing an installed package, deleting a scheduled task, and removing an agent.
+Your agents can run DorkOS for you: make agents, schedule work, change settings, add and remove packages. Most of that is easy to take back. Four things are not: removing an installed package, deleting a scheduled task, removing an agent, and changing an agent's safety boundaries.
 
-So DorkOS stops at those three and asks you. An agent does not get to do one of them and then tell you about it afterwards.
+So DorkOS stops at those four and asks you. An agent does not get to do one of them and then tell you about it afterwards.
 
 <Callout type="info">
   This is not the same as [tool approval](/docs/guides/tool-approval). Tool approval covers what an
@@ -55,11 +55,12 @@ Nothing is pre-selected, and neither button is styled as the safe choice. Saying
 
 ## What needs your OK, and what doesn't
 
-Five things an agent asks for will wait for you today. Three of them cannot be taken back:
+Six things an agent asks for will wait for you today. Four of them cannot be taken back:
 
 - **Removing an installed package**, with or without its saved data
 - **Deleting a scheduled task**, which has no undo: the prompt, the schedule, and the timezone are gone
 - **Removing an agent**, which also deletes its setup file and turns off its scheduled tasks
+- **Changing an agent's safety boundaries**, the list of things you told it never to do: the new text replaces the whole list, so whatever it said before is gone
 
 Two more wait for you because they bring new code onto your machine:
 
@@ -88,11 +89,11 @@ One set of settings is neither of those things. Agents are refused them outright
 
 Each action DorkOS does cover carries a size label on its card, so you can tell at a glance what you are being asked:
 
-| Label                | What it means                                                                                               |
-| -------------------- | ----------------------------------------------------------------------------------------------------------- |
-| **Read only**        | Only reads. You will not be asked about these at all.                                                       |
-| **Changes things**   | Changes something you can change back.                                                                      |
-| **Cannot be undone** | There is no undo. Three today: removing an installed package, deleting a scheduled task, removing an agent. |
+| Label                | What it means                                                                                                                                     |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Read only**        | Only reads. You will not be asked about these at all.                                                                                             |
+| **Changes things**   | Changes something you can change back.                                                                                                            |
+| **Cannot be undone** | There is no undo. Four today: removing an installed package, deleting a scheduled task, removing an agent, changing an agent's safety boundaries. |
 
 ## Settings your agents cannot change
 

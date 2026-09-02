@@ -72,6 +72,9 @@ const OWNING_SKILL: Record<string, string> = {
   tasks_delete: 'scheduling-tasks',
   mesh_unregister: 'managing-agents',
   'marketplace.uninstall': 'using-the-marketplace',
+  // The same skill that teaches editing an agent, because the decision an agent
+  // has to make is "which of these two do I call" (DOR-1698).
+  'operator.update_agent_boundaries': 'managing-agents',
 };
 
 /** Hand-registered tools that stop and ask. */

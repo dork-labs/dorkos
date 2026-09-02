@@ -485,6 +485,10 @@ capabilityConformance(registry, {
   docsRegistry: composeCapabilityRegistryForDocs(),
   sampleInputs: {
     'operator.update_agent': { cwd: SANDBOX_CWD, displayName: 'Conformance' },
+    // Destructive, and `nopeContent` is REQUIRED — a fixture without it fails the
+    // Zod parse before the gate ever runs, which would read as "the gate did not
+    // refuse this" (DOR-1698).
+    'operator.update_agent_boundaries': { cwd: SANDBOX_CWD, nopeContent: 'Never do that.' },
     'operator.config_patch': { patch: { ui: { sidebar: { collapsed: true } } } },
     'marketplace.get': { name: 'nonexistent-conformance-pkg' },
     'marketplace.recommend': { context: 'observability for a next.js app' },

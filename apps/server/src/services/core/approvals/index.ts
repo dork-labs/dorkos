@@ -45,6 +45,7 @@ export {
 export { hashApprovalInput, ApprovalInputNotBindableError } from './approval-input-hash.js';
 export {
   quoteSummaryValue,
+  readApprovalInputPath,
   redactSecretsInText,
   renderRequesterLabel,
   summaryFields,

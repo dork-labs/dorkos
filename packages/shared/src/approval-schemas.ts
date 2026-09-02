@@ -26,6 +26,18 @@ extendZodWithOpenApiOnce();
 export const APPROVAL_SUMMARY_MAX_LENGTH = 500;
 
 /**
+ * Longest {@link PendingApprovalSchema.shape.detail} an approval will hold.
+ *
+ * Sized off the biggest thing a capability can legitimately put there. Today
+ * that is `NOPE_MAX_CHARS` (2,000), and the headroom is deliberate: a detail
+ * that arrived truncated would recreate the very defect the field exists to fix,
+ * so the cap has to sit clear of the largest declared payload rather than at it.
+ * `ApprovalService.request` truncates to this, and a capability whose detail
+ * field could exceed it must lower its own bound first.
+ */
+export const APPROVAL_DETAIL_MAX_LENGTH = 4000;
+
+/**
  * An approval waiting on a person: what would run, why, and who asked. This is
  * exactly what the cockpit's approval card renders.
  */
@@ -66,6 +78,21 @@ export const PendingApprovalSchema = z
     requestedAt: z.string(),
     /** When the request stops being honored. ISO 8601 UTC. */
     expiresAt: z.string(),
+    /**
+     * The one argument a person has to read IN FULL before answering, verbatim.
+     *
+     * Present only for a capability that declares `approvalDetailField` — one
+     * today, the boundaries write, whose whole point is the text. Everything
+     * else says what it needs to say in {@link summary}, and a card with no
+     * detail renders exactly as it always has.
+     *
+     * Rendered as-is rather than as part of a sentence, so it carries no claim
+     * about itself: it is the argument, shown, and the summary above says what
+     * would be done with it. Like the summary it is swept for token-shaped runs
+     * and capped ({@link APPROVAL_DETAIL_MAX_LENGTH}) where it is stored, never
+     * at render time.
+     */
+    detail: z.string().max(APPROVAL_DETAIL_MAX_LENGTH).optional(),
   })
   .openapi('PendingApproval');
 

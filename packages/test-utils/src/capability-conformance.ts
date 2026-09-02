@@ -30,6 +30,11 @@
  *   render it in full. The summary is broadcast on the global event stream and
  *   readable by agents through `GET /api/approvals/pending`, so this check is what
  *   makes that mistake impossible rather than merely discouraged;
+ * - an `approvalDetailField`, where one is declared, sits on a `destructive`
+ *   capability, names a real field of that capability's own input, is not also a
+ *   display field, and is not secret-shaped. It is the escape from the summary's
+ *   per-value clamp (DOR-1698), and every way of misdeclaring it is silent at
+ *   runtime — a wrong path renders an empty block where the whole decision belongs;
  * - no two capabilities collide on an `http` method+path (the reverse-direction
  *   OpenAPI collision guard) and the projected route set is order-independent;
  * - the docs-projection registry exposes the SAME `http` surface set as the boot
@@ -150,6 +155,17 @@ export interface ConformanceCapability {
   surfaces: CapabilitySurfaces;
   /** Input fields the approval card may show. Required on `destructive` entries. */
   approvalDisplayFields?: readonly string[];
+  /** The one input field the card carries in full, when the entry declares one. */
+  approvalDetailField?: string;
+  /**
+   * The entry's input schema.
+   *
+   * Typed as `unknown` so this suite stays free of a Zod import and the real
+   * `CapabilityDefinition` still satisfies the shape; the one check that reads it
+   * narrows to "an object with a `shape` record" and skips anything else, so a
+   * schema kind that has no shape is not-checked rather than falsely flagged.
+   */
+  input?: unknown;
   /**
    * The per-agent grant this capability requires, when it declares one.
    *
@@ -159,6 +175,24 @@ export interface ConformanceCapability {
    * whichever capabilities carry it.
    */
   toolGroup?: string;
+}
+
+/**
+ * The key set of a `z.object` input, or `undefined` for anything else.
+ *
+ * Duck-typed on purpose: this package must not depend on Zod (it is consumed by
+ * every workspace, several of which pin their own copy), and the one question
+ * asked of the schema — "is this a real field name" — needs nothing more than the
+ * `shape` record every `ZodObject` carries.
+ *
+ * @param input - A capability's declared input schema.
+ * @returns Its field map, or `undefined` when it is not a plain object schema.
+ */
+function zodObjectShape(input: unknown): Record<string, unknown> | undefined {
+  if (!input || typeof input !== 'object') return undefined;
+  const shape = (input as { shape?: unknown }).shape;
+  if (!shape || typeof shape !== 'object') return undefined;
+  return shape as Record<string, unknown>;
 }
 
 /**
@@ -461,6 +495,54 @@ export function checkCapabilityConformance(
         'approval-card-fields',
         `capability "${cap.id}" declares an EMPTY approvalDisplayFields, so a person would be asked ` +
           `to approve an irreversible action with none of its arguments shown`
+      );
+    }
+  }
+
+  // ── Scope add (1c): the card's full-text field is real, single, and not a copy ─
+  //
+  // `approvalDetailField` is the escape from the summary's 80-character per-value
+  // cap (DOR-1698), and every one of these four ways of getting it wrong is silent
+  // at runtime: a misspelled path renders nothing, a non-destructive declaration
+  // has no card to render on, a duplicated field shows a truncated copy beside the
+  // full one, and a secret-shaped name publishes credential material to every
+  // cockpit and to any agent reading the pending list.
+  for (const cap of caps) {
+    const field = cap.approvalDetailField;
+    if (field === undefined) continue;
+    if (cap.tier !== 'destructive') {
+      add(
+        'approval-card-fields',
+        `capability "${cap.id}" declares approvalDetailField but is tier "${cap.tier}" — only a ` +
+          `destructive capability stops for a card to put it on`
+      );
+    }
+    if (cap.approvalDisplayFields?.includes(field)) {
+      add(
+        'approval-card-fields',
+        `capability "${cap.id}" names "${field}" in BOTH approvalDetailField and ` +
+          `approvalDisplayFields, so the card would show a clamped copy beside the full one`
+      );
+    }
+    const leaf = field.split('.').pop() ?? field;
+    if (isSecretInputKey(leaf)) {
+      add(
+        'approval-card-fields',
+        `capability "${cap.id}" declares "${field}" as its approvalDetailField, and that name says ` +
+          `its value is credential material — the detail is carried verbatim to a card every ` +
+          `cockpit sees and any agent can read`
+      );
+    }
+    // Top-level only: a dotted path is legal for the card's SENTENCE, but the
+    // shape read here is one level deep, so a nested detail field would be
+    // unverifiable rather than verified. Nothing needs one yet; the day something
+    // does, widen this rather than dropping it.
+    const shape = zodObjectShape(cap.input);
+    if (shape && !field.includes('.') && !Object.hasOwn(shape, field)) {
+      add(
+        'approval-card-fields',
+        `capability "${cap.id}" declares approvalDetailField "${field}", which is not a field of ` +
+          `its own input — the card would render nothing where the whole decision belongs`
       );
     }
   }

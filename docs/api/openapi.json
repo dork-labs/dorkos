@@ -1260,6 +1260,10 @@
           },
           "expiresAt": {
             "type": "string"
+          },
+          "detail": {
+            "type": "string",
+            "maxLength": 4000
           }
         },
         "required": [

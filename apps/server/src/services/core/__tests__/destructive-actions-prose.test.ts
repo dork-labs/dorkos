@@ -294,6 +294,11 @@ const PLAIN_LANGUAGE: Record<string, string> = {
   'marketplace.uninstall': 'removing an installed package',
   tasks_delete: 'deleting a scheduled task',
   mesh_unregister: 'removing an agent',
+  // NOPE.md, in the words the app itself uses for it (DOR-1698). "Changing"
+  // rather than "editing", because the write replaces the whole file: whatever
+  // the agent's boundaries said before is gone, which is what makes this one
+  // irreversible in the same sense as the three above.
+  'operator.update_agent_boundaries': "changing an agent's safety boundaries",
 };
 
 /**

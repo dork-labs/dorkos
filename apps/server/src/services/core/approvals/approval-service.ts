@@ -44,6 +44,7 @@ import { ulid } from 'ulidx';
 import { and, asc, eq, isNull, lt, approvals, type Db } from '@dorkos/db';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import {
+  APPROVAL_DETAIL_MAX_LENGTH,
   APPROVAL_SUMMARY_MAX_LENGTH,
   type ApprovalOutcome,
   type PendingApproval,
@@ -129,6 +130,15 @@ export interface ApprovalRequestInput {
   inputHash: string;
   /** One plain sentence describing what the operator is about to allow. */
   summary: string;
+  /**
+   * The one argument a person has to read IN FULL before answering, verbatim.
+   *
+   * Supplied only for a capability that declares `approvalDetailField`. It is
+   * NOT part of the summary and must not be duplicated into it: the summary is
+   * a glanceable sentence with every value capped at 80 characters, which is the
+   * bound this field exists to escape (DOR-1698).
+   */
+  detail?: string;
   /**
    * Opaque label for who asked — an agent path, a display name, whatever the
    * caller has. Never interpreted here, only shown on the card.
@@ -279,9 +289,38 @@ function hashToken(token: string): string {
  * confirmation provider, which writes its own sentences.
  */
 function storableSummary(summary: string): string {
-  const safe = redactSecretsInText(summary);
-  if (safe.length <= APPROVAL_SUMMARY_MAX_LENGTH) return safe;
-  return `${safe.slice(0, APPROVAL_SUMMARY_MAX_LENGTH - 1).trimEnd()}…`;
+  return clampForStorage(redactSecretsInText(summary), APPROVAL_SUMMARY_MAX_LENGTH);
+}
+
+/**
+ * Make a detail safe to store: the same sweep the summary gets, against the
+ * detail's own, much larger bound.
+ *
+ * Same two reasons, in the same order. The sweep is because this string is
+ * broadcast on the global event stream and returned by
+ * `GET /api/approvals/pending`, which agents can read. The cap is because the
+ * cockpit parses stored rows against a schema that caps it, so an over-long
+ * value has to shorten here or the whole card is dropped rather than shown —
+ * and a dropped card is worse than a shortened one for exactly the reason this
+ * field exists.
+ *
+ * @param detail - The verbatim argument the capability declared.
+ * @returns The swept, capped value to store.
+ */
+function storableDetail(detail: string): string {
+  return clampForStorage(redactSecretsInText(detail), APPROVAL_DETAIL_MAX_LENGTH);
+}
+
+/**
+ * Shorten a value to what its column's schema will parse, marking the cut.
+ *
+ * @param value - The already-swept string.
+ * @param max - The schema's bound for that field.
+ * @returns The value, at most `max` characters.
+ */
+function clampForStorage(value: string, max: number): string {
+  if (value.length <= max) return value;
+  return `${value.slice(0, max - 1).trimEnd()}…`;
 }
 
 /** A stored approval row, as Drizzle infers it. */
@@ -295,6 +334,7 @@ function toPendingApproval(row: ApprovalRow): PendingApproval {
     capabilityTitle: row.capabilityTitle,
     tier: row.tier,
     summary: row.summary,
+    ...(row.detail === null ? {} : { detail: row.detail }),
     ...(row.requestedBy ? { requestedBy: row.requestedBy } : {}),
     // The raw path stays off the wire (see `requestedByPath`'s own comment); what
     // goes out is the one bit a surface needs, which is whether there is one.
@@ -349,6 +389,9 @@ export class ApprovalService {
       tier: descriptor?.tier ?? ('destructive' as const),
       inputHash: input.inputHash,
       summary: storableSummary(input.summary),
+      // Absent for every capability that declares no detail field, which is all
+      // but one — `null` rather than `undefined` so the column is written.
+      detail: input.detail === undefined ? null : storableDetail(input.detail),
       // Caller-supplied, so capped and swept for secrets exactly like the summary.
       requestedBy: input.requestedBy ? renderRequesterLabel(input.requestedBy) : null,
       // Stored raw and never rendered: this is the key a standing permission is

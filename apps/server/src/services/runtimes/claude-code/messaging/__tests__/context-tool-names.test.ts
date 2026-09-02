@@ -321,7 +321,13 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // not a name it is invited to call and cannot — which is the DOR-1292 defect
     // this file exists for. See `ALWAYS_LOADED_TOOLS` for why merging is a turn
     // that can afford one and a room REPLY is not.
-    expect(advertised.size).toBe(95);
+    //
+    // 95 → 96 for `update_agent_boundaries`, the NOPE.md write split out of
+    // `update_agent` so it can be tier `destructive` (DOR-1698). No prompt block
+    // names it, so it stays deferred; the one place it IS named is
+    // `update_agent`'s own description, which the case below governs and which
+    // names it as a searchable ending for exactly that reason.
+    expect(advertised.size).toBe(96);
     expect(advertised.has('react_to_room_entry')).toBe(true);
 
     const { prose } = await claudeCodeProse();
