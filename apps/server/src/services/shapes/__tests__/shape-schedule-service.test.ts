@@ -684,15 +684,15 @@ describe('ShapeScheduleService — ownership is the write receipt, not the marke
   let logger: Logger;
   let service: ShapeScheduleService;
 
-  /** Where the receipt lives for this test's data directory. */
-  function receiptPath(): string {
-    return path.join(dorkHome, SCHEDULE_RECEIPT_FILENAME);
+  /** Where the receipt lives for a data directory (this test's by default). */
+  function receiptPath(home = dorkHome): string {
+    return path.join(home, SCHEDULE_RECEIPT_FILENAME);
   }
 
   /** The receipt's entries, or `[]` when no receipt has been written yet. */
-  async function readReceipt(): Promise<{ dir: string; shape: string }[]> {
+  async function readReceipt(home = dorkHome): Promise<{ dir: string; shape: string }[]> {
     try {
-      return JSON.parse(await fs.readFile(receiptPath(), 'utf-8')).entries;
+      return JSON.parse(await fs.readFile(receiptPath(home), 'utf-8')).entries;
     } catch {
       return [];
     }
@@ -741,8 +741,8 @@ describe('ShapeScheduleService — ownership is the write receipt, not the marke
     });
   }
 
-  /** A service over this test's data directory — call it again for a restart. */
-  function makeService(): ShapeScheduleService {
+  /** A service over a data directory (this test's by default) — call it again for a restart. */
+  function makeService(home = dorkHome): ShapeScheduleService {
     return new ShapeScheduleService({
       taskStore: store,
       registrar: new TaskRegistrar({
@@ -752,7 +752,7 @@ describe('ShapeScheduleService — ownership is the write receipt, not the marke
       meshCore: {
         getProjectPath: (id: string) => (id === 'agent-tender' ? agentDir : undefined),
       } as unknown as MeshCore,
-      dorkHome,
+      dorkHome: home,
       logger,
     });
   }
@@ -989,27 +989,49 @@ describe('ShapeScheduleService — ownership is the write receipt, not the marke
     // The receipt is keyed on the RESOLVED path, and a path that no longer
     // exists cannot be resolved — so a forget made after the delete falls back
     // to the unresolved spelling and misses. This fixture is the case where the
-    // two spellings differ: forcing `parseSkillFile` to fail sends the create
-    // down the fallback branch, which stores the UNRESOLVED filePath on the row
-    // while the receipt still holds the resolved one (every macOS temp dir is a
-    // symlink). Swap the two statements in `removeScheduledTaskFile` and this
-    // test goes red; nothing else in the suite does.
+    // two spellings differ. Both halves are built rather than assumed:
+    //
+    //  - the data directory is reached through a symlink this test makes, so
+    //    resolved and unresolved differ on EVERY platform. Relying on the OS for
+    //    that is what reddened this test in CI: macOS resolves `/var` to
+    //    `/private/var` so the two spellings differed locally, and Linux's `/tmp`
+    //    is a real directory, so they were identical and the precondition below
+    //    failed on a build that was otherwise fine.
+    //  - forcing `parseSkillFile` to fail sends the create down the fallback
+    //    branch, which stores the UNRESOLVED filePath on the row while the
+    //    receipt holds the resolved one.
+    //
+    // Swap the two statements in `removeScheduledTaskFile` and this test goes
+    // red; nothing else in the suite does.
+    const realHome = path.join(dorkHome, 'real-home');
+    const linkedHome = path.join(dorkHome, 'linked-home');
+    await fs.mkdir(realHome, { recursive: true });
+    await fs.symlink(realHome, linkedHome);
+    vi.stubEnv('DORK_HOME', linkedHome);
+    const linked = makeService(linkedHome);
+
     vi.mocked(parseSkillFile).mockReturnValueOnce({
       ok: false,
       error: 'forced parse failure (ordering fixture)',
       filePath: '(fixture)',
     });
-    await service.createSchedule(tick('inbox-tick', 'global'), { shape: 'linear-ops' });
+    await linked.createSchedule(tick('inbox-tick', 'global'), { shape: 'linear-ops' });
 
     const row = store.getTasks()[0];
-    const unresolved = path.join(dorkHome, 'skills', 'inbox-tick', 'SKILL.md');
+    const unresolved = path.join(linkedHome, 'skills', 'inbox-tick', 'SKILL.md');
     // The fixture is only meaningful while the row's path and the receipt's key
     // are different strings.
     expect(row.filePath).toBe(unresolved);
-    expect((await readReceipt())[0].dir).not.toBe(path.dirname(unresolved));
+    // Fully resolved on both sides: the outer tmpdir may itself be a symlink
+    // (it is on macOS), and the point of the assertion is the LINK this test
+    // made, not whatever the platform did above it.
+    expect((await readReceipt(linkedHome))[0].dir).toBe(
+      path.join(await fs.realpath(realHome), 'skills', 'inbox-tick')
+    );
+    expect((await readReceipt(linkedHome))[0].dir).not.toBe(path.dirname(unresolved));
 
-    await service.deleteSchedulesForShape('linear-ops');
+    await linked.deleteSchedulesForShape('linear-ops');
 
-    expect(await readReceipt()).toEqual([]);
+    expect(await readReceipt(linkedHome)).toEqual([]);
   });
 });
