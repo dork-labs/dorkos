@@ -109,4 +109,41 @@ describe('createCodexUiMcpServer', () => {
     expect(content[0]!.type).toBe('text');
     expect(JSON.parse(content[0]!.text)).toEqual({ success: true, action: 'open_canvas' });
   });
+
+  /**
+   * DOR-639. `apply_layout` writes to the person's machine — `SKILL.md` files into
+   * their skills root, a receipt naming what it wrote, the active Shape in their
+   * config, created/rebound/deleted scheduled tasks, enabled and disabled
+   * extensions. claude-code raises an approval card for it; Codex has no approval
+   * surface, so the answer is a refusal. (`ui-command-consent.ts` carries the full
+   * accounting, including what this action can NOT do.)
+   *
+   * This is the channel the refusal has to travel on to reach the MODEL: the
+   * event-mapper's `error` StreamEvent goes to the client's transcript, never back
+   * into the agent's context, so the tool result is the only place the agent can
+   * read why. Driven through the production stateless MCP router, so it is the
+   * real handler answering, not a stub of one.
+   */
+  it('refuses a control_ui action that reaches the machine, and says why', async () => {
+    const res = await postRpc(createTestApp(), {
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: {
+        name: 'control_ui',
+        arguments: { action: 'apply_layout', shape: 'nightly-release' },
+      },
+      id: 4,
+    });
+
+    expect(res.status).toBe(200);
+    const result = parseResponse(res).result ?? {};
+    expect(result.isError, 'a refusal returned as a success trains the agent to retry').toBe(true);
+    const payload = JSON.parse((result.content ?? [])[0]!.text) as {
+      success: boolean;
+      error: string;
+    };
+    expect(payload.success).toBe(false);
+    expect(payload.error).toContain('apply_layout');
+    expect(payload.error).toContain('DorkOS app');
+  });
 });

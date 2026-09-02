@@ -44,6 +44,11 @@ import {
   type RuntimeErrorCopy,
 } from '@dorkos/shared/runtime-error-classification';
 import { CODEX_UI_MCP_SERVER } from './codex-ui-mcp-server.js';
+import {
+  UI_COMMAND_REFUSED_CODE,
+  isUiActionRefusedOnCodex,
+  uiActionRefusalMessage,
+} from './ui-command-consent.js';
 import { recordCodexMedia, type CodexMediaState } from './media-capture.js';
 
 /**
@@ -511,6 +516,14 @@ function extractMcpResultText(item: McpToolCallItem): string | undefined {
  * return `[]` without recording a `startedToolIds` entry, so `mapMcpToolCall`'s
  * `ensureToolStart` correctly synthesizes the `tool_call_start`.
  *
+ * THIS IS THE ENFORCEMENT POINT for Codex's consent gate (DOR-639). The scoped
+ * MCP stub refuses a reaching action too, but it only tells the AGENT — this
+ * mapper reads the raw `item.arguments` recorded by Codex and never sees the
+ * stub's result, so a reaching action that got past the stub would still take
+ * effect here. An action {@link isUiActionRefusedOnCodex} rejects therefore
+ * produces a typed `error` event and no `ui_command`, the same shape the
+ * `ui_command_invalid` branch below uses.
+ *
  * @param item - The `control_ui` mcp_tool_call item from the `dorkos_ui` server
  * @param phase - Which item.* phase this item arrived under
  * @param ctx - Per-turn mapping context (forwarded to the failed-case fallback)
@@ -528,6 +541,17 @@ function mapControlUi(
       {
         type: 'error',
         data: { message: 'Invalid control_ui command', code: 'ui_command_invalid' },
+      },
+    ];
+  }
+  if (isUiActionRefusedOnCodex(parsed.data.action)) {
+    return [
+      {
+        type: 'error',
+        data: {
+          message: uiActionRefusalMessage(parsed.data.action),
+          code: UI_COMMAND_REFUSED_CODE,
+        },
       },
     ];
   }

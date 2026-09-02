@@ -568,11 +568,16 @@ describe('hand-registered MCP tools carry a permission tier', () => {
      * reaches a transport call. Two guards, because neither package can see the
      * other's end.
      *
-     * It also does not cover Codex. That runtime registers the same `control_ui`
-     * contract on its scoped `dorkos_ui` server and has no `canUseTool` of its own
-     * — its approvals are the Codex SDK's. This classification is available to it
-     * (that is why it lives in `@dorkos/shared`), and nothing consumes it there
-     * yet.
+     * It also does not cover Codex, which reaches the same classification by a
+     * different route. That runtime registers the same `control_ui` contract on
+     * its scoped `dorkos_ui` server and has no `canUseTool` of its own — its
+     * approvals are the Codex SDK's, which in exec mode cannot ask at all. So it
+     * cannot raise a card and instead REFUSES every `reaches-the-machine` action
+     * outright (DOR-639), in the scoped MCP handler and again in its event-mapper;
+     * `services/runtimes/codex/__tests__/` owns those checks. OpenCode needs
+     * neither gate: `control_ui` is in-session-only and its only DorkOS tool
+     * surface is the external `/mcp` server, which excludes it — see
+     * `external-mcp/__tests__/surface-parity.test.ts`.
      */
     it('classifies every branch of the control_ui multiplexer', () => {
       const options = (
