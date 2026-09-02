@@ -647,41 +647,160 @@ describe('the task form Runs-on controls', () => {
       expect(screen.queryByRole('alertdialog')).toBeNull();
     });
 
-    it('does not ask on an EDIT, where the agent cannot be saved at all', async () => {
+    describe('on an EDIT, where the agent cannot be saved at all', () => {
       // `UpdateTaskRequestSchema` has no target key and the form's edit branch
-      // sends none, so an edit's pick cannot change what runs. The door is for
-      // changes that happen; asking here would be asking somebody to agree to a
-      // claim that is not true.
-      const updateTask = vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-1' }));
-      const transport = transportWithAgentPerRuntime({ updateTask });
-      renderEditTask(
-        transport,
-        createMockSchedule({
-          id: 'sched-1',
-          agentId: CLAUDE_AGENT.id,
-          permissionMode: 'acceptEdits',
-          runtime: null,
-        })
-      );
+      // sends none, so a pick here could never change what runs. It only LOOKED
+      // like it could, and that appearance was not harmless: the dial
+      // re-captioned to the picked agent's runtime and then gated in THAT
+      // runtime's vocabulary, so a task running on Codex could be walked to the
+      // middle stop with no door and saved at a mode Codex never asks in
+      // (DOR-1694). The agent is drawn as text here rather than as a control,
+      // so there is no phantom to price against. What that row says while the
+      // agent roster is still loading, or after a read that failed, is its own
+      // set of claims — driven in `TaskAgentField.test.tsx`.
 
-      await pickAgent("Agent's runtime (Claude Code)", 'codex-bot');
+      /** An edit task targeting the Codex agent, sitting at `mode`. */
+      function renderCodexTaskAt(mode: PermissionMode, updateTask = vi.fn()) {
+        const transport = transportWithAgentPerRuntime({ updateTask });
+        renderEditTask(
+          transport,
+          createMockSchedule({
+            id: 'sched-1',
+            agentId: CODEX_AGENT.id,
+            permissionMode: mode,
+            runtime: null,
+          })
+        );
+        return updateTask;
+      }
 
-      expect(screen.queryByRole('alertdialog')).toBeNull();
-      expect(screen.getByText('codex-bot')).toBeInTheDocument();
+      it('shows the agent, says why it cannot change, and offers no control', async () => {
+        renderCodexTaskAt('plan');
 
-      fireEvent.click(screen.getByText('Save'));
-      await waitFor(() => expect(updateTask).toHaveBeenCalled());
-      const body = updateTask.mock.calls[0]?.[1] as Record<string, unknown>;
-      expect(body).not.toHaveProperty('target');
-      expect(body).not.toHaveProperty('agentId');
-      // The reason there is nothing to consent to, read off the SCHEMA and not
-      // off this form's own send. Should an update ever learn to carry a target,
-      // this goes red and the gate above has to grow an edit branch with it —
-      // which the assertions on the body alone would not, because they only
-      // restate what the form happens to do today.
-      const updatable = Object.keys(UpdateTaskRequestSchema.shape);
-      expect(updatable).not.toContain('target');
-      expect(updatable).not.toContain('agentId');
+        // Named, and as text: there is no control to disable, so there is no
+        // button to land on and no click to neutralise.
+        await waitFor(() =>
+          expect(screen.getByTestId('settled-agent')).toHaveTextContent('codex-bot')
+        );
+        expect(screen.queryByRole('button', { name: /codex-bot/ })).toBeNull();
+        expect(screen.getByTestId('agent-locked-note')).toHaveTextContent(
+          'You can’t change the agent after a task is created. To run this work as a different agent, create a new task.'
+        );
+
+        // And no other agent is reachable from this form at all.
+        expect(screen.queryByPlaceholderText('Search agents...')).toBeNull();
+        expect(screen.queryByText('claude-bot')).toBeNull();
+        expect(screen.queryByText('oc-bot')).toBeNull();
+      });
+
+      // The roster's three worlds, driven through the DIALOG rather than the
+      // row on its own — the row's own vocabulary is `TaskAgentField.test.tsx`,
+      // and what these two pin is the WIRING: `CreateTaskDialog` reads the
+      // agent-list query, and flattening it to `data?.agents ?? []` is what made
+      // an unanswered read indistinguishable from an answer of "none".
+
+      it('makes no claim about the agent while the roster is still in flight', async () => {
+        // Every cold open passes through this window. Read as an answer, the
+        // empty list makes a healthy task's agent look unregistered for as long
+        // as the request takes.
+        const transport = transportWithAgentPerRuntime({
+          listMeshAgentPaths: vi.fn().mockReturnValue(new Promise(() => {})),
+        });
+        renderEditTask(
+          transport,
+          createMockSchedule({ id: 'sched-1', agentId: CODEX_AGENT.id, runtime: null })
+        );
+
+        expect(await screen.findByTestId('settled-agent-loading')).toBeInTheDocument();
+        expect(screen.queryByTestId('settled-agent')).toBeNull();
+        expect(screen.queryByText(/isn’t registered/)).toBeNull();
+        // The sentence that would be wrong is absent, and the one that is right
+        // is still on screen: the agent cannot be changed either way.
+        expect(screen.getByTestId('agent-locked-note')).toBeInTheDocument();
+      });
+
+      it('blames the read, not the task, when the roster cannot be fetched', async () => {
+        // The permanent version of the same window. Silence would leave an empty
+        // row for good, so it says what failed — and says nothing about whether
+        // the agent still exists, because this machine cannot know.
+        const transport = transportWithAgentPerRuntime({
+          listMeshAgentPaths: vi.fn().mockRejectedValue(new Error('mesh unreachable')),
+        });
+        renderEditTask(
+          transport,
+          createMockSchedule({ id: 'sched-1', agentId: CODEX_AGENT.id, runtime: null })
+        );
+
+        await waitFor(() =>
+          expect(screen.getByTestId('settled-agent')).toHaveTextContent(
+            'DorkOS couldn’t read your list of agents, so it can’t show which one this is.'
+          )
+        );
+        expect(screen.queryByText(/isn’t registered/)).toBeNull();
+      });
+
+      it('prices the dial against the stored agent, and asks before the middle stop', async () => {
+        // The reviewer's repro, run to its end. There is no phantom pick to
+        // re-caption the dial, so the stops are Codex's own — and Codex reads
+        // the middle one as never-asking, which is exactly the door the phantom
+        // used to hide.
+        const updateTask = renderCodexTaskAt(
+          'plan',
+          vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-1' }))
+        );
+
+        await expectSelected('task-runtime-select', "Agent's runtime (Codex)");
+
+        // The repro's first move has nowhere to start: the agent is text, not a
+        // control, so the Claude Code agent cannot be reached and nothing
+        // downstream can be priced against it.
+        expect(screen.getByTestId('settled-agent')).toHaveTextContent('codex-bot');
+        expect(screen.queryByRole('button', { name: /codex-bot/ })).toBeNull();
+        expect(screen.queryByText('claude-bot')).toBeNull();
+
+        // Codex has no `plan` mode, so the dial keeps the stored one visible
+        // rather than lighting a stop nobody picked.
+        expect(screen.getByTestId('trust-dial-stranded')).toHaveTextContent('Plan');
+
+        await user.click(screen.getByRole('radio', { name: 'Act' }));
+
+        const door = await screen.findByRole('alertdialog');
+        expect(door).toHaveTextContent('Turn on Act');
+        expect(within(door).getByTestId('consent-asks-note')).toHaveTextContent(
+          /never pauses to ask/i
+        );
+
+        await confirmConsent('Turn on Act');
+        fireEvent.click(screen.getByText('Save'));
+        await waitFor(() =>
+          expect(updateTask).toHaveBeenCalledWith(
+            'sched-1',
+            expect.objectContaining({ permissionMode: 'acceptEdits' })
+          )
+        );
+      });
+
+      it('never sends an agent, and the schema is why', async () => {
+        const updateTask = renderCodexTaskAt(
+          'default',
+          vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-1' }))
+        );
+
+        await expectSelected('task-runtime-select', "Agent's runtime (Codex)");
+        fireEvent.click(screen.getByText('Save'));
+        await waitFor(() => expect(updateTask).toHaveBeenCalled());
+        const body = updateTask.mock.calls[0]?.[1] as Record<string, unknown>;
+        expect(body).not.toHaveProperty('target');
+        expect(body).not.toHaveProperty('agentId');
+        // The reason the picker is inert, read off the SCHEMA and not off this
+        // form's own send. Should an update ever learn to carry a target, this
+        // goes red and the picker has to become interactive again — with the
+        // consent gate the create path already has. The assertions on the body
+        // alone would not, because they only restate what the form does today.
+        const updatable = Object.keys(UpdateTaskRequestSchema.shape);
+        expect(updatable).not.toContain('target');
+        expect(updatable).not.toContain('agentId');
+      });
     });
 
     it('does not ask when the task pins its own runtime, whatever the agent runs on', async () => {

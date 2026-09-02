@@ -33,6 +33,7 @@ import {
   type ScheduleFormValues,
   type DialogStep,
 } from './TaskFormInner';
+import type { TaskAgentRoster } from './TaskAgentField';
 import { useAgentRuntime } from './use-task-execution';
 
 interface Props {
@@ -58,8 +59,18 @@ export function CreateTaskDialog({
   const deleteTask = useDeleteTask();
   const updateTask = useUpdateTask();
   const createTask = useCreateTask();
-  const { data: agentsData } = useMeshAgentPaths();
-  const agents = agentsData?.agents ?? [];
+  // The list AND whether it is an answer yet, kept together all the way down.
+  // Flattened to `agents` alone, an in-flight read and a failed one both look
+  // exactly like "this machine has no agents" — and the edit form then tells
+  // somebody their perfectly healthy task points at an agent that is gone
+  // (DOR-1694). `useAgentRuntimes` splits the same three worlds for the same
+  // reason.
+  const { data: agentsData, isError: agentsUnreadable } = useMeshAgentPaths();
+  const roster: TaskAgentRoster = {
+    agents: agentsData?.agents ?? [],
+    answered: agentsData !== undefined,
+    unreadable: agentsUnreadable,
+  };
 
   // Which runtime a NEW task will actually run on, so the operator's configured
   // stop is mapped through THAT runtime's own modes and the mode this dialog
@@ -79,7 +90,7 @@ export function CreateTaskDialog({
   // tolerance the server's resolver applies. Pinned to `claude-code`, this used
   // to hand a Codex agent's task a stop resolved in Claude Code's vocabulary.
   const { data: capabilityMap } = useRuntimeCapabilities();
-  const initialAgentRuntime = useAgentRuntime(agents, initialAgentId);
+  const initialAgentRuntime = useAgentRuntime(roster.agents, initialAgentId);
   // REGISTERED means an own property, not a truthy index. A manifest's `runtime`
   // is a free string, so `constructor` and `toString` are reachable values, and
   // a truthiness test answers them with an inherited member — `Object` is truthy,
@@ -296,7 +307,7 @@ export function CreateTaskDialog({
           <ScheduleForm
             key={formKey}
             defaultValues={formValues}
-            agents={agents}
+            roster={roster}
             editTask={editTask}
             onSubmitSuccess={() => onOpenChange(false)}
             onCancel={() => onOpenChange(false)}

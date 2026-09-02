@@ -11,7 +11,8 @@
  * - picking a runtime, which hands an unchanged mode id to a runtime that reads
  *   it as never-asking (DOR-1615);
  * - picking an agent, which moves the runtime the task inherits the same way
- *   (DOR-1637).
+ *   (DOR-1637) — on a NEW task only, because an edit cannot change its agent at
+ *   all and its picker is inert (DOR-1694).
  *
  * All three are answered here because a gate on one path is not a gate, and
  * three copies of one rule is how they come to disagree.

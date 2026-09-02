@@ -16,7 +16,7 @@ import { permissionModeLabel } from '@/layers/shared/lib';
 import type { EffortLevel, PermissionMode, Task } from '@dorkos/shared/types';
 import { ScheduleBuilder, isCronValid } from './TaskBuilder';
 import { TimezoneCombobox } from './TimezoneCombobox';
-import { AgentPicker } from './AgentPicker';
+import { TaskAgentField, type TaskAgentRoster } from './TaskAgentField';
 import { TaskExecutionFields } from './TaskExecutionFields';
 import { useAgentRuntimes, useTaskExecution } from './use-task-execution';
 import { usePostureConsent } from './use-posture-consent';
@@ -150,7 +150,13 @@ export function buildFormValues(
 
 export interface ScheduleFormProps {
   defaultValues: ScheduleFormValues;
-  agents: Array<{ id: string; name: string; projectPath: string; icon?: string; color?: string }>;
+  /**
+   * The agents this machine can file a task against, carrying whether that
+   * list is an answer yet — see {@link TaskAgentRoster}. The flags travel with
+   * the list rather than beside it so no caller can flatten the three worlds
+   * into one empty array.
+   */
+  roster: TaskAgentRoster;
   editTask?: Task;
   onSubmitSuccess: () => void;
   onCancel: () => void;
@@ -161,7 +167,7 @@ export interface ScheduleFormProps {
 /** Inner form component. Remounted via `key` when defaultValues change. */
 export function ScheduleForm({
   defaultValues,
-  agents,
+  roster,
   editTask,
   onSubmitSuccess,
   onCancel,
@@ -234,7 +240,7 @@ export function ScheduleForm({
   // Every picker agent's own runtime, off the manifest that owns it (ADR-0043).
   // The whole list rather than the selected one, because the agent picker below
   // has to know what a candidate agent would run on before it commits the pick.
-  const agentRuntimes = useAgentRuntimes(agents);
+  const agentRuntimes = useAgentRuntimes(roster.agents);
   const agentRuntime = agentRuntimes.runtimeFor(agentId);
 
   const execution = useTaskExecution({
@@ -286,50 +292,12 @@ export function ScheduleForm({
       >
         <div className="space-y-5 px-4 py-5">
           {/* ── Agent (target) ── */}
-          <div className="space-y-2">
-            <Label>Agent</Label>
-            <form.AppField name="agentId">
-              {(field) => (
-                <AgentPicker
-                  agents={agents}
-                  value={field.state.value || undefined}
-                  // Picking an agent moves the runtime this task INHERITS, and a
-                  // mode id means whatever the runtime running it says it means
-                  // — so this is the runtime picker's widening reached by a
-                  // different road (DOR-1637). Same door, same rule, and the
-                  // candidate's runtime is resolved BEFORE the pick commits.
-                  //
-                  // On a CREATE only, because only a create writes an agent:
-                  // `UpdateTaskRequestSchema` carries no target at all and the
-                  // edit branch of `onSubmit` above sends none, so an edit's
-                  // pick cannot change what runs. A door in front of a change
-                  // that will not happen asks somebody to agree to a claim that
-                  // is not true.
-                  onValueChange={(id) => {
-                    const nextAgentId = id ?? '';
-                    if (editTask) {
-                      field.handleChange(nextAgentId);
-                      return;
-                    }
-                    agentPick.pick(nextAgentId);
-                  }}
-                />
-              )}
-            </form.AppField>
-            {/* Said out loud, because the alternative is a click that appears
-                to do nothing. The agent is unchanged in both cases; what
-                differs is whether waiting will fix it, so each says which. */}
-            {(agentPick.isWaiting || agentPick.wasDropped) && (
-              <p
-                data-testid="agent-pick-waiting"
-                className="text-muted-foreground text-xs leading-relaxed"
-              >
-                {agentPick.wasDropped
-                  ? 'DorkOS couldn’t read what that agent runs on, so the agent hasn’t been changed. Choose it again to retry.'
-                  : 'Checking what that agent runs on…'}
-              </p>
-            )}
-          </div>
+          <TaskAgentField
+            roster={roster}
+            value={agentId}
+            locked={editTask !== undefined}
+            pick={agentPick}
+          />
 
           {/* ── Essential fields ── */}
           <form.AppField name="name">
