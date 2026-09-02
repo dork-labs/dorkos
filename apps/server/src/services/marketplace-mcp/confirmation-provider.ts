@@ -41,6 +41,11 @@ import {
   ApprovalInputNotBindableError,
   type ApprovalService,
 } from '../core/approvals/index.js';
+import {
+  describeDisclosedEffects,
+  disclosedEffectsOf,
+  type DisclosedEffects,
+} from '../marketplace/disclosed-effects.js';
 import { logger } from '../../lib/logger.js';
 
 /** The kind of mutation a confirmation request is gating. */
@@ -52,20 +57,24 @@ export type ConfirmationOperation = 'install' | 'uninstall' | 'create-package';
  * - `approved` — the user consented; the caller may proceed.
  * - `declined` — the user refused; `reason` is an optional human-readable note.
  * - `pending` — the request is awaiting out-of-band approval; the caller must
- *   re-resolve the returned `token` later.
+ *   re-resolve the returned `token` later. `reason` is set only when this pending
+ *   result REPLACED an approval that no longer covered the action — a stale token
+ *   the provider re-asked for rather than honoring — so the caller can say why a
+ *   second card appeared.
  */
 export type ConfirmationResult =
   | { status: 'approved' }
   | { status: 'declined'; reason?: string }
-  | { status: 'pending'; token: string };
+  | { status: 'pending'; token: string; reason?: string };
 
 /**
  * Payload for {@link ConfirmationProvider.requestInstallConfirmation}.
  *
- * Every field except `preview` is part of what the user actually agreed to, so
- * every field except `preview` is hashed into the approval's binding (see
- * {@link bindingOf}). Adding a field that reaches the mutation without adding it
- * here would let a retry change the effect the user approved.
+ * Every field here is part of what the user actually agreed to, so every field
+ * here is hashed into the approval's binding (see {@link bindingOf}) — `preview`
+ * through the executable subset {@link disclosedEffectsOf} names, the rest
+ * verbatim. Adding a field that reaches the mutation without adding it here would
+ * let a retry change the effect the user approved.
  */
 export interface ConfirmationRequest {
   packageName: string;
@@ -96,6 +105,16 @@ export interface ConfirmationRequest {
    * about itself, not what happens to the user's machine.
    */
   packageType?: string;
+  /**
+   * Install only: everything the install would do, as the person was shown it.
+   *
+   * The EXECUTABLE part of it is bound into the approval — every hook command
+   * string and every scheduled job's cron and permission mode (DOR-647). Those are
+   * the facts the headline disclosure is made of since DOR-635, so a re-resolve
+   * that changes them changes what the yes was about. The file lists, extensions,
+   * secrets, dependencies and conflicts stay out; see {@link disclosedEffectsOf}
+   * for the whole of that line and why it falls where it does.
+   */
   preview?: PermissionPreview;
   /**
    * Opaque label for the agent that asked, shown on the approval card so an
@@ -121,8 +140,22 @@ export interface MarketplaceConfirmationContext {
    * which spends an approval bound to the same arguments this handler is about to
    * act on. The handler must not ask again: one action, one card.
    *
-   * Only ever set for capabilities the tier gate actually gates (`destructive`),
-   * and only after {@link ApprovalService.consume} returned `granted`.
+   * ## What it is actually set for, which is more than the line above implies
+   *
+   * `callerContext` (`marketplace-capabilities.ts`) sets this on `context.approval`
+   * OR `context.trusted`. The first is the tier gate's spent approval and only
+   * reaches `destructive` capabilities. The second is a caller that proved it may
+   * DECIDE approvals — and it is not tier-scoped, so a trusted caller installing a
+   * package (`marketplace.install` is tier `act`, gated by nothing upstream) skips
+   * this provider entirely and no card is ever shown.
+   *
+   * That is the standing posture, not a regression, and it is deliberate as far as
+   * it goes: a caller who can grant its own approval gains nothing from being asked.
+   * It is written down here because the previous wording said "only ever set for
+   * `destructive`", which is false, and a reader trusting it would conclude an
+   * install always shows a card. Whether `trusted` should short-circuit an `act`
+   * capability's own confirmation is a separate question from DOR-647's binding,
+   * and is left to a follow-up rather than changed under it.
    */
   preApproved?: boolean;
 }
@@ -148,13 +181,15 @@ export interface ConfirmationProvider {
    * client re-calls `marketplace_install` after the user approved out-of-band.
    *
    * The caller must restate what it is about to do: an approval is bound to one
-   * exact action, so a token granted for installing A is refused when presented
-   * for installing B — or for the same package with a different marketplace,
-   * project, or purge flag.
+   * exact action, so a token granted for installing A does not license installing
+   * B — nor the same package with a different marketplace, project, or purge
+   * flag, nor a package that now declares different shell commands or scheduled
+   * jobs than the preview the person read (DOR-647).
    *
    * @param token - The token previously returned via `pending`.
    * @param req - The operation the caller is about to run. Must describe the same
-   *   action the token was issued for, field for field.
+   *   action the token was issued for, field for field, INCLUDING a freshly built
+   *   preview — the whole point is that a stale one cannot pass unnoticed.
    */
   resolveToken(token: string, req: ConfirmationRequest): Promise<ConfirmationResult>;
 }
@@ -167,6 +202,20 @@ const CAPABILITY_IDS: Record<ConfirmationOperation, string> = {
 };
 
 /**
+ * What one confirmation request binds to: the approval-service binding, plus the
+ * executable content that went into it, kept alongside so a caller can say what a
+ * package declares now without recomputing it.
+ */
+interface MarketplaceBinding {
+  /** Capability the approval is scoped to. */
+  capabilityId: string;
+  /** Canonical hash of the action AND its disclosed executable content. */
+  inputHash: string;
+  /** What the preview disclosed, or `null` when the operation previews nothing. */
+  disclosed: DisclosedEffects | null;
+}
+
+/**
  * The action a marketplace confirmation is bound to.
  *
  * Every value that reaches the mutation after the gate is hashed here, because
@@ -175,14 +224,20 @@ const CAPABILITY_IDS: Record<ConfirmationOperation, string> = {
  * sharpest case — approving a reversible uninstall must never license one that
  * deletes `.dork/data/` and `.dork/secrets.json`.
  *
- * Deliberately excludes the permission preview: the preview is derived (a fresh
- * resolve can legitimately produce different file lists) while these fields are
- * what the user actually agreed to.
+ * It also binds the EXECUTABLE part of the permission preview — the hook command
+ * strings and the scheduled jobs, via {@link disclosedEffectsOf} — because an
+ * approval that attests to something the person never saw is a defect in the
+ * approval's own contract (DOR-647). The rest of the preview stays out, and the
+ * original reasoning survives intact for the part it was actually about: a fresh
+ * resolve can legitimately produce different file lists, and re-asking over one
+ * would teach a person to click past the card that matters.
  *
  * @param req - The confirmation request.
- * @returns The canonical subset an approval binds to.
+ * @returns The canonical subset an approval binds to, and what the preview
+ *   disclosed, so a caller can name what a stale approval no longer covers.
  */
-function bindingOf(req: ConfirmationRequest): { capabilityId: string; inputHash: string } {
+function bindingOf(req: ConfirmationRequest): MarketplaceBinding {
+  const disclosed = disclosedEffectsOf(req.preview);
   return {
     capabilityId: CAPABILITY_IDS[req.operation],
     inputHash: hashApprovalInput({
@@ -194,7 +249,11 @@ function bindingOf(req: ConfirmationRequest): { capabilityId: string; inputHash:
       purge: req.purge ?? false,
       projectPath: req.projectPath ?? null,
       packageType: req.packageType ?? null,
+      // Absence is bound as absence here too: an operation that previews nothing
+      // must not hash the same as one whose package declares nothing.
+      disclosed,
     }),
+    disclosed,
   };
 }
 
@@ -265,6 +324,39 @@ function summaryOf(req: ConfirmationRequest): string {
   }
 }
 
+/** What each operation is called in a sentence a person reads. */
+const OPERATION_NOUNS: Record<ConfirmationOperation, string> = {
+  install: 'install',
+  uninstall: 'uninstall',
+  'create-package': 'package creation',
+};
+
+/**
+ * Say why a token no longer covers what the caller is about to do, and what the
+ * fresh card in its place is for.
+ *
+ * Written for whoever reads it next — the agent that retried, and the person it
+ * relays to — so it names the two things that could have moved, states what the
+ * package declares NOW, and says out loud that nothing happened. It cannot say
+ * which of the two moved: the approval stores only a hash, so the disclosure a
+ * person read is not recoverable at retry time, and guessing would be worse than
+ * naming both.
+ *
+ * @param req - The operation the caller is about to run.
+ * @param binding - Its binding, carrying what the current preview disclosed.
+ * @returns One plain sentence pair explaining the re-ask.
+ */
+function staleApprovalReason(req: ConfirmationRequest, binding: MarketplaceBinding): string {
+  const declares = binding.disclosed
+    ? ` This one would install ${describeDisclosedEffects(binding.disclosed)}.`
+    : '';
+  return (
+    `That approval does not cover this ${OPERATION_NOUNS[req.operation]} — either it was granted ` +
+    `for a different action, or what the package declares has changed since it was read.` +
+    `${declares} DorkOS has asked again; nothing on this machine has changed.`
+  );
+}
+
 /**
  * Confirmation provider that issues single-use, action-scoped tokens for
  * external MCP clients, backed by {@link ApprovalService}.
@@ -304,34 +396,55 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
    * @param req - The confirmation request payload.
    */
   async requestInstallConfirmation(req: ConfirmationRequest): Promise<ConfirmationResult> {
-    let binding: { capabilityId: string; inputHash: string };
+    let binding: MarketplaceBinding;
     try {
       binding = bindingOf(req);
     } catch (err) {
       if (err instanceof ApprovalInputNotBindableError) return unbindableRefusal(req, err);
       throw err;
     }
-    const { capabilityId, inputHash } = binding;
+    return { status: 'pending', token: this.ask(req, binding) };
+  }
+
+  /**
+   * Record one pending approval and return the token the agent retries with.
+   *
+   * Shared by the first ask and the re-ask a stale token triggers, so both put the
+   * same card in front of the operator.
+   *
+   * @param req - The confirmation request being asked about.
+   * @param binding - Its already-computed binding.
+   * @returns The one-time token for the retry.
+   */
+  private ask(req: ConfirmationRequest, binding: MarketplaceBinding): string {
     const ticket = this.approvals.request({
-      capabilityId,
-      inputHash,
+      capabilityId: binding.capabilityId,
+      inputHash: binding.inputHash,
       summary: summaryOf(req),
       ...(req.requestedBy ? { requestedBy: req.requestedBy } : {}),
     });
-    return { status: 'pending', token: ticket.token };
+    return ticket.token;
   }
 
   /**
    * Resolve a previously issued token against the operation the caller is about
    * to run. A decided token is spent by this call, so every later attempt reports
-   * `Unknown or expired token`; a token issued for a different package or
-   * operation is refused without being spent.
+   * `Unknown or expired token`.
+   *
+   * A token that does NOT cover this action — a different package, a different
+   * scope, or a package that now declares different commands or scheduled jobs
+   * than the preview the person read — is left unspent for what it WAS granted
+   * for, and this call asks again for what is in front of it now (DOR-647). That
+   * is the same answer the capability tier gate gives a mismatched token
+   * (`wrong_action` in `tier-enforcement.ts`), and it is the whole point of
+   * binding the disclosure: proceeding would run a command nobody read, and a bare
+   * refusal would leave the operator with nothing to decide.
    *
    * @param token - The token previously returned via `pending`.
    * @param req - The operation the caller is about to run.
    */
   async resolveToken(token: string, req: ConfirmationRequest): Promise<ConfirmationResult> {
-    let binding: { capabilityId: string; inputHash: string };
+    let binding: MarketplaceBinding;
     try {
       binding = bindingOf(req);
     } catch (err) {
@@ -350,8 +463,9 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
         return { status: 'declined', reason: 'Token expired' };
       case 'mismatched':
         return {
-          status: 'declined',
-          reason: 'This approval was granted for a different action',
+          status: 'pending',
+          token: this.ask(req, binding),
+          reason: staleApprovalReason(req, binding),
         };
       case 'consumed':
       case 'unknown':

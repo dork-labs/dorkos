@@ -155,8 +155,9 @@ export function createUninstallHandler(deps: MarketplaceMcpDeps) {
       return jsonContent({
         status: 'requires_confirmation',
         confirmationToken: confirmation.token,
-        message:
-          'User must confirm uninstall before proceeding. Re-call this tool with the confirmationToken once the user has approved.',
+        // A `reason` means this card replaced an approval that no longer covered
+        // the uninstall; see the same branch in `tool-install.ts`.
+        message: `${confirmation.reason ? `${confirmation.reason} ` : ''}User must confirm uninstall before proceeding. Re-call this tool with the confirmationToken once the user has approved.`,
       });
     }
     if (confirmation.status === 'declined') {
