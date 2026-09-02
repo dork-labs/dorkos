@@ -48,6 +48,7 @@ import {
 } from '../tier-enforcement.js';
 import { ApprovalGrantService, ApprovalService } from '../../approvals/index.js';
 import { eventFanOut } from '../../event-fan-out.js';
+import { codeOnly } from '../../../../../../../scripts/lib/code-only.mjs';
 
 /** The destructive capability every case in this file reaches for. */
 const DESTROY = defineCapability({
@@ -145,11 +146,15 @@ describe('the gate does not know what a permission mode is', () => {
       for (const file of await productionSources(path.join(SERVER_SRC, dir))) {
         // Prose is allowed and is in fact wanted: several modules here explain WHY
         // permission mode stays out. Only code counts.
-        const code = (await readFile(file, 'utf-8'))
-          .replace(/\/\*[\s\S]*?\*\//g, '')
-          .split('\n')
-          .filter((line) => !line.trim().startsWith('//'))
-          .join('\n');
+        //
+        // Told apart by the repo's shared stripper, which lexes with TypeScript's
+        // own parser (`scripts/lib/code-only.mjs`). This used to be a block-comment
+        // regex followed by a line filter, which is one of the three orders DOR-642
+        // proved cannot work: a `/*` inside a line comment or a string opens a fake
+        // span, and everything it swallows stops being scanned. That left no live
+        // hole in these two directories, but a guard whose blind spot depends on
+        // which route glob somebody writes next is not a guard.
+        const code = codeOnly(await readFile(file, 'utf-8'), file);
         if (code.includes('permissionMode')) {
           offenders.push(path.relative(SERVER_SRC, file));
         }

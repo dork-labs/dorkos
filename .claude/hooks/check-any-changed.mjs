@@ -1,7 +1,12 @@
 #!/usr/bin/env node
 /**
  * Check Any Changed Hook
- * Detects forbidden `any` type usage in TypeScript files
+ * Detects forbidden `any` type usage in TypeScript files.
+ *
+ * Only CODE counts — an `any` named in prose or inside a string is not a type
+ * annotation. Comments and literals are blanked by the repo's shared stripper
+ * (`scripts/lib/code-only.mjs`), which lexes with TypeScript's own parser and
+ * preserves positions. Fixtures: `scripts/__tests__/code-only.test.ts`.
  */
 
 import { readFileSync, existsSync } from 'fs';
@@ -24,29 +29,13 @@ async function readStdin() {
   });
 }
 
-// Strip string literals to avoid false positives
-function stripStrings(content) {
-  // Replace template literals
-  content = content.replace(/`(?:[^`\\]|\\.)*`/gs, '""');
-  // Replace double-quoted strings
-  content = content.replace(/"(?:[^"\\]|\\.)*"/g, '""');
-  // Replace single-quoted strings
-  content = content.replace(/'(?:[^'\\]|\\.)*'/g, "''");
-  return content;
-}
-
-// Strip comments to avoid false positives
-function stripComments(content) {
-  // Remove single-line comments
-  content = content.replace(/\/\/.*$/gm, '');
-  // Remove multi-line comments
-  content = content.replace(/\/\*[\s\S]*?\*\//g, '');
-  return content;
-}
-
 // Find any violations in content
 function findAnyViolations(content, originalContent) {
   const violations = [];
+  // Line `i` of the stripped content is line `i` of the file: the stripper
+  // blanks in place rather than deleting, so the two stay index-aligned and the
+  // reported line number is the real one. Deleting a multi-line block comment
+  // instead pulled every line below it up and misreported (DOR-642).
   const lines = originalContent.split('\n');
   const strippedLines = content.split('\n');
 
@@ -114,9 +103,19 @@ async function main() {
     // Read file content
     const originalContent = readFileSync(absolutePath, 'utf8');
 
-    // Strip strings and comments for analysis
-    let strippedContent = stripStrings(originalContent);
-    strippedContent = stripComments(strippedContent);
+    // Prose does not declare types, so comments and string literals are blanked
+    // before the patterns below run. This used to be a pair of regexes here —
+    // strings, then comments — and an apostrophe in a TSDoc ("the API's
+    // cookie/header") opened a fake string literal that blanked the code below
+    // it, hiding real `any` from the check (DOR-642). The shared stripper lexes
+    // with TypeScript's own parser instead, and preserves positions, so the line
+    // numbers reported below still point at the real lines.
+    //
+    // Imported dynamically so a checkout with no `node_modules` (a fresh
+    // worktree, before `pnpm install`) reaches the catch below and warns rather
+    // than crashing with a module-resolution stack trace.
+    const { codeOnly } = await import('../../scripts/lib/code-only.mjs');
+    const strippedContent = codeOnly(originalContent, absolutePath);
 
     // Find violations
     const violations = findAnyViolations(strippedContent, originalContent);
