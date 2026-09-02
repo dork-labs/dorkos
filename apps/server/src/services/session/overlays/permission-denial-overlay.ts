@@ -40,11 +40,35 @@
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { HistoryMessage, MessagePart } from '@dorkos/shared/types';
 import { logger } from '../../../lib/logger.js';
-import { getSessionEventStore } from '../session-state-projector.js';
+import { getSessionEventStore, peekProjector } from '../session-state-projector.js';
 import type { RecordedPermissionDenial } from '../session-event-store.js';
 
 /** The `permission_denied` session-event member. */
 type PermissionDeniedSessionEvent = Extract<SessionEvent, { type: 'permission_denied' }>;
+
+/**
+ * The `seq` of every denial the OPEN turn is still carrying live.
+ *
+ * A denial is written to disk the instant it is ingested, not at `turn_end`
+ * (`EAGERLY_RECORDED_EVENT_TYPES`) — because a turn parked on an ask may never
+ * reach one, and a refusal in that turn would be lost with it. The cost of that
+ * eagerness is a window where one denial exists in BOTH places at once: on the
+ * live stream as an `inProgressTurn` event the client is already folding into
+ * the streaming bubble, and as a durable row this overlay would splice into
+ * history beneath it. Same denial, drawn twice, until the turn ended.
+ *
+ * So the open turn is read here to SUBTRACT, never to add. `seq` is the right
+ * key and the tool-call id is not: one id can legitimately be refused twice
+ * across a resume-and-replay, and matching on it would drop a real second
+ * denial as though it were the first one echoing.
+ */
+function openTurnDenialSeqs(sessionId: string): Set<number> {
+  const seqs = new Set<number>();
+  for (const event of peekProjector(sessionId)?.peekInProgressTurn() ?? []) {
+    if (event.type === 'permission_denied') seqs.add(event.seq);
+  }
+  return seqs;
+}
 
 /** Every tool-call id the assembled history already accounts for. */
 function toolCallIdsIn(messages: HistoryMessage[]): Set<string> {
@@ -139,10 +163,9 @@ export function applyPermissionDenials(
  * database must cost the annotations and nothing else — never a person's
  * conversation.
  *
- * The OPEN turn is deliberately not read. Its denials are already on the live
- * stream as `inProgressTurn` events, which the client folds into the streaming
- * bubble; reading them here as well would draw each one twice until the turn
- * ended.
+ * The OPEN turn is read to SUBTRACT ({@link openTurnDenialSeqs}): a denial the
+ * live stream is still carrying is already on screen, so its eagerly-written row
+ * is skipped until the turn closes and the bubble is rebuilt from history.
  *
  * @param sessionId - The canonical id the denials were recorded under.
  * @param messages - History as the runtime assembled it.
@@ -153,7 +176,9 @@ export function overlayPermissionDenials(
 ): HistoryMessage[] {
   let denials: RecordedPermissionDenial[];
   try {
-    denials = getSessionEventStore()?.readPermissionDenials(sessionId) ?? [];
+    const recorded = getSessionEventStore()?.readPermissionDenials(sessionId) ?? [];
+    const live = openTurnDenialSeqs(sessionId);
+    denials = live.size === 0 ? recorded : recorded.filter((d) => !live.has(d.event.seq));
   } catch (err) {
     logger.warn('[permission-denials] could not read recorded denials — history unannotated', {
       sessionId,
