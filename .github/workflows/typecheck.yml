@@ -1,8 +1,9 @@
 name: typecheck
 
-# Type-checks every package that declares a `typecheck` script, and checks
-# Prettier formatting across the repo, on every PR and on push to main. See the
-# KNOWN GAPS note below for what this does not cover.
+# Type-checks every package that declares a `typecheck` script, on every PR
+# and on push to main. See the KNOWN GAPS note below for what this does not
+# cover. (The formatting gate that used to ride this workflow moved to
+# lint.yml in the DOR-627 follow-up, 2026-09-02 — see that file's header.)
 #
 # Before this workflow existed, NOTHING in CI ran `pnpm typecheck`. Enforcement
 # was the lefthook pre-commit hook plus a developer choosing to run
@@ -65,31 +66,6 @@ name: typecheck
 # that combined tree, so the interaction is checked before anything lands rather
 # than discovered on `main` afterwards.
 #
-# ALSO RUNS THE FORMATTING GATE (DOR-485). AGENTS.md Hard Rule 5 says "Prettier
-# + Tailwind class sorting are automatic — never hand-sort", which reads as a
-# guarantee. It was not one: formatting was enforced only by the lefthook
-# pre-commit hook, so `git commit --no-verify`, a hook failure, a fresh clone
-# that never ran `pnpm install`, or an agent that bypasses the hook landed
-# unformatted code silently. Nothing in `.github/workflows/` mentioned prettier.
-# PR #463 merged a test file that was prettier-unformatted, seven lines over 100
-# columns, and #515 merged a stray double blank line; nothing objected to either.
-#
-# It lives in THIS job rather than a workflow of its own because `typecheck` is
-# already a REQUIRED status check on `main`. A new `format` workflow would go red
-# without blocking the merge until someone added it to branch protection — and a
-# gate on a non-required check is not a gate, which is the same "looks enforced,
-# isn't" failure this exists to fix. This job also already installs the
-# dependencies prettier needs.
-#
-# DOR-627 landed the `lint` workflow this step was once earmarked to move into,
-# and DELIBERATELY LEFT THIS STEP HERE. The move is gated on `lint` joining the
-# required contexts on `main`, which is a branch-protection setting no PR can
-# make; at the time of writing `lint` is not among them. Moving the formatting
-# gate onto `lint` before that happens would take a gate that blocks merges
-# today and park it on one that does not — reintroducing exactly the hole
-# DOR-485 closed, for as long as nobody gets around to the settings change.
-# Move it once `lint` is required, and not before. (Read the live list from the
-# ruleset rather than trusting any enumeration in a comment; it changes.)
 on:
   push:
     branches: [main]
@@ -117,8 +93,7 @@ jobs:
   typecheck:
     runs-on: ubuntu-latest
     # A full cold typecheck (no turbo cache) is ~35-40s on a warm developer
-    # machine, and `prettier --check .` over ~7,300 files measured 2m17s there;
-    # generous headroom for a colder/slower CI runner.
+    # machine; generous headroom for a colder/slower CI runner.
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -132,22 +107,12 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # `pnpm format:check` (`prettier --check .`), never `npx prettier`: npx
-      # resolves a different binary than pnpm does in this workspace, and only
-      # `pnpm exec` matches what the lefthook pre-commit hook runs. A backstop
-      # that resolves differently from the hook it backs up can pass where the
-      # hook would reformat, which is the same class of gap as having no gate.
-      # Runs first so the cheap-to-fix failure is the first thing in the log:
-      # `pnpm format` fixes every one of them.
-      - name: Formatting gate — prettier --check (DOR-485)
-        run: pnpm format:check
-
       # Retired vocabulary in user-facing prose (DOR-1517). It rides THIS job
-      # for the same reason the formatting gate does: `typecheck` is already a
-      # required status check and already reports on `merge_group`, so a new
-      # workflow would go red without blocking a merge until someone amended
-      # branch protection — and a gate on a non-required check is not a gate.
-      # Needs no node_modules; it is bash and grep over prose files.
+      # because `typecheck` is already a required status check and already
+      # reports on `merge_group`, so a new workflow would go red without
+      # blocking a merge until someone amended branch protection — and a gate
+      # on a non-required check is not a gate. Needs no node_modules; it is
+      # bash and grep over prose files.
       #
       # This is the second half of a deliberate split. Render-path strings in
       # app source are judged by scripts/check-vocab-gate.ts, which parses
@@ -169,8 +134,9 @@ jobs:
         if: ${{ !cancelled() }}
         run: bash scripts/check-nul-bytes.sh
 
-      # `!cancelled()` so a formatting failure still reports every type error in
-      # the same run, for the same reason the step below passes `--continue`.
+      # `!cancelled()` so an earlier gate's failure still reports every type
+      # error in the same run, for the same reason the step below passes
+      # `--continue`.
       - name: Typecheck every package that declares a typecheck script
         if: ${{ !cancelled() }}
         run: pnpm exec turbo typecheck --continue
