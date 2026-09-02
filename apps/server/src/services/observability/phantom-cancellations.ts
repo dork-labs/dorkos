@@ -10,17 +10,27 @@
  * carries its own wording) and not an operator stop (which goes through
  * `interruptQuery` and stamps the session). The detection itself lives in
  * `runtimes/claude-code/messaging/phantom-cancellation.ts`; this module is only
- * the counting, and it exists because of what the persistent-session programme
- * is about to claim.
+ * the counting. It was built to settle a claim the persistent-session programme
+ * was making, and it did.
  *
- * **Persistence is HYPOTHESISED to remove this class entirely** — with a
- * persistent stream DorkOS stops racing the CLI's internal queue. That
- * hypothesis is unverified, and spec `persistent-session-runtime` task 5.1 is
- * the measurement that settles it. A rate needs a denominator and a
- * before/after, so {@link PhantomCancellationStats.byPath} splits the count by
- * which path produced it: `turn` is the resume-per-message path (the flag off),
- * `pump` is the persistent one (the flag on). Two numbers off one process, from
- * the same workload, are the whole measurement.
+ * **The measurement is done, and it did NOT confirm the hypothesis** (DOR-1291).
+ * Persistence was supposed to remove this class entirely — with a persistent
+ * stream DorkOS stops racing the CLI's internal queue. Spec
+ * `persistent-session-runtime` task 5.1 ran it (research
+ * `20260817_persistent-session-flag-measurement.md`) and found **zero on both
+ * arms**, and the wider evidence since agrees: zero firings across 30 log files,
+ * both account homes and both legs of the flag since this tripwire shipped
+ * (PR #1066). A control arm that improved as much as the treatment arm does not
+ * confirm the treatment — the likelier cause is DOR-1087/1149/1238, which are
+ * live on both legs. The 2026-09-02 note in ADR 260812-134510 records that
+ * weaker, true claim.
+ *
+ * So this is now a standing tripwire, not pending scaffolding: a class that went
+ * quiet for reasons nobody fully explained is exactly the kind worth counting
+ * forever. {@link PhantomCancellationStats.byPath} keeps splitting by which path
+ * produced a hit — `turn` is the resume-per-message path (Warm agents off, plus
+ * every cold start and recovery), `pump` is the persistent one — because if this
+ * class ever comes back, which path it came back on is the first question.
  *
  * Deliberately NOT persisted, for the same reason as
  * {@link module:services/observability/dispatch-buffers}: the NDJSON log is the
@@ -38,7 +48,9 @@ import { logger } from '../../lib/logger.js';
  * - `turn` — `messaging/message-sender.ts`, one SDK query per message. The path
  *   the 2026-08-09 incident was observed on.
  * - `pump` — `sessions/pump-turn-stream.ts`, one turn window on a persistent
- *   process. The path whose phantom count is expected to be zero.
+ *   process. The path persistence was supposed to make phantom-free — and it is,
+ *   but so is `turn`, which is why the split is still worth keeping and why
+ *   persistence was never credited for it (DOR-1291).
  */
 export type PhantomPath = 'turn' | 'pump';
 
@@ -189,8 +201,9 @@ export function recordPhantomCancellation(report: PhantomCancellationReport): vo
 /**
  * Everything the tripwire has counted since this process started.
  *
- * Read by `GET /api/debug/phantom-cancellations`, which is how task 5.1 samples
- * it between the flag-off and flag-on legs of the measurement.
+ * Read by `GET /api/debug/phantom-cancellations` — how task 5.1 sampled the
+ * flag-off and flag-on legs of its measurement, and how anyone checks the
+ * tripwire now that the measurement is behind us.
  *
  * @param limit - How many recent batches to include. Clamped to what the ring holds.
  */
