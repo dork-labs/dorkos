@@ -193,6 +193,32 @@ const SITE_SPECS = ['**/marketplace.spec.ts', '**/features.spec.ts'];
 /* eslint-enable no-restricted-syntax */
 
 /**
+ * Recreate a leg's throwaway `DORK_HOME` empty and readable only by the person
+ * running the suite.
+ *
+ * **The wipe** is why the directory is safe to reuse: a server that keeps
+ * yesterday's rows hands the specs that count them "expected 1, received 2" a
+ * run later, and a home that survives at all is a home some future default could
+ * point back at the operator's.
+ *
+ * **The mode is the other half, and it is `0700` rather than whatever `umask`
+ * says** (DOR-1551). `/tmp` is world-readable and world-traversable, and this
+ * directory holds a SQLite index of everything the suite indexed plus the
+ * instance's own `mcp-local-token` and `better-auth-secret`. At the default
+ * `umask 022` it was created `0755`, so every account on the machine could read
+ * all of it. Creating it here rather than leaving it to the server means the
+ * mode is set before the first byte is written, and `-m` states it outright
+ * instead of inheriting whatever `umask` the run happened to start with.
+ *
+ * @param dorkHome - The leg's data directory. Always one of the fixed
+ *   `/tmp/dorkos-*-<port>` paths above, whose port component is digit-checked
+ *   by {@link port}.
+ */
+function resetThrowawayHome(dorkHome: string): string {
+  return `rm -rf ${dorkHome} && mkdir -m 700 -p ${dorkHome}`;
+}
+
+/**
  * The command that boots an Express API leg, for every leg that needs one.
  *
  * Deliberately NOT `turbo dev` (`tsx watch`). On boot the server compiles each
@@ -407,6 +433,15 @@ export default defineConfig({
           // deciding where this leg listens and where it keeps its data.
           DORKOS_PORT: PORT,
           DORK_HOME: COCKPIT_DORK_HOME,
+          // Index this leg's own throwaway data directory and NOTHING ELSE
+          // (DOR-1551). `DORK_HOME` isolates what DorkOS owns; it does not move
+          // `~/.claude`, `$CODEX_HOME` or OpenCode's store, so without this the
+          // message-search sweep full-text-copied the operator's real
+          // transcripts — ~9,250 Claude Code messages, measured 2026-08-25 —
+          // into the directory below on EVERY run of this suite. Nothing about
+          // the product under test needs somebody's history in the index; the
+          // rooms the specs seed are indexed exactly as before.
+          DORKOS_SEARCH_NO_EXTERNAL_HISTORY: 'true',
           // The SERVER reads VITE_PORT too, and not for listening: in dev its
           // trusted-origin list is localhost/127.0.0.1 on the API port AND on
           // the Vite port (`getStaticLocalOrigins`), and the same value picks
@@ -417,11 +452,8 @@ export default defineConfig({
           // of the refused calls. The mock leg passes it for the same reason.
           VITE_PORT,
         },
-        // Wiped before every boot, for the reason the mock leg is: a server that
-        // keeps yesterday's rows hands the specs that count them "expected 1,
-        // received 2" a run later, and a home that survives at all is a home some
-        // future default could point back at the operator's.
-        `rm -rf ${COCKPIT_DORK_HOME}`
+        // Wiped and recreated `0700` before every boot — see resetThrowawayHome.
+        resetThrowawayHome(COCKPIT_DORK_HOME)
       ),
       url: `http://localhost:${PORT}/api/health`,
       name: 'Express API',
@@ -483,8 +515,12 @@ export default defineConfig({
           VITE_PORT: MOCK_VITE_PORT,
           DORK_HOME: MOCK_DORK_HOME,
           DORKOS_RELAY_ENABLED: 'true',
+          // Same lock as the cockpit leg above, for the same reason — this leg
+          // boots the same server and swept the same real transcripts into its
+          // own temp directory (DOR-1551).
+          DORKOS_SEARCH_NO_EXTERNAL_HISTORY: 'true',
         },
-        `rm -rf ${MOCK_DORK_HOME}`
+        resetThrowawayHome(MOCK_DORK_HOME)
       ),
       url: `http://localhost:${MOCK_PORT}/api/health`,
       name: 'Express API (test-mode)',

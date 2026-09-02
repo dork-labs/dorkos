@@ -37,6 +37,7 @@ function wideSource(onRead: (originKey: string) => void): RowSource {
   return {
     id: 'wide',
     mechanism: 'rows',
+    corpus: 'dorkos',
     listContainers: () =>
       Array.from({ length: CONTAINERS }, (_unused, i) => ({
         originKey: `container-${String(i)}`,

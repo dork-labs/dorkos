@@ -20,8 +20,8 @@
  *   nothing but strings), handed-in ordinals, `skipped` as the drift signal,
  *   and a null timestamp rather than an invented one. Each of those four
  *   executes; none is pinned by its wording alone.
- * - **§ The Registry Row** — `id` and `mechanism` are the record; the roots are a
- *   parameter so a test can point the source somewhere safe.
+ * - **§ The Registry Row** — `id`, `mechanism` and `corpus` are the record; the
+ *   roots are a parameter so a test can point the source somewhere safe.
  * - **§ Rules That Are Not Style** — `origin_key` composed by the projection,
  *   `container_path` on `search_sources` and never on `messages`.
  * - **§ When to Use What** — several roots in one source, an absent root that is
@@ -250,6 +250,9 @@ export function createJournalSource(resolveRoots: () => readonly string[]): File
   return {
     id: 'journal',
     mechanism: 'jsonl',
+    // Journal files live under the operator's home, not under `DORK_HOME`, so a
+    // server pointed at a throwaway data directory would still read them.
+    corpus: 'external',
     discover: (known) => discoverJournalFiles(resolveRoots(), known),
     project: projectJournalLines,
   };

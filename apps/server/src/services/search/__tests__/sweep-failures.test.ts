@@ -31,6 +31,7 @@ function rowSource(id: string, containers: readonly string[]): RowSource {
   return {
     id,
     mechanism: 'rows',
+    corpus: 'dorkos',
     listContainers: () =>
       containers.map((originKey) => ({ originKey, containerPath: null, maxOrdinal: 1 })),
     readSince: (_db, originKey) => ({
@@ -167,6 +168,7 @@ describe('a database that will not take the write recording a failure', () => {
     const source: RowSource = {
       id: 'partly-broken',
       mechanism: 'rows',
+      corpus: 'dorkos',
       listContainers: () => containers,
       readSince: (_db, originKey) => {
         if (originKey === 'container-bad') throw new Error('unexpected record shape at line 12');
@@ -218,6 +220,7 @@ describe('a database that will not take the write recording a failure', () => {
     const breaking: RowSource = {
       id: 'partly-broken',
       mechanism: 'rows',
+      corpus: 'dorkos',
       // Higher than the watermark the first sweep left, so the container is
       // genuinely re-read rather than skipped as unchanged.
       listContainers: () => [{ originKey: 'stays', containerPath: null, maxOrdinal: 2 }],
@@ -256,6 +259,7 @@ describe('a database that will not take the write recording a failure', () => {
     const breaking: RowSource = {
       id: 'partly-broken',
       mechanism: 'rows',
+      corpus: 'dorkos',
       listContainers: () => [{ originKey: 'stays', containerPath: null, maxOrdinal: 2 }],
       readSince: () => {
         throw new Error('unreadable');

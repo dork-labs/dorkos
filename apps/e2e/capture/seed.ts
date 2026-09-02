@@ -21,6 +21,7 @@ import {
   TASKS,
   WORKBENCH_SOURCE_FILES,
 } from './config.js';
+import { ensureCaptureHome } from './supervisor.js';
 
 /**
  * Demo-data seeding for the capture run. Split into a pre-boot phase (files the
@@ -73,6 +74,11 @@ async function patchJson(url: string, body: unknown): Promise<void> {
  */
 export async function prepareFilesystem(): Promise<void> {
   await fs.rm(CAPTURE_HOME, { recursive: true, force: true });
+  // Recreated `0700` before anything is written into it (DOR-1551). Letting the
+  // `FLEET_ROOT` mkdir below create the parent would have given it whatever
+  // `umask` says — `0755` by default — for a directory that ends up holding the
+  // capture run's database, `mcp-local-token` and `better-auth-secret`.
+  ensureCaptureHome();
   await fs.mkdir(FLEET_ROOT, { recursive: true });
   for (const agent of FLEET) {
     await fs.mkdir(path.join(FLEET_ROOT, agent.name), { recursive: true });

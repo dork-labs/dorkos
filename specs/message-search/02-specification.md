@@ -1081,3 +1081,58 @@ conversation holds its history whole, so a miss there means the id no longer add
 there is nothing a reader could act on. And there is no browser test for this half: the e2e suite
 reaches transcript search through no runtime it can seed — `test-mode` is not a search source, and
 the three that are read another program's files.
+
+## Amendment 13 — a harness may say "index nobody's history but mine" (DOR-1551, 2026-09-02)
+
+**The leak.** A throwaway `DORK_HOME` isolates everything DorkOS owns and nothing else. The browser
+suite gives each Express leg its own wiped-per-boot data directory under `/tmp` (DOR-1223), but
+`resolveClaudeRootSet()`, `resolveCodexRolloutRoots()` and `resolveOpenCodeStorePath()` all resolve
+from the operator's HOME and do not move when `DORK_HOME` does — they are the Hard-Rule-3 carve-outs
+that mirror another program's resolution of its own directory, and that is correct for what they are.
+So every `pnpm test:browser` ran a startup sweep that full-text-copied the operator's real
+transcripts (~9,250 Claude Code messages, §1.4's own measurement) into a world-readable temp
+directory. Read-only against the originals, and still a searchable copy of everything that person
+ever said, written by a run nobody thought was reading anything.
+
+**The fix is a property on the registry row, not a name in a list.** Every source declares
+`corpus: 'dorkos' | 'external'` — whether its bytes live inside the data directory this process owns,
+or in another program's store on the machine. `selectSearchSources()` drops the `external` rows when
+`DORKOS_SEARCH_NO_EXTERNAL_HISTORY=true`, and `apps/server/src/index.ts` is the only place that reads
+the flag. Required rather than optional, so the fifth source is covered on the day it lands: an
+optional field would default to "not external" and leak silently.
+
+**Coverage is unchanged for everyone who is not a test harness.** The flag is off by default and set
+by nothing in this repo except the harnesses that boot a server against a throwaway data directory,
+so a normal install still indexes every Claude root, every Codex rollout and every OpenCode
+conversation, and G4's copy in the search box stays true. **Do not "restore" the excluded sources by
+deleting the call** — that is the regression this amendment exists to name.
+
+**There are THREE such harness legs, not two, and the third is the reason this is written down.**
+`apps/e2e/playwright.config.ts` boots the cockpit and test-mode Express legs; `apps/e2e/capture/
+boot.ts` boots a third for the marketing-media capture run, in a different file, with its own
+`DORK_HOME` at `~/.dork-capture`. Every isolation decision made for the Playwright legs had to be
+made again there by hand — and it was not. Measured on the operator's machine during this change's
+review: `~/.dork-capture/dork.db` held **13,564 claude-code, 214 codex and 50 opencode real
+messages**, indexed by a run whose entire job is taking screenshots, in a directory other accounts
+could read. A fourth spawn added tomorrow is the same trap, which is why the fix is a required field
+plus a pin per leg rather than a note asking people to remember.
+
+**Proven in rows, and pinned per leg.** `search/__tests__/external-history-gate.test.ts` sweeps a
+real indexer over fixture-backed sources and measures both positions of the gate: with it open,
+rooms + claude-code + codex land rows; with it closed, only rooms do, no frontier row is written for
+an unswept source, and the three resolvers that reach into the operator's home are never called at
+all — zero rows could be an empty corpus, zero calls could not. `apps/e2e/__tests__/
+playwright-config.test.ts` and `apps/e2e/__tests__/capture-boot.test.ts` pin the harness half for all
+three legs, because deleting one env line from a boot script fails nothing on its own: the run goes
+green and the screenshots come out identical. `SearchIndexer`'s `sources` parameter also lost its
+default — it used to fall back to the whole registry, which made "read the operator's transcripts"
+the thing that happened when a caller said nothing.
+
+**The directory itself was the second half of the exposure.** These homes hold the index alongside
+the instance's `mcp-local-token` and `better-auth-secret`, and at the default `umask 022` they were
+created `0755` — under world-traversable `/tmp` for the Playwright legs, and directly in the
+operator's home for the capture run. All three are now created `0700` before their server boots
+(`resetThrowawayHome`, `ensureCaptureHome`), the capture helper chmods as well as mkdirs so a
+directory an older release left wide open is narrowed rather than kept, and `global-setup.ts` refuses
+to run against a Playwright leg whose home anything widened — read from the filesystem, not from the
+command that was supposed to set it.

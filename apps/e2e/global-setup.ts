@@ -29,6 +29,7 @@
  *
  * @module global-setup
  */
+import { statSync } from 'node:fs';
 import { chromium, request, type APIResponse, type FullConfig } from '@playwright/test';
 
 /**
@@ -62,7 +63,10 @@ const THROWAWAY_HOME_PREFIXES = ['/tmp/dorkos-', '/private/tmp/dorkos-'];
  * @param baseURL - The Vite dev server that proxies to the leg being checked.
  * @param dorkHome - The data directory that leg reported.
  */
-function assertThrowawayHome(baseURL: string, dorkHome: string | undefined): void {
+function assertThrowawayHome(
+  baseURL: string,
+  dorkHome: string | undefined
+): asserts dorkHome is string {
   if (dorkHome && THROWAWAY_HOME_PREFIXES.some((prefix) => dorkHome.startsWith(prefix))) return;
   throw new Error(
     `Refusing to run: the API leg behind ${baseURL} keeps its data in ${dorkHome ?? '(not reported)'}, ` +
@@ -70,6 +74,50 @@ function assertThrowawayHome(baseURL: string, dorkHome: string | undefined): voi
       `That directory is somebody's real data — the installed cockpit's ~/.dork, or the dev stack's ` +
       `apps/server/.temp/.dork — and this suite archives rooms, registers agents and rewrites config.\n` +
       `Check that the leg still sets DORK_HOME in apps/e2e/playwright.config.ts (DOR-1223).`
+  );
+}
+
+/**
+ * Refuse to run against a data directory anybody else on the machine can read.
+ *
+ * THE SECOND HALF OF DOR-1551, and the half that survives a mistake in the
+ * first. The legs keep their homes under `/tmp`, which is world-readable and
+ * world-traversable, and at the default `umask 022` the server created that
+ * directory `0755` — so the SQLite index, this instance's `mcp-local-token` and
+ * its `better-auth-secret` were readable by every account on the box for as long
+ * as the run lasted. `playwright.config.ts` now creates each home `0700` before
+ * the leg boots (`resetThrowawayHome`); this is what makes deleting that `-m 700`
+ * fail something instead of nothing.
+ *
+ * Asserted from the DIRECTORY, not from the command that was supposed to create
+ * it — same rule as {@link assertThrowawayHome}, and for the same reason: the
+ * only thing that can disagree with intent is the filesystem.
+ *
+ * @param baseURL - The Vite dev server that proxies to the leg being checked.
+ * @param dorkHome - The data directory that leg reported.
+ */
+function assertPrivateHome(baseURL: string, dorkHome: string): void {
+  let mode: number;
+  try {
+    mode = statSync(dorkHome).mode & 0o777;
+  } catch (error) {
+    // A booted server whose data directory is not there is an anomaly, not a
+    // permissions problem — say which of the two this is rather than letting a
+    // bare ENOENT stack out of global setup.
+    throw new Error(
+      `Could not inspect the data directory ${dorkHome} reported by the API leg behind ${baseURL}: ` +
+        `${error instanceof Error ? error.message : String(error)}`,
+      { cause: error }
+    );
+  }
+  if ((mode & 0o077) === 0) return;
+  throw new Error(
+    `Refusing to run: the API leg behind ${baseURL} keeps its data in ${dorkHome}, ` +
+      `which is mode 0${mode.toString(8)} — readable by other accounts on this machine.\n` +
+      `That directory holds the run's message-search index, its mcp-local-token and its ` +
+      `better-auth-secret, and it lives under world-traversable /tmp.\n` +
+      `Check that the leg still creates its DORK_HOME with \`mkdir -m 700\` in ` +
+      `apps/e2e/playwright.config.ts (DOR-1551).`
   );
 }
 
@@ -197,6 +245,11 @@ async function dismissOnboarding(baseURL: string): Promise<void> {
     };
     // Before the first write, and on the same read that was already happening.
     assertThrowawayHome(baseURL, dorkHome);
+    // Ordered: the throwaway check comes first, so a leg pointed at somebody's
+    // real `~/.dork` is reported as THAT rather than as a permissions nit. It
+    // narrows `dorkHome` to a string on the way through, which is why this call
+    // needs no guard of its own.
+    assertPrivateHome(baseURL, dorkHome);
     if (
       onboarding?.dismissedAt &&
       profile?.rolePromptDismissedAt &&

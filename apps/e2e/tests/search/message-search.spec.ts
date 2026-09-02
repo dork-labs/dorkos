@@ -14,23 +14,31 @@
  * this run's `runId`, and the query IS that token — which makes the assertions
  * about rows nobody else could have produced.
  *
- * **The deterministic gap, named rather than left implicit — and it is not the
- * gap it first looks like.** The `claude-code` source IS indexed on this run.
- * It resolves its root through the `os.homedir()` carve-out rather than through
- * `DORK_HOME`, so the throwaway data directory does not isolate it: both legs
- * of this spec logged the operator's real corpus being indexed. What cannot be
- * done here is SEED it. Adding a transcript would mean writing JSONL into the
- * operator's own `~/.claude/projects`, which this suite must never do, and
- * asserting against whatever is already in there is asserting against a corpus
- * that differs per machine and per day.
+ * **What this run's index contains, and what it therefore cannot cover.** Only
+ * `rooms`. Every leg of this suite boots with
+ * `DORKOS_SEARCH_NO_EXTERNAL_HISTORY=true` (DOR-1551), so the three transcript
+ * sources — `claude-code`, `codex`, `opencode` — are dropped from the sweep
+ * before it starts. That flag exists because they resolve their roots through
+ * the `os.homedir()` carve-outs rather than through `DORK_HOME`, so a throwaway
+ * data directory never isolated them: this suite used to full-text-copy the
+ * operator's real corpus into `/tmp` on every run, and this spec's own header
+ * used to record that as a fact of life.
  *
- * So the transcript half of search — the `/session` navigation branch and the
- * vanished-working-directory report — is covered by the client's own tests
+ * The transcript half was never coverable here anyway, and the gate did not take
+ * anything away. It could not be SEEDED: adding a transcript would mean writing
+ * JSONL into the operator's own `~/.claude/projects`, which this suite must
+ * never do, and asserting against whatever is already there is asserting against
+ * a corpus that differs per machine and per day. So it is covered by the
+ * client's tests
  * (`apps/client/src/layers/features/command-palette/__tests__/message-search-dialog.test.tsx`)
- * and by the server's, not here. **The determinism of what IS asserted below is
- * unaffected**: every assertion is scoped to this run's `runId` token, which no
- * transcript on any machine contains, and the room write-through is what makes
- * the seeded entry findable the moment `postEntries` resolves.
+ * and the server's (`services/search/__tests__/`, which sweeps real fixture
+ * trees), not here. **Do not "restore coverage" by dropping the flag** — that
+ * indexes a person's history, it does not make anything testable.
+ *
+ * What IS covered here is the whole room half, end to end through a real
+ * browser: the seeded entry is findable the moment `postEntries` resolves, and
+ * every assertion is scoped to this run's `runId` token, which nothing else on
+ * the server could have produced.
  */
 import { test, expect } from '../../fixtures';
 import { SERVER_ROUND_TRIP_MS } from '../../fixtures/rooms-api';

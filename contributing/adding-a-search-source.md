@@ -47,12 +47,13 @@ Two follow-on questions the table does not answer:
 
 ## The Registry Row
 
-A source is a plain record, never a class. Every mechanism's row carries the same two mandatory fields plus the functions its mechanism needs:
+A source is a plain record, never a class. Every mechanism's row carries the same three mandatory fields plus the functions its mechanism needs:
 
 | Field       | Type                                     | What it is for                                                                                                                                                                                                                  |
 | ----------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`        | `string`                                 | Stamped onto every row this source contributes, **from the registry, never from the projection** — so a projection cannot get its own source's name wrong. It is also the `?source=` filter value and the frontier's scope key. |
 | `mechanism` | `'jsonl' \| 'rows' \| 'sqlite-snapshot'` | Which sweep runs it. The row **names** its mechanism; `indexer.ts` never infers one from the shape of the record.                                                                                                               |
+| `corpus`    | `'dorkos' \| 'external'`                 | Whether the bytes live inside this process's `DORK_HOME` or in another program's store on the machine. Required, so a harness can drop everybody else's history by property rather than by name — see step 5 below.             |
 | M1 only     | `discover(known)`, `project(lines, ctx)` | Discovery reaches the filesystem. The projection never does.                                                                                                                                                                    |
 | M2 only     | `listContainers(db)`, `readSince(db, …)` | Discovery and change detection fold into one query — the container list carries each container's current high-water ordinal.                                                                                                    |
 | M3 only     | `open()`                                 | Copies the store, opens the copy read-only, hands back a `ContainerReader` the sweep must `close()`.                                                                                                                            |
@@ -394,11 +395,16 @@ export function createJournalSource(resolveRoots: () => readonly string[]): File
   return {
     id: 'journal',
     mechanism: 'jsonl',
+    // Journal files live under the operator's home, not under `DORK_HOME`, so a
+    // server pointed at a throwaway data directory would still read them.
+    corpus: 'external',
     discover: (known) => discoverJournalFiles(resolveRoots(), known),
     project: projectJournalLines,
   };
 }
 ```
+
+`corpus` is the one field with a wrong answer that compiles. It says whether the bytes this source reads live inside the `DORK_HOME` this process owns (`'dorkos'`) or in another program's store on the machine (`'external'`), and it is required precisely so nobody can skip the question: a harness that must read nobody's history sets `DORKOS_SEARCH_NO_EXTERNAL_HISTORY=true`, and `selectSearchSources()` drops every `external` row before the sweep starts. Answer `'dorkos'` only if a fresh `DORK_HOME` really does mean a fresh corpus. Getting it wrong is how the browser suite spent weeks copying the operator's real transcripts into a world-readable temp directory (DOR-1551, spec Amendment 13).
 
 That is the whole source. `jsonl-frontier.ts` is untouched by it: the byte offset, the partial-line rule, the shrink rebuild, the twin refusal, the prune suppression and the failure recording all apply without a line of new code.
 

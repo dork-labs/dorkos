@@ -177,6 +177,7 @@ describe('one source having a bad day', () => {
     const exploding: RowSource = {
       id: 'exploding',
       mechanism: 'rows',
+      corpus: 'dorkos',
       listContainers: () => {
         throw new Error('the container list would not read');
       },
@@ -207,6 +208,7 @@ describe('one source having a bad day', () => {
     const exploding: RowSource = {
       id: 'exploding',
       mechanism: 'rows',
+      corpus: 'dorkos',
       listContainers: () => {
         throw new Error('boom');
       },
@@ -475,6 +477,7 @@ describe('SearchIndexer over the room log', () => {
     let discovered = 5;
     const laggy: RowSource = {
       mechanism: 'rows',
+      corpus: 'dorkos',
       id: 'laggy',
       listContainers: () => [{ originKey: 'c', containerPath: null, maxOrdinal: discovered }],
       readSince: (_db, _key, after) => ({
@@ -509,6 +512,7 @@ describe('SearchIndexer over the room log', () => {
 
     const broken: RowSource = {
       mechanism: 'rows',
+      corpus: 'dorkos',
       id: 'broken',
       listContainers: () => [{ originKey: 'container-x', containerPath: null, maxOrdinal: 7 }],
       readSince: () => {
@@ -547,6 +551,7 @@ describe('SearchIndexer over the room log', () => {
     let failing = true;
     const flaky: RowSource = {
       mechanism: 'rows',
+      corpus: 'dorkos',
       id: 'flaky',
       listContainers: () => [{ originKey: 'container-x', containerPath: null, maxOrdinal: 1 }],
       readSince: () => {
@@ -764,6 +769,7 @@ describe('SearchIndexer scheduling', () => {
     let sweeps = 0;
     const counting: RowSource = {
       mechanism: 'rows',
+      corpus: 'dorkos',
       id: 'counting',
       listContainers: () => {
         sweeps += 1;

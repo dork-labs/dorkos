@@ -53,6 +53,7 @@ export {
   createOpenCodeSource,
   openCodeSource,
   roomsSource,
+  selectSearchSources,
 } from './registry.js';
 export { sweepContainers, sweepRowSource, PRUNE_GUARD_KEY } from './row-frontier.js';
 export { DISCOVERY_FAILURE_KEY } from './frontier-store.js';
@@ -95,6 +96,7 @@ export type {
   SkipReason,
   SkippedFile,
   SnapshotSource,
+  SourceCorpus,
   SourceFailure,
   SourceSweep,
 } from './types.js';
