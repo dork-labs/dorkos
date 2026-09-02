@@ -618,11 +618,16 @@ gh label create re-review    --description "Request another automated review pas
   unformatted — after any hook-skipped commit, `pnpm exec prettier --write` the
   touched files.
 
-- **A stale local `main` ref makes the pre-push `--affected` gate run everything.**
-  The hook diffs against the local base ref; when the shared `main` checkout is
-  behind origin, the affected set explodes to the whole repo and hits unrelated
-  flakes. `git pull --ff-only` in the clean main checkout before pushing
-  small/docs-only branches (this bit three times in one session, 2026-08-25).
+- **The pre-push `--affected` gate pins its own base — do not pull to shrink it.**
+  Until DOR-1717 the hook diffed against the _local_ `main` ref, so a shared
+  checkout sitting behind origin exploded the affected set to the whole repo and
+  hit unrelated flakes; the workaround was to `git pull --ff-only` in the clean
+  main checkout before pushing (it bit three times in one session, 2026-08-25).
+  The hook now sets `TURBO_SCM_BASE` to `origin/main` itself, so the local ref's
+  position no longer affects anything and that ritual is obsolete — pulling in a
+  checkout another agent is using is a worktree hazard for no gain. If the gate
+  still selects more than your branch touched, the cause is a real dependency
+  edge, `turbo.json`, or `pnpm-lock.yaml` (both global inputs), not staleness.
 
 - **A schema or route change owes a regenerated OpenAPI export.** Anything
   touching `packages/shared` schemas that project into the API, or server routes,

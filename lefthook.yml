@@ -95,32 +95,55 @@ pre-push:
       # A push that touches only docs, specs or a workflow runs nothing at
       # all, in about a second.
       #
-      # That last sentence only holds once the base is pinned, which this
-      # command does NOT do — see the pre-commit lint comment above. Turbo's
-      # default base is the local `main` branch, which on a worktree machine
-      # trails origin/main by dozens of commits, so the diff sweeps in other
-      # people's merges and this gate silently resolves to nearly everything.
-      # Measured 2026-09-02 on a docs-only tree: 24 packages / 57 test tasks
-      # against the default base, 1 package / 0 tasks with the base pinned to
-      # origin/main. Left alone here on purpose — a follow-up ticket owns it.
+      # That last sentence only holds because the base is pinned below
+      # (DOR-1717) — it was not, and the sentence was false, until then.
+      # Turbo's default base is the local `main` branch, which on a worktree
+      # machine only moves when a human pulls while every branch is cut
+      # straight from origin/main, so it trails by dozens of commits and the
+      # diff sweeps in everybody else's merges.
       #
-      # THREE THINGS THIS GATE NO LONGER CATCHES, all covered by the
-      # full-monorepo `test` workflow (.github/workflows/test.yml) — the split
-      # is the point: local gate fast and survivable, CI gate complete.
+      # Measured 2026-09-02 (`turbo test --affected --dry=json`), local ref
+      # standing ten commits behind. Read the counts carefully: turbo's task
+      # total includes the `build` and `generate:api-docs` tasks a suite
+      # depends on, so the number of actual SUITES is the smaller one.
+      #   * root files only  — stale: 24 packages / 57 tasks / 23 suites.
+      #     That is byte-for-byte what `turbo test` with no --affected at all
+      #     resolves to, i.e. the entire monorepo. Pinned: 1 package (`//`),
+      #     0 tasks, 0 suites.
+      #   * one file in packages/icons — stale: the same 24 / 57 / 23.
+      #     Pinned: 7 packages / 40 tasks / 6 suites.
+      # The stale run returns an identical set for both diffs, which is the
+      # tell: the staleness, not the change, was picking the packages. The
+      # `main` fallback covers a clone with no `origin` remote.
+      #
+      # WHAT THIS GATE STILL DOES NOT CATCH, covered by the full-monorepo
+      # `test` workflow (.github/workflows/test.yml) as a required merge-queue
+      # check — the split is the point: local gate fast and survivable, CI
+      # gate complete.
       #   * A break that only exists once two independently-affected PRs
-      #     combine; neither PR's own diff can see it.
-      #   * A push made while HEAD *is* main. `--affected` diffs against the
-      #     base branch, so on main it resolves to zero packages and runs
-      #     nothing. `test` runs on push to main, so the commit is still
-      #     checked — just after it lands rather than before.
-      #   * A commit that touches only repo-root files: AGENTS.md, README.md,
-      #     this file, the root package.json, even pnpm-lock.yaml on a
-      #     dependency bump. `--affected` maps changed files onto packages and
-      #     root files belong to none, so the run resolves to the `//` package
-      #     and executes zero suites ("Tasks: 0 successful, 0 total", ~150ms).
-      #     turbo.json is the one exception, being a global input: changing it
-      #     marks every package affected and runs all 18. `test` has no path
-      #     filter and runs on every PR, so the rest are still caught there.
+      #     combine; neither PR's own diff can see it. The merge queue builds
+      #     the combined tree and is the only thing that can see this.
+      #   * A commit that touches only repo-root files — AGENTS.md, README.md,
+      #     this file. `--affected` maps changed files onto packages and root
+      #     files belong to none, so the run resolves to the `//` package and
+      #     executes zero suites ("Tasks: 0 successful, 0 total", ~150ms).
+      #
+      # TWO ROOT FILES ARE NOT IN THAT LAST BULLET, both global inputs:
+      #   * turbo.json — changing it marks every package affected.
+      #   * pnpm-lock.yaml — turbo re-derives each package's external
+      #     dependencies from the lockfile, so a real dependency bump marks
+      #     every package that depends on the moved package. Measured by
+      #     rewriting one resolved version: 24 packages / 57 tasks /
+      #     23 suites, the whole repo. (A whitespace-only lockfile edit
+      #     changes no dependency and does resolve to `//` alone — it is the
+      #     derived graph that counts, not the file's bytes. Do not read that
+      #     as "lockfile changes are cheap".)
+      #
+      # A push made while HEAD is ahead of origin/main runs the real closure,
+      # pinned: measured 20 packages / 53 tasks / 19 suites with HEAD three
+      # commits ahead. Before the pin this was a hole — base and HEAD were
+      # the same local ref, so pushing `main` resolved to zero packages and
+      # ran nothing at all.
       #
       # CACHE-KEY CONSTRAINT — do not re-fork the turbo invocation below.
       # Turbo hashes the passthrough args (everything after `--`) into the
@@ -130,7 +153,10 @@ pre-push:
       # with CI: a green dev run makes the push instant (all cache hits).
       # Adding any passthrough flag (e.g. --retry) forks the key and forces a
       # full re-run on every push. (Verified: `@dorkos/relay#test` hashes to
-      # the same value with and without --affected.)
+      # the same value with and without --affected, and to the same value
+      # again with TURBO_SCM_BASE unset, pinned to origin/main, and set to
+      # junk — the base picks which tasks run, never what they hash to, so
+      # the pin below shares its cache with CI and the dev loop.)
       #
       #   --concurrency=1  (DOR-121, not hashed) Turbo otherwise fans out ~10
       #     package suites in parallel and each `vitest run` spawns its own
@@ -155,5 +181,6 @@ pre-push:
           echo "Delete-only push — skipping the test gate (nothing to test)."
           exit 0
         fi
+        export TURBO_SCM_BASE="$(git rev-parse --verify --quiet origin/main || echo main)"
         VITEST_RETRY=2 pnpm exec dotenv -- turbo test --affected --concurrency=1 -- --run
-      fail_text: 'Tests failed — fix them before pushing.'
+      fail_text: 'Tests failed — fix them before pushing, or turbo could not resolve the diff base.'
