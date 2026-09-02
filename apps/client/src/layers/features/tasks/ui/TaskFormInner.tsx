@@ -16,7 +16,7 @@ import { permissionModeLabel } from '@/layers/shared/lib';
 import type { EffortLevel, PermissionMode, Task } from '@dorkos/shared/types';
 import { ScheduleBuilder, isCronValid } from './TaskBuilder';
 import { TimezoneCombobox } from './TimezoneCombobox';
-import { TaskAgentField } from './TaskAgentField';
+import { TaskAgentField, type TaskAgentRoster } from './TaskAgentField';
 import { TaskExecutionFields } from './TaskExecutionFields';
 import { useAgentRuntimes, useTaskExecution } from './use-task-execution';
 import { usePostureConsent } from './use-posture-consent';
@@ -150,7 +150,13 @@ export function buildFormValues(
 
 export interface ScheduleFormProps {
   defaultValues: ScheduleFormValues;
-  agents: Array<{ id: string; name: string; projectPath: string; icon?: string; color?: string }>;
+  /**
+   * The agents this machine can file a task against, carrying whether that
+   * list is an answer yet — see {@link TaskAgentRoster}. The flags travel with
+   * the list rather than beside it so no caller can flatten the three worlds
+   * into one empty array.
+   */
+  roster: TaskAgentRoster;
   editTask?: Task;
   onSubmitSuccess: () => void;
   onCancel: () => void;
@@ -161,7 +167,7 @@ export interface ScheduleFormProps {
 /** Inner form component. Remounted via `key` when defaultValues change. */
 export function ScheduleForm({
   defaultValues,
-  agents,
+  roster,
   editTask,
   onSubmitSuccess,
   onCancel,
@@ -234,7 +240,7 @@ export function ScheduleForm({
   // Every picker agent's own runtime, off the manifest that owns it (ADR-0043).
   // The whole list rather than the selected one, because the agent picker below
   // has to know what a candidate agent would run on before it commits the pick.
-  const agentRuntimes = useAgentRuntimes(agents);
+  const agentRuntimes = useAgentRuntimes(roster.agents);
   const agentRuntime = agentRuntimes.runtimeFor(agentId);
 
   const execution = useTaskExecution({
@@ -287,7 +293,7 @@ export function ScheduleForm({
         <div className="space-y-5 px-4 py-5">
           {/* ── Agent (target) ── */}
           <TaskAgentField
-            agents={agents}
+            roster={roster}
             value={agentId}
             locked={editTask !== undefined}
             pick={agentPick}

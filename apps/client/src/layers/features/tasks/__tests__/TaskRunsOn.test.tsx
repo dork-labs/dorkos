@@ -654,8 +654,10 @@ describe('the task form Runs-on controls', () => {
       // re-captioned to the picked agent's runtime and then gated in THAT
       // runtime's vocabulary, so a task running on Codex could be walked to the
       // middle stop with no door and saved at a mode Codex never asks in
-      // (DOR-1694). The picker is inert here, so there is no phantom to price
-      // against.
+      // (DOR-1694). The agent is drawn as text here rather than as a control,
+      // so there is no phantom to price against. What that row says while the
+      // agent roster is still loading, or after a read that failed, is its own
+      // set of claims — driven in `TaskAgentField.test.tsx`.
 
       /** An edit task targeting the Codex agent, sitting at `mode`. */
       function renderCodexTaskAt(mode: PermissionMode, updateTask = vi.fn()) {
@@ -672,26 +674,69 @@ describe('the task form Runs-on controls', () => {
         return updateTask;
       }
 
-      it('shows the agent, says why it cannot change, and opens no list', async () => {
+      it('shows the agent, says why it cannot change, and offers no control', async () => {
         renderCodexTaskAt('plan');
 
-        const trigger = await screen.findByRole('button', { name: /codex-bot/ });
-        expect(trigger).toHaveAttribute('aria-disabled', 'true');
-        // The explanation is wired to the control, not merely near it: an inert
-        // button with the reason floating beside it is a dead click to anybody
-        // who cannot see the layout.
-        const note = screen.getByTestId('agent-locked-note');
-        expect(trigger).toHaveAttribute('aria-describedby', note.id);
-        expect(note).toHaveTextContent(
+        // Named, and as text: there is no control to disable, so there is no
+        // button to land on and no click to neutralise.
+        await waitFor(() =>
+          expect(screen.getByTestId('settled-agent')).toHaveTextContent('codex-bot')
+        );
+        expect(screen.queryByRole('button', { name: /codex-bot/ })).toBeNull();
+        expect(screen.getByTestId('agent-locked-note')).toHaveTextContent(
           'You can’t change the agent after a task is created. To run this work as a different agent, create a new task.'
         );
 
-        // Nothing opens, so no other agent is reachable — the click is
-        // neutralised rather than merely styled as unavailable.
-        await user.click(trigger);
+        // And no other agent is reachable from this form at all.
         expect(screen.queryByPlaceholderText('Search agents...')).toBeNull();
         expect(screen.queryByText('claude-bot')).toBeNull();
         expect(screen.queryByText('oc-bot')).toBeNull();
+      });
+
+      // The roster's three worlds, driven through the DIALOG rather than the
+      // row on its own — the row's own vocabulary is `TaskAgentField.test.tsx`,
+      // and what these two pin is the WIRING: `CreateTaskDialog` reads the
+      // agent-list query, and flattening it to `data?.agents ?? []` is what made
+      // an unanswered read indistinguishable from an answer of "none".
+
+      it('makes no claim about the agent while the roster is still in flight', async () => {
+        // Every cold open passes through this window. Read as an answer, the
+        // empty list makes a healthy task's agent look unregistered for as long
+        // as the request takes.
+        const transport = transportWithAgentPerRuntime({
+          listMeshAgentPaths: vi.fn().mockReturnValue(new Promise(() => {})),
+        });
+        renderEditTask(
+          transport,
+          createMockSchedule({ id: 'sched-1', agentId: CODEX_AGENT.id, runtime: null })
+        );
+
+        expect(await screen.findByTestId('settled-agent-loading')).toBeInTheDocument();
+        expect(screen.queryByTestId('settled-agent')).toBeNull();
+        expect(screen.queryByText(/isn’t registered/)).toBeNull();
+        // The sentence that would be wrong is absent, and the one that is right
+        // is still on screen: the agent cannot be changed either way.
+        expect(screen.getByTestId('agent-locked-note')).toBeInTheDocument();
+      });
+
+      it('blames the read, not the task, when the roster cannot be fetched', async () => {
+        // The permanent version of the same window. Silence would leave an empty
+        // row for good, so it says what failed — and says nothing about whether
+        // the agent still exists, because this machine cannot know.
+        const transport = transportWithAgentPerRuntime({
+          listMeshAgentPaths: vi.fn().mockRejectedValue(new Error('mesh unreachable')),
+        });
+        renderEditTask(
+          transport,
+          createMockSchedule({ id: 'sched-1', agentId: CODEX_AGENT.id, runtime: null })
+        );
+
+        await waitFor(() =>
+          expect(screen.getByTestId('settled-agent')).toHaveTextContent(
+            'DorkOS couldn’t read your list of agents, so it can’t show which one this is.'
+          )
+        );
+        expect(screen.queryByText(/isn’t registered/)).toBeNull();
       });
 
       it('prices the dial against the stored agent, and asks before the middle stop', async () => {
@@ -706,11 +751,12 @@ describe('the task form Runs-on controls', () => {
 
         await expectSelected('task-runtime-select', "Agent's runtime (Codex)");
 
-        // The repro's first move, and it goes nowhere: the Claude Code agent
-        // cannot be reached, so nothing downstream can be priced against it.
-        await user.click(screen.getByRole('button', { name: /codex-bot/ }));
+        // The repro's first move has nowhere to start: the agent is text, not a
+        // control, so the Claude Code agent cannot be reached and nothing
+        // downstream can be priced against it.
+        expect(screen.getByTestId('settled-agent')).toHaveTextContent('codex-bot');
+        expect(screen.queryByRole('button', { name: /codex-bot/ })).toBeNull();
         expect(screen.queryByText('claude-bot')).toBeNull();
-        await expectSelected('task-runtime-select', "Agent's runtime (Codex)");
 
         // Codex has no `plan` mode, so the dial keeps the stored one visible
         // rather than lighting a stop nobody picked.
