@@ -14,7 +14,7 @@ import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { EffortLevelSchema, TaskNameSchema, TASK_DURATION_PATTERN } from '@dorkos/shared/schemas';
 import type { EffortLevel, UpdateTaskRequest } from '@dorkos/shared/types';
-import { slugify, validateSlug } from '@dorkos/skills/slug';
+import { slugify } from '@dorkos/skills/slug';
 import type { McpToolDeps } from './types.js';
 import { jsonContent, structuredJsonContent } from './types.js';
 import { clampSchedulePermissionMode } from '../../../tasks/schedule-permission-clamp.js';
@@ -27,6 +27,8 @@ import {
 } from '../../../tasks/task-write-policy.js';
 import { createScheduledTask } from '../../../tasks/lifecycle/create-task.js';
 import { removeScheduledTaskFile } from '../../../tasks/lifecycle/delete-task.js';
+import { applyTaskFileUpdate } from '../../../tasks/lifecycle/update-task-file.js';
+import { describeScheduleProblem } from '../../../tasks/cron-validation.js';
 import { broadcastTasksChanged } from '../../../tasks/task-sse-events.js';
 import { resolveParkedScheduleRemoved } from '../../../notifications/emitters/schedule-park.js';
 
@@ -444,7 +446,18 @@ export function createCreateScheduleHandler(
   };
 }
 
-/** Update an existing schedule. */
+/**
+ * Update an existing schedule — its SKILL.md first, then the row it derives.
+ *
+ * **The file half is not optional, and leaving it out was a lie-on-success**
+ * (DOR-1625). This handler wrote the row alone and answered with the updated
+ * schedule; the reconciler re-reads every skills root every five minutes and
+ * upserts what it finds, so the untouched file put the old values straight back
+ * — every field an agent changed here (`prompt`, `cron`, `name`, `timezone`, and
+ * the runtime/model/effort trio) was silently reverted inside that window.
+ * `PATCH /api/tasks/:id` always wrote the file, and now both doors do it through
+ * the same seam ({@link applyTaskFileUpdate}).
+ */
 export function createUpdateScheduleHandler(deps: McpToolDeps) {
   return async (args: {
     id: string;
@@ -490,6 +503,22 @@ export function createUpdateScheduleHandler(deps: McpToolDeps) {
     const existing = deps.taskStore!.getTask(args.id);
     if (!existing) return jsonContent({ error: `Schedule ${args.id} not found` }, true);
 
+    // The MERGED schedule is what gets written and registered, so the merged
+    // schedule is what has to read: a new cron runs in the task's existing
+    // timezone unless this same call changes it, and either half alone can be the
+    // one croner refuses. Asked here for the reason the create path gives — the
+    // file is written below and never withdrawn, so a cron nothing can read would
+    // otherwise land in a person's SKILL.md permanently. `PATCH /api/tasks/:id`
+    // has always asked it; this door did not, and only got away with it while it
+    // wrote nothing to disk (DOR-1625).
+    if (args.cron !== undefined || args.timezone !== undefined) {
+      const problem = describeScheduleProblem(
+        args.cron !== undefined ? args.cron : existing.cron,
+        args.timezone !== undefined ? args.timezone : existing.timezone
+      );
+      if (problem) return jsonContent({ error: problem }, true);
+    }
+
     // The patch is assembled field by field rather than spread from the rest of
     // `args`, so there is no code here that could carry `permissionMode` to the
     // store even if the guard above were removed. The spread this replaces is how
@@ -518,15 +547,17 @@ export function createUpdateScheduleHandler(deps: McpToolDeps) {
     //
     // On this surface the caller is ALWAYS the non-trusted case: an MCP tool call
     // IS the agent surface, so there is no operator branch to spare (the reasoning
-    // `refuseOperatorOnlyTaskFields` states unconditionally, one level up). And
-    // this handler writes the ROW ONLY — it never rewrites the SKILL.md, so the
-    // file-watcher never fires and the reconciler's `keepsApprovedBypass` clamp is
-    // up to five minutes away. Until that resync the row sat at
-    // `bypassPermissions` holding the NEW prompt/cron/name, and a cron firing in
-    // that window dispatched an agent's instructions at full power. Clamping the
-    // row here makes the drop immediate, closing the window; the edit itself still
-    // lands (prompt/cron/name are agent-writable), the unattended run just gets its
-    // approval prompts back.
+    // `refuseOperatorOnlyTaskFields` states unconditionally, one level up).
+    // Clamping here makes the drop immediate rather than leaving the row at
+    // `bypassPermissions` holding the NEW prompt/cron/name until the next sync,
+    // where a cron firing in that window would dispatch an agent's instructions at
+    // full power. The edit itself still lands (prompt/cron/name are
+    // agent-writable), the unattended run just gets its approval prompts back.
+    //
+    // Set on the patch BEFORE the file write below, so the clamped mode lands in
+    // the SKILL.md as well as the row — exactly as it does on the REST route. A
+    // file declaring more power than its row holds is a standing request from disk
+    // that nobody made, and the next sync would read it back.
     //
     // `name` belongs beside prompt and cron because it is not inert: a scheduled
     // run is told `Job: ${task.name}` in its system prompt
@@ -542,6 +573,33 @@ export function createUpdateScheduleHandler(deps: McpToolDeps) {
     if (changesApprovedWork) {
       const clamp = clampSchedulePermissionMode(existing.permissionMode);
       if (clamp.clamped) patch.permissionMode = clamp.mode;
+    }
+
+    // The FILE first, through the seam `PATCH /api/tasks/:id` shares. Without it
+    // this handler wrote a row the reconciler reverted within five minutes, after
+    // the agent had been told the change landed (DOR-1625). Every gate inside
+    // refuses before anything is written — an unreadable file, one an installed
+    // package owns, a plan that would leave the block unreadable — so a refusal
+    // here leaves the row untouched too, and the call is refused WHOLE.
+    //
+    // One consequence worth naming: the approval grant is keyed on the schedule's
+    // CONTENT, so a live schedule whose prompt, cron or name an agent rewrites is
+    // re-parked by the next sync of the file this writes — the same thing that
+    // happens when an agent edits the SKILL.md by hand, and what the REST route
+    // means by re-issuing the grant for a TRUSTED caller only. An agent's edit
+    // still goes back to a person; it just no longer un-happens.
+    const fileOutcome = await applyTaskFileUpdate(
+      { dorkHome: deps.dorkHome, ...(deps.meshCore && { meshCore: deps.meshCore }) },
+      { existing, data: patch }
+    );
+    if (!fileOutcome.ok) {
+      return jsonContent(
+        {
+          error: fileOutcome.error,
+          ...(fileOutcome.code !== undefined && { code: fileOutcome.code }),
+        },
+        true
+      );
     }
 
     const updated = deps.taskStore!.updateTask(args.id, patch);
