@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
+import { setImmediate as nextEventLoopTurn } from 'node:timers/promises';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { messages, type Db } from '@dorkos/db';
+import { messages, count, type Db } from '@dorkos/db';
 import { SearchIndexer } from '../indexer.js';
 import { sweepFileSource } from '../jsonl-frontier.js';
 import { createClaudeCodeSource } from '../registry.js';
@@ -21,6 +22,16 @@ import type { FileSource, RowSource } from '../types.js';
  *
  * These tests assert the loop gets turns DURING a sweep, which is the only thing
  * that distinguishes "shares the process" from "is merely declared async".
+ *
+ * **Every check below counts turns of the event loop, never milliseconds**
+ * (DOR-1689). Both halves of the claim are ordering, not speed: the loop got a
+ * turn between containers, and it got roughly one per container. Measuring that
+ * with a 1ms `setInterval` and a one-second `vi.waitFor` instead made the file
+ * report how busy the MACHINE was — it redded five pre-push gates across four
+ * unrelated branches and, reproduced here, 24 of 24 runs under 24 concurrent
+ * vitest processes, each time with the sweep working correctly and simply not
+ * finished (485 of 500 rows written when the stopwatch expired). A turn is the
+ * unit the sweep actually spends, and load cannot buy fewer of them.
  */
 
 let db: Db;
@@ -31,6 +42,82 @@ beforeEach(() => {
 
 /** How many containers a sweep has to be wide before the point is made. */
 const CONTAINERS = 500;
+
+/**
+ * How long the runner waits for one of these tests.
+ *
+ * Not a bound on anything the sweep promises — nothing below is asserted in
+ * time, so raising this weakens no check. It exists because the WORK here is
+ * genuinely large (500 synchronous SQLite writes, 200 files created and read),
+ * and a machine already running other suites stretches it past vitest's 5s
+ * default: the slowest of these tests measured 8.2s under 40 concurrent vitest
+ * processes, and the pre-fix file was reproduced hitting the 5s runner timeout
+ * at only 10-way concurrency. Both are reds with the sweep working correctly.
+ */
+const SLOW_UNDER_LOAD_MS = 60_000;
+
+/** A running count of event-loop turns. */
+interface EventLoopTurnCounter {
+  /**
+   * Begin counting.
+   *
+   * Turns the loop took before this call are not counted, which is what lets a
+   * test open the count immediately before the loop it means to measure rather
+   * than banking the I/O turns of whatever ran first.
+   */
+  start: () => void;
+
+  /** Turns the loop has taken since {@link EventLoopTurnCounter.start}. */
+  readonly turns: number;
+
+  /** Stop counting, so the pump does not outlive the test. */
+  stop: () => void;
+}
+
+/**
+ * A counter of event-loop turns, created stopped.
+ *
+ * A `setImmediate` re-queued from inside the check phase runs on the NEXT turn
+ * of the loop and never the current one, so a self-rescheduling chain of them
+ * increments exactly once per turn. That is the unit a yielding sweep spends —
+ * one turn per container, because that is what `yieldToEventLoop` costs — and
+ * unlike a millisecond, a loaded machine cannot make the sweep spend fewer.
+ */
+function eventLoopTurnCounter(): EventLoopTurnCounter {
+  let turns = 0;
+  let running = false;
+  const pump = (): void => {
+    if (!running) return;
+    turns += 1;
+    setImmediate(pump);
+  };
+  return {
+    start: () => {
+      running = true;
+      setImmediate(pump);
+    },
+    get turns() {
+      return turns;
+    },
+    stop: () => {
+      running = false;
+    },
+  };
+}
+
+/**
+ * Hand the event loop turns until `settled()` holds, giving up after `maxTurns`.
+ *
+ * The turn-counted answer to `vi.waitFor`: a sweep that is progressing needs a
+ * bounded number of TURNS to finish however slow each one is, while a sweep that
+ * has stalled never finishes however many it is given — so the bound still fails
+ * a real stall, and no amount of load can trip it.
+ */
+async function settleWithinTurns(settled: () => boolean, maxTurns: number): Promise<void> {
+  for (let spent = 0; spent < maxTurns && !settled(); spent += 1) {
+    await nextEventLoopTurn();
+  }
+}
 
 /** A row source of {@link CONTAINERS} containers, each holding one message. */
 function wideSource(onRead: (originKey: string) => void): RowSource {
@@ -63,51 +150,69 @@ function wideSource(onRead: (originKey: string) => void): RowSource {
 }
 
 describe('a wide row sweep', () => {
-  it('lets a timer fire while it is still working', async () => {
-    // A real interval, not a fake one: the claim is about the event loop itself,
-    // and a fake timer would report a turn the loop never actually took.
-    let ticks = 0;
-    let containersRead = 0;
-    let firstTickAtContainer: number | null = null;
-    const source = wideSource(() => {
-      containersRead += 1;
-      if (ticks > 0 && firstTickAtContainer === null) firstTickAtContainer = containersRead;
-    });
+  it(
+    'lets the event loop turn while it is still working',
+    async () => {
+      let containersRead = 0;
+      let firstTurnAtContainer: number | null = null;
+      const loop = eventLoopTurnCounter();
+      loop.start();
+      const source = wideSource(() => {
+        containersRead += 1;
+        if (loop.turns > 0 && firstTurnAtContainer === null) firstTurnAtContainer = containersRead;
+      });
 
-    const heartbeat = setInterval(() => {
-      ticks += 1;
-    }, 1);
-    let swept;
-    try {
-      swept = await new SearchIndexer(db, [source]).sweep();
-    } finally {
-      clearInterval(heartbeat);
-    }
+      let swept;
+      try {
+        swept = await new SearchIndexer(db, [source]).sweep();
+      } finally {
+        loop.stop();
+      }
 
-    expect(swept.indexed).toBe(CONTAINERS);
-    // `null` is the whole of the old behaviour: the timer was due within a
-    // millisecond and could not run until every one of the 500 containers had
-    // been read and written.
-    expect(firstTickAtContainer).not.toBeNull();
-    expect(firstTickAtContainer).toBeLessThan(CONTAINERS);
-  });
+      expect(swept.indexed).toBe(CONTAINERS);
+      // `null` is the whole of the old behaviour: the loop could not take a turn
+      // until every one of the 500 containers had been read and written.
+      expect(firstTurnAtContainer).not.toBeNull();
+      expect(firstTurnAtContainer).toBeLessThan(CONTAINERS);
+      // And it is a turn PER CONTAINER, not one turn somewhere in the middle —
+      // the difference between a sweep that shares the process and one that
+      // pauses once. Measured at exactly `CONTAINERS`; the five turns of slack
+      // are so that the exact turn the sweep's own promise resolves on cannot
+      // decide the result, and nothing more. A floor of half would have been the
+      // more comfortable number and is the wrong one: yielding every OTHER
+      // container scores exactly 250 and would have passed it.
+      expect(loop.turns).toBeGreaterThanOrEqual(CONTAINERS - 5);
+    },
+    SLOW_UNDER_LOAD_MS
+  );
 
-  it('returns from start() long before the first sweep has indexed everything', async () => {
-    // The startup sweep is documented as un-awaited, and that was true of the
-    // PROMISE while being false of the work: a synchronous pass ran to completion
-    // inside `start()` itself, so boot waited for it whether it awaited or not.
-    const indexer = new SearchIndexer(db, [wideSource(() => {})]);
+  it(
+    'returns from start() long before the first sweep has indexed everything',
+    async () => {
+      // The startup sweep is documented as un-awaited, and that was true of the
+      // PROMISE while being false of the work: a synchronous pass ran to completion
+      // inside `start()` itself, so boot waited for it whether it awaited or not.
+      const indexer = new SearchIndexer(db, [wideSource(() => {})]);
 
-    indexer.start();
-    const indexedWhenStartReturned = db.select().from(messages).all().length;
-    indexer.stop();
+      indexer.start();
+      const indexedWhenStartReturned = db.select().from(messages).all().length;
+      indexer.stop();
 
-    expect(indexedWhenStartReturned).toBe(0);
-    // And it still finishes — a sweep that yields is not a sweep that stalls.
-    await vi.waitFor(() => {
+      // Never part of the DOR-1689 flake, and deliberately left alone: this reads
+      // the table in the same synchronous block that called `start()`, so it is
+      // already an ordering assertion and no amount of load can move it.
+      expect(indexedWhenStartReturned).toBe(0);
+
+      // And it still finishes — a sweep that yields is not a sweep that stalls.
+      // Waited out in turns rather than in milliseconds: this is where the flake
+      // lived, and the sweep spends one turn per container, so four times that is
+      // slack for discovery and the closing writes.
+      const indexed = (): number => db.select({ rows: count() }).from(messages).all()[0]?.rows ?? 0;
+      await settleWithinTurns(() => indexed() === CONTAINERS, CONTAINERS * 4);
       expect(db.select().from(messages).all()).toHaveLength(CONTAINERS);
-    });
-  });
+    },
+    SLOW_UNDER_LOAD_MS
+  );
 });
 
 describe('a wide file sweep', () => {
@@ -126,50 +231,73 @@ describe('a wide file sweep', () => {
     await fs.rm(root, { recursive: true, force: true });
   });
 
-  it('lets the loop run between files that have not changed', async () => {
-    // The file loop yields on real I/O whenever a file has something new, so the
-    // starved case is the ordinary one: a corpus where nothing changed since the
-    // last sweep costs no read at all, and the loop over it is pure synchronous
-    // work — 19,000 iterations of it on the operator's own machine.
-    const files = 200;
-    const slug = path.join(projects, 'slug-a');
-    await fs.mkdir(slug, { recursive: true });
-    await Promise.all(
-      Array.from({ length: files }, (_unused, i) =>
-        fs.writeFile(
-          path.join(slug, `session-${String(i)}.jsonl`),
-          `${JSON.stringify({
-            type: 'user',
-            cwd: '/repo/project',
-            timestamp: '2026-08-26T10:00:00.000Z',
-            message: { role: 'user', content: `said in session ${String(i)}` },
-          })}\n`
+  it(
+    'lets the loop run between files that have not changed',
+    async () => {
+      // The file loop yields on real I/O whenever a file has something new, so the
+      // starved case is the ordinary one: a corpus where nothing changed since the
+      // last sweep costs no read at all, and the loop over it is pure synchronous
+      // work — 19,000 iterations of it on the operator's own machine.
+      const files = 200;
+      const slug = path.join(projects, 'slug-a');
+      await fs.mkdir(slug, { recursive: true });
+      await Promise.all(
+        Array.from({ length: files }, (_unused, i) =>
+          fs.writeFile(
+            path.join(slug, `session-${String(i)}.jsonl`),
+            `${JSON.stringify({
+              type: 'user',
+              cwd: '/repo/project',
+              timestamp: '2026-08-26T10:00:00.000Z',
+              message: { role: 'user', content: `said in session ${String(i)}` },
+            })}\n`
+          )
         )
-      )
-    );
-    const first = await sweepFileSource(db, source, '2026-08-26T10:00:00.000Z');
-    expect(first.indexed).toBe(files);
+      );
+      const first = await sweepFileSource(db, source, '2026-08-26T10:00:00.000Z');
+      expect(first.indexed).toBe(files);
 
-    // Observed with an immediate rather than a timer, because the answer is then
-    // exact rather than a race: this one is queued before the loop's first yield,
-    // so it runs first in the same check phase — at file 1 when the loop yields,
-    // and not until the whole sweep is over when it does not.
-    let loopRanDuringSweep = false;
-    const observed: FileSource = {
-      ...source,
-      discover: async (known) => {
-        const discovery = await source.discover(known);
-        setImmediate(() => {
-          loopRanDuringSweep = true;
-        });
-        return discovery;
-      },
-    };
+      // Observed with an immediate rather than a timer, because the answer is then
+      // exact rather than a race: this one is queued before the loop's first yield,
+      // so it runs first in the same check phase — at file 1 when the loop yields,
+      // and not until the whole sweep is over when it does not.
+      let loopRanDuringSweep = false;
+      const loop = eventLoopTurnCounter();
+      const observed: FileSource = {
+        ...source,
+        discover: async (known) => {
+          const discovery = await source.discover(known);
+          setImmediate(() => {
+            loopRanDuringSweep = true;
+          });
+          // **Counting opens HERE, and that placement is the whole assertion.**
+          // Discovery reaches a real filesystem, so it spends plenty of turns of
+          // its own that have nothing to do with the file loop: started before
+          // `sweepFileSource` instead, the counter banks ~249 of them and clears
+          // any floor below that even with the per-file yield deleted — a check
+          // that cannot fail for the mutation it exists to catch. Opened one
+          // step before the loop it measures, every turn it sees was bought by
+          // `yieldToEventLoop`.
+          loop.start();
+          return discovery;
+        },
+      };
 
-    const second = await sweepFileSource(db, observed, '2026-08-26T10:05:00.000Z');
+      let second;
+      try {
+        second = await sweepFileSource(db, observed, '2026-08-26T10:05:00.000Z');
+      } finally {
+        loop.stop();
+      }
 
-    expect(second.indexed).toBe(0);
-    expect(second.containers).toBe(files);
-    expect(loopRanDuringSweep).toBe(true);
-  });
+      expect(second.indexed).toBe(0);
+      expect(second.containers).toBe(files);
+      expect(loopRanDuringSweep).toBe(true);
+      // The same turn-per-file floor the row sweep asserts, for the same reason:
+      // one turn somewhere is not the claim, a turn between FILES is. Measured
+      // at exactly `files`, with the same five turns of slack and no more.
+      expect(loop.turns).toBeGreaterThanOrEqual(files - 5);
+    },
+    SLOW_UNDER_LOAD_MS
+  );
 });
