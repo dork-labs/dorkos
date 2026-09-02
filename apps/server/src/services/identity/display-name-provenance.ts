@@ -57,9 +57,29 @@
  *   that is gone, and a stale `agent` stamp beside a `null` name would draw a
  *   hint under the roster's `You` fallback.
  *
- * The record leaf itself is `operator-only` in `CONFIG_WRITE_POLICY`, so no
- * patch can write or clear it directly at any of the three doors — every value
- * it ever holds is derived here or is {@link OPERATOR_SAVE_SOURCE}.
+ * ## What the `operator-only` verdict on the leaf does and does not buy
+ *
+ * `profile.displayNameSource` is `operator-only` in `CONFIG_WRITE_POLICY`, and
+ * that closes the DERIVED path completely: no patch reaching
+ * {@link stampDisplayNameSource} can name the leaf, in any posture, so every
+ * value it holds is decided here or is {@link OPERATOR_SAVE_SOURCE}. That is the
+ * path an agent actually has, because `config_patch` refuses the leaf outright.
+ *
+ * It does NOT mean the leaf is unwritable. `PATCH /api/config` inherits the
+ * residual DOR-505 could not close and that `routes/config.ts` documents at
+ * length: with login OFF — the default — there is no cookie for anyone, so a
+ * local program that simply omits its agent header can write EVERY
+ * `operator-only` setting through that route, this leaf included. Reproduced
+ * during review: the write returns 200 and is stored. Nothing about this leaf is
+ * special there; it is the same residual `auth.enabled` and `mcp.apiKey` carry,
+ * for the same reason (in the default posture the app presents nothing such a
+ * program cannot also present, and refusing it would lock a person out of their
+ * own settings). Turning on Require login closes it.
+ *
+ * So do not describe this note as unforgeable. The honest claim is narrower and
+ * still worth having: an agent using the capability surface it is given cannot
+ * write, clear or launder it, and on an install with Require login on, nothing
+ * can.
  *
  * @module services/identity/display-name-provenance
  */

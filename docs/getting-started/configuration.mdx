@@ -872,7 +872,7 @@ Tell DorkBot what kind of work you do, and every agent on this machine knows who
     },
     'profile.displayNameSource': {
       description:
-        'Who chose the name above: you, or an agent that suggested it. Set automatically; you never edit it. When an agent picked the name, your team page and account menu say "Suggested by DorkBot" until you save a name yourself. Local-only; never included in any telemetry payload.',
+        'Who chose the name above: you, an agent that suggested it, or nobody DorkOS can name. Set automatically; you never edit it. When an agent picked the name, your team page and account menu say "Suggested by DorkBot" until you save a name yourself in Settings › Profile. It stays empty for a name DorkOS has no record of — one you had before this was tracked, or one saved from the command line or the settings API, where DorkOS cannot tell it was you. An empty value shows no note. Local-only; never included in any telemetry payload.',
       type: 'object | null',
       default: 'null',
     },
