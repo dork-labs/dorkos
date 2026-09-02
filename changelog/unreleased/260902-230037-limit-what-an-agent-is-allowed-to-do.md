@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(shared,server,client,cli): let a person cap what an agent may ever do (DOR-486)'
+  - 'fix(server,shared,client): a revoked agent can no longer out-reach a capped one (DOR-486)'
 ---
 
 ### Added
