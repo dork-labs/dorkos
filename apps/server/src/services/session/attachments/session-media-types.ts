@@ -50,6 +50,25 @@ export function storableImageExtension(mediaType: string): string | null {
 }
 
 /**
+ * The media type, reduced to something safe to show a person.
+ *
+ * A media type is producer-controlled — the runtime records whatever the model
+ * or an MCP tool claimed — so it must not be interpolated into a rendered
+ * transcript or an error message verbatim. The parameters after `;` are dropped
+ * — exactly what {@link storableImageExtension} compares against — and anything
+ * not shaped like a media type at all falls back to a plain phrase.
+ *
+ * One rule, both surfaces: the live path's refusal message and the history
+ * placeholder for the same condition sanitize identically.
+ *
+ * @param mediaType - The raw media type the producer declared.
+ */
+export function displayableMime(mediaType: string): string {
+  const bare = mediaType.split(';')[0]!.trim().toLowerCase();
+  return /^[\w.+-]+\/[\w.+-]+$/.test(bare) ? bare : 'an unnamed image format';
+}
+
+/**
  * The media type a stored suffix is served as, or `null` for a suffix nothing
  * here could have written.
  *

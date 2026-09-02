@@ -44,6 +44,7 @@ import { mapMessageError } from './history-error-part.js';
 import { deriveSessionAttachmentId } from '../../session/attachments/session-attachment-id.js';
 import {
   MAX_SESSION_ATTACHMENT_BYTES,
+  displayableMime,
   storableImageExtension,
 } from '../../session/attachments/session-media-types.js';
 import type { SessionAttachmentStore } from '../../session/attachments/session-attachment-store.js';
@@ -279,22 +280,6 @@ type HistoryMediaResolver = (
  */
 function unshowableImagePart(message: string): ErrorPart {
   return { type: 'error', message, category: 'execution_error' };
-}
-
-/**
- * The media type, reduced to something safe to show.
- *
- * `file.mime` is producer-controlled (the sidecar records whatever the model
- * or an MCP tool claimed), so it must not be interpolated into a rendered
- * transcript verbatim. The parameters after `;` are dropped — exactly what the
- * storability check compares against — and anything not shaped like a media
- * type at all falls back to a plain phrase.
- *
- * @param mime - The raw media type the sidecar recorded.
- */
-function displayableMime(mime: string): string {
-  const base = mime.split(';')[0]!.trim().toLowerCase();
-  return /^[\w.+-]+\/[\w.+-]+$/.test(base) ? base : 'an unnamed image format';
 }
 
 /** The `file` member of OpenCode's part union, named for readability. */

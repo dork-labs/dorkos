@@ -31,6 +31,7 @@ import {
 } from './session-attachment-store.js';
 import {
   MAX_SESSION_ATTACHMENT_BYTES,
+  displayableMime,
   imageMediaTypeForExtension,
   storableImageExtension,
 } from './session-media-types.js';
@@ -209,12 +210,23 @@ export class LocalSessionAttachmentStore implements SessionAttachmentStore {
     return attachmentUrl(sessionId, attachmentId, extension);
   }
 
-  /** The allowlisted suffix and canonical type for these bytes, or refuse them. */
+  /**
+   * The allowlisted suffix and canonical type for these bytes, or refuse them.
+   *
+   * The refusal message reaches a person — it rides out of the live turn as a
+   * rendered error — and `mediaType` is producer-controlled, so it is shown
+   * through `displayableMime` rather than raw. This is the same sanitization
+   * the history placeholder for this condition applies, so both surfaces of one
+   * turn say the same safe thing.
+   *
+   * @param mediaType - What the producer said the bytes are.
+   */
   private requireStorable(mediaType: string): { extension: string; normalized: string } {
     const extension = storableImageExtension(mediaType);
     if (!extension) {
+      const shown = mediaType.trim() ? displayableMime(mediaType) : 'an untyped file';
       throw new UnsupportedSessionMediaError(
-        `A session cannot store ${mediaType || 'an untyped file'} — only PNG, JPEG, GIF and WebP images.`
+        `A session cannot store ${shown} — only PNG, JPEG, GIF and WebP images.`
       );
     }
     return { extension, normalized: imageMediaTypeForExtension(extension) ?? mediaType };

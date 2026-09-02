@@ -2,6 +2,7 @@
 covers:
   - 'fix(server): a turn whose only output is an unshowable image survives reload (DOR-1671)'
   - 'fix(server): apply DOR-1671 adversarial-review findings'
+  - 'fix(server): one media-type sanitization rule, live path and reload alike (DOR-1671)'
 ---
 
 ### Fixed
