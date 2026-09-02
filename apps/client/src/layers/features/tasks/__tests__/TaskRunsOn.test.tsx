@@ -820,6 +820,45 @@ describe('the task form Runs-on controls', () => {
         expect(screen.queryByTestId('agent-pick-waiting')).toBeNull();
       });
 
+      it('does not re-open a door the person already refused', async () => {
+        // The narrow claim, and the one that pins the EFFECT's own clear: a pick
+        // is refused, nothing else is touched, and the manifests are read again.
+        // Nothing but the effect can bring that pick back, so nothing but the
+        // effect's clear can stop it — unlike the case below, where picking a
+        // second agent also retires the first through `pick`'s straight-through
+        // path and would mask a missing clear here.
+        const createTask = vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-new' }));
+        const { transport, release } = transportWithHeldManifests({ createTask });
+        let client!: QueryClient;
+        renderNewTaskOnClaude(transport, (c) => {
+          client = c;
+        });
+
+        await pickCodexInTheWindow();
+        release();
+        const door = await screen.findByRole('alertdialog');
+        await user.click(within(door).getByRole('button', { name: 'Cancel' }));
+        await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+        await expectSelected('task-runtime-select', "Agent's runtime (Claude Code)");
+
+        // Nothing else happens in between. The roster grows, which is all it
+        // takes to make the manifests unknown and then known again.
+        const releaseSecond = await beginSecondRead(transport, client);
+        await expectSelected('task-runtime-select', 'Server default (Claude Code)');
+        releaseSecond();
+
+        await expectSelected('task-runtime-select', "Agent's runtime (Claude Code)");
+        expect(screen.queryByRole('alertdialog')).toBeNull();
+        expect(screen.getByText('claude-bot')).toBeInTheDocument();
+
+        fillRequiredFields();
+        fireEvent.click(screen.getByText('Create'));
+        await waitFor(() => expect(createTask).toHaveBeenCalled());
+        expect(createTask).toHaveBeenCalledWith(
+          expect.objectContaining({ target: CLAUDE_AGENT.id })
+        );
+      }, 20_000);
+
       it('does not bring a spent pick back when the manifests are read again', async () => {
         // "The manifests are known" is not a one-way door. The resolve query
         // re-mints its key whenever the roster changes, holds no placeholder
@@ -828,6 +867,10 @@ describe('the task form Runs-on controls', () => {
         // of those edges: it clobbers whatever the person chose in between, and
         // it can re-apply one they REFUSED at the door — silently, if the mode
         // has moved since so it no longer widens.
+        //
+        // The second agent here is the point — a later pick must not be undone
+        // by an earlier one — and it is also why this case cannot stand in for
+        // the one above: picking again retires the latch by another route.
         const createTask = vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-new' }));
         const { transport, release } = transportWithHeldManifests({ createTask });
         let client!: QueryClient;
