@@ -30,7 +30,12 @@ vi.mock('../../services/core/runtime-registry.js', () => ({
     getAllCapabilities: vi.fn(() => ({})),
     getDefaultType: vi.fn(() => 'fake'),
     resolveForSession: vi.fn(async () => fakeRuntime),
+    // One runtime, and it owns every session here — this file is about the cwd
+    // boundary, not about ownership. The unbound-session seam the gates key off
+    // lives in `sessions-model-gate-unbound.test.ts`.
+    resolveForSessionWithOwnership: vi.fn(async () => ({ runtime: fakeRuntime, bound: true })),
     getSessionRuntimeType: vi.fn(async () => 'fake'),
+    resolveSessionRuntime: vi.fn(async () => ({ type: 'fake', bound: true })),
     persistSessionRuntime: vi.fn(async () => {}),
     has: vi.fn(() => true),
   },

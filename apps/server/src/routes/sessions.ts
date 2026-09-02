@@ -510,6 +510,9 @@ function rejectUndeclaredPermissionMode(
  * later with "That model isn't available", by which point the person has already
  * typed their message (DOR-1660).
  *
+ * Which runtime that is, is {@link modelGateAuthority}'s question, and it is a
+ * real one: an unbound session HAS no runtime, only an inference.
+ *
  * ## It degrades, on purpose
  *
  * An EMPTY catalog is not a claim that the runtime has no models — it is what a
@@ -542,6 +545,53 @@ async function rejectUnknownModel(runtime: AgentRuntime, model: string): Promise
     return null;
   }
   return `The ${runtime.type} runtime cannot run model '${model}'. Pick one from the model menu.`;
+}
+
+/**
+ * The runtime whose catalog may REFUSE this model write, or `null` when nothing
+ * has the standing to refuse it.
+ *
+ * ## Why a gate has to ask this at all
+ *
+ * `resolveSessionRuntime` answers for every session id, bound or not — an
+ * unbound one gets the legacy inference, `claude-code`, so that reads keep
+ * working before the first turn. {@link rejectUnknownModel} was written on top
+ * of that answer as if it were ownership, and it is not: a person who starts a
+ * session, switches the chip to OpenCode and picks an OpenCode model was told
+ * "the claude-code runtime cannot run" it, for a session claude-code did not own
+ * and never would. The gate fired against a runtime nobody chose.
+ *
+ * So it asks in the order of who actually knows:
+ *
+ * - **Bound** → the owner. Ownership is a fact in `session_metadata`, the gate
+ *   has full authority, and this is the case DOR-1660 was about.
+ * - **Unbound, and the request names a registered runtime** → that one. Nothing
+ *   here binds anything — the hint only says which catalog to judge against, and
+ *   it is the catalog the person was picking from. Ownership is still the first
+ *   turn's to write (ADR-0255).
+ * - **Unbound, and nobody said** → `null`. The gate declines rather than guesses.
+ *
+ * That last rung is the same rule {@link rejectUnknownModel} already applies to
+ * an empty catalog, one level up: evidence nobody has is not evidence against.
+ * The cost of declining is a turn that fails honestly later; the cost of
+ * guessing is a person locked out of a model that works.
+ *
+ * An unregistered hint is treated as no hint. A caller cannot conjure authority
+ * out of a runtime this server does not have, and 400-ing on it would refuse a
+ * settings write over a field that only ever narrows a check.
+ *
+ * @param owner - The runtime instance the session resolved to.
+ * @param bound - Whether `owner` is the session's recorded owner or the inference.
+ * @param hint - `body.runtime`: the runtime the caller believes will own this session.
+ */
+function modelGateAuthority(
+  owner: AgentRuntime,
+  bound: boolean,
+  hint: string | undefined
+): AgentRuntime | null {
+  if (bound) return owner;
+  if (hint === undefined || !runtimeRegistry.has(hint)) return null;
+  return runtimeRegistry.get(hint);
 }
 
 /**
@@ -593,10 +643,18 @@ router.patch('/:id', async (req, res) => {
     fastMode,
     title,
     acknowledgedAutonomy,
+    runtime: runtimeHint,
   } = parsed.data;
   // Fail-closed by construction: an unresolvable session throws here, before
   // any check below can be skipped and before anything is written.
-  const runtime = await runtimeRegistry.resolveForSession(sessionId);
+  //
+  // Routing and ownership come out of the SAME read, because they are different
+  // questions with different answers: `runtime` is where this write goes, and
+  // `bound` is whether anyone has actually said so or the registry inferred it.
+  // A gate that conflates the two refuses requests on a guess — see
+  // {@link modelGateAuthority}. Nothing here writes ownership: that is the first
+  // turn's to establish (ADR-0255), and the `runtime` hint cannot bind.
+  const { runtime, bound } = await runtimeRegistry.resolveForSessionWithOwnership(sessionId);
   // The wire carries any well-formed mode id, because a runtime names its own
   // modes (`PermissionModeIdSchema`). The session's runtime is the ONLY thing
   // that can say whether the id it was handed is real, so it is the authority
@@ -687,8 +745,20 @@ router.patch('/:id', async (req, res) => {
   // Same authority argument as the mode gate directly above, applied to the
   // model: only the runtime can say whether the id it was handed is real, and it
   // is asked HERE so every caller passes the same door.
+  //
+  // With one difference the mode gate does not need: WHICH runtime is asked.
+  // Model ids are namespaced per runtime and overlap nowhere, so asking the
+  // wrong one is a guaranteed refusal rather than a rare one — which is exactly
+  // what shipped, and what {@link modelGateAuthority} exists to stop. The mode
+  // gate above keeps asking `runtime` because every runtime here declares a
+  // SUBSET of claude-code's mode ids, so the inference can only ever be too
+  // permissive there, and the too-permissive direction is already caught where
+  // the runtime finally becomes known (`RuntimeRegistry.claimedPermissionMode`
+  // drops a mode the bound runtime does not declare). Narrowing it to the hint
+  // would ADD refusals, not remove them, and that is a separate decision.
   if (model !== undefined) {
-    const modelError = await rejectUnknownModel(runtime, model);
+    const authority = modelGateAuthority(runtime, bound, runtimeHint);
+    const modelError = authority ? await rejectUnknownModel(authority, model) : null;
     if (modelError) return sendError(res, 400, modelError, 'UNSUPPORTED_MODEL');
   }
   // Past the gate the id is one THIS runtime declares, so it is a real mode by

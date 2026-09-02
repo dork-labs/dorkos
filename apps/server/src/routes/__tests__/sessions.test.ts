@@ -37,7 +37,20 @@ vi.mock('../../services/core/runtime-registry.js', () => ({
     getAllCapabilities: vi.fn(() => ({})),
     getDefaultType: vi.fn(() => 'fake'),
     resolveForSession: vi.fn(async () => fakeRuntime),
+    /**
+     * Every session in this file is OWNED by the one runtime it has.
+     *
+     * That is a real limit, not an oversight: with a single `fakeRuntime` and
+     * no DB, "nobody has bound this session yet" is not a state this mock can
+     * represent, and neither is a model that belongs to one runtime while the
+     * session resolves to another. Both are what the gates key off. The unbound
+     * case therefore lives in `sessions-model-gate-unbound.test.ts`, against the
+     * real registry and two runtimes — read that file before assuming a gate is
+     * covered by this one.
+     */
+    resolveForSessionWithOwnership: vi.fn(async () => ({ runtime: fakeRuntime, bound: true })),
     getSessionRuntimeType: vi.fn(async () => 'fake'),
+    resolveSessionRuntime: vi.fn(async () => ({ type: 'fake', bound: true })),
     persistSessionRuntime: vi.fn(async () => {}),
     has: vi.fn(() => true),
     // Session-settings store (ADR-0260): default to "no persisted settings"

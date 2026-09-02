@@ -75,6 +75,26 @@ export interface SessionBinding {
   boundAt: number | null;
 }
 
+/**
+ * Where a session's runtime came from, for a caller that has to know.
+ *
+ * The registry answers "which runtime" for every session id it is handed,
+ * including ids nothing has bound yet — see
+ * {@link RuntimeRegistry.resolveSessionRuntime}. Routing wants that tolerance.
+ * A gate does not: refusing a request on an inferred runtime refuses it on a
+ * guess.
+ */
+export interface SessionRuntimeResolution {
+  /** The runtime type to route by — the bound owner, or the inference. */
+  type: string;
+  /**
+   * True only when `session_metadata` names an owner. False means NOBODY has
+   * said which runtime this session runs on yet, and {@link type} is the
+   * fallback rather than an answer.
+   */
+  bound: boolean;
+}
+
 /** Reduce `SessionSettings` to only the explicitly-provided keys for an UPSERT patch. */
 function pickSettings(settings: SessionSettings): Partial<typeof sessionMetadata.$inferInsert> {
   const patch: Partial<typeof sessionMetadata.$inferInsert> = {};
@@ -296,10 +316,36 @@ export class RuntimeRegistry {
   /**
    * Return the runtime type string for a session.
    *
-   * Pure read — never writes. Two shapes get the same INFERRED answer, because
-   * they are the same state: `session_metadata` has no row for `sessionId`
-   * (legacy sessions predate the table), or it has one whose `runtime` is NULL
-   * (a settings change arrived before the session started — see
+   * **This answer is sometimes a GUESS, and this signature cannot tell you
+   * which.** It is {@link RuntimeRegistry.resolveSessionRuntime} with the
+   * `bound` flag dropped — fine for routing, where an unbound session has to be
+   * sent somewhere and the inference is the tolerant answer that keeps reads
+   * working before a session binds.
+   *
+   * It is the WRONG read for anything that refuses a request. A gate that
+   * validates against this string validates against the guess: that is how the
+   * model gate came to tell a person picking OpenCode that "the claude-code
+   * runtime cannot run" the model they had just chosen from the OpenCode menu
+   * — for a session no runtime owned yet. Ask
+   * {@link RuntimeRegistry.resolveSessionRuntime} instead and decline to judge
+   * when `bound` is false.
+   *
+   * @param sessionId - Session identifier
+   */
+  async getSessionRuntimeType(sessionId: string): Promise<string> {
+    return (await this.resolveSessionRuntime(sessionId)).type;
+  }
+
+  /**
+   * Which runtime a session runs on — and whether anything has actually said so.
+   *
+   * Pure read; never writes. The one place the legacy inference lives, so no
+   * caller re-derives it and the two copies cannot drift.
+   *
+   * Two shapes get the same INFERRED answer, because they are the same state:
+   * `session_metadata` has no row for `sessionId` (legacy sessions predate the
+   * table), or it has one whose `runtime` is NULL (a settings change arrived
+   * before the session started — see
    * {@link RuntimeRegistry.saveSessionSettings}). Neither has an owner yet, so
    * both resolve to `'claude-code'` when that adapter is registered, otherwise
    * the default registered type.
@@ -312,14 +358,14 @@ export class RuntimeRegistry {
    *
    * @param sessionId - Session identifier
    */
-  async getSessionRuntimeType(sessionId: string): Promise<string> {
-    const db = this.requireDb('getSessionRuntimeType');
+  async resolveSessionRuntime(sessionId: string): Promise<SessionRuntimeResolution> {
+    const db = this.requireDb('resolveSessionRuntime');
     const row = db
       .select({ runtime: sessionMetadata.runtime })
       .from(sessionMetadata)
       .where(eq(sessionMetadata.sessionId, sessionId))
       .get();
-    if (row?.runtime) return row.runtime;
+    if (row?.runtime) return { type: row.runtime, bound: true };
 
     // Legacy inference: sessions predating the registry table are Claude Code
     // sessions — but only when that adapter is actually registered. On a
@@ -331,14 +377,14 @@ export class RuntimeRegistry {
     logger.debug(
       `[RuntimeRegistry] Inferring runtime='${inferred}' for unbound session '${sessionId}' (not persisted)`
     );
-    return inferred;
+    return { type: inferred, bound: false };
   }
 
   /**
    * Resolve the runtime instance that owns a session.
    *
    * Reads `session_metadata`; row-less sessions resolve through
-   * {@link getSessionRuntimeType}'s inference (no row is written here). If the
+   * {@link resolveSessionRuntime}'s inference (no row is written here). If the
    * stored runtime type is not currently registered, throws
    * {@link RuntimeNotRegisteredError} rather than silently routing to the
    * default — masking such mismatches would hide routing bugs (e.g., a `codex`
@@ -348,10 +394,27 @@ export class RuntimeRegistry {
    * @throws {RuntimeNotRegisteredError} If the session's stored runtime is not registered.
    */
   async resolveForSession(sessionId: string): Promise<AgentRuntime> {
-    const runtimeType = await this.getSessionRuntimeType(sessionId);
-    const runtime = this.runtimes.get(runtimeType);
-    if (!runtime) throw new RuntimeNotRegisteredError(runtimeType, sessionId);
-    return runtime;
+    return (await this.resolveForSessionWithOwnership(sessionId)).runtime;
+  }
+
+  /**
+   * {@link RuntimeRegistry.resolveForSession}, plus whether the runtime it
+   * returned is the session's OWNER or the inference standing in for one.
+   *
+   * One read, both facts, for a caller that must not treat the second case as
+   * the first — {@link RuntimeRegistry.getSessionRuntimeType} explains which
+   * callers those are.
+   *
+   * @param sessionId - Session identifier
+   * @throws {RuntimeNotRegisteredError} If the session's stored runtime is not registered.
+   */
+  async resolveForSessionWithOwnership(
+    sessionId: string
+  ): Promise<{ runtime: AgentRuntime; bound: boolean }> {
+    const { type, bound } = await this.resolveSessionRuntime(sessionId);
+    const runtime = this.runtimes.get(type);
+    if (!runtime) throw new RuntimeNotRegisteredError(type, sessionId);
+    return { runtime, bound };
   }
 
   // ---------------------------------------------------------------------------

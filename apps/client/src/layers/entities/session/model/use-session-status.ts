@@ -161,6 +161,17 @@ export function useSessionStatus(
       };
       applyOverrides(sessionId, applied);
 
+      // Say which runtime these settings are FOR. Before a session's first
+      // message the server has no owner recorded for it, so it can only infer
+      // one — and a model id belongs to exactly one runtime's namespace, so an
+      // OpenCode model judged against Claude Code's catalog is refused every
+      // time. This hook is already handed the resolved runtime (the same value
+      // the chip displays and the model picker was filled from), so the request
+      // carries it. The server treats it as a hint on an unbound session and
+      // ignores it entirely on a bound one — it cannot bind or re-bind anything
+      // (ADR-0255). An explicit `opts.runtime` from a caller still wins.
+      const request: UpdateSessionRequest = { ...(runtime ? { runtime } : {}), ...opts };
+
       try {
         // The pending flag is a fact about THIS write, not about the session, so
         // it is split off before anything is cached: leaving it on the session
@@ -168,7 +179,7 @@ export function useSessionStatus(
         // happened (DOR-1435).
         const { permissionModePendingUntilNextTurn, ...updated } = await transport.updateSession(
           sessionId,
-          opts,
+          request,
           selectedCwd ?? undefined
         );
         if (permissionModePendingUntilNextTurn) {
@@ -209,7 +220,7 @@ export function useSessionStatus(
         handlers?.onError?.(err);
       }
     },
-    [transport, sessionId, selectedCwd, queryClient, applyOverrides, clearOverrides]
+    [transport, sessionId, runtime, selectedCwd, queryClient, applyOverrides, clearOverrides]
   );
 
   // Convergence effect: drop each optimistic override once server data confirms

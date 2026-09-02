@@ -988,6 +988,34 @@ describe('RuntimeRegistry', () => {
       expect(read('unbound-read')?.runtime).toBeNull();
     });
 
+    it('says out loud that the read was a guess, so a gate can decline to judge', async () => {
+      // The inference is tolerant on purpose — the test above is why. But a
+      // caller that REFUSES on it refuses on a guess, which is how the model
+      // gate came to tell a person picking OpenCode that claude-code could not
+      // run their model. `bound` is the one bit that makes the two readable
+      // apart; `getSessionRuntimeType` cannot carry it and says so.
+      await registry.saveSessionSettings('unbound-flag', { model: 'sonnet' });
+      await registry.persistSessionRuntime('bound-flag', 'test-mode');
+
+      expect(await registry.resolveSessionRuntime('row-less-flag')).toEqual({
+        type: 'claude-code',
+        bound: false,
+      });
+      expect(await registry.resolveSessionRuntime('unbound-flag')).toEqual({
+        type: 'claude-code',
+        bound: false,
+      });
+      expect(await registry.resolveSessionRuntime('bound-flag')).toEqual({
+        type: 'test-mode',
+        bound: true,
+      });
+
+      // The instance-resolving read carries the same bit, from the same lookup.
+      const resolved = await registry.resolveForSessionWithOwnership('unbound-flag');
+      expect(resolved.runtime.type).toBe('claude-code');
+      expect(resolved.bound).toBe(false);
+    });
+
     it('seeds the defaults of the runtime it BINDS, not of the one it guessed', async () => {
       // The reason the seed cannot ride the settings write: every key of it is a
       // per-runtime answer (`resolve-session-defaults` — the model id lives in
