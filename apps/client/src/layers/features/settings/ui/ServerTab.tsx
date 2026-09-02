@@ -231,7 +231,20 @@ function ConfigRow({
         dir={truncate ? 'rtl' : undefined}
         title={value}
       >
-        {value}
+        {/* A truncated value is a path, and a path's leaf is the part worth
+            keeping: `dir="rtl"` moves the ellipsis to the front so the shared
+            head is what gets clipped. The `bdi` is what keeps the value reading
+            left-to-right inside that. Without it a neutral character at
+            either edge is claimed by the surrounding RTL paragraph and painted
+            at the opposite end: the leading `/` of an absolute path is drawn at
+            the right, and a trailing `.` or `-` at the left. (A MATCHED
+            `(...)` or `[...]` pair does not move — UBA rule N0 gives it the
+            direction of its surrounding strong context — so a path ending in
+            `)` is not the reproduction case it looks like; an unpaired `)` is.
+            Measured in Chromium, DOR-1686.) Unconditional on purpose — the
+            `bdi` and the `dir` belong together, and separating them is what
+            caused this. Same idiom as `MessageSearchHitRow`. */}
+        <bdi dir="ltr">{value}</bdi>
       </span>
     );
   }

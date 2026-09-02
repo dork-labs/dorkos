@@ -168,6 +168,29 @@ describe('AdvancedTab', () => {
     );
   });
 
+  it('keeps the log path reading left-to-right inside its rtl span (DOR-1686)', async () => {
+    // Same trade as ServerTab's config rows: the path is clipped at the front
+    // so the folder name survives, which means an rtl paragraph, which means
+    // the leading `/` is drawn at the right-hand end unless the value is
+    // isolated (measured in Chromium: `/Users/kai/.dork/logs` painted as
+    // `Users/kai/.dork/logs/`). The leading edge is the only one at risk here,
+    // because this value always ends in `/logs`.
+    //
+    // **jsdom does no bidi layout**, so this pins the structure the browser
+    // needs and not the glyph order, which only a browser can show.
+    const { wrapper } = createConfigHarness({ dorkHome: '/Users/kai/.dork' });
+    render(<AdvancedTab />, { wrapper });
+
+    const isolated = await screen.findByText('/Users/kai/.dork/logs');
+    expect(isolated.tagName).toBe('BDI');
+    expect(isolated).toHaveAttribute('dir', 'ltr');
+    expect(isolated.textContent).toBe('/Users/kai/.dork/logs');
+    expect(isolated.parentElement).toHaveAttribute('dir', 'rtl');
+    // `truncate` is half the mechanism: without it the rtl box never clips, and
+    // the front ellipsis this row exists for is gone while `dir` still passes.
+    expect(isolated.parentElement).toHaveClass('truncate');
+  });
+
   it('opens ResetDialog when Reset button is clicked', () => {
     render(<AdvancedTab />, { wrapper: createWrapper() });
     fireEvent.click(screen.getByRole('button', { name: /reset/i }));

@@ -228,8 +228,15 @@ function LogLocationRow({ dorkHome }: { dorkHome: string }) {
     if (failed) return <span className="text-destructive text-xs">Couldn&apos;t copy</span>;
     return (
       <>
+        {/* Clipped at the front, so the folder name survives and the shared
+            head is what goes. The `bdi` keeps the path reading left-to-right
+            inside the rtl span; without it the leading `/` is claimed by the
+            surrounding RTL paragraph and painted at the right-hand end, so
+            `/Users/kai/.dork/logs` drew as `Users/kai/.dork/logs/`. That is the
+            only edge at risk here: this value always ends in `/logs`, never in
+            a neutral character (DOR-1686, idiom from `MessageSearchHitRow`). */}
         <span className="max-w-40 truncate font-mono text-xs" dir="rtl" title={logPath}>
-          {logPath}
+          <bdi dir="ltr">{logPath}</bdi>
         </span>
         <Copy className="size-3 shrink-0" />
       </>
