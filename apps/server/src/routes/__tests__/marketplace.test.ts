@@ -27,6 +27,10 @@ vi.mock('../../lib/boundary.js', async (importActual) => {
 });
 
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
+import {
+  InvalidPackageNameError,
+  PathEscapeError,
+} from '../../services/marketplace/lib/package-paths.js';
 import { MarketplaceSourceManager } from '../../services/marketplace/marketplace-source-manager.js';
 import { MarketplaceCache } from '../../services/marketplace/marketplace-cache.js';
 import type { PackageFetcher } from '../../services/marketplace/package-fetcher.js';
@@ -923,6 +927,37 @@ describe('Marketplace Routes', () => {
         .send({ force: 'not-a-boolean' });
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
+    });
+
+    // A containment assertion fires deep in the cache, where its message names
+    // the cache root — which spells dorkHome, which spells the operator's
+    // username. The body says the path was refused; it does not say where.
+    it('refuses an escaped path without telling the caller where the cache lives', async () => {
+      installer.preview.mockRejectedValue(
+        new PathEscapeError('/Users/realperson/.dork/cache/marketplace/packages', 'evil')
+      );
+
+      const res = await request(app)
+        .post('/api/marketplace/packages/sample-plugin/preview')
+        .send({});
+
+      expect(res.status).toBe(400);
+      expect(JSON.stringify(res.body)).not.toContain('realperson');
+      expect(JSON.stringify(res.body)).not.toContain('.dork');
+    });
+
+    // The other half of the pair: a bad NAME is echoed back, because the only
+    // thing that message contains is what the caller just sent, and saying
+    // which name was rejected is what makes the 400 actionable.
+    it('names the rejected package name, which the caller supplied itself', async () => {
+      installer.preview.mockRejectedValue(new InvalidPackageNameError('Bad Name', 'must be kebab'));
+
+      const res = await request(app)
+        .post('/api/marketplace/packages/sample-plugin/preview')
+        .send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('Bad Name');
     });
   });
 

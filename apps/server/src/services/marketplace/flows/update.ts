@@ -20,7 +20,7 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import type { Dirent } from 'node:fs';
 import path from 'node:path';
 import { gt as semverGt, valid as semverValid, coerce as semverCoerce } from 'semver';
-import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace';
+import { PACKAGE_MANIFEST_PATH, PackageNameSchema } from '@dorkos/marketplace';
 import type { MarketplaceJson, MarketplaceJsonEntry, PackageType } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
@@ -253,7 +253,14 @@ export class UpdateFlow {
         const manifest = await readInstalledManifest(installPath);
         if (!manifest) continue;
         const installMetadata = await readInstallMetadata(installPath);
-        const name = typeof manifest.name === 'string' ? manifest.name : entry.name;
+        // A manifest read off disk with no schema in front of it, one layer
+        // above a name that reaches `installer.update()` — which uninstalls by
+        // name, joining it into dorkHome. `typeof === 'string'` was never the
+        // question. The directory entry is the honest fallback: it is a real
+        // directory this walk just enumerated, so it cannot climb anywhere.
+        const name = PackageNameSchema.safeParse(manifest.name).success
+          ? (manifest.name as string)
+          : entry.name;
         const key = `${root.kind}:${name}`;
         if (byRootAndName.has(key)) continue;
         byRootAndName.set(key, {

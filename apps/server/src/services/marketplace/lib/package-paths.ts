@@ -35,12 +35,22 @@ import { PackageNameSchema } from '@dorkos/marketplace';
 /**
  * Base class for every refusal in this module, so a caller that only wants to
  * answer "the caller named something it may not name" can catch one type.
+ *
+ * These messages are written for a SERVER LOG, not for a response body. The
+ * two subclasses differ in what theirs contain, and a surface that answers the
+ * network has to tell them apart: {@link InvalidPackageNameError} quotes only
+ * the name the caller itself sent, while {@link PathEscapeError} names a root
+ * on this machine — a cache directory under dork-home, which spells the
+ * operator's home directory and therefore their username. `routes/marketplace`
+ * maps the first to its own message and the second to a fixed string for
+ * exactly that reason.
  */
 export class MarketplacePathError extends Error {
   /**
    * Build a path refusal.
    *
-   * @param message - Human-readable explanation, safe to return to the caller.
+   * @param message - Human-readable explanation. Log-safe, not response-safe —
+   *   see the class note before returning it to a caller.
    */
   constructor(message: string) {
     super(message);

@@ -42,6 +42,7 @@ import type { UpdateFlow } from '../services/marketplace/flows/update.js';
 import {
   assertPackageName,
   MarketplacePathError,
+  PathEscapeError,
 } from '../services/marketplace/lib/package-paths.js';
 import {
   installCountsProvider,
@@ -197,8 +198,17 @@ function mapErrorToStatus(err: unknown): { status: number; body: Record<string, 
   if (err instanceof InvalidPackageError) {
     return { status: 400, body: { error: err.message, errors: err.errors } };
   }
-  // A name or derived path the caller may not use. It is the caller's input
-  // that is wrong, so 400 — never the 500 an unmapped throw would produce.
+  // A containment assertion fired somewhere below. Its message names the root
+  // the path escaped — a cache directory under dorkHome, which spells the
+  // operator's home directory and therefore their username — so the body says
+  // the path was refused and nothing about where anything lives. The full
+  // message still reaches the server log through the handler's `logger.error`.
+  if (err instanceof PathEscapeError) {
+    return { status: 400, body: { error: 'Refused: that path resolves outside its own folder' } };
+  }
+  // A name the caller may not use. Echoed back on purpose, unlike the above:
+  // the only thing this message contains is the name the caller just sent, and
+  // saying which one was rejected is what makes the 400 actionable.
   if (err instanceof MarketplacePathError) {
     return { status: 400, body: { error: err.message } };
   }
