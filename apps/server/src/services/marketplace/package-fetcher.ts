@@ -484,11 +484,19 @@ export class PackageFetcher {
   private async resolveCommitSha(gitUrl: string, ref?: string): Promise<string> {
     const target = ref ?? 'HEAD';
     try {
-      const { stdout } = await execFileAsync('git', ['ls-remote', gitUrl, target], {
-        timeout: LS_REMOTE_TIMEOUT_MS,
-        // Confine git to safe transports (blocks `ext::`/`file::` command execution).
-        env: hardenedGitEnv(),
-      });
+      // `--end-of-options` so a package author's URL or ref starting with `-`
+      // is read as a value, never as a flag. The argv array already rules out
+      // a shell, and `hardenedGitEnv` the dangerous transports; this is the
+      // cheap fourth layer. Supported since git 2.24.
+      const { stdout } = await execFileAsync(
+        'git',
+        ['ls-remote', '--end-of-options', gitUrl, target],
+        {
+          timeout: LS_REMOTE_TIMEOUT_MS,
+          // Confine git to safe transports (blocks `ext::`/`file::` command execution).
+          env: hardenedGitEnv(),
+        }
+      );
       const firstLine = stdout.split('\n').find((line) => line.trim().length > 0);
       if (firstLine) {
         const sha = firstLine.split('\t')[0]?.trim();

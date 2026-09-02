@@ -130,6 +130,19 @@ async function cloneSubdirWithFallback(
   }
 }
 
+/**
+ * The `git` separator that ends option parsing: everything after it is read as
+ * a value, never as a flag.
+ *
+ * A clone URL and a ref both come from a marketplace entry a package author
+ * wrote, and one that starts with `-` would otherwise be offered to git as an
+ * option. Three layers already stand in front of that — the argv-array spawn
+ * (no shell), the URL schema, and {@link hardenedGitEnv} confining transports —
+ * so this is the fourth and cheapest. Supported since git 2.24, comfortably
+ * below this module's 2.25 floor.
+ */
+const END_OF_OPTIONS = '--end-of-options';
+
 /** Options shared by every clone helper in this module. */
 interface CloneStepOptions {
   cloneUrl: string;
@@ -147,12 +160,20 @@ interface CloneStepOptions {
  */
 async function sparseClone(opts: CloneStepOptions): Promise<void> {
   await runGit(
-    ['clone', '--filter=blob:none', '--no-checkout', '--depth=1', opts.cloneUrl, opts.destDir],
+    [
+      'clone',
+      '--filter=blob:none',
+      '--no-checkout',
+      '--depth=1',
+      END_OF_OPTIONS,
+      opts.cloneUrl,
+      opts.destDir,
+    ],
     undefined
   );
   await runGit(['sparse-checkout', 'init', '--cone'], opts.destDir);
   await runGit(['sparse-checkout', 'set', opts.subpath], opts.destDir);
-  await runGit(['checkout', opts.ref], opts.destDir);
+  await runGit(['checkout', END_OF_OPTIONS, opts.ref], opts.destDir);
 }
 
 /**
@@ -163,10 +184,13 @@ async function sparseClone(opts: CloneStepOptions): Promise<void> {
  * @internal
  */
 async function fallbackShallowClone(opts: CloneStepOptions): Promise<void> {
-  await runGit(['clone', '--no-checkout', '--depth=1', opts.cloneUrl, opts.destDir], undefined);
+  await runGit(
+    ['clone', '--no-checkout', '--depth=1', END_OF_OPTIONS, opts.cloneUrl, opts.destDir],
+    undefined
+  );
   await runGit(['sparse-checkout', 'init', '--cone'], opts.destDir);
   await runGit(['sparse-checkout', 'set', opts.subpath], opts.destDir);
-  await runGit(['checkout', opts.ref], opts.destDir);
+  await runGit(['checkout', END_OF_OPTIONS, opts.ref], opts.destDir);
 }
 
 /**
@@ -178,8 +202,8 @@ async function fallbackShallowClone(opts: CloneStepOptions): Promise<void> {
  * @internal
  */
 async function fallbackFullCloneWithCleanup(opts: CloneStepOptions): Promise<void> {
-  await runGit(['clone', '--depth=1', opts.cloneUrl, opts.destDir], undefined);
-  await runGit(['checkout', opts.ref], opts.destDir);
+  await runGit(['clone', '--depth=1', END_OF_OPTIONS, opts.cloneUrl, opts.destDir], undefined);
+  await runGit(['checkout', END_OF_OPTIONS, opts.ref], opts.destDir);
   await pruneOutsideSubpath(opts.destDir, opts.subpath);
 }
 

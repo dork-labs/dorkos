@@ -131,6 +131,33 @@ describe('gitSubdirResolver', () => {
     expect(result.path).toBe('/cache/qa-plugin@deadbeef/plugins/qa');
   });
 
+  // A fourth defence layer behind the transport hardening, the URL schema and
+  // the argv-array spawn: `--end-of-options` means git reads everything after
+  // it as a value, so a clone URL or ref beginning with `-` can never be
+  // mistaken for a flag.
+  it('separates package-author values from flags with --end-of-options', async () => {
+    vi.mocked(spawn).mockImplementation(() => makeFakeChild(0));
+
+    await gitSubdirResolver(
+      {
+        type: 'git-subdir',
+        cloneUrl: 'https://github.com/foo/monorepo.git',
+        subpath: 'plugins/qa',
+        ref: 'release/v2',
+      },
+      buildOpts(),
+      buildDeps()
+    );
+
+    const argv = vi.mocked(spawn).mock.calls.map((c) => c[1] as string[]);
+    // Clone: the separator sits immediately before the URL positional.
+    expect(argv[0].indexOf('--end-of-options')).toBe(
+      argv[0].indexOf('https://github.com/foo/monorepo.git') - 1
+    );
+    // Checkout: immediately before the ref.
+    expect(argv[3]).toEqual(['checkout', '--end-of-options', 'release/v2']);
+  });
+
   it('short-circuits with cache hit before any spawn call', async () => {
     const deps = buildDeps();
     (deps.cache.getPackage as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -265,7 +292,7 @@ describe('gitSubdirResolver', () => {
 
     // The checkout step (4th spawn) should reference the SHA.
     const checkoutCall = (vi.mocked(spawn).mock.calls[3]?.[1] as string[]).join(' ');
-    expect(checkoutCall).toBe(`checkout ${sha}`);
+    expect(checkoutCall).toBe(`checkout --end-of-options ${sha}`);
     expect(deps.resolveCommitSha).toHaveBeenCalledWith('https://github.com/foo/monorepo.git', sha);
   });
 });
