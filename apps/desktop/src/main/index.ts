@@ -288,9 +288,15 @@ if (!gotTheLock) {
   // Those guard read-once state meant for one renderer; this is stateless and
   // owns nothing, and a second cockpit window (`window.open` at our own origin)
   // is a full cockpit whose Settings → Server must work too.
-  ipcMain.handle('open-external', async (_event, url: unknown): Promise<void> => {
-    if (typeof url !== 'string' || !isWebLink(url)) return;
+  // Answers whether the URL actually left, because the renderer's link seam
+  // reports refusals to the person now (DOR-547) and cannot report one it was
+  // never told about. A dropped `mailto:`/`tel:` used to resolve here exactly
+  // like a successful `https:` — the same silent-click shape the seam exists to
+  // remove, reintroduced one process later.
+  ipcMain.handle('open-external', async (_event, url: unknown): Promise<boolean> => {
+    if (typeof url !== 'string' || !isWebLink(url)) return false;
     await shell.openExternal(url);
+    return true;
   });
 
   // Update surface for the renderer's in-app card (see auto-updater.ts). The

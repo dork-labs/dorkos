@@ -114,9 +114,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * else is ignored, matching the shell's link guards exactly.
    *
    * @param url - The URL to hand to the browser.
-   * @returns Resolves once the shell has been asked to open it.
+   * @returns `true` once the shell has been asked to open it, `false` if the
+   * shell's http(s)-only policy declined it. The renderer's link seam turns a
+   * `false` into a message the person can see, so this must not collapse a
+   * decline into the same resolved promise a success gets (DOR-547).
    */
-  openExternal: (url: string): Promise<void> => ipcRenderer.invoke('open-external', url),
+  openExternal: (url: string): Promise<boolean> => ipcRenderer.invoke('open-external', url),
   /**
    * Subscribe to main-process navigation requests (menu items, the dock
    * menu, and — Chunk D — `dorkos://` deep links), all funneled through the

@@ -25,12 +25,25 @@
  * NOT resolved against the page, so it always confirms too (should-fix 3,
  * DOR-1272 round 2).
  *
+ * **A confirmed click leaves through the app's one link seam** (DOR-547):
+ * `openExternalLink`, the same call every other confirmed link makes, rather
+ * than the raw `window.open` this used to run. Chat markdown is the
+ * highest-volume agent-authored link surface in the product, and it used to be
+ * the one surface running a different scheme policy from everything else.
+ * `irc:`, `ircs:` and `xmpp:` — the only schemes Streamdown's sanitizer lets
+ * through that the seam refuses — now stop here, and say so.
+ *
+ * A scheme the seam refuses never reaches {@link confirmAndOpen} at all:
+ * `LinkSafetyModal` asks `linkRefusalHere` when it opens and, for a refused link,
+ * explains itself and offers only "Copy link". This handler's job is the click,
+ * not the policy, and it stays on the seam so the two cannot drift.
+ *
  * Passed to `Streamdown` as `components={{ a: MarkdownLink }}` — see
  * `contributing/link-dispatch-policy.md` for how this fits the rest of the
  * app's link-dispatch policy.
  */
 import { memo, useCallback, useState, type ComponentProps, type MouseEvent } from 'react';
-import { cn } from '@/layers/shared/lib';
+import { cn, isWebUrl, openExternalLink } from '@/layers/shared/lib';
 import { LinkSafetyModal } from './link-safety-modal';
 
 type MarkdownLinkProps = Omit<ComponentProps<'a'>, 'onClick'> & {
@@ -38,30 +51,6 @@ type MarkdownLinkProps = Omit<ComponentProps<'a'>, 'onClick'> & {
    * prop shape matches what Streamdown's `Components['a']` slot passes. */
   node?: unknown;
 };
-
-/**
- * Whether `href` is an absolute `http:`/`https:` URL.
- *
- * Mirrors the desktop shell's own `isWebLink` (`apps/desktop/src/main/window-
- * manager.ts`) — http(s) only, no `mailto:` exception — but is not imported
- * from it: that file is Electron main-process code, a different process and a
- * different bundle from this component. `new URL(href)` is given no base, on
- * purpose: a relative path or a protocol-relative `//host/path` is exactly
- * what a browser WOULD resolve against the current page, and resolving it
- * here would make it look "safe" to bypass confirmation on. Failing the parse
- * instead means those hrefs always confirm, same as any other non-http(s)
- * scheme.
- *
- * @param href - The anchor's `href`, as Streamdown parsed it.
- */
-function isHttpUrl(href: string): boolean {
-  try {
-    const { protocol } = new URL(href);
-    return protocol === 'http:' || protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
 
 function MarkdownLinkImpl({ href, className, children, node: _node, ...rest }: MarkdownLinkProps) {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -79,12 +68,20 @@ function MarkdownLinkImpl({ href, className, children, node: _node, ...rest }: M
         event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
       // The reader is directly asking the browser for something — a new tab,
       // a new window — and an absolute http(s) URL is safe to hand it
-      // straight to that request. Anything else (a relative path this
-      // component deliberately would not resolve, `tel:`, `mailto:`, an
-      // `irc:`/`xmpp:` autolink) still confirms even when modified, because a
-      // modified click on one of those reaches an OS protocol handler with no
-      // warning otherwise.
-      if (isModified && href !== undefined && isHttpUrl(href)) return;
+      // straight to that request. Anything else (a relative path `isWebUrl`
+      // deliberately does not resolve, `tel:`, `mailto:`, an `irc:`/`xmpp:`
+      // autolink) still confirms even when modified, because a modified click
+      // on one of those reaches an OS protocol handler with no warning
+      // otherwise.
+      //
+      // `isWebUrl` is the seam's own predicate, shared with the desktop path
+      // (DOR-547) rather than the third private copy of "is this http(s)" this
+      // file used to hold. It is **narrower than `DISPATCHABLE_PROTOCOLS` on
+      // purpose**: it does not answer "may DorkOS open this?" — `classifyLink`
+      // does — but "may the browser have this click without asking?", and only
+      // a scheme whose worst case is a new tab qualifies. `mailto:` and `tel:`
+      // dispatch through the seam yet still confirm here.
+      if (isModified && href !== undefined && isWebUrl(href)) return;
       event.preventDefault();
       setIsConfirmOpen(true);
     },
@@ -93,7 +90,17 @@ function MarkdownLinkImpl({ href, className, children, node: _node, ...rest }: M
 
   const closeConfirm = useCallback(() => setIsConfirmOpen(false), []);
   const confirmAndOpen = useCallback(() => {
-    if (href) window.open(href, '_blank', 'noopener,noreferrer');
+    // The app's one link policy, same as every other confirmed link
+    // (`widget-context.tsx`, `McpAppFrame.tsx`) — DOR-547. This was a raw
+    // `window.open` until the seam could explain a refusal out loud; routing
+    // here before that landed would have turned "you confirmed, now open" into
+    // silence for any scheme the allowlist refuses.
+    //
+    // `openExternalLink`, not `openLink`: the modal's contract is "this leaves
+    // what you are looking at", so a markdown link that happens to name one of
+    // our own routes still opens a tab rather than navigating the reply out
+    // from under the reader.
+    if (href) openExternalLink(href);
     setIsConfirmOpen(false);
   }, [href]);
 
