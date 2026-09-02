@@ -26,9 +26,10 @@ export { ApprovalsUnavailable } from './ui/ApprovalsUnavailable';
 // Every surface that lists approvals composes this, so an answered card holds
 // its receipt for the same beat on all of them — see the module for the
 // disappearance it closes. The two writers (`holdDecidedApproval`,
-// `releaseDecidedApproval`) stay off the barrel deliberately: only the card
-// itself ever holds or releases, and a surface that could reach them from the
-// public API could pin a card nobody decided.
+// `releaseDecidedApproval`) stay off the barrel deliberately, and so do the two
+// per-card reads (`useRecordedApprovalDecision`, `useSettlingApprovals`): only
+// the card and the list inside this slice ever touch them, and a surface that
+// could reach the writers from the public API could pin a card nobody decided.
 export {
   APPROVAL_RECEIPT_SETTLE_MS,
   discardSettlingApprovals,

@@ -32,6 +32,7 @@ vi.mock('sonner', () => ({
 import { toast } from 'sonner';
 import { TransportProvider, useEventSubscription } from '@/layers/shared/model';
 import { createQueryClientConfig } from '@/layers/shared/lib';
+import { discardSettlingApprovals } from '../model/settling-approvals';
 import { ApprovalList } from '../ui/ApprovalList';
 import { usePendingApprovals } from '@/layers/entities/attention';
 import { StandingPermissionsSettings } from '../ui/StandingPermissionsSettings';
@@ -190,6 +191,11 @@ function toastCallCount() {
 
 afterEach(() => {
   cleanup();
+  // Answering a card records the answer in a module-level ledger that outlives
+  // `cleanup()` on purpose (a card must be able to outlive its own hold), so
+  // without this the next case renders the same approval id and gets a receipt
+  // where it expected buttons.
+  discardSettlingApprovals();
   vi.clearAllMocks();
 });
 

@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import { Badge, Button } from '@/layers/shared/ui';
@@ -11,7 +10,7 @@ import { useGrantApproval, useDenyApproval } from '../model/use-approval-decisio
 import {
   holdDecidedApproval,
   releaseDecidedApproval,
-  useHeldApprovalDecision,
+  useRecordedApprovalDecision,
   type ApprovalDecision,
 } from '../model/settling-approvals';
 import { useStandingGrantPolicy } from '../model/use-standing-grant-policy';
@@ -85,13 +84,13 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
   const deciding = grant.isPending || deny.isPending;
   const { canGrant, windowMinutes } = useStandingGrantPolicy();
   const reducedMotion = useReducedMotion();
-  const [answered, setAnswered] = useState<ApprovalDecision | null>(null);
-  // The same answer, as the hold remembers it. Local state is the fast path and
-  // this is what survives a remount: the copy that was answered can be unmounted
-  // by the refetch, and the card the hold puts back in its place is a fresh one
-  // with no state of its own.
-  const held = useHeldApprovalDecision(approval.approvalId);
-  const decision = answered ?? held ?? null;
+  // **The answer is read, never stored.** There is no local decision state here
+  // on purpose: an answer belongs to the request, not to one mounted card, and
+  // three copies of this component can be on screen at once. Keeping it local
+  // is what let a card that did not itself answer — the transcript's, which the
+  // refetch never unmounts — draw the receipt for the length of the hold and
+  // then revert to offering buttons on a decided request.
+  const decision = useRecordedApprovalDecision(approval.approvalId) ?? null;
 
   /**
    * Show the answer, tell the list focus is about to lose its button, and send
@@ -100,19 +99,17 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
    * sentence to be actionable.
    */
   const answer = (kind: ApprovalDecision, send: (onError: () => void) => void) => {
-    setAnswered(kind);
     onDecided?.(approval.approvalId);
-    // Hold the card on screen BEFORE the mutation settles. The race being lost
-    // is the refetch that drops this request from the pending list and unmounts
-    // the list around its own receipt — waiting for the mutation would be
-    // waiting for the very thing that ends the card (see `settling-approvals`).
+    // Recorded BEFORE the mutation settles, which is what makes the receipt
+    // optimistic AND what wins the race: the refetch drops this request from
+    // the pending list and unmounts the list around its own receipt, so waiting
+    // for the mutation would be waiting for the very thing that ends the card
+    // (see `settling-approvals`).
     holdDecidedApproval(approval, kind);
     send(() => {
-      // The hold goes with the receipt it was holding for: the card is
-      // answerable again, and a stale hold would draw it twice — once from the
-      // server's list and once from ours.
+      // The answer did not land. Taking it back here is what puts the buttons
+      // back — on this card and on every other copy of it.
       releaseDecidedApproval(approval.approvalId);
-      setAnswered(null);
     });
   };
 

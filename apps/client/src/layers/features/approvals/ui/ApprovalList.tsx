@@ -1,6 +1,7 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
+import { useSettlingApprovals } from '../model/settling-approvals';
 import { ApprovalCard } from './ApprovalCard';
 
 const staggerContainer = {
@@ -30,7 +31,31 @@ export interface ApprovalListProps {
  * @param props - The waiting {@link ApprovalListProps.approvals}.
  */
 export function ApprovalList({ approvals }: ApprovalListProps) {
-  const hidden = Math.max(0, approvals.length - MAX_CARDS);
+  // **The cap counts requests, not cards.** A card still saying how it was
+  // answered is not queueing for anything, so spending a slot on it would push
+  // a genuinely waiting request out of view, and counting it in the line below
+  // would report "1 more request is waiting" when nothing is. Both were true
+  // the moment the settling hold started merging answered cards back into this
+  // list (DOR-1411 review): with seven waiting, answering one left six live
+  // plus one held, the slice cut the receipt, and the footer lied about it.
+  const held = useSettlingApprovals();
+  const { shown, hidden } = useMemo(() => {
+    if (held.length === 0) {
+      return {
+        shown: approvals.slice(0, MAX_CARDS),
+        hidden: Math.max(0, approvals.length - MAX_CARDS),
+      };
+    }
+    const heldIds = new Set(held.map((approval) => approval.approvalId));
+    const waiting = approvals.filter((approval) => !heldIds.has(approval.approvalId));
+    const answered = approvals.filter((approval) => heldIds.has(approval.approvalId));
+    return {
+      // Receipts last, which is where the merge put them anyway, and always
+      // drawn: they leave on their own timer a beat from now.
+      shown: [...waiting.slice(0, MAX_CARDS), ...answered],
+      hidden: Math.max(0, waiting.length - MAX_CARDS),
+    };
+  }, [approvals, held]);
   const listRef = useRef<HTMLDivElement>(null);
 
   /**
@@ -74,7 +99,7 @@ export function ApprovalList({ approvals }: ApprovalListProps) {
       className="flex flex-col gap-2 outline-none"
     >
       <AnimatePresence initial={false}>
-        {approvals.slice(0, MAX_CARDS).map((approval) => (
+        {shown.map((approval) => (
           <ApprovalCard key={approval.approvalId} approval={approval} onDecided={handleDecided} />
         ))}
       </AnimatePresence>

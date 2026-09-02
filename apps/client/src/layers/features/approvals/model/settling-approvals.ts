@@ -26,16 +26,49 @@
  * because the request is gone from the server's list by the time the hold
  * matters — the consumers have nothing left to look it up in.
  *
- * ## Why this is a second registry and not a shared one
+ * ## Two lifetimes, and the difference is the whole design
  *
- * `features/schedule-approval/model/settling-approvals` does the same job for a
- * parked schedule, and the two are deliberately the same shape — the way
- * `deferred-rejection` beside it already is. They are NOT shared code: the
- * repo's DRY rule extracts at three, these are two, and they hold different
- * objects released on different events (a schedule holds only on approve, since
- * a rejection is carried by the undo window instead; a capability approval
- * holds on both answers). A third registry of this shape is the one that should
- * lift the machinery into `shared`.
+ * The **hold** is about the LIST: which cards a surface still draws after the
+ * server has stopped listing them. It is bounded by a timer, because a list
+ * that never let go would pin a decided card to the cockpit forever.
+ *
+ * The **answer** is about the CARD: what a card draws instead of two buttons.
+ * It outlives the hold, because a card can outlive the hold — the transcript's
+ * copy (`AssistantMessageContent` draws it from the message part, not from the
+ * pending list) is never unmounted by the refetch at all. Expiring the answer
+ * with the hold is what made such a card flash its receipt and then go BACK to
+ * offering Allow and Don't allow on a request that was already decided, which
+ * is precisely the "button that does nothing" the design rules out. Worse, the
+ * event that would have corrected it (`capability_approval_resolved`) is
+ * documented as droppable in `stream-manager.ts`, so the revert could be
+ * permanent.
+ *
+ * So the answer is bounded by COUNT, not by time, and there is exactly one
+ * thing that erases it: {@link releaseDecidedApproval}, i.e. the server
+ * refusing the answer. That is what keeps a second mounted card honest — when
+ * the answer turns out not to have landed, every copy goes back to being
+ * answerable together, not just the one that clicked.
+ *
+ * ## Why this is not shared machinery (yet)
+ *
+ * Two neighbours hold the same shape. `features/schedule-approval/model/
+ * settling-approvals` holds a parked schedule the same way, deliberately
+ * mirroring `deferred-rejection` beside it rather than sharing with it. And
+ * `entities/attention/model/ask-receipt-store` is the **third**: a settling
+ * list, per-id cancellable timers with the same DOR-1633 fix, and a
+ * count-bounded receipt ledger separate from that list — the very split this
+ * module just adopted, borrowed from it deliberately.
+ *
+ * So the rule-of-three counter is at three, and extraction is still not the
+ * right move: that third one is a Zustand store in `entities` serving a
+ * different question (how an Ask ENDED, including endings nobody chose — an
+ * expiry, another window), while these two are `useSyncExternalStore`
+ * registries in `features` that merge a hold back into a server list. A shared
+ * abstraction would have to span two layers and two state libraries to save a
+ * map and a timer. **The honest trigger is a FOURTH holder that merges a hold
+ * into a server-owned list** — at that point the merge hook plus the timer
+ * bookkeeping is the thing to lift into `shared`, and these two are what it
+ * should be extracted from.
  *
  * @module features/approvals/model/settling-approvals
  */
@@ -57,16 +90,33 @@ export const APPROVAL_RECEIPT_SETTLE_MS = (EXIT.delay + EXIT.duration) * 1000;
 /** What a person answered, once they have. */
 export type ApprovalDecision = 'granted' | 'denied';
 
-/** One answered approval, and the answer its receipt has to print. */
-interface HeldApproval {
-  /** The request, kept whole because the server's list no longer has it. */
-  approval: PendingApproval;
-  /** What was answered, so a card drawn from the hold draws the receipt. */
-  decision: ApprovalDecision;
-}
+/**
+ * How many answers are remembered at once.
+ *
+ * Bounded by count rather than by a timer, for the reason the module header
+ * gives: an answer has no natural expiry, and the card reading it may still be
+ * on screen an hour later. The number is `ask-receipt-store`'s; its REASONING is
+ * not, and borrowing it would be wrong — that store can argue nothing needs a
+ * receipt a minute later, which is the exact claim this module exists to
+ * refute. The bound here is simply more answers than any plausible burst in one
+ * page session, and it is safe because eviction degrades to the pre-fix
+ * behaviour — the card offers its buttons again and the server answers with the
+ * refusal toast — never to anything worse.
+ */
+const ANSWER_LIMIT = 50;
 
-/** Answered approvals still saying so, keyed by approval id. */
-const settling = new Map<string, HeldApproval>();
+/**
+ * How each request was answered — the ledger a CARD reads.
+ *
+ * Insertion-ordered (a `Map` is), so the cap drops the oldest rather than an
+ * arbitrary key. Deliberately NOT the same map as {@link settling}: an entry
+ * here survives its hold expiring and is erased only by
+ * {@link releaseDecidedApproval}.
+ */
+const answers = new Map<string, ApprovalDecision>();
+
+/** Answered approvals still drawn by every surface, keyed by approval id. */
+const settling = new Map<string, PendingApproval>();
 
 /**
  * The timer ending each hold, keyed the same way.
@@ -93,7 +143,7 @@ const NONE: PendingApproval[] = [];
 
 /** Rebuild the snapshot and tell every subscriber. */
 function publish(): void {
-  snapshot = settling.size === 0 ? NONE : [...settling.values()].map((held) => held.approval);
+  snapshot = settling.size === 0 ? NONE : [...settling.values()];
   // Copied first: a listener may unsubscribe as it runs, and mutating the set
   // mid-iteration would skip whoever came next.
   for (const listener of [...listeners]) listener();
@@ -119,18 +169,23 @@ function clearHoldTimer(approvalId: string): void {
  * for the very thing that ends the card.
  *
  * @param approval - The request that was just answered.
- * @param decision - What was answered, so the receipt survives a remount.
+ * @param decision - What was answered, so every copy of the card can draw the
+ *   receipt — including one that never had a decision of its own.
  */
 export function holdDecidedApproval(approval: PendingApproval, decision: ApprovalDecision): void {
+  rememberAnswer(approval.approvalId, decision);
   // Whatever was counting down for this id is done: this hold owns the deadline
   // now. Without this the older timer fires first and ends a window that had
   // only just started.
   clearHoldTimer(approval.approvalId);
-  settling.set(approval.approvalId, { approval, decision });
+  settling.set(approval.approvalId, approval);
   timers.set(
     approval.approvalId,
     setTimeout(() => {
       timers.delete(approval.approvalId);
+      // Only the LIST entry. The answer stays: the surfaces stop drawing this
+      // card, but a card that outlives the hold has to keep saying what it
+      // says. See the module header.
       settling.delete(approval.approvalId);
       publish();
     }, APPROVAL_RECEIPT_SETTLE_MS)
@@ -139,20 +194,46 @@ export function holdDecidedApproval(approval: PendingApproval, decision: Approva
 }
 
 /**
- * Stop holding an approval.
+ * Write this answer into the ledger, newest last, oldest evicted.
  *
- * The server refused the answer, so the request is answerable again and belongs
- * to the live list rather than to this one — a stale hold would draw it twice,
- * once from the server's copy and once from ours.
+ * Re-inserted rather than overwritten in place so a re-answer counts as recent:
+ * `Map` keeps first-insertion order, so a plain `set` on an existing key would
+ * leave the freshest answer sitting at the front of the eviction queue.
  *
- * @param approvalId - The request to release.
+ * @param approvalId - The request that was answered.
+ * @param decision - What was answered.
+ */
+function rememberAnswer(approvalId: string, decision: ApprovalDecision): void {
+  answers.delete(approvalId);
+  answers.set(approvalId, decision);
+  if (answers.size <= ANSWER_LIMIT) return;
+  const oldest = answers.keys().next().value;
+  if (oldest !== undefined) answers.delete(oldest);
+}
+
+/**
+ * Take an answer back, because the server would not have it.
+ *
+ * The one thing that erases a remembered answer, and it has to erase it
+ * everywhere rather than only on the card that clicked: a 403 from the answer
+ * guard usually means somebody else answered first, and a second mounted copy
+ * left saying "Allowed" would be reporting an outcome that never happened. The
+ * request is answerable again and belongs to the live list, so the hold goes
+ * too — left behind it would draw the card twice, once from the server's copy
+ * and once from ours.
+ *
+ * @param approvalId - The request whose answer did not land.
  */
 export function releaseDecidedApproval(approvalId: string): void {
   // The timer goes with the entry. Left armed it has nothing to end, and would
   // instead end the next hold this id is given.
   clearHoldTimer(approvalId);
-  if (!settling.delete(approvalId)) return;
-  publish();
+  const forgot = answers.delete(approvalId);
+  const dropped = settling.delete(approvalId);
+  // Either half changing is news: a card reads the answer, and the surfaces
+  // read the list. Publishing only when the LIST changed would leave a card
+  // whose hold had already expired still drawing a withdrawn receipt.
+  if (forgot || dropped) publish();
 }
 
 /** Watch the settling set. */
@@ -194,34 +275,52 @@ export function useApprovalCards(approvals: PendingApproval[]): PendingApproval[
 }
 
 /**
- * What this request was answered, while its hold is still running.
+ * How this request was answered, whoever answered it and however long ago.
  *
- * A card drawn FROM the hold is a fresh mount — the copy that was answered may
- * have been unmounted by the very refetch this module exists to survive — and a
- * fresh mount has no local decision state. Without this it would draw Allow and
- * Don't allow over a request that is already answered, which is a button that
- * does nothing. Reading the answer back is what makes the receipt a property of
- * the decision rather than of one component instance.
+ * What makes the receipt a property of the DECISION rather than of one
+ * component instance. Two cards need it and neither has the answer of its own:
+ * a card drawn from the hold, whose original copy the refetch unmounted; and
+ * the transcript's card, which was mounted before the answer and stays mounted
+ * long after — for that one, reading this is the difference between a receipt
+ * and two buttons offering to answer a request that is already decided.
+ *
+ * Deliberately NOT tied to the hold's timer. It goes away only when
+ * {@link releaseDecidedApproval} says the answer did not land.
  *
  * @param approvalId - The request to ask about.
- * @returns The answer, or `undefined` once the hold has ended or never ran.
+ * @returns The answer, or `undefined` when this request has none on record.
  */
-export function useHeldApprovalDecision(approvalId: string): ApprovalDecision | undefined {
+export function useRecordedApprovalDecision(approvalId: string): ApprovalDecision | undefined {
   return useSyncExternalStore(
     subscribe,
-    () => settling.get(approvalId)?.decision,
-    // The server render has no decisions in flight.
+    () => answers.get(approvalId),
+    // The server render has no decisions on record.
     () => undefined
   );
 }
 
 /**
- * Drop every hold immediately.
+ * The approvals currently being held — the ones that are drawn but NOT waiting.
  *
- * Test-only teardown: the timers outlive `cleanup()` by design, so a suite that
- * answered something would otherwise carry it into the next case. Cancelling
- * them is the whole point — clearing the entries alone leaves the timers armed,
- * and each one still fires inside some later, unrelated test.
+ * `ApprovalList` reads it to tell its cap the difference: a receipt is not a
+ * request queueing for an answer, so it must neither be pushed out by the cap
+ * nor counted in the "N more requests are waiting" line under it.
+ *
+ * @returns The held approvals, stable by identity while nothing changes.
+ */
+export function useSettlingApprovals(): readonly PendingApproval[] {
+  return useSyncExternalStore(subscribe, read, () => NONE);
+}
+
+/**
+ * Drop every hold and forget every answer immediately.
+ *
+ * Test-only teardown, and it has to clear BOTH halves: the timers outlive
+ * `cleanup()` by design, and the answer ledger outlives the timers by design,
+ * so a suite that answered something would otherwise carry it into the next
+ * case twice over. Cancelling the timers is the whole point of the first half —
+ * clearing the entries alone leaves them armed, and each one still fires inside
+ * some later, unrelated test.
  *
  * @internal Exported for testing only.
  */
@@ -229,5 +328,6 @@ export function discardSettlingApprovals(): void {
   for (const timer of timers.values()) clearTimeout(timer);
   timers.clear();
   settling.clear();
+  answers.clear();
   publish();
 }

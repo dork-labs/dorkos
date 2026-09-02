@@ -19,7 +19,7 @@ import { APPROVAL_RECEIPT_SETTLE_MS, discardSettlingApprovals, useApprovalCards 
 import {
   holdDecidedApproval,
   releaseDecidedApproval,
-  useHeldApprovalDecision,
+  useRecordedApprovalDecision,
 } from '../model/settling-approvals';
 
 /** A pending approval, only the fields this file reads. */
@@ -246,7 +246,7 @@ describe('the approval receipt hold', () => {
     // A card drawn from the hold is a fresh mount with no local state. Without
     // the answer travelling with the hold it would draw Allow and Don't allow
     // over a request that is already decided.
-    const { result } = renderHook(() => useHeldApprovalDecision('a-1'));
+    const { result } = renderHook(() => useRecordedApprovalDecision('a-1'));
     expect(result.current).toBeUndefined();
 
     act(() => holdDecidedApproval(request('a-1'), 'denied'));
@@ -254,5 +254,66 @@ describe('the approval receipt hold', () => {
 
     act(() => releaseDecidedApproval('a-1'));
     expect(result.current).toBeUndefined();
+  });
+
+  it('keeps remembering the answer after the hold that drew it has expired', () => {
+    // The two lifetimes. The LIST lets go on a timer; the ANSWER must not,
+    // because a card can outlive the hold — the transcript's copy is drawn from
+    // the message part and the refetch never unmounts it. Expiring both together
+    // made such a card flash its receipt and then go back to offering buttons on
+    // a decided request (DOR-1411 review).
+    const { result } = renderHook(() => ({
+      cards: useApprovalCards([]),
+      answer: useRecordedApprovalDecision('a-1'),
+    }));
+
+    act(() => holdDecidedApproval(request('a-1'), 'granted'));
+    expect(result.current.cards).toHaveLength(1);
+
+    act(() => {
+      vi.advanceTimersByTime(APPROVAL_RECEIPT_SETTLE_MS * 10);
+    });
+
+    // The surfaces have stopped drawing it…
+    expect(result.current.cards).toHaveLength(0);
+    // …and it still knows what it was answered.
+    expect(result.current.answer).toBe('granted');
+  });
+
+  it('forgets an answer the server refused, even after the hold expired', () => {
+    // The one thing that erases an answer. It has to reach a card whose hold is
+    // long over: a 403 from the answer guard usually means somebody else
+    // answered first, and a copy left saying "Allowed" would be reporting an
+    // outcome that never happened.
+    const { result } = renderHook(() => useRecordedApprovalDecision('a-1'));
+
+    act(() => holdDecidedApproval(request('a-1'), 'granted'));
+    act(() => {
+      vi.advanceTimersByTime(APPROVAL_RECEIPT_SETTLE_MS * 10);
+    });
+    expect(result.current).toBe('granted');
+
+    act(() => releaseDecidedApproval('a-1'));
+
+    expect(result.current).toBeUndefined();
+  });
+
+  it('remembers a bounded number of answers, dropping the oldest first', () => {
+    // Bounded by count because an answer has no natural expiry — without a cap
+    // this map grows for as long as the tab is open. The freshest answer must
+    // never be the one evicted, which a plain `set` on an existing key would
+    // allow: `Map` keeps FIRST-insertion order.
+    const { result } = renderHook(() => ({
+      first: useRecordedApprovalDecision('a-0'),
+      last: useRecordedApprovalDecision('a-50'),
+    }));
+
+    act(() => {
+      for (let i = 0; i <= 50; i += 1) holdDecidedApproval(request(`a-${i}`), 'granted');
+    });
+
+    // 51 answers against a limit of 50: the oldest is gone, the newest is not.
+    expect(result.current.first).toBeUndefined();
+    expect(result.current.last).toBe('granted');
   });
 });
