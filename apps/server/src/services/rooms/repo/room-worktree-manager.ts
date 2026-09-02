@@ -79,13 +79,35 @@
  * reached through a symlink gets a second worktree and keeps both — visible,
  * and fixable by them rather than by us.
  *
- * ## Harness projection, and why it cannot dirty the tree
+ * ## The agent's own skills, and the room's, in the tree the turn runs in
  *
  * A room repo may carry `.agents/skills/` like any project (§3.8), and Claude
  * Code — the default runtime — only reads skills from `.claude/skills/`. So
  * every fresh worktree gets the same projection an agent workspace gets
  * ({@link projectAgentWorkspace}: claude-code only, no dork home, no plugin
  * hooks, never throws).
+ *
+ * **The Operating DorkOS pack is seeded here too, and it has to be** (DOR-1640).
+ * The pack is written into an agent's HOME (`<agentDir>/.agents/skills/`) and
+ * projected into `<agentDir>/.claude/skills/`, but since the cwd rung landed a
+ * room turn runs in this worktree, and every harness resolves its project-scoped
+ * skills against the cwd. So the agent's own pack — including
+ * `working-in-room-repos`, whose entire subject is this directory — was reachable
+ * everywhere EXCEPT where it applies. Widening the harness's setting-source chain
+ * instead is not available: `settingSources` is a closed three-value enum and its
+ * `user` slot is already spoken for by account pinning
+ * (`claude-code/messaging/launch-resolver.ts`). So the pack comes to the tree.
+ * {@link seedAgentWorkspace} writes it before the projection runs, which is what
+ * makes it reach codex and opencode (they read `.agents/skills/` natively) as
+ * well as claude-code (which reads the projected links).
+ *
+ * Seeding never clobbers a room's own work: a same-named skill the room authored
+ * is `preserved` by the seeder, which only writes an absent file or its OWN
+ * unmodified older copy (`@dorkos/operating-skills`, `seed.ts`).
+ *
+ * Only worktrees are seeded. The room's integration tree — `repo/`, on `main` —
+ * is the one directory no turn ever runs in, and its contents are the room's
+ * committed files; putting DorkOS's pack there would offer it to a `git add -A`.
  *
  * That projection WRITES into the agent's tree, and everything above depends on
  * `git status` in that tree meaning "the agent's unsaved work". Left alone, a
@@ -115,6 +137,14 @@
  * makes its worktree read dirty, which is the conservative direction: spared,
  * never deleted.
  *
+ * **The seeded pack is in the block by the same rule, and it is DERIVED from the
+ * pack** ({@link SEEDED_PACK_EXCLUDES}). A hand-written list would be one skill
+ * behind the next time somebody adds one, and the failure mode of being behind
+ * is not a missing line — it is every room worktree in existence reading dirty
+ * forever, hence never reaped and never mergeable. It names each seeded
+ * `SKILL.md` rather than `.agents/skills/`, because that directory is where the
+ * ROOM authors its own skills and hiding it would hide their work.
+ *
  * **An exclude cannot hide a TRACKED file**, which is what makes these entries
  * safe: a room that commits its own harness manifest keeps working on it
  * normally.
@@ -126,11 +156,13 @@ import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { RoomContextFiles } from '@dorkos/shared/additional-context';
 import { slugifyAgentName } from '@dorkos/shared/validation';
+import { OPERATING_SKILLS_PACK } from '@dorkos/operating-skills';
 import { logger } from '../../../lib/logger.js';
 import { RoomError } from '../room-errors.js';
 import { PROJECTED_ATTACHMENTS_ROOT } from '../attachments/attachment-paths.js';
 import {
   projectAgentWorkspace,
+  seedAgentWorkspace,
   type AgentWorkspaceProjection,
 } from '../../harness/project-agent-workspace.js';
 import type { RoomRepoStore } from './room-repo-store.js';
@@ -192,6 +224,28 @@ export function roomWorktreeBranch(slug: string): string {
 const DORKOS_TEMP_DIR = path.posix.dirname(PROJECTED_ATTACHMENTS_ROOT);
 
 /**
+ * The `info/exclude` lines that hide the seeded Operating DorkOS pack — one per
+ * pack skill, DERIVED from the pack itself.
+ *
+ * Never hand-listed. The pack gains skills (seven at the time of writing, one
+ * of them added by the change this list exists for), and a list that has to be
+ * extended by hand is a list that will be one behind — leaving every room
+ * worktree permanently dirty, therefore never reaped and never mergeable, for
+ * whichever release forgot.
+ *
+ * Each entry names the ONE file the seeder writes for that skill
+ * (`@dorkos/operating-skills`, `seed.ts` → `writeSkillFile`), never the skill's
+ * directory and certainly never `.agents/skills/` — that directory is where a
+ * room authors skills of its own (§3.8), and hiding it would hide a member's
+ * work from `git status` and then let the reap delete it. A room that authors a
+ * skill sharing a pack name keeps it (the seeder `preserve`s it) and, being
+ * committed, keeps showing up too: an exclude cannot hide a TRACKED file.
+ */
+const SEEDED_PACK_EXCLUDES: readonly string[] = OPERATING_SKILLS_PACK.map(
+  (skill) => `/.agents/skills/${skill.name}/SKILL.md`
+);
+
+/**
  * The `info/exclude` block that keeps what DorkOS writes out of `git status`.
  *
  * Marker-delimited so the block can be recognized and REPLACED on the next call
@@ -211,6 +265,7 @@ const EXCLUDE_BLOCK = [
   '/.claude/skills/',
   '/.agents/harness.manifest.json',
   `/${DORKOS_TEMP_DIR}/`,
+  ...SEEDED_PACK_EXCLUDES,
   '# --- end DorkOS ---',
 ].join('\n');
 
@@ -249,11 +304,15 @@ export interface RoomWorktreeHandle {
    */
   created: boolean;
   /**
-   * What harness projection did, when this resolution created the worktree.
+   * What harness projection did, when this resolution ran one.
    *
-   * `null` when the worktree was already there — projection runs at create
-   * (spec §5 Q5), and re-running it every turn would make the server a writer
-   * in a tree the agent owns.
+   * `null` on the ordinary reuse path — projection runs at create (spec §5 Q5),
+   * and re-running it every turn would make the server a writer in a tree the
+   * agent owns. The one exception is a pack upgrade: the first resolution of a
+   * standing worktree after a server restart that carries a newer
+   * `OPERATING_SKILLS_VERSION` re-seeds and re-projects, and reports what that
+   * did here (DOR-1640). A worktree already on the current pack still reports
+   * `null`, so a non-null value means files actually moved.
    */
   projection: AgentWorkspaceProjection | null;
 }
@@ -383,6 +442,22 @@ export class RoomWorktreeManager {
    * anything that must happen once.
    */
   private readonly creating = new Map<string, Promise<RoomWorktreeHandle>>();
+
+  /**
+   * Standing worktrees this process has already checked the skill pack in.
+   *
+   * **Once per worktree per process, and that is exactly the right cadence.**
+   * `OPERATING_SKILLS_VERSION` is a compiled-in constant, so the only thing that
+   * can raise it is a new server — which is a restart, which empties this set.
+   * Checking again inside one process could therefore never find anything to do,
+   * and the check is not free: it reads every pack file and spawns one `git` to
+   * find the common git directory, on the turn path.
+   *
+   * Keyed by worktree directory, so it is bounded by the worktrees this install
+   * actually hands out and a removed-then-recreated tree gets the create path's
+   * seeding anyway.
+   */
+  private readonly packChecked = new Set<string>();
 
   /**
    * Bind the manager to one install's store and settings.
@@ -521,10 +596,64 @@ export class RoomWorktreeManager {
       // from the same clock the reap's cutoff reads, so the two never disagree
       // about what "now" is.
       await stampDirectory(dir, this.nowMs());
-      return { slug, path: dir, branch, created: false, projection: null };
+      const projection = await this.refreshPack(roomId, dir, slug);
+      return { slug, path: dir, branch, created: false, projection };
     }
     if (await directoryExists(dir)) await this.setCorpseAside(roomId, dir, slug);
     return this.createWorktree(roomId, dir, slug, branch);
+  }
+
+  /**
+   * Bring a STANDING worktree's copy of the Operating DorkOS pack up to the
+   * version this server ships, once per worktree per process.
+   *
+   * The gap this closes: seeding and projection run at create (§5 Q5), so a
+   * worktree made months ago keeps the pack it was born with, exactly the way
+   * agent HOMES did before `backfillAgentWorkspaceSkills` existed (DOR-671). A
+   * pack bump is how a correction reaches an agent — v4 retracted the claim that
+   * `dorkos uninstall` was ungated, v6 that `tasks_delete` carried no gate — and
+   * a standing room worktree is precisely where an agent works for a long time.
+   *
+   * **The exclude block is refreshed BEFORE anything is written**, and the order
+   * is load-bearing rather than tidy. This worktree's repo may carry a block
+   * from a release that predates {@link SEEDED_PACK_EXCLUDES}, and seeding into
+   * it would leave every worktree in that room permanently dirty: never reaped,
+   * never mergeable. Writing what must be hidden before hiding it is the same
+   * mistake in the other direction, so the block goes first.
+   *
+   * Re-projection is conditional on the seeder having actually written, so a
+   * worktree already on the current pack costs one `git rev-parse` and seven
+   * file reads on the first turn after a restart, and nothing at all after that.
+   * Best-effort throughout: both halves swallow their own failures, because a
+   * turn must not be refused its working directory over a skill file.
+   *
+   * @param roomId - The room, for the exclude write and the log line.
+   * @param dir - The standing worktree.
+   * @param slug - Its directory name, for the log line.
+   * @returns What the re-projection did, or `null` when nothing needed doing.
+   */
+  private async refreshPack(
+    roomId: string,
+    dir: string,
+    slug: string
+  ): Promise<AgentWorkspaceProjection | null> {
+    if (this.packChecked.has(dir)) return null;
+    this.packChecked.add(dir);
+
+    await this.ensureProjectionExcluded(
+      this.deps.store.repoPath(roomId),
+      this.deps.store.homeDir(roomId)
+    );
+    if ((await seedAgentWorkspace(dir)) !== 'wrote') return null;
+
+    const projection = projectAgentWorkspace(dir);
+    logger.info('[rooms] room worktree re-seeded with the current operating skills', {
+      roomId,
+      worktree: slug,
+      projection: projection.status,
+      projected: projection.applied,
+    });
+    return projection;
   }
 
   /**
@@ -917,11 +1046,19 @@ export class RoomWorktreeManager {
     }
     await addWorktree(repoDir, dir, branch, branchExists ? null : 'main', ceiling);
 
+    // Seed before project, always — the projection returns early when
+    // `.agents/skills/` does not exist, so the reverse order would link the
+    // room's own skills and none of the agent's until the NEXT resolution.
+    // Seeding here also spares this tree the re-seed pass: it is current.
+    const seeded = await seedAgentWorkspace(dir);
+    this.packChecked.add(dir);
+
     const projection = projectAgentWorkspace(dir);
     logger.info('[rooms] room worktree created', {
       roomId,
       worktree: slug,
       branch,
+      seeded,
       projection: projection.status,
       projected: projection.applied,
     });

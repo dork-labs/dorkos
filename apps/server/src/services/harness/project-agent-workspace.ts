@@ -36,6 +36,13 @@
  * `agent-creator` interleaves them with its own bookkeeping, and
  * {@link projectAgentWorkspace} stays exactly one thing.
  *
+ * **Neither half is only for agent HOMES.** A room worktree is the other
+ * directory a turn runs in, and Claude Code resolves its `project` setting
+ * source against the cwd — so an agent working on a room's files sees the pack
+ * only if the pack is in the worktree. `room-worktree-manager.ts` pairs the same
+ * two exports there (DOR-1640); the reason they are usable for that is that
+ * neither knows anything about mesh registration or dork home.
+ *
  * Four properties matter for the projection half:
  *
  * - **Best-effort.** A projection failure must never block agent creation or
@@ -198,7 +205,7 @@ export interface AgentWorkspaceBackfillSummary {
 }
 
 /** What seeding did to one workspace, collapsed to what the summary counts. */
-type SeedStatus = 'wrote' | 'unchanged' | 'failed';
+export type SeedStatus = 'wrote' | 'unchanged' | 'failed';
 
 /**
  * Seed the Operating DorkOS skill pack into one workspace, best-effort.
@@ -209,12 +216,18 @@ type SeedStatus = 'wrote' | 'unchanged' | 'failed';
  * stop this workspace's own projection from being attempted — a pack seeded on
  * an earlier boot still needs its links.
  *
- * @param agentDir - Absolute path to the agent's workspace root.
+ * Exported for the caller that is not an agent home: a room worktree is seeded
+ * on the turn path, where a throw would cost the turn rather than a log line
+ * (DOR-1640). Callers get the three-way status back and decide — the room
+ * manager only re-projects when this says `wrote`, so a steady-state turn costs
+ * nothing.
+ *
+ * @param agentDir - Absolute path to the workspace root to seed.
  * @returns `wrote` when at least one skill file was created or upgraded,
  *   `unchanged` when every skill was already current or is the person's own,
  *   `failed` when the seeder threw.
  */
-async function seedAgentWorkspace(agentDir: string): Promise<SeedStatus> {
+export async function seedAgentWorkspace(agentDir: string): Promise<SeedStatus> {
   try {
     const { outcomes } = await seedOperatingSkills(agentDir);
     const created = outcomes.filter((o) => o.action === 'created').length;
