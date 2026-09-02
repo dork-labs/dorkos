@@ -4,6 +4,7 @@ import { render, screen, cleanup, fireEvent, within } from '@testing-library/rea
 import '@testing-library/jest-dom/vitest';
 import type { AuthorRef, RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import { hashToHslColor, type AgentVisual } from '@/layers/shared/lib';
+import { seedAgentFace } from '@dorkos/shared/agent-face';
 import { RoomMemberRow, type RoomMemberRowProps } from '../ui/RoomMemberRow';
 
 /** Put the viewport below or above the 768px breakpoint for one test. */
@@ -137,13 +138,17 @@ describe('RoomMemberRow', () => {
       expect(tint()).toContain('rgb(255, 0, 0)');
     });
 
-    it('draws a letter on the same hashed colour the rest of the room uses', () => {
+    it('draws a letter on the same seeded colour the rest of the room uses', () => {
       // This row used to answer `currentColor` here, on the argument that a
-      // hashed colour would be confident about a face nobody knows. It matches
-      // the roster three inches away, which hashes the same id — so refusing to
-      // hash is what made one member two colours at once (DOR-968).
+      // derived colour would be confident about a face nobody knows. It matches
+      // the roster three inches away, which derives from the same id — so
+      // refusing to derive is what made one member two colours at once (DOR-968).
       //
-      // Red if the colour stops being THIS hash: a different one is worse than
+      // The colour an agent falls back to is the one DorkOS would have SEEDED
+      // for that id (DOR-949), which is why this is a palette hex rather than
+      // the hashed hue people still get.
+      //
+      // Red if the colour stops being that seed: a different one is worse than
       // no colour, because it looks deliberate. And red if an emoji ever
       // appears: this row holds an AUTHOR id, not the agent's manifest id, so a
       // hashed emoji here would be a different face from the one /team and the
@@ -154,7 +159,7 @@ describe('RoomMemberRow', () => {
       renderRow({ member: member({ kind: 'agent' }), visual: null });
 
       expect(within(disc()).getByText('A')).toBeInTheDocument();
-      expect(tint()).toContain(probeColor(hashToHslColor('author-Ana')));
+      expect(tint()).toContain(probeColor(seedAgentFace('author-Ana').color));
     });
 
     it('draws a letter for a person with no face of their own', () => {

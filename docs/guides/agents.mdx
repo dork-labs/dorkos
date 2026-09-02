@@ -111,15 +111,17 @@ System agents, like DorkBot, skip all three: they're managed automatically and c
 
 ## Visual Identity
 
-Every agent gets a deterministic color and emoji derived from its ID, so even a brand-new, unnamed agent looks intentional rather than broken. You can override either by tapping the face at the top of its profile. The priority is:
+Every new agent is given a color and an emoji face the moment it's created, picked from a small curated set. The pick is worked out from the agent's own ID, so it's the same face on every screen and it never changes on its own. You can swap either one by tapping the face at the top of the agent's profile.
 
-1. Your override, if you set one (stored in `.dork/agent.json` as `color`/`icon`)
-2. A deterministic hash from the agent's ID (stable across directory renames)
-3. For unregistered directories: a deterministic hash from the path
+What you see is the first of these that exists:
+
+1. The face you chose, or the one a marketplace package shipped with (stored in `.dork/agent.json` as `color`/`icon`)
+2. The face DorkOS picks for that agent's ID — what a new agent is created wearing, and what an older one falls back to
+3. For a directory that isn't a registered agent: a color worked out from the path
 
 <Callout type="info">
-  Clearing a color or emoji override reverts to the deterministic default. No visual identity is
-  ever lost.
+  Clearing a color or emoji takes the agent back to the face DorkOS picked for it. No visual
+  identity is ever lost.
 </Callout>
 
 ## Reference

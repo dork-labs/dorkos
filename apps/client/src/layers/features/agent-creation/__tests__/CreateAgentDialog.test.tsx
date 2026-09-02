@@ -311,6 +311,45 @@ describe('CreateAgentDialog', () => {
     expect(screen.getByTestId('suggestion-Nova')).toBeInTheDocument();
   });
 
+  // Red when the wizard treats its own placeholder as a choice. It used to seed
+  // the field with 🤖 on entering the naming step and submit that, so the
+  // server's seeding (DOR-949) never ran and every agent made here wore the
+  // same robot. Asserting the KEY IS ABSENT is the point — an assertion on the
+  // response, or on some other face value, would pass with 🤖 still going out.
+  it('sends no face when the user picked none, leaving the seeding to the server', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.createAgent).mockResolvedValue({
+      id: 'id',
+      name: 'scout',
+      _path: '/p',
+    } as never);
+    renderDialog(transport);
+    const nameInput = await reachNamingViaDesign(user);
+
+    await user.type(nameInput, 'Scout');
+    await user.click(screen.getByTestId('create-button'));
+
+    await waitFor(() => expect(transport.createAgent).toHaveBeenCalled());
+    const payload = vi.mocked(transport.createAgent).mock.calls[0][0];
+    expect(payload).not.toHaveProperty('icon');
+    expect(payload).not.toHaveProperty('color');
+  });
+
+  it('highlights no face in the picker until the user chooses one', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await reachNamingViaDesign(user);
+
+    const pressed = screen
+      .getAllByRole('button', { name: /^Face / })
+      .filter((button) => button.getAttribute('aria-pressed') === 'true');
+    expect(pressed).toHaveLength(0);
+
+    await user.click(screen.getByTestId('face-🦊'));
+    expect(screen.getByTestId('face-🦊')).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('a picked face persists to the created agent', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();

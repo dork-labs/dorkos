@@ -215,7 +215,8 @@ async function undoScaffold(
  * this is how a Shape's offered agent arrives fully shaped rather than blank.
  *
  * The agent's face — `color` and `icon` — is always written. A caller's own
- * choice is kept; anything they left out is seeded from the curated sets
+ * choice is kept (a face a person picked, or the emoji a marketplace package
+ * ships); anything they left out is seeded from the curated sets
  * (`seedAgentFace`), so a new agent shows a real face instead of a letter.
  *
  * When `opts.skipTemplateDownload` is true, the function assumes `directory`
@@ -355,7 +356,7 @@ export async function createAgentWorkspace(
 
     const id = ulid();
     // Every agent is born with a face (DOR-949): the one chosen in the naming
-    // step (M3) or shipped by a template, and a deterministic pick from the
+    // step (M3) or shipped by a marketplace package, and a deterministic pick from the
     // curated sets for whatever was left unchosen. Seeded here rather than left
     // to each reader's own fallback so the app, the roster aggregator and the
     // author registry all show the SAME face, and so `agent.json` says what the

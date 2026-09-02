@@ -145,7 +145,28 @@ export function seedAgentFace(agentId: string, chosen?: AgentFaceChoice): AgentF
   const colorIndex = fnv1aHash(`${agentId}:color`) % AGENT_COLOR_PRESETS.length;
   const iconIndex = fnv1aHash(`${agentId}:icon`) % AGENT_EMOJI_SET.length;
   return {
-    color: chosen?.color ?? AGENT_COLOR_PRESETS[colorIndex].hex,
-    icon: chosen?.icon ?? AGENT_EMOJI_SET[iconIndex],
+    // Truthiness, not `??`: an empty string is not a face somebody chose, it is
+    // a field that was cleared or never filled. Treating `''` as a choice is how
+    // an agent ends up with a blank avatar that no picker can explain.
+    color: chosen?.color || AGENT_COLOR_PRESETS[colorIndex].hex,
+    icon: chosen?.icon || AGENT_EMOJI_SET[iconIndex],
   };
+}
+
+/**
+ * True when a string is a single emoji grapheme (including variation-selector
+ * and ZWJ sequences).
+ *
+ * The gate on every face that comes from OUTSIDE this module — a marketplace
+ * package's `icon`, which its schema allows to be either an emoji or an
+ * arbitrary identifier like `"package"`. Only an emoji can be worn as a face or
+ * shown as selected in the picker; anything else is not a face, and the caller
+ * should let {@link seedAgentFace} supply one instead.
+ *
+ * @param value - Candidate icon string.
+ */
+export function isSingleEmoji(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  return /^\p{Extended_Pictographic}[\u{FE0F}\u{200D}\p{Extended_Pictographic}]*$/u.test(trimmed);
 }

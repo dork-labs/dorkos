@@ -6,7 +6,8 @@ import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/re
 import { DORKBOT_ONBOARDING_LINES } from '@dorkos/shared/dorkbot-templates';
 import { ROLE_CANON } from '@dorkos/shared/profile-recommendations';
 import { useAgentBirthStore, useAppStore } from '@/layers/shared/model';
-import { hashToHslColor, hashToEmoji, resolveAgentVisual } from '@/layers/shared/lib';
+import { resolveAgentVisual } from '@/layers/shared/lib';
+import { seedAgentFace } from '@dorkos/shared/agent-face';
 import { setPrefersReducedMotion } from '@/test-setup';
 
 // Instant reveals so the scripted lines land synchronously.
@@ -582,10 +583,10 @@ describe('OnboardingConversation', () => {
       expect(bubble.getAttribute('data-author-id')).toBe(DORKBOT_ID);
       // The whole defect in one assertion: hashing the slug is a face DorkBot
       // wears in no other surface, because its manifest id is a ULID.
-      expect(bubble.getAttribute('data-author-color')).toBe(hashToHslColor(DORKBOT_ID));
-      expect(bubble.getAttribute('data-author-color')).not.toBe(hashToHslColor('dorkbot'));
-      expect(bubble.getAttribute('data-author-emoji')).toBe(hashToEmoji(DORKBOT_ID));
-      expect(bubble.getAttribute('data-author-emoji')).not.toBe(hashToEmoji('dorkbot'));
+      expect(bubble.getAttribute('data-author-color')).toBe(seedAgentFace(DORKBOT_ID).color);
+      expect(bubble.getAttribute('data-author-color')).not.toBe(seedAgentFace('dorkbot').color);
+      expect(bubble.getAttribute('data-author-emoji')).toBe(seedAgentFace(DORKBOT_ID).icon);
+      expect(bubble.getAttribute('data-author-emoji')).not.toBe(seedAgentFace('dorkbot').icon);
     });
 
     it('picks the system agent even though another agent is registered first', async () => {
@@ -616,13 +617,13 @@ describe('OnboardingConversation', () => {
         // how a slug-hashed face reaches first light.
         expect(firstLight.getAttribute('data-icon')).toBe('');
         expect(firstLight.getAttribute('data-color')).toContain('var(');
-        expect(firstLight.getAttribute('data-color')).not.toBe(hashToHslColor('dorkbot'));
+        expect(firstLight.getAttribute('data-color')).not.toBe(seedAgentFace('dorkbot').color);
 
         await screen.findByTestId('pick-personality');
         const [bubble] = screen.getAllByTestId('msg');
         expect(bubble.getAttribute('data-author-emoji')).toBe('');
         expect(bubble.getAttribute('data-author-color')).toContain('var(');
-        expect(bubble.getAttribute('data-author-color')).not.toBe(hashToHslColor('dorkbot'));
+        expect(bubble.getAttribute('data-author-color')).not.toBe(seedAgentFace('dorkbot').color);
       }
     );
 
@@ -630,12 +631,12 @@ describe('OnboardingConversation', () => {
       render(<OnboardingConversation onComplete={vi.fn()} />);
       const firstLight = screen.getByTestId('first-light');
       expect(firstLight.getAttribute('data-agent-id')).toBe(DORKBOT_ID);
-      expect(firstLight.getAttribute('data-icon')).toBe(hashToEmoji(DORKBOT_ID));
+      expect(firstLight.getAttribute('data-icon')).toBe(seedAgentFace(DORKBOT_ID).icon);
 
       const record = await dissolveIntoSession();
       expect(record.agentId).toBe(DORKBOT_ID);
-      expect(record.icon).toBe(hashToEmoji(DORKBOT_ID));
-      expect(record.color).toBe(hashToHslColor(DORKBOT_ID));
+      expect(record.icon).toBe(seedAgentFace(DORKBOT_ID).icon);
+      expect(record.color).toBe(seedAgentFace(DORKBOT_ID).color);
     });
 
     it('carries a STORED icon and colour through to the birth records', async () => {

@@ -356,6 +356,18 @@ describe('createAgentWorkspace', () => {
     );
   });
 
+  // The API takes a raw body, so `{"icon": ""}` is a shape a caller can really
+  // send. It must not read as "I chose this face" — that would suppress the
+  // seed and create an agent with a blank avatar. Refused at the schema, where
+  // the caller still has somebody to be told.
+  it.each([
+    { field: 'icon', body: { name: 'blank-face', icon: '' } },
+    { field: 'color', body: { name: 'blank-face', color: '' } },
+  ])('refuses an empty $field rather than creating a faceless agent', async ({ body }) => {
+    await expect(createAgentWorkspace(body, mockMeshCore)).rejects.toThrow(AgentCreationError);
+    expect(mockWriteManifest).not.toHaveBeenCalled();
+  });
+
   it('seeds only the half the caller left out', async () => {
     const result = await createAgentWorkspace({ name: 'half-faced', icon: '🦊' }, mockMeshCore);
 

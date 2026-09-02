@@ -922,13 +922,19 @@ export const CreateAgentOptionsSchema = z
     capabilities: z.array(z.string().min(1).max(200)).max(64).optional(),
     /**
      * Emoji face and colour for the agent's visual identity, recorded on the
-     * manifest `icon` and `color` fields. A face chosen in the naming step
-     * (M3), or seeded from a template. Omitted → the creator seeds one from the
-     * curated sets (`@dorkos/shared/agent-face`), so an agent always has a face
-     * (DOR-949); what a caller sends here is never overwritten.
+     * manifest `icon` and `color` fields. A face a person chose in the naming
+     * step (M3), or one a marketplace package shipped. Omitted → the creator
+     * seeds one from the curated sets (`@dorkos/shared/agent-face`), so an
+     * agent always has a face (DOR-949); what a caller sends is never
+     * overwritten.
+     *
+     * `.min(1)` is the reason an agent cannot be created faceless: without it
+     * `{"icon": ""}` is a present-but-empty field, which reads as a choice and
+     * suppresses the seed. Clearing a face is an UPDATE concern and spells
+     * itself `null` (see {@link UpdateAgentRequestSchema}), never `""`.
      */
-    icon: z.string().max(64).optional(),
-    color: z.string().max(64).optional(),
+    icon: z.string().min(1).max(64).optional(),
+    color: z.string().min(1).max(64).optional(),
     traits: TraitsSchema.optional(),
     conventions: ConventionsSchema.optional(),
     /**

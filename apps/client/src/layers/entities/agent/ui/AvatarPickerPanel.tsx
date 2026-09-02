@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Wand2 } from 'lucide-react';
-import { cn, hashToHslColor, hashToEmoji } from '@/layers/shared/lib';
+import { cn } from '@/layers/shared/lib';
+import { seedAgentFace } from '@dorkos/shared/agent-face';
 import { Button } from '@/layers/shared/ui';
 import { AvatarColorGrid, AvatarEmojiGrid } from './AvatarPickerGrid';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
@@ -107,8 +108,10 @@ export function AvatarPickerPanel({
   title,
   onClose,
 }: AvatarPickerPanelProps) {
-  const autoColor = useMemo(() => hashToHslColor(agent.id), [agent.id]);
-  const autoEmoji = useMemo(() => hashToEmoji(agent.id), [agent.id]);
+  // The face DorkOS seeds for this agent — see IdentityTab (DOR-949).
+  const auto = useMemo(() => seedAgentFace(agent.id), [agent.id]);
+  const autoColor = auto.color;
+  const autoEmoji = auto.icon;
   const activeEmoji = agent.icon ?? autoEmoji;
   const hasColorOverride = agent.color != null;
   const hasIconOverride = agent.icon != null;

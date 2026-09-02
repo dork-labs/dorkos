@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { createHash } from 'node:crypto';
 import { ulid } from 'ulidx';
 import { writeManifest } from '@dorkos/shared/manifest';
+import { seedAgentFace } from '@dorkos/shared/agent-face';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { AgentManifest, McpServerTransport } from '@dorkos/shared/mesh-schemas';
 import { getBoundary, validateBoundary } from '../lib/boundary.js';
@@ -539,12 +540,18 @@ testControlRouter.post('/seed-agent', async (req, res) => {
     });
   }
   const agentDir = e2eAgentDir();
+  const fixtureId = fixtureAgentId(agentDir);
   const manifest: AgentManifest = {
-    id: fixtureAgentId(agentDir),
+    id: fixtureId,
     name: 'E2E Test Agent',
     description: 'Seeded by test setup — runs on the server default runtime',
     runtime: FIXTURE_AGENT_RUNTIME,
     capabilities: [],
+    // A fixture agent wears a face for the same reason a real one does: no
+    // production path can mint a faceless agent any more (DOR-949), so a
+    // browser test staged against one would be testing a shape the app cannot
+    // produce. Deterministic from the fixture's own id, like everywhere else.
+    ...seedAgentFace(fixtureId),
     behavior: { responseMode: 'always' },
     registeredAt: new Date().toISOString(),
     registeredBy: 'dorkos-e2e',
@@ -734,12 +741,15 @@ testControlRouter.post('/seed-oauth-mcp-agent', async (req, res) => {
     headers: {},
     authKind: 'oauth2',
   };
+  const oauthAgentId = ulid();
   const manifest: AgentManifest = {
-    id: ulid(),
+    id: oauthAgentId,
     name: 'E2E OAuth MCP Agent',
     description: 'Seeded by test setup — one OAuth-protected managed MCP server',
     runtime: 'claude-code',
     capabilities: [],
+    // Same reason as the fixture above (DOR-949).
+    ...seedAgentFace(oauthAgentId),
     behavior: { responseMode: 'always' },
     registeredAt: new Date().toISOString(),
     registeredBy: 'dorkos-e2e',

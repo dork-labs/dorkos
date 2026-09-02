@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { seedAgentFace, fnv1aHash, AGENT_COLOR_PRESETS, AGENT_EMOJI_SET } from '../agent-face.js';
+import {
+  seedAgentFace,
+  fnv1aHash,
+  isSingleEmoji,
+  AGENT_COLOR_PRESETS,
+  AGENT_EMOJI_SET,
+} from '../agent-face.js';
 
 const ID = '01JQZ8V4K7YB3T0G5M2P9NXWQR';
 
@@ -36,16 +42,30 @@ describe('seedAgentFace', () => {
   });
 
   it('gives different ids different faces', () => {
+    // 200 draws rather than a handful, because a small sample cannot separate
+    // the two implementations: at 24 ids an honest seed collides its way down
+    // to 19 distinct faces and a single-salt one still reaches ~15, so any
+    // bound between them is fitted to the sample rather than to the behaviour.
+    // Over 200 ids the gap is structural — one salt can produce at most 30
+    // distinct pairs no matter how many ids you feed it, because the colour
+    // becomes a function of the emoji.
     const faces = new Set(
-      Array.from({ length: 24 }, (_, i) => {
+      Array.from({ length: 200 }, (_, i) => {
         const face = seedAgentFace(`${ID}${i}`);
         return `${face.color}${face.icon}`;
       })
     );
 
-    // 300 possible faces, 24 draws: a single-hash implementation would collapse
-    // this to at most 30 and the pigeonholing would show up long before here.
-    expect(faces.size).toBeGreaterThan(15);
+    // Measured: 90 distinct. The bound sits well above the 30 a single salt can
+    // ever reach and well below the real spread, so it discriminates without
+    // being pinned to one sample.
+    expect(faces.size).toBeGreaterThan(60);
+  });
+
+  it('treats an empty string as no choice at all', () => {
+    // `??` would take `''` as a chosen face and hand back a blank avatar that
+    // no picker can explain.
+    expect(seedAgentFace(ID, { color: '', icon: '' })).toEqual(seedAgentFace(ID));
   });
 
   it('does not tie the colour to the emoji', () => {
@@ -86,6 +106,23 @@ describe('curated sets', () => {
 
   it('offers each emoji once', () => {
     expect(new Set(AGENT_EMOJI_SET).size).toBe(AGENT_EMOJI_SET.length);
+  });
+});
+
+describe('isSingleEmoji', () => {
+  it('accepts a plain emoji and a variation-selector/ZWJ sequence', () => {
+    expect(isSingleEmoji('🦊')).toBe(true);
+    expect(isSingleEmoji('🛰️')).toBe(true);
+    expect(isSingleEmoji('👨‍💻')).toBe(true);
+  });
+
+  it('refuses what a package may put in the same field instead', () => {
+    // The marketplace schema allows "an emoji OR an icon identifier", so these
+    // are the real inputs the install path has to turn down.
+    expect(isSingleEmoji('package')).toBe(false);
+    expect(isSingleEmoji('')).toBe(false);
+    expect(isSingleEmoji('  ')).toBe(false);
+    expect(isSingleEmoji('🦊 and more')).toBe(false);
   });
 });
 

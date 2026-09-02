@@ -8,7 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import { agentAuthorRef } from '@dorkos/shared/room-schemas';
 import type { AgentManifest, AgentPathEntry } from '@dorkos/shared/mesh-schemas';
-import { hashToEmoji, hashToHslColor } from '@/layers/shared/lib';
+import { seedAgentFace } from '@dorkos/shared/agent-face';
 import { agentFacesByRef, agentInfoByRef } from '../lib/agent-details';
 
 /**
@@ -35,7 +35,10 @@ describe('agentInfoByRef', () => {
     // the server, derived again here, and the two must meet.
     expect(info.get(agentAuthorRef('/w/bo'))).toEqual({
       memberId: '01JREGISTRYULID',
-      visual: { color: hashToHslColor('01JMANIFESTULID'), emoji: hashToEmoji('01JMANIFESTULID') },
+      visual: {
+        color: seedAgentFace('01JMANIFESTULID').color,
+        emoji: seedAgentFace('01JMANIFESTULID').icon,
+      },
       runtime: 'Claude Code',
       model: 'opus',
     });
@@ -61,7 +64,10 @@ describe('agentInfoByRef', () => {
     const resolved = info.get(agentAuthorRef('/w/bo'));
     expect(resolved).toEqual({
       memberId: '01JREGISTRYULID',
-      visual: { color: hashToHslColor('01JMANIFESTULID'), emoji: hashToEmoji('01JMANIFESTULID') },
+      visual: {
+        color: seedAgentFace('01JMANIFESTULID').color,
+        emoji: seedAgentFace('01JMANIFESTULID').icon,
+      },
       runtime: 'Claude Code',
     });
     expect(resolved).not.toHaveProperty('model');
@@ -109,8 +115,8 @@ describe('agentInfoByRef', () => {
     });
 
     expect(info.get(agentAuthorRef('/w/bo'))?.visual).toEqual({
-      color: hashToHslColor('01JSTALEONDISK'),
-      emoji: hashToEmoji('01JSTALEONDISK'),
+      color: seedAgentFace('01JSTALEONDISK').color,
+      emoji: seedAgentFace('01JSTALEONDISK').icon,
     });
   });
 });
@@ -126,12 +132,12 @@ describe('the face the join resolves', () => {
     const info = agentInfoByRef([entry('/w/bo')], { '/w/bo': manifest('claude-code', 'opus') });
 
     expect(info.get(agentAuthorRef('/w/bo'))?.visual).toEqual({
-      color: hashToHslColor('01JMANIFESTULID'),
-      emoji: hashToEmoji('01JMANIFESTULID'),
+      color: seedAgentFace('01JMANIFESTULID').color,
+      emoji: seedAgentFace('01JMANIFESTULID').icon,
     });
     // Not the path, and not the author id — the two seeds that were available
     // and would both have been wrong.
-    expect(info.get(agentAuthorRef('/w/bo'))?.visual.emoji).not.toBe(hashToEmoji('/w/bo'));
+    expect(info.get(agentAuthorRef('/w/bo'))?.visual.emoji).not.toBe(seedAgentFace('/w/bo').icon);
   });
 
   it('prefers the icon and colour an agent actually chose over the hash', () => {
