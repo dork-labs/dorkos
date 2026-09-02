@@ -17,7 +17,8 @@ const execFileAsync = promisify(execFile);
 const GIT_TIMEOUT_MS = 30_000;
 
 /**
- * Run a git command in `cwd`, returning trimmed stdout. Throws on non-zero exit.
+ * Run a git command in `cwd`, returning raw stdout untrimmed. Throws on
+ * non-zero exit. Callers that need trimmed output call `.trim()` themselves.
  *
  * @param args - Arguments passed to `git` (never shell-interpolated).
  * @param cwd - Directory to run in.

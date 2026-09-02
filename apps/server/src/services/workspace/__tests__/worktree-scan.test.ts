@@ -8,7 +8,17 @@
  * working in, and one broken checkout must not take the page down.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtemp, rm, writeFile, mkdir, realpath, stat, utimes, chmod } from 'node:fs/promises';
+import {
+  mkdtemp,
+  rm,
+  writeFile,
+  mkdir,
+  realpath,
+  stat,
+  utimes,
+  chmod,
+  symlink,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -279,6 +289,103 @@ describe('scanWorktrees degradation', () => {
     // project directory once dropped 7 checkouts with nothing to show for it.
     expect(result.worktrees).toHaveLength(0);
     expect(result.warnings).toEqual([{ path: sealed, reason: 'EACCES' }]);
+  });
+
+  it('adopts a symlinked checkout directory instead of skipping it', async () => {
+    // The layout some `gtr` setups and manual `ln -s` adoption produce: the
+    // real checkout lives elsewhere, and the project folder only holds a
+    // symlink to it. `entry.isDirectory()` is false for a symlink no matter
+    // what it points at, so without a fallback this checkout is invisible.
+    const home = path.join(base, 'symlinked');
+    const root = path.join(home, 'workspaces');
+    const project = path.join(root, 'core');
+    const source = path.join(home, 'source');
+    const realCheckout = path.join(home, 'real-checkout');
+    await mkdir(project, { recursive: true });
+    await mkdir(source, { recursive: true });
+
+    git(['init', '-b', 'main', '.'], source);
+    git(['config', 'user.email', 't@example.com'], source);
+    git(['config', 'user.name', 'Test'], source);
+    await writeFile(path.join(source, 'README.md'), '# s\n');
+    git(['add', '.'], source);
+    git(['commit', '-m', 'init'], source);
+    git(['worktree', 'add', realCheckout, '-b', 'feat/linked'], source);
+
+    await symlink(realCheckout, path.join(project, 'linked'), 'dir');
+
+    const { worktrees, warnings } = await scanWorktrees(root);
+    const linked = worktrees.find((w) => w.name === 'linked');
+
+    expect(linked).toBeDefined();
+    expect(linked?.readable).toBe(true);
+    expect(linked?.branch).toBe('feat/linked');
+    expect(warnings).toEqual([]);
+  });
+
+  it('warns on dangling symlinks, sorted by name, instead of silently dropping them', async () => {
+    // A symlink whose target has been moved or deleted. `fs.stat` on it fails,
+    // so the scan cannot know whether it was ever a directory — the same
+    // "hides whatever it held" problem an unopenable folder poses, and it
+    // gets the same answer: report it, don't drop it.
+    //
+    // `Zebra`/`ant` is not a cosmetic choice: on this machine's filesystem,
+    // `readdir` already returns entries in raw byte order (`Zebra` before
+    // `ant`, capital letters sort first), which happens to equal the sorted
+    // order for names that differ only in case-insensitive letter position.
+    // Pairing a leading capital with a leading lowercase makes byte order and
+    // `localeCompare` order disagree — `readdir` still yields `Zebra` before
+    // `ant`, but `localeCompare` puts `ant` first — so this assertion can only
+    // pass if the code actually sorts by name.
+    const home = path.join(base, 'dangling');
+    const root = path.join(home, 'workspaces');
+    const project = path.join(root, 'core');
+    await mkdir(project, { recursive: true });
+
+    const zebraLink = path.join(project, 'Zebra');
+    const antLink = path.join(project, 'ant');
+    await symlink(path.join(home, 'does-not-exist'), zebraLink, 'dir');
+    await symlink(path.join(home, 'also-does-not-exist'), antLink, 'dir');
+
+    const result = await scanWorktrees(root);
+
+    expect(result.worktrees).toHaveLength(0);
+    expect(result.warnings).toEqual([
+      { path: antLink, reason: 'ENOENT' },
+      { path: zebraLink, reason: 'ENOENT' },
+    ]);
+  });
+
+  it('adopts a symlinked PROJECT folder, not just a symlinked checkout', async () => {
+    // The scan walks two levels — root/project/checkout — and a symlink can
+    // stand in at either one. This pins the level the other adoption test
+    // does not: `root/core` itself is a symlink to a real project directory
+    // living elsewhere.
+    const home = path.join(base, 'symlinked-project');
+    const root = path.join(home, 'workspaces');
+    const realProject = path.join(home, 'real-project');
+    const source = path.join(home, 'source');
+    await mkdir(root, { recursive: true });
+    await mkdir(realProject, { recursive: true });
+    await mkdir(source, { recursive: true });
+
+    git(['init', '-b', 'main', '.'], source);
+    git(['config', 'user.email', 't@example.com'], source);
+    git(['config', 'user.name', 'Test'], source);
+    await writeFile(path.join(source, 'README.md'), '# s\n');
+    git(['add', '.'], source);
+    git(['commit', '-m', 'init'], source);
+    git(['worktree', 'add', path.join(realProject, 'checkout'), '-b', 'feat/proj-linked'], source);
+
+    await symlink(realProject, path.join(root, 'core'), 'dir');
+
+    const { worktrees, warnings } = await scanWorktrees(root);
+    const checkout = worktrees.find((w) => w.name === 'checkout');
+
+    expect(checkout).toBeDefined();
+    expect(checkout?.project).toBe('core');
+    expect(checkout?.readable).toBe(true);
+    expect(warnings).toEqual([]);
   });
 });
 
