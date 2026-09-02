@@ -1,0 +1,121 @@
+name: lint
+
+# Runs ESLint across every package in the monorepo on every PR, in the merge
+# queue, and on push to main (DOR-627).
+#
+# Before this workflow existed, the only ESLint anywhere in CI was
+# `pnpm exec eslint scripts/` in scripts-test.yml — the root `scripts/`
+# directory, no app and no package. AGENTS.md opens its Hard Rules section with
+# "Non-negotiable, enforced by ESLint/CI/convention", and for the four rules
+# ESLint actually implements, the "CI" half was false:
+#
+#   1. FSD layer violations       no-restricted-imports, apps/client/eslint.config.js
+#   2. SDK imports confined       no-restricted-imports, apps/server/eslint.config.js
+#   3. os.homedir() banned        no-restricted-imports + no-restricted-properties
+#   4. TSDoc on exports           jsdoc/*, packages/eslint-config/base.js
+#
+# All four are `error`, so all four fail `eslint` — but nothing downstream ever
+# ran `eslint`. Enforcement was the lefthook pre-commit hook plus a developer
+# choosing to run `pnpm verify`, and both are bypassable: `--no-verify` is a
+# documented, routinely-used escape in this repo. This is the same argument
+# typecheck.yml makes in its own header; that workflow exists because the
+# argument was accepted once, and it is not weaker for lint.
+#
+# Rule 4 was weaker still and needed a code change, not just a job. Every jsdoc
+# rule was registered at `warn`, and every package's lint script is a bare
+# `eslint .`, which exits 0 on warnings — so the TSDoc rule failed nothing
+# anywhere, this workflow included, and "enforced by eslint-plugin-jsdoc" was a
+# statement about a plugin being installed. DOR-627 promoted the jsdoc rules to
+# `error` in packages/eslint-config/base.js and cleared the 20 violations that
+# surfaced. See that file's header for why only the jsdoc rules moved and why
+# there is no `--max-warnings 0` here.
+#
+# FULL MONOREPO, not affected-only (the mode `pnpm verify` uses via
+# `turbo run typecheck lint --affected`). Same reasoning typecheck.yml gives
+# for the same choice, and lint has the same exposure: two PRs can each be
+# affected-only clean against the base they branched from and still combine
+# into a red `main`. That is not hypothetical for lint — a PR that tightens a
+# `no-restricted-imports` block and a PR that adds an import the new block
+# forbids are, individually, both green. Only a full run against the tree they
+# combine into can see it, which is what a merge-queue build is.
+#
+# NO build step: the shared config is syntax-only (`tseslint.configs.recommended`,
+# no type-aware rules), so ESLint never reads a dependency's dist and nothing
+# here needs `^build`. `turbo.json` declares `lint` with `dependsOn: ["^lint"]`
+# for the same reason. If a type-aware rule is ever added, that changes and this
+# comment is wrong — turbo will need `^build` on the task before this job is.
+#
+# WHY NOT ASSERT THE TASKS ACTUALLY EXECUTED, the way the merge-group `test` run
+# does via scripts/assert-tests-executed.sh: that guard exists because turbo can
+# replay a full cache hit in ~280ms while printing "successful" for every
+# package. It can only do that from a cache that outlives the run, and this repo
+# configures no turbo remote cache — no TURBO_TOKEN, no TURBO_TEAM, no
+# remoteCache block in turbo.json. Every runner starts with an empty
+# `.turbo/cache`, so all 21 tasks execute here every time. Wiring up remote
+# caching later would make this comment false and this job silently skippable;
+# add the assertion in the same change.
+#
+# THE push-to-main LEG IS KEPT FOR PARITY WITH typecheck.yml, which still has
+# one, even though AGENTS.md's CI section retired the push leg for `test` on the
+# grounds that the merge queue already checked the exact tree content. Two
+# reasons it stays here: `lint` is not a required check yet, so unlike `test` it
+# is NOT guaranteed to have run against the combined tree the queue built; and
+# this job is ~40s, so re-running it on main is cheap insurance rather than the
+# multi-minute duplicate that argument was made about. Revisit if `lint` becomes
+# required — at that point the `test` reasoning applies to it unchanged.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+
+# Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
+# hard cutoff for the Node 20 runtime (matches the other workflows here).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+# Cancel superseded runs on the same ref for PRs only. For push events, group by
+# SHA instead of ref: GitHub only lets one run per group be *pending* at a time,
+# so several quick merges to main sharing a `lint-refs/heads/main` group would
+# cancel each other's queued runs and only the final push would be checked.
+# Per-SHA groups give every push-to-main its own slot. (Copied deliberately from
+# typecheck.yml — same failure mode, same fix.)
+concurrency:
+  group: lint-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    # A full cold lint (`turbo lint --force`, 21 packages, no cache) measured
+    # ~40s on an idle developer machine. The ceiling is deliberately far above
+    # that: the same command took over four minutes on the same machine while
+    # several agents were running, so the number to budget against is a loaded
+    # runner, not a quiet one. This is a stop for a hung run, not a perf budget.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # `--continue` so one package's errors don't hide another's: a run that
+      # stops at the first red package makes fixing lint an N-round loop.
+      #
+      # Warnings do not fail this. `eslint` exits 0 on warnings and no
+      # `--max-warnings` is passed, so the ~210 outstanding `max-lines`,
+      # `no-restricted-syntax` and `no-unused-vars` warnings stay visible in the
+      # log without blocking. The per-rule severity in
+      # packages/eslint-config/base.js is the gate — anything meant to fail CI
+      # belongs at `error` there, not behind a flag added here.
+      - name: Lint every package
+        run: pnpm exec turbo lint --continue

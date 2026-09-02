@@ -21,7 +21,11 @@ import { runGit, computeDirtyState } from './git.js';
 export class CloneProvider implements WorkspaceProvider {
   readonly type = 'clone' as const;
 
-  /** @param root - The workspace root; every checkout path must canonicalize under it. */
+  /**
+   * Bind the provider to one workspace root.
+   *
+   * @param root - The workspace root; every checkout path must canonicalize under it.
+   */
   constructor(private readonly root: string) {}
 
   async create(req: WorkspaceCreateRequest): Promise<ProviderResult> {

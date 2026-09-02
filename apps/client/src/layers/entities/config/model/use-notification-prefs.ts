@@ -32,7 +32,11 @@ const LEGACY_SOUND_KEY = 'dorkos-enable-notification-sound';
  */
 let legacyImportAttempted = false;
 
-/** @internal Exported for testing only — resets the once-per-load import latch. */
+/**
+ * Reset the once-per-load legacy sound import latch.
+ *
+ * @internal Exported for testing only.
+ */
 export function resetLegacySoundImportForTests(): void {
   legacyImportAttempted = false;
 }

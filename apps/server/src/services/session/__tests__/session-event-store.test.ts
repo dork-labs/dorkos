@@ -8,7 +8,7 @@ import type { SessionEvent } from '@dorkos/shared/session-stream';
 import { SessionEventStore } from '../session-event-store.js';
 import { SessionStateProjector } from '../session-state-projector.js';
 import { reconstructHistoryFromEvents } from '../event-log-history.js';
-import { EVENT_LOG_MAX_EVENTS } from '../event-log.js';
+import { EVENT_LOG_MAX_EVENTS } from '../replay/event-log.js';
 
 /** A minimal seq'd turn: turn_start(user) → text_delta → turn_end. */
 function turn(startSeq: number, text: string): SessionEvent[] {

@@ -43,8 +43,9 @@ import { isAbsolvingTerminalReason, isNonFatalErrorCode } from '@dorkos/shared/r
 import { listPendingInteractions } from './pending-interactions.js';
 import type { SessionDebugCounters } from './session-debug-counters.js';
 import { logger } from '../../lib/logger.js';
-import { EventLog } from './event-log.js';
-import { RingBuffer } from './ring-buffer.js';
+import { EventLog } from './replay/event-log.js';
+import { RingBuffer } from './replay/ring-buffer.js';
+import { guardEventSize } from './replay/event-size-guard.js';
 import { devtoolsCaptureStore } from './devtools-capture-store.js';
 import type { SessionEventStore } from './session-event-store.js';
 import { getMessageQueueStore, toQueuedMessage } from './message-queue-store.js';
@@ -586,7 +587,12 @@ export class SessionStateProjector {
     // design — it ingests the retirements — and terminates because each stale
     // entry is removed before its own event is ingested.
     this.expireStaleSubagents();
-    const event = { ...raw, seq: ++this.counter } as SessionEvent;
+    // Byte guard BEFORE the seq is stamped and before anything projects, so
+    // every consumer — projection, log, ring, durable store, live subscriber —
+    // sees the identical guarded event. An oversized string becomes a stated
+    // omission rather than a silent truncation; the event's type and ids are
+    // untouched, so nothing downstream is stranded (`event-size-guard.ts`).
+    const event = guardEventSize({ ...raw, seq: ++this.counter } as SessionEvent);
     // Capture before project(): applyStatusChange replaces the status object.
     const lifecycleBefore = this.status.lifecycle;
     const activityBefore = this.status.activity;

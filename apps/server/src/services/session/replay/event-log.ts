@@ -14,9 +14,10 @@
  * without limit; trimming drops the oldest events, which the ring/log can no
  * longer replay — such a client falls back to a fresh snapshot.
  *
- * @module services/session/event-log
+ * @module services/session/replay/event-log
  */
 import type { SessionEvent } from '@dorkos/shared/session-stream';
+import { EVENT_LOG_MAX_BYTES, eventByteSize } from './event-size-guard.js';
 
 /**
  * Maximum events retained in the log before the oldest are trimmed. Sized well
@@ -29,12 +30,35 @@ export const EVENT_LOG_MAX_EVENTS = 5000;
 export class EventLog {
   private events: SessionEvent[] = [];
 
-  /** Append an event, trimming the oldest once the cap is exceeded. */
+  /** Running byte total of {@link EventLog.events}, kept in step with it. */
+  private bytes = 0;
+
+  /**
+   * Append an event, trimming the oldest once EITHER cap is exceeded.
+   *
+   * The byte cap is the one that makes this a real bound: 5000 events is a
+   * fixed number of entries and an unbounded number of bytes, which was fine
+   * while every event was a sentence and stopped being fine when a message part
+   * could stand for an image. Trimming drops the oldest events, which the log
+   * can no longer replay — a client that far behind takes a fresh snapshot, the
+   * same outcome the count cap already had. See `event-size-guard.ts`.
+   */
   append(event: SessionEvent): void {
     this.events.push(event);
+    this.bytes += eventByteSize(event);
     if (this.events.length > EVENT_LOG_MAX_EVENTS) {
-      this.events.splice(0, this.events.length - EVENT_LOG_MAX_EVENTS);
+      this.trim(this.events.length - EVENT_LOG_MAX_EVENTS);
     }
+    // Never trims the event just appended — see the same note on `RingBuffer`.
+    while (this.bytes > EVENT_LOG_MAX_BYTES && this.events.length > 1) {
+      this.trim(1);
+    }
+  }
+
+  /** Drop the oldest `count` events, keeping the byte total honest. */
+  private trim(count: number): void {
+    const dropped = this.events.splice(0, count);
+    for (const event of dropped) this.bytes -= eventByteSize(event);
   }
 
   /**

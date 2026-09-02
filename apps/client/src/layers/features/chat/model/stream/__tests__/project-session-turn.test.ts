@@ -15,6 +15,67 @@ describe('projectInProgressTurn', () => {
     expect(parts).toEqual([{ type: 'text', text: 'Hello World' }]);
   });
 
+  it('folds an image_attachment into an image part, as a reference', () => {
+    // The whole reason the seam exists: an image the turn produced must reach
+    // the bubble, and must reach it as a URL. Inlined bytes would be replayed
+    // on every reconnect through buffers that count events rather than bytes.
+    const events: SessionEvent[] = [
+      { seq: 1, type: 'text_delta', text: 'Here you go.' },
+      {
+        seq: 2,
+        type: 'image_attachment',
+        attachmentId: 'abc123',
+        url: '/api/sessions/s1/attachments/abc123.png',
+        mediaType: 'image/png',
+        size: 2048,
+        alt: 'banana.png',
+      },
+    ];
+
+    const parts = projectInProgressTurn(events);
+
+    expect(parts).toEqual([
+      { type: 'text', text: 'Here you go.' },
+      {
+        type: 'image',
+        attachmentId: 'abc123',
+        url: '/api/sessions/s1/attachments/abc123.png',
+        mediaType: 'image/png',
+        size: 2048,
+        alt: 'banana.png',
+      },
+    ]);
+  });
+
+  it('keeps two images in a turn as two parts, in the order they arrived', () => {
+    const events: SessionEvent[] = [
+      {
+        seq: 1,
+        type: 'image_attachment',
+        attachmentId: 'first',
+        url: '/api/sessions/s1/attachments/first.png',
+        mediaType: 'image/png',
+        size: 1,
+      },
+      {
+        seq: 2,
+        type: 'image_attachment',
+        attachmentId: 'second',
+        url: '/api/sessions/s1/attachments/second.png',
+        mediaType: 'image/png',
+        size: 1,
+      },
+    ];
+
+    const parts = projectInProgressTurn(events);
+
+    expect(parts.map((p) => p.type)).toEqual(['image', 'image']);
+    expect(parts.map((p) => (p as { attachmentId: string }).attachmentId)).toEqual([
+      'first',
+      'second',
+    ]);
+  });
+
   it('starts a new text part after a non-text part interrupts the stream', () => {
     // Purpose: text before and after a tool call must not merge across the tool
     // boundary (mirrors part ordering in the live pipeline).

@@ -13,6 +13,11 @@ export default [
       'require-yield': 'off',
       'react/display-name': 'off',
       'max-lines': 'off',
+      // Tests are exempt from HAVING a TSDoc block, not from writing a valid
+      // one. Only these two are off; `jsdoc/check-tag-names`, `jsdoc/no-types`
+      // and `jsdoc/require-param-description` still apply here, and all of them
+      // are `error` since DOR-627 — so a test file with no doc comments at all
+      // passes, while one carrying a misspelled tag or an inline type fails.
       'jsdoc/require-jsdoc': 'off',
       'jsdoc/require-description': 'off',
     },

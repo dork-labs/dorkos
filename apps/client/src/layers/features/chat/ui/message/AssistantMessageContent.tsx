@@ -20,6 +20,7 @@ import { PermissionDeniedChip } from './PermissionDeniedChip';
 import { CapabilityApprovalTimedOut } from './CapabilityApprovalTimedOut';
 import { McpSigninCard } from './McpSigninCard';
 import { CompactBoundaryRow } from './CompactBoundaryRow';
+import { MessageImage } from './MessageImage';
 import { CompactPendingRow } from '../primitives';
 import { AutoHideThinking, ToolCallWithApp } from './auto-hiding-parts';
 import { CollapsibleRun } from './CollapsibleRun';
@@ -193,7 +194,18 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
       // the card is what brings the agent back once the sign-in lands.
       return <McpSigninCard key={`mcp-signin-${part.agentId}-${part.flowId}`} part={part} />;
     }
-    // At this point part.type === 'tool_call' — all other variants have been handled above.
+    if (part.type === 'image') {
+      return <MessageImage key={`image-${part.attachmentId}-${i}`} part={part} />;
+    }
+    // Everything below is a tool call. The narrowing is asserted rather than
+    // assumed: this used to be a bare comment saying "at this point
+    // part.type === 'tool_call'", and the day a member was added to
+    // `MessagePartSchema` that comment became false — an unhandled part fell
+    // through and rendered as a broken tool card reading properties it does not
+    // have. A guard costs one branch and turns that class of bug into nothing
+    // on screen, which is the right outcome for a part a client is too old to
+    // understand (ADR 260901-135657).
+    if (part.type !== 'tool_call') return null;
     const toolPart = part;
     if (toolPart.interactiveType === 'approval' && toolPart.status === 'pending') {
       if (toolPart.toolCallId === inputZoneToolCallId) {

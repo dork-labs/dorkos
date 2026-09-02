@@ -511,6 +511,32 @@ function foldMemoryRecall(
 }
 
 /**
+ * Append an image the turn produced, where it happened.
+ *
+ * Plain append, no upsert: two pictures in one turn are two pictures, and the
+ * event carries no positional anchor beyond its own place in the stream — which
+ * is the right anchor, because the adapter emits it immediately after whatever
+ * produced it.
+ *
+ * The part is a reference. Nothing here fetches, decodes, or measures anything;
+ * the browser fetches `url` when the element renders and caches it, which is
+ * what makes a reconnect free (see `sessionImageShape` in `@dorkos/shared`).
+ */
+function foldImageAttachment(
+  parts: MessagePart[],
+  event: Extract<SessionEvent, { type: 'image_attachment' }>
+) {
+  parts.push({
+    type: 'image',
+    attachmentId: event.attachmentId,
+    url: event.url,
+    mediaType: event.mediaType,
+    size: event.size,
+    ...(event.alt !== undefined ? { alt: event.alt } : {}),
+  });
+}
+
+/**
  * Fold a `compact_boundary` event into an inline compaction row part (success).
  * Appended at the current tail — the event stream carries no positional anchor,
  * so for a mid-turn auto-compaction the row sits after the text streamed so far
@@ -817,7 +843,8 @@ function settledInteractionIds(events: SessionEvent[]): Set<string> {
  * pending tool-call / elicitation parts the live pipeline produces;
  * `subagent_update` maps to a `background_task` part; `hook_update`s attach to
  * their tool part (buffered when they precede it); `memory_recall` pins a
- * collapsible part at index 0; a typed `error` folds an inline error part (the
+ * collapsible part at index 0; `image_attachment` appends a picture where it
+ * was produced; a typed `error` folds an inline error part (the
  * live `ErrorMessageBlock`, for every runtime). `turn_start`, `turn_end`,
  * `status_change`, and `todo_update` carry no renderable part and are skipped
  * (they drive the status/task projections, not the bubble).
@@ -879,6 +906,9 @@ export function projectInProgressTurn(events: SessionEvent[]): MessagePart[] {
         break;
       case 'memory_recall':
         foldMemoryRecall(parts, event);
+        break;
+      case 'image_attachment':
+        foldImageAttachment(parts, event);
         break;
       case 'compact_boundary':
         foldCompactBoundary(parts, event);

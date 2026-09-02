@@ -57,6 +57,8 @@ export class StreamRefusedError extends Error {
   readonly status: number;
 
   /**
+   * Build a refusal from the status the close frame carried.
+   *
    * @param status - The status decoded from the WebSocket close code.
    * @param reason - The close frame's reason, when the server sent one.
    */

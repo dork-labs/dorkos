@@ -65,6 +65,11 @@ export const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
   // The EventLog is the fallback history source when the native sidecar read
   // fails/unbinds, so the platform persists it durably (DOR-189).
   logBackedHistory: true,
+  // The BASE declaration, for a runtime wired without an attachment store.
+  // `OpenCodeRuntime.getCapabilities` upgrades it to `'attachments'` when one
+  // is wired, because a runtime with nowhere to put an image cannot honestly
+  // claim to carry one (`RuntimeCapabilities.mediaOutput`).
+  mediaOutput: 'none',
   permissionModes: {
     supported: true,
     // Conservative: approval-required (matches the sidecar ask-ruleset).
