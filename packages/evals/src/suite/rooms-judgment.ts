@@ -156,14 +156,53 @@
  * "post nothing" lost twice to a model that did not count a warm sign-off as a
  * message.
  *
- * **Where DM answer-rate stands: 3 of 3 seeds, twice, plus a separate green on
- * the direct-question seed.** DM restraint is the softer number — 3 passes, 2
- * fails and one 313s harness timeout across the iteration — and its case carries
- * a defect of its own that is nobody's conduct: its OPENER ("did the importer fix
- * go out in yesterday's release?") is not answerable from the message, so a
- * sandbox agent that correctly says nothing trips `openerLanded` before restraint
- * is ever measured. That is the same defect this file already records against
- * two other cases, and it is owed the same fix.
+ * **The CHANNEL quiet branch is gated on `addressing.addressedNow`**, which is a
+ * review finding rather than a measured one and is worth marking as such. "You
+ * have nothing to add: post nothing, and end the turn." is right for the
+ * overheard conversation E7 makes silence free in; read from the last line
+ * before a message that just NAMED the agent, it licenses the disappearing act
+ * `specs/room-participation` is written against. The addressed branch still
+ * allows a reaction — A-06 needs "just ack this" answerable with one emoji and
+ * nothing else — and forbids only vanishing.
+ *
+ * ### The post-review confirmation round (2026-09-02, after the addressing gate)
+ *
+ * Twelve cases, one run each: **9 pass, 3 red, and none of the three reds is the
+ * behaviour its case is named for.**
+ *
+ * | Case | Result | Why |
+ * | ---- | ------ | --- |
+ * | the three DM answer-rate seeds | **3 of 3 pass** | — |
+ * | `rooms-dm-restraint-on-a-bare-thanks` | red | ONLY `openerLanded` failed; the restraint oracle passed and nothing was posted after "thanks!". The unanswerable-opener defect, twice over |
+ * | `rooms-channel-mentioned-question-posts` | pass | — |
+ * | `rooms-channel-yields-when-a-human-answered` | red | the sandbox confound: the agent posted "This is a greenfield project so I'm starting fresh", which is the host machine's `SessionStart` hook talking, not conduct |
+ * | `rooms-ack-only-reacts-under-the-flip` | pass | — |
+ * | `rooms-dm-reaction-can-be-the-whole-answer` | pass | — |
+ * | `rooms-thinking-stays-in-the-session` | pass | — |
+ * | `rooms-answers-three-questions-in-one-message` | pass | — |
+ * | `rooms-ambient-silence-is-free-for-a-model-too` | red | the restraint oracle PASSED — the transcript reasons "they're not asking me anything… I should post nothing and end the turn", which is the unaddressed quiet branch working. Its OPENER narrated instead of posting |
+ * | `rooms-declines-visibly-rather-than-vanishing` | pass | — |
+ *
+ * **The ambient red is the one worth not explaining away.** It is the narration
+ * failure, appearing once on an ADDRESSED channel message, in a round where the
+ * three sibling addressed-channel cases all posted through the tool. The
+ * addressing gate is not what produced it: the branch that gate changed forbids
+ * bare silence *more* strongly than the text it replaced, and the outcome was
+ * neither branch. One instance is not a rate, and the honest reading is that the
+ * channel speak branch is weaker than the DM one — it lacks the DM's "that call
+ * is the only thing they will ever see" — and may want the same force. That is a
+ * hypothesis with one data point behind it, not a finding.
+ *
+ * **Where DM answer-rate stands: 3 of 3 seeds, three separate rounds, plus a
+ * standalone green on the direct-question seed.** DM restraint is the softer
+ * number — 4 passes, 3 fails and one 313s harness timeout across the whole
+ * iteration — and its case carries a defect of its own that is nobody's conduct:
+ * its OPENER ("did the importer fix go out in yesterday's release?") is not
+ * answerable from the message, so a sandbox agent that correctly says nothing
+ * trips `openerLanded` before restraint is ever measured. That accounts for its
+ * last two reds outright — in both, the restraint oracle itself passed. It is the
+ * same defect this file already records against two other cases, and it is owed
+ * the same fix; until it is paid, this case's number understates the behaviour.
  *
  * ### The mutation drill, run live (DOR-1643)
  *

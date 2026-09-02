@@ -1,6 +1,8 @@
 ---
 covers:
   - 'fix(server): in a direct message, the answer an agent works out is the one it sends (DOR-1643)'
+  - 'fix(server,evals): in a direct message, the answer an agent works out is the one it sends (DOR-1643)'
+  - 'fix(server,evals): answer the review — restore the tool-name scan, gate channel silence on addressing (DOR-1643)'
 ---
 
 ### Fixed

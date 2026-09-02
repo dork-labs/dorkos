@@ -1409,31 +1409,69 @@ function closingDirective(data: RoomContextData, toolPrefix?: string): string {
   // — the closest thing to the decision, in the position the whole directive
   // was moved here to occupy.
   const [quiet, speak] =
-    data.room.kind === 'channel'
-      ? [
-          `You have nothing to add: post nothing, and end the turn.`,
-          `You decided to say something: call ${call}. Anything you write instead of ` +
-            `calling it reaches nobody.`,
-        ]
-      : [
-          // The banned phrasings are QUOTED, and that is what a prohibition has
-          // to do to beat politeness. "Post nothing" lost twice to a model that
-          // did not think a warm sign-off counted as a message; "Anytime! Let
-          // me know if you need anything else on the importer." is what it
-          // posted, and naming it is the difference between a rule and a hope.
-          `They asked for nothing back — a thanks, an acknowledgment, a heads-up with no ` +
-            `question in it: post nothing. React to their message, or end the turn. ` +
-            `"Anytime", "you're welcome", "let me know if you need anything else" are ` +
-            `messages, and posting one here is the noise this whole arrangement exists to ` +
-            `spare people.`,
-          // "or asked you to look at something" is not padding: the ambiguous
-          // seed ("can you take a look at that when you get a chance") was read
-          // as work to start rather than a message to answer, and the turn went
-          // off to reason about the repo and wrote its reply to nobody.
-          `They asked you anything at all — a question, or to look at something: call ` +
-            `${call}. That call is the only thing they will ever see; anything you write ` +
-            `here instead of calling it reaches nobody, and going off to work without it ` +
-            `leaves them in silence.`,
-        ];
+    data.room.kind === 'channel' ? channelBranches(data, call) : dmBranches(call);
   return `Before you end this turn, exactly one of these two:\n- ${quiet}\n- ${speak}`;
+}
+
+/**
+ * The channel pair, which turns on whether this message NAMED the agent.
+ *
+ * **Bare silence is offered only when nobody asked, and the reason is that this
+ * directive sits in the strongest position in the whole block.** "You have
+ * nothing to add: post nothing, and end the turn." is exactly right for the
+ * overheard conversation E7 makes silence free in — and read by an agent
+ * somebody has just named, from the last line before their message, it licenses
+ * the disappearing act the room-participation spec's UX section is written
+ * against. `addressedNow` is already resolved on the context for this turn, so
+ * the distinction costs nothing to make.
+ *
+ * The addressed branch still does not force a MESSAGE. A reaction is visible,
+ * and A-06 turns on an agent being able to answer "just ack this" with one and
+ * stop; what it forbids is vanishing, which is the only ending a person who
+ * named you cannot read.
+ *
+ * @param data - The turn's room context.
+ * @param call - The rendered posting call.
+ * @returns The quiet branch and the speaking branch, in that order.
+ */
+function channelBranches(data: RoomContextData, call: string): [string, string] {
+  return [
+    data.addressing.addressedNow
+      ? `You are not going to answer: react to their message, or send a short "I don't ` +
+        `know" — they named you, so going quiet leaves them waiting on you. Vanishing is ` +
+        `not one of your options here.`
+      : `You have nothing to add: post nothing, and end the turn.`,
+    `You decided to say something: call ${call}. Anything you write instead of calling it ` +
+      `reaches nobody.`,
+  ];
+}
+
+/**
+ * The direct-message pair, where an answer is owed and only its route is in
+ * question.
+ *
+ * @param call - The rendered posting call.
+ * @returns The quiet branch and the speaking branch, in that order.
+ */
+function dmBranches(call: string): [string, string] {
+  return [
+    // **The opener is narrow on purpose, and the banned phrasings are QUOTED.**
+    // "They asked for nothing back" alone reads as "no question mark", which a
+    // request slips through; "no question, no request" is the test that cannot
+    // be satisfied by grammar. And a prohibition has to name what it forbids to
+    // beat politeness — "post nothing" lost twice to a model that did not count
+    // a warm sign-off as a message, posting "Anytime! Let me know if you need
+    // anything else on the importer."
+    `They asked for nothing back at all — no question, no request: a thanks, an ` +
+      `acknowledgment, a heads-up. Post nothing. React to their message, or end the turn. ` +
+      `"Anytime", "you're welcome", "let me know if you need anything else" are messages, ` +
+      `and posting one here is the noise this whole arrangement exists to spare people.`,
+    // "or asked you to look at something" is not padding: the ambiguous seed
+    // ("can you take a look at that when you get a chance") was read as work to
+    // start rather than a message to answer, and the turn went off to reason
+    // about the repo and wrote its reply to nobody.
+    `They asked you anything at all — a question, or to look at something: call ${call}. ` +
+      `That call is the only thing they will ever see; anything you write here instead of ` +
+      `calling it reaches nobody, and going off to work without it leaves them in silence.`,
+  ];
 }

@@ -1935,8 +1935,8 @@ describe('what a tool-only turn is told about where its answer goes (§D11, DOR-
     // call: an imperative with a trailing exception got a pleasantry posted at
     // a bare "thanks!".
     expect(block).toContain(
-      '- They asked for nothing back — a thanks, an acknowledgment, a heads-up with no ' +
-        'question in it: post nothing.'
+      '- They asked for nothing back at all — no question, no request: a thanks, an ' +
+        'acknowledgment, a heads-up. Post nothing.'
     );
     // The banned phrasings are quoted rather than described: "post nothing"
     // alone lost twice to a model posting a warm sign-off.
@@ -1967,6 +1967,19 @@ describe('what a tool-only turn is told about where its answer goes (§D11, DOR-
 });
 
 describe('the closing directive a tool-only turn reads last (DOR-1643)', () => {
+  /** The same channel turn, triggered by a message that did NOT name the agent. */
+  function unaddressedChannel(): RoomContextData {
+    return context({
+      replyMode: 'tool-only',
+      addressing: {
+        responseMode: 'mention-only',
+        engagedUntil: null,
+        engagedPostsLeft: null,
+        addressedNow: false,
+      },
+    });
+  }
+
   it('is the very last thing in a direct message under the flip', () => {
     // Position is the assertion. The preamble's version of this sits above the
     // roster, the headroom line and the whole fenced backlog; the live probe
@@ -1983,12 +1996,33 @@ describe('the closing directive a tool-only turn reads last (DOR-1643)', () => {
     expect(block).toContain('That call is the only thing they will ever see');
   });
 
-  it('leaves the decision to speak with the agent in a channel', () => {
-    const block = formatRoomContext(context({ replyMode: 'tool-only' }), { nonce: NONCE });
+  it('leaves the decision to speak with the agent in a channel nobody named it in', () => {
+    const block = formatRoomContext(unaddressedChannel(), { nonce: NONCE });
     expect(
       block.trimEnd().endsWith('Anything you write instead of calling it reaches nobody.')
     ).toBe(true);
     expect(block).toContain('- You have nothing to add: post nothing, and end the turn.');
+  });
+
+  it('does not offer bare silence to an agent a channel message just named', () => {
+    // This directive is the last line before the person's words, which is the
+    // strongest position in the block — and "post nothing, and end the turn"
+    // read from there by an agent somebody has just named licenses exactly the
+    // disappearing act the room-participation spec is written against.
+    const block = formatRoomContext(context({ replyMode: 'tool-only' }), { nonce: NONCE });
+    expect(block).not.toContain('You have nothing to add: post nothing');
+    expect(block).toContain(
+      '- You are not going to answer: react to their message, or send a short "I don\'t know"'
+    );
+    expect(block).toContain('Vanishing is not one of your options here.');
+  });
+
+  it('still lets a named agent answer with a reaction alone', () => {
+    // A-06 turns on "just ack this" being answerable with one emoji and
+    // nothing else. The addressed branch forbids VANISHING, not reacting — a
+    // reaction is visible, which is the whole property being protected.
+    const block = formatRoomContext(context({ replyMode: 'tool-only' }), { nonce: NONCE });
+    expect(block).toContain('react to their message');
   });
 
   it('names the posting tool under the prefix the caller supplied', () => {
