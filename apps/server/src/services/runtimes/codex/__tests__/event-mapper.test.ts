@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { StreamEventSchema } from '@dorkos/shared/schemas';
+import { StreamEventSchema, UI_COMMAND_REACH } from '@dorkos/shared/schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { ThreadEvent } from '@openai/codex-sdk';
 import {
@@ -371,6 +371,91 @@ describe('mapCodexEvent', () => {
         status: 'error',
       });
       expect(events[2]!.data).toMatchObject({ status: 'error', result: 'rate limited' });
+    });
+
+    /**
+     * DOR-639. `apply_layout` is the one `control_ui` action that leaves the
+     * browser: the cockpit answers it by POSTing `/api/shapes/:name/apply`, which
+     * writes `SKILL.md` files into the person's skills root, records a receipt,
+     * rewrites the active Shape in their config, creates/rebinds/deletes scheduled
+     * tasks, and enables and disables extensions. On claude-code that raises an
+     * approval card (DOR-625). Codex cannot raise one at all, so it must refuse.
+     * (It cannot arm a prompts-off cron job — that is clamped and parked pending
+     * approval by DOR-607/DOR-1486 — so the writing and rewiring is the reason,
+     * and see `ui-command-consent.ts` for the full accounting.)
+     *
+     * The mapper is the enforcement point rather than the scoped MCP stub: it maps
+     * the raw `item.arguments` Codex recorded and never sees the stub's result, so
+     * a refusal that lived only in the stub would still let the effect through
+     * here.
+     */
+    it('refuses a reaching action (apply_layout) instead of applying it — DOR-639', () => {
+      const events = mapCodexEvent(
+        codexItemCompleted(
+          controlUiItem('ui-1', {
+            status: 'completed',
+            args: { action: 'apply_layout', shape: 'nightly-release' },
+          })
+        ),
+        makeContext()
+      );
+
+      expect(events.some((e) => e.type === 'ui_command')).toBe(false);
+      expect(events).toHaveLength(1);
+      expect(events[0]!.type).toBe('error');
+      expect(events[0]!.data).toMatchObject({ code: 'ui_command_refused' });
+      // The refusal names the action and points at what to do instead, so an
+      // agent reading it does not simply retry.
+      expect((events[0]!.data as { message: string }).message).toContain('apply_layout');
+      expect((events[0]!.data as { message: string }).message).toContain('DorkOS app');
+    });
+
+    /**
+     * Pins the gate to the shared reach table rather than to a hardcoded
+     * `apply_layout` check: every action `UI_COMMAND_REACH` marks as leaving the
+     * browser is refused, and every `client-only` one still maps to a `ui_command`.
+     * A twenty-third action classified `reaches-the-machine` is therefore covered
+     * the moment it is added, with no edit here.
+     */
+    it('refuses exactly the reaches-the-machine actions and passes the client-only ones', () => {
+      const argsFor: Partial<Record<string, Record<string, unknown>>> = {
+        apply_layout: { shape: 'nightly-release' },
+        open_panel: { panel: 'tasks' },
+        close_panel: { panel: 'tasks' },
+        toggle_panel: { panel: 'tasks' },
+        switch_sidebar_tab: { tab: 'sessions' },
+        open_canvas: { content: { type: 'markdown', content: '# hi' } },
+        update_canvas: { content: { type: 'markdown', content: '# hi' } },
+        open_file: { sourcePath: 'README.md' },
+        open_diff: { sourcePath: 'README.md' },
+        browser_navigate: { url: 'http://localhost:4242' },
+        show_toast: { message: 'hi' },
+        set_theme: { theme: 'dark' },
+        switch_agent: { cwd: '/tmp/project' },
+      };
+
+      for (const [action, reach] of Object.entries(UI_COMMAND_REACH)) {
+        const events = mapCodexEvent(
+          codexItemCompleted(
+            controlUiItem(`ui-${action}`, {
+              status: 'completed',
+              args: { action, ...(argsFor[action] ?? {}) },
+            })
+          ),
+          makeContext()
+        );
+        const types = events.map((e) => e.type);
+        // A sample the command union rejects would make this vacuous — every
+        // action must produce one of the two real verdicts, never the
+        // ui_command_invalid fallback.
+        expect(
+          types,
+          `${action}: sample arguments no longer parse, so this row proves nothing`
+        ).toEqual(reach === 'client-only' ? ['ui_command'] : ['error']);
+        if (reach !== 'client-only') {
+          expect(events[0]!.data).toMatchObject({ code: 'ui_command_refused' });
+        }
+      }
     });
 
     it('emits a typed error and no ui_command for invalid arguments', () => {

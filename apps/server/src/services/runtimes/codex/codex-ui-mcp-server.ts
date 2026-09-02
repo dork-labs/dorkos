@@ -19,11 +19,16 @@
  * `get_ui_state` is intentionally NOT exposed: a session-less stub would return
  * a misleading default UI state.
  *
+ * Actions that reach past the screen are REFUSED here and in the event-mapper —
+ * see {@link isUiActionRefusedOnCodex} for why Codex is the runtime where refusal
+ * is the only available answer (DOR-639).
+ *
  * @module services/runtimes/codex/codex-ui-mcp-server
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CONTROL_UI_DESCRIPTION, CONTROL_UI_INPUT } from '../shared/ui-tool-contract.js';
 import { jsonContent } from '../shared/mcp-content.js';
+import { isUiActionRefusedOnCodex, uiActionRefusalMessage } from './ui-command-consent.js';
 
 /**
  * Name of the scoped Codex UI MCP server. Shared by the event-mapper (to
@@ -39,12 +44,24 @@ export const CODEX_UI_MCP_SERVER = 'dorkos_ui';
  * contract is byte-for-byte identical to Claude Code's `control_ui`. The
  * handler is a side-effect-free stub — see the module doc — because the actual
  * `ui_command` emission happens in the event-mapper where the session is bound.
+ *
+ * The one thing the stub does decide is refusal: an action
+ * {@link isUiActionRefusedOnCodex} rejects comes back as an MCP error carrying
+ * {@link uiActionRefusalMessage}. This is the ONLY channel that reaches the model
+ * — StreamEvents go to the client, never back into the agent's context — so it is
+ * where the agent learns why. Enforcement is still the event-mapper's job, since
+ * it maps the raw item arguments and never sees this result (DOR-639).
  */
 export function createCodexUiMcpServer(): McpServer {
   const server = new McpServer({ name: CODEX_UI_MCP_SERVER, version: '1.0.0' });
 
   server.tool('control_ui', CONTROL_UI_DESCRIPTION, CONTROL_UI_INPUT, async (input) =>
-    jsonContent({ success: true, action: input.action })
+    isUiActionRefusedOnCodex(input.action)
+      ? jsonContent(
+          { success: false, action: input.action, error: uiActionRefusalMessage(input.action) },
+          true
+        )
+      : jsonContent({ success: true, action: input.action })
   );
 
   return server;
