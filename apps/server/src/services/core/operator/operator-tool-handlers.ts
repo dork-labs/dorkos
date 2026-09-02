@@ -14,9 +14,11 @@
  *
  * @module services/core/operator/operator-tool-handlers
  */
+import path from 'node:path';
 import { z } from 'zod';
 import { ListActivityQuerySchema } from '@dorkos/shared/activity-schemas';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../../../lib/boundary.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
 import { updateAgentManifest, AgentUpdateError } from './agent-updater.js';
@@ -199,14 +201,32 @@ export function createConfigGetHandler() {
  * A patch that touches even one operator-only path is refused whole: no partial
  * write, so an agent cannot smuggle a posture change in behind a legitimate one.
  *
+ * **This is also where an agent-set display name gets its receipt** (DOR-1022).
+ * `profile.displayName` stays writable here — DorkBot saving "call me Dorian" is
+ * the onboarding flow — but since DOR-979 that name is what the roster and the
+ * account menu call the person, so the write now records WHO made it. The name
+ * of the writing agent is the identity the surface resolved, and `null` when it
+ * resolved none; the record itself is `operator-only`, so a patch can never
+ * write or clear it directly.
+ *
+ * @param identity - The calling agent, when the surface resolved one. Read only
+ *   for the display-name receipt; nothing about the write depends on it.
  * @returns The bound handler (no deps; writes via the config singleton).
  */
-export function createConfigPatchHandler() {
+export function createConfigPatchHandler(identity?: AgentIdentity) {
   return async (args: { patch?: Record<string, unknown> }): Promise<OperatorToolResult> => {
     const result = applyGuardedConfigWrite({
       patch: args.patch,
       authority: OPERATOR_TOOL_AUTHORITY,
       source: 'the config_patch tool',
+      writer: {
+        kind: 'agent',
+        // The directory name is the legible handle when an identity carries no
+        // display name — the same fallback `capability-attribution.ts` uses for
+        // the same reason, so the Activity feed and this receipt cannot name one
+        // agent two different ways.
+        agentName: identity ? identity.displayName || path.basename(identity.agentPath) : null,
+      },
     });
     if (!result.ok) {
       if (result.kind === 'invalid') {

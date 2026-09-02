@@ -57,6 +57,7 @@ import {
   seedMemoryProviderDefault,
   seedRoomRepoDefaults,
   seedDorkosToolsDefault,
+  seedDisplayNameSourceDefault,
   seedToolOnlyReplyDefaults,
 } from '../config-manager.js';
 import { applyConfigPatch } from '../operator/config-patch.js';
@@ -530,6 +531,7 @@ describe('ConfigManager', () => {
       roles: [],
       tools: [],
       displayName: null,
+      displayNameSource: null,
       rolePromptDismissedAt: null,
     });
     // Existing user data survives the upgrade untouched.
@@ -541,6 +543,11 @@ describe('ConfigManager', () => {
       roles: ['hiring', 'business-ops'],
       tools: ['Gmail', 'Greenhouse'],
       displayName: 'Dorian',
+      // A name this install DOES know the provenance of: DorkBot proposed it and
+      // nobody has saved one since (DOR-1022). Carried through a reload like
+      // every other leaf, because a hint that survived only until the next boot
+      // would be worse than none.
+      displayNameSource: { kind: 'agent', agentName: 'DorkBot' },
       rolePromptDismissedAt: '2026-07-29T00:00:00.000Z',
     };
     fs.mkdirSync(testDir, { recursive: true });
@@ -984,6 +991,123 @@ describe('seedToolOnlyReplyDefaults migration (tool-only-room-replies §D5, DOR-
       // The upgrade adds two leaves; it changes nothing the person had set.
       expect(onDisk.rooms.maxAgentDepth).toBe(12);
       expect(onDisk.rooms.replyWaitMinutes).toBe(25);
+      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('seedDisplayNameSourceDefault migration (DOR-1022)', () => {
+  it('reserves the leaf on a `profile` block that predates it', () => {
+    // What this catches: conf merges top-level defaults SHALLOWLY, so an
+    // upgrading install with a stored `profile` block never inherits the new
+    // leaf on its own. Drop the body and it reads `undefined`.
+    const store = createMockStore({ profile: { roles: ['Engineer'], displayName: 'Dorian' } });
+    seedDisplayNameSourceDefault(store);
+    expect(store.data.profile).toEqual({
+      roles: ['Engineer'],
+      displayName: 'Dorian',
+      displayNameSource: null,
+    });
+  });
+
+  it('seeds `null` beside a name it cannot attribute, never a guess', () => {
+    // The decision, pinned as behaviour: a name stored before this field existed
+    // could have come from the person or from DorkBot, and this install has no
+    // record either way. `null` is read as "no record" and draws no hint, so an
+    // upgrade is silent rather than labelling a long-standing name a suggestion.
+    const store = createMockStore({ profile: { displayName: 'Dorian' } });
+    seedDisplayNameSourceDefault(store);
+    expect(store.data.profile).toEqual({ displayName: 'Dorian', displayNameSource: null });
+  });
+
+  it('never overwrites a source already on file (idempotent)', () => {
+    // What this catches: a re-run — corrupt-recovery instantiates conf twice —
+    // erasing a real attribution back to "no record", which silently clears the
+    // hint this whole field exists to draw.
+    const store = createMockStore({
+      profile: {
+        displayName: 'Dorian',
+        displayNameSource: { kind: 'agent', agentName: 'DorkBot' },
+      },
+    });
+    seedDisplayNameSourceDefault(store);
+    expect(store.data.profile).toEqual({
+      displayName: 'Dorian',
+      displayNameSource: { kind: 'agent', agentName: 'DorkBot' },
+    });
+  });
+
+  it('leaves a stored `null` alone rather than rewriting it', () => {
+    // The reason the guard is `in` and not `== null`: this leaf's default IS
+    // `null`, so an absence test written the usual way is true for a value that
+    // is already there, and the body writes on every re-run for ever.
+    //
+    // Asserted by IDENTITY rather than by value: the body spreads into a fresh
+    // object, so a `toEqual` here passes whether it wrote or not and would prove
+    // nothing about the `in` guard. Swap `in` for `== null` and this goes red.
+    const profile = { displayName: 'Dorian', displayNameSource: null };
+    const store = createMockStore({ profile });
+    seedDisplayNameSourceDefault(store);
+    expect(store.data.profile).toBe(profile);
+  });
+
+  it('does nothing when there is no `profile` block to extend', () => {
+    // The schema default supplies the whole section on read in that case, and
+    // writing a partial `profile` here would drop every other default in it.
+    const store = createMockStore({ server: { port: 4242 } });
+    seedDisplayNameSourceDefault(store);
+    expect(store.data.profile).toBeUndefined();
+  });
+
+  it('a real pre-0.73.0 config file gains the leaf on disk (full conf path)', () => {
+    // The half neither the mock store nor a `getDot` assertion can reach (see
+    // `seedToolOnlyReplyDefaults` above for the DOR-1496 measurement this shape
+    // comes from). A nested-leaf case, so this body is the ONLY thing that puts
+    // it on the file: suppress it and this goes red while
+    // `store.get('profile').displayNameSource` still answers `null` from Ajv's
+    // discarded copy.
+    //
+    // `projectVersion` is stated explicitly because `SERVER_VERSION` resolves to
+    // `0.0.0` in a dev tree, which runs no migration at all.
+    const dir = path.join(os.tmpdir(), 'test-dork-name-source-mig-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          version: 1,
+          profile: {
+            roles: ['Engineer'],
+            tools: [],
+            displayName: 'Dorian',
+            rolePromptDismissedAt: null,
+          },
+          __internal__: { migrations: { version: '0.72.0' } },
+        }),
+        'utf-8'
+      );
+
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        // Structurally compatible at runtime; mirrors the cast in config-manager.ts.
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.73.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        profile: Record<string, unknown>;
+      };
+      expect(onDisk.profile).toHaveProperty('displayNameSource', null);
+      // The upgrade adds one leaf; it changes nothing the person had set.
+      expect(onDisk.profile.displayName).toBe('Dorian');
+      expect(onDisk.profile.roles).toEqual(['Engineer']);
       expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

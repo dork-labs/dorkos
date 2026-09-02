@@ -73,6 +73,11 @@ describe('ElicitationPrompt — URL mode', () => {
     expect(openSpy).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: /Done/ })).not.toBeInTheDocument();
     expect(screen.getByText(/Could not open myapp:\/\/authorize/)).toBeInTheDocument();
+    // The half that matters for the flow, and the half the seam's own toast
+    // cannot say: the authorization did not happen (DOR-547). The toast says
+    // why the link was refused; this says what that means here, and unlike the
+    // toast it persists beside the missing "I authorized it" button.
+    expect(screen.getByText(/Nothing has been authorized\./)).toBeInTheDocument();
   });
 
   it('refuses a file: URL from the http cockpit, where it could not open anyway', () => {

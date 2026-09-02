@@ -2999,6 +2999,48 @@ export function seedToolOnlyReplyDefaults(store: {
 }
 
 /**
+ * Seed `profile.displayNameSource` — who wrote the display name that is stored
+ * right now (DOR-1022).
+ *
+ * **This body is the mechanism, not an anchor**, for the reason
+ * {@link seedToolOnlyReplyDefaults} states: a nested leaf inside a section every
+ * stored config already carries, and conf's pre-migration
+ * `Object.assign({}, defaults, fileStore)` is SHALLOW — a stored `profile`
+ * object wins wholesale and never gains a member. Nothing else writes this leaf,
+ * so deleting this body leaves it absent on disk for every upgraded install.
+ *
+ * **It seeds `null`, and `null` is the honest answer rather than a placeholder.**
+ * A name already stored when this field arrived could have come from either
+ * hand: the person typed it in Settings, or DorkBot saved it for them mid-chat.
+ * This install has no record and cannot get one. `null` is read as "no record"
+ * everywhere and draws NO hint, so an upgrade is silent — which is the
+ * conservative direction of the two, because labelling a name somebody has
+ * answered to for months "Suggested by DorkBot" would be a confident guess in
+ * exactly the case where guessing is worst.
+ *
+ * Absence is tested with `in` rather than `== null`, and that is load-bearing
+ * here where it is cosmetic elsewhere: this leaf's DEFAULT is `null`, so a
+ * `== null` guard would be true for a stored `null` too and rewrite the same
+ * value on every corrupt-recovery re-run.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedDisplayNameSourceDefault(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const profile = store.get('profile');
+  if (profile == null || typeof profile !== 'object') return;
+  const current = profile as Record<string, unknown>;
+  if ('displayNameSource' in current) return;
+  store.set('profile', {
+    ...current,
+    displayNameSource: USER_CONFIG_DEFAULTS.profile.displayNameSource,
+  });
+}
+
+/**
  * The `conf` migration chain, keyed by the app version each entry ships in.
  *
  * ## Where a new migration goes
@@ -3668,6 +3710,24 @@ export const CONFIG_MIGRATIONS = {
     // `tool-only-room-replies` §D5). Nested leaves, so this body is the only
     // thing that writes them; see `seedToolOnlyReplyDefaults`.
     seedToolOnlyReplyDefaults(store);
+  },
+  // 0.72.0 has merged (tool-only room replies), so 0.73.0 is the next key.
+  // Frozen from merge, not from the release bump, for the reason `'0.60.0'`
+  // above states; anything further opens `'0.74.0'`.
+  //
+  // Disjoint from every other key here: it writes one nested leaf under
+  // `profile`, a section no other key has ever touched since `'0.45.0'` created
+  // it — and that one seeds the whole section when it is absent, so the two
+  // cannot both act on the same install.
+  '0.73.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `profile.displayNameSource` — who wrote the stored display name, so a
+    // roster can say "Suggested by DorkBot" until the person saves one
+    // themselves (DOR-1022). A nested leaf, so this body is the only thing that
+    // writes it; see `seedDisplayNameSourceDefault`.
+    seedDisplayNameSourceDefault(store);
   },
 } as const;
 

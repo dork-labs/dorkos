@@ -249,9 +249,16 @@ export const operatorDomain: CapabilityDomain = {
           annotations: { idempotentHint: true },
         },
       },
-      invoke: async (_deps, input) =>
+      // The only operator capability that reads `context`, and it reads exactly
+      // one field: which agent is asking, so a display name this patch sets
+      // carries a receipt naming its author (DOR-1022). Nothing about the write
+      // itself branches on it — an unresolved identity writes the same config
+      // and simply cannot be named.
+      invoke: async (_deps, input, context) =>
         unwrapMcpEnvelope(
-          await createConfigPatchHandler()(input as { patch?: Record<string, unknown> })
+          await createConfigPatchHandler(context.identity)(
+            input as { patch?: Record<string, unknown> }
+          )
         ),
     }),
   ],

@@ -49,6 +49,7 @@ describe('the operator name diverges between a room and the roster', () => {
       sessionActivity: () => ({}),
       account: () => ({ id: OWNER_USER_ID, name: 'Dorian', email: 'dorian@dorkos.ai' }),
       configDisplayName: () => null,
+      configDisplayNameSource: () => null,
       defaultAgentName: () => null,
     });
 

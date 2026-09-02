@@ -36,6 +36,10 @@ export {
 export {
   APP_ROUTE_PATHS,
   classifyLink,
+  declaredScheme,
+  describeRefusal,
+  isWebUrl,
+  linkRefusalHere,
   openLink,
   openExternalLink,
   registerLinkNavigator,
@@ -44,6 +48,7 @@ export {
   supportsSeparateWindow,
   type BlockedLink,
   type BlockedLinkReason,
+  type LinkRefusal,
   type ClassifiedLink,
   type ExternalLink,
   type InternalLink,

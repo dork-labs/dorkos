@@ -94,18 +94,22 @@ task, delete it and create it again with the target you want.
 ### The approval gate
 
 A task you create is NOT live yet, whichever way you created it. Both
-\`tasks_create\` and \`dorkos task create\` leave it at \`pending_approval\`, and the
-user must approve it in DorkOS before it runs. Tell the user the task was created
-and needs their approval. Do not promise it will run until they approve.
+\`tasks_create\` and \`dorkos task create\` leave it at \`pending_approval\`. Tell the
+user it needs their approval; do not promise it will run before they give it.
 
-Moving a task to \`active\` is that approval, so it is not something you can do.
-\`tasks_update\` refuses \`status\` and changes nothing else in the same call. Use
-\`enabled\` to turn an already-approved task on or off.
+Moving a task to \`active\` IS that approval, so it is not yours to do:
+\`tasks_update\` refuses \`status\` and changes nothing else in the same call.
 
-This is the tasks scheduler's own gate, and it covers approving a NEW task only. It
-is not the capability approval flow in operating-dorkos: there is no
-\`approvalToken\` to retry with, and nothing for you to do except tell the user and
-wait. Deleting a task runs the other kind of gate; see below.
+**Editing an approved task sends it back for approval.** The user approved the
+\`prompt\` and the \`cron\`; change either and DorkOS stops the task within minutes
+and asks them again. Your edit is saved, it just waits, and the reply says so with
+\`needsReapproval: true\`. Name the task and tell the user it is waiting on them.
+Every other field is free, \`enabled\` included: that is how you turn a task on or off.
+
+This is the tasks scheduler's own gate, and it covers both moments. It is not the
+capability approval flow in operating-dorkos: there is no \`approvalToken\` to retry
+with, and nothing for you to do except tell the user and wait. Deleting a task runs
+the other kind of gate; see below.
 
 ## Edit or disable a task (tools only, no CLI)
 

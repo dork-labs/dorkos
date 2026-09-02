@@ -274,6 +274,13 @@ export const CONFIG_DISCLOSURE = {
   'profile.roles': 'expose',
   'profile.tools': 'expose',
   'profile.displayName': 'expose',
+  // Who wrote the display name that is stored right now (DOR-1022). Exposed for
+  // the same reason the name itself is, and for one more: an agent about to
+  // suggest a name can see that the person has already saved one, which is the
+  // difference between helping and overwriting. Reading it grants nothing —
+  // WRITING it is the operator-only half, and lives in `config-write-policy.ts`.
+  'profile.displayNameSource.kind': 'expose',
+  'profile.displayNameSource.agentName': 'expose',
   'profile.rolePromptDismissedAt': 'expose',
 
   'agentContext.relayTools': 'expose',

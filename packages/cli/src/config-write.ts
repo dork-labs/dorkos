@@ -114,7 +114,17 @@ export function createServerConfigWriter(dorkHome: string, logLevel: number): Cl
       await openAuditLog(dorkHome, logLevel);
       const { applyGuardedConfigWrite, LOCAL_OPERATOR_AUTHORITY } =
         await import('../server/services/core/operator/config-write.js');
-      return applyGuardedConfigWrite({ patch, authority: LOCAL_OPERATOR_AUTHORITY, source });
+      return applyGuardedConfigWrite({
+        patch,
+        authority: LOCAL_OPERATOR_AUTHORITY,
+        source,
+        // The terminal clears every AUTHORITY bar (that is the argument above),
+        // and still cannot say who typed the command — a script an agent wrote
+        // runs in the same shell. Authority and attribution are different
+        // questions, and only the first one the terminal can answer. See
+        // `display-name-provenance.ts`.
+        writer: { kind: 'unattributed' },
+      });
     },
   };
 }

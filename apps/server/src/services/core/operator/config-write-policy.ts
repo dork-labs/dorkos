@@ -518,6 +518,23 @@ export const CONFIG_WRITE_POLICY = {
   'profile.displayName': 'agent-writable',
   'profile.rolePromptDismissedAt': 'agent-writable',
 
+  // The one leaf of the profile a person keeps, and the reason it is not a
+  // contradiction of the line above (DOR-1022). `displayName` stays writable
+  // because DorkBot saving "call me Dorian" IS the onboarding flow. What it
+  // seeds is the name on the roster, in the account menu and in the Settings
+  // field, and none of those used to say the suggestion was not the person's
+  // own. `displayNameSource` is that signal — the RECORD of who wrote the name,
+  // not another preference.
+  //
+  // An agent that could write it could write `kind: 'operator'` over its own
+  // suggestion, which is signing somebody else's name to your work: the hint
+  // disappears and the person never learns the name was proposed for them.
+  // Nothing legitimate needs it either, because no agent ever writes this leaf
+  // through a patch — `stampDisplayNameSource` derives it from the write that is
+  // already happening, at the same three doors, in the same breath as the name.
+  'profile.displayNameSource.kind': 'operator-only',
+  'profile.displayNameSource.agentName': 'operator-only',
+
   // The four tool-group switches, all defaulting ON, all `PROTECTIVE_CARRYOVERS`
   // leaves — so operator-only by the wipe-floor rule in this module's doc. While
   // they were agent-writable, an agent could undo a narrowing the person had made
@@ -790,6 +807,15 @@ export const OPERATOR_ONLY_CONFIG_ERROR = 'Only a person can change those settin
  * - `initiative` — when agents speak on their own, and what that spends.
  * - `resources` — how much of this machine the work may take up.
  * - `attention` — whether the person finds out that something needs them.
+ * - `authorship` — whether a stored value is shown as the person's own or as an
+ *   agent's suggestion.
+ *
+ * `authorship` is the newest and the narrowest (DOR-1022): it covers the record
+ * of WHO wrote the display name, and nothing else on this list guards a record
+ * of authorship. It is not `disclosure` — nothing leaves the machine — and not
+ * `attention` — nothing is waiting on anybody. It is the same principle as
+ * `tools` and `resources` below: a near-neighbour would have been a refusal that
+ * says something false about the setting.
  *
  * `tools` and `resources` arrived with the wipe floor (DOR-1497) rather than
  * being carved out of the others, because neither claim was already on the list:
@@ -808,7 +834,8 @@ export type OperatorOnlyStake =
   | 'approvals'
   | 'initiative'
   | 'resources'
-  | 'attention';
+  | 'attention'
+  | 'authorship';
 
 /** One stake, the sentence an agent reads for it, and the paths it covers. */
 interface OperatorOnlyStakeGroup {
@@ -1020,6 +1047,18 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'rooms.repo.maxRoomMdBytes',
       'rooms.repo.worktreeReapDays',
     ],
+  },
+  {
+    stake: 'authorship',
+    // The narrowest stake here, and the only one that guards a RECORD rather
+    // than a behaviour: these two leaves say whether the stored display name was
+    // the person's own or an agent's suggestion (DOR-1022). Writing them changes
+    // nothing about what runs — it changes what the person is told about a name
+    // already on their roster, which is why neither `disclosure` (what leaves
+    // the machine) nor `attention` (whether you are told something is waiting)
+    // is a true sentence about it.
+    description: 'Whether a name on your roster is shown as your own or as an agent’s suggestion',
+    paths: ['profile.displayNameSource.kind', 'profile.displayNameSource.agentName'],
   },
   {
     stake: 'attention',

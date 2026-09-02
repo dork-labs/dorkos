@@ -107,6 +107,31 @@ describe('AccountMenu', () => {
     expect(screen.getByText('Settings')).toBeInTheDocument();
   });
 
+  describe('a name an agent suggested (DOR-1022)', () => {
+    /** The operator's row, with the provenance the payload would carry. */
+    function withSuggestion(nameSuggestedBy: string | null): TeamMember {
+      return { ...SELF, person: { ...SELF.person!, nameSuggestedBy } };
+    }
+
+    it('says so under the name, naming the agent', () => {
+      // This menu is the "who am I" surface, so a name DorkBot proposed cannot
+      // sit here reading as the person's own choice.
+      renderRows({ member: withSuggestion('DorkBot') });
+      expect(screen.getByText('Suggested by DorkBot')).toBeInTheDocument();
+    });
+
+    it('says so even when the payload cannot name the agent', () => {
+      renderRows({ member: withSuggestion(null) });
+      expect(screen.getByText('Suggested by an agent')).toBeInTheDocument();
+    });
+
+    it('stays quiet about a name nobody flagged', () => {
+      renderRows();
+      expect(screen.getByText(SELF.displayName)).toBeInTheDocument();
+      expect(screen.queryByText(/suggested by/i)).toBeNull();
+    });
+  });
+
   it('answers your pointer with your own colour, never by dimming your face', () => {
     renderMenu();
     const trigger = screen.getByRole('button', { name: /your account/i });

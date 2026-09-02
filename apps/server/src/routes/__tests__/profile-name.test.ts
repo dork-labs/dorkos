@@ -14,6 +14,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createTestDb } from '@dorkos/test-utils/db';
+import type { DisplayNameSource } from '@dorkos/shared/config-schema';
 import { user, eq, type Db } from '@dorkos/db';
 import { AuthorRegistry, type AuthorRecord } from '../../services/rooms/author-registry.js';
 import type { AvatarStore } from '../../services/identity/avatar-store.js';
@@ -35,6 +36,8 @@ describe('PATCH /api/profile', () => {
   let ownerAuthor: AuthorRecord;
   /** Stands in for `config.profile.displayName`, which is real config on a real install. */
   let storedProfileName: string | null;
+  /** Stands in for `config.profile.displayNameSource` — its sibling leaf (DOR-1022). */
+  let storedNameSource: DisplayNameSource | null;
 
   /**
    * An install with an account. `hasAccount: false` is the DEFAULT install
@@ -55,8 +58,9 @@ describe('PATCH /api/profile', () => {
         setAccountImage: () => {},
         setAccountName: (userId, name) =>
           db.update(user).set({ name }).where(eq(user.id, userId)).run(),
-        setProfileDisplayName: (displayName) => {
+        setProfileDisplayName: (displayName, source) => {
           storedProfileName = displayName;
+          storedNameSource = source;
         },
         ...overrides,
       })
@@ -75,6 +79,7 @@ describe('PATCH /api/profile', () => {
           hasAccount ? { id: OWNER_USER_ID, name: storedAccountName() ?? '' } : null,
         ownerEmail: () => (hasAccount ? 'dorian@dorkos.ai' : null),
         configDisplayName: () => storedProfileName,
+        configDisplayNameSource: () => storedNameSource,
         defaultAgentName: () => null,
       })
     );
@@ -95,12 +100,25 @@ describe('PATCH /api/profile', () => {
     return res.body.members.find((m: { isSelf: boolean }) => m.isSelf).displayName;
   }
 
+  /**
+   * Whether the roster would draw a "Suggested by …" note under that name, and
+   * whose (DOR-1022). `undefined` is the payload saying "no note".
+   */
+  async function rosterSelfSuggestedBy(
+    server: express.Express
+  ): Promise<string | null | undefined> {
+    const res = await request(server).get('/api/team');
+    expect(res.status).toBe(200);
+    return res.body.members.find((m: { isSelf: boolean }) => m.isSelf).person?.nameSuggestedBy;
+  }
+
   beforeEach(() => {
     db = createTestDb();
     db.insert(user).values({ id: OWNER_USER_ID, name: 'Dorian', email: 'dorian@dorkos.ai' }).run();
     registry = new AuthorRegistry(db);
     ownerAuthor = registry.bindOwner(OWNER_USER_ID);
     storedProfileName = null;
+    storedNameSource = null;
   });
 
   /**
@@ -114,6 +132,7 @@ describe('PATCH /api/profile', () => {
     registry = new AuthorRegistry(db);
     ownerAuthor = registry.localHuman();
     storedProfileName = null;
+    storedNameSource = null;
     return app(false);
   }
 
@@ -147,6 +166,36 @@ describe('PATCH /api/profile', () => {
       await request(app(true)).patch('/api/profile').send({ displayName: 'Dorian C' });
       expect(storedAccountName()).toBe('Dorian C');
       expect(storedProfileName).toBe('Dorian C');
+    });
+
+    it('marks the name as the person’s own, so the roster stops calling it a suggestion', async () => {
+      // The dismissal, end to end (DOR-1022): DorkBot's suggestion is stored,
+      // the roster says so, the person saves through this route, and the hint is
+      // gone — from the payload the app actually reads, not from a column.
+      const server = stageLoginOff();
+      storedProfileName = 'Dorian';
+      storedNameSource = { kind: 'agent', agentName: 'DorkBot' };
+      expect(await rosterSelfSuggestedBy(server)).toBe('DorkBot');
+
+      const patched = await request(server).patch('/api/profile').send({ displayName: 'Dorian C' });
+      expect(patched.status).toBe(200);
+
+      expect(storedNameSource).toEqual({ kind: 'operator' });
+      expect(await rosterSelfSuggestedBy(server)).toBeUndefined();
+    });
+
+    it('clears the hint even when the person saves the very name the agent picked', async () => {
+      // The gesture the field's Save button exists for once a hint is showing:
+      // "yes, that one is mine". Gate the stamp on a value change and this
+      // person can never dismiss it.
+      const server = stageLoginOff();
+      storedProfileName = 'Dorian';
+      storedNameSource = { kind: 'agent', agentName: 'DorkBot' };
+
+      await request(server).patch('/api/profile').send({ displayName: 'Dorian' });
+
+      expect(storedNameSource).toEqual({ kind: 'operator' });
+      expect(await rosterSelfSuggestedBy(server)).toBeUndefined();
     });
 
     it('leaves the author record saying "You", so a room still reads as your own seat', async () => {

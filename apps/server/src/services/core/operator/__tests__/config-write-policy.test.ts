@@ -98,6 +98,12 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'notifications.sounds.allClear',
       'notifications.sounds.knock',
       'notifications.sounds.turnEnd',
+      // The record of WHO wrote the display name, not the name itself — which
+      // stays agent-writable, because DorkBot saving "call me Dorian" is the
+      // onboarding flow (DOR-1022). An agent able to write these could stamp its
+      // own suggestion `operator` and erase the only sign the name was proposed.
+      'profile.displayNameSource.agentName',
+      'profile.displayNameSource.kind',
       'providers',
       'relay.dataDir',
       'relay.maxAgentTurnsPerAgentPerHour',

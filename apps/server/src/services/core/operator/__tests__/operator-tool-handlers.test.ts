@@ -33,6 +33,9 @@ vi.mock('../../../../lib/boundary.js', () => ({
 vi.mock('../../config-manager.js', () => ({
   configManager: {
     getAll: () => mocks.configStore,
+    // Read by the display-name provenance stamp, which asks for the ONE section
+    // it is about rather than the whole config (DOR-1022).
+    get: (key: string) => mocks.configStore[key],
     set: (key: string, value: unknown) => {
       mocks.configStore[key] = value;
     },
@@ -53,6 +56,8 @@ import {
   createAgentsRecentActivityHandler,
   type OperatorToolResult,
 } from '../operator-tool-handlers.js';
+import { operatorDomain } from '../operator-capabilities.js';
+import { logger } from '../../../../lib/logger.js';
 
 /** Parse the JSON payload out of an MCP text-content tool result. */
 function parsePayload<T = unknown>(result: OperatorToolResult): T {
@@ -311,6 +316,89 @@ describe('config_patch', () => {
     expect(payload.details?.length).toBeGreaterThan(0);
     // The invalid value must not have been persisted.
     expect(mocks.configStore.server).toBeUndefined();
+  });
+
+  describe('the display-name receipt (DOR-1022)', () => {
+    beforeEach(() => {
+      // A `profile` section, because a real `ConfigManager.get` always answers
+      // with one — Ajv fills the schema defaults into every read. The bare
+      // `{ version: 1 }` this file's own `beforeEach` sets is a store no
+      // instance ever hands back.
+      mocks.configStore.profile = {
+        roles: [],
+        tools: [],
+        displayName: null,
+        displayNameSource: null,
+        rolePromptDismissedAt: null,
+      };
+    });
+
+    /** What the write left in `profile.displayNameSource`. */
+    function storedSource(): unknown {
+      return (mocks.configStore.profile as Record<string, unknown> | undefined)?.displayNameSource;
+    }
+
+    it('names the agent behind a name it set', async () => {
+      const handler = createConfigPatchHandler({
+        agentPath: '/Users/dorian/.dork/agents/dorkbot',
+        displayName: 'DorkBot',
+        tierCeiling: 'destructive',
+        createdAt: '2026-09-01T00:00:00.000Z',
+      });
+      const result = await handler({ patch: { profile: { displayName: 'Dorian' } } });
+
+      expect(result.isError).toBeUndefined();
+      expect(storedSource()).toEqual({ kind: 'agent', agentName: 'DorkBot' });
+    });
+
+    it('falls back to the agent directory when the identity carries no name', async () => {
+      // The same fallback `capability-attribution.ts` uses, so the Activity feed
+      // and this receipt cannot call one agent two different things.
+      const handler = createConfigPatchHandler({
+        agentPath: '/Users/dorian/.dork/agents/dorkbot',
+        displayName: '',
+        tierCeiling: 'destructive',
+        createdAt: '2026-09-01T00:00:00.000Z',
+      });
+      await handler({ patch: { profile: { displayName: 'Dorian' } } });
+
+      expect(storedSource()).toEqual({ kind: 'agent', agentName: 'dorkbot' });
+    });
+
+    it('records that an agent wrote it even when no identity resolved', async () => {
+      // A revoked or never-minted token still belongs to an agent. Silence here
+      // would hide the suggestion exactly where attribution is weakest.
+      await createConfigPatchHandler()({ patch: { profile: { displayName: 'Dorian' } } });
+
+      expect(storedSource()).toEqual({ kind: 'agent', agentName: null });
+    });
+
+    it('is handed the caller’s identity by the capability, not just by its tests', async () => {
+      // Every assertion above builds the handler itself, so all of them stay
+      // green if `operator-capabilities.ts` stops forwarding `context.identity`
+      // — the receipt would silently degrade to "an agent" on every real call.
+      // This drives the capability's own `invoke`, which is the seam that
+      // decides it.
+      const capability = operatorDomain.capabilities.find((c) => c.id === 'operator.config_patch');
+      if (!capability) throw new Error('operator.config_patch is not registered');
+
+      await capability.invoke(
+        // `config_patch` reads neither half of the bag; both are here because
+        // the registry's contract requires them.
+        { logger, operatorDeps: buildDeps() },
+        { patch: { profile: { displayName: 'Dorian' } } },
+        {
+          identity: {
+            agentPath: '/Users/dorian/.dork/agents/dorkbot',
+            displayName: 'DorkBot',
+            tierCeiling: 'destructive',
+            createdAt: '2026-09-01T00:00:00.000Z',
+          },
+        }
+      );
+
+      expect(storedSource()).toEqual({ kind: 'agent', agentName: 'DorkBot' });
+    });
   });
 });
 

@@ -86,6 +86,7 @@ describe('/api/profile/avatar', () => {
         ownerAccount: () => ({ id: OWNER_USER_ID, name: 'Dorian' }),
         ownerEmail: () => 'dorian@dorkos.ai',
         configDisplayName: () => null,
+        configDisplayNameSource: () => null,
         defaultAgentName: () => null,
       })
     );

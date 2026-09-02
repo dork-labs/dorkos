@@ -45,6 +45,32 @@ describe('TeamMemberCard', () => {
     expect(screen.getByText('D')).toBeInTheDocument();
   });
 
+  describe('where the name came from (DOR-1022)', () => {
+    /** The operator's row, with the provenance the payload would carry. */
+    function withSuggestion(nameSuggestedBy: string | null): TeamMember {
+      return { ...SELF, person: { ...SELF.person!, nameSuggestedBy } };
+    }
+
+    it('says which agent suggested the name it is drawing', () => {
+      render(<TeamMemberCard member={withSuggestion('DorkBot')} />);
+      expect(screen.getByText('Suggested by DorkBot')).toBeInTheDocument();
+    });
+
+    it('still says an agent did it when the payload names none', () => {
+      render(<TeamMemberCard member={withSuggestion(null)} />);
+      expect(screen.getByText('Suggested by an agent')).toBeInTheDocument();
+    });
+
+    it('draws nothing at all for a name nobody flagged', () => {
+      // The common case, and the one that has to stay quiet: `SELF` carries no
+      // `nameSuggestedBy`, which is what the payload says for a name the person
+      // saved AND for one this install has no record of.
+      const { container } = render(<TeamMemberCard member={SELF} />);
+      expect(container.querySelector('[data-slot="team-member-name-source"]')).toBeNull();
+      expect(screen.queryByText(/suggested by/i)).toBeNull();
+    });
+  });
+
   describe('the Surface tier — the card answers as one thing', () => {
     /** The card's root article. */
     const cardOf = (container: HTMLElement) =>

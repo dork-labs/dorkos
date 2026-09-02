@@ -188,6 +188,49 @@ describe('ProfilePanel — name and email', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
+  describe('a name an agent suggested (DOR-1022)', () => {
+    /** The operator's row, with the provenance the payload would carry. */
+    function withSuggestion(nameSuggestedBy: string | null): TeamMember {
+      return { ...SELF, person: { ...SELF.person!, nameSuggestedBy } };
+    }
+
+    it('says where the name in the field came from', () => {
+      renderPanel(withSuggestion('DorkBot'));
+      expect(screen.getByText(/Suggested by DorkBot/)).toBeInTheDocument();
+    });
+
+    it('lets an UNCHANGED name be saved, because that is how the note is cleared', async () => {
+      // The one place the disabled-Save rule bends, and it has to: somebody who
+      // likes the name DorkBot picked has no other way to say "that one is
+      // mine". Without this the note is permanent for exactly the people it
+      // least needs to bother.
+      const updateProfile = vi.fn().mockResolvedValue({ displayName: 'Dorian' });
+      renderPanel(withSuggestion('DorkBot'), { updateProfile } as Partial<Transport>);
+
+      const field = screen.getByLabelText('Display name');
+      expect(field).toHaveValue('Dorian');
+      expect(saveButtonBeside(field)).toBeEnabled();
+
+      await userEvent.click(saveButtonBeside(field));
+      await waitFor(() => expect(updateProfile).toHaveBeenCalledWith('Dorian'));
+    });
+
+    it('still refuses to save an emptied field', () => {
+      // The bend above is about an unchanged name, not about no name: the server
+      // and the request schema both refuse an empty one.
+      renderPanel({ ...withSuggestion('DorkBot'), displayName: 'You' });
+      const field = screen.getByLabelText('Display name');
+      expect(field).toHaveValue('');
+      expect(saveButtonBeside(field)).toBeDisabled();
+    });
+
+    it('says nothing extra about a name nobody flagged', () => {
+      renderPanel(SELF);
+      expect(screen.getByText('What DorkOS calls you.')).toBeInTheDocument();
+      expect(screen.queryByText(/suggested by/i)).toBeNull();
+    });
+  });
+
   it('shows the account email and never lets it be edited here', () => {
     renderPanel(SELF);
     const email = screen.getByLabelText('Email');

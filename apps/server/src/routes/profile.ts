@@ -20,6 +20,7 @@
  */
 import { Router, type Request, type Response } from 'express';
 import multer from 'multer';
+import type { DisplayNameSource } from '@dorkos/shared/config-schema';
 import {
   ProfileUpdateRequestSchema,
   type ProfileAvatarResponse,
@@ -29,6 +30,7 @@ import { logError, logger } from '../lib/logger.js';
 import { parseBody, sendError } from '../lib/route-utils.js';
 import type { AuthorRecord, AuthorRegistry } from '../services/rooms/author-registry.js';
 import { sendRoomError } from './room-error-response.js';
+import { OPERATOR_SAVE_SOURCE } from '../services/identity/display-name-provenance.js';
 import {
   InvalidAvatarIdError,
   MAX_AVATAR_BYTES,
@@ -70,9 +72,20 @@ export interface ProfileRouterDeps {
   /**
    * Write `config.profile.displayName` — the SECOND thing that precedence
    * reads, and the only durable one on an install with login off, which is the
-   * default (ADR-0320).
+   * default (ADR-0320) — together with the record of who wrote it.
+   *
+   * **One call, both leaves, and that is a requirement rather than a
+   * convenience** (DOR-1022). A name and a stale stamp of its previous author
+   * are a contradiction, so an implementation that wrote them separately would
+   * leave a window in which the roster draws "Suggested by DorkBot" under a name
+   * the person had just saved.
+   *
+   * @param displayName - What the person wants to be called.
+   * @param source - Who wrote it. Always `{ kind: 'operator' }` from this route;
+   *   the parameter exists so the rule is the ROUTE's and stays testable, rather
+   *   than living in whatever wired the writer.
    */
-  setProfileDisplayName: (displayName: string) => void;
+  setProfileDisplayName: (displayName: string, source: DisplayNameSource) => void;
 }
 
 /**
@@ -216,7 +229,14 @@ export function createProfileRouter(deps: ProfileRouterDeps): Router {
     }
 
     if (owner) deps.setAccountName(owner.id, body.displayName);
-    deps.setProfileDisplayName(body.displayName);
+    // The one door that can name a person, so the one door that records one
+    // (DOR-1022). Unconditional — including when the string does not change,
+    // because re-saving the name already in the field is exactly how somebody
+    // dismisses a "Suggested by DorkBot" note on a name they are happy with.
+    // The constant is imported rather than written inline so all three doors'
+    // rules live in one module; `display-name-provenance.ts` states why this is
+    // the only one entitled to `operator`.
+    deps.setProfileDisplayName(body.displayName, OPERATOR_SAVE_SOURCE);
 
     // Echoed rather than re-resolved: both sources above the author record now
     // hold this string, so the precedence cannot answer with anything else.

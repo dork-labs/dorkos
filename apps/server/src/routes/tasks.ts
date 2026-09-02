@@ -7,7 +7,6 @@
  *
  * @module routes/tasks
  */
-import path from 'node:path';
 import { Router, type Request, type Response } from 'express';
 import { UpdateTaskRequestSchema, ListTaskRunsQuerySchema } from '@dorkos/shared/schemas';
 import type { Task } from '@dorkos/shared/schemas';
@@ -18,12 +17,10 @@ import type { TaskRegistrar } from '../services/tasks/task-registrar.js';
 import { describeScheduleProblem } from '../services/tasks/cron-validation.js';
 import { createScheduledTask } from '../services/tasks/lifecycle/create-task.js';
 import { removeScheduledTaskFile } from '../services/tasks/lifecycle/delete-task.js';
+import { applyTaskFileUpdate } from '../services/tasks/lifecycle/update-task-file.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
-import { writeSkillFile } from '@dorkos/skills/writer';
-import { parseSkillFile } from '@dorkos/skills/parser';
-import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { loadTemplates } from '../services/tasks/task-templates.js';
-import { parseBody, toErrorMessage } from '../lib/route-utils.js';
+import { parseBody } from '../lib/route-utils.js';
 import { broadcastTasksChanged } from '../services/tasks/task-sse-events.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
 import { readCallerAuthority, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
@@ -42,14 +39,6 @@ import {
   OPERATOR_ONLY_TRIGGER_REFUSAL,
   refuseUnknownTaskUpdateFields,
 } from '../services/tasks/task-write-policy.js';
-import {
-  describeArmBlocker,
-  isPackageOwned,
-  planTaskFileUpdate,
-  pluginRoots,
-  touchesFile,
-} from '../services/tasks/task-file-update.js';
-import fs from 'node:fs/promises';
 
 /**
  * Whether this caller is trusted to arm a scheduled task itself — that is, to
@@ -158,45 +147,6 @@ function refusedOperatorOnlyTaskWrite(req: Request, res: Response, trusted: bool
     message: describeOperatorOnlyTaskRefusal(operatorOnly),
   });
   return true;
-}
-
-/**
- * What a caller is told when a task's SKILL.md could not be read, understood,
- * or written.
- *
- * Written for a person, because these are the failures on this route that a
- * person has to go and fix outside DorkOS: a read-only disk, a full one, a file
- * owned by someone else, a settings block someone hand-edited into nonsense. It
- * names the file, says plainly that nothing changed, and carries the underlying
- * reason rather than hiding it.
- *
- * The `parse` case matters most, and is the one added last (DOR-1481 review).
- * Any task still carrying the `max-runtime: null` corruption this branch also
- * fixes has an unreadable file on disk right now, and the route used to fall
- * straight past it to the row and answer 200 — so the corruption had no symptom
- * at all. Now it has a legible one that says which file to open.
- *
- * @param what - Which step failed: loading the file, understanding it, or writing it.
- * @param filePath - The SKILL.md the route was working on.
- * @param reason - The underlying failure, already reduced to a sentence.
- * @returns One line for the response body's `error`.
- */
-function describeTaskFileFailure(
-  what: 'read' | 'parse' | 'save',
-  filePath: string,
-  reason: string
-): string {
-  const verb = { read: 'read', parse: 'make sense of', save: 'save' }[what];
-  const advice = {
-    read: 'Check who is allowed to open that file',
-    parse:
-      'Open that file and fix the settings block at the top — a setting written as `null` is the usual cause',
-    save: 'Check who is allowed to write to that file and how much space is left on the disk',
-  }[what];
-  return (
-    `DorkOS could not ${verb} this task's file at ${filePath}, so nothing was changed: ` +
-    `${reason}. ${advice}, then try again.`
-  );
 }
 
 /**
@@ -412,122 +362,23 @@ export function createTasksRouter(
       if (clamp.clamped) data.permissionMode = clamp.mode;
     }
 
-    // If there's a file on disk, update it.
-    //
-    // **The file goes first, and a failure here ends the request.** This used
-    // to be one `try {} catch {}` around the read AND the write, with a comment
-    // saying it was there for legacy DB-only tasks. It was — and it also
-    // swallowed `EACCES`, `ENOSPC` and `EROFS` from the write, after which the
-    // row below was updated anyway and the caller got a 200. Five minutes later
-    // the reconciler read the untouched file and put the old values back, so
-    // the edit simply vanished with nothing anywhere saying why. The only error
-    // that means "there is no file, edit the row alone" is `ENOENT` on the
-    // read; every other one is a real failure and is reported as one.
-    //
-    // A file that READS but does not PARSE is the same silent-success defect one
-    // branch over, and it was still here after the first pass (DOR-1481 review):
-    // the route skipped the write, updated the row, and answered 200. That is
-    // the permanent path for every task already carrying the `max-runtime: null`
-    // corruption this branch fixes, so it is exactly the case that most needs a
-    // symptom. It refuses too.
-    //
-    // **A request that changes nothing in the file does not open the file.**
-    // `touchesFile` is what makes that true, and it is load-bearing rather than
-    // an optimisation: approving a parked schedule sends `status` alone, and
-    // before DOR-1485's review every Approve dragged the person's own SKILL.md
-    // through a read-merge-write it had no reason to touch — which is how a
-    // click on Approve could erase the file's `schedule:` block.
-    const arming = data.status === 'active' && existing.status === 'pending_approval';
-    const changesFile = touchesFile(data, existing);
-    if (existing.filePath && (changesFile || arming)) {
-      let content: string | null = null;
-      try {
-        content = await fs.readFile(existing.filePath, 'utf-8');
-      } catch (err) {
-        // A legacy DB-only task: a row whose file was never written, or was
-        // deleted outside DorkOS. Fall through and update the row alone.
-        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-          return res.status(500).json({
-            error: describeTaskFileFailure(
-              'read',
-              existing.filePath,
-              toErrorMessage(err, 'the disk gave no reason')
-            ),
-          });
-        }
-      }
-
-      // Arming is the one thing a person can ask for that the FILE can refuse.
-      // A schedule whose block or cron DorkOS cannot read has nothing to run on,
-      // so approving it would produce a row that says `active` and never fires,
-      // with the complaint that explained why now gone from the card. Say what
-      // is wrong instead, and leave the schedule parked where they can see it.
-      if (arming && content !== null) {
-        const blocker = describeArmBlocker(existing.filePath, content);
-        if (blocker) {
-          return res.status(409).json({
-            error:
-              `This schedule cannot be switched on yet: ${blocker} ` +
-              `Fix it in ${existing.filePath} and DorkOS will pick the change up on its own.`,
-            code: 'schedule_file_unreadable',
-          });
-        }
-      }
-
-      if (content !== null && changesFile) {
-        // A file the skill schema cannot read is the silent-success defect
-        // DOR-1481 closed: the route used to skip the write, update the row, and
-        // answer 200. It refuses. (There was a second parse here, against the
-        // legacy task schema, while both shapes were live; DOR-1486 left one.)
-        const parsed = parseSkillFile(existing.filePath, content, SkillFrontmatterSchema);
-        if (!parsed.ok) {
-          return res.status(500).json({
-            error: describeTaskFileFailure('parse', existing.filePath, parsed.error),
-          });
-        }
-
-        // A skill an installed package owns is never ours to rewrite: the edit
-        // would land in `.dork/plugins/`, be shared by every agent that
-        // installed the package, and vanish at the next update.
-        const owningProject = existing.agentId
-          ? meshCore?.getProjectPath(existing.agentId)
-          : undefined;
-        if (
-          await isPackageOwned(existing.filePath, pluginRoots(dorkHome, owningProject ?? undefined))
-        ) {
-          return res.status(409).json({
-            error:
-              `This schedule belongs to an installed package, so DorkOS did not change its ` +
-              `file. You can switch it on or off here; to change what it does, edit the ` +
-              `package or make your own copy of the skill.`,
-            code: 'schedule_package_owned',
-          });
-        }
-
-        const plan = planTaskFileUpdate(existing.filePath, content, data, data.prompt);
-        if (plan.kind === 'refuse') {
-          return res.status(409).json({ error: plan.message, code: 'schedule_file_unreadable' });
-        }
-
-        const dirPath = path.dirname(existing.filePath);
-        try {
-          await writeSkillFile(
-            path.dirname(dirPath),
-            path.basename(dirPath),
-            plan.frontmatter,
-            plan.body
-          );
-        } catch (err) {
-          return res.status(500).json({
-            error: describeTaskFileFailure(
-              'save',
-              existing.filePath,
-              toErrorMessage(err, 'the disk gave no reason')
-            ),
-          });
-        }
-      }
+    // The SKILL.md first, then the row — through `applyTaskFileUpdate`, because
+    // `tasks_update` on both MCP servers has to do the identical thing and used
+    // to skip the file entirely, so every field an agent edited was reverted by
+    // the next reconciler sweep (DOR-1625). Every gate it runs — the read, the
+    // arm blocker, the parse, the package-owned check, the plan — refuses before
+    // anything is written, so a refusal here leaves the row untouched too.
+    const fileOutcome = await applyTaskFileUpdate(
+      { dorkHome, ...(meshCore && { meshCore }) },
+      { existing, data }
+    );
+    if (!fileOutcome.ok) {
+      return res.status(fileOutcome.status).json({
+        error: fileOutcome.error,
+        ...(fileOutcome.code !== undefined && { code: fileOutcome.code }),
+      });
     }
+    const { changesFile } = fileOutcome;
 
     let updated = store.updateTask(req.params.id, data);
     if (!updated) {

@@ -8,6 +8,7 @@ import type {
   UsageStatus,
 } from '@dorkos/shared/types';
 import type { PendingInteraction } from './messaging/interaction-wait.js';
+import { createToolResultImageState, type ToolResultImageState } from './tool-result-images.js';
 
 /** Input-side token usage of a single model request (one API round-trip). */
 export interface RequestUsage {
@@ -144,8 +145,16 @@ export interface AgentSession {
   contextBreakdown?: ContextUsage;
 }
 
-/** Mutable tool tracking state passed by reference into the event mapper. */
-export interface ToolState {
+/**
+ * Mutable tool tracking state passed by reference into the event mapper.
+ *
+ * It also carries the turn's MEDIA bookkeeping ({@link ToolResultImageState}):
+ * a picture arrives inside a `tool_result`, so the object that already
+ * correlates tool ids across a turn is the one that has to hold it. Storing
+ * bytes is I/O and the mapper does none, so what lands here is an intent that
+ * `media-capture.ts` drains from the turn loop.
+ */
+export interface ToolState extends ToolResultImageState {
   inTool: boolean;
   currentToolName: string;
   currentToolId: string;
@@ -196,7 +205,9 @@ export function createToolState(): ToolState {
   const toolNameById = new Map<string, string>();
   const resolvedResultIds = new Set<string>();
   const toolInputReceived = new Set<string>();
+  const media = createToolResultImageState();
   return {
+    ...media,
     get inTool() {
       return inTool;
     },

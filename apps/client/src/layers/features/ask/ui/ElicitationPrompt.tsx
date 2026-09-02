@@ -117,8 +117,16 @@ export function ElicitationPrompt({
     // MCP server can name a scheme the seam refuses (a `myapp://` desktop
     // OAuth deep link, say), and offering to confirm an authorization that
     // never opened would let someone accept a flow that never ran.
+    // Two messages on purpose, doing two jobs (DOR-547). The seam's toast says
+    // WHY — "DorkOS doesn't open myapp: links" — and is transient, dismissable,
+    // and easy to miss if the reader was looking at the prompt rather than the
+    // corner. This line says what the refusal MEANS here, which is the part
+    // only this surface knows, and it persists next to the button it gates:
+    // "I authorized it" is absent, and this is the sentence that explains the
+    // absence. Restating the allowlist is what this used to do instead, and
+    // that copy went stale the first time the allowlist moved.
     if (!openExternalLink(url)) {
-      setError(`Could not open ${url}. DorkOS only opens web and mail links.`);
+      setError(`Could not open ${url}. Nothing has been authorized.`);
       return;
     }
     setError(null);

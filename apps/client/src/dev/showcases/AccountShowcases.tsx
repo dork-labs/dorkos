@@ -6,7 +6,7 @@ import { AccountMenu, ProfilePanel, handleErrorMessage } from '@/layers/features
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
-import { MOCK_TEAM_ROSTER } from '../mock-samples';
+import { MOCK_TEAM_ROSTER, withSuggestedName } from '../mock-samples';
 import { createPlaygroundTransport } from '../playground-transport';
 
 const SELF = MOCK_TEAM_ROSTER.find((member) => member.isSelf)!;
@@ -92,6 +92,30 @@ export function AccountMenuShowcases() {
           </div>
         </div>
       </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        When DorkBot picked the name (DOR-1022). Open the menu: the header says so under your name,
+        until you save one yourself in Settings &rsaquo; Profile. The second menu is the same
+        install with an agent this machine cannot identify.
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="flex items-center gap-6">
+          <AccountMenu
+            member={withSuggestedName(SELF, 'DorkBot')}
+            canSignOut={false}
+            onViewProfile={() => undefined}
+            onOpenSettings={() => undefined}
+            onSignOut={() => undefined}
+          />
+          <AccountMenu
+            member={withSuggestedName(SELF, null)}
+            canSignOut={false}
+            onViewProfile={() => undefined}
+            onOpenSettings={() => undefined}
+            onSignOut={() => undefined}
+          />
+        </div>
+      </ShowcaseDemo>
     </PlaygroundSection>
   );
 }
@@ -113,6 +137,15 @@ export function ProfileTabShowcases() {
         <ProfilePanelDemo
           member={{ ...SELF, handle: null, person: { role: null, lastSeenAt: null } }}
         />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        A name an agent suggested (DOR-1022). The description says who picked it, and Save stays
+        live for the name already in the box — pressing it unchanged is how somebody who likes
+        DorkBot&rsquo;s pick claims it as their own and clears the note.
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <ProfilePanelDemo member={withSuggestedName(SELF, 'DorkBot')} />
       </ShowcaseDemo>
 
       <ShowcaseLabel>What the handle field says when a save is refused</ShowcaseLabel>

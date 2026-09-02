@@ -58,8 +58,11 @@ declare global {
      * leave would not be kept. Only `http`/`https` URLs are opened.
      *
      * @param url - The URL to hand to the browser.
+     * @returns `true` if the shell opened it, `false` if its http(s)-only
+     * policy declined. A host running an older preload resolves `undefined`,
+     * which the seam treats as "no answer" rather than as a decline.
      */
-    openExternal(url: string): Promise<void>;
+    openExternal(url: string): Promise<boolean>;
     /**
      * Subscribe to main-process navigation requests (menu items, dock menu,
      * `dorkos://` deep links — ADR 260709-210223). `cb` receives the client
