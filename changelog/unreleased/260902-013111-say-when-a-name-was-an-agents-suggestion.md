@@ -1,6 +1,7 @@
 ---
 covers:
   - "feat(server,client,shared): say when a display name was an agent's suggestion (DOR-1022)"
+  - 'fix(server,client): close two ways the name-provenance note could be defeated (DOR-1022)'
 ---
 
 ### Added
