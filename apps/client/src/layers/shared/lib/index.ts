@@ -36,6 +36,8 @@ export {
 export {
   APP_ROUTE_PATHS,
   classifyLink,
+  declaredScheme,
+  isWebUrl,
   openLink,
   openExternalLink,
   registerLinkNavigator,

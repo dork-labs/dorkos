@@ -45,6 +45,18 @@ function clickAndConfirm(name: string): void {
   fireEvent.click(screen.getByRole('button', { name: /open link/i }));
 }
 
+/**
+ * Click the link and read back what the modal offers. A refused link has no
+ * open button at all, so the confirm path above cannot be used on one.
+ */
+function clickAndInspect(name: string): { open: HTMLElement | null; copy: HTMLElement | null } {
+  fireEvent.click(screen.getByRole('link', { name }));
+  return {
+    open: screen.queryByRole('button', { name: /open link/i }),
+    copy: screen.queryByRole('button', { name: /copy link/i }),
+  };
+}
+
 describe('MarkdownLink — a confirmed markdown link goes through the link seam (DOR-547)', () => {
   it('opens an https link, still', () => {
     render(<MarkdownContent content="Read [the docs](https://dorkos.ai/docs)" />);
@@ -68,63 +80,55 @@ describe('MarkdownLink — a confirmed markdown link goes through the link seam 
     expect(toast.error).not.toHaveBeenCalled();
   });
 
-  it('refuses an irc: link the markdown sanitizer let through, and says so', () => {
+  it('never offers to open an irc: link the markdown sanitizer let through', () => {
     // The whole divergence, in one case. `rehype-sanitize` permits `irc:`, so
-    // the anchor is real and clickable; the seam refuses it, so nothing opens.
-    // This is the assertion that goes red if the confirmed path is ever put
-    // back on a raw `window.open`: that dispatches, and never says anything.
+    // the anchor is real and clickable; the seam refuses it, so the modal says
+    // so instead of offering a button whose only outcome is a refusal.
     render(<MarkdownContent content="Join [the channel](irc://irc.example.com/dorkos)" />);
 
-    clickAndConfirm('the channel');
+    const { open, copy } = clickAndInspect('the channel');
 
+    expect(open).toBeNull();
+    expect(copy).toBeInTheDocument();
+    expect(screen.getByText(/DorkOS opens web, email and phone links/)).toBeInTheDocument();
+    expect(screen.getByText(/This is a irc: link/)).toBeInTheDocument();
     expect(openSpy).not.toHaveBeenCalled();
-    expect(toast.error).toHaveBeenCalledWith(
-      "DorkOS doesn't open irc: links",
-      expect.objectContaining({ description: 'Only web, email and phone links open from here.' })
-    );
   });
 
-  it('refuses an xmpp: link the markdown sanitizer let through', () => {
+  it('never offers to open an xmpp: link either', () => {
     render(<MarkdownContent content="Chat on [xmpp](xmpp:someone@example.com)" />);
 
-    clickAndConfirm('xmpp');
-
+    expect(clickAndInspect('xmpp').open).toBeNull();
     expect(openSpy).not.toHaveBeenCalled();
-    expect(toast.error).toHaveBeenCalledWith("DorkOS doesn't open xmpp: links", expect.anything());
-  });
-
-  it('closes the confirmation whether the link opened or was refused', () => {
-    // A modal left standing over a refusal would read as "still working on it".
-    render(<MarkdownContent content="Join [the channel](irc://irc.example.com/dorkos)" />);
-
-    clickAndConfirm('the channel');
-
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('refuses a file: href, which only a non-markdown caller can even supply', () => {
-    // Mounted directly: Streamdown's sanitizer strips `file:` upstream, so no
-    // markdown string can produce this anchor. `MarkdownLink` is also rendered
-    // by `LinkifiedText` over raw machine output, so the component itself must
-    // refuse it rather than trusting an upstream pass to have run.
+    // Mounted directly, because no caller can currently reach this: Streamdown
+    // strips `file:` upstream, and `LinkifiedText` — the only other thing that
+    // renders this component — emits `http(s)` matches and nothing else. This
+    // is defense in depth against a THIRD caller, which is a one-line change
+    // away, not coverage of a live path. Both of the gates that protect this
+    // component today live in other files; this one is its own.
     render(<MarkdownLink href="file:///Users/kai/notes.md">notes</MarkdownLink>);
 
-    clickAndConfirm('notes');
-
+    expect(clickAndInspect('notes').open).toBeNull();
     expect(openSpy).not.toHaveBeenCalled();
-    expect(toast.error).toHaveBeenCalledWith("DorkOS doesn't open file: links", expect.anything());
   });
 
   it('refuses a javascript: href, which only a non-markdown caller can even supply', () => {
     render(<MarkdownLink href="javascript:alert(1)">totally safe</MarkdownLink>);
 
-    clickAndConfirm('totally safe');
-
+    expect(clickAndInspect('totally safe').open).toBeNull();
     expect(openSpy).not.toHaveBeenCalled();
-    expect(toast.error).toHaveBeenCalledWith(
-      "DorkOS doesn't open javascript: links",
-      expect.anything()
-    );
+  });
+
+  it('keeps the refusal wording sane for an absurdly long scheme', () => {
+    // A refused href is agent-authored; `new URL` parses a scheme of any length.
+    render(<MarkdownLink href={`${'a'.repeat(302)}://payload`}>click</MarkdownLink>);
+
+    expect(clickAndInspect('click').open).toBeNull();
+    expect(screen.queryByText(/This is a aaa/)).not.toBeInTheDocument();
+    expect(screen.getByText(/address is incomplete/)).toBeInTheDocument();
   });
 });
 

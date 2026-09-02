@@ -33,16 +33,17 @@
  * `irc:`, `ircs:` and `xmpp:` — the only schemes Streamdown's sanitizer lets
  * through that the seam refuses — now stop here, and say so.
  *
- * The refusal happens **after** the confirmation rather than instead of it, on
- * purpose: the modal is also where "Copy link" lives, which is the one useful
- * thing left for a link DorkOS will not open.
+ * A scheme the seam refuses never reaches {@link confirmAndOpen} at all:
+ * `LinkSafetyModal` asks `classifyLink` when it opens and, for a refused link,
+ * explains itself and offers only "Copy link". This handler's job is the click,
+ * not the policy, and it stays on the seam so the two cannot drift.
  *
  * Passed to `Streamdown` as `components={{ a: MarkdownLink }}` — see
  * `contributing/link-dispatch-policy.md` for how this fits the rest of the
  * app's link-dispatch policy.
  */
 import { memo, useCallback, useState, type ComponentProps, type MouseEvent } from 'react';
-import { cn, openExternalLink } from '@/layers/shared/lib';
+import { cn, isWebUrl, openExternalLink } from '@/layers/shared/lib';
 import { LinkSafetyModal } from './link-safety-modal';
 
 type MarkdownLinkProps = Omit<ComponentProps<'a'>, 'onClick'> & {
@@ -50,38 +51,6 @@ type MarkdownLinkProps = Omit<ComponentProps<'a'>, 'onClick'> & {
    * prop shape matches what Streamdown's `Components['a']` slot passes. */
   node?: unknown;
 };
-
-/**
- * Whether `href` is an absolute `http:`/`https:` URL.
- *
- * Mirrors the desktop shell's own `isWebLink` (`apps/desktop/src/main/window-
- * manager.ts`) — http(s) only, no `mailto:` exception — but is not imported
- * from it: that file is Electron main-process code, a different process and a
- * different bundle from this component. `new URL(href)` is given no base, on
- * purpose: a relative path or a protocol-relative `//host/path` is exactly
- * what a browser WOULD resolve against the current page, and resolving it
- * here would make it look "safe" to bypass confirmation on. Failing the parse
- * instead means those hrefs always confirm, same as any other non-http(s)
- * scheme.
- *
- * **Deliberately narrower than the seam's own allowlist**, and not a second
- * copy of it. This does not answer "may DorkOS open this?" — `classifyLink`
- * does, on the confirmed path. It answers "may the browser have this click
- * without asking?", and the honest answer is only for a scheme whose worst
- * case is a new browser tab. `mailto:` and `tel:` are dispatchable through the
- * seam yet still confirm here, because a cmd-click that silently opened a mail
- * composer or a dialer is not what the reader asked for.
- *
- * @param href - The anchor's `href`, as Streamdown parsed it.
- */
-function isHttpUrl(href: string): boolean {
-  try {
-    const { protocol } = new URL(href);
-    return protocol === 'http:' || protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
 
 function MarkdownLinkImpl({ href, className, children, node: _node, ...rest }: MarkdownLinkProps) {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -99,12 +68,20 @@ function MarkdownLinkImpl({ href, className, children, node: _node, ...rest }: M
         event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
       // The reader is directly asking the browser for something — a new tab,
       // a new window — and an absolute http(s) URL is safe to hand it
-      // straight to that request. Anything else (a relative path this
-      // component deliberately would not resolve, `tel:`, `mailto:`, an
-      // `irc:`/`xmpp:` autolink) still confirms even when modified, because a
-      // modified click on one of those reaches an OS protocol handler with no
-      // warning otherwise.
-      if (isModified && href !== undefined && isHttpUrl(href)) return;
+      // straight to that request. Anything else (a relative path `isWebUrl`
+      // deliberately does not resolve, `tel:`, `mailto:`, an `irc:`/`xmpp:`
+      // autolink) still confirms even when modified, because a modified click
+      // on one of those reaches an OS protocol handler with no warning
+      // otherwise.
+      //
+      // `isWebUrl` is the seam's own predicate, shared with the desktop path
+      // (DOR-547) rather than the third private copy of "is this http(s)" this
+      // file used to hold. It is **narrower than `DISPATCHABLE_PROTOCOLS` on
+      // purpose**: it does not answer "may DorkOS open this?" — `classifyLink`
+      // does — but "may the browser have this click without asking?", and only
+      // a scheme whose worst case is a new tab qualifies. `mailto:` and `tel:`
+      // dispatch through the seam yet still confirm here.
+      if (isModified && href !== undefined && isWebUrl(href)) return;
       event.preventDefault();
       setIsConfirmOpen(true);
     },

@@ -813,12 +813,12 @@ describe('the open-external bridge', () => {
   });
 
   /** Invoke the `open-external` handler `../index` registered. */
-  async function openExternal(url: unknown): Promise<void> {
+  async function openExternal(url: unknown): Promise<boolean> {
     const { ipcMain } = await getElectronMock();
     const call = vi.mocked(ipcMain.handle).mock.calls.find(([ch]) => ch === 'open-external');
     if (!call) throw new Error('no ipcMain.handle registered for "open-external"');
-    const handler = call[1] as (event: unknown, url: unknown) => Promise<void>;
-    await handler({}, url);
+    const handler = call[1] as (event: unknown, url: unknown) => Promise<boolean>;
+    return handler({}, url);
   }
 
   async function loadShell(): Promise<void> {
@@ -835,26 +835,35 @@ describe('the open-external bridge', () => {
     // The case the bridge exists for. `window.open` at this URL is claimed by
     // the window-open handler and becomes a second cockpit window, so Settings
     // → Server's "open in your browser" would not leave the app without it.
-    await openExternal('http://localhost:4242');
+    const opened = await openExternal('http://localhost:4242');
 
     expect(shell.openExternal).toHaveBeenCalledWith('http://localhost:4242');
+    expect(opened).toBe(true);
   });
 
-  it('refuses anything the shell would not open from a link', async () => {
+  it('refuses anything the shell would not open from a link, and SAYS it refused', async () => {
     await loadShell();
     const { shell } = await getElectronMock();
 
+    // The answer is the load-bearing part (DOR-547). This used to resolve
+    // `void` either way, so the renderer could not tell a dropped `mailto:`
+    // from an opened `https:` — it reported the link as opened and the person
+    // watched a click do nothing. The renderer's link seam turns a `false`
+    // into a message; there is nothing it can do with an indistinguishable
+    // `undefined`.
     for (const url of [
       'file:///etc/passwd',
       'javascript:alert(1)',
       'dorkos://agents',
       'mailto:someone@example.com',
+      'tel:+15551234567',
+      'HTTP://dorkos.ai',
       '',
       42,
       null,
       undefined,
     ]) {
-      await openExternal(url);
+      expect(await openExternal(url), String(url)).toBe(false);
     }
 
     expect(shell.openExternal).not.toHaveBeenCalled();
