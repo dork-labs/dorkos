@@ -40,6 +40,7 @@ import {
 import {
   driveDurableTurn,
   drivePresenceTurn,
+  driveReloadedHistory,
   driveTerminalOnce,
   driveQueueDurability,
 } from '../../../session/__tests__/durable-turn-harness.js';
@@ -389,6 +390,14 @@ runtimeConformance(
                 ...(LIVE ? {} : { resolveBinary: async () => '/bin/codex' }),
               });
             },
+            // DOR-1678, the reload half. Codex keeps no transcript of its own —
+            // `getMessageHistory` IS the durable EventLog fold — so the honest
+            // reload is the real trigger path feeding the store, the projector
+            // dropped, and the adapter asked again. Nothing here writes an error
+            // part: the mapper classified the failure once on the way in, and
+            // what this reads back is that classification replayed.
+            hydratedHistory: (runtime, sessionId, content) =>
+              driveReloadedHistory(runtime, sessionId, content, projectDir),
           },
         }),
   }

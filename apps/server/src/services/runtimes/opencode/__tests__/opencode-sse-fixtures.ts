@@ -190,7 +190,14 @@ export function taskToolPart(
 
 // === Message builders ===
 
-/** Build an assistant message; `completed: true` stamps `time.completed` + usage. */
+/**
+ * Build an assistant message; `completed: true` stamps `time.completed` + usage.
+ *
+ * `error` is how a FAILED turn is stored: OpenCode persists the failure on the
+ * message itself, and a turn that failed before the model said anything keeps
+ * zero parts, so this field is the only durable record a reopened transcript has
+ * to go on (DOR-1666).
+ */
 export function assistantMessage(
   sessionID: string,
   opts: {
@@ -199,6 +206,7 @@ export function assistantMessage(
     tokens?: AssistantMessage['tokens'];
     cost?: number;
     modelID?: string;
+    error?: AssistantMessage['error'];
   } = {}
 ): AssistantMessage {
   const {
@@ -207,12 +215,14 @@ export function assistantMessage(
     tokens = DEFAULT_TOKENS,
     cost = DEFAULT_COST,
     modelID = 'claude-sonnet-4-5',
+    error,
   } = opts;
   return {
     id,
     sessionID,
     role: 'assistant',
     time: { created: CREATED_AT, ...(completed ? { completed: COMPLETED_AT } : {}) },
+    ...(error ? { error } : {}),
     parentID: 'msg_0000',
     modelID,
     providerID: 'anthropic',

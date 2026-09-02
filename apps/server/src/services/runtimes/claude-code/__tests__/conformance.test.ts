@@ -175,6 +175,7 @@ vi.mock('../tooling/check-dependency.js', () => ({
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import type { HistoryMessage } from '@dorkos/shared/types';
 import { ClaudeCodeRuntime } from '../claude-code-runtime.js';
 import {
   drivePresenceTurn,
@@ -358,6 +359,82 @@ async function seedExpiredQuestionHistory(runtime: AgentRuntime, sessionId: stri
  */
 const CLAUDE_VENDOR_AUTH_TEXT =
   'Failed to authenticate: OAuth session expired and could not be refreshed';
+
+/**
+ * The working directory the credential-failure hydration driver writes under
+ * (DOR-1678). Its own cwd, for the same reason {@link QUESTION_CWD} has one:
+ * the transcript is written mid-suite, and under the suite's own slug it would
+ * turn up in `listSessions('/projects/conformance')` answers other cases are
+ * asserting on at the time.
+ */
+const AUTH_CWD = '/projects/conformance-auth';
+
+/**
+ * Fail a turn on an expired sign-in, write the transcript record the CLI leaves
+ * behind for it, and read history back the way a reopened session does.
+ *
+ * Claude-code's history is not a projection DorkOS owns — it is the SDK's own
+ * JSONL, re-parsed on every reopen. The SDK is mocked here, so no turn can
+ * produce that file, and the honest stand-in is the record the REAL CLI wrote:
+ * the synthetic API-error notice below is copied from the reported transcript
+ * `70fd483b…` (CLI 2.1.224, 2026-09-01) — the same fixture DOR-1649's parser
+ * tests were built from — trimmed to the fields the parser reads. Everything
+ * downstream of the file is production: the transcript reader, `parseTranscript`
+ * and its notice folding all run for real.
+ *
+ * @param runtime - The failing runtime the conformance suite handed over.
+ * @param sessionId - The session the suite already ensured.
+ * @param content - The message the failing turn carries.
+ */
+async function seedAuthFailureHistory(
+  runtime: AgentRuntime,
+  sessionId: string,
+  content: string
+): Promise<HistoryMessage[]> {
+  // The turn really fails first, on the scripted expiry `makeRuntime` armed —
+  // draining it is also what consumes that one-shot script, so it cannot leak
+  // into whatever runs next.
+  for await (const _event of runtime.sendMessage(sessionId, content, { cwd: AUTH_CWD })) {
+    // Drained rather than inspected: the live stream is the sibling case's
+    // subject; this one is about what survives to the next morning.
+  }
+  const dir = join(account.root, 'projects', '-projects-conformance-auth');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, `${sessionId}.jsonl`),
+    [
+      {
+        type: 'user',
+        message: { role: 'user', content },
+        timestamp: '2026-09-01T12:06:41.000Z',
+        cwd: AUTH_CWD,
+      },
+      {
+        parentUuid: '27a272f6-5858-4e8c-8746-5de8b94a6737',
+        isSidechain: false,
+        type: 'assistant',
+        uuid: 'aae96903-ccea-4fdc-a73c-34116a710dd8',
+        timestamp: '2026-09-01T12:06:43.988Z',
+        message: {
+          id: '4607c295-36fa-4b6a-8aef-9020980eaac8',
+          model: '<synthetic>',
+          role: 'assistant',
+          stop_reason: 'stop_sequence',
+          type: 'message',
+          usage: { input_tokens: 0, output_tokens: 0 },
+          content: [{ type: 'text', text: CLAUDE_VENDOR_AUTH_TEXT }],
+        },
+        error: 'authentication_failed',
+        isApiErrorMessage: true,
+        userType: 'external',
+        version: '2.1.224',
+      },
+    ]
+      .map((line) => JSON.stringify(line))
+      .join('\n') + '\n'
+  );
+  return runtime.getMessageHistory(AUTH_CWD, sessionId);
+}
 
 /** Warm processes this file booted, closed after each case so none leaks. */
 let warmCli: FakeCli | undefined;
@@ -651,6 +728,11 @@ runtimeConformance(
         );
         return new ClaudeCodeRuntime('/tmp/dorkos-conformance', '/projects/conformance');
       },
+      // DOR-1678, the reload half. See `seedAuthFailureHistory` for why the
+      // transcript is written rather than produced: the mocked SDK writes no
+      // JSONL, and claude-code's history IS that file.
+      hydratedHistory: (runtime, sessionId, content) =>
+        seedAuthFailureHistory(runtime, sessionId, content),
     },
     // One-shot compacting turn: the SDK stream carries a `status: 'compacting'`,
     // a `compact_boundary`, and a resolving `compact_result: 'success'`, which the

@@ -113,6 +113,45 @@ export interface RuntimeConformanceOpts {
      * must never be what a person reads.
      */
     vendorText: string;
+    /**
+     * Puts that same credential failure through this runtime's REAL history
+     * path and returns what a REOPENED session is served (DOR-1678).
+     *
+     * The live half above says what a person sees while the turn is failing.
+     * This one says what they see the next morning, and the two are different
+     * code paths in every runtime: claude-code re-parses the JSONL its CLI
+     * wrote, codex replays the durable EventLog, opencode reads its sidecar's
+     * store. The property was pinned three separate times, once per runtime,
+     * and nowhere shared — so a fourth adapter could ship a live `auth_error`
+     * card that reloads as the vendor's 401 pasted in as something the agent
+     * said, and every suite in the tree would still be green.
+     *
+     * **Drive the real reader, never hand back a shape you built.** The
+     * returned array must come from `getMessageHistory` (or whatever the
+     * product calls on reopen), reading state the failing turn genuinely left
+     * behind. A driver that assembles a `HistoryMessage` itself asserts only
+     * that its author knows what the answer should look like — the exact
+     * failure `.claude/rules/testing.md` catalogues. Where a runtime's backend
+     * is mocked and therefore writes no durable record, the honest stand-in is
+     * the record the REAL backend writes, copied from an observed one — the
+     * same latitude `expiredQuestionHistory` takes, and the reason each wiring
+     * says on the spot where its fixture came from.
+     *
+     * Omit it and the reload case SKIPs by name rather than passing on an
+     * absence, exactly as the live half does when {@link authFailure} itself is
+     * missing. A runtime whose history cannot be reached from this seam is
+     * saying so out loud, not quietly getting a green.
+     *
+     * @param runtime - The failing runtime from {@link authFailure.makeRuntime}.
+     * @param sessionId - The session the suite already called `ensureSession` for.
+     * @param content - The user message the turn should carry.
+     * @returns The history a reopened session would be served.
+     */
+    hydratedHistory?: (
+      runtime: AgentRuntime,
+      sessionId: string,
+      content: string
+    ) => Promise<HistoryMessage[]>;
   };
   /**
    * Factory producing a runtime whose next `sendMessage` turn emits a
@@ -2106,6 +2145,84 @@ export function runtimeConformance(
 
         // Failure must not break the every-path-ends-in-done contract.
         expect(events[events.length - 1]!.type).toBe(TERMINAL_EVENT_TYPE);
+      });
+
+      it('survives a reload as that same typed error part, never as agent speech (DOR-1678)', async (ctx) => {
+        if (!authFailure) {
+          // Same SKIP, same reason as the live half above.
+          ctx.skip(
+            'no authFailure driver was wired for this runtime, so a credential failure could ' +
+              'not be scripted here (see RuntimeConformanceOpts.authFailure)'
+          );
+          return;
+        }
+        const { hydratedHistory, vendorText } = authFailure;
+        if (!hydratedHistory) {
+          ctx.skip(
+            'this runtime scripts a credential failure but wires no way to read its history ' +
+              'back, so what a reopened session shows is unproven here (see ' +
+              'RuntimeConformanceOpts.authFailure.hydratedHistory)'
+          );
+          return;
+        }
+
+        const runtime = authFailure.makeRuntime();
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
+
+        const history = await hydratedHistory(runtime, sessionId, messageContent);
+
+        // Dropped is the failure mode nobody notices: a reader that maps only
+        // what the agent SAID gives a turn that failed before it spoke no parts
+        // at all, and the whole message disappears — the reopened transcript
+        // then shows the question and nothing after it, as if the agent had
+        // simply never answered (DOR-1666).
+        const parts = history.flatMap((message) => message.parts ?? []);
+        const errors = parts.filter((part) => part.type === 'error');
+        expect(
+          errors.length,
+          'a reopened session must show the credential failure EXACTLY once. Zero means the ' +
+            'turn that failed before the agent spoke was dropped, and the transcript reads as ' +
+            'though nobody ever answered; more than one means a reload stacks up repeat ' +
+            '"Fix sign-in" cards for a single expiry'
+        ).toBe(1);
+        const error = errors[0]!;
+
+        // The same three rules the live half applies, because "what a person
+        // reads" cannot depend on whether they happened to reload.
+        expect(
+          error.category,
+          'a reloaded credential failure must keep the auth_error category — without it the ' +
+            'reopened session shows a dead-end error where the live turn offered a way back in'
+        ).toBe('auth_error');
+        expect(
+          error.message,
+          'a reloaded credential failure must say the same DorkOS sentence the live turn did, ' +
+            'naming THIS runtime — share the copy via describeAuthError(runtime.type)'
+        ).toBe(describeAuthError(runtime.type));
+        expect(
+          error.details ?? '',
+          'the backend’s own failure text must still be reachable in `details` after a reload, ' +
+            'the same as live — translated, not deleted'
+        ).toContain(vendorText);
+
+        // And never attributed to the agent. This is the half the per-runtime
+        // pins were written for: a transcript reader that lands the vendor's
+        // sentence in a text part reports it as something the agent SAID, in
+        // the agent's own voice, with no error treatment and no way back in.
+        const spoken = [
+          ...history.map((message) => message.content),
+          ...parts.flatMap((part) =>
+            part.type === 'text' || part.type === 'thinking' ? [part.text] : []
+          ),
+        ];
+        for (const said of spoken) {
+          expect(
+            said,
+            'the backend’s credential text must never come back as something the agent said — ' +
+              'it belongs in an error part’s `details`, not in speech'
+          ).not.toContain(vendorText);
+        }
       });
     });
 

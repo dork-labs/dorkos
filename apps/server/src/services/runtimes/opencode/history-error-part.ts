@@ -15,12 +15,21 @@
  * on the `session.error` event, whose payload is the SAME union. That module
  * cannot be imported here: it pulls in the server logger, which imports `fs`,
  * and the mapper's import graph is filesystem-free by test guard (ADR-0308 —
- * the guard was measured to catch it). The overlap is kept to the two rules
- * that decide what a reader SEES — an abort is not a failure, and a credential
- * failure gets the `auth_error` category — with `detectAuthError` shared from
- * `@dorkos/shared`.
+ * the guard was measured to catch it). The overlap is kept to the rules that
+ * decide what a reader SEES — an abort is not a failure, and a credential
+ * failure gets the `auth_error` category and DorkOS's own sentence — with
+ * `detectAuthError` and `describeAuthError` shared from `@dorkos/shared`.
  *
- * **The two surfaces deliberately disagree on wording, and it shows on the
+ * **A dead sign-in reads the same live and after a reload, and that took
+ * fixing.** DOR-1656 gave every runtime's credential failure one DorkOS
+ * sentence naming the runtime, with the vendor's words demoted to `details` —
+ * but only on the LIVE channel. This reader kept showing the provider's raw
+ * `AuthenticationError: 401 {…}`, so the same expiry spoke DorkOS's voice
+ * during the turn and the vendor's the next morning, offering no remedy where
+ * the live card had offered one. The shared runtime-conformance floor (DOR-1678)
+ * is what caught it; both halves now answer identically.
+ *
+ * **The two surfaces still disagree on wording elsewhere, and it shows on the
  * commonest real failure.** Live, `mapSessionError` rewrites an
  * unavailable-model failure to friendly copy pointing at the model menu; here,
  * history shows the provider's own words. So a turn that failed with
@@ -50,7 +59,7 @@
  */
 import { z } from 'zod';
 import type { ErrorPart } from '@dorkos/shared/types';
-import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
+import { describeAuthError, detectAuthError } from '@dorkos/shared/runtime-error-classification';
 
 /**
  * The error name OpenCode stamps on a user interrupt. Suppressed rather than
@@ -58,6 +67,18 @@ import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
  * whatever the agent had already written is still in the message's parts.
  */
 const ABORT_ERROR_NAME = 'MessageAbortedError';
+
+/**
+ * This adapter's runtime type — the identity {@link describeAuthError} turns
+ * into the name a person reads, so an OpenCode credential failure says
+ * "OpenCode" and never another runtime's name.
+ *
+ * Spelled here rather than imported from `session-event-mapper.ts`, which
+ * carries the same constant for the live path: that module pulls in the server
+ * logger, which imports `fs`, and this file's import graph is filesystem-free by
+ * test guard (ADR-0308). One string is the smaller duplication.
+ */
+const OPENCODE_RUNTIME_TYPE = 'opencode';
 
 /**
  * What a persisted message error must carry to be worth rendering.
@@ -104,10 +125,35 @@ export function mapMessageError(error: unknown): ErrorPart | null {
   const reported = data?.['message'];
   const message = typeof reported === 'string' && reported.length > 0 ? reported : name;
 
+  // A dead credential speaks DorkOS's one sentence, exactly as the live turn
+  // did, with the provider's own words demoted into `details` (DOR-1656,
+  // DOR-1678). Until this, the two halves disagreed on the one failure that has
+  // a remedy: the live card said "OpenCode's model provider stopped accepting
+  // its sign-in", and reopening the same session the next morning showed the
+  // raw `AuthenticationError: 401 {"type":"error",…}` instead — the same
+  // failure, in the vendor's voice, telling the person nothing they could act
+  // on. The shared conformance floor is what caught it.
+  //
+  // Only the AUTH branch is translated. Everything else keeps the provider's
+  // words on purpose (see the module doc): they are the only account of what
+  // went wrong, and several of them carry the very link that fixes it.
+  if (detectAuthError({ message, code: name })) {
+    return {
+      type: 'error',
+      message: describeAuthError(OPENCODE_RUNTIME_TYPE),
+      category: 'auth_error',
+      // The name AND what the provider said — the live path carries the name as
+      // the event's `code`, and an `ErrorPart` has no such field, so both ride
+      // `details` here. When the provider said nothing, `message` already fell
+      // back to the name and repeating it twice would say nothing extra.
+      details: message === name ? `[${name}]` : `[${name}] ${message}`,
+    };
+  }
+
   return {
     type: 'error',
     message,
-    category: detectAuthError({ message, code: name }) ? 'auth_error' : 'execution_error',
+    category: 'execution_error',
     ...(message === name ? {} : { details: `[${name}]` }),
   };
 }

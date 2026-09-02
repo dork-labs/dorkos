@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { describeAuthError } from '@dorkos/shared/runtime-error-classification';
 import { mapMessageError } from '../history-error-part.js';
 
 /**
@@ -70,9 +71,15 @@ describe('mapMessageError', () => {
       })
     ).toEqual({
       type: 'error',
-      message: 'OAuth token revoked',
+      // DorkOS's own sentence, the same one the LIVE turn said (DOR-1656) —
+      // reopening a session must not switch the product back into the
+      // provider's voice (DOR-1678). Read off `describeAuthError` rather than
+      // retyped, which is the whole point of there being one copy.
+      message: describeAuthError('opencode'),
       category: 'auth_error',
-      details: '[ProviderAuthError]',
+      // Nothing is lost: the error name and the provider's own words both stay
+      // reachable behind the client's Details disclosure.
+      details: '[ProviderAuthError] OAuth token revoked',
     });
   });
 
@@ -82,6 +89,20 @@ describe('mapMessageError', () => {
       data: { message: '401 Unauthorized', isRetryable: false },
     });
     expect(part?.category).toBe('auth_error');
+    expect(part?.message).toBe(describeAuthError('opencode'));
+    expect(part?.details).toBe('[APIError] 401 Unauthorized');
+  });
+
+  it('says the name once when a credential failure carried no words of its own', () => {
+    // `message` fell back to the NAME, so there is nothing the provider said to
+    // preserve — repeating the name under a Details disclosure would reveal
+    // nothing the part does not already carry.
+    expect(mapMessageError({ name: 'ProviderAuthError', data: {} })).toEqual({
+      type: 'error',
+      message: describeAuthError('opencode'),
+      category: 'auth_error',
+      details: '[ProviderAuthError]',
+    });
   });
 
   it('falls back to the error name when the payload carries no message', () => {

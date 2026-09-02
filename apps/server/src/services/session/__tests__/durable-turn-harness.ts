@@ -9,6 +9,10 @@
  *
  * - {@link driveDurableTurn} (`durableHistory`) proves history survives a
  *   restart for a log-backed runtime (DOR-189).
+ * - {@link driveReloadedHistory} (`authFailure.hydratedHistory`) asks the same
+ *   turn's question one step further out: not "is the log durable" but "what is
+ *   a person shown when they reopen the session" — so it reads back through
+ *   `getMessageHistory` (DOR-1678).
  * - {@link drivePresenceTurn} (`presenceTurn`) opens a turn, hands control back
  *   while it is OPEN, and again once it has closed — the only way the presence
  *   assertions can watch a lifecycle actually transition. A runtime's own
@@ -69,6 +73,51 @@ export async function driveDurableTurn(
     // Restart analog: the live projector is gone; history must read durably.
     disposeProjector(sessionId);
     return readLogBackedHistory(sessionId);
+  } finally {
+    setSessionEventStore(undefined);
+  }
+}
+
+/**
+ * Run one complete turn through the real trigger path, drop the live projector
+ * (the server-restart analog), and return what the RUNTIME serves as history —
+ * the `authFailure.hydratedHistory` conformance driver (DOR-1678).
+ *
+ * The sibling {@link driveDurableTurn} reads the platform's
+ * `readLogBackedHistory` directly, which is the right question for "is the
+ * EventLog durable". This one asks a different question — "what does a person
+ * who reopens this session actually see" — so it goes through
+ * `getMessageHistory`, the call the reopen path makes. That distinction is the
+ * whole point for a runtime with a native store: opencode's `getMessageHistory`
+ * reads its sidecar and only falls back to the log, so reading the log here
+ * would prove nothing about the transcript anybody is served.
+ *
+ * The store is set up either way, because the read has to happen while a
+ * restarted server's state exists: a log-backed runtime (codex) answers out of
+ * it, and one with its own store (opencode) simply does not consult it.
+ *
+ * @param runtime - The runtime under test (its real `sendMessage`).
+ * @param sessionId - A unique session id for this turn.
+ * @param content - The user message to send.
+ * @param cwd - The working directory for the turn.
+ */
+export async function driveReloadedHistory(
+  runtime: AgentRuntime,
+  sessionId: string,
+  content: string,
+  cwd: string
+): Promise<HistoryMessage[]> {
+  const store = new SessionEventStore(createTestDb());
+  setSessionEventStore(store);
+  try {
+    const projector = getOrCreateProjector(sessionId, cwd, { persist: 'history' });
+    await feedProjector(projector, runtime.sendMessage(sessionId, content, { cwd }), {
+      userMessage: content,
+    });
+    // Restart analog: the live projector is gone, so whatever the runtime
+    // answers now it answered from something durable.
+    disposeProjector(sessionId);
+    return await runtime.getMessageHistory(cwd, sessionId);
   } finally {
     setSessionEventStore(undefined);
   }

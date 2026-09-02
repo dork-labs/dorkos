@@ -7,6 +7,7 @@ import type {
   OpencodeClient,
 } from '@opencode-ai/sdk';
 import { DIRECTORY_MEMBERSHIP_VECTORS } from '@dorkos/test-utils';
+import { describeAuthError } from '@dorkos/shared/runtime-error-classification';
 import { OpenCodeSessionMapper, type OpenCodeClientProvider } from '../session-mapper.js';
 import { SESSION_LIST_LIMIT, SESSION_REBUILD_LIMIT } from '../runtime-constants.js';
 
@@ -847,13 +848,15 @@ describe('OpenCodeSessionMapper', () => {
 
       const [failed] = await mapper.getMessageHistory(PROJECT_DIR, DORKOS_ID);
 
-      // `auth_error` is what turns the block into a "Fix sign-in" affordance.
+      // `auth_error` is what turns the block into a "Fix sign-in" affordance,
+      // and the words are DorkOS's own — the same sentence the live turn said,
+      // so reopening a session does not switch voices (DOR-1656/DOR-1678).
       expect(failed!.parts).toEqual([
         {
           type: 'error',
-          message: 'OAuth token revoked',
+          message: describeAuthError('opencode'),
           category: 'auth_error',
-          details: '[ProviderAuthError]',
+          details: '[ProviderAuthError] OAuth token revoked',
         },
       ]);
     });
