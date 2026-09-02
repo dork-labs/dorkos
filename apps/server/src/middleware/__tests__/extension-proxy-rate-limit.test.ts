@@ -2,10 +2,21 @@ import { describe, it, expect } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 
+import type { DataProxyConfig } from '@dorkos/extension-api';
+
 import {
   buildExtensionProxyRateLimiter,
   EXTENSION_PROXY_RATE_LIMIT_DEFAULT,
 } from '../extension-proxy-rate-limit.js';
+import { createProxyRouter } from '../../services/extensions/extension-proxy.js';
+
+/** A proxy config pointing at an upstream no test request ever reaches. */
+const PROXY_CONFIG: DataProxyConfig = {
+  baseUrl: 'https://api.example.com',
+  authHeader: 'Authorization',
+  authType: 'Bearer',
+  authSecret: 'api_key',
+};
 
 /** An app whose only route answers 200, behind the limiter under test. */
 function appWithLimiter(maxPerMinute?: number): express.Express {
@@ -54,7 +65,30 @@ describe('buildExtensionProxyRateLimiter', () => {
     expect((await request(second).get('/proxy/thing')).status).toBe(200);
   });
 
-  it('defaults to 120 requests per minute', () => {
+  it('defaults to 120 requests per minute', async () => {
+    const app = appWithLimiter();
+
+    const res = await request(app).get('/proxy/thing');
+
+    expect(res.headers['ratelimit-limit']).toBe('120');
     expect(EXTENSION_PROXY_RATE_LIMIT_DEFAULT).toBe(120);
+  });
+});
+
+// The proxy's own test file replaces this module with a spy so it can prove
+// WHERE the limiter is mounted. That leaves nobody watching the real limiter
+// reach a real proxy router, which is what this covers.
+describe('wired into the extension proxy router', () => {
+  it('answers a proxy request with the real 120/min budget', async () => {
+    const app = express();
+    app.use(createProxyRouter('test-ext', PROXY_CONFIG, '/no/such/dork-home'));
+
+    const res = await request(app).get('/proxy/thing');
+
+    expect(res.headers['ratelimit-limit']).toBe('120');
+    expect(res.status).not.toBe(429);
+    // No secret on disk under that dork home, so the request stops at 503 —
+    // after the limiter, which is the wiring this asserts.
+    expect(res.status).toBe(503);
   });
 });

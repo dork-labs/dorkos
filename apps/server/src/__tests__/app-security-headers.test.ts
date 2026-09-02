@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
 
 vi.mock('../services/core/tunnel-manager.js', () => ({
   tunnelManager: {
@@ -35,14 +35,28 @@ vi.mock('../lib/logger.js', () => ({
   },
 }));
 
+import type express from 'express';
 import request from 'supertest';
 import { createApp } from '../app.js';
 import { env } from '../env.js';
 import { logger } from '../lib/logger.js';
 import { isTrustedUpgradeOrigin } from '../lib/trusted-origins.js';
 
+// Building an Express app and driving a real request through it is slow on a
+// machine already running other agents' suites, and every test here does both.
+// The default 5s budget false-failed six of eight runs under that load.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+
 const EVIL_ORIGIN = 'https://evil.example.com';
 const LOOPBACK_ORIGIN = `http://localhost:${env.DORKOS_PORT}`;
+
+/** Read every warning `createApp` produced that mentions the CORS variable. */
+function corsWarnings(): string[] {
+  return vi
+    .mocked(logger.warn)
+    .mock.calls.map((call) => String(call[0]))
+    .filter((line) => line.includes('DORKOS_CORS_ORIGIN'));
+}
 
 /**
  * `DORKOS_CORS_ORIGIN='*'` must not hand the whole API to any page the operator
@@ -55,18 +69,18 @@ const LOOPBACK_ORIGIN = `http://localhost:${env.DORKOS_PORT}`;
  * the same rule.
  */
 describe('CORS: DORKOS_CORS_ORIGIN wildcard', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  let app: express.Express;
+
+  beforeAll(() => {
     process.env.DORKOS_CORS_ORIGIN = '*';
+    app = createApp();
   });
 
-  afterEach(() => {
+  afterAll(() => {
     delete process.env.DORKOS_CORS_ORIGIN;
   });
 
   it('sends no permissive ACAO to a cross-origin request', async () => {
-    const app = createApp();
-
     const res = await request(app).get('/api/health').set('Origin', EVIL_ORIGIN);
 
     expect(res.headers['access-control-allow-origin']).toBeUndefined();
@@ -74,8 +88,6 @@ describe('CORS: DORKOS_CORS_ORIGIN wildcard', () => {
   });
 
   it('sends no permissive ACAO on the preflight either', async () => {
-    const app = createApp();
-
     const res = await request(app)
       .options('/api/health')
       .set('Origin', EVIL_ORIGIN)
@@ -85,8 +97,6 @@ describe('CORS: DORKOS_CORS_ORIGIN wildcard', () => {
   });
 
   it('still allows a genuinely trusted origin (falls through to the per-request policy)', async () => {
-    const app = createApp();
-
     const res = await request(app).get('/api/health').set('Origin', LOOPBACK_ORIGIN);
 
     expect(res.headers['access-control-allow-origin']).toBe(LOOPBACK_ORIGIN);
@@ -94,17 +104,16 @@ describe('CORS: DORKOS_CORS_ORIGIN wildcard', () => {
   });
 
   it('warns the operator once, naming the variable and what to set instead', () => {
+    vi.mocked(logger.warn).mockClear();
+
     createApp();
 
-    const warnings = vi.mocked(logger.warn).mock.calls.map((call) => String(call[0]));
-    const cors = warnings.filter((line) => line.includes('DORKOS_CORS_ORIGIN'));
-    expect(cors).toHaveLength(1);
-    expect(cors[0]).toMatch(/ignor/i);
+    const warnings = corsWarnings();
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/ignor/i);
   });
 
   it('agrees with the WebSocket origin policy, which has always refused the wildcard', async () => {
-    const app = createApp();
-
     const httpAllowed =
       (await request(app).get('/api/health').set('Origin', EVIL_ORIGIN)).headers[
         'access-control-allow-origin'
@@ -125,23 +134,72 @@ describe('CORS: DORKOS_CORS_ORIGIN wildcard', () => {
   });
 });
 
-describe('X-Content-Type-Options', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+// A padded wildcard is the same typo, and used to be read as a one-entry
+// allowlist of the literal `*` — a list that matches no origin, suppresses the
+// same-origin branch, and warns about nothing. Both surfaces trim first now.
+describe('CORS: DORKOS_CORS_ORIGIN with surrounding whitespace', () => {
+  let app: express.Express;
+
+  beforeAll(() => {
+    process.env.DORKOS_CORS_ORIGIN = ' * ';
+    app = createApp();
+  });
+
+  afterAll(() => {
     delete process.env.DORKOS_CORS_ORIGIN;
   });
 
-  it('rides every API response, not only the routes that set it themselves', async () => {
-    const app = createApp();
+  it('reads a padded wildcard as the wildcard, so the app keeps working', async () => {
+    const res = await request(app).get('/api/health').set('Origin', LOOPBACK_ORIGIN);
 
+    expect(res.headers['access-control-allow-origin']).toBe(LOOPBACK_ORIGIN);
+  });
+
+  it('still refuses a stranger', async () => {
+    const res = await request(app).get('/api/health').set('Origin', EVIL_ORIGIN);
+
+    expect(res.headers['access-control-allow-origin']).toBeUndefined();
+  });
+
+  it('warns about it rather than passing silently', () => {
+    vi.mocked(logger.warn).mockClear();
+
+    createApp();
+
+    expect(corsWarnings()).toHaveLength(1);
+  });
+
+  it('agrees with the socket path on the same padded value', () => {
+    const socketAllowed = isTrustedUpgradeOrigin({
+      origin: LOOPBACK_ORIGIN,
+      hostHeader: `localhost:${env.DORKOS_PORT}`,
+      hostAllowed: true,
+      ownsNetworkBoundary: false,
+      configuredOrigins: ' * ',
+      forwardedProto: undefined,
+      connectionEncrypted: false,
+      hostCheckInert: false,
+    });
+
+    expect(socketAllowed).toBe(true);
+  });
+});
+
+describe('X-Content-Type-Options', () => {
+  let app: express.Express;
+
+  beforeAll(() => {
+    delete process.env.DORKOS_CORS_ORIGIN;
+    app = createApp();
+  });
+
+  it('rides every API response, not only the routes that set it themselves', async () => {
     const res = await request(app).get('/api/health');
 
     expect(res.headers['x-content-type-options']).toBe('nosniff');
   });
 
   it('rides a 404 too', async () => {
-    const app = createApp();
-
     const res = await request(app).get('/api/no-such-route');
 
     expect(res.headers['x-content-type-options']).toBe('nosniff');
@@ -149,18 +207,22 @@ describe('X-Content-Type-Options', () => {
 });
 
 describe('CORS: an explicit DORKOS_CORS_ORIGIN allowlist is untouched', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  let app: express.Express;
+
+  beforeAll(() => {
     process.env.DORKOS_CORS_ORIGIN = 'http://localhost:5173,https://dorkos.example.com';
+    app = createApp();
   });
 
-  afterEach(() => {
+  afterAll(() => {
     delete process.env.DORKOS_CORS_ORIGIN;
   });
 
-  it('echoes a listed origin with credentials', async () => {
-    const app = createApp();
+  beforeEach(() => {
+    vi.mocked(logger.warn).mockClear();
+  });
 
+  it('echoes a listed origin with credentials', async () => {
     const res = await request(app).get('/api/health').set('Origin', 'https://dorkos.example.com');
 
     expect(res.headers['access-control-allow-origin']).toBe('https://dorkos.example.com');
@@ -168,8 +230,6 @@ describe('CORS: an explicit DORKOS_CORS_ORIGIN allowlist is untouched', () => {
   });
 
   it('refuses an origin that is not on the list', async () => {
-    const app = createApp();
-
     const res = await request(app).get('/api/health').set('Origin', EVIL_ORIGIN);
 
     expect(res.headers['access-control-allow-origin']).toBeUndefined();
@@ -178,7 +238,6 @@ describe('CORS: an explicit DORKOS_CORS_ORIGIN allowlist is untouched', () => {
   it('does not warn about a real allowlist', () => {
     createApp();
 
-    const warnings = vi.mocked(logger.warn).mock.calls.map((call) => String(call[0]));
-    expect(warnings.filter((line) => line.includes('DORKOS_CORS_ORIGIN'))).toHaveLength(0);
+    expect(corsWarnings()).toHaveLength(0);
   });
 });

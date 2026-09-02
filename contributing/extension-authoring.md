@@ -779,13 +779,13 @@ For extensions that only need to forward requests to an external API with authen
 
 ### Configuration
 
-| Field         | Required | Default         | Description                                                           |
-| ------------- | -------- | --------------- | --------------------------------------------------------------------- |
-| `baseUrl`     | Yes      | —               | Upstream API base URL.                                                |
-| `authHeader`  | No       | `Authorization` | HTTP header name for the credential.                                  |
-| `authType`    | No       | `Bearer`        | How the secret is formatted: `Bearer`, `Basic`, `Token`, or `Custom`. |
-| `authSecret`  | Yes      | —               | Key name in the extension's secret store.                             |
-| `pathRewrite` | No       | —               | Object mapping regex patterns to replacements.                        |
+| Field         | Required | Default         | Description                                                                        |
+| ------------- | -------- | --------------- | ---------------------------------------------------------------------------------- |
+| `baseUrl`     | Yes      | —               | Upstream API base URL. A query or fragment on it is ignored (warned once at load). |
+| `authHeader`  | No       | `Authorization` | HTTP header name for the credential.                                               |
+| `authType`    | No       | `Bearer`        | How the secret is formatted: `Bearer`, `Basic`, `Token`, or `Custom`.              |
+| `authSecret`  | Yes      | —               | Key name in the extension's secret store.                                          |
+| `pathRewrite` | No       | —               | Object mapping regex patterns to replacements.                                     |
 
 **Auth type formatting:**
 
@@ -802,11 +802,11 @@ Proxy routes are auto-mounted at `/api/ext/{id}/proxy/*`. The proxy:
 
 1. Throttles the route to 120 requests per minute per IP — every call spends the operator's upstream credential
 2. Confines the caller's sub-path to `baseUrl`: the joined URL is parsed, and anything that leaves the base origin or climbs above the base path (`..`, `..%2f`, `%2e%2e`) is refused with `400`
-3. Strips hop-by-hop headers, and every header that authenticates the CALLER to DorkOS (`cookie`, `authorization`, `x-dorkos-agent`) — the upstream is a third party and never sees them
+3. Strips hop-by-hop headers, every header that authenticates the CALLER to DorkOS (`cookie`, `authorization`, `x-dorkos-agent`) — the upstream is a third party and never sees them — and `content-length`, which describes the caller's bytes while the proxy re-serializes the body
 4. Retrieves the auth secret from the encrypted store
 5. Injects the formatted auth header
 6. Forwards the request to `{baseUrl}/{remaining-path}`
-7. Applies `pathRewrite` rules if configured (author-controlled, so they are applied after the caller's path is checked)
+7. Applies `pathRewrite` rules if configured (author-controlled, so they run after the caller's path is checked) and then re-runs the confinement check: the first check sees the normalized URL and the rewrite edits the raw string, so a caller path that cancels itself out (`legacy/../admin`) can be un-cancelled by an ordinary prefix-stripping rule. A rewrite whose result leaves `baseUrl` is refused with the same `400`
 8. Returns the upstream response with its status code and content type
 
 Redirects are **not followed**. A 3xx comes back to the caller with its `Location` header intact, so the injected credential can never be replayed to whatever an upstream (or an open redirect on it) points at.

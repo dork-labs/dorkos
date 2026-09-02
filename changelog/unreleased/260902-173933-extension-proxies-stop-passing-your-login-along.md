@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server,client): extension proxies stop leaking your DorkOS login'
+  - 'fix(server,client): close the rewrite escape and the length mismatch in extension proxies'
 ---
 
 ### Security
@@ -9,3 +10,7 @@ covers:
 - The same proxies got three more limits. They can only reach the address the extension declared, so a crafted request can no longer walk up to a neighbouring part of that service with the extension's key attached. If the service answers with a redirect, DorkOS hands the redirect back to whoever asked instead of following it with the key. And there is now a ceiling of 120 requests a minute, so nothing can quietly burn through your quota at that service.
 - `DORKOS_CORS_ORIGIN="*"` no longer opens the whole API to every website. Logging in is off by default, so a wildcard meant any page you happened to visit could read your sessions and files and start turns of its own. DorkOS now ignores the `*`, says so at startup, and tells you to list the exact addresses you want to allow — the same rule live connections have always followed. Listing real addresses works exactly as before.
 - Every response now says it must not be second-guessed about what kind of file it is, instead of only the handful of routes that said it themselves.
+
+### Fixed
+
+- Sending data through an extension's proxy could fail for a reason nobody could see: DorkOS passed along the size of the original request while sending a slightly different one, and the outside service either rejected it or waited forever for bytes that never came. DorkOS now states the size of what it actually sends.

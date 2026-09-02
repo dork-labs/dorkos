@@ -82,8 +82,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * needs `req.protocol` and `req.headers.host`.
  */
 function buildCors(): express.RequestHandler {
+  // Trimmed, so a value that is whitespace around a wildcard (or whitespace
+  // around nothing) is read as what the operator meant rather than becoming a
+  // one-entry allowlist of `" * "` that matches no origin at all and warns
+  // about nothing. `isTrustedUpgradeOrigin` treats the socket side the same way.
   // eslint-disable-next-line no-restricted-syntax -- DORKOS_CORS_ORIGIN is not in env.ts (optional CORS override, not worth validating)
-  const envOrigin = process.env.DORKOS_CORS_ORIGIN;
+  const envOrigin = process.env.DORKOS_CORS_ORIGIN?.trim();
 
   // A wildcard is no list at all — say so once, then resolve per request.
   if (envOrigin === '*') {

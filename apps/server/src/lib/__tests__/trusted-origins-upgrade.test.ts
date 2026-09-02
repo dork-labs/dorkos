@@ -231,12 +231,13 @@ describe('isTrustedUpgradeOrigin', () => {
       ).toBe(true);
     });
 
-    it('a PADDED wildcard is a one-entry list, matching buildCors rather than inverting it', () => {
-      // `buildCors` does not trim before its `=== '*'` check, so `" * "` becomes
-      // a list containing the literal `*`, which matches no real origin — and
-      // being a list, it also suppresses the same-origin branch. Fail-closed,
-      // and identical on both surfaces; trimming here would have made the same
-      // typo mean "allow everything" on sockets while HTTP denied everything.
+    it('a PADDED wildcard reads as the wildcard, on this surface and in buildCors', () => {
+      // Both surfaces trim before the `=== '*'` check, so `" * "` is the
+      // wildcard: no list at all, and the other branches still decide. A
+      // stranger is refused because nothing else admits it; the app's own
+      // origin is admitted by the same-origin branch, which is what an
+      // untrimmed read used to suppress — blacking out this socket while
+      // `buildCors` (which does trim) kept serving the same page over HTTP.
       const padded = { configuredOrigins: ' * ' } as const;
       expect(
         isTrustedUpgradeOrigin(facts({ origin: 'https://evil.example', ...padded })),
@@ -246,8 +247,8 @@ describe('isTrustedUpgradeOrigin', () => {
         isTrustedUpgradeOrigin(
           facts({ origin: 'http://box.example', hostHeader: 'box.example', ...padded })
         ),
-        'and so is the cockpit itself — the same outage HTTP already has'
-      ).toBe(false);
+        "and the app's own origin still connects"
+      ).toBe(true);
     });
   });
 

@@ -23,8 +23,11 @@ import { buildExtensionProxyRateLimiter } from '../../middleware/extension-proxy
  * `authorization` was also silently corrupting the injected credential when the
  * extension's `authHeader` is `Authorization`: both spellings survive into one
  * `Headers` object and get joined with a comma.
+ *
+ * Exported so a drift test can assert the real `AGENT_IDENTITY_HEADER` is in
+ * here rather than trusting the copy below to survive a rename.
  */
-const STRIPPED_HEADERS = new Set([
+export const STRIPPED_HEADERS: ReadonlySet<string> = new Set([
   'host',
   'connection',
   'transfer-encoding',
@@ -36,7 +39,16 @@ const STRIPPED_HEADERS = new Set([
   'authorization',
   // `AGENT_IDENTITY_HEADER` from `middleware/agent-identity.ts`, spelled out
   // rather than imported so this file does not pull in the identity service.
+  // A test imports the real constant and asserts it is in this set, so a rename
+  // there cannot silently start leaking the token again.
   'x-dorkos-agent',
+  // The body is re-serialized below (`JSON.stringify(req.body ?? {})`), so the
+  // caller's length describes bytes that are not the ones being sent. undici
+  // rejects the mismatch outright ("Request body length does not match
+  // content-length header"), which turned every pretty-printed JSON POST into a
+  // 502 and every empty POST into an upstream hang. `fetch` sets the correct
+  // length itself.
+  'content-length',
 ]);
 
 /** Filter request headers, removing hop-by-hop and caller-credential headers. */
@@ -86,8 +98,9 @@ function staysWithinBase(target: URL, base: URL): boolean {
  * Create a proxy router for an extension's dataProxy configuration.
  *
  * Routes: ALL /proxy/* -> upstream baseUrl with auth header injected.
- * Returns 503 if the required secret is not configured.
- * Returns 502 on upstream network failure.
+ * Returns 400 when the target would leave `baseUrl` (before any secret is
+ * read), 429 when this router's per-minute budget is spent, 503 if the required
+ * secret is not configured, and 502 on upstream network failure.
  *
  * @param extensionId - Extension identifier for logging and secret lookup
  * @param config - DataProxy configuration from the extension manifest
@@ -105,6 +118,21 @@ export function createProxyRouter(
   // Parsed once: `DataProxySchema.baseUrl` is `z.string().url()`, so a manifest
   // that got this far cannot fail here.
   const base = new URL(config.baseUrl);
+  // A `baseUrl` carrying a query or fragment cannot mean anything to a proxy
+  // that appends a path and the caller's own query to it — and left in place it
+  // made every single request fail the confinement check with a message about
+  // the caller's path, which is not where the problem was. Drop them once, here,
+  // and say so where the extension author will see it.
+  if (base.search !== '' || base.hash !== '') {
+    logger.warn(
+      `[ext:${extensionId}] dataProxy.baseUrl carries a query or fragment (${base.search}${base.hash}); ignoring it. Put those on the request instead.`
+    );
+    base.search = '';
+    base.hash = '';
+  }
+  // What every target URL is built from: the base with any trailing slash
+  // dropped, so a sub-path can be appended with exactly one separator.
+  const baseForJoin = `${base.origin}${base.pathname}`.replace(/\/+$/, '');
 
   router.all('/proxy/{*splat}', rateLimiter, async (req: Request, res: Response) => {
     // Express 5 named wildcard: req.params.splat is the matched sub-path as a
@@ -112,29 +140,36 @@ export function createProxyRouter(
     // braces make it optional so proxying the upstream root (/proxy/) still
     // matches, with splat undefined -> empty targetPath.
     const targetPath = (req.params.splat as string[] | undefined)?.join('/') ?? '';
-    let targetUrl = `${config.baseUrl.replace(/\/+$/, '')}/${targetPath}`;
+    let targetUrl = `${baseForJoin}/${targetPath}`;
 
-    // Confine the caller's sub-path to the upstream the manifest named, BEFORE
-    // any credential is read or attached. Checked here rather than after the
-    // rewrites below because `pathRewrite` is the extension author's own rule,
-    // trusted at exactly the level `baseUrl` is; the sub-path is the caller's.
-    let joined: URL;
-    try {
-      joined = new URL(targetUrl);
-    } catch {
-      res.status(400).json({ error: 'Invalid proxy path', code: 'PROXY_PATH_NOT_ALLOWED' });
-      return;
-    }
-    if (!staysWithinBase(joined, base)) {
+    /**
+     * Refuse a target that is no longer the upstream the manifest named.
+     *
+     * @param stage - Which build step produced the URL, for the log line.
+     */
+    const refuseIfOutsideBase = (stage: 'path' | 'pathRewrite'): boolean => {
+      let parsed: URL;
+      try {
+        parsed = new URL(targetUrl);
+      } catch {
+        // Unparseable is refused, not passed on: `about:blank` has an opaque
+        // origin, so the comparison below fails the way it should.
+        parsed = new URL('about:blank');
+      }
+      if (staysWithinBase(parsed, base)) return false;
       logger.warn(
-        `[ext:${extensionId}] Refused a proxy path outside ${base.origin}${base.pathname}: ${req.method} ${req.url}`
+        `[ext:${extensionId}] Refused a proxy target outside ${base.origin}${base.pathname} (after ${stage}): ${req.method} ${req.url}`
       );
       res.status(400).json({
         error: 'Proxy path is outside the extension upstream',
         code: 'PROXY_PATH_NOT_ALLOWED',
       });
-      return;
-    }
+      return true;
+    };
+
+    // Confine the caller's sub-path to the upstream the manifest named, BEFORE
+    // any credential is read or attached.
+    if (refuseIfOutsideBase('path')) return;
 
     // Apply path rewrites if configured.
     //
@@ -150,6 +185,16 @@ export function createProxyRouter(
       for (const [from, to] of Object.entries(config.pathRewrite)) {
         targetUrl = targetUrl.replace(new RegExp(from), to);
       }
+      // Re-checked, because the rewrite runs on the RAW string while the check
+      // above ran on the normalized URL — so the two together escape what
+      // neither can escape alone. With base `/v1` and the ordinary
+      // prefix-stripping rule `{"/v1/legacy/": "/v1/"}`, the caller path
+      // `legacy/../admin` normalizes to `/v1/admin` and passes, then the rewrite
+      // deletes the `legacy/` the `..` was cancelling and leaves `/v1/../admin`
+      // for `fetch` to normalize into `/admin`. An author rule that genuinely
+      // needs to leave the base is out of contract: this field rewrites paths,
+      // and `baseUrl` is what the approval was given for.
+      if (refuseIfOutsideBase('pathRewrite')) return;
     }
 
     // Forward query string if present

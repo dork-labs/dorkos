@@ -122,20 +122,24 @@ export function toStreamSocketUrl(url: string, lastEventId?: string | null): str
 }
 
 /**
- * Call the handler registered for one frame's event, and nothing else.
+ * Call the handler registered for one event name, and nothing else.
  *
- * The event name is a string off the wire and the handler map is a plain
- * object, so a bare `handlers[event]` also reaches every member the map merely
+ * The event name comes from the stream and the handler map is a plain object,
+ * so a bare `handlers[event]` also reaches every member the map merely
  * INHERITS: `constructor` invokes `Object`, `__proto__` is not callable at all
- * and throws out of the message loop, killing the stream. Nothing legitimate is
- * lost by requiring an own, callable property — that is exactly what
- * `StreamManager` registers.
+ * and throws out of the loop that reads events, killing the stream. Nothing
+ * legitimate is lost by requiring an own, callable property — that is exactly
+ * what `StreamManager` registers.
+ *
+ * Shared with `transport-stream-pump.ts`, which feeds the same handler maps
+ * from the embedded Transport instead of a socket, so both readers of those
+ * maps dispatch by one rule.
  *
  * @param handlers - The caller's handler map, keyed by event name.
  * @param event - The event name the frame carried.
  * @param data - The frame payload to hand the handler.
  */
-function dispatchFrame(
+export function dispatchFrame(
   handlers: Record<string, (data: unknown) => void>,
   event: string,
   data: unknown
