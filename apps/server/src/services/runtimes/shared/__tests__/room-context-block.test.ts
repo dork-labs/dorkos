@@ -1902,3 +1902,184 @@ describe("the room's own files, and how work gets out of a tree (spec §3.7)", (
     expect(preamble).not.toContain('>');
   });
 });
+
+describe('what a tool-only turn is told about where its answer goes (§D11, DOR-1643)', () => {
+  /** The same context, put in a direct message under the flip. */
+  function dmUnderTheFlip(): RoomContextData {
+    return context({
+      room: { id: ROOM_ID, kind: 'dm', name: 'Ana Reyes', bridged: false },
+      replyMode: 'tool-only',
+    });
+  }
+
+  it('says the answer it works out is the thing it posts', () => {
+    // The measured failure this closes: an agent formed a complete answer,
+    // wrote it back into a session nobody reads, and believed it had replied.
+    // "Answering is not optional" alone did not stop that, because the agent
+    // had answered — somewhere nobody could see.
+    const block = formatRoomContext(dmUnderTheFlip(), { nonce: NONCE });
+    expect(block).toContain(
+      'Whatever answer you work out this turn, posting it is how you answer them'
+    );
+    expect(block).toContain('an answer you only write back in this session is one they never got');
+  });
+
+  it('still lets a message that asked nothing end in a reaction or in silence', () => {
+    // The other half of the same inversion: the obligation must not read as an
+    // instruction to reply to "thanks!".
+    const block = formatRoomContext(dmUnderTheFlip(), { nonce: NONCE });
+    expect(block).toContain(
+      'If their message asked nothing at all, a reaction on it, or nothing, is the whole reply.'
+    );
+    // And the closing directive tests the same carve-out FIRST, before the
+    // call: an imperative with a trailing exception got a pleasantry posted at
+    // a bare "thanks!".
+    expect(block).toContain(
+      '- They asked for nothing back at all — no question, no request: a thanks, an ' +
+        'acknowledgment, a heads-up. Post nothing.'
+    );
+    // The banned phrasings are quoted rather than described: "post nothing"
+    // alone lost twice to a model posting a warm sign-off.
+    expect(block).toContain(
+      '"Anytime", "you\'re welcome", "let me know if you need anything else"'
+    );
+    // And the speaking branch covers a REQUEST, not only a question: the
+    // ambiguous seed was read as work to start and answered nobody.
+    expect(block).toContain('They asked you anything at all — a question, or to look at ');
+  });
+
+  it('says none of it in a channel, where silence is often right', () => {
+    const block = formatRoomContext(context({ replyMode: 'tool-only' }), { nonce: NONCE });
+    expect(block).toContain('Nothing you write back this turn is posted into #build');
+    expect(block).not.toContain('This is a direct message, so answering is not optional');
+  });
+
+  it('says none of it in text mode, where the reply posts itself', () => {
+    // A DM whose words post themselves needs no instruction about a tool, and
+    // an instruction that told it otherwise would be false.
+    const block = formatRoomContext(
+      context({ room: { id: ROOM_ID, kind: 'dm', name: 'Ana Reyes', bridged: false } }),
+      { nonce: NONCE }
+    );
+    expect(block).not.toContain('This is a direct message, so answering is not optional');
+    expect(block).toContain('Whatever you say this turn is posted into Ana Reyes');
+  });
+});
+
+describe('the closing directive a tool-only turn reads last (DOR-1643)', () => {
+  /** The same channel turn, triggered by a message that did NOT name the agent. */
+  function unaddressedChannel(): RoomContextData {
+    return context({
+      replyMode: 'tool-only',
+      addressing: {
+        responseMode: 'mention-only',
+        engagedUntil: null,
+        engagedPostsLeft: null,
+        addressedNow: false,
+      },
+    });
+  }
+
+  it('is the very last thing in a direct message under the flip', () => {
+    // Position is the assertion. The preamble's version of this sits above the
+    // roster, the headroom line and the whole fenced backlog; the live probe
+    // that read it still narrated its answer away.
+    const block = formatRoomContext(
+      context({
+        room: { id: ROOM_ID, kind: 'dm', name: 'Ana Reyes', bridged: false },
+        replyMode: 'tool-only',
+      }),
+      { nonce: NONCE }
+    );
+    expect(block.trimEnd().endsWith('leaves them in silence.')).toBe(true);
+    expect(block).toContain('Before you end this turn, exactly one of these two:');
+    expect(block).toContain('That call is the only thing they will ever see');
+  });
+
+  it('leaves the decision to speak with the agent in a channel nobody named it in', () => {
+    const block = formatRoomContext(unaddressedChannel(), { nonce: NONCE });
+    expect(
+      block.trimEnd().endsWith('Anything you write instead of calling it reaches nobody.')
+    ).toBe(true);
+    expect(block).toContain('- You have nothing to add: post nothing, and end the turn.');
+  });
+
+  it('does not offer bare silence to an agent a channel message just named', () => {
+    // This directive is the last line before the person's words, which is the
+    // strongest position in the block — and "post nothing, and end the turn"
+    // read from there by an agent somebody has just named licenses exactly the
+    // disappearing act the room-participation spec is written against.
+    const block = formatRoomContext(context({ replyMode: 'tool-only' }), {
+      nonce: NONCE,
+      toolPrefix: 'mcp__dorkos__',
+    });
+    expect(block).not.toContain('You have nothing to add: post nothing');
+    expect(block).toContain(
+      '- You are not going to answer: react to their message, or call mcp__dorkos__' +
+        `post_to_room(roomId: "${ROOM_ID}", text: <a short "I don't know">)`
+    );
+    expect(block).toContain('Vanishing is not one of your options here.');
+  });
+
+  it('spells the call in the decline branch too, not only in the answer branch', () => {
+    // The feature's own lesson, applied rather than restated: leaving the agent
+    // to assemble the call is the exact step the probes show it does not take,
+    // and declining is the ending it reaches for when least sure of itself.
+    const block = formatRoomContext(context({ replyMode: 'tool-only' }), {
+      nonce: NONCE,
+      toolPrefix: 'mcp__dorkos__',
+    });
+    expect(block).toContain(`text: <a short "I don't know">)`);
+    expect(block).toContain('text: <your answer>)');
+  });
+
+  it('still lets a named agent answer with a reaction alone', () => {
+    // A-06 turns on "just ack this" being answerable with one emoji and
+    // nothing else. The addressed branch forbids VANISHING, not reacting — a
+    // reaction is visible, which is the whole property being protected.
+    const block = formatRoomContext(context({ replyMode: 'tool-only' }), { nonce: NONCE });
+    expect(block).toContain('react to their message');
+  });
+
+  it('names the posting tool under the prefix the caller supplied', () => {
+    // The whole point of naming it: a model holding a hundred-odd tools should
+    // not have to work out which one "the posting tool" is at the moment it is
+    // deciding whether to bother.
+    const block = formatRoomContext(
+      context({
+        room: { id: ROOM_ID, kind: 'dm', name: 'Ana Reyes', bridged: false },
+        replyMode: 'tool-only',
+      }),
+      { nonce: NONCE, toolPrefix: 'mcp__dorkos__' }
+    );
+    expect(block).toContain(
+      `or to look at something: call mcp__dorkos__post_to_room(roomId: "${ROOM_ID}", ` +
+        `text: <your answer>)`
+    );
+  });
+
+  it("takes OpenCode's different spelling from the caller rather than guessing", () => {
+    // claude-code and codex say `mcp__dorkos__post_to_room`; OpenCode says
+    // `dorkos_post_to_room`. A hard-coded name would be uncallable on one of
+    // the three, which is the DOR-1292 defect.
+    const block = formatRoomContext(context({ replyMode: 'tool-only' }), {
+      nonce: NONCE,
+      toolPrefix: 'dorkos_',
+    });
+    expect(block).toContain(`call dorkos_post_to_room(roomId: "${ROOM_ID}", text: <your answer>)`);
+    expect(block).not.toContain('mcp__dorkos__');
+  });
+
+  it('describes the tool rather than naming it when no prefix was supplied', () => {
+    // The honest fallback: a caller with no prefix to give still gets a true
+    // sentence, and no runtime is told a name that is wrong for it.
+    const block = formatRoomContext(context({ replyMode: 'tool-only' }), { nonce: NONCE });
+    expect(block).toContain(`the posting tool, with roomId "${ROOM_ID}"`);
+    expect(block).not.toContain('post_to_room');
+  });
+
+  it('says nothing at all in text mode, where the turn posts itself', () => {
+    const block = formatRoomContext(context(), { nonce: NONCE });
+    expect(block).not.toContain('Before you end this turn');
+  });
+});

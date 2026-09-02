@@ -88,10 +88,13 @@
  * ### The DM drill, in the five parts the README requires
  *
  * 1. **The seed.** In `apps/server/src/services/runtimes/shared/room-context-block.ts`,
- *    delete the `data.replyMode === 'tool-only' && data.room.kind !== 'channel'`
- *    block — the paragraph beginning "This is a direct message, so answering is
- *    not optional". That is the one instruction the whole DM reversal rests on
- *    (spec §D11, "One instruction added, flag-ON").
+ *    delete the `data.replyMode === 'tool-only'` push at the END of
+ *    `formatRoomContext` — the closing directive, "Before you end this turn,
+ *    exactly one of these two". **Not the D11 paragraph this step used to name.**
+ *    That paragraph was present, and reworded to state the association outright,
+ *    through every one of the DOR-1643 failing runs; the directive is what
+ *    carries the behaviour, and seeding the paragraph now would be a drill that
+ *    reds for nothing and proves nothing.
  * 2. **The command**, in full. `--isolation child-process` is load-bearing: the
  *    docker tier cannot see the local `claude` sign-in.
  *
@@ -118,9 +121,104 @@
  *    only quarantined cases always exits non-zero, so the exit code says nothing.
  *
  *
+ * ## What closed the inversion (2026-09-02, DOR-1643)
+ *
+ * The findings below stand as the record of what was measured on 2026-08-29 and
+ * why. **They describe the prompt as it was, not as it is.** The inversion they
+ * name was closed by a prompt change in
+ * `apps/server/src/services/runtimes/shared/room-context-block.ts`, and what
+ * closed it is worth more than the fix: three rewords that were all *true*
+ * changed nothing at all.
+ *
+ * - Stating the association in prose — "the answer you formed is the thing you
+ *   post", in both `buildToolOnlyBlock` and the D11 DM line — did not move it.
+ *   The turn still wrote a complete answer with zero tool calls.
+ * - Restating it as the LAST line of `<room_context>`, where nothing sits
+ *   between it and the person's message, did not move it either.
+ * - Naming the tool in that line (`mcp__dorkos__post_to_room`, via a prefix the
+ *   adapter supplies) did not move it.
+ * - Spelling the CALL, with this room's id already in it —
+ *   `…post_to_room(roomId: "01M…", text: <your answer>)` — moved it on the first
+ *   try, and the turn that had taken 41s to narrate posted in 13s.
+ *
+ * So the gap was never comprehension. A model that has decided its answer is
+ * written still has to assemble a call to send it, and every step between
+ * deciding and calling is a step at which it stops. Removing the assembly is
+ * what worked.
+ *
+ * Two further things were paid for in reds, and both are ordering rather than
+ * content. A single unconditional imperative answered a bare "thanks!" with
+ * "Welcome! Let me know if you want to dig into the importer details." —
+ * the pleasantry, reproduced. Inverting it so the exception came first restored
+ * restraint and lost the answer. Neither ordering is the fix: the directive is
+ * now TWO branches, each ending in its own concrete action, with the answering
+ * one last. And the quiet branch quotes the phrasings it forbids, because
+ * "post nothing" lost twice to a model that did not count a warm sign-off as a
+ * message.
+ *
+ * **The CHANNEL quiet branch is gated on `addressing.addressedNow`**, which is a
+ * review finding rather than a measured one and is worth marking as such. "You
+ * have nothing to add: post nothing, and end the turn." is right for the
+ * overheard conversation E7 makes silence free in; read from the last line
+ * before a message that just NAMED the agent, it licenses the disappearing act
+ * `specs/room-participation` is written against. The addressed branch still
+ * allows a reaction — A-06 needs "just ack this" answerable with one emoji and
+ * nothing else — and forbids only vanishing.
+ *
+ * ### The post-review confirmation round (2026-09-02, after the addressing gate)
+ *
+ * Twelve cases, one run each: **9 pass, 3 red, and none of the three reds is the
+ * behaviour its case is named for.**
+ *
+ * | Case | Result | Why |
+ * | ---- | ------ | --- |
+ * | the three DM answer-rate seeds | **3 of 3 pass** | — |
+ * | `rooms-dm-restraint-on-a-bare-thanks` | red | ONLY `openerLanded` failed; the restraint oracle passed and nothing was posted after "thanks!". The unanswerable-opener defect, twice over |
+ * | `rooms-channel-mentioned-question-posts` | pass | — |
+ * | `rooms-channel-yields-when-a-human-answered` | red | the sandbox confound: the agent posted "This is a greenfield project so I'm starting fresh", which is the host machine's `SessionStart` hook talking, not conduct |
+ * | `rooms-ack-only-reacts-under-the-flip` | pass | — |
+ * | `rooms-dm-reaction-can-be-the-whole-answer` | pass | — |
+ * | `rooms-thinking-stays-in-the-session` | pass | — |
+ * | `rooms-answers-three-questions-in-one-message` | pass | — |
+ * | `rooms-ambient-silence-is-free-for-a-model-too` | red | the restraint oracle PASSED — the transcript reasons "they're not asking me anything… I should post nothing and end the turn", which is the unaddressed quiet branch working. Its OPENER narrated instead of posting |
+ * | `rooms-declines-visibly-rather-than-vanishing` | pass | — |
+ *
+ * **The ambient red is the one worth not explaining away.** It is the narration
+ * failure, appearing once on an ADDRESSED channel message, in a round where the
+ * three sibling addressed-channel cases all posted through the tool. The
+ * addressing gate is not what produced it: the branch that gate changed forbids
+ * bare silence *more* strongly than the text it replaced, and the outcome was
+ * neither branch. One instance is not a rate, and the honest reading is that the
+ * channel speak branch is weaker than the DM one — it lacks the DM's "that call
+ * is the only thing they will ever see" — and may want the same force. That is a
+ * hypothesis with one data point behind it, not a finding.
+ *
+ * **Where DM answer-rate stands: 3 of 3 seeds, three separate rounds, plus a
+ * standalone green on the direct-question seed.** DM restraint is the softer
+ * number — 4 passes, 3 fails and one 313s harness timeout across the whole
+ * iteration — and its case carries a defect of its own that is nobody's conduct:
+ * its OPENER ("did the importer fix go out in yesterday's release?") is not
+ * answerable from the message, so a sandbox agent that correctly says nothing
+ * trips `openerLanded` before restraint is ever measured. That accounts for its
+ * last two reds outright — in both, the restraint oracle itself passed. It is the
+ * same defect this file already records against two other cases, and it is owed
+ * the same fix; until it is paid, this case's number understates the behaviour.
+ *
+ * ### The mutation drill, run live (DOR-1643)
+ *
+ * Deleting the closing directive — the `data.replyMode === 'tool-only'` push at
+ * the end of `formatRoomContext` — and re-running the three answer-rate seeds
+ * took them from 3 of 3 to 1 of 3: `rooms-dm-answers-a-direct-question` red,
+ * `rooms-dm-answers-an-ambiguous-request` red, `rooms-dm-answers-an-implied-question`
+ * green. `roomTurnRanFor` stayed green in every one, so each red is the post
+ * missing rather than the turn never starting. A measurable drop, which is what
+ * the recipe below asks for — and note it is now the CLOSING DIRECTIVE that the
+ * drill has to seed, not the D11 paragraph the recipe names: the paragraph was
+ * present and strengthened through all three of the failing runs above.
+ *
  * ## What the first live runs measured (2026-08-29, `claude-code-cheap` / Haiku)
  *
- * **Graduation criteria 2 and 3 are NOT met, and the reason is sharper than
+ * **Graduation criteria 2 and 3 were NOT met then, and the reason is sharper than
  * "the model is bad at this".** Seven credentialed runs, every one on
  * `claude-haiku-4-5` through `local-claude-login` (both fields are in each
  * `results.json`). Every one reported `unmetered` — a rooms drive collects the
@@ -260,24 +358,29 @@
  * flip back ON after every case, which is exactly backwards for the one person
  * this recipe is for.
  *
- * **What this suite is therefore for right now**: it is the instrument that says
- * the flip must not graduate yet, and it says where to look — the DM path
+ * **What this suite was for at that point**: it was the instrument that said the
+ * flip must not graduate yet, and it said where to look — the DM path
  * specifically, since run 7 shows a mentioned channel question answered through
  * the tool under the same block. Run 3 is the control that keeps the reading
- * honest: the same agent, same question, flip off, answers in 15 seconds.
+ * honest: the same agent, same question, flip off, answers in 15 seconds. That
+ * is what it was for, and it did it: DOR-1643 is the work it pointed at, and the
+ * section at the top of this doc is what came back. **It does not clear
+ * graduation** — criterion 2 is written across all THREE runtimes, and only
+ * claude-code has been measured; the Codex and OpenCode legs need their own
+ * `DORKOS_EVALS_PAID_PROVIDER` authorization.
  *
- * **Which drills ran live**: the DM mandatory drill is *superseded* by a stronger
- * control. Its recipe removes the DM instruction to see whether answer-rate
- * drops; answer-rate is already 0 of 2 DM runs WITH the instruction — and 0 of
- * the 1 of those that asked an answerable question — so the mutation has no
- * headroom to measure and would be a drill against a floor. Run 3 (flip OFF) is
- * the discriminating control that recipe was reaching for, and it is recorded
- * above. The recipe stays written for the day the cases go green, which is when
- * it becomes meaningful again. Every other case's drill is specified and NOT run
- * live — including the channel floor's, whose case now passes: a mutation drill
- * there has become meaningful and is the next one worth paying for, since a green
- * that survives having its instruction removed is a green about the model rather
- * than about the feature.
+ * **Which drills ran live**: the DM mandatory drill ran on 2026-09-02, against
+ * the closing directive rather than the D11 paragraph, and took answer-rate from
+ * 3 of 3 seeds to 1 of 3 — recorded at the top of this doc. Until then it was
+ * *superseded* by a stronger control, and the reason it was is worth keeping:
+ * answer-rate was 0 of 2 DM runs WITH the instruction, so the mutation had no
+ * headroom and would have been a drill against a floor. Run 3 (flip OFF) was the
+ * discriminating control it was reaching for. Once the cases went green the
+ * recipe became meaningful again, which is exactly when it was paid for. Every
+ * other case's drill is specified and NOT run live — including the channel
+ * floor's, whose case now passes: a mutation drill there has become meaningful
+ * and is the next one worth paying for, since a green that survives having its
+ * instruction removed is a green about the model rather than about the feature.
  *
  * @module evals/suite/rooms-judgment
  */
@@ -550,11 +653,24 @@ export const roomsDmAnswersImpliedQuestionCase: EvalCase = dmAnswerRateCase(
  * activity" — and `agent_declined` must not fire either, because a reaction
  * discharges the obligation.
  *
+ * **Its OPENER carries the unanswerable-question defect, and that is the first
+ * thing to fix here (DOR-1643).** "did the importer fix go out in yesterday's
+ * release?" is not answerable from the message by a fresh sandbox agent, so a
+ * turn that correctly says nothing trips `openerLanded` and the case reds before
+ * restraint has been measured at all — observed live on 2026-09-02. It is the
+ * same defect {@link dmAnswerRateCase} records against two other cases, and it
+ * is why this case's numbers are noisier than the answer-rate ones: 3 passes, 2
+ * fails and one harness timeout across the DOR-1643 iteration, with at least one
+ * of the fails owed to the opener rather than to a pleasantry. Give the opener
+ * its own facts, exactly as the three seeds above carry theirs.
+ *
  * Drill: seed `apps/server/src/services/runtimes/shared/room-tools-context.ts`
  * by deleting the "When nobody asked you, silence costs nothing" paragraph from
  * `buildToolOnlyBlock`, and re-run. STRUCTURAL: the turn runs either way.
  * VARIABLE: whether the model posts a courtesy reply without the permission to
- * stay quiet. **Specified, not yet run live.**
+ * stay quiet. **Specified, not yet run live** — and worth pairing with the
+ * closing directive's quiet branch, which is where the quoted prohibition on
+ * "Anytime" / "you're welcome" now lives.
  */
 export const roomsDmRestraintOnThanksCase: EvalCase = {
   id: 'rooms-dm-restraint-on-a-bare-thanks',

@@ -15,6 +15,7 @@ import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { AdditionalContextEntry } from '@dorkos/shared/additional-context';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { GEN_UI_CONTEXT } from '../shared/gen-ui-context.js';
+import { OPENCODE_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
 import { formatRoomContext } from '../shared/room-context-block.js';
 import { formatSeedContext } from '../shared/seed-context-block.js';
 import { formatStagedContext } from '../shared/staged-context-block.js';
@@ -69,7 +70,11 @@ function renderContextEntry(entry: AdditionalContextEntry): string {
 function renderContextBody(entry: AdditionalContextEntry): string {
   switch (entry.kind) {
     case 'room_context':
-      return formatRoomContext(entry.data);
+      // OpenCode builds `sanitize(server) + "_" + sanitize(tool)` rather than
+      // the `mcp__server__tool` the other two use, so the tool-only closing
+      // directive can only name the posting tool if this adapter says how
+      // (DOR-1292).
+      return formatRoomContext(entry.data, { toolPrefix: OPENCODE_DORKOS_TOOL_PREFIX });
     case 'seed_context':
       return formatSeedContext(entry.data);
     case 'staged_context':

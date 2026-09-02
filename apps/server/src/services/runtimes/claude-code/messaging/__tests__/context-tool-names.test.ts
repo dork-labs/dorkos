@@ -123,6 +123,8 @@ import { composeCapabilityRegistryForDocs } from '../../../../core/self-descript
 import { OPERATING_SKILLS_PACK, TOOL_NAME_NOTE } from '@dorkos/operating-skills';
 import { GEN_UI_CONTEXT } from '../../../shared/gen-ui-context.js';
 import { buildRoomToolsBlock } from '../../../shared/room-tools-context.js';
+import { formatRoomContext } from '../../../shared/room-context-block.js';
+import type { RoomContextData, RoomReplyMode } from '@dorkos/shared/additional-context';
 import {
   CODEX_DORKOS_TOOL_PREFIX,
   OPENCODE_DORKOS_TOOL_PREFIX,
@@ -296,6 +298,81 @@ async function claudeCodeProse(): Promise<{ prose: string; shared: string[] }> {
  */
 function identifierTokens(text: string): string[] {
   return text.match(/[a-z][a-z0-9_]*/g) ?? [];
+}
+
+/**
+ * A room context in one of the four shapes the block branches on.
+ *
+ * Deliberately MINIMAL in everything the tool-name scan does not read, and
+ * deliberately complete in everything it does: a pending message so the fence
+ * renders, a thread left null so the non-thread wording is the one scanned, and
+ * both room kinds reachable so each half of the closing directive is covered.
+ *
+ * @param kind - Channel or direct message.
+ * @param replyMode - Whether the turn's own words are posted.
+ * @param addressedNow - Whether the triggering message named this agent. The
+ *   channel closing directive branches on it, and the UNADDRESSED branch is the
+ *   one a matrix pinned to `true` never renders.
+ * @returns The fixture.
+ */
+function roomContextFixture(
+  kind: 'dm' | 'channel',
+  replyMode: RoomReplyMode,
+  addressedNow = true
+): RoomContextData {
+  return {
+    room: {
+      id: '01M0ROOM0000000000000000BD',
+      kind,
+      name: kind === 'dm' ? 'Dorian' : '#build',
+      bridged: false,
+    },
+    thread: null,
+    members: [
+      { handle: 'dorian', displayName: 'You', isPerson: true, isSelf: false, origin: 'local' },
+      {
+        handle: 'ana',
+        displayName: 'Ana',
+        isPerson: false,
+        isSelf: true,
+        origin: 'local',
+        responseMode: 'always',
+      },
+    ],
+    working: [],
+    pending: [
+      {
+        id: '01M0DEPLOY000000000000000B',
+        authorHandle: 'dorian',
+        authorDisplayName: 'You',
+        authorIsPerson: true,
+        authorOrigin: 'local',
+        kind: 'post',
+        at: '2026-07-28T14:01:00.000Z',
+        text: 'can someone check the deploy',
+        mentionsMe: false,
+        attachments: [],
+        topicLabel: null,
+      },
+    ],
+    pendingTruncated: false,
+    ownRecent: [],
+    acknowledgments: [],
+    triggerEntryId: '01M0TRIGGER00000000000000A',
+    triggerAttachments: [],
+    addressing: {
+      responseMode: 'always',
+      engagedUntil: null,
+      engagedPostsLeft: null,
+      addressedNow,
+    },
+    budget: {
+      automaticRepliesLeftInThisRoomThisHour: 41,
+      automaticRepliesLeftInTotalThisHour: 187,
+      repliesLeftInThisChain: 2,
+    },
+    replyMode,
+  };
 }
 
 describe('the claude-code prompt names tools the way the runtime exposes them', () => {
@@ -551,6 +628,16 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       // strictly stronger, because it also proves each prefix resolves to real
       // advertised tools rather than merely proving the source is quiet.
       if (name === 'room-tools-context.ts') continue;
+      // `room-context-block.ts` joined it for the same structural reason, and
+      // the same trade (DOR-1643). Its tool-only closing directive interpolates
+      // `${toolPrefix}post_to_room` from a prefix the CALLER supplies — the
+      // identical template shape, flagged by a raw-source scan for prose that is
+      // correct on every runtime. What it is exempted in exchange for is
+      // stronger than a source scan: `room-context-runtime-neutrality.test.ts`
+      // renders a tool-only turn through all three real adapters and checks the
+      // name each one actually emits, which also proves each adapter passes its
+      // own prefix rather than defaulting to none.
+      if (name === 'room-context-block.ts') continue;
       const source = stripComments(await readFile(join(dir, name), 'utf8'));
       if (source.includes(IN_SESSION_TOOL_PREFIX)) {
         offenders.push(`${name}: spells ${IN_SESSION_TOOL_PREFIX}`);
@@ -634,6 +721,96 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // rather than by an agent calling a tool that does not exist.
     expect(OPENCODE_DORKOS_TOOL_PREFIX).not.toBe(IN_SESSION_TOOL_PREFIX);
     expect(CODEX_DORKOS_TOOL_PREFIX).toBe(IN_SESSION_TOOL_PREFIX);
+  });
+
+  it('names the posting tool correctly in every RENDERED room context (DOR-1643)', async () => {
+    // **The other half of `room-context-block.ts`'s source-scan exemption, and
+    // it has to be a SCAN rather than a handful of pinned strings.** The
+    // exemption bought that module the same latitude `room-tools-context.ts`
+    // has — its closing directive interpolates `${toolPrefix}post_to_room` from
+    // a caller-supplied prefix, which a raw-source scan sees as a bare name. But
+    // the scan it replaced covered EVERY advertised tool across the whole
+    // 1,439-line module, and pinning three literals in a neutrality test does
+    // not: an unprefixed `react_to_room_entry` added anywhere else in the block
+    // — the preamble, the fence notes, the budget lines — would sail past a
+    // literal check while the old source scan caught it. So this walks the
+    // rendered output with the same `namedAsCallable` the source scan uses.
+    //
+    // Rendered rather than scanned at the source for the one reason the
+    // exemption exists: only a render resolves the prefix, and only a render
+    // proves the prefix resolves to a tool the server actually serves.
+    const advertised = await advertisedToolNames();
+    const prefixes = [
+      ['claude-code', IN_SESSION_TOOL_PREFIX],
+      ['codex', CODEX_DORKOS_TOOL_PREFIX],
+      ['opencode', OPENCODE_DORKOS_TOOL_PREFIX],
+    ] as const;
+
+    // Every shape the block branches on, because the closing directive and the
+    // D11 line are each rendered by only one of them. A fixture that covered
+    // only the DM would leave the channel directive unscanned, and a fixture
+    // that covered only `'tool-only'` would leave the text-mode preamble
+    // unscanned — and text mode is where most turns still are.
+    // The fifth tuple is not symmetry for its own sake. The channel directive
+    // branches on `addressing.addressedNow`, so a matrix pinned to `true` never
+    // renders the UNADDRESSED quiet branch at all — and a mutation of that
+    // branch passed this scan silently until it was added.
+    const shapes = [
+      ['dm, tool-only', 'dm', 'tool-only', true],
+      ['channel, tool-only, addressed', 'channel', 'tool-only', true],
+      ['channel, tool-only, unaddressed', 'channel', 'tool-only', false],
+      ['dm, text', 'dm', 'text', true],
+      ['channel, text', 'channel', 'text', true],
+    ] as const;
+
+    for (const [runtime, prefix] of prefixes) {
+      for (const [shape, kind, replyMode, addressedNow] of shapes) {
+        const rendered = formatRoomContext(roomContextFixture(kind, replyMode, addressedNow), {
+          nonce: 'aaaa1111',
+          toolPrefix: prefix,
+        });
+        const where = `the ${runtime} room context (${shape})`;
+
+        // 1. Nothing is named bare. A bare name is uncallable on every runtime
+        //    — the DOR-1292 defect — and this is the assertion the reviewer's
+        //    mutation (an unprefixed `react_to_room_entry` in the preamble)
+        //    has to red.
+        expect(
+          [...new Set(namedAsCallable(rendered, advertised))].sort(),
+          `${where} names these tools bare. Interpolate the prefix, or describe the verb.`
+        ).toEqual([]);
+
+        // 2. Every prefixed name resolves to a tool the server really serves,
+        //    so a rename cannot leave the prose behind.
+        expect(
+          [
+            ...new Set(
+              identifierTokens(rendered)
+                .filter((token) => token.startsWith(prefix))
+                .map((token) => token.slice(prefix.length))
+                .filter((name) => !advertised.has(name))
+            ),
+          ].sort(),
+          `${where} teaches these tools, and the server does not have them.`
+        ).toEqual([]);
+      }
+
+      // 3. And the tool-only shapes actually NAME the posting tool under this
+      //    prefix — without this, the two checks above are satisfied by a block
+      //    that names nothing, which is how this kind of guard goes vacuous.
+      //    That is exactly what the fallback phrasing would do, silently, if an
+      //    adapter ever stopped passing its prefix.
+      for (const kind of ['dm', 'channel'] as const) {
+        const rendered = formatRoomContext(roomContextFixture(kind, 'tool-only'), {
+          nonce: 'aaaa1111',
+          toolPrefix: prefix,
+        });
+        expect(
+          rendered,
+          `the ${runtime} ${kind} directive does not name the posting tool`
+        ).toContain(`${prefix}post_to_room(roomId:`);
+      }
+    }
   });
 
   it('makes every operating skill say its tool names are endings', async () => {
