@@ -274,7 +274,7 @@ if (isMain) {
   const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
   const decisionsDir = join(repoRoot, 'decisions');
   if (existsSync(join(decisionsDir, 'manifest.json'))) {
-    let lines = [];
+    let lines;
     try {
       lines = formatReport(findDrift(decisionsDir));
     } catch {
