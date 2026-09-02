@@ -251,6 +251,7 @@ export class NotificationService {
    */
   unresolvedStanding(kind: StandingNotificationKind): Array<{
     subjectId: string;
+    createdAt: string;
     payload: unknown;
   }> {
     return this.store.unresolvedStandingSubjects(kind);
@@ -581,6 +582,7 @@ export async function resolveStanding<K extends StandingNotificationKind>(
  */
 export function unresolvedStanding(kind: StandingNotificationKind): Array<{
   subjectId: string;
+  createdAt: string;
   payload: unknown;
 }> {
   if (!current) {

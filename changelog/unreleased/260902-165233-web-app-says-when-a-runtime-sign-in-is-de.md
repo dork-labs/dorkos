@@ -2,6 +2,7 @@
 covers:
   - 'feat(client): the web app says when a runtime sign-in is dead (DOR-1680)'
   - 'fix(server,client): a restart can no longer strand the sign-in banner (DOR-1680)'
+  - 'fix(server): close sign-in rows that predate the episode stamp (DOR-1680)'
 ---
 
 ### Added

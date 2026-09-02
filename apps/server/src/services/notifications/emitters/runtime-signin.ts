@@ -95,7 +95,14 @@ export function watchRuntimeSigninFailures(): () => void {
   // this process made: `noteSigninFailure` returns early while no sink is
   // installed, which is the same reason nothing is claimed before boot wires
   // one. See `retireOrphanedEpisodes` below.
-  const orphaned = unresolvedStanding('signin.required');
+  //
+  // Wrapped, because this is the composition root's thread: a locked database
+  // (SQLITE_BUSY, another process mid-write at exactly this moment) would
+  // otherwise throw out of `index.ts`'s boot sequence and take the whole
+  // installation of this watch with it — leaving every runtime UNWATCHED over a
+  // tidy-up that was optional. A repair that could not run is worth a log line;
+  // it is not worth the feature it is repairing.
+  const orphaned = readOrphanedEpisodes();
 
   setRuntimeSigninSink(({ runtime, edge, since }) => {
     if (edge === 'failing') {
@@ -115,6 +122,31 @@ export function watchRuntimeSigninFailures(): () => void {
 
   void retireOrphanedEpisodes(orphaned);
   return () => setRuntimeSigninSink(null);
+}
+
+/**
+ * The unresolved raise rows, or none when the store could not be asked.
+ *
+ * @returns What {@link unresolvedStanding} found, or an empty list on any read
+ *   failure — boot carries on either way.
+ */
+function readOrphanedEpisodes(): OrphanedEpisode[] {
+  try {
+    return unresolvedStanding('signin.required');
+  } catch (err) {
+    logger.warn('[Runtimes] Could not look for sign-in episodes left open by a restart', { err });
+    return [];
+  }
+}
+
+/** One raise row this process found with nothing after it. */
+interface OrphanedEpisode {
+  /** The runtime it is about — `subjectId` on the row. */
+  subjectId: string;
+  /** When the row was written. Always present; it is a column. */
+  createdAt: string;
+  /** What the row was written from, when it can still be read. */
+  payload: unknown;
 }
 
 /**
@@ -153,6 +185,26 @@ export function watchRuntimeSigninFailures(): () => void {
  * stays quiet and no banner is raised. What it does is stop the history claiming
  * the present.
  *
+ * ## Why a row with no episode stamp is closed anyway
+ *
+ * **The oldest rows in this table do not carry one.** DOR-1654 shipped
+ * `signin.required` as a plain event whose payload was `{ runtime }` and nothing
+ * else; `since` arrived with DOR-1657. Every row written in between — and this
+ * repo's own dogfood install ran for seventeen hours on that build — has no
+ * episode stamp, and so does any row whose stored JSON no longer parses. An
+ * earlier draft of this function skipped exactly those rows on the grounds that
+ * the episode key is what files a row, its timer and its resolution under one
+ * identity. That reasoning was backwards: it protected a key nothing is left to
+ * match, at the price of the only rows that are guaranteed to be permanent.
+ *
+ * Nothing needs the key to match here. `dedupeWindowMs` is 0, so the resolution
+ * cannot be suppressed by the raise; the escalation timer it would have
+ * cancelled died with the process that armed it (`cancelEscalationByKey` on a
+ * key with no timer is a no-op); and no surface draws a standing banner from
+ * this kind's `subjectKey` — the desktop draws from the ROW. So the row's own
+ * `createdAt` stands in when the payload has no stamp: always present, being a
+ * column, and within milliseconds of what the stamp would have said anyway.
+ *
  * ## The one row it will not close
  *
  * A runtime this process has ALREADY seen fail keeps its row: `isSigninFailing`
@@ -164,26 +216,30 @@ export function watchRuntimeSigninFailures(): () => void {
  * still be closed — at boot, before any runtime has been asked to do anything,
  * that is not a reachable window, and the next failing turn corrects it.
  *
+ * One row's failure is its own: the write is per-row, so a store that refuses
+ * one does not cost the others their repair.
+ *
  * @param orphaned - The unresolved raise rows found before the sink was wired.
  */
-async function retireOrphanedEpisodes(
-  orphaned: Array<{ subjectId: string; payload: unknown }>
-): Promise<void> {
-  for (const { subjectId, payload } of orphaned) {
-    const since = episodeStart(payload);
-    // No payload, no episode key — and the key is what files the row, the timer
-    // and the resolution under one identity. Skipping is the honest response to
-    // a row this process cannot address.
-    if (since === null) continue;
+async function retireOrphanedEpisodes(orphaned: OrphanedEpisode[]): Promise<void> {
+  for (const { subjectId, createdAt, payload } of orphaned) {
     if (isSigninFailing(subjectId)) continue;
+    const since = episodeStart(payload) ?? createdAt;
     logger.info('[Runtimes] Closing a sign-in episode a restart left open', {
       runtime: subjectId,
     });
-    await resolveStanding(
-      'signin.required',
-      { runtime: subjectId, since, clearedAt: new Date().toISOString(), closedAtBoot: true },
-      { outcome: 'cleared' }
-    );
+    try {
+      await resolveStanding(
+        'signin.required',
+        { runtime: subjectId, since, clearedAt: new Date().toISOString(), closedAtBoot: true },
+        { outcome: 'cleared' }
+      );
+    } catch (err) {
+      logger.warn('[Runtimes] Could not close a sign-in episode left open by a restart', {
+        err,
+        runtime: subjectId,
+      });
+    }
   }
 }
 
@@ -192,7 +248,9 @@ async function retireOrphanedEpisodes(
  * carry one this process can read.
  *
  * Narrowed rather than cast: the payload comes back off disk as `unknown`, and
- * it may have been written by an older version of this file.
+ * it may have been written by an older version of this file — the rows DOR-1654
+ * wrote carry `{ runtime }` and nothing else. `null` is normal, not exceptional;
+ * the caller falls back to the row's `createdAt`.
  */
 function episodeStart(payload: unknown): string | null {
   if (typeof payload !== 'object' || payload === null) return null;

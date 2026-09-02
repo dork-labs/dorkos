@@ -381,17 +381,27 @@ export class NotificationStore {
    * The payload comes back raw: this store never parses one, and the caller
    * knows the shape its own kind writes.
    *
+   * **`createdAt` rides along because the payload cannot be relied on.** Rows
+   * written by an older version of a kind carry an older payload shape — the
+   * first `signin.required` rows ever written (DOR-1654) had no episode stamp in
+   * theirs at all — and a row whose JSON no longer parses carries nothing. A
+   * caller that needs a timestamp to close a row with must have one that is
+   * always there, and the row's own creation time is that: a column, never
+   * absent, and within milliseconds of what the payload would have said.
+   *
    * @param kind - The kind to look at.
-   * @returns One entry per subject whose newest row is unresolved, each with the
-   *   payload that row was written from (or `undefined` if it carried none, or
-   *   carried JSON this process can no longer read).
+   * @returns One entry per subject whose newest row is unresolved, each with
+   *   when that row was written and the payload it was written from (or
+   *   `undefined` if it carried none, or carried JSON this process can no longer
+   *   read).
    */
   unresolvedStandingSubjects(
     kind: NotificationKind
-  ): Array<{ subjectId: string; payload: unknown }> {
+  ): Array<{ subjectId: string; createdAt: string; payload: unknown }> {
     const rows = this.db
       .select({
         subjectId: notifications.subjectId,
+        createdAt: notifications.createdAt,
         resolvedAt: notifications.resolvedAt,
         dataJson: notifications.dataJson,
       })
@@ -402,13 +412,20 @@ export class NotificationStore {
       .orderBy(desc(notifications.id))
       .all();
 
-    const newest = new Map<string, { resolvedAt: string | null; dataJson: string | null }>();
+    const newest = new Map<
+      string,
+      { createdAt: string; resolvedAt: string | null; dataJson: string | null }
+    >();
     for (const row of rows) {
       if (!newest.has(row.subjectId)) newest.set(row.subjectId, row);
     }
     return [...newest.entries()]
       .filter(([, row]) => row.resolvedAt === null)
-      .map(([subjectId, row]) => ({ subjectId, payload: parsePayload(row.dataJson) }));
+      .map(([subjectId, row]) => ({
+        subjectId,
+        createdAt: row.createdAt,
+        payload: parsePayload(row.dataJson),
+      }));
   }
 
   /**
@@ -753,24 +770,6 @@ function buildActions(
  * this cannot parse simply never auto-reads through this path; the operator
  * can still clear it with "Mark all read".
  */
-/**
- * Read a stored payload back, or `undefined` when there is nothing readable
- * there.
- *
- * Undefined rather than a throw: {@link NotificationStore.unresolvedStandingSubjects}
- * is a boot-time repair read, and one row whose JSON this process cannot parse
- * must not stop the others from being repaired. The caller decides what a
- * payload-less entry means for its own kind.
- */
-function parsePayload(dataJson: string | null): unknown {
-  if (!dataJson) return undefined;
-  try {
-    return JSON.parse(dataJson);
-  } catch {
-    return undefined;
-  }
-}
-
 function entrySeqOf(dataJson: string | null): number {
   if (!dataJson) return Number.POSITIVE_INFINITY;
   try {
@@ -778,5 +777,24 @@ function entrySeqOf(dataJson: string | null): number {
     return typeof payload.entrySeq === 'number' ? payload.entrySeq : Number.POSITIVE_INFINITY;
   } catch {
     return Number.POSITIVE_INFINITY;
+  }
+}
+
+/**
+ * Read a stored payload back, or `undefined` when there is nothing readable
+ * there.
+ *
+ * Undefined rather than a throw: {@link NotificationStore.unresolvedStandingSubjects}
+ * is a boot-time repair read, and one row whose JSON this process cannot parse
+ * must not stop the others from being repaired. That caller pairs this with the
+ * row's `createdAt`, which is a column and therefore always there, so an
+ * unreadable payload costs precision and never the repair itself.
+ */
+function parsePayload(dataJson: string | null): unknown {
+  if (!dataJson) return undefined;
+  try {
+    return JSON.parse(dataJson);
+  } catch {
+    return undefined;
   }
 }
