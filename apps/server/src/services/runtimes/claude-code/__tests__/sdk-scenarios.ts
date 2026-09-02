@@ -413,6 +413,161 @@ export async function* sdkMcpToolCall(
 }
 
 /**
+ * A one-pixel PNG, base64, as the `Read` tool hands one back.
+ *
+ * Real bytes rather than a placeholder string, because the attachment store
+ * writes them and the conformance suite reads back the size it wrote.
+ */
+export const TINY_PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+/**
+ * Produces a tool call whose result is an IMAGE — the `Read`-a-PNG shape.
+ *
+ * **Copied from a real turn, not invented.** Running
+ * `claude -p "Read shot.png" --allowedTools Read --output-format stream-json`
+ * against a real 8x8 PNG emits exactly this: a `tool_use` block, then an
+ * `SDKUserMessage` whose `tool_result.content` is a single
+ * `{ type: 'image', source: { type: 'base64', media_type, data } }` block and
+ * NO text block at all. There is no `tool_use_summary` — the built-in `Read`
+ * does not get one for an image — so this user message is the only place the
+ * picture ever appears on the live stream.
+ *
+ * @param toolId - Unique tool use ID.
+ * @param filePath - The path the model asked to read.
+ * @param mediaType - Media type to declare on the image block.
+ * @param base64 - The image payload.
+ * @param repeatResult - Emit the tool_result message this many times, to drive
+ *   the re-delivery case the single-shot guard exists for. Defaults to once.
+ */
+export async function* sdkImageToolResult(
+  toolId: string,
+  filePath: string,
+  mediaType = 'image/png',
+  base64: string = TINY_PNG_BASE64,
+  repeatResult = 1
+): AsyncGenerator<SDKMessage> {
+  yield makeInit();
+  yield {
+    type: 'stream_event',
+    event: {
+      type: 'content_block_start',
+      index: 0,
+      content_block: { type: 'tool_use', id: toolId, name: 'Read', input: {} },
+    },
+    parent_tool_use_id: null,
+    session_id: SESSION_ID,
+    uuid: BASE_UUID,
+  } as SDKMessage;
+  yield {
+    type: 'stream_event',
+    event: {
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'input_json_delta', partial_json: JSON.stringify({ file_path: filePath }) },
+    },
+    parent_tool_use_id: null,
+    session_id: SESSION_ID,
+    uuid: BASE_UUID,
+  } as SDKMessage;
+  yield {
+    type: 'stream_event',
+    event: { type: 'content_block_stop', index: 0 },
+    parent_tool_use_id: null,
+    session_id: SESSION_ID,
+    uuid: BASE_UUID,
+  } as SDKMessage;
+  for (let i = 0; i < repeatResult; i++) {
+    yield {
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: toolId,
+            content: [
+              { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
+            ],
+          },
+        ],
+      },
+      parent_tool_use_id: null,
+      session_id: SESSION_ID,
+      uuid: BASE_UUID,
+    } as SDKMessage;
+  }
+  yield makeResult();
+}
+
+/**
+ * The transcript JSONL a `Read` of a PNG writes, as `parseTranscript` reads it.
+ *
+ * The live and recorded shapes are the same — verified side by side against one
+ * real turn — which is why one extractor serves both.
+ *
+ * @param toolId - The tool_use id shared by the call and its result.
+ * @param mediaType - Media type to declare on the image block.
+ * @param base64 - The image payload.
+ */
+export function imageTranscriptLines(
+  toolId: string,
+  mediaType = 'image/png',
+  base64: string = TINY_PNG_BASE64
+): string[] {
+  return [
+    {
+      type: 'user',
+      message: { role: 'user', content: 'read the screenshot' },
+      timestamp: '2026-01-01T10:00:00.000Z',
+    },
+    {
+      type: 'assistant',
+      timestamp: '2026-01-01T10:00:01.000Z',
+      message: {
+        role: 'assistant',
+        model: 'probe',
+        content: [{ type: 'tool_use', id: toolId, name: 'Read', input: { file_path: 'shot.png' } }],
+      },
+    },
+    {
+      type: 'user',
+      timestamp: '2026-01-01T10:00:02.000Z',
+      message: {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: toolId,
+            content: [
+              { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
+            ],
+          },
+        ],
+      },
+    },
+    // The model's reply, and NOT optional dressing. A tool-result record maps to
+    // no message, so this assistant record and the `tool_use` one above become
+    // CONSECUTIVE and `mergeConsecutiveAssistantMessages` folds them — which is
+    // what happens on essentially every real transcript with a tool call, and
+    // what a fixture stopping at the tool result never exercises. The merge
+    // rebuilds the parts ARRAYS, so an image anchored to a tool-call part
+    // survives only because the part OBJECTS are carried over by reference. A
+    // refactor that deep-copied them there would delete every picture from
+    // history in silence; without this record, nothing would notice.
+    {
+      type: 'assistant',
+      timestamp: '2026-01-01T10:00:03.000Z',
+      message: {
+        role: 'assistant',
+        model: 'probe',
+        content: [{ type: 'text', text: 'DONE' }],
+      },
+    },
+  ].map((line) => JSON.stringify(line));
+}
+
+/**
  * Produces a user message with `isReplay: true` for testing the replay guard.
  *
  * @param toolId - Tool use ID to reference in the tool_result block
