@@ -107,4 +107,74 @@ describe('AgentPicker', () => {
       expect(screen.getByText(/No agents registered yet/)).toBeInTheDocument();
     });
   });
+
+  describe('when the choice is already settled', () => {
+    // The task form's edit screen: the agent a task runs as is written when the
+    // task is created and can never be changed after, so offering the choice
+    // would be offering something that does not happen (DOR-1694).
+
+    it('shows the agent and opens nothing', () => {
+      const onValueChange = vi.fn();
+      render(
+        <AgentPicker
+          agents={MOCK_AGENTS}
+          value="agent-1"
+          onValueChange={onValueChange}
+          disabledReasonId="why"
+        />
+      );
+
+      const trigger = screen.getByRole('button', { name: /api-bot/ });
+      expect(trigger).toHaveAttribute('aria-disabled', 'true');
+      // Focusable, not `disabled`: this trigger is the only place the agent is
+      // named, and a `disabled` button is skipped by tab navigation.
+      expect(trigger).not.toBeDisabled();
+      expect(trigger).toHaveAttribute('aria-describedby', 'why');
+
+      fireEvent.click(trigger);
+      expect(screen.queryByPlaceholderText('Search agents...')).toBeNull();
+      expect(screen.queryByText('test-bot')).toBeNull();
+      expect(onValueChange).not.toHaveBeenCalled();
+    });
+
+    it('states the case instead of prompting for a choice nobody can make', () => {
+      render(
+        <AgentPicker
+          agents={MOCK_AGENTS}
+          value={undefined}
+          onValueChange={vi.fn()}
+          disabledReasonId="why"
+        />
+      );
+
+      expect(screen.getByText('No agent')).toBeInTheDocument();
+      expect(screen.queryByText('Select an agent...')).toBeNull();
+    });
+
+    it('tells a missing agent apart from no agent at all', () => {
+      // A task filed against an agent that has since been unregistered. Reading
+      // that as "no agent" would say the task never had one.
+      render(
+        <AgentPicker
+          agents={MOCK_AGENTS}
+          value="agent-gone"
+          onValueChange={vi.fn()}
+          disabledReasonId="why"
+        />
+      );
+
+      expect(screen.getByText('Agent not found')).toBeInTheDocument();
+    });
+
+    it('says nothing about registering an agent when the roster is empty', () => {
+      // The empty-state box invites an action that would change nothing here:
+      // registering an agent does not make this task's agent editable.
+      render(
+        <AgentPicker agents={[]} value="agent-1" onValueChange={vi.fn()} disabledReasonId="why" />
+      );
+
+      expect(screen.queryByText(/No agents registered yet/)).toBeNull();
+      expect(screen.getByText('Agent not found')).toBeInTheDocument();
+    });
+  });
 });

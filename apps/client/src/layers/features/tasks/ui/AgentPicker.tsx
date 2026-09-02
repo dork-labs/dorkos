@@ -21,6 +21,21 @@ interface AgentPickerProps {
   agents: AgentPathEntry[];
   value: string | undefined;
   onValueChange: (value: string | undefined) => void;
+  /**
+   * Show the chosen agent without offering a change, and point at the element
+   * that says why.
+   *
+   * An id rather than a bare boolean, because an inert control with no reason
+   * attached is a dead click somebody has to guess at. It becomes the trigger's
+   * `aria-describedby`, so the sentence beneath the picker is read out with it.
+   *
+   * `aria-disabled` rather than the `disabled` attribute, the same rule the
+   * widget action buttons follow: this trigger is the only place the chosen
+   * agent is named, and a `disabled` button is skipped by tab navigation — so
+   * somebody moving through the form by keyboard would never hear which agent
+   * this is about. The click is neutralised instead.
+   */
+  disabledReasonId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -69,24 +84,37 @@ function AgentPickerTrigger({
   selectedAgent,
   open,
   onClick,
+  inertReasonId,
+  hasValue,
 }: {
   selectedAgent: AgentPathEntry | undefined;
   open: boolean;
   onClick: () => void;
+  inertReasonId?: string;
+  /** Whether an agent id is stored, whether or not the roster still has it. */
+  hasValue: boolean;
 }) {
   const selectedVisual = selectedAgent ? resolveAgentVisual(selectedAgent) : null;
+  const inert = inertReasonId !== undefined;
+
+  // A prompt on a control that takes no input reads as an instruction nobody
+  // can follow, so the inert trigger states the case instead — and it tells the
+  // two empty cases apart the way a task row does, because "no agent" and "the
+  // agent is gone" call for different things from the person reading it.
+  const emptyText = !inert ? 'Select an agent...' : hasValue ? 'Agent not found' : 'No agent';
 
   return (
     <button
       type="button"
-      aria-expanded={open}
-      aria-haspopup="listbox"
+      {...(inert
+        ? { 'aria-disabled': true, 'aria-describedby': inertReasonId }
+        : { 'aria-expanded': open, 'aria-haspopup': 'listbox' as const })}
       className={cn(
         'border-input ring-offset-background flex h-9 w-full items-center justify-between rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm transition-colors',
         'focus-visible:ring-ring focus-visible:ring-1 focus-visible:outline-none',
-        'hover:bg-accent/50'
+        inert ? 'cursor-default opacity-60' : 'hover:bg-accent/50'
       )}
-      onClick={onClick}
+      onClick={inert ? undefined : onClick}
     >
       {selectedAgent ? (
         <span className="flex items-center gap-2 truncate">
@@ -94,9 +122,10 @@ function AgentPickerTrigger({
           <span className="truncate">{getAgentDisplayName(selectedAgent)}</span>
         </span>
       ) : (
-        <span className="text-muted-foreground">Select an agent...</span>
+        <span className="text-muted-foreground">{emptyText}</span>
       )}
-      <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
+      {/* The chevron promises a list to open. Nothing opens here. */}
+      {!inert && <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />}
     </button>
   );
 }
@@ -105,8 +134,12 @@ function AgentPickerTrigger({
 // AgentPicker — dropdown on desktop, drawer on mobile
 // ---------------------------------------------------------------------------
 
-/** Searchable combobox for selecting a registered agent. Renders as a drawer on mobile. */
-export function AgentPicker({ agents, value, onValueChange }: AgentPickerProps) {
+/**
+ * Searchable combobox for selecting a registered agent. Renders as a drawer on
+ * mobile, and as an inert row wherever the choice is already settled — see
+ * {@link AgentPickerProps.disabledReasonId}.
+ */
+export function AgentPicker({ agents, value, onValueChange, disabledReasonId }: AgentPickerProps) {
   const [open, setOpen] = useState(false);
   const isMobile = useIsMobile();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -130,6 +163,21 @@ export function AgentPicker({ agents, value, onValueChange }: AgentPickerProps) 
     setOpen(false);
   }
 
+  // Ahead of the empty-state box below, which invites registering an agent —
+  // an action that would change nothing here, because this picker is not
+  // offering the choice in the first place.
+  if (disabledReasonId !== undefined) {
+    return (
+      <AgentPickerTrigger
+        selectedAgent={selectedAgent}
+        open={false}
+        onClick={() => {}}
+        inertReasonId={disabledReasonId}
+        hasValue={value !== undefined}
+      />
+    );
+  }
+
   if (agents.length === 0) {
     return (
       <div className="rounded-md border px-4 py-6 text-center">
@@ -149,6 +197,7 @@ export function AgentPicker({ agents, value, onValueChange }: AgentPickerProps) 
           selectedAgent={selectedAgent}
           open={open}
           onClick={() => setOpen(true)}
+          hasValue={value !== undefined}
         />
         <Drawer open={open} onOpenChange={setOpen}>
           <DrawerContent>
@@ -171,6 +220,7 @@ export function AgentPicker({ agents, value, onValueChange }: AgentPickerProps) 
         selectedAgent={selectedAgent}
         open={open}
         onClick={() => setOpen((prev) => !prev)}
+        hasValue={value !== undefined}
       />
 
       {open && (
