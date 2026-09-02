@@ -82,8 +82,10 @@ export function ModelLoadError({ onRetry }: { onRetry: () => void }) {
  * Two kinds of string reach {@link ModelIdLine}. OpenCode builds a description as
  * `` `${providerName} · ${modelId}` `` (`opencode/providers/models.ts`) and the
  * vanished-model banner draws a raw saved id, so both END on the identifier —
- * the case worth protecting. Claude Code and Codex ship fixed sentences
- * ("Strong model for everyday coding."), which end on nothing anyone needs.
+ * the case worth protecting. Codex's descriptions are fixed sentences in this
+ * repo (`codex/runtime-constants.ts`), and claude-code's arrive from its SDK, so
+ * far always as sentences too — every description observed ends either on an id
+ * or on prose.
  *
  * The tell is the LAST word: an id carries a path or tag separator inside it,
  * and an English sentence does not end on one. That reads both
@@ -95,10 +97,24 @@ export function ModelLoadError({ onRetry }: { onRetry: () => void }) {
  * cannot execute tools." would otherwise be read as an id the moment someone
  * writes a slash into the middle of a sentence.
  *
- * A single-segment id with no separator at all (`gpt-oss-120b`) reads as prose
- * and takes the end ellipsis. That is the honest answer for a string with
- * nothing marked out as protectable, and such an id is short enough that it
- * rarely reaches the question.
+ * Three known imprecisions, all cosmetic, none reachable from a producer in this
+ * repo today (DOR-1673 review):
+ *
+ * - A sentence whose last word carries a slash — "Charges separately for
+ *   input/output." — is read as an id and ellipsized from the front. Only
+ *   claude-code descriptions could ever supply one, and they come from its SDK
+ *   rather than from here, so this is not fully ours to prevent. The `<bdi>`
+ *   keeps the characters in order either way; the line just loses its opening
+ *   words instead of its closing ones.
+ * - The last-word test is NARROWER than the whole-string `/` test it replaces.
+ *   An id followed by a spaced suffix — `OpenRouter · meta/llama-3.1 (free)` —
+ *   ends on `(free)` and so takes the end ellipsis, clipping the id tail. No
+ *   producer spaces anything after an id today; if one starts, widen the test
+ *   rather than reverting it, or the Ollama case regresses.
+ * - A single-segment id with no separator at all (`gpt-oss-120b`) reads as prose
+ *   and takes the end ellipsis. That is the honest answer for a string with
+ *   nothing marked out as protectable, and such an id is short enough that it
+ *   rarely reaches the question.
  *
  * @param text - The whole line about to be drawn.
  */
@@ -120,10 +136,28 @@ function endsInIdentifier(text: string): boolean {
  *
  * The mechanism is one text node in a right-to-left box: `dir="rtl"` decides
  * only which end of the line the browser's own ellipsis lands on, and the
- * `<bdi dir="ltr">` inside puts the characters back in reading order, so a
- * description ending in a period or a bracket is not reordered by the bidi
- * algorithm. `text-left` is needed because a right-to-left box would otherwise
- * align a line that fits against the wrong edge.
+ * `<bdi dir="ltr">` inside keeps the characters themselves in reading order
+ * (see the pairing note below — it is required, not decorative). `text-left` is
+ * needed because a right-to-left box would otherwise align a line that fits
+ * against the wrong edge.
+ *
+ * The same treatment ships one feature over, on file paths, for the same reason:
+ * `MessageSearchHitRow.tsx` draws a hit's container path with this exact
+ * `dir="rtl"` + `<bdi dir="ltr">` pair, because a path's leaf identifies it and
+ * its head is what every project repeats. This is that idiom, not a new one.
+ *
+ * **The two halves are a pair. `dir="rtl"` without a `<bdi dir="ltr">` inside it
+ * is a bug, not a shortcut.** `dir="rtl"` sets the paragraph direction, and the
+ * bidi algorithm then resolves any character with no strong direction of its own
+ * — a space, a dot, a slash, a bracket — against that paragraph rather than
+ * against its neighbours. A run of such characters at either END of the string
+ * therefore jumps to the other side. Measured in Chromium: without the `<bdi>`,
+ * `A model with (parens) at the end.` renders as `.A model with (parens) at the
+ * end` — the trailing full stop leading the line. Ids that happen to end on a
+ * letter or a digit survive, which is what makes this dangerous: it looks
+ * correct on every string you tried and corrupts the first one you did not.
+ * The `<bdi>` is `unicode-bidi: isolate`, so the content resolves as its own
+ * paragraph and keeps the order it was written in.
  *
  * ONE text node is the point, and the reason this is not the two-span middle
  * ellipsis it replaces (DOR-1673 review). Two boxes side by side are blockified

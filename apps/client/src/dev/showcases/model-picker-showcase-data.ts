@@ -5,8 +5,9 @@
  * These are FIXTURES, not live data. The panel's hard case is an OpenRouter
  * catalog — hundreds of models, ids namespaced two levels deep, and rows that
  * have to admit what they cannot do — and reaching a real one needs a connected
- * provider. The values below are copied from real OpenRouter ids and names so
- * the widths are the widths the app has to survive.
+ * provider. Every value below is copied from a real id and a real name, mostly
+ * OpenRouter's and one Ollama tag, so the widths are the widths the app has to
+ * survive.
  *
  * @module dev/showcases/model-picker-showcase-data
  */
@@ -34,8 +35,14 @@ function openRouterModel(
 /**
  * The catalog the panel was widened for (DOR-1673): long two-segment ids, a
  * model that answers with pictures, and a model that cannot call a tool at all.
+ *
+ * Named for the RUNTIME, not for one provider inside it. OpenCode lists every
+ * provider it has credentials for in a single menu, so most of these rows are
+ * OpenRouter's — the hard case, and the reason the panel was measured against
+ * it — while the last one is a locally pulled Ollama model sitting in the same
+ * list, which is what the app really draws.
  */
-export const OPENROUTER_CATALOG: ModelOption[] = [
+export const OPENCODE_CATALOG: ModelOption[] = [
   openRouterModel({
     value: 'openrouter/anthropic/claude-sonnet-4.5',
     displayName: 'Anthropic: Claude Sonnet 4.5',
@@ -110,7 +117,7 @@ export const OPENROUTER_CATALOG: ModelOption[] = [
  * runtime has heard of, none of it confirmed, which is what the shortened-list
  * notice at the top of the panel exists to say out loud.
  */
-export const UNVERIFIED_CATALOG: ModelOption[] = OPENROUTER_CATALOG.slice(0, 5).map((model) => ({
+export const UNVERIFIED_CATALOG: ModelOption[] = OPENCODE_CATALOG.slice(0, 5).map((model) => ({
   ...model,
   unverified: true,
 }));

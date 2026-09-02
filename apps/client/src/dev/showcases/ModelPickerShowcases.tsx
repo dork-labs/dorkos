@@ -28,7 +28,7 @@ import { ShowcaseDemo } from '../ShowcaseDemo';
 import { createPlaygroundTransport } from '../playground-transport';
 import {
   CLAUDE_CODE_CATALOG,
-  OPENROUTER_CATALOG,
+  OPENCODE_CATALOG,
   UNVERIFIED_CATALOG,
 } from './model-picker-showcase-data';
 
@@ -90,9 +90,11 @@ export function ModelPickerShowcases() {
       title="Model picker"
       description="Click a model name to open the real panel. On desktop it opens at the width the panel picks for itself; on a phone-sized window it becomes a full-width sheet — resize the browser window itself to see the second one, not the demo's viewport buttons, because the switch is a media query."
     >
-      <ShowcaseLabel>OpenRouter — long ids, and rows that admit their limits</ShowcaseLabel>
+      <ShowcaseLabel>
+        OpenCode — long ids, a local tag, and rows that admit their limits
+      </ShowcaseLabel>
       <ShowcaseDemo>
-        <PickerDemo models={OPENROUTER_CATALOG} selected="openrouter/google/gemini-3-pro-image" />
+        <PickerDemo models={OPENCODE_CATALOG} selected="openrouter/google/gemini-3-pro-image" />
       </ShowcaseDemo>
 
       <ShowcaseLabel>Nothing connected — a short list nobody has confirmed</ShowcaseLabel>
@@ -103,7 +105,7 @@ export function ModelPickerShowcases() {
       <ShowcaseLabel>The saved model is gone</ShowcaseLabel>
       <ShowcaseDemo>
         <PickerDemo
-          models={OPENROUTER_CATALOG}
+          models={OPENCODE_CATALOG}
           selected="openrouter/meta-llama/llama-3.1-nemotron-ultra-253b-v1-free-preview"
         />
       </ShowcaseDemo>
