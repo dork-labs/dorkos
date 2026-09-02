@@ -196,10 +196,8 @@ function useTypewriterSequence(headline: string) {
   );
 
   useEffect(() => {
-    let cursor = 0;
-
     // Step 1 — type the headline
-    cursor = typeString(
+    let cursor = typeString(
       headline,
       0,
       (p) => setTypedHeadline(p),

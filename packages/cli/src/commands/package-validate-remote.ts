@@ -120,14 +120,13 @@ export async function runValidateRemote(args: ValidateRemoteArgs): Promise<numbe
   process.stdout.write(`[OK]   DorkOS schema (passthrough)\n`);
 
   // 2. Optional sidecar parse.
-  let sidecarCount: number | 'absent' = 'absent';
   if (sidecarRaw !== null) {
     const sidecarResult = parseDorkosSidecar(sidecarRaw);
     if (!sidecarResult.ok) {
       process.stderr.write(`[FAIL] Sidecar dorkos.json\n  - ${sidecarResult.error}\n`);
       return 1;
     }
-    sidecarCount = Object.keys(sidecarResult.sidecar.plugins).length;
+    const sidecarCount = Object.keys(sidecarResult.sidecar.plugins).length;
     process.stdout.write(`[OK]   Sidecar present and valid (${sidecarCount} plugins)\n`);
   } else {
     process.stdout.write(`[OK]   Sidecar absent (optional)\n`);

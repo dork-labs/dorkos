@@ -618,7 +618,8 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
       try {
         current = await fs.default.readFile(resolved, 'utf8');
       } catch (err) {
-        if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw new Error('File not found');
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT')
+          throw new Error('File not found', { cause: err });
         throw err;
       }
 

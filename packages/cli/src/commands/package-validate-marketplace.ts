@@ -105,7 +105,6 @@ export async function runValidateMarketplace(args: ValidateMarketplaceArgs): Pro
   process.stdout.write(`[OK]   DorkOS schema (passthrough)\n`);
 
   // 2. Optional sidecar, only when the target lives under .claude-plugin/.
-  let sidecarCount: number | 'absent' | 'invalid' = 'absent';
   if (path.basename(path.dirname(absPath)) === '.claude-plugin') {
     const sidecarPath = path.join(path.dirname(absPath), 'dorkos.json');
     try {
@@ -115,7 +114,7 @@ export async function runValidateMarketplace(args: ValidateMarketplaceArgs): Pro
         process.stderr.write(`[FAIL] Sidecar dorkos.json\n  - ${sidecarResult.error}\n`);
         return 1;
       }
-      sidecarCount = Object.keys(sidecarResult.sidecar.plugins).length;
+      const sidecarCount = Object.keys(sidecarResult.sidecar.plugins).length;
       process.stdout.write(`[OK]   Sidecar present and valid (${sidecarCount} plugins)\n`);
     } catch {
       process.stdout.write(`[OK]   Sidecar absent (optional)\n`);

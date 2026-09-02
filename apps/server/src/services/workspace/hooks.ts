@@ -97,7 +97,9 @@ export async function runHooks(
     } catch (err) {
       const detail = truncate(err instanceof Error ? err.message : String(err));
       if (FATAL_PHASES.has(phase)) {
-        throw new Error(`Workspace hook '${phase}' failed (\`${command}\`): ${detail}`);
+        throw new Error(`Workspace hook '${phase}' failed (\`${command}\`): ${detail}`, {
+          cause: err,
+        });
       }
       logger.warn(`[workspace] non-fatal hook '${phase}' failed (\`${command}\`): ${detail}`);
     }

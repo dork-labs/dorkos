@@ -78,7 +78,7 @@ export async function deliverRoomStream(
   // The dedupe on `highestSent` then drops whatever the read already covered.
   const iterator = service.stream.subscribe(roomId, sink.signal)[Symbol.asyncIterator]();
 
-  let highestSent = 0;
+  let highestSent: number;
 
   try {
     if (sinceCursor !== undefined) {

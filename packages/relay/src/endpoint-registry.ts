@@ -220,7 +220,7 @@ export class EndpointRegistry {
         // Lost the race. The winner's claim stands; re-read and defer to it.
         const winner = await readOwner(maildirPath);
         if (winner !== owner) {
-          throw new Error(`Endpoint belongs to another owner: ${subject}`);
+          throw new Error(`Endpoint belongs to another owner: ${subject}`, { cause: err });
         }
       }
     }

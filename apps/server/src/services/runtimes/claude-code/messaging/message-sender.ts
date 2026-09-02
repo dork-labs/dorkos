@@ -678,7 +678,6 @@ export async function* executeSdkQuery(
   // this event moves the terminal reason and touches nothing else.
   if (turnWindowOpen && wasStopped() && !emittedError) {
     logger.debug('[sendMessage] settling a stopped turn as interrupted', { session: sessionId });
-    eventCount++;
     yield { type: 'session_status', data: { sessionId, terminalReason: 'interrupted' } };
   }
 

@@ -153,7 +153,7 @@ async function runtimeRecorded(
   // recorded" — observed live, one window in two. Give it a bounded moment to
   // catch up, and only then report disagreement.
   const deadline = Date.now() + 15_000;
-  let last: boolean | null = null;
+  let last: boolean | null;
   do {
     let res: Response;
     try {
@@ -395,9 +395,9 @@ async function main(): Promise<void> {
   const ownName = w.agentDir.split('/').pop() ?? '';
   const otherDir = agents.find((a) => a !== w.agentDir);
   let backOk = false;
-  let backDetail = 'not attempted';
+  let backDetail: string;
   let awayOk = false;
-  let awayDetail = 'not attempted';
+  let awayDetail: string;
 
   if (!otherDir) {
     // With one agent there is nothing to switch TO, and clicking your own row

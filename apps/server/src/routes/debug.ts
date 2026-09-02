@@ -113,8 +113,7 @@ router.get('/dispatches', (req, res) => {
     claims = rooms.listActiveClaims();
     holds = rooms.listHolds();
   } catch {
-    claims = [];
-    holds = [];
+    // No room service wired, or it is mid-crash — the empty defaults stand.
   }
   res.json({ claims, holds, recent: recentDispatches(readLimit(req.query.limit)) });
 });

@@ -9,6 +9,7 @@
  */
 import { parseArgs } from 'node:util';
 import { ApiError, apiCall } from '../lib/api-client.js';
+import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
 /** Marketplace source as returned by the server `/sources` endpoints. */
 interface MarketplaceSource {
@@ -45,15 +46,7 @@ export function parseMarketplaceListArgs(rawArgs: string[]): void {
       strict: true,
     });
   } catch (err) {
-    if (
-      err instanceof TypeError &&
-      (err as NodeJS.ErrnoException).code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION'
-    ) {
-      const match = err.message.match(/Unknown option '([^']+)'/);
-      const option = match?.[1] ?? 'unknown';
-      throw new Error(`Unknown option for 'marketplace list': ${option}\n${USAGE_LINE}`);
-    }
-    throw err;
+    rethrowUnknownOption(err, 'marketplace list', USAGE_LINE);
   }
 }
 

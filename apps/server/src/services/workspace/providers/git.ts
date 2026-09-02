@@ -42,7 +42,7 @@ export async function computeDirtyState(cwd: string): Promise<DirtyState> {
     const out = await runGit(['rev-list', '--count', 'HEAD', '--not', '--remotes'], cwd);
     unpushed = Number.parseInt(out.trim(), 10) || 0;
   } catch {
-    unpushed = 0;
+    // No remotes, or not a git checkout — the 0 default stands.
   }
 
   return {

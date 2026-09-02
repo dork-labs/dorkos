@@ -112,7 +112,7 @@ async function requestWhenReady(
   baseURL: string
 ): Promise<APIResponse> {
   const deadline = Date.now() + CONFIG_READY_TIMEOUT_MS;
-  let lastSeen = '(no response)';
+  let lastSeen: string;
   for (;;) {
     try {
       const response = await attempt();

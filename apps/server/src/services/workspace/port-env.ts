@@ -31,7 +31,7 @@ export async function writePortEnv(workspacePath: string, ports: WorkspacePorts)
   try {
     body = await fs.readFile(envPath, 'utf-8');
   } catch {
-    body = '';
+    // No .env yet — the empty default stands and the file is written fresh.
   }
   body = upsertEnvLine(body, 'DORKOS_PORT', ports.DORKOS_PORT);
   body = upsertEnvLine(body, 'VITE_PORT', ports.VITE_PORT);

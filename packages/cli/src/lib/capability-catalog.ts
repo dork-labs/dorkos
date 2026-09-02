@@ -67,8 +67,6 @@ const MAX_PAGES = 10_000;
 export async function fetchFullCatalog(): Promise<FullCatalog> {
   const capabilities: CatalogCapability[] = [];
   let cursor: string | undefined;
-  let catalogVersion = '';
-  let generatedAt = '';
 
   for (let page = 0; page < MAX_PAGES; page += 1) {
     const params = new URLSearchParams({ detail: 'full', limit: String(PAGE_LIMIT) });
@@ -78,9 +76,9 @@ export async function fetchFullCatalog(): Promise<FullCatalog> {
       `/api/capabilities/catalog?${params.toString()}`
     );
     capabilities.push(...body.capabilities);
-    catalogVersion = body.catalogVersion;
-    generatedAt = body.generatedAt;
-    if (!body.nextCursor) return { catalogVersion, generatedAt, capabilities };
+    if (!body.nextCursor) {
+      return { catalogVersion: body.catalogVersion, generatedAt: body.generatedAt, capabilities };
+    }
     cursor = body.nextCursor;
   }
 

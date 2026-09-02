@@ -217,8 +217,8 @@ class FileListService {
 async function describeEntry(abs: string, dirent: Dirent, cwd: string): Promise<FileEntry | null> {
   const isSymlink = dirent.isSymbolicLink();
   let type: 'file' | 'dir';
-  let size = 0;
-  let mtime = 0;
+  let size: number;
+  let mtime: number;
   try {
     const st = await fs.stat(abs);
     type = st.isDirectory() ? 'dir' : 'file';

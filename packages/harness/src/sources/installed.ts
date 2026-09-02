@@ -227,7 +227,7 @@ function toInstalledSkill(entry: SkillEntry, absSkillsRoot: string): InstalledSk
   try {
     skillMd = readFileSync(join(absSkillsRoot, entry.name, 'SKILL.md'), 'utf8');
   } catch {
-    skillMd = '';
+    // No readable SKILL.md — the empty default above stands.
   }
   const frontmatter = readRawFrontmatter(skillMd)?.data ?? {};
   return {

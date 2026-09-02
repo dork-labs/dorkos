@@ -106,7 +106,7 @@ async function startFakeServer(
             const frame = projectEvent(ev as StreamEvent, seq++);
             if (frame) sink.write(frame);
           }
-          sink.write(sse('turn_end', { type: 'turn_end', seq: seq++ }));
+          sink.write(sse('turn_end', { type: 'turn_end', seq }));
         })();
       });
       return;
@@ -178,7 +178,7 @@ async function startRemapFakeServer(
             const frame = projectEvent(ev as StreamEvent, seq++);
             if (frame) sink.write(frame);
           }
-          sink.write(sse('turn_end', { type: 'turn_end', seq: seq++ }));
+          sink.write(sse('turn_end', { type: 'turn_end', seq }));
         })();
       });
       return;

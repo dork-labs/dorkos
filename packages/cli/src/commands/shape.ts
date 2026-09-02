@@ -9,6 +9,7 @@
  */
 import { parseArgs } from 'node:util';
 import { ApiError, apiCall } from '../lib/api-client.js';
+import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
 /** Parsed arguments for `dorkos shape fork`. */
 export interface ShapeForkArgs {
@@ -71,14 +72,7 @@ export function parseShapeForkArgs(rawArgs: string[]): ShapeForkArgs {
       strict: true,
     });
   } catch (err) {
-    if (
-      err instanceof TypeError &&
-      (err as NodeJS.ErrnoException).code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION'
-    ) {
-      const match = err.message.match(/Unknown option '([^']+)'/);
-      throw new Error(`Unknown option for 'shape fork': ${match?.[1] ?? 'unknown'}\n${FORK_USAGE}`);
-    }
-    throw err;
+    rethrowUnknownOption(err, 'shape fork', FORK_USAGE);
   }
 
   const { values, positionals } = parsed;

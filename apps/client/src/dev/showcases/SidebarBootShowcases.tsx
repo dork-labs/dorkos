@@ -192,7 +192,7 @@ function measureBootCache(): { key: string; bytes: number; queries: number }[] {
         (JSON.parse(raw) as { clientState?: { queries?: unknown[] } }).clientState?.queries
           ?.length ?? 0;
     } catch {
-      queries = 0;
+      // Unparseable cache entry — the 0 default stands.
     }
     entries.push({ key, bytes: new Blob([raw]).size, queries });
   }

@@ -20,6 +20,7 @@ import { parseArgs } from 'node:util';
 import { ApiError, apiCall } from '../lib/api-client.js';
 import { confirm } from '../lib/confirm-prompt.js';
 import { hasBlockingConflicts, renderPreview, type PreviewPayload } from '../lib/preview-render.js';
+import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
 /** Parsed CLI arguments accepted by {@link runInstall}. */
 export interface InstallArgs {
@@ -83,15 +84,7 @@ export function parseInstallArgs(rawArgs: string[]): InstallArgs {
       strict: true,
     });
   } catch (err) {
-    if (
-      err instanceof TypeError &&
-      (err as NodeJS.ErrnoException).code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION'
-    ) {
-      const match = err.message.match(/Unknown option '([^']+)'/);
-      const option = match?.[1] ?? 'unknown';
-      throw new Error(`Unknown option for 'install': ${option}\n${USAGE_LINE}`);
-    }
-    throw err;
+    rethrowUnknownOption(err, 'install', USAGE_LINE);
   }
 
   const { values, positionals } = parsed;

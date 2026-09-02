@@ -159,7 +159,7 @@ async function recordMobileChatLoop(browser: Browser, rec: RunRecorder): Promise
   const page = await ctx.newPage();
   const video = page.video();
   const startedAt = Date.now();
-  let headTrimMs = 0;
+  let headTrimMs: number;
   try {
     await openLiveTurn(
       page,
