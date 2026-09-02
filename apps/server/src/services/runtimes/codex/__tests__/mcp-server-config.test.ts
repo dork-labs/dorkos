@@ -14,10 +14,13 @@ describe('toCodexMcpServerConfig', () => {
       args: ['-y', 'server-filesystem'],
       env: { API_KEY: 'x' },
     };
-    expect(toCodexMcpServerConfig(connection)).toEqual({
-      command: 'npx',
-      args: ['-y', 'server-filesystem'],
-      env: { API_KEY: 'x' },
+    expect(toCodexMcpServerConfig('files', connection, new Set())).toEqual({
+      config: {
+        command: 'npx',
+        args: ['-y', 'server-filesystem'],
+        env: { API_KEY: 'x' },
+      },
+      env: {},
     });
   });
 
@@ -28,36 +31,68 @@ describe('toCodexMcpServerConfig', () => {
       args: [],
       env: {},
     };
-    const config = toCodexMcpServerConfig(connection);
-    expect(config).toEqual({ command: 'npx' });
-    expect(config).not.toHaveProperty('args');
-    expect(config).not.toHaveProperty('env');
+    const entry = toCodexMcpServerConfig('files', connection, new Set());
+    expect(entry?.config).toEqual({ command: 'npx' });
+    expect(entry?.config).not.toHaveProperty('args');
+    expect(entry?.config).not.toHaveProperty('env');
   });
 
-  it('maps an http connection to url + http_headers (Codex streamable_http shape)', () => {
+  it('names an http connection headers by env var, and never writes the value (DOR-993)', () => {
+    // `config` is flattened into `--config key=value` on the `codex exec`
+    // command line, so a header value written here is readable by any local
+    // process with `ps`. The name goes in the config; the value goes in `env`.
     const connection: McpAppServerConnection = {
       transport: 'http',
       url: 'https://example.com/mcp',
       headers: { Authorization: 'Bearer x' },
     };
-    expect(toCodexMcpServerConfig(connection)).toEqual({
-      url: 'https://example.com/mcp',
-      http_headers: { Authorization: 'Bearer x' },
+    expect(toCodexMcpServerConfig('remote', connection, new Set())).toEqual({
+      config: {
+        url: 'https://example.com/mcp',
+        env_http_headers: { Authorization: 'DORKOS_MCP_HDR_REMOTE_AUTHORIZATION' },
+      },
+      env: { DORKOS_MCP_HDR_REMOTE_AUTHORIZATION: 'Bearer x' },
+    });
+  });
+
+  it('redirects EVERY header, not just the ones that look like credentials', () => {
+    // The static-header field is exactly where people paste API keys, so there
+    // is no header this path leaves on `http_headers`.
+    const entry = toCodexMcpServerConfig(
+      'internal',
+      {
+        transport: 'http',
+        url: 'https://example.com/mcp',
+        headers: { 'X-Api-Key': 'sk-live', 'X-Tenant': 'acme' },
+      },
+      new Set()
+    );
+    expect(entry?.config).not.toHaveProperty('http_headers');
+    expect(entry?.env).toEqual({
+      DORKOS_MCP_HDR_INTERNAL_X_API_KEY: 'sk-live',
+      DORKOS_MCP_HDR_INTERNAL_X_TENANT: 'acme',
     });
   });
 
   it('omits empty headers on an http connection', () => {
-    const config = toCodexMcpServerConfig({
-      transport: 'http',
-      url: 'https://example.com/mcp',
-      headers: {},
-    });
-    expect(config).toEqual({ url: 'https://example.com/mcp' });
-    expect(config).not.toHaveProperty('http_headers');
+    const entry = toCodexMcpServerConfig(
+      'remote',
+      { transport: 'http', url: 'https://example.com/mcp', headers: {} },
+      new Set()
+    );
+    expect(entry).toEqual({ config: { url: 'https://example.com/mcp' }, env: {} });
+    expect(entry?.config).not.toHaveProperty('env_http_headers');
+    expect(entry?.config).not.toHaveProperty('http_headers');
   });
 
   it('returns null for an sse connection — Codex has no SSE transport', () => {
-    expect(toCodexMcpServerConfig({ transport: 'sse', url: 'https://example.com/sse' })).toBeNull();
+    expect(
+      toCodexMcpServerConfig(
+        'stream',
+        { transport: 'sse', url: 'https://example.com/sse' },
+        new Set()
+      )
+    ).toBeNull();
   });
 });
 
@@ -108,7 +143,60 @@ describe('toCodexMcpServers', () => {
     expect(reserved).toEqual([]);
   });
 
+  it('collects every header value into one env map, keyed by the minted var', () => {
+    const { servers, env } = toCodexMcpServers(
+      {
+        alpha: {
+          transport: 'http',
+          url: 'https://a.example.com/mcp',
+          headers: { Authorization: 'Bearer a' },
+        },
+        beta: {
+          transport: 'http',
+          url: 'https://b.example.com/mcp',
+          headers: { Authorization: 'Bearer b' },
+        },
+      },
+      new Set()
+    );
+    expect(env).toEqual({
+      DORKOS_MCP_HDR_ALPHA_AUTHORIZATION: 'Bearer a',
+      DORKOS_MCP_HDR_BETA_AUTHORIZATION: 'Bearer b',
+    });
+    expect(JSON.stringify(servers)).not.toContain('Bearer ');
+  });
+
+  it('mints DISTINCT variables for server names that sanitise alike', () => {
+    // `my-server` and `my_server` both reduce to MY_SERVER. One variable for
+    // two credentials would send each server the other's token.
+    const { servers, env } = toCodexMcpServers(
+      {
+        'my-server': {
+          transport: 'http',
+          url: 'https://a.example.com/mcp',
+          headers: { Authorization: 'Bearer a' },
+        },
+        my_server: {
+          transport: 'http',
+          url: 'https://b.example.com/mcp',
+          headers: { Authorization: 'Bearer b' },
+        },
+      },
+      new Set()
+    );
+    const names = Object.values(servers).map(
+      (entry) => (entry['env_http_headers'] as Record<string, string>)['Authorization']
+    );
+    expect(new Set(names).size).toBe(2);
+    expect(Object.keys(env)).toHaveLength(2);
+  });
+
   it('returns empty maps for no input', () => {
-    expect(toCodexMcpServers({}, new Set())).toEqual({ servers: {}, skipped: [], reserved: [] });
+    expect(toCodexMcpServers({}, new Set())).toEqual({
+      servers: {},
+      env: {},
+      skipped: [],
+      reserved: [],
+    });
   });
 });

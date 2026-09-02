@@ -263,10 +263,11 @@ describe('CodexRuntime', () => {
 
   describe('buildCodexOptions — managed MCP servers (DOR-892)', () => {
     const UI_URL = 'http://127.0.0.1:4242/codex-ui-mcp';
-    const managed = {
+    const servers = {
       files: { command: 'npx', args: ['-y', 'server-filesystem'] },
       remote: { url: 'https://example.com/mcp' },
     };
+    const managed = { servers, env: {} };
 
     it('folds enabled managed servers into config.mcp_servers alongside dorkos_ui', () => {
       const options = buildCodexOptions(null, UI_URL, undefined, managed);
@@ -280,20 +281,47 @@ describe('CodexRuntime', () => {
     it('writes dorkos_ui LAST so a managed server can never shadow it', () => {
       // A managed server literally named `dorkos_ui` must still resolve to the
       // real UI bridge URL, not the managed command.
-      const shadowing = { [CODEX_UI_MCP_SERVER]: { command: 'evil' } };
+      const shadowing = { servers: { [CODEX_UI_MCP_SERVER]: { command: 'evil' } }, env: {} };
       const options = buildCodexOptions(null, UI_URL, undefined, shadowing);
       expect(options.config?.mcp_servers?.[CODEX_UI_MCP_SERVER]).toEqual({ url: UI_URL });
     });
 
     it('injects managed servers even when no dorkos_ui URL is configured', () => {
       const options = buildCodexOptions(null, undefined, undefined, managed);
-      expect(options.config?.mcp_servers).toEqual(managed);
+      expect(options.config?.mcp_servers).toEqual(servers);
       expect(options.config?.mcp_servers).not.toHaveProperty(CODEX_UI_MCP_SERVER);
     });
 
     it('omits config entirely when there are no managed servers and no UI URL', () => {
-      expect(buildCodexOptions(null, undefined, undefined, {})).not.toHaveProperty('config');
+      expect(
+        buildCodexOptions(null, undefined, undefined, { servers: {}, env: {} })
+      ).not.toHaveProperty('config');
       expect(buildCodexOptions(null)).not.toHaveProperty('config');
+    });
+
+    it('puts a managed server header VALUE in env and nowhere in config (DOR-993)', () => {
+      // The SDK flattens `config` into `--config key=value` arguments on the
+      // `codex exec` command line, so a value written there is in the spawned
+      // argv. Asserted by serialising the WHOLE config and searching it: the
+      // flattening is recursive, so a value could reappear under any path.
+      const bearer = 'Bearer ya29.a0-live-oauth-access-token';
+      const options = buildCodexOptions(null, UI_URL, undefined, {
+        servers: {
+          notion: {
+            url: 'https://mcp.notion.com/mcp',
+            env_http_headers: { Authorization: 'DORKOS_MCP_HDR_NOTION_AUTHORIZATION' },
+          },
+        },
+        env: { DORKOS_MCP_HDR_NOTION_AUTHORIZATION: bearer },
+      });
+
+      expect(JSON.stringify(options.config ?? {})).not.toContain(bearer);
+      expect((options.env as Record<string, string>).DORKOS_MCP_HDR_NOTION_AUTHORIZATION).toBe(
+        bearer
+      );
+      // And the header env must not have cost the subprocess its inherited PATH.
+      const env = options.env as Record<string, string>;
+      expect(env.PATH ?? env.Path).toBeDefined();
     });
   });
 

@@ -94,7 +94,7 @@ import {
   buildRoomToolsBlock,
   roomReplyModeForToolCapableSession,
 } from '../shared/room-tools-context.js';
-import { resolveManagedMcpServers, type CodexMcpServerRecord } from './mcp-server-config.js';
+import { resolveManagedMcpServers, type CodexManagedMcpServers } from './mcp-server-config.js';
 import { buildCodexPrompt, projectThreadOptions } from './turn-input.js';
 import { enumerateCodexMcpServers } from './enumerate-mcp-servers.js';
 import { scanSkillCommands } from './scan-skill-commands.js';
@@ -277,23 +277,22 @@ export class CodexRuntime implements AgentRuntime {
    * SDK never runs (nor throws from) its own binary discovery.
    *
    * @param tokenEnv - The identity-token env fragment, `{}` when unattributed.
-   * @param managedServers - Enabled managed servers in Codex config shape, `{}` when none.
+   * @param managed - Enabled managed servers in Codex config shape, with the
+   *   header values that must ride the environment; empty maps when none.
    * @param dorkosTools - The resolved `dorkos` tool server, or null when it is
    *   not injected this turn. It carries a freshly minted identity token, so a
    *   client holding one can never be shared across turns.
    */
   private async clientForTurn(
     tokenEnv: Record<string, string>,
-    managedServers: CodexMcpServerRecord,
+    managed: CodexManagedMcpServers,
     dorkosTools: DorkosMcpInjection | null
   ): Promise<Codex> {
     const binary = await this.resolveTurnBinary();
     const hasToken = Object.keys(tokenEnv).length > 0;
-    const hasManaged = Object.keys(managedServers).length > 0;
+    const hasManaged = Object.keys(managed.servers).length > 0;
     if (hasToken || hasManaged || dorkosTools) {
-      return new Codex(
-        buildCodexOptions(binary, this.mcpUiUrl, tokenEnv, managedServers, dorkosTools)
-      );
+      return new Codex(buildCodexOptions(binary, this.mcpUiUrl, tokenEnv, managed, dorkosTools));
     }
     if (this.sharedClient?.binary !== binary) {
       this.sharedClient = { binary, client: new Codex(buildCodexOptions(binary, this.mcpUiUrl)) };

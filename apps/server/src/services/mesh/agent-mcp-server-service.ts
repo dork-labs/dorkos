@@ -674,13 +674,19 @@ export class AgentMcpServerService {
    * server this name used to point at is never sent to the one it points at now
    * (DOR-986).
    *
-   * KNOWN EXPOSURE (DOR-986): for the codex runtime, the merged header leaves this
-   * process as a `codex exec` config override, which `@openai/codex-sdk`
-   * serializes into the subprocess's argv — so the bearer is visible to anything
-   * on this machine that can list processes. It is bounded (a local, single-user
-   * machine; the token is the operator's own), but it is real, and fixing it means
-   * changing how that SDK carries config, which is out of scope here. The
-   * claude-code and opencode paths do not go through argv.
+   * WHERE THE HEADER TRAVELS, per runtime (DOR-993, closing the DOR-986
+   * exposure): claude-code and opencode hand it over out of band. Codex used to
+   * be the exception — the header left this process as a `codex exec` config
+   * override, which `@openai/codex-sdk` serializes into the subprocess's argv,
+   * so the bearer was readable by anything on this machine that could list
+   * processes. It no longer is: the codex adapter names each header by
+   * environment variable (`env_http_headers`) and puts the VALUE in the
+   * subprocess environment, so no header value reaches a command line
+   * (`runtimes/codex/mcp-server-config.ts`). The one credential still written
+   * into codex config is a STDIO server's own `env` block, which the operator
+   * typed into the server's definition — Codex offers no redirection there that
+   * lets DorkOS choose the variable name the child sees, and that path never
+   * carries an OAuth token this service minted.
    *
    * @param agentId - The owning agent's id (the token lookup's key half).
    * @param base - The cached, header-free enabled-servers map.
