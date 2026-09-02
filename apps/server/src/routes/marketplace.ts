@@ -663,6 +663,15 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     }
 
     try {
+      // The same confinement the three sibling mutation routes apply, and the
+      // one this route most needs: preview is the only one of the four that is
+      // NOT tier-gated, and it READS. `PermissionPreviewBuilder` joins
+      // `projectPath` into an install root and the conflict detector walks it,
+      // so an unbounded preview answers "does this directory exist, and what is
+      // in it" for any absolute path on the machine, with no approval card in
+      // the way.
+      const refused = await refuseOutOfBoundsProjectPath(res, parsed.data.projectPath);
+      if (refused) return refused;
       const { preview, manifest, packagePath } = await installer.preview({
         name: req.params.name,
         ...parsed.data,

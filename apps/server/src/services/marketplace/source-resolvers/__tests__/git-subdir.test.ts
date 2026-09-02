@@ -154,8 +154,29 @@ describe('gitSubdirResolver', () => {
     expect(argv[0].indexOf('--end-of-options')).toBe(
       argv[0].indexOf('https://github.com/foo/monorepo.git') - 1
     );
+    // Sparse-checkout set: immediately before the subpath. The source schema
+    // rejects `..` in a subpath but permits a leading `-`, so `"path":
+    // "--stdin"` would otherwise reach git as an option rather than a value.
+    expect(argv[2]).toEqual(['sparse-checkout', 'set', '--end-of-options', 'plugins/qa']);
     // Checkout: immediately before the ref.
     expect(argv[3]).toEqual(['checkout', '--end-of-options', 'release/v2']);
+  });
+
+  it('keeps an option-shaped subpath a value, not a flag', async () => {
+    vi.mocked(spawn).mockImplementation(() => makeFakeChild(0));
+
+    await gitSubdirResolver(
+      {
+        type: 'git-subdir',
+        cloneUrl: 'https://github.com/foo/monorepo.git',
+        subpath: '--stdin',
+      },
+      buildOpts(),
+      buildDeps()
+    );
+
+    const setCall = vi.mocked(spawn).mock.calls[2]?.[1] as string[];
+    expect(setCall.indexOf('--end-of-options')).toBe(setCall.indexOf('--stdin') - 1);
   });
 
   it('short-circuits with cache hit before any spawn call', async () => {

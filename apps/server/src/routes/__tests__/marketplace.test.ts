@@ -1488,6 +1488,22 @@ describe('Marketplace Routes', () => {
       expect(onPluginsChanged).not.toHaveBeenCalled();
     });
 
+    // Preview is the one route of the four that is NOT tier-gated, and it is
+    // the one that reads: `PermissionPreviewBuilder` joins `projectPath` into
+    // an install root and the conflict detector walks it, so an unbounded
+    // preview answers "does this directory exist, and what is in it" for any
+    // absolute path — with no approval card in the way.
+    it('preview returns 403 and never previews when projectPath is outside the boundary', async () => {
+      rejectBoundaryOnce();
+
+      const res = await request(app)
+        .post('/api/marketplace/packages/sample-plugin/preview')
+        .send({ projectPath: '/etc/evil' });
+
+      expect(res.status).toBe(403);
+      expect(installer.preview).not.toHaveBeenCalled();
+    });
+
     it('uninstall returns 403 when projectPath is outside the boundary', async () => {
       rejectBoundaryOnce();
 
