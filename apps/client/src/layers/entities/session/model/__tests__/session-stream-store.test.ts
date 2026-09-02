@@ -444,6 +444,33 @@ describe('useSessionStreamStore', () => {
     expect(s.inProgressTurn[1]).toMatchObject({ trigger: 'manual', preTokens: 51_226 });
   });
 
+  it('retains permission_denied in the turn so the denial chip is drawn live (DOR-795)', () => {
+    // Same failure shape `compact_boundary` had: an event the default arm drops
+    // never reaches its fold, so the chip only appears on the next history
+    // reload — and for a backgrounded subagent's auto-denial there is nothing
+    // else in the conversation to notice the loss by.
+    useSessionStreamStore.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
+    const store = useSessionStreamStore.getState();
+    store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+    store.applyEvent(SID, {
+      type: 'permission_denied',
+      seq: 2,
+      toolCallId: 'toolu_async_1',
+      toolName: 'Bash',
+      message: 'Backgrounded agents cannot request permission.',
+      reasonType: 'asyncAgent',
+      agentId: 'agent_child_7',
+    });
+    const s = useSessionStreamStore.getState().getSession(SID);
+    expect(s.inProgressTurn.map((e) => e.type)).toEqual(['turn_start', 'permission_denied']);
+    // The attribution rides with it — an event retained but stripped would draw
+    // a chip that cannot name the helper it is about.
+    expect(s.inProgressTurn[1]).toMatchObject({
+      agentId: 'agent_child_7',
+      reasonType: 'asyncAgent',
+    });
+  });
+
   it('applyEvent advances lastAppliedSeq and folds the event', () => {
     useSessionStreamStore.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
     const store = useSessionStreamStore.getState();

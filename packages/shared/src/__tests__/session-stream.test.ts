@@ -189,6 +189,33 @@ describe('SessionEventSchema', () => {
     expect(SessionEventSchema.parse(progress)).toEqual(progress);
   });
 
+  it('parses a permission_denied event, with and without its attribution', () => {
+    // Purpose (DOR-795): a refused tool call rides the stream so it can be
+    // recorded and drawn. `agentId` is what names the backgrounded helper that
+    // lost the tool — a denial without one happened on the main thread, so the
+    // field must be optional AND must survive when present.
+    const attributed = {
+      seq: 9,
+      type: 'permission_denied',
+      toolCallId: 'toolu_async_1',
+      toolName: 'Bash',
+      message: 'Backgrounded agents cannot request permission.',
+      reasonType: 'asyncAgent',
+      reason: 'Async agent tool calls are auto-denied.',
+      agentId: 'agent_child_7',
+    };
+    expect(SessionEventSchema.parse(attributed)).toEqual(attributed);
+
+    const mainThread = {
+      seq: 10,
+      type: 'permission_denied',
+      toolCallId: 'toolu_1',
+      toolName: 'Write',
+      message: 'Blocked.',
+    };
+    expect(SessionEventSchema.parse(mainThread)).toEqual(mainThread);
+  });
+
   it('parses an error event with optional code/category/details', () => {
     // Purpose: the typed turn-error member carries the ErrorEvent shape whole.
     const event = {

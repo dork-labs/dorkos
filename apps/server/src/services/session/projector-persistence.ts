@@ -62,6 +62,13 @@ export type ProjectorPersistenceMode = 'history' | 'record';
  * though nobody had ever been asked. The prompt row is what
  * {@link EAGERLY_RECORDED_EVENT_TYPES} makes durable in time to matter, and what
  * the boot sweep in `expire-orphaned-asks` reads to close the ask out.
+ *
+ * `permission_denied` is the second exception, and it is the OPPOSITE of a
+ * receipt: a decision nobody was allowed to make (DOR-795). The JSONL cannot
+ * answer for it either — for a BACKGROUNDED subagent the denied call is written
+ * into a child transcript no reader ever opens, so the parent conversation comes
+ * back showing an agent that simply stopped making progress. The row is what
+ * `permission-denial-overlay` puts back.
  */
 export const RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'turn_start',
@@ -71,6 +78,7 @@ export const RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'question_prompt',
   'elicitation_prompt',
   'interaction_resolved',
+  'permission_denied',
 ]);
 
 /**

@@ -162,6 +162,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           reasonType={part.reasonType}
           reason={part.reason}
           message={part.message}
+          agentId={part.agentId}
         />
       );
     }

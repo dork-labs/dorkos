@@ -1884,9 +1884,29 @@ export const SessionImageEventSchema = z.object(sessionImageShape).openapi('Sess
 export type SessionImageEvent = z.infer<typeof SessionImageEventSchema>;
 
 /**
- * Emitted when the SDK denies a tool call before it reaches `canUseTool` — most
- * notably an auto-mode safety classifier denial (`reasonType === 'classifier'`).
- * Mirrors `SDKPermissionDeniedMessage`. Rendered as a read-only denial chip.
+ * The subagent-attribution field a denial carries, shared by the event and the
+ * part it becomes so the two can never drift.
+ *
+ * **Not a DorkOS agent id.** Everything else in this file that says `agentId`
+ * (e.g. {@link McpSigninPartSchema}) means the ULID of an agent DorkOS created
+ * and can name. This one is the runtime's OWN handle for a child it spawned
+ * inside a single turn — `agent_id` on `SDKPermissionDeniedMessage`, the same
+ * value `canUseTool` receives as `agentID` — and DorkOS has no directory to
+ * look it up in. It is carried because attribution without it is impossible:
+ * a denial with no `agentId` happened on the main thread, and one with an
+ * `agentId` happened inside a child the reader never saw start.
+ */
+const deniedAgentShape = {
+  /** The runtime's id for the subagent whose tool call was denied; absent on the main thread. */
+  agentId: z.string().optional(),
+} as const;
+
+/**
+ * Emitted when the SDK denies a tool call before it reaches `canUseTool` — an
+ * auto-mode safety classifier denial (`reasonType === 'classifier'`), or a
+ * BACKGROUNDED subagent's call the CLI auto-denies because a detached child has
+ * no one to ask (`reasonType === 'asyncAgent'`, DOR-795). Mirrors
+ * `SDKPermissionDeniedMessage`. Rendered as a read-only denial chip.
  */
 export const PermissionDeniedEventSchema = z
   .object({
@@ -1894,12 +1914,13 @@ export const PermissionDeniedEventSchema = z
     toolCallId: z.string(),
     /** Name of the tool that was denied (e.g. `'Bash'`). */
     toolName: z.string(),
-    /** Discriminator for why the call was denied (e.g. `'classifier'`, `'rule'`). */
+    /** Discriminator for why the call was denied (e.g. `'classifier'`, `'asyncAgent'`, `'rule'`). */
     reasonType: z.string().optional(),
     /** Human-readable reason from the deciding component, when available. */
     reason: z.string().optional(),
     /** The rejection message returned to the model in the tool_result. */
     message: z.string(),
+    ...deniedAgentShape,
   })
   .openapi('PermissionDeniedEvent');
 
@@ -2544,9 +2565,11 @@ export type MemoryRecallPart = z.infer<typeof MemoryRecallPartSchema>;
 
 /**
  * A read-only chip in the message stream marking a tool call that was denied
- * before execution (e.g. by the auto-mode safety classifier). Distinct from a
- * user-issued denial — it carries no actions and offers no re-approval path.
- * Sourced from the `permission_denied` StreamEvent.
+ * before execution — by the auto-mode safety classifier, or because a
+ * backgrounded subagent had no one to ask. Distinct from a user-issued denial:
+ * it carries no actions and offers no re-approval path. Sourced from the
+ * `permission_denied` StreamEvent, which reaches both the live turn and a
+ * reopened transcript (DOR-795).
  */
 export const PermissionDeniedPartSchema = z
   .object({
@@ -2555,12 +2578,13 @@ export const PermissionDeniedPartSchema = z
     toolCallId: z.string(),
     /** Name of the tool that was denied (e.g. `'Bash'`). */
     toolName: z.string(),
-    /** Discriminator for why the call was denied (e.g. `'classifier'`, `'rule'`). */
+    /** Discriminator for why the call was denied (e.g. `'classifier'`, `'asyncAgent'`, `'rule'`). */
     reasonType: z.string().optional(),
     /** Human-readable reason from the deciding component, when available. */
     reason: z.string().optional(),
     /** The rejection message returned to the model in the tool_result. */
     message: z.string(),
+    ...deniedAgentShape,
   })
   .openapi('PermissionDeniedPart');
 

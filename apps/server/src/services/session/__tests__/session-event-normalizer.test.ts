@@ -568,13 +568,38 @@ describe('toRawSessionEvent', () => {
       input: { type: 'sync_update', data: { sessionId: 's1', timestamp: 'now' } },
       expected: null,
     },
+    // A refusal is NOT dropped (DOR-795): for a backgrounded subagent it is the
+    // only place the loss is ever stated, so it rides the durable stream.
     {
-      name: 'permission_denied → null',
+      name: 'permission_denied → permission_denied (lean denial stays lean)',
       input: {
         type: 'permission_denied',
         data: { toolCallId: 't', toolName: 'Bash', message: 'no' },
       },
-      expected: null,
+      expected: { type: 'permission_denied', toolCallId: 't', toolName: 'Bash', message: 'no' },
+    },
+    {
+      name: 'permission_denied → permission_denied (carries agentId + reasonType)',
+      input: {
+        type: 'permission_denied',
+        data: {
+          toolCallId: 'toolu_async_1',
+          toolName: 'Bash',
+          message: 'Backgrounded agents cannot request permission.',
+          reasonType: 'asyncAgent',
+          reason: 'Async agent tool calls are auto-denied.',
+          agentId: 'agent_child_7',
+        },
+      },
+      expected: {
+        type: 'permission_denied',
+        toolCallId: 'toolu_async_1',
+        toolName: 'Bash',
+        message: 'Backgrounded agents cannot request permission.',
+        reasonType: 'asyncAgent',
+        reason: 'Async agent tool calls are auto-denied.',
+        agentId: 'agent_child_7',
+      },
     },
     {
       name: 'ui_command → ui_command (carries the command whole)',

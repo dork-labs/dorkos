@@ -557,6 +557,32 @@ function foldCompactBoundary(
 }
 
 /**
+ * Fold a `permission_denied` event into a read-only denial chip (DOR-795).
+ *
+ * Appended at the current tail, like the compaction row: the event carries no
+ * positional anchor beyond its place in the stream, and the runtime emits it
+ * the moment the refusal happens.
+ *
+ * Every field rides through, `agentId` included — for a BACKGROUNDED subagent's
+ * auto-denial it is the only thing that says WHICH child lost the tool, and the
+ * child's own transcript is somewhere the reader will never look.
+ */
+function foldPermissionDenied(
+  parts: MessagePart[],
+  event: Extract<SessionEvent, { type: 'permission_denied' }>
+) {
+  parts.push({
+    type: 'permission_denied',
+    toolCallId: event.toolCallId,
+    toolName: event.toolName,
+    message: event.message,
+    ...(event.reasonType !== undefined ? { reasonType: event.reasonType } : {}),
+    ...(event.reason !== undefined ? { reason: event.reason } : {}),
+    ...(event.agentId !== undefined ? { agentId: event.agentId } : {}),
+  });
+}
+
+/**
  * Fold an `operation_progress` event. A successful compaction renders its inline
  * row from `compact_boundary`; a FAILED compaction fires NO boundary, so its only
  * durable signal is `operation_progress` `{ operation: 'compaction', state:
@@ -845,7 +871,8 @@ function settledInteractionIds(events: SessionEvent[]): Set<string> {
  * their tool part (buffered when they precede it); `memory_recall` pins a
  * collapsible part at index 0; `image_attachment` appends a picture where it
  * was produced; a typed `error` folds an inline error part (the
- * live `ErrorMessageBlock`, for every runtime). `turn_start`, `turn_end`,
+ * live `ErrorMessageBlock`, for every runtime); a `permission_denied` folds a
+ * read-only denial chip. `turn_start`, `turn_end`,
  * `status_change`, and `todo_update` carry no renderable part and are skipped
  * (they drive the status/task projections, not the bubble).
  *
@@ -912,6 +939,9 @@ export function projectInProgressTurn(events: SessionEvent[]): MessagePart[] {
         break;
       case 'compact_boundary':
         foldCompactBoundary(parts, event);
+        break;
+      case 'permission_denied':
+        foldPermissionDenied(parts, event);
         break;
       case 'operation_progress':
         foldOperationProgress(parts, event);

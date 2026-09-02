@@ -101,11 +101,13 @@ function approvalRequired(opts: {
  * product that ignored the decision entirely.
  *
  * Deliberately NOT a `permission_denied` event on the refusal, tempting as the
- * name is: the session-event normalizer maps that member to `null` (it is an
- * SDK-side pre-`canUseTool` denial, not an operator's), so it would never reach
- * a client and the browser assertion resting on it would be vacuous. The
- * operator's refusal reaches the transcript through `interaction_resolved`,
- * which is what draws the approval receipt.
+ * name is. That member says the RUNTIME refused a call before anyone could be
+ * asked — a classifier, a deny rule, or a backgrounded subagent with nobody to
+ * ask (DOR-795) — and it draws a read-only chip with no receipt on it. This
+ * scenario is the opposite: a person was asked and said no. Their refusal
+ * reaches the transcript through `interaction_resolved`, which is what draws
+ * the approval receipt, and emitting both would report one decision twice under
+ * two different authors.
  */
 const approvalGated: ScenarioFn = async function* (_content, ctx) {
   const toolCallId = 'gated-edit-1';
