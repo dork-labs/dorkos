@@ -4,7 +4,7 @@ import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import type { UnattendedAutonomyDriver } from '@dorkos/shared/permission-semantics';
 import { Banner, Button } from '@/layers/shared/ui';
-import { UnattendedAutonomyBanner } from '@/layers/widgets/app-banner';
+import { RuntimeSigninBanner, UnattendedAutonomyBanner } from '@/layers/widgets/app-banner';
 
 const SAMPLE_DETAILS = (
   <pre className="text-muted-foreground bg-background/60 max-w-full overflow-x-auto rounded-md border p-3 text-xs">
@@ -112,6 +112,23 @@ export function BannerShowcases() {
                 { ...UNATTENDED_BINDING, id: 'b2', name: 'Support inbox' },
                 { ...UNATTENDED_TASK, id: 't2', name: 'Morning digest' },
               ]}
+            />
+          </div>
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Dead runtime sign-in — one, two, and truncated</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="flex w-full flex-col gap-3">
+          <div className="w-full overflow-hidden rounded-md border">
+            <RuntimeSigninBanner runtimes={['claude-code']} />
+          </div>
+          <div className="w-full overflow-hidden rounded-md border">
+            <RuntimeSigninBanner runtimes={['claude-code', 'codex']} />
+          </div>
+          <div className="w-full overflow-hidden rounded-md border">
+            <RuntimeSigninBanner
+              runtimes={['claude-code', 'codex', 'opencode', 'a-future-runtime']}
             />
           </div>
         </div>

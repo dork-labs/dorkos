@@ -20,6 +20,16 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import '@testing-library/jest-dom/vitest';
 import { createMockTransport } from '@dorkos/test-utils';
+
+// The runtime-sign-in descriptor next door reads the Inbox, which subscribes to
+// the global `/api/events` stream and so wants the app-level
+// `EventStreamProvider` — a whole SSE stack for a subscription nothing in this
+// file fires. Everything else in the module is the real thing.
+vi.mock('@/layers/shared/model', async () => {
+  const actual = await vi.importActual<Record<string, unknown>>('@/layers/shared/model');
+  return { ...actual, useEventSubscription: () => undefined };
+});
+
 import { TransportProvider } from '@/layers/shared/model';
 
 import { useAppBanners } from '../model/use-app-banners';

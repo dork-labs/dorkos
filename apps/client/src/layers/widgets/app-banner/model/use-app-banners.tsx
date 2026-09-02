@@ -1,7 +1,11 @@
+import { useMemo } from 'react';
 import { useMemoryProviderStatus } from '@/layers/entities/memory-provider-status';
+import { useNotifications, type NotificationLens } from '@/layers/entities/notifications';
 import { useUnattendedAutonomy } from '@/layers/entities/unattended-autonomy';
 
+import { deadSigninRuntimes } from '../lib/dead-runtime-signins';
 import { MemoryProviderBenchedBanner } from '../ui/MemoryProviderBenchedBanner';
+import { RuntimeSigninBanner } from '../ui/RuntimeSigninBanner';
 import { UnattendedAutonomyBanner } from '../ui/UnattendedAutonomyBanner';
 import { BANNER_PRIORITY, type BannerDescriptor } from './banner-descriptor';
 
@@ -59,6 +63,44 @@ function useMemoryProviderBenchedDescriptor(): BannerDescriptor | null {
 }
 
 /**
+ * The Inbox lens this widget reads: `signin.required` rows and nothing else.
+ *
+ * Module-level so every render asks for the same lens — the lens is the query
+ * key, and its own paged request rather than a sieve over the bell's first page
+ * (see `NotificationLens.kinds`), so a busy morning cannot push the one row that
+ * matters off the end of a page this hook never scrolls.
+ */
+const SIGNIN_LENS: NotificationLens = { kinds: ['signin.required'] };
+
+/**
+ * Runtime-sign-in descriptor — critical severity, eligible while any runtime's
+ * newest `signin.required` row is not a `cleared` one.
+ *
+ * Critical, and the only descriptor here that is: nothing on that runtime runs
+ * at all — not a scheduled task at 3am, not a room reply, not an agent-to-agent
+ * delivery — and unlike a benched memory backend there is no degraded path
+ * carrying on behind it. It is also the one condition on this list that a person
+ * can end, from the button the banner draws.
+ *
+ * Read from the Inbox rather than from a runtime-health endpoint because the
+ * Inbox row IS the record: `signin.required` is `standing-recorded`, so the
+ * server writes a row at the raise edge and another at the recovery, and the
+ * memory-held watch behind them does not survive a restart. See
+ * {@link deadSigninRuntimes} for why the test is `outcome`, never unread.
+ */
+function useRuntimeSigninDescriptor(): BannerDescriptor | null {
+  const { notifications } = useNotifications(SIGNIN_LENS);
+  const runtimes = useMemo(() => deadSigninRuntimes(notifications), [notifications]);
+  if (runtimes.length === 0) return null;
+  return {
+    id: 'runtime-signin',
+    variant: 'critical',
+    priority: BANNER_PRIORITY.critical,
+    render: () => <RuntimeSigninBanner runtimes={runtimes} />,
+  };
+}
+
+/**
  * Collects every eligible app banner for the current app state. The slot ranks
  * the result and shows the highest-priority one. Add a banner by writing a
  * descriptor hook and appending its result here — no other wiring is required.
@@ -95,5 +137,8 @@ function useMemoryProviderBenchedDescriptor(): BannerDescriptor | null {
 export function useAppBanners(_sessionId: string | null): BannerDescriptor[] {
   const unattended = useUnattendedAutonomyDescriptor();
   const memoryProviderBenched = useMemoryProviderBenchedDescriptor();
-  return [unattended, memoryProviderBenched].filter((d): d is BannerDescriptor => d !== null);
+  const runtimeSignin = useRuntimeSigninDescriptor();
+  return [unattended, memoryProviderBenched, runtimeSignin].filter(
+    (d): d is BannerDescriptor => d !== null
+  );
 }

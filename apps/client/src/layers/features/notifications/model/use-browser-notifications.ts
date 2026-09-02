@@ -69,14 +69,15 @@ interface OpenNotification {
  * It is in the Inbox, where it belongs. Widening either source to include it is a
  * product decision, not a bug fix.
  *
- * **`signin.required` reaches neither for the same reason** (DOR-1657): it is
- * `blocking`, so the tier filter drops it, and `useBlockingArrivals` does not
- * know about it. It is not silent, though — it writes a real inbox row the
- * moment it happens, the escalation ladder pushes it to a subscribed phone, and
- * the desktop shell banners the row. What the WEB app does not draw is this
- * in-page banner, so a dead sign-in reaches a web-only operator through the bell
- * rather than over whatever they are looking at. Widening either source to cover
- * it is the same product decision as for `session.error`.
+ * **`signin.required` reaches neither either** (DOR-1657): it is `blocking`, so
+ * the tier filter drops it, and `useBlockingArrivals` does not know about it.
+ * Neither source was widened, and it is no longer silent in the web app: a dead
+ * sign-in now raises the standing app banner
+ * (`widgets/app-banner`'s `useRuntimeSigninDescriptor`, DOR-1680), on top of the
+ * inbox row it writes, the phone the escalation ladder reaches, and the banner
+ * the desktop shell draws. An in-page row that stays up while the condition
+ * stands is the right shape for it — an OS notification fires once and is gone,
+ * which is not how a sign-in that is still dead an hour later should read.
  */
 export function useBrowserNotifications(): void {
   const { permission } = useBrowserNotificationPermission();
