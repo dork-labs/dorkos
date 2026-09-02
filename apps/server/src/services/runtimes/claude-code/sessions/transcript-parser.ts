@@ -11,6 +11,7 @@ import type {
 import { SDK_TOOL_NAMES } from '@dorkos/shared/constants';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { extractToolResultImages, type ToolResultImage } from '../tool-result-images.js';
+import { apiErrorCode, buildApiErrorPart, isApiErrorRecord } from '../sdk/api-error-record.js';
 import { mapSdkAnswersToIndices } from './question-answers.js';
 import { applyToolResult } from './tool-result-outcome.js';
 import { classifyOrigin } from './classify-origin.js';
@@ -63,6 +64,19 @@ export interface TranscriptLine {
     postTokens?: number;
     durationMs?: number;
   };
+  /**
+   * The CLI's marker for a SYNTHETIC record it wrote to report an API failure
+   * (an expired sign-in, a 5xx, a hit limit) rather than anything the agent
+   * said. Paired with {@link TranscriptLine.error}; both are read by
+   * `sdk/api-error-record.ts`.
+   */
+  isApiErrorMessage?: boolean;
+  /**
+   * The failure code on an API-error record, e.g. `authentication_failed`.
+   * Typed `unknown` because a `system` record carries an OBJECT here, so every
+   * read narrows before trusting it.
+   */
+  error?: unknown;
   /** SDK-provided structured answers for AskUserQuestion tool results */
   toolUseResult?: {
     questions?: QuestionItem[];
@@ -341,6 +355,17 @@ export function isPersonAuthoredUserRecord(line: TranscriptLine): boolean {
  *
  * @param timestamp - The record's `timestamp` field, if any.
  */
+/**
+ * Whether an assistant record's content carries a `tool_use` block — the one
+ * shape the API-error branch must not swallow, since it renders the notice and
+ * drops everything else. Bare-string content carries none by construction.
+ *
+ * @param content - The record's `message.content`, in either encoding.
+ */
+function carriesToolUse(content: string | ContentBlock[]): boolean {
+  return Array.isArray(content) && content.some((block) => block.type === 'tool_use');
+}
+
 function epochMs(timestamp: string | undefined): number | undefined {
   if (!timestamp) return undefined;
   const ms = Date.parse(timestamp);
@@ -582,11 +607,37 @@ export function parseTranscript(lines: string[], images?: TranscriptImageRef[]):
       });
     } else if (parsed.type === 'assistant' && parsed.message) {
       const contentBlocks = parsed.message.content;
+
+      // A synthetic API-error notice the CLI wrote (expired sign-in, 5xx, hit
+      // limit) is a failure report, not speech. It becomes the SAME typed error
+      // part the live stream produces, so a reload shows the same card — and,
+      // for an expired sign-in, the same way out of it (DOR-1649).
+      //
+      // Two shape decisions, both defensive rather than observed. Every one of
+      // the 249 records measured carries exactly one `text` block. This runs
+      // BEFORE the array guard so a future bare-string notice is still read
+      // rather than dropped by it; and it stands down entirely for a record
+      // carrying a `tool_use` block, because this branch renders the notice and
+      // nothing else, which would silently drop tool calls. Such a record falls
+      // through to normal parsing instead — the pre-DOR-1649 behaviour, which
+      // loses no data.
+      if (isApiErrorRecord(parsed) && !carriesToolUse(contentBlocks)) {
+        messages.push({
+          id: parsed.uuid || crypto.randomUUID(),
+          role: 'assistant',
+          content: '',
+          parts: [
+            buildApiErrorPart(apiErrorCode(parsed), extractTextContent(contentBlocks).trim()),
+          ],
+          timestamp: parsed.timestamp,
+        });
+        continue;
+      }
+
       if (!Array.isArray(contentBlocks)) continue;
 
       // The CLI pairs its resume bootstrap with a zero-token synthetic
-      // assistant reply. Other synthetic messages (API error notices) stay
-      // visible — they carry real failure information.
+      // assistant reply, which carries no error markers and is drawn nowhere.
       if (
         parsed.message.model === '<synthetic>' &&
         extractTextContent(contentBlocks).trim() === 'No response requested.'

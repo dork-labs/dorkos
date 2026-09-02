@@ -61,6 +61,7 @@
  *
  * @module server/services/search/projections/claude-code
  */
+import { isApiErrorRecord } from '../../runtimes/claude-code/sdk/api-error-record.js';
 import {
   extractTextContent,
   isPersonAuthoredUserRecord,
@@ -268,9 +269,10 @@ function closeAssistantRun(
  * the 186 transcripts measured (2026-08-26) the corpus held 29 of these records
  * and exactly one produced such a landing.
  *
- * Other `<synthetic>` records are ordinary assistant records here, because they
- * are ordinary ones there: an API error notice carries real failure information
- * and the parser keeps it visible.
+ * The CLI's other `<synthetic>` records are its API-error notices, and they are
+ * excluded for the first reason but not the second: nobody said them, so
+ * `readSpeech` drops them, while the parser still renders one (as an error card
+ * — DOR-1649) so its uuid may still close a run.
  *
  * @param line - The record to classify.
  */
@@ -378,6 +380,20 @@ function readSpeech(line: TranscriptLine): { role: 'user' | 'assistant'; body: s
     // `isPersonAuthoredUserRecord`, stated here because that predicate answers
     // only for `user` records.
     if (line.isSidechain === true || line.isMeta === true) return null;
+    // A synthetic API-error notice — an expired sign-in, a 5xx, a hit limit —
+    // is the CLI reporting a failure, not the agent speaking, and the session
+    // view now draws it as an error card rather than a sentence (DOR-1649).
+    // Indexing it under the agent's voice would answer "what did it say" with
+    // words nobody said. Skipped HERE only: it is still an assistant record for
+    // run bookkeeping, and the parser still renders a message for it, so it
+    // remains a valid closer for the run its uuid names.
+    //
+    // One unobserved shape diverges on purpose: a notice ALSO carrying a
+    // `tool_use` block falls through to normal parsing there (so its tool calls
+    // survive) and renders its text, while staying unindexed here. That costs a
+    // search gap on words nobody said, never a mislanding — 0 of 249 records
+    // measured carry one.
+    if (isApiErrorRecord(line)) return null;
     // `extractTextContent` keeps `text` blocks and nothing else, so `thinking`
     // and `tool_use` blocks are excluded by construction rather than by a filter
     // that could be forgotten.

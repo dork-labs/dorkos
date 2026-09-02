@@ -327,3 +327,64 @@ describe('the id a Claude Code hit lands on', () => {
     expect(projection.messages.map((message) => message.messageId)).toEqual(['a-1', 'u-1', 'a-2']);
   });
 });
+
+describe('synthetic API-error notices are not speech (DOR-1649)', () => {
+  /** The CLI's own record for a failure, both markers as it writes them. */
+  function apiError(text: string, code: string, uuid: string): string {
+    return line({
+      type: 'assistant',
+      uuid,
+      timestamp: '2026-07-28T10:00:01.000Z',
+      message: { role: 'assistant', model: '<synthetic>', content: [{ type: 'text', text }] },
+      isApiErrorMessage: true,
+      error: code,
+    });
+  }
+
+  it('does not index the CLI wording of an expired sign-in', () => {
+    const projection = project([
+      said('carry on', { uuid: 'u-1' }),
+      apiError(
+        'Failed to authenticate: OAuth session expired and could not be refreshed',
+        'authentication_failed',
+        'e-1'
+      ),
+    ]);
+
+    expect(projection.messages.map((message) => message.body)).toEqual(['carry on']);
+  });
+
+  it('does not index a limit notice either', () => {
+    const projection = project([
+      apiError("You've hit your weekly limit · resets Aug 24 at 8pm", 'rate_limit', 'e-1'),
+    ]);
+
+    expect(projection.messages).toEqual([]);
+  });
+
+  // The notice is still an assistant record for run bookkeeping: the session
+  // view folds it into the turn it interrupted and keeps the LAST uuid, so a
+  // hit on that turn's real text must land on the notice's uuid.
+  it('still closes the run whose id the session view will render', () => {
+    const projection = project([
+      answered([{ type: 'text', text: 'working on it' }], { uuid: 'a-1' }),
+      apiError('API Error: 529 Overloaded.', 'server_error', 'e-1'),
+    ]);
+
+    expect(projection.messages.map((message) => [message.body, message.messageId])).toEqual([
+      ['working on it', 'e-1'],
+    ]);
+  });
+
+  it('keeps indexing an ordinary reply that merely mentions authentication', () => {
+    const projection = project([
+      answered([{ type: 'text', text: 'Your OAuth token expired, so I refreshed it.' }], {
+        uuid: 'a-1',
+      }),
+    ]);
+
+    expect(projection.messages.map((message) => message.body)).toEqual([
+      'Your OAuth token expired, so I refreshed it.',
+    ]);
+  });
+});

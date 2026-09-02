@@ -7,6 +7,11 @@ import {
   extractLocalCommandOutput,
 } from '../runtimes/claude-code/sessions/transcript-parser.js';
 import { applyToolResult } from '../runtimes/claude-code/sessions/tool-result-outcome.js';
+// These cases are about SHAPE — a typed error part instead of assistant text —
+// so they ask for the auth copy rather than restating it, and a reword by the
+// copy's owner leaves them alone. The sentence itself is pinned once, in
+// `sdk/__tests__/api-error-record.test.ts`.
+import { describeAssistantError } from '../runtimes/claude-code/sdk/sdk-error-mapping.js';
 import type { HistoryToolCall, ToolCallPart } from '@dorkos/shared/types';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { wrapKickoff } from '@dorkos/shared/kickoff';
@@ -710,15 +715,23 @@ describe('parseTranscript synthetic CLI record suppression', () => {
           model: '<synthetic>',
           content: [{ type: 'text', text: 'API Error: 401 Invalid authentication credentials' }],
         },
+        isApiErrorMessage: true,
+        error: 'authentication_failed',
       }),
     ];
     const result = parseTranscript(lines);
     expect(result).toHaveLength(2);
     expect(result[0]).toMatchObject({ role: 'user', messageType: 'compaction' });
-    expect(result[1]).toMatchObject({
-      role: 'assistant',
-      content: 'API Error: 401 Invalid authentication credentials',
-    });
+    // Kept — but as the failure it is, not as a sentence the agent said.
+    expect(result[1]).toMatchObject({ role: 'assistant' });
+    expect(result[1].parts).toEqual([
+      {
+        type: 'error',
+        message: describeAssistantError('authentication_failed'),
+        category: 'auth_error',
+        details: 'API Error: 401 Invalid authentication credentials',
+      },
+    ]);
   });
 
   it('attaches compact_boundary metadata to the following compaction summary (DOR-118)', () => {
@@ -925,5 +938,224 @@ describe('parseTranscript local_command output (DOR-126)', () => {
       content: 'stray output',
       id: 'orphan-out',
     });
+  });
+});
+
+describe('parseTranscript synthetic API-error notices (DOR-1649)', () => {
+  /**
+   * The record the CLI actually wrote when a turn's sign-in expired, copied
+   * from the reported transcript (70fd483b…, CLI 2.1.224, 2026-09-01) and
+   * trimmed to the fields the parser reads.
+   */
+  function authFailureRecord(): string {
+    return JSON.stringify({
+      parentUuid: '27a272f6-5858-4e8c-8746-5de8b94a6737',
+      isSidechain: false,
+      type: 'assistant',
+      uuid: 'aae96903-ccea-4fdc-a73c-34116a710dd8',
+      timestamp: '2026-09-01T12:06:43.988Z',
+      message: {
+        id: '4607c295-36fa-4b6a-8aef-9020980eaac8',
+        model: '<synthetic>',
+        role: 'assistant',
+        stop_reason: 'stop_sequence',
+        type: 'message',
+        usage: { input_tokens: 0, output_tokens: 0 },
+        content: [
+          {
+            type: 'text',
+            text: 'Failed to authenticate: OAuth session expired and could not be refreshed',
+          },
+        ],
+      },
+      error: 'authentication_failed',
+      isApiErrorMessage: true,
+      userType: 'external',
+      sessionId: '70fd483b-a826-4928-ae80-fb601b336426',
+      version: '2.1.224',
+    });
+  }
+
+  it('hydrates the reported auth failure as a typed error part, not assistant text', () => {
+    const result = parseTranscript([authFailureRecord()]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      id: 'aae96903-ccea-4fdc-a73c-34116a710dd8',
+      role: 'assistant',
+      timestamp: '2026-09-01T12:06:43.988Z',
+    });
+    expect(result[0].parts).toEqual([
+      {
+        type: 'error',
+        message: describeAssistantError('authentication_failed'),
+        category: 'auth_error',
+        details: 'Failed to authenticate: OAuth session expired and could not be refreshed',
+      },
+    ]);
+    // Nothing the agent "said": the vendor sentence must not come back as text.
+    expect(result[0].content).toBe('');
+    expect(result[0].parts?.some((p) => p.type === 'text')).toBe(false);
+  });
+
+  it('folds the notice into the turn it interrupted, keeping the real reply', () => {
+    const lines = [
+      JSON.stringify({
+        type: 'assistant',
+        uuid: 'real-1',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Working on it now.' }],
+        },
+      }),
+      authFailureRecord(),
+    ];
+
+    const result = parseTranscript(lines);
+
+    expect(result).toHaveLength(1);
+    // The fold keeps the LAST record's id, so the merged turn is addressed by
+    // the notice's uuid. The search projection's `closeAssistantRun` depends on
+    // exactly this, so it is asserted on both sides.
+    expect(result[0].id).toBe('aae96903-ccea-4fdc-a73c-34116a710dd8');
+    expect(result[0].content).toBe('Working on it now.');
+    expect(result[0].parts).toEqual([
+      { type: 'text', text: 'Working on it now.' },
+      {
+        type: 'error',
+        message: describeAssistantError('authentication_failed'),
+        category: 'auth_error',
+        details: 'Failed to authenticate: OAuth session expired and could not be refreshed',
+      },
+    ]);
+  });
+
+  it('keeps the CLI wording for a limit notice DorkOS has no copy for', () => {
+    const lines = [
+      JSON.stringify({
+        type: 'assistant',
+        uuid: 'limit-1',
+        message: {
+          role: 'assistant',
+          model: '<synthetic>',
+          content: [{ type: 'text', text: "You've hit your weekly limit · resets Aug 24 at 8pm" }],
+        },
+        error: 'rate_limit',
+        isApiErrorMessage: true,
+      }),
+    ];
+
+    const result = parseTranscript(lines);
+
+    expect(result[0].parts).toEqual([
+      { type: 'error', message: "You've hit your weekly limit · resets Aug 24 at 8pm" },
+    ]);
+  });
+
+  it('reads a notice whose content is a bare string', () => {
+    const lines = [
+      JSON.stringify({
+        type: 'assistant',
+        uuid: 'str-1',
+        message: { role: 'assistant', content: 'API Error: Connection dropped (ECONNRESET)' },
+        isApiErrorMessage: true,
+      }),
+    ];
+
+    const result = parseTranscript(lines);
+
+    expect(result[0].parts).toEqual([
+      { type: 'error', message: 'API Error: Connection dropped (ECONNRESET)' },
+    ]);
+  });
+
+  // Defensive, not observed: 0 of the 249 records measured carry a tool_use
+  // block. If one ever does, the notice branch would render the notice and
+  // nothing else, so it stands down and the record parses normally instead.
+  // Losing a tool call is worse than the text reading as speech.
+  it('stands down for a notice that also carries a tool call', () => {
+    const lines = [
+      JSON.stringify({
+        type: 'assistant',
+        uuid: 'mixed-1',
+        message: {
+          role: 'assistant',
+          model: '<synthetic>',
+          content: [
+            { type: 'text', text: 'API Error: 500 Internal server error' },
+            { type: 'tool_use', id: 'tool-9', name: 'Read', input: { file_path: '/tmp/a' } },
+          ],
+        },
+        isApiErrorMessage: true,
+        error: 'server_error',
+      }),
+    ];
+
+    const result = parseTranscript(lines);
+
+    expect(result[0].toolCalls).toHaveLength(1);
+    expect(result[0].content).toBe('API Error: 500 Internal server error');
+    expect(result[0].parts?.some((p) => p.type === 'error')).toBe(false);
+  });
+
+  it('falls back to the mapper sentence when the CLI wrote no text', () => {
+    const lines = [
+      JSON.stringify({
+        type: 'assistant',
+        uuid: 'blank-1',
+        message: { role: 'assistant', model: '<synthetic>', content: [] },
+        isApiErrorMessage: true,
+        error: 'rate_limit',
+      }),
+    ];
+
+    const result = parseTranscript(lines);
+
+    // Never a blank card.
+    expect(result[0].parts).toEqual([
+      { type: 'error', message: 'The agent stopped with an unexpected error.' },
+    ]);
+  });
+
+  // The inverse guard. Nothing about an ordinary reply may be reclassified —
+  // not its text, not its tool calls, not a reply that merely talks about
+  // authentication.
+  it('never reclassifies an ordinary assistant message', () => {
+    const lines = [
+      JSON.stringify({
+        type: 'assistant',
+        uuid: 'ok-1',
+        message: {
+          role: 'assistant',
+          model: 'claude-opus-4-6',
+          content: [
+            { type: 'text', text: 'Your OAuth token expired last week, so I refreshed it.' },
+            { type: 'tool_use', id: 'tool-1', name: 'Read', input: { file_path: '/tmp/a' } },
+          ],
+        },
+      }),
+    ];
+
+    const result = parseTranscript(lines);
+
+    expect(result[0].content).toBe('Your OAuth token expired last week, so I refreshed it.');
+    expect(result[0].parts?.some((p) => p.type === 'error')).toBe(false);
+    expect(result[0].toolCalls).toHaveLength(1);
+  });
+
+  it('still hides the resume bootstrap reply, which carries no error markers', () => {
+    const lines = [
+      JSON.stringify({
+        type: 'assistant',
+        uuid: 'synth-1',
+        message: {
+          role: 'assistant',
+          model: '<synthetic>',
+          content: [{ type: 'text', text: 'No response requested.' }],
+        },
+      }),
+    ];
+
+    expect(parseTranscript(lines)).toHaveLength(0);
   });
 });

@@ -103,7 +103,17 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           message={part.message}
           category={part.category}
           details={part.details}
-          onRetry={onRetry}
+          // Retry inside the transcript re-sends the session's LAST user
+          // message, which is only a coherent offer when we know what failed.
+          // An UNCATEGORISED part is by definition one nothing could classify:
+          // the CLI's own limit and connection notices arrive that way
+          // (DOR-1649), and they sit mid-history, so the prompt that button
+          // would re-send is usually not the one that failed. Offering nothing
+          // is honest — the composer is right there. Categorised parts keep
+          // their category's own `retryable` answer, and the transport-error
+          // card ChatPanel renders directly is a different call site,
+          // unaffected.
+          onRetry={part.category !== undefined ? onRetry : undefined}
           runtimeLabel={runtimeLabel}
         />
       );
