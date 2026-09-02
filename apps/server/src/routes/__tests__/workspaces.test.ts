@@ -4,11 +4,15 @@
  * `blocked: 'dirty'` in the body (so the client can escalate), NOT a 409 the
  * generic fetch layer would swallow into a opaque error.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import express, { type Express } from 'express';
 import request from 'supertest';
+import { mkdtemp, rm, mkdir, realpath, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import workspaceRoutes from '../workspaces.js';
-import { setWorkspaceManager } from '../../services/workspace/index.js';
+import { setWorkspaceManager, setWorkspaceRoot } from '../../services/workspace/index.js';
 import type { WorkspaceManager, Workspace } from '@dorkos/shared/workspace';
 
 function mountWith(manager: Partial<WorkspaceManager>): Express {
@@ -82,5 +86,68 @@ describe('workspaces routes', () => {
     const res = await request(app).delete('/api/workspaces/w1');
     expect(res.status).toBe(200);
     expect(res.body.removed).toBe(true);
+  });
+});
+
+/**
+ * The adoption scan (DOR-1056). Driven against a real temp root, because the
+ * route's job is to hand back what is genuinely on disk — and because `/scan`
+ * has to beat the `/:id` parameter route, which a mocked service could not show.
+ */
+describe('GET /api/workspaces/scan', () => {
+  let base: string;
+  let root: string;
+
+  beforeAll(async () => {
+    base = await realpath(await mkdtemp(path.join(tmpdir(), 'ws-scan-route-')));
+    root = path.join(base, 'workspaces');
+    const source = path.join(base, 'source');
+    await mkdir(path.join(root, 'core'), { recursive: true });
+    await mkdir(source, { recursive: true });
+
+    execFileSync('git', ['init', '-b', 'main', '.'], { cwd: source, stdio: 'pipe' });
+    execFileSync('git', ['config', 'user.email', 't@example.com'], { cwd: source, stdio: 'pipe' });
+    execFileSync('git', ['config', 'user.name', 'Test'], { cwd: source, stdio: 'pipe' });
+    await writeFile(path.join(source, 'README.md'), '# s\n');
+    execFileSync('git', ['add', '.'], { cwd: source, stdio: 'pipe' });
+    execFileSync('git', ['commit', '-m', 'init'], { cwd: source, stdio: 'pipe' });
+    execFileSync('git', ['worktree', 'add', path.join(root, 'core', 'DOR-1056'), '-b', 'scan'], {
+      cwd: source,
+      stdio: 'pipe',
+    });
+  }, 60_000);
+
+  afterAll(async () => {
+    await rm(base, { recursive: true, force: true });
+  });
+
+  it('returns the checkouts found under the registered root', async () => {
+    setWorkspaceRoot(root);
+    const app = mountWith({});
+
+    const res = await request(app).get('/api/workspaces/scan');
+
+    expect(res.status).toBe(200);
+    expect(res.body.root).toBe(root);
+    expect(res.body.worktrees).toHaveLength(1);
+    expect(res.body.worktrees[0]).toMatchObject({
+      name: 'DOR-1056',
+      project: 'core',
+      branch: 'scan',
+      readable: true,
+    });
+  });
+
+  it('is not swallowed by the /:id route', async () => {
+    setWorkspaceRoot(root);
+    // `get` is what `/:id` would call. If `/scan` were declared after it, the
+    // literal path would be read as an id and this spy would fire.
+    const get = vi.fn().mockResolvedValue(null);
+    const app = mountWith({ get });
+
+    const res = await request(app).get('/api/workspaces/scan');
+
+    expect(res.status).toBe(200);
+    expect(get).not.toHaveBeenCalled();
   });
 });

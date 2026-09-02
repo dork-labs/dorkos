@@ -30,6 +30,20 @@ export interface WorkspaceSubsystem {
 }
 
 /**
+ * Resolve where workspace checkouts live — the one place that answer is derived.
+ *
+ * Both the managed subsystem and the read-only adoption scan must walk the same
+ * directory, and `os.homedir()` is banned here (Hard Rule 3), so the root always
+ * comes from the resolved data dir unless config names another.
+ *
+ * @param opts.dorkHome - The resolved data dir.
+ * @param opts.config - The resolved `workspace` config section.
+ */
+export function resolveWorkspaceRoot(opts: { dorkHome: string; config: WorkspaceConfig }): string {
+  return opts.config.rootPath ?? path.join(opts.dorkHome, 'workspaces');
+}
+
+/**
  * Wire the workspace subsystem from config + the DB handle.
  *
  * @param opts.db - The consolidated DB handle.
@@ -43,7 +57,7 @@ export function createWorkspaceSubsystem(opts: {
   config: WorkspaceConfig;
   listAttachedSessions?: (workspacePath: string) => AttachedSession[] | Promise<AttachedSession[]>;
 }): WorkspaceSubsystem {
-  const root = opts.config.rootPath ?? path.join(opts.dorkHome, 'workspaces');
+  const root = resolveWorkspaceRoot(opts);
   const store = new WorkspaceStore(opts.db, root);
   const allocator = new PortAllocator(
     { portBase: opts.config.portBase, portBlockSize: opts.config.portBlockSize },
@@ -81,6 +95,26 @@ export function getWorkspaceManager(): WorkspaceManager {
   return active;
 }
 
+let scanRoot: string | null = null;
+
+/**
+ * Register the root the adoption scan walks. Registered unconditionally at
+ * bootstrap — reading which checkouts exist is filesystem truth, and stays true
+ * whether or not the managed layer (`workspace.enabled`) is switched on.
+ *
+ * @param root - The resolved workspace root.
+ */
+export function setWorkspaceRoot(root: string): void {
+  scanRoot = root;
+}
+
+/** Read the registered workspace root (throws if bootstrap has not run). */
+export function getWorkspaceRoot(): string {
+  if (!scanRoot) throw new Error('Workspace root not initialized');
+  return scanRoot;
+}
+
 export { WorkspaceService } from './workspace-service.js';
 export { WorkspaceStore } from './workspace-store.js';
 export { WorkspaceReconciler } from './workspace-reconciler.js';
+export { scanWorktrees } from './worktree-scan.js';

@@ -40,12 +40,7 @@ import type {
   UploadResult,
   UploadProgress,
 } from './types.js';
-import type {
-  Workspace,
-  WorkspaceWithSessions,
-  EnsureWorkspaceRequest,
-  RemoveResult,
-} from './workspace.js';
+import type { Workspace, WorktreeScanResult } from './workspace.js';
 import type {
   AdapterConfig,
   AdapterStatus,
@@ -1207,17 +1202,14 @@ export interface Transport extends RoomTransport {
    */
   resizeTerminal(handle: TerminalHandle, size: { cols: number; rows: number }): void;
 
-  // --- Workspaces (server-managed isolated checkouts; DOR-84) ---
-  /** List workspaces (optionally one project), each with its attached sessions. */
-  listWorkspaces(projectKey?: string): Promise<WorkspaceWithSessions[]>;
+  // --- Workspaces (isolated checkouts; DOR-84, DOR-1056) ---
+  /**
+   * Scan the workspace root for the checkouts that really exist on disk.
+   * Read-only: it never provisions, changes, or deletes one.
+   */
+  scanWorktrees(): Promise<WorktreeScanResult>;
   /** Resolve an absolute path (e.g. a session cwd) to its containing workspace, or null. */
   resolveWorkspace(absPath: string): Promise<Workspace | null>;
-  /** Provision-or-reuse the workspace for a unit of work. */
-  ensureWorkspace(req: EnsureWorkspaceRequest): Promise<Workspace>;
-  /** Pin or unpin a workspace (pinned workspaces are exempt from cleanup). */
-  pinWorkspace(id: string, pinned: boolean): Promise<Workspace>;
-  /** Remove a workspace; refuses a dirty one unless `force`. */
-  removeWorkspace(id: string, force?: boolean): Promise<RemoveResult>;
 
   /** Server health check. */
   health(): Promise<HealthResponse>;

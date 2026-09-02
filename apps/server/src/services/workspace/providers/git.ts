@@ -16,9 +16,20 @@ const execFileAsync = promisify(execFile);
 /** Default git command timeout (ms). */
 const GIT_TIMEOUT_MS = 30_000;
 
-/** Run a git command in `cwd`, returning trimmed stdout. Throws on non-zero exit. */
-export async function runGit(args: string[], cwd: string): Promise<string> {
-  const { stdout } = await execFileAsync('git', args, { cwd, timeout: GIT_TIMEOUT_MS });
+/**
+ * Run a git command in `cwd`, returning trimmed stdout. Throws on non-zero exit.
+ *
+ * @param args - Arguments passed to `git` (never shell-interpolated).
+ * @param cwd - Directory to run in.
+ * @param timeoutMs - Kill the child after this long. Provisioning can afford the
+ *   30s default; a scan that blocks an HTTP response cannot, so it passes its own.
+ */
+export async function runGit(
+  args: string[],
+  cwd: string,
+  timeoutMs: number = GIT_TIMEOUT_MS
+): Promise<string> {
+  const { stdout } = await execFileAsync('git', args, { cwd, timeout: timeoutMs });
   return stdout;
 }
 

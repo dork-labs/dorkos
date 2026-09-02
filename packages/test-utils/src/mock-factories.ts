@@ -334,28 +334,10 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       },
     }),
     getGitStatus: vi.fn().mockResolvedValue({ error: 'not_git_repo' as const }),
-    // Workspaces (DOR-84)
-    listWorkspaces: vi.fn().mockResolvedValue([]),
+    // Workspaces (DOR-84, DOR-1056) — the scan answers "nothing found" so a
+    // component under test renders its empty state unless the test overrides it.
+    scanWorktrees: vi.fn().mockResolvedValue({ root: '/tmp/ws', worktrees: [] }),
     resolveWorkspace: vi.fn().mockResolvedValue(null),
-    ensureWorkspace: vi.fn().mockResolvedValue({
-      id: 'ws_mock',
-      projectKey: 'core',
-      key: 'mock',
-      path: '/tmp/ws/mock',
-      source: '/repo',
-      branch: 'dork/mock',
-      provider: 'worktree' as const,
-      status: 'ready' as const,
-      portBase: 4250,
-      portBlockSize: 10,
-      hostname: null,
-      url: null,
-      pinned: false,
-      createdAt: '2026-06-16T00:00:00.000Z',
-      lastUsedAt: '2026-06-16T00:00:00.000Z',
-    }),
-    pinWorkspace: vi.fn().mockResolvedValue({}),
-    removeWorkspace: vi.fn().mockResolvedValue({ removed: true }),
     // Rooms (spec `rooms`) — every read answers empty so a component under test
     // renders its empty state unless the test overrides it.
     listRooms: vi.fn().mockResolvedValue([]),

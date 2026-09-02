@@ -1,107 +1,143 @@
 import { useMemo } from 'react';
-import { useNavigate } from '@tanstack/react-router';
-import { GitBranch, Pin, FolderGit2 } from 'lucide-react';
-import { cn } from '@/layers/shared/lib';
-import { Badge, PageContainer } from '@/layers/shared/ui';
+import { FolderGit2, GitBranch } from 'lucide-react';
+import { formatRelativeTime, shortenHomePath } from '@/layers/shared/lib';
 import {
-  useWorkspaces,
-  derivePorts,
-  type WorkspaceWithSessions,
-  type WorkspaceStatus,
-} from '@/layers/entities/workspace';
-import { WorkspaceActions } from '@/layers/features/workspace-management';
+  Badge,
+  PageContainer,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/layers/shared/ui';
+import { useWorktreeScan, type WorktreeScanEntry } from '@/layers/entities/workspace';
 
-const STATUS_DOT: Record<WorkspaceStatus, string> = {
-  ready: 'bg-emerald-500',
-  provisioning: 'bg-amber-500',
-  failed: 'bg-destructive',
-  removing: 'bg-muted-foreground',
-};
+/** Placeholder for a fact this checkout cannot supply. */
+const UNKNOWN = '—';
 
-/** One workspace card: identity, status, ports, pinned/dirty, and attached sessions. */
-function WorkspaceCard({ workspace }: { workspace: WorkspaceWithSessions }) {
-  const navigate = useNavigate();
-  const ports = derivePorts(workspace.portBase);
-  const changeCount =
-    (workspace.dirty?.uncommitted.length ?? 0) +
-    (workspace.dirty?.untracked.length ?? 0) +
-    (workspace.dirty?.unpushed ?? 0);
+/** What the Changes column says: how much unsaved work sits in this copy. */
+function changesLabel(worktree: WorktreeScanEntry): string {
+  if (worktree.changedFiles === null) return UNKNOWN;
+  if (worktree.changedFiles === 0) return 'Clean';
+  return `${worktree.changedFiles} changed`;
+}
+
+/**
+ * What the Sync column says. A branch with no upstream reports neither number,
+ * and "in sync" would be a claim about a comparison that was never made.
+ */
+function syncLabel(worktree: WorktreeScanEntry): string {
+  const { ahead, behind } = worktree;
+  if (ahead === null || behind === null) return UNKNOWN;
+  if (ahead === 0 && behind === 0) return 'In sync';
+  return [ahead > 0 && `${ahead} ahead`, behind > 0 && `${behind} behind`]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** One scanned checkout: identity, branch, unsaved work, and how recently it moved. */
+function WorktreeRow({ worktree }: { worktree: WorktreeScanEntry }) {
+  const hasChanges = (worktree.changedFiles ?? 0) > 0;
 
   return (
-    <div className="bg-card rounded-xl border p-4">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <GitBranch className="text-muted-foreground size-4 shrink-0" />
-            <span className="truncate font-medium">{workspace.key}</span>
-            {workspace.pinned && <Pin className="text-muted-foreground size-3.5 shrink-0" />}
-          </div>
-          <div className="text-muted-foreground mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-            <span className="inline-flex items-center gap-1">
-              <span className={cn('size-1.5 rounded-full', STATUS_DOT[workspace.status])} />
-              {workspace.status}
-            </span>
-            <span>· {workspace.provider}</span>
-            <span
-              title={`DORKOS ${ports.DORKOS_PORT} · VITE ${ports.VITE_PORT} · SITE ${ports.SITE_PORT}`}
-            >
-              · :{ports.DORKOS_PORT}
-            </span>
-            {workspace.dirty &&
-              (workspace.dirty.dirty ? (
-                <span className="text-amber-600">· ● {changeCount} changes</span>
-              ) : (
-                <span>· clean</span>
-              ))}
-          </div>
+    <TableRow>
+      <TableCell className="max-w-0">
+        <div className="truncate font-medium">{worktree.name}</div>
+        <div className="text-muted-foreground truncate text-xs" title={worktree.path}>
+          {shortenHomePath(worktree.path)}
         </div>
-        <WorkspaceActions workspace={workspace} />
-      </div>
+      </TableCell>
 
-      <div className="mt-3 border-t border-dashed pt-3">
-        {workspace.sessions.length === 0 ? (
-          <p className="text-muted-foreground text-xs">No sessions</p>
+      <TableCell className="max-w-0">
+        {!worktree.readable ? (
+          <Badge variant="outline" title="DorkOS could not read this folder with git.">
+            Can&apos;t read
+          </Badge>
+        ) : worktree.branch ? (
+          <span className="flex items-center gap-1.5">
+            <GitBranch className="text-muted-foreground size-3.5 shrink-0" />
+            <span className="truncate text-xs">{worktree.branch}</span>
+          </span>
         ) : (
-          <ul className="flex flex-col gap-1.5">
-            {workspace.sessions.map((session) => (
-              <li key={session.sessionId}>
-                <button
-                  type="button"
-                  onClick={() =>
-                    navigate({
-                      to: '/session',
-                      // Carry the workspace cwd so the session opens in its
-                      // checkout (transcript + the workspace status-bar chip).
-                      search: { session: session.sessionId, dir: workspace.path },
-                    })
-                  }
-                  className="text-foreground/80 hover:text-foreground focus-visible:ring-ring inline-flex w-full items-center gap-2 truncate rounded text-left text-xs focus-visible:ring-2 focus-visible:outline-none"
-                >
-                  <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
-                  <span className="truncate">{session.title || session.sessionId}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          <span className="text-muted-foreground text-xs">No branch</span>
         )}
-      </div>
-    </div>
+      </TableCell>
+
+      <TableCell className={hasChanges ? 'text-amber-600' : 'text-muted-foreground'}>
+        <span className="text-xs whitespace-nowrap">{changesLabel(worktree)}</span>
+      </TableCell>
+
+      <TableCell className="text-muted-foreground hidden md:table-cell">
+        <span className="text-xs whitespace-nowrap">{syncLabel(worktree)}</span>
+      </TableCell>
+
+      <TableCell className="text-muted-foreground hidden sm:table-cell">
+        <span className="text-xs whitespace-nowrap">
+          {worktree.lastCommitAt ? formatRelativeTime(worktree.lastCommitAt) : UNKNOWN}
+        </span>
+      </TableCell>
+    </TableRow>
   );
 }
 
-/** The /workspaces page — server-managed workspaces grouped by project (DOR-84). */
+/** One project folder's worth of checkouts. */
+function ProjectSection({
+  project,
+  worktrees,
+}: {
+  project: string;
+  worktrees: WorktreeScanEntry[];
+}) {
+  return (
+    <section>
+      <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
+        {project}
+        <Badge variant="secondary">{worktrees.length}</Badge>
+      </h2>
+      <div className="bg-card rounded-lg border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Folder</TableHead>
+              <TableHead>Branch</TableHead>
+              <TableHead>Changes</TableHead>
+              <TableHead className="hidden md:table-cell">Compared to remote</TableHead>
+              <TableHead className="hidden sm:table-cell">Last commit</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {worktrees.map((worktree) => (
+              <WorktreeRow key={worktree.path} worktree={worktree} />
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The /workspaces page (DOR-1056) — every copy of your code that really exists
+ * on disk, read straight from the workspaces folder.
+ *
+ * It used to list only checkouts DorkOS had provisioned itself, and it had never
+ * provisioned one, so it was always empty while dozens of real worktrees sat in
+ * the very same folder. The page now reads the folder instead of the record of
+ * it. Deliberately read-only: it shows what is there and changes nothing.
+ */
 export function WorkspacesPage() {
-  const { workspaces, isLoading } = useWorkspaces();
+  const { root, worktrees, isLoading } = useWorktreeScan();
 
   const byProject = useMemo(() => {
-    const map = new Map<string, WorkspaceWithSessions[]>();
-    for (const ws of workspaces) {
-      const list = map.get(ws.projectKey) ?? [];
-      list.push(ws);
-      map.set(ws.projectKey, list);
+    const map = new Map<string, WorktreeScanEntry[]>();
+    for (const worktree of worktrees) {
+      const list = map.get(worktree.project) ?? [];
+      list.push(worktree);
+      map.set(worktree.project, list);
     }
-    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
-  }, [workspaces]);
+    return [...map.entries()];
+  }, [worktrees]);
 
   return (
     // The route panel clips its overflow, so the page needs its own scroller —
@@ -116,34 +152,26 @@ export function WorkspacesPage() {
           for one. */}
       <h1 className="sr-only">Workspaces</h1>
       <p className="text-muted-foreground mb-6 text-sm">
-        Isolated, server-managed checkouts — one per unit of work, bound to sessions via cwd.
+        Every separate copy of your code found in your workspaces folder. Agents work in these so
+        they never edit the same files at once. This page only reads them.
       </p>
 
       {isLoading ? (
-        <p className="text-muted-foreground text-sm">Loading workspaces…</p>
+        <p className="text-muted-foreground text-sm">Looking for your worktrees…</p>
       ) : byProject.length === 0 ? (
         <div className="bg-card rounded-xl border p-10 text-center">
           <FolderGit2 className="text-muted-foreground/60 mx-auto size-8" />
-          <p className="mt-3 font-medium">No workspaces yet</p>
+          <p className="mt-3 font-medium">No worktrees yet</p>
           <p className="text-muted-foreground mt-1 text-sm">
-            DorkOS doesn&apos;t create workspaces on its own yet. Today one appears only when a tool
-            or script asks the server for it through the API.
+            A worktree is a second copy of your project, on its own branch, so one agent&rsquo;s
+            edits can&rsquo;t collide with another&rsquo;s. They show up here once they exist
+            {root ? ` in ${shortenHomePath(root)}` : ''}.
           </p>
         </div>
       ) : (
         <div className="flex flex-col gap-8">
-          {byProject.map(([projectKey, items]) => (
-            <section key={projectKey}>
-              <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
-                {projectKey}
-                <Badge variant="secondary">{items.length}</Badge>
-              </h2>
-              <div className="flex flex-col gap-2">
-                {items.map((ws) => (
-                  <WorkspaceCard key={ws.id} workspace={ws} />
-                ))}
-              </div>
-            </section>
+          {byProject.map(([project, items]) => (
+            <ProjectSection key={project} project={project} worktrees={items} />
           ))}
         </div>
       )}

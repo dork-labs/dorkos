@@ -218,6 +218,63 @@ export type WorkspaceWithSessions = Workspace & {
   dirty?: DirtyState;
 };
 
+// === Adoption scan (DOR-1056) ===
+
+/**
+ * One checkout found on disk under the workspace root by the read-only adoption
+ * scan. This is filesystem truth, not the managed layer: it reports the git
+ * worktrees agents actually create (the `.gtrconfig` flow points them here), so
+ * the page can tell the truth about what exists rather than about what the
+ * manager provisioned.
+ *
+ * Every git-derived field is nullable because a checkout can be unreadable — its
+ * source repo moved, its `.git` link is broken, git timed out. Such a row still
+ * appears, with `readable: false`; it is never silently dropped, because a
+ * checkout you cannot read is exactly the one worth seeing.
+ *
+ * `branch` is `null` on a readable checkout whose HEAD is detached.
+ */
+export const WorktreeScanEntrySchema = z
+  .object({
+    /** Absolute path of the checkout directory. */
+    path: z.string(),
+    /** Directory name — the checkout's identity within its project folder. */
+    name: z.string(),
+    /** The folder directly under the workspace root that holds this checkout. */
+    project: z.string(),
+    /** Absolute path of the repository this checkout shares history with. */
+    repoPath: z.string().nullable(),
+    /** Checked-out branch; `null` when HEAD is detached or unreadable. */
+    branch: z.string().nullable(),
+    /** Files with uncommitted or untracked changes. */
+    changedFiles: z.number().int().nullable(),
+    /** Commits this branch has that its upstream does not; `null` with no upstream. */
+    ahead: z.number().int().nullable(),
+    /** Commits the upstream has that this branch does not; `null` with no upstream. */
+    behind: z.number().int().nullable(),
+    /** ISO timestamp of the newest commit on HEAD. */
+    lastCommitAt: z.string().nullable(),
+    /** False when git could not describe this checkout — the row is a stub. */
+    readable: z.boolean(),
+  })
+  .openapi('WorktreeScanEntry');
+
+/** One checkout found by the adoption scan — see {@link WorktreeScanEntrySchema}. */
+export type WorktreeScanEntry = z.infer<typeof WorktreeScanEntrySchema>;
+
+/** The result of one adoption scan: the root that was scanned and what it holds. */
+export const WorktreeScanResultSchema = z
+  .object({
+    /** The workspace root the scan walked. */
+    root: z.string(),
+    /** Every checkout found, newest commit first within each project. */
+    worktrees: z.array(WorktreeScanEntrySchema),
+  })
+  .openapi('WorktreeScanResult');
+
+/** The result of one adoption scan — see {@link WorktreeScanResultSchema}. */
+export type WorktreeScanResult = z.infer<typeof WorktreeScanResultSchema>;
+
 // === Hexagonal port: WorkspaceProvider ===
 
 /**

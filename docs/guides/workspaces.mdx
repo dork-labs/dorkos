@@ -15,7 +15,7 @@ That folder is called a **workspace**. Today, workspaces are created on request:
 
 ## Quick look: what you'll see
 
-Open the **Workspaces** tab on Home and you'll see a card per checkout: which project it belongs to, its status, whether it has uncommitted changes, and which sessions are currently using it. While you work, the session's status bar shows a small chip like `⎇ DOR-84 · core · ● 3 changes`, so you always know which workspace a session is sitting in. Both are covered in detail below.
+Open the **Workspaces** tab on Home and you'll see every separate copy of your code that exists in your workspaces folder, grouped by project. Each row tells you its branch, how many files have unsaved changes, how it compares to the remote, and when it last got a commit. While you work, the session's status bar shows a small chip like `⎇ DOR-84 · core · ● 3 changes`, so you always know which workspace a session is sitting in. Both are covered in detail below.
 
 ## Why workspaces exist
 
@@ -35,17 +35,20 @@ Doing that by hand means creating a `git worktree` (a second working copy of you
 
 ## The /workspaces page
 
-Open the **Workspaces** tab on Home to see every managed checkout, grouped by project. Each card shows the workspace's identity, status, provider, its primary port, and whether it has uncommitted changes or is pinned. Below the divider, the card lists the sessions currently attached to it, click one to jump straight into that session, opened in the workspace's checkout.
+Open the **Workspaces** tab on Home to see the real copies of your code sitting in your workspaces folder, grouped by the project folder they live in. Each row shows:
 
-Each card has two actions:
-
-- **Pin / Unpin**: mark a workspace you want to keep. Retention cleanup never removes a pinned workspace.
-- **Remove**: delete the checkout. This is dirty-safe (see [Pinning and cleanup](#pinning-and-cleanup) below), so a stray click can't destroy work you haven't saved.
+- **Folder**: the copy's name, and where it is on disk.
+- **Branch**: the branch it has checked out. A copy parked on a specific commit instead of a branch reads "No branch".
+- **Changes**: how many files hold edits you haven't committed. "Clean" means none.
+- **Compared to remote**: how many commits it is ahead of or behind the branch it tracks. A branch that tracks nothing shows a dash, because there is nothing to compare it against.
+- **Last commit**: when work last landed there, so you can spot copies you're done with.
 
 <Callout type="info">
-  The page answers "what workspaces exist for this work, and which sessions are using them?", not
-  "show me every directory on disk." It's scoped to what DorkOS manages.
+  The page only reads. It never creates, changes, or deletes a copy. Other agents are working in
+  these folders right now, so a stray click here can't cost anyone their work.
 </Callout>
+
+A folder DorkOS can't read shows up too, marked "Can't read", instead of quietly disappearing. That usually means the original repo moved or was deleted. It's the one folder you most want to know about, so it always gets a row.
 
 ## Knowing which workspace you're in
 
@@ -154,12 +157,17 @@ The server allocates the **lowest free block**, so two workspaces are guaranteed
 
 Removing a workspace deletes its checkout, so it's deliberately conservative:
 
-- **Dirty-safe removal.** Remove first checks the checkout for uncommitted, untracked, or unpushed work. If any exists, the request is refused and the UI re-prompts with an explicit force confirmation rather than silently destroying work, so you can't fat-finger delete on something you haven't saved. Forcing deletes it permanently.
-- **Pinning.** Pin a workspace you want to keep. DorkOS does not reclaim old workspaces on a schedule yet; when retention cleanup does run, it never removes a pinned workspace. The pin persists and shows on the card and in the status-bar chip tooltip.
+- **Dirty-safe removal.** Remove first checks the checkout for uncommitted, untracked, or unpushed work. If any exists, the request is refused, and the caller has to ask again with an explicit force. Forcing deletes it permanently.
+- **Pinning.** Pin a workspace you want to keep. DorkOS does not reclaim old workspaces on a schedule yet; when retention cleanup does run, it never removes a pinned workspace. The pin shows in the status-bar chip tooltip.
 
 <Callout type="warn">
   Pinning protects against retention cleanup, not against an explicit remove. The two guards are
   independent: dirty-state protects unsaved work; pinning protects from reclamation policy.
+</Callout>
+
+<Callout type="info">
+  Removing and pinning are API-only. Neither the Workspaces page nor anything else in the app can
+  delete a checkout, so a mis-click can never take one out from under a running agent.
 </Callout>
 
 ### Providers
@@ -220,6 +228,7 @@ All endpoints are under `/api/workspaces`:
 
 | Method & path                  | Purpose                                                                                   |
 | ------------------------------ | ----------------------------------------------------------------------------------------- |
+| `GET /api/workspaces/scan`     | Read-only scan of the workspace root: every checkout on disk. Backs the Workspaces page.  |
 | `GET /api/workspaces`          | List workspaces (optionally `?projectKey=`), each with attached sessions and dirty state. |
 | `GET /api/workspaces/resolve`  | Resolve a workspace from an absolute `?path=`: powers the session status-bar indicator.   |
 | `POST /api/workspaces/ports`   | Preview the port block a given checkout `path` would receive.                             |
