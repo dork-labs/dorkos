@@ -13,11 +13,15 @@
  * is what keeps it dark and keeps it on the surfaces it suits.
  *
  * **What this guard covers, and what it does not.** It owns three things: the
- * token value, the light-ground rule, and the no-duplicate rule. It does NOT
- * cover the wider dark-ground text debt — `/story` paints `--warm-gray` on
- * charcoal at 1.89:1, and the brand accents fail AA as text on cream. Both are
- * tracked under DOR-1512. Read a pass here as "the muted token is sound", never
- * as "site text is accessible".
+ * token value, the light-ground rule, and the no-duplicate rule. The
+ * light-ground rule now covers both warm-gray tiers, not just the muted one:
+ * `/story` was painting the bare `--warm-gray` on charcoal at 1.89:1 across
+ * seven call sites, under a scan that only looked for `-light` (DOR-1512).
+ * Those sites moved to `text-cream-tertiary/60` and the scan was widened.
+ * It still does NOT cover the brand accents, which fail AA as text on cream
+ * and need a policy call before anything moves. Read a pass here as "the
+ * warm-gray tokens are on the right grounds", never as "site text is
+ * accessible".
  *
  * **Contrast needs layout, and a unit test has none** — the real proof is the
  * browser measurement recorded on the PR. What a test CAN own is the token
@@ -182,8 +186,16 @@ function sectionTags(source: string): string[] {
 /** Grounds dark enough that the light-ground muted token is unreadable on them. */
 const DARK_GROUND = /bg-charcoal|bg-\[#0f0e0c\]|bg-\[#1a1814\]/i;
 
-/** The light-ground muted token, as a Tailwind text utility. */
-const LIGHT_GROUND_TEXT_TOKEN = /text-warm-gray-light/;
+/**
+ * The light-ground warm-gray text tokens, as Tailwind text utilities.
+ *
+ * Both tiers are light-ground colours: `--warm-gray` is body text on cream and
+ * `--warm-gray-light` is the muted step under it. Neither survives a dark
+ * ground — `--warm-gray` measured 1.89:1 on charcoal across `/story` (DOR-1512),
+ * which is why the bare token is scanned for here and not only its muted
+ * sibling. The `-light` suffix is optional so one pattern catches both.
+ */
+const LIGHT_GROUND_TEXT_TOKENS = /text-warm-gray(?:-light)?\b/;
 
 /** Hardcoded copies of the muted token, old value or new. */
 const MUTED_HEX_LITERAL = /#(?:7A756A|686358)\b/i;
@@ -202,12 +214,26 @@ const VARIANT_PLAYGROUND = `app${'/'}(marketing)/test/`;
  */
 const HEX_LITERAL_ALLOWLIST: Record<string, string> = {
   'layers/features/marketing/ui/InstallMoment.tsx':
-    'terminal mockup on a #1A1814 ground — the token was darkened for cream and moves the wrong way here (3.87:1 -> 2.97:1); tracked under DOR-1512',
+    'terminal mockup on a #1A1814 ground — the token was darkened for cream and moves the wrong way here (3.87:1 -> 2.97:1); tracked under DOR-1700',
 };
 
 const TSX_FILES = walkTsx(SRC)
   .map((f) => ({ rel: relative(SRC, f).split('\\').join('/'), source: readFileSync(f, 'utf8') }))
   .filter(({ rel }) => !rel.startsWith(VARIANT_PLAYGROUND));
+
+/**
+ * The files whose `<section>` carries a dark ground — the subjects of the
+ * dark-ground rule below.
+ *
+ * Derived once and asserted on directly, because `sectionTags` can go blind:
+ * it ends a tag at the first `>` outside a `{...}` expression, so a `>` inside
+ * a plain-string `className` truncates the slice before the ground class is
+ * read. A detector that finds nothing makes the offender list trivially empty,
+ * and an empty offender list is exactly what a pass looks like.
+ */
+const DARK_GROUNDED_FILES = TSX_FILES.filter(({ source }) =>
+  sectionTags(source).some((tag) => DARK_GROUND.test(tag))
+);
 
 describe('marketing muted-text contrast', () => {
   // --- The math, pinned before anything below is allowed to mean something ---
@@ -294,13 +320,31 @@ describe('marketing muted-text contrast', () => {
     expect(TSX_FILES.some(({ rel }) => rel.endsWith('story/StoryHero.tsx'))).toBe(true);
   });
 
-  it('no dark-grounded section paints text with the light-ground token', () => {
-    const offenders = TSX_FILES.filter(
-      ({ source }) =>
-        sectionTags(source).some((tag) => DARK_GROUND.test(tag)) &&
-        LIGHT_GROUND_TEXT_TOKEN.test(stripComments(source))
+  it('still finds the dark-grounded sections it is supposed to be judging', () => {
+    // Without this, the rule below has a zero-subject pass: if `sectionTags`
+    // stops seeing section tags, every file drops out of the subject set and
+    // the offender list goes empty for the one reason a green must never mean.
+    const rels = DARK_GROUNDED_FILES.map(({ rel }) => rel);
+    expect(rels).toContain('layers/features/marketing/ui/story/StoryHero.tsx');
+    expect(rels.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it('no dark-grounded section paints text with a light-ground warm-gray token', () => {
+    const offenders = DARK_GROUNDED_FILES.filter(({ source }) =>
+      LIGHT_GROUND_TEXT_TOKENS.test(stripComments(source))
     ).map(({ rel }) => rel);
     expect(offenders).toEqual([]);
+  });
+
+  it('the widened scan actually sees the bare token, not just its muted sibling', () => {
+    // The scan above passing is only meaningful if `text-warm-gray` on its own
+    // is a match. Before DOR-1512 the pattern required the `-light` suffix, so
+    // seven `/story` call sites at 1.89:1 sat under it unseen.
+    expect(LIGHT_GROUND_TEXT_TOKENS.test('className="text-warm-gray text-sm"')).toBe(true);
+    expect(LIGHT_GROUND_TEXT_TOKENS.test('className="text-warm-gray-light"')).toBe(true);
+    // And it must not fire on the colour used as a border or a background.
+    expect(LIGHT_GROUND_TEXT_TOKENS.test('className="border-warm-gray/20"')).toBe(false);
+    expect(LIGHT_GROUND_TEXT_TOKENS.test('className="bg-warm-gray"')).toBe(false);
   });
 
   it('no component hardcodes the muted gray instead of referencing the token', () => {

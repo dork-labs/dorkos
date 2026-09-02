@@ -38,7 +38,7 @@ export function FounderSection({ slideId = 'founder' }: FounderSectionProps) {
           ].map(({ value, label }) => (
             <div key={label} className="flex items-baseline gap-1.5">
               <span className="text-cream-white font-mono text-[20px] font-bold">{value}</span>
-              <span className="text-warm-gray font-mono text-[9px] tracking-[0.1em] uppercase">
+              <span className="text-cream-tertiary/60 font-mono text-[9px] tracking-[0.1em] uppercase">
                 {label}
               </span>
             </div>
@@ -63,7 +63,7 @@ export function FounderSection({ slideId = 'founder' }: FounderSectionProps) {
 
         <motion.p
           variants={REVEAL}
-          className="text-warm-gray text-[clamp(13px,1.6vw,16px)] leading-[1.8]"
+          className="text-cream-tertiary/60 text-[clamp(13px,1.6vw,16px)] leading-[1.8]"
         >
           I drive my son to school every morning. My sister lives nearby &mdash; there are nieces
           and nephews to show up for.

@@ -59,7 +59,7 @@ export function MondayMorningSection({ slideId = 'morning' }: MondayMorningSecti
           >
             Before you touched anything.
           </motion.h2>
-          <motion.p variants={REVEAL} className="text-warm-gray text-sm">
+          <motion.p variants={REVEAL} className="text-cream-tertiary/60 text-sm">
             While you slept, the system ran.
           </motion.p>
         </motion.div>
