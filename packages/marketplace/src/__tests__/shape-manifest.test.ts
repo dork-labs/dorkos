@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { PermissionModeSchema } from '@dorkos/shared/schemas';
+import { EXTENSION_ID_REGEX } from '@dorkos/shared/extension-id';
 import {
   MarketplacePackageManifestSchema,
   SCHEDULE_PERMISSION_MODES,
+  SHAPE_EXTENSION_ID_REGEX,
   type MarketplacePackageManifest,
   type ShapePackageManifest,
 } from '../manifest-schema.js';
@@ -319,5 +321,61 @@ describe('existing package types still parse after adding shape', () => {
       description: 'An existing package type.',
     });
     expect(result.type).toBe(type);
+  });
+});
+
+describe('extension ids in a Shape manifest name a file, so they are constrained', () => {
+  // A Shape's `activates`, `extensions`, and `connections[].extension` all name
+  // an extension, and every one of those names becomes part of a path — the
+  // extension's directory, its settings file, its secrets file. An unconstrained
+  // string here reached `join(dorkHome, 'extension-secrets', `${id}.json`)` at
+  // apply time and escaped dorkHome with '../'.
+  const ESCAPING_IDS = ['../outside', '..', 'nested/deeper', 'UPPER', 'has space', '.hidden'];
+
+  // Both fields have to carry the bad id — cross-field rule 3 requires the
+  // connection's extension to be activated, so setting only one of them fails
+  // for the WRONG reason. Which means `success === false` proves nothing here:
+  // it stays false on `activates` alone. Assert the issue path instead, so
+  // dropping the regex from `connections[].extension` turns this red.
+  it.each(ESCAPING_IDS)('refuses %j in connections[].extension', (id) => {
+    const manifest = validShapeManifest();
+    manifest.activates = [id];
+    manifest.connections = [
+      { kind: 'extension-secret', extension: id, secret: 'linear_api_key', required: true },
+    ];
+    const result = MarketplacePackageManifestSchema.safeParse(manifest);
+    expect(result.success).toBe(false);
+    expect(result.error!.issues.some((i) => i.path.join('.') === 'connections.0.extension')).toBe(
+      true
+    );
+  });
+
+  it.each(ESCAPING_IDS)('refuses %j in activates', (id) => {
+    const manifest = validShapeManifest();
+    manifest.activates = ['linear-issues', id];
+    expect(MarketplacePackageManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+
+  it.each(ESCAPING_IDS)('refuses %j in extensions', (id) => {
+    const manifest = validShapeManifest();
+    manifest.extensions = [id];
+    expect(MarketplacePackageManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+
+  it('still accepts ordinary extension ids', () => {
+    const manifest = validShapeManifest();
+    manifest.activates = ['linear-issues', 'ext-2', '0abc'];
+    manifest.extensions = ['bundled-ext'];
+    expect(MarketplacePackageManifestSchema.safeParse(manifest).success).toBe(true);
+  });
+});
+
+describe('extension-id drift — marketplace mirror vs @dorkos/shared source', () => {
+  // @dorkos/shared is a devDependency here on purpose (see the PermissionMode
+  // note above): the manifest schema stays browser-safe, so the id pattern is
+  // spelled out in the source and checked against its owner here instead.
+  it('the mirrored pattern is the shared one', () => {
+    expect(SHAPE_EXTENSION_ID_REGEX.source).toBe(EXTENSION_ID_REGEX.source);
+    expect(SHAPE_EXTENSION_ID_REGEX.flags).toBe(EXTENSION_ID_REGEX.flags);
   });
 });

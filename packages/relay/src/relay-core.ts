@@ -200,7 +200,7 @@ export class RelayCore {
     const deadLetterQueue = new DeadLetterQueue({
       maildirStore,
       sqliteIndex: this.sqliteIndex,
-      rootDir: mailboxesDir,
+      logger: options?.logger,
       onDeadLetter: options?.onDeadLetter,
     });
     this.accessControl = new AccessControl(dataDir, options?.logger);

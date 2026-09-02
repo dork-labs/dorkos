@@ -71,7 +71,6 @@ beforeEach(async () => {
   dlq = new DeadLetterQueue({
     maildirStore,
     sqliteIndex,
-    rootDir: mailboxesDir,
   });
 
   await maildirStore.ensureMaildir(TEST_ENDPOINT);
@@ -170,7 +169,6 @@ describe('onDeadLetter observer', () => {
     const observed = new DeadLetterQueue({
       maildirStore,
       sqliteIndex,
-      rootDir: mailboxesDir,
       onDeadLetter: (n) => notices.push(n),
     });
 
@@ -190,7 +188,6 @@ describe('onDeadLetter observer', () => {
     const observed = new DeadLetterQueue({
       maildirStore,
       sqliteIndex,
-      rootDir: mailboxesDir,
       onDeadLetter: (n) => notices.push(n),
     });
 
@@ -208,7 +205,6 @@ describe('onDeadLetter observer', () => {
     const observed = new DeadLetterQueue({
       maildirStore,
       sqliteIndex,
-      rootDir: mailboxesDir,
       onDeadLetter: () => calls++,
     });
 
@@ -222,7 +218,6 @@ describe('onDeadLetter observer', () => {
     const observed = new DeadLetterQueue({
       maildirStore,
       sqliteIndex,
-      rootDir: mailboxesDir,
       onDeadLetter: () => calls++,
     });
 
@@ -239,7 +234,6 @@ describe('onDeadLetter observer', () => {
     const observed = new DeadLetterQueue({
       maildirStore,
       sqliteIndex,
-      rootDir: mailboxesDir,
       onDeadLetter: () => {
         throw new Error('bad listener');
       },
@@ -533,6 +527,14 @@ describe('SQLite integration', () => {
 
     expect(sqliteIndex.countSenderInWindow('relay.agent.sender', windowStart)).toBe(1);
     expect(sqliteIndex.getMessage('DLQ-ACCT-01')?.status).toBe('failed');
+  });
+
+  // removeDeadLetter used to rebuild the Maildir path by hand, which meant the
+  // containment check every other Maildir path goes through did not apply to
+  // deletes. It now routes through MaildirStore.deleteMessageFile, so an
+  // escaping hash is refused here too rather than unlinking outside the root.
+  it('removeDeadLetter refuses an endpoint hash that escapes the mailbox root', async () => {
+    await expect(dlq.removeDeadLetter('../outside', 'x')).rejects.toThrow(/endpoint hash/i);
   });
 
   it('removeDeadLetter deletes the row directly without clobbering neighbors', async () => {

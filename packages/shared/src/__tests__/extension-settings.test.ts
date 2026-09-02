@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ExtensionSettingsStore } from '../extension-settings.js';
+import { InvalidExtensionIdError } from '../extension-id.js';
 
 let tmpDir: string;
 
@@ -141,5 +142,20 @@ describe('ExtensionSettingsStore', () => {
       const all = await new ExtensionSettingsStore(tmpDir, 'test-ext').getAll();
       expect(all).toEqual({ fresh: true });
     });
+  });
+});
+
+describe('ExtensionSettingsStore — extension id containment', () => {
+  it.each(['../outside', '..', 'nested/deeper', 'UPPER', 'has space', '', '.hidden'])(
+    'refuses the id %j',
+    (id) => {
+      expect(() => new ExtensionSettingsStore(tmpDir, id)).toThrow(InvalidExtensionIdError);
+    }
+  );
+
+  it.each(['test-ext', 'ext-a', 'ext1', '0abc'])('accepts the id %j', async (id) => {
+    const store = new ExtensionSettingsStore(tmpDir, id);
+    await store.set('key', 'value');
+    expect(await store.get('key')).toBe('value');
   });
 });

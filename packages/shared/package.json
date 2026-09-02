@@ -69,6 +69,10 @@
       "types": "./src/telemetry-events.ts",
       "default": "./dist/telemetry-events.js"
     },
+    "./extension-id": {
+      "types": "./src/extension-id.ts",
+      "default": "./dist/extension-id.js"
+    },
     "./relay-schemas": {
       "types": "./src/relay-schemas.ts",
       "default": "./dist/relay-schemas.js"

@@ -549,6 +549,29 @@ describe('Relay routes', () => {
 
       expect(vi.mocked(relayCore.getDeadLetters)).toHaveBeenCalledWith({ endpointHash: 'abc123' });
     });
+
+    it.each([
+      'relay.agent.dorkbot',
+      'relay.human.console.main',
+      '*',
+      'relay.agent.>',
+      'adapter:relay.telegram.inbound',
+    ])('accepts the legitimate endpointHash %j', async (endpointHash) => {
+      const res = await request(server).get('/api/relay/dead-letters').query({ endpointHash });
+
+      expect(res.status).toBe(200);
+      expect(vi.mocked(relayCore.getDeadLetters)).toHaveBeenCalledWith({ endpointHash });
+    });
+
+    it.each(['../../../../etc', 'nested/deeper', '..', 'has space'])(
+      'refuses the traversing endpointHash %j with a 400',
+      async (endpointHash) => {
+        const res = await request(server).get('/api/relay/dead-letters').query({ endpointHash });
+
+        expect(res.status).toBe(400);
+        expect(vi.mocked(relayCore.getDeadLetters)).not.toHaveBeenCalled();
+      }
+    );
   });
 
   describe('GET /api/relay/metrics', () => {

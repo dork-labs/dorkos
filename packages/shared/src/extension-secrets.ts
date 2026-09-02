@@ -12,6 +12,7 @@ import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { withFileLock } from './atomic-write.js';
+import { assertValidExtensionId } from './extension-id.js';
 
 const ALGORITHM = 'aes-256-gcm';
 const KEY_LENGTH = 32;
@@ -47,10 +48,18 @@ export class ExtensionSecretStore {
   private readonly secretsFilePath: string;
   private readonly hostKeyPath: string;
 
+  /**
+   * Bind a store to one extension's secrets file.
+   *
+   * @param extensionId - The extension whose secrets this store reads and writes.
+   * @param dorkHome - Resolved data directory.
+   * @throws {InvalidExtensionIdError} If the id could name a file outside `dorkHome`.
+   */
   constructor(
     private readonly extensionId: string,
     private readonly dorkHome: string
   ) {
+    assertValidExtensionId(extensionId);
     this.secretsFilePath = join(dorkHome, 'extension-secrets', `${extensionId}.json`);
     this.hostKeyPath = join(dorkHome, 'host.key');
   }

@@ -552,6 +552,23 @@ const ShapeScheduleSchema = BaseScheduleDeclSchema.extend({
 });
 
 /**
+ * What an extension id may look like wherever a Shape names one.
+ *
+ * This is `EXTENSION_ID_REGEX` from `@dorkos/shared/extension-id`, spelled out
+ * rather than imported for the same reason the permission modes are mirrored:
+ * this schema is browser-safe and `@dorkos/shared` stays out of the bundle. The
+ * drift test in `__tests__/shape-manifest.test.ts` reads the source pattern and
+ * asserts the two are the same.
+ *
+ * It matters because every field that carries an extension id — `activates`,
+ * `extensions`, and a connection's `extension` — becomes part of a path at
+ * apply time (the extension's directory, its settings file, its secrets file).
+ * An unconstrained string there let a manifest reach outside the data
+ * directory.
+ */
+export const SHAPE_EXTENSION_ID_REGEX = /^[a-z0-9][a-z0-9-]*$/;
+
+/**
  * A connection the Shape needs. Two kinds today (Assumption A4): an extension
  * secret to prompt for, or a raw MCP server the bundled agents should have. A
  * future `provider` kind targets the W5 connector gateway; unknown kinds degrade
@@ -561,7 +578,7 @@ const ShapeConnectionSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('extension-secret'),
     /** Extension id that declares the secret (its `serverCapabilities.secrets`). */
-    extension: z.string(),
+    extension: z.string().regex(SHAPE_EXTENSION_ID_REGEX),
     /** Secret key to prompt for (must match the extension's declared key). */
     secret: z.string(),
     required: z.boolean().default(true),
@@ -637,9 +654,9 @@ const ShapeLineageSchema = z.object({
 const ShapeManifestSchema = BasePackageManifestSchema.extend({
   type: z.literal('shape'),
   /** Extension ids to enable when this Shape is applied (core, bundled, or from `requires`). */
-  activates: z.array(z.string()).default([]),
+  activates: z.array(z.string().regex(SHAPE_EXTENSION_ID_REGEX)).default([]),
   /** Extensions embedded inline in this Shape's package dir (like `PluginManifestSchema.extensions`). */
-  extensions: z.array(z.string()).default([]),
+  extensions: z.array(z.string().regex(SHAPE_EXTENSION_ID_REGEX)).default([]),
   /**
    * The workspace chrome restored on arrival.
    *
