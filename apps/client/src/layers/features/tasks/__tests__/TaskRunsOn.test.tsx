@@ -10,13 +10,14 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, cleanup, within, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { PermissionMode } from '@dorkos/shared/types';
+import { UpdateTaskRequestSchema } from '@dorkos/shared/schemas';
 import { createMockTransport, createMockSchedule } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { configKeys } from '@/layers/entities/config';
@@ -460,6 +461,496 @@ describe('the task form Runs-on controls', () => {
 
       await expectSelected('task-runtime-select', 'Codex');
       expect(screen.queryByRole('alertdialog')).toBeNull();
+    });
+  });
+
+  describe('picking an agent whose runtime reads the task mode as never-asking', () => {
+    // The same widening as the runtime picker above, reached by a different
+    // road: an agent carries its own manifest runtime, so choosing one moves
+    // what a task with no override of its own INHERITS — and the mode id it
+    // keeps can mean "never asks" over there (DOR-1637).
+
+    const CLAUDE_AGENT = { id: 'agent-claude', name: 'claude-bot', projectPath: '/projects/api' };
+    const CODEX_AGENT = { id: 'agent-codex', name: 'codex-bot', projectPath: '/projects/worker' };
+    const OPENCODE_AGENT = { id: 'agent-oc', name: 'oc-bot', projectPath: '/projects/docs' };
+
+    /** A fourth agent, only ever used to GROW the roster mid-test. */
+    const EXTRA_AGENT = { id: 'agent-extra', name: 'extra-bot', projectPath: '/projects/extra' };
+
+    /** One of the agents above, as the manifest that names its runtime. */
+    function agentManifest(agent: { id: string; name: string }, runtime: string): AgentManifest {
+      return { ...manifest(runtime), id: agent.id, name: agent.name };
+    }
+
+    /** What `resolveAgents` answers with, keyed the way the transport keys it. */
+    const MANIFESTS: Record<string, AgentManifest> = {
+      [CLAUDE_AGENT.projectPath]: agentManifest(CLAUDE_AGENT, 'claude-code'),
+      [CODEX_AGENT.projectPath]: agentManifest(CODEX_AGENT, 'codex'),
+      [OPENCODE_AGENT.projectPath]: agentManifest(OPENCODE_AGENT, 'opencode'),
+    };
+
+    /**
+     * A mesh holding one agent per product runtime.
+     *
+     * Three rather than two, because the claim under test is not "the door
+     * opens on any agent change" — it is that it opens on the ones that widen.
+     * OpenCode reads `acceptEdits` the way Claude Code does, so it is the
+     * control that a bare "did the agent change?" gate would fail.
+     */
+    function transportWithAgentPerRuntime(overrides: Partial<Transport> = {}) {
+      return createMockTransport({
+        listMeshAgentPaths: vi
+          .fn()
+          .mockResolvedValue({ agents: [CLAUDE_AGENT, CODEX_AGENT, OPENCODE_AGENT] }),
+        resolveAgents: vi.fn().mockResolvedValue(MANIFESTS),
+        ...overrides,
+      });
+    }
+
+    /** Open a NEW task already targeting the Claude Code agent, past the gallery. */
+    function renderNewTaskOnClaude(transport: Transport, seed?: (client: QueryClient) => void) {
+      const Wrapper = createWrapper(transport, seed);
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} initialAgentId={CLAUDE_AGENT.id} />
+        </Wrapper>
+      );
+      fireEvent.click(screen.getByText('Start from scratch'));
+    }
+
+    /**
+     * Open the agent dropdown and choose `name`.
+     *
+     * Waits on the RUNTIME caption first, which lands only once the manifests
+     * do. The window BEFORE that — picker clickable, runtimes still unknown — is
+     * its own case, driven deliberately in "before the manifests land" below.
+     */
+    async function pickAgent(from: string, to: string) {
+      await expectSelected('task-runtime-select', from);
+      fireEvent.click(screen.getByText('claude-bot'));
+      fireEvent.click(await screen.findByText(to));
+    }
+
+    /** Give a new task the two fields Create is disabled without. */
+    function fillRequiredFields() {
+      fireEvent.change(screen.getByPlaceholderText('Daily code review'), {
+        target: { value: 'Nightly build' },
+      });
+      fireEvent.change(
+        screen.getByPlaceholderText('Review all pending PRs and summarize findings...'),
+        { target: { value: 'Run the nightly build' } }
+      );
+    }
+
+    it('asks first, and writes nothing until the person agrees', async () => {
+      const createTask = vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-new' }));
+      const transport = transportWithAgentPerRuntime({ createTask });
+      renderNewTaskOnClaude(transport);
+
+      await pickAgent("Agent's runtime (Claude Code)", 'codex-bot');
+
+      const door = await screen.findByRole('alertdialog');
+      // Codex's own word for the stop `acceptEdits` sits at, and the sentence
+      // that makes the difference impossible to miss.
+      expect(door).toHaveTextContent('Turn on Act');
+      expect(within(door).getByTestId('consent-asks-note')).toHaveTextContent(
+        /never pauses to ask/i
+      );
+      expect(door).toHaveTextContent(/nobody to ask/i);
+      // Held, not applied: the picker still reads the agent the task had, and
+      // the caption still names that agent's runtime.
+      expect(screen.getByText('claude-bot')).toBeInTheDocument();
+      expect(screen.queryByText('codex-bot')).toBeNull();
+      expect(screen.getByTestId('task-runtime-select')).toHaveTextContent(
+        "Agent's runtime (Claude Code)"
+      );
+
+      await confirmConsent('Turn on Act');
+      await expectSelected('task-runtime-select', "Agent's runtime (Codex)");
+
+      fillRequiredFields();
+      fireEvent.click(screen.getByText('Create'));
+      await waitFor(() =>
+        expect(createTask).toHaveBeenCalledWith(
+          expect.objectContaining({ target: CODEX_AGENT.id, permissionMode: 'acceptEdits' })
+        )
+      );
+    });
+
+    it('puts the agent back when the door is dismissed', async () => {
+      const createTask = vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-new' }));
+      const transport = transportWithAgentPerRuntime({ createTask });
+      renderNewTaskOnClaude(transport);
+
+      await pickAgent("Agent's runtime (Claude Code)", 'codex-bot');
+
+      const door = await screen.findByRole('alertdialog');
+      await user.click(within(door).getByRole('button', { name: 'Cancel' }));
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+
+      expect(screen.getByText('claude-bot')).toBeInTheDocument();
+      expect(screen.queryByText('codex-bot')).toBeNull();
+      expect(screen.getByTestId('task-runtime-select')).toHaveTextContent(
+        "Agent's runtime (Claude Code)"
+      );
+
+      // All the way to the wire: the task is filed against the agent it had,
+      // not the one the dismissed door was about.
+      fillRequiredFields();
+      fireEvent.click(screen.getByText('Create'));
+      await waitFor(() =>
+        expect(createTask).toHaveBeenCalledWith(
+          expect.objectContaining({ target: CLAUDE_AGENT.id })
+        )
+      );
+    });
+
+    it('does not ask when the new agent reads the mode the same way', async () => {
+      // OpenCode's `acceptEdits` asks before a command, exactly as Claude
+      // Code's does. Nothing widened, so nothing is asked — a door here would
+      // be a door in front of every agent change, which is how a door stops
+      // being read.
+      const transport = transportWithAgentPerRuntime();
+      renderNewTaskOnClaude(transport);
+
+      await pickAgent("Agent's runtime (Claude Code)", 'oc-bot');
+
+      await expectSelected('task-runtime-select', "Agent's runtime (OpenCode)");
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+    });
+
+    it('does not ask again for a posture the person already agreed to', async () => {
+      // Full autonomy on both sides. The operator's configured stop is primed
+      // rather than clicked, so the form OPENS at a never-asking posture the
+      // way a person who set that default would find it.
+      const transport = transportWithAgentPerRuntime();
+      const [capabilities, config] = await Promise.all([
+        transport.getCapabilities(),
+        transport.getConfig(),
+      ]);
+      renderNewTaskOnClaude(transport, (client) => {
+        client.setQueryData(['capabilities'], capabilities);
+        client.setQueryData(configKeys.current(), {
+          ...config,
+          executionDefaults: { trustStop: 'autonomy', perRuntime: [] },
+        });
+      });
+
+      // The harness's own claim: without this the form opens at `acceptEdits`
+      // and the test would be measuring the widening case instead.
+      await waitFor(() =>
+        expect(screen.getByRole('radio', { name: 'Full autonomy' })).toBeChecked()
+      );
+      await pickAgent("Agent's runtime (Claude Code)", 'codex-bot');
+
+      await expectSelected('task-runtime-select', "Agent's runtime (Codex)");
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+    });
+
+    it('does not ask on an EDIT, where the agent cannot be saved at all', async () => {
+      // `UpdateTaskRequestSchema` has no target key and the form's edit branch
+      // sends none, so an edit's pick cannot change what runs. The door is for
+      // changes that happen; asking here would be asking somebody to agree to a
+      // claim that is not true.
+      const updateTask = vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-1' }));
+      const transport = transportWithAgentPerRuntime({ updateTask });
+      renderEditTask(
+        transport,
+        createMockSchedule({
+          id: 'sched-1',
+          agentId: CLAUDE_AGENT.id,
+          permissionMode: 'acceptEdits',
+          runtime: null,
+        })
+      );
+
+      await pickAgent("Agent's runtime (Claude Code)", 'codex-bot');
+
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      expect(screen.getByText('codex-bot')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText('Save'));
+      await waitFor(() => expect(updateTask).toHaveBeenCalled());
+      const body = updateTask.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(body).not.toHaveProperty('target');
+      expect(body).not.toHaveProperty('agentId');
+      // The reason there is nothing to consent to, read off the SCHEMA and not
+      // off this form's own send. Should an update ever learn to carry a target,
+      // this goes red and the gate above has to grow an edit branch with it —
+      // which the assertions on the body alone would not, because they only
+      // restate what the form happens to do today.
+      const updatable = Object.keys(UpdateTaskRequestSchema.shape);
+      expect(updatable).not.toContain('target');
+      expect(updatable).not.toContain('agentId');
+    });
+
+    it('does not ask when the task pins its own runtime, whatever the agent runs on', async () => {
+      // An override outranks the agent (spec `task-runtime-model` §2.4), so the
+      // pick cannot move what this task runs on and there is nothing to consent
+      // to. Without the short-circuit the gate prices the pick against the
+      // AGENT's runtime, opens a door over a change that will not happen, and
+      // gets a "yes" for a posture the task never takes.
+      const createTask = vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-new' }));
+      const transport = transportWithAgentPerRuntime({ createTask });
+      renderNewTaskOnClaude(transport);
+
+      // Pinned to the runtime the task is already on, so the pin itself is not a
+      // widening and needs no door of its own.
+      await expectSelected('task-runtime-select', "Agent's runtime (Claude Code)");
+      await pick('task-runtime-select', 'Claude Code');
+      await expectSelected('task-runtime-select', 'Claude Code');
+
+      fireEvent.click(screen.getByText('claude-bot'));
+      fireEvent.click(await screen.findByText('codex-bot'));
+
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      await screen.findByText('codex-bot');
+      expect(screen.getByTestId('task-runtime-select')).toHaveTextContent('Claude Code');
+
+      fillRequiredFields();
+      fireEvent.click(screen.getByText('Create'));
+      await waitFor(() =>
+        expect(createTask).toHaveBeenCalledWith(
+          expect.objectContaining({ target: CODEX_AGENT.id, runtime: 'claude-code' })
+        )
+      );
+    }, 20_000);
+
+    describe('before the manifests land', () => {
+      // The picker is clickable the moment the agent LIST arrives, and the
+      // manifests behind it are a SECOND round trip — so there is a guaranteed
+      // window in which every candidate's runtime reads as unknown. Taking
+      // unknown for "names no runtime" resolves it to the server default, which
+      // is the runtime the task is already on: no widening found, pick applied,
+      // door never opened. That is the defect with the fix removed.
+
+      /** A manifests answer that arrives only when the test says so. */
+      function heldManifests() {
+        let release!: () => void;
+        const promise = new Promise<Record<string, AgentManifest>>((resolve) => {
+          release = () => resolve(MANIFESTS);
+        });
+        return { promise, release };
+      }
+
+      /** A transport whose manifests answer only when the test says so. */
+      function transportWithHeldManifests(overrides: Partial<Transport> = {}) {
+        const { promise, release } = heldManifests();
+        const transport = transportWithAgentPerRuntime({
+          resolveAgents: vi.fn().mockReturnValue(promise),
+          ...overrides,
+        });
+        return { transport, release };
+      }
+
+      /**
+       * Make the manifests be read AGAIN, the way the app really does it.
+       *
+       * The resolve query is keyed on the project paths, so gaining an agent
+       * re-mints the key — and the query holds no placeholder data, so the new
+       * key starts with none and `known` is false until it answers. That is the
+       * false→true edge, and holding the second answer open is what makes it
+       * observable: resolving it inside one batch collapses both renders into
+       * one, and a test that cannot see the edge cannot claim anything about it.
+       *
+       * @param transport - The mock whose next answers are being staged.
+       * @param client - The query client the form is mounted against.
+       */
+      async function beginSecondRead(transport: Transport, client: QueryClient) {
+        const { promise, release } = heldManifests();
+        transport.resolveAgents = vi.fn().mockReturnValue(promise);
+        transport.listMeshAgentPaths = vi
+          .fn()
+          .mockResolvedValue({ agents: [CLAUDE_AGENT, CODEX_AGENT, OPENCODE_AGENT, EXTRA_AGENT] });
+        await act(async () => {
+          await client.invalidateQueries({ predicate: (q) => q.queryKey[0] === 'mesh' });
+        });
+        return release;
+      }
+
+      /** Wait for the agent list, then pick the Codex agent while runtimes are unknown. */
+      async function pickCodexInTheWindow() {
+        // The picker's own readiness, and nothing downstream of it: waiting on
+        // the runtime caption here would wait out the very window under test.
+        fireEvent.click(await screen.findByText('claude-bot'));
+        fireEvent.click(await screen.findByText('codex-bot'));
+      }
+
+      it('cannot apply a widening pick while the candidate runtime is unknown', async () => {
+        const createTask = vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-new' }));
+        const { transport } = transportWithHeldManifests({ createTask });
+        renderNewTaskOnClaude(transport);
+
+        await pickCodexInTheWindow();
+
+        // Held, and said out loud rather than looking like a dead click.
+        expect(await screen.findByTestId('agent-pick-waiting')).toHaveTextContent(
+          /Checking what that agent runs on/
+        );
+        expect(screen.getByText('claude-bot')).toBeInTheDocument();
+        expect(screen.queryByText('codex-bot')).toBeNull();
+
+        // All the way to the wire, which is where the reviewer's repro landed:
+        // filing the task in this window used to send the Codex agent with a
+        // mode that never asks on it, with no door in between.
+        fillRequiredFields();
+        fireEvent.click(screen.getByText('Create'));
+        await waitFor(() => expect(createTask).toHaveBeenCalled());
+        expect(createTask).toHaveBeenCalledWith(
+          expect.objectContaining({ target: CLAUDE_AGENT.id })
+        );
+      });
+
+      it('asks as soon as the candidate runtime lands', async () => {
+        // Held, not dropped: waiting is the policy, so the pick is still the
+        // person's and it goes through the door the moment it can be priced.
+        const { transport, release } = transportWithHeldManifests();
+        renderNewTaskOnClaude(transport);
+
+        await pickCodexInTheWindow();
+        await screen.findByTestId('agent-pick-waiting');
+        expect(screen.queryByRole('alertdialog')).toBeNull();
+
+        release();
+
+        const door = await screen.findByRole('alertdialog');
+        expect(door).toHaveTextContent('Turn on Act');
+        await confirmConsent('Turn on Act');
+        await expectSelected('task-runtime-select', "Agent's runtime (Codex)");
+        expect(screen.queryByTestId('agent-pick-waiting')).toBeNull();
+      });
+
+      it('does not re-open a door the person already refused', async () => {
+        // The narrow claim, and the one that pins the EFFECT's own clear: a pick
+        // is refused, nothing else is touched, and the manifests are read again.
+        // Nothing but the effect can bring that pick back, so nothing but the
+        // effect's clear can stop it — unlike the case below, where picking a
+        // second agent also retires the first through `pick`'s straight-through
+        // path and would mask a missing clear here.
+        const createTask = vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-new' }));
+        const { transport, release } = transportWithHeldManifests({ createTask });
+        let client!: QueryClient;
+        renderNewTaskOnClaude(transport, (c) => {
+          client = c;
+        });
+
+        await pickCodexInTheWindow();
+        release();
+        const door = await screen.findByRole('alertdialog');
+        await user.click(within(door).getByRole('button', { name: 'Cancel' }));
+        await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+        await expectSelected('task-runtime-select', "Agent's runtime (Claude Code)");
+
+        // Nothing else happens in between. The roster grows, which is all it
+        // takes to make the manifests unknown and then known again.
+        const releaseSecond = await beginSecondRead(transport, client);
+        await expectSelected('task-runtime-select', 'Server default (Claude Code)');
+        releaseSecond();
+
+        await expectSelected('task-runtime-select', "Agent's runtime (Claude Code)");
+        expect(screen.queryByRole('alertdialog')).toBeNull();
+        expect(screen.getByText('claude-bot')).toBeInTheDocument();
+
+        fillRequiredFields();
+        fireEvent.click(screen.getByText('Create'));
+        await waitFor(() => expect(createTask).toHaveBeenCalled());
+        expect(createTask).toHaveBeenCalledWith(
+          expect.objectContaining({ target: CLAUDE_AGENT.id })
+        );
+      }, 20_000);
+
+      it('does not bring a spent pick back when the manifests are read again', async () => {
+        // "The manifests are known" is not a one-way door. The resolve query is
+        // keyed on the project paths, so every change to the roster re-mints the
+        // key, and a fresh key starts with no data — `known` goes false→true
+        // again with each of those. A pick left latched fires on every one of
+        // those edges: it clobbers whatever the person chose in between, and it
+        // can re-apply one they REFUSED at the door — silently, if the mode has
+        // moved since so it no longer widens.
+        //
+        // The second agent here is the point — a later pick must not be undone
+        // by an earlier one — and it is also why this case cannot stand in for
+        // the one above: picking again retires the latch by another route.
+        const createTask = vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-new' }));
+        const { transport, release } = transportWithHeldManifests({ createTask });
+        let client!: QueryClient;
+        renderNewTaskOnClaude(transport, (c) => {
+          client = c;
+        });
+
+        // A pick made inside the window, priced when the manifests land — and
+        // turned down.
+        await pickCodexInTheWindow();
+        release();
+        const door = await screen.findByRole('alertdialog');
+        await user.click(within(door).getByRole('button', { name: 'Cancel' }));
+        await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+
+        // Then a different agent, which needs no door of its own.
+        fireEvent.click(screen.getByText('claude-bot'));
+        fireEvent.click(await screen.findByText('oc-bot'));
+        await expectSelected('task-runtime-select', "Agent's runtime (OpenCode)");
+
+        // The manifests are read again — the everyday event, not an exotic one.
+        const releaseSecond = await beginSecondRead(transport, client);
+        // The edge itself, proven rather than assumed: with no manifest in hand
+        // the caption cannot name the agent's runtime and falls back to the
+        // server default. If this never reads, `known` never went false and the
+        // rest of this test is measuring nothing.
+        await expectSelected('task-runtime-select', 'Server default (Claude Code)');
+        releaseSecond();
+
+        // The refused pick does not come back to life, and the one the person
+        // actually made is still theirs.
+        await expectSelected('task-runtime-select', "Agent's runtime (OpenCode)");
+        expect(screen.queryByRole('alertdialog')).toBeNull();
+        fillRequiredFields();
+        fireEvent.click(screen.getByText('Create'));
+        await waitFor(() => expect(createTask).toHaveBeenCalled());
+        expect(createTask).toHaveBeenCalledWith(
+          expect.objectContaining({ target: OPENCODE_AGENT.id })
+        );
+      }, 20_000);
+
+      it('says so, and lets the pick go, when the manifests cannot be read at all', async () => {
+        // The other end of the same window: not slow, unanswerable. Holding it
+        // anyway would leave a choice from one minute of somebody's attention
+        // primed to apply itself whenever the resolve eventually recovers, so
+        // the pick is dropped and the sentence says what to do about it.
+        const createTask = vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-new' }));
+        const transport = transportWithAgentPerRuntime({
+          createTask,
+          resolveAgents: vi.fn().mockRejectedValue(new Error('mesh unreachable')),
+        });
+        let client!: QueryClient;
+        renderNewTaskOnClaude(transport, (c) => {
+          client = c;
+        });
+
+        await pickCodexInTheWindow();
+
+        await waitFor(() =>
+          expect(screen.getByTestId('agent-pick-waiting')).toHaveTextContent(
+            /couldn’t read what that agent runs on/
+          )
+        );
+        expect(screen.getByText('claude-bot')).toBeInTheDocument();
+        expect(screen.queryByText('codex-bot')).toBeNull();
+
+        // And it stays let go: a read that recovers later answers nobody's
+        // outstanding question, because there is none.
+        const releaseSecond = await beginSecondRead(transport, client);
+        releaseSecond();
+
+        await expectSelected('task-runtime-select', "Agent's runtime (Claude Code)");
+        expect(screen.queryByRole('alertdialog')).toBeNull();
+        fillRequiredFields();
+        fireEvent.click(screen.getByText('Create'));
+        await waitFor(() => expect(createTask).toHaveBeenCalled());
+        expect(createTask).toHaveBeenCalledWith(
+          expect.objectContaining({ target: CLAUDE_AGENT.id })
+        );
+      }, 20_000);
     });
   });
 
