@@ -351,6 +351,7 @@ function SecretRow({
     <SettingRow label={secret.label} description={description}>
       <div className="flex items-center gap-2">
         <PasswordInput
+          responsive={false}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder={secret.placeholder ?? secret.key}
@@ -359,7 +360,10 @@ function SecretRow({
             if (e.key === 'Enter') void handleSave();
           }}
         />
-        <Button size="sm" onClick={handleSave} disabled={saving || !value.trim()} className="h-8">
+        {/* No custom height: `sm` already renders at this row's h-8 on
+            desktop, and a bare `h-8` here used to cancel its `h-11` mobile
+            growth instead of just repeating its own desktop value. */}
+        <Button size="sm" onClick={handleSave} disabled={saving || !value.trim()}>
           Save
         </Button>
       </div>

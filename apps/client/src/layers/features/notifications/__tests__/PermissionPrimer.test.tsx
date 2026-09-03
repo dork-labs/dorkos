@@ -98,6 +98,21 @@ describe('PermissionPrimer', () => {
     expect(screen.getByText(CARD, { exact: false })).toBeInTheDocument();
   });
 
+  // DOR-1753: a bare `h-7` with no `responsive` prop merges under `sm`'s
+  // default `h-11 md:h-8` and leaves `md:h-8` behind, which renders SMALLER
+  // on a phone (28px) than on desktop (32px) — backwards from the
+  // touch-target system's intent.
+  it('keeps both answer buttons at one fixed height everywhere, no leftover md: artifact', () => {
+    renderPrimer({});
+    act(() => armPermissionPrimer());
+
+    for (const name of ['Not now', 'Turn on notifications']) {
+      const button = screen.getByRole('button', { name });
+      expect(button.className).toContain('h-7');
+      expect(button.className).not.toContain('md:h-8');
+    }
+  });
+
   it('stays away once the person has already answered it', () => {
     renderPrimer({ prefs: { browserPermissionPrimerDismissed: true } });
     act(() => armPermissionPrimer());

@@ -244,7 +244,7 @@ export function SelectSettingRow({
   return (
     <SettingRow label={status.label} description={status.description ?? ''} orientation="vertical">
       <Select value={String(status.value ?? '')} onValueChange={handleChange} disabled={saving}>
-        <SelectTrigger className="h-8 text-sm">
+        <SelectTrigger responsive={false} className="h-8 text-sm">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

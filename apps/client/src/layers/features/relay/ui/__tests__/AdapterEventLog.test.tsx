@@ -180,5 +180,21 @@ describe('AdapterEventLog', () => {
       render(<AdapterEventLog adapterId="telegram-1" />);
       expect(screen.getByText('All types')).toBeInTheDocument();
     });
+
+    // DOR-1753: a bare `h-7` with no `responsive` prop merges under
+    // SelectTrigger's default `h-11 md:h-9` and leaves `md:h-9` behind,
+    // which renders SMALLER on a phone (28px) than on desktop (36px) —
+    // backwards from the touch-target system's intent.
+    it('keeps the filter trigger at one fixed height everywhere, no leftover md: artifact', () => {
+      mockUseAdapterEvents.mockReturnValue({
+        data: { events: [connectedEvent, errorEvent] },
+        isLoading: false,
+      });
+      render(<AdapterEventLog adapterId="telegram-1" />);
+
+      const trigger = screen.getByRole('combobox');
+      expect(trigger.className).toContain('h-7');
+      expect(trigger.className).not.toContain('md:h-9');
+    });
   });
 });

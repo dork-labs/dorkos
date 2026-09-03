@@ -245,7 +245,7 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
                 </div>
               )}
               <Select value={routeAgentId} onValueChange={setRouteAgentId}>
-                <SelectTrigger className="h-8 text-xs">
+                <SelectTrigger responsive={false} className="h-8 text-xs">
                   <SelectValue placeholder="Select agent" />
                 </SelectTrigger>
                 <SelectContent>
