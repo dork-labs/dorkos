@@ -6,6 +6,8 @@ paths: apps/client/src/**/*.tsx
 
 These rules apply to all React components in `apps/client/src/`.
 
+Picking a primitive? Start at [`shared/ui/README.md`](../../apps/client/src/layers/shared/ui/README.md) — which overlay, row, or form control to reach for, before writing a new one.
+
 ## FSD Layer Awareness
 
 | Location                | Layer    | Can Import From                        |
@@ -34,6 +36,7 @@ The client uses **Radix UI** primitives with `asChild` composition (the standard
 - **Focus styles**: `focus-visible:` (keyboard only), never bare `focus:`.
 - **Deterministic values**: never `Math.random()` in components — derive stable pseudo-random values from `React.useId()`.
 - **React 19 refs**: `ref` is a regular prop — new components take `ref` in props, no `forwardRef`. Existing `forwardRef` in `ui/` is fine; don't add more.
+- **Compound components use flat sibling exports** (`CardHeader`, `DialogContent`, `FieldLabel`) — the shadcn convention 89 of 90 `shared/ui` files already follow. Don't reach for an `Object.assign` namespace (`FilterBar.Search`); `filter-bar/` predates this rule and stays as it is.
 
 ## Accessibility
 
@@ -107,3 +110,7 @@ Use `<Table>` primitives for structured columnar data — never flex-based row l
 | Component file | PascalCase | `UserCard.tsx`       |
 | Utility file   | kebab-case | `use-sidebar.ts`     |
 | Index exports  | `index.ts` | Re-export public API |
+
+`layers/shared/ui/` is the exception: files are kebab-case regardless of
+shadcn-vs-custom origin (`button.tsx`, `mention-pill.tsx`, `trust-dial.tsx`).
+Only the component's own PascalCase name changes inside the file.
