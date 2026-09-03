@@ -117,9 +117,13 @@ export {
   STATUS_DOT_HALO,
   STATUS_DOT_LABEL,
   STATUS_DOT_PULSE,
+  STATUS_TONE_BORDER_LEFT,
+  STATUS_TONE_DOT,
+  STATUS_TONE_SURFACE,
+  STATUS_TONE_TEXT,
   statusDotClass,
 } from './status-dot';
-export type { IdentityStatus, StatusSignal } from './status-dot';
+export type { IdentityStatus, StatusSignal, StatusTone } from './status-dot';
 export { PRESS_CARD, PRESS_MARK, PRESS_ROW } from './press';
 export { IdentityHoverCard } from './identity-hover-card';
 export type {

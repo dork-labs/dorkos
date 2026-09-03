@@ -19,6 +19,7 @@ vi.mock('@/layers/entities/relay', () => ({
   useAdapterCatalog: (...args: unknown[]) => mockUseAdapterCatalog(...args),
 }));
 
+import { STATUS_TONE_DOT } from '@/layers/shared/ui';
 import { RelayHealthBar, computeHealthState } from '../RelayHealthBar';
 
 // ---------------------------------------------------------------------------
@@ -303,30 +304,34 @@ describe('RelayHealthBar', () => {
     });
   });
 
+  // Against `STATUS_TONE_DOT`, not a palette literal: relay's healthy dot was
+  // `bg-emerald-500` while its own status table said `bg-green-500` — two
+  // spellings of one fact, inside one feature. These assertions fail the moment
+  // either grows back.
   describe('status dot colors', () => {
-    it('shows emerald dot when healthy (all adapters connected, low failures)', () => {
+    it('shows the success dot when healthy (all adapters connected, low failures)', () => {
       enableRelayWithData({ metrics: mockMetricsNoFailures, catalog: catalogAllConnected });
       const { container } = render(<RelayHealthBar />);
-      expect(container.querySelector('.bg-emerald-500')).toBeInTheDocument();
-      expect(container.querySelector('.bg-amber-500')).toBeNull();
-      expect(container.querySelector('.bg-red-500')).toBeNull();
+      expect(container.querySelector(`.${STATUS_TONE_DOT.success}`)).toBeInTheDocument();
+      expect(container.querySelector(`.${STATUS_TONE_DOT.warning}`)).toBeNull();
+      expect(container.querySelector(`.${STATUS_TONE_DOT.error}`)).toBeNull();
     });
 
-    it('shows amber dot when degraded (some adapters disconnected)', () => {
+    it('shows the warning dot when degraded (some adapters disconnected)', () => {
       enableRelayWithData({ metrics: mockMetricsNoFailures, catalog: catalogPartiallyConnected });
       const { container } = render(<RelayHealthBar />);
-      expect(container.querySelector('.bg-amber-500')).toBeInTheDocument();
-      expect(container.querySelector('.bg-emerald-500')).toBeNull();
+      expect(container.querySelector(`.${STATUS_TONE_DOT.warning}`)).toBeInTheDocument();
+      expect(container.querySelector(`.${STATUS_TONE_DOT.success}`)).toBeNull();
     });
 
-    it('shows red dot when critical (failure rate > 50%)', () => {
+    it('shows the error dot when critical (failure rate > 50%)', () => {
       enableRelayWithData({
         metrics: { ...mockMetrics, totalMessages: 10, failedCount: 6, deadLetteredCount: 0 },
         catalog: catalogAllConnected,
       });
       const { container } = render(<RelayHealthBar />);
-      expect(container.querySelector('.bg-red-500')).toBeInTheDocument();
-      expect(container.querySelector('.bg-emerald-500')).toBeNull();
+      expect(container.querySelector(`.${STATUS_TONE_DOT.error}`)).toBeInTheDocument();
+      expect(container.querySelector(`.${STATUS_TONE_DOT.success}`)).toBeNull();
     });
   });
 

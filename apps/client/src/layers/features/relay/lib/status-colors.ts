@@ -1,94 +1,76 @@
-/** Unified status color tokens for all Relay components. */
-export const RELAY_STATUS_COLORS = {
-  healthy: {
-    dot: 'bg-green-500',
-    text: 'text-green-600 dark:text-green-400',
-    border: 'border-l-green-500',
-  },
-  delivered: {
-    dot: 'bg-green-500',
-    text: 'text-green-600 dark:text-green-400',
-    border: 'border-l-green-500',
-  },
-  connected: {
-    dot: 'bg-green-500',
-    text: 'text-green-600 dark:text-green-400',
-    border: 'border-l-green-500',
-  },
-  pending: {
-    dot: 'bg-blue-500',
-    text: 'text-blue-600 dark:text-blue-400',
-    border: 'border-l-blue-500',
-  },
-  starting: {
-    dot: 'bg-blue-500',
-    text: 'text-blue-600 dark:text-blue-400',
-    border: 'border-l-blue-500',
-  },
-  new: {
-    dot: 'bg-blue-500',
-    text: 'text-blue-600 dark:text-blue-400',
-    border: 'border-l-blue-500',
-  },
-  reconnecting: {
-    dot: 'bg-amber-500',
-    text: 'text-amber-600 dark:text-amber-400',
-    border: 'border-l-amber-500',
-  },
-  degraded: {
-    dot: 'bg-amber-500',
-    text: 'text-amber-600 dark:text-amber-400',
-    border: 'border-l-amber-500',
-  },
-  warning: {
-    dot: 'bg-amber-500',
-    text: 'text-amber-600 dark:text-amber-400',
-    border: 'border-l-amber-500',
-  },
-  rate_limited: {
-    dot: 'bg-amber-500',
-    text: 'text-amber-600 dark:text-amber-400',
-    border: 'border-l-amber-500',
-  },
-  failed: { dot: 'bg-red-500', text: 'text-red-600 dark:text-red-400', border: 'border-l-red-500' },
-  error: { dot: 'bg-red-500', text: 'text-red-600 dark:text-red-400', border: 'border-l-red-500' },
-  disconnected: {
-    dot: 'bg-red-500',
-    text: 'text-red-600 dark:text-red-400',
-    border: 'border-l-red-500',
-  },
-  inactive: { dot: 'bg-gray-400', text: 'text-muted-foreground', border: 'border-l-gray-400' },
-  stopped: { dot: 'bg-gray-400', text: 'text-muted-foreground', border: 'border-l-gray-400' },
-} as const;
+import {
+  STATUS_TONE_BORDER_LEFT,
+  STATUS_TONE_DOT,
+  STATUS_TONE_TEXT,
+  type StatusTone,
+} from '@/layers/shared/ui';
 
-export type RelayStatus = keyof typeof RELAY_STATUS_COLORS;
+/**
+ * What each relay status MEANS, in the app's one status vocabulary.
+ *
+ * Only the tone lives here. The classes come from the shared records, so relay
+ * cannot drift into its own green again — this table used to spell every state
+ * out three times (`bg-green-500`, `text-green-600 dark:text-green-400`,
+ * `border-l-green-500`) and had already grown an emerald beside the green.
+ *
+ * `disconnected` is an error here and a plain `neutral` for an adapter
+ * (`entities/relay/lib/adapter-state-colors.ts`), which is not drift: a
+ * conversation whose peer dropped has a problem, an adapter you never started
+ * does not.
+ */
+export const RELAY_STATUS_TONE = {
+  healthy: 'success',
+  delivered: 'success',
+  connected: 'success',
+  pending: 'info',
+  starting: 'info',
+  new: 'info',
+  reconnecting: 'warning',
+  degraded: 'warning',
+  warning: 'warning',
+  rate_limited: 'warning',
+  failed: 'error',
+  error: 'error',
+  disconnected: 'error',
+  inactive: 'neutral',
+  stopped: 'neutral',
+} as const satisfies Record<string, StatusTone>;
+
+export type RelayStatus = keyof typeof RELAY_STATUS_TONE;
+
+/**
+ * The tone a relay status speaks in, or `neutral` for one this build has never
+ * heard of — an unknown state is not a failure.
+ *
+ * @param status - Any relay status string (e.g. `'connected'`, `'failed'`)
+ */
+function toneOf(status: string): StatusTone {
+  return RELAY_STATUS_TONE[status as RelayStatus] ?? 'neutral';
+}
 
 /**
  * Returns the Tailwind dot (background) color class for a given relay status string.
- * Falls back to `bg-gray-400` for unknown statuses.
  *
  * @param status - Any relay status string (e.g. `'connected'`, `'failed'`)
  */
 export function getStatusDotColor(status: string): string {
-  return RELAY_STATUS_COLORS[status as RelayStatus]?.dot ?? 'bg-gray-400';
+  return STATUS_TONE_DOT[toneOf(status)];
 }
 
 /**
  * Returns the Tailwind text color class for a given relay status string.
- * Falls back to `text-muted-foreground` for unknown statuses.
  *
  * @param status - Any relay status string
  */
 export function getStatusTextColor(status: string): string {
-  return RELAY_STATUS_COLORS[status as RelayStatus]?.text ?? 'text-muted-foreground';
+  return STATUS_TONE_TEXT[toneOf(status)];
 }
 
 /**
  * Returns the Tailwind left-border color class for a given relay status string.
- * Falls back to `border-l-gray-400` for unknown statuses.
  *
  * @param status - Any relay status string
  */
 export function getStatusBorderColor(status: string): string {
-  return RELAY_STATUS_COLORS[status as RelayStatus]?.border ?? 'border-l-gray-400';
+  return STATUS_TONE_BORDER_LEFT[toneOf(status)];
 }

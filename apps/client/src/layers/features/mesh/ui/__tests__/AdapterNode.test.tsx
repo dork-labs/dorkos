@@ -39,6 +39,7 @@ vi.mock('@xyflow/react', () => ({
   },
 }));
 
+import { STATUS_TONE_DOT } from '@/layers/shared/ui';
 import { AdapterNode, ADAPTER_NODE_WIDTH, ADAPTER_NODE_HEIGHT } from '../AdapterNode';
 
 // ---------------------------------------------------------------------------
@@ -111,24 +112,27 @@ describe('AdapterNode', () => {
     });
   });
 
+  // The dot classes come from the shared status vocabulary, so these assert
+  // against `STATUS_TONE_DOT` rather than a palette literal — a node that went
+  // back to its own `bg-green-500` would fail here.
   describe('status indicator', () => {
-    it('shows green dot for running status', () => {
+    it('shows the success dot for running status', () => {
       const { container } = render(
         <AdapterNode {...makeMockProps({ adapterStatus: 'running' })} />
       );
-      expect(container.querySelector('.bg-green-500')).toBeInTheDocument();
+      expect(container.querySelector(`.${STATUS_TONE_DOT.success}`)).toBeInTheDocument();
     });
 
-    it('shows muted dot for stopped status', () => {
+    it('shows the neutral dot for stopped status', () => {
       const { container } = render(
         <AdapterNode {...makeMockProps({ adapterStatus: 'stopped' })} />
       );
-      expect(container.querySelector('.bg-muted-foreground')).toBeInTheDocument();
+      expect(container.querySelector(`.${STATUS_TONE_DOT.neutral}`)).toBeInTheDocument();
     });
 
-    it('shows red dot for error status', () => {
+    it('shows the error dot for error status', () => {
       const { container } = render(<AdapterNode {...makeMockProps({ adapterStatus: 'error' })} />);
-      expect(container.querySelector('.bg-red-500')).toBeInTheDocument();
+      expect(container.querySelector(`.${STATUS_TONE_DOT.error}`)).toBeInTheDocument();
     });
   });
 

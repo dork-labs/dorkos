@@ -9,6 +9,7 @@ import type {
 import { useBindings, useCreateBinding } from '@/layers/entities/binding';
 import { ADAPTER_STATE_DOT_CLASS } from '@/layers/entities/relay';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
+import { STATUS_DOT_PULSE, STATUS_TONE_DOT } from '@/layers/shared/ui';
 import { AdapterCardHeader } from './AdapterCardHeader';
 import { AdapterCardBindings } from './AdapterCardBindings';
 import { AdapterCardError } from './AdapterCardError';
@@ -82,8 +83,8 @@ export function AdapterCard({
   const statusDotClass = cn(
     'size-2 shrink-0 rounded-full',
     instance.status.state === 'connected' && !effectiveHasBindings
-      ? 'bg-amber-500 motion-safe:animate-pulse'
-      : (ADAPTER_STATE_DOT_CLASS[instance.status.state] ?? 'bg-muted-foreground')
+      ? `${STATUS_TONE_DOT.warning} ${STATUS_DOT_PULSE}`
+      : (ADAPTER_STATE_DOT_CLASS[instance.status.state] ?? STATUS_TONE_DOT.neutral)
   );
 
   async function handleQuickBind(agentId: string) {

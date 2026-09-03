@@ -20,6 +20,8 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
+  STATUS_TONE_DOT,
+  type StatusTone,
 } from '@/layers/shared/ui';
 import { cn, getAgentDisplayName, shortenHomePath, resolveAgentVisual } from '@/layers/shared/lib';
 import type { Task } from '@dorkos/shared/types';
@@ -57,7 +59,7 @@ function TaskOverrideChip({ task }: { task: Task }) {
   return (
     <span
       data-testid="task-override-chip"
-      className="text-muted-foreground/70 inline-flex min-w-0 shrink-0 items-center gap-1 text-[10px]"
+      className="text-muted-foreground/70 inline-flex min-w-0 shrink-0 items-center gap-1 text-3xs"
     >
       {task.runtime && <RuntimeMark type={task.runtime} model={task.model} size={11} />}
       {modelLabel && (
@@ -71,14 +73,12 @@ function TaskOverrideChip({ task }: { task: Task }) {
 
 /** Color-coded dot indicating the task's current status. */
 function StatusDot({ task }: { task: Task }) {
-  const color =
-    task.status === 'pending_approval'
-      ? 'bg-yellow-500'
-      : !task.enabled
-        ? 'bg-neutral-400'
-        : 'bg-green-500';
+  // The shared vocabulary, so a waiting task is the same amber a waiting agent
+  // is, and a paused one is neutral rather than a second grey.
+  const tone: StatusTone =
+    task.status === 'pending_approval' ? 'warning' : !task.enabled ? 'neutral' : 'success';
 
-  return <span className={cn('inline-block size-2 rounded-full', color)} />;
+  return <span className={cn('inline-block size-2 rounded-full', STATUS_TONE_DOT[tone])} />;
 }
 
 interface TaskRowProps {
@@ -193,7 +193,7 @@ export function TaskRow({
                   />
                   <span className="text-sm font-medium">{getAgentDisplayName(agent)}</span>
                   {isSystem && (
-                    <Badge variant="outline" className="px-1 py-0 text-[10px] leading-tight">
+                    <Badge variant="outline" className="px-1 py-0 text-3xs leading-tight">
                       <Shield className="mr-0.5 size-2.5" />
                       System
                     </Badge>
@@ -348,7 +348,7 @@ export function TaskRow({
             >
               <div className="border-t px-3 pt-2 pb-3">
                 {task.filePath && (
-                  <p className="text-muted-foreground mb-2 truncate font-mono text-[11px]">
+                  <p className="text-muted-foreground mb-2 truncate font-mono text-2xs">
                     {shortenHomePath(task.filePath)}
                   </p>
                 )}

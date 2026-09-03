@@ -4,6 +4,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/layers/shared/ui/tooltip';
+import { STATUS_TONE_DOT } from '@/layers/shared/ui';
 import { useDeliveryMetrics, useAdapterCatalog, useRelayEnabled } from '@/layers/entities/relay';
 import type { DeliveryMetrics } from '@dorkos/shared/relay-schemas';
 
@@ -16,10 +17,11 @@ interface RelayHealthBarProps {
 
 type HealthState = 'healthy' | 'degraded' | 'critical';
 
+/** The app's one status vocabulary, so relay's "healthy" is the same green everywhere else's is. */
 const DOT_COLORS: Record<HealthState, string> = {
-  healthy: 'bg-emerald-500',
-  degraded: 'bg-amber-500',
-  critical: 'bg-red-500',
+  healthy: STATUS_TONE_DOT.success,
+  degraded: STATUS_TONE_DOT.warning,
+  critical: STATUS_TONE_DOT.error,
 };
 
 /** Format a latency value to a display string. */

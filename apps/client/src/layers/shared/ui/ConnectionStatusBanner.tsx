@@ -1,5 +1,6 @@
 import { Wifi, WifiOff } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
+import { STATUS_TONE_SURFACE } from './status-dot';
 import type { ConnectionState } from '@dorkos/shared/types';
 
 interface ConnectionStatusBannerProps {
@@ -34,9 +35,7 @@ export function ConnectionStatusBanner({
     <div
       className={cn(
         'flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium',
-        isDisconnected
-          ? 'bg-red-500/10 text-red-600 dark:text-red-400'
-          : 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+        isDisconnected ? STATUS_TONE_SURFACE.error : STATUS_TONE_SURFACE.warning,
         className
       )}
     >

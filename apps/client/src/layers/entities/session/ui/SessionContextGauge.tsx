@@ -1,7 +1,7 @@
 import { CircleDashed, Recycle } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
-import { Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
+import { STATUS_TONE_TEXT, Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
 // Same-slice imports via sibling modules (not the entities/session barrel).
 import { useSessionContextHealth } from '../model/use-session-context-health';
 import type { ContextSeverity } from '../lib/context-health';
@@ -9,8 +9,8 @@ import type { ContextSeverity } from '../lib/context-health';
 /** Severity → text color, matching `ContextItem`'s amber/red vocabulary. */
 const SEVERITY_TEXT: Record<ContextSeverity, string> = {
   ok: 'text-muted-foreground/60',
-  warning: 'text-amber-500',
-  critical: 'text-red-500',
+  warning: STATUS_TONE_TEXT.warning,
+  critical: STATUS_TONE_TEXT.error,
 };
 
 /**
@@ -96,7 +96,7 @@ export function SessionContextGauge({ session }: { session: Session }) {
               aria-label={`Context ${health.percent}% full`}
             >
               <ContextRing percent={health.percent} />
-              <span className="text-[10px] tabular-nums">{health.percent}%</span>
+              <span className="text-3xs tabular-nums">{health.percent}%</span>
             </span>
           </TooltipTrigger>
           <TooltipContent side="top">
