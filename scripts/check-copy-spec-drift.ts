@@ -314,10 +314,22 @@ export function changedCopyFiles(repoRoot: string, baseRef: string): string[] {
     .filter((line) => line.length > 0 && isScannablePath(line));
 }
 
-/** A file's contents at `ref`, or null when it did not exist there. */
+/**
+ * A file's contents at `ref`, or null when it did not exist there.
+ *
+ * git's stderr is discarded rather than inherited, because "it did not exist
+ * there" is a NORMAL answer here — every file a change ADDS reaches this — and
+ * an inherited stderr prints `fatal: path … exists on disk, but not in <base>`
+ * above the job's own green verdict. A clean run must read as clean.
+ */
 function readAtRef(repoRoot: string, ref: string, file: string): string | null {
   try {
-    return git(repoRoot, ['show', `${ref}:${file}`]);
+    return execFileSync('git', ['show', `${ref}:${file}`], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
   } catch {
     return null;
   }
