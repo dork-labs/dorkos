@@ -59,7 +59,7 @@ export { isManifestGitTracked } from './git-tracked.js';
 // package: `UpsertResult`, `AutoImportResult` and `ManifestProbe` are internal
 // steps on the way to it, and the server's three MeshCore-shaped interfaces
 // need this one to stay honest.
-export type { SyncFromDiskResult } from './mesh-agent-management.js';
+export type { SyncFromDiskResult, UnregisterResult } from './mesh-agent-management.js';
 
 // Namespace
 export { resolveNamespace, normalizeNamespace, validateNamespace } from './namespace-resolver.js';

@@ -120,11 +120,21 @@ export function ProfileAgentActions({
   function unregister() {
     if (agentId === null) return;
     unregisterAgent.mutate(agentId, {
-      onSuccess: () => {
-        toast(`${name} unregistered`, {
-          action: { label: 'Undo', onClick: () => registerAgent.mutate({ path: projectPath }) },
-          duration: 5000,
-        });
+      onSuccess: (result) => {
+        // Its agent file was part of a git repo, so DorkOS left it alone and
+        // blocked the folder from scans instead — otherwise the next scan would
+        // simply add the agent back. Both halves are the person's to know, and
+        // "Undo" reverses both (DOR-1019).
+        const kept = result.blockedFromDiscovery === true;
+        toast(
+          kept
+            ? `${name} unregistered — its agent file belongs to a git repo, so it stayed put and the folder is blocked from scans`
+            : `${name} unregistered`,
+          {
+            action: { label: 'Undo', onClick: () => registerAgent.mutate({ path: projectPath }) },
+            duration: kept ? 8000 : 5000,
+          }
+        );
         close();
       },
     });

@@ -29,6 +29,19 @@ const GIT_TIMEOUT_MS = 5_000;
 const MAX_GIT_PROBE_DEPTH = 64;
 
 /**
+ * git's own words for "I walked up from here and found no repository at all",
+ * which it exits 128 for — the same exit code a broken or refused repo uses, so
+ * only the message tells a definite answer from a failure to answer.
+ *
+ * The parenthetical is load-bearing and not decoration. A `.git` pointing at a
+ * directory that is gone — a linked worktree whose parent was deleted — fails
+ * with the very similar `fatal: not a git repository: /gone`, and that one is
+ * NOT an answer: there is a working tree here whose files are somebody's. Only
+ * the walked-and-found-nothing wording may be read as "no repo".
+ */
+const NOT_A_REPO = /not a git repository \(or any of the parent directories\)/i;
+
+/**
  * Whether `<projectPath>/.dork/agent.json` is tracked by git.
  *
  * Three answers, from one `git ls-files --error-unmatch`:
@@ -36,9 +49,13 @@ const MAX_GIT_PROBE_DEPTH = 64;
  * - **exit 0** — git knows the file. Tracked.
  * - **exit 1** — git is running in a repo and this path matches nothing in the
  *   index. Untracked, which is the ordinary DorkOS-owned case.
- * - **anything else** — git could not be asked (not installed, exit 128 for a
- *   dubious-ownership or broken repo, a timeout). We do not know, so we look
- *   for a `.git` above the directory and let that decide: inside a working
+ * - **exit 128 saying "not a git repository"** — there is no repo here at all.
+ *   Also untracked, and just as ordinary: every agent under `{dorkHome}/agents`
+ *   answers this way, and reading it as "could not tell" put an untrue warning
+ *   in the log on every one of their unregisters (DOR-1019 review).
+ * - **anything else** — git genuinely could not be asked (not installed, a
+ *   dubious-ownership refusal, a broken repo, a timeout). We do not know, so we
+ *   look for a `.git` above the directory and let that decide: inside a working
  *   tree, assume tracked and keep the file; outside one, there is no repo to
  *   damage and the answer is untracked. A directory that has vanished
  *   altogether skips even that — there is nothing left to protect.
@@ -64,6 +81,10 @@ export async function isManifestGitTracked(
   } catch (err) {
     const code = (err as { code?: number | string }).code;
     if (code === 1) return false;
+    // git ran and said there is no repository here. A definite answer, not a
+    // failure — and the one every managed agent under `{dorkHome}/agents`
+    // gives, so it must not warn.
+    if (NOT_A_REPO.test(String((err as { stderr?: unknown }).stderr ?? ''))) return false;
     // git never even started because the directory is gone (an unreachable
     // agent being swept). There is no file to protect and nothing to say.
     if (!(await exists(projectPath))) return false;

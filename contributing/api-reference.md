@@ -1038,7 +1038,7 @@ Trigger peer discovery for a given working directory. Scans for `.dork/agent.jso
 
 Register an agent in the mesh.
 
-**A directory that already holds a `.dork/agent.json` is adopted, never overwritten** (DOR-1019). The file is left byte-identical and the agent it describes is what gets registered, so the returned `id` and `name` can differ from the ones sent — `overrides` apply only to a directory with no manifest. A manifest that is present but unreadable, or that names an agent already registered somewhere else, is refused with a `422` naming the file. Registration also clears any denial recorded against the directory.
+**A directory that already holds a `.dork/agent.json` is adopted, never overwritten** (DOR-1019). The file is left byte-identical and the agent it describes is what gets registered, so the returned `id` and `name` can differ from the ones sent — `overrides` apply only to a directory with no manifest, and may be omitted entirely when there is one to adopt (`overrides.name` and `overrides.runtime` are required only for a fresh directory, which is what the `400` below means). A manifest that is present but unreadable, or that names an agent already registered somewhere else, is refused with a `422` naming the file. Registration also clears any denial recorded against the directory, which is how a folder unregistered while git tracked its manifest is taken back on.
 
 **Request body:** `AgentManifest` (from `@dorkos/shared/mesh-schemas`)
 
@@ -1090,7 +1090,7 @@ Unregister an agent from the mesh. Deletes its `.dork/agent.json` so the next sc
 
 **Responses:**
 
-- `200` - `{ ok: true }`
+- `200` - `{ success: true, blockedFromDiscovery: boolean }` — `blockedFromDiscovery` is `true` when the manifest was kept and the folder denied, so the app can tell the person about the second effect
 - `404` - Agent not found
 
 ### DELETE /api/mesh/agents/:id/data

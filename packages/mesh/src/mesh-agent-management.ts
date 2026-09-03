@@ -294,6 +294,18 @@ export async function update(
 }
 
 /**
+ * What an unregister did on disk, for a caller that has to say so.
+ *
+ * `manifestKept` is the durable second effect a person has to be told about:
+ * their file is still there AND the folder is now denied, which is a state they
+ * will meet again the next time they look at that directory (DOR-1019).
+ */
+export interface UnregisterResult {
+  /** Whether the manifest was left on disk (git tracks it) and the path denied. */
+  manifestKept: boolean;
+}
+
+/**
  * Unregister an agent by ID.
  *
  * ADR-0043: releases `.dork/agent.json` on disk, then runs the shared
@@ -301,16 +313,21 @@ export async function update(
  *
  * @param deps - Agent management dependencies
  * @param agentId - The ULID of the agent to unregister
+ * @returns What happened to the manifest on disk.
  */
-export async function unregister(deps: AgentManagementDeps, agentId: string): Promise<void> {
+export async function unregister(
+  deps: AgentManagementDeps,
+  agentId: string
+): Promise<UnregisterResult> {
   const agent = deps.registry.get(agentId);
-  if (!agent) return;
+  if (!agent) return { manifestKept: false };
 
   // ADR-0043: settle the manifest file first, so nothing can re-discover the
   // agent between here and the cascade below.
-  await releaseManifest(deps, agent.projectPath);
+  const manifestKept = await releaseManifest(deps, agent.projectPath);
 
   await removeAgent(deps, agent);
+  return { manifestKept };
 }
 
 /**
@@ -334,11 +351,12 @@ export async function unregister(deps: AgentManagementDeps, agentId: string): Pr
  *
  * @param deps - Agent management dependencies (denial list and logger).
  * @param projectPath - The unregistering agent's project directory.
+ * @returns `true` when the file was kept and the directory denied instead.
  */
-async function releaseManifest(deps: AgentManagementDeps, projectPath: string): Promise<void> {
+async function releaseManifest(deps: AgentManagementDeps, projectPath: string): Promise<boolean> {
   if (!(await isManifestGitTracked(projectPath, deps.logger))) {
     await removeManifest(projectPath);
-    return;
+    return false;
   }
 
   deps.denialList.deny(
@@ -350,6 +368,7 @@ async function releaseManifest(deps: AgentManagementDeps, projectPath: string): 
     event: 'mesh.manifest.tracked_kept',
     projectPath,
   });
+  return true;
 }
 
 /**

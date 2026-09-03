@@ -149,6 +149,36 @@ describe('registration adopts rather than overwrites', () => {
     mesh.close();
   });
 
+  it('adopts on a bare request, because adoption needs no name or runtime', async () => {
+    // The documented recovery: re-registering a folder to take it off the
+    // denied list sends `{ path }` and nothing else (the Undo on an unregister
+    // toast). Demanding fields that adoption then ignores 400'd it.
+    const base = await makeTempDir();
+    const repo = path.join(base, 'repo');
+    await fs.mkdir(repo, { recursive: true });
+    await writeManifest(repo, makeManifest({ id: '01ANA0000000000000000000E' }));
+
+    const mesh = new MeshCore({ db, defaultScanRoot: base, logger: quietLogger() });
+    const registered = await mesh.registerByPath(repo, {});
+
+    expect(registered.id).toBe('01ANA0000000000000000000E');
+
+    mesh.close();
+  });
+
+  it('refuses a bare request for a directory with nothing to adopt', async () => {
+    const base = await makeTempDir();
+    const fresh = path.join(base, 'fresh');
+    await fs.mkdir(fresh, { recursive: true });
+
+    const mesh = new MeshCore({ db, defaultScanRoot: base, logger: quietLogger() });
+    await expect(mesh.registerByPath(fresh, {})).rejects.toThrow(/name and a runtime/);
+
+    expect(await manifestBytes(fresh)).toBeNull();
+
+    mesh.close();
+  });
+
   it('still mints a fresh identity for a directory with no manifest', async () => {
     const base = await makeTempDir();
     const fresh = path.join(base, 'fresh');
@@ -178,7 +208,9 @@ describe('unregistration never deletes a git-tracked manifest', () => {
     const mesh = new MeshCore({ db, defaultScanRoot: base, logger: quietLogger() });
     const agent = await mesh.registerByPath(repo, { name: 'ana', runtime: 'claude-code' });
 
-    await mesh.unregister(agent.id);
+    // The result says the file was kept, which is what lets the app tell the
+    // person their folder is now blocked from scans.
+    expect(await mesh.unregister(agent.id)).toEqual({ manifestKept: true });
 
     // The repo's own file survives, byte for byte.
     expect(await manifestBytes(repo)).toBe(before);
@@ -200,7 +232,7 @@ describe('unregistration never deletes a git-tracked manifest', () => {
     const mesh = new MeshCore({ db, defaultScanRoot: base, logger: quietLogger() });
     const agent = await mesh.registerByPath(repo, { name: 'ana', runtime: 'claude-code' });
 
-    await mesh.unregister(agent.id);
+    expect(await mesh.unregister(agent.id)).toEqual({ manifestKept: false });
 
     expect(await manifestBytes(repo)).toBeNull();
     expect(mesh.listDenied()).toHaveLength(0);
@@ -237,6 +269,18 @@ describe('unregistration never deletes a git-tracked manifest', () => {
     const warn = vi.fn();
     expect(await isManifestGitTracked(repo, { warn })).toBe(true);
     expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('says untracked, quietly, for a directory in no repository at all', async () => {
+    // The ordinary case for every agent under `{dorkHome}/agents`: git exits
+    // 128 saying "not a git repository", which is a definite answer, not a
+    // failure to answer — so it must not warn on every unregister.
+    const base = await makeTempDir();
+    await writeManifest(base, makeManifest({ id: '01ANA0000000000000000000F' }));
+
+    const warn = vi.fn();
+    expect(await isManifestGitTracked(base, { warn })).toBe(false);
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it('says untracked, quietly, for a directory that is no longer there', async () => {

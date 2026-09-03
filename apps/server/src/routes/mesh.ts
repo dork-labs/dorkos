@@ -19,7 +19,7 @@ import {
   HeartbeatRequestSchema,
   UpdateAccessRuleRequestSchema,
 } from '@dorkos/shared/mesh-schemas';
-import { removeDorkDirectory } from '@dorkos/shared/manifest';
+import { removeDorkDirectory, probeManifest } from '@dorkos/shared/manifest';
 import { validateBoundary, validateBoundaryOrDorkHome } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import { logOrphanedInstalls } from '../services/mesh/orphaned-installs.js';
@@ -293,19 +293,25 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
       }
     }
 
-    // registerByPath requires name and runtime
-    const name = overrides?.name;
-    const runtime = overrides?.runtime;
-    if (!name || !runtime) {
+    // Creating an agent needs a name and a runtime; ADOPTING one needs neither,
+    // because the manifest already on disk supplies both and the overrides are
+    // ignored. Requiring them regardless 400'd the one recovery this route
+    // documents — re-registering a folder to take it off the denied list, which
+    // the "Undo" on an unregister toast sends as a bare `{ path }` (DOR-1019
+    // review).
+    const adoptable = (await probeManifest(validatedPath)).state === 'present';
+    if (!adoptable && (!overrides?.name || !overrides?.runtime)) {
       return res.status(400).json({
-        error: 'overrides.name and overrides.runtime are required for manual registration',
+        error:
+          'overrides.name and overrides.runtime are required to register a directory that has ' +
+          'no .dork/agent.json of its own',
       });
     }
 
     try {
       const manifest = await meshCore.registerByPath(
         validatedPath,
-        { ...overrides, name, runtime },
+        { ...overrides },
         approver,
         validatedScanRoot
       );
@@ -613,7 +619,7 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
       await logOrphanedInstalls({ projectPath: orphanScanPath, agentLabel: agent.name, logger });
     }
 
-    await meshCore.unregister(req.params.id);
+    const { manifestKept } = await meshCore.unregister(req.params.id);
 
     // Fire-and-forget activity event for agent removal
     const activityService = req.app.locals.activityService as ActivityService | undefined;
@@ -630,7 +636,11 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
       });
     }
 
-    return res.json({ success: true });
+    // `blockedFromDiscovery` is the durable second effect, and the caller has to
+    // be able to say it: the agent's manifest was git-tracked, so it is still on
+    // disk and the folder was denied instead — a state the person meets again
+    // the next time they look at that directory (DOR-1019).
+    return res.json({ success: true, blockedFromDiscovery: manifestKept });
   });
 
   // POST /deny — Deny a candidate path

@@ -8,7 +8,7 @@
  */
 import path from 'path';
 import { monotonicFactory } from 'ulidx';
-import type { AgentManifest, AgentRuntime, DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
+import type { AgentManifest, DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
 import { seedAgentFace } from '@dorkos/shared/agent-face';
 import type { DiscoveryStrategy } from './types.js';
 import type { AgentRegistry, AgentRegistryEntry } from './agent-registry.js';
@@ -426,9 +426,15 @@ export async function register(
  * then the one on disk, id and all, and `partial` is ignored; only a directory
  * with no manifest gets the freshly minted identity built below.
  *
+ * Which is why `name` and `runtime` are required only for THAT case, and are
+ * checked here rather than in the type: a caller adopting a directory has
+ * nothing to name (`POST /api/mesh/agents` with a bare `{ path }` is how a
+ * person re-registers a folder they unregistered), and demanding fields that
+ * are then ignored turned that recovery into a 400 (DOR-1019 review).
+ *
  * @param projectPath - Absolute path to the agent's project directory
- * @param partial - Manifest fields to set (name, runtime are required). Applied
- *   only when there is no manifest to adopt.
+ * @param partial - Manifest fields to set. `name` and `runtime` are required
+ *   when there is no manifest to adopt, and ignored when there is.
  * @param deps - Discovery dependencies
  * @param approver - Identifier of the entity approving registration (default: "mesh")
  * @param scanRoot - Root directory for namespace derivation. Ignored for an agent
@@ -436,16 +442,26 @@ export async function register(
  *   directory (see {@link managedScanRoot}); otherwise defaults to
  *   `deps.defaultScanRoot`.
  * @returns The created AgentManifest
+ * @throws When there is no manifest to adopt and `partial` names no `name` or
+ *   `runtime` — there is nothing to write without them.
  */
 export async function registerByPath(
   projectPath: string,
-  partial: Partial<AgentManifest> & { name: string; runtime: AgentRuntime },
+  partial: Partial<AgentManifest>,
   deps: DiscoveryDeps,
   approver = DEFAULT_REGISTRAR,
   scanRoot?: string
 ): Promise<AgentManifest> {
   const adopted = await adoptExistingManifest(projectPath, deps, scanRoot);
   if (adopted) return adopted;
+
+  const { name, runtime } = partial;
+  if (!name || !runtime) {
+    throw new Error(
+      `Refusing to register ${projectPath}: it holds no ${MANIFEST_DIR}/${MANIFEST_FILE} to ` +
+        `adopt, so a name and a runtime are needed to create one.`
+    );
+  }
 
   const id = deps.generateUlid();
   const now = new Date().toISOString();
@@ -454,9 +470,9 @@ export async function registerByPath(
 
   const manifest: AgentManifest = {
     id,
-    name: partial.name,
+    name,
     description: partial.description ?? '',
-    runtime: partial.runtime,
+    runtime,
     capabilities: partial.capabilities ?? [],
     behavior: partial.behavior ?? { responseMode: 'always' },
     namespace,

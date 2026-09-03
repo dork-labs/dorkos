@@ -5268,6 +5268,26 @@
         "apps/client/src/layers/features/chat/ui/message/MessageImage.tsx",
         "packages/test-utils/src/runtime-conformance.ts"
       ]
+    },
+    {
+      "id": "260903-023414",
+      "slug": "registering-an-agent-adopts-a-manifest-it-finds-and-never-writes-over-one",
+      "title": "Registering an agent adopts the manifest it finds, and never writes over one",
+      "status": "accepted",
+      "created": "2026-09-03",
+      "extractedFrom": "implementation",
+      "specSlug": null,
+      "amends": null,
+      "supersedes": null,
+      "affects": [
+        "packages/mesh/src/mesh-discovery.ts",
+        "packages/mesh/src/mesh-agent-management.ts",
+        "packages/mesh/src/git-tracked.ts",
+        "apps/server/src/routes/mesh.ts",
+        "apps/server/src/services/runtimes/claude-code/mcp-tools/mesh-tools.ts",
+        "apps/server/src/services/core/external-mcp/mesh-tools.ts",
+        "apps/client/src/layers/features/profile/ui/ProfileAgentActions.tsx"
+      ]
     }
   ]
 }

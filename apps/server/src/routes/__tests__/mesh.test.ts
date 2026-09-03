@@ -53,7 +53,9 @@ function createMockMeshCore() {
     registerByPath: vi.fn(),
     deny: vi.fn().mockResolvedValue(undefined),
     undeny: vi.fn().mockResolvedValue(undefined),
-    unregister: vi.fn().mockResolvedValue(undefined),
+    // Mirrors the real `MeshCore.unregister`, which reports whether it had to
+    // leave a git-tracked manifest on disk (DOR-1019).
+    unregister: vi.fn().mockResolvedValue({ manifestKept: false }),
     list: vi.fn().mockReturnValue([]),
     listWithHealth: vi.fn().mockReturnValue([]),
     get: vi.fn().mockReturnValue(undefined),
@@ -337,6 +339,26 @@ describe('Mesh routes', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error).toContain('overrides.name and overrides.runtime are required');
+    });
+
+    it('registers a directory that already has a manifest from a bare { path }', async () => {
+      // Re-registering a folder to clear its denial — the "Undo" on an
+      // unregister toast — sends nothing but the path, and adoption ignores
+      // name and runtime anyway. Requiring them 400'd that recovery (DOR-1019).
+      const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'mesh-route-')));
+      tempDirs.push(dir);
+      await fs.mkdir(path.join(dir, '.dork'));
+      await fs.writeFile(
+        path.join(dir, '.dork', 'agent.json'),
+        JSON.stringify({ ...MOCK_MANIFEST, id: '01ANA0000000000000000000A' }),
+        'utf-8'
+      );
+      meshCore.registerByPath.mockResolvedValue(MOCK_MANIFEST);
+
+      const res = await request(app).post('/api/mesh/agents').send({ path: dir });
+
+      expect(res.status).toBe(201);
+      expect(meshCore.registerByPath).toHaveBeenCalled();
     });
 
     it('returns 400 when overrides.runtime is missing', async () => {
@@ -821,6 +843,17 @@ describe('Mesh routes', () => {
       expect(res.body.error).toBe('Agent project path not found');
       expect(meshCore.unregister).not.toHaveBeenCalled();
       expect(removeDorkDirectory).not.toHaveBeenCalled();
+    });
+
+    it('reports blockedFromDiscovery when unregister had to keep the manifest', async () => {
+      meshCore.get.mockReturnValue(MOCK_MANIFEST);
+      meshCore.unregister.mockResolvedValue({ manifestKept: true });
+
+      const res = await request(app).delete('/api/mesh/agents/agent-1');
+
+      expect(res.status).toBe(200);
+      // The app says so in the toast; without this the second effect is invisible.
+      expect(res.body).toEqual({ success: true, blockedFromDiscovery: true });
     });
 
     it('refuses to delete a .dork directory whose agent.json git tracks', async () => {
