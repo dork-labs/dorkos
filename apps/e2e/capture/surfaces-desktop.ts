@@ -202,7 +202,7 @@ async function shootGenUiWidgets(page: Page, theme: Theme, rec: RunRecorder): Pr
  * (1-based, `BoardCell`'s label convention), the square that completes the
  * seeded opening board's main diagonal (`demo-scenario-tictactoe.ts`).
  */
-const TICTACTOE_WINNING_CELL_LABEL = 'Row 3, column 3: empty — play here';
+const TICTACTOE_WINNING_CELL_LABEL = 'Row 3, column 3: empty, play here';
 
 /**
  * Drive the tic-tac-toe board end to end: the intro line and the mid-game

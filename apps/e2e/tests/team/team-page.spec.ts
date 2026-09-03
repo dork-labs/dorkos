@@ -279,7 +279,7 @@ test.describe('Team — the roster @smoke', () => {
     await expect.poll(rotateOf).toBe('none');
   });
 
-  test('Group: manager clusters the roster under a header', async ({
+  test('Group by owner clusters the roster under a header', async ({
     page,
     basePage,
     roomsApi,
@@ -289,7 +289,7 @@ test.describe('Team — the roster @smoke', () => {
     await basePage.waitForAppReady();
     await expect(card(page, agent.name)).toBeVisible();
 
-    await page.getByRole('button', { name: 'Group: manager' }).click();
+    await page.getByRole('button', { name: 'Group by owner' }).click();
 
     await expect(page).toHaveURL(/[?&]group=manager/);
     await expect(page.getByRole('main').locator('[data-slot="team-roster-groups"]')).toBeVisible();

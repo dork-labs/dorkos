@@ -343,11 +343,11 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
       await dialog.getByRole('button', { name: /^(Continue|Skip)$/ }).click();
       await dialog.getByRole('button', { name: 'Save Changes' }).click();
 
-      // The specific sentence, and ONLY it — the app-wide "Action failed.
-      // Please try again." would talk over the reason and invite a retry of the
-      // same broken input.
+      // The specific sentence, and ONLY it — the app-wide "That didn't work.
+      // Try again." would talk over the reason and invite a retry of the same
+      // broken input.
       await expect(page.getByText(/expected JSON/)).toBeVisible();
-      await expect(page.getByText('Action failed. Please try again.')).toHaveCount(0);
+      await expect(page.getByText("That didn't work. Try again.")).toHaveCount(0);
 
       // The stored rules are still there.
       const saved = (await fetchCatalog(page))
