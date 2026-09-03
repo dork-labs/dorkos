@@ -1,6 +1,10 @@
 ---
 covers:
   - 'feat(shared,server,client): Stop says which of five endings it reached (DOR-1015)'
+  - 'style(client): prettier on two test files (DOR-1015)'
+  - 'merge: fold origin/main into feat/dor-1015-interrupt-receipts (DOR-1015)'
+  - 'fix(server): drop an import the merge left unused (DOR-1015)'
+  - 'test(server): DOR-1302's pump-stop tests speak the DOR-1015 receipt contract'
 ---
 
 ### Changed
