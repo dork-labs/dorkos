@@ -356,6 +356,12 @@ const TURN_EVENT_TYPES: ReadonlySet<SessionEvent['type']> = new Set([
   // (`projectSessionMessages`) splits the turn at it into an inline user bubble.
   // It never opens or closes a turn — the default arm just pushes it.
   'turn_input',
+  // A tool call the runtime refused before anyone could be asked (DOR-795), so
+  // the denial chip lands in the turn where it happened rather than only on the
+  // next history reload. The BACKGROUNDED-subagent case is the one that needs
+  // it: the denied call is in a child transcript nobody opens, so if this event
+  // does not reach the bubble the reader sees an agent quietly go nowhere.
+  'permission_denied',
   // A staged-context receipt (spec `persistent-session-runtime` §2.5, task 4.2).
   // Staging is only ever offered while a turn is open, so it rides that turn like
   // a steer does — but the projection renders it as a QUIET note, not a bubble:

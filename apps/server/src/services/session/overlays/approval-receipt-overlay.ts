@@ -37,7 +37,7 @@
  * A log-backed runtime needs none of this: its history is folded from the same
  * event stream, so `event-log-history` reads the answers straight out of it.
  *
- * @module services/session/approval-receipt-overlay
+ * @module services/session/overlays/approval-receipt-overlay
  */
 import {
   approvalOutcomeOf,
@@ -50,8 +50,8 @@ import type {
   QuestionOutcome,
   ToolApprovalOutcome,
 } from '@dorkos/shared/types';
-import { logger } from '../../lib/logger.js';
-import { getSessionEventStore, peekProjector } from './session-state-projector.js';
+import { logger } from '../../../lib/logger.js';
+import { getSessionEventStore, peekProjector } from '../session-state-projector.js';
 
 /** What a person's answer to one interaction leaves behind. */
 export interface ApprovalReceipt {

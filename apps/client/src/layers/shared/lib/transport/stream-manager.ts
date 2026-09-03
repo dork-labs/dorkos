@@ -162,6 +162,12 @@ const SESSION_EVENT_TYPES = [
   // before anyone suspected the allowlist.
   'image_attachment',
   'compact_boundary',
+  // A tool call the runtime refused before anyone could be asked (DOR-795).
+  // Registered with the CONTRACT for the same reason `image_attachment` is: a
+  // backgrounded subagent's auto-denial is the ONLY notice that a piece of the
+  // work never happened, so a frame dropped here is indistinguishable from the
+  // silence this event exists to break.
+  'permission_denied',
   'system_status',
   'operation_progress',
   'error',

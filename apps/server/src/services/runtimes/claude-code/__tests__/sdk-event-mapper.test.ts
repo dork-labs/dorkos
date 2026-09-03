@@ -1283,5 +1283,59 @@ describe('sdk-event-mapper permission_denied messages', () => {
     expect(data.message).toBe('Blocked.');
     expect(data.reasonType).toBeUndefined();
     expect(data.reason).toBeUndefined();
+    expect(data.agentId).toBeUndefined();
+  });
+
+  // Purpose: the case DOR-795 was filed for — a BACKGROUNDED subagent's tool call
+  // is auto-denied by the CLI (it never reaches canUseTool), and the chip can
+  // only say WHICH child lost WHAT if agent_id survives the mapper.
+  it('carries agent_id and asyncAgent through a backgrounded subagent auto-denial', async () => {
+    const msg = {
+      type: 'system',
+      subtype: 'permission_denied',
+      tool_name: 'Bash',
+      tool_use_id: 'toolu_async_1',
+      agent_id: 'agent_child_7',
+      decision_reason_type: 'asyncAgent',
+      decision_reason: 'Async agent tool calls are auto-denied.',
+      message: 'Backgrounded agents cannot request permission.',
+      uuid: '00000000-0000-4000-8000-0000000000ac',
+      session_id: 'test-session',
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('permission_denied');
+    expect(events[0].data as PermissionDeniedEvent).toEqual({
+      toolCallId: 'toolu_async_1',
+      toolName: 'Bash',
+      reasonType: 'asyncAgent',
+      reason: 'Async agent tool calls are auto-denied.',
+      message: 'Backgrounded agents cannot request permission.',
+      agentId: 'agent_child_7',
+    });
+  });
+
+  // Purpose: attribution is not tied to the asyncAgent reason — a FOREGROUND
+  // subagent denied by the classifier is named too.
+  it('carries agent_id on a subagent denial with a non-asyncAgent reason', async () => {
+    const msg = {
+      type: 'system',
+      subtype: 'permission_denied',
+      tool_name: 'WebFetch',
+      tool_use_id: 'toolu_sub_2',
+      agent_id: 'agent_child_9',
+      decision_reason_type: 'classifier',
+      message: 'Blocked.',
+      uuid: '00000000-0000-4000-8000-0000000000ad',
+      session_id: 'test-session',
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    const data = events[0].data as PermissionDeniedEvent;
+    expect(data.agentId).toBe('agent_child_9');
+    expect(data.reasonType).toBe('classifier');
   });
 });

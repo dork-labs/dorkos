@@ -236,9 +236,16 @@ export async function* mapSystemEvent(
       return;
     }
 
-    // Handle classifier/SDK tool denials (e.g. auto-mode safety classifier).
-    // The SDK resolves these before `canUseTool` is reached, so we surface them
-    // as a read-only denial chip rather than an approval card.
+    // Handle classifier/SDK tool denials (e.g. auto-mode safety classifier, or a
+    // BACKGROUNDED subagent's call the CLI auto-denies — `decision_reason_type:
+    // 'asyncAgent'`). The SDK resolves these before `canUseTool` is reached, so
+    // we surface them as a read-only denial chip rather than an approval card.
+    //
+    // `agent_id` is carried because it is the only thing that makes the chip
+    // legible in the case DOR-795 was filed for: a detached child's tools are
+    // denied inside a transcript the reader never opens, so a chip that could not
+    // say WHICH child lost WHAT tool reported a blocked session and named no
+    // cause. It rides all the way to the part (`PermissionDeniedPart.agentId`).
     if (message.subtype === 'permission_denied') {
       const msg = message as Record<string, unknown>;
       yield {
@@ -249,6 +256,7 @@ export async function* mapSystemEvent(
           reasonType: msg.decision_reason_type as string | undefined,
           reason: msg.decision_reason as string | undefined,
           message: msg.message as string,
+          agentId: msg.agent_id as string | undefined,
         },
       };
       return;

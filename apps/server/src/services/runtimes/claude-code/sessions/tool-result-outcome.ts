@@ -291,7 +291,7 @@ function resolveToolCall(
  * - **A tool a person refused or let expire** takes an `approvalOutcome`. This
  *   is the ONLY record of such a decision when it was made outside DorkOS — in
  *   the bare CLI, or in a session whose event log has since been pruned. Where
- *   DorkOS does hold the answer, `session/approval-receipt-overlay` runs after
+ *   DorkOS does hold the answer, `session/overlays/approval-receipt-overlay` runs after
  *   this and replaces it with the authoritative one.
  * - **Anything else that failed** takes `status: 'error'` and nothing more; the
  *   result text is the tool card's own explanation.

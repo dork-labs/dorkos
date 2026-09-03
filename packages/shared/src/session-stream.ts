@@ -37,6 +37,7 @@ import {
   HookStatusSchema,
   MemoryRecallEventSchema,
   CompactBoundaryEventSchema,
+  PermissionDeniedEventSchema,
   SessionImageEventSchema,
   SystemStatusEventSchema,
   OperationProgressEventShapeSchema,
@@ -487,6 +488,19 @@ export const SessionEventSchema = z
       ...seqShape,
       type: z.literal('compact_boundary'),
       ...CompactBoundaryEventSchema.shape,
+    }),
+    // A tool call the runtime refused before anyone could be asked (DOR-795) —
+    // the auto-mode safety classifier, a deny rule, or a BACKGROUNDED subagent
+    // whose request the CLI auto-denies because a detached child has nobody to
+    // ask (`reasonType: 'asyncAgent'`). NOT a fidelity member: unlike the ones
+    // above it, the runtime's own transcript cannot answer for it — the denied
+    // call happened inside a child's transcript that no reader opens — so it is
+    // recorded durably (`RECORDED_EVENT_TYPES`) and overlaid back onto a
+    // reopened conversation. Its `agentId` is what lets the chip name the child.
+    z.object({
+      ...seqShape,
+      type: z.literal('permission_denied'),
+      ...PermissionDeniedEventSchema.shape,
     }),
     // A transient operational status (SDK status messages — hook progress, a raw
     // `status` token). Drives the client's transient status strip — NOT the

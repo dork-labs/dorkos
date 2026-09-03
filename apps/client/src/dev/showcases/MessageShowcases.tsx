@@ -87,7 +87,7 @@ export function MessageShowcases() {
       <MessageRowShowcases />
       <PlaygroundSection
         title="PermissionDeniedChip"
-        description="Read-only chip marking a tool call blocked before execution by the auto-mode safety classifier — distinct from a user denial, with no actions or re-approval."
+        description="Read-only chip marking a tool call blocked before execution — by the auto-mode safety classifier, a rule, or because the helper that asked was running in the background. Distinct from a user denial: no actions, no re-approval."
       >
         <ShowcaseLabel>Classifier denial (with reason)</ShowcaseLabel>
         <ShowcaseDemo>
@@ -114,6 +114,25 @@ export function MessageShowcases() {
             toolName="WebFetch"
             reasonType="rule"
             message="A permission rule blocked this call."
+          />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Background helper auto-denial (attributed)</ShowcaseLabel>
+        <ShowcaseDemo>
+          <PermissionDeniedChip
+            toolName="Bash"
+            reasonType="asyncAgent"
+            agentId="agent_7f3c91ab2d"
+            message="Backgrounded agents cannot request permission."
+          />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Background helper auto-denial (runtime named no helper)</ShowcaseLabel>
+        <ShowcaseDemo>
+          <PermissionDeniedChip
+            toolName="Edit"
+            reasonType="asyncAgent"
+            message="Backgrounded agents cannot request permission."
           />
         </ShowcaseDemo>
       </PlaygroundSection>

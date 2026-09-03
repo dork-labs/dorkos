@@ -31,12 +31,28 @@ The 16-member event union has a **required core and an optional fidelity tier**.
 
 ### Excluded members: `subagent_text_delta` and `permission_denied`
 
+> **Amended 2026-09-02** — `permission_denied` is no longer excluded (DOR-795). This section records the original decision; see the Amendment below it for what replaced it and why.
+
 Two `StreamEvent` types the Claude adapter still emits are **deliberately excluded** from the live contract — the normalizer's default case maps them to `null` and drops them:
 
 - **`subagent_text_delta`** (live inner text of a running subagent): subagent lifecycle rides `subagent_update` (`status`, `toolUses`, `lastToolName`, `summary`) without the inner text stream.
 - **`permission_denied`** (a classifier/SDK denial resolved before `canUseTool`): operator denials reach live clients via `interaction_resolved {resolution: 'denied'}` (the client settles the tool part to `error` — `project-session-turn.ts`), and the denied call's error result is durable in reconstructed history. The dedicated `PermissionDeniedPart` schema and `PermissionDeniedChip` renderer are retained, but the new pipeline currently has no producer for that part — classifier-denial chips do not render from the live stream.
 
 Rationale: both are fidelity nice-to-haves, and every member added to the contract is surface that ALL future adapters, the projector, replay, and the client projection must carry forever. They are recorded here as known fidelity losses relative to the old in-band POST stream, and are the first candidates for a future contract revision if the gap proves user-visible.
+
+## Amendment (2026-09-02) — `permission_denied` rejoins the contract
+
+The gap proved user-visible, on the revision this section named itself a candidate for. **`permission_denied` is now a contract member** (DOR-795): the normalizer maps it rather than dropping it, `PermissionDeniedPart` finally has a producer, and the chip renders live and after a reload. `subagent_text_delta` stays excluded and this amendment says nothing about it.
+
+What the original exclusion got wrong was not the cost/benefit — it was the premise. It reasoned that "the denied call's error result is durable in reconstructed history", which holds only when the denied call is IN the history being reconstructed. It is not, for the case that matters: a BACKGROUNDED subagent's tool call is auto-denied by the CLI (`SDKPermissionDeniedMessage`, "headless-agent auto-deny", `decision_reason_type: 'asyncAgent'`), and the call is written into the CHILD's transcript, which nothing reads. So the loss had no anchor anywhere — not the live stream, not the parent's JSONL — and a person saw an agent quietly stop making progress with no reason on screen. That is not a fidelity nice-to-have; it is the only account of work that never happened.
+
+Three things follow, and they are the shape of the exception rather than a widening of the contract:
+
+- The member carries the SDK's `agent_id` as `agentId`, so the chip names WHICH child lost WHAT tool. A denial without one happened on the main thread.
+- It is the first member that is neither a fidelity extra nor status-bearing: it is **durable** for a `'record'`-mode session, written EAGERLY (`EAGERLY_RECORDED_EVENT_TYPES`, the `approval_required` precedent) because a turn parked on an ask may never reach the `turn_end` that would flush it, and overlaid back onto JSONL-derived history by `services/session/overlays/permission-denial-overlay.ts`.
+- Only denials the transcript CANNOT anchor become a durable row. A main-thread classifier or deny-rule refusal keeps the original reasoning exactly — its `tool_use` and rejection `tool_result` are in the JSONL, so the chip stays a live extra and history is left alone rather than reporting one refusal twice.
+
+The rest of the section stands: adding a member is permanent surface for every adapter, and the bar for the next one is unchanged.
 
 ## Consequences
 
@@ -50,4 +66,4 @@ Rationale: both are fidelity nice-to-haves, and every member added to the contra
 
 - Adds an abstraction layer (projector + normalizer + contract) the server must maintain; the normalizer is a second lossy mapping hop after the adapter's own SDK→`StreamEvent` mapping.
 - Two adapter persistence strategies (native-backed vs DorkOS-log-backed) to keep behaviorally consistent; the shared contract + stateless-runtime tests mitigate drift. The log-backed history fold is deliberately lower-fidelity (no parts interleaving, no thinking) and depth-bounded by `EVENT_LOG_MAX_EVENTS`.
-- The excluded members are real fidelity regressions (no live subagent inner text; no live classifier-denial chip) accepted to keep the contract small.
+- The excluded members are real fidelity regressions (no live subagent inner text; no live classifier-denial chip) accepted to keep the contract small. _Amendment (2026-09-02): the second one was not a fidelity regression but a silent loss of work — see the Amendment above. `permission_denied` is now a member; `subagent_text_delta` is still excluded._

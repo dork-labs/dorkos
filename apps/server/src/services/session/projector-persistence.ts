@@ -62,6 +62,13 @@ export type ProjectorPersistenceMode = 'history' | 'record';
  * though nobody had ever been asked. The prompt row is what
  * {@link EAGERLY_RECORDED_EVENT_TYPES} makes durable in time to matter, and what
  * the boot sweep in `expire-orphaned-asks` reads to close the ask out.
+ *
+ * `permission_denied` is the second exception, and it is the OPPOSITE of a
+ * receipt: a decision nobody was allowed to make (DOR-795). The JSONL cannot
+ * answer for it either — for a BACKGROUNDED subagent the denied call is written
+ * into a child transcript no reader ever opens, so the parent conversation comes
+ * back showing an agent that simply stopped making progress. The row is what
+ * `permission-denial-overlay` puts back.
  */
 export const RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'turn_start',
@@ -71,6 +78,7 @@ export const RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'question_prompt',
   'elicitation_prompt',
   'interaction_resolved',
+  'permission_denied',
 ]);
 
 /**
@@ -95,12 +103,26 @@ export const RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set([
  *
  * Cheap by construction: at most two extra transactions per ask, on a path that
  * has just stopped to wait for a human being.
+ *
+ * `permission_denied` is eager for the SAME reason, reached from the other side
+ * (DOR-795 review). A refusal and a parked ask are not merely both possible in
+ * one turn — the refusal is what a backgrounded child does INSTEAD of asking,
+ * while the main thread goes on and may park on an ask of its own. So the exact
+ * DOR-1439 scenario recurs with the denial as its victim: the turn never reaches
+ * `turn_end`, the ask row is on disk because it is eager, and the turn-granular
+ * flush that would have written the denial never runs. Reopening the session
+ * then shows the ask and no trace of the work that was silently lost — which is
+ * the whole failure this event exists to end.
+ *
+ * The overlay pays for this by excluding the OPEN turn's denials (they are
+ * already on the live stream), so an eager row is never drawn twice.
  */
 export const EAGERLY_RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'approval_required',
   'question_prompt',
   'elicitation_prompt',
   'interaction_resolved',
+  'permission_denied',
 ]);
 
 /**

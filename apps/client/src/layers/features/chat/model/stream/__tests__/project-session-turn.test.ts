@@ -607,6 +607,59 @@ describe('projectInProgressTurn', () => {
     ]);
   });
 
+  it('folds a permission_denied into an attributed denial chip part (DOR-795)', () => {
+    // Purpose: a BACKGROUNDED subagent's tool call is auto-denied by the CLI and
+    // the refusal is written into the CHILD's transcript, which nobody opens. If
+    // this fold drops `agentId`, the chip can report that something was blocked
+    // but not WHICH helper lost WHAT — the whole content of the warning.
+    const events: SessionEvent[] = [
+      { seq: 1, type: 'text_delta', text: 'Delegating that.' },
+      {
+        seq: 2,
+        type: 'permission_denied',
+        toolCallId: 'toolu_async_1',
+        toolName: 'Bash',
+        message: 'Backgrounded agents cannot request permission.',
+        reasonType: 'asyncAgent',
+        agentId: 'agent_child_7',
+      },
+    ];
+    const parts = projectInProgressTurn(events);
+    expect(parts.map((p) => p.type)).toEqual(['text', 'permission_denied']);
+    expect(parts[1]).toEqual({
+      type: 'permission_denied',
+      toolCallId: 'toolu_async_1',
+      toolName: 'Bash',
+      message: 'Backgrounded agents cannot request permission.',
+      reasonType: 'asyncAgent',
+      agentId: 'agent_child_7',
+    });
+  });
+
+  it('a main-thread denial folds without inventing an agentId', () => {
+    // Absence is the claim "this happened on the main thread" — an empty string
+    // would attribute it to a helper that never existed.
+    const events: SessionEvent[] = [
+      {
+        seq: 1,
+        type: 'permission_denied',
+        toolCallId: 'toolu_1',
+        toolName: 'Bash',
+        message: 'Blocked.',
+        reasonType: 'classifier',
+      },
+    ];
+    expect(projectInProgressTurn(events)).toEqual([
+      {
+        type: 'permission_denied',
+        toolCallId: 'toolu_1',
+        toolName: 'Bash',
+        message: 'Blocked.',
+        reasonType: 'classifier',
+      },
+    ]);
+  });
+
   it('folds a typed error event into an inline error part', () => {
     // Purpose: a live typed error must render the inline ErrorMessageBlock for
     // every runtime — previously error events never reached the client at all.

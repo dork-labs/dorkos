@@ -1396,6 +1396,9 @@
           },
           "message": {
             "type": "string"
+          },
+          "agentId": {
+            "type": "string"
           }
         },
         "required": [
@@ -2190,6 +2193,46 @@
             "required": [
               "seq",
               "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "permission_denied"
+                ]
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "toolName": {
+                "type": "string"
+              },
+              "reasonType": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "agentId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "toolCallId",
+              "toolName",
+              "message"
             ]
           },
           {
@@ -11200,6 +11243,46 @@
                       "required": [
                         "seq",
                         "type"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "permission_denied"
+                          ]
+                        },
+                        "toolCallId": {
+                          "type": "string"
+                        },
+                        "toolName": {
+                          "type": "string"
+                        },
+                        "reasonType": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "toolCallId",
+                        "toolName",
+                        "message"
                       ]
                     },
                     {

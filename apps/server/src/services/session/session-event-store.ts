@@ -72,6 +72,24 @@ export interface UnresolvedInteractionRow {
   startedAt: number;
 }
 
+/**
+ * One recorded tool denial, with the wall-clock the row was written at — what
+ * {@link SessionEventStore.readPermissionDenials} hands the history overlay.
+ *
+ * The timestamp comes from the ROW rather than the event, because the event has
+ * none: `seq` orders a session's own stream and says nothing that can be
+ * compared against a JSONL transcript's ISO timestamps. It is the turn's FLUSH
+ * time (one `createdAt` per `appendTurn`), so a denial sorts to the end of the
+ * turn it happened in — after that turn's messages, before the next turn's,
+ * which is where a reader expects to meet it.
+ */
+export interface RecordedPermissionDenial {
+  /** The denial as it was projected, `seq` included. */
+  event: Extract<SessionEvent, { type: 'permission_denied' }>;
+  /** ISO-8601 wall-clock the row was written at — the enclosing turn's flush. */
+  createdAt: string;
+}
+
 /** The prompt event types, mapped to the interaction kind each one raises. */
 const ASK_KIND_BY_EVENT_TYPE: Readonly<
   Record<BlockingInteractionEventType, PendingInteractionDTO['type']>
@@ -215,6 +233,38 @@ export class SessionEventStore {
       if (event?.type === 'interaction_resolved') events.push(event);
     }
     return events;
+  }
+
+  /**
+   * A session's `permission_denied` rows only — the tool calls the runtime
+   * refused before anyone could be asked (DOR-795).
+   *
+   * Same shape, same cost argument, and the same `LIKE` on the serialized
+   * discriminant as {@link SessionEventStore.readInteractionResolutions}: it runs
+   * on every history read, so it filters in SQLite instead of parsing thousands
+   * of rows to find the two that matter. A row that matched the pattern without
+   * being a denial is dropped after the parse.
+   *
+   * @param sessionId - DorkOS session identifier
+   */
+  readPermissionDenials(sessionId: string): RecordedPermissionDenial[] {
+    const rows = this.db
+      .select()
+      .from(sessionEvents)
+      .where(
+        and(
+          eq(sessionEvents.sessionId, sessionId),
+          sql`${sessionEvents.payload} LIKE '%"type":"permission_denied"%'`
+        )
+      )
+      .orderBy(sessionEvents.seq)
+      .all();
+    const denials: RecordedPermissionDenial[] = [];
+    for (const row of rows) {
+      const event = parsePayload(row);
+      if (event?.type === 'permission_denied') denials.push({ event, createdAt: row.createdAt });
+    }
+    return denials;
   }
 
   /**

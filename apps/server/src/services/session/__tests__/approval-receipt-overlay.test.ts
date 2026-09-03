@@ -6,7 +6,7 @@ import {
   collectApprovalReceipts,
   applyApprovalReceipts,
   overlayApprovalReceipts,
-} from '../approval-receipt-overlay.js';
+} from '../overlays/approval-receipt-overlay.js';
 import { SessionEventStore } from '../session-event-store.js';
 import type { RawSessionEvent } from '../session-state-projector.js';
 import {

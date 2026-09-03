@@ -133,10 +133,13 @@ exact: true }` never matches.
   Wait for `inference-indicator-streaming` to be hidden before that click, or
   Playwright refuses to click a still-reflowing element and reports it as a click
   timeout rather than as an animation.
-- **`permission_denied` never reaches a client.** The session-event normalizer
-  maps it to `null` (it is an SDK pre-`canUseTool` denial, not an operator's), so
-  a fixture emitting it, and any assertion resting on it, is dead weight. An
-  operator's refusal reaches the transcript via `interaction_resolved`.
+- **`permission_denied` is not an operator's refusal.** It says the RUNTIME
+  refused a call before anybody could be asked — a classifier, a deny rule, or a
+  backgrounded subagent with nobody to ask — and it draws the read-only
+  `permission-denied-chip`, which carries no receipt and no re-approval path
+  (DOR-795). An operator's refusal reaches the transcript via
+  `interaction_resolved` and draws the `approval-receipt` instead. Emitting both
+  for one decision reports it twice under two different authors.
 - **Elicitation form fields are labelled by the schema's `description`, not its
   `title`** — `ElicitationPrompt.tsx` uses `prop.description ?? key` and ignores
   `title` entirely. A fixture that sets only `title` renders the raw property key.

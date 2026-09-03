@@ -239,6 +239,26 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
       return boundary;
     }
 
+    // A tool call refused before anyone could be asked (DOR-795). Forwarded
+    // rather than dropped because the runtime's own transcript cannot answer for
+    // it: for a BACKGROUNDED subagent (`reasonType: 'asyncAgent'`) the denied
+    // call lives in a child transcript no reader opens, so this event is the only
+    // place the loss is ever stated. Optionals ride only when present so a lean
+    // denial stays lean — `agentId` in particular, whose ABSENCE means "the main
+    // thread", a claim an empty string would quietly fake.
+    case 'permission_denied': {
+      const denied: RawOf<'permission_denied'> = {
+        type: 'permission_denied',
+        toolCallId: String(data.toolCallId ?? ''),
+        toolName: String(data.toolName ?? ''),
+        message: String(data.message ?? ''),
+        ...(data.reasonType !== undefined ? { reasonType: String(data.reasonType) } : {}),
+        ...(data.reason !== undefined ? { reason: String(data.reason) } : {}),
+        ...(data.agentId !== undefined ? { agentId: String(data.agentId) } : {}),
+      };
+      return denied;
+    }
+
     // A transient operational status (hook progress, a raw SDK `status` token).
     // Drives the client status strip; forward only the fields present. Operation
     // lifecycle (compaction) rides `operation_progress`, not this member.
@@ -336,8 +356,8 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
     }
 
     // No session-stream projection: raw context/usage notices, sync/presence/
-    // relay traffic, prompt suggestions, permission denials, and `done` (turn
-    // boundary handled by feedProjector, not by a per-event mapping).
+    // relay traffic, prompt suggestions, and `done` (turn boundary handled by
+    // feedProjector, not by a per-event mapping).
     default:
       return null;
   }

@@ -76,6 +76,7 @@ import {
   disposeProjector,
   getOrCreateProjector,
   overlayApprovalReceipts,
+  overlayPermissionDenials,
   peekProjector,
 } from '../../session/index.js';
 import { mcpAuthEvidenceFrom } from '../../mesh/mcp-revocation.js';
@@ -950,7 +951,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * The transcript is SDK JSONL, which records that a tool ran or did not and
    * nothing about a person having been asked first — so the permission
    * decisions DorkOS recorded for this session are overlaid back on
-   * ({@link overlayApprovalReceipts}). This is the seam BOTH history consumers
+   * ({@link overlayApprovalReceipts}), and so are the tool calls it refused
+   * before anyone could be asked ({@link overlayPermissionDenials}). This is the
+   * seam BOTH history consumers
    * pass through — `GET /:id/messages` and `getSessionSnapshot`'s loader — so
    * reopening a conversation shows the same receipts a live one does. The
    * transcript reader stays a JSONL parser and learns nothing about DorkOS
@@ -982,7 +985,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // replaying recorded `image_attachment` events, which carry their URL
     // (`services/session/event-log-history.ts`).
     await attachTranscriptImages(this.attachments, sessionId, messages, images);
-    return overlayApprovalReceipts(sessionId, messages);
+    // And the third pass, for the refusals nobody was asked about (DOR-795): a
+    // BACKGROUNDED subagent's denied tool call is written into the child's
+    // transcript, not this one, so without this the conversation comes back
+    // showing an agent that stopped making progress for no stated reason.
+    return overlayPermissionDenials(sessionId, overlayApprovalReceipts(sessionId, messages));
   }
 
   /**
