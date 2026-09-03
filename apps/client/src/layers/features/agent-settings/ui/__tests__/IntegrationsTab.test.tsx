@@ -130,13 +130,16 @@ vi.mock('@/layers/features/relay', () => ({
   AdapterIcon: ({ adapterType }: { adapterType?: string }) => (
     <span data-testid="adapter-icon" data-adapter-type={adapterType} />
   ),
+  // Mirrors the real STATUS_TONE_DOT + STATUS_DOT_PULSE values rather than a
+  // hand-picked palette — this suite doesn't assert on these directly today,
+  // but a value here should still be a class the app actually paints.
   ADAPTER_STATE_DOT_CLASS: {
-    connected: 'bg-green-500',
+    connected: 'bg-status-success',
     disconnected: 'bg-muted-foreground',
-    error: 'bg-red-500',
-    starting: 'bg-amber-500',
-    stopping: 'bg-amber-500',
-    reconnecting: 'bg-amber-500',
+    error: 'bg-status-error',
+    starting: 'bg-status-warning-dot motion-safe:animate-pulse',
+    stopping: 'bg-status-warning-dot motion-safe:animate-pulse',
+    reconnecting: 'bg-status-warning-dot motion-safe:animate-pulse',
   },
   ADAPTER_STATE_LABEL: {
     connected: 'Connected',

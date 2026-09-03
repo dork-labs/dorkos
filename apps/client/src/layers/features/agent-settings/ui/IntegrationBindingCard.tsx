@@ -22,6 +22,7 @@ import {
 } from '@/layers/shared/ui';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import { AdapterIcon, ADAPTER_STATE_DOT_CLASS } from '@/layers/features/relay';
+import { STATUS_TONE_DOT } from '@/layers/shared/ui';
 import { buildPreviewSentence } from '@/layers/entities/binding';
 import type { AdapterBinding, BindingTestResult } from '@dorkos/shared/relay-schemas';
 
@@ -30,13 +31,17 @@ export type CardAdapterState = 'connected' | 'disconnected' | 'error' | 'connect
 
 /**
  * Maps the four card-level states to dot classes.
- * 'disconnected' uses amber here — a dropped integration binding warrants attention,
- * unlike the relay panel where disconnected means idle/ready (muted-foreground).
+ * 'disconnected' spends the plain `warning` tone here — a dropped integration
+ * binding warrants attention, unlike the relay panel where disconnected means
+ * idle/ready (`neutral`). It reads `STATUS_TONE_DOT` directly rather than
+ * `ADAPTER_STATE_DOT_CLASS.starting`, which pairs the same amber with the
+ * pulse animation `connecting` below wears — disconnected is a held state,
+ * not a transition, so it stays still.
  * 'connecting' surfaces as the amber-pulsing 'starting' class — same visual meaning.
  */
 const STATE_DOT_CLASS: Record<CardAdapterState, string> = {
   connected: ADAPTER_STATE_DOT_CLASS.connected,
-  disconnected: 'bg-amber-500',
+  disconnected: STATUS_TONE_DOT.warning,
   error: ADAPTER_STATE_DOT_CLASS.error,
   connecting: ADAPTER_STATE_DOT_CLASS.starting,
 };

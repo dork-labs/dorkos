@@ -88,10 +88,18 @@ export const STATUS_TONE_SURFACE: Record<StatusTone, string> = {
   neutral: 'bg-muted text-muted-foreground',
 };
 
-/** The left rule a row wears when its whole state is written down the edge of it. */
+/**
+ * The left rule a row wears when its whole state is written down the edge of
+ * it.
+ *
+ * `warning` spends `--status-warning-dot` rather than `--status-warning`, for
+ * the same reason {@link STATUS_DOT_COLOR} does: a 2px rule is a non-text mark
+ * that carries its meaning by colour alone, so it needs the darker amber
+ * WCAG 1.4.11 asks of one (`--status-warning` is 2.15:1 on a light surface).
+ */
 export const STATUS_TONE_BORDER_LEFT: Record<StatusTone, string> = {
   success: 'border-l-status-success',
-  warning: 'border-l-status-warning',
+  warning: 'border-l-status-warning-dot',
   error: 'border-l-status-error',
   info: 'border-l-status-info',
   neutral: 'border-l-muted-foreground',

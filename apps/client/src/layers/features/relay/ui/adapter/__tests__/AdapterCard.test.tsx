@@ -4,7 +4,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor, act } from '@testing-library/react';
-import { STATUS_TONE_DOT } from '@/layers/shared/ui';
+import { STATUS_TONE_BORDER_LEFT, STATUS_TONE_DOT } from '@/layers/shared/ui';
 import { AdapterCard } from '../AdapterCard';
 import type { AdapterManifest, CatalogInstance } from '@dorkos/shared/relay-schemas';
 
@@ -230,7 +230,7 @@ describe('AdapterCard', () => {
 
   it('does not render left border color classes', () => {
     const { container } = render(<AdapterCard {...defaultProps()} />);
-    expect(container.querySelector('.border-l-green-500')).toBeNull();
+    expect(container.querySelector(`.${STATUS_TONE_BORDER_LEFT.success}`)).toBeNull();
     expect(container.querySelector('.border-l-2')).toBeNull();
   });
 

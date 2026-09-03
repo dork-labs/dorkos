@@ -8,18 +8,21 @@ import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
 import { IntegrationBindingCard } from '../IntegrationBindingCard';
 import type { CardAdapterState } from '../IntegrationBindingCard';
 
-// Mock AdapterIcon to avoid logo resolution in tests
+// Mock AdapterIcon to avoid logo resolution in tests. `ADAPTER_STATE_DOT_CLASS`
+// mirrors its real values (STATUS_TONE_DOT + STATUS_DOT_PULSE) rather than a
+// hand-picked palette, so a selector this suite queries for is a class the app
+// actually paints, not a fiction the real component stopped emitting.
 vi.mock('@/layers/features/relay', () => ({
   AdapterIcon: ({ adapterType }: { adapterType?: string }) => (
     <span data-testid="adapter-icon" data-adapter-type={adapterType} />
   ),
   ADAPTER_STATE_DOT_CLASS: {
-    connected: 'bg-green-500',
+    connected: 'bg-status-success',
     disconnected: 'bg-muted-foreground',
-    error: 'bg-red-500',
-    starting: 'bg-amber-500 motion-safe:animate-pulse',
-    stopping: 'bg-amber-500 motion-safe:animate-pulse',
-    reconnecting: 'bg-amber-500 motion-safe:animate-pulse',
+    error: 'bg-status-error',
+    starting: 'bg-status-warning-dot motion-safe:animate-pulse',
+    stopping: 'bg-status-warning-dot motion-safe:animate-pulse',
+    reconnecting: 'bg-status-warning-dot motion-safe:animate-pulse',
   },
 }));
 
@@ -128,22 +131,25 @@ describe('IntegrationBindingCard', () => {
   describe('status dot overlay', () => {
     it('shows green dot when connected', () => {
       const { container } = renderCard({ adapterState: 'connected' });
-      expect(container.querySelector('.bg-green-500')).toBeInTheDocument();
+      expect(container.querySelector('.bg-status-success')).toBeInTheDocument();
     });
 
     it('shows amber dot when disconnected (dropped binding warrants attention)', () => {
       const { container } = renderCard({ adapterState: 'disconnected' });
-      expect(container.querySelector('.bg-amber-500')).toBeInTheDocument();
+      expect(container.querySelector('.bg-status-warning-dot')).toBeInTheDocument();
+      // Held state, not a transition — it must NOT wear the pulse 'connecting' does.
+      expect(container.querySelector('.motion-safe\\:animate-pulse')).not.toBeInTheDocument();
     });
 
     it('shows red dot when error', () => {
       const { container } = renderCard({ adapterState: 'error' });
-      expect(container.querySelector('.bg-red-500')).toBeInTheDocument();
+      expect(container.querySelector('.bg-status-error')).toBeInTheDocument();
     });
 
     it('shows amber pulse dot when connecting', () => {
       const { container } = renderCard({ adapterState: 'connecting' });
-      expect(container.querySelector('.bg-amber-500')).toBeInTheDocument();
+      expect(container.querySelector('.bg-status-warning-dot')).toBeInTheDocument();
+      expect(container.querySelector('.motion-safe\\:animate-pulse')).toBeInTheDocument();
     });
   });
 
@@ -301,7 +307,7 @@ describe('IntegrationBindingCard', () => {
       });
       expect(container.querySelector('.bg-muted-foreground\\/40')).toBeInTheDocument();
       // Should NOT show green dot even though adapter is connected
-      expect(container.querySelector('.bg-green-500')).not.toBeInTheDocument();
+      expect(container.querySelector('.bg-status-success')).not.toBeInTheDocument();
     });
 
     it('does not show error border when paused even with error adapter state', () => {

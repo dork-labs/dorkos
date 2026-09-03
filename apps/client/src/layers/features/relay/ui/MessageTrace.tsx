@@ -13,8 +13,11 @@ interface MessageTraceProps {
  * `sent` is `info` — the same blue relay draws `pending` and `starting` in,
  * because all three mean "on its way", not "look at me".
  *
- * `no_subscriber` and `timeout` are `neutral`: the message reached nobody, but
- * nothing went wrong. Never the failure red.
+ * `no_subscriber` is `neutral`: the message reached nobody, but nothing went
+ * wrong. `timeout` is `neutral` too, but for a different reason — it IS a
+ * failure with a clock on it, just not one the sender's own transport
+ * reported as `failed`; it keeps the grey it always drew rather than being
+ * promoted to the failure red on this sweep.
  */
 const SPAN_TONE: Record<TraceSpan['status'], StatusTone> = {
   delivered: 'success',
@@ -26,7 +29,12 @@ const SPAN_TONE: Record<TraceSpan['status'], StatusTone> = {
 
 /** Status color mapping for timeline dots. */
 function statusColor(status: TraceSpan['status']): string {
-  return STATUS_TONE_DOT[SPAN_TONE[status]];
+  // `?? STATUS_TONE_DOT.neutral`: a span status this build has not been
+  // compiled against (the server can add one before the client redeploys)
+  // falls back to a visible neutral dot rather than an unresolved
+  // `className={undefined}`, matching the defence `status-colors.ts`'s
+  // `toneOf()` keeps for the same situation.
+  return STATUS_TONE_DOT[SPAN_TONE[status]] ?? STATUS_TONE_DOT.neutral;
 }
 
 /** Format ISO 8601 timestamp to readable time. */
