@@ -1,9 +1,9 @@
 import { useState, type ReactNode } from 'react';
-import QRCode from 'react-qr-code';
 import { Check, Copy, Link, QrCode, X, type LucideIcon } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Button } from '@/layers/shared/ui';
 import { cn, useCopyFeedback } from '@/layers/shared/lib';
+import { TunnelQrCode, tunnelHost } from '@/layers/entities/tunnel';
 import { latencyColor } from '../lib/tunnel-utils';
 
 /** Props for the connected view showing URL sharing and QR code. */
@@ -104,7 +104,7 @@ export function TunnelConnected({ url, activeSessionId, latencyMs }: TunnelConne
             aria-label={latencyMs !== null ? `${latencyMs}ms latency` : 'Latency unknown'}
           />
           <span className="text-foreground min-w-0 flex-1 truncate font-mono text-xs">
-            {url.replace(/^https?:\/\//, '')}
+            {tunnelHost(url)}
           </span>
           <AnimatePresence>
             {latencyMs !== null && (
@@ -165,9 +165,7 @@ export function TunnelConnected({ url, activeSessionId, latencyMs }: TunnelConne
             transition={qrExpandTransition}
             className="overflow-hidden"
           >
-            <div className="flex justify-center rounded-lg bg-white p-4">
-              <QRCode value={url} size={180} level="M" />
-            </div>
+            <TunnelQrCode url={url} />
             <p className="text-muted-foreground mt-2 text-center text-xs">Scan from any device</p>
           </motion.div>
         )}

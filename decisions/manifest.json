@@ -5309,6 +5309,29 @@
         "apps/client/src/layers/features/agent-settings/ui/ToolsTab.tsx",
         "packages/shared/src/mesh-schemas.ts"
       ]
+    },
+    {
+      "id": "260903-210711",
+      "slug": "an-actions-outcome-outranks-a-server-report-and-the-gate-lives-in-shared-state",
+      "title": "An action's outcome outranks a server report, and the gate enforcing that lives in shared state",
+      "status": "accepted",
+      "created": "2026-09-03",
+      "extractedFrom": "implementation",
+      "specSlug": null,
+      "amends": null,
+      "supersedes": null,
+      "affects": [
+        "apps/client/src/layers/entities/tunnel/model/remote-access-store.ts",
+        "apps/client/src/layers/entities/tunnel/model/use-remote-access.ts",
+        "apps/client/src/layers/entities/tunnel/model/use-remote-access-actions.ts",
+        "apps/client/src/layers/entities/tunnel/model/use-remote-access-announcer.ts",
+        "apps/client/src/layers/entities/tunnel/model/use-tunnel-sync.ts",
+        "apps/client/src/layers/features/settings/model/use-tunnel-machine.ts",
+        "apps/client/src/layers/features/command-palette/model/palette-remote-access.ts",
+        "apps/client/src/layers/widgets/control-center/ui/RemoteAccessRow.tsx",
+        "apps/client/src/layers/widgets/remote-access/ui/RemoteAccessBeacon.tsx",
+        "apps/client/src/AppShell.tsx"
+      ]
     }
   ]
 }

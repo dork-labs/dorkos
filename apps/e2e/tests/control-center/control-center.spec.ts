@@ -27,6 +27,7 @@ test.describe.configure({ mode: 'serial' });
 /** The curated config this file reads — the same block the warm-agents switch renders from. */
 interface ConfigView {
   claudeCode?: { persistentSession?: boolean };
+  tunnel?: { tokenConfigured?: boolean };
 }
 
 /** Read the one config value the switch test moves. */
@@ -96,6 +97,42 @@ test.describe('Control Center @smoke', () => {
     await expect
       .poll(async () => (await readConfig(request)).claudeCode?.persistentSession)
       .toBe(!before);
+  });
+
+  test('the Remote-access row hands off to its dialog, through the modal lock', async ({
+    controlCenter,
+    page,
+    request,
+  }) => {
+    // With no ngrok token the row's switch does not flip — it opens the Remote
+    // Access dialog for the one-time setup (DOR-1743). Every leg boots on a
+    // throwaway DORK_HOME, so that is the state here; if a token leaked in from
+    // the environment the row would try to START a tunnel, which is not
+    // something a browser test should do.
+    const tokenConfigured = (await readConfig(request)).tunnel?.tokenConfigured ?? false;
+    test.skip(tokenConfigured, 'an ngrok token is configured; the row would start a real tunnel');
+
+    await controlCenter.open();
+    await expect(controlCenter.remoteAccessSwitch).toBeVisible();
+
+    await controlCenter.remoteAccessSwitch.click();
+
+    // The dialog is actually THERE, and it is the one it promised.
+    const dialog = page.getByRole('dialog').filter({ hasText: 'Remote Access' });
+    await expect(dialog).toBeVisible();
+
+    // The flyout closed on the way. Both are modal popovers, so leaving the
+    // first open would stack two `pointer-events: none` locks and hand the
+    // person a dialog they cannot type into — the hazard `createModalHandoff`
+    // exists for, and the reason the overrides ledger below asserts the same
+    // thing on its own path.
+    await expect(controlCenter.body).toBeHidden();
+
+    // Focus is inside the dialog, not stranded on the flyout that closed under
+    // it — the DOR-953 focus race, one surface over.
+    await expect(dialog).toContainText('Remote Access');
+    const focusInDialog = await dialog.evaluate((node) => node.contains(document.activeElement));
+    expect(focusInDialog).toBe(true);
   });
 
   test('an overrides row deep-links to its owning surface', async ({

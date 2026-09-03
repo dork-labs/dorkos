@@ -22,11 +22,6 @@ vi.mock('@/layers/shared/model/media/use-is-mobile', () => ({
   useIsMobile: () => false,
 }));
 
-// Mock TunnelDialog to avoid router dependency
-vi.mock('../ui/TunnelDialog', () => ({
-  TunnelDialog: () => null,
-}));
-
 // Mock AdvancedTab to avoid transport dependency in SettingsDialog tests
 vi.mock('../ui/AdvancedTab', () => ({
   AdvancedTab: () => <div data-testid="advanced-tab">Advanced</div>,

@@ -1,30 +1,29 @@
 /**
- * Action handlers for the Remote Access tunnel dialog.
+ * The two writes only the Remote Access dialog makes: the ngrok auth token and
+ * the custom domain.
  *
- * Wraps each handler in a stable `useCallback`. Pure functions over the
- * machine state — no local state of its own.
+ * Turning remote access on and off is NOT here. Three surfaces do that now, so
+ * it lives once in `@/layers/entities/tunnel` and this hook forwards to it
+ * (DOR-1743) — a second copy of the 409 handling and the exposure guard is how
+ * two surfaces end up disagreeing about what a refusal meant.
  *
- * Lifted here from `TunnelDialog`, which owned these callbacks inline. Every
- * failure path says what actually went wrong: the server writes a specific
- * sentence for a refused or invalid write, and this is the layer that decides
- * what a person reads instead of it (`lib/tunnel-errors.ts`, DOR-1739).
+ * Every failure path says what actually went wrong: the server writes a
+ * specific sentence for a refused or invalid write, and this is the layer that
+ * decides what a person reads instead of it (`lib/tunnel-errors.ts`, DOR-1739).
  *
  * @module features/settings/model/use-tunnel-actions
  */
 
-import { useCallback, useEffect, useRef } from 'react';
-import type { QueryClient } from '@tanstack/react-query';
-import type { Transport } from '@dorkos/shared/transport';
-import { requestOwnerSetup } from '@/layers/shared/lib';
-import { broadcastTunnelChange } from '@/layers/entities/tunnel';
+import { useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useTransport } from '@/layers/shared/model';
+import { useRemoteAccessActions } from '@/layers/entities/tunnel';
+import { configKeys } from '@/layers/entities/config';
 import { describeTunnelWriteFailure } from '../lib/tunnel-errors';
 import type { TunnelMachine } from './use-tunnel-machine';
-import { configKeys } from '@/layers/entities/config';
 
 interface UseTunnelActionsArgs {
   machine: TunnelMachine;
-  transport: Transport;
-  queryClient: QueryClient;
 }
 
 /** Stable action handlers returned by {@link useTunnelActions}. */
@@ -35,113 +34,14 @@ export interface TunnelActions {
 }
 
 /**
- * Action handlers for the Remote Access tunnel dialog.
+ * Action handlers for the Remote Access dialog.
  *
- * Wraps each handler in a stable `useCallback`. Pure functions over the
- * machine state — no local state of its own.
- *
- * @param args - Tunnel machine, transport, and query client
+ * @param args - The dialog's machine, for the two fields these writes read.
  */
-export function useTunnelActions({
-  machine,
-  transport,
-  queryClient,
-}: UseTunnelActionsArgs): TunnelActions {
-  // Ref so the exposure-guard retry (`onComplete`) can re-invoke the latest
-  // start closure without making the callback depend on itself.
-  const startTunnelRef = useRef<() => Promise<void>>(undefined);
-
-  // One clock, and it belongs to the request. This used to arm a 15s timer of
-  // its own over a call the transport already times out at 30s, so a start that
-  // took longer than 15s showed "Tunnel timed out after 15 seconds" while the
-  // request was still in flight — and then flipped the very same dialog to
-  // connected when it succeeded at, say, 20s (DOR-1739). The transport's timeout
-  // is the honest answer, so it is the only one the dialog hears.
-  const startTunnel = useCallback(async () => {
-    machine.setUserInitiated(true);
-    machine.setState('starting');
-    machine.setError(null);
-    try {
-      const result = await transport.startTunnel();
-      machine.setState('connected');
-      machine.setUrl(result.url);
-      queryClient.invalidateQueries({ queryKey: configKeys.all });
-      broadcastTunnelChange();
-    } catch (err) {
-      const refusal = err as { code?: string; status?: number; body?: { url?: string | null } };
-
-      // Exposing an unprotected instance is blocked (task 1.3, 409). Route the
-      // user into owner-account creation, then retry the start once login is on.
-      if (refusal.code === 'AUTH_REQUIRED_FOR_EXPOSURE') {
-        machine.setUserInitiated(false);
-        machine.setState('off');
-        requestOwnerSetup({
-          reason: 'exposure',
-          message: 'Exposing DorkOS requires a login.',
-          onComplete: () => void startTunnelRef.current?.(),
-        });
-        return;
-      }
-
-      // The route's OTHER 409 is "Tunnel is already running", and it is not a
-      // failure — it is the answer converging on a tunnel that is up. Painting
-      // an error over a live tunnel is how a person ends up turning off working
-      // remote access to fix it. Reachable for real now that ngrok reconnects
-      // are reported (DOR-1738): a start pressed during one is a no-op.
-      //
-      // The 409 body carries the live URL, so the usual case settles straight
-      // into connected; without one the tunnel is up but unreachable, which is
-      // exactly `reconnecting`. The refetch corrects either reading.
-      if (refusal.status === 409) {
-        // Disarmed like every other exit from this catch. The tunnel was ALREADY
-        // up, so the refetch below reports no change and consumes nothing — and
-        // a flag left armed here would sit there until the next genuine drop and
-        // swallow the one toast that mattered.
-        machine.setUserInitiated(false);
-        const liveUrl = refusal.body?.url ?? machine.url;
-        machine.setState(liveUrl ? 'connected' : 'reconnecting');
-        if (liveUrl) machine.setUrl(liveUrl);
-        queryClient.invalidateQueries({ queryKey: configKeys.all });
-        broadcastTunnelChange();
-        return;
-      }
-
-      // No status change is coming, so the suppression must not stay armed over
-      // whatever happens next.
-      machine.setUserInitiated(false);
-      machine.setState('error');
-      machine.setError(err instanceof Error ? err.message : 'Failed to start tunnel');
-    }
-  }, [machine, transport, queryClient]);
-  // Keep the retry ref pointing at the latest closure (the exposure retry fires
-  // long after render, once owner setup completes).
-  useEffect(() => {
-    startTunnelRef.current = startTunnel;
-  }, [startTunnel]);
-
-  const handleToggle = useCallback(
-    async (checked: boolean) => {
-      if (checked) {
-        await startTunnel();
-      } else {
-        machine.setUserInitiated(true);
-        machine.setState('stopping');
-        machine.setError(null);
-        try {
-          await transport.stopTunnel();
-          machine.setState('off');
-          machine.setUrl(null);
-          queryClient.invalidateQueries({ queryKey: configKeys.all });
-          broadcastTunnelChange();
-        } catch (err) {
-          machine.setUserInitiated(false);
-          machine.setState('connected');
-          machine.setError(err instanceof Error ? err.message : 'Failed to stop tunnel');
-        }
-      }
-    },
-    [startTunnel, machine, transport, queryClient]
-  );
+export function useTunnelActions({ machine }: UseTunnelActionsArgs): TunnelActions {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  const remote = useRemoteAccessActions();
 
   const handleSaveToken = useCallback(async () => {
     machine.setTokenError(null);
@@ -151,16 +51,16 @@ export function useTunnelActions({
       machine.setShowTokenInput(false);
       machine.setShowSetup(false);
       // A saved token answers the most common reason a start failed, so the old
-      // failure is no longer news — and this dialog outlives every close, so
-      // nothing else would ever clear it. Leaving it up would drop the person
-      // back onto "Tunnel failed" the moment the setup view stepped aside.
-      machine.setError(null);
-      machine.setState((current) => (current === 'error' ? 'off' : current));
+      // failure is no longer news — and nothing else would ever clear it, since
+      // a failure now outlives the dialog it was raised in. Leaving it up would
+      // drop the person back onto "Tunnel failed" the moment the setup view
+      // stepped aside.
+      remote.clearError();
       queryClient.invalidateQueries({ queryKey: configKeys.all });
     } catch (err) {
       machine.setTokenError(describeTunnelWriteFailure(err, 'Could not save token. Try again.'));
     }
-  }, [machine, queryClient, transport]);
+  }, [machine, queryClient, remote, transport]);
 
   // A refused domain write is shown, not swallowed. The comment this replaces
   // said "domain will be re-synced from config", which was false comfort in the
@@ -189,7 +89,7 @@ export function useTunnelActions({
   }, [machine, queryClient, transport]);
 
   return {
-    handleToggle,
+    handleToggle: remote.toggle,
     handleSaveToken,
     handleSaveDomain,
   };

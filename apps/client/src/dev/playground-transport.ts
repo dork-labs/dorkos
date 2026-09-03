@@ -234,7 +234,18 @@ export function createPlaygroundTransport(): Transport {
       if (prop === 'listNotifications') {
         return async () => ({ notifications: [], nextCursor: null, unreadCount: 0 });
       }
-      // The third. A room's files answer with a LISTING, and `null` is not one —
+      // The third pair. Remote access is a switch the playground can actually
+      // flip (the Remote Access showcase), and `null` is not a start result —
+      // the shared model reads `result.url` off it and would turn a working
+      // demo into a red failure state. A made-up address is the honest answer
+      // for a playground with no server, and stopping simply succeeds.
+      if (prop === 'startTunnel') {
+        return async () => ({ url: 'https://calm-otter.ngrok.app' });
+      }
+      if (prop === 'stopTunnel') {
+        return async () => undefined;
+      }
+      // A room's files answer with a LISTING, and `null` is not one —
       // the room panel's Files section would map over it and turn the whole
       // sheet showcase into an error card. "This room has no files of its own"
       // is both the honest default and what nearly every room really says, so

@@ -1,6 +1,7 @@
 import { PlaygroundPageLayout } from '../PlaygroundPageLayout';
 import { SETTINGS_SECTIONS } from '../playground-registry';
 import { SettingsShowcases } from '../showcases/SettingsShowcases';
+import { RemoteAccessShowcases } from '../showcases/RemoteAccessShowcases';
 import { RuntimeCardShowcases } from '../showcases/RuntimeCardShowcases';
 
 /** Settings dialog showcase page for the dev playground. */
@@ -13,6 +14,7 @@ export function SettingsPage() {
     >
       <RuntimeCardShowcases />
       <SettingsShowcases />
+      <RemoteAccessShowcases />
     </PlaygroundPageLayout>
   );
 }

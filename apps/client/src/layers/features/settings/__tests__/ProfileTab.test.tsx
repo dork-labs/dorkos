@@ -27,7 +27,6 @@ import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';
 import { SettingsDialog } from '../ui/SettingsDialog';
 
 vi.mock('@/layers/shared/model/media/use-is-mobile', () => ({ useIsMobile: () => false }));
-vi.mock('../ui/TunnelDialog', () => ({ TunnelDialog: () => null }));
 vi.mock('../ui/AdvancedTab', () => ({ AdvancedTab: () => null }));
 vi.mock('../ui/ServerRestartOverlay', () => ({ ServerRestartOverlay: () => null }));
 

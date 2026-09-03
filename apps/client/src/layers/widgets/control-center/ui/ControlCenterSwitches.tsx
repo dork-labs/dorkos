@@ -13,6 +13,7 @@ import {
   useUpdateConfig,
 } from '@/layers/entities/config';
 import { OpenMeshSwitch } from '@/layers/entities/mesh';
+import { RemoteAccessRow } from './RemoteAccessRow';
 
 /** Lowest and highest concurrent-run counts the scheduler schema accepts. */
 const MIN_CONCURRENCY = 1;
@@ -28,6 +29,10 @@ const DEFAULT_CONCURRENCY = 4;
  * The Control Center's power switches, all writing through hooks that already
  * exist (spec `full-power-defaults`, D7):
  *
+ * - **Remote access** — first, because it is the only switch here that changes
+ *   who can reach this machine rather than how agents behave on it (DOR-1743).
+ *   It reads the shared tunnel model, so it and the Remote Access dialog cannot
+ *   disagree.
  * - **Open mesh** — the shared {@link OpenMeshSwitch}, wired to the topology
  *   query, so it reads the real `openMesh` rule rather than a local boolean.
  * - **Limit automatic replies** — `rooms.turnLimitsEnabled`, through the same
@@ -65,6 +70,8 @@ export function ControlCenterSwitches() {
   return (
     <FieldCard>
       <FieldCardContent>
+        <RemoteAccessRow />
+
         <OpenMeshSwitch />
 
         {/* The off state says the consequence in the same words Settings → Rooms

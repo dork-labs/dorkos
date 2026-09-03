@@ -164,6 +164,29 @@ export interface PanelsSlice {
   controlCenterOpen: boolean;
   setControlCenterOpen: (open: boolean) => void;
   toggleControlCenter: () => void;
+
+  /**
+   * The Remote Access dialog — the full one, with setup, the auth token and the
+   * custom domain.
+   *
+   * It lived as `useState` inside `SettingsDialog` until DOR-1743, which is why
+   * only Settings could open it. Four doors flip this flag now: Settings'
+   * sidebar action, the Control Center's Remote-access row (when nothing is set
+   * up yet, and again from a failure's "Fix…"), the beacon's "Manage…", and the
+   * sidebar promo.
+   */
+  remoteAccessOpen: boolean;
+  setRemoteAccessOpen: (open: boolean) => void;
+
+  /**
+   * The beacon's flyout — the link, the QR code and an off switch, one click
+   * from the top bar while remote access is on.
+   *
+   * A store flag rather than the popover's own state so ⌘K's "Show QR code" can
+   * open it, exactly as the Control Center's glyph works.
+   */
+  remoteAccessBeaconOpen: boolean;
+  setRemoteAccessBeaconOpen: (open: boolean) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -262,4 +285,10 @@ export const createPanelsSlice: StateCreator<
   controlCenterOpen: false,
   setControlCenterOpen: (open) => set({ controlCenterOpen: open }),
   toggleControlCenter: () => set((s) => ({ controlCenterOpen: !s.controlCenterOpen })),
+
+  remoteAccessOpen: false,
+  setRemoteAccessOpen: (open) => set({ remoteAccessOpen: open }),
+
+  remoteAccessBeaconOpen: false,
+  setRemoteAccessBeaconOpen: (open) => set({ remoteAccessBeaconOpen: open }),
 });

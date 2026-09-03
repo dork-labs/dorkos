@@ -1,7 +1,7 @@
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Button, LinkifiedText } from '@/layers/shared/ui';
-import { friendlyErrorMessage } from '../lib/tunnel-utils';
+import { friendlyErrorMessage } from '@/layers/entities/tunnel';
 
 /**
  * Horizontal shake animation — plays on mount to signal a connection failure.

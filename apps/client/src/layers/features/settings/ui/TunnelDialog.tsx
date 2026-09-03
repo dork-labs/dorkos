@@ -1,4 +1,3 @@
-import { useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   ResponsiveDialog,
@@ -11,7 +10,7 @@ import {
   Field,
   FieldLabel,
 } from '@/layers/shared/ui';
-import { useTransport, useIsMobile } from '@/layers/shared/model';
+import { useIsMobile } from '@/layers/shared/model';
 import { cn, getPlatform } from '@/layers/shared/lib';
 import { useSessionId } from '@/layers/entities/session';
 import { useTunnelMachine } from '../model/use-tunnel-machine';
@@ -49,13 +48,11 @@ interface TunnelDialogProps {
 
 /** State machine shell for the Remote Access dialog. Delegates rendering to focused sub-components. */
 export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
-  const transport = useTransport();
   const isDesktop = !useIsMobile();
-  const queryClient = useQueryClient();
   const [activeSessionId] = useSessionId();
 
   const machine = useTunnelMachine({ open });
-  const actions = useTunnelActions({ machine, transport, queryClient });
+  const actions = useTunnelActions({ machine });
 
   if (getPlatform().isEmbedded) return null;
 

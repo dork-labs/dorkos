@@ -23,7 +23,6 @@ export type {
   PromoPlacement,
   PromoAction,
   PromoDialogProps,
-  PromoOpenDialogProps,
   PromoContent,
   PromoContext,
   QuietSuggestionCopy,

@@ -891,6 +891,39 @@ body {
   animation-iteration-count: infinite;
 }
 
+/* The single ring the remote-access beacon throws the moment a tunnel comes up
+   (DOR-1743), and then never again.
+
+   ONE iteration is the whole point. A steady tunnel is a settled fact, and a
+   glyph that pulsed forever would be a notification that never stops — the
+   thing Calm Tech exists to avoid. So the ripple marks the EVENT (your phone
+   can reach this machine now) and the beacon goes still.
+
+   `forwards` holds the end frame, which is fully transparent, so the ring
+   leaves nothing behind for the next paint to composite. It is drawn by a
+   decorative `aria-hidden` span inside the button, absolutely positioned and
+   pointer-events-none, so the button's own box never moves — the actionability
+   trap `animate-tasks` documents above. Call sites gate it with `motion-safe:`
+   and skip it entirely under `useReducedMotion()`. */
+@keyframes beacon-ripple {
+  from {
+    transform: scale(0.7);
+    opacity: 0.45;
+  }
+  to {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+}
+
+@utility animate-beacon-ripple {
+  animation-name: beacon-ripple;
+  animation-duration: 600ms;
+  animation-timing-function: cubic-bezier(0, 0, 0.2, 1);
+  animation-iteration-count: 1;
+  animation-fill-mode: forwards;
+}
+
 /* Radix Collapsible opening and closing (DOR-1751): `animate-collapsible-down`
    / `animate-collapsible-up`, worn by `shared/ui/collapsible.tsx`, come from
    `tw-animate-css` (imported above) — it already ships both keyframes reading

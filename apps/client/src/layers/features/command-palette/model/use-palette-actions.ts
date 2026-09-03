@@ -12,7 +12,8 @@ import {
   useFeedbackDialogStore,
   useTransport,
 } from '@/layers/shared/model';
-import { openLink, reportClientError } from '@/layers/shared/lib';
+import { openLink, reportClientError, useCopyFeedback } from '@/layers/shared/lib';
+import { useRemoteAccessActions, useRemoteAccessSnapshot } from '@/layers/entities/tunnel';
 import {
   useDirectoryState,
   useStartNewSession,
@@ -25,6 +26,7 @@ import { useInteractionStore } from '@/layers/entities/interactions';
 import { PROFILE_PANEL_ID } from '@/layers/features/profile';
 import { composeCommandDraft } from './palette-command-draft';
 import { runPaletteCommandHandler } from './palette-command-handlers';
+import { REMOTE_ACCESS_PALETTE_ACTIONS } from './palette-remote-access';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 
 interface PaletteActions {
@@ -71,6 +73,13 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
   const transport = useTransport();
 
   const openFeedback = useFeedbackDialogStore((s) => s.openFeedback);
+
+  // Remote access, through the shared model every other surface uses — so a
+  // tunnel ⌘K turns off is off in the Control Center row and the beacon before
+  // the request even settles (DOR-1743).
+  const remoteAccess = useRemoteAccessActions();
+  const { url: remoteUrl } = useRemoteAccessSnapshot();
+  const { copy: copyRemoteLink } = useCopyFeedback({ toastOnSettle: true });
 
   // URL-based openers for dialog panels. These update TanStack Router
   // search params; DialogHost listens to both the store flag and the URL
@@ -352,6 +361,21 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
         case 'browseFilesystem':
           setPickerOpen(true);
           return;
+        // Remote access. The palette has already closed, so a copy has no
+        // button left to morph — `toastOnSettle` is why this call site opts
+        // into the neutral toast instead.
+        case REMOTE_ACCESS_PALETTE_ACTIONS.copyLink:
+          if (remoteUrl) void copyRemoteLink(remoteUrl);
+          return;
+        case REMOTE_ACCESS_PALETTE_ACTIONS.showQr:
+          useAppStore.getState().setRemoteAccessBeaconOpen(true);
+          return;
+        case REMOTE_ACCESS_PALETTE_ACTIONS.turnOn:
+          void remoteAccess.start();
+          return;
+        case REMOTE_ACCESS_PALETTE_ACTIONS.turnOff:
+          void remoteAccess.stop();
+          return;
         default:
           runExtensionAction(action);
           return;
@@ -369,6 +393,9 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
       openConnections,
       openSettings,
       openFeedback,
+      copyRemoteLink,
+      remoteAccess,
+      remoteUrl,
       // Load-bearing: it closes over the ACTIVE agent, and the palette is
       // mounted for the whole life of the app. Omit it and this handler is
       // built once at boot and keeps whatever agent was selected then, so

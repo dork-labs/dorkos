@@ -1,6 +1,7 @@
 import type { DialogContribution } from '@/layers/shared/model';
 import { ShapeSwitcherDialog } from '@/layers/features/shapes';
 import { ProfileSheetContainer } from '@/layers/features/profile';
+import { TunnelDialog } from '@/layers/features/settings';
 import { SettingsDialogWrapper } from './wrappers/SettingsDialogWrapper';
 import { DirectoryPickerWrapper } from './wrappers/DirectoryPickerWrapper';
 import { TasksDialogWrapper } from './wrappers/TaskDialogWrapper';
@@ -44,6 +45,17 @@ export const DIALOG_CONTRIBUTIONS: DialogContribution[] = [
     component: ServerRestartOverlayWrapper,
     openStateKey: 'restartOverlayOpen',
     priority: 7,
+  },
+  {
+    // Registered here rather than nested inside `SettingsDialog`, because
+    // Settings is no longer the only door to it (DOR-1743): the Control Center
+    // row opens it for one-time setup and again from a failure's "Fix…", and
+    // the beacon's "Manage…" opens it from the top bar. It renders its own
+    // dialog chrome, so it registers directly.
+    id: 'remote-access',
+    component: TunnelDialog,
+    openStateKey: 'remoteAccessOpen',
+    priority: 8,
   },
   {
     // The switcher already renders its own Dialog chrome (open/onOpenChange), so
