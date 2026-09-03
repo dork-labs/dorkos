@@ -32,7 +32,7 @@
  * or not; everything else here is the dialog's own account of what the person
  * just did (`use-tunnel-machine.ts`).
  */
-export type TunnelState = 'off' | 'starting' | 'connected' | 'stopping' | 'error';
+export type TunnelState = 'off' | 'starting' | 'connected' | 'reconnecting' | 'stopping' | 'error';
 
 /** UI view selected by the dialog based on tunnel + setup state. */
 export type ViewState = 'landing' | 'setup' | 'ready' | 'connecting' | 'connected' | 'error';
@@ -52,20 +52,32 @@ export const LATENCY_PROBE_TIMEOUT_MS = 10_000;
 /**
  * Derive which view to show based on tunnel config, state, and user navigation.
  *
+ * `reconnecting` deliberately shares the `connected` view. The tunnel is still
+ * open — ngrok is re-establishing it — so showing `ready`, with the switch
+ * snapped off and the URL gone, would tell the person their remote access had
+ * been turned off when it had not (DOR-1738/DOR-1739).
+ *
  * @param tokenConfigured - Whether ngrok auth token is saved on the server
  * @param showSetup - Whether the user has explicitly entered the setup view
- * @param tunnelState - Current server-reported tunnel state
+ * @param tunnelState - Where the dialog currently believes the tunnel is
+ * @param hasUrl - Whether a public URL is known. The connected view is built
+ *   around that URL and renders nothing without one, so a state that claims to
+ *   be up but cannot say where falls back to the connecting view rather than to
+ *   an empty dialog.
  */
 export function deriveViewState(
   tokenConfigured: boolean,
   showSetup: boolean,
-  tunnelState: TunnelState
+  tunnelState: TunnelState,
+  hasUrl: boolean
 ): ViewState {
   if (!tokenConfigured && !showSetup) return 'landing';
   if (!tokenConfigured && showSetup) return 'setup';
   if (showSetup) return 'setup';
   if (tunnelState === 'error') return 'error';
   if (tunnelState === 'starting') return 'connecting';
-  if (tunnelState === 'connected' || tunnelState === 'stopping') return 'connected';
+  if (tunnelState === 'connected' || tunnelState === 'stopping' || tunnelState === 'reconnecting') {
+    return hasUrl ? 'connected' : 'connecting';
+  }
   return 'ready';
 }

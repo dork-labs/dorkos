@@ -63,9 +63,17 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
     off: 'bg-gray-400',
     starting: 'bg-amber-400',
     connected: 'bg-green-500',
+    // Amber, like `starting`, and for the same reason: the tunnel is on its way
+    // to being reachable, not off and not broken.
+    reconnecting: 'bg-amber-400',
     stopping: 'bg-gray-400',
-    error: 'bg-red-500',
+    error: 'bg-destructive',
   }[machine.state];
+
+  // Pulses while the dialog is waiting on something, which now includes ngrok
+  // re-establishing a dropped session — but `isTransitioning` deliberately does
+  // NOT, because it also disables the switch.
+  const dotPulses = machine.isTransitioning || machine.state === 'reconnecting';
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
@@ -76,7 +84,7 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
               className={cn(
                 'inline-block size-2 rounded-full',
                 dotColor,
-                machine.isTransitioning && 'animate-tasks'
+                dotPulses && 'animate-tasks'
               )}
             />
             Remote Access
@@ -151,7 +159,11 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
 
                 {/* Inline toggle — demoted to simple text when connected */}
                 <div className="mt-4 flex items-center justify-between">
-                  <p className="text-muted-foreground text-sm">Remote access is on</p>
+                  <p className="text-muted-foreground text-sm">
+                    {machine.state === 'reconnecting'
+                      ? 'Reconnecting\u2026'
+                      : 'Remote access is on'}
+                  </p>
                   <Switch
                     checked={machine.isChecked}
                     onCheckedChange={actions.handleToggle}

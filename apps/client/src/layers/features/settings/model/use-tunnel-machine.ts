@@ -34,6 +34,43 @@ import {
   deriveViewState,
 } from './tunnel-view-state';
 
+/**
+ * What the server says about the tunnel, plus the field DOR-1738 is adding.
+ *
+ * `isRunning` answers "is the listener still open", which is a different
+ * question from `connected` ("is it reachable right now"). While ngrok
+ * re-establishes a dropped session the first is true and the second is false,
+ * and a client that only knows `connected` has to call that OFF.
+ *
+ * It is declared here rather than on the shared DTO because `schemas.ts` belongs
+ * to DOR-1738; this widening disappears when that lands. Optional on purpose —
+ * a server that has not shipped it yet sends nothing, and
+ * {@link readTunnelReport} falls back to the old meaning.
+ */
+type TunnelReport = NonNullable<ServerConfig['tunnel']> & { isRunning?: boolean };
+
+/** The three states the server's report can put the tunnel in. */
+type ReportedStatus = 'on' | 'reconnecting' | 'off';
+
+/**
+ * Read the server's tunnel block into the three states the dialog distinguishes.
+ *
+ * The `?? connected` fallback is what makes this safe to ship before DOR-1738:
+ * against a server with no `isRunning`, `reconnecting` can never be produced and
+ * every reading is exactly what it was.
+ */
+function readTunnelReport(tunnel: TunnelReport | undefined): {
+  status: ReportedStatus;
+  url: string | null;
+} {
+  const connected = tunnel?.connected ?? false;
+  const running = tunnel?.isRunning ?? connected;
+  return {
+    status: connected ? 'on' : running ? 'reconnecting' : 'off',
+    url: tunnel?.url ?? null,
+  };
+}
+
 /** Aggregated state + setters returned by {@link useTunnelMachine}. */
 export interface TunnelMachine {
   // State
@@ -88,6 +125,11 @@ export function useTunnelMachine({ open }: { open: boolean }): TunnelMachine {
   const { data: serverConfig } = useConfig();
 
   const tunnel = serverConfig?.tunnel;
+  // Read once, at render, into two primitives. The effects below depend on
+  // THESE rather than on `tunnel` — an object identity that changes on every
+  // refetch — so each one re-runs exactly when the answer changed and not when
+  // the query merely spoke again.
+  const { status: reportedStatus, url: reportedUrl } = readTunnelReport(tunnel);
 
   const [state, setState] = useState<TunnelState>('off');
   const [url, setUrl] = useState<string | null>(null);
@@ -100,11 +142,11 @@ export function useTunnelMachine({ open }: { open: boolean }): TunnelMachine {
   const [domainError, setDomainError] = useState<string | null>(null);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
 
-  const prevConnectedRef = useRef<boolean | undefined>(undefined);
+  const prevStatusRef = useRef<ReportedStatus | undefined>(undefined);
   // The last thing the SERVER said, so this hook can tell a fresh report from a
   // re-render. Without it there is no way to distinguish "the tunnel dropped"
   // from "the config query handed back the same answer again".
-  const lastReportRef = useRef<{ connected: boolean; url: string | null } | null>(null);
+  const lastReportRef = useRef<{ status: ReportedStatus; url: string | null } | null>(null);
   // Set by the toggle before it acts, so the connect/disconnect toasts stay
   // quiet for the transition the person just asked for.
   const userInitiatedRef = useRef(false);
@@ -120,20 +162,24 @@ export function useTunnelMachine({ open }: { open: boolean }): TunnelMachine {
   // that mattered.
   /* eslint-disable react-hooks/set-state-in-effect -- sync local UI state from a changed server tunnel report */
   useEffect(() => {
-    const connected = tunnel?.connected ?? false;
-    const reportedUrl = tunnel?.url ?? null;
     const previous = lastReportRef.current;
-    if (previous && previous.connected === connected && previous.url === reportedUrl) return;
-    lastReportRef.current = { connected, url: reportedUrl };
+    if (previous && previous.status === reportedStatus && previous.url === reportedUrl) return;
+    lastReportRef.current = { status: reportedStatus, url: reportedUrl };
 
-    if (connected && reportedUrl) {
+    if (reportedStatus === 'on' && reportedUrl) {
       setState('connected');
       setUrl(reportedUrl);
+    } else if (reportedStatus === 'reconnecting') {
+      // The listener is still open, so the URL the person copied is still the
+      // right one and is kept. Clearing it would empty the dialog over a tunnel
+      // that is about to answer again.
+      setState('reconnecting');
+      if (reportedUrl) setUrl(reportedUrl);
     } else {
       setState('off');
       setUrl(null);
     }
-  }, [tunnel?.connected, tunnel?.url]);
+  }, [reportedStatus, reportedUrl]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
@@ -159,10 +205,9 @@ export function useTunnelMachine({ open }: { open: boolean }): TunnelMachine {
   // The old description also promised "Attempting to reconnect...", which
   // nothing in DorkOS does. Remote access stays off until it is turned back on.
   useEffect(() => {
-    const wasConnected = prevConnectedRef.current;
-    const isConnected = tunnel?.connected ?? false;
-    prevConnectedRef.current = isConnected;
-    if (wasConnected === undefined || wasConnected === isConnected) return;
+    const previous = prevStatusRef.current;
+    prevStatusRef.current = reportedStatus;
+    if (previous === undefined || previous === reportedStatus) return;
 
     // Consumed on the first real transition either way, so a stop that the
     // server never reports cannot leave the next genuine drop silent.
@@ -171,15 +216,24 @@ export function useTunnelMachine({ open }: { open: boolean }): TunnelMachine {
       return;
     }
 
-    if (!isConnected) {
+    if (reportedStatus === 'reconnecting') {
+      // "Reconnecting" is a promise, and this is the one state in which DorkOS
+      // can keep it: ngrok's own agent retries a dropped session and emits
+      // `connected` again on recovery. The old code said it on every drop,
+      // including a permanent one, where nothing was retrying anything.
+      toast.warning('Remote access is reconnecting', {
+        id: 'tunnel-status',
+        description: 'Your other devices may not reach DorkOS until it is back.',
+      });
+    } else if (reportedStatus === 'off') {
       toast.error('Remote access turned off', {
         id: 'tunnel-status',
         description: 'Your other devices can no longer reach DorkOS. Turn it back on to restore.',
       });
-    } else if (tunnel?.url) {
-      toast.success('Remote access is on', { id: 'tunnel-status', description: tunnel.url });
+    } else if (reportedUrl) {
+      toast.success('Remote access is on', { id: 'tunnel-status', description: reportedUrl });
     }
-  }, [tunnel?.connected, tunnel?.url]);
+  }, [reportedStatus, reportedUrl]);
 
   // Latency measurement when connected and dialog is open.
   //
@@ -224,9 +278,16 @@ export function useTunnelMachine({ open }: { open: boolean }): TunnelMachine {
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const tokenConfigured = !!tunnel?.tokenConfigured;
-  const viewState = deriveViewState(tokenConfigured, showSetup, state);
+  const viewState = deriveViewState(tokenConfigured, showSetup, state, !!url);
   const isTransitioning = state === 'starting' || state === 'stopping';
-  const isChecked = state === 'connected' || state === 'starting' || state === 'stopping';
+  // Reconnecting counts as ON — the listener is open and the person did not turn
+  // anything off — but NOT as transitioning, because that would disable the very
+  // switch they need in order to turn it off while ngrok keeps retrying.
+  const isChecked =
+    state === 'connected' ||
+    state === 'starting' ||
+    state === 'stopping' ||
+    state === 'reconnecting';
 
   return {
     state,

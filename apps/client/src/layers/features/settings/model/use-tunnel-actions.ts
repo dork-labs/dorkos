@@ -68,12 +68,12 @@ export function useTunnelActions({
       queryClient.invalidateQueries({ queryKey: configKeys.all });
       broadcastTunnelChange();
     } catch (err) {
-      // No status change is coming, so the suppression must not stay armed over
-      // whatever happens next.
-      machine.setUserInitiated(false);
+      const refusal = err as { code?: string; status?: number; body?: { url?: string | null } };
+
       // Exposing an unprotected instance is blocked (task 1.3, 409). Route the
       // user into owner-account creation, then retry the start once login is on.
-      if ((err as { code?: string }).code === 'AUTH_REQUIRED_FOR_EXPOSURE') {
+      if (refusal.code === 'AUTH_REQUIRED_FOR_EXPOSURE') {
+        machine.setUserInitiated(false);
         machine.setState('off');
         requestOwnerSetup({
           reason: 'exposure',
@@ -82,6 +82,28 @@ export function useTunnelActions({
         });
         return;
       }
+
+      // The route's OTHER 409 is "Tunnel is already running", and it is not a
+      // failure — it is the answer converging on a tunnel that is up. Painting
+      // an error over a live tunnel is how a person ends up turning off working
+      // remote access to fix it. Reachable for real now that ngrok reconnects
+      // are reported (DOR-1738): a start pressed during one is a no-op.
+      //
+      // The 409 body carries the live URL, so the usual case settles straight
+      // into connected; without one the tunnel is up but unreachable, which is
+      // exactly `reconnecting`. The refetch corrects either reading.
+      if (refusal.status === 409) {
+        const liveUrl = refusal.body?.url ?? machine.url;
+        machine.setState(liveUrl ? 'connected' : 'reconnecting');
+        if (liveUrl) machine.setUrl(liveUrl);
+        queryClient.invalidateQueries({ queryKey: configKeys.all });
+        broadcastTunnelChange();
+        return;
+      }
+
+      // No status change is coming, so the suppression must not stay armed over
+      // whatever happens next.
+      machine.setUserInitiated(false);
       machine.setState('error');
       machine.setError(err instanceof Error ? err.message : 'Failed to start tunnel');
     }

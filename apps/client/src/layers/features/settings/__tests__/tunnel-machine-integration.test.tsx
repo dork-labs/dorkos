@@ -20,9 +20,10 @@ import { configKeys } from '@/layers/entities/config';
 import { useTunnelMachine } from '../model/use-tunnel-machine';
 import { useTunnelActions } from '../model/use-tunnel-actions';
 
-vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() } }));
 
-type Tunnel = NonNullable<ServerConfig['tunnel']>;
+/** The DTO plus the `isRunning` field DOR-1738 is adding to it. */
+type Tunnel = NonNullable<ServerConfig['tunnel']> & { isRunning?: boolean };
 
 const baseTunnel = {
   enabled: false,
@@ -195,6 +196,130 @@ describe('the server still gets the last word when it has news', () => {
   });
 });
 
+describe('a reconnecting tunnel is still ON (DOR-1738)', () => {
+  it('keeps the switch on and the URL, instead of reading as turned off', async () => {
+    const { result, serverReports } = setup({
+      connected: true,
+      isRunning: true,
+      url: 'https://abc.ngrok.app',
+    });
+    await settled(result);
+    await waitFor(() => expect(result.current.machine.state).toBe('connected'));
+
+    // ngrok dropped the session and is re-establishing it: the listener is still
+    // open, so the tunnel is not off — and `url` is still the address the person
+    // copied. `connected: false` alone used to be read as OFF.
+    await serverReports({ connected: false, isRunning: true });
+
+    expect(result.current.machine.state).toBe('reconnecting');
+    expect(result.current.machine.isChecked).toBe(true);
+    expect(result.current.machine.url).toBe('https://abc.ngrok.app');
+    expect(result.current.machine.viewState).toBe('connected');
+    // The switch has to stay usable — turning it off is the way out of a
+    // reconnect loop.
+    expect(result.current.machine.isTransitioning).toBe(false);
+  });
+
+  it('settles back to connected when ngrok recovers', async () => {
+    const { result, serverReports } = setup({
+      connected: true,
+      isRunning: true,
+      url: 'https://abc.ngrok.app',
+    });
+    await settled(result);
+    await serverReports({ connected: false, isRunning: true });
+    await serverReports({ connected: true, isRunning: true });
+
+    expect(result.current.machine.state).toBe('connected');
+  });
+
+  it('still reads a real stop as off, not as reconnecting', async () => {
+    const { result, serverReports } = setup({
+      connected: true,
+      isRunning: true,
+      url: 'https://abc.ngrok.app',
+    });
+    await settled(result);
+    await serverReports({ connected: false, isRunning: false, url: null });
+
+    expect(result.current.machine.state).toBe('off');
+    expect(result.current.machine.isChecked).toBe(false);
+  });
+
+  it('behaves exactly as before against a server with no isRunning field', async () => {
+    // The whole point of the `?? connected` fallback: this branch has to be
+    // shippable before DOR-1738 lands, and on an older server `reconnecting`
+    // must be unreachable rather than sticky.
+    const { result, serverReports } = setup({ connected: true, url: 'https://abc.ngrok.app' });
+    await settled(result);
+    await waitFor(() => expect(result.current.machine.state).toBe('connected'));
+
+    await serverReports({ connected: false, url: null });
+
+    expect(result.current.machine.state).toBe('off');
+  });
+});
+
+describe('a start against a tunnel that is already up converges (DOR-1738)', () => {
+  it('lands on connected with the URL the 409 carried, not on an error', async () => {
+    const { result, transport } = setup();
+    await settled(result);
+    vi.mocked(transport.startTunnel).mockRejectedValue(
+      Object.assign(new Error('Tunnel is already running'), {
+        status: 409,
+        body: { error: 'Tunnel is already running', url: 'https://abc.ngrok.app' },
+      })
+    );
+
+    await act(async () => {
+      await result.current.actions.handleToggle(true);
+    });
+
+    // Painting "Tunnel failed" over a live tunnel is how somebody ends up
+    // turning off working remote access in order to fix it.
+    expect(result.current.machine.state).toBe('connected');
+    expect(result.current.machine.url).toBe('https://abc.ngrok.app');
+    expect(result.current.machine.viewState).not.toBe('error');
+    expect(result.current.machine.error).toBeNull();
+  });
+
+  it('lands on reconnecting when the 409 names no URL', async () => {
+    const { result, transport } = setup();
+    await settled(result);
+    vi.mocked(transport.startTunnel).mockRejectedValue(
+      Object.assign(new Error('Tunnel is already running'), {
+        status: 409,
+        body: { error: 'Tunnel is already running' },
+      })
+    );
+
+    await act(async () => {
+      await result.current.actions.handleToggle(true);
+    });
+
+    expect(result.current.machine.state).toBe('reconnecting');
+    expect(result.current.machine.viewState).not.toBe('error');
+  });
+
+  it('still routes the exposure 409 into owner setup', async () => {
+    const { result, transport } = setup();
+    await settled(result);
+    vi.mocked(transport.startTunnel).mockRejectedValue(
+      Object.assign(new Error('Exposing DorkOS requires a login.'), {
+        status: 409,
+        code: 'AUTH_REQUIRED_FOR_EXPOSURE',
+      })
+    );
+
+    await act(async () => {
+      await result.current.actions.handleToggle(true);
+    });
+
+    // Both refusals are 409s; only one of them means the tunnel is up.
+    expect(result.current.machine.state).toBe('off');
+  });
+});
+
 describe('status toasts speak only for changes the person did not make', () => {
   it('says nothing when the person turns remote access off themselves', async () => {
     const { result, transport, serverReports } = setup({
@@ -218,13 +343,33 @@ describe('status toasts speak only for changes the person did not make', () => {
     await settled(result);
     await waitFor(() => expect(result.current.machine.state).toBe('connected'));
 
-    await serverReports({ connected: false, url: null });
+    // Gone for good: the listener is closed, so nothing is retrying.
+    await serverReports({ connected: false, isRunning: false, url: null });
 
     expect(toast.error).toHaveBeenCalledTimes(1);
     const [title, options] = vi.mocked(toast.error).mock.calls[0] ?? [];
     expect(title).toBe('Remote access turned off');
-    // Nothing in DorkOS retries a dropped tunnel, so nothing may say it does.
     expect(String((options as { description?: string })?.description)).not.toMatch(/reconnect/i);
+    expect(toast.warning).not.toHaveBeenCalled();
+  });
+
+  it('promises a reconnect only where one is actually happening', async () => {
+    const { result, serverReports } = setup({
+      connected: true,
+      isRunning: true,
+      url: 'https://abc.ngrok.app',
+    });
+    await settled(result);
+    await waitFor(() => expect(result.current.machine.state).toBe('connected'));
+
+    await serverReports({ connected: false, isRunning: true });
+
+    // ngrok's own agent retries the session and emits `connected` again on
+    // recovery, so here — and only here — "reconnecting" is a true statement.
+    expect(toast.warning).toHaveBeenCalledTimes(1);
+    const [title] = vi.mocked(toast.warning).mock.calls[0] ?? [];
+    expect(title).toMatch(/reconnecting/i);
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it('still reports a real drop after a stop that failed', async () => {
