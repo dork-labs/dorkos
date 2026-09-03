@@ -205,6 +205,15 @@ export class FakeAgentRuntime implements AgentRuntime {
   // test exercising cwd resolution assigns its own spy:
   // `fakeRuntime.getSessionCwd = vi.fn(() => '/some/project');`.
   getSessionCwd?: (sessionId: string) => string | undefined;
+  // Deliberately NOT defined by default, for the same reason as `getSessionCwd`
+  // directly above — and here the branch it protects is the sign-in watch's
+  // whole degradation story. A runtime with ONE set of credentials omits this
+  // method, and the watch then behaves exactly as it did before accounts existed
+  // (DOR-1682). A fake that always defined it, even answering `undefined`, would
+  // still be a fake that "has accounts", and no test could exercise the
+  // one-credential path. A test about multi-account behaviour assigns its own:
+  // `fakeRuntime.getSessionAccount = (id) => accounts.get(id);`.
+  getSessionAccount?: (sessionId: string) => string | undefined;
   getSessionTasks = vi
     .fn<(projectDir: string, sessionId: string) => Promise<TaskItem[]>>()
     .mockResolvedValue([]);

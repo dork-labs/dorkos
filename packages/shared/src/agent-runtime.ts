@@ -1379,6 +1379,47 @@ export interface AgentRuntime {
   getSessionCwd?(sessionId: string): string | undefined;
 
   /**
+   * Which of this runtime's ACCOUNTS a turn on this session runs on — the
+   * credential that would fail if the sign-in behind it were dead.
+   *
+   * ## What the string is, and what it is not
+   *
+   * An OPAQUE identity, stable for as long as the session runs on that account.
+   * Consumers compare it and never parse it: claude-code answers with the
+   * absolute Claude config directory a launch is pinned to (`~/.claude`,
+   * `~/.claude2`, …), and a future runtime may answer with an email, a
+   * workspace id, or anything else it can tell its own credentials apart by.
+   * Nothing outside the adapter may assume a shape.
+   *
+   * It is NOT the working directory ({@link getSessionCwd}) and NOT a
+   * credential — it names WHICH sign-in a turn used, never the secret itself,
+   * so it is safe in a log line.
+   *
+   * ## Absence is the neutral answer, always
+   *
+   * Optional, and a runtime with exactly one set of credentials — codex and
+   * opencode each have one home directory — omits it entirely. `undefined` from
+   * a runtime that DOES implement it means "this session's account is not known
+   * here", which is the honest answer before a session's first launch has
+   * resolved one.
+   *
+   * Both spellings of absence mean the same thing to every consumer: *do not
+   * distinguish*. The sign-in watch (`services/observability/runtime-signin-watch.ts`)
+   * is the consumer this exists for, and it degrades by falling back to
+   * per-runtime behavior — never by refusing to notice a dead credential.
+   *
+   * MUST answer synchronously and MUST NEVER throw, for any id (unknown,
+   * malformed, or otherwise), exactly as {@link getSessionCwd} must: the caller
+   * is an observer wrapped around somebody else's turn, and an observer may
+   * never be the thing that fails it.
+   *
+   * @param sessionId - Session to report on; either id a caller might hold
+   * @returns The account this session's turns run on, or `undefined` when this
+   *   runtime cannot name one
+   */
+  getSessionAccount?(sessionId: string): string | undefined;
+
+  /**
    * Read new content from a session transcript starting at a byte offset.
    *
    * @param projectDir - Project directory for transcript lookup

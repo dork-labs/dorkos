@@ -191,6 +191,33 @@ function registryRunning(
   return registry;
 }
 
+/**
+ * A registry holding one runtime that CAN name the account each session runs
+ * on — a machine with more than one Claude sign-in.
+ *
+ * `getSessionAccount` is assigned rather than built into `FakeAgentRuntime` on
+ * purpose: the watch branches on whether the method EXISTS, and the absence is
+ * the supported answer for every runtime with one set of credentials. A fake
+ * that always defined it could never exercise that half.
+ *
+ * @param accounts - Which account each session id runs on. A session left out is
+ *   one this runtime cannot place, which is a real state (a turn that failed
+ *   before its launch resolved an account) and must not be a reason to say
+ *   nothing.
+ */
+function registryWithAccounts(
+  runtimeType: string,
+  scenarios: Array<() => AsyncGenerator<StreamEvent>>,
+  accounts: Record<string, string>
+): RuntimeRegistry {
+  const registry = new RuntimeRegistry();
+  const runtime = new FakeAgentRuntime(runtimeType);
+  runtime.withScenarios(scenarios);
+  runtime.getSessionAccount = (sessionId: string): string | undefined => accounts[sessionId];
+  registry.register(runtime);
+  return registry;
+}
+
 beforeEach(() => {
   // Fake time throughout: an episode's identity is the moment it began, and both
   // the escalation delay and the "already in flight" guard are answered against
@@ -526,6 +553,195 @@ describe('the next clean turn on that runtime', () => {
     // An abandoned turn never reached its end, so nothing about it says the
     // credential works.
     expect(retired()).toEqual([]);
+  });
+});
+
+/**
+ * A machine running more than one Claude account (DOR-1682).
+ *
+ * The condition is about a CREDENTIAL, and a credential belongs to an account
+ * root — but the watch used to key its episodes on the runtime TYPE alone, so a
+ * clean turn on a healthy account resolved a condition a DEAD one had raised.
+ * Under ordinary traffic that all-clear lands within seconds of the failure and
+ * keeps landing, which cancels the escalation ladder every time and means the
+ * phone leg never runs at all.
+ *
+ * Driven through the same real registry and real notification stack as
+ * everything above, with the runtime answering `getSessionAccount` — the one
+ * seam that can say which of a runtime's own credentials a turn used.
+ */
+describe('a machine with more than one account on one runtime', () => {
+  it('leaves the dead account standing however well the healthy one works', async () => {
+    const registry = registryWithAccounts('claude-code', [authErrorTurn, cleanTurn, cleanTurn], {
+      'sess-dead': '~/.claude',
+      'sess-live-1': '~/.claude2',
+      'sess-live-2': '~/.claude2',
+    });
+
+    await drain(registry, 'claude-code', 'sess-dead');
+    expect(raisedRows()).toHaveLength(1);
+
+    vi.advanceTimersByTime(ONE_MINUTE_MS);
+    await drain(registry, 'claude-code', 'sess-live-1');
+    vi.advanceTimersByTime(ONE_MINUTE_MS);
+    await drain(registry, 'claude-code', 'sess-live-2');
+
+    // Two turns that reached the provider and were let in — and neither says
+    // anything whatsoever about the account that is actually broken.
+    expect(retired()).toEqual([]);
+    expect(clearedRows()).toEqual([]);
+  });
+
+  it('still reaches the phone while the other account keeps working', async () => {
+    // The half that hurts most. A resolution disarms the ladder, so on a busy
+    // machine the healthy account's very next turn cancelled the push — every
+    // time, forever, which is silence rather than a late alarm.
+    const registry = registryWithAccounts('claude-code', [authErrorTurn, cleanTurn], {
+      'sess-dead': '~/.claude',
+      'sess-live': '~/.claude2',
+    });
+
+    await drain(registry, 'claude-code', 'sess-dead');
+    await vi.advanceTimersByTimeAsync(ONE_MINUTE_MS);
+    await drain(registry, 'claude-code', 'sess-live');
+    await vi.advanceTimersByTimeAsync((ESCALATION_MINUTES + 1) * ONE_MINUTE_MS);
+
+    expect(sendToAll).toHaveBeenCalledTimes(1);
+    expect(sendToAll).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Your Claude sign-in stopped working' })
+    );
+  });
+
+  it('clears once a turn goes through on the account that actually failed', async () => {
+    const registry = registryWithAccounts('claude-code', [authErrorTurn, cleanTurn], {
+      'sess-dead': '~/.claude',
+      'sess-fixed': '~/.claude',
+    });
+
+    await drain(registry, 'claude-code', 'sess-dead');
+    vi.advanceTimersByTime(ONE_MINUTE_MS);
+    await drain(registry, 'claude-code', 'sess-fixed');
+
+    expect(retired()).toHaveLength(1);
+    expect(clearedRows().map((row) => row.title)).toEqual(['Your Claude sign-in is working again']);
+  });
+
+  it('says it once for two dead accounts, and waits for both to be fixed', async () => {
+    // One notice per runtime is the product decision — the inbox subject is the
+    // runtime and the app's standing banner reads the newest row per runtime, so
+    // a second row would say the same sentence twice. What the per-account store
+    // buys is that the one notice does not end early.
+    const registry = registryWithAccounts(
+      'claude-code',
+      [authErrorTurn, authErrorTurn, cleanTurn, cleanTurn],
+      {
+        'sess-a-fail': '~/.claude',
+        'sess-b-fail': '~/.claude2',
+        'sess-a-fixed': '~/.claude',
+        'sess-b-fixed': '~/.claude2',
+      }
+    );
+
+    await drain(registry, 'claude-code', 'sess-a-fail');
+    vi.advanceTimersByTime(ONE_MINUTE_MS);
+    await drain(registry, 'claude-code', 'sess-b-fail');
+    expect(raisedRows()).toHaveLength(1);
+
+    vi.advanceTimersByTime(ONE_MINUTE_MS);
+    await drain(registry, 'claude-code', 'sess-a-fixed');
+    expect(clearedRows()).toEqual([]);
+
+    vi.advanceTimersByTime(ONE_MINUTE_MS);
+    await drain(registry, 'claude-code', 'sess-b-fixed');
+
+    // Retired under the FIRST account's episode key — the identity the ladder
+    // armed on, which does not move when a second account joins the condition.
+    expect(retired()).toHaveLength(1);
+    expect(clearedRows()).toHaveLength(1);
+  });
+
+  it('does not count a turn that was already running when THAT account failed', async () => {
+    // The already-running-turn rule, answered per account. The runtime's
+    // condition has stood since the first account died, so comparing against
+    // THAT moment would credit this turn — which started before the second
+    // account failed and so authenticated on a credential that was still good.
+    let release = (): void => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    /** A working turn on the second account that hangs until the test lets it finish. */
+    async function* heldCleanTurn(): AsyncGenerator<StreamEvent> {
+      yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
+      await gate;
+    }
+
+    const registry = registryWithAccounts(
+      'claude-code',
+      [authErrorTurn, heldCleanTurn, authErrorTurn, cleanTurn],
+      {
+        'sess-a-fail': '~/.claude',
+        'sess-b-held': '~/.claude2',
+        'sess-b-fail': '~/.claude2',
+        'sess-a-fixed': '~/.claude',
+      }
+    );
+
+    await drain(registry, 'claude-code', 'sess-a-fail');
+
+    vi.advanceTimersByTime(ONE_MINUTE_MS);
+    const held = (async () => {
+      for await (const _ of registry.get('claude-code').sendMessage('sess-b-held', 'hi', {}));
+    })();
+    await flush();
+
+    vi.advanceTimersByTime(ONE_MINUTE_MS);
+    await drain(registry, 'claude-code', 'sess-b-fail');
+
+    vi.advanceTimersByTime(ONE_MINUTE_MS);
+    await drain(registry, 'claude-code', 'sess-a-fixed');
+
+    release();
+    await held;
+    await flush();
+
+    // The held turn is the only thing left that could end the condition, and it
+    // is evidence about a moment before its own account broke.
+    expect(retired()).toEqual([]);
+  });
+
+  it('lets any working credential answer a failure it could not place', async () => {
+    // A failure the runtime could not attribute is recorded under "unknown",
+    // which every clean turn on that runtime answers. The alternative is an
+    // episode nothing can ever clear — a banner for the life of the install —
+    // and a sign-in that is still dead re-stands on the very next turn.
+    const registry = registryWithAccounts('claude-code', [authErrorTurn, cleanTurn], {
+      // `sess-unplaceable` is deliberately absent: the runtime cannot say.
+      'sess-live': '~/.claude2',
+    });
+
+    await drain(registry, 'claude-code', 'sess-unplaceable');
+    expect(raisedRows()).toHaveLength(1);
+
+    vi.advanceTimersByTime(ONE_MINUTE_MS);
+    await drain(registry, 'claude-code', 'sess-live');
+
+    expect(retired()).toHaveLength(1);
+  });
+
+  it('is unchanged for a runtime that has only one sign-in to speak of', async () => {
+    // The degradation pin, and the A/B against the first case in this block:
+    // the same two sessions and the same two turns, on a runtime that does NOT
+    // implement `getSessionAccount`. Codex and opencode each have one home
+    // directory, so any clean turn is evidence about the only credential there
+    // is — exactly as it was before accounts entered this module.
+    const registry = registryRunning('codex', [authErrorTurn, cleanTurn]);
+
+    await drain(registry, 'codex', 'sess-dead');
+    vi.advanceTimersByTime(ONE_MINUTE_MS);
+    await drain(registry, 'codex', 'sess-other');
+
+    expect(retired()).toHaveLength(1);
+    expect(clearedRows().map((row) => row.title)).toEqual(['Your Codex sign-in is working again']);
   });
 });
 

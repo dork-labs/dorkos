@@ -1318,6 +1318,72 @@ export function runtimeConformance(
         ).toBe(projectDir);
       });
 
+      it('C12: getSessionAccount names the credential a turn ran on, stably, or does not exist', async (ctx) => {
+        // The account half of C10, and the seam the sign-in watch keys its
+        // episodes on (DOR-1682): with no way to ask which credential a turn
+        // used, a clean turn on a healthy Claude account cleared a condition a
+        // DEAD one had raised — an all-clear that never happened.
+        //
+        // Optional, and omitting it is the RIGHT answer for a runtime with one
+        // set of credentials (codex and opencode each have one home directory).
+        // The watch reads the absence as "do not distinguish" and behaves
+        // exactly as it did before accounts existed.
+        const runtime = makeRuntime();
+        const getSessionAccount = runtime.getSessionAccount?.bind(runtime);
+        if (getSessionAccount === undefined) {
+          // A SKIP, not a pass, for C7's reason: an `it` that returns early is
+          // indistinguishable from one that asserted something.
+          ctx.skip(
+            'this runtime does not implement `getSessionAccount`, so every one of its turns runs ' +
+              'on the same credential and the sign-in watch keys on the runtime alone ' +
+              '(see AgentRuntime.getSessionAccount)'
+          );
+          return;
+        }
+
+        // (1) ANSWERABLE for a session it has never heard of, never a throw. The
+        // caller is an observer wrapped around somebody else's turn, so a lookup
+        // that dereferences a missing entry would fail a turn it only watches.
+        const strangerId = nextSessionId();
+        expect(
+          () => getSessionAccount(strangerId),
+          'getSessionAccount must answer for a session it has never heard of, not throw'
+        ).not.toThrow();
+        expect(
+          getSessionAccount(strangerId),
+          'an id this runtime has never heard of must answer undefined, never a guessed account — ' +
+            'a guess files a dead credential under the wrong key, which is wrong in both directions'
+        ).toBeUndefined();
+
+        // (2) It NAMES the account once a turn has actually run. A runtime that
+        // answers undefined here has implemented nothing the watch can use, and
+        // is better off omitting the method — the absence is a supported,
+        // documented answer and a constant undefined only pretends otherwise.
+        if (!warmSession) return;
+
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
+        await warmSession(runtime, sessionId);
+
+        const account = getSessionAccount(sessionId);
+        expect(
+          typeof account,
+          'a session that has taken a turn must have its account named — a runtime that can never ' +
+            'name one should omit getSessionAccount rather than always answer undefined'
+        ).toBe('string');
+        expect(account, 'an empty account name distinguishes nothing').not.toBe('');
+
+        // (3) STABLE across reads, which is the property the watch actually
+        // depends on: it reads the account at the failing edge and again at the
+        // resolving edge, and an answer that moved between them would leave an
+        // episode filed under a key no later turn could ever match — a notice
+        // that outlives the fix.
+        expect(
+          getSessionAccount(sessionId),
+          'getSessionAccount must answer the same account twice for one session'
+        ).toBe(account);
+      });
+
       it('says when the person last wrote, or says why it cannot (BC-16)', async () => {
         // Purpose: `Session.userLastMessageAt` is half the sidebar's Today
         // order key, and the contract is "omission, never a guess". Two honest

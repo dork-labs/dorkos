@@ -1074,6 +1074,32 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     return this.sessionStore.findSession(sessionId)?.cwd;
   }
 
+  /**
+   * @inheritdoc
+   *
+   * The account this session's turns run and bill on, as the absolute Claude
+   * config directory (`~/.claude`, `~/.claude2`, …) — the directory that IS a
+   * Claude Code account, because it carries that account's own sign-in
+   * (`claude-config-dir.ts`).
+   *
+   * The last LAUNCH's account first, then the transcript's. They agree whenever
+   * both exist — a launch resolves `session.accountRoot ?? ladder` — and the
+   * launch is the more precise answer on the one turn where they differ: a
+   * brand-new session has no transcript yet, so disk knows nothing while the
+   * ladder has already decided which credential the turn is using. Asking the
+   * transcript alone would leave the first turn of every new session
+   * unattributed, which is exactly the turn a dead credential fails on.
+   *
+   * `undefined` means no launch in this process and no transcript on disk. Never
+   * a guess: resolving the ladder here instead would answer with the account a
+   * launch WOULD pick, which is wrong for any session started from a per-send
+   * hint or an agent manifest, and wrong in both directions at once.
+   */
+  getSessionAccount(sessionId: string): string | undefined {
+    const session = this.sessionStore.findSession(sessionId);
+    return session?.launchedAccountRoot ?? session?.accountRoot;
+  }
+
   /** @inheritdoc */
   async getLastMessageIds(sessionId: string): Promise<{ user: string; assistant: string } | null> {
     try {

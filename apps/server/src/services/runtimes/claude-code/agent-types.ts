@@ -47,6 +47,26 @@ export interface AgentSession {
    * a reason to fail.
    */
   accountRoot?: string;
+  /**
+   * The Claude root the most recent launch on this session actually ran on —
+   * `session.accountRoot` when disk had already decided, otherwise whatever the
+   * launch ladder picked (`resolveLaunch`, ADR 260821-205323).
+   *
+   * **Deliberately a second field, and never written back to
+   * {@link accountRoot}.** That one is disk-derived truth, and its presence is
+   * the ladder's only gate (spec `billing-account-ladder` invariant 5) — setting
+   * it from a ladder result would pin a session to an account before any
+   * transcript existed, so a launch that died before writing one could never be
+   * retried onto the account a person then picked.
+   *
+   * What it is FOR is the question `AgentRuntime.getSessionAccount` answers:
+   * which credential did this turn use? The sign-in watch keys its episodes on
+   * that, so a clean turn on a healthy account cannot clear a condition a dead
+   * one raised. Undefined until the first launch this process resolved for the
+   * session, which reads as "not known here" and costs only the account
+   * distinction, never the notice.
+   */
+  launchedAccountRoot?: string;
   /** True once the first SDK query has been sent (JSONL file exists) */
   hasStarted: boolean;
   /**
