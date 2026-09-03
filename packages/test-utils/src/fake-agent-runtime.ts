@@ -32,6 +32,7 @@ import type {
   PermissionMode,
   EffortLevel,
   SessionListWarning,
+  InterruptReceipt,
 } from '@dorkos/shared/types';
 
 type ScenarioFn = (content: string) => AsyncGenerator<StreamEvent>;
@@ -90,6 +91,16 @@ export class FakeAgentRuntime implements AgentRuntime {
    */
   constructor(type = 'fake', opts: FakeAgentRuntimeOptions = {}) {
     this.type = type;
+    // Set here rather than at the field, which cannot see the instance's own
+    // type: a receipt naming the wrong runtime is the one thing conformance I2
+    // reads this field for.
+    const idle: InterruptReceipt = {
+      outcome: 'not-running',
+      reason: 'no-open-turn',
+      runtime: type,
+    };
+    this.stopTask.mockResolvedValue(idle);
+    this.interruptQuery.mockResolvedValue(idle);
     if (opts.settings !== undefined) this._settings = opts.settings;
   }
 
@@ -205,6 +216,15 @@ export class FakeAgentRuntime implements AgentRuntime {
   // test exercising cwd resolution assigns its own spy:
   // `fakeRuntime.getSessionCwd = vi.fn(() => '/some/project');`.
   getSessionCwd?: (sessionId: string) => string | undefined;
+  // Deliberately NOT defined by default, for the same reason as `getSessionCwd`
+  // directly above — and here the branch it protects is the sign-in watch's
+  // whole degradation story. A runtime with ONE set of credentials omits this
+  // method, and the watch then behaves exactly as it did before accounts existed
+  // (DOR-1682). A fake that always defined it, even answering `undefined`, would
+  // still be a fake that "has accounts", and no test could exercise the
+  // one-credential path. A test about multi-account behaviour assigns its own:
+  // `fakeRuntime.getSessionAccount = (id) => accounts.get(id);`.
+  getSessionAccount?: (sessionId: string) => string | undefined;
   getSessionTasks = vi
     .fn<(projectDir: string, sessionId: string) => Promise<TaskItem[]>>()
     .mockResolvedValue([]);
@@ -361,10 +381,15 @@ export class FakeAgentRuntime implements AgentRuntime {
       ) => boolean
     >()
     .mockReturnValue(true);
-  stopTask = vi
-    .fn<(sessionId: string, taskId: string) => Promise<boolean>>()
-    .mockResolvedValue(false);
-  interruptQuery = vi.fn<(sessionId: string) => Promise<boolean>>().mockResolvedValue(false);
+  /**
+   * Defaults to `not-running` / `no-open-turn` — the honest answer for a fake
+   * with no live turn, and the one ending that is not a failure. Its `runtime`
+   * is stamped in the constructor, so a fake registered under `'fake-b'` answers
+   * receipts naming `'fake-b'` (conformance I2 pins that field).
+   */
+  stopTask = vi.fn<(sessionId: string, taskId: string) => Promise<InterruptReceipt>>();
+  /** Defaults to `not-running` / `no-open-turn`; see {@link FakeAgentRuntime.stopTask}. */
+  interruptQuery = vi.fn<(sessionId: string) => Promise<InterruptReceipt>>();
   getSessionSnapshot = vi
     .fn<(ctx: SessionOpts, sessionId: string) => Promise<SessionSnapshot>>()
     .mockResolvedValue({

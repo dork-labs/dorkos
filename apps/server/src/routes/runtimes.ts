@@ -45,64 +45,21 @@ import {
   assessOllamaModels,
   DEFAULT_OLLAMA_MODEL_ID,
 } from '../services/runtimes/opencode/providers/ollama-catalog.js';
-import { env } from '../env.js';
 import { logger } from '../lib/logger.js';
-import { isLocalRequest } from '../lib/trusted-origins.js';
+import { isLocalCaller } from '../lib/caller-authority.js';
 
 const router = Router();
 
 /**
- * Whether this request came from a person at this machine.
+ * Reject non-local requests with 403; returns `true` when the request was
+ * rejected.
  *
- * Two independent signals, and BOTH must hold, because each one alone admits a
- * different attacker (DOR-532 review):
- *
- * - **The TCP peer must be loopback.** This is the part a caller cannot write.
- *   Header-only checks fell to a raw socket from another host on the LAN:
- *   `Host: localhost` from peer `192.168.86.200` returned 200 and would have run
- *   a Homebrew/winget install. `req.hostname` and `req.ip` are both derived
- *   through `trust proxy` from `X-Forwarded-*` and are caller-controlled, so
- *   neither is usable here; only `req.socket.remoteAddress` is.
- * - **The `Host` header must name loopback.** This is the part that stops a
- *   browser. Under DNS rebinding the peer genuinely IS `127.0.0.1` — the request
- *   comes from the user's own browser — but the page was served from
- *   `evil.com`, and the browser writes that into `Host` and cannot lie about it.
- *
- * Socket alone admits the rebound browser; `Host` alone admits the remote
- * caller. Neither substitutes for the other. A live ngrok tunnel is the clearest
- * case: its agent runs on this machine, so the peer IS loopback, and only the
- * `Host` check (which sees the public tunnel domain) turns that traffic away.
- *
- * ## `DORKOS_ALLOW_INSECURE_BIND` relaxes this, as it does the host guard
- *
- * In a container the browser's request arrives from the bridge gateway rather
- * than loopback, so requiring a loopback peer would refuse runtime provisioning
- * for every Docker operator — a feature that works today, broken for the people
- * the flag already exists to accommodate. The flag's established meaning is
- * "this deployment owns its network boundary", and the official image sets it;
- * `docs/self-hosting/docker.mdx` already states that anyone who reaches the
- * published port has full control. Refusing here would not shrink that blast
- * radius (such a caller can already run agent turns and open shells), so it buys
- * nothing and costs a working feature. Honoring the flag is the same decision
- * `middleware/host-guard.ts` makes, for the same reason.
- *
- * Unflagged — the default on a normal machine — both signals are still required.
- *
- * One residual remains and is inherent: a reverse proxy on this same host
- * connects from `127.0.0.1`, so it is indistinguishable from a local caller at
- * the socket layer (see `isLoopbackPeer` in `lib/trusted-origins.ts`). Its forwarded `Host` normally
- * carries the public name and is refused, but an operator who rewrites `Host` to
- * `localhost` re-opens it.
+ * The locality question itself lives in `lib/caller-authority.ts`, because
+ * `GET /api/config` now asks it too — to TELL the app what this refusal would
+ * do, so a phone over the tunnel is given honest guidance instead of a button
+ * that 403s (DOR-1655). Read that module for what the answer rests on; the two
+ * surfaces share it so the report can never promise what this refuses.
  */
-function isLocalCaller(req: Request): boolean {
-  return isLocalRequest({
-    peer: req.socket.remoteAddress,
-    hostHeader: req.headers.host,
-    allowInsecureBind: env.DORKOS_ALLOW_INSECURE_BIND,
-  });
-}
-
-/** Reject non-local requests with 403; returns `true` when the request was rejected. */
 function rejectNonLoopback(req: Request, res: Response): boolean {
   if (isLocalCaller(req)) return false;
   res.status(403).json({ error: 'Runtime connect actions are only available locally' });

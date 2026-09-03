@@ -15,6 +15,7 @@ import { OpenMeshNotice } from '@/layers/entities/mesh';
 import { useAgentCreationStore } from '../model/store';
 import { useCreateAgent } from '../model/use-create-agent';
 import { useConfigureForm } from '../model/use-configure-form';
+import { useOfferSchedules } from '../model/use-offer-schedules';
 import type { WizardStep, SelectedTemplate } from '../lib/wizard-types';
 import { STEP_HEADERS } from '../lib/wizard-types';
 import { resolveSuggestionPool } from '../lib/name-suggestions';
@@ -65,6 +66,14 @@ export function CreateAgentDialog() {
   const faceSeed =
     template?.icon && isSingleEmoji(template.icon) ? template.icon : (seedIcon ?? null);
   const runtimeSeed = seed?.template.runtime ?? 'claude-code';
+
+  // What the offered package will run on its own. An agent package never sees
+  // the install confirmation dialog, so this dialog is where that gets said
+  // (DOR-644). Fetched from the moment the dialog opens so the answer is usually
+  // already there by the time a person has finished reading the card. The store
+  // clears `seed` on both close and generic open, so a non-null seed is always a
+  // live offer.
+  const offerSchedules = useOfferSchedules(seed);
 
   const form = useConfigureForm({
     step,
@@ -260,6 +269,9 @@ export function CreateAgentDialog() {
                 {step === 'arrival' && seed && (
                   <ArrivalConfirm
                     seed={seed}
+                    packageSchedules={offerSchedules.schedules}
+                    isCheckingOffer={offerSchedules.isChecking}
+                    offerCheckFailed={offerSchedules.failed}
                     resolvedDirectory={form.resolvedDirectory}
                     canSubmit={form.canSubmit}
                     isCreating={createAgent.isPending}
@@ -278,6 +290,9 @@ export function CreateAgentDialog() {
                     onImportInstead={handleImport}
                     onCreate={handleCreate}
                     isCreating={createAgent.isPending}
+                    packageSchedules={offerSchedules.schedules}
+                    offerCheckFailed={offerSchedules.failed}
+                    isCheckingOffer={offerSchedules.isChecking}
                   />
                 )}
               </motion.div>

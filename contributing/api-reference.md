@@ -552,15 +552,20 @@ Update agent fields by path. Merges the request body into the existing manifest.
 
 All fields are optional. The `enabledToolGroups` object controls per-agent tool domain toggles. Omitted fields inherit the global default from the `agentContext` section in `~/.dork/config.json`.
 
-**This route is agent-reachable, and three fields are refused here because of it.** It backs both the cockpit's self-edit and the `update_agent` MCP tool, and it performs no caller-identity check, so a field an agent must not decide for itself cannot be accepted on this path (DOR-1506):
+**This route is agent-reachable, so what it accepts is a classification rather than a schema.** It backs both the cockpit's self-edit and the `update_agent` MCP tool, and it performs no caller-identity check, so a field an agent must not decide for itself cannot be accepted on this path. Every leaf of the wire carries a verdict in `apps/server/src/services/core/operator/agent-write-policy.ts`, and a drift guard fails the build when a new field arrives without one (DOR-1506). These are the refusals:
 
-| Field                           | Why it is refused                                                                                      | Where it is set instead      |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------- |
-| `account`                       | Billing is the operator's call — an agent could repoint whose subscription its work bills to           | `PATCH /api/mesh/agents/:id` |
-| `enabledToolGroups.roomsManage` | A grant the governed agent can set for itself is not a grant (ADR-260828-123331)                       | `PATCH /api/mesh/agents/:id` |
-| `tierCeiling` (raising only)    | Widening the cap on what an agent may ever do hands privilege back, which is a person's call (DOR-486) | `PATCH /api/mesh/agents/:id` |
+| Field                                                                              | Why it is refused                                                                                                                                                           | Where it is set instead      |
+| ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| `name`                                                                             | The slug is how everything else addresses the agent — `displayName` is the writable half                                                                                    | `PATCH /api/mesh/agents/:id` |
+| `namespace`                                                                        | It decides which other agents this one can reach, so an agent moving itself picks its own side of the access rules                                                          | `PATCH /api/mesh/agents/:id` |
+| `behavior.responseMode`, `behavior.escalationThreshold`                            | They decide whether a turn RUNS unbidden — an agent could vote itself the floor in every room, on the operator's model budget                                               | `PATCH /api/mesh/agents/:id` |
+| `account`                                                                          | Billing is the operator's call — an agent could repoint whose subscription its work bills to                                                                                | `PATCH /api/mesh/agents/:id` |
+| `enabledToolGroups` (all five: `tasks`, `relay`, `mesh`, `adapter`, `roomsManage`) | A per-agent value beats the global `agentContext.*` switch, so a writable one undoes a narrowing the person made; `roomsManage` is a real grant besides (ADR-260828-123331) | `PATCH /api/mesh/agents/:id` |
+| `tierCeiling` (raising only)                                                       | Widening the cap on what an agent may ever do hands privilege back, which is a person's call (DOR-486)                                                                      | `PATCH /api/mesh/agents/:id` |
 
-The first two are **refused, not stripped**: a partial write that silently dropped the field would let a caller report the change as done. Naming `roomsManage` at all — `true`, `false`, or `null` — refuses the whole patch, so a client that reads the stored `enabledToolGroups` object and spreads it into an unrelated toggle must use the operator route too. The other four keys stay writable here.
+Everything but the ceiling is **refused, not stripped**: a partial write that silently dropped the field would let a caller report the change as done. Naming a refused field at all — `true`, `false`, `null`, or any object above it — refuses the whole patch, and the check runs before the schema parse and before the manifest is read, so the answer never depends on the rest of the body being well-formed or on which agent lives at the path.
+
+"Any object above it" includes one carrying **only keys DorkOS does not recognise**, and that is load-bearing rather than pedantic. A write here REPLACES the object it names instead of merging into it, so `{"enabledToolGroups":{"zzz":1}}` would store `{}` — clearing groups a person had turned off, and the `roomsManage` grant with them — even though the patch named no guarded key. `{"behavior":{"zzz":1}}` is sharper still, because the schema defaults `responseMode` and the replacement would re-arm the most permissive setting. So naming an object that holds a refused field counts as naming every field under it, unless every key it carries is one the policy classifies.
 
 `tierCeiling` is the one refusal keyed on the VALUE rather than the field. An agent may LOWER its own ceiling — giving something up is a normal, safe thing to let it do — and any change that widens one, `null` (which means "no extra limit") included, is refused whole. Absent on the manifest reads as `destructive`, so every agent that predates the field keeps exactly the capability it had.
 
@@ -577,7 +582,7 @@ The first two are **refused, not stripped**: a partial write that silently dropp
 
 - `200` - Updated `AgentManifest`
 - `400` - Validation error or missing `path`
-- `403` - Refused as operator-only: the patch named `account` or `enabledToolGroups.roomsManage`, or asked to widen `tierCeiling`
+- `403` - Refused as operator-only: the patch named a field from the table above, or asked to widen `tierCeiling`
 - `403` - Path outside configured boundary
 - `404` - No agent registered at this path
 

@@ -60,13 +60,14 @@
  * Three seconds anyway, because the person is the tighter constraint: a Stop
  * that has visibly done nothing for longer than that reads as broken, and
  * pressing it again is the natural response. The trade is bounded on the other
- * side too — the live settle is honest either way ON THE RESUME PATH, where a
- * turn ended by an escalated close is reported as `interrupted` rather than as
- * finished (`messaging/message-sender.ts`, DOR-1244); the persistent pump does
- * not run that loop and still settles a killed process as a crash, which is a
- * named DOR-1244 follow-up (`persistentSession` ships OFF). So on the path that
- * ships, a premature escalation costs the CLI's transcript marker and a warm
- * process, not the operator's understanding of what just happened.
+ * side too — the live settle is honest on BOTH paths, and a turn ended by an
+ * escalated close is reported as `interrupted` rather than as finished or as a
+ * crash: the resume path supplies that reason from its send loop
+ * (`messaging/message-sender.ts`, DOR-1244), and the persistent pump supplies it
+ * from the windower, which reads the same stop record before it settles a dead
+ * process's window (`sessions/session-turn-windows.ts`, DOR-1302). So a
+ * premature escalation costs the CLI's transcript marker and a warm process, not
+ * the operator's understanding of what just happened.
  *
  * Revisit this number with measurements of real ack latency under load, not
  * with an argument.

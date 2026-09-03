@@ -14,21 +14,12 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import type { AgentMcpOAuthService } from '../services/mesh/agent-mcp-oauth-service.js';
-import { getLocalCockpitOrigin, isLocalRequest } from '../lib/trusted-origins.js';
-import { env } from '../env.js';
+import { getLocalCockpitOrigin } from '../lib/trusted-origins.js';
+import { isLocalCaller } from '../lib/caller-authority.js';
 
 /** HTTP status for a completed callback vs. any failure (used for the rendered page). */
 const OK = 200;
 const BAD_REQUEST = 400;
-
-/** Whether the request originates from this machine's loopback interface. */
-function isLocalCaller(req: Request): boolean {
-  return isLocalRequest({
-    peer: req.socket.remoteAddress,
-    hostHeader: req.headers.host,
-    allowInsecureBind: env.DORKOS_ALLOW_INSECURE_BIND,
-  });
-}
 
 /** Escape the small set of HTML metacharacters so a query value can't inject markup. */
 function escapeHtml(value: string): string {

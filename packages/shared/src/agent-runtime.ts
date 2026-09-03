@@ -23,6 +23,7 @@ import type {
 import type { AdditionalContext, ContextKind } from './additional-context.js';
 import type { SessionSnapshot, SessionEvent, SessionListEvent } from './session-stream.js';
 import type { RuntimeCommandIntentId } from './command-intents.js';
+import type { InterruptReceipt } from './types.js';
 
 /**
  * The message-delivery vocabulary of the runtime contract, re-exported here so
@@ -38,6 +39,17 @@ export type {
   MessageDeliveryOutcome,
   QueuedMessage,
 } from './types.js';
+
+/**
+ * The stop vocabulary of the runtime contract, re-exported here for the same
+ * reason the delivery one is: an adapter reads its whole contract from one
+ * module.
+ *
+ * Defined once as Zod in `schemas.js` — the receipt is a wire type as well as a
+ * contract type (it rides the interrupt and stop-task routes).
+ */
+export type { InterruptOutcome, InterruptReason, InterruptReceipt } from './types.js';
+export { turnEnded, worthRetrying } from './schemas.js';
 
 /**
  * Where a permission mode sits on the one question the permission surface asks:
@@ -1110,22 +1122,39 @@ export interface AgentRuntime {
   /**
    * Stop a running background task (agent or bash command).
    *
+   * Answers the same {@link InterruptReceipt} vocabulary `interruptQuery` does,
+   * for the same reason: a boolean cannot tell "there was no such task" from
+   * "the runtime declined and it is still running". A runtime with no
+   * addressable background tasks answers `not-running` / `no-open-turn` —
+   * honest, and not a failure.
+   *
    * @param sessionId - Target session
    * @param taskId - The background task to stop
-   * @returns true if the task was found and stopped, false otherwise
+   * @returns A receipt naming which of the five endings the stop reached
    */
-  stopTask(sessionId: string, taskId: string): Promise<boolean>;
+  stopTask(sessionId: string, taskId: string): Promise<InterruptReceipt>;
 
   /**
    * Interrupt the active query for a session.
    *
-   * Attempts a graceful interrupt first (SDK `query.interrupt()`). If that fails,
-   * escalates to a forceful close (SDK `query.close()`).
+   * **Returns a receipt, never a boolean** (spec `runtime-interrupt-receipts`).
+   * The boolean it replaced was `true` for two endings that are not the same
+   * ending — the agent heard the stop and stopped, and DorkOS gave up waiting
+   * and killed the process — and `false` for three more that are not the same as
+   * each other. Callers read the receipt through `turnEnded` and
+   * `worthRetrying`, never by string equality, and the client's copy follows the
+   * stop-requested rule: "stopped" is only said about an ending DorkOS observed.
+   *
+   * **An adapter MUST NOT throw for an ordinary refusal** — `failed` /
+   * `delivery-failed` is the receipt for that, matching the rule ADR
+   * `260816-143752` set for {@link AgentRuntime.deliverIntoTurn}. Every mapping
+   * is gated by `runtimeConformance` (cases I1–I5), so a new adapter cannot omit
+   * one.
    *
    * @param sessionId - Target session
-   * @returns true if the query was interrupted, false if no active query
+   * @returns A receipt naming which of the five endings the stop reached
    */
-  interruptQuery(sessionId: string): Promise<boolean>;
+  interruptQuery(sessionId: string): Promise<InterruptReceipt>;
 
   /**
    * Deliver a message into a session WITHOUT opening a turn of its own.
@@ -1405,6 +1434,58 @@ export interface AgentRuntime {
    * @returns The session's working directory, or `undefined` when unknown
    */
   getSessionCwd?(sessionId: string): string | undefined;
+
+  /**
+   * Which of this runtime's ACCOUNTS a turn on this session runs on — the
+   * credential that would fail if the sign-in behind it were dead.
+   *
+   * ## What the string is, and what it is not
+   *
+   * An OPAQUE identity that is **CANONICAL FOR THE RUNTIME**: every session on
+   * one account answers the same string, byte for byte, whichever route put that
+   * session on it. Consumers compare it with `===` and never parse it, so the
+   * adapter owns the normalizing — claude-code answers with the *resolved*
+   * absolute Claude config directory a launch is pinned to (`~/.claude`,
+   * `~/.claude2`, …), and a future runtime may answer with an email, a workspace
+   * id, or anything else it can tell its own credentials apart by. Nothing
+   * outside the adapter may assume a shape.
+   *
+   * **Cross-session equality is the contract, not just per-session stability.**
+   * The consumer's two edges are different sessions: one turn discovers a dead
+   * credential, and a LATER turn — on some other session — is what proves it
+   * works again. An account whose spelling varies by how a session was started
+   * therefore reads as two accounts, and a condition raised under one spelling
+   * can never be resolved by the other. A runtime whose identity source is
+   * caller-spelled (a path from config, a directory a person typed) must
+   * normalize it here rather than hand the variation on.
+   *
+   * It is NOT the working directory ({@link getSessionCwd}) and NOT a
+   * credential — it names WHICH sign-in a turn used, never the secret itself,
+   * so it is safe in a log line.
+   *
+   * ## Absence is the neutral answer, always
+   *
+   * Optional, and a runtime with exactly one set of credentials — codex and
+   * opencode each have one home directory — omits it entirely. `undefined` from
+   * a runtime that DOES implement it means "this session's account is not known
+   * here", which is the honest answer before a session's first launch has
+   * resolved one.
+   *
+   * Both spellings of absence mean the same thing to every consumer: *do not
+   * distinguish*. The sign-in watch (`services/observability/runtime-signin-watch.ts`)
+   * is the consumer this exists for, and it degrades by falling back to
+   * per-runtime behavior — never by refusing to notice a dead credential.
+   *
+   * MUST answer synchronously and MUST NEVER throw, for any id (unknown,
+   * malformed, or otherwise), exactly as {@link getSessionCwd} must: the caller
+   * is an observer wrapped around somebody else's turn, and an observer may
+   * never be the thing that fails it.
+   *
+   * @param sessionId - Session to report on; either id a caller might hold
+   * @returns The account this session's turns run on, or `undefined` when this
+   *   runtime cannot name one
+   */
+  getSessionAccount?(sessionId: string): string | undefined;
 
   /**
    * Read new content from a session transcript starting at a byte offset.

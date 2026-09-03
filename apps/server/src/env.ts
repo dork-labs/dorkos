@@ -7,6 +7,23 @@ const boolFlag = z
   .transform((v) => v === 'true');
 
 /**
+ * Reusable Zod type for a 'true'/'false' env flag that keeps the difference
+ * between "unset" and "explicitly false".
+ *
+ * {@link boolFlag} defaults an absent variable to `false`, which is right for a
+ * plain feature switch: nobody asked for the feature, so it is off, and the two
+ * spellings of "off" mean the same thing. It is wrong wherever the flag OVERRIDES
+ * a stored preference, because there the two differ — "nobody said" has to let
+ * the stored value decide, while "somebody said false" has to beat it. Reading
+ * `undefined` as `false` is what silently stopped an enabled tunnel from coming
+ * back after a restart (DOR-1738).
+ */
+const optionalBoolFlag = z
+  .enum(['true', 'false'])
+  .optional()
+  .transform((v) => (v === undefined ? undefined : v === 'true'));
+
+/**
  * Normalize `value` into the docs origin DorkOS is willing to hand an agent, or
  * `null` when it is not one: the pointer is built by appending `/llms.txt` and
  * `/docs`, so the base has to be an `http:`/`https:` URL carrying no query, no
@@ -122,8 +139,9 @@ const serverEnvSchema = z.object({
   // deliberately NOT declared here. Its sole consumer,
   // services/core/auth/secret.ts, reads process.env directly — that module is a
   // shared seam also bundled into the CLI, and this schema's parse-once
-  // snapshot is a server-boot concern. See readEnvSecret() there; same
-  // carve-out routes/tunnel.ts uses for NGROK_AUTHTOKEN.
+  // snapshot is a server-boot concern. See readEnvSecret() there. (Until
+  // DOR-1738 routes/tunnel.ts read NGROK_AUTHTOKEN the same way; it no longer
+  // does, and this is the last carve-out of its kind outside a runtime adapter.)
   // Approval decision window (ms). Boot-time only, and CLAMPED AT BOOT so it can
   // only ever SHORTEN the two-hour default, never lengthen it — a one-directional
   // knob cannot be turned into a way to keep consent alive past the moment a
@@ -266,7 +284,11 @@ const serverEnvSchema = z.object({
   DORKOS_Q3_TICK_MS: z.coerce.number().int().min(1).default(500),
   DORKOS_Q3_CANARY_MAP: z.string().optional(),
   // Tunnel (ngrok integration — all optional)
-  TUNNEL_ENABLED: boolFlag,
+  // TUNNEL_ENABLED is tri-state on purpose: the boot-time autostart falls back to
+  // the stored `tunnel.enabled` preference when nobody set the variable, so it
+  // has to be able to tell that apart from an explicit `false`, which beats the
+  // stored value. See services/core/config/tunnel-settings.ts.
+  TUNNEL_ENABLED: optionalBoolFlag,
   TUNNEL_PORT: z.coerce.number().int().min(1).max(65535).optional(),
   TUNNEL_AUTH: z.string().optional(),
   TUNNEL_DOMAIN: z.string().optional(),

@@ -636,6 +636,123 @@ export const MessageDeliveryOutcomeSchema = z
 /** What happened to an accepted message. See {@link MessageDeliveryOutcomeSchema}. */
 export type MessageDeliveryOutcome = z.infer<typeof MessageDeliveryOutcomeSchema>;
 
+/**
+ * Which of the five endings a stop request reached (spec
+ * `runtime-interrupt-receipts` §1).
+ *
+ * Every stop-shaped verb in DorkOS — the composer's Stop, a room's halt, a task
+ * run's stop, the stall watchdog — used to answer with a boolean, and that
+ * boolean was `true` for two endings that are not the same ending and `false`
+ * for three more that are not the same as each other. These five are the
+ * distinctions a person actually needs after pressing Stop:
+ *
+ * - `acked` — the agent itself confirmed the stop and wound down.
+ * - `closed` — DorkOS ended the process or the turn after the graceful path
+ *   failed. **This is a success, not a failure:** the turn is over and the
+ *   person got what they asked for. What they lost is the agent's own wind-down
+ *   — its transcript marker, its terminal reason, a warm process — which is
+ *   worth one sentence of UI and is not an error state.
+ * - `not-running` — there was no turn to stop. Nothing failed.
+ * - `unconfirmed` — the request went out; the runtime cannot say whether it
+ *   landed, and the turn may still be running. **Press it again.**
+ * - `failed` — the stop could not be delivered and nothing ended the turn.
+ *
+ * A sixth ending would be a new spec, not a free-form `detail` string.
+ */
+export const InterruptOutcomeSchema = z
+  .enum(['acked', 'closed', 'not-running', 'unconfirmed', 'failed'])
+  .openapi('InterruptOutcome');
+
+/** Which of the five endings a stop reached. See {@link InterruptOutcomeSchema}. */
+export type InterruptOutcome = z.infer<typeof InterruptOutcomeSchema>;
+
+/**
+ * Why a stop ended where it did, when the outcome alone does not say it.
+ *
+ * - `no-open-turn` — `not-running`: nothing was in flight.
+ * - `ack-timeout` — `closed` | `unconfirmed`: nothing answered inside the
+ *   runtime's own bound.
+ * - `refused` — `closed`: the runtime answered with a failure.
+ * - `stdin-ended` — `closed`: the graceful path was known-undeliverable, so it
+ *   was skipped rather than spending the bound proving it again.
+ * - `runtime-declined` — `unconfirmed`: the runtime answered "no" with the turn
+ *   still open.
+ * - `delivery-failed` — `failed`: the call threw.
+ */
+export const InterruptReasonSchema = z
+  .enum([
+    'no-open-turn',
+    'ack-timeout',
+    'refused',
+    'stdin-ended',
+    'runtime-declined',
+    'delivery-failed',
+  ])
+  .openapi('InterruptReason');
+
+/** Why a stop ended where it did. See {@link InterruptReasonSchema}. */
+export type InterruptReason = z.infer<typeof InterruptReasonSchema>;
+
+/**
+ * What a stop request concluded — the receipt every stop-shaped verb returns.
+ *
+ * One shape serves the composer's Stop, a room's halt, a task run's stop and the
+ * stall watchdog, and every runtime maps its own stop path onto it (spec
+ * `runtime-interrupt-receipts` §4, gated by `runtimeConformance`).
+ *
+ * Read it through {@link turnEnded} and {@link worthRetrying} rather than by
+ * string equality, so a caller never re-derives the vocabulary.
+ */
+export const InterruptReceiptSchema = z
+  .object({
+    /** Which of the five endings the stop reached. */
+    outcome: InterruptOutcomeSchema,
+    /** Present whenever it adds information the outcome does not carry. */
+    reason: InterruptReasonSchema.optional(),
+    /**
+     * Which runtime answered — the receipt travels across runtimes (ADR-0310),
+     * so the surface that reports it can name the one that did not confirm.
+     *
+     * The `AgentRuntime.type` of the adapter that produced it, verbatim.
+     */
+    runtime: z.string(),
+  })
+  .openapi('InterruptReceipt');
+
+/** What a stop request concluded. See {@link InterruptReceiptSchema}. */
+export type InterruptReceipt = z.infer<typeof InterruptReceiptSchema>;
+
+/**
+ * Whether DorkOS observed the turn end.
+ *
+ * True for the three endings where there is nothing left running: the agent
+ * acked, DorkOS closed it, or there was no turn in the first place. This is the
+ * predicate that decides whether a surface may say "stopped" — the
+ * **stop-requested rule**: "stopped" is only ever said about an ending DorkOS
+ * observed, and everything else says "stop requested".
+ *
+ * @param receipt - The receipt a stop-shaped verb answered with
+ */
+export function turnEnded(receipt: InterruptReceipt): boolean {
+  return (
+    receipt.outcome === 'acked' || receipt.outcome === 'closed' || receipt.outcome === 'not-running'
+  );
+}
+
+/**
+ * Whether pressing Stop again is the move.
+ *
+ * True for the two endings that leave the turn open: the runtime declined
+ * (`unconfirmed`) or the call never landed (`failed`). Exactly the complement of
+ * {@link turnEnded}, stated separately because the two read at opposite call
+ * sites and neither should be written as the negation of the other by hand.
+ *
+ * @param receipt - The receipt a stop-shaped verb answered with
+ */
+export function worthRetrying(receipt: InterruptReceipt): boolean {
+  return receipt.outcome === 'unconfirmed' || receipt.outcome === 'failed';
+}
+
 /** One message waiting to be dispatched to a session. */
 export const QueuedMessageSchema = z
   .object({
@@ -1210,6 +1327,29 @@ export const ToolProgressEventSchema = z
 
 export type ToolProgressEvent = z.infer<typeof ToolProgressEventSchema>;
 
+/**
+ * How far an accepted "Always Allow" actually reaches.
+ *
+ * The button forwards the runtime's own permission suggestions verbatim, and
+ * some of those write a settings FILE rather than a session row — so one click
+ * on one card can outlive the conversation it was answered in. This is the card
+ * saying which before the click, not a limit on the grant (DOR-1462):
+ *
+ * - `session` — only this conversation, gone when it ends.
+ * - `project` — this project's settings, so every future session here.
+ * - `user` — the operator's own global settings: every Claude session anywhere.
+ *
+ * Optional on the wire, and absent whenever a runtime has nothing to say: a
+ * runtime that never offers "Always Allow" (OpenCode answers "once" and ships
+ * `hasSuggestions: false`) omits it, and so does a card recorded before this
+ * field existed. A card with no scope reads exactly as it did before.
+ */
+export const AlwaysAllowScopeSchema = z
+  .enum(['session', 'project', 'user'])
+  .openapi('AlwaysAllowScope');
+
+export type AlwaysAllowScope = z.infer<typeof AlwaysAllowScopeSchema>;
+
 export const ApprovalEventSchema = z
   .object({
     toolCallId: z.string(),
@@ -1224,6 +1364,9 @@ export const ApprovalEventSchema = z
     blockedPath: z.string().optional().describe('File path that triggered the permission request'),
     decisionReason: z.string().optional().describe('Why this permission request was triggered'),
     hasSuggestions: z.boolean().describe('Whether "Always Allow" permission updates are available'),
+    alwaysAllowScope: AlwaysAllowScopeSchema.optional().describe(
+      'How far an accepted "Always Allow" reaches — named on the card so the click is informed'
+    ),
     remainingMs: z
       .number()
       .optional()
@@ -1294,6 +1437,8 @@ export const PendingInteractionDTOSchema = z
       blockedPath: z.string().optional(),
       decisionReason: z.string().optional(),
       hasSuggestions: z.boolean(),
+      /** See {@link AlwaysAllowScopeSchema} — carried so a recovered card names its scope too. */
+      alwaysAllowScope: AlwaysAllowScopeSchema.optional(),
     }),
     z.object({
       type: z.literal('question'),
@@ -2393,6 +2538,14 @@ export const ToolCallPartSchema = z
       .describe('Why this permission request was triggered'),
     approvalHasSuggestions: z.boolean().optional().describe('Whether "Always Allow" is available'),
     /**
+     * How far this card's "Always Allow" reaches, carried through so the button
+     * can name it. See {@link AlwaysAllowScopeSchema}; absent when the runtime
+     * offers no suggestions or the card predates the field.
+     */
+    approvalAlwaysAllowScope: AlwaysAllowScopeSchema.optional().describe(
+      'Scope an accepted "Always Allow" grants — session, project, or the operator\'s global settings'
+    ),
+    /**
      * How an approval interaction was ANSWERED, folded from the resolving
      * `interaction_resolved` event. This is what gives an answered approval an
      * afterlife: the pending card leaves a one-line receipt at its
@@ -3362,6 +3515,17 @@ export const TunnelStatusSchema = z
   .object({
     enabled: z.boolean(),
     connected: z.boolean(),
+    /**
+     * Whether a tunnel is OPEN, which is not the same as reachable.
+     *
+     * `connected` follows ngrok's own status callback, so it goes false for as
+     * long as a live tunnel is dropped and reconnecting. Through `connected`
+     * alone, that is indistinguishable from no tunnel at all — a reader shows
+     * Remote Access as off, and a start it offers is refused with "already
+     * running" (DOR-1738). `isRunning` is the difference: true with `connected`
+     * false means reconnecting; both false means off.
+     */
+    isRunning: z.boolean(),
     url: z.string().nullable(),
     port: z.number().int().nullable(),
     startedAt: z.string().nullable(),
@@ -3494,6 +3658,10 @@ export const ServerConfigSchema = z
     isDevMode: z
       .boolean()
       .openapi({ description: 'Whether the server is running a development build' }),
+    isLocalCaller: z.boolean().openapi({
+      description:
+        'Whether THIS request reached DorkOS from the machine it runs on. The one field here that describes the caller rather than the server: it is answered per request by the same predicate that guards the loopback-only connect endpoints (`lib/caller-authority.ts`), so a client can be told in advance what those endpoints would do instead of discovering it from a 403. False for a phone or any browser arriving over the tunnel, over the LAN, or through a reverse proxy. True whenever `DORKOS_ALLOW_INSECURE_BIND` is set, because under that flag those endpoints accept',
+    }),
     dismissedUpgradeVersions: z
       .array(z.string())
       .openapi({ description: 'Versions the user has dismissed upgrade notifications for' }),
@@ -3568,7 +3736,17 @@ export const ServerConfigSchema = z
         'What a new session starts with — the runtime, and the model and effort per runtime (spec execution-defaults)',
     }),
     claudeCliPath: z.string().nullable(),
-    tunnel: TunnelStatusSchema,
+    // The live status, plus what the SETTING says — two different facts, the
+    // same pair `tasks` and `relay` report below. While no tunnel is running,
+    // `domain`, `authEnabled` and `tokenConfigured` describe what a start would
+    // use (environment first, then the stored config), so a saved custom domain
+    // still reads back after a restart.
+    tunnel: TunnelStatusSchema.extend({
+      enabledInConfig: z.boolean().optional().openapi({
+        description:
+          "What the user's setting says (`tunnel.enabled`), which is not always what is running: `enabled` only moves when a tunnel is actually opened or closed",
+      }),
+    }),
     tasks: z
       .object({
         enabled: z.boolean().openapi({ description: 'Whether the Tasks scheduler is enabled' }),
@@ -4726,6 +4904,33 @@ export const ConfigPatchRequestSchema = z
 
 export type ConfigPatchRequest = z.infer<typeof ConfigPatchRequestSchema>;
 
+/**
+ * What `PATCH /api/config` answers with.
+ *
+ * `config` is the **curated snapshot**, not the stored file: the server projects
+ * its config through the disclosure allowlist before answering, so no credential
+ * ever rides a response body (DOR-1740). A stored secret shows up only as a
+ * boolean `…Configured` sibling — `tunnel.authtokenConfigured` rather than
+ * `tunnel.authtoken` — which says whether the write landed without saying what
+ * landed.
+ *
+ * The `config` shape below documents the fields callers read most often, not
+ * every field the snapshot carries; the authoritative list is
+ * `CONFIG_DISCLOSURE` in the server's `config-disclosure.ts`.
+ *
+ * ## Why the tunnel flags are not spelled the way `GET /api/config` spells them
+ *
+ * That read answers `tunnel.tokenConfigured` and `tunnel.authEnabled`, and the
+ * difference is deliberate rather than drift — do not "fix" either into the
+ * other. `GET` reports what a tunnel START WOULD USE, so it ORs the stored value
+ * with the environment (`NGROK_AUTHTOKEN`, `TUNNEL_AUTH`) and answers the
+ * effective question a settings screen has to ask. These flags come off the
+ * disclosure projection, which only ever looks at the STORED config, so
+ * `authtokenConfigured` means "there is a token in `config.json`" and nothing
+ * more. Two different questions, so two different names: an install with the
+ * env variable set and nothing stored answers `true` on one and `false` on the
+ * other, and both are correct.
+ */
 export const ConfigPatchResponseSchema = z
   .object({
     success: z.boolean(),
@@ -4735,8 +4940,10 @@ export const ConfigPatchResponseSchema = z
       tunnel: z.object({
         enabled: z.boolean(),
         domain: z.string().nullable(),
-        authtoken: z.string().nullable(),
-        auth: z.string().nullable(),
+        /** Whether an ngrok authtoken is stored. The token itself never ships. */
+        authtokenConfigured: z.boolean(),
+        /** Whether tunnel sign-in credentials are stored. The value never ships. */
+        authConfigured: z.boolean(),
       }),
       ui: z.object({ theme: z.enum(['light', 'dark', 'system']) }),
     }),

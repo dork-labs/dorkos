@@ -77,7 +77,23 @@ const subscribers = new Set<EventStreamHandlers>();
 /** The `getPort` accessor the live connection (if any) was opened with. */
 let activeGetPort: GetServerPort | null = null;
 
-let request: ReturnType<typeof http.get> | null = null;
+/** One attempt at the stream: the HTTP request, live from `http.get` until it is destroyed. */
+type ConnectionAttempt = ReturnType<typeof http.get>;
+
+/**
+ * The attempt that currently owns the module's state, or `null` when nothing is
+ * connected.
+ *
+ * Everything a connection calls back is fenced against this — see
+ * {@link isCurrent}. Node emits `ECONNRESET` on an in-flight request a tick
+ * *after* `destroy()` returned, so an attempt the last `unsubscribe` tore down
+ * can still call back once the next subscriber has a connection of its own.
+ * Unfenced, that late callback destroyed the new connection and told its
+ * subscriber the stream was lost, leaving the reconnect backoff to bring it
+ * back a second later — by which point whatever the server had sent in between
+ * was gone (DOR-1730).
+ */
+let request: ConnectionAttempt | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let retryDelayMs = RECONNECT_BASE_MS;
 
@@ -111,7 +127,27 @@ export function subscribeEventStream(
   };
 }
 
-/** Tear down the live connection and reset backoff state for the next subscriber. */
+/**
+ * Whether a callback still speaks for the live connection.
+ *
+ * Clearing {@link request} is what makes a teardown final: every later callback
+ * from that attempt — its error, its idle timeout, its response's data and end
+ * — answers `false` here and does nothing at all. So `unsubscribe` settles the
+ * connection synchronously and completely; nothing from it can arrive
+ * afterwards.
+ *
+ * @param attempt - The attempt whose callback is asking.
+ */
+function isCurrent(attempt: ConnectionAttempt): boolean {
+  return attempt === request;
+}
+
+/**
+ * Tear down the live connection and reset backoff state for the next subscriber.
+ *
+ * Nothing is notified: the subscriber that asked for this is gone, and a
+ * connection nobody is listening to was not "lost".
+ */
 function teardown(): void {
   if (retryTimer) clearTimeout(retryTimer);
   retryTimer = null;
@@ -161,6 +197,12 @@ function scheduleReconnect(): void {
   retryDelayMs = Math.min(retryDelayMs * 2, RECONNECT_MAX_MS);
 }
 
+/**
+ * Drop the live connection and tell every subscriber the stream is gone.
+ *
+ * Only ever called from a callback that passed {@link isCurrent}, so the
+ * connection being dropped is always the one that reported the trouble.
+ */
 function dropConnection(): void {
   request?.destroy();
   request = null;
@@ -178,22 +220,35 @@ function connect(): void {
   // 127.0.0.1 rather than `localhost` so this never depends on how the
   // machine resolves that name; the server's Host guard (DOR-532) allows
   // both, and Node sets the Host header from the URL for us.
-  request = http.get(
+  const attempt = http.get(
     {
       host: '127.0.0.1',
       port,
       path: '/api/events',
       headers: { accept: 'text/event-stream' },
     },
-    (response) => handleResponse(response)
+    (response) => {
+      if (!isCurrent(attempt)) {
+        // Torn down before its headers arrived. Drain and drop it rather than
+        // leaving a half-read socket behind.
+        response.resume();
+        response.destroy();
+        return;
+      }
+      handleResponse(response, attempt);
+    }
   );
-  request.setTimeout(STREAM_IDLE_TIMEOUT_MS, () => {
+  request = attempt;
+
+  attempt.setTimeout(STREAM_IDLE_TIMEOUT_MS, () => {
+    if (!isCurrent(attempt)) return;
     // A stream that has gone quiet past the server's heartbeat is a stream
     // that is not coming back; drop it so the reconnect loop can take over.
     dropConnection();
     scheduleReconnect();
   });
-  request.on('error', (err: Error) => {
+  attempt.on('error', (err: Error) => {
+    if (!isCurrent(attempt)) return;
     if (!outageLogged) {
       outageLogged = true;
       log.warn('[event-stream] Lost the connection to the server event stream.', err.message);
@@ -203,7 +258,15 @@ function connect(): void {
   });
 }
 
-function handleResponse(response: IncomingMessage): void {
+/**
+ * Read one connection's response: either degrade on a non-200, or parse frames
+ * out of the stream until it ends.
+ *
+ * @param response - The response to the attempt.
+ * @param attempt - The request it answers, so every listener below can check it
+ *   is still the live one before touching shared state.
+ */
+function handleResponse(response: IncomingMessage, attempt: ConnectionAttempt): void {
   if (response.statusCode !== 200) {
     if (!outageLogged) {
       outageLogged = true;
@@ -227,6 +290,7 @@ function handleResponse(response: IncomingMessage): void {
 
   let buffer = '';
   response.on('data', (chunk: string) => {
+    if (!isCurrent(attempt)) return;
     buffer += chunk;
     // SSE frames are separated by a blank line; anything after the last one
     // is a partial frame and is carried over to the next chunk.
@@ -235,6 +299,7 @@ function handleResponse(response: IncomingMessage): void {
     for (const frame of frames) notifyFrame(parseFrame(frame));
   });
   response.on('end', () => {
+    if (!isCurrent(attempt)) return;
     dropConnection();
     scheduleReconnect();
   });

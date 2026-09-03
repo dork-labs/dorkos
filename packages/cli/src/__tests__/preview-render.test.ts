@@ -108,9 +108,53 @@ describe('renderPreview', () => {
       )
     );
 
-    expect(out).toContain('nightly-sweep: runs on 0 3 * * *, starts on');
+    expect(out).toContain(
+      'nightly-sweep: runs on 0 3 * * *, waits for your approval before its first run'
+    );
     expect(out).toContain('This job can run any command without a permission prompt.');
     expect(out).not.toContain('bypassPermissions');
+  });
+
+  it('never tells the terminal a packaged job starts on, because none does', () => {
+    // The same false claim the app's two install screens carried (DOR-644), on
+    // the third surface that renders it. `enabled: true` is what the package
+    // ASKED for; `resolveFileArmStatus` parks every first sighting at
+    // `pending_approval` regardless, so "starts on" promised the one thing that
+    // cannot happen.
+    const out = stripAnsi(
+      renderPreview(
+        'demo',
+        '1.0.0',
+        makePreview({
+          schedules: [
+            {
+              name: 'eager',
+              cron: '0 3 * * *',
+              permissionMode: 'acceptEdits',
+              startsEnabled: true,
+            },
+          ],
+        })
+      )
+    );
+
+    expect(out).not.toContain('starts on');
+  });
+
+  it('says a job the package did not even ask to enable arrives switched off', () => {
+    const out = stripAnsi(
+      renderPreview(
+        'demo',
+        '1.0.0',
+        makePreview({
+          schedules: [{ name: 'audit', cron: null, permissionMode: 'plan', startsEnabled: false }],
+        })
+      )
+    );
+
+    expect(out).toContain(
+      'audit: runs only when you ask, arrives switched off, and would wait for your approval too'
+    );
   });
 
   it('omits both sections for a package that runs nothing and schedules nothing', () => {

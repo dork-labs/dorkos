@@ -873,6 +873,118 @@ describe('/api/rooms', () => {
       const res = await request(app).get(`/api/rooms/${room.id}/entries`).query({ limit: 5000 });
       expect(res.status).toBe(400);
     });
+
+    /**
+     * The page boundary a busy thread crosses (DOR-690).
+     *
+     * Sized past the default page on purpose: the room holds a root and sixty
+     * replies, so the fifty entries the default page returns are ALL replies and
+     * the root is nowhere in them. A fixture under fifty entries cannot fail
+     * here and would certify nothing — the root would be in the page either way.
+     */
+    describe('a thread whose root has scrolled out of the page', () => {
+      /**
+       * A room whose whole default page is replies to one much older entry.
+       *
+       * Written through the real routes rather than the store, so the seq
+       * allocation, the page's `ORDER BY … LIMIT` and the thread pointers are
+       * the product's own and not this test's idea of them.
+       */
+      async function roomWithABuriedRoot(): Promise<{ id: string; rootEntryId: string }> {
+        const room = await createChannel();
+        const root = await request(app)
+          .post(`/api/rooms/${room.id}/entries`)
+          .send({ text: 'why is the build slow?' });
+        for (let i = 0; i < 60; i++) {
+          const reply = await request(app)
+            .post(`/api/rooms/${room.id}/threads`)
+            .send({ rootEntryId: root.body.entryId, text: `answer ${i}` });
+          expect(reply.status).toBe(202);
+        }
+        return { id: room.id, rootEntryId: root.body.entryId };
+      }
+
+      it('answers with the root the page replies to but does not hold', async () => {
+        const room = await roomWithABuriedRoot();
+        const res = await request(app).get(`/api/rooms/${room.id}/entries`);
+
+        const entries = res.body.entries as { id: string; seq: number }[];
+        const roots = res.body.threadRoots as { id: string; seq: number }[];
+
+        // The premise, asserted rather than assumed: a full page, and the root
+        // is genuinely outside it.
+        expect(entries).toHaveLength(50);
+        expect(entries.map((entry) => entry.id)).not.toContain(room.rootEntryId);
+
+        // Exactly one root, deduped across the fifty replies that all point at
+        // it, and older than everything in the page — which is what lets a
+        // reader put it in front and keep the array in `seq` order.
+        expect(roots.map((root) => root.id)).toEqual([room.rootEntryId]);
+        expect(roots[0].seq).toBeLessThan(entries[0].seq);
+      });
+
+      it('tells the root how many replies the ROOM holds, not how many the page does', async () => {
+        // Sixty, beside a page that carries fifty of them. Without this the
+        // room would draw "50 replies" under a thread the Threads list calls
+        // sixty — one app disagreeing with itself about one conversation.
+        const room = await roomWithABuriedRoot();
+        const res = await request(app).get(`/api/rooms/${room.id}/entries`);
+
+        const [root] = res.body.threadRoots as { threadReplyCount: number }[];
+        expect(root.threadReplyCount).toBe(60);
+        expect(res.body.entries).toHaveLength(50);
+      });
+
+      it('leaves the count off a root the page holds, where the page IS the thread', async () => {
+        // The absent field is the instruction "count what you have", and it is
+        // absent on purpose: every reply to a root inside the page is written
+        // after it and the page runs to the newest entry, so a second number
+        // here could only ever disagree with what is on screen.
+        const room = await createChannel();
+        const root = await request(app)
+          .post(`/api/rooms/${room.id}/entries`)
+          .send({ text: 'why is the build slow?' });
+        await request(app)
+          .post(`/api/rooms/${room.id}/threads`)
+          .send({ rootEntryId: root.body.entryId, text: 'the cache is cold' });
+
+        const res = await request(app).get(`/api/rooms/${room.id}/entries`);
+        const entries = res.body.entries as { threadReplyCount?: number }[];
+        expect(entries.every((entry) => entry.threadReplyCount === undefined)).toBe(true);
+      });
+
+      it('says nothing when the page holds every root it points at', async () => {
+        const room = await createChannel();
+        const root = await request(app)
+          .post(`/api/rooms/${room.id}/entries`)
+          .send({ text: 'why is the build slow?' });
+        await request(app)
+          .post(`/api/rooms/${room.id}/threads`)
+          .send({ rootEntryId: root.body.entryId, text: 'the cache is cold' });
+
+        const res = await request(app).get(`/api/rooms/${room.id}/entries`);
+
+        // The self-contained page is the common one, and it costs nothing: no
+        // extra rows on the wire and no second read behind them.
+        expect(res.body.entries).toHaveLength(2);
+        expect(res.body.threadRoots).toEqual([]);
+      });
+
+      it('carries a root back with its reactions on it', async () => {
+        // A root arriving through the second read is still a message, and a
+        // message renders its pills. Resolved by the same roll-up the page gets,
+        // because a root drawn without the reactions it had in the flow is a
+        // message that changes when you scroll to it.
+        const room = await roomWithABuriedRoot();
+        await request(app)
+          .post(`/api/rooms/${room.id}/entries/${room.rootEntryId}/reactions`)
+          .send({ emoji: '🎉' });
+
+        const res = await request(app).get(`/api/rooms/${room.id}/entries`);
+        const [rootBack] = res.body.threadRoots as { reactions: { emoji: string }[] }[];
+        expect(rootBack.reactions.map((pill) => pill.emoji)).toEqual(['🎉']);
+      });
+    });
   });
 
   describe('members', () => {

@@ -43,6 +43,7 @@ export function deriveFromParts(parts: MessagePart[]): {
         approvalBlockedPath: part.approvalBlockedPath,
         approvalDecisionReason: part.approvalDecisionReason,
         approvalHasSuggestions: part.approvalHasSuggestions,
+        approvalAlwaysAllowScope: part.approvalAlwaysAllowScope,
       });
     }
   }

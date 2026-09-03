@@ -15,6 +15,11 @@ interface TurnFailedNoticeProps {
    * the notice then renders without a Retry button rather than a dead one.
    */
   onRetry?: () => void;
+  /**
+   * Called once when a sign-in started from this notice's auth card completes,
+   * so the failed message can send itself (DOR-1650). Returns whether it did.
+   */
+  onSigninComplete?: () => boolean;
 }
 
 /**
@@ -40,7 +45,7 @@ interface TurnFailedNoticeProps {
  * usually lands within ~300ms and renders the inline error block instead, so
  * the delay avoids a notice that flashes in and immediately hands off.
  */
-export function TurnFailedNotice({ sessionId, onRetry }: TurnFailedNoticeProps) {
+export function TurnFailedNotice({ sessionId, onRetry, onSigninComplete }: TurnFailedNoticeProps) {
   const runtime = useSessionRuntime(sessionId);
   const lastError = useSessionStreamStatus(sessionId)?.lastError ?? null;
   const isAuthError = lastError?.category === 'auth_error';
@@ -72,6 +77,7 @@ export function TurnFailedNotice({ sessionId, onRetry }: TurnFailedNoticeProps) 
         subtext={subtext}
         details={details || undefined}
         onRetry={onRetry}
+        onSigninComplete={onSigninComplete}
         runtimeLabel={runtimeLabel}
         sessionId={sessionId}
       />

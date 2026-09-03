@@ -8,6 +8,11 @@
 // --- Query key factory ---
 export { marketplaceKeys } from './api/query-keys';
 
+// --- Lib ---
+// The one sentence that describes a package's scheduled job, shared by every
+// surface that has to disclose one before a person says yes.
+export { describePreviewSchedule, runsUnattended } from './lib/describe-schedule';
+
 // --- Query hooks ---
 export { useMarketplacePackages } from './model/use-marketplace-packages';
 export { useMarketplacePackage } from './model/use-marketplace-package';

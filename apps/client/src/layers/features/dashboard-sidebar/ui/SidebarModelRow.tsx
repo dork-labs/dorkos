@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
+import { isWithinDirectory } from '@dorkos/shared/paths';
 import { SidebarRow, type SidebarRowMotion } from '@/layers/shared/ui';
 import { AgentAvatar, useAgentVisual } from '@/layers/entities/agent';
 import { SessionVerbLine } from '@/layers/entities/session';
@@ -48,6 +49,16 @@ import { useSidebarChrome } from './SidebarChrome';
  * what makes BC-33's dual presence readable: the anchor in Today and the
  * agent's own Library row both take the active tint, and the operator can see
  * they are the same thing.
+ *
+ * "Belongs to it" is THE canonical membership rule — the agent's directory or
+ * any folder inside it, through the shared `isWithinDirectory` predicate that
+ * `selectAgentSessions` and the server's own listing use (DOR-674/DOR-1550).
+ * Exact equality here meant a session started at `<project>/packages/api` sat
+ * in the agent's own session list while the agent's row stayed dark, which
+ * reads as the wrong agent being open. The consequence of the wider rule,
+ * stated rather than discovered: an agent nested inside another agent's
+ * directory lights both rows for a session in the inner one, because from a
+ * single row there is no way to see that a closer agent exists.
  *
  * @param target - The row's target.
  * @param active - What the router says is open, or `null`.
@@ -78,7 +89,7 @@ export function isRowActive(
   }
   if (target.kind === 'agent') {
     if (active.kind === 'agent') return active.path === target.path;
-    return active.kind === 'session' && active.cwd === target.path;
+    return active.kind === 'session' && isWithinDirectory(active.cwd, target.path);
   }
   if (target.kind === 'room') {
     // **Compared through the row key, never through `roomId`.** A thread and

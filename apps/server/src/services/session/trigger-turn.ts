@@ -83,7 +83,7 @@
  * @module services/session/trigger-turn
  */
 import type { MessageOpts, SseResponse, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
-import type { SessionSettings, StreamEvent } from '@dorkos/shared/types';
+import type { InterruptReceipt, SessionSettings, StreamEvent } from '@dorkos/shared/types';
 import type { ClientContext, RoomContextData } from '@dorkos/shared/additional-context';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
@@ -366,8 +366,11 @@ export interface TriggerTurnDeps {
    * runtime that cannot strand a turn — which reads as "nothing to settle".
    */
   settleOpenTurn?(sessionId: string): Promise<boolean>;
-  /** Interrupt the runtime's in-flight turn (stall watchdog). Resolves false when none found. */
-  interruptQuery(sessionId: string): Promise<boolean>;
+  /**
+   * Interrupt the runtime's in-flight turn (stall watchdog). Answers the
+   * {@link InterruptReceipt} vocabulary — `not-running` when there was none.
+   */
+  interruptQuery(sessionId: string): Promise<InterruptReceipt>;
   /** Resolve the backend-internal (canonical) id once the adapter assigns it. */
   getInternalSessionId(sessionId: string): string | undefined;
   /**

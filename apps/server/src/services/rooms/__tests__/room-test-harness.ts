@@ -10,6 +10,8 @@
  * @module server/services/rooms/__tests__/room-test-harness
  */
 import { createTestDb } from '@dorkos/test-utils/db';
+import { mockInterruptReceipt } from '@dorkos/test-utils';
+import type { InterruptReceipt } from '@dorkos/shared/types';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { ProjectableAttachment } from '../room-context.js';
 import type { Db } from '@dorkos/db';
@@ -189,11 +191,11 @@ export function outcomeRunner(
   return {
     turns,
     interrupted,
-    interrupt(request): Promise<boolean> {
+    interrupt(request): Promise<InterruptReceipt> {
       interrupted.push(request);
       // Nothing is being held here, so nothing was stopped — the honest answer
       // for a runner whose turns are already over by the time a halt runs.
-      return Promise.resolve(false);
+      return Promise.resolve(mockInterruptReceipt('not-running'));
     },
     run(request: RoomTurnRequest): Promise<RoomTurnResult> {
       const sessionId = request.sessionId ?? `session-${(minted += 1)}`;
@@ -320,17 +322,17 @@ export function gatedRunner({
   return {
     turns,
     interrupted,
-    interrupt(request): Promise<boolean> {
+    interrupt(request): Promise<InterruptReceipt> {
       interrupted.push(request);
       // The stop reached a runtime with no turn bound to it — it stopped
       // nothing, and says so (DOR-1424, DOR-1425).
-      if (interruptFindsNothing) return Promise.resolve(false);
+      if (interruptFindsNothing) return Promise.resolve(mockInterruptReceipt('not-running'));
       // A real interrupt ENDS the turn: the runtime stops, the stream closes,
       // and the collector resolves with whatever there was. A fake that only
       // recorded the call would leave the dispatcher awaiting a turn nothing can
       // finish — which is not what a halt does, and would let a halt that never
       // reached the runtime pass.
-      if (!interruptEndsTurn) return Promise.resolve(true);
+      if (!interruptEndsTurn) return Promise.resolve(mockInterruptReceipt('acked'));
       let stoppedSomething = false;
       for (const [authorId, queued] of held) {
         if (queued[0]?.request.agentPath !== request.agentPath) continue;
@@ -338,7 +340,7 @@ export function gatedRunner({
         held.delete(authorId);
         stoppedSomething = true;
       }
-      return Promise.resolve(stoppedSomething);
+      return Promise.resolve(mockInterruptReceipt(stoppedSomething ? 'acked' : 'not-running'));
     },
     run(request: RoomTurnRequest): Promise<RoomTurnResult> {
       turns.push({

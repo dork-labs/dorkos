@@ -75,9 +75,10 @@ DorkOS supports ngrok tunnels (a service that gives your local machine a public 
 <TypeTable
   type={{
     TUNNEL_ENABLED: {
-      description: 'Set to `true` to enable the ngrok tunnel on startup.',
+      description:
+        'Open the ngrok tunnel when DorkOS starts. Leave it unset and your saved setting decides, so the switch in the app keeps working after a restart. Set it to `false` to keep this one run private whatever you have saved.',
       type: 'boolean',
-      default: 'false',
+      default: 'your saved setting',
     },
     NGROK_AUTHTOKEN: {
       description: 'Your ngrok authentication token.',

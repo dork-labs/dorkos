@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -175,7 +175,7 @@ vi.mock('../tooling/check-dependency.js', () => ({
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
-import type { HistoryMessage } from '@dorkos/shared/types';
+import type { HistoryMessage, InterruptReceipt } from '@dorkos/shared/types';
 import { ClaudeCodeRuntime } from '../claude-code-runtime.js';
 import {
   drivePresenceTurn,
@@ -185,6 +185,7 @@ import {
 } from '../../../session/__tests__/durable-turn-harness.js';
 import { getOrCreateProjector, feedProjector } from '../../../session/index.js';
 import { FakeCli } from '../sessions/__tests__/fake-persistent-cli.js';
+import { projectSlug } from '../sessions/project-slug.js';
 import { LocalSessionAttachmentStore } from '../../../session/attachments/local-session-attachment-store.js';
 
 const mockedQuery = vi.mocked(query);
@@ -271,6 +272,39 @@ afterAll(() => {
   rmSync(account.root, { recursive: true, force: true });
   rmSync(ATTACHMENT_HOME, { recursive: true, force: true });
 });
+
+/**
+ * Put a listable claude-code session at `cwd` — the runtime's own wiring for the
+ * conformance subtree-membership invariant (DOR-1550).
+ *
+ * claude-code lists SDK JSONL transcripts, so `ensureSession` (the harness
+ * default) leaves nothing to list: the seed has to be a transcript, written
+ * where the SDK would write it — under `projectSlug(cwd)`, the very mapping the
+ * widened listing has to walk to find a subfolder's own directory.
+ *
+ * Removed when the test finishes, because it is written mid-suite under a slug
+ * inside `/projects/conformance` and would otherwise turn up in the listings
+ * other cases assert on — the same care {@link QUESTION_CWD} takes.
+ *
+ * @param cwd - The working directory the seeded session must run in.
+ */
+function seedListableTranscript(cwd: string): string {
+  const sessionId = randomUUID();
+  const dir = join(account.root, 'projects', projectSlug(cwd));
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, `${sessionId}.jsonl`);
+  writeFileSync(
+    file,
+    JSON.stringify({
+      type: 'user',
+      message: { role: 'user', content: `working in ${cwd}` },
+      timestamp: '2026-01-01T11:00:00.000Z',
+      cwd,
+    }) + '\n'
+  );
+  onTestFinished(() => rmSync(file, { force: true }));
+  return sessionId;
+}
 
 /**
  * The working directory the unanswered-question driver writes under (DOR-1293).
@@ -659,10 +693,15 @@ runtimeConformance(
     // `bounded-control.ts` exists for. `process.received` growing past the warm
     // turn's count is the real signal the second turn's message reached the
     // process, i.e. `session.activeQuery` is armed with the query under test.
-    // The pinned settle is `true`: `bounded-control.ts` escalates an unacked
-    // interrupt to `query.close()` and reports the process WAS stopped, just
-    // not gracefully — unlike opencode, which has nothing to escalate to.
-    hangingInterrupt: async (runtime: AgentRuntime, sessionId: string): Promise<boolean> => {
+    // The pinned settle is `closed / ack-timeout`: `bounded-control.ts`
+    // escalates an unacked interrupt to `query.close()`, so the process WAS
+    // stopped, just not gracefully — unlike opencode, which has nothing to
+    // escalate to and answers `unconfirmed`. The boolean these two shared until
+    // DOR-1015 said `true` and `false`, which named neither ending.
+    hangingInterrupt: async (
+      runtime: AgentRuntime,
+      sessionId: string
+    ): Promise<InterruptReceipt> => {
       persistent.on = true;
       warmCli = new FakeCli();
       mockedQuery.mockImplementation(warmCli.query as unknown as typeof query);
@@ -686,7 +725,7 @@ runtimeConformance(
         { userMessage: 'this turn is never answered' }
       );
       await vi.waitFor(() => expect(process.received.length).toBe(warmReceived + 1));
-      return true;
+      return { outcome: 'closed', reason: 'ack-timeout', runtime: 'claude-code' };
     },
     // Claude-code CAN say when the person last wrote: it rides the transcript
     // tail read the session list already performs. Read back through
@@ -694,6 +733,9 @@ runtimeConformance(
     // path the sidebar calls and the one this field exists for. The probe
     // transcript's last human message precedes both the agent's later turns and
     // the file's mtime.
+    // The subtree-membership invariant needs a session claude-code will LIST,
+    // and only a transcript on disk is one (DOR-1550).
+    listableSessionAt: (_runtime, cwd) => seedListableTranscript(cwd),
     userLastMessageAtSession: async (runtime) => {
       const listed = await runtime.listSessions('/projects/conformance');
       const session = listed.find((s) => s.id === probeSessionId);
@@ -746,3 +788,59 @@ runtimeConformance(
     },
   }
 );
+
+/**
+ * The account identity two DIFFERENT sessions share (DOR-1682).
+ *
+ * Conformance C12 states the contract — every session on one account answers the
+ * same string — but it can only ever feed this suite ONE spelling of the root, so
+ * it cannot produce the defect this case exists for. Claude-code can: the launch
+ * ladder's rungs are independently spelled (`resolveLaunchAccountRoot` hands back
+ * a registry row's `path` verbatim, and the `defaultAccount` rung hands back that
+ * field verbatim), and the config schema constrains neither to be absolute or
+ * slash-free.
+ *
+ * The sign-in watch compares these strings with `===` ACROSS sessions, because
+ * its two edges never belong to one: a turn discovers the dead credential, and a
+ * LATER turn on some other session proves it working again. So one directory
+ * spelled two ways reads as two accounts, a sign-in fixed under one spelling can
+ * never resolve the episode raised under the other, and the notice stands for the
+ * life of the install with no `null` entry left to catch it.
+ */
+describe('ClaudeCodeRuntime — the account two sessions share', () => {
+  it('answers one canonical string however the ladder spelled the root', async () => {
+    const runtime = new ClaudeCodeRuntime('/tmp/dorkos-conformance', '/projects/conformance');
+    const canonical = account.root;
+
+    const first = randomUUID();
+    runtime.ensureSession(first, { permissionMode: 'default', cwd: '/projects/conformance' });
+    for await (const _event of runtime.sendMessage(first, 'ping', {
+      cwd: '/projects/conformance',
+    })) {
+      // Drained rather than inspected: this turn exists only to make a launch
+      // resolve an account for the session.
+    }
+
+    try {
+      // The SAME directory, spelled the way another rung of the ladder spells it.
+      // Restored in `finally` because `afterAll` deletes `account.root`, and a
+      // holder left mutated would aim that at a path this suite never created.
+      account.root = `${canonical}/`;
+      const second = randomUUID();
+      runtime.ensureSession(second, { permissionMode: 'default', cwd: '/projects/conformance' });
+      for await (const _event of runtime.sendMessage(second, 'ping', {
+        cwd: '/projects/conformance',
+      })) {
+        // Drained, same reason.
+      }
+
+      expect(
+        runtime.getSessionAccount(second),
+        'two sessions on one account must answer the same string, whichever rung of the launch ' +
+          'ladder spelled its root — the watch compares these with === across sessions'
+      ).toBe(runtime.getSessionAccount(first));
+    } finally {
+      account.root = canonical;
+    }
+  });
+});

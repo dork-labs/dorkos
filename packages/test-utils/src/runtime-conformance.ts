@@ -41,7 +41,14 @@ import {
   SessionListEventSchema,
   type SessionListEvent,
 } from '@dorkos/shared/session-stream';
-import type { HistoryMessage, PermissionModeId, Session, StreamEvent } from '@dorkos/shared/types';
+import type {
+  HistoryMessage,
+  InterruptReceipt,
+  PermissionModeId,
+  Session,
+  StreamEvent,
+} from '@dorkos/shared/types';
+import { InterruptReceiptSchema } from '@dorkos/shared/schemas';
 
 /**
  * Tuning knobs for legitimate cross-runtime differences. Defaults describe
@@ -72,6 +79,27 @@ export interface RuntimeConformanceOpts {
   expectHistory?: boolean;
   /** User message content sent during turn-based assertions. Defaults to `'conformance ping'`. */
   messageContent?: string;
+  /**
+   * Produces a session this runtime's LIST path will report, running at a
+   * caller-chosen working directory — the wiring behind the subtree-membership
+   * invariant (DOR-1550).
+   *
+   * The default tracks one with `ensureSession`, which is all a registry-backed
+   * runtime needs. Wire this when a runtime lists from a STORE it must first be
+   * given something to read: claude-code lists SDK JSONL transcripts, so an
+   * `ensureSession` alone produces nothing to list and the invariant would fail
+   * on the seeding rather than on the rule.
+   *
+   * There is deliberately no "cannot be scripted" waiver. Every runtime lists
+   * sessions per project — that IS the `listSessions(projectDir)` contract — so
+   * a runtime that cannot be given a listable session at a chosen directory
+   * cannot honour it either, and the honest report is a red.
+   *
+   * @param runtime - The runtime instance under test.
+   * @param cwd - The working directory the session must run in.
+   * @returns The seeded session's id.
+   */
+  listableSessionAt?: (runtime: AgentRuntime, cwd: string) => Promise<string> | string;
   /**
    * Factory producing a runtime whose next `sendMessage` turn FAILS
    * terminally (e.g. a mocked backend scripted to a failed turn). When
@@ -347,17 +375,18 @@ export interface RuntimeConformanceOpts {
    * `controller.abort()`, test-mode's in-process abort — proves the property
    * by construction, and the case asserts exactly that shape instead.
    *
-   * @returns The EXACT value `interruptQuery` must settle to once the suite
-   *   advances past the bound — not merely "some boolean". The two shipped
+   * @returns The EXACT receipt `interruptQuery` must settle to once the suite
+   *   advances past the bound — not merely "some receipt". The two shipped
    *   drivers disagree on purpose: claude-code escalates an unacked
-   *   interrupt to `query.close()` and reports `true` (the process WAS
-   *   stopped, just not gracefully); opencode has no session-scoped
-   *   escalation to reach for and reports `false` (honest, not a lie of
-   *   omission). Pinning the value, rather than accepting either, is what
-   *   would catch a runtime that silently started returning the wrong one
-   *   on expiry.
+   *   interrupt to `query.close()` and reports `closed` / `ack-timeout` (the
+   *   process WAS stopped, just not gracefully); opencode has no session-scoped
+   *   escalation to reach for and reports `unconfirmed` / `ack-timeout`
+   *   (honest, not a lie of omission). Pinning the receipt, rather than
+   *   accepting either, is what catches a runtime that silently started
+   *   answering the wrong one on expiry — and the two differ in `outcome`, so
+   *   the distinction the boolean could not carry is exactly what is pinned.
    */
-  hangingInterrupt?: (runtime: AgentRuntime, sessionId: string) => Promise<boolean>;
+  hangingInterrupt?: (runtime: AgentRuntime, sessionId: string) => Promise<InterruptReceipt>;
   /**
    * Waives the safety invariant that a runtime's DEFAULT permission mode must
    * still stop for the person — one that would need a consent ritual if a person
@@ -1088,6 +1117,7 @@ export function runtimeConformance(
     permissionMode: permissionModeOverride,
     expectHistory = false,
     messageContent = 'conformance ping',
+    listableSessionAt,
     makeFailingRuntime,
     authFailure,
     makeCompactingRuntime,
@@ -1140,6 +1170,20 @@ export function runtimeConformance(
     permissionMode: resolvePermissionMode(runtime),
     cwd: projectDir,
   });
+
+  /**
+   * Seed a session this runtime will LIST, running at `cwd` — the declared
+   * wiring when one is given, else a plain `ensureSession`.
+   *
+   * @param runtime - The runtime instance under test.
+   * @param cwd - The working directory the session must run in.
+   */
+  async function seedListableSession(runtime: AgentRuntime, cwd: string): Promise<string> {
+    if (listableSessionAt) return listableSessionAt(runtime, cwd);
+    const sessionId = nextSessionId();
+    runtime.ensureSession(sessionId, { permissionMode: resolvePermissionMode(runtime), cwd });
+    return sessionId;
+  }
 
   /** Run one full turn and collect every yielded StreamEvent. */
   async function drainTurn(runtime: AgentRuntime, sessionId: string): Promise<StreamEvent[]> {
@@ -1223,6 +1267,35 @@ export function runtimeConformance(
 
         const sessions = await runtime.listSessions(projectDir);
         expect(sessions.map((s) => s.id)).not.toContain(sessionId);
+      });
+
+      it('lists a session started INSIDE the project, and never a lookalike sibling (DOR-1550)', async () => {
+        // The other half of the membership rule. A person opens a project and
+        // starts an agent in `packages/api`; that session is the project's
+        // session, and every runtime used to decide otherwise by comparing the
+        // two directory strings for equality. DOR-674 fixed OpenCode's sidecar
+        // listing and deferred this invariant because claude-code would have
+        // failed it; DOR-1550 is where the rest of the set caught up.
+        const runtime = makeRuntime();
+        const subfolder = `${projectDir}/packages/api`;
+        const inside = await seedListableSession(runtime, subfolder);
+        // `<project>-2` shares a character prefix with the project and shares no
+        // path SEGMENT with it — the trap a `startsWith` check falls into, and
+        // the control that keeps the case above from passing by listing
+        // everything on the machine.
+        const sibling = await seedListableSession(runtime, `${projectDir}-2`);
+        // And the project's own directory, so a wiring that seeds nothing
+        // listable fails here rather than silently proving nothing.
+        const own = await seedListableSession(runtime, projectDir);
+
+        const listed = await runtime.listSessions(projectDir);
+        const ids = listed.map((s) => s.id);
+        expect(ids, 'the project’s own session must list at all').toContain(own);
+        expect(ids, 'a session started in a subfolder belongs to the project').toContain(inside);
+        expect(ids, 'a sibling project’s session is not this project’s').not.toContain(sibling);
+        // Each row still says where it is really running — a listing that
+        // rewrote `cwd` to the project would hide which folder an agent is in.
+        expect(listed.find((s) => s.id === inside)?.cwd).toBe(subfolder);
       });
 
       it('getSession resolves session metadata or null — and null for an unknown id', async () => {
@@ -1312,6 +1385,88 @@ export function runtimeConformance(
           getSessionCwd(sessionId),
           'a warmed session`s live binding must be answered, matching the directory it was warmed with'
         ).toBe(projectDir);
+      });
+
+      it('C12: getSessionAccount names the credential a turn ran on, stably, or does not exist', async (ctx) => {
+        // The account half of C10, and the seam the sign-in watch keys its
+        // episodes on (DOR-1682): with no way to ask which credential a turn
+        // used, a clean turn on a healthy Claude account cleared a condition a
+        // DEAD one had raised — an all-clear that never happened.
+        //
+        // Optional, and omitting it is the RIGHT answer for a runtime with one
+        // set of credentials (codex and opencode each have one home directory).
+        // The watch reads the absence as "do not distinguish" and behaves
+        // exactly as it did before accounts existed.
+        const runtime = makeRuntime();
+        const getSessionAccount = runtime.getSessionAccount?.bind(runtime);
+        if (getSessionAccount === undefined) {
+          // A SKIP, not a pass, for C7's reason: an `it` that returns early is
+          // indistinguishable from one that asserted something.
+          ctx.skip(
+            'this runtime does not implement `getSessionAccount`, so every one of its turns runs ' +
+              'on the same credential and the sign-in watch keys on the runtime alone ' +
+              '(see AgentRuntime.getSessionAccount)'
+          );
+          return;
+        }
+
+        // (1) ANSWERABLE for a session it has never heard of, never a throw. The
+        // caller is an observer wrapped around somebody else's turn, so a lookup
+        // that dereferences a missing entry would fail a turn it only watches.
+        const strangerId = nextSessionId();
+        expect(
+          () => getSessionAccount(strangerId),
+          'getSessionAccount must answer for a session it has never heard of, not throw'
+        ).not.toThrow();
+        expect(
+          getSessionAccount(strangerId),
+          'an id this runtime has never heard of must answer undefined, never a guessed account — ' +
+            'a guess files a dead credential under the wrong key, which is wrong in both directions'
+        ).toBeUndefined();
+
+        // (2) It NAMES the account once a turn has actually run. A runtime that
+        // answers undefined here has implemented nothing the watch can use, and
+        // is better off omitting the method — the absence is a supported,
+        // documented answer and a constant undefined only pretends otherwise.
+        if (!warmSession) return;
+
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
+        await warmSession(runtime, sessionId);
+
+        const account = getSessionAccount(sessionId);
+        expect(
+          typeof account,
+          'a session that has taken a turn must have its account named — a runtime that can never ' +
+            'name one should omit getSessionAccount rather than always answer undefined'
+        ).toBe('string');
+        expect(account, 'an empty account name distinguishes nothing').not.toBe('');
+
+        // (3) The SAME string for a DIFFERENT session on the same account, which
+        // is the property the watch actually depends on and the one a per-session
+        // check cannot see. Its two edges are never the same session: one turn
+        // discovers the dead credential, and a LATER turn on some other session
+        // is what proves it working again. So an identity that varies by how a
+        // session was started reads as two accounts, and the condition raised
+        // under one spelling can never be resolved by the other — a notice that
+        // stands for the life of the install.
+        //
+        // What this half can and cannot catch, stated so nobody over-reads it:
+        // it fails any runtime whose identity is DERIVED per session (a session
+        // id folded in, a counter, a fresh object's `toString`). It cannot fail a
+        // runtime whose identity merely varies with how a session was STARTED,
+        // because the suite has one way of starting one. That case needs a
+        // fixture that can produce two spellings, which only the adapter's own
+        // suite can build — claude-code's lives beside its conformance call.
+        const secondId = nextSessionId();
+        runtime.ensureSession(secondId, sessionOpts(runtime));
+        await warmSession(runtime, secondId);
+
+        expect(
+          getSessionAccount(secondId),
+          'two sessions on one account must answer the SAME string — canonicalize the identity in ' +
+            'the adapter rather than handing on however the caller happened to spell it'
+        ).toBe(account);
       });
 
       it('says when the person last wrote, or says why it cannot (BC-16)', async () => {
@@ -2222,16 +2377,155 @@ export function runtimeConformance(
       });
     });
 
+    /**
+     * The `reason` half of §4's table, as a rule rather than as a per-cell copy.
+     *
+     * `reason` is documented as "present whenever it adds information the
+     * outcome does not carry", which is not a matter of taste in three of the
+     * five cases:
+     *
+     * - `not-running` and `unconfirmed` and `failed` MUST carry one. Each is an
+     *   ending a person is shown or asked to act on, and the reason is the only
+     *   thing that says whether the stop was declined, timed out, or never left
+     *   the building.
+     * - `acked` must NOT. §4 lists no reason on any acked cell, and every reason
+     *   in the vocabulary names why a graceful path was abandoned — which by
+     *   definition did not happen when the agent itself confirmed.
+     * - `closed` is the one genuine MAY: claude-code always has a reason (which
+     *   escalation ran), codex has none to give (it has no graceful path to
+     *   abandon).
+     *
+     * @param verb - Which call produced the receipt, for the failure message.
+     * @param receipt - The receipt to check.
+     */
+    function assertReasonPresence(verb: string, receipt: InterruptReceipt): void {
+      if (receipt.outcome === 'acked') {
+        expect(
+          receipt.reason,
+          `${verb} answered \`acked\` with a reason. Every reason names why a graceful stop was ` +
+            'abandoned, and nothing was abandoned when the agent confirmed the stop itself'
+        ).toBeUndefined();
+        return;
+      }
+      if (receipt.outcome === 'closed') return;
+      expect(
+        receipt.reason,
+        `${verb} answered \`${receipt.outcome}\` with no reason. This is an ending a person is ` +
+          'shown or asked to act on, and the outcome alone cannot say whether the stop was ' +
+          'declined, timed out, or never delivered (spec `runtime-interrupt-receipts` §4)'
+      ).toBeDefined();
+    }
+
     describe('interrupt semantics', () => {
-      it('interruptQuery resolves to a boolean — false when no query is active', async () => {
+      it('I1: with no turn open, interruptQuery resolves not-running — never failed', async () => {
         const runtime = makeRuntime();
         const sessionId = nextSessionId();
         runtime.ensureSession(sessionId, sessionOpts(runtime));
 
-        const result = await runtime.interruptQuery(sessionId);
-        expect(typeof result).toBe('boolean');
-        // Contract: true only when an active query was interrupted.
-        expect(result).toBe(false);
+        const receipt = await runtime.interruptQuery(sessionId);
+        expect(
+          receipt.outcome,
+          'a stop that arrives after the turn finished on its own is a RACE, not a failure — ' +
+            '`not-running` is what says so, and it is the one ending the client stays quiet ' +
+            'about. Answering `failed` here would put "Couldn’t stop it. Try again." over a ' +
+            'session with nothing left to stop'
+        ).toBe('not-running');
+        expect(
+          receipt.reason,
+          '`not-running` carries `no-open-turn`: the outcome says nothing ended, the reason ' +
+            'says why'
+        ).toBe('no-open-turn');
+      });
+
+      it('I2: a receipt from a LIVE turn parses, names THIS runtime, and carries its reason', async () => {
+        const runtime = makeRuntime();
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
+
+        // **A turn must actually be OPEN here, and that is the whole setup.**
+        // Every adapter's first branch is "no session, no turn -> not-running",
+        // so a version of this case that interrupted an idle session was only
+        // ever re-testing I1's precondition: it inspected the one receipt that
+        // is minted before any per-runtime mapping runs. Measured, not
+        // theorised — with that setup, pointing a runtime's LIVE mapping at
+        // another runtime's name left the whole suite green.
+        let live: InterruptReceipt;
+        if (hangingInterrupt) {
+          // The same staging C11 uses, for the same reason: on a runtime whose
+          // interrupt awaits a backend ack, only this driver can produce a
+          // genuinely active turn. Staged on REAL timers (a driver's own setup
+          // leans on macrotask delays), then the bound is advanced through so
+          // the receipt lands without spending three real seconds.
+          await hangingInterrupt(runtime, sessionId);
+          onTestFinished(() => {
+            vi.useRealTimers();
+          });
+          vi.useFakeTimers();
+          const pending = runtime.interruptQuery(sessionId);
+          await vi.advanceTimersByTimeAsync(10_000);
+          live = await pending;
+          vi.useRealTimers();
+        } else {
+          // No driver means this runtime's interrupt has nothing to await, so
+          // its turn can be opened the ordinary way and left running: pull ONE
+          // event off `sendMessage` and stop reading. The generator is returned
+          // in teardown rather than drained — a drained turn is a CLOSED turn,
+          // which is exactly what this case must not inspect.
+          const turn = runtime.sendMessage(sessionId, messageContent, { cwd: projectDir });
+          onTestFinished(() => {
+            void turn.return(undefined);
+          });
+          await turn.next();
+          live = await runtime.interruptQuery(sessionId);
+        }
+
+        expect(
+          live.outcome,
+          'the stop was aimed at a turn this case had just opened, so `not-running` means the ' +
+            'setup failed to open one — and every assertion below would then be about the ' +
+            'pre-mapping receipt rather than about this runtime`s own mapping'
+        ).not.toBe('not-running');
+
+        // Both stop-shaped verbs, live receipt included, because a receipt that
+        // named the wrong runtime — or carried an outcome outside the five —
+        // would reach the UI as a sentence about somebody else's agent.
+        for (const [verb, receipt] of [
+          ['interruptQuery (live turn)', live],
+          ['stopTask', await runtime.stopTask(sessionId, 'task-that-does-not-exist')],
+        ] as const) {
+          expect(
+            InterruptReceiptSchema.safeParse(receipt).success,
+            `${verb} must answer the InterruptReceipt vocabulary and nothing else — ` +
+              `got ${JSON.stringify(receipt)}`
+          ).toBe(true);
+          expect(
+            receipt.runtime,
+            `${verb}'s receipt must name the adapter that produced it: the receipt travels ` +
+              'across runtimes (ADR-0310), and the copy that says "{Runtime} didn’t confirm ' +
+              'it" reads this field'
+          ).toBe(runtime.type);
+          assertReasonPresence(verb, receipt);
+        }
+      });
+
+      it('I5: a stop aimed at a session this runtime never saw resolves, never rejects', async () => {
+        const runtime = makeRuntime();
+
+        // Never `ensureSession`d: the adapter has no state for this id at all,
+        // which is the cheapest way to reach whatever internal lookup its stop
+        // path starts with. Adapters MUST NOT throw for an ordinary refusal —
+        // `failed` is the receipt for that (ADR 260816-143752's rule for
+        // `deliverIntoTurn`, applied to the stop verbs) — and a rejection here
+        // would escape the interrupt route into a 500 that loses the queue it
+        // had already cleared.
+        await expect(
+          runtime.interruptQuery('00000000-0000-4000-8000-00000000dead'),
+          'interruptQuery must resolve a receipt for an unknown session, not reject'
+        ).resolves.toBeDefined();
+        await expect(
+          runtime.stopTask('00000000-0000-4000-8000-00000000dead', 'no-such-task'),
+          'stopTask must resolve a receipt for an unknown session, not reject'
+        ).resolves.toBeDefined();
       });
 
       it('C11: interruptQuery against a backend that never answers still resolves within a bound', async () => {
@@ -2258,7 +2552,7 @@ export function runtimeConformance(
             vi.useRealTimers();
           });
           vi.useFakeTimers();
-          let settled: boolean | typeof NOT_SETTLED = NOT_SETTLED;
+          let settled: InterruptReceipt | typeof NOT_SETTLED = NOT_SETTLED;
           void runtime.interruptQuery(sessionId).then((result) => {
             settled = result;
           });
@@ -2272,7 +2566,7 @@ export function runtimeConformance(
               'microtask hop could settle this, and none did (see ' +
               'RuntimeConformanceOpts.hangingInterrupt)'
           ).not.toBe(NOT_SETTLED);
-          expect(typeof settled).toBe('boolean');
+          expect(InterruptReceiptSchema.safeParse(settled).success).toBe(true);
           return;
         }
 
@@ -2307,9 +2601,11 @@ export function runtimeConformance(
           'a bounded interrupt must settle once the suite has advanced well past any ' +
             'reasonable ack timeout — an unbounded one hangs here until the TEST ITSELF ' +
             'times out, which is the mutant this case exists to catch. It must also settle to ' +
-            'EXACTLY the value the driver declared, not merely some boolean — a runtime that ' +
-            'silently flips true/false on expiry is a lie this pin exists to catch.'
-        ).resolves.toBe(expectedSettle);
+            'EXACTLY the receipt the driver declared, not merely some receipt — the whole ' +
+            'point of the vocabulary is that a runtime which escalated to a close (`closed`) ' +
+            'and one which could not confirm anything (`unconfirmed`) are different endings, ' +
+            'and a runtime that silently swapped them is what this pin catches.'
+        ).resolves.toEqual(expectedSettle);
       });
     });
 

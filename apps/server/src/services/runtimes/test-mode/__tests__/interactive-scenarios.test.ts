@@ -21,7 +21,7 @@ import {
 import { reconstructHistoryFromEvents } from '../../../session/event-log-history.js';
 import { triggerTurn } from '../../../session/trigger-turn.js';
 import { interactionGate } from '../interaction-gate.js';
-import { scenarioStore } from '../scenario-store.js';
+import { declareInterruptOutcome, scenarioStore } from '../scenario-store.js';
 import { TestModeRuntime } from '../test-mode-runtime.js';
 
 const SESSION = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
@@ -384,7 +384,13 @@ describe('stoppable-turn (C-10) — Stop ends a turn that would never end itself
       expect(projector.getStatus().lifecycle).toBe('streaming');
     });
 
-    expect(await runtime.interruptQuery(SESSION)).toBe(true);
+    // `closed`, never `acked`: `interactionGate.abort` is DorkOS ending the
+    // scenario from the outside, and nothing in a scripted turn acknowledges
+    // anything (spec `runtime-interrupt-receipts` D10).
+    expect(await runtime.interruptQuery(SESSION)).toEqual({
+      outcome: 'closed',
+      runtime: 'test-mode',
+    });
     // `interrupted`, not `idle`: the projection says WHY the turn ended rather
     // than pretending it finished, which is the whole of "settles honestly".
     await waitForSettled(projector, 'interrupted');
@@ -397,9 +403,64 @@ describe('stoppable-turn (C-10) — Stop ends a turn that would never end itself
     expect(streamedText(projector)).not.toContain('unreachable');
   });
 
-  it('reports false when there is no turn to stop', async () => {
+  it('a declared `acked` reaches the browser leg without lying about the turn', async () => {
+    // The ending a real runtime only produces when its agent genuinely wound
+    // down — unreachable from a browser test any other way (spec D10). The turn
+    // still ends, because `acked` IS an ending DorkOS observed.
     const runtime = new TestModeRuntime();
-    expect(await runtime.interruptQuery(SESSION)).toBe(false);
+    scenarioStore.setForSession(SESSION, 'stoppable-turn');
+    const { projector } = startTurn(runtime, 'go');
+    await vi.waitFor(() => expect(projector.getStatus().lifecycle).toBe('streaming'));
+
+    declareInterruptOutcome('acked');
+    expect(await runtime.interruptQuery(SESSION)).toEqual({
+      outcome: 'acked',
+      runtime: 'test-mode',
+    });
+    await waitForSettled(projector, 'interrupted');
+  });
+
+  it('a declared `unconfirmed` leaves the turn RUNNING — the shape, not a narration', () => {
+    // The half that makes this lever worth having: `unconfirmed` means the stop
+    // did not land, so a fixture that ended the turn anyway would let the
+    // composer's "the agent may still be working" copy be asserted over a turn
+    // that had visibly stopped — proving nothing.
+    const runtime = new TestModeRuntime();
+    scenarioStore.setForSession(SESSION, 'stoppable-turn');
+    startTurn(runtime, 'go');
+    return vi
+      .waitFor(() => expect(interactionGate.isOpen(SESSION)).toBe(true))
+      .then(async () => {
+        declareInterruptOutcome('unconfirmed');
+        expect(await runtime.interruptQuery(SESSION)).toEqual({
+          outcome: 'unconfirmed',
+          reason: 'runtime-declined',
+          runtime: 'test-mode',
+        });
+        expect(
+          interactionGate.isOpen(SESSION),
+          'a declared `unconfirmed` must leave the scripted turn open'
+        ).toBe(true);
+      });
+  });
+
+  it('a declared outcome does not invent a turn that was never running', async () => {
+    const runtime = new TestModeRuntime();
+    declareInterruptOutcome('unconfirmed');
+    expect(await runtime.interruptQuery(SESSION)).toEqual({
+      outcome: 'not-running',
+      reason: 'no-open-turn',
+      runtime: 'test-mode',
+    });
+  });
+
+  it('reports not-running when there is no turn to stop', async () => {
+    const runtime = new TestModeRuntime();
+    expect(await runtime.interruptQuery(SESSION)).toEqual({
+      outcome: 'not-running',
+      reason: 'no-open-turn',
+      runtime: 'test-mode',
+    });
   });
 
   it('ends a turn parked on an approval nobody will ever give', async () => {
@@ -412,7 +473,13 @@ describe('stoppable-turn (C-10) — Stop ends a turn that would never end itself
     expect(projector.getStatus().lifecycle).toBe('blocked');
     expect((await runtime.getSessionSnapshot(CTX, SESSION)).pendingInteractions).toHaveLength(1);
 
-    expect(await runtime.interruptQuery(SESSION)).toBe(true);
+    // `closed`, never `acked`: `interactionGate.abort` is DorkOS ending the
+    // scenario from the outside, and nothing in a scripted turn acknowledges
+    // anything (spec `runtime-interrupt-receipts` D10).
+    expect(await runtime.interruptQuery(SESSION)).toEqual({
+      outcome: 'closed',
+      runtime: 'test-mode',
+    });
     await waitForSettled(projector, 'interrupted');
 
     expect(replay(projector).some((e) => e.type === 'turn_end')).toBe(true);
@@ -435,7 +502,13 @@ describe('stoppable-turn (C-10) — Stop ends a turn that would never end itself
     const { projector } = startTurn(runtime, 'do the three things');
     await waitForPending(projector, 3);
 
-    expect(await runtime.interruptQuery(SESSION)).toBe(true);
+    // `closed`, never `acked`: `interactionGate.abort` is DorkOS ending the
+    // scenario from the outside, and nothing in a scripted turn acknowledges
+    // anything (spec `runtime-interrupt-receipts` D10).
+    expect(await runtime.interruptQuery(SESSION)).toEqual({
+      outcome: 'closed',
+      runtime: 'test-mode',
+    });
     await waitForSettled(projector, 'interrupted');
 
     // All three, not just the first: a stop resolves the whole parked set.

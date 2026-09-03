@@ -148,13 +148,13 @@ describe('PermissionPreviewSection', () => {
     expect(screen.getByText('nightly-sweep')).toBeInTheDocument();
     expect(
       screen.getByText(
-        'At 03:00 AM, starts switched on. This job can run any command without a permission prompt.'
+        'At 03:00 AM, waits for your approval before its first run. This job can run any command without a permission prompt.'
       )
     ).toBeInTheDocument();
     expect(screen.queryByText(/bypassPermissions/)).not.toBeInTheDocument();
   });
 
-  it('says when a scheduled job only runs on request and starts switched off', () => {
+  it('says when a scheduled job only runs on request and arrives switched off', () => {
     const preview = makePreview({
       schedules: [{ name: 'audit', cron: null, permissionMode: 'plan', startsEnabled: false }],
     });
@@ -163,7 +163,7 @@ describe('PermissionPreviewSection', () => {
 
     expect(
       screen.getByText(
-        'Runs only when you ask, starts switched off. This job can only read and plan, and cannot change anything.'
+        'Runs only when you ask, arrives switched off, and would wait for your approval too. This job can only read and plan, and cannot change anything.'
       )
     ).toBeInTheDocument();
   });

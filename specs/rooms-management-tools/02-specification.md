@@ -205,6 +205,8 @@ The operator's path (`routes/mesh.ts:491-520`, file-first per ADR-0043) is untou
 
 **Scope boundary, stated so it is not over-read.** This closes the sanctioned agent surfaces for this one field. It does **not** stop an agent with shell access from curling `PATCH /api/mesh/agents/:id` directly, because with login off a bare loopback request is indistinguishable from the cockpit's — the inherited `local-trust` residual documented in `contributing/agent-operator-surface.md`, whose stated remedy is turning login on. The general caller-identity policy for the manifest remains **DOR-1506**, referenced and not absorbed.
 
+> **Resolved 2026-09-02 (DOR-1506).** The general policy shipped: `agent-write-policy.ts` classifies every leaf of the agent-reachable manifest wire `operator-only` / `agent-writable` / `tighten-only`, `updateAgentManifest` enforces it in one place, and a drift guard fails the build when a new field arrives unclassified. The narrow guard described above is now one row of that table, and the four documentation keys beside `roomsManage` are refused too. The `local-trust` residual in this paragraph is unchanged and still accurate.
+
 ### D7. `requireRosterWriteAllowed`
 
 `requireOperator` (`room-service.ts:3970-3973`) is **not relaxed**. Four of its seven call sites must never gain an agent path: `setFallbackSeat:1092` and `updateMembership:2124` decide who answers what, which is arbitration by another name; `archiveBridgedRoom:1387` and the turn-limit branch of `updateRoom:1946` are spend authority.

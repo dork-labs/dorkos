@@ -35,6 +35,7 @@ import {
   checkBindAllowed,
 } from './services/core/auth/exposure-guard.js';
 import { tunnelManager } from './services/core/tunnel-manager.js';
+import { resolveTunnelSettings } from './services/core/config/tunnel-settings.js';
 import { initCloudLinkManager, getCloudLinkManager } from './services/core/auth/cloud-link.js';
 import {
   initConfigManager,
@@ -50,6 +51,7 @@ import {
   initCredentialProvider,
 } from './services/core/credential-provider.js';
 import { initBoundary } from './lib/boundary.js';
+import { getLocalCockpitPort } from './lib/trusted-origins.js';
 import { initLogger, logger, logError } from './lib/logger.js';
 import { createDorkOsToolServer } from './services/runtimes/claude-code/mcp-tools/index.js';
 import { TaskStore } from './services/tasks/task-store.js';
@@ -3655,33 +3657,33 @@ async function start() {
   sweepImages();
   sessionAttachmentSweepInterval = setInterval(sweepImages, SESSION_ATTACHMENT_SWEEP_INTERVAL_MS);
 
-  // Start ngrok tunnel if enabled. The exposure guard (task 1.3) also gates the
-  // boot-time autostart: skip (and log) rather than expose without a login.
-  if (env.TUNNEL_ENABLED) {
+  // Start ngrok tunnel if enabled — by the environment this process was given,
+  // or by the stored `tunnel.enabled` preference the /api/tunnel/start route
+  // writes when someone turns Remote Access on in the app (DOR-1738). The
+  // exposure guard (task 1.3) also gates the boot-time autostart: skip (and log)
+  // rather than expose without a login.
+  const bootTunnel = resolveTunnelSettings({
+    env,
+    stored: configManager.get('tunnel'),
+    fallbackPort: getLocalCockpitPort(),
+  });
+  if (bootTunnel.enabled) {
     if (!canExpose()) {
       logger.warn(
         '[Tunnel] Autostart skipped — exposing DorkOS requires a login. Enable login and ' +
           'create an owner account first (AUTH_REQUIRED_FOR_EXPOSURE).'
       );
     } else {
-      const tunnelPort = env.TUNNEL_PORT ?? PORT;
-
       try {
-        const url = await tunnelManager.start({
-          port: tunnelPort,
-          authtoken: env.NGROK_AUTHTOKEN,
-          basicAuth: env.TUNNEL_AUTH,
-          domain: env.TUNNEL_DOMAIN,
-        });
+        const url = await tunnelManager.start(bootTunnel.config);
 
-        const hasAuth = !!env.TUNNEL_AUTH;
-        const isDevPort = tunnelPort !== PORT;
+        const isDevPort = bootTunnel.config.port !== PORT;
 
         logger.info('[Tunnel] ngrok tunnel active', {
           url,
-          port: tunnelPort,
-          auth: hasAuth ? 'basic auth enabled' : 'none (open)',
-          ...(isDevPort && { mode: `dev (Vite on :${tunnelPort})` }),
+          port: bootTunnel.config.port,
+          auth: bootTunnel.config.basicAuth ? 'basic auth enabled' : 'none (open)',
+          ...(isDevPort && { mode: `dev (Vite on :${bootTunnel.config.port})` }),
         });
       } catch (err) {
         logger.warn(

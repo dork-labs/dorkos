@@ -139,6 +139,7 @@ import type {
 } from '@dorkos/shared/room-schemas';
 import type { RoomContextFiles } from '@dorkos/shared/additional-context';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
+import type { InterruptReceipt } from '@dorkos/shared/types';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { logError, logger } from '../../lib/logger.js';
 import { runInDispatch } from '../../lib/dispatch-context.js';
@@ -3079,13 +3080,30 @@ export class RoomTriggerDispatcher {
    * @param roomId - The room the stop was pressed in.
    * @param claim - The turn it was aimed at.
    * @param sessionId - The session the interrupt was sent to.
+   * @param receipt - What the runtime answered; its outcome picks the sentence.
    */
-  private reportUnreachedStop(roomId: string, claim: ActiveClaim, sessionId: string): void {
-    logger.warn('[rooms] a stop found no turn to stop — it may still be starting', {
+  private reportUnreachedStop(
+    roomId: string,
+    claim: ActiveClaim,
+    sessionId: string,
+    receipt: InterruptReceipt
+  ): void {
+    // Two different facts, and the boolean this replaced said the first about
+    // both: `not-running` is a stop that found nothing (most often a turn still
+    // booting), while `unconfirmed` / `failed` is a turn that IS there and did
+    // not stop.
+    const message =
+      receipt.outcome === 'not-running'
+        ? '[rooms] a stop found no turn to stop — it may still be starting'
+        : '[rooms] a stop was not confirmed — the agent may still be working';
+    logger.warn(message, {
       roomId,
       authorId: claim.authorId,
       dispatchId: claim.dispatchId,
       sessionId,
+      outcome: receipt.outcome,
+      ...(receipt.reason ? { reason: receipt.reason } : {}),
+      runtime: receipt.runtime,
     });
   }
 
@@ -4197,7 +4215,7 @@ export class RoomTriggerDispatcher {
         // every message after.
         const sessionId = this.deps.store.getRoomSession(room.id, claim.authorId);
         if (sessionId !== null && sessionId !== undefined) {
-          const stopped = await this.deps.runner.interrupt({
+          const receipt = await this.deps.runner.interrupt({
             sessionId,
             agentPath: claim.agentPath,
           });
@@ -4205,8 +4223,10 @@ export class RoomTriggerDispatcher {
           // (DOR-1425). The answer was thrown away here, so a stop that landed
           // on nothing — a turn still booting, most often — logged exactly like
           // one that stopped a turn. The claim goes either way; what changes is
-          // that an operator reading the log can tell the two apart.
-          if (!stopped) this.reportUnreachedStop(room.id, claim, sessionId);
+          // that an operator reading the log can tell the three apart.
+          if (receipt.outcome !== 'acked' && receipt.outcome !== 'closed') {
+            this.reportUnreachedStop(room.id, claim, sessionId, receipt);
+          }
         }
       } catch (err) {
         // One agent that will not stop must not leave the others running, and
@@ -4355,12 +4375,14 @@ export class RoomTriggerDispatcher {
       // after. Whatever went wrong, the claim goes.
       const sessionId = this.deps.store.getRoomSession(room.id, authorId);
       if (sessionId !== null && sessionId !== undefined) {
-        const stopped = await this.deps.runner.interrupt({
+        const receipt = await this.deps.runner.interrupt({
           sessionId,
           agentPath: claim.agentPath,
         });
         // Same answer, same reading, at the narrower scope (DOR-1425).
-        if (!stopped) this.reportUnreachedStop(room.id, claim, sessionId);
+        if (receipt.outcome !== 'acked' && receipt.outcome !== 'closed') {
+          this.reportUnreachedStop(room.id, claim, sessionId, receipt);
+        }
       }
     } catch (err) {
       // An agent that will not stop still loses its claim: a claim held for a

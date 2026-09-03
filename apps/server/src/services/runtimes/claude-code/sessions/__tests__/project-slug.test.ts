@@ -16,7 +16,12 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtemp, mkdir, symlink, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
-import { projectSlug, slugForCanonicalPath, canonicalizeCwd } from '../project-slug.js';
+import {
+  projectSlug,
+  slugForCanonicalPath,
+  canonicalizeCwd,
+  subtreeSlugScope,
+} from '../project-slug.js';
 
 describe('slugForCanonicalPath', () => {
   it('replaces every non-alphanumeric character with a dash', () => {
@@ -114,5 +119,50 @@ describe('canonicalizeCwd', () => {
     } else {
       expect(canonical).toBe(path.resolve(decomposed));
     }
+  });
+});
+
+describe('subtreeSlugScope', () => {
+  /**
+   * A directory that does not exist slugs lexically (the SDK's own fallback),
+   * so these cases can name paths without staging them — the scope is a
+   * question about NAMES, and the realpath clause has its own coverage above.
+   */
+  const scope = subtreeSlugScope('/work/project');
+
+  it('accepts the project’s own transcript directory', () => {
+    expect(scope(projectSlug('/work/project'))).toBe(true);
+  });
+
+  it('accepts the directory of every folder inside the project', () => {
+    expect(scope(projectSlug('/work/project/packages'))).toBe(true);
+    expect(scope(projectSlug('/work/project/packages/api/src'))).toBe(true);
+  });
+
+  it('rejects directories that cannot hold one of this project’s sessions', () => {
+    expect(scope(projectSlug('/work'))).toBe(false);
+    expect(scope(projectSlug('/elsewhere/other'))).toBe(false);
+    expect(scope(projectSlug('/work/projectile'))).toBe(false);
+  });
+
+  it('over-selects a lookalike sibling rather than risk missing a subfolder', () => {
+    // `/work/project-2` slugs to the project's slug plus `-2`, and no rule over
+    // NAMES can tell that apart from a `2` folder inside the project. Being
+    // WRONG here costs one directory read; being wrong the other way loses
+    // sessions, which is why the membership predicate — not this scope — has
+    // the final say (DOR-1550).
+    expect(scope(projectSlug('/work/project-2'))).toBe(true);
+  });
+
+  it('accepts every directory when the project’s own slug is truncated', () => {
+    // Past 200 characters the SDK appends a hash of the whole path, and a
+    // subfolder's hash is not its project's — so the two names diverge at the
+    // cut and prefix reasoning stops holding. Reading everything is slower;
+    // trusting the prefix would silently lose the subtree.
+    const long = `/${'a'.repeat(250)}`;
+    const wide = subtreeSlugScope(long);
+    expect(projectSlug(`${long}/api`).startsWith(`${projectSlug(long)}-`)).toBe(false);
+    expect(wide(projectSlug(`${long}/api`))).toBe(true);
+    expect(wide('-something-else-entirely')).toBe(true);
   });
 });

@@ -9,6 +9,8 @@ import { env } from '../../env.js';
 import { tunnelManager } from '../../services/core/tunnel-manager.js';
 import {
   getLocalCockpitOrigin,
+  getTunnelHost,
+  getTunnelOrigin,
   getStaticLocalOrigins,
   isLocalRequest,
   isLoopbackHost,
@@ -499,5 +501,50 @@ describe('resolveAuthTrustedOrigins', () => {
     setCorsOrigin('https://dorkos.example.com');
     expect(resolveTrustedOrigins()).not.toContain('https://dorkos.example.com');
     expect(resolveTrustedOrigins()).toEqual(getStaticLocalOrigins());
+  });
+});
+
+/**
+ * The tunnel origin, which every `/api` request resolves.
+ *
+ * These read `tunnelManager.status.url` through the module mock at the top of
+ * this file. A string that no longer parses is not hypothetical here: it is
+ * whatever `listener.url()` handed back, from a program DorkOS does not control,
+ * and it is read on the hot path of CORS, the host guard and Better Auth. An
+ * unguarded parse there throws out of the CORS callback and 500s the whole API.
+ */
+describe('getTunnelOrigin / getTunnelHost', () => {
+  /** Point the mocked tunnel manager at a URL, or at nothing. */
+  function setTunnelUrl(url: string | null): void {
+    (tunnelManager as unknown as { status: { url: string | null } }).status = { url };
+  }
+
+  afterEach(() => setTunnelUrl(null));
+
+  it('resolves the origin and host of a live tunnel', () => {
+    setTunnelUrl('https://abc123.ngrok.app/some/path');
+    expect(getTunnelOrigin()).toBe('https://abc123.ngrok.app');
+    expect(getTunnelHost()).toBe('abc123.ngrok.app');
+  });
+
+  it('answers null, rather than throwing, for a URL that does not parse', () => {
+    setTunnelUrl('not a url at all');
+    expect(() => getTunnelOrigin()).not.toThrow();
+    expect(getTunnelOrigin()).toBeNull();
+    expect(getTunnelHost()).toBeNull();
+  });
+
+  it('answers null for a scheme with no origin of its own', () => {
+    // `new URL('tcp://1.2.3.4:1234').origin` is the STRING "null", and the
+    // literal `null` must never reach an allowlist as an origin.
+    setTunnelUrl('tcp://1.2.3.4:1234');
+    expect(getTunnelOrigin()).toBeNull();
+    expect(getTunnelHost()).toBeNull();
+  });
+
+  it('answers null when no tunnel is running', () => {
+    setTunnelUrl(null);
+    expect(getTunnelOrigin()).toBeNull();
+    expect(getTunnelHost()).toBeNull();
   });
 });

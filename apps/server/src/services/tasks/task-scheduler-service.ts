@@ -1,7 +1,14 @@
 import { Cron } from 'croner';
 import type { RelayCore } from '@dorkos/relay';
 import type { MeshCore } from '@dorkos/mesh';
-import type { EffortLevel, Task, TaskRun, PermissionMode, StreamEvent } from '@dorkos/shared/types';
+import type {
+  EffortLevel,
+  InterruptReceipt,
+  Task,
+  TaskRun,
+  PermissionMode,
+  StreamEvent,
+} from '@dorkos/shared/types';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import { isTerminalRunStatus, type TaskStore } from './task-store.js';
 import type { ActivityService } from '../activity/activity-service.js';
@@ -172,9 +179,10 @@ export interface SchedulerAgentManager {
    *
    * This is the ONLY way to stop a scheduled run: `sendMessage` takes no
    * `AbortSignal` (see `MessageOpts`), so abandoning its stream leaves the agent
-   * running. Resolves false when the runtime found no in-flight turn to abort.
+   * running. Answers the {@link InterruptReceipt} vocabulary — `not-running`
+   * when there was no in-flight turn to abort.
    */
-  interruptQuery(sessionId: string): Promise<boolean>;
+  interruptQuery(sessionId: string): Promise<InterruptReceipt>;
   /**
    * The runtime's OWN session id for a session key, after the SDK has minted or
    * kept one (`AgentRuntime.getInternalSessionId`).

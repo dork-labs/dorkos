@@ -278,4 +278,31 @@ describe('useMarkRoomReadNow', () => {
     expect(invalidated).toContainEqual(['rooms', 'list']);
     expect(invalidated).toContainEqual(['rooms', 'detail', 'room-1']);
   });
+
+  it('marks the NEWEST entry read, not the thread root riding in front of it', async () => {
+    // A one-entry page is not a one-entry answer any more (DOR-690): when the
+    // room's newest line is a reply to something older than the window, the root
+    // comes back with it and history arrives oldest-first. Reading the first
+    // element would move the cursor BACKWARDS onto that root and leave the badge
+    // exactly where the reader just pressed to clear it.
+    const transport = createMockTransport({
+      listRoomEntries: vi.fn().mockResolvedValue([entry(1), entry(204)]),
+    });
+    const { queryClient } = recordingWrapper();
+    const { result } = renderHook(() => useMarkRoomReadNow(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={queryClient}>
+          <TransportProvider transport={transport}>{children}</TransportProvider>
+        </QueryClientProvider>
+      ),
+    });
+
+    await act(async () => {
+      result.current.mutate('room-1');
+    });
+
+    await waitFor(() =>
+      expect(transport.setReadCursor).toHaveBeenCalledWith('room', 'room-1', 204)
+    );
+  });
 });

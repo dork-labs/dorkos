@@ -20,6 +20,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
+import { mockInterruptReceipt } from '@dorkos/test-utils';
 import type { RuntimeCapabilities, SseResponse } from '@dorkos/shared/agent-runtime';
 import { COMMAND_INTENT_REQUEST_TIMEOUT_MS } from '@dorkos/shared/command-intents';
 
@@ -103,7 +104,7 @@ describe('triggerTurn — a queued turn never waits longer than a stranger would
         sends.push(content);
         return scenarios[sends.length - 1]!();
       },
-      interruptQuery: async () => false,
+      interruptQuery: async () => mockInterruptReceipt('not-running'),
       getInternalSessionId: () => undefined,
       rekeyProjector: () => {},
       getCapabilities: () => ({ nativeContext: [] }) as unknown as RuntimeCapabilities,
@@ -169,7 +170,7 @@ describe('triggerTurn — a queued turn never waits longer than a stranger would
         sends.push(content);
         return scenarios[sends.length - 1]!();
       },
-      interruptQuery: async () => false,
+      interruptQuery: async () => mockInterruptReceipt('not-running'),
       getInternalSessionId: () => undefined,
       rekeyProjector: () => {},
       getCapabilities: () => ({ nativeContext: [] }) as unknown as RuntimeCapabilities,
@@ -222,7 +223,7 @@ describe('triggerCommandIntent — a compact queues like a turn (G7)', () => {
           yield { type: 'done', data: {} } as StreamEvent;
         })();
       },
-      interruptQuery: async () => false,
+      interruptQuery: async () => mockInterruptReceipt('not-running'),
       getInternalSessionId: () => undefined,
       rekeyProjector: () => {},
       getCapabilities: () => ({ nativeContext: [] }) as unknown as RuntimeCapabilities,
@@ -235,7 +236,7 @@ describe('triggerCommandIntent — a compact queues like a turn (G7)', () => {
           yield { type: 'done', data: {} } as StreamEvent;
         })();
       },
-      interruptQuery: async () => false,
+      interruptQuery: async () => mockInterruptReceipt('not-running'),
       getInternalSessionId: () => undefined,
     };
     const projector = getOrCreateProjector(SESSION);
@@ -292,7 +293,7 @@ describe('triggerCommandIntent — a compact queues like a turn (G7)', () => {
           await turnGate.wait;
           yield { type: 'done', data: {} } as StreamEvent;
         })(),
-      interruptQuery: async () => false,
+      interruptQuery: async () => mockInterruptReceipt('not-running'),
       getInternalSessionId: () => undefined,
       rekeyProjector: () => {},
       getCapabilities: () => ({ nativeContext: [] }) as unknown as RuntimeCapabilities,
@@ -305,7 +306,7 @@ describe('triggerCommandIntent — a compact queues like a turn (G7)', () => {
           yield { type: 'done', data: {} } as StreamEvent;
         })();
       },
-      interruptQuery: async () => false,
+      interruptQuery: async () => mockInterruptReceipt('not-running'),
       getInternalSessionId: () => undefined,
     };
     const projector = getOrCreateProjector(SESSION);
@@ -371,7 +372,7 @@ describe('triggerCommandIntent — told it failed means it did not run (DOR-1101
           await turnGate.wait;
           yield { type: 'done', data: {} } as StreamEvent;
         })(),
-      interruptQuery: async () => false,
+      interruptQuery: async () => mockInterruptReceipt('not-running'),
       getInternalSessionId: () => undefined,
       rekeyProjector: () => {},
       getCapabilities: () => ({ nativeContext: [] }) as unknown as RuntimeCapabilities,
@@ -384,7 +385,7 @@ describe('triggerCommandIntent — told it failed means it did not run (DOR-1101
           yield { type: 'done', data: {} } as StreamEvent;
         })();
       },
-      interruptQuery: async () => false,
+      interruptQuery: async () => mockInterruptReceipt('not-running'),
       getInternalSessionId: () => undefined,
     };
 

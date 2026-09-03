@@ -619,19 +619,28 @@ const fadeIn = {
 ```
 
 ```typescript
-// ✅ Reduced motion is handled globally — no per-component work required
-// App.tsx wraps everything in:
+// ✅ Transform and layout animations are handled globally — no per-component
+// work required for THOSE. App.tsx wraps everything in:
 // <MotionConfig reducedMotion="user">
-// This automatically disables transform/layout animations when the user has
+// This disables transform/layout animations when the user has
 // prefers-reduced-motion: reduce set in their OS settings.
-// You do not need to call useReducedMotion() in individual components.
 
-// If you need to conditionally adjust non-motion behavior based on the setting:
+// ⚠️ Opacity, colour, and any `repeat: Infinity` animation are NOT covered —
+// MotionConfig writes inline styles it does not suppress for those. A
+// motion.* component using any of the three must gate itself:
 import { useReducedMotion } from 'motion/react';
 
-export function AnimatedCard() {
+// Put the branch in a pure function that also reports itself as a `data-`
+// attribute, so the two can never drift — see `shouldAnimateRoster()` in
+// features/team-roster/lib/roster-layout.ts.
+export function PulsingBorder() {
   const shouldReduceMotion = useReducedMotion();
-  // Use only when you need to customize non-Motion behavior (e.g., skip a delay)
+  return (
+    <motion.div
+      animate={shouldReduceMotion ? {} : { borderColor: ['red', 'blue', 'red'] }}
+      transition={{ duration: 2, repeat: Infinity }}
+    />
+  );
 }
 ```
 
@@ -762,9 +771,9 @@ Add `will-change` to elements that animate frequently:
 
 ### 3. Reduce Motion for Accessibility
 
-`<MotionConfig reducedMotion="user">` in `App.tsx` handles this globally for all Motion animations. Additionally, `index.css` collapses all CSS `animation-duration` and `transition-duration` to `0.01ms` under `@media (prefers-reduced-motion: reduce)`, covering any non-Motion CSS animations.
+`<MotionConfig reducedMotion="user">` in `App.tsx` suppresses **transform and layout** Motion animations globally. `index.css` collapses all CSS `animation-duration` and `transition-duration` to `0.01ms` under `@media (prefers-reduced-motion: reduce)`, covering any non-Motion CSS animations. Most components need nothing beyond this.
 
-No per-component `useReducedMotion` calls are needed unless you need to gate non-animation behavior on that preference.
+**Neither reset reaches opacity or colour, including any `repeat: Infinity` loop over them** — `MotionConfig` doesn't suppress those, since they're written as inline styles from JS regardless of the setting. (A `repeat: Infinity` loop over a _transform_ — `x`, `y`, `scale`, `rotate` — is a different case: those are exactly what `MotionConfig` already suppresses, so they need no separate gate.) A `motion.*` component animating opacity or colour must call `useReducedMotion()` itself and branch off; putting the branch in a pure function that also reports itself as a `data-` attribute, so the attribute can't drift from the behavior, is one way to do it (the `shouldAnimateRoster()` shape in `features/team-roster/lib/roster-layout.ts`). `use-session-border-state.ts` gates its colour pulse this way.
 
 ### 4. Animation Duration Guidelines
 

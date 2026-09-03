@@ -14,7 +14,8 @@
  *
  * @module services/tasks/run-stream
  */
-import type { StreamEvent } from '@dorkos/shared/types';
+import type { InterruptReceipt, StreamEvent } from '@dorkos/shared/types';
+import { worthRetrying } from '@dorkos/shared/schemas';
 import { SESSIONS } from '../../config/constants.js';
 import { createTaggedLogger } from '../../lib/logger.js';
 
@@ -34,8 +35,11 @@ const INTERRUPT_TIMEOUT = Symbol('interrupt-timeout');
  * `AgentRuntime` satisfies it structurally.
  */
 export interface RunInterrupter {
-  /** Resolves false when the runtime found no in-flight turn to abort. */
-  interruptQuery(sessionId: string): Promise<boolean>;
+  /**
+   * Answers the {@link InterruptReceipt} vocabulary — `not-running` when the
+   * runtime found no in-flight turn to abort.
+   */
+  interruptQuery(sessionId: string): Promise<InterruptReceipt>;
 }
 
 /**
@@ -132,14 +136,31 @@ export async function interruptRun(runtime: RunInterrupter, sessionId: string): 
     });
     const outcome = await Promise.race([runtime.interruptQuery(sessionId), expiry]);
     if (outcome === INTERRUPT_TIMEOUT) {
+      // This bound winning IS an `unconfirmed / ack-timeout` ending — the
+      // request went out and nothing came back — and it is logged as such
+      // rather than as a receipt, because the receipt belongs to whoever the
+      // runtime eventually answers, which by now is nobody.
       logger.warn(
         `run ${sessionId}: interrupt did not settle within ` +
           `${SESSIONS.STALL_INTERRUPT_TIMEOUT_MS}ms; the run is finalized anyway`
       );
-    } else if (!outcome) {
+    } else if (outcome.outcome === 'not-running') {
       // Also the honest answer for a turn that just finished, and what
       // TestModeRuntime always says — so this is not evidence of a leak.
       logger.debug(`run ${sessionId}: runtime reported no in-flight turn to interrupt`);
+    } else if (worthRetrying(outcome)) {
+      // The one ending worth a warning: nothing DorkOS did ended the turn, so
+      // the run is being finalized over an agent that may still be working.
+      logger.warn(`run ${sessionId}: the turn was not confirmed stopped`, {
+        outcome: outcome.outcome,
+        reason: outcome.reason,
+        runtime: outcome.runtime,
+      });
+    } else {
+      logger.debug(`run ${sessionId}: the turn was stopped`, {
+        outcome: outcome.outcome,
+        reason: outcome.reason,
+      });
     }
   } catch (err) {
     logger.error(`run ${sessionId}: interrupting the turn failed:`, err);

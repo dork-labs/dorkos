@@ -40,6 +40,7 @@ import type {
   TaskItem,
   CommandRegistry,
   SessionSettings,
+  InterruptReceipt,
 } from '@dorkos/shared/types';
 import type {
   AgentRegistryPort,
@@ -749,8 +750,8 @@ export class CodexRuntime implements AgentRuntime {
   }
 
   /** Codex has no addressable background tasks — nothing to stop. */
-  async stopTask(): Promise<boolean> {
-    return false;
+  async stopTask(): Promise<InterruptReceipt> {
+    return { outcome: 'not-running', reason: 'no-open-turn', runtime: this.type };
   }
 
   /**
@@ -760,14 +761,22 @@ export class CodexRuntime implements AgentRuntime {
    * `codex exec` subprocess (the SDK's only interrupt primitive). The events
    * generator then throws AbortError, which the mapper normalizes to a quiet
    * `done` — user-initiated, not an error.
+   *
+   * **`closed`, never `acked`, and that is deliberate** (spec
+   * `runtime-interrupt-receipts` D7). Nothing in codex acknowledges a stop; the
+   * turn ends because the process died. Reporting that as `acked` would tell the
+   * person the agent wound down when it did not, and would hide the very cost
+   * `closed` exists to name. It carries no `reason`: the reasons all say why a
+   * graceful attempt was abandoned, and there is no graceful attempt here to
+   * abandon — the escalation is where every codex stop starts.
    */
-  async interruptQuery(sessionId: string): Promise<boolean> {
+  async interruptQuery(sessionId: string): Promise<InterruptReceipt> {
     const controller = this.activeTurns.get(sessionId);
-    if (!controller) return false;
+    if (!controller) return { outcome: 'not-running', reason: 'no-open-turn', runtime: this.type };
     this.activeTurns.delete(sessionId);
     controller.abort();
     logger.debug('[CodexRuntime] interrupted in-flight turn', { sessionId });
-    return true;
+    return { outcome: 'closed', runtime: this.type };
   }
 
   // --- Session queries (storage) ---

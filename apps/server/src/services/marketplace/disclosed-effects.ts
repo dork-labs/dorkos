@@ -89,7 +89,11 @@ export interface DisclosedSchedule {
   cron: string | null;
   /** How much the job may do without a person in the loop, after the clamp. */
   permissionMode: string;
-  /** Whether the job is created switched on. */
+  /**
+   * Whether the package asked for the job to be switched on. Its declared
+   * intent, not an outcome: `resolveFileArmStatus` parks every packaged
+   * schedule at `pending_approval` on first sighting whatever this says.
+   */
   startsEnabled: boolean;
 }
 

@@ -150,11 +150,16 @@ export default defineConfig([
       '**/*.test.ts',
       'src/lib/dork-home.ts',
       'src/lib/logger.ts',
-      'src/routes/tunnel.ts',
+      // `routes/tunnel.ts` was here until DOR-1738. It read NGROK_AUTHTOKEN,
+      // NODE_ENV, TUNNEL_PORT, DORKOS_PORT and VITE_PORT straight off
+      // process.env; it now reads the validated `env` snapshot, and the one
+      // remaining VITE_PORT read moved to `lib/trusted-origins.ts`, which owns
+      // the only spelling of that variable and carries its own inline disable.
+      // Do not add it back without a reason of the kind the rows below give.
+      //
       // CLAUDE_CONFIG_DIR is the Claude Agent SDK's own env var (not a DorkOS
       // config value env.ts should model), read here to mirror the SDK
-      // subprocess's own config-dir resolution 1:1 (DOR-250). Same rationale
-      // as tunnel.ts's NGROK_AUTHTOKEN above.
+      // subprocess's own config-dir resolution 1:1 (DOR-250).
       'src/services/runtimes/claude-code/claude-config-dir.ts',
       // CODEX_HOME is the Codex CLI's own env var, read here for the same
       // reason and in the same shape: the search index reads rollout files the

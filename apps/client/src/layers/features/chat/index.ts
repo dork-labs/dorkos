@@ -17,6 +17,10 @@ export { buildListRows, messageRowKey } from './lib/build-list-rows';
 export type { ListRow } from './lib/build-list-rows';
 export { buildFileEntries } from './lib/build-file-entries';
 export { resolveTransportRetryText } from './lib/resolve-retry-text';
+export { resolveSigninResumeText } from './model/signin-resume/resolve-signin-resume';
+export type { SigninResumeState } from './model/signin-resume/resolve-signin-resume';
+export { useSigninResumeClaim } from './model/signin-resume/use-signin-resume-claim';
+export type { SigninResumeClaim } from './model/signin-resume/use-signin-resume-claim';
 
 export { ChatEmptyState } from './ui/ChatEmptyState';
 export { BirthCertificate } from './ui/BirthCertificate';
@@ -49,6 +53,8 @@ export { TerminalReasonChip, TurnFailedNotice } from './ui/status';
 
 export { useChatSession } from './model/use-chat-session';
 export type { StopOutcome } from './model/use-session-submit';
+export { stopNotice, shouldReofferStop } from './lib/stop-copy';
+export type { StopNotice } from './lib/stop-copy';
 export { useCelebrations } from './model/use-celebrations';
 export { useTaskState } from './model/use-task-state';
 export { useToolShortcuts } from './model/use-tool-shortcuts';

@@ -38,6 +38,7 @@ import type {
   TaskItem,
   CommandRegistry,
   SessionSettings,
+  InterruptReceipt,
 } from '@dorkos/shared/types';
 import type {
   AgentRuntime,
@@ -87,7 +88,7 @@ import {
   type OpenCodeSessionMapStore,
 } from './session-mapper.js';
 import { OpenCodeGlobalEventHub, TurnEventQueue } from './global-event-hub.js';
-import { OpenCodeSessionRegistry } from './session-registry.js';
+import { OpenCodeSessionRegistry, type OpenCodeSessionPatch } from './session-registry.js';
 import {
   enforceApprovals,
   PendingApprovalStore,
@@ -228,10 +229,13 @@ export class OpenCodeRuntime implements AgentRuntime {
   /**
    * @inheritdoc
    *
-   * Auto-creates untracked sessions (the PATCH-before-first-message path) and
-   * writes the operator's choice through the durable settings store first
-   * (ADR-0260) so it survives restarts. The new mode applies to the very next
-   * permission request — enforcement reads the registry live.
+   * Auto-creates untracked sessions (the PATCH-before-first-message path, and
+   * every PATCH that follows a restart) through the shared hydration seam
+   * {@link OpenCodeRuntime.registerWithPersisted}, so a change to ONE setting
+   * keeps the persisted others, then writes the operator's choice through the
+   * durable settings store (ADR-0260) so it survives the next restart too. The
+   * new mode applies to the very next permission request — enforcement reads
+   * the registry live.
    *
    * `effort` is part of the shared signature and is DROPPED here — not tracked,
    * not echoed, and not written to the durable store. OpenCode's prompt API has
@@ -242,12 +246,11 @@ export class OpenCodeRuntime implements AgentRuntime {
    */
   async updateSession(sessionId: string, opts: SessionSettings): Promise<SessionUpdateResult> {
     const { effort: _unsupported, ...storable } = opts;
+    // Hydrate BEFORE the write-through, so the row this reads is the one that
+    // stood before this PATCH: the settings it says nothing about are exactly
+    // what has to be recovered, and the ones it names outrank them anyway.
+    await this.registerWithPersisted(sessionId, storable);
     await this.settingsPort?.saveSessionSettings(sessionId, storable);
-    this.registry.register(sessionId, {
-      ...(opts.permissionMode !== undefined ? { permissionMode: opts.permissionMode } : {}),
-      ...(opts.model !== undefined ? { model: opts.model } : {}),
-      ...(opts.fastMode !== undefined ? { fastMode: opts.fastMode } : {}),
-    });
     return { updated: true };
   }
 
@@ -461,6 +464,61 @@ export class OpenCodeRuntime implements AgentRuntime {
   }
 
   /**
+   * Register a session's settings, hydrating the durable row (ADR-0260) under
+   * the caller's own fields when the runtime has no memory of the session.
+   * Precedence: explicit → persisted, and for `permissionMode` alone a runtime
+   * default beneath both — a session always runs under SOME mode, while an
+   * unstated model or fastMode is honestly just absent (the sidecar's own
+   * default model, no fast mode) rather than a value this could invent.
+   *
+   * The ONE hydration seam, shared by the two cold entry points that need it —
+   * {@link OpenCodeRuntime.updateSession} and
+   * {@link OpenCodeRuntime.resolveTurnSettings} — because a session loses its
+   * in-memory state on every restart and EITHER a message or a settings PATCH
+   * can be the first thing to arrive afterwards. Registering only the fields a
+   * caller happened to name would drop the row's siblings — a PATCH that picks
+   * a model would reset an enforced `bypassPermissions` session to `default`
+   * while the stored settings (and the app, reading them) kept showing the
+   * operator's real choice (DOR-1152; the claude-code twin is DOR-1151).
+   *
+   * {@link OpenCodeRuntime.ensureSession} is a third cold path and deliberately
+   * does NOT come through here: `SessionOpts.permissionMode` is REQUIRED by the
+   * shared contract — "callers resolve the effective mode (per-send override →
+   * persisted → runtime default) before creating" (`SessionOpts`,
+   * `agent-runtime.ts`) — and its real callers do exactly that, the scheduler
+   * from the task's own mode and the relay from the binding's, on an id it mints
+   * one line earlier that no stored row can describe yet. Reading the store
+   * there would re-derive an answer the caller had already given, or invent one
+   * for a session that has no history.
+   *
+   * A session already tracked in memory reads nothing: its registration is the
+   * live truth, and only the stated fields change.
+   *
+   * @param sessionId - DorkOS session id.
+   * @param explicit - The fields this caller states, which outrank the stored ones.
+   */
+  private async registerWithPersisted(
+    sessionId: string,
+    explicit: OpenCodeSessionPatch = {}
+  ): Promise<void> {
+    const tracked = this.registry.has(sessionId);
+    const persisted = tracked ? null : await this.settingsPort?.getSessionSettings(sessionId);
+    // A tracked session keeps the mode it is running under unless this call
+    // names one; a cold one is born with the persisted mode, or the default.
+    const permissionMode = tracked
+      ? explicit.permissionMode
+      : (explicit.permissionMode ?? persisted?.permissionMode ?? 'default');
+    const model = explicit.model ?? persisted?.model;
+    const fastMode = explicit.fastMode ?? persisted?.fastMode;
+    this.registry.register(sessionId, {
+      ...(permissionMode !== undefined ? { permissionMode } : {}),
+      ...(model !== undefined ? { model } : {}),
+      ...(fastMode !== undefined ? { fastMode } : {}),
+      ...(explicit.cwd !== undefined ? { cwd: explicit.cwd } : {}),
+    });
+  }
+
+  /**
    * Effective settings for one turn: per-send override → tracked session →
    * persisted store (hydrated once for untracked sessions, e.g. resume after
    * a server restart) → runtime default.
@@ -470,12 +528,13 @@ export class OpenCodeRuntime implements AgentRuntime {
     opts?: MessageOpts
   ): Promise<SessionSettings> {
     if (!this.registry.has(sessionId)) {
-      const persisted = await this.settingsPort?.getSessionSettings(sessionId);
-      this.registry.register(sessionId, {
-        permissionMode: opts?.permissionMode ?? persisted?.permissionMode ?? 'default',
-        ...(persisted?.model !== undefined ? { model: persisted.model } : {}),
-        ...(persisted?.fastMode !== undefined ? { fastMode: persisted.fastMode } : {}),
-        ...(opts?.cwd !== undefined ? { cwd: opts.cwd } : {}),
+      // Only the mode and cwd are stated here. A per-send `model`/`fastMode` is
+      // a transient override for THIS turn (Tasks, relay) — it is applied to
+      // the returned settings below and deliberately never tracked, so the
+      // session keeps running on the operator's own choice afterwards.
+      await this.registerWithPersisted(sessionId, {
+        permissionMode: opts?.permissionMode,
+        cwd: opts?.cwd,
       });
     }
     const tracked = this.registry.get(sessionId)!;
@@ -541,8 +600,8 @@ export class OpenCodeRuntime implements AgentRuntime {
   }
 
   /** OpenCode exposes no addressable background tasks — nothing to stop. */
-  async stopTask(): Promise<boolean> {
-    return false;
+  async stopTask(): Promise<InterruptReceipt> {
+    return { outcome: 'not-running', reason: 'no-open-turn', runtime: this.type };
   }
 
   /**
@@ -551,17 +610,28 @@ export class OpenCodeRuntime implements AgentRuntime {
    * Aborts the in-flight turn via `POST /session/{id}/abort`, bounded by
    * {@link awaitAbortAck} (DOR-1299): a wedged sidecar drops the request the
    * same way an ended stdin drops claude-code's, and nothing then answers it,
-   * ever. Past {@link INTERRUPT_ACK_TIMEOUT_MS} this gives up and answers
-   * `false` — honest, not an escalation; see {@link INTERRUPT_ACK_TIMEOUT_MS}
-   * for why there is nothing session-scoped to escalate TO here.
+   * ever. Past {@link INTERRUPT_ACK_TIMEOUT_MS} this gives up; see
+   * {@link INTERRUPT_ACK_TIMEOUT_MS} for why there is nothing session-scoped to
+   * escalate TO here.
    *
    * On the acked path the wire carries `session.error{MessageAbortedError}` +
    * `session.idle`, which the mapper normalizes to a quiet `done` —
    * user-initiated, not an error.
+   *
+   * **Nothing here is ever `closed`, and DorkOS does not settle a turn it did
+   * not observe end** (spec `runtime-interrupt-receipts` §4.2, D6). An abort
+   * that answers `false`, or that nothing answers at all, is `unconfirmed`: the
+   * DorkOS-side turn stays open, Stop stays pressable, and the person is told
+   * the stop was requested but not confirmed. Fabricating an end instead would
+   * show a stopped turn that goes on producing text and disagrees with the
+   * runtime's own store at the next hydrate — the DOR-1313 shape. Escalating by
+   * killing the sidecar is not available either: it is DorkOS-managed and shared
+   * by every OpenCode session on the machine (ADR-0308), so stopping one turn
+   * that way would stop every other one too.
    */
-  async interruptQuery(sessionId: string): Promise<boolean> {
+  async interruptQuery(sessionId: string): Promise<InterruptReceipt> {
     const turn = this.activeTurns.get(sessionId);
-    if (!turn) return false;
+    if (!turn) return { outcome: 'not-running', reason: 'no-open-turn', runtime: this.type };
     const ack = await awaitAbortAck(async () => {
       const client = await this.provider.getClient(turn.cwd);
       return (
@@ -577,16 +647,20 @@ export class OpenCodeRuntime implements AgentRuntime {
       case 'settled':
         if (ack.aborted) {
           logger.debug('[OpenCodeRuntime] interrupted in-flight turn', { sessionId });
-        } else {
-          logger.warn('[OpenCodeRuntime] interrupt returned false', { sessionId });
+          return { outcome: 'acked', runtime: this.type };
         }
-        return ack.aborted;
+        logger.warn('[OpenCodeRuntime] interrupt returned false', { sessionId });
+        return { outcome: 'unconfirmed', reason: 'runtime-declined', runtime: this.type };
       case 'refused':
+        // The call itself blew up — the sidecar is down, or the network is. The
+        // turn is untouched and nothing DorkOS did ended it, which is `failed`
+        // rather than `unconfirmed`: this one reads as an error and asks the
+        // person to try again.
         logger.warn('[OpenCodeRuntime] interrupt call failed', { sessionId });
-        return false;
+        return { outcome: 'failed', reason: 'delivery-failed', runtime: this.type };
       case 'unacked':
         logger.warn('[OpenCodeRuntime] interrupt timed out waiting for an ack', { sessionId });
-        return false;
+        return { outcome: 'unconfirmed', reason: 'ack-timeout', runtime: this.type };
     }
   }
 

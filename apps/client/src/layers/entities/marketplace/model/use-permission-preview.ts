@@ -34,5 +34,15 @@ export function usePermissionPreview(
     queryFn: () => transport.previewMarketplacePackage(name!, hasOpts ? installOpts : undefined),
     enabled: enabled && name !== null,
     staleTime: 30_000,
+    // This preview is a consent surface: a caller decides whether to gate an
+    // install on it, and a PAUSED query answers neither "here is what the
+    // package does" nor "we could not find out". TanStack's default
+    // `networkMode: 'online'` pauses whenever `navigator.onLine` is false, which
+    // says nothing about the DorkOS server — it is this machine's own process,
+    // reached over localhost, and dropped wifi is not a reason to stop asking it
+    // (the same reasoning `entities/config/model/use-config.ts` spells out). Let
+    // the request run and let it FAIL, so a surface waiting on this gets a real
+    // error to disclose instead of a silence it cannot tell from an answer.
+    networkMode: 'always',
   });
 }

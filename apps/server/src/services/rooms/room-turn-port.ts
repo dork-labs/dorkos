@@ -18,6 +18,7 @@
 import type { RoomContextData, RoomReplyMode } from '@dorkos/shared/additional-context';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
+import type { InterruptReceipt } from '@dorkos/shared/types';
 import type { ProjectableAttachment } from './room-context.js';
 import type { RoomTurnUnanswered } from './notices/notice-log.js';
 import type { WaitingKind } from './notices/notice-copy.js';
@@ -272,23 +273,22 @@ export interface RoomTurnRunner {
    * is halting, and a turn that finished a moment earlier is a successful halt,
    * not a failure.
    *
-   * **The answer is whether the stop LANDED ON ANYTHING** — the runtime's own
-   * `interruptQuery` boolean, carried out rather than dropped here (DOR-1425).
-   * `false` means the runtime had no turn to aim it at: either the turn was
-   * already over, or it had not yet reached the point where it can be stopped.
-   * The claim is dropped and the room says the same thing either way, because a
-   * claim held for a turn nobody could interrupt is an indicator with nothing
-   * behind it; what the answer buys is a log an operator can read, and the one
-   * place the room could ever say "we could not reach the agent".
+   * **The answer is the runtime's own {@link InterruptReceipt}**, carried out
+   * rather than dropped here (DOR-1425, spec `runtime-interrupt-receipts` §5.2).
+   * `not-running` means the runtime had no turn to aim it at: either the turn
+   * was already over, or it had not yet reached the point where it can be
+   * stopped. `unconfirmed` and `failed` mean the opposite — a turn IS there and
+   * nothing DorkOS can see ended it — which the boolean this replaced folded
+   * together with the first case.
    *
-   * Deliberately still a boolean and not the five-value receipt of
-   * `specs/runtime-interrupt-receipts` §5.2: that spec replaces this return type
-   * along with every other stop-shaped verb's, and widening one caller ahead of
-   * it would be a second vocabulary to migrate.
+   * The claim is dropped whatever the receipt says, because a claim held for a
+   * turn nobody could interrupt is an indicator with nothing behind it. What the
+   * receipt buys is a log an operator can read, and the one place the room could
+   * ever say "we could not reach the agent".
    *
    * @param request.sessionId - The session the turn is running on.
    * @param request.agentPath - The agent's directory, which selects its runtime.
-   * @returns Whether the runtime had a turn to stop.
+   * @returns The receipt naming which of the five endings the stop reached.
    */
-  interrupt(request: { sessionId: string; agentPath: string }): Promise<boolean>;
+  interrupt(request: { sessionId: string; agentPath: string }): Promise<InterruptReceipt>;
 }

@@ -11,6 +11,7 @@ import { cpSync, readFileSync, readdirSync, rmSync } from 'fs';
 import { isBuiltin } from 'module';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { parse as parseYaml } from 'yaml';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../../..');
@@ -330,6 +331,29 @@ function packageNameOf(specifier: string): string {
   return specifier.startsWith('@') ? segments.slice(0, 2).join('/') : segments[0];
 }
 
+/** The declared dependency versions this build reads pins against. */
+type DeclaredDependencies = Record<string, string>;
+
+/**
+ * The parts of `apps/desktop/package.json` the gates below read. Everything
+ * electron-builder packs is derived from these two maps.
+ */
+interface DesktopManifest {
+  dependencies?: DeclaredDependencies;
+  optionalDependencies?: DeclaredDependencies;
+}
+
+/**
+ * Read `apps/desktop/package.json`, the source of truth for what ships.
+ *
+ * @returns The parsed manifest.
+ */
+function readDesktopManifest(): DesktopManifest {
+  return JSON.parse(
+    readFileSync(path.join(DESKTOP_PKG, 'package.json'), 'utf-8')
+  ) as DesktopManifest;
+}
+
 /**
  * Assert every package the bundle imports is one electron-builder will pack.
  *
@@ -348,10 +372,7 @@ function packageNameOf(specifier: string): string {
  * @throws If a specifier's package is not a declared runtime dependency.
  */
 function assertExternalsArePackaged(specifiers: string[]): void {
-  const pkg = JSON.parse(readFileSync(path.join(DESKTOP_PKG, 'package.json'), 'utf-8')) as {
-    dependencies?: Record<string, string>;
-    optionalDependencies?: Record<string, string>;
-  };
+  const pkg = readDesktopManifest();
   // optionalDependencies count: electron-builder packs them, and that is how
   // the per-platform Claude Code binary ships (see electron-builder.yml).
   const packaged = new Set([
@@ -435,31 +456,63 @@ function verifyBundleLoadable(outfile: string, metafile: Metafile): void {
   );
 }
 
-/** The declared dependency versions this build reads pins against. */
-type DeclaredDependencies = Record<string, string>;
+/**
+ * The version `name` actually resolves to in this checkout — read from the copy
+ * under the desktop package's own `node_modules`, which is the copy
+ * electron-builder packs.
+ *
+ * Used by families whose parent is declared as a RANGE: comparing a
+ * per-platform pin against `"^1.7.0"` compares it against something that is not
+ * a version at all, so the pin is compared against what that range resolved to
+ * instead. (Reading a sibling package's manifest rather than importing it is
+ * the same trick `scripts/rebuild-natives.ts` uses to learn Electron's version,
+ * and it never evaluates the package — see {@link verifyBundleLoadable} for why
+ * this build must not.)
+ *
+ * @param name - Package name to look up.
+ * @returns The installed version.
+ * @throws If the package is not installed, since the pin cannot then be judged.
+ */
+function installedVersionOf(name: string): string {
+  const manifest = path.join(DESKTOP_PKG, 'node_modules', name, 'package.json');
+  try {
+    return (JSON.parse(readFileSync(manifest, 'utf-8')) as { version: string }).version;
+  } catch (err) {
+    throw new Error(
+      `Cannot read ${manifest}, so the per-platform binary pins for ${name} cannot be ` +
+        `checked. Run pnpm install.`,
+      { cause: err }
+    );
+  }
+}
 
 /**
- * The three families of per-platform native binary the packaged app ships, and
+ * The four families of per-platform native binary the packaged app ships, and
  * what each one's `optionalDependencies` pin has to equal.
  *
- * All three are the same shape of hazard: a package whose only job is to carry
- * an executable for one platform, kept in step with a parent package by nothing
- * but somebody remembering. A skewed pin does not fail to install and does not
- * fail to package — it produces an app that starts and then cannot do one
- * particular thing:
+ * All four are the same shape of hazard: a package whose only job is to carry
+ * one platform's binary, kept in step with a parent package by nothing but
+ * somebody remembering. A skewed pin does not fail to install and does not fail
+ * to package — it produces an app that starts and then cannot do one particular
+ * thing:
  *
  * - **Claude Code** — the SDK spawns a binary from a different release than the
  *   protocol it speaks.
  * - **Codex** — same, one runtime over.
- * - **esbuild** — the loudest of the three: esbuild passes its own version to
- *   the binary and refuses outright when they differ, so every extension in the
- *   app stops compiling. Its pin is compared against the version esbuild
- *   actually resolves to rather than the range in `package.json`, because the
- *   repo root pins `esbuild` through a pnpm override — `^0.25.0`, which is what
- *   `apps/desktop` now declares too, so this package reads honestly on its own.
- *   (`apps/server` and `packages/cli` still say `^0.28.0` and are still
- *   overridden to 0.25.x; neither packages a binary, so neither is checked
- *   here.)
+ * - **esbuild** — the loudest of the four: esbuild passes its own version to the
+ *   binary and refuses outright when they differ, so every extension in the app
+ *   stops compiling.
+ * - **ngrok** — the odd one out, because it is `dlopen`ed rather than spawned:
+ *   `@ngrok/ngrok` is a napi-rs addon whose JS loader `require`s the platform
+ *   package for its `.node` file. napi keeps it ABI-stable across Node and
+ *   Electron (so `scripts/rebuild-natives.ts` leaves it alone), but a JS loader
+ *   and a binary from different releases still have to agree.
+ *
+ * esbuild and ngrok are pinned against the version their parent RESOLVED to
+ * rather than the range `package.json` declares, because both parents are
+ * declared as carets here and in the two other workspace packages that use them
+ * — matching those keeps one copy of each in the tree, and the desktop app runs
+ * the same server source `apps/server` does.
  *
  * Anything outside these prefixes is left alone: this is a rule about
  * per-platform binaries, not about optional dependencies in general.
@@ -493,7 +546,46 @@ const PLATFORM_BINARY_FAMILIES: ReadonlyArray<{
     expected: () => esbuildVersion,
     lockedTo: 'the esbuild version this build resolved',
   },
+  {
+    // Covers both spellings of ngrok's platform packages: darwin-arm64, and
+    // win32-x64-msvc with the toolchain suffix napi-rs gives Windows targets.
+    prefix: '@ngrok/ngrok-',
+    expected: () => installedVersionOf('@ngrok/ngrok'),
+    lockedTo: 'the @ngrok/ngrok version this install resolved',
+  },
 ];
+
+/**
+ * The `asarUnpack` glob a per-platform binary package needs, verbatim.
+ *
+ * Compared by exact string equality, deliberately: electron-builder accepts
+ * other spellings that unpack the same files, and teaching this gate to judge
+ * glob equivalence would mean reimplementing its matcher. A functionally
+ * equivalent glob written some other way therefore fails the build and asks
+ * for this one — an error that costs a one-line edit, in the direction where
+ * being wrong is safe. Silently accepting a glob that turns out not to match
+ * is the direction that ships a broken app.
+ *
+ * @param name - The package name.
+ * @returns The glob electron-builder.yml must contain for it.
+ */
+function unpackGlobFor(name: string): string {
+  return `**/node_modules/${name}/**`;
+}
+
+/**
+ * The package a `**\/node_modules/<name>/**` glob unpacks, or undefined for any
+ * other glob (`dist/renderer/**`, `core-extensions/**`).
+ *
+ * The same verbatim-only reading as {@link unpackGlobFor}: this recognises the
+ * one spelling this file writes, so an unrecognised glob is simply not judged
+ * rather than judged wrongly.
+ *
+ * @param glob - One entry from electron-builder.yml's `asarUnpack` list.
+ */
+function packageNameFromUnpackGlob(glob: string): string | undefined {
+  return /^\*\*\/node_modules\/(.+)\/\*\*$/.exec(glob)?.[1];
+}
 
 /**
  * Assert every per-platform binary package is pinned to its parent's version.
@@ -505,10 +597,7 @@ const PLATFORM_BINARY_FAMILIES: ReadonlyArray<{
  * @throws If any pin has drifted from what it is locked to.
  */
 function assertPlatformBinariesLocked(): void {
-  const pkg = JSON.parse(readFileSync(path.join(DESKTOP_PKG, 'package.json'), 'utf-8')) as {
-    dependencies?: DeclaredDependencies;
-    optionalDependencies?: DeclaredDependencies;
-  };
+  const pkg = readDesktopManifest();
   const dependencies = pkg.dependencies ?? {};
   const problems: string[] = [];
   let checked = 0;
@@ -528,7 +617,7 @@ function assertPlatformBinariesLocked(): void {
   if (problems.length > 0) {
     throw new Error(
       `apps/desktop/package.json ships per-platform binaries whose versions have drifted ` +
-        `from what they carry the executable for:\n\n${problems.join('\n')}\n\n` +
+        `from the parent they carry a binary for:\n\n${problems.join('\n')}\n\n` +
         `Update the optionalDependencies pins (and run pnpm install), or roll the parent back. ` +
         `A skewed pin packages green and only breaks in an installed app.`
     );
@@ -536,9 +625,246 @@ function assertPlatformBinariesLocked(): void {
   console.log(`  ✓ All ${checked} per-platform binary packages are version-locked`);
 }
 
+/**
+ * Names that read as "this package carries one platform's binary": a platform
+ * token next to an architecture token, the same shape app-builder-lib itself
+ * matches when it reports a platform package it could not bundle.
+ *
+ * `darwin-universal` is here because ngrok publishes a fat Mach-O under that
+ * name; it carries no arch token and is deliberately never selected for a
+ * specific target below.
+ */
+const PLATFORM_PACKAGE_NAME =
+  /(linux|win32|darwin|freebsd|android)[-_](x64|arm64|ia32|arm|ppc64|s390x|loong64|riscv64|universal)/;
+
+/** One platform/arch pair electron-builder.yml says this app is packaged for. */
+interface PackagedTarget {
+  /** Node's name for the platform (`darwin`, `win32`, `linux`). */
+  platform: string;
+  /** Architecture as electron-builder spells it (`arm64`, `x64`). */
+  arch: string;
+}
+
+/** electron-builder.yml's platform keys, mapped to Node's platform names. */
+const TARGET_PLATFORMS = [
+  { key: 'mac', platform: 'darwin' },
+  { key: 'win', platform: 'win32' },
+  { key: 'linux', platform: 'linux' },
+] as const;
+
+/**
+ * The shape of electron-builder.yml this build reads. Only the two keys the
+ * gates below need — everything else in that file is electron-builder's.
+ */
+interface BuilderConfig {
+  asarUnpack?: string[];
+  mac?: { target?: { arch?: string[] }[] };
+  win?: { target?: { arch?: string[] }[] };
+  linux?: { target?: { arch?: string[] }[] };
+}
+
+/**
+ * Read `electron-builder.yml`.
+ *
+ * @returns The parsed packaging config.
+ */
+function readBuilderConfig(): BuilderConfig {
+  return parseYaml(
+    readFileSync(path.join(DESKTOP_PKG, 'electron-builder.yml'), 'utf-8')
+  ) as BuilderConfig;
+}
+
+/**
+ * Every platform/arch this app is actually packaged for, read from the same
+ * `target` blocks electron-builder builds from.
+ *
+ * Derived rather than hardcoded so that adding an arch (mac x64, win32-arm64,
+ * a linux target) immediately demands that arch's binary from every family,
+ * instead of packaging green and shipping a target with no tools in it.
+ *
+ * @param config - The parsed electron-builder config.
+ * @returns One entry per platform/arch pair.
+ */
+function packagedTargets(config: BuilderConfig): PackagedTarget[] {
+  // De-duplicated: mac lists arm64 twice (once for dmg, once for the zip
+  // electron-updater installs from), and that is one target to check, not two.
+  const pairs = new Set<string>();
+  for (const { key, platform } of TARGET_PLATFORMS) {
+    for (const target of config[key]?.target ?? []) {
+      for (const arch of target.arch ?? []) pairs.add(`${platform}/${arch}`);
+    }
+  }
+  return [...pairs].map((pair) => {
+    const [platform, arch] = pair.split('/');
+    return { platform, arch };
+  });
+}
+
+/**
+ * Every dependency that delegates its native binary to per-platform optional
+ * packages, discovered by reading what each direct dependency declares about
+ * itself rather than from a list maintained here.
+ *
+ * This is the half the prefix list in {@link PLATFORM_BINARY_FAMILIES} cannot
+ * do. That list only describes packages someone already thought to add, so it
+ * can police a family that is half-wired but is blind to one that is not wired
+ * at all — which is the state BOTH shipped bugs were actually in (#1458 and
+ * DOR-1335 each added the package.json entry and the asarUnpack glob in one
+ * commit, because neither existed). Reading the dependency's own manifest
+ * finds the family the moment it enters the tree, before anyone has written
+ * anything here about it.
+ *
+ * What it can see: a parent whose own `optionalDependencies` name its platform
+ * packages. All four families do (verified: claude-agent-sdk 8, ngrok 13,
+ * codex 6, esbuild 18) — and today no other direct dependency does, so this
+ * discovers exactly the four and nothing else.
+ *
+ * What it cannot see: a parent that resolves its binary some other way — a
+ * postinstall download, a hardcoded sibling, a transitive package's optional
+ * deps (only DIRECT dependencies are read; every family so far is one, because
+ * the package holding the binary is what has to be declared here anyway). A
+ * dependency that is not installed for this platform is skipped: it is a
+ * platform leaf we already declare, never a parent, because a parent has to be
+ * installed for the bundle to build at all.
+ *
+ * @param manifest - apps/desktop's own manifest.
+ * @returns Parent package name -> the platform packages it names.
+ */
+function discoverPlatformFamilies(manifest: DesktopManifest): Map<string, string[]> {
+  const families = new Map<string, string[]>();
+  const direct = [
+    ...Object.keys(manifest.dependencies ?? {}),
+    ...Object.keys(manifest.optionalDependencies ?? {}),
+  ];
+  for (const name of direct) {
+    let parent: { optionalDependencies?: Record<string, string> };
+    try {
+      parent = JSON.parse(
+        readFileSync(path.join(DESKTOP_PKG, 'node_modules', name, 'package.json'), 'utf-8')
+      ) as typeof parent;
+    } catch {
+      continue; // Not installed for this platform — a leaf we declare, not a parent.
+    }
+    const members = Object.keys(parent.optionalDependencies ?? {}).filter((member) =>
+      PLATFORM_PACKAGE_NAME.test(member)
+    );
+    if (members.length > 0) families.set(name, members);
+  }
+  return families;
+}
+
+/**
+ * Families whose per-platform binary this app deliberately does NOT ship.
+ *
+ * Deliberately EMPTY, and the same bar as {@link ALLOWED_WARNING_TEXTS}: an
+ * entry here silences a real "this target ships without that tool" finding, so
+ * it needs a comment saying why the packaged app does not need that binary —
+ * a runtime that is provisioned on demand rather than bundled, say. "The build
+ * went red" is not a reason; wiring the family up is the fix.
+ */
+const FAMILIES_NOT_SHIPPED: readonly string[] = [];
+
+/**
+ * Assert every per-platform binary family is wired all the way through, in
+ * every direction that can silently ship a broken app:
+ *
+ * 1. **Every packaged target has a binary from every family** — the check that
+ *    would have caught both historical bugs, and the reason the families are
+ *    discovered ({@link discoverPlatformFamilies}) rather than listed.
+ * 2. **Everything declared is also unpacked** — a package inside `app.asar` can
+ *    be neither spawned nor `dlopen`ed, so declaring alone ships a binary
+ *    nothing can open.
+ * 3. **Everything unpacked is also declared** — a glob for a package that is
+ *    not in the production tree unpacks nothing at all.
+ * 4. **Everything declared has a pin rule** — otherwise
+ *    {@link assertPlatformBinariesLocked} skips it in silence and its version
+ *    is free to drift from the parent it carries the binary for.
+ *
+ * All four package green and fail only in an installed app.
+ *
+ * @throws If any family has a gap.
+ */
+function assertPlatformBinariesWired(): void {
+  const manifest = readDesktopManifest();
+  const declared = manifest.optionalDependencies ?? {};
+  const config = readBuilderConfig();
+  const asarUnpack = config.asarUnpack ?? [];
+  const globs = new Set(asarUnpack);
+  const families = discoverPlatformFamilies(manifest);
+  const targets = packagedTargets(config);
+  const problems: string[] = [];
+
+  for (const [parent, members] of families) {
+    if (FAMILIES_NOT_SHIPPED.includes(parent)) continue;
+    for (const { platform, arch } of targets) {
+      // Match the target against the member's NAME rather than constructing
+      // one: every family spells its members differently (@esbuild/darwin-arm64,
+      // @ngrok/ngrok-win32-x64-msvc with a toolchain suffix, @openai/codex-*
+      // as an npm alias), and `<platform>-<arch>` as an adjacent, delimited
+      // pair is the one thing all four agree on. Delimited so that an `arm`
+      // target could never be answered by an `arm64` package, and adjacent so
+      // `-darwin-universal` is not offered for a specific arch.
+      const target = new RegExp(`${platform}[-_]${arch}([-_]|$)`);
+      const candidates = members.filter((member) => target.test(member));
+      // No candidate means the family publishes nothing for this target — a
+      // real case (nobody builds freebsd here). It would also be how a family
+      // that spelled its names the other way round read, which is one of the
+      // things the packaged smoke exists to catch below this gate.
+      if (candidates.length === 0) continue;
+      if (candidates.some((m) => m in declared)) continue;
+      problems.push(
+        `  ${platform}-${arch} is packaged, but nothing from ${parent}'s per-platform family is ` +
+          `declared for it. Add one of: ${candidates.join(', ')}.`
+      );
+    }
+  }
+
+  // Judged by NAME SHAPE, not by the prefix list: a member of a family nobody
+  // has written a pin rule for yet is exactly the case that needs catching,
+  // and filtering by the prefix list here would make the pin-rule check below
+  // unreachable — it could only ever run on names that already matched one.
+  for (const name of Object.keys(declared).filter((n) => PLATFORM_PACKAGE_NAME.test(n))) {
+    if (!globs.has(unpackGlobFor(name))) {
+      problems.push(
+        `  ${name} is declared in package.json but electron-builder.yml has no ` +
+          `'${unpackGlobFor(name)}' under asarUnpack — it would ship trapped inside app.asar.`
+      );
+    }
+    if (!PLATFORM_BINARY_FAMILIES.some(({ prefix }) => name.startsWith(prefix))) {
+      problems.push(
+        `  ${name} is declared but matches no entry in PLATFORM_BINARY_FAMILIES, so nothing ` +
+          `checks its version against the parent it carries a binary for. Add a pin rule.`
+      );
+    }
+  }
+
+  for (const glob of asarUnpack) {
+    const name = packageNameFromUnpackGlob(glob);
+    if (name === undefined || !PLATFORM_PACKAGE_NAME.test(name) || name in declared) continue;
+    problems.push(
+      `  '${glob}' unpacks ${name}, which package.json does not list under ` +
+        `optionalDependencies — nothing would be there to unpack.`
+    );
+  }
+
+  if (problems.length > 0) {
+    throw new Error(
+      `apps/desktop's per-platform binaries are not fully wired:\n\n${problems.join('\n')}\n\n` +
+        `Every one of them needs BOTH an os/cpu-guarded optionalDependencies entry (which is ` +
+        `what puts it where electron-builder's copier finds it) AND an asarUnpack glob (which ` +
+        `is what makes it a real file on disk).`
+    );
+  }
+  console.log(
+    `  ✓ All ${families.size} per-platform binary families are wired for all ` +
+      `${targets.length} packaged targets`
+  );
+}
+
 async function buildServer() {
   console.log('[1/2] Bundling server...');
   assertPlatformBinariesLocked();
+  assertPlatformBinariesWired();
   rmSync(path.join(OUT, 'server'), { recursive: true, force: true });
 
   // ESM, not CJS, and `.mjs` (not `.js`): apps/server's source is ESM

@@ -420,6 +420,11 @@ import { SessionSchema } from '@dorkos/shared/schemas';
 | Utilities        | kebab-case                  | `stream-parser.ts`                  |
 | Index            | `index.ts`                  | Public API barrel export            |
 
+`layers/shared/ui/` is the exception: files are kebab-case regardless of
+shadcn-vs-custom origin (`button.tsx`, `mention-pill.tsx`, `trust-dial.tsx`).
+See `.claude/rules/components.md` for the full rule, including its own named
+exceptions.
+
 ## Anti-Patterns
 
 ```typescript

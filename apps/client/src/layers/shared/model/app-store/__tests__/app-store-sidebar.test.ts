@@ -28,9 +28,9 @@ describe('CoreSlice — sidebarActiveTab', () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBe(legacyId);
   });
 
-  it('resetPreferences returns the active tab to overview and clears storage', () => {
+  it('resetAllSettings returns the active tab to overview and clears storage', () => {
     useAppStore.getState().setSidebarActiveTab('linear-issues:linear-loop-sidebar');
-    useAppStore.getState().resetPreferences();
+    useAppStore.getState().resetAllSettings();
     expect(useAppStore.getState().sidebarActiveTab).toBe('overview');
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
   });

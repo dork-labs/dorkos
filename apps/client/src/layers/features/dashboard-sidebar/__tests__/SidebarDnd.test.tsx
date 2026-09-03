@@ -34,7 +34,17 @@ function Row() {
         data={sidebarDndData('ungrouped', { kind: 'agent', path: '/a' })}
       >
         {(b) => (
-          <div ref={b.setNodeRef} {...b.handleProps} data-testid="row">
+          // `data-dragging` mirrors the bindings' own `isDragging`, which is
+          // dnd-kit's active-drag state read straight off the hook. It is what
+          // these tests watch a keyboard drag through, because the drag root is
+          // no longer a `role="button"` and so no longer carries `aria-pressed`
+          // (DOR-1418) — and the real rows dim themselves off this same flag.
+          <div
+            ref={b.setNodeRef}
+            {...b.handleProps}
+            data-testid="row"
+            {...(b.isDragging ? { 'data-dragging': '' } : {})}
+          >
             alpha
             <button type="button" data-testid="nested-action">
               New session
@@ -66,7 +76,25 @@ describe('SidebarDnd', () => {
     render(<Row />);
     const row = screen.getByTestId('row');
     expect(row.getAttribute('aria-roledescription')).toBe('sortable');
+    // **The `0` is this fixture's, not the app's.** It is what dnd-kit puts on a
+    // drag root by default, and the assertion is that the drag layer attached at
+    // all. In the real panel the sidebar's roving focus takes these to `-1`, so
+    // do not read this line as "a drag root is in the tab order there".
     expect(row.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('wraps the row in a container role, never a second button (DOR-1418)', () => {
+    render(<Row />);
+    const row = screen.getByTestId('row');
+    // dnd-kit defaults a draggable to `role="button"`, which around a row that
+    // CONTAINS a button is axe's `nested-interactive` — 21 of them on the
+    // sidebar. `group` is a container role, so it is allowed focusable content,
+    // and it still carries the sortable's ARIA.
+    expect(row.getAttribute('role')).toBe('group');
+    expect(row.querySelector('button')).not.toBeNull();
+    // Still described by dnd-kit's keyboard instructions, which is what makes
+    // the roledescription mean anything to a reader.
+    expect(row.getAttribute('aria-describedby')).toMatch(/DndDescribedBy/);
   });
 
   it('disables drag on mobile: no drag handlers or sortable role attach in the Sheet', () => {
@@ -75,6 +103,7 @@ describe('SidebarDnd', () => {
     const row = screen.getByTestId('row');
     expect(row.getAttribute('aria-roledescription')).toBeNull();
     expect(row.getAttribute('tabindex')).toBeNull();
+    expect(row.getAttribute('role')).toBeNull();
   });
 
   // The row registers itself as its own activator node, so KeyboardSensor only
@@ -85,8 +114,9 @@ describe('SidebarDnd', () => {
     render(<Row />);
     const row = screen.getByTestId('row');
     fireEvent.keyDown(row, { code: 'Enter' });
-    // dnd-kit reflects the active keyboard drag as aria-pressed on the row.
-    expect(row.getAttribute('aria-pressed')).toBe('true');
+    // The row reports itself as the active draggable — dnd-kit's own
+    // `isDragging`, mirrored onto the node by the fixture above.
+    expect(row.hasAttribute('data-dragging')).toBe(true);
     // End the drag so cleanup unmounts an idle tree.
     fireEvent.keyDown(row, { code: 'Escape' });
   });
@@ -97,7 +127,7 @@ describe('SidebarDnd', () => {
     const nested = screen.getByTestId('nested-action');
     fireEvent.keyDown(nested, { code: 'Enter' });
     fireEvent.keyDown(nested, { code: 'Space' });
-    expect(row.getAttribute('aria-pressed')).toBeNull();
+    expect(row.hasAttribute('data-dragging')).toBe(false);
   });
 });
 

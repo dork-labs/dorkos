@@ -23,7 +23,7 @@ import type {
   ElicitationResult,
   PermissionUpdate,
 } from '@anthropic-ai/claude-agent-sdk';
-import type { StreamEvent, QuestionItem } from '@dorkos/shared/types';
+import type { AlwaysAllowScope, StreamEvent, QuestionItem } from '@dorkos/shared/types';
 import { logRefusal } from '../../../observability/refusals.js';
 import { logger } from '../../../../lib/logger.js';
 import { SESSIONS } from '../../../../config/constants.js';
@@ -48,6 +48,12 @@ export interface ApprovalSnapshot {
   blockedPath?: string;
   decisionReason?: string;
   hasSuggestions: boolean;
+  /**
+   * How far an accepted "Always Allow" reaches, so a card rebuilt on recovery
+   * names the same scope the live one did (DOR-1462). Absent when the prompt
+   * carried no suggestions — there is no button to describe.
+   */
+  alwaysAllowScope?: AlwaysAllowScope;
 }
 
 /**

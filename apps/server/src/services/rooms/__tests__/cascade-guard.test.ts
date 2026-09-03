@@ -14,6 +14,7 @@ import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { deriveCascade, evaluateCascade } from '../cascade-guard.js';
 import { buildCascadeNotice } from '../notices/notice-copy.js';
 import type { AuthorRegistry } from '../author-registry.js';
+import { mockInterruptReceipt } from '@dorkos/test-utils';
 import type { RoomService } from '../room-service.js';
 import {
   agentLookupFor,
@@ -220,7 +221,7 @@ describe('cascade guard, wired', () => {
     const selfPosting: ScriptedTurnRunner = {
       turns,
       interrupted: [],
-      interrupt: () => Promise.resolve(false),
+      interrupt: () => Promise.resolve(mockInterruptReceipt('not-running')),
       run(request) {
         turns.push({
           roomId: request.room.id,
@@ -334,7 +335,7 @@ describe('cascade guard, wired', () => {
     const narrating: ScriptedTurnRunner = {
       turns,
       interrupted: [],
-      interrupt: () => Promise.resolve(true),
+      interrupt: () => Promise.resolve(mockInterruptReceipt('acked')),
       run(req) {
         turns.push({
           roomId: req.room.id,
@@ -413,7 +414,7 @@ describe('cascade guard, wired', () => {
     const twoRooms: ScriptedTurnRunner = {
       turns,
       interrupted: [],
-      interrupt: () => Promise.resolve(true),
+      interrupt: () => Promise.resolve(mockInterruptReceipt('acked')),
       run(req) {
         turns.push({
           roomId: req.room.id,
@@ -501,7 +502,7 @@ describe('cascade guard, wired', () => {
     const chatty: ScriptedTurnRunner = {
       turns,
       interrupted: [],
-      interrupt: () => Promise.resolve(false),
+      interrupt: () => Promise.resolve(mockInterruptReceipt('not-running')),
       run(req) {
         turns.push({
           roomId: req.room.id,
@@ -680,7 +681,7 @@ describe('triggering', () => {
       runner: {
         turns: [],
         interrupted: [],
-        interrupt: () => Promise.resolve(false),
+        interrupt: () => Promise.resolve(mockInterruptReceipt('not-running')),
         run: () => Promise.reject(new Error('runtime exploded')),
       },
     });

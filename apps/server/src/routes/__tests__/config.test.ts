@@ -853,7 +853,12 @@ describe('PATCH /api/config', () => {
         .patch('/api/config')
         .send({ tunnel: { authtoken: 'chosen-by-a-person' } })
         .expect(200);
-      expect(ok.body.config.tunnel.authtoken).toBe('chosen-by-a-person');
+      expect(ok.body.success).toBe(true);
+      // The write LANDED, read off the store rather than out of the answer: the
+      // answer is the curated snapshot and never carries the token (DOR-1740).
+      const { configManager } = await import('../../services/core/config-manager.js');
+      expect(configManager.getDot('tunnel.authtoken')).toBe('chosen-by-a-person');
+      expect(ok.body.config.tunnel.authtokenConfigured).toBe(true);
     });
 
     it('still refuses an agent that names itself, cookie or not', async () => {
@@ -907,9 +912,12 @@ describe('PATCH /api/config', () => {
       .patch('/api/config')
       .send({ tunnel: { authtoken: 'planted' }, mcp: { apiKey: 'planted' } })
       .expect(200);
-    expect(ok.body.config.tunnel.authtoken).toBe('planted');
+    expect(ok.body.success).toBe(true);
 
+    // Both writes landed. Measured at the store, not in the answer — the answer
+    // is the curated snapshot and carries neither value (DOR-1740).
     const { configManager } = await import('../../services/core/config-manager.js');
+    expect(configManager.getDot('tunnel.authtoken')).toBe('planted');
     expect(configManager.getDot('mcp.apiKey')).toBe('planted');
   });
 
@@ -993,6 +1001,127 @@ describe('PATCH /api/config', () => {
       .expect(400);
 
     expect(response.body.error).toBe('Validation failed');
+  });
+
+  describe('the answer never carries a stored secret (DOR-1740)', () => {
+    // The defect, reproduced against the real route: the response used to be
+    // `result.config` — the whole stored file — so saving an ngrok token got the
+    // token back verbatim, and after that every unrelated patch carried it too. A
+    // response body is logged by whatever fronts the server, cached by the
+    // browser, and over the built-in tunnel it crosses the public internet, so
+    // this is the same class of leak the POST-only MCP reveal exists to avoid.
+
+    /** The `<leaf>Configured` sibling that stands in for a withheld secret. */
+    function presenceFlagPath(dotPath: string): string {
+      const parts = dotPath.split('.');
+      return [...parts.slice(0, -1), `${parts[parts.length - 1]!}Configured`].join('.');
+    }
+
+    /** Read a dot-path out of a response body, or `undefined` if any hop is missing. */
+    function readDotPath(root: unknown, dotPath: string): unknown {
+      let node: unknown = root;
+      for (const part of dotPath.split('.')) {
+        if (node === null || typeof node !== 'object') return undefined;
+        node = (node as Record<string, unknown>)[part];
+      }
+      return node;
+    }
+
+    it('withholds the token a patch just saved, and says only that one is set', async () => {
+      const response = await request(server)
+        .patch('/api/config')
+        .send({ tunnel: { authtoken: 'ngrok-secret-value' } })
+        .expect(200);
+
+      expect(response.body.success).toBe(true);
+      expect(JSON.stringify(response.body)).not.toContain('ngrok-secret-value');
+      // Withheld by ABSENCE plus a boolean, never by `null`: a `null` where a
+      // token is stored cannot be told apart from no token at all, which is the
+      // one thing a caller that just wrote needs to know.
+      expect('authtoken' in response.body.config.tunnel).toBe(false);
+      expect(response.body.config.tunnel.authtokenConfigured).toBe(true);
+
+      const { configManager } = await import('../../services/core/config-manager.js');
+      expect(configManager.getDot('tunnel.authtoken')).toBe('ngrok-secret-value');
+    });
+
+    it('never carries the secrets already on disk, whatever the patch was about', async () => {
+      // Derived from `SENSITIVE_CONFIG_KEYS` rather than hand-listed, the way
+      // `config-patch-paths.test.ts` derives its own list, so a fifth secret is
+      // covered the day it is added instead of the day somebody remembers.
+      const { SENSITIVE_CONFIG_KEYS } = await import('@dorkos/shared/config-schema');
+      const { configManager } = await import('../../services/core/config-manager.js');
+      const planted = new Map(
+        SENSITIVE_CONFIG_KEYS.map((key) => [key, `planted-${key.replace(/\./g, '-')}`])
+      );
+      // A derived list that came back empty would make every assertion below
+      // vacuous, and this test would then pass while checking nothing.
+      expect(planted.size).toBeGreaterThan(0);
+      for (const [key, value] of planted) configManager.setDot(key, value);
+
+      // A patch about a theme. Nothing in it names a credential, which is exactly
+      // the case the old response leaked on: it echoed the whole stored file.
+      const response = await request(server)
+        .patch('/api/config')
+        .send({ ui: { theme: 'dark' } })
+        .expect(200);
+
+      expect(response.body.config.ui.theme).toBe('dark');
+      const serialized = JSON.stringify(response.body);
+      for (const [key, value] of planted) {
+        expect(serialized, `${key} rode the PATCH response`).not.toContain(value);
+        expect(readDotPath(response.body.config, key)).toBeUndefined();
+        expect(readDotPath(response.body.config, presenceFlagPath(key))).toBe(true);
+      }
+
+      // And the leak was not "fixed" by refusing to store them.
+      for (const [key, value] of planted) expect(configManager.getDot(key)).toBe(value);
+    });
+
+    it('matches the published wire contract, so the schema is not a decoration', async () => {
+      // `ConfigPatchResponseSchema` is the documented shape of this body and had
+      // no runtime reader at all, which is how it came to promise
+      // `tunnel.authtoken: string | null` — a leak, written down as a contract.
+      // Parsing a REAL answer through it is what stops the schema and the route
+      // from drifting apart again in either direction.
+      const { ConfigPatchResponseSchema } = await import('@dorkos/shared/schemas');
+
+      const response = await request(server)
+        .patch('/api/config')
+        .send({ server: { port: 8080 }, ui: { theme: 'dark' } })
+        .expect(200);
+
+      const parsed = ConfigPatchResponseSchema.safeParse(response.body);
+      expect(parsed.error?.issues ?? []).toEqual([]);
+      expect(parsed.success).toBe(true);
+      expect(parsed.data?.config.tunnel).toEqual({
+        enabled: false,
+        domain: null,
+        authtokenConfigured: false,
+        authConfigured: false,
+      });
+    });
+
+    it('withholds the credential REFERENCES too, which name where a secret lives', async () => {
+      // Not on `SENSITIVE_CONFIG_KEYS` and still withheld, because the allowlist
+      // decides rather than that list: `file:/Users/me/.dork/secrets/anthropic`
+      // tells a reader exactly which file to open, which is the same escalation
+      // as handing over the key (ADR-0315, `config-disclosure.ts`).
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.set('providers', { anthropic: 'file:planted-provider-ref' });
+      configManager.setDot('runtimes.codex.credentialRef', 'env:PLANTED_CODEX_KEY');
+
+      const response = await request(server)
+        .patch('/api/config')
+        .send({ ui: { theme: 'light' } })
+        .expect(200);
+
+      const serialized = JSON.stringify(response.body);
+      expect(serialized).not.toContain('file:planted-provider-ref');
+      expect(serialized).not.toContain('env:PLANTED_CODEX_KEY');
+      expect(response.body.config.providersConfigured).toEqual(['anthropic']);
+      expect(response.body.config.runtimes.codex.credentialRefConfigured).toBe(true);
+    });
   });
 });
 

@@ -63,7 +63,8 @@
  *
  * @module services/session/stall-guard
  */
-import type { StreamEvent } from '@dorkos/shared/types';
+import type { InterruptReceipt, StreamEvent } from '@dorkos/shared/types';
+import { turnEnded } from '@dorkos/shared/schemas';
 import { SESSIONS } from '../../config/constants.js';
 import { logger } from '../../lib/logger.js';
 import type { TurnWindowSignal } from './turn-window-signal.js';
@@ -121,8 +122,11 @@ export interface StallGuardOpts {
    * on a person (a pending approval, question, or elicitation), not hung.
    */
   isPaused: () => boolean;
-  /** Interrupt hook (runtime.interruptQuery). Resolves false when no in-flight turn was found. */
-  onStall: () => Promise<boolean>;
+  /**
+   * Interrupt hook (`runtime.interruptQuery`). Answers the `InterruptReceipt`
+   * vocabulary — `not-running` when no in-flight turn was found.
+   */
+  onStall: () => Promise<InterruptReceipt>;
   /**
    * How long to wait for {@link StallGuardOpts.onStall} before closing the turn
    * anyway. Defaults to {@link SESSIONS.STALL_INTERRUPT_TIMEOUT_MS}.
@@ -152,9 +156,15 @@ export interface StallGuardOpts {
   windows?: TurnWindowSignal;
 }
 
-/** What the bounded interrupt attempt concluded, and how to say it to a person. */
-interface InterruptOutcome {
-  /** True only when the runtime confirmed it aborted an in-flight turn. */
+/**
+ * What the bounded interrupt attempt concluded, and how to say it to a person.
+ *
+ * Distinct from `InterruptReceipt` in `@dorkos/shared`, and deliberately not
+ * named for it: this is what the WATCHDOG concluded, which includes an ending
+ * no receipt has — its own bound firing before the runtime answered at all.
+ */
+interface StallInterruptAttempt {
+  /** True only when DorkOS observed the turn end (`turnEnded` on the receipt). */
   interrupted: boolean;
   /** Wall time the interrupt attempt took, bounded by `interruptTimeoutMs`. */
   elapsedMs: number;
@@ -171,7 +181,7 @@ interface InterruptOutcome {
  * A rejection arriving AFTER the bound already won is silenced separately, so a
  * dying transport cannot surface as an unhandled rejection.
  */
-async function attemptInterrupt(opts: StallGuardOpts): Promise<InterruptOutcome> {
+async function attemptInterrupt(opts: StallGuardOpts): Promise<StallInterruptAttempt> {
   const startedAt = Date.now();
   // Wrapped so a synchronous throw from onStall becomes a rejection like any
   // other, and so the extra catch below can silence a LATE rejection.
@@ -196,13 +206,25 @@ async function attemptInterrupt(opts: StallGuardOpts): Promise<InterruptOutcome>
           'Interrupting the turn did not finish in time; the runtime may have leaked a process.',
       };
     }
-    return winner
-      ? { interrupted: true, elapsedMs, details: 'The in-flight turn was aborted.' }
-      : {
-          interrupted: false,
-          elapsedMs,
-          details: 'No in-flight turn was found to abort; the runtime may have leaked a process.',
-        };
+    if (turnEnded(winner)) {
+      return {
+        interrupted: winner.outcome !== 'not-running',
+        elapsedMs,
+        details:
+          winner.outcome === 'not-running'
+            ? 'No in-flight turn was found to abort; the runtime may have leaked a process.'
+            : 'The in-flight turn was aborted.',
+      };
+    }
+    // `unconfirmed` or `failed`: the request went out and nothing DorkOS can see
+    // ended the turn. Distinct from `not-running`, which the old boolean folded
+    // this together with — the process is not merely maybe-leaked, it is very
+    // likely still running.
+    return {
+      interrupted: false,
+      elapsedMs,
+      details: 'The in-flight turn was not confirmed stopped; it may still be running.',
+    };
   } catch (err) {
     opts.onError?.(err);
     return {

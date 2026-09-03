@@ -56,6 +56,16 @@ describe('threadReplySummary', () => {
     expect(summary.lastAt).toBe('2026-07-30T09:45:00.000Z');
   });
 
+  it('counts the room’s number when the thread reaches past what is loaded', () => {
+    // DOR-690: a thread whose root came back from behind the page knows a
+    // bigger number than the array does, and the row must say the bigger one.
+    const summary = threadReplySummary(replies, null, 60);
+    expect(summary.count).toBe(60);
+    // The timestamp takes no such correction and needs none: what is missing is
+    // the OLDEST replies, so the newest one is always in hand.
+    expect(summary.lastAt).toBe('2026-07-30T09:45:00.000Z');
+  });
+
   it('reads the newest by SEQ, not by the order it was handed', () => {
     // The log is the room's own order and `seq` is the only monotonic thing on
     // it — a clock skew between two writers must not decide what "last" means.

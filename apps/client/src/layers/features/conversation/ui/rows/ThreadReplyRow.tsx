@@ -18,6 +18,12 @@ interface ThreadReplyRowProps {
   id?: string;
   /** The replies hanging off one entry. Never empty — no replies, no row. */
   replies: RoomEntry[];
+  /**
+   * How many replies the thread has in the ROOM, when that is more than the
+   * ones above — a thread reaching back past the loaded page. Omitted for every
+   * other thread, where the replies handed in are the whole of it.
+   */
+  totalReplies?: number;
   /** The reader's read cursor, frozen at the room's open, or null for a non-member. */
   lastReadSeq: number | null;
   /** True while this thread is the one the panel is showing. */
@@ -50,9 +56,16 @@ interface ThreadReplyRowProps {
  * count: a ref seeded `null` at mount, so a row arriving with three replies
  * already on it is drawn at rest and only a genuine increment moves.
  */
-export function ThreadReplyRow({ id, replies, lastReadSeq, open, onOpen }: ThreadReplyRowProps) {
+export function ThreadReplyRow({
+  id,
+  replies,
+  totalReplies,
+  lastReadSeq,
+  open,
+  onOpen,
+}: ThreadReplyRowProps) {
   const { capabilities } = useConversation();
-  const { count, lastAt, unread } = threadReplySummary(replies, lastReadSeq);
+  const { count, lastAt, unread } = threadReplySummary(replies, lastReadSeq, totalReplies);
   const time = formatTime(lastAt);
 
   // Whether this count has MOVED since the row was drawn, which is what

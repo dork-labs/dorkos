@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { DIRECTORY_MEMBERSHIP_VECTORS } from '@dorkos/test-utils';
 import type { Session } from '@dorkos/shared/types';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
 import { CodexSessionRegistry } from '../session-registry.js';
@@ -155,3 +156,19 @@ describe('CodexSessionRegistry', () => {
     });
   });
 });
+
+describe.each(DIRECTORY_MEMBERSHIP_VECTORS)(
+  'membership vector: $name',
+  ({ root, candidate, within }) => {
+    it(`${within ? 'includes' : 'excludes'} it`, () => {
+      // The registry answers the SAME table as the OpenCode sidecar listing,
+      // the server's per-agent fan-out and the client's selector — one rule,
+      // every call site that decides which project a session belongs to
+      // (DOR-674, completed for the registries by DOR-1550).
+      const registry = new CodexSessionRegistry();
+      registry.register(SESSION_ID, { cwd: candidate });
+
+      expect(registry.list(root).map((s) => s.id)).toEqual(within ? [SESSION_ID] : []);
+    });
+  }
+);

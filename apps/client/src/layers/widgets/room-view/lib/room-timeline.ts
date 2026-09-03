@@ -147,8 +147,14 @@ export interface ThreadedEntries {
   repliesByRoot: Map<string, RoomEntry[]>;
   /**
    * Ids of entries in {@link ThreadedEntries.topLevel} that ARE replies but
-   * could not be placed, because the entry heading their thread is not in this
-   * page. They render in the flow, and say so.
+   * could not be placed, because the entry heading their thread is not in the
+   * loaded history. They render in the flow, and say so.
+   *
+   * **Rare rather than routine since DOR-690.** A page arrives with the roots
+   * it replies to from outside itself, so a thread older than the window is no
+   * longer de-threaded on load. What is left is the reply that arrives on the
+   * LIVE stream for a thread the loaded page held nothing of, and the pointer
+   * at another reply that the server's depth policy does not currently write.
    */
   orphaned: Set<string>;
 }

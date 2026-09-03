@@ -1,5 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
+import { resolveTunnelSettings } from '../services/core/config/tunnel-settings.js';
+import { getLocalCockpitPort } from '../lib/trusted-origins.js';
 import { resolveClaudeCliPath } from '../services/runtimes/claude-code/sdk/sdk-utils.js';
 import { describeClaudeCodeAccounts } from '../services/runtimes/claude-code/claude-config-dir.js';
 import { configManager } from '../services/core/config-manager.js';
@@ -23,7 +25,7 @@ import {
   USER_PROFILE_DEFAULTS,
 } from '@dorkos/shared/config-schema';
 import { describeExperiments } from '../services/core/config/describe-experiments.js';
-import { deepMerge } from '../services/core/operator/config-patch.js';
+import { deepMerge, sanitizedConfigSnapshot } from '../services/core/operator/config-patch.js';
 import {
   applyGuardedConfigWrite,
   logConfigWrite,
@@ -37,6 +39,7 @@ import {
 } from '../services/core/operator/config-write-policy.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
 import {
+  isLocalCaller,
   readCallerAuthority,
   requireOperatorCookieUnderLogin,
   requireStandingGrantsLogin,
@@ -94,7 +97,7 @@ function configuredRuntimes(): string[] {
   return runtimes;
 }
 
-router.get('/', async (_req, res) => {
+router.get('/', async (req, res) => {
   let claudeCliPath: string | null = null;
   try {
     claudeCliPath = resolveClaudeCliPath() ?? null;
@@ -103,12 +106,37 @@ router.get('/', async (_req, res) => {
   }
 
   const tunnel = tunnelManager.status;
+  const storedTunnel = configManager.get('tunnel');
+  // What a start would actually use, asked of the one resolver both the boot
+  // autostart and POST /api/tunnel/start read (DOR-1738). Asking it — rather
+  // than re-deriving "env or config" here — is what stops this block from
+  // describing a tunnel nobody would get.
+  const wouldStartWith = resolveTunnelSettings({
+    env,
+    stored: storedTunnel,
+    fallbackPort: getLocalCockpitPort(),
+  }).config;
   const latestVersion = await getLatestVersion();
+
+  // This response is per-CALLER, not per-server, since `isLocalCaller` below
+  // answers for the request that asked. A shared cache between DorkOS and a
+  // browser — a reverse proxy, or the tunnel provider's edge — could otherwise
+  // hand a phone the answer it computed for a request from the machine itself,
+  // which is the one wrong answer that matters: it puts back the Sign in button
+  // that can only 403.
+  res.setHeader('Cache-Control', 'no-store');
 
   res.json({
     version: SERVER_VERSION,
     latestVersion,
     isDevMode: IS_DEV_BUILD,
+    // The one field in this DTO that describes the CALLER, not the server, and
+    // the reason it is here: the connect endpoints under `/api/runtimes` are
+    // loopback-only, so a phone reaching DorkOS over the tunnel was shown a
+    // Sign in button that could only ever 403 (DOR-1655). Answered by the same
+    // reader those endpoints refuse with, so the app is told exactly what they
+    // would do rather than a guess of its own.
+    isLocalCaller: isLocalCaller(req),
     dismissedUpgradeVersions:
       (configManager.get('ui') as { dismissedUpgradeVersions?: string[] } | undefined)
         ?.dismissedUpgradeVersions ?? [],
@@ -156,11 +184,20 @@ router.get('/', async (_req, res) => {
     dorkHome: process.env.DORK_HOME!,
     nodeVersion: process.version,
     claudeCliPath,
+    // Live status where there is one, and what a start WOULD use where there is
+    // not — a settings screen has to be able to show both, and the block used to
+    // show only the first. So a saved custom domain read back as `null` after a
+    // restart, and `authEnabled` was reported by ORing in the environment even
+    // while a tunnel that had none was running, which told an operator their
+    // public tunnel had a password on it when it did not (DOR-1738).
     tunnel: {
       ...tunnel,
-      authEnabled: tunnel.authEnabled || !!env.TUNNEL_AUTH,
-      tokenConfigured:
-        tunnel.tokenConfigured || !!(env.NGROK_AUTHTOKEN || configManager.get('tunnel')?.authtoken),
+      authEnabled: tunnel.enabled ? tunnel.authEnabled : !!wouldStartWith.basicAuth,
+      tokenConfigured: tunnel.enabled ? tunnel.tokenConfigured : !!wouldStartWith.authtoken,
+      domain: tunnel.enabled ? tunnel.domain : (wouldStartWith.domain ?? null),
+      // `enabled` is what is RUNNING, `enabledInConfig` what the setting says —
+      // the same pair `tasks` and `relay` report below, for the same reason.
+      enabledInConfig: storedTunnel?.enabled ?? false,
     },
     // `enabled` is what is RUNNING; `enabledInConfig` is what the setting says.
     // They are two different facts because `index.ts` reads these flags once, at
@@ -538,7 +575,30 @@ router.patch('/', (req, res) => {
 
     return res.json({
       success: true,
-      config: result.config,
+      // ## The answer is the CURATED snapshot, never the stored file (DOR-1740)
+      //
+      // This used to be `result.config` — everything on disk — so saving an ngrok
+      // token got that token straight back in the response body, and after that
+      // EVERY unrelated patch carried it too, along with `tunnel.auth`,
+      // `mcp.apiKey` and `cloud.instanceToken`.
+      //
+      // A response body is not a private channel. It is logged by whatever sits
+      // in front of the server, it lands in caches and devtools history, and when
+      // a person uses DorkOS from their phone it crosses the public internet over
+      // the built-in tunnel. That is the same reasoning that keeps the local MCP
+      // token off `GET /api/config` and behind a POST-only reveal (see that route
+      // below), and the reason the `config_patch` operator tool already answers
+      // with this projection rather than the raw config. This door was the one
+      // that never caught up, and it is the door the cockpit uses.
+      //
+      // The projection is an ALLOWLIST (`config-disclosure.ts`), so a
+      // secret-bearing field added tomorrow is withheld until somebody classifies
+      // it, rather than exposed until somebody remembers to hide it. Each
+      // withheld credential comes back as a boolean `…Configured` sibling, so a
+      // caller can still tell that the write landed without being told what
+      // landed — which `null` could not do, since it cannot be told apart from
+      // "nothing is set".
+      config: sanitizedConfigSnapshot(result.config),
       ...(result.warnings.length > 0 && { warnings: result.warnings }),
     });
   } catch (err) {

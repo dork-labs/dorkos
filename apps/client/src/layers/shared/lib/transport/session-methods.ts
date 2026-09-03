@@ -24,6 +24,7 @@ import type {
   MessageDisposition,
   QueueMoveTarget,
   QueuedMessage,
+  InterruptReceipt,
   UpdateQueuedMessageResponse,
   SessionQueueResponse,
 } from '@dorkos/shared/schemas';
@@ -492,8 +493,11 @@ export function createSessionMethods(
     },
 
     /** Stop a running background task. */
-    stopTask(sessionId: string, taskId: string): Promise<{ success: boolean; taskId: string }> {
-      return fetchJSON<{ success: boolean; taskId: string }>(
+    stopTask(
+      sessionId: string,
+      taskId: string
+    ): Promise<{ receipt: InterruptReceipt; taskId: string }> {
+      return fetchJSON<{ receipt: InterruptReceipt; taskId: string }>(
         baseUrl,
         `/sessions/${sessionId}/tasks/${taskId}/stop`,
         { method: 'POST' }
@@ -501,14 +505,15 @@ export function createSessionMethods(
     },
 
     /**
-     * Interrupt the active query for a session and empty its queue
-     * (best-effort, short timeout). The removed messages ride back on
-     * `cancelledQueued` so the composer can return the words to the person.
+     * Interrupt the active query for a session and empty its queue (short
+     * timeout). The removed messages ride back on `cancelledQueued` so the
+     * composer can return the words to the person, and `receipt` names which of
+     * the five endings the stop reached.
      */
     interruptSession(
       sessionId: string
-    ): Promise<{ ok: boolean; cancelledQueued: QueuedMessage[] }> {
-      return fetchJSON<{ ok: boolean; cancelledQueued: QueuedMessage[] }>(
+    ): Promise<{ receipt: InterruptReceipt; cancelledQueued: QueuedMessage[] }> {
+      return fetchJSON<{ receipt: InterruptReceipt; cancelledQueued: QueuedMessage[] }>(
         baseUrl,
         `/sessions/${sessionId}/interrupt`,
         {

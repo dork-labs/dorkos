@@ -42,7 +42,10 @@ export function replyRootFor(entry: RoomEntry): string {
 
 /** What the "↳ N replies · last 9:45 AM" row under a thread root says. */
 export interface ThreadReplySummary {
-  /** How many replies the thread holds. Never zero — no replies, no row. */
+  /**
+   * How many replies the thread holds — in the ROOM, not in this client. Never
+   * zero: no replies, no row.
+   */
   count: number;
   /** When the newest of them was written, as its stored ISO timestamp. */
   lastAt: string;
@@ -82,14 +85,30 @@ export interface ThreadReplySummary {
  * empty case is tested here so the failure stays loud rather than becoming a
  * silent `NaN` in a row somebody reads.
  *
+ * **`totalReplies` is the room's own number, and it outranks the array** (DOR-690).
+ * A thread whose root is older than the loaded page comes back with the count
+ * the ROOM has (`RoomEntry.threadReplyCount`), which is larger than what this
+ * client holds — and saying "50 replies" beside a Threads list saying 60 is two
+ * surfaces of one app disagreeing about one thread. Every other thread passes
+ * nothing here, because for those the loaded replies ARE the thread.
+ *
+ * `lastAt` needs no such correction and takes none: the missing replies are the
+ * OLDEST ones, so the newest is always loaded. `unread` can only undercount for
+ * the same reason — a reply above the cursor but below the page floor is not
+ * counted — and it is left that way deliberately, since the alternative is an
+ * accent promising the reader messages this client cannot show them.
+ *
  * @param replies - One thread's replies, at least one. Order is not assumed.
  * @throws TypeError when handed an empty array — see above.
  * @param lastReadSeq - The reader's read cursor, or `null` when they are not a
  *   member of this room.
+ * @param totalReplies - How many replies the thread has in the room, when that
+ *   is known to differ from what was loaded. Omitted is "count the array".
  */
 export function threadReplySummary(
   replies: readonly RoomEntry[],
-  lastReadSeq: number | null
+  lastReadSeq: number | null,
+  totalReplies?: number
 ): ThreadReplySummary {
   let newest = replies[0]!;
   let unread = 0;
@@ -100,5 +119,5 @@ export function threadReplySummary(
     if (reply.seq > newest.seq) newest = reply;
     if (lastReadSeq !== null && reply.seq > lastReadSeq) unread += 1;
   }
-  return { count: replies.length, lastAt: newest.createdAt, unread };
+  return { count: totalReplies ?? replies.length, lastAt: newest.createdAt, unread };
 }

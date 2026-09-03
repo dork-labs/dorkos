@@ -1,13 +1,23 @@
 /**
  * The shared table of "does this session belong to this project" cases.
  *
- * Session membership is decided at three call sites — the OpenCode adapter's
- * listing, the server's per-agent fan-out, and the client's session selector.
- * They all route through one predicate (`isWithinDirectory` in
- * `@dorkos/shared/paths`), and each one's own suite drives THIS table so that
- * agreement is proven at every layer rather than assumed from a shared import.
- * Before DOR-674 all three tested raw string equality, and a session started in
- * a subfolder was dropped by whichever layer reached it first.
+ * Session membership is decided in many places — the OpenCode adapter's
+ * listing, the tracked-session registries of all three non-default runtimes,
+ * the claude-code transcript listing, the server's per-agent fan-out, the
+ * client's session selector, and the sidebar's active-row tint. They all route
+ * through one predicate (`isWithinDirectory` in `@dorkos/shared/paths`), and
+ * each one's own suite drives THIS table so that agreement is proven at every
+ * layer rather than assumed from a shared import. Before DOR-674 every one of
+ * them tested raw string equality, and a session started in a subfolder was
+ * dropped by whichever layer reached it first; DOR-1550 finished the set.
+ *
+ * The one call site that does NOT drive this table is claude-code's transcript
+ * listing, and only because its answer is filesystem-bound: it walks real slug
+ * directories, so a case like `C:\\work\\project` cannot be staged on the
+ * machine running the suite. Its coverage is a real-fixture suite instead
+ * (`transcript-reader-subtree.test.ts`), and the CONTRACT it must satisfy is
+ * pinned portably by the `runtimeConformance` subtree invariant, which every
+ * runtime clears.
  *
  * Add a case here, not in one suite, whenever the rule gains an edge.
  *

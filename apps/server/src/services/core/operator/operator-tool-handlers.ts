@@ -429,9 +429,13 @@ export function createConfigPatchHandler(identity?: AgentIdentity) {
     }
     // Echo the redacted post-write snapshot — never the raw config, which
     // would leak secrets into the model context and the persisted transcript.
+    // Projected from the config the write RETURNED rather than re-read from the
+    // store, which is the convention `sanitizedConfigSnapshot` documents for a
+    // post-write caller: `PATCH /api/config` does the same, and the value is
+    // already in hand either way.
     return jsonResult({
       success: true,
-      config: sanitizedConfigSnapshot(),
+      config: sanitizedConfigSnapshot(result.config),
       ...(result.warnings.length > 0 && { warnings: result.warnings }),
     });
   };
