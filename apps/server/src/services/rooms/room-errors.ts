@@ -19,6 +19,22 @@ export type RoomErrorCode =
   | 'SLUG_TAKEN'
   | 'INVALID_SLUG'
   /**
+   * A roster edit would leave a direct message holding the exact member set
+   * another direct message already holds (DOR-1616).
+   *
+   * **`SLUG_TAKEN` for a DM's name, which is who is in it.** A channel is
+   * identified by `#slug` and a DM by its roster, so both have a "that name is
+   * somebody else's" refusal — and both are refusals rather than silent merges,
+   * because two conversations with the same people cannot be reconciled by a
+   * database.
+   *
+   * Reachable only by ADDING to, or REMOVING from, an existing DM: opening one
+   * that already exists is idempotent by design and answers with the
+   * conversation instead. Take Kai out of the DM with Ana and Kai while a DM
+   * with just Ana already exists, and this is what says so.
+   */
+  | 'DM_MEMBER_SET_TAKEN'
+  /**
    * A handle somebody asked for is live on another author (spec `handles` §8).
    *
    * **Three handle codes, not one**, because they are three different things a

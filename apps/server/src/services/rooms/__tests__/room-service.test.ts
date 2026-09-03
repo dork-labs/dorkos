@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { eq, roomMembers, roomSessions, type Db } from '@dorkos/db';
 import { agentAuthorRef } from '@dorkos/shared/room-schemas';
 import { eventFanOut } from '../../core/event-fan-out.js';
@@ -7,7 +7,12 @@ import type { ReadCursorService } from '../../core/read-cursor-service.js';
 import type { RoomService } from '../room-service.js';
 import type { RoomStore } from '../room-store.js';
 import { RoomError } from '../room-errors.js';
-import { agentLookupFor, createRoomHarness, scriptedRunner } from './room-test-harness.js';
+import {
+  agentLookupFor,
+  createRoomHarness,
+  scriptedRunner,
+  type RoomHarness,
+} from './room-test-harness.js';
 
 /** Ana answers everything by manifest; Bo stays quiet unless mentioned. */
 const agentLookup = agentLookupFor({
@@ -1547,6 +1552,122 @@ describe('RoomService — a DM is idempotent on its member set', () => {
     );
     expect(again.id).toBe(first.id);
   });
+});
+
+describe('RoomService — two opens racing for one DM (DOR-1616)', () => {
+  let harness: RoomHarness;
+  let service: RoomService;
+  let store: RoomStore;
+  let human: string;
+
+  /**
+   * Both member-set lookups miss, and then the real query answers again.
+   *
+   * **This is the ONE thing stubbed, and it stands in for a clock rather than
+   * for a mechanism.** The window being reproduced is unobservable from inside
+   * one process: `RoomService.createRoom` is synchronous end to end over
+   * `better-sqlite3`, so two calls on one event loop cannot interleave, and the
+   * race is reachable only across processes — a second DorkOS server, or a CLI
+   * and the app started together (the same window `ensureSystemChannel`
+   * documents for `rooms.well_known`). What each of those writers sees is a
+   * SELECT that ran before the other one committed, which is exactly a lookup
+   * that answers null, and that is what this returns — twice, once per racer.
+   *
+   * Everything the fix consists of then runs for real: the two inserts, the
+   * partial unique index that refuses the second, the re-read that finds the
+   * winner, and the adoption. The third call onwards is the unstubbed query, so
+   * the recovery is not being fed its answer either.
+   */
+  function bothCallersLookBeforeEitherWrites(): void {
+    vi.spyOn(store, 'findDmByMemberSet').mockReturnValueOnce(null).mockReturnValueOnce(null);
+  }
+
+  beforeEach(() => {
+    harness = createRoomHarness({ agents: agentLookup });
+    ({ service, store, human } = harness);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('leaves ONE room, and hands the loser the winner it lost to', async () => {
+    bothCallersLookBeforeEitherWrites();
+    const request = { kind: 'dm' as const, title: 'Ana', members: [], agentPaths: ['/agents/ana'] };
+
+    const [first, second] = await Promise.all([
+      Promise.resolve().then(() => service.createRoom(request, human)),
+      Promise.resolve().then(() => service.createRoom(request, human)),
+    ]);
+
+    // The heart of it: one conversation, not two rooms with the same people in
+    // them and the sidebar showing both.
+    expect(service.listRooms(human, { kind: 'dm', includeArchived: true })).toHaveLength(1);
+    expect(second.id).toBe(first.id);
+    // And the loser was told which answer it got. Exactly one of the two calls
+    // created the room, whichever one won the insert.
+    expect([first.created, second.created].sort()).toEqual([false, true]);
+  });
+
+  it('answers the loser with a usable room, not a constraint error', async () => {
+    // The failure this exists to prevent is not only the duplicate: a raw
+    // `SQLITE_CONSTRAINT_UNIQUE` reaching the route would be a 500 telling the
+    // caller their DM does not exist while pointing straight at it.
+    //
+    // **This one is a mutation guard, not a red-before test**, and saying so is
+    // the honest note: before DOR-1616 there was no error to surface, so it
+    // passed then too. What it discriminates against is the recovery going
+    // wrong — a catch that rethrew, or an adopt that answered with a room
+    // stripped of its roster.
+    bothCallersLookBeforeEitherWrites();
+    const request = { kind: 'dm' as const, title: 'Ana', members: [], agentPaths: ['/agents/ana'] };
+
+    const opened = await Promise.all([
+      Promise.resolve().then(() => service.createRoom(request, human)),
+      Promise.resolve().then(() => service.createRoom(request, human)),
+    ]);
+
+    for (const room of opened) {
+      expect(room.members).toHaveLength(2);
+      expect(room.archived).toBe(false);
+      // A room a caller can immediately post into — the point of answering with
+      // the winner rather than with an error.
+      expect(() => service.post(room.id, { authorId: human, text: 'morning' })).not.toThrow();
+    }
+  });
+
+  it('un-archives the room the loser adopts, exactly as the matched path does', () => {
+    // A racing open whose winner was an ARCHIVED conversation must still come
+    // back live. Both halves of the adopt path are the same method, and this is
+    // what says so.
+    const first = service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+    service.updateRoom(first.id, human, { archived: true });
+
+    // One miss this time: the winner is already in the table, so only the loser
+    // is being simulated.
+    vi.spyOn(store, 'findDmByMemberSet').mockReturnValueOnce(null);
+    const adopted = service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+
+    expect(adopted.id).toBe(first.id);
+    expect(adopted.created).toBe(false);
+    expect(adopted.archived).toBe(false);
+    expect(service.listRooms(human, { kind: 'dm', includeArchived: true })).toHaveLength(1);
+  });
+
+  // **What keeps the recovery from swallowing OTHER refusals is tested where it
+  // can actually fail**, not here. The obvious service-level assertion — open
+  // two channels with one name and expect `SLUG_TAKEN` — cannot reach the catch
+  // at all: `createRoom`'s own `findLiveChannelBySlug` guard refuses before the
+  // insert is attempted, so that test passes with the guard widened to catch
+  // every unique violation, and certifies nothing about it. The narrowness is
+  // pinned by `isDmMemberSetTaken`'s own tests in `room-store.test.ts`, driven
+  // by real SQLite failures from each of the three unique indexes on `rooms`.
 });
 
 describe('RoomService — how an author renders', () => {

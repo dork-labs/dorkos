@@ -3515,6 +3515,17 @@ export const TunnelStatusSchema = z
   .object({
     enabled: z.boolean(),
     connected: z.boolean(),
+    /**
+     * Whether a tunnel is OPEN, which is not the same as reachable.
+     *
+     * `connected` follows ngrok's own status callback, so it goes false for as
+     * long as a live tunnel is dropped and reconnecting. Through `connected`
+     * alone, that is indistinguishable from no tunnel at all — a reader shows
+     * Remote Access as off, and a start it offers is refused with "already
+     * running" (DOR-1738). `isRunning` is the difference: true with `connected`
+     * false means reconnecting; both false means off.
+     */
+    isRunning: z.boolean(),
     url: z.string().nullable(),
     port: z.number().int().nullable(),
     startedAt: z.string().nullable(),
@@ -3725,7 +3736,17 @@ export const ServerConfigSchema = z
         'What a new session starts with — the runtime, and the model and effort per runtime (spec execution-defaults)',
     }),
     claudeCliPath: z.string().nullable(),
-    tunnel: TunnelStatusSchema,
+    // The live status, plus what the SETTING says — two different facts, the
+    // same pair `tasks` and `relay` report below. While no tunnel is running,
+    // `domain`, `authEnabled` and `tokenConfigured` describe what a start would
+    // use (environment first, then the stored config), so a saved custom domain
+    // still reads back after a restart.
+    tunnel: TunnelStatusSchema.extend({
+      enabledInConfig: z.boolean().optional().openapi({
+        description:
+          "What the user's setting says (`tunnel.enabled`), which is not always what is running: `enabled` only moves when a tunnel is actually opened or closed",
+      }),
+    }),
     tasks: z
       .object({
         enabled: z.boolean().openapi({ description: 'Whether the Tasks scheduler is enabled' }),
@@ -4883,6 +4904,33 @@ export const ConfigPatchRequestSchema = z
 
 export type ConfigPatchRequest = z.infer<typeof ConfigPatchRequestSchema>;
 
+/**
+ * What `PATCH /api/config` answers with.
+ *
+ * `config` is the **curated snapshot**, not the stored file: the server projects
+ * its config through the disclosure allowlist before answering, so no credential
+ * ever rides a response body (DOR-1740). A stored secret shows up only as a
+ * boolean `…Configured` sibling — `tunnel.authtokenConfigured` rather than
+ * `tunnel.authtoken` — which says whether the write landed without saying what
+ * landed.
+ *
+ * The `config` shape below documents the fields callers read most often, not
+ * every field the snapshot carries; the authoritative list is
+ * `CONFIG_DISCLOSURE` in the server's `config-disclosure.ts`.
+ *
+ * ## Why the tunnel flags are not spelled the way `GET /api/config` spells them
+ *
+ * That read answers `tunnel.tokenConfigured` and `tunnel.authEnabled`, and the
+ * difference is deliberate rather than drift — do not "fix" either into the
+ * other. `GET` reports what a tunnel START WOULD USE, so it ORs the stored value
+ * with the environment (`NGROK_AUTHTOKEN`, `TUNNEL_AUTH`) and answers the
+ * effective question a settings screen has to ask. These flags come off the
+ * disclosure projection, which only ever looks at the STORED config, so
+ * `authtokenConfigured` means "there is a token in `config.json`" and nothing
+ * more. Two different questions, so two different names: an install with the
+ * env variable set and nothing stored answers `true` on one and `false` on the
+ * other, and both are correct.
+ */
 export const ConfigPatchResponseSchema = z
   .object({
     success: z.boolean(),
@@ -4892,8 +4940,10 @@ export const ConfigPatchResponseSchema = z
       tunnel: z.object({
         enabled: z.boolean(),
         domain: z.string().nullable(),
-        authtoken: z.string().nullable(),
-        auth: z.string().nullable(),
+        /** Whether an ngrok authtoken is stored. The token itself never ships. */
+        authtokenConfigured: z.boolean(),
+        /** Whether tunnel sign-in credentials are stored. The value never ships. */
+        authConfigured: z.boolean(),
       }),
       ui: z.object({ theme: z.enum(['light', 'dark', 'system']) }),
     }),

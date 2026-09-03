@@ -329,7 +329,12 @@ On first run, DorkOS creates `~/.dork/` for persistent storage:
       description:
         'Your DorkOS API key, needed only when login is on. Falls back to ~/.dork/api-key',
     },
-    TUNNEL_ENABLED: { type: 'boolean', description: 'Enable ngrok tunnel', default: 'false' },
+    TUNNEL_ENABLED: {
+      type: 'boolean',
+      description:
+        'Open the ngrok tunnel at startup. Unset, your saved setting decides; `false` keeps this run private whatever you have saved',
+      default: 'your saved setting',
+    },
     NGROK_AUTHTOKEN: { type: 'string', description: 'ngrok auth token (required for tunnels)' },
   }}
 />

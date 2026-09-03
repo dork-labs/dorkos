@@ -224,6 +224,45 @@ export const handleTombstones = sqliteTable(
 export const DEFAULT_AMBIENT_MAX_ENTRIES = 30;
 
 /**
+ * The canonical spelling of a direct message's member set — what
+ * {@link rooms}.`dm_member_key` stores, and the only expression that may
+ * produce it (DOR-1616).
+ *
+ * **It lives here, in the package that owns the column and its unique index,
+ * because a second spelling of it would be a second constraint.** The server's
+ * store computes this on every write that changes a DM's roster and looks a DM
+ * up by it; migration 0085 backfills it in SQL. Those are already two copies of
+ * one rule, which is one more than anybody wants — the migration's own test
+ * pins the SQL against this function so they cannot drift.
+ *
+ * Sorted so `[me, ana]` and `[ana, me]` are one conversation, deduplicated so a
+ * caller repeating an id cannot change the answer, and joined with `,` — which
+ * is also `group_concat`'s default separator, so the SQL backfill needs no
+ * argument for it.
+ *
+ * **Plain sorted ids rather than a hash of them**, deliberately. A hash would
+ * be fixed-width and unreadable; this is neither, and the readability is what
+ * matters: the column is server-side only, never reaches a client, and is the
+ * thing somebody debugging a duplicated DM has to be able to look at. It also
+ * keeps the SQL backfill a `group_concat` instead of an extension SQLite does
+ * not ship.
+ *
+ * **JS and SQLite agree on the order because every author id is a ULID** —
+ * uppercase Crockford base32, so pure ASCII, where JavaScript's UTF-16
+ * code-unit comparison and SQLite's `BINARY` collation are the same ordering. A
+ * non-ASCII author id would break that agreement, which is why nothing mints
+ * one.
+ *
+ * @param authorIds - The member set. Order and duplicates do not matter.
+ * @returns The canonical key, or `''` for an empty set — which no caller may
+ *   store: a room with no roster takes part in no dedupe, so its column stays
+ *   NULL.
+ */
+export function canonicalDmMemberKey(authorIds: readonly string[]): string {
+  return [...new Set(authorIds)].sort().join(',');
+}
+
+/**
  * A membership-scoped durable stream: a channel or a DM (ADR 260726-170125).
  *
  * **There is no third kind, and there is no room hierarchy.** A thread is a
@@ -359,6 +398,46 @@ export const rooms = sqliteTable(
      */
     maxAutoTurnsPerHour: integer('max_auto_turns_per_hour'),
 
+    /**
+     * The canonical member set of a direct message — {@link canonicalDmMemberKey}
+     * over its roster — and `null` for every room that takes part in no
+     * member-set dedupe (DOR-1616).
+     *
+     * **A constraint, not a cache.** "A DM is identified by who is in it" used
+     * to be a query the create path ran and then hoped nothing had changed
+     * underneath it: `RoomStore.findDmByMemberSet` grouped `room_members` and
+     * counted, so two opens for the same pair could both read "no DM yet" and
+     * both insert, leaving one conversation told twice. Nothing in SQL could
+     * refuse the second one, because the fact being constrained lived in a
+     * different table. This column brings it onto the row the index can guard,
+     * exactly as `slug` does for a channel's name.
+     *
+     * **It is what the lookup READS**, not a second opinion beside it. The
+     * find-a-DM query is a lookup on this column, so the question the create
+     * path asks and the constraint that settles it are the same expression —
+     * they cannot disagree about what "the same member set" means.
+     *
+     * **Kept in step with the roster, in the same transaction as the roster
+     * write.** Every add and every remove recomputes it for a room that holds
+     * one. That is what closes the second door to a duplicate: without it, a
+     * DM's key would go on describing the roster it was OPENED with, and the
+     * lookup would confidently hand back a room that no longer holds those
+     * people.
+     *
+     * **Three kinds of room store NULL here, and each is a real answer.**
+     * A channel has no member-set identity at all. A BRIDGED DM is identified
+     * by its bridge row and never by its roster (ADR 260804-093318) — its
+     * roster is byte-identical to the operator's own private DM with the same
+     * agent, so a bridged chat that took part in this dedupe would hand a
+     * stranger's log back as a private conversation. And a DM that was already
+     * a duplicate before this column existed keeps its history and its place in
+     * the sidebar, but is not the room a fresh open resolves to; migration 0085
+     * chose exactly the room `findDmByMemberSet` would have returned and left
+     * the rest NULL, which is why that migration can never fail on an install
+     * that already had duplicates.
+     */
+    dmMemberKey: text('dm_member_key'),
+
     createdAt: text('created_at').notNull(),
     lastActivityAt: text('last_activity_at').notNull(),
   },
@@ -374,6 +453,21 @@ export const rooms = sqliteTable(
     // by and a released one would let the next boot open a second #team beside
     // the archived first.
     uniqueIndex('rooms_well_known_unique').on(table.wellKnown),
+    // ONE DM per member set — the constraint `findDmByMemberSet` never had
+    // (DOR-1616). Partial for the reason `rooms_channel_slug_unique` is: the
+    // predicate is the query. Channels never carry a key, and the DMs that
+    // deliberately hold NULL — bridged ones, and duplicates that predate the
+    // column — stay out of the index entirely rather than sitting in it as
+    // rows a unique index happens to treat as distinct.
+    //
+    // **Archived DMs are IN it, deliberately**, unlike a channel's slug, which
+    // archiving releases. Archive is this product's reversible "put it away",
+    // so asking for a conversation you have archived must REOPEN it; a released
+    // key would let a second room be minted beside the first and strand the
+    // history in it.
+    uniqueIndex('rooms_dm_member_key_unique')
+      .on(table.dmMemberKey)
+      .where(sql`"kind" = 'dm' AND "dm_member_key" IS NOT NULL`),
   ]
 );
 

@@ -10,20 +10,31 @@ mac:
   # zip must accompany dmg: electron-updater (Squirrel.Mac) can only install
   # updates from the zip artifact; the dmg is the human-facing installer.
   #
-  # mac is arm64-only. THREE separate binaries ship as per-arch optional
+  # mac is arm64-only. FOUR separate native binaries ship as per-arch optional
   # dependencies (see apps/desktop/package.json's optionalDependencies):
   # Claude Code (`@anthropic-ai/claude-agent-sdk-<platform>-<arch>`), the Codex
-  # CLI (`@openai/codex-<platform>-<arch>`) and esbuild
-  # (`@esbuild/<platform>-<arch>`, which the extension host compiles with).
+  # CLI (`@openai/codex-<platform>-<arch>`), esbuild
+  # (`@esbuild/<platform>-<arch>`, which the extension host compiles with) and
+  # ngrok (`@ngrok/ngrok-<platform>-<arch>`, which backs Remote Access).
   # Every packaged platform/arch needs BOTH its matching package there AND an
   # asarUnpack glob for it below — otherwise the packaged app for that target
   # silently ships without that tool. The Claude half is the bug this config
   # originally fixed; the Codex and esbuild halves are DOR-1335, where the
   # shipped 0.61.0 Mac app had no Codex runtime at all and failed to compile
-  # its own bundled marketplace extension on every boot.
+  # its own bundled marketplace extension on every boot; the ngrok half is
+  # #1458, where 0.66.0 shipped ngrok's JS with no binary behind it, so every
+  # "Enable remote access" toggle failed in milliseconds with a bare 500.
+  # scripts/build-server.ts's assertPlatformBinariesWired fails the build on any
+  # of it: a packaged target with no binary from some family, a package declared
+  # there with no glob here, a glob here for a package nothing declares. It
+  # finds the families by reading what each dependency says about itself rather
+  # than from a list, so a FIFTH one entering the tree is caught the same way —
+  # which is the part that matters, since both bugs above were a family nobody
+  # had written anything about yet, not a half-wired one.
   # Wired so far: darwin-arm64 (this block) and win32-x64 (the `win` block
   # below). Adding another target (mac x64, win32-arm64, linux) means repeating
-  # all six additions for it.
+  # all eight additions for it — and because that gate reads the `target` blocks
+  # in this file, adding the arch alone turns the build red until you do.
   target:
     - target: dmg
       arch:
@@ -198,6 +209,50 @@ asarUnpack:
   # Windows counterpart of the esbuild binary above (esbuild.exe at the
   # package root there, not under bin/).
   - '**/node_modules/@esbuild/win32-x64/**'
+  # ngrok's tunnel library, which backs Remote Access. Same nested-optional-
+  # dependency trap as the three families above — 0.66.0 packaged
+  # @ngrok/ngrok's JS with no platform package anywhere in the bundle, so
+  # starting a tunnel threw "Failed to load native binding" before any network
+  # call and the route answered 500 in single-digit milliseconds (#1458).
+  # (Verified against the released DorkOS-0.66.0-arm64-mac.zip, whose app.asar
+  # carries the parent's own JS and no platform package at all.)
+  #
+  # The mechanism is reachability, not installation. pnpm DOES install a nested
+  # platform optional — measured in a clean room: @ngrok/ngrok-darwin-arm64
+  # lands in .pnpm and the parent loads it. What decides whether it SHIPS is
+  # app-builder-lib's collector, which bundles a dependency only when it can
+  # resolve a real path for it (node-module-collector/nodeModulesCollector.js;
+  # a miss goes to logMissingDependency, and platform-shaped names print as
+  # "platform-specific optional dependencies not bundled … pnpm 10+ does not
+  # auto-install transitive platform binaries" — that parenthetical is
+  # upstream's own explanation, and the clean-room result says it is not what
+  # happens here). Whether a NESTED package is reachable is not something this
+  # package controls: a local `pack` of the unfixed tree bundled the binary
+  # while the released build of that same commit did not. Declaring it here
+  # makes it a first-class entry in apps/desktop's own tree, which the collector
+  # always has a path for — deterministic, and exactly what that log prescribes.
+  #
+  # Unlike the three above this one is NOT spawned: it is a napi-rs addon the
+  # bundled server dlopen()s, so it is here for the same reason better-sqlite3
+  # and node-pty are — a `.node` file has to be a real file on disk. Only the
+  # platform package is unpacked and not its `@ngrok/ngrok` parent, because the
+  # parent is pure JS (index.js + index.d.ts, no binary of its own) and reads
+  # fine from inside app.asar; the `.node` lives here. Keep it version-locked
+  # to @ngrok/ngrok — scripts/build-server.ts compares this pin against the
+  # version that dependency actually resolves to.
+  #
+  # On macOS that parent asks for @ngrok/ngrok-darwin-universal FIRST and falls
+  # through to the per-arch package when the require throws — which is why an
+  # arm64-only build needs only the 9 MB arm64 package and not the 19 MB fat
+  # one, and why a darwin-universal miss in a debugger is that fallthrough
+  # rather than a bug. A build that does find the universal package reachable
+  # packs that too, and then it wins; declaring the arm64 one is what makes the
+  # outcome the same every time.
+  - '**/node_modules/@ngrok/ngrok-darwin-arm64/**'
+  # Windows counterpart. Note the `-msvc` suffix: ngrok's Windows package is
+  # @ngrok/ngrok-win32-x64-msvc, not the plain `win32-x64` the three families
+  # above use.
+  - '**/node_modules/@ngrok/ngrok-win32-x64-msvc/**'
   # express.static (app.ts's production SPA serving) cannot reliably read
   # range-requested static assets from inside app.asar — the packaged
   # window now loads the renderer via the bundled server's own

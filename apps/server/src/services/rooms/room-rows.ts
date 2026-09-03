@@ -43,6 +43,22 @@ export interface NewRoom {
    * request body may name one.
    */
   wellKnown?: string | null;
+  /**
+   * Whether this room is a BRIDGE PROJECTION of a platform chat, which takes it
+   * out of DM member-set dedupe entirely (DOR-1616).
+   *
+   * **It is not a column** — a room's bridge is the `room_bridges` row, and this
+   * flag never reaches the `rooms` table. It exists because the store computes
+   * `dm_member_key` from the roster it is handed, and a bridged private chat's
+   * roster — the bound agent plus the operator — is byte-identical to the
+   * operator's own private DM with that agent. Without this, opening a bridged
+   * chat would collide with that private conversation, or hand it back
+   * (chats-as-channels spec §3.2, ADR 260804-093318).
+   *
+   * Omitted, and so `false`, for every room a person or an agent opens.
+   * `RoomService.createBridgedRoom` is the only writer that sets it.
+   */
+  bridged?: boolean;
   createdAt: string;
 }
 
@@ -104,10 +120,18 @@ export interface ThreadAggregateRow {
 /**
  * Narrow a room row's stringly-typed `kind` onto the domain union.
  *
+ * **`dm_member_key` is dropped here on purpose**, the same way {@link toEntry}
+ * drops `dispatch_id`. It is the DM dedupe's own accounting (DOR-1616) — read
+ * only inside {@link RoomStore}, and of no use to a reader of the room — and
+ * spreading the row would carry it into every SSE frame and every API response
+ * as a field `Room` does not declare. It also names other people's authors,
+ * which is a thing a room shared over a bridge has no business carrying.
+ *
  * @param row - The stored row.
  */
 export function toRoom(row: RoomRow): Room {
-  return { ...row, kind: row.kind as RoomKind };
+  const { dmMemberKey: _internalDmMemberKey, ...rest } = row;
+  return { ...rest, kind: row.kind as RoomKind };
 }
 
 /**

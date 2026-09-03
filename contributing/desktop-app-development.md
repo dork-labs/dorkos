@@ -132,7 +132,7 @@ A Mach-O binary cannot be `dlopen`ed/executed from inside `app.asar`. So `electr
 
 - `better-sqlite3` and `node-pty` (native `.node` addons),
 - `dist/renderer/**` (`express.static` can't range-read from inside asar),
-- **three** families of per-platform binary package, each with `…-darwin-arm64/**` and `…-win32-x64/**` globs: `@anthropic-ai/claude-agent-sdk-*` (the `claude` executable), `@openai/codex-*` (the vendored Codex CLI) and `@esbuild/*` (the compiler the extension host runs). `@anthropic-ai/claude-agent-sdk/**` itself is unpacked too. See §3,
+- **four** families of per-platform binary package, each with a darwin-arm64 and a win32-x64 glob: `@anthropic-ai/claude-agent-sdk-*` (the `claude` executable), `@openai/codex-*` (the vendored Codex CLI), `@esbuild/*` (the compiler the extension host runs) and `@ngrok/ngrok-*` (the Remote Access tunnel, whose Windows package is `…-win32-x64-msvc`). `@anthropic-ai/claude-agent-sdk/**` itself is unpacked too. See §3,
 - `core-extensions/**` (staged into `DORK_HOME` via `fs.cp`).
 
 Unpacking is the **only** way to put a file outside the asar. Do not add a second copy via `extraResources`: the server bundle resolves `node_modules` by walking up from `app.asar/dist/server/`, so it reaches `app.asar/node_modules/<pkg>` (asar-redirected to the unpacked copy) before it could ever see `resources/node_modules/<pkg>`. A duplicate there is unreachable weight that only surfaces the day the two copies carry different ABIs and someone debugs a `NODE_MODULE_VERSION` error against a binary they didn't know existed. One such copy of `better-sqlite3` was carried from the first desktop commit until DOR-536 removed it.
@@ -162,23 +162,42 @@ If `pnpm --filter @dorkos/desktop pack` or `dist` has run on this machine (both 
 
 ### 3.1 The pattern, once
 
-Three separate things the packaged app needs are published the same way: as a **per-platform package holding one executable**, hung off a parent package as an _optional_ dependency. pnpm nests those, and **electron-builder's production-tree copier does not reach a nested optional dependency** — so declaring the parent is not enough. Every one of them needs all three of:
+Four separate things the packaged app needs are published the same way: as a **per-platform package holding one binary**, hung off a parent package as an _optional_ dependency. Declaring the parent is not enough, because **a nested optional dependency is not reliably reachable by electron-builder's copier**. It bundles a dependency only when it can resolve a real path for it (`app-builder-lib/out/node-module-collector/nodeModulesCollector.js`); a miss goes to `logMissingDependency` and is _reported_, never failed:
+
+```text
+platform-specific optional dependencies not bundled — add them to your project's
+optionalDependencies if your app requires them (pnpm 10+ does not auto-install
+transitive platform binaries)  dependencies=["@ngrok/ngrok-win32-x64-msvc@1.7.0", …]
+```
+
+Take the remedy, not the explanation. That parenthetical is upstream's own account and it is **not** what happens here: a clean-room `pnpm install` of `@ngrok/ngrok` alone does materialise `@ngrok/ngrok-darwin-arm64` under `.pnpm`, and `require('@ngrok/ngrok')` loads it. What is measured is one level up — **the same commit produced a local `pack` that carried the binary and a released build that did not.** Reachability of a _nested_ package is not something `apps/desktop` controls; a direct `optionalDependencies` entry is a path the copier always has.
+
+So: **verify against the released artifact, never your own build.** `gh release download vX.Y.Z --repo dork-labs/dorkos --pattern '*-arm64-mac.zip'`, then `unzip -l` for the `app.asar.unpacked/…` entries and `@electron/asar`'s `listPackage` for what is inside `app.asar`.
+
+Every one of them needs all three of:
 
 1. an os/cpu-guarded entry in `apps/desktop/package.json`'s `optionalDependencies`, which is what puts it at the desktop package's own top level where the copier finds it,
-2. an `asarUnpack` glob in `electron-builder.yml`, because an executable cannot run from inside `app.asar`,
-3. a version pinned to whatever it carries the executable **for**.
+2. an `asarUnpack` glob in `electron-builder.yml`, because a native binary can be neither executed nor `dlopen`ed from inside `app.asar`,
+3. a version pinned to whatever it carries the binary **for**.
 
-`scripts/build-server.ts` enforces (3) on every build (`assertPlatformBinariesLocked`) — a skewed pin installs cleanly, packages green, and only shows up in an installed app.
+`scripts/build-server.ts` enforces all three on every build: `assertPlatformBinariesLocked` on (3), and `assertPlatformBinariesWired` on (1) and (2) — a packaged target with no binary from some family, a declared package with no glob, a glob for a package nothing declares, or a declared package no pin rule covers. Every one of those installs cleanly, packages green, and only shows up in an installed app.
 
-| Package                                 | Carries                       | Locked to                        | Reached at runtime via                            |
-| --------------------------------------- | ----------------------------- | -------------------------------- | ------------------------------------------------- |
-| `@anthropic-ai/claude-agent-sdk-<plat>` | `claude` / `claude.exe`       | `@anthropic-ai/claude-agent-sdk` | `DORKOS_CLAUDE_CLI_PATH` from `server-spawn.ts`   |
-| `@openai/codex-<plat>` (an npm alias)   | `vendor/<triple>/bin/codex`   | `@openai/codex`                  | `@openai/codex-sdk`'s own `require.resolve` chain |
-| `@esbuild/<plat>`                       | `bin/esbuild` / `esbuild.exe` | the resolved `esbuild` version   | `ESBUILD_BINARY_PATH` from `server-spawn.ts`      |
+Two things make that gate worth more than the list it replaced. It **discovers the families** by reading each direct dependency's own `optionalDependencies` for platform-shaped names, rather than from a list someone has to remember to extend — so a fifth family is covered the moment it enters the tree. That is the case that actually shipped twice: neither DOR-1335 nor #1458 was a half-wired family, both were families with **nothing** written about them anywhere (each fix added the `package.json` entry and the `asarUnpack` glob in one commit), and a prefix list cannot see those. And it reads the **packaged targets from `electron-builder.yml`'s own `target` blocks**, so adding an arch turns the build red until that arch's binaries are declared, instead of quietly shipping a target with no tools in it.
 
-Only two of the three were wired before DOR-1335. The shipped 0.61.0 Mac app therefore had **no Codex runtime at all** (the SDK threw `Unable to locate Codex CLI binaries` at construction and `registerOptionalRuntime` swallowed it) and **failed to compile its own bundled marketplace extension on every boot** (`The package "@esbuild/darwin-arm64" could not be found`).
+What it cannot see: a parent that gets its binary some other way (a postinstall download, a hardcoded sibling) or one reached only transitively. `scripts/smoke-packaged.ts` is the net below it, and the only place the copier's actual behaviour shows up. Three of the four families already fail an assertion there when their binary is missing (an unregistered runtime, a failed marketplace compilation); `assertTunnelBinaryUnpacked` covers the fourth, because a missing tunnel binary is invisible until someone turns Remote Access on — which needs an ngrok account and a network, so it checks that the file the loader will `dlopen` exists and is big enough to be a real Mach-O.
 
-The Claude binary adds ~213 MB to the DMG and the Codex one ~257 MB. That is inherent to "runs your coding agents out of the box"; the os/cpu guards keep each to the one target arch.
+| Package                                 | Carries                       | Locked to                           | Reached at runtime via                            |
+| --------------------------------------- | ----------------------------- | ----------------------------------- | ------------------------------------------------- |
+| `@anthropic-ai/claude-agent-sdk-<plat>` | `claude` / `claude.exe`       | `@anthropic-ai/claude-agent-sdk`    | `DORKOS_CLAUDE_CLI_PATH` from `server-spawn.ts`   |
+| `@openai/codex-<plat>` (an npm alias)   | `vendor/<triple>/bin/codex`   | `@openai/codex`                     | `@openai/codex-sdk`'s own `require.resolve` chain |
+| `@esbuild/<plat>`                       | `bin/esbuild` / `esbuild.exe` | the resolved `esbuild` version      | `ESBUILD_BINARY_PATH` from `server-spawn.ts`      |
+| `@ngrok/ngrok-<plat>`                   | `ngrok.<plat>.node`           | the resolved `@ngrok/ngrok` version | `@ngrok/ngrok`'s own generated napi loader        |
+
+ngrok is the odd one out: it is a napi-rs addon the server **`dlopen`s**, not an executable it spawns, so nothing hands it a path — the parent's generated `index.js` just `require`s the platform package, and Electron's asar layer redirects that to the unpacked file the same way it does for `better-sqlite3`. (Being napi also means it is ABI-stable across Node and Electron, which is why `scripts/rebuild-natives.ts` does not rebuild it. On macOS that loader asks for `@ngrok/ngrok-darwin-universal` first and falls through to the per-arch package when that require throws, which is why an arm64-only build needs only the 9 MB arm64 package and not the 19 MB fat one.)
+
+Only the Claude family was wired before DOR-1335, which added Codex and esbuild. The shipped 0.61.0 Mac app therefore had **no Codex runtime at all** (the SDK threw `Unable to locate Codex CLI binaries` at construction and `registerOptionalRuntime` swallowed it) and **failed to compile its own bundled marketplace extension on every boot** (`The package "@esbuild/darwin-arm64" could not be found`). ngrok was the last one missing: 0.66.0 packaged `@ngrok/ngrok`'s JS with no platform package anywhere in the bundle, so every attempt to turn on Remote Access threw `Failed to load native binding` before any network call and `POST /api/tunnel/start` answered 500 in single-digit milliseconds (#1458). Checked against the shipped artifact, not a local build: `DorkOS-0.66.0-arm64-mac.zip`'s `app.asar` carries the parent's own JS and no platform package at all, and its `app.asar.unpacked` has no `@ngrok` in it.
+
+The Claude binary adds ~213 MB to the DMG and the Codex one ~257 MB (ngrok's addon is ~9 MB). That is inherent to "runs your coding agents out of the box"; the os/cpu guards keep each to the one target arch.
 
 ### 3.2 Why two of them are handed an explicit path
 

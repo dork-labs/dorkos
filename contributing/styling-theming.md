@@ -379,20 +379,34 @@ See `contributing/design-system.md` for the full FilterBar component specificati
 </div>
 ```
 
-```tsx
-// ❌ Don't modify Shadcn component source files
-// File: apps/client/src/layers/shared/ui/button.tsx
-export function Button() {
-  return <button className="bg-primary px-4 py-2">...</button>;
-  // Changes lost on shadcn update
-}
+Shadcn files under `layers/shared/ui/` are **owned, not vendored** — there is no
+upstream sync to protect. Extend them in place with a new `cva` variant; keep
+the caller `className` prop as the escape hatch for one-off overrides. Never
+fork a primitive into a wrapper component — `button.tsx`'s own `brand` variant
+and `responsive` prop are exactly this pattern, done right.
 
-// ✅ Use className prop or create wrapper
-import { Button as BaseButton } from '@/components/ui/button';
+```tsx
+// ✅ Add a variant to the primitive itself
+// File: apps/client/src/layers/shared/ui/button.tsx
+const buttonVariants = cva('...', {
+  variants: {
+    variant: {
+      default: 'bg-primary text-primary-foreground hover:bg-primary/90',
+      // New look? Add a variant here, not a new component.
+      brand: 'bg-brand text-brand-foreground hover:bg-brand/90',
+    },
+  },
+});
+
+// ✅ One-off override? Use the className prop callers already have.
+<Button className="w-full" />;
+
+// ❌ Don't fork a wrapper component around the primitive
+import { Button as BaseButton } from './button';
 
 export function Button(props) {
   return <BaseButton className="custom-override" {...props} />;
-  // Safe, preserves updates
+  // A second `Button` nobody remembers to keep in sync with the first
 }
 ```
 

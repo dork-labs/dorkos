@@ -289,6 +289,17 @@ jobs:
       - name: Raw-NUL-byte guard fixtures
         run: bash scripts/test-check-nul-bytes.sh
 
+      # check-dead-doc-paths.sh (DOR-1762) is the guard for a ground-truth doc
+      # naming a path that no longer exists in the codebase —
+      # contributing/styling-theming.md once taught a dead `@/components/`
+      # import alias as the ✅ pattern. Hermetic (throwaway trees in a temp
+      # dir), so it never reads this repo's real doc content; the guard itself
+      # runs in the `typecheck` workflow the same way check-banned-words.sh
+      # does, and this step proves it still goes red on a seeded violation and
+      # stays green on the marked-worked-example escape hatch.
+      - name: Dead-path guard fixtures
+        run: bash scripts/test-check-dead-doc-paths.sh
+
       # wait-for-npm.sh is the shared npm-availability wait used by
       # publish-docker.yml and update-homebrew.yml (DOR-1606) — a script that
       # gives up too early does not crash, it exits 1 on a release that would

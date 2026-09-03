@@ -127,6 +127,20 @@ export interface TasksHandlerDeps {
    * peers from inside it; without this it started every chain over.
    */
   inboundBudgets?: import('../../inbound-turn-budgets.js').InboundTurnBudgets;
+  /**
+   * This run's clock, injectable so a test can pin the TTL boundary instead of
+   * racing it (DOR-1729).
+   *
+   * The run's deadline is `envelope.budget.ttl - now()`, so reading the wall
+   * clock for it makes this function's own startup part of the sum: a fixture
+   * with a millisecond-scale TTL is already expired before `sendMessage` on a
+   * machine under load, and the run is refused outright instead of being
+   * stopped mid-stream — which is a different path from the one the test is
+   * about. A fixed clock spends the budget in the unit the code spends.
+   *
+   * Defaults to `Date.now`, which is what every host gets: nothing wires this.
+   */
+  now?: () => number;
   logger?: import('@dorkos/shared/logger').Logger;
 }
 
@@ -152,7 +166,10 @@ export interface TasksHandlerConfig {
  * @param _subject - The tasks subject (unused, kept for interface consistency)
  * @param envelope - The relay envelope containing the tasks dispatch payload
  * @param context - Optional adapter context with agent directory info
- * @param startTime - Timestamp when delivery began (for durationMs calculation)
+ * @param startTime - Timestamp when delivery began (for durationMs calculation).
+ *   An ARGUMENT rather than a clock read, so it sits outside the fence
+ *   {@link TasksHandlerDeps.now} draws: source it from the same clock you
+ *   inject there, or the two disagree and the duration comes out negative.
  * @param config - Resolved adapter configuration
  * @param deps - Injected dependencies
  */
@@ -166,7 +183,12 @@ export async function handleTasksMessage(
 ): Promise<DeliveryResult> {
   const traceId = randomUUID();
   const spanId = randomUUID();
-  const now = Date.now();
+  // Every clock read in this run, so a test that pins one pins all of them —
+  // a run that took its deadline from an injected clock and its trace
+  // timestamps from the wall clock would report a run that ended before it
+  // started. See {@link TasksHandlerDeps.now}.
+  const clock = deps.now ?? Date.now;
+  const now = clock();
 
   // Validate tasks payload
   const parsed = TaskDispatchPayloadSchema.safeParse(envelope.payload);
@@ -190,7 +212,7 @@ export async function handleTasksMessage(
     return {
       success: false,
       error: 'Invalid TaskDispatchPayload',
-      durationMs: Date.now() - startTime,
+      durationMs: clock() - startTime,
     };
   }
 
@@ -250,7 +272,7 @@ export async function handleTasksMessage(
   });
 
   // Set up timeout from TTL budget
-  const ttlRemaining = envelope.budget.ttl - Date.now();
+  const ttlRemaining = envelope.budget.ttl - clock();
   const controller = new AbortController();
   let timeout: ReturnType<typeof setTimeout> | undefined;
   if (ttlRemaining <= 0) {
@@ -328,7 +350,7 @@ export async function handleTasksMessage(
       }
     );
 
-    const durationMs = Date.now() - startTime;
+    const durationMs = clock() - startTime;
     const truncatedSummary = outputSummary.slice(0, OUTPUT_SUMMARY_MAX_CHARS);
     // Both stops record `cancelled` — the run-status vocabulary has no separate
     // timeout — so the error line is what tells a person which one happened,
@@ -366,7 +388,7 @@ export async function handleTasksMessage(
 
     deps.traceStore.updateSpan(envelope.id, {
       status: 'processed',
-      processedAt: Date.now(),
+      processedAt: clock(),
     });
 
     return {
@@ -378,7 +400,7 @@ export async function handleTasksMessage(
       durationMs,
     };
   } catch (err) {
-    const durationMs = Date.now() - startTime;
+    const durationMs = clock() - startTime;
     const errorMsg = err instanceof Error ? err.message : String(err);
 
     if (deps.taskStore) {
@@ -394,7 +416,7 @@ export async function handleTasksMessage(
 
     deps.traceStore.updateSpan(envelope.id, {
       status: 'failed',
-      processedAt: Date.now(),
+      processedAt: clock(),
       error: errorMsg,
     });
 

@@ -42,7 +42,12 @@ describe('TunnelError', () => {
 
   it('displays a friendly message for timeout errors', () => {
     render(<TunnelError error="connection ETIMEDOUT" onRetry={vi.fn()} />);
-    expect(screen.getByText('Tunnel timed out. Check your network.')).toBeInTheDocument();
+    expect(screen.getByText('The tunnel took too long to respond. Try again.')).toBeInTheDocument();
+  });
+
+  it('announces itself, because it replaces what the person was looking at', () => {
+    render(<TunnelError error="ngrok exploded" onRetry={vi.fn()} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Tunnel failed');
   });
 
   it('displays a friendly message for tunnel limit errors', () => {

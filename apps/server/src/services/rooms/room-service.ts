@@ -142,7 +142,7 @@ import {
 } from './notices/notice-copy.js';
 import { dmTitleNames, RoomRoster, type AddMemberInput } from './room-roster.js';
 import { parseEntryBody, type NewRoom } from './room-rows.js';
-import type { RoomStore } from './room-store.js';
+import { isDmMemberSetTaken, type RoomStore } from './room-store.js';
 import type { RoomBroadcaster } from './room-stream.js';
 import {
   RoomTriggerDispatcher,
@@ -1135,6 +1135,16 @@ export class RoomService {
    * cockpit, an MCP client, a shell. And a client could only evaluate it by
    * holding every DM's roster, which is exactly the per-room fetch R5 deleted.
    *
+   * **And the DATABASE is what decides it, not the lookup below** (DOR-1616).
+   * The member-set lookup used to be a query with nothing behind it, so two
+   * writers could both read "no DM yet" and both insert. `rooms.dm_member_key`
+   * carries the canonical roster on the room row and
+   * `rooms_dm_member_key_unique` refuses the second write; the loser adopts the
+   * winner's room. The lookup is still run first, because the common case is a
+   * conversation that has existed for hours and answering it with a SELECT beats
+   * answering it with a failed INSERT — but it is now an optimisation over a
+   * guarantee rather than the guarantee itself.
+   *
    * Three consequences worth stating, because none of them is obvious:
    *
    * - **An archived match is un-archived and returned.** Archive is this
@@ -1219,15 +1229,7 @@ export class RoomService {
     // to probe for one.
     if (request.kind === 'dm') {
       const existing = this.store.findDmByMemberSet([...resolved.keys()]);
-      if (existing) {
-        // `updateRoom` re-checks visibility and broadcasts `room_updated`, which
-        // is what a sidebar holding a stale list needs to hear. Its slug-reclaim
-        // branch is channel-only, so it is inert here.
-        const reopened = existing.archived
-          ? this.updateRoom(existing.id, creatorAuthorId, { archived: false })
-          : this.withRoster(existing, creatorAuthorId);
-        return { ...reopened, created: false };
-      }
+      if (existing) return this.adoptExistingDm(existing, creatorAuthorId);
     }
 
     const members = [...resolved.values()].map((author) => ({
@@ -1236,10 +1238,55 @@ export class RoomService {
       joinedAt,
     }));
 
-    const room = this.store.createRoom(draft, members);
+    let room: Room;
+    try {
+      room = this.store.createRoom(draft, members);
+    } catch (err) {
+      // **The INSERT is what settles a concurrent DM open, not the lookup above
+      // it** (DOR-1616). Two writers — a second DorkOS process, a CLI and the
+      // app started together — can both read "no DM yet" and both come here, and
+      // `rooms_dm_member_key_unique` makes exactly one of them win. The loser
+      // ADOPTS the winner's room rather than failing, because the caller asked
+      // for a conversation and there now is one: reporting a constraint error
+      // would be telling them their DM does not exist while pointing at it.
+      //
+      // Same shape, same reasoning as `ensureSystemChannel`'s well-known-key
+      // race below, including the recovery test: the re-read decides it rather
+      // than an errno comparison, and a failure that did not leave the key held
+      // is rethrown untouched — a channel's `SLUG_TAKEN` included, since
+      // `isDmMemberSetTaken` names the column and not merely the error class.
+      if (!isDmMemberSetTaken(err)) throw err;
+      const won = this.store.findDmByMemberSet([...resolved.keys()]);
+      if (!won) throw err;
+      return this.adoptExistingDm(won, creatorAuthorId);
+    }
 
     eventFanOut.broadcast('room_created', { roomId: room.id, kind: room.kind, title: room.title });
     return { ...this.withRoster(room, creatorAuthorId), created: true };
+  }
+
+  /**
+   * Answer a DM open with the conversation that already holds these people —
+   * the matched half of {@link RoomService.createRoom}, reached both by its
+   * lookup and by its adopt-the-winner recovery.
+   *
+   * One method rather than two copies because the two paths must be
+   * indistinguishable to a caller: whether this install had the room before the
+   * request or acquired it a microsecond into one, what comes back is the same
+   * conversation, un-archived if it was away, with `created: false` telling the
+   * caller which of the two answers they got.
+   *
+   * @param existing - The DM holding exactly this member set.
+   * @param creatorAuthorId - Whoever asked to open it.
+   */
+  private adoptExistingDm(existing: Room, creatorAuthorId: string): OpenedRoom {
+    // `updateRoom` re-checks visibility and broadcasts `room_updated`, which
+    // is what a sidebar holding a stale list needs to hear. Its slug-reclaim
+    // branch is channel-only, so it is inert here.
+    const reopened = existing.archived
+      ? this.updateRoom(existing.id, creatorAuthorId, { archived: false })
+      : this.withRoster(existing, creatorAuthorId);
+    return { ...reopened, created: false };
   }
 
   /**
@@ -1522,6 +1569,14 @@ export class RoomService {
       slug,
       title,
       topic: null,
+      // The create-path bypass of §3.2, now also structural in the DATABASE
+      // (DOR-1616). This flag is what keeps a bridged private chat out of
+      // `rooms_dm_member_key_unique`: its roster is byte-identical to the
+      // operator's own DM with the same agent, so a bridged chat inside that
+      // constraint would either collide with the private conversation or be
+      // handed back as it. Not calling `findDmByMemberSet` is no longer the only
+      // thing standing between the two.
+      bridged: true,
       createdAt,
     };
     // The one place this seeds a responseMode that is NOT

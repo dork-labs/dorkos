@@ -253,12 +253,12 @@ None are required if you already have the [Claude Code CLI](https://docs.anthrop
 
 These let you reach DorkOS from another device through a secure public URL (ngrok).
 
-| Variable          | What it does                                  |
-| ----------------- | --------------------------------------------- |
-| `TUNNEL_ENABLED`  | Set to `true` to open a public URL            |
-| `NGROK_AUTHTOKEN` | Your ngrok token                              |
-| `TUNNEL_DOMAIN`   | A custom address for the URL (optional)       |
-| `TUNNEL_AUTH`     | Password protection as `user:pass` (optional) |
+| Variable          | What it does                                                                                    |
+| ----------------- | ----------------------------------------------------------------------------------------------- |
+| `TUNNEL_ENABLED`  | Open a public URL at startup. Unset, your saved setting decides; `false` keeps this run private |
+| `NGROK_AUTHTOKEN` | Your ngrok token                                                                                |
+| `TUNNEL_DOMAIN`   | A custom address for the URL (optional)                                                         |
+| `TUNNEL_AUTH`     | Password protection as `user:pass` (optional)                                                   |
 
 ### API documentation
 

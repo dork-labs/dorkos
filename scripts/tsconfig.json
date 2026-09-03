@@ -24,6 +24,7 @@
     "__tests__/**/*.ts",
     "vitest.config.ts",
     "check-vocab-gate.ts",
+    "check-copy-spec-drift.ts",
     "vitest-flake-reporter.ts"
   ]
 }

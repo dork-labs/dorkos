@@ -80,6 +80,21 @@ export interface AgentHandlerDeps {
    * (DOR-791). Absent means no threading — the pre-existing behaviour.
    */
   inboundBudgets?: InboundTurnBudgets;
+  /**
+   * This turn's clock, injectable so a test can pin the TTL boundary instead of
+   * racing it (DOR-1729).
+   *
+   * The deadline below is `envelope.budget.ttl - now()`, and reading the wall
+   * clock for it makes the handler's own startup path part of the sum: a
+   * fixture with a millisecond-scale TTL is out of budget before `sendMessage`
+   * on a machine under load, so `ttlRemaining` lands at or below zero, the
+   * turn takes `defaultTimeoutMs` instead, and the deadline the test was about
+   * never bites. A test that hands over a fixed clock spends the budget in the
+   * unit the code spends rather than in whatever the runner had left.
+   *
+   * Defaults to `Date.now`, which is what every host gets: nothing wires this.
+   */
+  now?: () => number;
   logger?: import('@dorkos/shared/logger').Logger;
 }
 
@@ -153,6 +168,11 @@ const STREAM_EVENT_TYPES: ReadonlySet<string> = new Set(StreamEventTypeSchema.op
  *
  * Resolves the agent ID, records trace spans, formats the prompt with
  * relay context, and streams the agent response back to envelope.replyTo.
+ *
+ * @param startTime - When delivery began, for the `durationMs` this reports.
+ *   An ARGUMENT rather than a clock read, so it sits outside the fence
+ *   {@link AgentHandlerDeps.now} draws: source it from the same clock you
+ *   inject there, or the two disagree and the duration comes out negative.
  */
 export async function handleAgentMessage(
   subject: string,
@@ -163,12 +183,17 @@ export async function handleAgentMessage(
   deps: AgentHandlerDeps,
   relay: RelayPublisher | null
 ): Promise<DeliveryResult> {
+  // Every clock read in this turn, so a test that pins one pins all of them —
+  // a handler that took its deadline from an injected clock and its trace
+  // timestamps from the wall clock would report a turn that ended before it
+  // started. See {@link AgentHandlerDeps.now}.
+  const now = deps.now ?? Date.now;
   const agentId = extractAgentId(subject);
   if (!agentId) {
     return {
       success: false,
       error: `Could not extract agentId from subject: ${subject}`,
-      durationMs: Date.now() - startTime,
+      durationMs: now() - startTime,
     };
   }
 
@@ -221,8 +246,8 @@ export async function handleAgentMessage(
     toEndpoint: `agent:${agentId}/${ccaSessionKey}`,
     status: 'pending',
     budgetHopsUsed: envelope.budget.hopCount,
-    budgetTtlRemainingMs: envelope.budget.ttl - Date.now(),
-    sentAt: Date.now(),
+    budgetTtlRemainingMs: envelope.budget.ttl - now(),
+    sentAt: now(),
     deliveredAt: null,
     processedAt: null,
     error: null,
@@ -285,7 +310,7 @@ export async function handleAgentMessage(
       ...executionSettings,
     });
   }
-  deps.traceStore.updateSpan(envelope.id, { status: 'delivered', deliveredAt: Date.now() });
+  deps.traceStore.updateSpan(envelope.id, { status: 'delivered', deliveredAt: now() });
 
   if (!envelope.replyTo) {
     log.warn(
@@ -298,8 +323,8 @@ export async function handleAgentMessage(
     log.debug?.(
       `[CCA] skipping sendMessage for StreamEvent payload type=${String(payloadObj.type)}`
     );
-    deps.traceStore.updateSpan(envelope.id, { status: 'processed', processedAt: Date.now() });
-    return { success: true, durationMs: Date.now() - startTime };
+    deps.traceStore.updateSpan(envelope.id, { status: 'processed', processedAt: now() });
+    return { success: true, durationMs: now() - startTime };
   }
 
   const correlationId = payloadObj?.correlationId as string | undefined;
@@ -307,12 +332,13 @@ export async function handleAgentMessage(
     extractPayloadContent(envelope.payload),
     envelope,
     agentId,
-    ccaSessionKey
+    ccaSessionKey,
+    now
   );
   const formatBlock = buildResponseFormatBlock(responseContext);
 
   // Set up timeout from TTL budget
-  const ttlRemaining = envelope.budget.ttl - Date.now();
+  const ttlRemaining = envelope.budget.ttl - now();
   const timeout = setTimeout(
     () => controller.abort(),
     ttlRemaining > 0 ? ttlRemaining : config.defaultTimeoutMs
@@ -436,7 +462,7 @@ export async function handleAgentMessage(
     log.error('[CCA] Streaming error:', describeError(err));
     deps.traceStore.updateSpan(envelope.id, {
       status: 'failed',
-      processedAt: Date.now(),
+      processedAt: now(),
       error: streamError,
     });
   } finally {
@@ -553,7 +579,7 @@ export async function handleAgentMessage(
   if (!streamError) {
     deps.traceStore.updateSpan(envelope.id, {
       status: aborted ? 'failed' : 'processed',
-      processedAt: Date.now(),
+      processedAt: now(),
       ...(aborted && { error: abortText(controller.signal) }),
     });
   }
@@ -562,7 +588,7 @@ export async function handleAgentMessage(
     success: !failed,
     error: streamError ?? abortText(controller.signal),
     deadLettered: aborted,
-    durationMs: Date.now() - startTime,
+    durationMs: now() - startTime,
   };
 }
 
@@ -697,7 +723,8 @@ function formatPromptWithContext(
   content: string,
   envelope: RelayEnvelope,
   agentId: string,
-  sdkSessionId: string
+  sdkSessionId: string,
+  now: () => number
 ): string {
   const { sender, chat } = extractSenderIdentity(envelope.payload);
   const lines = [
@@ -712,7 +739,7 @@ function formatPromptWithContext(
     '',
     'Budget remaining:',
     `- Hops: ${envelope.budget.hopCount} of ${envelope.budget.maxHops} used`,
-    `- TTL: ${Math.max(0, Math.round((envelope.budget.ttl - Date.now()) / 1000))} seconds remaining`,
+    `- TTL: ${Math.max(0, Math.round((envelope.budget.ttl - now()) / 1000))} seconds remaining`,
     `- Max turns: ${envelope.budget.callBudgetRemaining}`,
   ];
   if (envelope.replyTo) {
