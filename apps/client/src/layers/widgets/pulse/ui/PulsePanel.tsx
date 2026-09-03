@@ -15,8 +15,12 @@ import { PulseActivitySection } from './PulseActivitySection';
  *  2. Activity — a most-recent-first peek at recent activity, overflowing to
  *     /activity (Linear's state-vs-history split).
  *
- * Each section collapses to a calm one-line all-clear rather than vanishing, so
- * Pulse always has a body.
+ * Each section collapses to a calm one-line all-clear when it has nothing to
+ * show, rather than vanishing. On desktop, a section instead draws NOTHING on
+ * the one route it would be duplicating on screen — Needs attention on Home,
+ * Activity on /activity (see each section's own doc) — so Pulse is not
+ * guaranteed a body everywhere; it is guaranteed one wherever it is not
+ * standing next to its own duplicate.
  *
  * Usage is intentionally omitted, not collapsed: the spend/context meters in the
  * status feature are session-scoped — their `UsageStatus` is derived from a
