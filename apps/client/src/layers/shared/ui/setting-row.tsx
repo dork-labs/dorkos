@@ -13,8 +13,12 @@ interface SettingRowProps {
    * the way out of what it describes — the Control Center's Remote-access row
    * pairs a failure with a "Fix…" link, and splitting that across two slots
    * would put the link somewhere it does not read as part of the sentence.
+   *
+   * Optional: leave it off when the control already says everything the
+   * description would (a Theme select listing Light, Dark and System needs
+   * no sentence telling you it picks a theme).
    */
-  description: React.ReactNode;
+  description?: React.ReactNode;
   /** Control element (Switch, Button, Select, etc.) rendered on the right (horizontal) or below (vertical). */
   children: React.ReactNode;
   /**
@@ -54,7 +58,7 @@ function SettingRow({
     >
       <FieldContent className="min-w-0">
         <FieldLabel className="text-sm font-medium">{label}</FieldLabel>
-        <FieldDescription className="text-xs">{description}</FieldDescription>
+        {description && <FieldDescription className="text-xs">{description}</FieldDescription>}
       </FieldContent>
       {children}
     </Field>

@@ -170,7 +170,7 @@ export function BindingAdvancedSection({
         {/* Session strategy selector — replaced by a note once bridged (§7.2) */}
         {bridged ? (
           <div className="space-y-1.5 px-4 py-3">
-            <Label>Session Strategy</Label>
+            <Label>Session strategy</Label>
             <p className="text-muted-foreground text-xs">
               A bridged chat keeps its history in the channel, so it does not use a session
               strategy.
@@ -178,7 +178,7 @@ export function BindingAdvancedSection({
           </div>
         ) : (
           <div className="space-y-1.5 px-4 py-3">
-            <Label htmlFor="binding-session-strategy">Session Strategy</Label>
+            <Label htmlFor="binding-session-strategy">Session strategy</Label>
             <Select value={strategy} onValueChange={(v) => onStrategyChange(v as SessionStrategy)}>
               <SelectTrigger id="binding-session-strategy" className="w-full">
                 <SelectValue />
@@ -240,7 +240,7 @@ export function BindingAdvancedSection({
 
         {/* Message direction toggles */}
         <div className="space-y-2.5 px-4 py-3">
-          <p className="text-muted-foreground text-xs font-medium">Message Direction</p>
+          <p className="text-muted-foreground text-xs font-medium">Message direction</p>
           <div className="flex cursor-pointer items-center justify-between gap-3">
             <Label
               htmlFor="perm-initiate"

@@ -56,7 +56,7 @@ export function useTopologyHandlers({
   const [hasDraggedNodes, setHasDraggedNodes] = useState(false);
   // Track manual position overrides from user drags (session-only, not persisted).
   const manualPositions = useRef<Map<string, { x: number; y: number }>>(new Map());
-  // Incremented to force a re-layout when "Reset Layout" is clicked.
+  // Incremented to force a re-layout when "Reset layout" is clicked.
   const [layoutVersion, setLayoutVersion] = useState(0);
   // Binding edge pending deletion — drives the confirm dialog (never delete silently).
   const [pendingDeleteEdgeId, setPendingDeleteEdgeId] = useState<string | null>(null);

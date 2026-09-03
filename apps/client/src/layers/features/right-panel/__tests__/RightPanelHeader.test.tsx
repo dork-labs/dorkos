@@ -190,10 +190,10 @@ describe('RightPanelHeader', () => {
   it('renders the active tab actions beside the close button', () => {
     renderHeader(
       [makeContribution('agent'), makeContribution('files')],
-      <button type="button">New File</button>
+      <button type="button">New file</button>
     );
 
-    expect(screen.getByRole('button', { name: 'New File' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New file' })).toBeInTheDocument();
   });
 
   it('always renders the close button', () => {

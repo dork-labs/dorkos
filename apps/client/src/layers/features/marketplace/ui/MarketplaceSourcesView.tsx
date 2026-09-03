@@ -96,7 +96,7 @@ function AddSourceDialog({ open, onOpenChange, isPending, onSubmit }: AddSourceD
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add Marketplace Source</DialogTitle>
+          <DialogTitle>Add a marketplace source</DialogTitle>
           <DialogDescription>
             Enter a git URL and friendly name for a registry that publishes marketplace packages.
           </DialogDescription>
@@ -175,7 +175,7 @@ export function MarketplaceSourcesView() {
           {/* Not drawn (design decision E1): the bar overhead already says
               "Marketplace Sources". Kept for the outline — the bar's title is
               a `nav` landmark, not a heading. */}
-          <h1 className="sr-only">Marketplace Sources</h1>
+          <h1 className="sr-only">Marketplace sources</h1>
           <p className="text-muted-foreground text-sm">
             Git registries that publish marketplace packages.
           </p>

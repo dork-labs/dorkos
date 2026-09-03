@@ -88,7 +88,7 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
                 dotPulses && 'animate-breath'
               )}
             />
-            Remote Access
+            Remote access
           </ResponsiveDialogTitle>
           {machine.viewState === 'landing' && (
             <ResponsiveDialogDescription className="text-muted-foreground text-xs">

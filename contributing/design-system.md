@@ -402,6 +402,14 @@ A nav panel has **two levels and one header style** (`specs/sidebar-simplificati
 
 Never nest accordions, and keep nav trees to **one indent level** — depth past two stops helping wayfinding. Section labels are sentence case, **11px medium**, `text-sidebar-foreground/70`, with **no icon**: the rows underneath carry the glyph, and a `#` above a list of `#` rows says the same thing twice. ALL-CAPS with letterspacing reads dated at small sizes.
 
+#### Casing: sentence case everywhere
+
+The rule above is not a sidebar rule, it is the house rule. **Every string a person reads is sentence case** — headings, section labels, buttons, menu items, tab titles, dialog titles, settings rows, tooltips, `aria-label`s. Capitalise the first word and nothing else.
+
+The only exceptions are proper nouns: product names (DorkOS, Claude Code, Codex, OpenCode, Obsidian, Slack, Telegram, GitHub), named surfaces that are titles in their own right (Control Center, Dev Playground), and acronyms (ID, MCP, URL). "Reset all data", not "Reset All Data". "Open in a new tab", not "Open in New Tab". "Marketplace sources", not "Marketplace Sources".
+
+Title Case makes a small UI shout, and mixing the two registers in one menu — which this app did until DOR-1755 — reads as two products stitched together. When in doubt, write the words the way you would write them in a sentence.
+
 #### The three geometry tokens
 
 Every horizontal inset in the sidebar comes off three custom properties, declared on `:root` in `apps/client/src/index.css`. They are measured **from the panel's left edge**, not from the element that pays them — the panel already pays 8px (`px-2` on `SidebarContent`), so each consumer applies `calc(var(--token) - 0.5rem)`.

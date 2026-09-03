@@ -21,8 +21,8 @@ export function RateLimitSection({ rateLimit, onUpdate }: RateLimitSectionProps)
   return (
     <div className="space-y-3">
       <SwitchSettingRow
-        label="Rate limiting"
-        description="Limit external MCP requests per time window"
+        label="Cap incoming requests"
+        description="Limit how many requests other apps can send DorkOS in a stretch of time."
         checked={rateLimit.enabled}
         onCheckedChange={(v) => onUpdate({ enabled: v })}
         ariaLabel="Toggle rate limiting"

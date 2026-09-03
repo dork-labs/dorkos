@@ -267,10 +267,10 @@ export function FileTreeRow({
       <ResponsiveContextMenuTrigger asChild>{body}</ResponsiveContextMenuTrigger>
       <ResponsiveContextMenuContent className="w-52">
         <ResponsiveContextMenuItem onClick={() => onNewFile(parent)}>
-          New File
+          New file
         </ResponsiveContextMenuItem>
         <ResponsiveContextMenuItem onClick={() => onNewFolder(parent)}>
-          New Folder
+          New folder
         </ResponsiveContextMenuItem>
         <ResponsiveContextMenuSeparator />
         {revealLabel && (

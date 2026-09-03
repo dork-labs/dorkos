@@ -188,7 +188,7 @@ describe('BindingDialog', () => {
       render(<BindingDialog {...defaultCreateProps} />, { wrapper: Wrapper });
       // Session strategy lives inside the collapsible Advanced section — open it first.
       fireEvent.click(screen.getByText('Advanced'));
-      expect(screen.getByText('Session Strategy')).toBeInTheDocument();
+      expect(screen.getByText('Session strategy')).toBeInTheDocument();
     });
 
     it('renders label input with placeholder', () => {

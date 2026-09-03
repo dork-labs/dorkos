@@ -75,8 +75,8 @@ export function ServerTab() {
           <ServerAddress port={config.port} />
 
           <ConfigRow label="Uptime" value={formatUptime(config.uptime)} />
-          <ConfigRow label="Working Directory" value={config.workingDirectory} mono truncate />
-          <ConfigRow label="Data Directory" value={config.dorkHome} mono truncate />
+          <ConfigRow label="Working folder" value={config.workingDirectory} mono truncate />
+          <ConfigRow label="Data folder" value={config.dorkHome} mono truncate />
           <ConfigRow label="Boundary" value={config.boundary} mono truncate />
           <ConfigRow label="Node.js" value={config.nodeVersion} />
         </div>

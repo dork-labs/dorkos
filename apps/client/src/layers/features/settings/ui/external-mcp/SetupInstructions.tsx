@@ -32,7 +32,7 @@ export function SetupInstructions({ endpoint, apiKey }: SetupInstructionsProps) 
   return (
     <Collapsible open={setupOpen} onOpenChange={setSetupOpen}>
       <CollapsibleTrigger className="flex w-full items-center justify-between text-sm font-medium">
-        <span>Setup Instructions</span>
+        <span>Setup instructions</span>
         <ChevronDown
           className={cn(
             'text-muted-foreground size-3.5 transition-transform duration-150',

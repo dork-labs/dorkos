@@ -252,7 +252,7 @@ describe('BindingAdvancedSection permissions', () => {
   describe('session strategy when bridged (chats-as-channels §7.2)', () => {
     it('shows the session-strategy selector for an unbridged binding', () => {
       renderSection({ bridged: false });
-      expect(screen.getByLabelText('Session Strategy')).toBeInTheDocument();
+      expect(screen.getByLabelText('Session strategy')).toBeInTheDocument();
       expect(screen.queryByText(/keeps its history in the channel/i)).not.toBeInTheDocument();
     });
 

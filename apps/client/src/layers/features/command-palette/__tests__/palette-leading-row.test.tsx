@@ -151,7 +151,7 @@ vi.mock('@/layers/shared/model', () => ({
     },
     {
       id: 'theme',
-      label: 'Toggle Theme',
+      label: 'Toggle theme',
       icon: 'Moon',
       action: 'toggleTheme',
       category: 'quick-action',

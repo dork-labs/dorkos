@@ -250,7 +250,7 @@ vi.mock('@/layers/shared/model', () => ({
     },
     {
       id: 'theme',
-      label: 'Toggle Theme',
+      label: 'Toggle theme',
       icon: 'Moon',
       action: 'toggleTheme',
       category: 'quick-action',
@@ -447,7 +447,7 @@ describe('rooms in the command palette', () => {
       // Not rooms: the agent, the feature, the quick action.
       expect(screen.queryByText('Ana')).not.toBeInTheDocument();
       expect(screen.queryByText('Settings')).not.toBeInTheDocument();
-      expect(screen.queryByText('Toggle Theme')).not.toBeInTheDocument();
+      expect(screen.queryByText('Toggle theme')).not.toBeInTheDocument();
     });
 
     it('draws no badge for a channel the reader is not a member of', async () => {
@@ -510,7 +510,7 @@ describe('rooms in the command palette', () => {
       await waitFor(() =>
         expect(screen.getByText('Open conversation with Ana')).toBeInTheDocument()
       );
-      // The agent row, which drills into "New Session" and the rest.
+      // The agent row, which drills into "New session" and the rest.
       expect(screen.getByRole('option', { name: /^Ana/ })).toBeInTheDocument();
       // And the DM row never says "Message Ana". Pressing it opens the
       // conversation that already exists and shows what is in it; it writes

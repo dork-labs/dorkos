@@ -142,16 +142,15 @@ export function ToolsTab() {
   return (
     <div className="space-y-4">
       <p className="text-muted-foreground text-sm">
-        Choose which tool groups your agents are told about by default. Turning a group off leaves
-        it out of an agent&rsquo;s instructions, so agents stop reaching for it. It is guidance, not
-        a lock &mdash; an agent that asks for one anyway still gets it. Individual agents can
-        override these in their own Tools tab.
+        Choose which tools your agents hear about by default. Turning a group off keeps it out of
+        their instructions, so they stop reaching for it. This is a hint, not a lock: an agent that
+        asks for one anyway still gets it. Each agent can set its own list in its Tools tab.
       </p>
       <FieldCard>
         <FieldCardContent>
           <SettingRow
-            label="Core Tools"
-            description="Server info, agent identity, app controls, and preview reads"
+            label="Core tools"
+            description="Let agents check the app, know who they are, and read what you're previewing."
           >
             <div className="flex items-center gap-2">
               <ToolCountBadge tools={TOOL_INVENTORY.core} />

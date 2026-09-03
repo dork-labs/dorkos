@@ -217,7 +217,7 @@ export function CommandPaletteDialog() {
     [queryClient]
   );
 
-  // "Open in New Tab" — this agent in another tab (DOR-540). The seam picks
+  // "Open in a new tab" — this agent in another tab (DOR-540). The seam picks
   // whose tab: the cockpit's own strip in the desktop app, a real browser tab in
   // a browser, so the label is honest on both. Where there is no second view at
   // all (the Obsidian embed), open the agent here rather than dropping the
@@ -235,7 +235,7 @@ export function CommandPaletteDialog() {
     [agentHref, handleAgentSelect, recordAgentOpened, closePalette]
   );
 
-  // "Open in New Window" — the same target, in a second cockpit window instead
+  // "Open in a new window" — the same target, in a second cockpit window instead
   // of a tab. Kept as its own action rather than a modifier on the tab one:
   // parking an agent on a second monitor is a different intent from wanting
   // another tab, and this list is where a person already chooses where an agent
@@ -665,7 +665,7 @@ export function CommandPaletteDialog() {
                         }
                         onNewSession={() => {
                           // A NEW conversation, not this agent's latest one —
-                          // otherwise this row and "Open Here" above it do the
+                          // otherwise this row and "Open here" above it do the
                           // same thing (DOR-928).
                           startNewSession(subMenuAgent.projectPath);
                           recordAgentOpened(subMenuAgent.projectPath);
@@ -678,7 +678,7 @@ export function CommandPaletteDialog() {
                         // Offered only when there is something to browse. The
                         // count is already in hand here, and a row that opens a
                         // dialog saying "no conversations yet" is a dead end
-                        // dressed as a destination — "New Session" above it is
+                        // dressed as a destination — "New session" above it is
                         // what that operator actually wants.
                         onBrowseSessions={
                           previewData.sessionCount > 0

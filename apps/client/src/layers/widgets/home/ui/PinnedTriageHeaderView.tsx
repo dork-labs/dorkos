@@ -85,7 +85,7 @@ function TriageGroup({
       <h2
         id={headingId}
         className={cn(
-          'mb-2 text-xs font-medium tracking-widest uppercase',
+          'mb-2 text-xs font-medium',
           tone === 'waiting' ? 'text-status-warning-fg' : 'text-muted-foreground'
         )}
       >
@@ -491,7 +491,7 @@ export function PinnedTriageHeaderView({
               )}
             >
               {showsWaiting && (
-                <TriageGroup title="Waiting On You">
+                <TriageGroup title="Waiting on you">
                   {/* Asks first: their window is ten minutes and a capability
                       approval's is two hours, so this IS time-left order. */}
                   {(asks.length > 0 || settlingAsks.length > 0) && (
@@ -521,7 +521,7 @@ export function PinnedTriageHeaderView({
               )}
 
               {showsAttention && (
-                <TriageGroup title="Needs Attention">
+                <TriageGroup title="Needs attention">
                   <div className="border-status-warning-border/40 bg-background/60 rounded-lg border p-2">
                     <motion.div variants={staggerContainer} initial="initial" animate="animate">
                       {errorSignals.map((signal) => (
@@ -540,7 +540,7 @@ export function PinnedTriageHeaderView({
               )}
 
               {showsActivity && (
-                <TriageGroup title="Recent Activity" tone="neutral">
+                <TriageGroup title="Recent activity" tone="neutral">
                   <div className="border-border/60 bg-background/60 rounded-lg border p-2">
                     <motion.div variants={staggerContainer} initial="initial" animate="animate">
                       {activityItems.map((item) => (

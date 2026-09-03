@@ -272,13 +272,13 @@ describe('RightPanelContainer', () => {
     mockContributions = [
       makeContribution('profile'),
       makeContribution('files', {
-        headerActions: () => <button type="button">New File</button>,
+        headerActions: () => <button type="button">New file</button>,
       }),
     ];
 
     render(<RightPanelContainer pathname={mockPathname} />);
 
-    expect(screen.getByRole('button', { name: 'New File' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New file' })).toBeInTheDocument();
   });
 
   it('hides a transport-gated tab when the active transport lacks the capability', () => {

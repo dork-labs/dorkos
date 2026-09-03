@@ -380,11 +380,11 @@ function TopologyGraphInner({
               variant="outline"
               size="xs"
               onClick={handleResetLayout}
-              title="Reset Layout"
+              title="Reset layout"
               className="shadow-sm"
             >
               <RotateCcw />
-              Reset Layout
+              Reset layout
             </Button>
           </div>
         )}

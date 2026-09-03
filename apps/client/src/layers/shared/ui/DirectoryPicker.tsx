@@ -218,8 +218,8 @@ export function DirectoryPicker({
                 type="button"
                 onClick={startCreatingFolder}
                 className="hover:bg-accent flex-shrink-0 rounded p-1 transition-colors max-md:p-2"
-                aria-label="New Folder"
-                title="New Folder"
+                aria-label="New folder"
+                title="New folder"
               >
                 <FolderPlus className="text-muted-foreground size-(--size-icon-sm)" />
               </button>

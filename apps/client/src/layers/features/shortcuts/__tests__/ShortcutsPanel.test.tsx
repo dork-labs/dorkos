@@ -51,13 +51,15 @@ describe('ShortcutsPanel', () => {
 
     expect(screen.getByText('Command palette')).toBeInTheDocument();
     expect(screen.getByText('Toggle sidebar')).toBeInTheDocument();
-    expect(screen.getByText('Keyboard shortcuts')).toBeInTheDocument();
+    // Two of these on screen since the dialog title dropped its Title Case
+    // (DOR-1755): the heading, and the row for the shortcut that opens it.
+    expect(screen.getAllByText('Keyboard shortcuts')).toHaveLength(2);
   });
 
   it('renders the dialog title', () => {
     useAppStore.setState({ shortcutsPanelOpen: true });
     render(<ShortcutsPanel />);
 
-    expect(screen.getByText('Keyboard Shortcuts')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Keyboard shortcuts' })).toBeInTheDocument();
   });
 });

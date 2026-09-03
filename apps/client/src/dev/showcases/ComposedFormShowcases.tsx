@@ -98,7 +98,7 @@ function SettingRowSection() {
   return (
     <PlaygroundSection
       title="SettingRow"
-      description="Horizontal settings row with label and description on the left, control on the right."
+      description="Horizontal settings row with label and optional description on the left, control on the right."
     >
       <ShowcaseLabel>Toggle off (default)</ShowcaseLabel>
       <ShowcaseDemo>
@@ -144,6 +144,15 @@ function SettingRowSection() {
             description="Share anonymous usage data to improve DorkOS."
           >
             <Switch checked={telemetry} onCheckedChange={setTelemetry} />
+          </SettingRow>
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>No description</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full max-w-md">
+          <SettingRow label="Auto-start agents">
+            <Switch checked={autoStart} onCheckedChange={setAutoStart} />
           </SettingRow>
         </div>
       </ShowcaseDemo>
@@ -314,8 +323,8 @@ function FieldCardSection() {
             <FieldCardContent>
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="text-sm font-medium">Reset All Data</p>
-                  <p className="text-muted-foreground text-xs">Permanently delete all data.</p>
+                  <p className="text-sm font-medium">Reset all data</p>
+                  <p className="text-muted-foreground text-xs">Delete everything DorkOS saved.</p>
                 </div>
                 <button className="bg-destructive text-destructive-foreground rounded-md px-3 py-1.5 text-xs">
                   Reset
@@ -323,9 +332,9 @@ function FieldCardSection() {
               </div>
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="text-sm font-medium">Restart Server</p>
+                  <p className="text-sm font-medium">Restart DorkOS</p>
                   <p className="text-muted-foreground text-xs">
-                    Active sessions will be interrupted.
+                    Anything running right now stops.
                   </p>
                 </div>
                 <button className="bg-destructive text-destructive-foreground rounded-md px-3 py-1.5 text-xs">

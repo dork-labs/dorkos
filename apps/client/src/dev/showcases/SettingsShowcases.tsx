@@ -476,7 +476,7 @@ function PrimitivesSection() {
       <ShowcaseDemo>
         <FieldCard>
           <FieldCardContent>
-            <SettingRow label="Theme" description="Choose your preferred color scheme">
+            <SettingRow label="Theme">
               <Button variant="outline" size="sm">
                 System
               </Button>
@@ -487,7 +487,7 @@ function PrimitivesSection() {
 
       <ShowcaseLabel>SettingRow — disabled</ShowcaseLabel>
       <ShowcaseDemo>
-        <SettingRow label="Background sync" description="Requires premium plan">
+        <SettingRow label="Background sync" description="Needs a paid plan.">
           <Switch checked={false} disabled />
         </SettingRow>
       </ShowcaseDemo>
