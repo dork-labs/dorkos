@@ -1,15 +1,18 @@
 import type { PlaygroundSection } from '../playground-registry';
 
 /**
- * The first half of the Features page: an agent and the network it lives in.
+ * Sections for the Agent & Relay page: an agent and the network it lives in.
  *
  * Sources: PersonalityPickerShowcases, AgentFleetShowcases, RelayShowcases,
  * AgentSidebarShowcases, AdapterWizardShowcases, MeshShowcases,
- * TasksShowcases.
+ * TasksShowcases, PulsePanelShowcases.
  *
- * Split out of `features-sections.ts` when that file passed the 500-line cap —
- * it is one flat registry with a natural seam in the middle, so the halves are
- * data files and `features-sections.ts` stays the one name everything imports.
+ * Formerly the first half of one combined `FEATURES_SECTIONS` array — split
+ * into its own page at DOR-1766 (batch 20 audit finding 20.2): the flat
+ * registry had already passed the 500-line file cap and been split into two
+ * data files along this exact seam, but the page above it stayed one 46-item
+ * list with no matching split. `FEATURE_SURFACE_SECTIONS` is the other half,
+ * now the Home, Inbox & Approvals page (`features-surface-sections.ts`).
  *
  * @module dev/sections/features-agent-sections
  */
@@ -64,6 +67,22 @@ export const FEATURE_AGENT_SECTIONS: PlaygroundSection[] = [
     page: 'features',
     category: 'Relay',
     keywords: ['connection', 'status', 'banner', 'disconnected', 'reconnecting', 'relay'],
+  },
+  {
+    id: 'messagingconnections',
+    title: 'MessagingConnections',
+    page: 'features',
+    category: 'Relay',
+    keywords: [
+      'messaging',
+      'connections',
+      'panel',
+      'composed',
+      'adapter',
+      'card',
+      'live now',
+      'catalog',
+    ],
   },
   // AdapterWizardShowcases
   {
@@ -289,5 +308,40 @@ export const FEATURE_AGENT_SECTIONS: PlaygroundSection[] = [
     page: 'features',
     category: 'Tasks',
     keywords: ['preset', 'card', 'schedule', 'toggle', 'selectable', 'cron', 'tasks'],
+  },
+  {
+    id: 'taskspanel',
+    title: 'TasksPanel',
+    page: 'features',
+    category: 'Tasks',
+    keywords: [
+      'tasks',
+      'panel',
+      'schedule',
+      'schedules',
+      'disabled',
+      'empty',
+      'running',
+      'paused',
+      'composed',
+    ],
+  },
+  // PulsePanelShowcases
+  {
+    id: 'pulsepanel',
+    title: 'PulsePanel',
+    page: 'features',
+    category: 'Pulse',
+    keywords: [
+      'pulse',
+      'panel',
+      'inspector',
+      'spine',
+      'tab',
+      'attention',
+      'activity',
+      'all clear',
+      'composed',
+    ],
   },
 ];

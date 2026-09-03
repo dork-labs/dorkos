@@ -124,7 +124,7 @@ function WidthColumn({
  * (the `maintaining-dev-playground` skill's borrow pattern) — a different
  * question from the Ask card family (may this agent do X at all, not answer
  * this one interaction), still worth seeing beside the rest of the family.
- * Its registry entry stays on Subsystems, where this page renders it.
+ * Its registry entry stays on Home, Inbox & Approvals, where this page renders it.
  */
 export function ApprovalCardShowcase() {
   return (
