@@ -2,6 +2,26 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+
+/**
+ * Runs between the moment the keypair resolver decides the stored file is junk
+ * and the moment it moves that file aside — the one window in which another
+ * process can replace the junk with a real keypair. Set by the interleave case
+ * below; a no-op everywhere else.
+ */
+let beforeQuarantine: ((filePath: string) => void) | null = null;
+
+vi.mock('@dorkos/shared/secret-file', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@dorkos/shared/secret-file')>();
+  return {
+    ...actual,
+    quarantineSecretFile: (filePath: string) => {
+      beforeQuarantine?.(filePath);
+      return actual.quarantineSecretFile(filePath);
+    },
+  };
+});
+
 import { createDb, runMigrations, type Db } from '@dorkos/db';
 import type { WebPushPayload } from '@dorkos/shared/notification-schemas';
 import { PushSubscriptionStore } from '../push-subscription-store.js';
@@ -52,6 +72,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  beforeQuarantine = null;
   fs.rmSync(dorkHome, { recursive: true, force: true });
   vi.restoreAllMocks();
 });
@@ -99,6 +120,31 @@ describe('VAPID keys', () => {
     expect(fs.readFileSync(path.join(path.dirname(file), setAside[0]!), 'utf-8')).toBe(
       'not json at all'
     );
+  });
+
+  it('adopts a keypair another process published while the junk was being set aside', () => {
+    const file = vapidKeyPath(dorkHome);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, 'not json at all');
+    const theirs = { publicKey: 'their-public-key', privateKey: 'their-private-key' };
+    // The interleave: this process has already judged the file unusable, and
+    // the other process replaces it with a real keypair a moment before the
+    // rename. Publishing over what we moved would strand every browser the
+    // other process is about to hand `their-public-key` to.
+    beforeQuarantine = (filePath) => {
+      beforeQuarantine = null;
+      fs.writeFileSync(filePath, JSON.stringify(theirs));
+    };
+
+    const key = sender().channel.publicKey();
+
+    expect(key).toBe(theirs.publicKey);
+    // Restored, not replaced: the file holds their keypair and nothing is left
+    // sitting in quarantine.
+    expect(JSON.parse(fs.readFileSync(file, 'utf-8'))).toEqual(theirs);
+    expect(
+      fs.readdirSync(path.dirname(file)).filter((name) => name.includes('.unusable-'))
+    ).toEqual([]);
   });
 
   it('reports push as unavailable rather than throwing when the keys cannot be written', () => {

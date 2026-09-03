@@ -2,6 +2,7 @@
 covers:
   - 'fix(server,shared): two first boots settle on one secret key (DOR-712)'
   - 'fix(server,shared): publish first-boot secrets whole, or not at all (DOR-712)'
+  - 'fix(server): parse a quarantined keypair before publishing over it (DOR-712)'
 ---
 
 ### Fixed

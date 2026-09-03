@@ -233,4 +233,19 @@ describe('quarantineSecretFile', () => {
   it('answers null when another process already moved it', () => {
     expect(quarantineSecretFile(join(dir, 'missing'))).toBeNull();
   });
+
+  it('moves whatever is at the path, which may not be what the caller judged', () => {
+    const filePath = join(dir, 'vapid.json');
+    writeFileSync(filePath, 'not json', { mode: MODE });
+    // A caller decides the file is junk, and another process replaces it with a
+    // good value before the rename lands. The rename is atomic, so the moved
+    // file is definitively this caller's to inspect — but it is NOT the file it
+    // judged, which is why callers must parse what they moved before replacing
+    // it (`readOrCreateVapidKeys` restores it instead).
+    writeFileSync(filePath, 'perfectly-good-value', { mode: MODE });
+
+    const movedTo = quarantineSecretFile(filePath);
+
+    expect(readFileSync(movedTo!, 'utf8')).toBe('perfectly-good-value');
+  });
 });

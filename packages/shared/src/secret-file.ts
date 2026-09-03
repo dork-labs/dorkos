@@ -142,9 +142,18 @@ export function publishSecretFile(
  *
  * The file is renamed beside itself rather than deleted — it is somebody's data
  * even when nothing can be done with it, and a support question is answerable
- * with it on disk. Two processes doing this at once is safe: one rename wins,
- * the other finds nothing to move, and both then race to publish the
- * replacement through {@link publishSecretFile}, where only one can win.
+ * with it on disk.
+ *
+ * What this does NOT promise is that the file moved is the file the caller
+ * decided was unusable. Deciding and moving are two steps, and another process
+ * can replace the contents in between — including with something perfectly
+ * good. What the atomic rename does give you is ownership: whatever landed at
+ * the returned path is definitively yours, and no other process can be looking
+ * at it. So the caller must INSPECT what it moved before publishing a
+ * replacement, and put it back if it turns out to have been fine
+ * (`readOrCreateVapidKeys` is the worked example). Two processes quarantining
+ * at once is safe in the narrow sense that only one rename can win; the loser
+ * finds nothing to move and gets `null`.
  *
  * @param filePath - Absolute path to the file to set aside.
  * @returns Where the file was moved, or `null` when it was already gone.
