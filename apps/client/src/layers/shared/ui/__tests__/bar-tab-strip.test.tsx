@@ -222,6 +222,20 @@ describe('BarTabStrip — overflow at a narrow width', () => {
     expect(fade('end')).toBeNull();
   });
 
+  it('never yields below one readable tab', async () => {
+    // With `min-w-0` and nothing else, `flex-initial` gave away every pixel it
+    // was asked for: at 768px with the sidebar and the right panel both docked,
+    // the four home tabs measured 16px wide — no label, and not even the fade
+    // that says there is more. jsdom lays nothing out, so the floor itself is
+    // what can be asserted.
+    renderStrip('/', 'home');
+    await screen.findByTestId('page');
+
+    const wrapper = strip().parentElement;
+    expect(wrapper).toHaveClass('min-w-28');
+    expect(wrapper).not.toHaveClass('min-w-0');
+  });
+
   it('keeps the cue out of the way of the tab underneath it', async () => {
     renderStrip('/', 'home');
     await screen.findByTestId('page');

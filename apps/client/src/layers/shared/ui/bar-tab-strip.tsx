@@ -153,7 +153,15 @@ export function BarTabStrip({
         //
         // The shell's cross-fade wrapper has to stretch as well, or this one has
         // nothing taller to stretch to (`AppShell.tsx`).
-        'flex min-w-0 flex-initial self-stretch',
+        //
+        // **A floor, not `min-w-0`.** `flex-initial` yields space to everything
+        // beside it, and with nothing to stop it the strip yields all of it: on
+        // a 768px window with the sidebar and the right panel both docked, the
+        // four home tabs measured 16px wide — no label, and not even the fade
+        // that says there is more. `min-w-28` is one full tab plus its fade, so
+        // the strip still shrinks and still scrolls sideways on a phone, and
+        // stops at the width where it is still a strip.
+        'flex min-w-28 flex-initial self-stretch',
         className
       )}
     >

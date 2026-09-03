@@ -9,10 +9,12 @@ import {
 } from '@/layers/shared/ui';
 import {
   useAppStore,
+  useIsBelowDesktop,
   useIsMobile,
   useSlotContributions,
   useTransport,
 } from '@/layers/shared/model';
+import { cn } from '@/layers/shared/lib';
 import { PanelErrorBoundary } from './PanelErrorBoundary';
 import { RightPanelHeader, RIGHT_PANEL_PANEL_ID, rightPanelTabDomId } from './RightPanelHeader';
 import { useRightPanelSizing } from '../model/use-right-panel-sizing';
@@ -37,7 +39,8 @@ export interface RightPanelContainerProps {
    *
    * - `'resizable'` (default): the desktop inset — a collapsible
    *   `react-resizable-panels` `Panel` that must live inside a `PanelGroup`;
-   *   narrow viewports (`useIsMobile`) still fall back to the overlay Sheet.
+   *   windows under 1024px (`useIsBelowDesktop`) still fall back to the
+   *   overlay Sheet.
    * - `'overlay'`: always the slide-over Sheet, regardless of width. The
    *   embed uses this — its pane is narrow and has no `PanelGroup`, so a
    *   side-by-side split would crowd the chat; an overlay degrades gracefully.
@@ -52,7 +55,7 @@ export interface RightPanelContainerProps {
  * the DOM when contributions exist — collapsed to zero width when closed,
  * expanded with a CSS flex-grow transition (300ms) when opened. Transitions are
  * disabled during manual resize drag and on initial mount to avoid layout
- * flash. On narrow viewports (768px breakpoint) — and always under
+ * flash. Below 1024px (`useIsBelowDesktop`) — and always under
  * `variant='overlay'` (the Obsidian embed) — it renders as a Sheet with
  * built-in slide animation instead.
  */
@@ -64,7 +67,8 @@ export function RightPanelContainer({ pathname, variant = 'resizable' }: RightPa
   // per-agent stored preference (DOR-227). Explicit tab picks in the header use
   // the persisting `setActiveRightPanelTab`.
   const setActiveTabView = useAppStore((s) => s.setActiveRightPanelTabView);
-  const isMobile = useIsMobile();
+  const overlayOnly = useIsBelowDesktop();
+  const isPhone = useIsMobile();
   const panelRef = useRef<ImperativePanelHandle>(null);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -201,19 +205,29 @@ export function RightPanelContainer({ pathname, variant = 'resizable' }: RightPa
 
   // Overlay: render as a slide-over Sheet instead of an inset split — always
   // under `variant='overlay'` (the narrow Obsidian embed, which has no
-  // PanelGroup) and on mobile-width viewports in the routed shell.
-  if (variant === 'overlay' || isMobile) {
+  // PanelGroup) and on any window too narrow for three panes at once.
+  //
+  // The cutoff is 1024px, not the 768px phone line. A tablet is the case that
+  // proved 768 wrong: sidebar docked, panel docked, and the page between them
+  // measured 236px — a tab strip collapsed to 16px, card grids at 78px columns.
+  // Two panes fit there; three do not, so the panel comes over the page.
+  if (variant === 'overlay' || overlayOnly) {
     if (!shouldShow) return null;
     return (
       <ResponsiveSheet open onOpenChange={(open) => !open && setRightPanelOpen(false)}>
         <ResponsiveSheetContent
           showCloseButton={false}
-          // Always full width here, on both branches that reach this Sheet
-          // (variant='overlay' and mobile): this className is applied after
-          // ResponsiveSheetContent's own computed width, so it wins the
-          // tailwind-merge regardless of what useIsMobile() reports — the
-          // embed's overlay is narrow-paned even on a desktop-width viewport.
-          className="bg-sidebar text-sidebar-foreground flex w-full flex-col gap-0 p-0 sm:max-w-full"
+          // Full width where there is nothing to sit beside: a phone, and the
+          // embed's narrow pane, which is narrow at any window size — this
+          // className lands after ResponsiveSheetContent's own computed width,
+          // so it wins the tailwind-merge regardless of what useIsMobile()
+          // reports. A tablet is the case that is NOT that: there is a page
+          // worth keeping in view behind the panel, so the sheet keeps the
+          // reading width the primitive gives it.
+          className={cn(
+            'bg-sidebar text-sidebar-foreground flex w-full flex-col gap-0 p-0',
+            (variant === 'overlay' || isPhone) && 'sm:max-w-full'
+          )}
         >
           <ResponsiveSheetHeader className="sr-only">
             <ResponsiveSheetTitle>Panel</ResponsiveSheetTitle>

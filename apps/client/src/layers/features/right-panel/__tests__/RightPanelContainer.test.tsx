@@ -97,6 +97,10 @@ const mockSetActiveRightPanelTabView = vi.fn();
 let mockRightPanelOpen = false;
 let mockActiveRightPanelTab: string | null = null;
 let mockIsMobile = false;
+// Whether the window is too narrow for three panes (< 1024px). A phone is
+// always below desktop; a tablet is below desktop WITHOUT being a phone, which
+// is the tier that decides the panel overlays instead of docking.
+let mockIsBelowDesktop = false;
 let mockContributions: RightPanelContribution[] = [];
 // The container gates capability-scoped tabs (e.g. the web-only terminal) on the
 // active transport; mutate per-test to exercise the transport-gated path.
@@ -129,6 +133,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
         explicitAgentPath: mockExplicitAgentPath,
       }),
     useIsMobile: () => mockIsMobile,
+    useIsBelowDesktop: () => mockIsBelowDesktop,
     useSlotContributions: () => mockContributions,
     useTransport: () => mockTransport,
   };
@@ -168,6 +173,7 @@ describe('RightPanelContainer', () => {
     mockRightPanelOpen = false;
     mockActiveRightPanelTab = null;
     mockIsMobile = false;
+    mockIsBelowDesktop = false;
     mockContributions = [];
     mockTransport = { supportsTerminal: true };
     mockPathname = '/session';
@@ -595,6 +601,7 @@ describe('RightPanelContainer', () => {
 
   it('renders Sheet instead of Panel on mobile', () => {
     mockIsMobile = true;
+    mockIsBelowDesktop = true;
     mockRightPanelOpen = true;
     mockActiveRightPanelTab = 'a';
     mockContributions = [makeContribution('a')];
@@ -604,10 +611,13 @@ describe('RightPanelContainer', () => {
     expect(screen.getByTestId('sheet')).toBeInTheDocument();
     expect(screen.queryByTestId('right-panel')).not.toBeInTheDocument();
     expect(screen.queryByTestId('resize-handle')).not.toBeInTheDocument();
+    // Full bleed on a phone: there is no page beside it worth keeping in view.
+    expect(screen.getByTestId('sheet-content')).toHaveClass('sm:max-w-full');
   });
 
   it('mobile Sheet renders active content', () => {
     mockIsMobile = true;
+    mockIsBelowDesktop = true;
     mockRightPanelOpen = true;
     mockActiveRightPanelTab = 'a';
     mockContributions = [makeContribution('a')];
@@ -619,6 +629,7 @@ describe('RightPanelContainer', () => {
 
   it('mobile returns null when rightPanelOpen is false', () => {
     mockIsMobile = true;
+    mockIsBelowDesktop = true;
     mockRightPanelOpen = false;
     mockContributions = [makeContribution('a')];
 
@@ -628,6 +639,7 @@ describe('RightPanelContainer', () => {
 
   it('mobile Sheet also renders the shared header (tab strip + close)', () => {
     mockIsMobile = true;
+    mockIsBelowDesktop = true;
     mockRightPanelOpen = true;
     mockActiveRightPanelTab = 'a';
     mockContributions = [makeContribution('a'), makeContribution('b')];
@@ -636,6 +648,39 @@ describe('RightPanelContainer', () => {
 
     expect(screen.getByRole('tablist', { name: 'Right panel tabs' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Close panel' })).toBeInTheDocument();
+  });
+
+  // A tablet is wider than a phone and still too narrow for three panes: at
+  // 768px with the sidebar and the panel both docked, the page between them
+  // measured 236px. So the panel comes OVER the page there — but as a sheet at
+  // reading width, not the phone's full-bleed takeover, because there is a page
+  // worth keeping in view behind it.
+  describe('tablet tier (768–1023px)', () => {
+    it('overlays the panel instead of docking it', () => {
+      mockIsMobile = false;
+      mockIsBelowDesktop = true;
+      mockRightPanelOpen = true;
+      mockActiveRightPanelTab = 'a';
+      mockContributions = [makeContribution('a')];
+
+      render(<RightPanelContainer pathname={mockPathname} />);
+
+      expect(screen.getByTestId('sheet')).toBeInTheDocument();
+      expect(screen.queryByTestId('right-panel')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('resize-handle')).not.toBeInTheDocument();
+    });
+
+    it('keeps the sheet at reading width rather than full bleed', () => {
+      mockIsMobile = false;
+      mockIsBelowDesktop = true;
+      mockRightPanelOpen = true;
+      mockActiveRightPanelTab = 'a';
+      mockContributions = [makeContribution('a')];
+
+      render(<RightPanelContainer pathname={mockPathname} />);
+
+      expect(screen.getByTestId('sheet-content')).not.toHaveClass('sm:max-w-full');
+    });
   });
 
   // variant='overlay' is the narrow Obsidian embed: always a slide-over Sheet,
