@@ -9,6 +9,8 @@ covers:
   - 'fix(client): the checkbox stops being the one control with no transition (DOR-1751)'
   - 'fix(client): hand-rolled rows fade their hover instead of flashing (DOR-1751)'
   - 'refactor(client): one press ladder, three stops (DOR-1751)'
+  - "fix(client): a collapsible's clip stops eating the focus ring, and its keyframes stop shadowing tw-animate-css (DOR-1751)"
+  - "fix(obsidian-plugin): the sidebar's press ladder reaches the plugin's stylesheet again (DOR-1751)"
 ---
 
 ### Changed
@@ -25,3 +27,5 @@ covers:
 - Activity rows that lead nowhere no longer look clickable or take a keyboard stop (DOR-1751)
 - Cards that lift under the mouse do the same for a keyboard, so nobody learns less by not using a mouse (DOR-1751)
 - Menu and list rows fade between highlights instead of flashing (DOR-1751)
+- A keyboard focus ring inside a section that folds open no longer gets cut off at the edge (DOR-1751)
+- Rows in the Obsidian sidebar panel keep their press feedback and hover colour again (DOR-1751)
