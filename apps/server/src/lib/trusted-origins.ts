@@ -152,30 +152,37 @@ export function isLocalRequest(facts: LocalRequestFacts): boolean {
   return isLoopbackPeer(facts.peer) && isLoopbackHostHeader(facts.hostHeader);
 }
 
+/** The port `apps/client`'s Vite dev server listens on when `VITE_PORT` says nothing. */
+const DEFAULT_VITE_PORT = 4241;
+
 /** The Vite dev-server port the cockpit is served from outside production. */
-function viteDevPort(): string {
+function viteDevPort(): number {
   // eslint-disable-next-line no-restricted-syntax -- VITE_PORT is a Vite-specific var not in server env.ts
-  return process.env.VITE_PORT || '4241';
+  return Number(process.env.VITE_PORT) || DEFAULT_VITE_PORT;
 }
 
 /**
- * The address a person's browser reaches THE COCKPIT at on this machine — which
- * is not always the API address, and that difference is the whole reason this
- * exists.
+ * The port a person's browser reaches THE COCKPIT at on this machine — which is
+ * not always the API port, and that difference is the whole reason this exists.
  *
  * In production the server serves the SPA itself, so the cockpit lives at
  * `DORKOS_PORT`. In development it does not: `express.static` is production-only,
  * nothing answers `/` on the API port, and the cockpit is on the Vite dev server.
  * A link built from `DORKOS_PORT` in dev is therefore dead exactly for the people
- * most likely to click it.
+ * most likely to click it — and a tunnel pointed at it would forward to nothing.
  *
  * The one spelling of "where DorkOS is", so a link back into the app (the OAuth
- * callback landing page) and the always-trusted loopback origins below can never
- * disagree. Both ports are derived, never hardcoded.
+ * callback landing page), the always-trusted loopback origins below, and the port
+ * the tunnel forwards to (`routes/tunnel.ts`) can never disagree. Every port is
+ * derived, never hardcoded.
  */
+export function getLocalCockpitPort(): number {
+  return env.NODE_ENV === 'production' ? env.DORKOS_PORT : viteDevPort();
+}
+
+/** The origin a person's browser reaches the cockpit at — {@link getLocalCockpitPort} on localhost. */
 export function getLocalCockpitOrigin(): string {
-  const port = env.NODE_ENV === 'production' ? String(env.DORKOS_PORT) : viteDevPort();
-  return `http://localhost:${port}`;
+  return `http://localhost:${getLocalCockpitPort()}`;
 }
 
 /**
@@ -203,12 +210,34 @@ export function getStaticLocalOrigins(): string[] {
 }
 
 /**
+ * The live tunnel URL, parsed, or `null` when there is no usable one.
+ *
+ * Guarded because this runs on the hot path of EVERY `/api` request (CORS, the
+ * host guard, Better Auth) off a string another program handed us. An
+ * unparseable listener URL would otherwise throw out of the CORS callback and
+ * take the whole API down rather than costing one origin (DOR-1738). A URL we
+ * cannot read is a URL we cannot trust, so it counts as no tunnel at all — as
+ * does one whose scheme has no origin of its own (`tcp://…` serializes to the
+ * opaque origin `"null"`, and the literal string `null` must never reach an
+ * allowlist).
+ */
+function parseTunnelUrl(): URL | null {
+  const tunnelUrl = tunnelManager.status.url;
+  if (!tunnelUrl) return null;
+  try {
+    const parsed = new URL(tunnelUrl);
+    return parsed.origin === 'null' ? null : parsed;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Origin of the active ngrok tunnel, resolved at call time, or `null` when no
  * tunnel is connected.
  */
 export function getTunnelOrigin(): string | null {
-  const tunnelUrl = tunnelManager.status.url;
-  return tunnelUrl ? new URL(tunnelUrl).origin : null;
+  return parseTunnelUrl()?.origin ?? null;
 }
 
 /**
@@ -217,8 +246,7 @@ export function getTunnelOrigin(): string | null {
  * tunnel carries exactly this name, so the host guard compares against it.
  */
 export function getTunnelHost(): string | null {
-  const tunnelOrigin = getTunnelOrigin();
-  return tunnelOrigin ? new URL(tunnelOrigin).hostname.toLowerCase() : null;
+  return parseTunnelUrl()?.hostname.toLowerCase() ?? null;
 }
 
 /**

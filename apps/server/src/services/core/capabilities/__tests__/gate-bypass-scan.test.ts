@@ -235,6 +235,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'a person clicking a Shape in their own cockpit — applying one arms scheduled work, so an agent is asked first (DOR-625)',
       'routes/extensions-approval.ts':
         'a person allowing an extension to run its code inside DorkOS, in their own cockpit (DOR-516). Gated: both bars from `PATCH /api/config` for an operator-only setting, in the same order — the cookie bar under login, then this one — because the field it writes (`extensions.approvedToRun`) IS operator-only, plus a trusted-`Origin` bar the config route does not need because these two routes are reachable by a plain cross-site POST. There is no MCP twin to walk around, by design',
+      'routes/tunnel.ts':
+        'a person turning Remote Access on in their own cockpit, which publishes this machine and writes `tunnel.enabled` (DOR-1738). Gated: both bars from `PATCH /api/config` for an operator-only setting, in the same order — the cookie bar under login, then this one — because `tunnel.*` IS operator-only in config-write-policy and this route writes the flag straight through `configManager`, around the door that enforces that. `POST /api/tunnel/stop` deliberately runs neither bar and reaches no effect on this list: stopping only ever narrows exposure, and gating it stranded a running tunnel once already (DOR-574)',
       'services/core/capabilities/trusted-caller.ts': 'the definition itself',
     },
   },

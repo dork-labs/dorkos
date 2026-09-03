@@ -139,7 +139,12 @@ Everything below is background for the curious. You don't need it to set up or u
 
 <TypeTable
   type={{
-    TUNNEL_ENABLED: { type: 'boolean', description: 'Enable the ngrok tunnel', default: 'false' },
+    TUNNEL_ENABLED: {
+      type: 'boolean',
+      description:
+        'Open the tunnel when DorkOS starts. Leave it unset and your saved setting decides — which is how the switch in the app keeps working after a restart. Set it to false to keep this one run private whatever you have saved.',
+      default: 'your saved setting',
+    },
     NGROK_AUTHTOKEN: {
       type: 'string',
       description: 'ngrok authentication token (required when tunnel is enabled)',
