@@ -96,6 +96,7 @@
         "packages/relay/src/lib/subjects.ts",
         "apps/server/src/services/relay/adapter-manager.ts",
         "apps/server/src/services/relay/adapter-factory.ts",
+        "apps/server/src/services/relay/task-dispatch/readiness.ts",
         "apps/server/src/services/tasks/task-scheduler-service.ts",
         "apps/server/src/services/tasks/relay-dispatch.ts",
         "apps/server/src/index.ts"
