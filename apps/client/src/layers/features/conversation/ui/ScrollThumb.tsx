@@ -28,16 +28,45 @@ export function ScrollThumb({ scrollRef }: ScrollThumbProps) {
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [visible, setVisible] = useState(false);
   const isDraggingRef = useRef(false);
+  // Whether the pointer is over the track right now — a `bool`, not the thumb's
+  // own `:hover`, because the thumb is a sliver of the track and the affordance
+  // a person is reaching for is "the scrollbar area," the same target OS
+  // scrollbars answer to.
+  const isHoveringRef = useRef(false);
   const dragStartYRef = useRef(0);
   const dragStartScrollTopRef = useRef(0);
 
-  const showThumb = useCallback(() => {
-    setVisible(true);
+  // Arms (or re-arms) the fade-out. Split from `showThumb` so hovering can
+  // hold the thumb visible without re-triggering the "just scrolled" fade-in
+  // — pointer enter and pointer leave both need to restart this timer, but
+  // neither should force `visible` back to `true` on its own.
+  const scheduleFade = useCallback(() => {
     if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
     fadeTimerRef.current = setTimeout(() => {
-      if (!isDraggingRef.current) setVisible(false);
+      if (!isDraggingRef.current && !isHoveringRef.current) setVisible(false);
     }, FADE_DELAY_MS);
   }, []);
+
+  const showThumb = useCallback(() => {
+    setVisible(true);
+    scheduleFade();
+  }, [scheduleFade]);
+
+  // A pointer moving toward the thumb to grab it approaches the TRACK first —
+  // the thumb itself may already be faded to `opacity: 0` by the time it
+  // arrives, so waking on the thumb's own hover would be too late. Wiring
+  // this to the track's full-height hit area (`pointer-events-auto` above)
+  // means reaching for the scrollbar always reveals it, the same cue a native
+  // one gives for free (DOR-1752 finding 6.7).
+  const handleTrackPointerEnter = useCallback(() => {
+    isHoveringRef.current = true;
+    showThumb();
+  }, [showThumb]);
+
+  const handleTrackPointerLeave = useCallback(() => {
+    isHoveringRef.current = false;
+    scheduleFade();
+  }, [scheduleFade]);
 
   // Update thumb position and size on scroll
   const updateThumb = useCallback(() => {
@@ -125,15 +154,17 @@ export function ScrollThumb({ scrollRef }: ScrollThumbProps) {
         isDraggingRef.current = false;
         document.removeEventListener('pointermove', onMove);
         document.removeEventListener('pointerup', onUp);
-        // Start fade timer after drag ends
-        if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
-        fadeTimerRef.current = setTimeout(() => setVisible(false), FADE_DELAY_MS);
+        // Re-arm the fade now that the drag is over. Routed through the same
+        // `isHoveringRef` check as every other path, so releasing the thumb
+        // while the pointer is still over the track leaves it visible instead
+        // of fading out from under a cursor that never left.
+        scheduleFade();
       };
 
       document.addEventListener('pointermove', onMove);
       document.addEventListener('pointerup', onUp);
     },
-    [scrollRef]
+    [scrollRef, scheduleFade]
   );
 
   return (
@@ -141,6 +172,8 @@ export function ScrollThumb({ scrollRef }: ScrollThumbProps) {
       ref={trackRef}
       role="presentation"
       onClick={handleTrackClick}
+      onPointerEnter={handleTrackPointerEnter}
+      onPointerLeave={handleTrackPointerLeave}
       // Where the track starts is the HOST's to say, because it is a fact about
       // the host's own chrome: a session pads the top of its transcript by 3rem
       // and its thumb has to clear that pad, while a room has no pad at all.

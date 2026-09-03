@@ -10,8 +10,7 @@ import type { ActivityItem } from '@dorkos/shared/activity-schemas';
 // reads filter state from it too — neither is under test here, so both are
 // stood in for rather than wiring up a router the assertions never touch.
 vi.mock('@/layers/features/activity-feed-page', async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import('@/layers/features/activity-feed-page')>();
+  const actual = await importOriginal<typeof import('@/layers/features/activity-feed-page')>();
   return {
     ...actual,
     ActivityRow: ({ item }: { item: ActivityItem }) => (
@@ -50,19 +49,31 @@ describe('ActivityTimeline', () => {
     expect(container.querySelector('[data-slot="activity-timeline-skeleton"]')).not.toBeNull();
   });
 
+  it('shows the empty state when there is genuinely nothing to show', () => {
+    // The positive control the next test's absence assertion was missing: it
+    // is not enough to prove `activity-empty-state` is ABSENT under
+    // `isError` — something has to prove it is REACHABLE at all, or the
+    // absence assertion is unfalsifiable.
+    render(
+      <ActivityTimeline
+        items={[]}
+        isLoading={false}
+        isError={false}
+        onRetry={vi.fn()}
+        isFiltered={false}
+      />
+    );
+
+    expect(screen.getByTestId('activity-empty-state')).toBeInTheDocument();
+  });
+
   it('shows the error state instead of the empty state when the feed fails to load', () => {
     // The bug this pins (batch 06, finding 6.4): before `isError` was threaded
     // through, a failed fetch left `items` at `[]` and this branch fell straight
     // to `ActivityEmptyState` — a broken request looked exactly like a quiet
     // week. Flip `isError` to `false` here and this assertion goes red.
     render(
-      <ActivityTimeline
-        items={[]}
-        isLoading={false}
-        isError
-        onRetry={vi.fn()}
-        isFiltered={false}
-      />
+      <ActivityTimeline items={[]} isLoading={false} isError onRetry={vi.fn()} isFiltered={false} />
     );
 
     expect(screen.getByText(/couldn.t load your activity/i)).toBeInTheDocument();
@@ -76,7 +87,7 @@ describe('ActivityTimeline', () => {
       <ActivityTimeline items={[]} isLoading={false} isError onRetry={onRetry} isFiltered={false} />
     );
 
-    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
 
     expect(onRetry).toHaveBeenCalledTimes(1);
   });

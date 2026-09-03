@@ -24,10 +24,24 @@ describe('TeamRosterSkeleton', () => {
   });
 
   it('draws one card-shaped bone per placeholder row', () => {
-    const { container } = render(<TeamRosterSkeleton />);
-    // Each card is an avatar bone plus a name bone plus a secondary-line bone.
+    const { container } = render(<TeamRosterSkeleton count={1} />);
+    // Each card is an avatar bone plus a name bone plus a handle-line bone
+    // plus a secondary-line bone — pinned exactly, at a count of one, so a
+    // silent change to the per-card bone count fails here rather than passing
+    // under a modulo that 3, 6, or 300 would all satisfy.
     const skeletons = container.querySelectorAll('[data-slot="skeleton"]');
-    expect(skeletons.length % 3).toBe(0);
-    expect(skeletons.length).toBeGreaterThan(0);
+    expect(skeletons.length).toBe(4);
+  });
+
+  it('draws exactly `count` cards', () => {
+    const { container } = render(<TeamRosterSkeleton count={2} />);
+    const cards = container.querySelectorAll('[data-slot="skeleton"]').length / 4;
+    expect(cards).toBe(2);
+  });
+
+  it('defaults to six cards when `count` is omitted', () => {
+    const { container } = render(<TeamRosterSkeleton />);
+    const cards = container.querySelectorAll('[data-slot="skeleton"]').length / 4;
+    expect(cards).toBe(6);
   });
 });

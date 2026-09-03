@@ -12,7 +12,7 @@
  */
 export { TeamMemberCard } from './ui/TeamMemberCard';
 export type { TeamMemberCardProps } from './ui/TeamMemberCard';
-export { TeamRosterGrid, TEAM_ROSTER_GRID } from './ui/TeamRosterGrid';
+export { TeamRosterGrid } from './ui/TeamRosterGrid';
 export type { TeamRosterGridProps } from './ui/TeamRosterGrid';
 export { TeamRosterSkeleton } from './ui/TeamRosterSkeleton';
 export { TeamRosterToolbar } from './ui/TeamRosterToolbar';

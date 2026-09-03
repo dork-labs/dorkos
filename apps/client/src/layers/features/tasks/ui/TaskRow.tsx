@@ -165,7 +165,14 @@ export function TaskRow({
 
   return (
     <>
-      <div className="overflow-hidden rounded-lg border">
+      {/* Rounds its first and last child rather than clipping with
+          `overflow-hidden` — clipping cut the keyboard focus ring off on
+          three of its four sides (batch 06, N1). Rounding the edge children
+          directly keeps the row's own hover/focus tint inside the same
+          curve without clipping anything drawn outside the box, the focus
+          ring included. In the collapsed state the row is both first and
+          last child, so it lands full `rounded-lg`, same as before. */}
+      <div className="rounded-lg border [&>*:first-child]:rounded-t-lg [&>*:last-child]:rounded-b-lg">
         <div
           role="button"
           tabIndex={0}

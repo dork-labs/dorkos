@@ -101,14 +101,6 @@ export function TeamPage({ filters, onFiltersChange }: TeamPageProps) {
     activeFilters.owner !== undefined ||
     (activeFilters.q ?? '') !== '';
 
-  if (isLoading) {
-    return (
-      <PageContainer width="full" className="flex flex-col gap-4">
-        <TeamRosterSkeleton />
-      </PageContainer>
-    );
-  }
-
   if (isError) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
@@ -132,7 +124,15 @@ export function TeamPage({ filters, onFiltersChange }: TeamPageProps) {
     <PageContainer width="full" className="flex flex-col gap-4">
       <TeamRosterWarnings warnings={data?.warnings} />
       <TeamRosterToolbar filters={activeFilters} onFiltersChange={patchFilters} people={people} />
-      {visible.length > 0 ? (
+      {/* The skeleton replaces only the roster below the toolbar — the same
+          shape `PackageGrid` uses for `PackageLoadingSkeleton` — so the
+          toolbar and warnings slot stay mounted through the load and nothing
+          above the roster appears out from under it (DOR-1752 finding 6.5).
+          An early return here, before the toolbar, would remount it once the
+          roster lands and everything below it would jump. */}
+      {isLoading ? (
+        <TeamRosterSkeleton />
+      ) : visible.length > 0 ? (
         <TeamRosterGrid
           members={visible}
           roster={roster}
@@ -149,8 +149,9 @@ export function TeamPage({ filters, onFiltersChange }: TeamPageProps) {
           roster to be below. A truly empty payload means the roster could not
           be read (the banner above says so), and inviting someone to import
           projects would be answering a question they did not ask with a button
-          that cannot help. */}
-      {roster.length > 0 && !hasAgents && (
+          that cannot help. Held back while loading too, so it cannot flash on
+          before the real roster says whether there are agents at all. */}
+      {!isLoading && roster.length > 0 && !hasAgents && (
         <div className="flex justify-center py-6">
           <AgentGhostRows />
         </div>
