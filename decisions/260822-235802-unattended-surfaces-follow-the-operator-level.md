@@ -12,7 +12,7 @@ amends: null
 
 ## Status
 
-Proposed — extracted from spec `full-power-defaults`.
+Accepted — extracted from spec `full-power-defaults`.
 
 ## Context
 

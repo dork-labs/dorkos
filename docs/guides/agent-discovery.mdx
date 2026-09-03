@@ -201,7 +201,7 @@ Every registered agent has a manifest describing its identity and configuration.
   }}
 />
 
-Discovery strategies automatically populate the manifest with hints extracted from the project (name from `package.json` or directory name, capabilities from detected tooling), but you can override any field during registration.
+Discovery strategies automatically populate the manifest with hints extracted from the project (name from `package.json` or directory name, capabilities from detected tooling). You can override any field during registration — but only for a project directory that has no `.dork/agent.json` of its own. Point registration at a directory that already has one and DorkOS adopts what's already there instead: the manifest on disk is left untouched, and your overrides are ignored.
 
 ### Registering agents
 
@@ -244,7 +244,7 @@ Register an agent directly:
 mesh_register({ path: "/home/user/projects/research", name: "research-agent", runtime: "claude-code", capabilities: ["web-search"] })
 ```
 
-When an agent creates a registration via MCP tools, the manifest is written to `.dork/agent.json` in the project directory and the agent becomes available in the registry right away.
+When an agent creates a registration via MCP tools, the manifest is written to `.dork/agent.json` in the project directory (or adopted as-is if one is already there, per the note above) and the agent becomes available in the registry right away.
 
 <Callout type="info">
   When Relay is enabled, registering an agent also creates a messaging address for it at

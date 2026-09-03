@@ -1,0 +1,51 @@
+{
+  "label": "v0.73.0",
+  "archivedAt": "2026-09-03T19:51:42.777Z",
+  "source": {
+    "schemaVersion": 2,
+    "generatedAt": "2026-09-03T17:35:49.397Z",
+    "runId": "20260903-122916"
+  },
+  "shots": [
+    {
+      "id": "agents",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["marketing", "docs"]
+    },
+    {
+      "id": "task-runtime-picker",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["changelog"]
+    }
+  ],
+  "count": 2,
+  "totalBytes": 216675,
+  "assets": [
+    {
+      "source": "auto",
+      "file": "agents-light.png",
+      "surface": "agents",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 95951,
+      "runId": "20260903-122916",
+      "capturedAt": "2026-09-03T17:33:06.876Z"
+    },
+    {
+      "source": "auto",
+      "file": "task-runtime-picker-light.png",
+      "surface": "task-runtime-picker",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 120724,
+      "runId": "20260903-122916",
+      "capturedAt": "2026-09-03T17:33:06.876Z"
+    }
+  ]
+}

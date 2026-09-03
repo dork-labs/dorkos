@@ -13,7 +13,7 @@ amends: null
 
 ## Status
 
-Proposed (extracted from spec: `room-per-agent-stop`, DOR-1352).
+Accepted (extracted from spec: `room-per-agent-stop`, DOR-1352).
 
 It reads against ADR `260726-170125`, which is unchanged: that ADR refuses a room-scoped turn
 lock, a speaker election and a scheduler. Nothing here elects a speaker or orders two agents

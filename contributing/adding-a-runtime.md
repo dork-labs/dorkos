@@ -96,7 +96,7 @@ capability flag.
 
 `getCapabilities()` returns a static `RuntimeCapabilities` object. Keep it in a `runtime-constants.ts` (`CODEX_CAPABILITIES`, `OPENCODE_CAPABILITIES` are the models). Three parts deserve care:
 
-- **`permissionModes` is structured, and every mode declares what it does.** Enumerate the modes your backend genuinely supports as `PermissionModeDescriptor[]` plus a `default` id, or declare `{ supported: false, values: [] }` for no picker at all. Draw ids from the shared `PermissionModeSchema` enum (`packages/shared/src/schemas.ts`) when a mode must persist in `session_metadata`.
+- **`permissionModes` is structured, and every mode declares what it does.** Enumerate the modes your backend genuinely supports as `PermissionModeDescriptor[]` plus a `default` id, or declare `{ supported: false, values: [] }` for no picker at all. `id` is a free-form string (`PermissionModeIdSchema`, `packages/shared/src/schemas.ts`) — a mode persists in `session_metadata` under that id whether or not it belongs to the shared `PermissionModeSchema` enum (`test-mode` names all three of its modes outside that enum on purpose, DOR-885). Reach for `PermissionModeSchema` only when a mode also needs to be nameable by DorkOS's own runtime-agnostic surfaces — scheduled tasks, relay bindings, config defaults — which is what that enum is actually for.
 
   Beyond `id`/`label`, four fields are **required** and carry the mode's meaning. The client derives every warning, tint, and caption from them by uniform rules (`@dorkos/shared/permission-semantics`) — there is no id table anywhere that a new runtime can be missing from, which is exactly why these are not optional:
 

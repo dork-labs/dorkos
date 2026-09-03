@@ -12,7 +12,7 @@ superseded-by: null
 
 ## Status
 
-Proposed. Extracted from `specs/ask-parks-on-timeout` (DOR-1350), which is the
+Accepted. Extracted from `specs/ask-parks-on-timeout` (DOR-1350), which is the
 approvals tier C follow-on ADR `260818-002803` named as its own known gap.
 
 ## Context
