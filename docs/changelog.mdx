@@ -164,6 +164,12 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 - A marketplace package page no longer shows the package's name as a heading twice — once as the page title, once again at the top of its README (DOR-725)
 - Text on the dark sections of the story page was nearly invisible: a dark gray meant for cream backgrounds, painted on near-black. It now uses the same light color the rest of those sections use (DOR-1512)
 - The "API Reference" link in the docs, from the rooms page and the integrations guide, no longer leads to a page-not-found error (DOR-611)
+- Session, scheduled-task, and subtask rows now light up when you hover or tab to them, so it's clear what you're about to click (DOR-1752)
+- The Activity feed now tells you when it can't reach the server, with a way to retry, instead of quietly showing "no activity" (DOR-1752)
+- The Team page now shows a placeholder shaped like your roster while it loads, instead of a bare spinner that pops into a full grid (DOR-1752)
+- The Team page's filters and search no longer jump down after your roster finishes loading — they now stay put while the roster fills in underneath them (DOR-1752)
+- On Connections, the built-in Claude Code card no longer has a dashed border, which used to make it look unavailable even while it was live and working (DOR-1752)
+- A conversation's scrollbar now lights up as soon as you move toward it, instead of only while you're actively scrolling (DOR-1752)
 
 ### Security
 
