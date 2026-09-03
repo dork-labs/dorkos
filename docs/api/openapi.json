@@ -2570,6 +2570,9 @@
               },
               "terminalReason": {
                 "$ref": "#/components/schemas/TerminalReason"
+              },
+              "stopWasRequested": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -11652,6 +11655,9 @@
                         },
                         "terminalReason": {
                           "$ref": "#/components/schemas/TerminalReason"
+                        },
+                        "stopWasRequested": {
+                          "type": "boolean"
                         }
                       },
                       "required": [

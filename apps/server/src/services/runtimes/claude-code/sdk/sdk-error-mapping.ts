@@ -56,7 +56,7 @@ export interface StoppedTurnEvidence {
  *   `refusal-fallback-edit`. Only `interrupt` is DorkOS's own
  *   `query.interrupt()`; the CLI keeps the distinction in a predicate that
  *   never reaches the SDK surface. `refusal-fallback-edit` is the provable
- *   hole: an API refusal aborts the main turn controller directly, so a
+ *   case: an API refusal aborts the main turn controller directly, so a
  *   shape-only gate would drop a real failure's error frame and tell the
  *   operator they stopped a turn they never touched (DOR-1320 review, from the
  *   shipped `claude-agent-sdk` 0.3.224 bundle).
@@ -65,6 +65,15 @@ export interface StoppedTurnEvidence {
  * terminal reason, which the projector already reads as `interrupted`. Nothing
  * else about the result is dropped: the closing `session_status` still carries
  * the reason, the cost and the token totals.
+ *
+ * **The other half of the same evidence now rides the wire.** Keeping the error
+ * frame was never enough on its own: SETTLEMENT read the abort reason and
+ * called the turn `interrupted` anyway, which erased the very frame this
+ * predicate had deliberately preserved. So the mapper also stamps
+ * `stopWasRequested` onto the `session_status` beside an abort reason, and the
+ * projections AND the two exactly as this does
+ * (`@dorkos/shared/run-outcome`, `isUnrequestedAbortFailure`). One decision, one
+ * piece of evidence, read the same way at both layers.
  *
  * @param evidence - The result's terminal reason and DorkOS's own stop record
  */

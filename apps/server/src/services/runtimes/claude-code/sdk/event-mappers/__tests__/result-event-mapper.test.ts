@@ -303,6 +303,67 @@ describe('mapResultEvent — a turn a person stopped is not an error (DOR-1320)'
     expect(errorData(events)?.category).toBe('execution_error');
   });
 
+  // Keeping the error frame was never enough on its own: settlement read the
+  // abort reason, called the turn `interrupted` and erased the very frame this
+  // mapper had deliberately preserved. So the intent travels WITH the reason.
+  describe('the stop record it stamps on session_status', () => {
+    /** The `data` payload of the emitted `session_status`. */
+    function statusData(events: StreamEvent[]): Record<string, unknown> {
+      return events.find((e) => e.type === 'session_status')?.data as Record<string, unknown>;
+    }
+
+    it.each([true, false])('reports stopWasRequested:%s beside an abort reason', async (stop) => {
+      const events = await drain(
+        mapResultEvent(abortedResult(), makeSession(), SESSION_ID, () => stop)
+      );
+      expect(statusData(events).stopWasRequested).toBe(stop);
+    });
+
+    it.each(['interrupted', 'aborted_streaming', 'aborted_tools'])(
+      'stamps it on every abort reason (%s), not just the observed one',
+      async (reason) => {
+        const events = await drain(
+          mapResultEvent(abortedResult(reason), makeSession(), SESSION_ID, () => false)
+        );
+        expect(statusData(events).stopWasRequested).toBe(false);
+      }
+    );
+
+    it('omits it entirely when the caller tracks no stops at all', async () => {
+      // A caller holding no session has no record to report, and an absent field
+      // is what makes settlement fall back to its old answer. Writing `false`
+      // here would turn every abort on those paths into a reported crash.
+      const events = await drain(mapResultEvent(abortedResult(), makeSession(), SESSION_ID));
+      expect(statusData(events)).not.toHaveProperty('stopWasRequested');
+    });
+
+    it('omits it on a terminal it could not decide anything about', async () => {
+      // Attached only beside an abort. On every other ending it would be a fact
+      // no reader consults, written into the durable log of every turn forever.
+      const events = await drain(
+        mapResultEvent(
+          msg({ type: 'result', subtype: 'success', terminal_reason: 'completed' }),
+          makeSession(),
+          SESSION_ID,
+          () => false
+        )
+      );
+      expect(statusData(events)).not.toHaveProperty('stopWasRequested');
+    });
+
+    it('omits it when the result named no terminal reason at all', async () => {
+      const events = await drain(
+        mapResultEvent(
+          msg({ type: 'result', subtype: 'error_max_turns', is_error: true, errors: ['limit'] }),
+          makeSession(),
+          SESSION_ID,
+          () => true
+        )
+      );
+      expect(statusData(events)).not.toHaveProperty('stopWasRequested');
+    });
+  });
+
   it('KEEPS the error frame for a failure that named no abort at all', async () => {
     // The other half of the conjunct: a stop was requested, but this turn ended
     // on a limit rather than on the stop. A stop DorkOS asked for and the CLI

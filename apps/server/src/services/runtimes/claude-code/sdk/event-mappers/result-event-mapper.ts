@@ -2,6 +2,7 @@ import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent, TerminalReason, UsageStatus, UsageState } from '@dorkos/shared/types';
 import type { AgentSession } from '../../agent-types.js';
 import { describeAuthError, detectAuthError } from '@dorkos/shared/runtime-error-classification';
+import { isInterruptedTerminalReason } from '@dorkos/shared/schemas';
 import {
   CLAUDE_CODE_RUNTIME_TYPE,
   isStoppedTurnResult,
@@ -175,6 +176,17 @@ export async function* mapResultEvent(
       usage = session.lastSubscriptionUsage;
     }
 
+    // The stop record this turn's ending is read beside. Resolved ONCE and used
+    // twice — here, and by `isStoppedTurnResult` below — so the intent the wire
+    // carries and the intent that decides the error frame cannot disagree about
+    // one result.
+    //
+    // Undefined when the caller supplied no `wasStopped` probe at all (the
+    // media-capture path), which is the honest answer: that caller holds no
+    // session and so has no record to report. Settlement reads an absent signal
+    // as it always did, so nothing about those paths changes.
+    const stopWasRequested = wasStopped === undefined ? undefined : wasStopped();
+
     // Always emit session_status with final cost/token/model data + cache metrics
     yield {
       type: 'session_status',
@@ -189,6 +201,16 @@ export async function* mapResultEvent(
         ...(turnInputTokens !== undefined ? { turnInputTokens } : {}),
         ...(turnOutputTokens !== undefined ? { turnOutputTokens } : {}),
         ...(terminalReason ? { terminalReason } : {}),
+        // Attached only beside an ABORT reason, which is the only ending whose
+        // settlement it changes. Every other terminal would carry a fact no
+        // reader consults into the durable log of every turn this session ever
+        // runs. Absent therefore means either "no record" or "no decision to
+        // make", and settlement treats both the same way.
+        ...(terminalReason !== undefined &&
+        stopWasRequested !== undefined &&
+        isInterruptedTerminalReason(terminalReason)
+          ? { stopWasRequested }
+          : {}),
         ...(usage ? { usage } : {}),
       },
     };
@@ -227,7 +249,7 @@ export async function* mapResultEvent(
     const subtype = result.subtype as string | undefined;
     const stopped = isStoppedTurnResult({
       terminalReason,
-      stopWasRequested: wasStopped?.() ?? false,
+      stopWasRequested: stopWasRequested ?? false,
     });
     if (subtype && subtype !== 'success' && !stopped) {
       const errors = result.errors as string[] | undefined;

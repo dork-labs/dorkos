@@ -675,6 +675,124 @@ describe('feedProjector', () => {
     expect(turnEnd).toMatchObject({ type: 'turn_end', terminalReason: 'max_turns' });
   });
 
+  // The intent half of settlement. An abort reason says a turn was cut short and
+  // never by whom, so the runtime's own stop record has to reach the projections
+  // that decide what the ending MEANS — and it has to reach them on the durable
+  // `turn_end`, because that same turn is read again from the log after a
+  // reconnect.
+  describe('the stop record that rides with the terminal reason', () => {
+    /**
+     * Drive one stream and return every `turn_end` it ingested, in order — a
+     * stream that reopens a window (DOR-1100) closes more than one.
+     */
+    async function turnEndsOf(
+      sessionId: string,
+      events: StreamEvent[]
+    ): Promise<RawSessionEvent[]> {
+      const projector = new SessionStateProjector(sessionId);
+      const ingestSpy = vi.spyOn(projector, 'ingest');
+      async function* turn(): AsyncIterable<StreamEvent> {
+        for (const event of events) yield event;
+      }
+      await feedProjector(projector, turn());
+      return ingestSpy.mock.calls.map((c) => c[0]).filter((e) => e.type === 'turn_end');
+    }
+
+    /** The single `turn_end` of a stream that closes exactly one window. */
+    async function turnEndOf(
+      sessionId: string,
+      events: StreamEvent[]
+    ): Promise<RawSessionEvent | undefined> {
+      const ends = await turnEndsOf(sessionId, events);
+      expect(ends).toHaveLength(1);
+      return ends[0];
+    }
+
+    it.each([true, false])('carries stopWasRequested:%s onto turn_end', async (stop) => {
+      const end = await turnEndOf('s-stop', [
+        {
+          type: 'session_status',
+          data: {
+            sessionId: 's-stop',
+            terminalReason: 'aborted_streaming',
+            stopWasRequested: stop,
+          },
+        },
+        { type: 'done', data: { sessionId: 's-stop' } },
+      ]);
+      expect(end).toMatchObject({ terminalReason: 'aborted_streaming', stopWasRequested: stop });
+    });
+
+    it('omits the field entirely when the runtime reported no record', async () => {
+      // The degradation pin: codex/opencode and every pre-existing transcript.
+      // An absent key is what makes settlement fall back to its old answer, so
+      // a `false` written here would silently change every one of those turns.
+      const end = await turnEndOf('s-nostop', [
+        { type: 'session_status', data: { sessionId: 's-nostop', terminalReason: 'completed' } },
+        { type: 'done', data: { sessionId: 's-nostop' } },
+      ]);
+      expect(end).not.toHaveProperty('stopWasRequested');
+    });
+
+    it('drops the record when a LATER reason arrives without one', async () => {
+      // Latched as a pair, so a turn cannot settle with one ending's shape and
+      // an earlier ending's intent. Degrading to "unknown" is the safe half.
+      const end = await turnEndOf('s-pair', [
+        {
+          type: 'session_status',
+          data: {
+            sessionId: 's-pair',
+            terminalReason: 'aborted_streaming',
+            stopWasRequested: true,
+          },
+        },
+        { type: 'session_status', data: { sessionId: 's-pair', terminalReason: 'aborted_tools' } },
+        { type: 'done', data: { sessionId: 's-pair' } },
+      ]);
+      expect(end).toMatchObject({ terminalReason: 'aborted_tools' });
+      expect(end).not.toHaveProperty('stopWasRequested');
+    });
+
+    it('resets the record when the runtime reopens the window (DOR-1100)', async () => {
+      // A continuation is its own window: the previous window's stop belonged to
+      // the turn that already ended, and carrying it forward would let a stop
+      // the operator asked for excuse a failure in work they never saw.
+      const ends = await turnEndsOf('s-reopen', [
+        {
+          type: 'session_status',
+          data: {
+            sessionId: 's-reopen',
+            terminalReason: 'aborted_streaming',
+            stopWasRequested: false,
+          },
+        },
+        { type: 'done', data: { sessionId: 's-reopen' } },
+        { type: 'text_delta', data: { text: 'picking it back up' } },
+      ]);
+      expect(ends).toHaveLength(2);
+      // The window that really did abort keeps its record…
+      expect(ends[0]).toMatchObject({
+        terminalReason: 'aborted_streaming',
+        stopWasRequested: false,
+      });
+      // …and the continuation, which ended on nothing, inherits neither half.
+      expect(ends[1]).not.toHaveProperty('stopWasRequested');
+      expect(ends[1]).not.toHaveProperty('terminalReason');
+    });
+
+    it('never pairs a record with the error latch’s own reason', async () => {
+      // The latch fires precisely when NO reason came, and the record is only
+      // ever read beside a reason — so a latch-supplied `'error'` cannot inherit
+      // an intent the runtime never attached to it.
+      const end = await turnEndOf('s-latch-stop', [
+        { type: 'error', data: { message: 'backend crashed' } },
+        { type: 'done', data: { sessionId: 's-latch-stop' } },
+      ]);
+      expect(end).toMatchObject({ terminalReason: 'error' });
+      expect(end).not.toHaveProperty('stopWasRequested');
+    });
+  });
+
   // A stream that ends without `done` still closes the turn (no stuck streaming).
   it('synthesizes turn_end when the stream ends without a done event', async () => {
     const projector = new SessionStateProjector('s3');

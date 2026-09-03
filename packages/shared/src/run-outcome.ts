@@ -27,7 +27,10 @@
  *
  * - **A stop is not a failure.** A turn cut short reports one of
  *   {@link isInterruptedTerminalReason}'s reasons; a stopped run is recorded
- *   `cancelled` by its caller and must never also read as failed.
+ *   `cancelled` by its caller and must never also read as failed. Those reasons
+ *   answer SHAPE and not intent, so the carve-out asks a second question before
+ *   it excuses anything — see {@link isUnrequestedAbortFailure}, which is what
+ *   keeps an abort nobody asked for from being filed as a stop.
  * - **A recovered error is not a failure.** A runtime that reports a mid-turn
  *   error and then completes the turn normally (`terminalReason: 'completed'`,
  *   e.g. a Codex `item_error` the turn recovers from) did the work.
@@ -207,6 +210,65 @@ export function isAbsolvingTerminalReason(reason: string | undefined): boolean {
 }
 
 /**
+ * Whether an abort-shaped ending is a FAILURE wearing a stop's shape — the
+ * question `isInterruptedTerminalReason` cannot answer on its own.
+ *
+ * Every settlement reader outranks its error frame with the abort reasons, so
+ * that ordering decides which of two very different turns a person is shown:
+ * one they ended on purpose, and one that ended itself. The reason alone cannot
+ * tell them apart — the CLI drives nine distinct abort causes through one
+ * `signal.aborted` check and collapses them into two strings
+ * ({@link isInterruptedTerminalReason}). The provable case is
+ * `refusal-fallback-edit`: an API refusal aborts the main turn controller,
+ * DorkOS never asked for a stop, and the claude-code result mapper KEEPS the
+ * error frame on purpose (`sdk/sdk-error-mapping.ts`, `isStoppedTurnResult`).
+ * Read as a stop, that turn was presented as one the operator stopped and its
+ * explanation was erased on the way out.
+ *
+ * **Both halves are required, and the asymmetry between them is the design.**
+ *
+ * - `stopWasRequested === false` — a POSITIVE denial, never merely an absent
+ *   signal. `undefined` means the runtime does not keep a stop record (codex,
+ *   opencode) or the turn predates the field, and guessing "then nobody asked"
+ *   would turn every abort on those runtimes into a crash. Unknown settles the
+ *   way it always did.
+ * - A fatal error frame — because an abort with nothing to report is a turn cut
+ *   short however it happened, and `interrupted` is the honest word for it. A
+ *   shutdown mid-turn is not a failure just because no person pressed Stop.
+ *
+ * Callers supply the frame test rather than the frame: the run tracker latches
+ * only fatal frames (a survivable one never reaches it), while the two chat
+ * projections hold the last frame and test it with {@link isNonFatalErrorCode}.
+ * Same question, two honest ways of already knowing the answer.
+ *
+ * @param stopWasRequested - The `turn_end`/`session_status` stop record, when
+ *   the runtime supplies one.
+ * @param hasFatalErrorFrame - Whether the closing window latched an error frame
+ *   that is not marked survivable.
+ */
+export function isUnrequestedAbortFailure(
+  stopWasRequested: boolean | undefined,
+  hasFatalErrorFrame: boolean
+): boolean {
+  return stopWasRequested === false && hasFatalErrorFrame;
+}
+
+/**
+ * Read a `stopWasRequested` off any event that carries one.
+ *
+ * Read defensively and NOT narrowed to `session_status`, for the same reason
+ * {@link readTerminalReason} is: it is latched as a PAIR with the reason it
+ * arrives beside, so wherever a runtime chooses to put the reason, its intent
+ * signal travels with it.
+ *
+ * @param event - The event to read.
+ */
+export function readStopWasRequested(event: StreamEvent): boolean | undefined {
+  const stop = (event.data as { stopWasRequested?: unknown } | undefined)?.stopWasRequested;
+  return typeof stop === 'boolean' ? stop : undefined;
+}
+
+/**
  * Events that OPEN a turn window when one is not open — the runtime picking the
  * work back up after a `done` (DOR-1100). Mirrors
  * `TURN_REOPENING_STREAM_EVENT_TYPES` in the session normalizer, which is what
@@ -292,6 +354,12 @@ export function createRunOutcomeTracker(): RunOutcomeTracker {
   let open = true;
   /** The last reason the OPEN window carried, if any. */
   let terminalReason: string | undefined;
+  /**
+   * The stop record that arrived WITH {@link terminalReason} — latched as a
+   * pair, so the intent always describes the reason it is read beside rather
+   * than some earlier ending's.
+   */
+  let stopWasRequested: boolean | undefined;
   /** The last error frame the OPEN window carried, if any. */
   let latched: { message?: string; category?: ErrorCategory } | null = null;
   /** How the last CLOSED window settled. */
@@ -306,7 +374,14 @@ export function createRunOutcomeTracker(): RunOutcomeTracker {
   /** Apply the settlement rule to the window that is closing. */
   const decide = (): string | null => {
     // A stop, not a failure: the caller records a stopped run as `cancelled`.
-    if (isInterruptedTerminalReason(terminalReason)) return null;
+    // Unless nobody asked for the abort and the window latched a fatal frame —
+    // then the run really did break, and filing it `cancelled` would say a
+    // scheduled run at 3am was called off rather than that it failed.
+    if (isInterruptedTerminalReason(terminalReason)) {
+      return isUnrequestedAbortFailure(stopWasRequested, latched !== null)
+        ? composeMessage(latched)
+        : null;
+    }
     // The one reason that accuses on its own — every runtime and every injected
     // failure sets it deliberately, and Codex's dedupe path can close a failed
     // turn with it and no frame at all.
@@ -326,10 +401,18 @@ export function createRunOutcomeTracker(): RunOutcomeTracker {
       if (!open && TURN_REOPENING_EVENT_TYPES.has(event.type)) {
         open = true;
         terminalReason = undefined;
+        stopWasRequested = undefined;
         latched = null;
       }
       const reason = readTerminalReason(event);
-      if (reason !== undefined) terminalReason = reason;
+      // Latched TOGETHER: the stop record is read off the event that named the
+      // reason, so a later ending cannot inherit an earlier one's intent. An
+      // event that names a reason and carries no record clears the record too,
+      // which is the safe direction — unknown intent settles as a stop.
+      if (reason !== undefined) {
+        terminalReason = reason;
+        stopWasRequested = readStopWasRequested(event);
+      }
       if (event.type === 'error') {
         const data = event.data as { message?: unknown; code?: unknown; category?: unknown };
         // A survivable error is not the turn failing, so it never reaches the

@@ -681,11 +681,21 @@ export async function* executeSdkQuery(
   //
   // Carried on a `session_status` because that is where the result mapper puts
   // `terminalReason` too, and the normalizer reads it off either. It projects no
-  // status of its own: with no status fields, `toStatusChange` yields null, so
-  // this event moves the terminal reason and touches nothing else.
+  // status of its own: neither field below is a status field, so `toStatusChange`
+  // still yields null and this event moves the terminal reason and touches
+  // nothing else.
+  //
+  // `stopWasRequested: true` is not decoration and not a guess — reaching this
+  // line REQUIRES `wasStopped()`, so the intent is proven by the branch itself.
+  // Stating it keeps settlement from having to infer intent from the reason:
+  // `'interrupted'` is an abort reason like any other, and a reader that has to
+  // guess who caused an abort is exactly the hole this field closes.
   if (turnWindowOpen && wasStopped() && !emittedError) {
     logger.debug('[sendMessage] settling a stopped turn as interrupted', { session: sessionId });
-    yield { type: 'session_status', data: { sessionId, terminalReason: 'interrupted' } };
+    yield {
+      type: 'session_status',
+      data: { sessionId, terminalReason: 'interrupted', stopWasRequested: true },
+    };
   }
 
   if (!emittedDone) {

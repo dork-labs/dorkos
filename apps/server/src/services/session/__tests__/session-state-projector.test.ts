@@ -1060,6 +1060,89 @@ describe('SessionStateProjector', () => {
     expect(snap.status.lifecycle).toBe('interrupted');
   });
 
+  // The refusal case DOR-1320's review proved and DOR-1676 recorded as a known
+  // hole here: an API refusal aborts the main turn controller, so the turn ends
+  // `aborted_streaming` while DorkOS never asked for a stop — and the result
+  // mapper KEEPS the error frame on purpose. Settled on shape alone, the
+  // operator was told they stopped a turn they never touched and the clear that
+  // follows the derivation erased the explanation.
+  describe('an abort NOBODY asked for', () => {
+    it.each(['interrupted', 'aborted_streaming', 'aborted_tools'])(
+      'settles to error and keeps lastError when %s carried no stop request',
+      async (terminalReason) => {
+        const p = new SessionStateProjector('s1');
+        p.ingest({ type: 'turn_start' });
+        p.ingest({ type: 'error', message: 'Claude refused to continue' } as RawSessionEvent);
+        p.ingest({ type: 'turn_end', terminalReason, stopWasRequested: false });
+
+        const status = p.getStatus();
+        expect(status.lifecycle).toBe('error');
+        expect(status.lastError).toEqual({ message: 'Claude refused to continue' });
+
+        // The hydrated reading of the SAME turn. Live and cold must not
+        // disagree about whether a person stopped this.
+        const snap = await p.buildSnapshot(async () => []);
+        expect(snap.status.lifecycle).toBe('error');
+        expect(snap.status.lastError).toEqual({ message: 'Claude refused to continue' });
+      }
+    );
+
+    it.each(['interrupted', 'aborted_streaming', 'aborted_tools'])(
+      'still settles to interrupted when %s WAS requested',
+      (terminalReason) => {
+        // The behavior DOR-1320 shipped, unchanged: a turn a person stopped
+        // settles `interrupted` even though an error frame rode along with it.
+        const p = new SessionStateProjector('s1');
+        p.ingest({ type: 'turn_start' });
+        p.ingest({ type: 'error', message: 'aborted mid-tool' } as RawSessionEvent);
+        p.ingest({ type: 'turn_end', terminalReason, stopWasRequested: true });
+
+        const status = p.getStatus();
+        expect(status.lifecycle).toBe('interrupted');
+        expect(status.lastError).toBeNull();
+      }
+    );
+
+    it.each(['interrupted', 'aborted_streaming', 'aborted_tools'])(
+      'still settles to interrupted when %s carried NO signal at all',
+      (terminalReason) => {
+        // The degradation pin. Codex and OpenCode keep no stop record, and no
+        // turn recorded before the field existed carries one; reading that
+        // silence as "nobody asked" would report every operator Stop on those
+        // runtimes as a crash.
+        const p = new SessionStateProjector('s1');
+        p.ingest({ type: 'turn_start' });
+        p.ingest({ type: 'error', message: 'aborted mid-tool' } as RawSessionEvent);
+        p.ingest({ type: 'turn_end', terminalReason });
+
+        expect(p.getStatus().lifecycle).toBe('interrupted');
+      }
+    );
+
+    it('stays interrupted when an unrequested abort had nothing to report', () => {
+      // Both halves are required. A shutdown nobody asked for is still a turn
+      // cut short, not a turn that failed — there is no failure to show.
+      const p = new SessionStateProjector('s1');
+      p.ingest({ type: 'turn_start' });
+      p.ingest({ type: 'turn_end', terminalReason: 'aborted_streaming', stopWasRequested: false });
+      expect(p.getStatus().lifecycle).toBe('interrupted');
+    });
+
+    it('stays interrupted when an unrequested abort carried only a SURVIVABLE frame', () => {
+      // A `hook_failure` is the operator's own script exiting non-zero, so it
+      // cannot promote an abort into a crash.
+      const p = new SessionStateProjector('s1');
+      p.ingest({ type: 'turn_start' });
+      p.ingest({
+        type: 'error',
+        message: 'Hook "notify" failed (Stop)',
+        code: 'hook_failure',
+      } as RawSessionEvent);
+      p.ingest({ type: 'turn_end', terminalReason: 'aborted_streaming', stopWasRequested: false });
+      expect(p.getStatus().lifecycle).toBe('interrupted');
+    });
+  });
+
   // Failure mode (C2 guard): a normal completion must STILL settle idle — the
   // terminal-lifecycle handling is scoped to error/abort reasons only.
   it('still settles to idle when a turn ends cleanly (completed)', () => {
