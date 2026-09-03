@@ -11,6 +11,7 @@ import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { cn, useCopyFeedback } from '@/layers/shared/lib';
 import {
   IdentityAvatar,
+  PRESS_ROW,
   ResponsivePopover,
   ResponsivePopoverContent,
   ResponsivePopoverTitle,
@@ -170,7 +171,7 @@ export function ProfileRow({ row, onNavigate, pickContent }: ProfileRowProps) {
       // found the same way.
       data-profile-return={row.kind === 'nav' ? row.page : undefined}
       // `focus-ring` is opt-in: index.css clears the native outline globally.
-      className={cn(shared, 'focus-ring hover:bg-muted/50 transition-colors active:scale-[0.99]')}
+      className={cn(shared, 'focus-ring hover:bg-muted/50', PRESS_ROW)}
       // The label and its value in one string, so a screen reader hears the row
       // rather than "Runs on" followed by an unrelated-sounding model name.
       aria-label={row.value ? `${row.label}: ${row.value}` : row.label}

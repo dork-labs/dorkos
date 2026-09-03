@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { cn } from '@/layers/shared/lib';
 import { useIsMobile, type LongPressState } from '@/layers/shared/model';
 import {
+  PRESS_MARK,
   ResponsiveContextMenu,
   ResponsiveContextMenuContent,
   ResponsiveContextMenuItem,
@@ -69,7 +70,7 @@ function DrawerReactionRow({ quick, mine, onToggle, disabled }: EntryActionMenuR
             aria-label={`React with ${emojiLabel(emoji)}`}
             className={cn(
               'focus-ring flex size-11 items-center justify-center rounded-full border text-lg',
-              'motion-safe:transition-transform motion-safe:active:scale-95',
+              PRESS_MARK,
               'disabled:pointer-events-none disabled:opacity-50',
               mine.includes(emoji)
                 ? 'border-brand/70 bg-brand/12'
@@ -87,7 +88,7 @@ function DrawerReactionRow({ quick, mine, onToggle, disabled }: EntryActionMenuR
           aria-label="Pick a reaction"
           className={cn(
             'focus-ring border-border bg-muted/60 active:bg-accent flex size-11 items-center justify-center rounded-full border text-base',
-            'motion-safe:transition-transform motion-safe:active:scale-95',
+            PRESS_MARK,
             'disabled:pointer-events-none disabled:opacity-50'
           )}
         >

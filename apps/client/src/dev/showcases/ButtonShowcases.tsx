@@ -1,8 +1,86 @@
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
-import { Button, Badge, HoverBorderGradient, InlineCode, Kbd } from '@/layers/shared/ui';
+import {
+  Button,
+  Badge,
+  HoverBorderGradient,
+  InlineCode,
+  Kbd,
+  PRESS_CARD,
+  PRESS_MARK,
+  PRESS_ROW,
+} from '@/layers/shared/ui';
+import { cn } from '@/layers/shared/lib';
 import { Settings } from 'lucide-react';
+
+/**
+ * The three press stops, side by side and pressable.
+ *
+ * They are class strings rather than components, so the only honest way to show
+ * them is to put one on each size of target and let a reviewer hold the mouse
+ * down. Reading the numbers out of the source tells you nothing about whether
+ * 0.94 on a 24px disc feels like the same press as 0.99 on a card.
+ */
+function PressLadderSection() {
+  return (
+    <PlaygroundSection
+      title="Press ladder"
+      description="Press scales by target size: 0.99 for a card, 0.98 for a row or chip, 0.94 for a mark. Hold the mouse down on each."
+    >
+      <ShowcaseLabel>PRESS_CARD — a whole tile is the target</ShowcaseLabel>
+      <ShowcaseDemo>
+        <button
+          type="button"
+          className={cn(
+            'bg-card focus-ring hover:bg-accent w-full max-w-sm rounded-xl border p-4 text-left',
+            PRESS_CARD
+          )}
+        >
+          <p className="text-sm font-semibold">Scout</p>
+          <p className="text-muted-foreground text-xs">Reviews pull requests</p>
+        </button>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>PRESS_ROW — a row or a chip</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full max-w-sm space-y-1">
+          {['Standup notes', 'Release checklist'].map((label) => (
+            <button
+              key={label}
+              type="button"
+              className={cn(
+                'focus-ring hover:bg-accent flex w-full items-center rounded-md px-2 py-1.5 text-left text-sm',
+                PRESS_ROW
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>PRESS_MARK — a disc or icon used as a button</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="flex items-center gap-2">
+          {['🙂', '🎉', '🚀'].map((emoji) => (
+            <button
+              key={emoji}
+              type="button"
+              aria-label={`React with ${emoji}`}
+              className={cn(
+                'focus-ring bg-muted/60 hover:bg-accent flex size-11 items-center justify-center rounded-full border text-lg',
+                PRESS_MARK
+              )}
+            >
+              <span aria-hidden>{emoji}</span>
+            </button>
+          ))}
+        </div>
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
 
 /** Button, Badge, HoverBorderGradient, Kbd, and InlineCode component showcases. */
 export function ButtonShowcases() {
@@ -66,6 +144,8 @@ export function ButtonShowcases() {
           </div>
         </ShowcaseDemo>
       </PlaygroundSection>
+
+      <PressLadderSection />
 
       <PlaygroundSection title="Badge" description="Label variants for status and categorization.">
         <ShowcaseDemo>

@@ -60,7 +60,7 @@ export function RightPanelToggle() {
           className="text-muted-foreground hover:text-foreground relative flex h-7 w-7 items-center justify-center rounded-md transition-colors"
           onClick={toggleRightPanel}
           whileHover={{ scale: 1.1 }}
-          whileTap={{ scale: 0.93 }}
+          whileTap={{ scale: 0.94 }}
           transition={{ type: 'spring', stiffness: 600, damping: 35 }}
         >
           <Icon className="size-4" />

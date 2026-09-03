@@ -11,7 +11,7 @@ import type { ReactNode } from 'react';
 import { ChevronRight } from 'lucide-react';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { cn, useCopyFeedback } from '@/layers/shared/lib';
-import { Badge, Button, IdentityAvatar, IDENTITY_MARK_GROUP } from '@/layers/shared/ui';
+import { Badge, Button, IdentityAvatar, IDENTITY_MARK_GROUP, PRESS_MARK } from '@/layers/shared/ui';
 import { teamMemberFace } from '@/layers/entities/team';
 import type { ProfileRelationship } from '../lib/profile-relationship';
 import { profileStatusText } from '../lib/profile-status';
@@ -116,7 +116,7 @@ export function ProfileHeader({
           // (`ProfileStack`). The face is a control that pushes a page, so it is
           // restored the same way one is. Pinned by `ProfileView.test.tsx`.
           data-profile-return="appearance"
-          className={cn(IDENTITY_MARK_GROUP, 'focus-ring relative rounded-2xl active:scale-[0.94]')}
+          className={cn(IDENTITY_MARK_GROUP, 'focus-ring relative rounded-2xl', PRESS_MARK)}
         >
           <ProfileFace member={member} size="lg" />
         </button>

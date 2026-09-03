@@ -29,6 +29,7 @@ import {
   hasSecondLine,
 } from '@/layers/shared/lib/row-grammar';
 import { IDENTITY_MARK_GROUP } from './identity-avatar';
+import { PRESS_MARK, PRESS_ROW } from './press';
 import { SidebarMenuItem, SIDEBAR_MENU_ITEM_ATTRS, SIDEBAR_MENU_ITEM_CLASS } from './sidebar';
 import { SIDEBAR_MENU_GUTTER, SidebarMenuSurface, type SidebarMenuNode } from './sidebar-menu-node';
 import { TOUCH_TARGET_MIN_H } from './touch-target';
@@ -552,7 +553,8 @@ export function SidebarRow({
           // is the line and `py-1` is what keeps a one-line row on it exactly.
           // A row that earned a second line grows past it, which is the point —
           // height carries meaning here.
-          'focus-visible:ring-sidebar-ring flex w-full rounded-md py-1 text-left text-[13px] outline-hidden transition-colors duration-100 focus-visible:ring-2 active:scale-[0.98]',
+          'focus-visible:ring-sidebar-ring flex w-full rounded-md py-1 text-left text-[13px] outline-hidden focus-visible:ring-2',
+          PRESS_ROW,
           SIDEBAR_ROW_HEIGHT[pointer],
           SIDEBAR_ROW_INSET,
           showSecondLine ? 'items-start py-1.5' : 'items-center',
@@ -678,7 +680,8 @@ export function SidebarRow({
               // two cannot drift apart.
               className={cn(
                 IDENTITY_MARK_GROUP,
-                'focus-ring absolute size-[18px] cursor-pointer rounded-md transition-[scale] active:scale-[0.94]',
+                'focus-ring absolute size-[18px] cursor-pointer rounded-md',
+                PRESS_MARK,
                 SIDEBAR_GLYPH_ACTION_LEFT,
                 showSecondLine ? 'top-1.5' : 'top-1/2 -translate-y-1/2'
               )}
@@ -697,7 +700,8 @@ export function SidebarRow({
               }}
               {...{ [SIDEBAR_TRAILING_ACTION_ATTRIBUTE]: '' }}
               className={cn(
-                'focus-ring absolute cursor-pointer rounded-full transition-[scale] active:scale-[0.94]',
+                'focus-ring absolute cursor-pointer rounded-full',
+                PRESS_MARK,
                 SIDEBAR_ROW_TRAILING_ACTION_OFFSET,
                 showSecondLine ? 'top-1.5' : 'top-1/2 -translate-y-1/2'
               )}
