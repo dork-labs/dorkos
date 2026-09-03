@@ -71,12 +71,29 @@ import { resolveAgentIdentity } from '../../middleware/agent-identity.js';
 import {
   initAgentIdentityService,
   resetAgentIdentityService,
+  TOKEN_ABSOLUTE_TTL_MS,
 } from '../../services/core/agent-identity/agent-identity-service.js';
+import { agentIdentityTokens } from '@dorkos/db';
 import { createCapabilitiesInvokeRouter } from '../capabilities-invoke.js';
 import { createMcpRouter } from '../mcp.js';
 
-/** A token shaped like the real thing that resolves to nobody: a revoked agent. */
+/** A token shaped like the real thing that resolves to NO agent at all. */
 const UNVERIFIABLE = 'dork_agent_this-token-resolves-to-nothing';
+
+/** The three states a presented token can be dead in. Each must be refused. */
+type DeadTokenState = 'fabricated' | 'revoked' | 'expired';
+
+/**
+ * The dead states that REACH `resolveAddedBy`, which is what these rows test.
+ *
+ * `revoked` is deliberately not among them and gets its own case: a revoked
+ * identity is capped at `observe`, so the tier gate refuses a `destructive` verb
+ * before an approval is ever minted — it never arrives at the principal check at
+ * all. `expired` keeps its recorded ceiling, so it does arrive, and it is the
+ * state that proves the `inactive` test in `resolveAddedBy` is load-bearing
+ * (DOR-486).
+ */
+const DEAD_TOKEN_STATES: DeadTokenState[] = ['fabricated', 'expired'];
 
 /** The code every seam that names a caller now answers an unverifiable token with. */
 const REFUSAL_CODE = 'AGENT_IDENTITY_UNVERIFIED';
@@ -164,6 +181,31 @@ describe('an unverifiable agent token on the mcp.* capability surfaces', () => {
     return initAgentIdentityService(db).mint({ agentPath: ANA_PATH, displayName: 'Ana' });
   }
 
+  /**
+   * A token in one of the three dead states, built the way it really happens.
+   *
+   * The fabricated string used to stand in for all three, and it stopped being
+   * able to: a revoked or expired token now RESOLVES, to an identity marked
+   * `inactive`, so that the capability gate can tell a shut-off agent from a
+   * stranger (DOR-486). `resolveAddedBy` keyed on presence, so those two states
+   * would have stamped a dead token's own `agentPath` into a durable manifest
+   * field while every assertion here stayed green against the wrong subject.
+   *
+   * @param state - Which dead state to produce.
+   * @returns The token to present.
+   */
+  async function deadToken(state: DeadTokenState): Promise<string> {
+    if (state === 'fabricated') return UNVERIFIABLE;
+    const token = await anaToken();
+    if (state === 'revoked') {
+      await initAgentIdentityService(db).revoke(ANA_PATH);
+      return token;
+    }
+    const longAgo = new Date(Date.now() - TOKEN_ABSOLUTE_TTL_MS - 60_000).toISOString();
+    db.update(agentIdentityTokens).set({ createdAt: longAgo, lastUsedAt: longAgo }).run();
+    return token;
+  }
+
   describe('POST /api/capabilities/mcp.add/invoke', () => {
     /** The invoke route behind the identity middleware, as `index.ts` mounts it. */
     function app(): express.Express {
@@ -195,13 +237,33 @@ describe('an unverifiable agent token on the mcp.* capability surfaces', () => {
       return retry.send(SERVER);
     }
 
-    it('refuses the granted retry, and records no principal at all', async () => {
-      const res = await askGrantRetry(UNVERIFIABLE);
+    it.each(DEAD_TOKEN_STATES)(
+      'refuses the granted retry for a %s token, and records no principal at all',
+      async (state) => {
+        const res = await askGrantRetry(await deadToken(state));
 
-      expect(res.status).toBe(400);
-      expect(res.body.code).toBe(REFUSAL_CODE);
-      // The half that matters: the manifest field was never written, and above
-      // all it does not say `operator` for a call no person made.
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe(REFUSAL_CODE);
+        // The half that matters: the manifest field was never written, and above
+        // all it does not say `operator` — or the dead token's own path — for a
+        // call no live principal made.
+        expect(recordedAddedBy).toEqual([]);
+      }
+    );
+
+    it('stops a revoked token at the tier gate, before any card is minted', async () => {
+      // Defence in depth, and worth pinning as its own row: a revoked identity
+      // is capped at `observe`, so this `destructive` verb is refused outright
+      // rather than queued for a person. Nothing is recorded either way, which
+      // is the property both rows share (DOR-486).
+      const res = await request(app())
+        .post('/api/capabilities/mcp.add/invoke')
+        .set('X-DorkOS-Agent', await deadToken('revoked'))
+        .send(SERVER);
+
+      expect(res.status).not.toBe(200);
+      expect(res.body.reason).toBe('tier_ceiling');
+      expect(res.body.approvable).toBe(false);
       expect(recordedAddedBy).toEqual([]);
     });
 
@@ -285,11 +347,23 @@ describe('an unverifiable agent token on the mcp.* capability surfaces', () => {
       return rpc({ ...SERVER, approvalToken: payload.approvalToken }, token);
     }
 
-    it('refuses the granted retry, and records no principal at all', async () => {
-      const res = await askGrantRetry(UNVERIFIABLE);
+    it.each(DEAD_TOKEN_STATES)(
+      'refuses the granted retry for a %s token, and records no principal at all',
+      async (state) => {
+        const res = await askGrantRetry(await deadToken(state));
 
-      expect(jsonRpc(res).result?.isError).toBe(true);
-      expect(mcpPayload(res).code).toBe(REFUSAL_CODE);
+        expect(jsonRpc(res).result?.isError).toBe(true);
+        expect(mcpPayload(res).code).toBe(REFUSAL_CODE);
+        expect(recordedAddedBy).toEqual([]);
+      }
+    );
+
+    it('stops a revoked token at the tier gate, before any card is minted', async () => {
+      const res = await rpc(SERVER, await deadToken('revoked'));
+
+      const payload = mcpPayload(res) as { status?: string; reason?: string };
+      expect(payload.status).toBe('denied');
+      expect(payload.reason).toBe('tier_ceiling');
       expect(recordedAddedBy).toEqual([]);
     });
 

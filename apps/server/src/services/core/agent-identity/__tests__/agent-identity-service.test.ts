@@ -115,8 +115,13 @@ describe('AgentIdentityService', () => {
 
       expect(await service.revoke(AGENT_PATH)).toBe(2);
 
-      expect(await service.resolve(first)).toBeUndefined();
-      expect(await service.resolve(second)).toBeUndefined();
+      // Marked, not erased (DOR-486). A revoked token used to resolve to
+      // `undefined`, which every consumer reads as "unidentified" — and an
+      // unidentified caller is capped at the WIDEST tier, so that answer made
+      // revoking a capped agent widen it. `inactive` is what each gate fails
+      // closed on instead.
+      expect(await service.resolve(first)).toMatchObject({ inactive: 'revoked' });
+      expect(await service.resolve(second)).toMatchObject({ inactive: 'revoked' });
     });
 
     it('leaves other agents untouched', async () => {
@@ -125,8 +130,10 @@ describe('AgentIdentityService', () => {
 
       await service.revoke(AGENT_PATH);
 
-      expect(await service.resolve(mine)).toBeUndefined();
-      expect(await service.resolve(theirs)).toBeDefined();
+      expect(await service.resolve(mine)).toMatchObject({ inactive: 'revoked' });
+      const other = await service.resolve(theirs);
+      expect(other?.agentPath).toBe('/projects/other');
+      expect(other?.inactive).toBeUndefined();
     });
 
     it('marks rows rather than deleting them, so revocation stays auditable', async () => {
@@ -192,7 +199,11 @@ describe('AgentIdentityService — token expiry', () => {
     const token = await service.mint({ agentPath: AGENT_PATH, displayName: 'Researcher' });
     backdate(TOKEN_IDLE_TTL_MS + 60_000);
 
-    expect(await service.resolve(token)).toBeUndefined();
+    // `expired` rather than `undefined` (DOR-486): an aged-out token must not be
+    // a way to SHED a tier ceiling, which resolving to nothing would be. It keeps
+    // its recorded ceiling and holds no tool-group grant. It is deliberately not
+    // clamped the way `revoked` is — expiry is a clock, not a person saying stop.
+    expect(await service.resolve(token)).toMatchObject({ inactive: 'expired' });
   });
 
   it('refuses a token past the absolute cap even when it is used constantly', async () => {
@@ -200,14 +211,16 @@ describe('AgentIdentityService — token expiry', () => {
     // Minted long ago, used a minute ago — the idle clock is happy, the hard cap is not.
     backdate(TOKEN_ABSOLUTE_TTL_MS + 60_000, 60_000);
 
-    expect(await service.resolve(token)).toBeUndefined();
+    expect(await service.resolve(token)).toMatchObject({ inactive: 'expired' });
   });
 
   it('keeps a long-lived token alive while it stays in use', async () => {
     const token = await service.mint({ agentPath: AGENT_PATH, displayName: 'Researcher' });
     backdate(TOKEN_IDLE_TTL_MS * 3, TOKEN_IDLE_TTL_MS - 60_000);
 
-    expect(await service.resolve(token)).toMatchObject({ agentPath: AGENT_PATH });
+    const identity = await service.resolve(token);
+    expect(identity).toMatchObject({ agentPath: AGENT_PATH });
+    expect(identity?.inactive).toBeUndefined();
   });
 
   it('treats a token minted before expiry existed by its mint date', async () => {
@@ -220,7 +233,7 @@ describe('AgentIdentityService — token expiry', () => {
       })
       .run();
 
-    expect(await service.resolve(token)).toBeUndefined();
+    expect(await service.resolve(token)).toMatchObject({ inactive: 'expired' });
   });
 
   it('does not rewrite lastUsedAt on every call', async () => {
@@ -244,11 +257,22 @@ describe('AgentIdentityService — token expiry', () => {
     expect(await service.describeAgent(AGENT_PATH)).toMatchObject({ tierCeiling: 'act' });
   });
 
-  it('stops describing an agent once its tokens are revoked', async () => {
+  it('describes a revoked agent as revoked rather than as nobody', async () => {
+    // The in-session half of the same inversion (DOR-486). `undefined` here does
+    // not mean "no privilege" to the gate, it means "unidentified" — the widest
+    // ceiling there is. Naming the agent AND its state is what lets the gate cap
+    // it at `observe` instead of handing it everything.
     await service.mint({ agentPath: AGENT_PATH, displayName: 'Researcher' });
     await service.revoke(AGENT_PATH);
 
-    expect(await service.describeAgent(AGENT_PATH)).toBeUndefined();
+    expect(await service.describeAgent(AGENT_PATH)).toMatchObject({
+      agentPath: AGENT_PATH,
+      inactive: 'revoked',
+    });
+  });
+
+  it('still describes nobody for a path that has never minted a token', async () => {
+    expect(await service.describeAgent('/projects/never-minted')).toBeUndefined();
   });
 });
 

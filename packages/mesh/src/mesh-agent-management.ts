@@ -19,7 +19,7 @@ import type { AgentRegistry, AgentRegistryEntry } from './agent-registry.js';
 import type { RelayBridge } from './relay-bridge.js';
 import { subjectForAgent } from './relay-bridge.js';
 import type { TopologyManager, TopologyView, CrossNamespaceRule } from './topology.js';
-import { readManifest, writeManifest, removeManifest } from './manifest.js';
+import { readManifest, probeManifest, writeManifest, removeManifest } from './manifest.js';
 import type { DiscoveryDeps } from './mesh-discovery.js';
 import { upsertAutoImported } from './mesh-discovery.js';
 
@@ -255,15 +255,74 @@ export function getProjectPath(deps: AgentManagementDeps, agentId: string): stri
 }
 
 /**
+ * The one refusal {@link update} raises on its own: the manifest is THERE and
+ * cannot be read, so writing would destroy what only that file holds.
+ *
+ * A class rather than a bare `Error` because the route above it has to answer
+ * this differently from everything else that can throw on the same line —
+ * `writeManifest` rejects a schema-invalid merge, and an I/O failure can surface
+ * from either call. Catching all of them as one turned a validation bug into a
+ * `409 MANIFEST_UNREADABLE` carrying raw internals, which is both a wrong status
+ * and a wrong story (DOR-486 re-review). Callers must narrow on
+ * `instanceof`, never on the message.
+ */
+export class ManifestUnreadableError extends Error {
+  /**
+   * Build the refusal, wording it for the person who has to fix the file.
+   *
+   * @param projectPath - The agent directory whose manifest could not be read.
+   * @param detail - The errno, parse error, or schema issues behind it.
+   */
+  constructor(
+    public readonly projectPath: string,
+    public readonly detail: string
+  ) {
+    super(
+      `Refusing to update ${projectPath}: its .dork/agent.json is present but could not be ` +
+        `read (${detail}). Writing over it would erase the settings only that file holds. ` +
+        `Fix or remove the file, then try again.`
+    );
+    this.name = 'ManifestUnreadableError';
+  }
+}
+
+/**
  * Update mutable fields of a registered agent.
  *
  * ADR-0043: writes to `.dork/agent.json` first (canonical), then updates DB (cache).
- * If the manifest file is missing, reconstructs from the DB entry before writing.
+ * If the manifest file is ABSENT, reconstructs from the DB entry before writing.
+ *
+ * **An UNREADABLE manifest is refused rather than reconstructed** (DOR-486
+ * review). The DB row is a LOSSY cache — it has no column for
+ * `enabledToolGroups`, `mcpServers`, `workspace` or `tierCeiling` — so
+ * reconstructing from it turns any PATCH into a silent erase of every one of
+ * those, and for `tierCeiling` that erase WIDENS a security control: an agent
+ * capped at `observe` would come back uncapped because somebody renamed a
+ * display name while its manifest happened to be malformed. `probeManifest`
+ * separates "demonstrably gone" (reconstructing is the recovery path, and there
+ * is nothing to lose) from "here and unreadable" (reconstructing destroys), which
+ * `readManifest`'s single `null` cannot.
+ *
+ * **The read, the merge and the write are NOT atomic, and nothing locks
+ * `.dork/agent.json`.** `writeManifest` is atomic per write (temp file +
+ * rename), so no reader ever sees a half-file — but two updates that overlap
+ * both read the same base and the later `rename` wins whole, so the earlier
+ * one's fields are lost. That is a property of this seam for every field, and it
+ * predates tier ceilings; it is called out here because a ceiling is the field
+ * where losing an update is a SECURITY outcome rather than a cosmetic one (an
+ * operator's lowering dropped by a concurrent display-name write leaves the agent
+ * wider than the person believes). What the window cannot do is invent a value
+ * nobody sent — every ceiling that reaches the file passed
+ * `agent-updater.ts`'s direction guard, or came from the operator's own route.
+ * Closing it properly means locking the manifest for read-modify-write, which is
+ * a change to this function for all its callers rather than to one field
+ * (DOR-486 review).
  *
  * @param deps - Agent management dependencies
  * @param agentId - The agent's ULID
  * @param partial - Fields to update (name, description, capabilities, etc.)
  * @returns The updated agent manifest, or undefined if not found
+ * @throws {ManifestUnreadableError} When the manifest is present but cannot be read.
  */
 export async function update(
   deps: AgentManagementDeps,
@@ -275,6 +334,12 @@ export async function update(
 
   // ADR-0043: read current manifest from disk, merge, write back
   const diskManifest = await readManifest(entry.projectPath);
+  if (!diskManifest) {
+    const probe = await probeManifest(entry.projectPath);
+    if (probe.state === 'unreadable') {
+      throw new ManifestUnreadableError(entry.projectPath, probe.detail);
+    }
+  }
   const base = diskManifest ?? toManifest(entry);
   const merged: AgentManifest = { ...base, ...partial, id: agentId };
   await writeManifest(entry.projectPath, merged);

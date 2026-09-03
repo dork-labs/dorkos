@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, within } from '@testing-library/react';
+import { render, fireEvent, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
 
@@ -80,6 +80,20 @@ function renderTab(
     </QueryClientProvider>
   );
   return within(container);
+}
+
+/**
+ * Open the tier-ceiling select.
+ *
+ * Keyboard, not a click: jsdom has no pointer capture, so Radix's trigger never
+ * sees the pointer sequence that opens it. Its list renders in a portal outside
+ * the container {@link renderTab} scopes to, which is why the options are read
+ * off `screen`.
+ *
+ * @param view - The scoped queries {@link renderTab} returned.
+ */
+function openCeiling(view: ReturnType<typeof renderTab>): void {
+  fireEvent.keyDown(view.getByLabelText('The most this agent can ever do'), { key: 'ArrowDown' });
 }
 
 describe('ToolsTab', () => {
@@ -364,6 +378,81 @@ describe('ToolsTab', () => {
       // The count badge, derived rather than listed — a static copy of this is
       // the drift DOR-499 deleted three times over.
       expect(view.getByText('2')).toBeInTheDocument();
+    });
+  });
+
+  describe('the most this agent can ever do', () => {
+    const CEILING_LABEL = 'The most this agent can ever do';
+
+    it('reads as no extra limit for an agent nobody has capped', () => {
+      const view = renderTab(baseAgent, onUpdate);
+
+      expect(view.getByLabelText(CEILING_LABEL)).toHaveTextContent('No extra limit');
+    });
+
+    it('reads back the ceiling recorded on the manifest', () => {
+      const view = renderTab({ ...baseAgent, tierCeiling: 'act' }, onUpdate);
+
+      expect(view.getByLabelText(CEILING_LABEL)).toHaveTextContent('Change things, never delete');
+    });
+
+    it('writes through the OPERATOR route, never the agent self-edit route', () => {
+      // The half that would silently break the feature, exactly as for the grant
+      // above: `PATCH /api/agents/current` refuses any change that WIDENS a
+      // ceiling, whoever sends it, so a person raising one has to use the mesh
+      // route (DOR-486).
+      const mutate = vi.fn();
+      vi.mocked(useUpdateAgent).mockReturnValue({
+        mutate,
+        isPending: false,
+      } as unknown as ReturnType<typeof useUpdateAgent>);
+      const view = renderTab({ ...baseAgent, tierCeiling: 'observe' }, onUpdate);
+
+      openCeiling(view);
+      fireEvent.click(screen.getByRole('option', { name: 'No extra limit' }));
+
+      expect(mutate).toHaveBeenCalledWith(
+        { id: baseAgent.id, updates: { tierCeiling: 'destructive' } },
+        expect.anything()
+      );
+      expect(onUpdate).not.toHaveBeenCalled();
+    });
+
+    it('refreshes the manifest it renders, so the choice does not snap back', () => {
+      const mutate = vi.fn(
+        (_vars: unknown, options?: { onSettled?: () => void }) => void options?.onSettled?.()
+      );
+      vi.mocked(useUpdateAgent).mockReturnValue({
+        mutate,
+        isPending: false,
+      } as unknown as ReturnType<typeof useUpdateAgent>);
+      const client = new QueryClient();
+      const invalidate = vi.spyOn(client, 'invalidateQueries');
+      const view = renderTab(baseAgent, onUpdate, client);
+
+      openCeiling(view);
+      fireEvent.click(screen.getByRole('option', { name: 'Read only' }));
+
+      const asked = invalidate.mock.calls.map(([filters]) => JSON.stringify(filters?.queryKey));
+      expect(asked).toContain(JSON.stringify(agentKeys.all));
+      expect(asked).toContain(JSON.stringify(TEAM_ROSTER_KEY));
+    });
+
+    it('says that no approval can lift it, and who may loosen it', () => {
+      const view = renderTab(baseAgent, onUpdate);
+
+      expect(view.getByText(/no approval can unlock it/)).toBeInTheDocument();
+      expect(view.getByText(/only you can loosen it/)).toBeInTheDocument();
+    });
+
+    it('renders for a runtime that cannot take DorkOS tools in-session', () => {
+      // The cap is enforced at the capability gate, which every runtime reaches.
+      vi.mocked(useCapabilitiesForRuntime).mockReturnValue({
+        supportsMcp: false,
+      } as RuntimeCapabilities);
+      const view = renderTab(baseAgent, onUpdate);
+
+      expect(view.getByLabelText(CEILING_LABEL)).toBeInTheDocument();
     });
   });
 });

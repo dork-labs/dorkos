@@ -225,7 +225,12 @@ dorkos agent create --name <slug> --path <dir>       # Create a new agent
 dorkos agent create --name <slug> --path <dir> --template <ref> --display-name "<name>"
 dorkos agent update --path <dir> --display-name "<name>"   # Edit self-editable fields
 dorkos agent update --path <dir> --color "" --icon ""      # Pass "" to clear a field
+dorkos agent update --path <dir> --ceiling act             # Cap what this agent may ever do
 ```
+
+`--ceiling` sets the most an agent is ever allowed to do: `observe` reads only, `act` changes things but never deletes them, and `destructive` is no extra limit, which is where every agent starts. Anything past the line is refused outright, and no approval unlocks it — so it is the way to say "read my repos, never uninstall anything." An agent can tighten its own limit; only you can loosen one.
+
+One edge worth knowing: the limit covers what an agent asks DorkOS to do. An agent that can run terminal commands can still act outside DorkOS. If you want that closed too, turn on **Require login** (Settings, under Security), which makes every request prove it is you.
 
 **`dorkos task`**: list, create, trigger, and inspect scheduled tasks.
 

@@ -41,7 +41,10 @@ import { getRequestAgentIdentity, presentsAgentIdentity } from '../middleware/ag
  *
  * It used to fall through to branch 3, because branch 1 asks
  * {@link getRequestAgentIdentity} — "WHICH agent is this" — and a revoked or
- * expired token leaves that empty. So an agent that kept following the protocol
+ * expired token left that empty. **It no longer does** (DOR-486): resolution now
+ * NAMES a shut-off agent, so that the capability gate can tell one from a
+ * stranger, and branch 1 tests `!identity.inactive` to keep answering exactly as
+ * described here. So an agent that kept following the protocol
  * after its token died resolved to the INSTALL OWNER, and passed every
  * `caller.kind !== 'human'` gate the room routes hang off it.
  *
@@ -109,7 +112,14 @@ export function resolveCaller(
 ): AuthorRecord {
   const registry = getRoomService().authorRegistry;
   const identity = getRequestAgentIdentity(res);
-  if (identity) {
+  // `!identity.inactive` preserves this route's existing answer through a change
+  // one module over (DOR-486 review). `resolve()` used to return `undefined` for
+  // a revoked or expired token, so those callers fell into the 401 below by
+  // omission; it now returns a NAMED identity, because the capability gate has to
+  // tell a shut-off agent from a stranger to stop revocation widening a ceiling.
+  // Without this check that change would have quietly turned a hard 401 here into
+  // a full agent author — the exact inversion it exists to close, one seam over.
+  if (identity && !identity.inactive) {
     return registry.resolveAgent(identity.agentPath, identity.displayName);
   }
   if (presentsAgentIdentity(req, res)) {

@@ -27,14 +27,32 @@
  * is a 400 here too); the code is what discriminates, not the status, and
  * inventing a second reporting shape for one refusal would be the divergence.
  *
+ * ## Three dead states, not one string (DOR-486)
+ *
+ * This suite used to present ONE fabricated token — a string that resolves to
+ * nobody — and called it "what a revoked agent looks like". That stopped being
+ * true, and the suite could not notice: `resolve()` now NAMES a revoked or
+ * expired token, marking it `inactive`, so the capability gate can tell a
+ * shut-off agent from a stranger. `callerAuthor` keyed on identity PRESENCE, so
+ * the two real states walked straight past it while every assertion here stayed
+ * green against the wrong subject. Measured on the real invoke router before the
+ * fix: a revoked token read room history `200`, and an expired token posted
+ * `200` (entries 1 -> 2).
+ *
+ * So every refusal row runs against all three states a token can be dead in, each
+ * built the way it really happens — mint then revoke, mint then age past the
+ * absolute TTL, and a string from no agent at all.
+ *
  * Seeded defects, each run and each red before the fix:
  *
  * - Drop the `agentIdentityPresented` refusal from `callerAuthor` -> every
- *   "refused" row red: the post lands as the owner and the history reads back.
- * - Stop threading the fact in `routes/capabilities-invoke.ts` -> the two invoke
- *   rows red, alone.
+ *   "fabricated" row red: the post lands as the owner and the history reads back.
+ * - Drop the `!context.identity.inactive` test from `callerAuthor` -> every
+ *   "revoked" and "expired" row red, and only those.
+ * - Stop threading the fact in `routes/capabilities-invoke.ts` -> the invoke
+ *   fabricated rows red, alone.
  * - Stop threading it in `routes/mcp.ts` (or drop it from `mcp-server.ts`'s
- *   `caller`) -> the two MCP rows red, alone.
+ *   `caller`) -> the MCP fabricated rows red, alone.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import express from 'express';
@@ -107,7 +125,9 @@ import { resolveAgentIdentity } from '../../middleware/agent-identity.js';
 import {
   initAgentIdentityService,
   resetAgentIdentityService,
+  TOKEN_ABSOLUTE_TTL_MS,
 } from '../../services/core/agent-identity/agent-identity-service.js';
+import { agentIdentityTokens } from '@dorkos/db';
 import { createCapabilitiesInvokeRouter } from '../capabilities-invoke.js';
 import { createMcpRouter } from '../mcp.js';
 import {
@@ -117,8 +137,14 @@ import {
   type RoomHarness,
 } from '../../services/rooms/__tests__/room-test-harness.js';
 
-/** A token shaped like the real thing that resolves to nobody: a revoked agent. */
+/** A token shaped like the real thing that resolves to NO agent at all. */
 const UNVERIFIABLE = 'dork_agent_this-token-resolves-to-nothing';
+
+/** The three states a presented token can be dead in. Each must be refused. */
+type DeadTokenState = 'fabricated' | 'revoked' | 'expired';
+
+/** Every dead state, so a row that only covers one cannot pass for coverage. */
+const DEAD_TOKEN_STATES: DeadTokenState[] = ['fabricated', 'revoked', 'expired'];
 
 /** The code every room seam now answers a token it cannot verify with. */
 const REFUSAL_CODE = 'AGENT_IDENTITY_UNVERIFIED';
@@ -165,6 +191,37 @@ function mcpErrorPayload(res: request.Response): { code?: string; error?: string
   return JSON.parse(body.result!.content![0]!.text!);
 }
 
+/**
+ * Whether a JSON-RPC reply is a refusal, in EITHER shape a refusal can take.
+ *
+ * Two gates can turn one of these calls away and they answer differently on
+ * purpose: `callerAuthor` throws the rooms domain's typed error (`isError`),
+ * while the tier gate returns a structured `denied` payload that is deliberately
+ * NOT `isError` so a model reads it rather than retrying. Which one answers
+ * depends on the caller and the tier — a revoked token is capped at `observe`,
+ * so an `act` verb is stopped by the ceiling before `callerAuthor` ever runs.
+ * The property under test is that the call did not happen, so the assertion is
+ * on that, not on which door closed first (DOR-486).
+ *
+ * @param res - The transport response.
+ * @returns The refusal text, for the caller to make its own claims about.
+ */
+function refusalText(res: request.Response): string {
+  const body = jsonRpc(res);
+  const text = body.result?.content?.[0]?.text ?? '';
+  // Parsed, not substring-matched: the denial payload is pretty-printed, so
+  // `"status":"denied"` never appears literally in it.
+  let status: unknown;
+  try {
+    status = (JSON.parse(text) as { status?: unknown }).status;
+  } catch {
+    status = undefined;
+  }
+  const refused = body.result?.isError === true || status === 'denied';
+  expect(refused, `expected a refusal, got: ${text.slice(0, 200)}`).toBe(true);
+  return text;
+}
+
 describe('an unverifiable agent token on the rooms capability surfaces', () => {
   let harness: RoomHarness;
   let registry: CapabilityRegistry;
@@ -203,6 +260,30 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
     });
   }
 
+  /**
+   * A token in one of the three dead states, built the way it really happens.
+   *
+   * `revoked` and `expired` are REAL — minted for Ana and then killed — because
+   * the fabricated string is the one dead state that never had an identity to
+   * resolve to, and it is precisely the state that kept passing while the other
+   * two walked through (DOR-486).
+   *
+   * @param state - Which dead state to produce.
+   * @returns The token to present.
+   */
+  async function deadToken(state: DeadTokenState): Promise<string> {
+    if (state === 'fabricated') return UNVERIFIABLE;
+    const token = await anaToken();
+    if (state === 'revoked') {
+      await initAgentIdentityService(harness.db).revoke(ANA_PATH);
+      return token;
+    }
+    // Past the absolute cap, which no amount of use resets.
+    const longAgo = new Date(Date.now() - TOKEN_ABSOLUTE_TTL_MS - 60_000).toISOString();
+    harness.db.update(agentIdentityTokens).set({ createdAt: longAgo, lastUsedAt: longAgo }).run();
+    return token;
+  }
+
   /** How many entries the room holds — what a refused post must not change. */
   function entryCount(): number {
     return harness.service.readHistory(roomId, ownerAuthorId, { limit: 50 }).length;
@@ -218,40 +299,56 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
       return server;
     }
 
-    it('refuses rooms.post, where the same call with no header posts as the operator', async () => {
+    it.each(DEAD_TOKEN_STATES)('refuses rooms.post for a %s token', async (state) => {
       const refused = await request(app())
         .post('/api/capabilities/rooms.post/invoke')
-        .set('X-DorkOS-Agent', UNVERIFIABLE)
+        .set('X-DorkOS-Agent', await deadToken(state))
         .send({ roomId, text: 'as you, apparently' });
 
-      expect(refused.status).toBe(400);
-      expect(refused.body.code).toBe(REFUSAL_CODE);
+      // Refused, and by WHICHEVER gate got there first: a revoked identity is
+      // capped at `observe`, so the tier gate turns an `act` verb away (403,
+      // `tier_ceiling`) before `callerAuthor` runs; the other two states reach
+      // `callerAuthor` and get its 400. Asserting one code would pin the order
+      // the gates happen to run in rather than the property (DOR-486).
+      expect(refused.status).not.toBe(200);
+      // Either this seam's own code, or none because the tier gate answered
+      // first with its `denied` payload. Asserting the value itself rather than
+      // a ternary over it — the ternary was a tautology that could not fail.
+      expect([REFUSAL_CODE, undefined]).toContain(refused.body.code);
+      expect(refused.body.posted).toBeUndefined();
       // The half that matters: nothing was written under anybody's name.
       expect(entryCount()).toBe(1);
+    });
 
-      // The header is the ONLY difference. Without this the refusal above would
+    it('posts as the operator with no header at all, which is the control', () => {
+      // The header is the ONLY difference. Without this the refusals above would
       // also pass for a route that was simply broken.
-      const allowed = await request(app())
+      return request(app())
         .post('/api/capabilities/rooms.post/invoke')
-        .send({ roomId, text: 'from the keyboard' });
-      expect(allowed.status).toBe(200);
-      expect(allowed.body.posted).toBe(true);
-      expect(entryCount()).toBe(2);
+        .send({ roomId, text: 'from the keyboard' })
+        .expect(200)
+        .then((allowed) => {
+          expect(allowed.body.posted).toBe(true);
+          expect(entryCount()).toBe(2);
+        });
     });
 
-    it('refuses rooms.read_history, which the observe tier lets through', async () => {
-      // `observe` returns allowed before any other check runs, so the ONLY thing
-      // between this caller and the operator's rooms was `callerAuthor`.
-      const refused = await request(app())
-        .post('/api/capabilities/rooms.read_history/invoke')
-        .set('X-DorkOS-Agent', UNVERIFIABLE)
-        .send({ roomId, limit: 5 });
+    it.each(DEAD_TOKEN_STATES)(
+      'refuses rooms.read_history for a %s token, which the observe tier lets through',
+      async (state) => {
+        // `observe` returns allowed before any other check runs, so the ONLY
+        // thing between this caller and the operator's rooms is `callerAuthor`.
+        const refused = await request(app())
+          .post('/api/capabilities/rooms.read_history/invoke')
+          .set('X-DorkOS-Agent', await deadToken(state))
+          .send({ roomId, limit: 5 });
 
-      expect(refused.status).toBe(400);
-      expect(refused.body.code).toBe(REFUSAL_CODE);
-      expect(refused.body).not.toHaveProperty('entries');
-      expect(JSON.stringify(refused.body)).not.toContain('a private note');
-    });
+        expect(refused.status).toBe(400);
+        expect(refused.body.code).toBe(REFUSAL_CODE);
+        expect(refused.body).not.toHaveProperty('entries');
+        expect(JSON.stringify(refused.body)).not.toContain('a private note');
+      }
+    );
 
     it('still lets a token that resolves act as its own agent', async () => {
       const token = await anaToken();
@@ -305,26 +402,40 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
       return req.send(body);
     }
 
-    it('refuses post_to_room, where the same call with no header posts', async () => {
+    it.each(DEAD_TOKEN_STATES)('refuses post_to_room for a %s token', async (state) => {
       const refused = await rpc(
         toolCall('post_to_room', { roomId, text: 'as you, apparently' }),
-        UNVERIFIABLE
+        await deadToken(state)
       );
 
-      expect(mcpErrorPayload(refused).code).toBe(REFUSAL_CODE);
+      // Either refusal shape — see `refusalText` on why the gate that answers
+      // depends on the state and the tier.
+      refusalText(refused);
       expect(entryCount()).toBe(1);
+    });
 
+    it('posts with no header at all, which is the control', async () => {
       const allowed = await rpc(toolCall('post_to_room', { roomId, text: 'from the keyboard' }));
+
       expect(jsonRpc(allowed).result?.isError).toBeFalsy();
       expect(entryCount()).toBe(2);
     });
 
-    it('refuses read_room_history, and hands back none of the room', async () => {
-      const refused = await rpc(toolCall('read_room_history', { roomId, limit: 5 }), UNVERIFIABLE);
+    it.each(DEAD_TOKEN_STATES)(
+      'refuses read_room_history for a %s token, and hands back none of the room',
+      async (state) => {
+        const refused = await rpc(
+          toolCall('read_room_history', { roomId, limit: 5 }),
+          await deadToken(state)
+        );
 
-      expect(mcpErrorPayload(refused).code).toBe(REFUSAL_CODE);
-      expect(refused.text).not.toContain('a private note');
-    });
+        // `read_room_history` is `observe`, the tier no ceiling ever blocks — so
+        // for all three states `callerAuthor` is the ONLY thing between this
+        // caller and the operator's rooms, and its typed code is what comes back.
+        expect(mcpErrorPayload(refused).code).toBe(REFUSAL_CODE);
+        expect(refused.text).not.toContain('a private note');
+      }
+    );
 
     it('still lets a token that resolves act as its own agent', async () => {
       const token = await anaToken();
@@ -445,6 +556,30 @@ describe('a capability behind the rooms-management grant, on the real surfaces',
       agentPath: ANA_PATH,
       displayName: 'Ana',
     });
+  }
+
+  /**
+   * A token in one of the three dead states, built the way it really happens.
+   *
+   * `revoked` and `expired` are REAL — minted for Ana and then killed — because
+   * the fabricated string is the one dead state that never had an identity to
+   * resolve to, and it is precisely the state that kept passing while the other
+   * two walked through (DOR-486).
+   *
+   * @param state - Which dead state to produce.
+   * @returns The token to present.
+   */
+  async function deadToken(state: DeadTokenState): Promise<string> {
+    if (state === 'fabricated') return UNVERIFIABLE;
+    const token = await anaToken();
+    if (state === 'revoked') {
+      await initAgentIdentityService(harness.db).revoke(ANA_PATH);
+      return token;
+    }
+    // Past the absolute cap, which no amount of use resets.
+    const longAgo = new Date(Date.now() - TOKEN_ABSOLUTE_TTL_MS - 60_000).toISOString();
+    harness.db.update(agentIdentityTokens).set({ createdAt: longAgo, lastUsedAt: longAgo }).run();
+    return token;
   }
 
   describe('the external /mcp server', () => {

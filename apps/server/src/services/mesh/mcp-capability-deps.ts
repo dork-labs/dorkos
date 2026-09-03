@@ -101,8 +101,10 @@ export function rethrowAsCapabilityError(err: unknown): never {
  *
  * **A caller whose agent token did NOT verify is refused rather than recorded**
  * (DOR-1361). `context.identity` answers "WHICH agent", and a revoked or expired
- * token leaves it empty — so the `?? 'operator'` below wrote a machine's act into
- * a durable manifest field under the person's name. `addedBy` is read back by
+ * token used to leave it empty — so the `?? 'operator'` below wrote a machine's
+ * act into a durable manifest field under the person's name. Since DOR-486 such
+ * a token fills `identity` with an `inactive` mark instead, so the check below
+ * reads the mark too; see the comment at the guard. `addedBy` is read back by
  * people deciding whether to trust an entry that runs a command in an agent's
  * environment, so a wrong principal there is worse than no entry at all.
  *
@@ -124,14 +126,24 @@ export function rethrowAsCapabilityError(err: unknown): never {
  *   presented an agent token this machine could not verify.
  */
 export function resolveAddedBy(context: CapabilityHandlerContext): string {
-  if (!context.identity && context.agentIdentityPresented) {
+  // `context.identity?.inactive` is the second way into this refusal, and it is
+  // newer than the paragraph above (DOR-486). A revoked or expired token no
+  // longer leaves `context.identity` empty — it fills it with an identity marked
+  // `inactive`, because the capability gate must tell a shut-off agent from a
+  // stranger. Presence stopped meaning "verified", so without this test a dead
+  // token would have stamped its own `agentPath` into a durable `addedBy` — the
+  // provenance field this refusal exists to keep honest.
+  if ((!context.identity || context.identity.inactive) && context.agentIdentityPresented) {
     throw new CapabilityToolError({
       error:
         'That agent identity could not be verified. Its token may have been revoked, or it may have expired.',
       code: 'AGENT_IDENTITY_UNVERIFIED',
     });
   }
-  return context.identity?.agentPath ?? 'operator';
+  // An inactive identity that somehow reached here without the presence flag is
+  // still not a principal: it falls to `operator` only when nothing named a
+  // machine at all, never on the strength of a dead token's path.
+  return context.identity && !context.identity.inactive ? context.identity.agentPath : 'operator';
 }
 
 /**

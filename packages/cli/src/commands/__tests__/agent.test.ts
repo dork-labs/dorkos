@@ -81,6 +81,18 @@ describe('parseAgentUpdateArgs', () => {
   it('keeps a non-empty --icon as a string', () => {
     expect(parseAgentUpdateArgs(['--path', '/a', '--icon', '🤖'])).toMatchObject({ icon: '🤖' });
   });
+
+  it('accepts a known --ceiling rung', () => {
+    expect(parseAgentUpdateArgs(['--path', '/a', '--ceiling', 'act'])).toMatchObject({
+      ceiling: 'act',
+    });
+  });
+
+  it('names the three rungs when --ceiling is not one of them', () => {
+    expect(() => parseAgentUpdateArgs(['--path', '/a', '--ceiling', 'readonly'])).toThrow(
+      /observe, act, destructive/
+    );
+  });
 });
 
 describe('runAgentList', () => {
@@ -173,6 +185,53 @@ describe('runAgentUpdate', () => {
     });
     expect(code).toBe(1);
     expect(apiCallMock).not.toHaveBeenCalled();
+  });
+
+  // A ceiling is a security control: the self-edit route refuses any change that
+  // widens one, whoever sends it, so the person's own shell writes it through
+  // the operator's route (DOR-486).
+  it('writes --ceiling through the operator route, never the self-edit route', async () => {
+    apiCallMock.mockResolvedValue({ id: 'agt_1', name: 'warden', tierCeiling: 'act' });
+
+    const code = await runAgentUpdate({
+      path: '/tmp/a',
+      displayName: undefined,
+      description: undefined,
+      color: undefined,
+      icon: undefined,
+      ceiling: 'act',
+      json: false,
+    });
+
+    expect(code).toBe(0);
+    expect(apiCallMock).toHaveBeenCalledWith('PATCH', '/api/mesh/agents/agt_1', {
+      tierCeiling: 'act',
+    });
+    // And nothing about the ceiling rode the self-edit route.
+    const selfEditWrites = apiCallMock.mock.calls.filter(
+      (call) => call[0] === 'PATCH' && String(call[1]).startsWith('/api/agents/current')
+    );
+    expect(selfEditWrites).toHaveLength(0);
+  });
+
+  it('re-reads the manifest after setting a ceiling, so --json is not stale', async () => {
+    apiCallMock.mockResolvedValue({ id: 'agt_1', name: 'warden', tierCeiling: 'observe' });
+
+    await runAgentUpdate({
+      path: '/tmp/a',
+      displayName: undefined,
+      description: undefined,
+      color: undefined,
+      icon: undefined,
+      ceiling: 'observe',
+      json: true,
+    });
+
+    // The mesh route answers from the derived row, which has no column for the
+    // ceiling — so the last call has to be a manifest read.
+    const last = apiCallMock.mock.calls.at(-1);
+    expect(last?.[0]).toBe('GET');
+    expect(last?.[1]).toBe('/api/agents/current?path=%2Ftmp%2Fa');
   });
 });
 
