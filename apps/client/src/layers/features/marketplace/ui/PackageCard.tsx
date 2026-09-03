@@ -109,7 +109,10 @@ export function PackageCard({
       className={cn(
         'card-interactive group bg-card flex h-full cursor-pointer flex-col rounded-xl border text-left',
         isCompact ? 'p-4' : 'p-6',
-        'hover:border-border/80 transition-all duration-200 hover:shadow-md',
+        // `card-interactive` owns the transition (and now the focus-visible
+        // twin of this hover). A `transition-all` here would put border width,
+        // padding and every layout property back in it.
+        'hover:border-border/80 hover:shadow-md',
         'focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-2'
       )}
       data-testid={`package-card-${pkg.name}`}
