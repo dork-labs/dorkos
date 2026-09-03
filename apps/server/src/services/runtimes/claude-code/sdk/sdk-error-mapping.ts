@@ -59,7 +59,13 @@ export interface StoppedTurnEvidence {
  *   case: an API refusal aborts the main turn controller directly, so a
  *   shape-only gate would drop a real failure's error frame and tell the
  *   operator they stopped a turn they never touched (DOR-1320 review, from the
- *   shipped `claude-agent-sdk` 0.3.224 bundle).
+ *   shipped `claude-agent-sdk` 0.3.224 bundle). Re-extracted from that same
+ *   binary for DOR-1684 and unchanged: the CLI's abort predicate, its
+ *   nine-cause collapse, the two-member suppression set that puts
+ *   `refusal-fallback-edit` and DorkOS's own `interrupt` in one bucket, and the
+ *   `result` shapes an abort closes with are all quoted in
+ *   `research/20260903_claude-cli-aborted-refusal-shapes.md`, with the recipe
+ *   for re-running it after an SDK bump.
  *
  * When both hold the error frame is suppressed and the turn settles on its
  * terminal reason, which the projector already reads as `interrupted`. Nothing
