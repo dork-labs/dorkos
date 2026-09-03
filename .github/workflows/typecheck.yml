@@ -138,6 +138,15 @@ jobs:
         if: ${{ !cancelled() }}
         run: bash scripts/check-nul-bytes.sh
 
+      # A ground-truth doc naming a path that no longer exists (DOR-1762) —
+      # contributing/styling-theming.md once taught a dead `@/components/`
+      # import alias as the ✅ pattern. Rides THIS job for the same reason as
+      # the two gates above: needs no node_modules, and `typecheck` is already
+      # required and already reports on `merge_group`.
+      - name: Dead-path gate — ground-truth docs (DOR-1762)
+        if: ${{ !cancelled() }}
+        run: bash scripts/check-dead-doc-paths.sh
+
       # `!cancelled()` so an earlier gate's failure still reports every type
       # error in the same run, for the same reason the step below passes
       # `--continue`.
