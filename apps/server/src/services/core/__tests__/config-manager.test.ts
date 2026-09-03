@@ -3319,11 +3319,15 @@ describe('CONFIG_MIGRATIONS key invariant (DOR-339 regression guard)', () => {
   // negative cases testable at all — staging "a migration body appended to an
   // already-tagged key" against real git would mean fabricating tags.
   //
-  // Two things this guard checks that the previous one did not. It compares the
+  // Three things this guard checks that the first one did not. It compares the
   // CONTENT of every shipped migration against the release, not merely whether
   // the key is present — a body appended to an already-tagged composite key ships
-  // dead while the key sits there looking fine, and that is DOR-988. And it
-  // covers every key, not only the newest.
+  // dead while the key sits there looking fine, and that is DOR-988. It covers
+  // every key, not only the newest. And it follows a shipped key into the code it
+  // CALLS (DOR-1135): most of this table is a composite, so comparing the table
+  // slice alone froze a helper's name and left its body editable — the tamper
+  // that proved it was seeded into `backfillAutonomyAcknowledgement`, which the
+  // shipped '0.57.0' key calls, and this test stayed green.
   //
   // Git tags, not package.json, are the ground truth: a feature branch can sit
   // open past a real release without ever touching its own stale copy of that
@@ -3358,7 +3362,7 @@ describe('CONFIG_MIGRATIONS key invariant (DOR-339 regression guard)', () => {
     expect(Object.keys(extractMigrationBodies(source))).toEqual(Object.keys(CONFIG_MIGRATIONS));
   });
 
-  it('every migration key is either unreleased-and-newer or byte-identical to its release', () => {
+  it('every migration key is unreleased-and-newer, or matches its release in body and in what it calls', () => {
     const source = fs.readFileSync(
       path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../config-manager.ts'),
       'utf-8'

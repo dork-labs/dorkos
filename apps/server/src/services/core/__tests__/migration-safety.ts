@@ -21,12 +21,43 @@
  *     strictly greater than the latest release, or the users already on that
  *     release will never run it.
  *
+ * ## Why the table slice is not the whole comparison (DOR-1135)
+ *
+ * Comparing table text is comparing the CALL, and nearly every key in this table
+ * is a composite that calls helpers — several are a bare reference and nothing
+ * else. So the byte-identity rule above, on its own, froze the name of a shipped
+ * migration's helper while leaving the helper's body editable. That is not a
+ * theory: seeding a tamper into `backfillAutonomyAcknowledgement`, which the
+ * shipped `'0.57.0'` key calls, returned `ok: true`, while the identical tamper
+ * written inline in the table went red.
+ *
+ * So a shipped key is compared twice. Its table slice must be byte-identical, as
+ * before; and the top-level declarations it REACHES — transitively, following
+ * calls and the constants they act on — must still be the ones the release
+ * carries. The second comparison is normalized rather than byte-for-byte
+ * (`migration-closure.ts` explains the normalization and what it is measured
+ * against), because a helper's prose is not its behavior and freezing every
+ * TSDoc line a shipped migration can reach would make the guard unlandable
+ * noise. Behavior is what the release ran, and behavior is what is pinned.
+ *
+ * The append-only pins next door already hash the same closure, so this is
+ * deliberately a second lock on the same door — with a different key. A pin is a
+ * value checked into this repository and repinning it is the documented escape
+ * hatch; the release tag is not editable at all, so for a key that has SHIPPED
+ * there is no escape hatch, which is the correct number.
+ *
  * Pure on purpose: everything that touches git or the filesystem is passed in,
  * so the whole matrix — including the cases that must FAIL — is fixture-testable
  * without staging tags in a scratch repo. `__tests__/migration-safety.test.ts`
  * runs that matrix; `config-manager.test.ts` feeds it the real repository.
  */
 import semver from 'semver';
+
+import {
+  extractTopLevelDeclarations,
+  normalizeForHash,
+  reachedDeclarations,
+} from './migration-closure.js';
 
 /** Everything the rule needs, with git and the filesystem already resolved. */
 export interface MigrationSafetyInput {
@@ -106,6 +137,53 @@ export function extractMigrationBodies(source: string): Record<string, string> {
   return bodies;
 }
 
+/**
+ * What one migration key reaches, mapped to the text that decides if it changed.
+ *
+ * @param slice - The key's own source text, from {@link extractMigrationBodies}.
+ * @param declarations - Every top-level declaration in the same file.
+ * @returns Each reached declaration's name mapped to its normalized source.
+ */
+function reachedSources(
+  slice: string,
+  declarations: Readonly<Record<string, string>>
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const name of reachedDeclarations(slice, declarations)) {
+    out[name] = normalizeForHash(declarations[name]!);
+  }
+  return out;
+}
+
+/**
+ * Name every way the code a migration reaches differs between two revisions.
+ *
+ * Three kinds, kept apart because they read differently in a failure message: a
+ * helper that was edited, one the key now reaches and did not, and one it has
+ * stopped reaching. The last two matter even when every shared body is
+ * untouched — a call added inside a helper silently extends what a shipped key
+ * does, and a call removed silently takes something away.
+ *
+ * @param working - The working tree's reached sources, from {@link reachedSources}.
+ * @param released - The same, as of the release being compared against.
+ * @returns One phrase per difference, in name order; empty when they agree.
+ */
+function describeClosureDrift(
+  working: Readonly<Record<string, string>>,
+  released: Readonly<Record<string, string>>
+): string[] {
+  const names = [...new Set([...Object.keys(working), ...Object.keys(released)])].sort();
+  const drift: string[] = [];
+  for (const name of names) {
+    const here = working[name];
+    const there = released[name];
+    if (there === undefined) drift.push(`${name} is now reached and was not`);
+    else if (here === undefined) drift.push(`${name} is no longer reached`);
+    else if (here !== there) drift.push(`${name} was edited`);
+  }
+  return drift;
+}
+
 /** The newest released version among `tags`, ignoring prereleases. */
 function latestRelease(tags: readonly string[]): string | null {
   const released = tags.filter((t) => semver.valid(t) !== null && semver.prerelease(t) === null);
@@ -146,24 +224,27 @@ export function checkMigrationSafety(input: MigrationSafetyInput): MigrationSafe
   }
 
   const working = extractMigrationBodies(input.workingSource);
+  const workingDeclarations = extractTopLevelDeclarations(input.workingSource);
 
   // The released side is parsed inside a try, the working side outside it, and
   // the asymmetry is the point. A throw from the working tree is the author's
   // own file and their own problem, stated plainly. A throw from a TAGGED file
-  // is history: the table was shaped differently back then, nobody can go and
-  // fix it, and letting `extractMigrationBodies` raise here would blame the
-  // working tree for a restructure that happened releases ago.
+  // is history: the file was shaped differently back then, nobody can go and
+  // fix it, and letting the readers raise here would blame the working tree for
+  // a restructure that happened releases ago.
   let released: Record<string, string>;
+  let releasedDeclarations: Record<string, string>;
   try {
     released = extractMigrationBodies(releasedSource);
+    releasedDeclarations = extractTopLevelDeclarations(releasedSource);
   } catch (err) {
     return {
       ok: false,
       latestReleased,
       problems: [
-        `could not parse CONFIG_MIGRATIONS as of v${latestReleased}: the table's shape changed ` +
-          'since that release, so shipped bodies cannot be compared against it. Teach ' +
-          `extractMigrationBodies the older shape, or re-cut the comparison against a tag it can ` +
+        `could not read config-manager.ts as of v${latestReleased}: its shape changed ` +
+          'since that release, so shipped migrations cannot be compared against it. Teach ' +
+          `the guard's readers the older shape, or re-cut the comparison against a tag they can ` +
           `read (${err instanceof Error ? err.message : String(err)})`,
       ],
     };
@@ -179,6 +260,21 @@ export function checkMigrationSafety(input: MigrationSafetyInput): MigrationSafe
           `migration "${key}" already shipped in v${latestReleased}, but its body here differs ` +
             'from the released one. Never edit a shipped migration: every user who upgraded past ' +
             'it ran the OLD body and will never run the new one. Open a new key instead.'
+        );
+        continue;
+      }
+      const drift = describeClosureDrift(
+        reachedSources(body, workingDeclarations),
+        reachedSources(shipped, releasedDeclarations)
+      );
+      if (drift.length > 0) {
+        problems.push(
+          `migration "${key}" already shipped in v${latestReleased} and its line in the table is ` +
+            `unchanged, but the code it reaches is not: ${drift.join('; ')}. The table slice is ` +
+            'only the call — the behavior lives in the helpers, and every user who upgraded past ' +
+            'this key ran the RELEASED ones. Never edit a helper a shipped migration reaches: ' +
+            'open a new key that corrects the state, or add a new function for the new callers ' +
+            'and leave this one alone.'
         );
       }
       continue;
