@@ -49,10 +49,24 @@ const authFailureHistory: HistoryMessage = {
   timestamp: '2026-09-01T12:06:43.988Z',
 };
 
+/** What the transcript would have resolved for the row being rendered. */
+interface RowContext {
+  /**
+   * The wired retry handler. Defaults to one because ChatPanel always wires
+   * one, and it re-sends the session's LAST user message — which is exactly
+   * what must not be offered from an unclassifiable or stale card.
+   */
+  onRetry?: (() => void) | undefined;
+  /**
+   * Whether this row is the session's last message. Defaults to `true` so a
+   * test that is not about position reads as the live tail; the DOR-1677 block
+   * below is where `false` — a card sitting in history — is exercised.
+   */
+  isFinalMessage?: boolean;
+}
+
 /**
- * Render as production does. `onRetry` defaults to a wired handler because
- * ChatPanel always wires one, and it re-sends the session's LAST user message —
- * which is exactly what must not be offered from an unclassifiable card.
+ * Render as production does.
  *
  * The query/transport providers are here because the card can now sign the
  * runtime back in from the conversation (DOR-1651), and naming a session is
@@ -63,7 +77,8 @@ const authFailureHistory: HistoryMessage = {
  * be in the current working directory's listing at all. Unknown runtime means
  * no sign-in to offer, so the deep-link below is what renders.
  */
-function renderMessage(message: ChatMessage, onRetry: (() => void) | undefined = vi.fn()) {
+function renderMessage(message: ChatMessage, row: RowContext = {}) {
+  const { onRetry = vi.fn(), isFinalMessage = true } = row;
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
   });
@@ -75,6 +90,7 @@ function renderMessage(message: ChatMessage, onRetry: (() => void) | undefined =
             sessionId: 'session-1',
             isStreaming: false,
             isLatestWidgetMessage: false,
+            isFinalMessage,
             activeToolCallId: null,
             onToolRef: undefined,
             focusedOptionIndex: 0,
@@ -92,8 +108,8 @@ function renderMessage(message: ChatMessage, onRetry: (() => void) | undefined =
 }
 
 /** Render a message straight off the wire, through the history mapper. */
-function renderHydrated(message: HistoryMessage, onRetry: (() => void) | undefined = vi.fn()) {
-  return renderMessage(mapHistoryMessage(message), onRetry);
+function renderHydrated(message: HistoryMessage, row: RowContext = {}) {
+  return renderMessage(mapHistoryMessage(message), row);
 }
 
 /** The uncategorised tier: a limit notice in the CLI's own words. */
@@ -140,9 +156,13 @@ describe('a hydrated API-error notice', () => {
   // The blocker this test exists for: ChatPanel always wires `onRetry`, and it
   // re-sends the session's LAST user message. On a limit notice sitting in the
   // middle of a conversation that is an unrelated prompt, sent without warning.
+  //
+  // Rendered as the FINAL row on purpose: the position gate (DOR-1677, below)
+  // would withhold Retry anywhere else, and a test where both gates are shut
+  // cannot say which one did the work.
   it('offers no Retry on an uncategorised notice, even with onRetry wired', () => {
     const onRetry = vi.fn();
-    renderHydrated(limitNoticeHistory, onRetry);
+    renderHydrated(limitNoticeHistory, { onRetry, isFinalMessage: true });
 
     expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
     // The card is still there, and the words still lead.
@@ -153,7 +173,7 @@ describe('a hydrated API-error notice', () => {
 
   it('keeps Retry beside Fix sign-in on the categorised auth card', () => {
     const onRetry = vi.fn();
-    renderHydrated(authFailureHistory, onRetry);
+    renderHydrated(authFailureHistory, { onRetry, isFinalMessage: true });
 
     expect(screen.getByRole('button', { name: /fix sign-in/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
@@ -215,5 +235,66 @@ describe('a hydrated API-error notice', () => {
 
     expect(screen.queryByTestId('error-message-block')).not.toBeInTheDocument();
     expect(screen.getByText('Your OAuth token expired, so I refreshed it.')).toBeInTheDocument();
+  });
+});
+
+/** A failure the client CAN classify, so only position decides its Retry. */
+const executionFailureHistory: HistoryMessage = {
+  id: 'exec-1',
+  role: 'assistant',
+  content: '',
+  parts: [
+    {
+      type: 'error',
+      message: 'The sidecar exited before it answered.',
+      category: 'execution_error',
+    },
+  ],
+};
+
+/**
+ * Retry re-sends the session's LAST user message, so it is only a coherent
+ * offer on the session's LAST message. Six turns back the prompt it would send
+ * is not the prompt that failed — the person reads "Retry", presses it, and
+ * their newest message goes out again for a failure that has nothing to do with
+ * it (DOR-1677, found reviewing DOR-1666).
+ *
+ * The two gates COMPOSE: a card earns Retry only by being both classifiable
+ * (DOR-1649) and last. These pin the position half; the category half is pinned
+ * above, at the position where it is the only gate that could be shutting.
+ */
+describe('Retry belongs to the final turn alone (DOR-1677)', () => {
+  afterEach(() => {
+    cleanup();
+    openSettings.mockClear();
+  });
+
+  it('offers Retry on the last message', () => {
+    renderHydrated(executionFailureHistory, { onRetry: vi.fn(), isFinalMessage: true });
+
+    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
+  });
+
+  it('withholds Retry from the same failure once the conversation moved past it', () => {
+    renderHydrated(executionFailureHistory, { onRetry: vi.fn(), isFinalMessage: false });
+
+    expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
+    // The failure itself is still on screen — this withholds one button, it
+    // does not hide what went wrong.
+    expect(screen.getByTestId('error-message-block')).toBeInTheDocument();
+    expect(screen.getByText('The sidecar exited before it answered.')).toBeInTheDocument();
+  });
+
+  // The DOR-1651 interaction: an auth card's actions are Sign in AND Retry.
+  // Only Retry is position-dependent. The sign-in still resolves a real,
+  // current problem — the runtime's login is broken NOW, whenever it broke —
+  // so a hydrated old auth failure keeps it.
+  it('keeps the sign-in on a mid-history auth card and drops only the Retry', () => {
+    renderHydrated(authFailureHistory, { onRetry: vi.fn(), isFinalMessage: false });
+
+    expect(screen.getByRole('button', { name: /fix sign-in/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
+    // And the heading that explains it, so the card is not reduced to a stub.
+    expect(screen.getByText('Sign in to Claude again')).toBeInTheDocument();
   });
 });

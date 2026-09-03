@@ -73,6 +73,9 @@ const STANDALONE_CTX = {
   sessionId: MOCK_SESSION_ID,
   isStreaming: false,
   isLatestWidgetMessage: true,
+  // A showcase row stands alone, so it IS the last message — the same reason
+  // `SessionMessage` defaults this to `true` off a transcript (DOR-1677).
+  isFinalMessage: true,
   activeToolCallId: null,
   onToolRef: undefined,
   focusedOptionIndex: -1,

@@ -79,6 +79,10 @@ vi.mock('../MessageContext', () => ({
   useMessageContext: () => ({
     sessionId: 'test-session',
     isStreaming: false,
+    // A `vi.mock` factory is untyped, so the required-field argument that makes
+    // every real provider answer this does not reach here — an omission would
+    // silently gate every future Retry assertion in this file shut (DOR-1677).
+    isFinalMessage: true,
     activeToolCallId: null,
     onToolRef: undefined,
     focusedOptionIndex: -1,
