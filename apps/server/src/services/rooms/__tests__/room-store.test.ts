@@ -415,6 +415,76 @@ describe('RoomStore.findDmByMemberSet', () => {
       expect(storedKey('dm-ana')).toBeNull();
       expect(store.findDmByMemberSet([])).toBeNull();
     });
+
+    it('does NOT bring the key back when an emptied DM is repopulated', () => {
+      // The accepted regression, asserted rather than only described in
+      // `syncDmMemberKey`'s doc — the member-count query this replaced would
+      // have handed the original room back here. Pinned so that changing the
+      // rule is a red test rather than a paragraph somebody has to notice.
+      //
+      // Narrow on purpose: emptying a DM at all takes removing YOURSELF last,
+      // and the room keeps its entire history. What it loses is the ability to
+      // be resolved by asking for those people again.
+      seedDm('dm-ana', ['me', 'ana']);
+      store.removeMember('dm-ana', 'ana');
+      store.removeMember('dm-ana', 'me');
+
+      store.addMember({
+        roomId: 'dm-ana',
+        authorId: 'me',
+        responseMode: 'always',
+        joinedAt: '2026-07-27T11:00:00.000Z',
+      });
+      store.addMember({
+        roomId: 'dm-ana',
+        authorId: 'ana',
+        responseMode: 'always',
+        joinedAt: '2026-07-27T11:00:00.000Z',
+      });
+
+      expect(storedKey('dm-ana')).toBeNull();
+      expect(store.findDmByMemberSet(['me', 'ana'])).toBeNull();
+      // So the set is free, and a fresh open takes it — a second room beside the
+      // first, which is what the doc says happens and why it says it plainly.
+      seedDm('dm-ana-2', ['me', 'ana']);
+      expect(store.findDmByMemberSet(['me', 'ana'])?.id).toBe('dm-ana-2');
+    });
+
+    it('self-heals a PARTIAL emptying, which is every reachable case but one', () => {
+      // The complement, and the reason the loss above is acceptable: a roster
+      // that still holds somebody recomputes a real key on the very next write,
+      // so nothing except a DM emptied all the way down ever leaves the dedupe.
+      seedDm('dm-group', ['me', 'ana', 'kai']);
+      store.removeMember('dm-group', 'ana');
+      store.removeMember('dm-group', 'kai');
+
+      expect(storedKey('dm-group')).toBe('me');
+      store.addMember({
+        roomId: 'dm-group',
+        authorId: 'ana',
+        responseMode: 'always',
+        joinedAt: '2026-07-27T11:00:00.000Z',
+      });
+
+      expect(storedKey('dm-group')).toBe('ana,me');
+      expect(store.findDmByMemberSet(['me', 'ana'])?.id).toBe('dm-group');
+    });
+
+    it('never keys a DM that was CREATED with an empty roster', () => {
+      // Reachable only by a direct store call — `RoomService.createRoom` always
+      // seeds at least its creator — and the doc claims it stays out forever, so
+      // that is asserted here rather than assumed from the create path.
+      seedDm('dm-nobody', []);
+      expect(storedKey('dm-nobody')).toBeNull();
+
+      store.addMember({
+        roomId: 'dm-nobody',
+        authorId: 'me',
+        responseMode: 'always',
+        joinedAt: '2026-07-27T11:00:00.000Z',
+      });
+      expect(storedKey('dm-nobody')).toBeNull();
+    });
   });
 
   it('collapses a member named twice rather than failing to match', () => {

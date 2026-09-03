@@ -844,12 +844,27 @@ export class RoomStore {
    * member set is by definition the winner's, so the recompute would collide and
    * refuse a roster edit that changes nothing.
    *
-   * **A roster emptied to nothing drops the key.** A room with nobody in it has
-   * no member set to be found by, and `findDmByMemberSet([])` has always
-   * answered `null`, so it leaves the dedupe rather than sitting in the index
-   * under an empty string. It does not come back if somebody is added again;
-   * that is the honest consequence of a DM having been emptied, and it is no
-   * worse than the state such a room is in today.
+   * **A roster emptied to nothing drops the key, permanently.** A room with
+   * nobody in it has no member set to be found by, and `findDmByMemberSet([])`
+   * has always answered `null`, so it leaves the dedupe rather than sitting in
+   * the index under an empty string. It does not rejoin if somebody is added
+   * back: a later open naming those same people starts a SECOND room, and the
+   * emptied one keeps its whole history while no longer resolving to anything.
+   *
+   * **That is a real loss against the member-count query this replaced**, and
+   * not a wash — remove everybody, add them back, ask for the conversation, and
+   * the old code handed back the original room. It is accepted rather than
+   * overlooked, on how narrow the path is: only removing YOURSELF last can empty
+   * a DM, and every partial case self-heals, because a roster that still holds
+   * somebody recomputes a real key on the next add or remove. The alternative is
+   * a key that names people who have left, which is the exact class of lie this
+   * column exists to remove.
+   *
+   * **A DM CREATED with an empty roster never joins the dedupe either**, for the
+   * same reason and by the same rule — {@link dmMemberKeyFor} writes NULL, and
+   * this method then leaves it alone forever. Only a direct
+   * {@link RoomStore.createRoom} call can produce one; `RoomService.createRoom`
+   * always seeds at least its creator.
    *
    * @param roomId - The room whose roster just changed.
    * @param exec - The open transaction (or the db, when the caller had none).
