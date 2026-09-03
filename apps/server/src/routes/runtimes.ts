@@ -26,6 +26,7 @@ import {
   delegateRuntimeLogin,
   LOGIN_RUNTIME_TYPES,
 } from '../services/runtimes/connect/delegated-login.js';
+import { resolveAccountRootForSession } from '../services/runtimes/connect/resolve-session-account.js';
 import {
   buildAuthorizeUrl,
   handleOpenRouterCallback,
@@ -134,6 +135,12 @@ const LoginBodySchema = z.object({
   // concept there) and, for `claude-code`, against the known account roots —
   // both before anything spawns.
   accountRoot: z.string().min(1).optional(),
+  // Sign back into the account THIS session is bound to (DOR-1651). Preferred
+  // over `accountRoot` because only the server can answer it correctly for a
+  // session whose first turn failed before writing a transcript — the client's
+  // `Session.account` is derived from that transcript and is absent exactly
+  // then. See `resolveAccountRootForSession`.
+  sessionId: z.string().min(1).optional(),
 });
 
 /** A runtime's on-demand provisioning function (streams progress, resolves to a result). */
@@ -461,12 +468,23 @@ router.post('/:type/credential', async (req, res) => {
  * and detect completion (bounded). Returns `{ ok, error? }`. Loopback-only.
  *
  * Body is optional (Express 5 leaves `req.body` `undefined` on an empty POST):
- * an omitted body signs in the account DorkOS runs new sessions on. `{
- * accountRoot }` (DOR-1652's seam for DOR-1651, its first real caller) pins
- * the login to a specific account instead. `delegateRuntimeLogin` owns the
- * rest of the validation: it rejects `accountRoot` outright for any type
- * other than `claude-code`, and — for `claude-code` — against the known
- * account roots, both before anything spawns.
+ * an omitted body signs in the account DorkOS runs new sessions on.
+ *
+ * Account precedence, highest first:
+ *
+ * 1. `{ sessionId }` — the account THAT session is bound to, resolved through
+ *    the launch ladder the server already owns (DOR-1651). Highest because it
+ *    is the only rung that is right for a session whose first turn failed
+ *    before a transcript existed; the client cannot compute it.
+ * 2. `{ accountRoot }` — an explicit pin, for callers with no session
+ *    (DOR-1652's seam).
+ * 3. Neither — the account DorkOS runs new sessions on.
+ *
+ * A `sessionId` that resolves to nothing falls through to `accountRoot`, then
+ * to the default: an unknown session degrades the pin, it never refuses the
+ * sign-in. `delegateRuntimeLogin` owns the rest of the validation — it rejects
+ * a pin outright for any type other than `claude-code`, and, for `claude-code`,
+ * against the known account roots, both before anything spawns.
  */
 router.post('/:type/login', async (req, res) => {
   if (rejectNonLoopback(req, res)) return;
@@ -476,9 +494,16 @@ router.post('/:type/login', async (req, res) => {
   }
   const parsed = LoginBodySchema.safeParse(req.body ?? {});
   if (!parsed.success) {
-    return res.status(400).json({ ok: false, error: 'accountRoot must be a non-empty string.' });
+    return res.status(400).json({
+      ok: false,
+      error: 'accountRoot and sessionId must be non-empty strings.',
+    });
   }
-  const result = await delegateRuntimeLogin(type, { accountRoot: parsed.data.accountRoot });
+  const fromSession = parsed.data.sessionId
+    ? await resolveAccountRootForSession(parsed.data.sessionId)
+    : undefined;
+  const accountRoot = fromSession ?? parsed.data.accountRoot;
+  const result = await delegateRuntimeLogin(type, { accountRoot });
   res.json(result);
 });
 

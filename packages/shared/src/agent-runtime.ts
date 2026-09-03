@@ -409,6 +409,31 @@ export function runtimeAuthConnectKind(type: string): 'login' | 'provider-picker
 }
 
 /**
+ * Runtime types that can actually run a delegated CLI sign-in
+ * (`claude auth login` / `codex login`).
+ *
+ * The ONE source of truth, shared by the server route that accepts the request
+ * and every client surface that offers the button. It is deliberately not
+ * derived from {@link runtimeAuthConnectKind}: that function answers "which
+ * connect flow does this runtime use", and it answers `'login'` for everything
+ * that is not OpenCode — including `test-mode` and any future runtime — so a
+ * surface gated on it offers a Sign in button that the route rejects with a
+ * 400. An allowlist can only be wrong in the safe direction.
+ */
+export const LOGIN_RUNTIME_TYPES = ['claude-code', 'codex'] as const;
+
+/**
+ * Whether a runtime can run a delegated CLI sign-in, and so whether a surface
+ * may offer one. See {@link LOGIN_RUNTIME_TYPES} for why this is an allowlist
+ * rather than a question asked of {@link runtimeAuthConnectKind}.
+ *
+ * @param type - Runtime type identifier (e.g. `'claude-code'`).
+ */
+export function runtimeSupportsLogin(type: string): boolean {
+  return (LOGIN_RUNTIME_TYPES as readonly string[]).includes(type);
+}
+
+/**
  * Project a runtime's raw {@link DependencyCheck}[] into the two-state
  * Ready/Connect model surfaced by `GET /api/system/requirements`.
  *

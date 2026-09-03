@@ -314,4 +314,106 @@ describe('delegateRuntimeLogin', () => {
       expect(calls[0].cmd).toBe('/bin/claude');
     });
   });
+
+  describe('one login at a time (DOR-1651)', () => {
+    beforeEach(() => {
+      vi.resetAllMocks();
+    });
+
+    /** A login that only settles when the returned `finish` is called. */
+    function heldLogin() {
+      const child = new FakeChild();
+      const calls: SpawnCall[] = [];
+      const spawn = ((cmd: string, args: string[], options?: { env?: NodeJS.ProcessEnv }) => {
+        calls.push({ cmd, args, options });
+        return child;
+      }) as unknown as SpawnFn;
+      return {
+        calls,
+        spawn,
+        resolveCommand: async () => ({ binary: '/bin/claude', args: ['auth', 'login'] }),
+        finish: (code = 0) => child.emit('exit', code),
+      };
+    }
+
+    it('joins a second request for the same account to the attempt already running', async () => {
+      // Purpose: there is one vendor CLI and one browser flow. The inline card
+      // put a Sign in button on every hydrated auth-error row, times every open
+      // tab, so concurrent presses are now ordinary rather than exotic — and two
+      // spawns means two browser windows, one of them orphaned.
+      const login = heldLogin();
+
+      const first = delegateRuntimeLogin('claude-code', login);
+      const second = delegateRuntimeLogin('claude-code', login);
+      // Let both reach the latch before anything settles.
+      await Promise.resolve();
+      login.finish(0);
+
+      expect(await first).toEqual({ ok: true });
+      // The joiner gets the SAME outcome, not a second sign-in.
+      expect(await second).toEqual({ ok: true });
+      expect(login.calls).toHaveLength(1);
+    });
+
+    it('refuses a second request for a DIFFERENT account rather than answering for it', async () => {
+      // Purpose: sharing the in-flight promise across accounts would report a
+      // completed sign-in for an account nobody signed into — the DOR-1652 bug
+      // wearing a different hat. One CLI means the honest answer is "not now".
+      vi.mocked(resolveClaudeRootSet).mockReturnValue(['/Users/x/.claude', '/Users/x/.claude2']);
+      const login = heldLogin();
+
+      const first = delegateRuntimeLogin('claude-code', {
+        ...login,
+        accountRoot: '/Users/x/.claude',
+      });
+      await Promise.resolve();
+      const second = await delegateRuntimeLogin('claude-code', {
+        ...login,
+        accountRoot: '/Users/x/.claude2',
+      });
+
+      expect(second.ok).toBe(false);
+      expect(second.error).toContain('already in progress');
+      login.finish(0);
+      expect(await first).toEqual({ ok: true });
+      expect(login.calls).toHaveLength(1);
+    });
+
+    it('releases the latch once a login settles, so the next one can run', async () => {
+      // Purpose: a latch that leaks wedges the runtime forever — including
+      // after the bounded timeout, which is the case most likely to strand
+      // someone who then cannot retry at all.
+      const first = heldLogin();
+      const running = delegateRuntimeLogin('claude-code', first);
+      await Promise.resolve();
+      first.finish(1);
+      expect((await running).ok).toBe(false);
+
+      const second = heldLogin();
+      const next = delegateRuntimeLogin('claude-code', second);
+      await Promise.resolve();
+      second.finish(0);
+
+      expect(await next).toEqual({ ok: true });
+      expect(second.calls).toHaveLength(1);
+    });
+
+    it('does not latch one runtime behind another', async () => {
+      // Purpose: the constraint is per-CLI. Signing Claude in must not block
+      // signing Codex in — they are different binaries and different browsers.
+      const claude = heldLogin();
+      const codex = heldLogin();
+
+      const claudeRun = delegateRuntimeLogin('claude-code', claude);
+      const codexRun = delegateRuntimeLogin('codex', codex);
+      await Promise.resolve();
+      claude.finish(0);
+      codex.finish(0);
+
+      expect(await claudeRun).toEqual({ ok: true });
+      expect(await codexRun).toEqual({ ok: true });
+      expect(claude.calls).toHaveLength(1);
+      expect(codex.calls).toHaveLength(1);
+    });
+  });
 });

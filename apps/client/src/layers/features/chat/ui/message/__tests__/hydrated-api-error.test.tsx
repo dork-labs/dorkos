@@ -13,7 +13,10 @@ import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { HistoryMessage } from '@dorkos/shared/types';
+import { createMockTransport } from '@dorkos/test-utils';
+import { TransportProvider } from '@/layers/shared/model';
 import type { ChatMessage } from '@/layers/shared/model/chat-message-types';
 import {
   mapHistoryMessage,
@@ -50,26 +53,47 @@ const authFailureHistory: HistoryMessage = {
  * Render as production does. `onRetry` defaults to a wired handler because
  * ChatPanel always wires one, and it re-sends the session's LAST user message —
  * which is exactly what must not be offered from an unclassifiable card.
+ *
+ * The query/transport providers are here because the card can now sign the
+ * runtime back in from the conversation (DOR-1651), and naming a session is
+ * what lets it: with a `sessionId` in context it reads the session list to
+ * learn which runtime failed. That read is genuinely needed here — production
+ * always has both providers — and the session is deliberately left ABSENT from
+ * the list, which is the honest shape for a hydrated card whose session may not
+ * be in the current working directory's listing at all. Unknown runtime means
+ * no sign-in to offer, so the deep-link below is what renders.
  */
-function renderHydrated(message: HistoryMessage, onRetry: (() => void) | undefined = vi.fn()) {
+function renderMessage(message: ChatMessage, onRetry: (() => void) | undefined = vi.fn()) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+  });
   return render(
-    <MessageProvider
-      value={{
-        sessionId: 'session-1',
-        isStreaming: false,
-        isLatestWidgetMessage: false,
-        activeToolCallId: null,
-        onToolRef: undefined,
-        focusedOptionIndex: 0,
-        onToolDecided: undefined,
-        onRetry,
-        inputZoneToolCallId: null,
-        runtimeLabel: 'Claude',
-      }}
-    >
-      <AssistantMessageContent message={mapHistoryMessage(message)} />
-    </MessageProvider>
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={createMockTransport()}>
+        <MessageProvider
+          value={{
+            sessionId: 'session-1',
+            isStreaming: false,
+            isLatestWidgetMessage: false,
+            activeToolCallId: null,
+            onToolRef: undefined,
+            focusedOptionIndex: 0,
+            onToolDecided: undefined,
+            onRetry,
+            inputZoneToolCallId: null,
+            runtimeLabel: 'Claude',
+          }}
+        >
+          <AssistantMessageContent message={message} />
+        </MessageProvider>
+      </TransportProvider>
+    </QueryClientProvider>
   );
+}
+
+/** Render a message straight off the wire, through the history mapper. */
+function renderHydrated(message: HistoryMessage, onRetry: (() => void) | undefined = vi.fn()) {
+  return renderMessage(mapHistoryMessage(message), onRetry);
 }
 
 /** The uncategorised tier: a limit notice in the CLI's own words. */
@@ -176,24 +200,7 @@ describe('a hydrated API-error notice', () => {
     expect(assistant?._streaming).toBe(false);
 
     // And that swapped-in content renders the card, not a sentence.
-    render(
-      <MessageProvider
-        value={{
-          sessionId: 'session-1',
-          isStreaming: false,
-          isLatestWidgetMessage: false,
-          activeToolCallId: null,
-          onToolRef: undefined,
-          focusedOptionIndex: 0,
-          onToolDecided: undefined,
-          onRetry: vi.fn(),
-          inputZoneToolCallId: null,
-          runtimeLabel: 'Claude',
-        }}
-      >
-        <AssistantMessageContent message={assistant!} />
-      </MessageProvider>
-    );
+    renderMessage(assistant!);
 
     expect(screen.getByTestId('error-message-block')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /fix sign-in/i })).toBeInTheDocument();

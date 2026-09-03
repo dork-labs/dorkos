@@ -259,7 +259,10 @@ describe('LoginConnect — Fix sign-in from Ready (DOR-438)', () => {
     await user.click(screen.getByTestId('runtime-reconnect-claude-code'));
     await user.click(await screen.findByRole('button', { name: 'Sign in' }));
 
-    expect(transport.delegateRuntimeLogin).toHaveBeenCalledWith('claude-code');
+    // No account pin from the settings surface: it reconnects the runtime, not
+    // one session's account, so it signs into whichever account DorkOS runs new
+    // sessions on. The session-scoped pin belongs to the chat card (DOR-1651).
+    expect(transport.delegateRuntimeLogin).toHaveBeenCalledWith('claude-code', undefined);
   });
 });
 

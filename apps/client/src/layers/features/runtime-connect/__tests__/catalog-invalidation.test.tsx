@@ -6,15 +6,18 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import { MODELS_KEY } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
-import {
-  useStoreRuntimeCredential,
-  useDelegateRuntimeLogin,
-} from '../model/use-credential-connect';
 import { useStoreOpenRouterKey } from '../model/use-openrouter-connect';
 import { useConnectOllama, useConnectDirectProvider } from '../model/use-opencode-provider';
 import { useGuidedOllamaPull } from '../model/use-guided-ollama-pull';
 import { useProvisionOllama } from '../model/use-provision-ollama';
-import { useProvisionRuntime } from '@/layers/entities/runtime';
+// The credential/login hooks moved down to `entities/runtime` (DOR-1651): the
+// chat auth-error card signs in too, and a feature may not reach into a
+// sibling feature's model.
+import {
+  useProvisionRuntime,
+  useStoreRuntimeCredential,
+  useDelegateRuntimeLogin,
+} from '@/layers/entities/runtime';
 
 afterEach(() => {
   cleanup();

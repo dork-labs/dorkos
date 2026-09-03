@@ -17,6 +17,8 @@ import {
   renameSession as sdkRenameSession,
   forkSession as sdkForkSession,
 } from '@anthropic-ai/claude-agent-sdk';
+import { readManifest } from '@dorkos/shared/manifest';
+import { resolveLaunchAccountRoot } from '../claude-config-dir.js';
 import { SessionStore } from '../sessions/session-store.js';
 import { TranscriptReader } from '../sessions/transcript-reader.js';
 import { ClaudeCodeRuntime } from '../claude-code-runtime.js';
@@ -34,8 +36,11 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
 vi.mock('../claude-config-dir.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../claude-config-dir.js')>()),
   resolveActiveClaudeRoot: () => ACTIVE,
-  resolveLaunchAccountRoot: () => ACTIVE,
+  // A spy rather than a plain arrow: the `accountRootForSession` cases below
+  // assert WHICH rung it was asked for (the agent manifest's pinned account).
+  resolveLaunchAccountRoot: vi.fn(() => ACTIVE),
 }));
+vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn() }));
 vi.mock('../../../../lib/logger.js', () => ({
   logger: {
     info: vi.fn(),
@@ -97,6 +102,53 @@ describe('D8 env-lock call sites', () => {
     // explicitly so a mockImplementation set by the `renameSession` case below
     // can never leak into a later test.
     vi.mocked(TranscriptReader).mockReset();
+  });
+
+  describe('ClaudeCodeRuntime.accountRootForSession (DOR-1651)', () => {
+    /** A runtime whose internal TranscriptReader answers this account probe. */
+    function runtimeWithProbe(root?: string) {
+      // A `function`, not an arrow — the constructor mock is called with `new`.
+      vi.mocked(TranscriptReader).mockImplementation(function () {
+        return fakeReader(root);
+      });
+      return new ClaudeCodeRuntime('/tmp/dorkos-test');
+    }
+
+    it('uses the account disk has already bound the session to', async () => {
+      // Purpose: a conversation that has run must stay on the account whose
+      // subscription paid for it, whichever one happens to be active.
+      const runtime = runtimeWithProbe(ACCOUNT_B);
+
+      await expect(runtime.accountRootForSession('s1', '/work')).resolves.toBe(ACCOUNT_B);
+      expect(resolveLaunchAccountRoot).not.toHaveBeenCalled();
+    });
+
+    it('runs the launch ladder for a first turn that failed before writing a transcript', async () => {
+      // Purpose: THE bug this exists for. A session whose first turn failed on
+      // a bad credential has no transcript, so nothing has bound it — and an
+      // agent pinned to a second account would otherwise re-authenticate the
+      // ACTIVE one, report success, and fail again. That is the DOR-1652
+      // wrong-account failure one rung down, and it is why the client's own
+      // `Session.account` (transcript-derived, absent here) cannot be trusted
+      // for this.
+      vi.mocked(readManifest).mockResolvedValue({ account: 'account-b' } as never);
+      const runtime = runtimeWithProbe(undefined);
+
+      await runtime.accountRootForSession('first-turn', '/work');
+
+      expect(readManifest).toHaveBeenCalledWith('/work');
+      expect(resolveLaunchAccountRoot).toHaveBeenCalledWith({ agentAccountId: 'account-b' });
+    });
+
+    it('still answers when the agent manifest cannot be read', async () => {
+      // Purpose: a missing or malformed manifest means "no pin", never a thrown
+      // sign-in. The ladder's own fallback rungs take over.
+      vi.mocked(readManifest).mockRejectedValue(new Error('ENOENT'));
+      const runtime = runtimeWithProbe(undefined);
+
+      await expect(runtime.accountRootForSession('first-turn', '/work')).resolves.toBe(ACTIVE);
+      expect(resolveLaunchAccountRoot).toHaveBeenCalledWith({ agentAccountId: undefined });
+    });
   });
 
   describe('SessionStore.accountRootFor', () => {

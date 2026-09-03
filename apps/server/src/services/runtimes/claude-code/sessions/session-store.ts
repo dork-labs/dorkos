@@ -443,10 +443,39 @@ export class SessionStore {
     transcriptReader: TranscriptReader,
     projectDir: string
   ): Promise<string> {
+    return (
+      (await this.settledAccountRoot(sessionId, transcriptReader, projectDir)) ??
+      resolveActiveClaudeRoot()
+    );
+  }
+
+  /**
+   * The account this session has ALREADY settled on, or `undefined` when it has
+   * not launched yet.
+   *
+   * The same first two rungs as {@link accountRootFor}, without its
+   * active-account fallback — and the distinction is the whole point.
+   * "Undefined" and "the active account" are indistinguishable to
+   * `accountRootFor`, which is right for an in-process SDK helper acting on an
+   * existing conversation but wrong for a caller that must then run the LAUNCH
+   * ladder (a session whose first turn has not written a transcript is pinned by
+   * its agent manifest, not by whatever account is active). Signing a
+   * first-turn failure back in is exactly that caller (DOR-1651).
+   *
+   * @param sessionId - DorkOS or SDK session id.
+   * @param transcriptReader - Reader whose account probe answers for a cold session.
+   * @param projectDir - The session's working directory, which keys the probe.
+   * @returns An absolute Claude config directory, or `undefined` when unsettled.
+   */
+  async settledAccountRoot(
+    sessionId: string,
+    transcriptReader: TranscriptReader,
+    projectDir: string
+  ): Promise<string | undefined> {
     const live = this.findSession(sessionId)?.accountRoot;
     if (live) return live;
     const { root } = await transcriptReader.hasTranscript(projectDir, sessionId);
-    return root ?? resolveActiveClaudeRoot();
+    return root ?? undefined;
   }
 
   /** Fork a session, creating a new independent copy of the conversation. */

@@ -48,6 +48,7 @@
 import { spawn as nodeSpawn } from 'node:child_process';
 import path from 'node:path';
 import type { DelegatedLoginResult } from '@dorkos/shared/runtime-connect';
+import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import { logger } from '../../../lib/logger.js';
 import { resolveCodexBinaryPath } from '../codex/check-dependencies.js';
 import { resolveClaudeCliPath } from '../claude-code/sdk/sdk-utils.js';
@@ -60,11 +61,39 @@ import {
 /** Injectable spawn seam (defaults to `node:child_process` spawn); tests pass a fake. */
 export type SpawnFn = typeof nodeSpawn;
 
-/** Runtime types that support a delegated CLI login. */
-export const LOGIN_RUNTIME_TYPES = ['claude-code', 'codex'] as const;
+/**
+ * Runtime types that support a delegated CLI login.
+ *
+ * Re-exported from `@dorkos/shared` rather than declared here: the client gates
+ * its inline sign-in button on the same list (DOR-1651), and two copies would
+ * drift into a surface that offers a sign-in this route then refuses.
+ */
+export { LOGIN_RUNTIME_TYPES } from '@dorkos/shared/agent-runtime';
 
 /** Upper bound on an interactive login — long enough for a browser sign-in, short enough to never hang. */
 export const LOGIN_TIMEOUT_MS = 180_000;
+
+/**
+ * Delegated logins currently in flight, keyed by runtime type, with the account
+ * each is signing in (`''` meaning "whichever account DorkOS runs new sessions
+ * on").
+ *
+ * There is one vendor CLI and one browser flow per runtime, so two concurrent
+ * `claude auth login` spawns fight over the same terminal-free sign-in and the
+ * loser's window is orphaned. Nothing prevented that before: the sign-in used
+ * to have a single entry point (Settings), but the inline error card (DOR-1651)
+ * puts one on every hydrated auth-error row, times every open tab.
+ *
+ * Keyed by type rather than by type+account deliberately — the constraint is
+ * the CLI, not the account. A second request for the SAME account joins the
+ * attempt already running; one for a DIFFERENT account is refused honestly,
+ * because handing it the in-flight promise would report a completed sign-in
+ * for an account nobody signed into (the very bug DOR-1652 fixed, one rung up).
+ */
+const inFlightLogins = new Map<
+  string,
+  { target: string; promise: Promise<DelegatedLoginResult> }
+>();
 
 /** Upper bound on the non-interactive `codex login --with-api-key` write. */
 export const APIKEY_APPLY_TIMEOUT_MS = 15_000;
@@ -317,12 +346,38 @@ export async function delegateRuntimeLogin(
     }
   }
 
-  const resolveCommand = deps.resolveCommand ?? resolveLoginCommand;
-  const cmd = await resolveCommand(type, { accountRoot: deps.accountRoot });
-  if (!cmd) {
-    return { ok: false, error: `The ${type} CLI is not available to sign in.` };
+  const target = deps.accountRoot === undefined ? '' : path.resolve(deps.accountRoot);
+  const existing = inFlightLogins.get(type);
+  if (existing) {
+    // Same target: hand back the SAME attempt. Every card watching this runtime
+    // then settles on one outcome instead of racing a second browser window.
+    if (existing.target === target) return existing.promise;
+    // Different account, same runtime: there is one vendor CLI and one browser
+    // flow, so this cannot be honoured — and answering with the in-flight
+    // attempt's result would report a sign-in for an account nobody signed in.
+    return {
+      ok: false,
+      error: `A sign-in for ${runtimeDisplayName(type)} is already in progress.`,
+    };
   }
-  return runDelegatedLogin(cmd, deps);
+
+  const attempt = (async (): Promise<DelegatedLoginResult> => {
+    const resolveCommand = deps.resolveCommand ?? resolveLoginCommand;
+    const cmd = await resolveCommand(type, { accountRoot: deps.accountRoot });
+    if (!cmd) {
+      return { ok: false, error: `The ${type} CLI is not available to sign in.` };
+    }
+    return runDelegatedLogin(cmd, deps);
+  })();
+
+  inFlightLogins.set(type, { target, promise: attempt });
+  try {
+    return await attempt;
+  } finally {
+    // Released on every path — success, honest failure, and the bounded timeout
+    // — so a login that never completed cannot wedge the runtime forever.
+    inFlightLogins.delete(type);
+  }
 }
 
 /**
