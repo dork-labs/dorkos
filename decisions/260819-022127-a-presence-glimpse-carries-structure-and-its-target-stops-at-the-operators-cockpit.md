@@ -13,7 +13,7 @@ amends: null
 
 ## Status
 
-Proposed (extracted from spec: `presence-verb-glimpse`, DOR-1351).
+Accepted (extracted from spec: `presence-verb-glimpse`, DOR-1351).
 
 It extends `specs/room-presence` §3.2's wire shape and reads against
 `notice-copy.ts`'s durable waiting notice, which refuses to put a tool name or a

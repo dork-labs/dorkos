@@ -12,7 +12,7 @@ amends: null
 
 ## Status
 
-Proposed — extracted from spec `universal-scheduled-tasks`.
+Accepted — extracted from spec `universal-scheduled-tasks`.
 
 ## Context
 

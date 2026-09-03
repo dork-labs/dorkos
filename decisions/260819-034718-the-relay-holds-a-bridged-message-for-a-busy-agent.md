@@ -12,7 +12,7 @@ amends: null
 
 ## Status
 
-Proposed. Standalone. It follows the shape of
+Accepted. Standalone. It follows the shape of
 [260818-234541](260818-234541-a-busy-agents-message-is-held-not-refused.md) (a busy agent's message
 is held, not refused) but amends nothing: that decision is about the room dispatcher's `agentPath`
 ceiling, this one is about the relay adapter's concurrency semaphore, and neither's mechanism
