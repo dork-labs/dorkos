@@ -293,6 +293,45 @@ describe('CreateTaskDialog', () => {
     });
   });
 
+  it('keeps an advanced answer after the section is closed again (DOR-1759)', async () => {
+    // The disclosure card unmounts what it hides, where the old `<details>` only
+    // hid it. A setting a person made and then folded away must still be the one
+    // that is saved — the form owns the value, not the field on screen.
+    const transport = createMockTransport({
+      createTask: vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-folded' })),
+    });
+    const Wrapper = createWrapper(transport);
+
+    render(
+      <Wrapper>
+        <CreateTaskDialog open={true} onOpenChange={vi.fn()} />
+      </Wrapper>
+    );
+
+    fireEvent.click(screen.getByText('Start from scratch'));
+    fireEvent.change(screen.getByPlaceholderText('Daily code review'), {
+      target: { value: 'Folded away' },
+    });
+    fireEvent.change(
+      screen.getByPlaceholderText('Review all pending PRs and summarize findings...'),
+      { target: { value: 'Still sticky' } }
+    );
+
+    await openAdvanced();
+    fireEvent.click(screen.getByRole('switch', { name: /sticky/i }));
+    // Close it again — the switch leaves the page entirely.
+    await openAdvanced();
+    expect(screen.queryByRole('switch', { name: /sticky/i })).toBeNull();
+
+    fireEvent.click(screen.getByText('Create'));
+
+    await waitFor(() => {
+      expect(transport.createTask).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'Folded away', sticky: true })
+      );
+    });
+  });
+
   it('submits update with correct ID in edit mode', async () => {
     const schedule = createMockSchedule({
       id: 'sched-42',
