@@ -238,6 +238,24 @@ describe('QueuePanel — send next and reorder', () => {
     expect(sendBtn.className).not.toContain('opacity-0');
   });
 
+  it('grows move-up, send-next and remove to a 32px touch target below md, without touching the glyph (DOR-1753)', () => {
+    renderPanel({ queue: [makeItem('First', 0), makeItem('Second', 1)] });
+
+    for (const name of [
+      /Move queued message 2 earlier/,
+      /Send queued message 2 next/,
+      /Remove queued message 2/,
+    ]) {
+      const button = screen.getByRole('button', { name });
+      expect(button.className).toContain('relative');
+      expect(button.className).toContain('after:absolute');
+      expect(button.className).toContain('after:-inset-1');
+      expect(button.className).toContain('md:after:hidden');
+      // The glyph itself never grows — only the invisible reach does.
+      expect(button.querySelector('svg')?.getAttribute('class')).toContain('size-3');
+    }
+  });
+
   it('gives every row button a keyboard focus ring', () => {
     renderPanel({ queue: [makeItem('First', 0), makeItem('Second', 1)] });
 
