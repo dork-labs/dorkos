@@ -144,9 +144,7 @@ describe('MarketplaceToolbar', () => {
     expect(hint.className).toContain('sm:block');
     // The padding held for it goes with it.
     expect(screen.getByTestId('marketplace-search').className).toContain('max-sm:pr-3');
-    // And the sort control gives back the rest: measured at 390px, the
-    // placeholder needs 181px and this is the width that leaves it 184 while
-    // still holding the word "Featured" whole.
+    // And the sort control gives back the rest, holding "Featured" whole.
     expect(screen.getByRole('combobox', { name: /sort packages/i }).className).toContain('w-28');
   });
 

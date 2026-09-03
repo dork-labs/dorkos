@@ -79,8 +79,10 @@ export function MarketplaceToolbar() {
             field beside it has one job. Measured at 390px: with `w-32` the
             placeholder still clipped after the keyboard hint went away, and
             with `w-24` "Featured" clipped instead. 7rem is the width where
-            both are whole — the placeholder needs 181px and gets 184
-            (DOR-1747). */}
+            both are whole (DOR-1747). Below 390 — 375 and 360, every iPhone
+            SE/mini/8 and the modal Android width — this floor alone still
+            left the placeholder short by up to 27px; the placeholder itself
+            got shorter too so the two stop competing for the same pixels. */}
         <SelectTrigger aria-label="Sort packages" className="w-28 shrink-0 text-xs sm:w-32">
           <SelectValue />
         </SelectTrigger>
@@ -174,7 +176,7 @@ function MarketplaceSearchInput() {
         data-testid="marketplace-search"
         value={localSearch}
         onChange={(e) => setLocalSearch(e.target.value)}
-        placeholder="Search packages…"
+        placeholder="Search…"
         className="pl-9 transition-shadow duration-200 focus:shadow-md max-sm:pr-3 sm:pr-10"
       />
       {/* The keyboard hint, and only where a keyboard is. A phone cannot press
