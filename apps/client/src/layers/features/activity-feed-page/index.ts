@@ -41,5 +41,7 @@ export { ActivityFilterBar } from './ui/ActivityFilterBar';
 export type { ActivityFilterBarProps } from './ui/ActivityFilterBar';
 export { ActivityEmptyState } from './ui/ActivityEmptyState';
 export type { ActivityEmptyStateProps } from './ui/ActivityEmptyState';
+export { ActivityErrorState } from './ui/ActivityErrorState';
+export type { ActivityErrorStateProps } from './ui/ActivityErrorState';
 export { ActivitySinceLastVisit } from './ui/ActivitySinceLastVisit';
 export type { ActivitySinceLastVisitProps } from './ui/ActivitySinceLastVisit';
