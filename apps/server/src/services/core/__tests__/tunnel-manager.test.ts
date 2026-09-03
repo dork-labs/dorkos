@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockListener = {
-  url: vi.fn(() => 'https://test.ngrok.io'),
-  close: vi.fn().mockResolvedValue(undefined),
+  url: vi.fn<() => string | null>(() => 'https://test.ngrok.io'),
+  close: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
 };
 
 vi.mock('@ngrok/ngrok', () => ({
@@ -15,8 +15,36 @@ let manager: TunnelManager;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockListener.url.mockReturnValue('https://test.ngrok.io');
+  mockListener.close.mockResolvedValue(undefined);
   manager = new TunnelManager();
 });
+
+/**
+ * Arm `ngrok.forward` so the next `start()` hands back a way to drive the
+ * status callback, then return that driver.
+ *
+ * It reads `onStatusChange` — the SDK's own spelling, taking ONE argument —
+ * rather than whatever key this module happens to pass. That is the whole point:
+ * the previous version of these tests read `on_status_change`, which meant it
+ * pinned a misspelling the real SDK never reads, and reported a disconnect
+ * handler that could not fire (DOR-1738). See the SDK's `forward()`, which
+ * checks `config["onStatusChange"]` and calls it as `(status)`.
+ */
+async function captureStatusCallback(): Promise<(status: string) => void> {
+  const ngrok = await import('@ngrok/ngrok');
+  let onStatusChange: ((status: string) => void) | undefined;
+  (ngrok.forward as ReturnType<typeof vi.fn>).mockImplementation(
+    async (opts: Record<string, unknown>) => {
+      onStatusChange = opts.onStatusChange as (status: string) => void;
+      return mockListener;
+    }
+  );
+  return (status: string) => {
+    if (!onStatusChange) throw new Error('ngrok.forward was given no onStatusChange callback');
+    onStatusChange(status);
+  };
+}
 
 describe('TunnelManager', () => {
   it('initial status is disabled and disconnected', () => {
@@ -74,6 +102,36 @@ describe('TunnelManager', () => {
     await expect(manager.start({ port: 4242 })).rejects.toThrow('Tunnel is already running');
   });
 
+  describe('isRunning', () => {
+    it('is false before a start and true after one', async () => {
+      expect(manager.isRunning).toBe(false);
+      await manager.start({ port: 4242 });
+      expect(manager.isRunning).toBe(true);
+    });
+
+    it('is false again after stop()', async () => {
+      await manager.start({ port: 4242 });
+      await manager.stop();
+      expect(manager.isRunning).toBe(false);
+    });
+
+    it('stays true while ngrok reports a transient disconnect (DOR-1738)', async () => {
+      // The half-dead case. `status.connected` follows ngrok's own
+      // onStatusChange, so a dropped connection flips it to false while the
+      // listener is still open and start() would still throw. Anything asking
+      // "may I start one?" has to ask isRunning, not status.connected — asking
+      // the latter turned a reconnecting tunnel into a 500 on /api/tunnel/start.
+      const notify = await captureStatusCallback();
+
+      await manager.start({ port: 4242 });
+      notify('closed');
+
+      expect(manager.status.connected).toBe(false);
+      expect(manager.isRunning).toBe(true);
+      await expect(manager.start({ port: 4242 })).rejects.toThrow('Tunnel is already running');
+    });
+  });
+
   it('stop() calls listener.close()', async () => {
     await manager.start({ port: 4242 });
     await manager.stop();
@@ -119,17 +177,20 @@ describe('TunnelManager', () => {
       );
     });
 
-    it('emits status_change when on_status_change reports connected', async () => {
+    it('registers its disconnect handler under the key the SDK actually reads', async () => {
+      // The regression this file missed for as long as it existed: the option
+      // was passed as `on_status_change`, which @ngrok/ngrok never looks at, so
+      // no drop was ever reported and DorkOS showed a dead tunnel as connected.
       const ngrok = await import('@ngrok/ngrok');
-      let onStatusChange: ((addr: string, status: string) => void) | undefined;
+      await manager.start({ port: 4242 });
 
-      (ngrok.forward as ReturnType<typeof vi.fn>).mockImplementation(
-        async (opts: Record<string, unknown>) => {
-          onStatusChange = opts.on_status_change as (addr: string, status: string) => void;
-          return mockListener;
-        }
-      );
+      const opts = (ngrok.forward as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(typeof opts.onStatusChange).toBe('function');
+      expect(opts.on_status_change).toBeUndefined();
+    });
 
+    it('emits status_change when ngrok reports connected', async () => {
+      const notify = await captureStatusCallback();
       const handler = vi.fn();
       manager.on('status_change', handler);
 
@@ -137,21 +198,12 @@ describe('TunnelManager', () => {
       handler.mockClear();
 
       // Simulate ngrok reconnection
-      onStatusChange!('localhost:4242', 'connected');
+      notify('connected');
       expect(handler).toHaveBeenCalledWith(expect.objectContaining({ connected: true }));
     });
 
-    it('emits status_change when on_status_change reports closed', async () => {
-      const ngrok = await import('@ngrok/ngrok');
-      let onStatusChange: ((addr: string, status: string) => void) | undefined;
-
-      (ngrok.forward as ReturnType<typeof vi.fn>).mockImplementation(
-        async (opts: Record<string, unknown>) => {
-          onStatusChange = opts.on_status_change as (addr: string, status: string) => void;
-          return mockListener;
-        }
-      );
-
+    it('emits status_change when ngrok reports closed', async () => {
+      const notify = await captureStatusCallback();
       const handler = vi.fn();
       manager.on('status_change', handler);
 
@@ -159,8 +211,41 @@ describe('TunnelManager', () => {
       handler.mockClear();
 
       // Simulate ngrok disconnect
-      onStatusChange!('localhost:4242', 'closed');
+      notify('closed');
       expect(handler).toHaveBeenCalledWith(expect.objectContaining({ connected: false }));
+    });
+  });
+
+  describe('when ngrok misbehaves', () => {
+    it('treats a listener with no URL as a failed start, and closes it', async () => {
+      // Reporting an empty URL as success showed Remote Access as on with a
+      // blank address, and left something unusable "running" so every later
+      // start was refused (DOR-1738).
+      mockListener.url.mockReturnValue(null);
+
+      await expect(manager.start({ port: 4242 })).rejects.toThrow('no public URL');
+      expect(mockListener.close).toHaveBeenCalled();
+      expect(manager.isRunning).toBe(false);
+      expect(manager.status.connected).toBe(false);
+      expect(manager.status.url).toBeNull();
+    });
+
+    it('lets go of the listener even when close() rejects (DOR-1738)', async () => {
+      // A failing close used to strand the manager: listener non-null, status
+      // still connected — so the tunnel origin stayed trusted, every later stop
+      // retried the same doomed close, and every start was refused.
+      await manager.start({ port: 4242 });
+      mockListener.close.mockRejectedValue(new Error('ngrok agent is gone'));
+
+      await expect(manager.stop()).rejects.toThrow('ngrok agent is gone');
+
+      expect(manager.isRunning).toBe(false);
+      expect(manager.status.connected).toBe(false);
+      expect(manager.status.url).toBeNull();
+
+      // And the manager is genuinely usable again, not merely reporting so.
+      mockListener.close.mockResolvedValue(undefined);
+      await expect(manager.start({ port: 4242 })).resolves.toBe('https://test.ngrok.io');
     });
   });
 });
