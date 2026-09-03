@@ -194,6 +194,10 @@ export const RoomRow = memo(function RoomRow({
   // the "⋮" opens its dropdown on the same `pointerdown` this fires from, so the
   // acts have to be in hand by the time that event finishes bubbling, not one
   // commit later — and a layout effect inside a `flushSync` lands in it.
+  //
+  // Safe to call from any of the three intents: the surface hands the focus one
+  // over in a microtask, because focus can land while React is already
+  // rendering and a flush is illegal there (see `onMenuIntent`).
   const [acts, setActs] = useState<RoomRowActs | null>(null);
   const [awake, setAwake] = useState(false);
   const awakeRef = useRef(false);
