@@ -71,6 +71,24 @@ export const MOCK_PKG_ADAPTER_LONG_DESC: AggregatedPackage = {
   tags: ['slack', 'messaging', 'notifications'],
 };
 
+/**
+ * A borrowed package whose author and source are both long — the pair that
+ * used to crush each other to one letter apiece on a narrow card (DOR-1747).
+ * Shown at a narrow width so the provenance row's wrap is visible.
+ */
+export const MOCK_PKG_LONG_PROVENANCE: AggregatedPackage = {
+  name: 'duckdb-skills',
+  source: 'https://github.com/anthropics/claude-plugins/duckdb-skills',
+  marketplace: 'claude-plugins-official',
+  author: 'DuckDB Foundation',
+  description: 'Query, profile, and explain DuckDB databases from a session.',
+  version: '0.3.0',
+  type: 'skill-pack',
+  icon: '🦆',
+  category: 'data',
+  tags: ['duckdb', 'sql'],
+};
+
 /** Featured agent for the FeaturedRail — second slot. */
 export const MOCK_PKG_FEATURED_DEPLOY: AggregatedPackage = {
   name: 'deploy-bot',
