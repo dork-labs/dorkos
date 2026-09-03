@@ -77,6 +77,16 @@ describe('TaskListPanel', () => {
     expect(screen.queryByText('Completed task')).toBeNull();
   });
 
+  it('scrolls a long plan inside itself instead of growing the zone', () => {
+    // The list sits between the transcript and the composer. Ten rows with no
+    // ceiling pushed the conversation off a phone screen (DOR-1759, batch 13.2).
+    render(<TaskListPanel tasks={baseTasks} taskMap={makeMap(baseTasks)} {...baseProps} />);
+    const list = screen.getByText('Completed task').closest('ul');
+    expect(list?.className).toContain('overflow-y-auto');
+    expect(list?.className).toContain('max-h-[30svh]');
+    expect(list?.className).toContain('sm:max-h-[40svh]');
+  });
+
   it('calls onToggleCollapse when header is clicked', () => {
     const onToggle = vi.fn();
     render(
