@@ -16,6 +16,8 @@ import type {
 } from '@dorkos/shared/mesh-schemas';
 import type { SignalEmitter } from '@dorkos/relay';
 import type { AgentRegistry, AgentRegistryEntry } from './agent-registry.js';
+import type { DenialList } from './denial-list.js';
+import { isManifestGitTracked } from './git-tracked.js';
 import type { RelayBridge } from './relay-bridge.js';
 import { subjectForAgent } from './relay-bridge.js';
 import type { TopologyManager, TopologyView, CrossNamespaceRule } from './topology.js';
@@ -37,6 +39,11 @@ export type SyncFromDiskResult = 'synced' | 'no-manifest' | 'duplicate-id';
 /** Dependencies required by agent management functions. */
 export interface AgentManagementDeps {
   registry: AgentRegistry;
+  /**
+   * The denial list, so an unregister that has to LEAVE a manifest on disk can
+   * stop the next scan adopting it straight back (see {@link unregister}).
+   */
+  denialList: DenialList;
   relayBridge: RelayBridge;
   topology: TopologyManager;
   signalEmitter: SignalEmitter | undefined;
@@ -352,24 +359,81 @@ export async function update(
 }
 
 /**
+ * What an unregister did on disk, for a caller that has to say so.
+ *
+ * `manifestKept` is the durable second effect a person has to be told about:
+ * their file is still there AND the folder is now denied, which is a state they
+ * will meet again the next time they look at that directory (DOR-1019).
+ */
+export interface UnregisterResult {
+  /** Whether the manifest was left on disk (git tracks it) and the path denied. */
+  manifestKept: boolean;
+}
+
+/**
  * Unregister an agent by ID.
  *
- * ADR-0043: deletes `.dork/agent.json` from disk, then runs the shared
+ * ADR-0043: releases `.dork/agent.json` on disk, then runs the shared
  * removal cascade (Relay endpoint, registry row, unregister callbacks).
- * Without file deletion, unregistered agents silently reappear on the
- * next discovery scan.
  *
  * @param deps - Agent management dependencies
  * @param agentId - The ULID of the agent to unregister
+ * @returns What happened to the manifest on disk.
  */
-export async function unregister(deps: AgentManagementDeps, agentId: string): Promise<void> {
+export async function unregister(
+  deps: AgentManagementDeps,
+  agentId: string
+): Promise<UnregisterResult> {
   const agent = deps.registry.get(agentId);
-  if (!agent) return;
+  if (!agent) return { manifestKept: false };
 
-  // ADR-0043: delete manifest file first to prevent re-discovery
-  await removeManifest(agent.projectPath);
+  // ADR-0043: settle the manifest file first, so nothing can re-discover the
+  // agent between here and the cascade below.
+  const manifestKept = await releaseManifest(deps, agent.projectPath);
 
   await removeAgent(deps, agent);
+  return { manifestKept };
+}
+
+/**
+ * Give up the manifest of an agent being unregistered — by deleting it, or,
+ * when git is tracking it, by leaving it alone and denying the directory.
+ *
+ * Deleting is the default and the reason is ADR-0043: the file is what makes an
+ * agent real, so an unregistered agent whose manifest survives is adopted again
+ * by the next scan, and the reconciler runs one every five minutes.
+ *
+ * **A manifest git tracks is not ours to delete** (DOR-1019). It was committed
+ * on purpose, teammates get it on clone, and unregistering an agent is a
+ * statement about this machine's roster — never a licence to change somebody's
+ * source tree. It cost this repo its own `.dork/agent.json` once already; only
+ * a person reading `git status` got it back.
+ *
+ * Denying the directory is what keeps both halves true at once: the file stays,
+ * and the agent still does not come back. The denial is visible in the denied
+ * list with its reason, and registering the directory again clears it
+ * (`mesh-discovery.clearDenial`).
+ *
+ * @param deps - Agent management dependencies (denial list and logger).
+ * @param projectPath - The unregistering agent's project directory.
+ * @returns `true` when the file was kept and the directory denied instead.
+ */
+async function releaseManifest(deps: AgentManagementDeps, projectPath: string): Promise<boolean> {
+  if (!(await isManifestGitTracked(projectPath, deps.logger))) {
+    await removeManifest(projectPath);
+    return false;
+  }
+
+  deps.denialList.deny(
+    projectPath,
+    'Removed from your agents. Its .dork/agent.json is tracked by git, so the file was left alone.',
+    'mesh'
+  );
+  deps.logger.info('[mesh] left a git-tracked agent manifest in place on unregister', {
+    event: 'mesh.manifest.tracked_kept',
+    projectPath,
+  });
+  return true;
 }
 
 /**

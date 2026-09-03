@@ -183,13 +183,32 @@ export interface PumpLaunchInput {
  */
 export type PumpLauncher = (input: PumpLaunchInput) => PumpQuery | Promise<PumpQuery>;
 
-/** A process that ended when nobody asked it to. */
+/** A process that ended without the PUMP asking it to. */
 export interface PumpCrash {
   sessionId: string;
   /** What the pump was doing when the process died. `running` means a turn was open. */
   stateAtCrash: PumpState;
   /** What the stream threw, when it threw rather than simply ending. */
   error?: unknown;
+  /**
+   * True when a DorkOS Stop aimed at THIS process is what ended it — the
+   * escalation in `session-store.ts`'s `interruptGivenQuery`, which closes the
+   * query when the graceful interrupt is refused or goes unacked (DOR-1302).
+   *
+   * **Written by the wiring above the pump, never by the pump itself.** The pump
+   * owns a process and knows nothing about sessions, so from where it sits every
+   * death it did not order is a crash — which is exactly right for the state
+   * machine (the process IS gone, and the next dispatch must relaunch) and
+   * exactly wrong for what the operator is told. `persistent-dispatch.ts` holds
+   * both halves of the answer: the session carrying DorkOS's stop record, and
+   * the query that died. It stamps this on the way to
+   * `SessionCrashRecovery.handleCrash`.
+   *
+   * Two readers, and both would otherwise blame the operator's own Stop on the
+   * agent: the windower settles the open turn as `interrupted` rather than as a
+   * failure, and the crash budget does not spend a life on it.
+   */
+  stopRequested?: boolean;
 }
 
 /** One message being dispatched into the pump. */
@@ -221,9 +240,9 @@ export interface SessionPumpOptions {
    */
   onMessage?: (message: SDKMessage) => void;
   /**
-   * The process ended when nobody asked it to — task 3.6's failover seam. It is
-   * that task, not this one, that closes an open turn with
-   * `turn_end{terminalReason:'error'}` and preserves the queue.
+   * The process ended without the pump asking it to — task 3.6's failover seam.
+   * It is that task, not this one, that closes the open turn and preserves the
+   * queue; how that turn settles depends on {@link PumpCrash.stopRequested}.
    */
   onCrash?: (crash: PumpCrash) => void;
   /**

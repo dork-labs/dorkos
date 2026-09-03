@@ -14,9 +14,9 @@ import {
 } from '@anthropic-ai/claude-agent-sdk';
 import type {
   PermissionMode,
-  EffortLevel,
   Session,
   PendingInteractionDTO,
+  SessionSettings,
 } from '@dorkos/shared/types';
 import type {
   SessionOpts,
@@ -27,7 +27,7 @@ import type {
 } from '@dorkos/shared/agent-runtime';
 import { tightensDeclaredMode, needsConsentRitual } from '@dorkos/shared/permission-semantics';
 import type { AgentSession } from '../agent-types.js';
-import { CLAUDE_CODE_CAPABILITIES } from '../runtime-constants.js';
+import { CLAUDE_CODE_CAPABILITIES, narrowToClaudeCodeMode } from '../runtime-constants.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import { resolveActiveClaudeRoot } from '../claude-config-dir.js';
@@ -526,15 +526,7 @@ export class SessionStore {
    * `updated: true` — there is no "session does not exist" case for this
    * runtime, because the auto-create branch below handles it.
    */
-  async updateSession(
-    sessionId: string,
-    opts: {
-      permissionMode?: PermissionMode;
-      model?: string;
-      effort?: EffortLevel;
-      fastMode?: boolean;
-    }
-  ): Promise<SessionUpdateResult> {
+  async updateSession(sessionId: string, opts: SessionSettings): Promise<SessionUpdateResult> {
     let session = this.findSession(sessionId);
     if (!session) {
       // Auto-create with hasStarted=false — sendMessage will check the transcript
@@ -579,8 +571,13 @@ export class SessionStore {
         // contract true rather than merely written down.
         const ack = await awaitControlAck(
           () =>
+            // Only the SDK needs the narrow name (DOR-885): a mode id is
+            // whatever its runtime declared, and the session above keeps the id
+            // as asked, but a query can only be moved to a mode the SDK knows.
             query.setPermissionMode(
-              opts.permissionMode as Parameters<typeof query.setPermissionMode>[0]
+              narrowToClaudeCodeMode(opts.permissionMode, 'default') as Parameters<
+                typeof query.setPermissionMode
+              >[0]
             ),
           PERMISSION_MODE_ACK_TIMEOUT_MS
         );

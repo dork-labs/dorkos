@@ -456,4 +456,39 @@ describe('useSessionStatus and a permission change that has not taken yet', () =
       expect(value).not.toHaveProperty('permissionModePendingUntilNextTurn');
     }
   });
+
+  it('never writes the guessed-runtime flag into the session cache either', async () => {
+    // DOR-1693. Same rule, harder consequence: this cache genuinely does not
+    // wash the flag out. `syncSessionDetailCache` merges list rows over the
+    // entry and re-stamps its freshness, and a list row has no such field — so a
+    // cached `true` would outlive the binding that made it false and be renewed
+    // on every list refresh, calling a settled runtime a guess forever.
+    const transport = createMockTransport({
+      getSession: vi.fn().mockResolvedValue({ id: 's1', model: 'a', runtime: 'claude-code' }),
+      updateSession: vi.fn().mockResolvedValue({
+        id: 's1',
+        model: 'a',
+        runtime: 'claude-code',
+        runtimeUnbound: true,
+      }),
+    });
+    const { wrapper, queryClient } = wrapperWithClient(transport);
+    const written: unknown[] = [];
+    const setQueryData = queryClient.setQueryData.bind(queryClient);
+    vi.spyOn(queryClient, 'setQueryData').mockImplementation(((key: unknown, updater: unknown) => {
+      const result = setQueryData(key as never, updater as never);
+      if (JSON.stringify(key).includes('s1')) written.push(result);
+      return result;
+    }) as typeof queryClient.setQueryData);
+
+    const { result } = renderHook(() => useSessionStatus('s1', null, true), { wrapper });
+    await act(async () => {
+      await result.current.updateSession({ model: 'b' });
+    });
+
+    expect(written.length).toBeGreaterThan(0);
+    for (const value of written) {
+      expect(value).not.toHaveProperty('runtimeUnbound');
+    }
+  });
 });

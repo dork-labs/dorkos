@@ -577,6 +577,11 @@ export interface Transport extends RoomTransport {
    * saved but could not be delivered to the reply already in flight — that
    * reply keeps the looser mode it started under, and a surface showing the new
    * one has to say so (DOR-1435).
+   *
+   * It carries `runtimeUnbound` when the `runtime` it reports is the inference a
+   * session with no recorded owner falls back to, rather than that owner — it
+   * can even differ from the `runtime` this call passed. Read the runtime as a
+   * guess whenever it is there (DOR-1693).
    */
   updateSession(
     id: string,
@@ -1615,8 +1620,14 @@ export interface Transport extends RoomTransport {
   ): Promise<AgentManifest>;
   /** Update an existing mesh agent's metadata. */
   updateMeshAgent(id: string, updates: Partial<AgentManifest>): Promise<AgentManifest>;
-  /** Unregister a mesh agent by ID. */
-  unregisterMeshAgent(id: string): Promise<{ success: boolean }>;
+  /**
+   * Unregister a mesh agent by ID.
+   *
+   * `blockedFromDiscovery` says the agent's `.dork/agent.json` was git-tracked,
+   * so it was left on disk and its folder denied instead of deleted — the
+   * durable second effect a person has to be told about (DOR-1019).
+   */
+  unregisterMeshAgent(id: string): Promise<{ success: boolean; blockedFromDiscovery?: boolean }>;
   /** Delete an agent and its `.dork` directory by ID. */
   deleteAgentData(id: string): Promise<{ success: boolean; deletedPath: string }>;
   /** Deny a discovered agent path, preventing future registration. */

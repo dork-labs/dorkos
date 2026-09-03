@@ -50,6 +50,17 @@ interface SessionMessageProps {
    * Defaults to `true` (surfaces with no list context render live widgets).
    */
   isLatestWidgetMessage?: boolean;
+  /**
+   * Whether this is the session's LAST message — the only one an inline error
+   * card may offer Retry from, because Retry re-sends the last user message
+   * (DOR-1677).
+   *
+   * Defaults to `true`, matching `isLatestWidgetMessage`: a row rendered
+   * outside a transcript (the dev showcase, a scripted narration) is the only
+   * message there is, so calling it anything else would be false. A LIST always
+   * passes it — `SessionTranscript` is the one that does.
+   */
+  isFinalMessage?: boolean;
   /** The toolCallId of the currently active interactive tool (for keyboard shortcuts) */
   activeToolCallId?: string | null;
   /** Callback to register the active tool's imperative handle */
@@ -92,6 +103,7 @@ export function SessionMessage({
   isNew = false,
   isStreaming = false,
   isLatestWidgetMessage = true,
+  isFinalMessage = true,
   activeToolCallId = null,
   onToolRef,
   focusedOptionIndex = -1,
@@ -142,6 +154,7 @@ export function SessionMessage({
         sessionId,
         isStreaming,
         isLatestWidgetMessage,
+        isFinalMessage,
         activeToolCallId,
         onToolRef,
         focusedOptionIndex,

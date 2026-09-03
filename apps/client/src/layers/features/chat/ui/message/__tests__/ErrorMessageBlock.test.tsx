@@ -631,6 +631,28 @@ describe('ErrorMessageBlock', () => {
       expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
     });
 
+    it('stands on its own when the card has no Retry to offer', async () => {
+      // Purpose: the shape a mid-history auth card takes once Retry is gated to
+      // the final turn (DOR-1677). The sign-in is NOT position-dependent — the
+      // runtime's login is broken now, whenever it broke — so the primary
+      // action and its quiet fallback both survive, and only Retry goes.
+      const user = userEvent.setup();
+      sessionRows.current = [sessionRow('claude-code')];
+      const transport = renderBlock(
+        <ErrorMessageBlock message="401 revoked" category="auth_error" sessionId={SESSION_ID} />
+      );
+
+      expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Use an API key instead' })).toBeInTheDocument();
+
+      // And the button that remains is the working one, not a leftover.
+      await user.click(screen.getByRole('button', { name: 'Sign in' }));
+      expect(transport.delegateRuntimeLogin).toHaveBeenCalledWith('claude-code', {
+        sessionId: SESSION_ID,
+        accountRoot: undefined,
+      });
+    });
+
     it('keeps the settings route as a quiet link, named for what it gets you', async () => {
       // Purpose: the API-key form lives in Settings → Runtimes. It stays
       // reachable, but demoted — one quiet link under the primary action, not

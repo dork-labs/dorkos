@@ -47,9 +47,12 @@ const MESH_EXTERNAL_CONFIGS: ExternalToolConfigs = {
   // Auto-imports any `.dork/agent.json` found during the walk, upserting the
   // registry as a scan side effect — not a pure read.
   mesh_discover: { annotations: A.mutateUpdateLocal },
-  // Assigns a fresh ULID every call, even for the same path — repeat calls create
-  // additional agent records rather than converging.
-  mesh_register: { annotations: A.mutateCreateLocal },
+  // Creates an agent for a directory that has none — but a directory that
+  // already holds a `.dork/agent.json` is adopted, so the SECOND call on any
+  // path (including one the first call wrote) converges on the same agent
+  // rather than minting another ULID over it (DOR-1019). Idempotent, which is
+  // why this is the update preset and not the create one.
+  mesh_register: { annotations: A.mutateUpdateLocal },
   mesh_list: { annotations: A.readOnlyLocal, outputSchema: meshListOutputSchema },
   mesh_deny: { annotations: A.mutateUpdateLocal },
   mesh_unregister: { annotations: A.mutateDeleteLocal },

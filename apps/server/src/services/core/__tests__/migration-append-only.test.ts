@@ -6,17 +6,17 @@
  * are built here out of hand-written source text. `config-manager.test.ts` runs
  * the same rule over the real file and the real pins.
  *
+ * The source-reading half — `extractTopLevelDeclarations` and
+ * `normalizeForHash` — now lives in `migration-closure.ts`, shared with the
+ * tag-based rule (DOR-1135). Its matrix stays here, because the pins are what
+ * those two exist to serve and a regression in either shows up as a moved hash.
+ *
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest';
 
-import {
-  checkAppendOnly,
-  extractTopLevelDeclarations,
-  migrationClosure,
-  migrationHash,
-  normalizeForHash,
-} from './migration-append-only.js';
+import { checkAppendOnly, migrationClosure, migrationHash } from './migration-append-only.js';
+import { extractTopLevelDeclarations, normalizeForHash } from './migration-closure.js';
 
 /** A helper shaped exactly like the real ones: inline object param, `}): void {`. */
 function helper(name: string, body: string, doc = 'documented'): string {

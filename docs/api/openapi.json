@@ -3871,6 +3871,12 @@
                 "enum": [
                   true
                 ]
+              },
+              "runtimeUnbound": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
               }
             }
           }
@@ -10352,7 +10358,7 @@
           "Sessions"
         ],
         "summary": "Update session settings",
-        "description": "Moving an interactive session to a permission mode that never stops to ask requires an acknowledgement. That means any mode the runtime declares at the `autonomy` stop, and any mode it declares with `asks: \"never\"` and a `reach` other than `\"read\"` — Codex files such a mode at the middle stop. Satisfy it with `acknowledgedAutonomy: true` on this request, or with the standing record in `ui.autonomyAcknowledgedAt`. Without one the response is `428 AUTONOMY_ACK_REQUIRED` and nothing is persisted — obtain consent and retry the identical request (spec `trust-dial`, decision 5). This is a consent ritual for a person, not a boundary against a caller.\n\nThe chosen mode is always saved. When it could not also be delivered to a reply already in flight AND it was a tightening (the agent must now ask more, or may reach less far), the answer is `202` with `permissionModePendingUntilNextTurn: true` — saved, in force from the next reply, and NOT governing the reply already running. A loosening in the same position stays a plain `200`: it costs a few extra approval prompts for the rest of one turn and corrects itself.",
+        "description": "Moving an interactive session to a permission mode that never stops to ask requires an acknowledgement. That means any mode the runtime declares at the `autonomy` stop, and any mode it declares with `asks: \"never\"` and a `reach` other than `\"read\"` — Codex files such a mode at the middle stop. Satisfy it with `acknowledgedAutonomy: true` on this request, or with the standing record in `ui.autonomyAcknowledgedAt`. Without one the response is `428 AUTONOMY_ACK_REQUIRED` and nothing is persisted — obtain consent and retry the identical request (spec `trust-dial`, decision 5). This is a consent ritual for a person, not a boundary against a caller.\n\nThe chosen mode is always saved. When it could not also be delivered to a reply already in flight AND it was a tightening (the agent must now ask more, or may reach less far), the answer is `202` with `permissionModePendingUntilNextTurn: true` — saved, in force from the next reply, and NOT governing the reply already running. A loosening in the same position stays a plain `200`: it costs a few extra approval prompts for the rest of one turn and corrects itself.\n\nA session with no recorded runtime is answered with the inference reads fall back to, which can differ from the `runtime` hint you sent — so that answer carries `runtimeUnbound: true` and you can tell a guess from a binding. This is not only a brand-new session: the binding is written by an interactive session's first turn and by nothing else, so a scheduled or room-driven session can have run many turns and still have no owner. The field is absent once one is recorded, and it never appears as `false`.",
         "parameters": [
           {
             "schema": {
@@ -10379,7 +10385,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Session"
+                  "$ref": "#/components/schemas/SessionUpdateResponse"
                 }
               }
             }
@@ -14146,6 +14152,7 @@
           "Mesh"
         ],
         "summary": "Register a mesh agent",
+        "description": "A directory that already holds a `.dork/agent.json` is ADOPTED, never overwritten: the file is left untouched and the agent it describes is what gets registered, so the returned id and name can differ from the ones sent, and `overrides` may be omitted entirely. A manifest that is there but cannot be read is refused with a 422 rather than replaced. `overrides.name` and `overrides.runtime` are required only for a directory that has no manifest to adopt. Registering also clears any denial recorded against the directory.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -14157,7 +14164,7 @@
         },
         "responses": {
           "201": {
-            "description": "Registered agent",
+            "description": "Registered agent (adopted, when the directory already had one)",
             "content": {
               "application/json": {
                 "schema": {
@@ -14168,6 +14175,16 @@
           },
           "400": {
             "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Registration refused — an existing manifest there could not be read or adopted",
             "content": {
               "application/json": {
                 "schema": {
@@ -14335,6 +14352,7 @@
           "Mesh"
         ],
         "summary": "Unregister mesh agent",
+        "description": "Removes the agent and deletes its `.dork/agent.json`, so the next scan does not adopt it back — unless git is tracking that file, which makes it part of a repository rather than DorkOS's bookkeeping. Then the file is left alone and the directory is denied instead, and `blockedFromDiscovery` says so. Registering the directory again clears that denial.",
         "parameters": [
           {
             "schema": {
@@ -14355,10 +14373,14 @@
                   "properties": {
                     "success": {
                       "type": "boolean"
+                    },
+                    "blockedFromDiscovery": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
-                    "success"
+                    "success",
+                    "blockedFromDiscovery"
                   ]
                 }
               }

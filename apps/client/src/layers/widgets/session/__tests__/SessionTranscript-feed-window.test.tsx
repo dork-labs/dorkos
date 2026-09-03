@@ -30,7 +30,7 @@ function render(ui: React.ReactElement) {
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
-  useAppStore.getState().resetPreferences();
+  useAppStore.getState().resetAllSettings();
 });
 
 vi.mock('streamdown', () => ({
