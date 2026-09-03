@@ -158,9 +158,13 @@ export function BarTabStrip({
         // beside it, and with nothing to stop it the strip yields all of it: on
         // a 768px window with the sidebar and the right panel both docked, the
         // four home tabs measured 16px wide — no label, and not even the fade
-        // that says there is more. `min-w-28` is one full tab plus its fade, so
-        // the strip still shrinks and still scrolls sideways on a phone, and
-        // stops at the width where it is still a strip.
+        // that says there is more. `min-w-28` (112px) is roughly one tab plus
+        // its fade at desktop text scale, where the floor actually binds (the
+        // four home tabs there measure up to 103px) — at phone text scale the
+        // widest of the same four runs to 124px, past the floor, so the strip
+        // still shrinks and still scrolls sideways on a phone rather than
+        // guaranteeing every label its own room, and stops at the width where
+        // it is still a strip.
         'flex min-w-28 flex-initial self-stretch',
         className
       )}

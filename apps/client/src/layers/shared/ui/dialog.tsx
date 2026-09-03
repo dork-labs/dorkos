@@ -57,7 +57,17 @@ const DialogContent = React.forwardRef<
       {...props}
     >
       {children}
-      <DialogPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none">
+      {/* `row-span-full` + `sticky`, not `absolute`: the box above can now
+          scroll (see the height-cap comment above), and an
+          absolutely-positioned child of a scroll container scrolls away with
+          everything else. Spanning every row keeps this overlaying the
+          content instead of landing in its own row below it — the same
+          visual role `absolute` used to play — and `sticky` then pins it to
+          the same corner for as long as the dialog stays open, scrolled or
+          not. The negative margins pull it back from the grid's padded edge
+          to the original 16px inset (`top-4`/`right-4`) rather than the
+          content's 24px one. */}
+      <DialogPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground sticky top-4 row-span-full -mt-2 -mr-2 self-start justify-self-end rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none">
         <X className="size-(--size-icon-md)" />
         <span className="sr-only">Close</span>
       </DialogPrimitive.Close>

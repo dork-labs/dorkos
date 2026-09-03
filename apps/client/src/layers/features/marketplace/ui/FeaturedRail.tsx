@@ -1,8 +1,10 @@
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
+import { cn } from '@/layers/shared/lib';
 import { useMarketplacePackages } from '@/layers/entities/marketplace';
 import { Skeleton } from '@/layers/shared/ui';
 import { useRequestInstall } from '../model/use-request-install';
 import { useMarketplaceParams } from '../model/use-marketplace-params';
+import { PACKAGE_GRID_CONTAINER, RAIL_GRID_COLUMNS } from '../lib/package-grid-layout';
 import { PackageCard } from './PackageCard';
 
 // ---------------------------------------------------------------------------
@@ -27,25 +29,19 @@ const RAIL_LABEL = 'Featured';
  *
  * A container query, not a viewport one: the rail shares its row with the
  * sidebar and a dockable panel, so window width says nothing about how much
- * room it actually has.
+ * room it actually has. Marked with the same {@link PACKAGE_GRID_CONTAINER}
+ * name the catalog grid uses — the two never nest inside each other, so one
+ * name serves both, and `RAIL_GRID_COLUMNS` is the same 240px-card rule
+ * capped one column lower.
  */
-const RAIL_SECTION = '@container/rail space-y-3';
-
-/**
- * How the rail lays its three cards out, at the width it really has.
- *
- * Thresholds keep a card at roughly 240px or wider. Shared by the skeleton and
- * the real grid so the two never disagree about how many columns are about to
- * appear.
- */
-const RAIL_GRID = 'grid grid-cols-1 gap-4 @lg/rail:grid-cols-2 @3xl/rail:grid-cols-3';
+const RAIL_SECTION = cn(PACKAGE_GRID_CONTAINER, 'space-y-3');
 
 /** Loading skeleton row shown while packages are being fetched. */
 function RailSkeleton() {
   return (
     <section aria-label={RAIL_LABEL} className={RAIL_SECTION}>
       <h2 className="text-base font-semibold">{RAIL_LABEL}</h2>
-      <div className={RAIL_GRID}>
+      <div className={RAIL_GRID_COLUMNS}>
         {Array.from({ length: SKELETON_COUNT }).map((_, i) => (
           <Skeleton key={i} className="h-48 rounded-xl" />
         ))}
@@ -66,7 +62,7 @@ function RailGrid({
   return (
     <section aria-label={RAIL_LABEL} className={RAIL_SECTION}>
       <h2 className="text-base font-semibold">{RAIL_LABEL}</h2>
-      <div className={RAIL_GRID}>
+      <div className={RAIL_GRID_COLUMNS}>
         {packages.map((pkg) => (
           <div key={pkg.name} className="h-full">
             <PackageCard
