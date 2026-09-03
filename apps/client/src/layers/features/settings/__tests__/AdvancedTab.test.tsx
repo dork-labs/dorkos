@@ -12,6 +12,11 @@ vi.mock('../ui/ResetDialog', () => ({
     open ? <div data-testid="reset-dialog">Reset Dialog</div> : null,
 }));
 
+vi.mock('../ui/ResetSettingsDialog', () => ({
+  ResetSettingsDialog: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="reset-settings-dialog">Reset Settings Dialog</div> : null,
+}));
+
 vi.mock('../ui/RestartDialog', () => ({
   RestartDialog: ({ open }: { open: boolean }) =>
     open ? <div data-testid="restart-dialog">Restart Dialog</div> : null,
@@ -77,6 +82,24 @@ describe('AdvancedTab', () => {
     render(<AdvancedTab />, { wrapper: createWrapper() });
     expect(screen.getByText('Reset All Data')).toBeInTheDocument();
     expect(screen.getByText('Restart Server')).toBeInTheDocument();
+  });
+
+  // The clean slate for interface settings lives here and only here (DOR-923):
+  // the Appearance panel's own reset stops at theme and typography.
+  it('renders the Reset All Settings row, and its button says which reset it is', () => {
+    render(<AdvancedTab />, { wrapper: createWrapper() });
+    expect(screen.getByText('Reset All Settings')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reset Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reset Data' })).toBeInTheDocument();
+  });
+
+  it('asks for a confirm before resetting settings — the dialog opens, nothing resets on the click', () => {
+    render(<AdvancedTab />, { wrapper: createWrapper() });
+    expect(screen.queryByTestId('reset-settings-dialog')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Settings' }));
+
+    expect(screen.getByTestId('reset-settings-dialog')).toBeInTheDocument();
   });
 
   it('retains the Background refresh row', () => {
@@ -191,10 +214,12 @@ describe('AdvancedTab', () => {
     expect(isolated.parentElement).toHaveClass('truncate');
   });
 
-  it('opens ResetDialog when Reset button is clicked', () => {
+  it('opens ResetDialog when the Reset Data button is clicked', () => {
     render(<AdvancedTab />, { wrapper: createWrapper() });
-    fireEvent.click(screen.getByRole('button', { name: /reset/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Data' }));
     expect(screen.getByTestId('reset-dialog')).toBeInTheDocument();
+    // The settings reset is a different door — clicking data must not open it.
+    expect(screen.queryByTestId('reset-settings-dialog')).not.toBeInTheDocument();
   });
 
   it('opens RestartDialog when Restart button is clicked', () => {

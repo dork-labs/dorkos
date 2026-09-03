@@ -75,7 +75,7 @@ afterEach(() => {
   mockIsAtEnd.mockImplementation(() => true);
   mockMeasureElement.mockClear();
   // Reset store to defaults between tests
-  useAppStore.getState().resetPreferences();
+  useAppStore.getState().resetAllSettings();
 });
 
 // Mock Streamdown to avoid complex rendering in unit tests

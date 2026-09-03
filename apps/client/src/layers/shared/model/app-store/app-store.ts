@@ -49,6 +49,28 @@ export type { ContextFile, RecentCwd } from './app-store-helpers';
 // No-op when the keys are absent; runs once at module load before slices read.
 purgeOrphanedPreferenceKeys();
 
+/**
+ * Put typography back to its default in storage and on the document, and
+ * return the matching state patch.
+ *
+ * Shared by the two resets so the appearance-scoped one and the clean slate can
+ * never disagree about what "default typography" means (DOR-923).
+ */
+function restoreDefaultTypography(): {
+  fontSize: 'medium';
+  fontFamily: FontFamilyKey;
+} {
+  try {
+    localStorage.removeItem(STORAGE_KEYS.FONT_SIZE);
+    localStorage.removeItem(STORAGE_KEYS.FONT_FAMILY);
+  } catch {}
+  document.documentElement.style.setProperty('--user-font-scale', '1');
+  const defaultConfig = getFontConfig(DEFAULT_FONT);
+  if (defaultConfig.googleFontsUrl) loadGoogleFont(defaultConfig.googleFontsUrl);
+  applyFontCSS(defaultConfig.sans, defaultConfig.mono);
+  return { fontSize: 'medium', fontFamily: DEFAULT_FONT };
+}
+
 export const useAppStore = create<AppState>()(
   devtools(
     (...a) => {
@@ -184,14 +206,21 @@ export const useAppStore = create<AppState>()(
           set((s) => ({ contextFiles: s.contextFiles.filter((f) => f.id !== id) })),
         clearContextFiles: () => set({ contextFiles: [] }),
 
-        // ── Preferences reset (cross-slice — lives here where set is fully typed) ──
-        resetPreferences: () => {
+        // ── Resets (cross-slice — they live here where set is fully typed) ──
+        //
+        // Two of them, and the split is the point (DOR-923): a panel's "Reset to
+        // defaults" may only reach what that panel shows, so the Appearance one
+        // stops at typography. The clean slate that reaches everything is the
+        // Danger Zone's, behind a confirm.
+        resetAppearance: () => {
+          set(restoreDefaultTypography());
+        },
+
+        resetAllSettings: () => {
           try {
             for (const lsKey of Object.values(BOOL_KEYS)) {
               localStorage.removeItem(lsKey);
             }
-            localStorage.removeItem(STORAGE_KEYS.FONT_SIZE);
-            localStorage.removeItem(STORAGE_KEYS.FONT_FAMILY);
             localStorage.removeItem('dorkos-sidebar-active-tab');
             // The retired promo-dismissal key. Still swept, because an install
             // that has not yet had its one-time import run may still carry it, and
@@ -204,16 +233,11 @@ export const useAppStore = create<AppState>()(
             localStorage.removeItem(STORAGE_KEYS.RIGHT_PANEL_LAYOUTS);
             localStorage.removeItem(STORAGE_KEYS.PIP_PANEL_STATE);
           } catch {}
-          document.documentElement.style.setProperty('--user-font-scale', '1');
-          const defaultConfig = getFontConfig(DEFAULT_FONT);
-          if (defaultConfig.googleFontsUrl) loadGoogleFont(defaultConfig.googleFontsUrl);
-          applyFontCSS(defaultConfig.sans, defaultConfig.mono);
           set({
             ...BOOL_DEFAULTS,
+            ...restoreDefaultTypography(),
             devtoolsOpen: false,
             routerDevtoolsOpen: false,
-            fontSize: 'medium' as const,
-            fontFamily: DEFAULT_FONT as FontFamilyKey,
             sidebarActiveTab: 'overview' as const,
             rightPanelOpen: false,
             activeRightPanelTab: null,
