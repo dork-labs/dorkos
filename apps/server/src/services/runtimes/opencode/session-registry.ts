@@ -19,6 +19,7 @@
  * @module services/runtimes/opencode/session-registry
  */
 import type { Session, PermissionMode } from '@dorkos/shared/types';
+import { isWithinDirectory } from '@dorkos/shared/paths';
 import { deriveSessionTitle } from '../shared/derive-title.js';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
 
@@ -124,14 +125,27 @@ export class OpenCodeSessionRegistry {
   }
 
   /**
-   * Tracked sessions scoped to a working directory. A session tracked without
-   * a cwd belongs to NO project list — it cannot be attributed to any project,
-   * and fanning it into every list rendered ghost sessions under every agent
-   * (DOR-202, ADR 260707-193314; mirrored from the Codex registry). It stays
-   * reachable by id via {@link OpenCodeSessionRegistry.get}.
+   * Tracked sessions belonging to a project: the ones running IN that directory
+   * or anywhere inside it, through the one shared membership predicate
+   * (`isWithinDirectory`, DOR-674/DOR-1550).
+   *
+   * DOR-674 taught the SIDECAR listing this rule, and this registry is the half
+   * that answers when the sidecar cannot: a session created while the sidecar
+   * was cold, or still binding, is listed from here alone — so exact string
+   * equality here still hid a subfolder session for exactly as long as that
+   * lasted.
+   *
+   * A session tracked without a cwd belongs to NO project list — it cannot be
+   * attributed to any project, and fanning it into every list rendered ghost
+   * sessions under every agent (DOR-202, ADR 260707-193314; mirrored from the
+   * Codex registry). The predicate answers `false` for an absent cwd, so that
+   * rule is the same rule. It stays reachable by id via
+   * {@link OpenCodeSessionRegistry.get}.
    */
   list(projectDir: string): Session[] {
-    return [...this.sessions.values()].filter((s) => s.cwd === projectDir).map((s) => ({ ...s }));
+    return [...this.sessions.values()]
+      .filter((s) => isWithinDirectory(s.cwd, projectDir))
+      .map((s) => ({ ...s }));
   }
 
   /**

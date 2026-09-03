@@ -73,6 +73,27 @@ export interface RuntimeConformanceOpts {
   /** User message content sent during turn-based assertions. Defaults to `'conformance ping'`. */
   messageContent?: string;
   /**
+   * Produces a session this runtime's LIST path will report, running at a
+   * caller-chosen working directory — the wiring behind the subtree-membership
+   * invariant (DOR-1550).
+   *
+   * The default tracks one with `ensureSession`, which is all a registry-backed
+   * runtime needs. Wire this when a runtime lists from a STORE it must first be
+   * given something to read: claude-code lists SDK JSONL transcripts, so an
+   * `ensureSession` alone produces nothing to list and the invariant would fail
+   * on the seeding rather than on the rule.
+   *
+   * There is deliberately no "cannot be scripted" waiver. Every runtime lists
+   * sessions per project — that IS the `listSessions(projectDir)` contract — so
+   * a runtime that cannot be given a listable session at a chosen directory
+   * cannot honour it either, and the honest report is a red.
+   *
+   * @param runtime - The runtime instance under test.
+   * @param cwd - The working directory the session must run in.
+   * @returns The seeded session's id.
+   */
+  listableSessionAt?: (runtime: AgentRuntime, cwd: string) => Promise<string> | string;
+  /**
    * Factory producing a runtime whose next `sendMessage` turn FAILS
    * terminally (e.g. a mocked backend scripted to a failed turn). When
    * provided, the suite additionally asserts turn-failure conformance: the
@@ -1088,6 +1109,7 @@ export function runtimeConformance(
     permissionMode: permissionModeOverride,
     expectHistory = false,
     messageContent = 'conformance ping',
+    listableSessionAt,
     makeFailingRuntime,
     authFailure,
     makeCompactingRuntime,
@@ -1144,6 +1166,20 @@ export function runtimeConformance(
     permissionMode: resolvePermissionMode(runtime),
     cwd: projectDir,
   });
+
+  /**
+   * Seed a session this runtime will LIST, running at `cwd` — the declared
+   * wiring when one is given, else a plain `ensureSession`.
+   *
+   * @param runtime - The runtime instance under test.
+   * @param cwd - The working directory the session must run in.
+   */
+  async function seedListableSession(runtime: AgentRuntime, cwd: string): Promise<string> {
+    if (listableSessionAt) return listableSessionAt(runtime, cwd);
+    const sessionId = nextSessionId();
+    runtime.ensureSession(sessionId, { permissionMode: resolvePermissionMode(runtime), cwd });
+    return sessionId;
+  }
 
   /** Run one full turn and collect every yielded StreamEvent. */
   async function drainTurn(runtime: AgentRuntime, sessionId: string): Promise<StreamEvent[]> {
@@ -1227,6 +1263,35 @@ export function runtimeConformance(
 
         const sessions = await runtime.listSessions(projectDir);
         expect(sessions.map((s) => s.id)).not.toContain(sessionId);
+      });
+
+      it('lists a session started INSIDE the project, and never a lookalike sibling (DOR-1550)', async () => {
+        // The other half of the membership rule. A person opens a project and
+        // starts an agent in `packages/api`; that session is the project's
+        // session, and every runtime used to decide otherwise by comparing the
+        // two directory strings for equality. DOR-674 fixed OpenCode's sidecar
+        // listing and deferred this invariant because claude-code would have
+        // failed it; DOR-1550 is where the rest of the set caught up.
+        const runtime = makeRuntime();
+        const subfolder = `${projectDir}/packages/api`;
+        const inside = await seedListableSession(runtime, subfolder);
+        // `<project>-2` shares a character prefix with the project and shares no
+        // path SEGMENT with it — the trap a `startsWith` check falls into, and
+        // the control that keeps the case above from passing by listing
+        // everything on the machine.
+        const sibling = await seedListableSession(runtime, `${projectDir}-2`);
+        // And the project's own directory, so a wiring that seeds nothing
+        // listable fails here rather than silently proving nothing.
+        const own = await seedListableSession(runtime, projectDir);
+
+        const listed = await runtime.listSessions(projectDir);
+        const ids = listed.map((s) => s.id);
+        expect(ids, 'the project’s own session must list at all').toContain(own);
+        expect(ids, 'a session started in a subfolder belongs to the project').toContain(inside);
+        expect(ids, 'a sibling project’s session is not this project’s').not.toContain(sibling);
+        // Each row still says where it is really running — a listing that
+        // rewrote `cwd` to the project would hide which folder an agent is in.
+        expect(listed.find((s) => s.id === inside)?.cwd).toBe(subfolder);
       });
 
       it('getSession resolves session metadata or null — and null for an unknown id', async () => {

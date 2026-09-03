@@ -11,6 +11,7 @@
  * and nothing else is asked to.
  */
 import { describe, it, expect } from 'vitest';
+import { DIRECTORY_MEMBERSHIP_VECTORS } from '@dorkos/test-utils';
 import type { SidebarTarget } from '../model/build-sidebar-model';
 import { isRowActive } from '../ui/SidebarModelRow';
 
@@ -55,4 +56,50 @@ describe('isRowActive on Home', () => {
   it('still lights a room the ordinary way when both could answer', () => {
     expect(isRowActive(otherRow, otherRow, TEAM)).toBe(true);
   });
+});
+
+describe('isRowActive on an agent row', () => {
+  /**
+   * The open session, as the router reports it.
+   *
+   * @param cwd - The session's working directory.
+   */
+  function openSessionAt(cwd: string | null): SidebarTarget {
+    return { kind: 'session', sessionId: 'sess-1', agentPath: '/work/project', cwd };
+  }
+
+  it('lights the agent whose folder the open session is running in', () => {
+    // The plain case, and the one exact equality already got right.
+    expect(
+      isRowActive({ kind: 'agent', path: '/work/project' }, openSessionAt('/work/project'))
+    ).toBe(true);
+  });
+
+  it('lights the agent when the session is running in a subfolder (DOR-1550)', () => {
+    // The session is already IN this agent's list (`selectAgentSessions` has
+    // used the subtree rule since DOR-674); the row staying dark while its own
+    // conversation is open reads as the wrong agent being open.
+    expect(
+      isRowActive(
+        { kind: 'agent', path: '/work/project' },
+        openSessionAt('/work/project/packages/api')
+      )
+    ).toBe(true);
+  });
+
+  it('leaves an agent dark for a session with no working directory at all', () => {
+    // A cwd-less session belongs to no agent (DOR-202) — including no agent's
+    // active tint.
+    expect(isRowActive({ kind: 'agent', path: '/work/project' }, openSessionAt(null))).toBe(false);
+  });
+
+  describe.each(DIRECTORY_MEMBERSHIP_VECTORS)(
+    'membership vector: $name',
+    ({ root, candidate, within }) => {
+      it(`${within ? 'lights' : 'leaves dark'} the agent row`, () => {
+        // The tint answers the SAME table as the session list it is a tint for.
+        expect(isRowActive({ kind: 'agent', path: root }, openSessionAt(candidate))).toBe(within);
+      });
+    }
+  );
 });

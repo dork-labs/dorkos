@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -185,6 +185,7 @@ import {
 } from '../../../session/__tests__/durable-turn-harness.js';
 import { getOrCreateProjector, feedProjector } from '../../../session/index.js';
 import { FakeCli } from '../sessions/__tests__/fake-persistent-cli.js';
+import { projectSlug } from '../sessions/project-slug.js';
 import { LocalSessionAttachmentStore } from '../../../session/attachments/local-session-attachment-store.js';
 
 const mockedQuery = vi.mocked(query);
@@ -271,6 +272,39 @@ afterAll(() => {
   rmSync(account.root, { recursive: true, force: true });
   rmSync(ATTACHMENT_HOME, { recursive: true, force: true });
 });
+
+/**
+ * Put a listable claude-code session at `cwd` — the runtime's own wiring for the
+ * conformance subtree-membership invariant (DOR-1550).
+ *
+ * claude-code lists SDK JSONL transcripts, so `ensureSession` (the harness
+ * default) leaves nothing to list: the seed has to be a transcript, written
+ * where the SDK would write it — under `projectSlug(cwd)`, the very mapping the
+ * widened listing has to walk to find a subfolder's own directory.
+ *
+ * Removed when the test finishes, because it is written mid-suite under a slug
+ * inside `/projects/conformance` and would otherwise turn up in the listings
+ * other cases assert on — the same care {@link QUESTION_CWD} takes.
+ *
+ * @param cwd - The working directory the seeded session must run in.
+ */
+function seedListableTranscript(cwd: string): string {
+  const sessionId = randomUUID();
+  const dir = join(account.root, 'projects', projectSlug(cwd));
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, `${sessionId}.jsonl`);
+  writeFileSync(
+    file,
+    JSON.stringify({
+      type: 'user',
+      message: { role: 'user', content: `working in ${cwd}` },
+      timestamp: '2026-01-01T11:00:00.000Z',
+      cwd,
+    }) + '\n'
+  );
+  onTestFinished(() => rmSync(file, { force: true }));
+  return sessionId;
+}
 
 /**
  * The working directory the unanswered-question driver writes under (DOR-1293).
@@ -694,6 +728,9 @@ runtimeConformance(
     // path the sidebar calls and the one this field exists for. The probe
     // transcript's last human message precedes both the agent's later turns and
     // the file's mtime.
+    // The subtree-membership invariant needs a session claude-code will LIST,
+    // and only a transcript on disk is one (DOR-1550).
+    listableSessionAt: (_runtime, cwd) => seedListableTranscript(cwd),
     userLastMessageAtSession: async (runtime) => {
       const listed = await runtime.listSessions('/projects/conformance');
       const session = listed.find((s) => s.id === probeSessionId);

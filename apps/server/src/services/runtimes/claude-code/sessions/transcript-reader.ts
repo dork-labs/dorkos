@@ -9,6 +9,7 @@ import type {
   TaskItem,
   SessionListWarning,
 } from '@dorkos/shared/types';
+import { isWithinDirectory } from '@dorkos/shared/paths';
 import {
   parseTranscript,
   extractTextContent,
@@ -18,7 +19,7 @@ import {
 import type { TranscriptImageRef, TranscriptLine } from './transcript-parser.js';
 import { classifyOrigin } from './classify-origin.js';
 import { deriveSessionTitle } from '../../shared/derive-title.js';
-import { projectSlug } from './project-slug.js';
+import { projectSlug, subtreeSlugScope } from './project-slug.js';
 import { parseTasks } from './task-reader.js';
 import { SessionRootIndex, accountForTranscript } from './session-root-index.js';
 import { sumContextTokens } from '../sdk/context-tokens.js';
@@ -245,35 +246,68 @@ export class TranscriptReader {
    * (permissions, I/O) contributes one warning and zero sessions, and never
    * fails the call, so the accounts that DO read still list.
    *
+   * Covers the project's SUBTREE, not just its own folder (DOR-1550). Claude
+   * Code files a session under the slug of the directory it was started in, so
+   * a session started at `<project>/packages/api` lives in its own slug dir and
+   * was invisible from `<project>` — the claude-code half of the blind spot
+   * DOR-674 fixed for OpenCode, and fixed the same way: widen the read
+   * ({@link subtreeSlugScope} names every directory that could hold one), then
+   * narrow with the ONE shared membership predicate, `isWithinDirectory` from
+   * `@dorkos/shared/paths`. Each session keeps reporting its OWN working
+   * directory, so a row still says where it is really running.
+   *
+   * The project's own slug dir is exempt from the narrowing, and deliberately:
+   * that directory IS this project by construction — the SDK named it from this
+   * project's canonical path — so everything in it lists exactly as it did
+   * before, including a session whose recorded `cwd` spells the path a
+   * different way (a symlinked checkout, `/tmp` against `/private/tmp`).
+   * Reconciling spellings before they reach the predicate is DOR-695's job; the
+   * widened directories cannot borrow that exemption, because a slug prefix is
+   * a guess about names and only the predicate can turn it into an answer.
+   *
    * Every returned session carries a cwd: a transcript whose head records carry
    * none (oversized or unparseable first lines) is attributed to the project
    * directory it was listed from — its own slug dir — so exact-match cwd scoping
-   * downstream can never orphan it (ADR 260707-193314). Copies, never mutates:
-   * the shared metaCache also serves the fleet-wide watcher, which has no
-   * vaultRoot to attribute with.
+   * downstream can never orphan it (ADR 260707-193314). In a WIDENED directory
+   * there is no such attribution to make: the slug is lossy, so a cwd-less
+   * transcript there cannot be shown to belong to this project, and it is left
+   * out rather than credited to a project on the strength of a directory name.
+   * Copies, never mutates: the shared metaCache also serves the fleet-wide
+   * watcher, which has no vaultRoot to attribute with.
    */
   async listSessionsAcrossAccounts(
     vaultRoot: string
   ): Promise<{ sessions: Session[]; warnings: SessionListWarning[] }> {
     await validateBoundaryOrDorkHome(vaultRoot);
     const slug = this.getProjectSlug(vaultRoot);
+    const inScope = subtreeSlugScope(vaultRoot);
     const sessions: Session[] = [];
     const warnings: SessionListWarning[] = [];
     const seen = new Set<string>();
 
     for (const projectsRoot of this.getProjectsRootSet()) {
       try {
-        const found = await this.listSessionsInDir(path.join(projectsRoot, slug));
-        for (const session of found) {
-          // One row per id, first account (the active one) wins. Real machines
-          // never produce a collision — ids are UUIDs and each transcript exists
-          // under one account — but a duplicated id must not reach clients as two
-          // rows claiming to be the same session, and this is also the order every
-          // single-session read resolves in (SessionRootIndex, active first), so
-          // the row and the session it opens agree.
-          if (seen.has(session.id)) continue;
-          seen.add(session.id);
-          sessions.push(session.cwd === undefined ? { ...session, cwd: vaultRoot } : session);
+        for (const slugDir of await this.slugDirsInScope(projectsRoot, inScope)) {
+          const ownSlugDir = slugDir === slug;
+          const found = await this.listSessionsInDir(path.join(projectsRoot, slugDir));
+          for (const session of found) {
+            // One row per id, first account (the active one) wins. Real machines
+            // never produce a collision — ids are UUIDs and each transcript exists
+            // under one account — but a duplicated id must not reach clients as two
+            // rows claiming to be the same session, and this is also the order every
+            // single-session read resolves in (SessionRootIndex, active first), so
+            // the row and the session it opens agree.
+            if (seen.has(session.id)) continue;
+            if (session.cwd === undefined) {
+              if (!ownSlugDir) continue;
+              seen.add(session.id);
+              sessions.push({ ...session, cwd: vaultRoot });
+              continue;
+            }
+            if (!ownSlugDir && !isWithinDirectory(session.cwd, vaultRoot)) continue;
+            seen.add(session.id);
+            sessions.push(session);
+          }
         }
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
@@ -296,6 +330,40 @@ export class TranscriptReader {
     // One ordering across the union — each account's own sort is only per-account.
     sessions.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     return { sessions, warnings };
+  }
+
+  /**
+   * The slug directories in ONE account that could hold a session belonging to
+   * the project {@link subtreeSlugScope} was built for: its own, plus every
+   * directory named for a folder inside it.
+   *
+   * An account with no `projects` directory at all answers `[]` — a machine
+   * where this account has never run Claude Code contributes nothing and says
+   * nothing, which is the same silence a missing slug dir bought before the
+   * read widened. Any OTHER failure THROWS, so an account that exists and
+   * cannot be read still becomes one warning rather than a silent "no sessions"
+   * (spec `claude-code-accounts` AC6).
+   *
+   * Names only — no `stat`, no parse. Entries that are not directories are left
+   * in: `readdir` reports a slug dir reached through a symlink as a non-directory,
+   * and dropping those would lose every session inside it (the omission
+   * `session-inventory.ts` documents at length). {@link listSessionsInDir} reads
+   * through the name and an entry that turns out not to be a directory simply
+   * lists as nothing.
+   *
+   * @param projectsRoot - One account's `{claudeRoot}/projects` directory.
+   * @param inScope - The scope predicate from {@link subtreeSlugScope}.
+   */
+  private async slugDirsInScope(
+    projectsRoot: string,
+    inScope: (slugDirName: string) => boolean
+  ): Promise<string[]> {
+    try {
+      return (await fs.readdir(projectsRoot)).filter(inScope);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw err;
+    }
   }
 
   /**

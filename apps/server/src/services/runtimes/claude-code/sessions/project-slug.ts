@@ -132,3 +132,42 @@ export function slugForCanonicalPath(canonicalPath: string): string {
 export function projectSlug(cwd: string): string {
   return slugForCanonicalPath(canonicalizeCwd(cwd));
 }
+
+/**
+ * Which transcript-directory names could hold a session running at `cwd` **or
+ * anywhere inside it** — a READ SCOPE, never a membership rule.
+ *
+ * A session started at `<project>/packages/api` gets its own slug directory, so
+ * a listing that reads only `<project>`'s slug never sees it (DOR-1550). This
+ * says which directories are worth opening; whether a session found in one of
+ * them really belongs to the project is decided afterwards, and only, by
+ * `isWithinDirectory` from `@dorkos/shared/paths`.
+ *
+ * The scope may over-select and must never under-select, because a name it
+ * rejects is a directory nobody opens. Two properties make that hold:
+ *
+ *   * Every non-alphanumeric character becomes a dash, path separators
+ *     included, so a directory INSIDE `cwd` always slugs as this slug, a dash,
+ *     and more. Over-selection is the price: `~/work/app-2` also starts with
+ *     `~/work/app` plus a dash, and it is the predicate downstream — comparing
+ *     whole path segments — that throws it back out.
+ *   * Both sides are canonicalized the same way ({@link canonicalizeCwd}), so a
+ *     project reached through a symlink and the subfolder sessions the SDK
+ *     filed under its real name still line up.
+ *
+ * The one shape prefix reasoning cannot survive is a slug the SDK TRUNCATED: a
+ * hash of the whole path is appended past
+ * {@link PROJECT_SLUG_MAX_LENGTH}, and a subfolder's hash differs from its
+ * project's, so the two names diverge at the cut. Such a project accepts EVERY
+ * directory rather than silently losing its subtree — slower, never wrong.
+ *
+ * @param cwd - The project's working directory.
+ * @returns A predicate over the plain directory names found in a
+ *   `{claudeRoot}/projects` directory.
+ */
+export function subtreeSlugScope(cwd: string): (slugDirName: string) => boolean {
+  const replaced = canonicalizeCwd(cwd).replace(/[^a-zA-Z0-9]/g, '-');
+  if (replaced.length > PROJECT_SLUG_MAX_LENGTH) return () => true;
+  const nested = `${replaced}-`;
+  return (slugDirName) => slugDirName === replaced || slugDirName.startsWith(nested);
+}
