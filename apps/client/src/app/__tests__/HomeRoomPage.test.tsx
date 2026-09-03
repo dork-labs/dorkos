@@ -483,7 +483,7 @@ describe('HomeRoomPage — the attention deep links', () => {
     search = { detail: 'offline-agent', itemId: 'offline' };
     renderHome();
 
-    expect(await screen.findByRole('dialog', { name: /offline/i })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: /aren’t answering/i })).toBeInTheDocument();
   });
 
   it('draws no sheet without one', async () => {

@@ -144,7 +144,11 @@ describe('SessionConnectorsGroup', () => {
     await user.click(screen.getByRole('button', { name: 'Gmail (work)' }));
     await user.click(screen.getByRole('button', { name: 'Attach' }));
 
-    expect(await screen.findByText(/attached, but not available right now/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        /Attached, but there is a problem\. This account is not available right now\./i
+      )
+    ).toBeInTheDocument();
   });
 
   it('detaches an account with one action', async () => {

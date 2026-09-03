@@ -8,7 +8,10 @@ import { InlineCode } from './inline-code';
 export interface FeatureDisabledStateProps extends React.ComponentProps<'div'> {
   /** Glyph for the subsystem, drawn above the message. */
   icon: LucideIcon;
-  /** What is switched off, in the words the reader would use. */
+  /**
+   * What is switched off, in the words the reader would use ("Messaging",
+   * "Scheduling"). It is read as `{name} is off`, so keep it singular.
+   */
   name: string;
   /** One short line on what turning it on gets them. */
   description: string;

@@ -283,7 +283,7 @@ describe('when somebody else got there first', () => {
     // text still in the box. The apostrophe class is loose on purpose: the
     // read-refusal copy predates this branch and spells it straight.
     expect(await screen.findByText(/isn.t in the room.s files any more/)).toBeInTheDocument();
-    expect(screen.getByText(/save it over their change/)).toBeInTheDocument();
+    expect(screen.getByText(/Save it over their change/)).toBeInTheDocument();
     expect(box).toHaveValue('mine\n');
     expect(screen.getByRole('button', { name: 'Save mine over it' })).toBeInTheDocument();
   });

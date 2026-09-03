@@ -789,7 +789,7 @@ describe('ScheduleApprovalCard — running it once', () => {
 
     await waitFor(() => expect(slot('schedule-test-run')).toHaveAttribute('data-phase', 'failed'));
     expect(slot('schedule-test-run')).toHaveTextContent(
-      'Test run failed — Command not found: sweep'
+      'Test run failed: Command not found: sweep'
     );
     // And it offers no "view what it did" over a failure with no session.
     expect(screen.queryByRole('button', { name: /view what it did/ })).not.toBeInTheDocument();

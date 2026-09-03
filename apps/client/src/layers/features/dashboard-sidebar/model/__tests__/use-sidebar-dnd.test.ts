@@ -628,7 +628,7 @@ describe('buildSidebarAnnouncements', () => {
       over: over({ type: 'container', container: inGroup('g1') }),
     });
     expect(msg).toBe(
-      "Can't move api-server into Clients. membership is rule-based. Edit rules instead."
+      "Can't move api-server into Clients. Membership is rule-based. Edit rules instead."
     );
   });
 

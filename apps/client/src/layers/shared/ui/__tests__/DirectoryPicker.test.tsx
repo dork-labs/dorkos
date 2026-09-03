@@ -325,7 +325,12 @@ describe('DirectoryPicker', () => {
       fireEvent.keyDown(screen.getByLabelText('New folder name'), { key: 'Enter' });
 
       await waitFor(() => {
-        expect(toast.error).toHaveBeenCalledWith('Permission denied');
+        // The authored line is the headline and the server's own words sit
+        // under it, so a person meets a sentence rather than "EACCES" (DOR-1755).
+        expect(toast.error).toHaveBeenCalledWith(
+          "Couldn't make that folder.",
+          expect.objectContaining({ description: 'Permission denied' })
+        );
       });
     });
   });

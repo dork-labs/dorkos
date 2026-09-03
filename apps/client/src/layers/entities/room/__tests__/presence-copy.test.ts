@@ -36,7 +36,7 @@ describe('presenceSentence', () => {
       'Kai and Ana are still working, this is taking longer than usual'
     );
     expect(presenceSentence(['Kai', 'Ana', 'Sam'], 'working_late')).toBe(
-      'Kai, Ana and Sam are still working — this is taking longer than usual'
+      'Kai, Ana and Sam are still working, this is taking longer than usual'
     );
   });
 });
