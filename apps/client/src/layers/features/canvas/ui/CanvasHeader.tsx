@@ -35,6 +35,22 @@ const CONTENT_TYPE_ICONS = {
   diff: GitCompare,
 } as const satisfies Record<UiCanvasContent['type'], unknown>;
 
+/**
+ * Invisible reach that grows the tab close button below `md`, vertically only.
+ *
+ * **No horizontal reach, on purpose.** The close button already sits inside
+ * `pr-7` — 28px the tab button reserves for it — and at `p-1.5` (below `md`)
+ * its 24px box fills that reservation edge to edge (`right-1` plus 24px of
+ * box is 28px). Reaching sideways from there would spend the tab's OWN
+ * clickable label area, so a tap meant to select the tab would close it
+ * instead — worse than the small target this replaces. The tab grew to
+ * `py-3` below `md` specifically to give this reach somewhere safe to go:
+ * an 8px vertical slack opens on each side of the now-centered 24px box,
+ * bounded by the row itself, so `-inset-y-2` cannot spill onto anything
+ * outside this tab.
+ */
+const TAB_CLOSE_TOUCH_REACH = 'after:absolute after:-inset-y-2 md:after:hidden';
+
 /** DOM id of the canvas content region the active tab controls. */
 export const CANVAS_PANEL_ID = 'canvas-panel';
 
@@ -115,7 +131,7 @@ export function CanvasHeader({
               aria-controls={isActive ? CANVAS_PANEL_ID : undefined}
               {...getTabProps(doc.id)}
               className={cn(
-                'focus-ring flex items-center gap-1.5 rounded-md py-1 pr-7 pl-2 text-xs transition-colors',
+                'focus-ring flex items-center gap-1.5 rounded-md py-3 pr-7 pl-2 text-xs transition-colors md:py-1',
                 isActive
                   ? 'bg-muted text-foreground'
                   : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
@@ -129,7 +145,10 @@ export function CanvasHeader({
               tabIndex={-1}
               onClick={() => onClose(doc.id)}
               aria-label={`Close ${doc.sourceLabel}`}
-              className="focus-ring hover:bg-background/80 absolute top-1/2 right-1 -translate-y-1/2 rounded-sm p-0.5 opacity-60 transition-opacity group-hover:opacity-100"
+              className={cn(
+                'focus-ring hover:bg-background/80 absolute top-1/2 right-1 -translate-y-1/2 rounded-sm p-1.5 opacity-60 transition-opacity group-hover:opacity-100 md:p-0.5',
+                TAB_CLOSE_TOUCH_REACH
+              )}
             >
               <X className="size-3" />
             </button>
