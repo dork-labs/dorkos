@@ -96,7 +96,7 @@ export function ControlCenterSwitches() {
           description={
             loginEnabled
               ? 'Answer “stop asking about this” once from an approval card and DorkOS remembers it — one agent, one action at a time.'
-              : 'Turn on Require login in Settings → Security to use this. Without it, DorkOS cannot tell you apart from an agent on this machine.'
+              : 'Turn on Require login in Settings → Access to use this. Without it, DorkOS cannot tell you apart from an agent on this machine.'
           }
           checked={standingGrants && loginEnabled}
           disabled={!loginEnabled || updateConfig.isPending}

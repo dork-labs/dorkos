@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
+import { TunnelMachineProvider } from '../model/tunnel-machine-provider';
 import { TunnelDialog } from '../ui/TunnelDialog';
 
 // Mock useIsMobile to always return false (desktop dialog)
@@ -92,7 +93,9 @@ function createWrapper(transport?: Transport) {
   const t = transport || createTunnelTransport();
   return ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
-      <TransportProvider transport={t}>{children}</TransportProvider>
+      <TransportProvider transport={t}>
+        <TunnelMachineProvider>{children}</TunnelMachineProvider>
+      </TransportProvider>
     </QueryClientProvider>
   );
 }
@@ -123,6 +126,19 @@ describe('TunnelDialog', () => {
     await waitFor(() => {
       expect(screen.getByTestId('tunnel-landing')).toBeDefined();
     });
+  });
+
+  it('says "Access DorkOS from any device" once, not in the header and the body both', async () => {
+    // The dialog's own header description used to repeat what
+    // `TunnelOnboarding` already says under the illustration — the exact
+    // duplicate `TunnelLanding.tsx` removed from its body, just missed in the
+    // header (review nit).
+    const transport = createTunnelTransport({ tokenConfigured: false });
+    render(<TunnelDialog open={true} onOpenChange={vi.fn()} />, {
+      wrapper: createWrapper(transport),
+    });
+    await screen.findByTestId('tunnel-landing');
+    expect(screen.getAllByText(/Access DorkOS from any device/)).toHaveLength(1);
   });
 
   it('shows settings view when tokenConfigured is true', async () => {

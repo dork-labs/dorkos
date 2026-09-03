@@ -1548,7 +1548,7 @@ export function migrateStatusBarToPins(store: {
  * in it. Same shape and same reasoning as {@link migrateStatusBarToPins}.
  *
  * Seeds `true`, matching the schema default — chat formats as you type, and the
- * Settings → Advanced switch turns it off.
+ * Settings → Preferences switch turns it off.
  *
  * ## This body was EDITED after merging, and that was a mistake
  *

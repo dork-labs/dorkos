@@ -27,7 +27,7 @@ import { useCurrentUser, useSignOut } from '../model/use-auth-session';
  * toggle shows (no user, no sign-out, no API keys). Enabling it walks the user
  * through owner-account creation, then flips `auth.enabled`.
  *
- * Composed into the Settings dialog's Security tab (a `features/settings` UI
+ * Composed into the Settings dialog's Access tab (a `features/settings` UI
  * that renders this `features/auth` panel — sibling UI composition).
  */
 export function SecurityPanel() {
@@ -56,8 +56,8 @@ export function SecurityPanel() {
   return (
     <div className="space-y-4">
       <div className="space-y-1">
-        {/* No heading here: the Settings dialog draws the panel's own
-            "Security" header. This is the explainer that sits under it. */}
+        {/* No heading here: the Access tab draws the section heading this
+            sits under ("On this machine"). This is its explainer. */}
         <p className="text-muted-foreground text-sm">
           Require an owner login to reach this instance. Exposing DorkOS beyond localhost (a tunnel
           or non-loopback bind) always requires login.

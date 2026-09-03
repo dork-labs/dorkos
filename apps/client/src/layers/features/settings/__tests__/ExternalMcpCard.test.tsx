@@ -242,7 +242,7 @@ describe('ExternalMcpCard', () => {
   it('shows personal-API-key guidance for login-on none (no keys minted yet)', async () => {
     // Purpose: login ON with authSource 'none' just means no personal API key
     // exists yet — a reachable state. The "couldn't generate a local token"
-    // alarm would be false there; the card points at Settings → Security instead.
+    // alarm would be false there; the card points at Settings → Access instead.
     const user = userEvent.setup();
     const { Wrapper } = createWrapper();
     render(<ExternalMcpCard mcp={DEFAULT_MCP} authEnabled={true} />, { wrapper: Wrapper });

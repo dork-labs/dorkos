@@ -3,7 +3,7 @@ import { openFromCommandPalette } from './command-palette';
 
 /**
  * Page Object Model for the local-login (Better Auth) surface:
- * - the Settings → Security panel ("Require login" toggle, sign-out),
+ * - the Settings → Access panel ("Require login" toggle, sign-out),
  * - the owner-setup dialog, and
  * - the full-bleed LoginScreen that the AuthGuard renders when a session is
  *   required.
@@ -17,19 +17,24 @@ export class AuthPage {
     this.settingsDialog = page.getByRole('dialog', { name: /settings/i });
   }
 
-  /** Open Settings from the command palette and switch to the Security tab. */
-  async openSecurityTab() {
+  /**
+   * Open Settings from the command palette and switch to the Access tab.
+   *
+   * "Access" since DOR-1758: the Security and DorkOS account tabs answered one
+   * question and became two sections of one tab.
+   */
+  async openAccessTab() {
     await openFromCommandPalette(this.page, 'Settings');
     await this.settingsDialog.waitFor({ state: 'visible' });
-    await this.settingsDialog.getByRole('tab', { name: /security/i }).click();
+    await this.settingsDialog.getByRole('tab', { name: /^access$/i }).click();
   }
 
-  /** The "Require login" toggle in Settings → Security. */
+  /** The "Require login" toggle in Settings → Access. */
   get requireLoginSwitch() {
     return this.settingsDialog.getByRole('switch', { name: /require login/i });
   }
 
-  /** The "Sign out" control shown in Settings → Security when signed in. */
+  /** The "Sign out" control shown in Settings → Access when signed in. */
   get signOutButton() {
     return this.settingsDialog.getByRole('button', { name: /sign out/i });
   }

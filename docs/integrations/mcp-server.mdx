@@ -74,7 +74,7 @@ One honest note on what this protects: it stops tokenless calls, keeps the token
   `POST` a real JSON-RPC request like the ones above.
 </Callout>
 
-**Login on.** Once you turn on login, MCP clients authenticate with a **personal API key** instead, created and revoked from **Settings → Security → API keys** and sent as a Bearer token. The local token steps aside; per-user keys take over. See [Securing Your Instance](/docs/self-hosting/securing-your-instance) for the full flow.
+**Login on.** Once you turn on login, MCP clients authenticate with a **personal API key** instead, created and revoked from **Settings → Access → API keys** and sent as a Bearer token. The local token steps aside; per-user keys take over. See [Securing Your Instance](/docs/self-hosting/securing-your-instance) for the full flow.
 
 **Headless deployments** (CI, servers no one signs into): set the `MCP_API_KEY` environment variable. It's a static override that every client uses as its Bearer token; it takes priority over both the local token and per-user keys, and it can't be revoked from the UI.
 

@@ -62,8 +62,6 @@ export interface TabbedDialogProps<T extends string> {
   initialTab?: T | null;
   /** Built-in tabs. */
   tabs: TabbedDialogTab<T>[];
-  /** Optional non-tab sidebar items (e.g., a button that opens a sub-dialog). */
-  sidebarExtras?: ReactNode;
   /**
    * Optional extension slot ID. When set, contributions from the registry are merged
    * into the tab list (built-ins first, extensions appended).
@@ -110,7 +108,6 @@ export function TabbedDialog<T extends string>({
   defaultTab,
   initialTab,
   tabs,
-  sidebarExtras,
   extensionSlot,
   maxWidth = 'max-w-2xl',
   minHeight = 'min-h-[280px]',
@@ -208,7 +205,6 @@ export function TabbedDialog<T extends string>({
                       {tab.label}
                     </NavigationLayoutItem>
                   ))}
-              {sidebarExtras}
             </NavigationLayoutSidebar>
 
             <NavigationLayoutContent className={cn(minHeight, 'p-4')}>

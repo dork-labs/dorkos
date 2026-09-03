@@ -151,7 +151,10 @@ describe('ExperimentsTab', () => {
     expect(await screen.findByTestId('experiments-empty')).toHaveTextContent(
       /Nothing’s cooking right now/
     );
-    expect(screen.queryAllByRole('switch')).toHaveLength(0);
+    // "Show dev tools" is not one of the server-sent experiments — it is the
+    // one switch this tab draws itself — so it survives an empty list.
+    expect(screen.queryAllByRole('switch')).toHaveLength(1);
+    expect(screen.getByRole('switch', { name: 'Show dev tools' })).toBeInTheDocument();
   });
 
   it('does not claim the list is empty while the config is still loading', () => {
@@ -172,13 +175,38 @@ describe('ExperimentsTab', () => {
     );
 
     expect(screen.queryByTestId('experiments-empty')).not.toBeInTheDocument();
-    expect(screen.queryAllByRole('switch')).toHaveLength(0);
+    // Pure client state, not server-derived — DOR-1758 follow-up (I4): the
+    // one production path to the developer panel must not wait on a config
+    // read that may never resolve.
+    expect(screen.getByRole('switch', { name: 'Show dev tools' })).toBeInTheDocument();
   });
 
   it('shows the empty state on a server too old to report the block at all', async () => {
     renderTab(undefined);
 
     expect(await screen.findByTestId('experiments-empty')).toBeInTheDocument();
+  });
+
+  it('keeps the dev-tools switch reachable when the server refuses to answer', async () => {
+    // The exact failure scenario the Server tab has (I4, DOR-1758 follow-up):
+    // mid-restart, or refusing outright, is precisely when someone reaches for
+    // the developer panel — and the one production path to it must not be
+    // gated behind the same config read that just failed.
+    updateConfig = vi.fn().mockResolvedValue(undefined);
+    const transport: Transport = createMockTransport({
+      getConfig: vi.fn().mockRejectedValue(new Error('ECONNREFUSED')),
+      updateConfig,
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <ExperimentsTab />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+
+    expect(await screen.findByRole('switch', { name: 'Show dev tools' })).toBeInTheDocument();
   });
 
   it('always states the deal, whether or not there is anything listed', async () => {

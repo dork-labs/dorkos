@@ -36,7 +36,7 @@ import { PLAYGROUND_CAPABILITIES } from '../playground-transport';
 
 /**
  * Realistic mock `ServerConfig` consumed by the `ServerTab`, `ToolsTab`,
- * `AdvancedTab`, and full Settings dialog showcases.
+ * `DangerZoneTab`, and full Settings dialog showcases.
  *
  * Values are chosen to look plausible in screenshots: a recent version,
  * the production default port, a multi-hour uptime, and feature flags

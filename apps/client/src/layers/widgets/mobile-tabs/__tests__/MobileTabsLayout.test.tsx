@@ -35,6 +35,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
+import { TunnelMachineProvider } from '@/layers/features/settings';
 import { buildSidebarModel } from '@/layers/features/dashboard-sidebar/model/build-sidebar-model';
 import type { SidebarState } from '@/layers/features/dashboard-sidebar/model/sidebar-state';
 import {
@@ -209,7 +210,14 @@ function renderLayout(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
         <TooltipProvider>
-          <MobileTabsLayout takeover={takeover} />
+          {/* The Home zone's dashboard sidebar carries the Remote Access promo
+              card, which mounts `TunnelDialog` — a reader of the app-wide
+              tunnel machine `AppShell.tsx` provides in production (DOR-1758
+              follow-up). Without this here, that card throws the moment its
+              `shouldShow` condition is met. */}
+          <TunnelMachineProvider>
+            <MobileTabsLayout takeover={takeover} />
+          </TunnelMachineProvider>
         </TooltipProvider>
       </TransportProvider>
     </QueryClientProvider>

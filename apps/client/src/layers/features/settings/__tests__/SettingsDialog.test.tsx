@@ -22,9 +22,9 @@ vi.mock('@/layers/shared/model/media/use-is-mobile', () => ({
   useIsMobile: () => false,
 }));
 
-// Mock AdvancedTab to avoid transport dependency in SettingsDialog tests
-vi.mock('../ui/AdvancedTab', () => ({
-  AdvancedTab: () => <div data-testid="advanced-tab">Advanced</div>,
+// Mock DangerZoneTab to avoid transport dependency in SettingsDialog tests
+vi.mock('../ui/DangerZoneTab', () => ({
+  DangerZoneTab: () => <div data-testid="danger-zone-tab">Danger zone</div>,
 }));
 
 // Mock ServerRestartOverlay to avoid transport dependency in SettingsDialog tests
@@ -162,7 +162,11 @@ describe('SettingsDialog', () => {
     navigateTo(/preferences/i);
     expect(screen.getByText('Show timestamps')).toBeDefined();
     expect(screen.getByText('Expand tool calls')).toBeDefined();
-    expect(screen.getByText('Show dev tools')).toBeDefined();
+    // The two rows that came back from the old Advanced tab (DOR-1758).
+    expect(screen.getByText('Format text as you type')).toBeDefined();
+    expect(screen.getByText('Background refresh')).toBeDefined();
+    // The developer panel is a debugging aid; it went to Server → Diagnostics.
+    expect(screen.queryByText('Show dev tools')).toBeNull();
   });
 
   // Verifies server config section appears with fetched data
@@ -178,6 +182,8 @@ describe('SettingsDialog', () => {
     // a standalone "Port 4242" row told a desktop user nothing they could copy
     // into an MCP client or a browser.
     expect(screen.getByText('http://localhost:4242')).toBeDefined();
+    // The working directory is one of the four diagnostics behind the fold.
+    fireEvent.click(screen.getByRole('button', { name: 'Diagnostics' }));
     expect(screen.getByText('/home/user/project')).toBeDefined();
   });
 
@@ -190,6 +196,7 @@ describe('SettingsDialog', () => {
     navigateTo(/server/i);
     expect(await screen.findByText('http://localhost:4242')).toBeDefined();
     expect(screen.getByText('http://localhost:4242/mcp')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Diagnostics' }));
     expect(screen.getByText('/home/user/.dork')).toBeDefined();
   });
 
@@ -220,13 +227,19 @@ describe('SettingsDialog', () => {
     expect(screen.getByRole('tab', { name: /server/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /tools/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /^runtimes/i })).toBeDefined();
-    expect(screen.getByRole('tab', { name: /security/i })).toBeDefined();
+    expect(screen.getByRole('tab', { name: /^access$/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /privacy & data/i })).toBeDefined();
-    expect(screen.getByRole('tab', { name: /advanced/i })).toBeDefined();
+    expect(screen.getByRole('tab', { name: /remote access/i })).toBeDefined();
+    expect(screen.getByRole('tab', { name: /danger zone/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /experiments/i })).toBeDefined();
     // The two deleted tabs are gone.
     expect(screen.queryByRole('tab', { name: /integrations/i })).toBeNull();
     expect(screen.queryByRole('tab', { name: /^agents$/i })).toBeNull();
+    // So are the three the reshuffle retired: Security and DorkOS account are
+    // one Access tab now, and Advanced is named after what it holds (DOR-1758).
+    expect(screen.queryByRole('tab', { name: /^security$/i })).toBeNull();
+    expect(screen.queryByRole('tab', { name: /dorkos account/i })).toBeNull();
+    expect(screen.queryByRole('tab', { name: /^advanced$/i })).toBeNull();
   });
 
   // The staging area for flags that ship OFF (DOR-1304). Reachable by click and
@@ -262,7 +275,9 @@ describe('SettingsDialog', () => {
     const headers = Array.from(
       container.querySelectorAll('[data-slot="navigation-layout-section-header"]')
     ).map((el) => el.textContent);
-    expect(headers).toEqual(['Agents & sessions', 'Access & privacy', 'System']);
+    // Four labelled peers. The first four tabs used to carry no group at all and
+    // rendered as a headerless run above the first header (DOR-1758).
+    expect(headers).toEqual(['You', 'Agents & sessions', 'Access & privacy', 'System']);
   });
 
   // Verifies font family selector appears in the Appearance tab
@@ -350,22 +365,26 @@ describe('SettingsDialog', () => {
     expect(toggle?.getAttribute('data-state')).toBe('checked');
   });
 
-  // Verifies Feature suggestions toggle appears between To-do celebrations and Show dev tools
-  it('positions Feature suggestions between To-do celebrations and Show dev tools', () => {
+  // Two groups, not one flat stack: everything about the conversation, then the
+  // two rows about being shown something again (DOR-1758).
+  it('groups the chat rows first and the discovery rows after them', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
     navigateTo(/preferences/i);
     const panel = screen
       .getByText('Show timestamps')
       .closest('[data-slot="navigation-layout-panel"]')!;
+    expect(within(panel as HTMLElement).getByRole('heading', { name: 'Chat' })).toBeDefined();
+    expect(within(panel as HTMLElement).getByRole('heading', { name: 'Discovery' })).toBeDefined();
+
     const labels = Array.from(panel.querySelectorAll('[data-slot="field-label"]')).map(
       (el) => el.textContent
     );
     const celebrationsIdx = labels.indexOf('To-do celebrations');
+    const refreshIdx = labels.indexOf('Background refresh');
     const promoIdx = labels.indexOf('Feature suggestions');
-    const devToolsIdx = labels.indexOf('Show dev tools');
     expect(celebrationsIdx).toBeGreaterThanOrEqual(0);
-    expect(promoIdx).toBeGreaterThan(celebrationsIdx);
-    expect(devToolsIdx).toBeGreaterThan(promoIdx);
+    expect(refreshIdx).toBeGreaterThan(celebrationsIdx);
+    expect(promoIdx).toBeGreaterThan(refreshIdx);
   });
 
   // A setting whose description promised a toast no code ever rendered was
@@ -393,9 +412,8 @@ describe('SettingsDialog — one heading per panel', () => {
     { nav: /preferences/i, title: 'Preferences' },
     { nav: /^tools/i, title: 'Tools' },
     { nav: /^runtimes/i, title: 'Runtimes' },
-    { nav: /security/i, title: 'Security' },
+    { nav: /^access$/i, title: 'Access' },
     { nav: /privacy & data/i, title: 'Privacy & Data' },
-    { nav: /dorkos account/i, title: 'DorkOS account' },
     { nav: /^server/i, title: 'Server' },
   ];
 

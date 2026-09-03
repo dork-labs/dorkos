@@ -1,9 +1,24 @@
-import { useQuery } from '@tanstack/react-query';
-import { ExternalLink } from 'lucide-react';
+import { useCallback, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Copy, ExternalLink } from 'lucide-react';
+import type { ServerConfig } from '@dorkos/shared/types';
 import { cn, isNewer, openExternalLink, useCopyFeedback } from '@/layers/shared/lib';
-import { Button, CopyButton } from '@/layers/shared/ui';
+import {
+  Button,
+  CollapsibleFieldCard,
+  CopyButton,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  SettingRow,
+} from '@/layers/shared/ui';
 import { useTransport } from '@/layers/shared/model';
 import { configKeys } from '@/layers/entities/config';
+
+const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace'] as const;
 
 /** Settings panel tab displaying server status, environment, and endpoints. */
 export function ServerTab() {
@@ -38,50 +53,217 @@ export function ServerTab() {
           ))}
         </div>
       ) : config ? (
-        <div className="space-y-1">
-          {config.isDevMode ? (
-            <div className="-mx-1 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 dark:border-amber-800 dark:bg-amber-950/30">
-              <span className="text-sm font-medium text-amber-800 dark:text-amber-200">
-                Development Build
-              </span>
-              <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">
-                Running from source — version checks disabled
-              </p>
-            </div>
-          ) : (
-            <>
-              <ConfigRow label="Version" value={config.version} />
+        <div className="space-y-3">
+          <div className="space-y-1">
+            {config.isDevMode ? (
+              <div className="-mx-1 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 dark:border-amber-800 dark:bg-amber-950/30">
+                <span className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                  Development Build
+                </span>
+                <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">
+                  Running from source — version checks disabled
+                </p>
+              </div>
+            ) : (
+              <>
+                <ConfigRow label="Version" value={config.version} />
 
-              {/* Update notice — shown when latestVersion is newer */}
-              {config.latestVersion && isNewer(config.latestVersion, config.version) && (
-                <div className="-mx-1 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 dark:border-amber-800 dark:bg-amber-950/30">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-amber-800 dark:text-amber-200">
-                      Update available: v{config.latestVersion}
-                    </span>
+                {/* Update notice — shown when latestVersion is newer */}
+                {config.latestVersion && isNewer(config.latestVersion, config.version) && (
+                  <div className="-mx-1 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 dark:border-amber-800 dark:bg-amber-950/30">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                        Update available: v{config.latestVersion}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">
+                      Run{' '}
+                      <code className="text-3xs rounded bg-amber-100 px-1 py-0.5 font-mono dark:bg-amber-900/50">
+                        npm update -g dorkos
+                      </code>{' '}
+                      to update
+                    </p>
                   </div>
-                  <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">
-                    Run{' '}
-                    <code className="text-3xs rounded bg-amber-100 px-1 py-0.5 font-mono dark:bg-amber-900/50">
-                      npm update -g dorkos
-                    </code>{' '}
-                    to update
-                  </p>
-                </div>
-              )}
-            </>
-          )}
+                )}
+              </>
+            )}
 
-          <ServerAddress port={config.port} />
+            <ServerAddress port={config.port} />
 
-          <ConfigRow label="Uptime" value={formatUptime(config.uptime)} />
-          <ConfigRow label="Working Directory" value={config.workingDirectory} mono truncate />
-          <ConfigRow label="Data Directory" value={config.dorkHome} mono truncate />
-          <ConfigRow label="Boundary" value={config.boundary} mono truncate />
-          <ConfigRow label="Node.js" value={config.nodeVersion} />
+            <ConfigRow label="Uptime" value={formatUptime(config.uptime)} />
+          </div>
+
+          <DiagnosticsSection config={config} />
+          <LoggingSection config={config} />
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The paths and versions a support conversation asks for, folded away.
+ *
+ * They are why nobody opens this tab: shown flat beside the address, four
+ * click-to-copy rows about directories and Node cost the one row people came
+ * for its prominence, and "Boundary" is a word a non-developer has no model
+ * for. Behind one disclosure they are still one click away, and the header's
+ * own control copies the lot in one go rather than making somebody click four
+ * rows in turn.
+ *
+ */
+function DiagnosticsSection({ config }: { config: ServerConfig }) {
+  const [open, setOpen] = useState(false);
+
+  const rows = [
+    { label: 'Working Directory', value: config.workingDirectory },
+    { label: 'Data Directory', value: config.dorkHome },
+    { label: 'Boundary', value: config.boundary },
+    { label: 'Node.js', value: config.nodeVersion },
+  ];
+
+  return (
+    <CollapsibleFieldCard
+      open={open}
+      onOpenChange={setOpen}
+      trigger="Diagnostics"
+      action={
+        <CopyButton
+          value={rows.map((row) => `${row.label}: ${row.value}`).join('\n')}
+          label="Copy all diagnostics"
+        />
+      }
+    >
+      {/* One child, so the card's row padding lands once and each ConfigRow
+          keeps the compact click-to-copy shape it has at the top of the tab. */}
+      <div className="space-y-1">
+        {rows.map((row) => (
+          <ConfigRow key={row.label} label={row.label} value={row.value} mono truncate />
+        ))}
+      </div>
+    </CollapsibleFieldCard>
+  );
+}
+
+/**
+ * How much this machine's server writes down, and where it keeps it.
+ *
+ * Moved here from the old Advanced tab (DOR-1758): logging is a property of
+ * this server, which is what this tab is. Folded because two of its four rows
+ * are file-rotation numbers that matter to almost nobody, and the level — the
+ * one anybody changes — rides in the header so it can be read without opening
+ * anything.
+ */
+function LoggingSection({ config }: { config: ServerConfig }) {
+  const [open, setOpen] = useState(false);
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  const logging = config.logging;
+
+  const updateLogging = useCallback(
+    async (patch: Record<string, unknown>) => {
+      const current = logging ?? { level: 'info', maxLogSizeKb: 500, maxLogFiles: 14 };
+      await transport.updateConfig({ logging: { ...current, ...patch } });
+      await queryClient.invalidateQueries({ queryKey: configKeys.all });
+    },
+    [transport, queryClient, logging]
+  );
+
+  if (!logging) return null;
+
+  return (
+    <CollapsibleFieldCard
+      open={open}
+      onOpenChange={setOpen}
+      trigger="Logging"
+      badge={<span className="text-muted-foreground text-xs">{logging.level}</span>}
+    >
+      <SettingRow label="Log level" description="How much the server writes down">
+        <Select value={logging.level} onValueChange={(v) => updateLogging({ level: v })}>
+          <SelectTrigger className="w-28">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {LOG_LEVELS.map((level) => (
+              <SelectItem key={level} value={level}>
+                {level}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </SettingRow>
+
+      <SettingRow label="Max log file size" description="Size in KB before a log file is rotated">
+        <div className="flex items-center gap-1.5">
+          <Input
+            type="number"
+            min={100}
+            max={10240}
+            value={logging.maxLogSizeKb}
+            onChange={(e) => {
+              const v = parseInt(e.target.value, 10);
+              if (v >= 100 && v <= 10240) updateLogging({ maxLogSizeKb: v });
+            }}
+            className="w-24"
+          />
+          <span className="text-muted-foreground text-xs">KB</span>
+        </div>
+      </SettingRow>
+
+      <SettingRow label="Rotated files kept" description="Number of old log files to retain (1-30)">
+        <Input
+          type="number"
+          min={1}
+          max={30}
+          value={logging.maxLogFiles}
+          onChange={(e) => {
+            const v = parseInt(e.target.value, 10);
+            if (v >= 1 && v <= 30) updateLogging({ maxLogFiles: v });
+          }}
+          className="w-20"
+        />
+      </SettingRow>
+
+      {config.dorkHome && <LogLocationRow dorkHome={config.dorkHome} />}
+    </CollapsibleFieldCard>
+  );
+}
+
+/** Read-only row showing the log file location with click-to-copy. */
+function LogLocationRow({ dorkHome }: { dorkHome: string }) {
+  const { copied, failed, copy } = useCopyFeedback();
+  const logPath = `${dorkHome}/logs`;
+
+  function content() {
+    if (copied) return <span className="text-xs">Copied</span>;
+    if (failed) return <span className="text-destructive text-xs">Couldn&apos;t copy</span>;
+    return (
+      <>
+        {/* Clipped at the front, so the folder name survives and the shared
+            head is what goes. The `bdi` keeps the path reading left-to-right
+            inside the rtl span; without it the leading `/` is claimed by the
+            surrounding RTL paragraph and painted at the right-hand end, so
+            `/Users/kai/.dork/logs` drew as `Users/kai/.dork/logs/`. That is the
+            only edge at risk here: this value always ends in `/logs`, never in
+            a neutral character (DOR-1686, idiom from `MessageSearchHitRow`). */}
+        <span className="max-w-40 truncate font-mono text-xs" dir="rtl" title={logPath}>
+          <bdi dir="ltr">{logPath}</bdi>
+        </span>
+        <Copy className="size-3 shrink-0" />
+      </>
+    );
+  }
+
+  return (
+    <SettingRow label="Log location" description="Where the server keeps its log files">
+      <button
+        type="button"
+        onClick={() => void copy(logPath)}
+        className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors"
+      >
+        {content()}
+      </button>
+    </SettingRow>
   );
 }
 
@@ -149,7 +331,7 @@ function ServerAddress({ port }: { port: number }) {
         </p>
       </div>
       {/* One grid for both URLs so the controls column is sized by the widest
-          row and the two fields end at the same edge — the cockpit address
+          row and the two fields end at the same edge — the app's own address
           carries an extra button, the MCP endpoint does not. */}
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-1.5 gap-y-2">
         <AddressField url={baseUrl} label="DorkOS address">
