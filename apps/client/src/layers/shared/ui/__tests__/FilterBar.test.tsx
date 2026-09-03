@@ -169,6 +169,24 @@ describe('FilterBar', () => {
     ).toHaveBeenCalledWith('name', 'desc');
   });
 
+  // DOR-1753: FilterBar backs /tasks, /team and /activity, real mobile
+  // routes, so its search box gets a real touch target below `md` instead
+  // of the flat desktop `h-8` it used to force everywhere.
+  it('grows the search box to a touch target below md, desktop density unchanged', () => {
+    const state = createMockFilterState();
+    render(
+      <FilterBar state={state}>
+        <FilterBar.Search placeholder="Search..." />
+      </FilterBar>
+    );
+
+    const input = screen.getByPlaceholderText('Search...');
+    expect(input.className).toContain('md:h-8');
+    // The bare (unprefixed) h-8 that used to win at every width is gone —
+    // it would otherwise beat the default `h-11` below `md` too.
+    expect(input.className.split(' ')).not.toContain('h-8');
+  });
+
   it('search onChange calls filterState.set', async () => {
     const state = createMockFilterState();
     const user = userEvent.setup();

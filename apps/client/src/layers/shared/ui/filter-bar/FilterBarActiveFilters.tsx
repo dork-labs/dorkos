@@ -98,7 +98,6 @@ function FilterBarActiveFilters({ className }: FilterBarActiveFiltersProps) {
                 <Button
                   variant="ghost"
                   size="icon-xs"
-                  responsive={false}
                   onClick={() => clear(name)}
                   aria-label={`Remove ${label} filter`}
                 >
@@ -109,7 +108,6 @@ function FilterBarActiveFilters({ className }: FilterBarActiveFiltersProps) {
             <Button
               variant="ghost"
               size="xs"
-              responsive={false}
               className="mt-2 self-start"
               onClick={() => {
                 clearAll();

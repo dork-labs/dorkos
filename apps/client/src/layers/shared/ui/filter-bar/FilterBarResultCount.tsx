@@ -24,7 +24,7 @@ function FilterBarResultCount({ count, total, noun, className }: FilterBarResult
     >
       <span>{count === total ? `${count} ${plural}` : `${count} of ${total} ${plural}`}</span>
       {count < total && (
-        <Button variant="ghost" size="xs" responsive={false} onClick={clearAll}>
+        <Button variant="ghost" size="xs" onClick={clearAll}>
           Clear all
         </Button>
       )}

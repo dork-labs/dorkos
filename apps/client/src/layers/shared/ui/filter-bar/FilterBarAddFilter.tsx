@@ -169,7 +169,6 @@ function FilterBarAddFilter({ dynamicOptions, className }: FilterBarAddFilterPro
           <Button
             variant="ghost"
             size="xs"
-            responsive={false}
             className="mt-1 self-start"
             onClick={() => clear(name)}
           >
@@ -202,7 +201,6 @@ function FilterBarAddFilter({ dynamicOptions, className }: FilterBarAddFilterPro
           <Button
             variant="ghost"
             size="xs"
-            responsive={false}
             className="mt-1 self-start"
             onClick={() => clear(name)}
           >
@@ -243,7 +241,6 @@ function FilterBarAddFilter({ dynamicOptions, className }: FilterBarAddFilterPro
         <div className="flex items-center gap-2 text-xs">
           <span className="text-muted-foreground w-8">Min</span>
           <Input
-            responsive={false}
             type="number"
             aria-label="Minimum value"
             value={current.min ?? ''}
@@ -253,13 +250,12 @@ function FilterBarAddFilter({ dynamicOptions, className }: FilterBarAddFilterPro
                 min: e.target.value ? Number(e.target.value) : undefined,
               })
             }
-            className="h-7 text-xs"
+            className="text-xs md:h-7"
           />
         </div>
         <div className="flex items-center gap-2 text-xs">
           <span className="text-muted-foreground w-8">Max</span>
           <Input
-            responsive={false}
             type="number"
             aria-label="Maximum value"
             value={current.max ?? ''}
@@ -269,7 +265,7 @@ function FilterBarAddFilter({ dynamicOptions, className }: FilterBarAddFilterPro
                 max: e.target.value ? Number(e.target.value) : undefined,
               })
             }
-            className="h-7 text-xs"
+            className="text-xs md:h-7"
           />
         </div>
       </div>

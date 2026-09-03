@@ -18,11 +18,13 @@ function FilterBarSearch({ placeholder = 'Search...', className }: FilterBarSear
     <div data-slot="filter-bar-search" className={cn('relative', className)}>
       <SearchIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
       <Input
-        responsive={false}
         placeholder={placeholder}
         value={value ?? ''}
         onChange={(e) => set('search', e.target.value)}
-        className="h-8 pl-8 text-sm sm:max-w-64"
+        // `md:h-8` keeps today's desktop density; below `md` the default
+        // `h-11` responsive scale (Input's own default) takes over instead
+        // of being disabled outright.
+        className="pl-8 text-sm sm:max-w-64 md:h-8"
       />
     </div>
   );
