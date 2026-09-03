@@ -1,5 +1,6 @@
 import { useId, useState, type FormEvent } from 'react';
 import { Button, Input, Label, PasswordInput } from '@/layers/shared/ui';
+import { describeAuthError, type AuthErrorCopy } from '../lib/auth-error-copy';
 import { useSignUp } from '../model/use-auth-session';
 
 /** Better Auth's default minimum password length (scrypt, no verification). */
@@ -74,11 +75,15 @@ export function OwnerSetupScreen({
   }
 
   const registrationClosed = error?.code === 'REGISTRATION_CLOSED' && !onOwnerExists;
-  const errorMessage =
-    localError ??
+  const localCopy: AuthErrorCopy | null = localError ? { message: localError, detail: null } : null;
+  const errorCopy =
+    localCopy ??
     (registrationClosed
-      ? 'An owner account already exists for this instance. Sign in instead.'
-      : error?.message);
+      ? {
+          message: 'An owner account already exists for this instance. Sign in instead.',
+          detail: null,
+        }
+      : describeAuthError(error, window.location.origin));
 
   return (
     <div className="space-y-5">
@@ -126,10 +131,14 @@ export function OwnerSetupScreen({
           />
         </div>
 
-        {errorMessage && (
-          <p className="text-sm text-red-500" role="alert">
-            {errorMessage}
-          </p>
+        {errorCopy && (
+          <div role="alert" className="space-y-1">
+            <p className="text-sm text-red-500">{errorCopy.message}</p>
+            {/* The auth layer's own wording, kept so it can be searched or pasted. */}
+            {errorCopy.detail && (
+              <p className="text-muted-foreground text-xs">{errorCopy.detail}</p>
+            )}
+          </div>
         )}
 
         <div className="flex gap-2">
