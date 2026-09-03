@@ -360,7 +360,7 @@ describe('CreateTaskDialog', () => {
       fillFormWithCron('invalid');
 
       const note = screen.getByTestId('cron-blocks-save');
-      expect(note).toHaveTextContent(/Fix the cron expression under Schedule/);
+      expect(note).toHaveTextContent(/Fix the timing under Schedule/);
       // Outside the <details>, so collapsing the section cannot take it away.
       expect(note.closest('details')).toBeNull();
     });

@@ -417,7 +417,7 @@ describe('TaskRunHistoryPanel', () => {
 
     it('says WHY it was skipped', async () => {
       // The row is the only place a person ever learns the occurrence was passed
-      // over. Without this the row read "scheduled · Just now · < 1s" — no
+      // over. Without this the row read "Schedule · Just now · < 1s" — no
       // reason, and a duration implying it had run.
       await renderSkipped();
 
@@ -541,7 +541,7 @@ describe('TaskRunHistoryPanel', () => {
         </Wrapper>
       );
 
-      await screen.findByText('scheduled');
+      await screen.findByText('Schedule');
       expect(screen.queryByText(/Claude Code|Codex|OpenCode/)).toBeNull();
     });
   });

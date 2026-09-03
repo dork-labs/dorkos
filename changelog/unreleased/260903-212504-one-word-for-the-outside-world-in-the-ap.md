@@ -3,8 +3,6 @@ covers:
   - "fix(client): one word for the outside world, in the app's own chrome (DOR-1754)"
 ---
 
-### Fixed
+### Changed
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
-
-- One word for the outside world, in the app's own chrome (DOR-1754)
+- Anything that links your agents to the outside world is now called a connection everywhere in the app. The same thing used to be called an integration in one place, an adapter in another, and a connection in a third.

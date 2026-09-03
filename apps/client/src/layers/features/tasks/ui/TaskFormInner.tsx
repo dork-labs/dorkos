@@ -370,7 +370,7 @@ export function ScheduleForm({
               <form.AppField name="cron">
                 {(field) => (
                   <div className="space-y-1.5">
-                    <Label>Cron Expression</Label>
+                    <Label>When it runs</Label>
                     <ScheduleBuilder
                       value={field.state.value}
                       onChange={(cron) => field.handleChange(cron)}
@@ -403,7 +403,7 @@ export function ScheduleForm({
             {(cronIsBroken) =>
               cronIsBroken ? (
                 <p role="alert" data-testid="cron-blocks-save" className="text-destructive text-xs">
-                  Fix the cron expression under Schedule before saving.
+                  Fix the timing under Schedule before saving.
                 </p>
               ) : null
             }
@@ -533,7 +533,10 @@ export function ScheduleForm({
               <form.AppField name="maxRuntime">
                 {(field) => (
                   <div className="space-y-1.5">
-                    <Label htmlFor="schedule-max-runtime">Max Runtime</Label>
+                    <Label htmlFor="schedule-max-runtime">Stop after</Label>
+                    <p className="text-muted-foreground text-xs leading-relaxed">
+                      Give up if the run takes longer than this.
+                    </p>
                     <input
                       id="schedule-max-runtime"
                       className="border-input focus-visible:ring-ring w-24 rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none"
@@ -551,7 +554,7 @@ export function ScheduleForm({
                 {(field) => (
                   <div className="flex items-start justify-between gap-3">
                     <div className="space-y-0.5">
-                      <Label htmlFor="schedule-sticky">Sticky</Label>
+                      <Label htmlFor="schedule-sticky">Remember the last run</Label>
                       <p className="text-muted-foreground text-xs leading-relaxed">
                         Resume the same session each run, so the agent remembers what it did last
                         time. Off starts fresh every run.

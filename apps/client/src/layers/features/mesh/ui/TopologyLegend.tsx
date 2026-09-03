@@ -77,7 +77,7 @@ export function TopologyLegend({ namespaces }: TopologyLegendProps) {
           <span className="flex h-2.5 w-6 items-center justify-center">
             <Zap className="h-3 w-3 text-yellow-500" />
           </span>
-          <span>Relay-enabled</span>
+          <span>Can message other agents</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="flex h-2.5 w-6 items-center justify-center">

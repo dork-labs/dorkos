@@ -100,6 +100,20 @@ function StatusIcon({ status }: { status: TaskRun['status'] }) {
   }
 }
 
+/**
+ * What started a run, in the person's words.
+ *
+ * The wire values (`scheduled`/`manual`/`agent`) used to render raw under a
+ * column headed "Trigger", which is the system's word for the question and
+ * nobody else's. The column now asks "started by", so each value answers it
+ * (DOR-1754).
+ */
+const TRIGGER_LABEL: Record<TaskRun['trigger'], string> = {
+  scheduled: 'Schedule',
+  manual: 'You',
+  agent: 'Agent',
+};
+
 /** TriggerIcon renders a Clock for scheduled runs and a Play for manual runs. */
 function TriggerIcon({ trigger }: { trigger: TaskRun['trigger'] }) {
   if (trigger === 'scheduled') {
@@ -139,7 +153,7 @@ function RunTimestamp({ date }: { date: string }) {
 /** RunRowSkeleton provides a loading placeholder matching the 5-column grid. */
 function RunRowSkeleton() {
   return (
-    <div className="grid grid-cols-[20px_56px_1fr_64px_72px_20px] items-center gap-2 rounded-md px-2 py-2">
+    <div className="grid grid-cols-[20px_56px_1fr_64px_72px_20px] items-center gap-2 rounded-md px-2 py-2 sm:grid-cols-[20px_72px_1fr_64px_72px_20px]">
       <Skeleton className="size-3.5 rounded-full" />
       <Skeleton className="h-3 w-10" />
       <Skeleton className="h-3 w-24" />
@@ -198,6 +212,7 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
       }
       className={cn(
         'grid grid-cols-[20px_56px_1fr_64px_72px_20px] items-center gap-2',
+        'sm:grid-cols-[20px_72px_1fr_64px_72px_20px]',
         'rounded-md border border-transparent px-2 py-2 text-xs transition-colors',
         isClickable && [
           'hover:bg-muted/50 hover:border-border cursor-pointer',
@@ -208,9 +223,9 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
     >
       <StatusIcon status={run.status} />
 
-      <span className="text-muted-foreground truncate capitalize">
+      <span className="text-muted-foreground truncate">
         <TriggerIcon trigger={run.trigger} />
-        {run.trigger}
+        {TRIGGER_LABEL[run.trigger]}
       </span>
 
       <span className="flex min-w-0 flex-col gap-0.5">
@@ -385,10 +400,10 @@ export function TaskRunHistoryPanel({ scheduleId, scheduleCwd }: Props) {
     <div className="space-y-0.5">
       <StatusFilterSelect value={statusFilter} onChange={handleFilterChange} />
       {/* Column headers — desktop only */}
-      <div className="sm:text-muted-foreground hidden sm:grid sm:grid-cols-[20px_56px_1fr_64px_72px_20px] sm:gap-2 sm:px-2 sm:pb-1 sm:text-xs sm:font-medium">
+      <div className="sm:text-muted-foreground hidden sm:grid sm:grid-cols-[20px_72px_1fr_64px_72px_20px] sm:gap-2 sm:px-2 sm:pb-1 sm:text-xs sm:font-medium">
         <span />
-        <span>Trigger</span>
-        <span>Started</span>
+        <span>Started by</span>
+        <span>When</span>
         <span>Duration</span>
         <span />
         <span />

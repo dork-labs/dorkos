@@ -342,12 +342,12 @@ test.describe('Team — the roster @smoke', () => {
     await page.goto('/team?view=access');
     await basePage.waitForAppReady();
 
-    // Which of the two it shows depends on how many namespaces the install has,
+    // Which of the two it shows depends on how many projects the install has,
     // which depends on what else the run seeded — so accept either, and fail if
     // the view renders neither.
-    const needsNamespaces = page.getByText('Cross-project access requires multiple namespaces');
-    const namespaceList = page.getByRole('heading', { name: 'Namespaces' });
-    await expect(needsNamespaces.or(namespaceList).first()).toBeVisible();
+    const needsProjects = page.getByText('You need agents in more than one project');
+    const projectList = page.getByRole('heading', { name: 'Projects' });
+    await expect(needsProjects.or(projectList).first()).toBeVisible();
   });
 });
 

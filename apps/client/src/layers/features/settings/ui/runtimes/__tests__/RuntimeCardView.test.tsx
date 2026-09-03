@@ -125,7 +125,7 @@ describe('RuntimeCardView', () => {
   });
 
   it('keeps each separator with the fact it introduces, so a wrap cannot strand it', () => {
-    // Two flex items would let "Runtime's choice ·" end one line and "Asks
+    // Two flex items would let "Automatic ·" end one line and "Asks
     // first" start the next. One item per pair makes that impossible.
     renderCard();
 

@@ -111,8 +111,13 @@ export function RuntimesTab() {
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
+        {/* The word "runtime" is everywhere on this tab and nowhere else in
+            the product — onboarding names Claude Code, Codex and OpenCode
+            directly and never says it. One sentence at the top is what makes
+            the rest of the tab readable (DOR-1754). */}
         <p className="text-muted-foreground text-sm">
-          Connect the runtimes you use, and set what each one starts a conversation with.
+          Runtimes are the AI tools that do the work. Connect the ones you use, and set what each
+          one starts a conversation with.
         </p>
         {/* A maintenance action, not a primary one (design §1): the labeled
             "Check again" row became this. Icon-only, so it says its name to a

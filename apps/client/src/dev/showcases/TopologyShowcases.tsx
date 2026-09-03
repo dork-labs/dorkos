@@ -107,7 +107,7 @@ export function TopologyShowcases() {
           </div>
         </ShowcaseDemo>
 
-        <ShowcaseLabel>Ghost placeholder (no adapters registered)</ShowcaseLabel>
+        <ShowcaseLabel>Ghost placeholder (no platforms connected yet)</ShowcaseLabel>
         <ShowcaseDemo>
           <AdapterGhostPlaceholder />
         </ShowcaseDemo>

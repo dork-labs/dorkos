@@ -38,15 +38,12 @@ export function AdapterDefaultCard({ d }: { d: AdapterDemoData }) {
           <span className="text-foreground truncate text-sm font-medium">{d.label || d.name}</span>
           {d.label && <span className="text-muted-foreground truncate text-xs">{d.name}</span>}
         </div>
-        <Badge variant="outline" className="text-muted-foreground text-3xs ml-auto shrink-0">
-          Adapter
-        </Badge>
       </div>
       <div className="mt-2 flex items-center justify-between">
         <span className="text-muted-foreground text-xs capitalize">{d.type}</span>
         {d.bindingCount > 0 && (
           <Badge variant="secondary" className="text-xs">
-            {d.bindingCount} {d.bindingCount === 1 ? 'binding' : 'bindings'}
+            {d.bindingCount} {d.bindingCount === 1 ? 'connection' : 'connections'}
           </Badge>
         )}
       </div>
@@ -74,7 +71,7 @@ export function AdapterGhostPlaceholder() {
       tabIndex={0}
     >
       <Plus className="text-muted-foreground size-4" />
-      <span className="text-muted-foreground text-sm">Add Adapter</span>
+      <span className="text-muted-foreground text-sm">Add a platform</span>
     </div>
   );
 }

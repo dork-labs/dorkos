@@ -212,7 +212,7 @@ describe('RuntimeCard — write paths', () => {
     );
   });
 
-  it("writes a null model for Runtime's choice, never the picker's sentinel", async () => {
+  it("writes a null model for Automatic, never the picker's sentinel", async () => {
     const { updateConfig } = renderCard(
       {},
       {
@@ -230,7 +230,7 @@ describe('RuntimeCard — write paths', () => {
     await expand();
 
     await userEvent.click(await screen.findByTestId('runtime-model-select-codex'));
-    await userEvent.click(await screen.findByRole('option', { name: "Runtime's choice" }));
+    await userEvent.click(await screen.findByRole('option', { name: 'Automatic' }));
 
     await waitFor(() =>
       expect(updateConfig).toHaveBeenCalledWith({ runtimes: { codex: { defaultModel: null } } })
@@ -754,7 +754,7 @@ describe('RuntimeCard — declared sections', () => {
     );
 
     const summary = await screen.findByTestId('runtime-card-summary-claude-code');
-    await waitFor(() => expect(summary).toHaveTextContent("Runtime's choice"));
+    await waitFor(() => expect(summary).toHaveTextContent('Automatic'));
     expect(summary).not.toHaveTextContent('billing');
   });
 });

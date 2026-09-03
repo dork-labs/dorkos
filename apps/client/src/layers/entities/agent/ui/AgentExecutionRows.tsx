@@ -360,7 +360,7 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
       <div className="space-y-1.5">
         <ExecutionRow
           label="Model"
-          valueLabel={selectedModel?.displayName ?? effectiveModel ?? "Runtime's choice"}
+          valueLabel={selectedModel?.displayName ?? effectiveModel ?? 'Automatic'}
           options={[
             ...(models ?? []).map((m) => ({
               value: m.value,

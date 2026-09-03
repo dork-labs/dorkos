@@ -77,7 +77,7 @@ describe('EffortRow', () => {
 
   it("reports the runtime's-choice segment as null, never as its sentinel", async () => {
     const { onChange } = renderRow({ selectedModel: SHORT_LADDER, value: 'high' });
-    await userEvent.click(screen.getByRole('radio', { name: "Runtime's choice" }));
+    await userEvent.click(screen.getByRole('radio', { name: 'Automatic' }));
     expect(onChange).toHaveBeenCalledWith(null);
   });
 
@@ -100,7 +100,7 @@ describe('EffortRow', () => {
     const trigger = screen.getByTestId('runtime-effort-claude-code');
     expect(trigger).toHaveRole('combobox');
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
-    expect(trigger).toHaveTextContent("Runtime's choice");
+    expect(trigger).toHaveTextContent('Automatic');
   });
 
   it('keeps every rung of a long ladder reachable in the menu', async () => {
@@ -109,7 +109,7 @@ describe('EffortRow', () => {
     await userEvent.click(screen.getByTestId('runtime-effort-claude-code'));
     const options = screen.getAllByRole('option').map((el) => el.textContent);
     expect(options).toEqual([
-      "Runtime's choice",
+      'Automatic',
       'None',
       'Minimal',
       'Low',
@@ -132,7 +132,7 @@ describe('EffortRow', () => {
     expect(onChange).toHaveBeenCalledWith('max');
 
     await userEvent.click(screen.getByTestId('runtime-effort-claude-code'));
-    await userEvent.click(screen.getByRole('option', { name: "Runtime's choice" }));
+    await userEvent.click(screen.getByRole('option', { name: 'Automatic' }));
     expect(onChange).toHaveBeenLastCalledWith(null);
   });
 

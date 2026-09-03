@@ -251,8 +251,6 @@ describe('TopologyPanel — the mesh-wide switch (DOR-1338)', () => {
     // The empty state still explains itself, but the one control that matters
     // before the first agent exists is reachable rather than hidden behind it.
     expect(await screen.findByRole('switch', { name: OPEN_MESH_LABEL })).toBeInTheDocument();
-    expect(
-      screen.getByText('Cross-project access requires multiple namespaces')
-    ).toBeInTheDocument();
+    expect(screen.getByText('You need agents in more than one project')).toBeInTheDocument();
   });
 });

@@ -154,7 +154,7 @@ export function EffortRow({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={INHERIT}>Runtime&apos;s choice</SelectItem>
+            <SelectItem value={INHERIT}>Automatic</SelectItem>
             {rungs.map((level) => (
               <SelectItem key={level} value={level}>
                 {effortLabel(level)}
@@ -171,7 +171,7 @@ export function EffortRow({
           onValueChange={(next) => onChange(next === INHERIT ? null : (next as EffortLevel))}
         >
           <SegmentedControlItem value={INHERIT}>
-            <span className="truncate">Runtime&apos;s choice</span>
+            <span className="truncate">Automatic</span>
           </SegmentedControlItem>
           {rungs.map((level) => (
             <SegmentedControlItem key={level} value={level}>

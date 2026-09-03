@@ -77,7 +77,7 @@ const CASES: SummaryCase[] = [
     ],
   },
   {
-    name: 'no configured model reads “Runtime’s choice”, marked inherited',
+    name: 'no configured model reads “Automatic”, marked inherited',
     input: {
       ready: true,
       settings: CODEX_SETTINGS,
@@ -87,7 +87,7 @@ const CASES: SummaryCase[] = [
       trustInherited: true,
     },
     expected: [
-      { kind: 'model', label: "Runtime's choice", inherited: true },
+      { kind: 'model', label: 'Automatic', inherited: true },
       { kind: 'trust', label: 'Pauses at big steps', inherited: true },
     ],
   },
@@ -147,7 +147,7 @@ const CASES: SummaryCase[] = [
       trustInherited: true,
     },
     expected: [
-      { kind: 'model', label: "Runtime's choice", inherited: true },
+      { kind: 'model', label: 'Automatic', inherited: true },
       { kind: 'trust', label: 'Asks first', inherited: true },
     ],
   },
@@ -162,7 +162,7 @@ const CASES: SummaryCase[] = [
       trustInherited: true,
     },
     expected: [
-      { kind: 'model', label: "Runtime's choice", inherited: true },
+      { kind: 'model', label: 'Automatic', inherited: true },
       { kind: 'trust', label: 'Asks first', inherited: true },
     ],
   },
@@ -251,7 +251,7 @@ const CASES: SummaryCase[] = [
       trustInherited: false,
     },
     expected: [
-      { kind: 'model', label: "Runtime's choice", inherited: true },
+      { kind: 'model', label: 'Automatic', inherited: true },
       { kind: 'trust', label: 'Full autonomy', inherited: false },
     ],
   },
@@ -265,7 +265,7 @@ const CASES: SummaryCase[] = [
       trustInherited: true,
     },
     expected: [
-      { kind: 'model', label: "Runtime's choice", inherited: true },
+      { kind: 'model', label: 'Automatic', inherited: true },
       { kind: 'trust', label: 'Full autonomy', inherited: true },
     ],
   },
@@ -278,7 +278,7 @@ const CASES: SummaryCase[] = [
       trustStop: null,
       trustInherited: true,
     },
-    expected: [{ kind: 'model', label: "Runtime's choice", inherited: true }],
+    expected: [{ kind: 'model', label: 'Automatic', inherited: true }],
   },
   {
     name: 'a runtime declaring no sections stays quiet even when a value is handed in',
@@ -291,7 +291,7 @@ const CASES: SummaryCase[] = [
       sectionValues: { 'claude-accounts': 'Personal' },
     },
     expected: [
-      { kind: 'model', label: "Runtime's choice", inherited: true },
+      { kind: 'model', label: 'Automatic', inherited: true },
       { kind: 'trust', label: 'Asks first', inherited: true },
     ],
   },
@@ -306,7 +306,7 @@ const CASES: SummaryCase[] = [
       sectionValues: { 'claude-accounts': null },
     },
     expected: [
-      { kind: 'model', label: "Runtime's choice", inherited: true },
+      { kind: 'model', label: 'Automatic', inherited: true },
       { kind: 'trust', label: 'Asks first', inherited: true },
     ],
   },
@@ -321,7 +321,7 @@ const CASES: SummaryCase[] = [
       sectionValues: { 'opencode-power-source': 'Anthropic' },
     },
     expected: [
-      { kind: 'model', label: "Runtime's choice", inherited: true },
+      { kind: 'model', label: 'Automatic', inherited: true },
       { kind: 'trust', label: 'Asks first', inherited: true },
       { kind: 'section', label: 'Anthropic' },
     ],
@@ -341,7 +341,7 @@ const CASES: SummaryCase[] = [
       sectionValues: { 'aider-keys': 'something' },
     },
     expected: [
-      { kind: 'model', label: "Runtime's choice", inherited: true },
+      { kind: 'model', label: 'Automatic', inherited: true },
       { kind: 'trust', label: 'Asks first', inherited: true },
     ],
   },
@@ -399,7 +399,7 @@ describe('buildRuntimeCardSummary', () => {
         sectionValues: { 'claude-accounts': 'Work', 'opencode-power-source': 'Anthropic' },
       })
     ).toEqual([
-      { kind: 'model', label: "Runtime's choice", inherited: true },
+      { kind: 'model', label: 'Automatic', inherited: true },
       { kind: 'section', label: 'Anthropic' },
       { kind: 'section', label: 'billing Work' },
     ]);

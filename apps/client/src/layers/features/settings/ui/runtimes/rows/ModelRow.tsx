@@ -89,7 +89,7 @@ export function ModelRow({
   return (
     <SettingRow
       label="Model"
-      description={`Which ${runtimeLabel} model a new conversation starts on. Leave it on Runtime's choice to let ${runtimeLabel} decide.`}
+      description={`Which ${runtimeLabel} model a new conversation starts on. Leave it on Automatic to let ${runtimeLabel} pick.`}
     >
       <div className="w-52 space-y-1.5">
         <Select
@@ -106,7 +106,7 @@ export function ModelRow({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={INHERIT}>Runtime&apos;s choice</SelectItem>
+            <SelectItem value={INHERIT}>Automatic</SelectItem>
             {(models ?? []).map((model) => (
               <SelectItem key={model.value} value={model.value}>
                 {model.displayName}

@@ -289,7 +289,7 @@ test.describe('Settings — Runtimes tab @smoke', () => {
     await expect(modelSelect).toBeVisible();
 
     // Whatever the pinned catalog offers, not a hardcoded model id: the first
-    // option is "Runtime's choice", so the second is the first real model, and
+    // option is 'Automatic', so the second is the first real model, and
     // the run reads its name instead of assuming it. Radix portals the list out
     // of the dialog, so it is located on the page.
     await modelSelect.click();
