@@ -72,15 +72,24 @@ export function CandidateCard({
     >
       <div className="min-w-0 flex-1 space-y-2">
         {/* Name. `truncate` because the last fallback is the whole path, which
-            is one unbroken string and would run out of the card (DOR-1747). */}
-        <p className="truncate text-sm leading-tight font-semibold">
+            is one unbroken string and would run out of the card (DOR-1747).
+            `title` carries the full value forward for a long suggested name
+            (a `truncate` this charter adds must keep the hover fallback it
+            requires — a truncated string with no way to read it whole is not
+            containment, it's data loss). */}
+        <p
+          className="truncate text-sm leading-tight font-semibold"
+          title={hints.suggestedName || path.split('/').pop() || path}
+        >
           {hints.suggestedName || path.split('/').pop() || path}
         </p>
 
         {/* Path */}
         <div className="text-muted-foreground flex items-center gap-1.5 text-xs">
           <Folder className="size-3 shrink-0" />
-          <span className="truncate font-mono">{path}</span>
+          <span className="truncate font-mono" title={path}>
+            {path}
+          </span>
         </div>
 
         {/* Runtime with HoverCard showing detection strategy */}

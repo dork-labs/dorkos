@@ -42,7 +42,11 @@ export function DeniedView() {
             <p className="truncate font-mono text-sm" title={d.path}>
               {d.path}
             </p>
-            {d.reason && <p className="text-muted-foreground truncate text-xs">{d.reason}</p>}
+            {d.reason && (
+              <p className="text-muted-foreground truncate text-xs" title={d.reason}>
+                {d.reason}
+              </p>
+            )}
           </div>
           {/* `shrink-0`, or the badge gives its width up to the path beside it
               and wraps its own single word (DOR-1747). */}
