@@ -8,6 +8,7 @@ import {
 } from '../runtime-registry.js';
 import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type { SessionSettings } from '@dorkos/shared/types';
+import { SessionSettingsSchema } from '@dorkos/shared/schemas';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { sessionMetadata, eq, type Db } from '@dorkos/db';
 import { logger } from '../../../lib/logger.js';
@@ -850,6 +851,34 @@ describe('RuntimeRegistry', () => {
 
     it('getSessionSettings returns null when no row exists', async () => {
       expect(await registry.getSessionSettings('missing')).toBeNull();
+    });
+
+    it('round-trips a runtime-declared mode id the shared enum never named (DOR-885)', async () => {
+      // The permission-mode column is plain text holding whatever the owning
+      // runtime calls its mode, and `test-mode` really does declare
+      // `always-allow` as its default (`TEST_MODE_CAPABILITIES`) — so a row like
+      // this one exists on any install that has opened a test-mode session.
+      // What used to be wrong was only the TYPE on the way back out, and the
+      // parse below is what makes this a real check rather than a restatement of
+      // the string: before DOR-885 `SessionSettingsSchema` was the narrow enum,
+      // so the value this store legitimately holds could not be parsed as the
+      // settings it is.
+      await registry.saveSessionSettings('wide-mode', { permissionMode: 'always-allow' });
+      const row = db
+        .select()
+        .from(sessionMetadata)
+        .where(eq(sessionMetadata.sessionId, 'wide-mode'))
+        .get();
+      expect(row?.permissionMode).toBe('always-allow');
+
+      const settings = await registry.getSessionSettings('wide-mode');
+      expect(settings).toEqual({ permissionMode: 'always-allow' });
+      expect(SessionSettingsSchema.parse(settings)).toEqual({ permissionMode: 'always-allow' });
+      // The batch read is a second code path over the same row, and the display
+      // overlay uses it for every session in the list — it must agree.
+      expect(registry.getSessionSettingsMany(['wide-mode']).get('wide-mode')).toEqual({
+        permissionMode: 'always-allow',
+      });
     });
 
     it('getSessionSettings maps NULL columns to omitted keys', async () => {

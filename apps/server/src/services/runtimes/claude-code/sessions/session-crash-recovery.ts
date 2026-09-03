@@ -10,7 +10,7 @@
  *
  * | What a crash must do                        | Who does it                                    |
  * | ------------------------------------------- | ---------------------------------------------- |
- * | close the open turn as a failure            | `session-turn-windows.ts` (task 3.3)           |
+ * | close the open turn                         | `session-turn-windows.ts` (task 3.3)           |
  * | relaunch with `resume` on the next dispatch | `SessionPump.dispatch` on a CRASHED pump       |
  * | decide WHETHER to relaunch, and record why  | here                                           |
  *
@@ -46,6 +46,10 @@
  *   failure this bounds is a process that boots perfectly and dies mid-turn, so
  *   treating a successful boot as recovery would disarm the bound against the
  *   exact case it exists for.
+ * - **A Stop is not a crash.** A Stop the CLI never acks escalates to
+ *   `query.close()`, which arrives here as a process death; it is forwarded to
+ *   the windower and skipped by the bound entirely
+ *   ({@link SessionCrashRecovery.handleCrash}, DOR-1302).
  * - **A refusal is a message to a person, not a brick.** Refusing spends the
  *   run back down to one, so the person's next attempt gets a launch and, if it
  *   fails the same way, is refused again. The steady state of a permanently
@@ -201,9 +205,51 @@ export class SessionCrashRecovery {
    * or the message behind a second consecutive crash would be let through on
    * the count from the first.
    *
+   * **A close the OPERATOR asked for is forwarded and nothing else** (DOR-1302).
+   * A Stop that goes unacked escalates to `query.close()`, which reaches this
+   * seam as a process death like any other — so before the fix, two Stops in a
+   * row spent both lives of the bound below and the person's THIRD message was
+   * refused with "This chat's agent keeps stopping", blaming the agent for
+   * something they did themselves. The bound exists to catch a session that
+   * cannot stay up on its own; a process a person killed proves nothing about
+   * that either way, so it neither spends a life nor clears the run, and it is
+   * not recorded as this session's last crash — a later refusal would otherwise
+   * quote a Stop as its reason. The window still has to close, so the forward
+   * below is unconditional.
+   *
+   * **"The operator" here means every caller of `interruptQuery`, and that is
+   * deliberate rather than overlooked.** Five of them are automatic: the stall
+   * watchdog on both turn paths (`session/trigger-turn.ts`,
+   * `session/trigger-command-intent.ts`), the task-run timeout
+   * (`tasks/run-stream.ts`), and a room's halt and turn timeout
+   * (`rooms/room-turn-runner.ts`). All of them write `stoppedQueries`, so a
+   * session that stalls every turn is force-killed every turn and never spends a
+   * life. The exemption is written to include them for one reason: this bound
+   * asks "can this process stay up on its own", and a process DorkOS reached in
+   * and killed answers that question about DorkOS, not about the process.
+   * Counting it here would add a complaint whose sentence ("This chat's agent
+   * keeps stopping") blames the agent for a decision the server made — and in
+   * the stall case, which is the one that recurs, the turn already carries its
+   * own typed-error terminal from the watchdog, so the person has been told.
+   *
+   * **What that gives up, stated rather than discovered.** "Repeatedly force-
+   * killed" used to reach the bound through this seam and no longer does, and a
+   * session stalling on every turn is a real fault this no longer counts. If
+   * that is worth bounding, it wants its OWN counter and its own sentence —
+   * about a session that keeps going silent, which is the true symptom — not a
+   * share of this one, whose message is about a process that keeps dying.
+   *
    * @param crash - What the pump observed
    */
   handleCrash(crash: PumpCrash): void {
+    if (crash.stopRequested === true) {
+      logger.info('[SessionCrashRecovery] a Stop closed this session process', {
+        sessionId: crash.sessionId,
+        stateAtCrash: crash.stateAtCrash,
+      });
+      this.opts.windows.onCrash(crash);
+      return;
+    }
     this.run += 1;
     const record: CrashRecord = {
       sessionId: crash.sessionId,

@@ -3084,23 +3084,30 @@ export function seedDisplayNameSourceDefault(store: {
  *
  * ## Both rules are enforced, and they are enforced differently
  *
- * - `__tests__/migration-safety.ts` compares each key's TABLE SLICE, byte for
- *   byte, against the newest release tag. Byte-identity is deliberate there: a
- *   rule that skipped comments would need a parser deciding which lines are
- *   code, and "an appended line the parser mis-read as a comment" is the same
- *   class of hole it exists to close. The consequence is that a stale sentence
- *   inside a shipped body cannot be corrected in place — `'0.57.0'` still
- *   carries one, pointing at the composition convention this docblock replaced.
- *   Correct that kind of thing HERE, or in the comment directly above a key
- *   (both sit outside every key's slice), not inside the body.
+ * - `__tests__/migration-safety.ts` compares a shipped key against the newest
+ *   release TAG. Its TABLE SLICE must be byte-identical, and byte-identity is
+ *   deliberate there: a rule that skipped comments would need a parser deciding
+ *   which lines are code, and "an appended line the parser mis-read as a
+ *   comment" is the same class of hole it exists to close. The consequence is
+ *   that a stale sentence inside a shipped body cannot be corrected in place —
+ *   `'0.57.0'` still carries one, pointing at the composition convention this
+ *   docblock replaced. Correct that kind of thing HERE, or in the comment
+ *   directly above a key (both sit outside every key's slice), not inside the
+ *   body. It then follows the key into the code it CALLS and compares that too
+ *   (DOR-1135), because most of this table is a composite and comparing the
+ *   slice alone was comparing the call rather than what runs: a tamper seeded
+ *   into `backfillAutonomyAcknowledgement`, which `'0.57.0'` calls, used to pass
+ *   while the identical tamper written inline went red. Helpers are compared
+ *   normalized, not byte for byte, so a helper's own prose stays correctable.
  * - `__tests__/migration-append-only.ts` pins a hash per merged key against
- *   `__tests__/merged-migration-hashes.ts`. It covers the whole CLOSURE — the
+ *   `__tests__/merged-migration-hashes.ts`. It covers the same CLOSURE — the
  *   table slice plus every top-level function AND constant in this file the key
- *   reaches — so it sees an edit to a helper the table merely calls, and to a
- *   list like `RETIRED_SIDEBAR_KEYS` that decides what a helper does. The
- *   slice-only rule sees neither. It normalizes comments and formatting away, so it is the rule
- *   that stays quiet when prose is corrected. It needs no tag, which is what
- *   lets it hold inside the window where no tag exists yet.
+ *   reaches, including a list like `RETIRED_SIDEBAR_KEYS` that decides what a
+ *   helper does — and it needs no tag, which is what lets it hold inside the
+ *   window where no tag exists yet. Both rules read the file through
+ *   `__tests__/migration-closure.ts`, and they differ in what they answer to: a
+ *   pin is a value in this repository and repinning it is the escape hatch,
+ *   while a tag cannot be edited at all.
  *
  * `config-manager.test.ts` runs both over the real repository on every CI run.
  *

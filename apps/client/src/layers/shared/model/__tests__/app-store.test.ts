@@ -110,11 +110,11 @@ describe('AppStore', () => {
     expect(localStorage.getItem('dorkos-auto-hide-tool-calls')).toBe('false');
   });
 
-  it('resets autoHideToolCalls to true on resetPreferences', () => {
+  it('resets autoHideToolCalls to true on resetAllSettings', () => {
     useAppStore.getState().setAutoHideToolCalls(false);
     expect(useAppStore.getState().autoHideToolCalls).toBe(false);
 
-    useAppStore.getState().resetPreferences();
+    useAppStore.getState().resetAllSettings();
     expect(useAppStore.getState().autoHideToolCalls).toBe(true);
   });
 
@@ -156,11 +156,11 @@ describe('AppStore', () => {
     expect(localStorage.getItem('dorkos-enable-message-polling')).toBe('true');
   });
 
-  it('resets enableMessagePolling to false on resetPreferences', () => {
+  it('resets enableMessagePolling to false on resetAllSettings', () => {
     useAppStore.getState().setEnableMessagePolling(true);
     expect(useAppStore.getState().enableMessagePolling).toBe(true);
 
-    useAppStore.getState().resetPreferences();
+    useAppStore.getState().resetAllSettings();
     expect(useAppStore.getState().enableMessagePolling).toBe(false);
   });
 });

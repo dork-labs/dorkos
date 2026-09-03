@@ -1,9 +1,12 @@
 /**
- * Static configuration for the Claude Code runtime — capability flags.
+ * Static configuration for the Claude Code runtime — capability flags, and the
+ * one reading of them that answers "is this mode id one I run?".
  *
  * @module services/runtimes/claude-code/runtime-constants
  */
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
+import type { PermissionMode, PermissionModeId } from '@dorkos/shared/types';
+import { PermissionModeSchema } from '@dorkos/shared/schemas';
 
 /**
  * Static Claude Code capabilities.
@@ -159,3 +162,43 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
     claudeSlashCommands: true,
   },
 };
+
+/**
+ * Turn a mode id from anywhere into one this adapter may hand the Agent SDK.
+ *
+ * A permission-mode id is whatever its own runtime declared, so the ids that
+ * travel through the settings store, a PATCH body and `SessionOpts` are plain
+ * {@link PermissionModeId} strings — `test-mode` persists `always-allow` in the
+ * very same text column (DOR-885). What reaches `Options.permissionMode`,
+ * `resolveModeDecision` and the auto-mode guard cannot be: those read a mode by
+ * NAME, off the closed {@link PermissionModeSchema} union. This is the one
+ * place the wide id becomes the narrow one, and it does it by a CHECK rather
+ * than by an assertion.
+ *
+ * `PermissionModeSchema` is the right authority here precisely because it is
+ * the union of ids the Agent SDK accepts — every id in it is a mode this
+ * adapter can send, including `dontAsk`, which the SDK takes and DorkOS does
+ * not yet surface in the picker.
+ *
+ * An id outside it falls back rather than travelling on, and the fallback can
+ * only ever be SAFER: callers pass Claude Code's declared default (`'default'`,
+ * its most cautious mode), so an unrecognized id asks about everything instead
+ * of reaching an SDK that would fail the whole turn on a value it has never
+ * heard of.
+ *
+ * Unreachable in normal operation — `PATCH /api/sessions/:id` already refuses
+ * an id the session's own runtime does not declare — but a settings row can be
+ * written before any runtime is bound, so the type is honest about what can
+ * arrive.
+ *
+ * @param id - A mode id from a request, the settings store, or a runtime.
+ * @param fallback - The mode to use when `id` is absent or not one the SDK takes.
+ * @returns A mode id the Agent SDK accepts.
+ */
+export function narrowToClaudeCodeMode(
+  id: PermissionModeId | undefined,
+  fallback: PermissionMode
+): PermissionMode {
+  const parsed = PermissionModeSchema.safeParse(id);
+  return parsed.success ? parsed.data : fallback;
+}

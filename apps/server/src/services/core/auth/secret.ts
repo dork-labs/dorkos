@@ -20,7 +20,9 @@
  *      live session).
  *   3. **A freshly generated secret** — 32 random bytes, hex-encoded, written to
  *      the persisted file with `0600` permissions and returned. This is the
- *      zero-config path a fresh install lands on.
+ *      zero-config path a fresh install lands on. The file is created
+ *      exclusively (`@dorkos/shared/secret-file`), so two first boots at once
+ *      settle on one secret instead of overwriting each other's.
  *
  * The secret value is never logged; only its file path is.
  *
@@ -29,6 +31,7 @@
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { claimSecretText } from '@dorkos/shared/secret-file';
 import { logger } from '../../../lib/logger.js';
 
 /**
@@ -74,6 +77,10 @@ function readEnvSecret(): string | undefined {
  * @param dorkHome - The resolved DorkOS data directory (from `resolveDorkHome`).
  *   The persisted secret lives at `<dorkHome>/better-auth-secret`.
  * @returns The signing secret (hex string, or the operator's env value).
+ * @throws If the secret file exists but is blank or unreadable. It is never
+ *   overwritten: minting over it would invalidate every session signed with
+ *   whatever it holds, so a boot that stops with the message beats one that
+ *   silently signs out everybody.
  */
 export function resolveBetterAuthSecret(dorkHome: string): string {
   const fromEnv = readEnvSecret();
@@ -99,14 +106,20 @@ export function resolveBetterAuthSecret(dorkHome: string): string {
     }
   }
 
-  const generated = randomBytes(SECRET_BYTES).toString('hex');
-  fs.mkdirSync(dorkHome, { recursive: true });
-  fs.writeFileSync(secretPath, generated, { mode: SECRET_FILE_MODE });
-  // Re-assert the mode: `writeFileSync`'s `mode` is ignored when the file
-  // already exists, and is subject to the process umask on create.
-  fs.chmodSync(secretPath, SECRET_FILE_MODE);
-  logger.info('[Auth] Generated a persistent session-signing secret', { path: secretPath });
-  return generated;
+  // Claim the file rather than just writing it. Two processes reaching a fresh
+  // data directory together — a server plus a CLI command, a dev server plus
+  // the dogfood app — can both read nothing here and both mint; a plain write
+  // would leave the loser signing sessions with a secret no longer on disk, and
+  // every cookie it signed would stop verifying (DOR-712).
+  const claimed = claimSecretText(
+    secretPath,
+    randomBytes(SECRET_BYTES).toString('hex'),
+    SECRET_FILE_MODE
+  );
+  if (claimed.minted) {
+    logger.info('[Auth] Generated a persistent session-signing secret', { path: secretPath });
+  }
+  return claimed.value;
 }
 
 /**

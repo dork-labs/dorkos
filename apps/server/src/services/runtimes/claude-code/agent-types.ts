@@ -1,7 +1,7 @@
 import type { Query } from '@anthropic-ai/claude-agent-sdk';
 import type {
   StreamEvent,
-  PermissionMode,
+  PermissionModeId,
   EffortLevel,
   UiState,
   ContextUsage,
@@ -24,7 +24,14 @@ export interface RequestUsage {
 export interface AgentSession {
   sdkSessionId: string;
   lastActivity: number;
-  permissionMode: PermissionMode;
+  /**
+   * The mode this session runs under — any id a runtime declared, not only a
+   * name from the shared enum (DOR-885). A session persisted in a mode this
+   * runtime has since retired still loads and runs; the id is checked into the
+   * SDK's narrower vocabulary where a query is actually built
+   * (`messaging/launch-resolver.ts`), and nowhere earlier.
+   */
+  permissionMode: PermissionModeId;
   model?: string;
   effort?: EffortLevel;
   fastMode?: boolean;

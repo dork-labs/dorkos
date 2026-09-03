@@ -22,7 +22,7 @@ import type {
 } from '@dorkos/shared/session-stream';
 import type {
   Session,
-  PermissionMode,
+  SessionSettings,
   HistoryMessage,
   CommandRegistry,
   TaskItem,
@@ -48,7 +48,7 @@ export interface DirectTransportServices {
     submitAnswers(sessionId: string, toolCallId: string, answers: Record<string, string>): boolean;
     updateSession(
       sessionId: string,
-      opts: { permissionMode?: PermissionMode; model?: string }
+      opts: SessionSettings
     ): SessionUpdateResult | Promise<SessionUpdateResult>;
     getCapabilities(): RuntimeCapabilities;
     /**

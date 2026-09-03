@@ -37,6 +37,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import webpush, { WebPushError } from 'web-push';
 import type { WebPushPayload } from '@dorkos/shared/notification-schemas';
+import { publishSecretFile, quarantineSecretFile } from '@dorkos/shared/secret-file';
 import { logger } from '../../../lib/logger.js';
 import type { PushSubscriptionStore, StoredPushSubscription } from '../push-subscription-store.js';
 
@@ -66,6 +67,9 @@ const PUSH_TIMEOUT_MS = 10_000;
 
 /** The two answers that mean "this browser is gone", rather than "try later". */
 const GONE_STATUS_CODES = new Set([404, 410]);
+
+/** Owner-only file mode for the stored keypair (`rw-------`). */
+const VAPID_FILE_MODE = 0o600;
 
 /** This install's VAPID keypair. */
 interface VapidKeys {
@@ -257,7 +261,7 @@ export function vapidKeyPath(dorkHome: string): string {
 }
 
 /**
- * Read the VAPID keypair, generating and storing it on first use.
+ * Read the VAPID keypair, publishing one on first use.
  *
  * `0600` on the file and `0700` on the directory, because the private key is
  * what authorises a push to every browser subscribed here. A file that exists
@@ -266,27 +270,94 @@ export function vapidKeyPath(dorkHome: string): string {
  * browsers stop being reachable until they re-subscribe — which the Settings tab
  * shows, and which is strictly better than a permanently dead push leg.
  *
+ * The keypair is published first and read second (`@dorkos/shared/secret-file`),
+ * never minted after a failed read. Two first boots at once would otherwise both
+ * generate, and the loser would go on handing browsers a public key whose
+ * private half is no longer on disk — subscriptions that can never be pushed to
+ * again, with nothing logged (DOR-712). Replacing an unparseable file goes
+ * through the same claim: the file is set aside, then whoever publishes the
+ * replacement first wins.
+ *
+ * Reading the file and setting it aside are two statements, so what gets moved
+ * is not necessarily the file this call judged unusable: another process can
+ * replace the junk with a good keypair in between. The rename is the point at
+ * which that becomes decidable — it is atomic, so a file this call moved is
+ * definitively its own to inspect — and the file is therefore parsed AFTER the
+ * move. One that parses was never junk; it is restored and adopted rather than
+ * published over, which is what keeps the other process's browsers reachable.
+ *
  * @param dorkHome - The data directory.
+ * @throws If a keypair can be neither published nor read after setting an
+ *   unusable file aside. Reaching that needs a third writer racing both passes;
+ *   {@link WebPushChannel.resolveKeys} turns it into a disabled push leg.
  */
-function readOrCreateVapidKeys(dorkHome: string): VapidKeys {
+export function readOrCreateVapidKeys(dorkHome: string): VapidKeys {
   const file = vapidKeyPath(dorkHome);
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
 
-  if (fs.existsSync(file)) {
+  // A bounded number of passes, after the instance lock's idiom
+  // (`lib/instance-lock.ts`). Every pass either returns a keypair or frees the
+  // name by setting an unusable file aside, so it cannot spin; the extra pass
+  // beyond the obvious two is what covers a third process taking the name back
+  // in between.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const generated = webpush.generateVAPIDKeys();
+    if (publishSecretFile(file, JSON.stringify(generated, null, 2), VAPID_FILE_MODE)) {
+      logger.info('[Push] Generated this install’s VAPID keypair', { file });
+      return { publicKey: generated.publicKey, privateKey: generated.privateKey };
+    }
+
     const parsed = parseVapidFile(file);
     if (parsed) return parsed;
-    logger.warn('[Push] The stored VAPID keypair could not be read; generating a new one', {
+
+    const movedTo = quarantineSecretFile(file);
+    // Gone already: another process moved the same junk, and the name is free.
+    if (!movedTo) continue;
+
+    const rescued = rescueQuarantinedKeys(file, movedTo);
+    if (rescued) return rescued;
+
+    logger.warn('[Push] The stored VAPID keypair could not be read; set it aside for a new one', {
       file,
+      movedTo,
     });
   }
 
-  const generated = webpush.generateVAPIDKeys();
-  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  fs.writeFileSync(file, JSON.stringify(generated, null, 2), { mode: 0o600 });
-  // `writeFileSync`'s mode is only applied when it CREATES the file, so a
-  // pre-existing unparseable file would keep whatever permissions it had.
-  fs.chmodSync(file, 0o600);
-  logger.info('[Push] Generated this install’s VAPID keypair', { file });
-  return { publicKey: generated.publicKey, privateKey: generated.privateKey };
+  throw new Error(`Could not establish a VAPID keypair at '${file}'.`);
+}
+
+/**
+ * Adopt a quarantined file that turns out to be a real keypair, putting it back
+ * where it belongs.
+ *
+ * Only reachable when another process published a good keypair between this
+ * one's read and its rename. Restoring is itself a first-writer-wins publish, so
+ * a third process that has already taken the name keeps it — and then ITS
+ * keypair is what this call adopts, because the value in the file always wins
+ * over the one in a hand.
+ *
+ * @param file - Where the keypair belongs.
+ * @param movedTo - Where this call set the file aside.
+ * @returns The keypair now in force, or `null` when the moved file really was
+ *   junk and a fresh one should be published.
+ */
+function rescueQuarantinedKeys(file: string, movedTo: string): VapidKeys | null {
+  const rescued = parseVapidFile(movedTo);
+  if (!rescued) return null;
+
+  if (publishSecretFile(file, fs.readFileSync(movedTo), VAPID_FILE_MODE)) {
+    // Restored: the set-aside copy is now a duplicate of the live file.
+    fs.rmSync(movedTo, { force: true });
+    logger.info('[Push] Restored a VAPID keypair another process had just published', { file });
+    return rescued;
+  }
+
+  const winner = parseVapidFile(file);
+  if (winner) return winner;
+
+  // Somebody put junk back at the name while we held a good keypair. Publish
+  // ours on the next pass; the rescued copy stays on disk either way.
+  return null;
 }
 
 /** Read a stored keypair, or `null` when the file is not one. */
