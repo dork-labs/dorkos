@@ -98,12 +98,43 @@ let roomToolsAskedFor: string[] = [];
  */
 let roomToolDirectories: string[] | null = [];
 
+/**
+ * What `session_metadata` says OWNS each session — the ADR-0255 binding, written
+ * by the first turn and never rewritten.
+ *
+ * A session absent from this map is one nothing has bound yet, which is what the
+ * registry answers `bound: false` for: every first turn, and any id whose row was
+ * never written. That is the default here, so every test that predates the
+ * binding read behaves exactly as it did.
+ */
+const sessionOwners = new Map<string, string>();
+
+/**
+ * Which runtime TYPE the runner asked the registry for, in order.
+ *
+ * Recorded rather than inferred from the stub it gets back, because the claim
+ * DOR-764 is about is which program takes the turn — and a registry stub that
+ * ignores its argument (this one does, deliberately: every runtime behaves the
+ * same here) could not tell a bound codex session from a claude-code one.
+ */
+const runtimesAskedFor: string[] = [];
+
 vi.mock('../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
     persistSessionRuntime: (...args: unknown[]) => persistSessionRuntime(...args),
     getSessionSettings: () => Promise.resolve(storedSettings),
-    get: () =>
-      runtimeIsRegistered
+    // The real read, shape for shape: a row's runtime is `bound`, and an id with
+    // no row falls through to the legacy claude-code inference, which is
+    // explicitly NOT an owner.
+    resolveSessionRuntime: (sessionId: string) =>
+      Promise.resolve(
+        sessionOwners.has(sessionId)
+          ? { type: sessionOwners.get(sessionId), bound: true }
+          : { type: 'claude-code', bound: false }
+      ),
+    get: (type: string) => {
+      runtimesAskedFor.push(type);
+      return runtimeIsRegistered
         ? {
             getCapabilities: () => getCapabilities(),
             acquireLock: () => true,
@@ -120,7 +151,8 @@ vi.mock('../../core/runtime-registry.js', () => ({
                   },
                 }),
           }
-        : undefined,
+        : undefined;
+    },
     has: (type: string) => registeredRuntimes.includes(type),
     getDefaultType: () => 'claude-code',
   },
@@ -372,6 +404,81 @@ describe('createSessionRoomTurnRunner', () => {
     roomsConfig = undefined;
     roomToolDirectories = [];
     roomToolsAskedFor = [];
+    sessionOwners.clear();
+    runtimesAskedFor.length = 0;
+    agentManifest = null;
+    registeredRuntimes = ['claude-code', 'codex', 'opencode', 'test-mode'];
+  });
+
+  describe('which runtime takes the turn', () => {
+    it('keeps a running conversation on the runtime that started it, whatever the manifest now says', async () => {
+      // **ADR-0255, on the one path that used to bypass it** (DOR-764). The
+      // session was bound to codex by its first turn; the manifest has since
+      // been edited to say claude-code. Re-reading the manifest here handed the
+      // room's remaining turns to a program that holds none of this
+      // conversation's history — while `session_metadata` went on naming codex,
+      // because `persistSessionRuntime` refuses to re-bind. The edit governs the
+      // next session, not this one.
+      sessionOwners.set('room-session-on-codex', 'codex');
+      agentManifest = { runtime: 'claude-code' };
+
+      await createSessionRoomTurnRunner().run(request({ sessionId: 'room-session-on-codex' }));
+
+      expect(runtimesAskedFor).toEqual(['codex']);
+      // And the row still says so, so the two cannot drift apart again.
+      expect(persistSessionRuntime).toHaveBeenLastCalledWith(
+        'room-session-on-codex',
+        'codex',
+        '/repo/ana'
+      );
+    });
+
+    it("starts a first turn on the agent's manifest runtime, not on the registry's inference", async () => {
+      // The other half, and the reason this is not simply `resolveForSession`:
+      // a session nobody has bound resolves through the registry's legacy
+      // "it must be claude-code" inference, so asking it alone would run every
+      // codex agent's OPENING room turn on the wrong program — and then bind it
+      // there for the life of the conversation.
+      agentManifest = { runtime: 'codex' };
+
+      await createSessionRoomTurnRunner().run(request({ sessionId: null }));
+
+      expect(runtimesAskedFor).toEqual(['codex']);
+      expect(persistSessionRuntime).toHaveBeenLastCalledWith(
+        expect.any(String),
+        'codex',
+        '/repo/ana'
+      );
+    });
+
+    it('reads an id nothing has bound the same way it reads no id at all', async () => {
+      // The room binds a `(room, agent)` id BEFORE the first turn, so a
+      // non-null id is not proof of an owner: this is that placeholder, and a
+      // row a turn that never started left unwritten. Both take the manifest
+      // rung — treating "no row" as an answer is exactly the inference above.
+      agentManifest = { runtime: 'codex' };
+
+      await createSessionRoomTurnRunner().run(request({ sessionId: 'room-placeholder' }));
+
+      expect(runtimesAskedFor).toEqual(['codex']);
+    });
+
+    it('aims a halt at the runtime the turn is actually running on', async () => {
+      // A stop sent to the wrong runtime stops nothing at all, silently: the
+      // one it reaches has no such turn and answers `false`, and the turn it
+      // was meant for runs to completion (DOR-1424 is what that costs). So the
+      // halt asks the same question the turn did.
+      sessionOwners.set('room-session-on-codex', 'codex');
+      agentManifest = { runtime: 'claude-code' };
+
+      await createSessionRoomTurnRunner().interrupt({
+        sessionId: 'room-session-on-codex',
+        agentPath: '/repo/ana',
+      });
+
+      expect(runtimesAskedFor).toEqual(['codex']);
+      expect(interruptQuery).toHaveBeenCalledWith('room-session-on-codex');
+    });
   });
 
   describe('the reply mode it resolves, and which of a turn\u2019s two paths it asks about', () => {
@@ -1474,6 +1581,8 @@ describe('what a room turn actually sends (ADR-0273)', () => {
   beforeEach(() => {
     triggered.length = 0;
     turnBehaviour = saysAndCloses('green');
+    sessionOwners.clear();
+    runtimesAskedFor.length = 0;
   });
 
   it('sends the message byte for byte, with nothing wrapped around it', async () => {
@@ -1507,6 +1616,8 @@ describe('what a room turn runs with (execution defaults)', () => {
     runtimesConfig = USER_CONFIG_DEFAULTS.runtimes;
     agentManifest = null;
     registeredRuntimes = ['claude-code', 'codex', 'opencode', 'test-mode'];
+    sessionOwners.clear();
+    runtimesAskedFor.length = 0;
   });
 
   it("starts a room agent's first turn on the server's default model and effort", async () => {
@@ -1677,6 +1788,8 @@ describe('a room turn is recorded durably', () => {
     internalSessionId = () => undefined;
     turnBehaviour = saysAndCloses('green');
     getCapabilities.mockReturnValue(DECLARED_CAPABILITIES);
+    sessionOwners.clear();
+    runtimesAskedFor.length = 0;
   });
 
   afterEach(() => {

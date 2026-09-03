@@ -7,6 +7,12 @@
  * asks it a third time. A second copy of the manifest-then-default ladder is a
  * second copy that can disagree about which program answers for an agent.
  *
+ * Two functions, and which one to call is decided by whether there is a SESSION:
+ * {@link resolveAgentRuntimeType} answers for an agent that is about to get one,
+ * {@link resolveTurnRuntimeType} for a turn on a session that may already have an
+ * owner. A turn on an existing conversation must ask the second one — see
+ * ADR-0255.
+ *
  * @module services/runtimes/shared/resolve-agent-runtime-type
  */
 import { readManifest } from '@dorkos/shared/manifest';
@@ -34,4 +40,52 @@ export async function resolveAgentRuntimeType(agentPath: string): Promise<string
     // No manifest, or an unreadable one. The default is the right answer.
   }
   return runtimeRegistry.getDefaultType();
+}
+
+/**
+ * Which runtime one TURN runs on: the session's recorded owner once it has one,
+ * and only for a session nobody owns yet, {@link resolveAgentRuntimeType}.
+ *
+ * **A session's runtime is decided once and never recomputed (ADR-0255).** The
+ * manifest is a preference about the NEXT session an agent starts, not a fact
+ * about the ones it is already in the middle of: editing it while a conversation
+ * is running used to reroute that conversation's remaining turns to a different
+ * program, which has no transcript for the session id it is handed and answers
+ * from an empty context — while `session_metadata` still named the old owner,
+ * because `persistSessionRuntime` refuses to re-bind (DOR-764). So a manifest
+ * change takes effect on the next session — the same OUTCOME every other
+ * unattended surface already gives, by its own mechanism rather than this one:
+ * the cockpit routes on the binding (`resolveForSession`), a scheduled run pins
+ * the runtime it resolved onto `pulse_runs.resolved_runtime` for that run, and
+ * the relay keeps a chat subject on the session its first message created.
+ * Rooms were the surface with no such memory at all.
+ *
+ * The manifest rung is not a fallback from the binding — it is the answer for a
+ * session that HAS no owner, which is every session's first turn. Asking the
+ * registry alone would be worse than asking the manifest alone: an unbound id
+ * resolves through the registry's legacy inference, so a codex agent's opening
+ * room turn would run on claude-code.
+ *
+ * **A bound runtime this server does not have is a refusal, not a redirect.** It
+ * travels back as the type it is, and the caller's `runtimeRegistry.get` throws
+ * — the same answer `resolveForSession` gives the session routes. Falling back
+ * to the manifest there would be the very re-decision this exists to prevent,
+ * and it would hand the conversation to a program with none of its history.
+ *
+ * @param turn.sessionId - The session the turn will run on, or `null` when the
+ *   caller is about to mint one. A non-null id that nothing has bound yet — a
+ *   placeholder from a turn that never started, a row that was never written —
+ *   is the same case as `null` and takes the manifest rung too.
+ * @param turn.agentPath - The agent's project directory, the one holding
+ *   `.dork/agent.json`.
+ */
+export async function resolveTurnRuntimeType(turn: {
+  sessionId: string | null;
+  agentPath: string;
+}): Promise<string> {
+  if (turn.sessionId !== null) {
+    const { type, bound } = await runtimeRegistry.resolveSessionRuntime(turn.sessionId);
+    if (bound) return type;
+  }
+  return resolveAgentRuntimeType(turn.agentPath);
 }
