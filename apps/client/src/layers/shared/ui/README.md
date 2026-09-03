@@ -13,15 +13,15 @@ naming and composition conventions live in
 
 ## Overlays
 
-| Want                                                              | Use                      | Not                  | Because                                                                                                            |
-| ----------------------------------------------------------------- | ------------------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| A menu of actions in a touch-reachable area (status bar, toolbar) | `ResponsiveDropdownMenu` | plain `DropdownMenu` | swaps to a bottom `Drawer` on mobile                                                                               |
-| A menu only ever opened by mouse (dense table, desktop-only tool) | `DropdownMenu`           | —                    | no mobile use, so no wrapper is needed                                                                             |
-| Right-click actions on a touch-reachable row or card              | `ResponsiveContextMenu`  | plain `ContextMenu`  | a long-press opens a bottom `Drawer` on mobile                                                                     |
-| A floating panel a touch user has to reach                        | `ResponsivePopover`      | plain `Popover`      | swaps to a bottom `Drawer` on mobile                                                                               |
-| A centered dialog whose content needs the full screen on a phone  | `ResponsiveDialog`       | plain `Dialog`       | swaps to a full-screen `Drawer` on mobile                                                                          |
-| A right-side panel that should fill the screen on a phone         | `ResponsiveSheet`        | plain `Sheet`        | stays a `Sheet` on every size — only its width changes                                                             |
-| The bottom-sheet primitive itself                                 | `Drawer`                 | —                    | what every `Responsive*` wrapper swaps to on mobile; use directly only for a surface that is mobile-only by design |
+| Want                                                              | Use                      | Not                  | Because                                                                                                                                     |
+| ----------------------------------------------------------------- | ------------------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| A menu of actions in a touch-reachable area (status bar, toolbar) | `ResponsiveDropdownMenu` | plain `DropdownMenu` | swaps to a bottom `Drawer` on mobile                                                                                                        |
+| A menu only ever opened by mouse (dense table, desktop-only tool) | `DropdownMenu`           | —                    | no mobile use, so no wrapper is needed                                                                                                      |
+| Right-click actions on a touch-reachable row or card              | `ResponsiveContextMenu`  | plain `ContextMenu`  | a long-press opens a bottom `Drawer` on mobile                                                                                              |
+| A floating panel a touch user has to reach                        | `ResponsivePopover`      | plain `Popover`      | swaps to a bottom `Drawer` on mobile                                                                                                        |
+| A centered dialog whose content needs the full screen on a phone  | `ResponsiveDialog`       | plain `Dialog`       | swaps to a full-screen `Drawer` on mobile                                                                                                   |
+| A right-side panel that should fill the screen on a phone         | `ResponsiveSheet`        | plain `Sheet`        | stays a `Sheet` on every size — only its width changes                                                                                      |
+| The bottom-sheet primitive itself                                 | `Drawer`                 | —                    | what every `Responsive*` wrapper except `ResponsiveSheet` swaps to on mobile; use directly only for a surface that is mobile-only by design |
 
 ## Rows
 

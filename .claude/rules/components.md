@@ -36,7 +36,7 @@ The client uses **Radix UI** primitives with `asChild` composition (the standard
 - **Focus styles**: `focus-visible:` (keyboard only), never bare `focus:`.
 - **Deterministic values**: never `Math.random()` in components — derive stable pseudo-random values from `React.useId()`.
 - **React 19 refs**: `ref` is a regular prop — new components take `ref` in props, no `forwardRef`. Existing `forwardRef` in `ui/` is fine; don't add more.
-- **Compound components use flat sibling exports** (`CardHeader`, `DialogContent`, `FieldLabel`) — the shadcn convention 89 of 90 `shared/ui` files already follow. Don't reach for an `Object.assign` namespace (`FilterBar.Search`); `filter-bar/` predates this rule and stays as it is.
+- **Compound components use flat sibling exports** (`CardHeader`, `DialogContent`, `FieldLabel`) — the shadcn convention every other multi-part primitive follows (`card.tsx`, `dialog.tsx`, `field.tsx`, `navigation-layout.tsx`, `sidebar.tsx`, `table.tsx`). Don't reach for an `Object.assign` namespace (`FilterBar.Search`); `filter-bar/` predates this rule and stays as it is.
 
 ## Accessibility
 
@@ -113,4 +113,8 @@ Use `<Table>` primitives for structured columnar data — never flex-based row l
 
 `layers/shared/ui/` is the exception: files are kebab-case regardless of
 shadcn-vs-custom origin (`button.tsx`, `mention-pill.tsx`, `trust-dial.tsx`).
-Only the component's own PascalCase name changes inside the file.
+Only the component's own PascalCase name changes inside the file. The
+`filter-bar/`, `form-fields/`, and `tour-spotlight/` subdirectories, plus five
+standalone files (`ConnectionStatusBanner.tsx`, `DirectoryPicker.tsx`,
+`FeatureDisabledState.tsx`, `PromptSuggestionChips.tsx`, `ScanLine.tsx`), keep
+PascalCase filenames and stay that way — they predate this rule.

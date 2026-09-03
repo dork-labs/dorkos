@@ -50,6 +50,11 @@ run_case 'a rules doc names the dead alias' 1 \
   '.claude/rules/components.md' \
   'See `@/components/ui/dialog` for the pattern.'
 
+# shellcheck disable=SC2016
+run_case 'a doc names the dead path with no @ alias' 1 \
+  'contributing/design-system.md' \
+  'Shows as a centered `Dialog` on desktop and a `Drawer` on mobile. See `components/ui/responsive-dialog.tsx`.'
+
 echo ""
 echo "== the guard must stay GREEN on everything we deliberately kept =="
 
@@ -64,6 +69,16 @@ run_case 'the real shared/ui path is untouched' 0 \
 run_case 'a doc outside the scanned dirs is not scanned' 0 \
   'decisions/260101-000000-something.md' \
   "import { Button } from '@/components/ui/button';"
+
+# shellcheck disable=SC2016
+run_case 'the site alias is live, not dead — a line naming apps/site is scoped out' 0 \
+  'contributing/styling-theming.md' \
+  "In \`apps/site\`, \`@/components/ui/button\` is the real shadcn primitive."
+
+# shellcheck disable=SC2016
+run_case 'a bare mention of the site path is scoped out too' 0 \
+  'contributing/styling-theming.md' \
+  'The site keeps its shadcn primitives at `apps/site/src/components/ui/`.'
 
 echo ""
 printf '%s passed, %s failed\n' "$pass" "$fail"
