@@ -1,14 +1,7 @@
-import { createRequire } from 'node:module';
-import type { AxeResults, Result } from 'axe-core';
+import type { AxeResults } from 'axe-core';
 import type { Locator, Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
-
-declare global {
-  interface Window {
-    /** Injected by {@link runAxe} via `addScriptTag`; absent until then. */
-    axe: { run: (context: string, options: Record<string, unknown>) => Promise<AxeResults> };
-  }
-}
+import { describeViolation, runAxe } from '../../axe';
 
 /**
  * The Dev Playground page this spec drives.
@@ -18,16 +11,6 @@ declare global {
  * nothing, registers no agent, and cleans nothing up.
  */
 const SHOWCASE_PATH = '/dev/sidebar-model';
-
-/**
- * axe-core's own bundle, resolved from this package's dependency rather than
- * fetched.
- *
- * `@axe-core/playwright` would be the usual choice; the bare engine is used
- * because it was already in the lockfile (`eslint-plugin-jsx-a11y` depends on
- * it) and injecting one script is the whole of what the wrapper does here.
- */
-const AXE_BUNDLE = createRequire(import.meta.url).resolve('axe-core/axe.min.js');
 
 /** What axe is pointed at: the page's content box, and none of the playground's chrome. */
 const AXE_CONTEXT = '[data-slot="page-container"]';
@@ -119,16 +102,6 @@ async function setTheme(page: Page, theme: 'light' | 'dark'): Promise<void> {
 }
 
 /**
- * Run axe-core over the page's content box and hand back everything it found.
- *
- * @param page - The page under test.
- */
-async function runAxe(page: Page): Promise<AxeResults> {
-  await page.addScriptTag({ path: AXE_BUNDLE });
-  return page.evaluate(async (context) => window.axe.run(context, {}), AXE_CONTEXT);
-}
-
-/**
  * Assert the page fits inside the viewport, before axe is asked anything.
  *
  * **This is the coverage guarantee, and it replaced a number that could not be
@@ -208,13 +181,6 @@ async function expectEveryReasonChipEvaluated(page: Page, results: AxeResults): 
     missed.slice(0, 8),
     `axe did not evaluate ${missed.length} of the page's reason chips — it stopped looking before the page ended, so a contrast failure down there would not be reported`
   ).toEqual([]);
-}
-
-/** One violation, flattened into something an assertion failure can be read from. */
-function describeViolation(violation: Result): string {
-  return `${violation.id} (${violation.impact}): ${violation.nodes
-    .map((node) => `${node.target.join(' ')} — ${node.failureSummary?.replace(/\s+/g, ' ')}`)
-    .join(' | ')}`;
 }
 
 /**
@@ -554,7 +520,7 @@ test.describe('Sidebar model showcase @smoke', () => {
       // cannot be satisfied by a page that outgrew the viewport, which an
       // absolute floor could be. See PAGE_MUST_FIT_VIEWPORT.
       await expectPageFitsViewport(page);
-      const results = await runAxe(page);
+      const results = await runAxe(page, AXE_CONTEXT);
       await expectEveryReasonChipEvaluated(page, results);
 
       // **No quarantine any more, and that is the news.** Two muted rows used to

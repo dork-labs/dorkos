@@ -333,6 +333,28 @@ describe('RoomThreadPanel', () => {
     expect(articles.map((a) => a.getAttribute('aria-setsize'))).toEqual(['3', '3', '3']);
   });
 
+  it('will not number a thread whose root says it is bigger than what is loaded', () => {
+    // The third state, and the one DOR-690 created. A root fetched from behind
+    // the page is HERE — so the rule above would call the set complete — while
+    // the older half of its replies is not, and the root says so. Promising
+    // "3 of 3" over the tail of a nine-message thread is the same lie the
+    // orphan case refuses, arriving by a different door.
+    renderPanel({ entries: [entry(1, { threadReplyCount: 8 }), reply(2, 1), reply(3, 1)] });
+    const articles = screen.getAllByRole('article');
+
+    expect(articles).toHaveLength(3);
+    expect(articles[0]).toHaveAttribute('aria-setsize', '-1');
+    expect(articles[0]).not.toHaveAttribute('aria-posinset');
+  });
+
+  it('numbers exactly when the root’s count agrees with what is loaded', () => {
+    // The count is not a reason on its own to stop numbering — only a count
+    // LARGER than the replies on screen is. A thread that fits says so.
+    renderPanel({ entries: [entry(1, { threadReplyCount: 2 }), reply(2, 1), reply(3, 1)] });
+
+    expect(screen.getAllByRole('article')[0]).toHaveAttribute('aria-setsize', '3');
+  });
+
   it('moves root to reply on Page Down and back on Page Up', () => {
     renderPanel({ entries: [entry(1), reply(2, 1), reply(3, 1)] });
     const [root, first, second] = screen.getAllByRole('article');

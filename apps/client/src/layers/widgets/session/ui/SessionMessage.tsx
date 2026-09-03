@@ -71,6 +71,12 @@ interface SessionMessageProps {
   onToolDecided?: (toolCallId: string, answers?: Record<string, string>) => void;
   /** Called when user clicks "Retry" on an inline error block */
   onRetry?: () => void;
+  /**
+   * Called once when a sign-in started from an inline auth-error card
+   * completes, so the failed message can send itself (DOR-1650). Returns
+   * whether it did.
+   */
+  onSigninComplete?: () => boolean;
   /** Tool call ID being handled in the input zone, or null. */
   inputZoneToolCallId?: string | null;
   /** Text animation effect for streaming text. When undefined, StreamingText uses its default. */
@@ -109,6 +115,7 @@ export function SessionMessage({
   focusedOptionIndex = -1,
   onToolDecided,
   onRetry,
+  onSigninComplete,
   inputZoneToolCallId = null,
   textEffect,
   runtimeLabel,
@@ -160,6 +167,7 @@ export function SessionMessage({
         focusedOptionIndex,
         onToolDecided,
         onRetry,
+        onSigninComplete,
         inputZoneToolCallId,
         textEffect,
         runtimeLabel,

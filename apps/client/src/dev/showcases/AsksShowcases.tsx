@@ -407,6 +407,25 @@ function InlineApprovalPrompt() {
           timeoutMs={30_000}
         />
       </ShowcaseDemo>
+
+      {/* The three reaches one button can have. Worth seeing side by side:
+          the same click means "until this chat ends" and "every Claude session
+          on this machine", and the only thing separating them is this line of
+          text (DOR-1462). */}
+      <ShowcaseLabel>Always Allow — the three grant scopes</ShowcaseLabel>
+      <ShowcaseDemo>
+        {(['session', 'project', 'user'] as const).map((scope) => (
+          <ApprovalPrompt
+            key={scope}
+            sessionId={MOCK_SESSION_ID}
+            toolCallId={`${TOOL_CALL_APPROVAL.toolCallId}-scope-${scope}`}
+            toolName={TOOL_CALL_APPROVAL.toolName}
+            input={TOOL_CALL_APPROVAL.input}
+            approvalHasSuggestions
+            approvalAlwaysAllowScope={scope}
+          />
+        ))}
+      </ShowcaseDemo>
     </TransportProvider>
   );
 }

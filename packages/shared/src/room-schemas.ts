@@ -1187,6 +1187,14 @@ export const RoomEntrySchema = z
       .describe(
         "The files posted with this entry. Every path that delivers an entry to a reader carries it — the history page, the stream's hydration snapshot, a resume replay, and a live `entry` event. Optional only because the server's internal entry shape exists before the roll-up runs; on the wire it is always present, and absent should be read as empty."
       ),
+    threadReplyCount: z
+      .number()
+      .int()
+      .min(1)
+      .optional()
+      .describe(
+        'How many replies this entry\'s thread holds in the ROOM, which is not always how many the reader has. Unlike the two roll-ups above it, this is present on exactly one kind of entry: a thread root that came back in `threadRoots` because the page it belongs to does not contain it. That is the only case where the replies a client loaded are not the whole thread — a root INSIDE the page has every one of its replies in the page after it, so the loaded replies are the count, and a second number that could disagree with what is on screen would be worse than no number at all. Absent means "count what you have".'
+      ),
   })
   .openapi('RoomEntry');
 
@@ -1566,9 +1574,30 @@ export const ThreadListResponseSchema = z
 
 export type ThreadListResponse = z.infer<typeof ThreadListResponseSchema>;
 
-/** The `GET /api/rooms/:id/entries` envelope, oldest-first within the page. */
+/**
+ * The `GET /api/rooms/:id/entries` envelope, oldest-first within the page.
+ *
+ * **A page is self-describing** (DOR-690): a thread is a relation between
+ * entries (ADR 260728-022013), so a reply is only drawable as a reply while the
+ * entry heading its thread is loaded too — and a busy room pushes that root out
+ * of the trailing page long before the replies stop arriving. `threadRoots`
+ * carries exactly the roots this page points at and does not contain, so a
+ * reader never has to ask a second time to know what it is looking at.
+ *
+ * The two arrays are separate rather than merged because they answer different
+ * questions: `entries` is the PAGE — what `before` and `limit` selected, and
+ * what a backwards cursor must be taken from — while `threadRoots` is context
+ * from outside it, always older than the page's own oldest entry.
+ */
 export const RoomEntryListResponseSchema = z
-  .object({ entries: z.array(RoomEntrySchema) })
+  .object({
+    entries: z.array(RoomEntrySchema),
+    threadRoots: z
+      .array(RoomEntrySchema)
+      .describe(
+        "The thread roots entries in this page reply to that the page itself does not hold, oldest first. Empty whenever every reply's root came back in the page. Never part of the page: each one sits below its oldest entry, so a `before=` cursor is read from `entries` alone. Each carries `threadReplyCount`, because a thread reaching back past the page is also the one case where what a reader loaded is not the whole of it."
+      ),
+  })
   .openapi('RoomEntryListResponse');
 
 export type RoomEntryListResponse = z.infer<typeof RoomEntryListResponseSchema>;

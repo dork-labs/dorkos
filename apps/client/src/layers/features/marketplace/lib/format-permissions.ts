@@ -7,12 +7,8 @@
  *
  * @module features/marketplace/lib/format-permissions
  */
-import {
-  describeHookEvent,
-  describeSchedulePermissionMode,
-  type PermissionPreview,
-} from '@dorkos/shared/marketplace-schemas';
-import cronstrue from 'cronstrue';
+import { describeHookEvent, type PermissionPreview } from '@dorkos/shared/marketplace-schemas';
+import { describePreviewSchedule, runsUnattended } from '@/layers/entities/marketplace';
 
 // ---------------------------------------------------------------------------
 // Output types
@@ -372,50 +368,26 @@ function formatCommands(preview: PermissionPreview): FormattedPermission[] {
 }
 
 /**
- * Translate a cron expression into plain words via `cronstrue`, the same
- * library (and the same fallback stance) the task builder already uses.
- *
- * An expression `cronstrue` cannot parse falls back to the raw text rather
- * than to silence: the preview would otherwise claim less than it knows.
- */
-function describeCron(cron: string): string {
-  try {
-    return cronstrue.toString(cron);
-  } catch {
-    return `On the schedule ${cron}`;
-  }
-}
-
-/**
  * Format the `schedules` field into the `schedules` group.
  *
- * Names the permission mode in plain words rather than echoing the raw id: a
- * person deciding whether to trust a package learns nothing from
- * "bypassPermissions" and everything from "can run any command without a
- * permission prompt". The cron expression gets the same treatment for the same reason —
- * translating one and not the other in a single sentence was the inconsistency
- * this dialog exists to avoid. A job that runs unattended without asking is
- * flagged at warning severity.
+ * The sentence itself comes from `describePreviewSchedule` in
+ * `entities/marketplace`, because the agent arrival confirm has to say exactly
+ * the same thing about exactly the same job (DOR-644) and two copies would
+ * drift. A job that runs unattended without asking is flagged at warning
+ * severity here, which is this dialog's own concern: the arrival confirm's
+ * ledger has no severity column.
  *
  * @param preview - Full permission preview from the server.
  */
 function formatSchedules(preview: PermissionPreview): FormattedPermission[] {
-  return preview.schedules.map((schedule) => {
-    const when = schedule.cron ? describeCron(schedule.cron) : 'Runs only when you ask';
-    const state = schedule.startsEnabled ? 'starts switched on' : 'starts switched off';
-    const unattended =
-      schedule.permissionMode === 'bypassPermissions' ||
-      schedule.permissionMode === 'dontAsk' ||
-      schedule.permissionMode === 'auto';
-    return {
-      icon: 'clock',
-      label: schedule.name,
-      description: `${when}, ${state}. This job ${describeSchedulePermissionMode(schedule.permissionMode)}.`,
-      severity: (unattended && schedule.startsEnabled
-        ? 'warning'
-        : 'info') satisfies PermissionSeverity,
-    };
-  });
+  return preview.schedules.map((schedule) => ({
+    icon: 'clock',
+    label: schedule.name,
+    description: describePreviewSchedule(schedule),
+    severity: (runsUnattended(schedule.permissionMode) && schedule.startsEnabled
+      ? 'warning'
+      : 'info') satisfies PermissionSeverity,
+  }));
 }
 
 // ---------------------------------------------------------------------------

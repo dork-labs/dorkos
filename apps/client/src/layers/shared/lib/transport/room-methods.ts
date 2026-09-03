@@ -26,6 +26,7 @@ import {
   type PostToRoomResponse,
   type RoomAttachment,
   type RoomEntry,
+  type RoomEntryListResponse,
   type RoomEvent,
   type RoomMember,
   type RoomRosterEntry,
@@ -145,11 +146,28 @@ export function createRoomMethods(baseUrl: string) {
       });
     },
 
+    /**
+     * The page, with the thread roots it points at ahead of it (DOR-690).
+     *
+     * **The history this returns is one array in `seq` order, and everything
+     * above reads it that way** — the cache the live stream merges into, the
+     * cursor it resumes from, the grouping the timeline draws. So the two
+     * arrays the server keeps apart are joined here, and this is the only place
+     * that knows they were ever separate. Roots go first because every one of
+     * them is older than the page's own oldest entry: a root inside the page's
+     * `seq` range came back IN the page.
+     *
+     * The wire keeps them apart so a caller that pages BACKWARDS can tell where
+     * the page ends — the `before=` cursor is `entries[0].seq`, never a root's.
+     * Nothing asks for that yet; when something does, it reads the envelope
+     * rather than un-mixing this array.
+     */
     listRoomEntries(id: string, query?: ListRoomEntriesQuery): Promise<RoomEntry[]> {
       const qs = buildQueryString({ before: query?.before, limit: query?.limit });
-      return fetchJSON<{ entries: RoomEntry[] }>(baseUrl, `/rooms/${id}/entries${qs}`).then(
-        (r) => r.entries
-      );
+      return fetchJSON<RoomEntryListResponse>(baseUrl, `/rooms/${id}/entries${qs}`).then((r) => [
+        ...r.threadRoots,
+        ...r.entries,
+      ]);
     },
 
     /**

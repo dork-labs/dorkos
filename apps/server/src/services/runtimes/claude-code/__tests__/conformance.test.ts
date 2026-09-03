@@ -783,3 +783,59 @@ runtimeConformance(
     },
   }
 );
+
+/**
+ * The account identity two DIFFERENT sessions share (DOR-1682).
+ *
+ * Conformance C12 states the contract — every session on one account answers the
+ * same string — but it can only ever feed this suite ONE spelling of the root, so
+ * it cannot produce the defect this case exists for. Claude-code can: the launch
+ * ladder's rungs are independently spelled (`resolveLaunchAccountRoot` hands back
+ * a registry row's `path` verbatim, and the `defaultAccount` rung hands back that
+ * field verbatim), and the config schema constrains neither to be absolute or
+ * slash-free.
+ *
+ * The sign-in watch compares these strings with `===` ACROSS sessions, because
+ * its two edges never belong to one: a turn discovers the dead credential, and a
+ * LATER turn on some other session proves it working again. So one directory
+ * spelled two ways reads as two accounts, a sign-in fixed under one spelling can
+ * never resolve the episode raised under the other, and the notice stands for the
+ * life of the install with no `null` entry left to catch it.
+ */
+describe('ClaudeCodeRuntime — the account two sessions share', () => {
+  it('answers one canonical string however the ladder spelled the root', async () => {
+    const runtime = new ClaudeCodeRuntime('/tmp/dorkos-conformance', '/projects/conformance');
+    const canonical = account.root;
+
+    const first = randomUUID();
+    runtime.ensureSession(first, { permissionMode: 'default', cwd: '/projects/conformance' });
+    for await (const _event of runtime.sendMessage(first, 'ping', {
+      cwd: '/projects/conformance',
+    })) {
+      // Drained rather than inspected: this turn exists only to make a launch
+      // resolve an account for the session.
+    }
+
+    try {
+      // The SAME directory, spelled the way another rung of the ladder spells it.
+      // Restored in `finally` because `afterAll` deletes `account.root`, and a
+      // holder left mutated would aim that at a path this suite never created.
+      account.root = `${canonical}/`;
+      const second = randomUUID();
+      runtime.ensureSession(second, { permissionMode: 'default', cwd: '/projects/conformance' });
+      for await (const _event of runtime.sendMessage(second, 'ping', {
+        cwd: '/projects/conformance',
+      })) {
+        // Drained, same reason.
+      }
+
+      expect(
+        runtime.getSessionAccount(second),
+        'two sessions on one account must answer the same string, whichever rung of the launch ' +
+          'ladder spelled its root — the watch compares these with === across sessions'
+      ).toBe(runtime.getSessionAccount(first));
+    } finally {
+      account.root = canonical;
+    }
+  });
+});

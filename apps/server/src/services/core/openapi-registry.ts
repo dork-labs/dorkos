@@ -3749,11 +3749,11 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Read a page of room history',
   description:
-    'Oldest-first within the page. Page backwards with `before=<seq>`. The room log is never trimmed, so any page remains readable.',
+    'Oldest-first within the page. Page backwards with `before=<seq>`. The room log is never trimmed, so any page remains readable. **The page is self-describing about threads**: a thread is a relation between entries rather than a room of its own, so a reply is only legible as a reply while the entry heading its thread is loaded beside it — and a thread outlives the 50-entry window it started in. `threadRoots` carries the roots this page replies to that the page itself does not hold, so nobody has to ask twice. They are context, never part of the page: each sits below the oldest entry in `entries`, which is where a `before=` cursor is read from.',
   request: { params: RoomIdParams, query: ListRoomEntriesQuerySchema },
   responses: {
     200: {
-      description: 'A page of entries',
+      description: 'A page of entries, and the thread roots it points at outside itself',
       content: { 'application/json': { schema: RoomEntryListResponseSchema } },
     },
     400: roomValidationError,

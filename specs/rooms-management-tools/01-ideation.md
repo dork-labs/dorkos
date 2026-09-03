@@ -339,3 +339,5 @@ Proposed phasing, two PRs, split so the risky half is reviewable alone:
 **PR 2 — the verbs.** `requireRosterWriteAllowed` and the `addMember`/`removeMember` agent paths; the five capability definitions and the declaration snapshot; the `leave_room` guards; the create→add→post turn-count test and the room-multiplication budget test; both Tools tabs; user docs and a changelog fragment.
 
 **Blocking dependency:** DOR-1506, or at minimum D6's narrower closure of it. Stated plainly because it is the difference between a boundary and a comment — a hard filter an agent can grant itself is not a hard filter.
+
+> **Resolved 2026-09-02.** D6's narrow closure shipped with PR 1; DOR-1506 itself shipped afterwards as `agent-write-policy.ts`, a per-leaf classification of the whole agent-reachable manifest wire enforced inside `updateAgentManifest`. The open-seam quotations from `config-write-policy.ts` above are kept as the record of what was true when this was written.

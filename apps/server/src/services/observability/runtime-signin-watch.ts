@@ -89,10 +89,12 @@
  * which is exactly why DOR-1654 shipped `signin.required` as a plain event.
  *
  * This module is that owner. {@link failingSince} IS the store: a runtime is in
- * it when its last turn died on its sign-in and no turn since has gone through.
- * And the edge is **the next turn on that runtime that reaches the provider
- * without a credential failure.** Nothing else can answer it honestly: a
- * credential is not something DorkOS can inspect, only something it can try.
+ * it when a turn died on one of its sign-ins and no turn since has gone through
+ * on that same account. And the edge is **the next turn that reaches the
+ * provider on that account without a credential failure.** Nothing else can
+ * answer it honestly: a credential is not something DorkOS can inspect, only
+ * something it can try. (The account half arrived with DOR-1682, below; before
+ * it, "that account" was simply "that runtime".)
  *
  * Three judgement calls in that sentence, each deliberate:
  *
@@ -110,6 +112,37 @@
  *   count.** It authenticated before the credential died, so its success is
  *   evidence about a moment that has already passed — and clearing on it would
  *   take the notice down while the sign-in is still broken.
+ *
+ * ## Why it asks which ACCOUNT a turn ran on (DOR-1682)
+ *
+ * Because "a turn on this runtime worked" is not the same claim as "this
+ * credential works", and on a machine running several Claude accounts the two
+ * come apart. A credential belongs to an account root (`CLAUDE_CONFIG_DIR`), and
+ * DorkOS supports several: with the store keyed on the runtime TYPE alone, a
+ * clean turn on a healthy account resolved a condition a DEAD one raised. That
+ * is an all-clear that has not happened, and under normal traffic it fires
+ * within seconds and then keeps firing, so the phone leg never runs.
+ *
+ * The runtime is the only thing that knows which of its own credentials a turn
+ * used, so it says so: `AgentRuntime.getSessionAccount` (optional, synchronous,
+ * never throws). {@link SigninEpisode} records an account per failure and the
+ * resolution edge only credits a clean turn against the account it actually ran
+ * on.
+ *
+ * **Absence is neutral, in both directions, and that is the whole degradation
+ * story.** A runtime that does not implement the method — codex and opencode
+ * each have exactly one home directory — behaves precisely as it did before this
+ * existed: one account key (`null`), any clean turn resolves it. And a runtime
+ * that implements it but cannot name a particular turn's account records the
+ * same `null`, so a failure is never dropped for want of an account.
+ *
+ * What it deliberately does NOT do is split the NOTICE. One dead credential and
+ * two dead credentials are still one `signin.required` per runtime, because the
+ * notification's subject is the runtime and the app's standing banner reads the
+ * newest row per runtime — a second row would say the same sentence twice, and
+ * per-account rows would need a per-account banner to go with them. What the
+ * per-account store buys instead is that the ONE notice stands until every
+ * failing account has proved itself, and clears the moment the last one does.
  *
  * @module services/observability/runtime-signin-watch
  */
@@ -144,11 +177,42 @@ export type RuntimeSigninSink = (event: RuntimeSigninEvent) => void;
 let sink: RuntimeSigninSink | null = null;
 
 /**
- * When each currently-failing runtime's episode began, by runtime type. Epoch ms.
+ * One runtime's standing sign-in condition: when it began, and which of that
+ * runtime's accounts are still unproven.
+ */
+interface SigninEpisode {
+  /**
+   * When the runtime-level condition began. Epoch ms.
+   *
+   * The episode's identity, carried verbatim to the resolution so both edges,
+   * the inbox rows and the escalation timer file under one key. It is stamped by
+   * the FIRST account to fail and never moves, however many accounts join
+   * afterwards — a later account's failure is more of the same condition, not a
+   * new one, and re-stamping would strand the timer armed under the old string.
+   */
+  since: number;
+  /**
+   * Every account of this runtime whose sign-in is still unproven, and when each
+   * one's failure was noticed. Epoch ms, per account, because the
+   * already-running-turn rule is answered per account: a turn that started
+   * before ACCOUNT B failed proves nothing about B, even though the runtime's
+   * condition has stood since account A failed minutes earlier.
+   *
+   * `null` keys a failure whose account could not be named — a runtime with one
+   * set of credentials and no {@link AgentRuntime.getSessionAccount}, or one that
+   * has it but could not answer for this session yet. Both mean "do not
+   * distinguish", so the entry is cleared by any clean turn on the runtime.
+   */
+  accounts: Map<string | null, number>;
+}
+
+/**
+ * The sign-in episode each currently-failing runtime is holding open, by runtime
+ * type.
  *
  * **This is the store that makes `signin.required` a standing condition**
- * (DOR-1657): a runtime is in here exactly while its last turn died on its
- * sign-in and no turn since has gone through. A standing kind is required to
+ * (DOR-1657): a runtime is in here exactly while a turn died on one of its
+ * sign-ins and no turn since has gone through on that same account. A standing kind is required to
  * have one (ADR 260819-234828), and for a credential nothing else could be it —
  * a token is not something DorkOS can inspect, only something it can try.
  *
@@ -180,19 +244,23 @@ let sink: RuntimeSigninSink | null = null;
  * banner does exactly that — so a row this process can never resolve would
  * otherwise claim a dead sign-in forever.
  *
- * **Keyed by runtime TYPE, which is wrong for multi-account claude-code.** A
- * credential belongs to an account root (`CLAUDE_CONFIG_DIR`), and DorkOS
- * supports several; a clean turn on one account therefore clears a condition
- * raised by another, reading as an all-clear that has not happened. It is not
- * fixable from here: the account is a private field of `ClaudeCodeRuntime`'s
- * session store, resolved asynchronously far deeper than this seam, and reaching
- * it needs a new method on the shared `AgentRuntime` interface plus an
- * implementation in all three runtimes. Scoped to claude-code — codex and
- * opencode each have exactly one home directory. The failure mode is a premature
- * all-clear, corrected by the next failing turn on the affected account, rather
- * than permanent silence (DOR-1657 follow-up).
+ * **Keyed by runtime TYPE, with the ACCOUNTS inside** (DOR-1682). One notice per
+ * runtime is the product decision — see the module doc — but a credential
+ * belongs to an account root (`CLAUDE_CONFIG_DIR`) and DorkOS supports several,
+ * so the condition it describes is per account. Both facts live in one entry:
+ * the map answers "does this runtime have something standing?" for
+ * {@link isSigninFailing} and the sink, and {@link SigninEpisode.accounts}
+ * answers "has every failing credential proved itself?" for the resolution edge.
+ *
+ * Keyed on the runtime type at the top level rather than on runtime+account, and
+ * that is what keeps the reporting honest rather than being a shortcut: a store
+ * keyed per account would raise a second episode for a second dead account, and
+ * the app's standing banner reads the NEWEST row per runtime — so fixing the
+ * first account would write a `cleared` row that took the banner down while the
+ * second was still dead, and the second account's episode, already claimed,
+ * would never say anything again.
  */
-const failingSince = new Map<string, number>();
+const failingSince = new Map<string, SigninEpisode>();
 
 /**
  * Install what to do when a runtime's sign-in changes state. Called once by the
@@ -205,22 +273,41 @@ export function setRuntimeSigninSink(next: RuntimeSigninSink | null): void {
 }
 
 /**
- * Report that a runtime's sign-in is dead, once per episode.
+ * Report that a runtime's sign-in is dead, once per episode — and record WHICH
+ * of that runtime's accounts died, so the resolution edge knows what it is
+ * waiting for.
  *
  * Claims the episode BEFORE telling anybody, because the race it closes is
  * concurrent turns arriving before anything has been said. Nothing is claimed
  * when there is no sink to tell: a runtime latched with nobody listening would
  * stand silently forever, and every later failure would find it already standing.
  *
+ * A second account failing while the condition already stands says nothing — one
+ * dead runtime is one notice (see the module doc) — but it IS recorded, and that
+ * recording is the whole point: without it, fixing the first account would end a
+ * condition the second is still true of.
+ *
  * @param runtimeType - The runtime whose credential failed.
+ * @param account - The account the failing turn ran on, or `undefined` when this
+ *   runtime cannot name one. Absence is neutral, never a reason to say nothing.
  */
-function noteSigninFailure(runtimeType: string): void {
+function noteSigninFailure(runtimeType: string, account: string | undefined): void {
   if (!sink) return;
-  if (failingSince.has(runtimeType)) return;
+  const key = account ?? null;
+
+  const standing = failingSince.get(runtimeType);
+  if (standing) {
+    // First noticing wins the timestamp: a later turn re-stamping this account
+    // would push its failure forward past turns that have already started, and
+    // one of those could then be credited with proving a credential it never
+    // reached.
+    if (!standing.accounts.has(key)) standing.accounts.set(key, Date.now());
+    return;
+  }
 
   const since = Date.now();
-  failingSince.set(runtimeType, since);
-  logger.info('[Runtimes] A turn failed on its sign-in', { runtime: runtimeType });
+  failingSince.set(runtimeType, { since, accounts: new Map([[key, since]]) });
+  logger.info('[Runtimes] A turn failed on its sign-in', { runtime: runtimeType, account });
 
   // The claim is optimistic — it has to be made before anybody is told, or
   // concurrent turns all report the same thing. So a sink that could not do its
@@ -233,28 +320,60 @@ function noteSigninFailure(runtimeType: string): void {
 }
 
 /**
- * Report that a runtime whose sign-in had failed is working again — the
- * resolution edge of the standing condition (DOR-1657).
+ * Credit a clean turn against the account it ran on, and report the runtime's
+ * sign-in working again once every failing account has been proved — the
+ * resolution edge of the standing condition (DOR-1657, DOR-1682).
+ *
+ * **What one clean turn is evidence about.** Its own account, plus any failure
+ * whose account could not be named (`null`). The second half is what keeps an
+ * unattributable failure from standing forever on a runtime that CAN usually
+ * name its accounts: `null` means "we could not tell", and the best evidence
+ * available against it is a credential on that runtime demonstrably working. It
+ * is the same self-correcting direction the rest of this module takes — a
+ * sign-in that is still dead re-stands on the very next turn, while an episode
+ * nobody can ever clear is a banner for the life of the install.
+ *
+ * It is evidence about NO OTHER account. That is the whole fix: a turn on a
+ * healthy account says nothing whatsoever about a dead one, however many times
+ * it succeeds.
  *
  * @param runtimeType - The runtime whose turn went through.
+ * @param account - The account that turn ran on, or `undefined` when this
+ *   runtime cannot name one.
  * @param turnStartedAt - When that turn began. Epoch ms. A turn that was already
  *   running when the failure was noticed authenticated before the credential
  *   died, so it says nothing about the state the condition describes.
  */
-function noteSigninRecovery(runtimeType: string, turnStartedAt: number): void {
-  const since = failingSince.get(runtimeType);
-  if (since === undefined) return;
-  // `>=`, not `>`: a turn that started in the very millisecond the failure was
-  // recorded cannot be shown to have authenticated after it, and the tie has to
-  // fall on the side that leaves the condition standing. A wrong all-clear
-  // silences a live problem; a wrong hold is corrected by the next turn.
-  if (since >= turnStartedAt) return;
+function noteSigninRecovery(
+  runtimeType: string,
+  account: string | undefined,
+  turnStartedAt: number
+): void {
+  const episode = failingSince.get(runtimeType);
+  if (episode === undefined) return;
+
+  for (const key of account === undefined ? [null] : [account, null]) {
+    const noticedAt = episode.accounts.get(key);
+    // `<`, not `<=`: a turn that started in the very millisecond the failure was
+    // recorded cannot be shown to have authenticated after it, and the tie has to
+    // fall on the side that leaves the condition standing. A wrong all-clear
+    // silences a live problem; a wrong hold is corrected by the next turn.
+    if (noticedAt !== undefined && noticedAt < turnStartedAt) episode.accounts.delete(key);
+  }
+  // Still an account nothing has proved — the runtime's condition is one notice
+  // covering all of them, so it stays up until the last one clears.
+  if (episode.accounts.size > 0) return;
 
   failingSince.delete(runtimeType);
   logger.info('[Runtimes] A turn went through on a sign-in that had failed', {
     runtime: runtimeType,
+    account,
   });
-  report({ runtime: runtimeType, edge: 'recovered', since: new Date(since).toISOString() });
+  report({
+    runtime: runtimeType,
+    edge: 'recovered',
+    since: new Date(episode.since).toISOString(),
+  });
 }
 
 /**
@@ -330,6 +449,36 @@ function isAuthErrorEvent(event: StreamEvent): boolean {
 }
 
 /**
+ * Which of a runtime's accounts a session's turns run on, or `undefined` when
+ * nobody can say.
+ *
+ * Asked LATE — at the edge that needs it, never when the turn is set up —
+ * because a brand-new session's account is decided by the launch, and the launch
+ * has not happened until the first event is pulled. Asking early would answer
+ * `undefined` for exactly the turn a dead credential fails on.
+ *
+ * The contract says this never throws. It is wrapped anyway: this whole module
+ * is an observer sitting on somebody else's turn, and an adapter bug must cost
+ * the account distinction, never the turn or the notice.
+ *
+ * An empty string is read as `undefined` — a blank account name distinguishes
+ * nothing, and treating it as an identity would file one account's failures
+ * under a key no clean turn could ever match.
+ */
+function accountOf(runtime: AgentRuntime, sessionId: string): string | undefined {
+  try {
+    const account = runtime.getSessionAccount?.(sessionId);
+    return account ? account : undefined;
+  } catch (err) {
+    logger.debug('[Runtimes] Could not read which account a turn ran on', {
+      err,
+      runtime: runtime.type,
+    });
+    return undefined;
+  }
+}
+
+/**
  * Watch one turn for a credential failure, and for the absence of one. Every
  * event passes through untouched.
  *
@@ -346,7 +495,8 @@ function isAuthErrorEvent(event: StreamEvent): boolean {
  * {@link PROVIDER_CONTACT_EVENTS} for why finishing on its own proves nothing.
  */
 async function* watchTurn(
-  runtimeType: string,
+  runtime: AgentRuntime,
+  sessionId: string,
   source: AsyncGenerator<StreamEvent>
 ): AsyncGenerator<StreamEvent> {
   const startedAt = Date.now();
@@ -356,7 +506,7 @@ async function* watchTurn(
     for await (const event of source) {
       if (isAuthErrorEvent(event)) {
         sawAuthError = true;
-        noteSigninFailure(runtimeType);
+        noteSigninFailure(runtime.type, accountOf(runtime, sessionId));
       } else if (PROVIDER_CONTACT_EVENTS.has(event.type)) {
         reachedProvider = true;
       }
@@ -364,10 +514,14 @@ async function* watchTurn(
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    if (detectAuthError({ message })) noteSigninFailure(runtimeType);
+    if (detectAuthError({ message })) {
+      noteSigninFailure(runtime.type, accountOf(runtime, sessionId));
+    }
     throw err;
   }
-  if (!sawAuthError && reachedProvider) noteSigninRecovery(runtimeType, startedAt);
+  if (!sawAuthError && reachedProvider) {
+    noteSigninRecovery(runtime.type, accountOf(runtime, sessionId), startedAt);
+  }
 }
 
 /**
@@ -378,6 +532,11 @@ async function* watchTurn(
  * be the one thing not running. A thin Proxy intercepts only `sendMessage` and
  * passes every other member straight through, bound to the real runtime so
  * private state stays intact.
+ *
+ * `target` — not the proxy — is what the watched turn is handed, so
+ * {@link accountOf}'s `getSessionAccount` call resolves against the instance
+ * that owns the session state, for the same reason the `Reflect.get` below
+ * passes `target` as its receiver.
  *
  * @param runtime - The runtime to watch.
  * @returns A watching proxy over it.
@@ -391,7 +550,7 @@ export function watchRuntimeSignin(runtime: AgentRuntime): AgentRuntime {
           content: string,
           opts?: MessageOpts
         ): AsyncGenerator<StreamEvent> =>
-          watchTurn(target.type, target.sendMessage(sessionId, content, opts));
+          watchTurn(target, sessionId, target.sendMessage(sessionId, content, opts));
       }
       // Receiver is the real target (not the proxy) so getters/methods that
       // touch private fields resolve against the instance that owns them.
@@ -408,6 +567,12 @@ export function watchRuntimeSignin(runtime: AgentRuntime): AgentRuntime {
  * `emitters/runtime-signin.ts` closes the raise rows a restart orphaned, and it
  * must not close one for a runtime that has ALREADY failed again since this
  * process started — that row is about now, not about the last process.
+ *
+ * Per RUNTIME, and deliberately so even though the episode inside knows which
+ * accounts are failing: the rows this answers for are the ones the notification
+ * store holds, and those are subject-keyed by runtime type. Asking a narrower
+ * question than the row records would close a row this process is still holding
+ * a condition for.
  *
  * @param runtimeType - The runtime to ask about.
  */

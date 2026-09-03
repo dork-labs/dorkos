@@ -7,18 +7,27 @@
  * component, and these hooks only run when a sign-in is actually on screen.
  *
  * The split goes one level deeper than it looks. `SessionSigninActions` is
- * where the session-list read lives, and it mounts ONLY when there is a session
- * to read — so the no-session fallback needs neither a QueryClient nor a
- * Transport, which is what lets a bare `<ErrorMessageBlock category="auth_error" />`
- * render anywhere without providers.
+ * where every read lives — the session list, and the locality answer that
+ * decides whether signing in is even possible from this browser — and it mounts
+ * ONLY when there is a session to read. So the no-session fallback needs
+ * neither a QueryClient nor a Transport, which is what lets a bare
+ * `<ErrorMessageBlock category="auth_error" />` render anywhere without
+ * providers. Any read added here has to stay below that guard;
+ * `ErrorMessageBlock-no-providers.test.tsx` goes red if one climbs above it.
  *
  * @module features/chat/ui/message/AuthErrorActions
  */
+import { useState } from 'react';
 import { Check, Loader2, LogIn, RotateCcw } from 'lucide-react';
 import { runtimeSupportsLogin } from '@dorkos/shared/agent-runtime';
 import { Button } from '@/layers/shared/ui';
 import { useSettingsDeepLink } from '@/layers/shared/model';
-import { getLoginCopy, useDelegateRuntimeLogin } from '@/layers/entities/runtime';
+import { useLocalCaller } from '@/layers/entities/config';
+import {
+  getLoginCopy,
+  RemoteSigninNotice,
+  useDelegateRuntimeLogin,
+} from '@/layers/entities/runtime';
 import { useSessions } from '@/layers/entities/session';
 
 /** Settings tab that hosts runtime sign-in — where the quiet fallback link goes. */
@@ -52,10 +61,15 @@ function SettingsFallbackLink({ label }: { label: string }) {
  * machine signs into the default account, reads "Signed in", and watches the
  * session keep failing (DOR-1652 built the pin; this is its first caller).
  *
- * Every way the endpoint can refuse — it is loopback-only, and the Obsidian
- * embed declines it outright — arrives as this card's error state with a real
- * message and a retry, so the button is never dead even where it cannot work.
- * Reaching sign-in from a phone or tunnel is DOR-1655.
+ * This is the LOCAL card. A browser that is not on this machine never reaches
+ * it — `SessionSigninActions` routes those to {@link RemoteSigninGuidance}
+ * before the runtime is even resolved (DOR-1655), because the endpoint is
+ * loopback-only and this button could only 403 there.
+ *
+ * The ways the endpoint can still refuse from here — the Obsidian embed
+ * declines it outright, a vendor CLI can fail or time out — arrive as this
+ * card's error state with a real message and a retry, so the button is never
+ * dead even where it cannot work.
  */
 function InlineSigninActions({
   runtime,
@@ -66,14 +80,31 @@ function InlineSigninActions({
   runtime: string;
   sessionId: string;
   onRetry?: () => void;
-  onSigninComplete?: () => void;
+  onSigninComplete?: () => boolean;
 }) {
-  // The once-only guarantee is the hook's, not this component's, and it has to
-  // be: `isSuccess` is read from the shared MutationCache, which outlives this
-  // row. A latch held here would reset on the remount the virtualized
-  // transcript performs on every scroll and re-announce a sign-in that already
-  // finished — re-sending the failed turn once DOR-1650 consumes this.
-  const login = useDelegateRuntimeLogin(runtime, { sessionId, onCompleted: onSigninComplete });
+  // Whether the sign-in that just landed also put the failed message back on its
+  // way (DOR-1650). Component-local, and that is right: it acknowledges an
+  // action taken a moment ago, not a fact about the session. The once-only
+  // guarantee it depends on is the HOOK's — `isSuccess` reads from the shared
+  // MutationCache, which outlives this row, so a latch held here would reset on
+  // the remount the virtualized transcript performs on every scroll and re-send
+  // a message that already went. A remount does drop this line back to the
+  // settled "Signed in.", which is the honest reading by then: the resend is
+  // over, and the transcript above shows it.
+  //
+  // Virtualization cuts the other way too, and that lapse is deliberate as
+  // well: the hook that reports a landing lives HERE, so scrolling the row away
+  // while the login is still running means nothing is mounted to hear it settle
+  // and the resume waits until the row comes back. Deferred, never lost, never
+  // doubled — the shared cache holds the outcome and the latch holds the count.
+  // Hoisting the subscription up to the panel would fire it with nothing on
+  // screen, which sends a person's message while they are looking somewhere
+  // else and no card anywhere says so.
+  const [resending, setResending] = useState(false);
+  const login = useDelegateRuntimeLogin(runtime, {
+    sessionId,
+    onCompleted: () => setResending(onSigninComplete?.() ?? false),
+  });
   const copy = getLoginCopy(runtime);
 
   if (login.isSuccess) {
@@ -84,9 +115,11 @@ function InlineSigninActions({
           role="status"
         >
           <Check aria-hidden="true" className="size-3.5 shrink-0" />
-          Signed in.
+          {resending ? 'Signed in. Sending your message again…' : 'Signed in.'}
         </p>
-        {onRetry && (
+        {/* No Retry while the message is already going — a button offering to
+            send it again, at the moment it is being sent, is how you get two. */}
+        {!resending && onRetry && (
           <Button size="sm" onClick={onRetry} className="mt-2 gap-1.5">
             <RotateCcw className="size-3" />
             Retry
@@ -143,6 +176,29 @@ function InlineSigninActions({
 }
 
 /**
+ * What the card offers a person who is NOT on the machine DorkOS runs on — a
+ * phone over the tunnel, a laptop on the LAN, a browser behind a proxy.
+ *
+ * The wording is {@link RemoteSigninNotice}'s, in `entities/runtime`, because
+ * Settings → Runtimes says the same thing on the same condition and the two
+ * must not drift. What belongs to chat is the surrounding decision: the Sign in
+ * button and the "Use an API key instead" link were two doors onto the same
+ * 403, and both are GONE here rather than kept and re-explained. Retry survives
+ * because it is the one action that still works from here — and it is exactly
+ * what the person wants the moment they have signed in on that computer.
+ *
+ * Runtime-generic on purpose: this is the same answer for Claude Code, Codex
+ * and OpenCode, so it is decided before the runtime is even known.
+ */
+function RemoteSigninGuidance({ onRetry }: { onRetry?: () => void }) {
+  return (
+    <div className="mt-3" data-testid="auth-error-remote-guidance">
+      <RemoteSigninNotice {...(onRetry ? { onRetry } : {})} />
+    </div>
+  );
+}
+
+/**
  * Auth-error actions for a runtime with no sign-in to run — OpenCode, whose
  * "connect" is picking where the model comes from, not logging in — and for
  * every card with no session to sign in for.
@@ -177,10 +233,17 @@ function SessionSigninActions({
 }: {
   sessionId: string;
   onRetry?: () => void;
-  onSigninComplete?: () => void;
+  onSigninComplete?: () => boolean;
 }) {
   const { sessions, isLoading } = useSessions();
+  const isLocalCaller = useLocalCaller();
   const runtime = sessions.find((s) => s.id === sessionId)?.runtime;
+
+  // Answered before the runtime is, and without waiting for the session list,
+  // because it does not depend on either: nothing that repairs a sign-in —
+  // vendor login or pasted key, on any runtime — can run from a browser that is
+  // not on this machine (DOR-1655).
+  if (!isLocalCaller) return <RemoteSigninGuidance onRetry={onRetry} />;
 
   // While the list is still loading the runtime is unknown, not absent —
   // rendering the deep-link now would flip to a Sign in button a moment later.
@@ -214,8 +277,15 @@ export function AuthErrorActions({
   sessionId?: string;
   /** Re-send the failed turn. Omitted when there is nothing to resend. */
   onRetry?: () => void;
-  /** Fires once a sign-in started here completes (the DOR-1650 seam). */
-  onSigninComplete?: () => void;
+  /**
+   * Fires once — and only once — when a sign-in started here completes, so the
+   * conversation can put the failed message back on its way (DOR-1650).
+   * Returns whether it actually did: the card says "Sending your message
+   * again…" only when something really is being sent, and settles on a plain
+   * "Signed in." with a Retry button when the conversation decided the person
+   * had moved on.
+   */
+  onSigninComplete?: () => boolean;
 }) {
   if (!sessionId) return <ProviderPickerActions onRetry={onRetry} />;
   return (

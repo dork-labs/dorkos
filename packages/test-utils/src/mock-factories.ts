@@ -316,6 +316,10 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     revealEntry: vi.fn().mockResolvedValue(undefined),
     getConfig: vi.fn().mockResolvedValue({
       version: '1.0.0',
+      // A test browser is on the machine under test, so anything that degrades
+      // for a remote client renders its LOCAL variant by default. A test about
+      // the remote experience overrides this to `false` and says so.
+      isLocalCaller: true,
       port: 4242,
       uptime: 0,
       workingDirectory: '/test',

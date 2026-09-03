@@ -678,10 +678,10 @@ const ENTRIES: NotificationRegistryMap = {
     // condition a person can END, every such kind is `standing`, and a standing
     // kind needs a store that answers "is it still waiting?" — which nothing
     // owned for a credential. `runtime-signin-watch.ts` is now that store: a
-    // runtime stands in it while its last turn died on its sign-in and no turn
-    // since has gone through, and the next clean turn on that runtime is the
-    // resolution edge. With an owner, the reservation is satisfied and the
-    // storage discipline the ADR prescribes applies.
+    // runtime stands in it while a turn died on one of its sign-ins and no turn
+    // since has gone through on that same account, and that account's next clean
+    // turn is the resolution edge. With an owner, the reservation is satisfied
+    // and the storage discipline the ADR prescribes applies.
     //
     // **`standing-recorded`, not plain `standing`, and the restart is why.**
     // Being standing buys the phone: escalation carries standing kinds only, so
@@ -696,6 +696,15 @@ const ENTRIES: NotificationRegistryMap = {
     // because the wording below never goes stale: "stopped working" is as true
     // next month as it was that night, and the resolution row that follows says
     // plainly that it came back.
+    //
+    // **One row per RUNTIME, even when a machine runs several accounts on it**
+    // (DOR-1682). A Claude credential belongs to an account root, and DorkOS
+    // supports several; the watch tracks each of them separately, but reports one
+    // condition per runtime, because `subjectId` below is the runtime type and
+    // the app's standing banner reads the newest row per runtime. A second dead
+    // account therefore adds nothing to the inbox — what it adds is that this
+    // row's resolution waits for it: the "working again" row is written when the
+    // LAST failing account proves itself, never when the first does.
     kind: 'signin.required',
     tier: 'blocking',
     storage: 'standing-recorded',

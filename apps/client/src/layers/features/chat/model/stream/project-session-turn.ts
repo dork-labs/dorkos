@@ -264,6 +264,7 @@ function foldApproval(
     approvalBlockedPath: event.blockedPath,
     approvalDecisionReason: event.decisionReason,
     approvalHasSuggestions: event.hasSuggestions,
+    approvalAlwaysAllowScope: event.alwaysAllowScope,
   };
   const existing = findToolCallPart(parts, event.id);
   if (existing) {

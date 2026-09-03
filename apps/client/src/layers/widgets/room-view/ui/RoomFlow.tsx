@@ -178,7 +178,18 @@ type RoomFlowRow =
       /** What this post answers, when it is not the row directly above it. */
       answers: { entryId: string; excerpt: string } | null;
     }
-  | { kind: 'thread-reply'; id: string; rootId: string; replies: RoomEntry[] };
+  | {
+      kind: 'thread-reply';
+      id: string;
+      rootId: string;
+      replies: RoomEntry[];
+      /**
+       * What the room says this thread holds, when it holds more than the
+       * replies above — a thread whose root was fetched from behind the loaded
+       * page (`RoomEntry.threadReplyCount`). `undefined` for every other thread.
+       */
+      totalReplies: number | undefined;
+    };
 
 /**
  * A room's history: the same rows a session transcript renders — author groups,
@@ -280,6 +291,11 @@ export function RoomFlow({
           id: threadRowKey(entry.id),
           rootId: entry.id,
           replies,
+          // Read off the ROOT, which is the only thing that can know: a root
+          // fetched from behind the page carries the room's own count, and
+          // everything else carries nothing because for it the replies here are
+          // the thread.
+          totalReplies: entry.threadReplyCount,
         });
       }
     }
@@ -297,7 +313,7 @@ export function RoomFlow({
             kind: 'thread-reply',
             id: row.id,
             rootId: row.rootId,
-            replyCount: row.replies.length,
+            replyCount: row.totalReplies ?? row.replies.length,
             lastAt: row.replies[row.replies.length - 1]!.createdAt,
           };
         return {
@@ -327,6 +343,7 @@ export function RoomFlow({
           <ThreadReplyRow
             id={threadRowId(row.rootId)}
             replies={row.replies}
+            totalReplies={row.totalReplies}
             lastReadSeq={lastReadSeq}
             open={openThreadId === row.rootId}
             onOpen={() => open(row.rootId)}

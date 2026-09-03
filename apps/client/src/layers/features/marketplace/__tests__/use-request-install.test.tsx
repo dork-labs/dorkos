@@ -33,6 +33,15 @@ describe('agentPackageToCreationSeed', () => {
     const seed = agentPackageToCreationSeed(pkg({ displayName: undefined }));
     expect(seed.template.displayName).toBe('Code Reviewer');
   });
+
+  it('carries the package name so the arrival card can ask what it schedules', () => {
+    // Without this, the arrival confirm has no way to ask the server what the
+    // package's own `.dork/tasks` SKILL.md files declare — and an agent package
+    // is the one type that never reaches the install confirmation dialog, so
+    // nothing else would ever tell the person (DOR-644).
+    const seed = agentPackageToCreationSeed(pkg());
+    expect(seed.packageName).toBe('@dorkos/code-reviewer');
+  });
 });
 
 describe('useRequestInstall', () => {

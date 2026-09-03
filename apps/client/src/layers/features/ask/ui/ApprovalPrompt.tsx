@@ -11,10 +11,12 @@ import { motion, useReducedMotion } from 'motion/react';
 import { Check, X, Shield, ShieldCheck } from 'lucide-react';
 import { useTransport } from '@/layers/shared/model';
 import { DENY_REASON_MAX_LENGTH } from '@dorkos/shared/schemas';
+import type { AlwaysAllowScope } from '@dorkos/shared/types';
 import { ToolArgumentsDisplay, cn, getToolLabel, getMcpServerBadge } from '@/layers/shared/lib';
 import { Kbd, Button, Input, CompactResultRow } from '@/layers/shared/ui';
 import { AskCard, WARN_AT_S, URGENT_AT_S } from './AskCard';
 import { ASK_PARKED_LABEL } from '../lib/format-time-left';
+import { alwaysAllowScopeLabel } from '../lib/always-allow-scope-label';
 
 // --- Animation constants (module-scope to avoid per-render allocation) ---
 
@@ -93,6 +95,17 @@ interface ApprovalPromptProps {
   /** Whether "Always Allow" permission updates are available */
   approvalHasSuggestions?: boolean;
   /**
+   * How far an accepted "Always Allow" reaches. Named ON the button, because
+   * the grant is forwarded to the runtime verbatim and some of it writes
+   * settings FILES — so one click here can outlive this conversation, and a
+   * person is owed that sentence before they press it, not after (DOR-1462).
+   *
+   * Absent on a runtime that offers no suggestions and on cards recorded before
+   * the field existed; the button then reads as it always did rather than
+   * guessing at a promise nobody made.
+   */
+  approvalAlwaysAllowScope?: AlwaysAllowScope;
+  /**
    * Whether this session's runtime can deliver a free-text deny reason to the
    * agent (`RuntimeCapabilities.permissionModes.denyReason`). Defaults to
    * `true` — most runtimes have the channel. `false` (OpenCode: its respond
@@ -136,6 +149,7 @@ export function ApprovalPrompt({
   approvalBlockedPath,
   approvalDecisionReason,
   approvalHasSuggestions,
+  approvalAlwaysAllowScope,
   allowsDenyReason = true,
 }: ApprovalPromptProps) {
   const transport = useTransport();
@@ -145,6 +159,8 @@ export function ApprovalPrompt({
   const rawLabel = getToolLabel(toolName, input);
   // Prefer SDK-provided display name, fall back to our own label
   const label = approvalDisplayName || rawLabel;
+  // What one press of "Always Allow" would actually grant, in words.
+  const scopeLabel = alwaysAllowScopeLabel(approvalAlwaysAllowScope);
   const [responding, setResponding] = useState(false);
   const [decided, setDecided] = useState<'approved' | 'denied' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -541,9 +557,26 @@ export function ApprovalPrompt({
               variant="outline"
               onClick={handleAlwaysAllow}
               disabled={responding}
+              // Spelled out rather than assembled from the children, and this
+              // is the one button on the card that gets an explicit name. The
+              // reach is half of what pressing it does, so what a screen reader
+              // says has to be a whole sentence and the same one in every
+              // browser — engines disagree about whether a space falls between
+              // an inline child's text and the text before it, which is enough
+              // to turn this into "Always Allow· this project". The keyboard
+              // hint is left out on purpose: it is a visual affordance, not
+              // part of the grant.
+              aria-label={scopeLabel === undefined ? 'Always Allow' : `Always Allow, ${scopeLabel}`}
               className="transition-opacity duration-150"
             >
               <ShieldCheck className="size-(--size-icon-xs)" /> Always Allow
+              {/* The reach, ON the button rather than under it: this grant can
+                  outlive the conversation, because a settings file the runtime
+                  writes is read by every future session (DOR-1462). Absent when
+                  the server named no scope. */}
+              {scopeLabel !== undefined && (
+                <span className="text-2xs opacity-70">{`· ${scopeLabel}`}</span>
+              )}
               {showKeyHints && <Kbd className="ml-1.5">Shift+Enter</Kbd>}
             </Button>
           )}

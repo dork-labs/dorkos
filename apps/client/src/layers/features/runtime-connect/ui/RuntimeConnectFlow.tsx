@@ -10,9 +10,17 @@
  * The `install` kind never reaches here — the entity handles OpenCode's
  * one-click provisioning inline (ADR-0317).
  *
+ * Being the one entry point is also what makes it the right place to answer
+ * "can this browser connect anything at all" (DOR-1655) — see the guard below.
+ *
  * @module features/runtime-connect/ui/RuntimeConnectFlow
  */
-import type { RuntimeConnectSlot, RuntimeConnectSlotProps } from '@/layers/entities/runtime';
+import { useLocalCaller } from '@/layers/entities/config';
+import {
+  RemoteSigninNotice,
+  type RuntimeConnectSlot,
+  type RuntimeConnectSlotProps,
+} from '@/layers/entities/runtime';
 import { LoginConnect } from './LoginConnect';
 import { OpenCodeProviderPicker } from './OpenCodeProviderPicker';
 
@@ -23,6 +31,20 @@ export function RuntimeConnectFlow({
   currentProvider,
   onConnected,
 }: RuntimeConnectSlotProps) {
+  const isLocalCaller = useLocalCaller();
+
+  // Every flow below this line ends at a loopback-only endpoint — the delegated
+  // login and paste-key for Claude Code and Codex, and OpenCode's OpenRouter
+  // key, OAuth start and Ollama detect/pull/provision. So the guard belongs to
+  // the DISPATCHER rather than to one flow: put it inside `LoginConnect` and
+  // OpenCode's picker still hands a remote browser a set of controls that can
+  // only 403 (DOR-1655).
+  //
+  // Without this, the product contradicts itself two clicks apart: the chat
+  // auth-error card says sign-in needs the other computer, and Settings offers
+  // a button that says otherwise.
+  if (!isLocalCaller) return <RemoteSigninNotice />;
+
   if (connect.kind === 'provider-picker') {
     return <OpenCodeProviderPicker currentProvider={currentProvider} onConnected={onConnected} />;
   }

@@ -37,6 +37,7 @@ export type {
   ToolCallEvent,
   ToolProgressEvent,
   ApprovalEvent,
+  AlwaysAllowScope,
   QuestionOption,
   QuestionItem,
   QuestionPromptEvent,

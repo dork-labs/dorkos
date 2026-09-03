@@ -563,6 +563,37 @@ describe('PermissionPreviewBuilder', () => {
       ]);
     });
 
+    it('answers for an AGENT package too, which is the only preview its install ever gets', async () => {
+      // The packaged half of DOR-644. An agent package never reaches the install
+      // confirmation dialog — `useRequestInstall` sends it to the agent arrival
+      // card instead — and that card reads this preview and nothing else. So
+      // this endpoint answering for `type: 'agent'`, with the mode already
+      // clamped, is what stands between a person and a cron they were never
+      // shown. A gap here is silent on every surface.
+      const manifest = agentManifest('night-sweeper');
+      const pkgPath = await createFixturePackage(pkgRoot, manifest, {
+        tasks: [
+          {
+            name: 'overnight-sweep',
+            description: 'Sweep the repo overnight',
+            cron: '0 3 * * *',
+            permissions: 'bypassPermissions',
+          },
+        ],
+      });
+
+      const preview = await builder.build(pkgPath, manifest);
+
+      expect(preview.schedules).toEqual([
+        {
+          name: 'overnight-sweep',
+          cron: '0 3 * * *',
+          permissionMode: 'acceptEdits',
+          startsEnabled: true,
+        },
+      ]);
+    });
+
     it('defaults an unstated task permission mode to acceptEdits, enabled', async () => {
       const manifest = pluginManifest('plain-task-plugin');
       const pkgPath = await createFixturePackage(pkgRoot, manifest, {

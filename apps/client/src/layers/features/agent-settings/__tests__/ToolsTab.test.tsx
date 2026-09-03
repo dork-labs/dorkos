@@ -67,15 +67,11 @@ const baseAgent: AgentManifest = {
  * Helper to scope queries to the rendered container.
  * Wraps in TooltipProvider since ToolGroupRow uses Tooltip.
  */
-function renderTab(
-  agent: AgentManifest,
-  onUpdate: ReturnType<typeof vi.fn<(updates: Partial<AgentManifest>) => void>>,
-  client: QueryClient = new QueryClient()
-) {
+function renderTab(agent: AgentManifest, client: QueryClient = new QueryClient()) {
   const { container } = render(
     <QueryClientProvider client={client}>
       <TooltipProvider>
-        <ToolsTab agent={agent} projectPath="/projects/test" onUpdate={onUpdate} />
+        <ToolsTab agent={agent} projectPath="/projects/test" />
       </TooltipProvider>
     </QueryClientProvider>
   );
@@ -97,11 +93,8 @@ function openCeiling(view: ReturnType<typeof renderTab>): void {
 }
 
 describe('ToolsTab', () => {
-  let onUpdate: ReturnType<typeof vi.fn<(updates: Partial<AgentManifest>) => void>>;
-
   beforeEach(() => {
     vi.clearAllMocks();
-    onUpdate = vi.fn<(updates: Partial<AgentManifest>) => void>();
     vi.mocked(useRelayEnabled).mockReturnValue(true);
     vi.mocked(useTasksEnabled).mockReturnValue(true);
     vi.mocked(useCapabilitiesForRuntime).mockReturnValue({
@@ -120,7 +113,7 @@ describe('ToolsTab', () => {
 
   describe('Tool Groups section', () => {
     it('renders all four tool group toggles with updated labels', () => {
-      const view = renderTab(baseAgent, onUpdate);
+      const view = renderTab(baseAgent);
       expect(view.getByText('Scheduling')).toBeInTheDocument();
       expect(view.getByText('Messaging')).toBeInTheDocument();
       expect(view.getByText('Agent Discovery')).toBeInTheDocument();
@@ -128,7 +121,7 @@ describe('ToolsTab', () => {
     });
 
     it('shows core tools footnote instead of row', () => {
-      const view = renderTab(baseAgent, onUpdate);
+      const view = renderTab(baseAgent);
       // "Always REGISTERED", not "in every agent's instructions" (DOR-509 review).
       // A first pass at this footnote said "instructions", which is false: there is
       // no core-tools context block. `context-builder.ts` assembles exactly five
@@ -144,36 +137,78 @@ describe('ToolsTab', () => {
     });
 
     it('shows "default" badge when agent has no override', () => {
-      const view = renderTab({ ...baseAgent, enabledToolGroups: {} }, onUpdate);
+      const view = renderTab({ ...baseAgent, enabledToolGroups: {} });
       const defaultBadges = view.getAllByText('default');
       expect(defaultBadges.length).toBe(4);
     });
 
     it('shows reset button when agent explicitly disables a domain', () => {
-      const view = renderTab({ ...baseAgent, enabledToolGroups: { tasks: false } }, onUpdate);
+      const view = renderTab({ ...baseAgent, enabledToolGroups: { tasks: false } });
       expect(view.getByLabelText('Reset Scheduling to default')).toBeInTheDocument();
     });
 
-    it('calls onUpdate with updated enabledToolGroups when toggle changes', () => {
-      const view = renderTab(baseAgent, onUpdate);
-      const switches = view.getAllByRole('switch');
-      // Click the first tool group switch (Scheduling)
-      fireEvent.click(switches[0]);
-      expect(onUpdate).toHaveBeenCalledWith(
-        expect.objectContaining({ enabledToolGroups: expect.any(Object) })
+    it('writes a toggle through the OPERATOR route, never the agent self-edit route', () => {
+      // DOR-1506: `PATCH /api/agents/current` now refuses all five keys of this
+      // object, because a per-agent value BEATS the global `agentContext.*`
+      // switch a person set. The cockpit is the person, so it uses the mesh
+      // route — the same split the grant and the ceiling below already use.
+      const mutate = vi.fn();
+      vi.mocked(useUpdateAgent).mockReturnValue({
+        mutate,
+        isPending: false,
+      } as unknown as ReturnType<typeof useUpdateAgent>);
+      const view = renderTab(baseAgent);
+
+      fireEvent.click(view.getByLabelText('Toggle Scheduling tools'));
+
+      expect(mutate).toHaveBeenCalledWith(
+        // Off, because the switch reads ON from the inherited global default.
+        { id: baseAgent.id, updates: { enabledToolGroups: { tasks: false } } },
+        expect.anything()
       );
     });
 
     it('Reset button clears the per-agent override', () => {
-      const view = renderTab({ ...baseAgent, enabledToolGroups: { tasks: false } }, onUpdate);
-      const resetBtn = view.getByLabelText('Reset Scheduling to default');
-      fireEvent.click(resetBtn);
-      expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({ enabledToolGroups: {} }));
+      const mutate = vi.fn();
+      vi.mocked(useUpdateAgent).mockReturnValue({
+        mutate,
+        isPending: false,
+      } as unknown as ReturnType<typeof useUpdateAgent>);
+      const view = renderTab({ ...baseAgent, enabledToolGroups: { tasks: false } });
+
+      fireEvent.click(view.getByLabelText('Reset Scheduling to default'));
+
+      expect(mutate).toHaveBeenCalledWith(
+        { id: baseAgent.id, updates: { enabledToolGroups: {} } },
+        expect.anything()
+      );
+    });
+
+    it('refreshes the manifest it renders, so a toggle does not snap back', () => {
+      // Same defect `ManageRoomsCard` documents, now on the four soft toggles:
+      // the mesh mutation clears `['mesh','agents']` and stops, while this tab
+      // renders the agent `useCurrentAgent` holds.
+      const mutate = vi.fn(
+        (_vars: unknown, options?: { onSettled?: () => void }) => void options?.onSettled?.()
+      );
+      vi.mocked(useUpdateAgent).mockReturnValue({
+        mutate,
+        isPending: false,
+      } as unknown as ReturnType<typeof useUpdateAgent>);
+      const client = new QueryClient();
+      const invalidate = vi.spyOn(client, 'invalidateQueries');
+      const view = renderTab(baseAgent, client);
+
+      fireEvent.click(view.getByLabelText('Toggle Scheduling tools'));
+
+      const asked = invalidate.mock.calls.map(([filters]) => JSON.stringify(filters?.queryKey));
+      expect(asked).toContain(JSON.stringify(agentKeys.all));
+      expect(asked).toContain(JSON.stringify(TEAM_ROSTER_KEY));
     });
 
     it('shows disabled switch when server has relay off', () => {
       vi.mocked(useRelayEnabled).mockReturnValue(false);
-      const view = renderTab(baseAgent, onUpdate);
+      const view = renderTab(baseAgent);
       const messagingRow = view.getByText('Messaging').closest('div')!.parentElement!;
       const switchInRow = within(messagingRow).getByRole('switch');
       expect(switchInRow).toBeDisabled();
@@ -181,7 +216,7 @@ describe('ToolsTab', () => {
 
     it('shows disabled switch when server has tasks off', () => {
       vi.mocked(useTasksEnabled).mockReturnValue(false);
-      const view = renderTab(baseAgent, onUpdate);
+      const view = renderTab(baseAgent);
       const schedulingRow = view.getByText('Scheduling').closest('div')!.parentElement!;
       const switchInRow = within(schedulingRow).getByRole('switch');
       expect(switchInRow).toBeDisabled();
@@ -193,7 +228,7 @@ describe('ToolsTab', () => {
       vi.mocked(useCapabilitiesForRuntime).mockReturnValue({
         supportsMcp: false,
       } as RuntimeCapabilities);
-      const view = renderTab({ ...baseAgent, runtime: 'codex' }, onUpdate);
+      const view = renderTab({ ...baseAgent, runtime: 'codex' });
 
       // None of the DorkOS tool-group toggles render...
       expect(view.queryByText('Scheduling')).not.toBeInTheDocument();
@@ -215,21 +250,21 @@ describe('ToolsTab', () => {
       vi.mocked(useCapabilitiesForRuntime).mockReturnValue({
         supportsMcp: true,
       } as RuntimeCapabilities);
-      const view = renderTab(baseAgent, onUpdate);
+      const view = renderTab(baseAgent);
       expect(view.getByText('Scheduling')).toBeInTheDocument();
       expect(view.queryByText(/does not support DorkOS tool groups/i)).not.toBeInTheDocument();
     });
   });
 
   it('renders tool groups and MCP servers with no Limits control (the removed advisory budget)', () => {
-    const view = renderTab(baseAgent, onUpdate);
+    const view = renderTab(baseAgent);
     expect(view.getByText('Scheduling')).toBeInTheDocument();
     expect(view.queryByText('Limits')).not.toBeInTheDocument();
   });
 
   describe('Manage rooms — the one group that is a lock', () => {
     it('renders the switch, off until a person turns it on', () => {
-      const view = renderTab(baseAgent, onUpdate);
+      const view = renderTab(baseAgent);
 
       const toggle = view.getByLabelText('Manage rooms');
       expect(toggle).toBeInTheDocument();
@@ -237,22 +272,22 @@ describe('ToolsTab', () => {
     });
 
     it('reads as on when the agent holds the grant', () => {
-      const view = renderTab({ ...baseAgent, enabledToolGroups: { roomsManage: true } }, onUpdate);
+      const view = renderTab({ ...baseAgent, enabledToolGroups: { roomsManage: true } });
 
       expect(view.getByLabelText('Manage rooms')).toBeChecked();
     });
 
     it('writes through the OPERATOR route, never the agent self-edit route', () => {
       // The half that would silently break the feature. `PATCH
-      // /api/agents/current` — what `onUpdate` calls — refuses this field by
-      // design, because a grant the governed agent can set for itself is not a
-      // grant. The cockpit is the person, so it must use the mesh route.
+      // /api/agents/current` refuses this field by design, because a grant the
+      // governed agent can set for itself is not a grant. The cockpit is the
+      // person, so it must use the mesh route.
       const mutate = vi.fn();
       vi.mocked(useUpdateAgent).mockReturnValue({
         mutate,
         isPending: false,
       } as unknown as ReturnType<typeof useUpdateAgent>);
-      const view = renderTab(baseAgent, onUpdate);
+      const view = renderTab(baseAgent);
 
       fireEvent.click(view.getByLabelText('Manage rooms'));
 
@@ -263,7 +298,6 @@ describe('ToolsTab', () => {
         },
         expect.anything()
       );
-      expect(onUpdate).not.toHaveBeenCalled();
     });
 
     it('keeps the four documentation toggles when it writes the grant', () => {
@@ -272,7 +306,7 @@ describe('ToolsTab', () => {
         mutate,
         isPending: false,
       } as unknown as ReturnType<typeof useUpdateAgent>);
-      const view = renderTab({ ...baseAgent, enabledToolGroups: { tasks: false } }, onUpdate);
+      const view = renderTab({ ...baseAgent, enabledToolGroups: { tasks: false } });
 
       fireEvent.click(view.getByLabelText('Manage rooms'));
 
@@ -285,44 +319,54 @@ describe('ToolsTab', () => {
       );
     });
 
-    it('keeps the grant out of the soft-toggle write, which would refuse the whole patch', () => {
-      // Executed before the fix (DOR-1611 review): flipping Scheduling on an
-      // agent that HOLDS the grant produced an OPERATOR_ONLY toast and wrote
-      // nothing. These two handlers spread the stored `enabledToolGroups` into
-      // `PATCH /api/agents/current`, and `agent-updater` refuses any body naming
-      // `roomsManage` — whole-patch, whatever the value, by design. So arming an
-      // agent broke the four toggles beside the switch that armed it.
-      const view = renderTab(
-        { ...baseAgent, enabledToolGroups: { roomsManage: true, tasks: false } },
-        onUpdate
-      );
+    it('carries the grant along on a soft-toggle write, rather than clearing it', () => {
+      // The mirror of the DOR-1611 defect, once both halves moved to the
+      // operator route (DOR-1506). While the four toggles went through the agent
+      // self-edit route the grant had to be STRIPPED — that route refuses any
+      // body naming it — and the manifest write REPLACES `enabledToolGroups`
+      // wholesale, so on the operator route the same strip would silently
+      // disarm an agent a person had armed. Send the whole stored object.
+      const mutate = vi.fn();
+      vi.mocked(useUpdateAgent).mockReturnValue({
+        mutate,
+        isPending: false,
+      } as unknown as ReturnType<typeof useUpdateAgent>);
+      const view = renderTab({
+        ...baseAgent,
+        enabledToolGroups: { roomsManage: true, tasks: false },
+      });
 
       fireEvent.click(view.getByLabelText('Toggle Scheduling tools'));
 
-      expect(onUpdate).toHaveBeenCalledTimes(1);
-      const patch = onUpdate.mock.calls[0]?.[0] as { enabledToolGroups: Record<string, unknown> };
-      expect(patch.enabledToolGroups).not.toHaveProperty('roomsManage');
-      // …and it still carries the four it IS allowed to write.
-      expect(patch.enabledToolGroups.tasks).toBe(true);
+      expect(mutate).toHaveBeenCalledWith(
+        {
+          id: baseAgent.id,
+          updates: { enabledToolGroups: { roomsManage: true, tasks: true } },
+        },
+        expect.anything()
+      );
     });
 
-    it('keeps the grant out of the RESET write too, not only the toggle write', () => {
-      // The reset path is the second door to the same refusal, and it is the one
-      // a mutation survives: `handleToolGroupChange` is covered above, and
-      // stripping the key from it alone leaves "Reset Scheduling to default"
-      // still sending `roomsManage` into a route that refuses the whole patch.
-      const view = renderTab(
-        { ...baseAgent, enabledToolGroups: { roomsManage: true, tasks: false } },
-        onUpdate
-      );
+    it('carries the grant through the RESET write too, not only the toggle write', () => {
+      // The second door to the same outcome: "Reset Scheduling to default" also
+      // rewrites the whole object, so it has to keep the grant for the same
+      // reason.
+      const mutate = vi.fn();
+      vi.mocked(useUpdateAgent).mockReturnValue({
+        mutate,
+        isPending: false,
+      } as unknown as ReturnType<typeof useUpdateAgent>);
+      const view = renderTab({
+        ...baseAgent,
+        enabledToolGroups: { roomsManage: true, tasks: false },
+      });
 
       fireEvent.click(view.getByLabelText('Reset Scheduling to default'));
 
-      expect(onUpdate).toHaveBeenCalledTimes(1);
-      const patch = onUpdate.mock.calls[0]?.[0] as { enabledToolGroups: Record<string, unknown> };
-      expect(patch.enabledToolGroups).not.toHaveProperty('roomsManage');
-      // …and the reset really cleared the key it was aimed at.
-      expect(patch.enabledToolGroups).not.toHaveProperty('tasks');
+      expect(mutate).toHaveBeenCalledWith(
+        { id: baseAgent.id, updates: { enabledToolGroups: { roomsManage: true } } },
+        expect.anything()
+      );
     });
 
     it('refreshes the manifest it renders, so the switch does not snap back', () => {
@@ -341,7 +385,7 @@ describe('ToolsTab', () => {
       } as unknown as ReturnType<typeof useUpdateAgent>);
       const client = new QueryClient();
       const invalidate = vi.spyOn(client, 'invalidateQueries');
-      const view = renderTab(baseAgent, onUpdate, client);
+      const view = renderTab(baseAgent, client);
 
       fireEvent.click(view.getByLabelText('Manage rooms'));
 
@@ -351,7 +395,7 @@ describe('ToolsTab', () => {
     });
 
     it('says plainly that this one blocks, where the others do not', () => {
-      const view = renderTab(baseAgent, onUpdate);
+      const view = renderTab(baseAgent);
 
       expect(view.getByText(/This switch is a lock, not a hint/)).toBeInTheDocument();
       expect(view.getByText(/the agent cannot turn it on for itself/)).toBeInTheDocument();
@@ -366,14 +410,14 @@ describe('ToolsTab', () => {
       vi.mocked(useCapabilitiesForRuntime).mockReturnValue({
         supportsMcp: false,
       } as RuntimeCapabilities);
-      const view = renderTab(baseAgent, onUpdate);
+      const view = renderTab(baseAgent);
 
       expect(view.getByLabelText('Manage rooms')).toBeInTheDocument();
       expect(view.getByText(/external MCP server/)).toBeInTheDocument();
     });
 
     it('names the tools behind the grant from the live catalog', () => {
-      const view = renderTab(baseAgent, onUpdate);
+      const view = renderTab(baseAgent);
 
       // The count badge, derived rather than listed — a static copy of this is
       // the drift DOR-499 deleted three times over.
@@ -385,13 +429,13 @@ describe('ToolsTab', () => {
     const CEILING_LABEL = 'The most this agent can ever do';
 
     it('reads as no extra limit for an agent nobody has capped', () => {
-      const view = renderTab(baseAgent, onUpdate);
+      const view = renderTab(baseAgent);
 
       expect(view.getByLabelText(CEILING_LABEL)).toHaveTextContent('No extra limit');
     });
 
     it('reads back the ceiling recorded on the manifest', () => {
-      const view = renderTab({ ...baseAgent, tierCeiling: 'act' }, onUpdate);
+      const view = renderTab({ ...baseAgent, tierCeiling: 'act' });
 
       expect(view.getByLabelText(CEILING_LABEL)).toHaveTextContent('Change things, never delete');
     });
@@ -406,7 +450,7 @@ describe('ToolsTab', () => {
         mutate,
         isPending: false,
       } as unknown as ReturnType<typeof useUpdateAgent>);
-      const view = renderTab({ ...baseAgent, tierCeiling: 'observe' }, onUpdate);
+      const view = renderTab({ ...baseAgent, tierCeiling: 'observe' });
 
       openCeiling(view);
       fireEvent.click(screen.getByRole('option', { name: 'No extra limit' }));
@@ -415,7 +459,6 @@ describe('ToolsTab', () => {
         { id: baseAgent.id, updates: { tierCeiling: 'destructive' } },
         expect.anything()
       );
-      expect(onUpdate).not.toHaveBeenCalled();
     });
 
     it('refreshes the manifest it renders, so the choice does not snap back', () => {
@@ -428,7 +471,7 @@ describe('ToolsTab', () => {
       } as unknown as ReturnType<typeof useUpdateAgent>);
       const client = new QueryClient();
       const invalidate = vi.spyOn(client, 'invalidateQueries');
-      const view = renderTab(baseAgent, onUpdate, client);
+      const view = renderTab(baseAgent, client);
 
       openCeiling(view);
       fireEvent.click(screen.getByRole('option', { name: 'Read only' }));
@@ -439,7 +482,7 @@ describe('ToolsTab', () => {
     });
 
     it('says that no approval can lift it, and who may loosen it', () => {
-      const view = renderTab(baseAgent, onUpdate);
+      const view = renderTab(baseAgent);
 
       expect(view.getByText(/no approval can unlock it/)).toBeInTheDocument();
       expect(view.getByText(/only you can loosen it/)).toBeInTheDocument();
@@ -450,7 +493,7 @@ describe('ToolsTab', () => {
       vi.mocked(useCapabilitiesForRuntime).mockReturnValue({
         supportsMcp: false,
       } as RuntimeCapabilities);
-      const view = renderTab(baseAgent, onUpdate);
+      const view = renderTab(baseAgent);
 
       expect(view.getByLabelText(CEILING_LABEL)).toBeInTheDocument();
     });

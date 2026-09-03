@@ -26,7 +26,7 @@
  *
  * @module services/runtimes/codex/session-registry
  */
-import type { Session, PermissionMode, EffortLevel } from '@dorkos/shared/types';
+import type { Session, PermissionModeId, EffortLevel } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
 import { deriveSessionTitle } from '../shared/derive-title.js';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
@@ -36,7 +36,7 @@ const PREVIEW_MAX_CHARS = 80;
 
 /** Metadata fields the registry can update on a tracked session. */
 export interface CodexSessionPatch {
-  permissionMode?: PermissionMode;
+  permissionMode?: PermissionModeId;
   model?: string;
   effort?: EffortLevel;
   fastMode?: boolean;

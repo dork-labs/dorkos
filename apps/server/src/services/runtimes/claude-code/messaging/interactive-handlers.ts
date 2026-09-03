@@ -6,9 +6,11 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk';
 import type { QuestionItem } from '@dorkos/shared/types';
 import { UI_COMMAND_REACH, UiCommandSchema } from '@dorkos/shared/schemas';
-import type { PermissionMode } from '@dorkos/shared/schemas';
+import { PermissionModeSchema, type PermissionModeId } from '@dorkos/shared/schemas';
 import { createInSessionContextResolver } from '../../../core/agent-identity/index.js';
 import { SESSIONS } from '../../../../config/constants.js';
+import { logger } from '../../../../lib/logger.js';
+import { alwaysAllowScopeOf, suggestionDestinations } from './always-allow-scope.js';
 import {
   armInteractionWait,
   approvalParkedNotice,
@@ -423,6 +425,11 @@ export type ModeDecision = 'allow' | 'ask';
  * `never` assignment in the `default` arm enforces that, and it is the whole
  * point of the function.
  *
+ * The parameter is nevertheless a {@link PermissionModeId}: a mode id is
+ * whatever its runtime declared, and a session can be sitting in one this
+ * runtime has since retired (DOR-885). Such an id is not a member of the union
+ * and gets no arm — it asks, for the same reason every unnamed mode does.
+ *
  * ## Why everything but `bypassPermissions` asks
  *
  * `canUseTool` is not the first gate — it is the last one. The Claude Code CLI
@@ -468,8 +475,14 @@ export type ModeDecision = 'allow' | 'ask';
  * @param mode - The session's permission mode.
  * @returns `'allow'` to run without asking, `'ask'` to raise an approval card.
  */
-export function resolveModeDecision(mode: PermissionMode): ModeDecision {
-  switch (mode) {
+export function resolveModeDecision(mode: PermissionModeId): ModeDecision {
+  const named = PermissionModeSchema.safeParse(mode);
+  // An id this runtime does not name has no rule here, and absence of a rule is
+  // never consent — the same answer the exhaustive arms below give every mode
+  // but `bypassPermissions`.
+  if (!named.success) return 'ask';
+  const namedMode = named.data;
+  switch (namedMode) {
     // "Skip all tool approval prompts" — this mode IS consent. The CLI resolves
     // most calls under it upstream, but not quite all (see the TSDoc above).
     case 'bypassPermissions':
@@ -495,7 +508,7 @@ export function resolveModeDecision(mode: PermissionMode): ModeDecision {
       // Unreachable while the switch is exhaustive; if a new mode is added to
       // `PermissionMode` this line stops compiling. At runtime an unknown mode
       // asks — absence of a rule is never consent.
-      const exhaustive: never = mode;
+      const exhaustive: never = namedMode;
       void exhaustive;
       return 'ask';
     }
@@ -804,7 +817,7 @@ async function hasAgentIdentity(
  *   disk.
  */
 export function createCanUseTool(
-  session: InteractiveSession & { permissionMode: PermissionMode },
+  session: InteractiveSession & { permissionMode: PermissionModeId },
   log: ToolGateLogger,
   onToolPreflight?: (toolName: string, input: Record<string, unknown>) => Promise<void>,
   resolveIdentity: () => Promise<unknown> = createInSessionContextResolver(session.cwd)
@@ -882,6 +895,19 @@ export function handleToolApproval(
   context: ToolApprovalContext
 ): Promise<PermissionResult> {
   const startedAt = Date.now();
+  // What "Always Allow" on this card would actually grant. Named on the card so
+  // the click is informed, and logged in raw SDK terms so a week of real cards
+  // can answer whether wide destinations turn up often enough to be worth
+  // stripping — the follow-up question DOR-1462 deliberately left open.
+  const alwaysAllowScope = alwaysAllowScopeOf(context.suggestions);
+  if (alwaysAllowScope !== undefined) {
+    logger.info('[handleToolApproval] always-allow suggestions offered', {
+      toolName,
+      toolUseID: toolUseId,
+      scope: alwaysAllowScope,
+      destinations: suggestionDestinations(context.suggestions),
+    });
+  }
 
   session.eventQueue.push({
     type: 'approval_required',
@@ -898,6 +924,7 @@ export function handleToolApproval(
       blockedPath: context.blockedPath,
       decisionReason: context.decisionReason,
       hasSuggestions: (context.suggestions?.length ?? 0) > 0,
+      ...(alwaysAllowScope !== undefined ? { alwaysAllowScope } : {}),
     },
   });
   session.eventQueueNotify?.();
@@ -944,6 +971,7 @@ export function handleToolApproval(
         blockedPath: context.blockedPath,
         decisionReason: context.decisionReason,
         hasSuggestions: (context.suggestions?.length ?? 0) > 0,
+        ...(alwaysAllowScope !== undefined ? { alwaysAllowScope } : {}),
       },
       resolve: (result, denyReason) => {
         clearInteractionTimer(session, toolUseId);

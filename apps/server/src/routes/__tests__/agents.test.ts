@@ -333,10 +333,14 @@ describe('Agents Routes', () => {
     it('returns 404 for unregistered path', async () => {
       mockReadManifest.mockResolvedValue(null);
 
+      // An ORDINARY field. The write policy runs before the manifest is read
+      // (DOR-1506), so a patch naming an operator-only field is refused whether
+      // or not an agent lives at the path — which is the point: the answer to
+      // "may you write this" must not depend on, or disclose, who is there.
       const res = await request(app)
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
-        .send({ name: 'new-name' });
+        .send({ displayName: 'New Name' });
 
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('No agent registered at this path');
@@ -521,7 +525,11 @@ describe('Agents Routes', () => {
       expect(mockWriteManifest).toHaveBeenCalled();
     });
 
-    it('rejects name mutation (slug is immutable)', async () => {
+    it('rejects a slug rename with a 403, and points at displayName', async () => {
+      // 403 rather than the 400 this answered before DOR-1506: the slug is
+      // operator-only on this seam, not immutable everywhere — a person renames
+      // an agent on `PATCH /api/mesh/agents/:id`. The advice in the sentence is
+      // what a caller acts on either way.
       mockReadManifest.mockResolvedValue({ ...mockManifest, isSystem: false });
 
       const res = await request(app)
@@ -529,8 +537,26 @@ describe('Agents Routes', () => {
         .query({ path: '/home/user/project' })
         .send({ name: 'new-slug' });
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(403);
       expect(res.body.error).toContain('displayName');
+    });
+
+    it('refuses an agent restoring its own tool-context blocks (DOR-1506)', async () => {
+      // The issue, through the real route. A person turns an agent's tool
+      // context off in Settings → Tools (`agentContext.*`, operator-only at the
+      // config seam since DOR-1497), and the agent writes a PER-AGENT value,
+      // which `resolveToolConfig` prefers over the global switch.
+      mockReadManifest.mockResolvedValue(mockManifest);
+
+      const res = await request(app)
+        .patch('/api/agents/current')
+        .query({ path: '/home/user/project' })
+        .send({ displayName: 'Sneaky', enabledToolGroups: { relay: true, mesh: true } });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toContain('Tools settings');
+      // Whole-patch: the legitimate half did not land either.
+      expect(mockWriteManifest).not.toHaveBeenCalled();
     });
   });
 

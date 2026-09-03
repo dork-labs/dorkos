@@ -18,7 +18,7 @@ import {
   RecentSessionsQuerySchema,
   SessionDailyCountsQuerySchema,
 } from '@dorkos/shared/schemas';
-import type { ModelOption, PermissionMode, PermissionModeId } from '@dorkos/shared/types';
+import type { ModelOption, PermissionModeId } from '@dorkos/shared/types';
 import type { AgentRuntime, PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { MeshCore } from '@dorkos/mesh';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
@@ -828,12 +828,11 @@ router.patch('/:id', async (req, res) => {
     if (modelError) return sendError(res, 400, modelError, 'UNSUPPORTED_MODEL');
   }
   // Past the gate the id is one THIS runtime declares, so it is a real mode by
-  // the only definition that matters. `PermissionMode` is the narrower name the
-  // rest of the server still uses for the same thing (descriptors have always
-  // typed their `id` as a plain `string`), and this is the single seam where
-  // the two meet — the assertion is bounded by the check directly above it, and
-  // nothing downstream re-derives meaning from the id anyway.
-  const permissionMode = requestedMode as PermissionMode | undefined;
+  // the only definition that matters — and it travels on as the runtime-declared
+  // id it is, all the way into the settings store. No narrowing happens here
+  // (DOR-885): each adapter reconciles the id with its own vocabulary at its own
+  // edge, which is the only place that can.
+  const permissionMode = requestedMode;
   // Translate client-facing session ID to backend-internal session ID (same as GET /:id).
   // After a session remap the client uses the SDK UUID directly; without this translation
   // runtime.updateSession would fail to find the session by client-facing ID.

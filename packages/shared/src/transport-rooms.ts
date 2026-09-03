@@ -109,7 +109,16 @@ export interface RoomTransport {
    */
   updateRoom(id: string, req: UpdateRoomRequest): Promise<RoomWithRoster>;
   /**
-   * Read a page of a room's history, oldest-first within the page.
+   * Read a page of a room's history, oldest-first.
+   *
+   * **More than the page, and in `seq` order regardless.** A thread is a
+   * relation between entries (ADR 260728-022013), so a reply only reads as a
+   * reply while the entry heading its thread is loaded beside it — and a thread
+   * outlives the window it started in. The page therefore arrives with the
+   * thread roots it points at from OUTSIDE itself in front of it (DOR-690),
+   * each older than everything in the page. Two consequences for a caller:
+   * `limit` bounds the page and not the array, and the newest entry is the LAST
+   * one, never the first.
    *
    * @param id - The room id.
    * @param query - `before` (exclusive `seq` upper bound) and `limit`.

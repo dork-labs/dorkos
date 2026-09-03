@@ -55,6 +55,18 @@ export interface CreationSeed {
   origin: CreationOrigin;
   /** Human-facing name of the source (e.g. the Shape or marketplace), for "offered by …" copy. */
   sourceLabel?: string;
+  /**
+   * The marketplace package this offer came from, when it came from one.
+   *
+   * The browse listing an offer is built from knows a package's name and
+   * description, never its contents — so it cannot say whether the package
+   * ships a scheduled job. The arrival confirm asks the server for that with
+   * this name (DOR-644): an agent package never reaches the install
+   * confirmation dialog, so its arrival card is the only place a person is told
+   * what the package will run on its own. Absent for a Shape offer, whose
+   * template is inline and has nothing to fetch.
+   */
+  packageName?: string;
 }
 
 /** Optional per-open behavior. */

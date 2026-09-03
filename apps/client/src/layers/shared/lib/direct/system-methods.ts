@@ -686,6 +686,14 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
         version: '0.1.0',
         latestVersion: null,
         isDevMode: true,
+        // There is no request and no network: this transport runs in-process
+        // inside Obsidian, on the machine DorkOS runs on. `true` is the literal
+        // answer to what the field asks. It does not claim the connect actions
+        // work here — they do not, and each one declines with its own honest
+        // reason (embedded-mode-stubs.ts). That decline is what the person sees,
+        // rather than guidance telling them to walk to the computer they are
+        // already sitting at.
+        isLocalCaller: true,
         dismissedUpgradeVersions: [],
         // Always empty here, and it is not an oversight: `updateConfig` is a
         // no-op on this transport (embedded-mode-stubs.ts), so the embed has

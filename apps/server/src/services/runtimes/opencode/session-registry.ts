@@ -18,7 +18,7 @@
  *
  * @module services/runtimes/opencode/session-registry
  */
-import type { Session, PermissionMode } from '@dorkos/shared/types';
+import type { Session, PermissionModeId } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
 import { deriveSessionTitle } from '../shared/derive-title.js';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
@@ -37,7 +37,7 @@ const PREVIEW_MAX_CHARS = 80;
  * (spec `execution-defaults` §4).
  */
 export interface OpenCodeSessionPatch {
-  permissionMode?: PermissionMode;
+  permissionMode?: PermissionModeId;
   model?: string;
   fastMode?: boolean;
   cwd?: string;

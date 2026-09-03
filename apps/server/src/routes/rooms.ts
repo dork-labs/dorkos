@@ -249,14 +249,21 @@ router.get('/:id/sessions', (req, res) => {
   }
 });
 
-/** GET /:id/entries — a page of history, oldest-first. */
+/**
+ * GET /:id/entries — a page of history, oldest-first, and the thread roots it
+ * points at from outside itself.
+ *
+ * The second half is what keeps a thread a thread across the page boundary
+ * (DOR-690): a reply whose root has scrolled out of the window is a flat row
+ * with nothing marking it as an answer, and a client cannot tell otherwise
+ * without the root. `listEntryPage` says why the page carries them rather than
+ * the reader fetching them back.
+ */
 router.get('/:id/entries', (req, res) => {
   const query = parseBody(ListRoomEntriesQuerySchema, req.query, res);
   if (!query) return;
   try {
-    res.json({
-      entries: getRoomService().listEntries(req.params.id, resolveCaller(req, res).id, query),
-    });
+    res.json(getRoomService().listEntryPage(req.params.id, resolveCaller(req, res).id, query));
   } catch (err) {
     sendRoomError(res, err, 'GET /:id/entries');
   }

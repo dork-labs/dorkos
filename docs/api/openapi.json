@@ -369,6 +369,9 @@
               },
               "hasSuggestions": {
                 "type": "boolean"
+              },
+              "alwaysAllowScope": {
+                "$ref": "#/components/schemas/AlwaysAllowScope"
               }
             },
             "required": [
@@ -473,6 +476,14 @@
               "message"
             ]
           }
+        ]
+      },
+      "AlwaysAllowScope": {
+        "type": "string",
+        "enum": [
+          "session",
+          "project",
+          "user"
         ]
       },
       "QuestionItem": {
@@ -905,6 +916,16 @@
           "approvalHasSuggestions": {
             "type": "boolean",
             "description": "Whether \"Always Allow\" is available"
+          },
+          "approvalAlwaysAllowScope": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AlwaysAllowScope"
+              },
+              {
+                "description": "Scope an accepted \"Always Allow\" grants — session, project, or the operator's global settings"
+              }
+            ]
           },
           "approvalOutcome": {
             "type": "string",
@@ -1735,6 +1756,9 @@
               },
               "hasSuggestions": {
                 "type": "boolean"
+              },
+              "alwaysAllowScope": {
+                "$ref": "#/components/schemas/AlwaysAllowScope"
               }
             },
             "required": [
@@ -5621,7 +5645,7 @@
           }
         },
         "default": {},
-        "description": "Per-agent tool groups. The four domain keys (tasks, relay, mesh, adapter) are documentation settings: undefined = inherit global default, and off means the agent is not told about the group, not that the tools are blocked. Binding tools follow adapter toggle. Trace tools follow relay toggle. roomsManage is different: it is a per-agent grant the server enforces, absent means off with no global default, and only a person may set it."
+        "description": "Per-agent tool groups. The four domain keys (tasks, relay, mesh, adapter) are documentation settings: undefined = inherit global default, and off means the agent is not told about the group, not that the tools are blocked. Binding tools follow adapter toggle. Trace tools follow relay toggle. roomsManage is different: it is a per-agent grant the server enforces, and absent means off with no global default. Only a person sets any of the five: the agent-reachable write path refuses this object outright."
       },
       "ManagedMcpServer": {
         "type": "object",
@@ -7604,10 +7628,18 @@
             "items": {
               "$ref": "#/components/schemas/RoomEntry"
             }
+          },
+          "threadRoots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoomEntry"
+            },
+            "description": "The thread roots entries in this page reply to that the page itself does not hold, oldest first. Empty whenever every reply's root came back in the page. Never part of the page: each one sits below its oldest entry, so a `before=` cursor is read from `entries` alone. Each carries `threadReplyCount`, because a thread reaching back past the page is also the one case where what a reader loaded is not the whole of it."
           }
         },
         "required": [
-          "entries"
+          "entries",
+          "threadRoots"
         ]
       },
       "RoomEntry": {
@@ -7701,6 +7733,11 @@
               "$ref": "#/components/schemas/RoomAttachment"
             },
             "description": "The files posted with this entry. Every path that delivers an entry to a reader carries it — the history page, the stream's hydration snapshot, a resume replay, and a live `entry` event. Optional only because the server's internal entry shape exists before the roll-up runs; on the wire it is always present, and absent should be read as empty."
+          },
+          "threadReplyCount": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "How many replies this entry's thread holds in the ROOM, which is not always how many the reader has. Unlike the two roll-ups above it, this is present on exactly one kind of entry: a thread root that came back in `threadRoots` because the page it belongs to does not contain it. That is the only case where the replies a client loaded are not the whole thread — a root INSIDE the page has every one of its replies in the page after it, so the loaded replies are the count, and a second number that could disagree with what is on screen would be worse than no number at all. Absent means \"count what you have\"."
           }
         },
         "required": [
@@ -10826,6 +10863,9 @@
                         },
                         "hasSuggestions": {
                           "type": "boolean"
+                        },
+                        "alwaysAllowScope": {
+                          "$ref": "#/components/schemas/AlwaysAllowScope"
                         }
                       },
                       "required": [
@@ -18964,7 +19004,7 @@
           "Rooms"
         ],
         "summary": "Read a page of room history",
-        "description": "Oldest-first within the page. Page backwards with `before=<seq>`. The room log is never trimmed, so any page remains readable.",
+        "description": "Oldest-first within the page. Page backwards with `before=<seq>`. The room log is never trimmed, so any page remains readable. **The page is self-describing about threads**: a thread is a relation between entries rather than a room of its own, so a reply is only legible as a reply while the entry heading its thread is loaded beside it — and a thread outlives the 50-entry window it started in. `threadRoots` carries the roots this page replies to that the page itself does not hold, so nobody has to ask twice. They are context, never part of the page: each sits below the oldest entry in `entries`, which is where a `before=` cursor is read from.",
         "parameters": [
           {
             "schema": {
@@ -19000,7 +19040,7 @@
         ],
         "responses": {
           "200": {
-            "description": "A page of entries",
+            "description": "A page of entries, and the thread roots it points at outside itself",
             "content": {
               "application/json": {
                 "schema": {

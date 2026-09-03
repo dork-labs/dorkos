@@ -14,7 +14,7 @@
  *
  * @module services/runtimes/test-mode/session-registry
  */
-import type { Session, PermissionMode } from '@dorkos/shared/types';
+import type { Session, PermissionModeId } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
 import { deriveSessionTitle } from '../shared/derive-title.js';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
@@ -38,12 +38,13 @@ const PREVIEW_MAX_CHARS = 80;
  * the first declared descriptor keeps the one property that matters — the birth
  * mode is always a mode this runtime declares — without a second copy of an id.
  */
-const BIRTH_PERMISSION_MODE = (TEST_MODE_CAPABILITIES.permissionModes.default ??
-  TEST_MODE_CAPABILITIES.permissionModes.values[0]!.id) as PermissionMode;
+const BIRTH_PERMISSION_MODE: PermissionModeId =
+  TEST_MODE_CAPABILITIES.permissionModes.default ??
+  TEST_MODE_CAPABILITIES.permissionModes.values[0]!.id;
 
 /** Metadata fields the registry can update on an already-tracked session. */
 export interface TrackedSessionPatch {
-  permissionMode?: PermissionMode;
+  permissionMode?: PermissionModeId;
   model?: string;
   cwd?: string;
 }

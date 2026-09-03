@@ -156,7 +156,6 @@ function ToolGroupRow({
 interface ToolsTabProps {
   agent: AgentManifest;
   projectPath: string;
-  onUpdate: (updates: Partial<AgentManifest>) => void;
 }
 
 /**
@@ -344,10 +343,12 @@ function TierCeilingCard({ agent }: { agent: AgentManifest }) {
  * Tools tab for agent configuration: per-agent tool group overrides and
  * MCP server overview.
  */
-export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
+export function ToolsTab({ agent, projectPath }: ToolsTabProps) {
   const relayEnabled = useRelayEnabled();
   const tasksEnabled = useTasksEnabled();
   const { config: globalConfig } = useAgentContextConfig();
+  const updateAgent = useUpdateMeshAgent();
+  const queryClient = useQueryClient();
 
   // DorkOS's own tool groups (Scheduling/Messaging/Discovery/Integrations) are
   // injected as an MCP server. A runtime that can't consume MCP (e.g. Codex,
@@ -357,34 +358,52 @@ export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
   const caps = useCapabilitiesForRuntime(agent.runtime);
   const supportsDorkTools = caps?.supportsMcp ?? true;
 
-  // **The grant must never ride along on a soft-toggle write** (DOR-1611
-  // review). These two send the whole `enabledToolGroups` object through
-  // `PATCH /api/agents/current`, and `agent-updater` refuses ANY body naming
-  // `roomsManage` — whole-patch, whatever the value, by design, because a grant
-  // the governed agent can set for itself is not a grant. So once a person armed
-  // an agent, spreading the stored object made every one of the four soft
-  // toggles fail with `OPERATOR_ONLY`: arming an agent broke the settings page
-  // beside the switch that armed it. Stripped rather than sent, because the
-  // field is not this route's to carry and the four keys beside it are.
-  const softToolGroups = useCallback((): EnabledToolGroups => {
-    const { roomsManage: _grant, ...soft } = agent.enabledToolGroups ?? {};
-    return soft;
-  }, [agent.enabledToolGroups]);
+  // **Written through the operator's route, never the agent self-edit route**
+  // (DOR-1506) — the same split `TierCeilingCard` and `ManageRoomsCard` below
+  // already use, now covering all five keys of the object.
+  //
+  // `PATCH /api/agents/current` refuses every one of them: a per-agent value
+  // BEATS the global `agentContext.*` switch (`resolveToolConfig`), and those
+  // four are operator-only at the config seam, so leaving these writable there
+  // let an agent undo a narrowing the person had made to its own tool context.
+  // The cockpit is the person, so it uses `PATCH /api/mesh/agents/:id`.
+  //
+  // The whole stored object is sent, `roomsManage` included: the operator's
+  // route carries the grant, and `deepMerge` is not in play here — the manifest
+  // update REPLACES `enabledToolGroups`, so dropping the key would clear it.
+  //
+  // The two invalidations are the ones `ManageRoomsCard` explains: the `agent`
+  // this tab renders comes from `useCurrentAgent`, which the mesh mutation knows
+  // nothing about, so without them a saved toggle snaps straight back.
+  const writeToolGroups = useCallback(
+    (next: EnabledToolGroups) => {
+      updateAgent.mutate(
+        { id: agent.id, updates: { enabledToolGroups: next } },
+        {
+          onSettled: () => {
+            void queryClient.invalidateQueries({ queryKey: agentKeys.all });
+            void queryClient.invalidateQueries({ queryKey: TEAM_ROSTER_KEY });
+          },
+        }
+      );
+    },
+    [agent.id, queryClient, updateAgent]
+  );
 
   const handleToolGroupChange = useCallback(
     (key: ToolDomainKey, value: boolean) => {
-      onUpdate({ enabledToolGroups: { ...softToolGroups(), [key]: value } });
+      writeToolGroups({ ...(agent.enabledToolGroups ?? {}), [key]: value });
     },
-    [onUpdate, softToolGroups]
+    [agent.enabledToolGroups, writeToolGroups]
   );
 
   const handleToolGroupReset = useCallback(
     (key: ToolDomainKey) => {
-      const current = softToolGroups();
-      delete current[key];
-      onUpdate({ enabledToolGroups: current });
+      const next = { ...(agent.enabledToolGroups ?? {}) };
+      delete next[key];
+      writeToolGroups(next);
     },
-    [onUpdate, softToolGroups]
+    [agent.enabledToolGroups, writeToolGroups]
   );
 
   const toolDomains: ToolDomain[] = [
