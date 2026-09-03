@@ -17,6 +17,7 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 
 import { cn } from '@/layers/shared/lib/utils';
+import { Button } from './button';
 
 /**
  * The dialog itself — wraps a trigger and its content, and owns open/closed.
@@ -122,13 +123,25 @@ function DialogContent({
             the same corner for as long as the dialog stays open, scrolled or
             not. The negative margins pull it back from the grid's padded edge
             to the original 16px inset (`top-4`/`right-4`) rather than the
-            content's 24px one. */}
-        <DialogPrimitive.Close
-          data-slot="dialog-content-close"
-          className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground sticky top-4 row-span-full -mt-2 -mr-2 self-start justify-self-end rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
-        >
-          <X className="size-(--size-icon-md)" />
-          <span className="sr-only">Close</span>
+            content's 24px one — the offset is to the control's own edge, so it
+            lands in the same place now that the control is a sized `Button`
+            box rather than a bare icon.
+
+            `asChild` hands the close behaviour to a real `Button`, which is
+            where the `focus-visible:` ring comes from: the hand-rolled recipe
+            this replaces painted its ring on every mouse click too. The button
+            keeps this part's own `data-slot` rather than `Button`'s, so the
+            slot names in this file still read as one set. */}
+        <DialogPrimitive.Close asChild>
+          <Button
+            data-slot="dialog-content-close"
+            variant="ghost"
+            size="icon-sm"
+            className="sticky top-4 row-span-full -mt-2 -mr-2 self-start justify-self-end opacity-70 hover:opacity-100"
+          >
+            <X className="size-(--size-icon-md)" />
+            <span className="sr-only">Close</span>
+          </Button>
         </DialogPrimitive.Close>
       </DialogPrimitive.Content>
     </DialogPortal>
