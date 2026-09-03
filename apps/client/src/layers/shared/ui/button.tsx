@@ -4,6 +4,13 @@ import { Slot } from 'radix-ui';
 
 import { cn } from '@/layers/shared/lib/utils';
 
+// `[&_svg:not([class*='size-'])]:size-(--size-icon-sm)` is the default size for
+// any `<svg>` a caller drops in without sizing it. The TOKEN, not a flat
+// `size-4`: the button's own height grows below 768px (RESPONSIVE_SIZE_CLASSES
+// below), and an icon frozen at 16px inside a 44px target reads as a shrinking
+// icon. `--size-icon-sm` is 16px on desktop and 20px on a phone — the same
+// proportion at both. The `:not([class*='size-'])` guard is the opt-out: any
+// `size-*` class on the svg, token or literal, wins over this default.
 const buttonVariants = cva(
   // **The press lives here, not at the call site.** The design system asks every
   // button for "scale to 0.97 on active, spring back", and for a long time the
@@ -17,7 +24,7 @@ const buttonVariants = cva(
   // across 768px animated the height of every button on screen. `scale` is
   // named as itself: Tailwind v4's scale utilities write the standalone `scale`
   // property, so a list saying `transform` would transition nothing.
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-[color,background-color,border-color,box-shadow,scale] duration-150 motion-safe:active:scale-[0.97] motion-safe:active:duration-100 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-[color,background-color,border-color,box-shadow,scale] duration-150 motion-safe:active:scale-[0.97] motion-safe:active:duration-100 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-(--size-icon-sm) shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
   {
     variants: {
       variant: {

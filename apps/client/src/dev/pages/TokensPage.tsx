@@ -312,9 +312,9 @@ function SizesSection() {
       <ShowcaseLabel>Icon Sizes</ShowcaseLabel>
       <div className="flex items-end gap-6">
         {[
-          { label: 'icon-xs', cls: 'size-[var(--size-icon-xs)]' },
-          { label: 'icon-sm', cls: 'size-[var(--size-icon-sm)]' },
-          { label: 'icon-md', cls: 'size-[var(--size-icon-md)]' },
+          { label: 'icon-xs', cls: 'size-(--size-icon-xs)' },
+          { label: 'icon-sm', cls: 'size-(--size-icon-sm)' },
+          { label: 'icon-md', cls: 'size-(--size-icon-md)' },
         ].map((icon) => (
           <div key={icon.label} className="space-y-1.5 text-center">
             <Settings className={cn('text-foreground', icon.cls)} />

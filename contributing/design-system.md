@@ -945,21 +945,25 @@ The app uses a CSS custom property scale multiplier system that makes text, icon
 
 ### Icon Size Convention
 
-Three standard sizes, use `size-[--size-icon-*]` for all icon sizing:
+Three standard sizes, use `size-(--size-icon-*)` for all icon sizing:
 
-| Token     | Desktop | Use Case                                                 |
-| --------- | ------- | -------------------------------------------------------- |
-| `icon-xs` | 12px    | Decorative, status indicators, inline affordances        |
-| `icon-sm` | 16px    | Interactive icons in compact UI (sidebar, tool cards)    |
-| `icon-md` | 20px    | Primary action icons (buttons, navigation, prominent UI) |
+| Token     | Desktop | Mobile | Use Case                                                 |
+| --------- | ------- | ------ | -------------------------------------------------------- |
+| `icon-xs` | 12px    | 15px   | Decorative, status indicators, inline affordances        |
+| `icon-sm` | 16px    | 20px   | Interactive icons in compact UI (sidebar, tool cards)    |
+| `icon-md` | 20px    | 25px   | Primary action icons (buttons, navigation, prominent UI) |
 
 Usage:
 
 ```tsx
-<Check className="size-[--size-icon-xs] text-status-success" />
-<FolderOpen className="size-[--size-icon-sm] text-muted-foreground" />
-<PanelLeft className="size-[--size-icon-md]" />
+<Check className="size-(--size-icon-xs) text-status-success" />
+<FolderOpen className="size-(--size-icon-sm) text-muted-foreground" />
+<PanelLeft className="size-(--size-icon-md)" />
 ```
+
+**Parentheses, not brackets.** `size-(--size-icon-sm)` is Tailwind v4's syntax for "this arbitrary value is a custom property". The v3 spelling `size-[--size-icon-sm]` compiles to `width: --size-icon-sm`, which is not valid CSS — the browser drops it and the icon falls back to its intrinsic 24px. Two files shipped that way until DOR-1750; if an icon looks too big, check the brackets first.
+
+`Button` already applies `--size-icon-sm` to any `<svg>` a caller hands it unsized, so most icons inside a button need no class at all. Its `xs` and `icon-xs` sizes deliberately opt out and stay at a flat 12px — they are small chrome that should not grow.
 
 ### Hover Pattern Mobile Alternatives
 
