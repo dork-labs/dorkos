@@ -100,8 +100,11 @@ export const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
         stop: 'autonomy',
         asks: 'never',
         reach: 'everything',
+        // No softening clause, for the reason claude-code's own bypass mode
+        // carries (DOR-1754): the consent dialog reads this sentence out, and
+        // "Still asks when it needs your call" contradicted `asks: 'never'`.
         promise:
-          'Acts without approval prompts — including outside this project. Still asks when it needs your call.',
+          'Acts without approval prompts, including outside this project. It will not stop to ask you.',
       },
     ],
     // `POST /session/{id}/permissions/{permissionID}` takes `once`/`reject`

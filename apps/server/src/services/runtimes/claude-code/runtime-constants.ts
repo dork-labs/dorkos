@@ -116,8 +116,12 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
         stop: 'autonomy',
         asks: 'never',
         reach: 'everything',
+        // No softening clause (DOR-1754). This sentence is what the consent
+        // dialog reads out at the moment somebody turns the stop on, and it
+        // used to end "Still asks when it needs your call" — which contradicts
+        // `asks: 'never'` and read like the safer stop below it.
         promise:
-          'Acts without approval prompts — including outside this project. Still asks when it needs your call.',
+          'Acts without approval prompts, including outside this project. It will not stop to ask you.',
       },
       {
         // Research preview, and the middle stop's intelligence rather than a

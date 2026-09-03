@@ -2754,6 +2754,22 @@ export function runtimeConformance(
             if (descriptor.axis !== undefined) {
               expect(PERMISSION_AXES, `${descriptor.id}.axis`).toContain(descriptor.axis);
             }
+
+            // The promise is the sentence the dial's caption and BOTH consent
+            // dialogs read out verbatim, so a mode that never asks may not
+            // claim in words that it still does (DOR-1754). claude-code and
+            // OpenCode both shipped "Still asks when it needs your call" on
+            // their bypass mode, which made the riskiest stop read like the
+            // safe one at the exact moment somebody turns it on. "ask" is
+            // fine — "can't pause to ask", "will not stop to ask you" — it is
+            // the positive present-tense claim that is the lie.
+            if (descriptor.asks === 'never') {
+              expect(
+                /\basks\b/i.test(descriptor.promise),
+                `${descriptor.id}.promise says it "asks" while declaring asks: 'never' — ` +
+                  'a mode that never stops for approval must not promise that it does'
+              ).toBe(false);
+            }
           }
 
           // A way of working is not a trust level, so it leaves the dial — which
