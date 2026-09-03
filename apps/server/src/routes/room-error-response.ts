@@ -22,6 +22,10 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   MEMBER_NOT_FOUND: 404,
   AGENT_NOT_FOUND: 404,
   SLUG_TAKEN: 409,
+  // A 409 beside `SLUG_TAKEN`, and for the identical reason: a room's name is
+  // already somebody else's. A DM's name is who is in it, so this is what a
+  // roster edit gets when it would make two conversations hold the same people.
+  DM_MEMBER_SET_TAKEN: 409,
   INVALID_SLUG: 400,
   HANDLE_TAKEN: 409,
   HANDLE_RESERVED: 409,

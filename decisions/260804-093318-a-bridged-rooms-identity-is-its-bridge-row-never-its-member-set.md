@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted. Implemented in the `chats-as-channels` phase 1 series.
 
+**Amendment 1 (DOR-1616, migration 0085): the exclusion moved from the query into the row, and the decision it protects is unchanged.** Member-set dedupe is now a real constraint — `rooms.dm_member_key` carries a DM's canonical roster and `rooms_dm_member_key_unique` refuses a second room for it — because the old read-then-insert could be raced into two rooms for one pair. A bridged room's key is **NULL**, and `findDmByMemberSet` is a lookup on that column, so `WHERE rooms.id NOT IN (SELECT room_id FROM room_bridges)` no longer exists and is no longer needed. Read the third Positive consequence below as "enforced in the SCHEMA, not by convention": the clause it names was a thing every future copy of one query had to remember, whereas a bridged room now has nothing for the lookup to match and cannot be pulled into the constraint by a roster change either. The recorded fallback in the second Negative — `kind: 'channel'`, never a weakening of the exclusion — stands as written.
+
 ## Context
 
 `RoomStore.findDmByMemberSet` identifies a DM by its exact member set, and `createRoom` consults it for every `kind: 'dm'` request, returning - and un-archiving - a match. A bridged Telegram private chat whose roster is `{operator, bound agent}` is byte-identical to the operator's own private DM with that agent. Routing a bridge create through member-set matching would silently return the operator's existing private conversation, land strangers' messages in it, and make its private posts delivery candidates for a chat the operator never meant to expose.

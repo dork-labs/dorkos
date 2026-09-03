@@ -13,11 +13,11 @@
 import {
   DEFAULT_AMBIENT_MAX_ENTRIES,
   authors,
+  canonicalDmMemberKey,
   rooms,
   roomMembers,
   roomEntries,
   roomSessions,
-  roomBridges,
   readCursors,
   eq,
   and,
@@ -97,6 +97,70 @@ function topLevelWindow(roomId: string, opts: TopLevelWindow): SQL | undefined {
   );
 }
 
+/**
+ * What SQLite says when the partial unique index behind "one DM per member set"
+ * refuses a write. `better-sqlite3` names the COLUMN rather than the index
+ * (`UNIQUE constraint failed: rooms.dm_member_key`), which is what makes this
+ * string, and not the error code, the thing to match on.
+ */
+const DM_MEMBER_KEY_CONSTRAINT = 'rooms.dm_member_key';
+
+/**
+ * Whether a thrown error is SQLite refusing a second direct message for one
+ * member set (DOR-1616).
+ *
+ * **The column is matched, not just the error code.** `rooms` carries three
+ * unique indexes — the channel slug, the well-known key, and this one — so a
+ * caller that read any `SQLITE_CONSTRAINT_UNIQUE` as "somebody else opened this
+ * DM first" would swallow a `SLUG_TAKEN` collision along with it. The column
+ * name in the message is the only thing that tells them apart.
+ *
+ * **The whole cause chain is searched**, because the error a caller catches is
+ * not always the one SQLite threw: a driver is free to wrap it, and a guard
+ * that only read the outermost `message` would start answering `false` after a
+ * dependency bump — silently turning every adopt-the-winner path back into the
+ * 500 it exists to prevent.
+ *
+ * @param err - Whatever was caught.
+ * @returns `true` when the DM member-set constraint is what refused the write.
+ */
+export function isDmMemberSetTaken(err: unknown): boolean {
+  for (let cursor: unknown = err; cursor instanceof Error; cursor = cursor.cause) {
+    if (cursor.message.includes(DM_MEMBER_KEY_CONSTRAINT)) return true;
+  }
+  return false;
+}
+
+/**
+ * The `rooms.dm_member_key` a new room is inserted with — its canonical member
+ * set, or `null` when it takes part in no member-set dedupe.
+ *
+ * Two rooms answer `null`. A CHANNEL has no member-set identity: its name is
+ * `#slug` and `rooms_channel_slug_unique` is its constraint. A BRIDGED DM's
+ * identity is its bridge row and never its roster (ADR 260804-093318) — the
+ * roster of a bridged private chat is byte-identical to the operator's own DM
+ * with that agent, so a bridged chat inside this dedupe would let a fresh open
+ * reuse, and un-archive, a stranger's chat log.
+ *
+ * An empty roster also answers `null`, and that is not a degenerate case being
+ * papered over: a room with nobody in it has no member set to be identified by,
+ * and `RoomStore.findDmByMemberSet([])` has always answered `null` for exactly
+ * that reason.
+ *
+ * @param kind - The room's kind.
+ * @param bridged - Whether this room is a bridge projection.
+ * @param members - The roster being written alongside the room.
+ */
+function dmMemberKeyFor(
+  kind: RoomKind,
+  bridged: boolean,
+  members: ReadonlyArray<{ authorId: string }>
+): string | null {
+  if (kind !== 'dm' || bridged) return null;
+  const key = canonicalDmMemberKey(members.map((member) => member.authorId));
+  return key === '' ? null : key;
+}
+
 /** Persistence for rooms, memberships, entries, and per-room agent sessions. */
 export class RoomStore {
   /**
@@ -141,15 +205,28 @@ export class RoomStore {
    *   roster with no bridge row sitting exposed between two separate
    *   `db.transaction` calls, however briefly.
    * @returns The inserted room.
+   * @throws Whatever SQLite throws, including a UNIQUE failure on
+   *   `rooms.dm_member_key` when another writer opened this same DM first —
+   *   {@link isDmMemberSetTaken} is how a caller recognises that one, and
+   *   `RoomService.createRoom` is what adopts the winner rather than surfacing
+   *   it.
    */
   createRoom(
     room: NewRoom,
     members: ReadonlyArray<{ authorId: string; responseMode: ResponseMode; joinedAt: string }>,
     within?: (tx: DbTransaction) => void
   ): Room {
+    const { bridged = false, ...columns } = room;
     const row = {
-      ...room,
+      ...columns,
       wellKnown: room.wellKnown ?? null,
+      // Computed HERE, from the roster this call is about to write, rather than
+      // handed in by the caller (DOR-1616). The key and the memberships have to
+      // describe the same set of people, and the only way to guarantee that is
+      // to derive one from the other in the transaction that writes both — a
+      // caller-supplied key would be a second expression of the member set,
+      // free to disagree with the rows beside it.
+      dmMemberKey: dmMemberKeyFor(room.kind, bridged, members),
       // Empty at creation always: the seat is assigned by the boot hook that
       // resolves the default agent, never by whoever opened the room.
       fallbackSeatAuthorId: null,
@@ -262,68 +339,61 @@ export class RoomStore {
   /**
    * The direct message whose roster is EXACTLY this set of authors, or `null`.
    *
-   * "Exactly" is the whole point and every word of it is load-bearing:
+   * **A lookup on the column the constraint guards, and that is the whole
+   * design** (DOR-1616). This used to group `room_members` and count, which
+   * answered the question correctly and answered it about a moment that had
+   * already passed: two opens for one pair could both read "no DM yet" and both
+   * insert, because no constraint could refuse the second — the fact being
+   * constrained lived in a different table from the row. `rooms.dm_member_key`
+   * moves it onto the row, `rooms_dm_member_key_unique` refuses the duplicate,
+   * and this method reads that same column. So the question the create path asks
+   * and the constraint that settles it are ONE expression, and cannot come to
+   * different conclusions about what "the same member set" means.
    *
-   * - **The whole set, human included.** A DM is identified by who is in it, and
-   *   the operator is in it. Matching on the agents alone would collapse two
-   *   different conversations the moment a second human author exists.
-   * - **Order-independent.** `[me, ana]` and `[ana, me]` are one conversation.
-   *   The `IN` test does not care, and neither should a caller.
-   * - **Not a superset, not a subset.** `COUNT(*)` pins the roster's size and
-   *   the `SUM` pins how many of it were asked for; requiring both to equal the
-   *   set's size is what makes "contains these agents" fail to match. A DM with
-   *   Ana and Kai is not the DM with Ana.
+   * "Exactly" still means exactly, and the key is what makes each part of it
+   * true. The whole set, human included — a DM is identified by who is in it and
+   * the operator is in it, so matching the agents alone would collapse two
+   * conversations the moment a second human author exists. Order-independent —
+   * `[me, ana]` and `[ana, me]` sort to one key. Neither a superset nor a
+   * subset — a different roster is a different string, so the DM with Ana and
+   * Kai can never answer for the DM with Ana.
    *
-   * Archived DMs are matched too, and deliberately: the caller decides what to
-   * do with one (`RoomService.createRoom` un-archives it), and a store that hid
-   * them would leave the only way to reach that conversation being to mint a
-   * second room with the same people in it.
+   * Archived DMs are matched too, and deliberately: archiving does not release
+   * a member set the way it releases a `#slug`, so the caller decides what to do
+   * with one (`RoomService.createRoom` un-archives it). A store that hid them
+   * would leave the only way back to that conversation being to mint a second
+   * room with the same people in it.
    *
-   * **A bridged room is never a match, enforced in the query** (chats-as-channels
-   * spec §3.2, A3.2c). A bridged private chat's roster — the bound agent plus
-   * the operator — is byte-identical to the operator's own private DM with that
-   * agent, so without this exclusion this method would hand a stranger's chat
-   * log back as the operator's private conversation, and would un-archive and
-   * reuse it for a re-bridge. The `NOT IN (SELECT room_id FROM room_bridges)`
-   * clause is what makes that impossible regardless of which call site reaches
-   * this method — `RoomService.createBridgedRoom` also never calls it at all
-   * (§3.2's create-path bypass), so the exclusion here is belt-and-braces for
-   * every OTHER caller, present and future, that does.
+   * **A bridged room is never a match, now structurally.** A bridged private
+   * chat's roster — the bound agent plus the operator — is byte-identical to the
+   * operator's own private DM with that agent, so a match would hand a
+   * stranger's chat log back as a private conversation and would un-archive and
+   * reuse it for a re-bridge (chats-as-channels spec §3.2, A3.2c). Bridged rooms
+   * carry a NULL key and this query asks for a non-null one, so the exclusion no
+   * longer needs a `NOT IN (SELECT … FROM room_bridges)` clause that a future
+   * copy of the query could be written without.
    *
-   * Ordering settles a tie that only pre-existing data can produce — nothing
-   * creates a duplicate once `createRoom` consults this — so a live room is
-   * preferred over an archived one and the oldest wins after that, rather than
-   * leaving the answer to whichever index the planner picked.
+   * **At most one row can match, so there is no tie to break.** The old
+   * `ORDER BY archived, created_at` existed for duplicates that only
+   * pre-existing data could hold; migration 0085 resolved those by that same
+   * order and left every loser NULL, and the unique index means no new one can
+   * appear.
    *
    * @param authorIds - The exact member set to match. Duplicates are collapsed.
    * @returns The matching DM, or `null` when no room holds exactly these authors.
    */
   findDmByMemberSet(authorIds: readonly string[]): Room | null {
-    const wanted = [...new Set(authorIds)];
-    if (wanted.length === 0) return null;
+    const key = canonicalDmMemberKey(authorIds);
+    if (key === '') return null;
     const row = this.db
-      .select({ room: rooms })
+      .select()
       .from(rooms)
-      .innerJoin(roomMembers, eq(roomMembers.roomId, rooms.id))
-      .where(
-        and(
-          eq(rooms.kind, 'dm'),
-          sql`${rooms.id} NOT IN (SELECT ${roomBridges.roomId} FROM ${roomBridges})`
-        )
-      )
-      .groupBy(rooms.id)
-      .having(
-        and(
-          eq(count(), wanted.length),
-          eq(
-            sql<number>`SUM(CASE WHEN ${inArray(roomMembers.authorId, wanted)} THEN 1 ELSE 0 END)`,
-            wanted.length
-          )
-        )
-      )
-      .orderBy(rooms.archived, rooms.createdAt)
+      // `kind` is redundant given that only a DM ever carries a key, and it is
+      // here so the predicate MATCHES the partial index's own — which is what
+      // lets the planner use it rather than scanning.
+      .where(and(eq(rooms.kind, 'dm'), eq(rooms.dmMemberKey, key)))
       .get();
-    return row ? toRoom(row.room) : null;
+    return row ? toRoom(row) : null;
   }
 
   /**
@@ -438,6 +508,10 @@ export class RoomStore {
    *   `this.db` for the reason {@link RoomStore.createRoom} records — one
    *   connection, so it sees that transaction's own uncommitted writes.
    * @returns The stored membership.
+   * @throws Whatever SQLite throws, including a UNIQUE failure on
+   *   `rooms.dm_member_key` when this join would give one DM the member set
+   *   another DM already holds — see {@link RoomStore.syncDmMemberKey}, and
+   *   {@link isDmMemberSetTaken} for how `RoomRoster` recognises it.
    */
   addMember(
     member: {
@@ -448,9 +522,14 @@ export class RoomStore {
     },
     tx?: DbTransaction
   ): RoomMember {
-    const exec = tx ?? this.db;
     const row = { ...member, joinedSeq: this.maxSeq(member.roomId), lastReadSeq: 0 };
-    exec.insert(roomMembers).values(row).onConflictDoNothing().run();
+    // The join and the room's member key are ONE write: a DM whose roster moved
+    // without its key moving would leave `findDmByMemberSet` confidently
+    // answering with a room that no longer holds those people (DOR-1616).
+    this.inOneTransaction(tx, (exec) => {
+      exec.insert(roomMembers).values(row).onConflictDoNothing().run();
+      this.syncDmMemberKey(member.roomId, exec);
+    });
     // Read back through `this.db` even inside a transaction, for the reason
     // `createRoom` records: one connection, so a read here sees the open
     // transaction's own uncommitted write.
@@ -690,18 +769,111 @@ export class RoomStore {
    * @param roomId - The room.
    * @param authorId - The member.
    * @returns Whether a membership was removed.
+   * @throws Whatever SQLite throws, including a UNIQUE failure on
+   *   `rooms.dm_member_key` when the departure would leave one DM holding the
+   *   member set another DM already holds — see
+   *   {@link RoomStore.syncDmMemberKey}.
    */
   removeMember(roomId: string, authorId: string): boolean {
     const existed = this.getMember(roomId, authorId) !== null;
-    this.db
-      .delete(roomMembers)
-      .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.authorId, authorId)))
-      .run();
-    this.db
-      .delete(roomSessions)
-      .where(and(eq(roomSessions.roomId, roomId), eq(roomSessions.authorId, authorId)))
-      .run();
+    // All three writes together, for the reason `addMember` gives: a roster that
+    // moved without the room's member key moving is a key that describes people
+    // who are no longer there.
+    this.inOneTransaction(undefined, (exec) => {
+      exec
+        .delete(roomMembers)
+        .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.authorId, authorId)))
+        .run();
+      exec
+        .delete(roomSessions)
+        .where(and(eq(roomSessions.roomId, roomId), eq(roomSessions.authorId, authorId)))
+        .run();
+      this.syncDmMemberKey(roomId, exec);
+    });
     return existed;
+  }
+
+  /**
+   * Run `writes` inside a transaction — the caller's when it has one, a fresh
+   * IMMEDIATE one when it does not.
+   *
+   * **A caller's transaction is joined, never nested.** On this
+   * single-connection `better-sqlite3` database a plain write from inside an
+   * open transaction lands in it whether or not it is handed the `tx` handle
+   * (see `DbTransaction`'s doc in `@dorkos/db`), so opening a second one here
+   * would be asking SQLite for a savepoint nobody needs, and a rollback
+   * boundary that is not the one the caller reasoned about.
+   *
+   * IMMEDIATE for the reason {@link RoomStore.appendEntry} records: this
+   * transaction reads a room's roster and then writes the room's key from it,
+   * and a deferred transaction that took a read lock first would fail to
+   * upgrade it with `SQLITE_BUSY_SNAPSHOT` — which SQLite does not retry — the
+   * moment a second process wrote in between.
+   *
+   * @param tx - The caller's open transaction, or `undefined`.
+   * @param writes - The statements to run, handed whichever executor applies.
+   */
+  private inOneTransaction(
+    tx: DbTransaction | undefined,
+    writes: (exec: Db | DbTransaction) => void
+  ): void {
+    if (tx) {
+      writes(tx);
+      return;
+    }
+    this.db.transaction((fresh) => writes(fresh), { behavior: 'immediate' });
+  }
+
+  /**
+   * Re-derive one room's `dm_member_key` from the roster as it now stands
+   * (DOR-1616).
+   *
+   * **Called from inside the transaction that changed the roster**, never
+   * after it. The key and the memberships are one fact written in two places,
+   * and a crash between them would leave a DM whose key names people who are
+   * not in it — which `RoomStore.findDmByMemberSet` would then hand back as
+   * that conversation.
+   *
+   * **A room that holds no key is left alone, and that is the guard that makes
+   * this safe rather than an oversight.** Three kinds of room hold NULL and
+   * each must keep holding it: a channel, which has no member-set identity; a
+   * BRIDGED DM, whose identity is its bridge row and never its roster
+   * (ADR 260804-093318); and a DM that was already a duplicate before migration
+   * 0085 ran, which that migration deliberately left out of the index. Deriving
+   * a key for the last of those would be the worst outcome of the three — its
+   * member set is by definition the winner's, so the recompute would collide and
+   * refuse a roster edit that changes nothing.
+   *
+   * **A roster emptied to nothing drops the key.** A room with nobody in it has
+   * no member set to be found by, and `findDmByMemberSet([])` has always
+   * answered `null`, so it leaves the dedupe rather than sitting in the index
+   * under an empty string. It does not come back if somebody is added again;
+   * that is the honest consequence of a DM having been emptied, and it is no
+   * worse than the state such a room is in today.
+   *
+   * @param roomId - The room whose roster just changed.
+   * @param exec - The open transaction (or the db, when the caller had none).
+   * @throws Whatever SQLite throws, including a UNIQUE failure on
+   *   `rooms.dm_member_key` when the new roster is one another DM already holds
+   *   — which rolls the whole roster write back, so the refusal leaves nothing
+   *   half-applied.
+   */
+  private syncDmMemberKey(roomId: string, exec: Db | DbTransaction): void {
+    const room = exec
+      .select({ dmMemberKey: rooms.dmMemberKey })
+      .from(rooms)
+      .where(eq(rooms.id, roomId))
+      .get();
+    if (!room || room.dmMemberKey === null) return;
+    const roster = exec
+      .select({ authorId: roomMembers.authorId })
+      .from(roomMembers)
+      .where(eq(roomMembers.roomId, roomId))
+      .all();
+    const key = canonicalDmMemberKey(roster.map((member) => member.authorId));
+    const next = key === '' ? null : key;
+    if (next === room.dmMemberKey) return;
+    exec.update(rooms).set({ dmMemberKey: next }).where(eq(rooms.id, roomId)).run();
   }
 
   // === Entries ===

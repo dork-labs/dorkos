@@ -39,7 +39,7 @@ import {
 } from './author-registry.js';
 import type { ReadCursorService } from '../core/read-cursor-service.js';
 import { RoomError, type RoomAgentLookup } from './room-errors.js';
-import type { RoomStore } from './room-store.js';
+import { isDmMemberSetTaken, type RoomStore } from './room-store.js';
 
 /**
  * The agents on a roster, by the names a title would call them.
@@ -54,6 +54,35 @@ export function dmTitleNames(members: readonly RoomRosterEntry[]): string[] {
   return members
     .filter((member) => member.author.kind === 'agent')
     .map((member) => member.author.displayName);
+}
+
+/**
+ * Run one roster write, turning SQLite's refusal of a duplicate direct message
+ * into a refusal a person can read (DOR-1616).
+ *
+ * **Here rather than in the store, and here rather than at each call site.**
+ * `RoomStore` is drizzle CRUD and owes nobody a domain vocabulary; every roster
+ * write in the product funnels through {@link RoomRoster.add} and
+ * {@link RoomRoster.remove}, so this is the one place that can translate for all
+ * of them. The one add that does NOT come through here is the bridged room's
+ * lazy external join, which writes to a room whose key is NULL and therefore
+ * cannot raise this at all.
+ *
+ * @param write - The store call to run.
+ * @returns Whatever the write returned.
+ * @throws {RoomError} `DM_MEMBER_SET_TAKEN` when the edit would leave two direct
+ *   messages holding the same people. Anything else is rethrown untouched.
+ */
+function refuseDuplicateDm<T>(write: () => T): T {
+  try {
+    return write();
+  } catch (err) {
+    if (!isDmMemberSetTaken(err)) throw err;
+    throw new RoomError(
+      'DM_MEMBER_SET_TAKEN',
+      "You already have a direct message with exactly these people — open that one instead. A direct message is named by who is in it, so two of them can't hold the same people."
+    );
+  }
 }
 
 /**
@@ -122,12 +151,14 @@ export class RoomRoster {
    */
   add(room: Room, input: AddMemberInput): RoomRosterEntry {
     const author = this.resolve(input);
-    const member = this.store.addMember({
-      roomId: room.id,
-      authorId: author.id,
-      responseMode: input.responseMode ?? this.seedResponseMode(room, author),
-      joinedAt: new Date().toISOString(),
-    });
+    const member = refuseDuplicateDm(() =>
+      this.store.addMember({
+        roomId: room.id,
+        authorId: author.id,
+        responseMode: input.responseMode ?? this.seedResponseMode(room, author),
+        joinedAt: new Date().toISOString(),
+      })
+    );
     return { ...member, author: toAuthorRef(author), origin: authorOrigin(author.naturalKey) };
   }
 
@@ -201,7 +232,7 @@ export class RoomRoster {
    * @param authorId - The member.
    */
   remove(roomId: string, authorId: string): void {
-    if (!this.store.removeMember(roomId, authorId)) {
+    if (!refuseDuplicateDm(() => this.store.removeMember(roomId, authorId))) {
       throw new RoomError('MEMBER_NOT_FOUND', 'Not a member of this room');
     }
   }
