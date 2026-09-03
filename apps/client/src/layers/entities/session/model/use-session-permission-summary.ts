@@ -17,15 +17,19 @@
  *
  * @module entities/session/model/use-session-permission-summary
  */
-import type { PermissionMode, Session } from '@dorkos/shared/types';
+import type { PermissionModeId, Session } from '@dorkos/shared/types';
 import { isBypassPermissionMode, isBypassSemantics } from '@/layers/shared/lib';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import { useSessionPermissionMode } from './use-session-detail';
 
 /** What {@link useSessionPermissionSummary} answers. */
 export interface SessionPermissionSummary {
-  /** The mode id the session is running under. */
-  permissionMode: PermissionMode;
+  /**
+   * The mode id the session is running under — any id its own runtime declares,
+   * not just a name from the shared enum (DOR-885). Every reader treats it as an
+   * opaque display string or looks it up in the runtime's own descriptor map.
+   */
+  permissionMode: PermissionModeId;
   /**
    * The mode lets the agent act without asking first — the same fact every
    * full-power surface (the dial, the status strip, the row mark) already
@@ -55,13 +59,7 @@ export function useSessionPermissionSummary(session: Session): SessionPermission
   const permissionMode =
     useSessionPermissionMode(session.id, {
       enabled: false,
-      // `session.permissionMode` carries any id the session's own runtime
-      // reports (DOR-851; `test-mode`'s ids sit outside the enum on purpose).
-      // Safe to narrow back to `PermissionMode` here — every reader treats it as
-      // an opaque display string (`permissionModeLabel`,
-      // `isBypassPermissionMode`) or looks it up in the runtime's own descriptor
-      // map, never against the literal enum.
-      fallback: session.permissionMode as PermissionMode,
+      fallback: session.permissionMode,
     }) ?? 'default';
   const caps = useCapabilitiesForRuntime(session.runtime);
   const descriptor = caps?.permissionModes.values.find((d) => d.id === permissionMode);

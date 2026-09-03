@@ -33,8 +33,6 @@
 import { Codex } from '@openai/codex-sdk';
 import type {
   StreamEvent,
-  PermissionMode,
-  EffortLevel,
   ModelOption,
   SubagentInfo,
   Session,
@@ -347,15 +345,7 @@ export class CodexRuntime implements AgentRuntime {
    * state a posture the run has not adopted. When a turn is in flight and the
    * change takes permissions away, that is reported rather than assumed.
    */
-  async updateSession(
-    sessionId: string,
-    opts: {
-      permissionMode?: PermissionMode;
-      model?: string;
-      effort?: EffortLevel;
-      fastMode?: boolean;
-    }
-  ): Promise<SessionUpdateResult> {
+  async updateSession(sessionId: string, opts: SessionSettings): Promise<SessionUpdateResult> {
     await this.seedFromDurable(sessionId);
     // Read BEFORE the register below overwrites it — this is the mode the
     // in-flight turn's sandbox was projected from.
@@ -700,13 +690,7 @@ export class CodexRuntime implements AgentRuntime {
     const effort = opts?.effort ?? tracked.effort;
     const fastMode = opts?.fastMode ?? tracked.fastMode;
     return {
-      // `tracked.permissionMode` reads off the shared `Session` shape, whose
-      // field carries any id a runtime declares (DOR-851). Safe to narrow back
-      // to `PermissionMode` HERE: codex only ever writes one of its own
-      // enum-shaped ids into this registry (`projectThreadOptions` below reads
-      // only those), so the wider type never actually holds anything else for
-      // this runtime.
-      permissionMode: (opts?.permissionMode ?? tracked.permissionMode) as PermissionMode,
+      permissionMode: opts?.permissionMode ?? tracked.permissionMode,
       ...(model !== undefined ? { model } : {}),
       ...(effort !== undefined ? { effort } : {}),
       ...(fastMode !== undefined ? { fastMode } : {}),

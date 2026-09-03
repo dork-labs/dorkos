@@ -41,7 +41,7 @@
  *
  * @module services/runtimes/opencode/approvals
  */
-import type { ApprovalEvent, PermissionMode, StreamEvent } from '@dorkos/shared/types';
+import type { ApprovalEvent, PermissionModeId, StreamEvent } from '@dorkos/shared/types';
 import { SESSIONS } from '../../../config/constants.js';
 import { logger, logError } from '../../../lib/logger.js';
 import { logRefusal } from '../../observability/refusals.js';
@@ -71,11 +71,16 @@ const EDIT_PERMISSION_TYPES = new Set(['edit']);
  * Unknown modes (`plan`, `dontAsk`, `auto`, future additions) deliberately
  * fall through to `ask` — never silently escalate.
  *
+ * That fall-through is also why the parameter is a {@link PermissionModeId} and
+ * not the narrow enum: a mode id is whatever its runtime declared (DOR-885), and
+ * an id this function has no rule for is an id nobody consented to skip an
+ * approval for.
+ *
  * @param mode - The session's effective DorkOS permission mode
  * @param permissionType - The request's permission key (`bash`, `edit`, `webfetch`, …)
  */
 export function resolveApprovalDecision(
-  mode: PermissionMode | undefined,
+  mode: PermissionModeId | undefined,
   permissionType: string
 ): ApprovalDecision {
   if (mode === 'bypassPermissions') return 'auto-approve';
@@ -358,7 +363,7 @@ export async function* enforceApprovals(
     // adapters cannot say that — Claude's CLI stops calling back at all under a
     // mode that never asks, and Codex's sandbox is fixed when the turn starts —
     // which is exactly why they DO report it. Do not "align" this one with them.
-    const mode = deps.registry.get(sessionId)?.permissionMode as PermissionMode | undefined;
+    const mode = deps.registry.get(sessionId)?.permissionMode;
     if (resolveApprovalDecision(mode, approval.toolName) === 'auto-approve') {
       try {
         await respondPermission(

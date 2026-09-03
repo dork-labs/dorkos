@@ -31,8 +31,6 @@
 import type { OpencodeClient, ProviderListResponse } from '@opencode-ai/sdk';
 import type {
   StreamEvent,
-  PermissionMode,
-  EffortLevel,
   ModelOption,
   SubagentInfo,
   Session,
@@ -242,15 +240,7 @@ export class OpenCodeRuntime implements AgentRuntime {
    * supported by OpenCode" false in the one place that matters (spec
    * `execution-defaults` §4).
    */
-  async updateSession(
-    sessionId: string,
-    opts: {
-      permissionMode?: PermissionMode;
-      model?: string;
-      effort?: EffortLevel;
-      fastMode?: boolean;
-    }
-  ): Promise<SessionUpdateResult> {
+  async updateSession(sessionId: string, opts: SessionSettings): Promise<SessionUpdateResult> {
     const { effort: _unsupported, ...storable } = opts;
     await this.settingsPort?.saveSessionSettings(sessionId, storable);
     this.registry.register(sessionId, {
@@ -492,12 +482,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     const model = opts?.model ?? tracked.model;
     const fastMode = opts?.fastMode ?? tracked.fastMode;
     return {
-      // `tracked.permissionMode` reads off the shared `Session` shape, whose
-      // field carries any id a runtime declares (DOR-851). Safe to narrow back
-      // to `PermissionMode` HERE: opencode only ever writes one of its own
-      // enum-shaped ids into this registry, so the wider type never actually
-      // holds anything else for this runtime.
-      permissionMode: (opts?.permissionMode ?? tracked.permissionMode) as PermissionMode,
+      permissionMode: opts?.permissionMode ?? tracked.permissionMode,
       ...(model !== undefined ? { model } : {}),
       ...(fastMode !== undefined ? { fastMode } : {}),
     };

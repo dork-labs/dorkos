@@ -41,7 +41,7 @@ import {
   SessionListEventSchema,
   type SessionListEvent,
 } from '@dorkos/shared/session-stream';
-import type { HistoryMessage, PermissionMode, Session, StreamEvent } from '@dorkos/shared/types';
+import type { HistoryMessage, PermissionModeId, Session, StreamEvent } from '@dorkos/shared/types';
 
 /**
  * Tuning knobs for legitimate cross-runtime differences. Defaults describe
@@ -62,7 +62,7 @@ export interface RuntimeConformanceOpts {
    * `PermissionMode` enum (test-mode's is `always-allow` — DOR-851). Set this
    * only to force a SPECIFIC mode across every session the suite creates.
    */
-  permissionMode?: PermissionMode;
+  permissionMode?: PermissionModeId;
   /**
    * When true, `getMessageHistory` must return at least one message after a
    * completed turn. Leave false (the default) for stateless adapters that
@@ -1119,19 +1119,15 @@ export function runtimeConformance(
    * hardcoded `'default'` for every runtime, so it never exercised any
    * runtime through the mode it actually starts sessions in; a runtime whose
    * ENTIRE declared set sits outside the enum (test-mode) would have sailed
-   * through unnoticed. The cast bridges `RuntimeCapabilities.permissionModes.default`
-   * (a runtime-declared id, DOR-851's wide id) to `SessionOpts.permissionMode`
-   * (still typed to the narrower enum — a known, separately-tracked gap): the
-   * same bridge every other seam in the codebase uses at this exact boundary
-   * (`routes/sessions.ts`, `codex-runtime.ts`), safe here because the id is
-   * read back from the SAME runtime that declared it and `ensureSession`
-   * never branches on the literal name.
+   * through unnoticed. The id needs no bridging any more: `SessionOpts.permissionMode`
+   * carries the runtime-declared id it always held in practice (DOR-885), so the
+   * declared default travels into `ensureSession` exactly as its runtime named it.
    *
    * @param runtime - The runtime instance under test in THIS test.
    */
-  function resolvePermissionMode(runtime: AgentRuntime): PermissionMode {
+  function resolvePermissionMode(runtime: AgentRuntime): PermissionModeId {
     if (permissionModeOverride !== undefined) return permissionModeOverride;
-    return (runtime.getCapabilities().permissionModes.default ?? 'default') as PermissionMode;
+    return runtime.getCapabilities().permissionModes.default ?? 'default';
   }
 
   /**

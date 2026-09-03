@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, vi } from 'vitest';
 import type {
   ModelOption,
-  PermissionMode,
+  PermissionModeId,
   SessionSettings,
   StreamEvent,
 } from '@dorkos/shared/types';
@@ -301,7 +301,7 @@ describe('Sessions Routes', () => {
      * capability gate can be exercised against a realistic runtime posture.
      * (The shared FakeAgentRuntime deliberately declares all six modes.)
      */
-    function declareModes(ids: PermissionMode[]): void {
+    function declareModes(ids: PermissionModeId[]): void {
       const capabilities = fakeRuntime.getCapabilities();
       fakeRuntime.getCapabilities.mockReturnValue({
         ...capabilities,
@@ -310,9 +310,7 @@ describe('Sessions Routes', () => {
           default: ids[0],
           // Narrowed from the fake's own descriptors, so each surviving mode
           // keeps the semantics it declares everywhere else.
-          values: capabilities.permissionModes.values.filter((d) =>
-            ids.includes(d.id as PermissionMode)
-          ),
+          values: capabilities.permissionModes.values.filter((d) => ids.includes(d.id)),
         },
       });
       fakeRuntime.getCapabilities.mockClear();
@@ -386,7 +384,7 @@ describe('Sessions Routes', () => {
         runtimeModes: ['default', 'acceptEdits', 'plan', 'bypassPermissions', 'auto'],
         asked: 'dontAsk',
       },
-    ] as { runtimeModes: PermissionMode[]; asked: PermissionMode }[])(
+    ] as { runtimeModes: PermissionModeId[]; asked: PermissionModeId }[])(
       'returns 400 for a permission mode the runtime does not declare ($asked)',
       async ({ runtimeModes, asked }) => {
         declareModes(runtimeModes);
@@ -505,23 +503,23 @@ describe('Sessions Routes', () => {
     // land in exactly the same place.
     describe('the autonomy door', () => {
       /** The id of whichever mode this runtime declares at the autonomy stop. */
-      function autonomyModeId(): PermissionMode {
+      function autonomyModeId(): PermissionModeId {
         const descriptor = fakeRuntime
           .getCapabilities()
           .permissionModes.values.find((d) => d.stop === 'autonomy');
         if (!descriptor) throw new Error('the fake runtime declares no autonomy stop');
         fakeRuntime.getCapabilities.mockClear();
-        return descriptor.id as PermissionMode;
+        return descriptor.id;
       }
 
       /** The id of a mode that stops to ask — anything but the autonomy stop. */
-      function nonAutonomyModeId(): PermissionMode {
+      function nonAutonomyModeId(): PermissionModeId {
         const descriptor = fakeRuntime
           .getCapabilities()
           .permissionModes.values.find((d) => d.stop !== 'autonomy');
         if (!descriptor) throw new Error('the fake runtime declares only an autonomy stop');
         fakeRuntime.getCapabilities.mockClear();
-        return descriptor.id as PermissionMode;
+        return descriptor.id;
       }
 
       beforeEach(() => {
@@ -630,7 +628,7 @@ describe('Sessions Routes', () => {
       // from the declared semantics rather than from that id.
       describe('a middle stop that never asks', () => {
         /** The id of whichever non-autonomy mode this runtime declares that never asks. */
-        function neverAskingMiddleModeId(): PermissionMode {
+        function neverAskingMiddleModeId(): PermissionModeId {
           const descriptor = fakeRuntime
             .getCapabilities()
             .permissionModes.values.find(
@@ -638,7 +636,7 @@ describe('Sessions Routes', () => {
             );
           if (!descriptor) throw new Error('the fake runtime declares no never-asking middle stop');
           fakeRuntime.getCapabilities.mockClear();
-          return descriptor.id as PermissionMode;
+          return descriptor.id;
         }
 
         it('refuses it when nothing acknowledges it', async () => {
