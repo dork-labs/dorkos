@@ -26,7 +26,7 @@ export function SkillPacksList({ projectPath }: SkillPacksListProps) {
   }
 
   if (error) {
-    return <p className="text-destructive py-2 text-xs">Failed to load skills.</p>;
+    return <p className="text-destructive py-2 text-xs">Couldn&rsquo;t load skills.</p>;
   }
 
   const skillPacks = packages?.filter((p) => p.type === 'skill-pack') ?? [];

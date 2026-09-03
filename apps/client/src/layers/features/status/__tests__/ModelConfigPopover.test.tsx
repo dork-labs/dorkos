@@ -420,7 +420,7 @@ describe('ModelConfigPopover', () => {
       }));
       render(<ModelConfigPopover {...defaultProps()} />);
       expect(screen.getByTestId('model-load-error')).toBeInTheDocument();
-      expect(screen.getByText('Failed to load models')).toBeInTheDocument();
+      expect(screen.getByText(/Couldn’t load the model list/)).toBeInTheDocument();
       expect(screen.getByText('Retry')).toBeInTheDocument();
     });
 

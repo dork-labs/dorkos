@@ -218,8 +218,8 @@ describe('useRemoveRoomMember', () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(mockToast.error).toHaveBeenCalledWith(
-      "Couldn't remove that agent — Only you can change who is in a room",
-      expect.anything()
+      "Couldn't remove that agent",
+      expect.objectContaining({ description: "Only you can change who is in a room" })
     );
   });
 
@@ -280,8 +280,8 @@ describe('useRemoveRoomMember', () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(mockToast.error).toHaveBeenCalledWith(
-      "Couldn't leave — Two agents share this room — take one of them out before you leave it",
-      expect.anything()
+      "Couldn't leave",
+      expect.objectContaining({ description: "Two agents share this room — take one of them out before you leave it" })
     );
   });
 
@@ -300,8 +300,8 @@ describe('useRemoveRoomMember', () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(mockToast.error).toHaveBeenCalledWith(
-      "Couldn't leave — You can't leave #team — it's your home channel",
-      expect.anything()
+      "Couldn't leave",
+      expect.objectContaining({ description: "You can't leave #team — it's your home channel" })
     );
   });
 });

@@ -155,23 +155,23 @@ describe('DeadLetterSection', () => {
   });
 
   describe('view sample action', () => {
-    it('shows "View Sample" button when sample is present', () => {
+    it('shows the "See one" button when a sample is present', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [hopLimitGroup], isLoading: false });
       render(<DeadLetterSection />);
-      expect(screen.getByText('View Sample')).toBeInTheDocument();
+      expect(screen.getByText('See one')).toBeInTheDocument();
     });
 
     it('does not show "View Sample" button when sample is absent', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [ttlGroup], isLoading: false });
       render(<DeadLetterSection />);
-      expect(screen.queryByText('View Sample')).not.toBeInTheDocument();
+      expect(screen.queryByText('See one')).not.toBeInTheDocument();
     });
 
     it('opens sample dialog when "View Sample" is clicked', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [hopLimitGroup], isLoading: false });
       render(<DeadLetterSection />);
-      fireEvent.click(screen.getByText('View Sample'));
-      expect(screen.getByText('Sample Envelope')).toBeInTheDocument();
+      fireEvent.click(screen.getByText('See one'));
+      expect(screen.getByText('What was sent')).toBeInTheDocument();
     });
   });
 
@@ -179,20 +179,20 @@ describe('DeadLetterSection', () => {
     it('shows "Mark Resolved" button on each card', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [hopLimitGroup], isLoading: false });
       render(<DeadLetterSection />);
-      expect(screen.getByText('Mark Resolved')).toBeInTheDocument();
+      expect(screen.getByText('Clear these')).toBeInTheDocument();
     });
 
     it('opens confirmation dialog when "Mark Resolved" is clicked', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [hopLimitGroup], isLoading: false });
       render(<DeadLetterSection />);
-      fireEvent.click(screen.getByText('Mark Resolved'));
+      fireEvent.click(screen.getByText('Clear these'));
       expect(screen.getByText('Mark dead letters as resolved?')).toBeInTheDocument();
     });
 
     it('shows count, source, and reason in the confirmation dialog', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [hopLimitGroup], isLoading: false });
       render(<DeadLetterSection />);
-      fireEvent.click(screen.getByText('Mark Resolved'));
+      fireEvent.click(screen.getByText('Clear these'));
       // The description text is split across multiple DOM nodes due to JSX interpolation
       const _description = screen.getByRole('alertdialog').querySelector('[id^="radix-"]');
       const descText =
@@ -209,7 +209,7 @@ describe('DeadLetterSection', () => {
         isLoading: false,
       });
       render(<DeadLetterSection />);
-      fireEvent.click(screen.getByText('Mark Resolved'));
+      fireEvent.click(screen.getByText('Clear these'));
       const descText =
         screen.getByText('Mark dead letters as resolved?').closest('[role="alertdialog"]')
           ?.textContent ?? '';
@@ -220,7 +220,7 @@ describe('DeadLetterSection', () => {
     it('calls dismiss mutation after confirming in the dialog', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [hopLimitGroup], isLoading: false });
       render(<DeadLetterSection />);
-      fireEvent.click(screen.getByText('Mark Resolved'));
+      fireEvent.click(screen.getByText('Clear these'));
       // Click the "Mark Resolved" action button inside the dialog
       const dialogActions = screen.getAllByText('Mark Resolved');
       fireEvent.click(dialogActions[dialogActions.length - 1]);
@@ -233,7 +233,7 @@ describe('DeadLetterSection', () => {
     it('does not call dismiss mutation when Cancel is clicked', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [hopLimitGroup], isLoading: false });
       render(<DeadLetterSection />);
-      fireEvent.click(screen.getByText('Mark Resolved'));
+      fireEvent.click(screen.getByText('Clear these'));
       fireEvent.click(screen.getByText('Cancel'));
       expect(mockDismissMutate).not.toHaveBeenCalled();
     });
@@ -245,7 +245,7 @@ describe('DeadLetterSection', () => {
       });
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [hopLimitGroup], isLoading: false });
       render(<DeadLetterSection />);
-      expect(screen.getByText('Mark Resolved').closest('button')).toBeDisabled();
+      expect(screen.getByText('Clear these').closest('button')).toBeDisabled();
     });
   });
 

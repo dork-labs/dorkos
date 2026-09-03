@@ -98,14 +98,15 @@ function AggregatedCard({ group }: AggregatedCardProps) {
                 onClick={() => setSampleOpen(true)}
               >
                 <Eye className="mr-1 size-3" />
-                View Sample
+                See one
               </Button>
               <Dialog open={sampleOpen} onOpenChange={setSampleOpen}>
                 <DialogContent className="max-w-lg">
                   <DialogHeader>
-                    <DialogTitle>Sample Envelope</DialogTitle>
+                    <DialogTitle>What was sent</DialogTitle>
                     <DialogDescription>
-                      Representative failure from {group.source} ({reasonConfig.label})
+                      One of the messages from {group.source} that never arrived (
+                      {reasonConfig.label})
                     </DialogDescription>
                   </DialogHeader>
                   <pre className="bg-muted max-h-80 overflow-auto rounded-md p-3 font-mono text-xs">
@@ -124,16 +125,16 @@ function AggregatedCard({ group }: AggregatedCardProps) {
                 disabled={dismissMutation.isPending}
               >
                 <Trash2 className="mr-1 size-3" />
-                Mark Resolved
+                Clear these
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Mark dead letters as resolved?</AlertDialogTitle>
+                <AlertDialogTitle>Clear these messages?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will dismiss {group.count} dead letter{group.count !== 1 ? 's' : ''} from{' '}
-                  <span className="font-medium">{group.source}</span> ({reasonConfig.label}). This
-                  action cannot be undone.
+                  This clears {group.count} message{group.count !== 1 ? 's' : ''} from{' '}
+                  <span className="font-medium">{group.source}</span> ({reasonConfig.label}).
+                  Clearing them does not send them, and you cannot undo it.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -143,7 +144,7 @@ function AggregatedCard({ group }: AggregatedCardProps) {
                     dismissMutation.mutate({ source: group.source, reason: group.reason })
                   }
                 >
-                  Mark Resolved
+                  Clear these
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>

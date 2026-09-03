@@ -278,7 +278,7 @@ function TopologyGraphInner({
     return (
       <QueryErrorState
         className="h-full"
-        title="Could not load the topology"
+        title="Couldn’t draw the map of your agents"
         description="The mesh API is unreachable. Check that the server is running."
         onRetry={() => void refetch()}
       />

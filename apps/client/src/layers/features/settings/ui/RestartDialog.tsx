@@ -40,7 +40,10 @@ export function RestartDialog({ open, onOpenChange, onRestartComplete }: Restart
       onOpenChange(false);
       onRestartComplete();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to restart server');
+      toast.error("Couldn't restart DorkOS.", {
+        description:
+          err instanceof Error ? err.message : 'It is still running, so try the button again.',
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -50,15 +53,15 @@ export function RestartDialog({ open, onOpenChange, onRestartComplete }: Restart
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Restart Server</AlertDialogTitle>
+          <AlertDialogTitle>Restart DorkOS</AlertDialogTitle>
           <AlertDialogDescription>
-            This will restart the DorkOS server. All active sessions will be interrupted.
+            DorkOS starts again in a few seconds. Anything running right now stops.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction disabled={isSubmitting} onClick={handleRestart}>
-            {isSubmitting ? 'Restarting...' : 'Restart Server'}
+            {isSubmitting ? 'Restarting…' : 'Restart DorkOS'}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

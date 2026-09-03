@@ -292,7 +292,9 @@ function LocalTokenAuthRow({
     try {
       await onReveal();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to fetch the local MCP token');
+      toast.error("Couldn't show the token.", {
+        description: err instanceof Error ? err.message : 'Try again in a moment.',
+      });
     } finally {
       setIsRevealing(false);
     }
@@ -304,7 +306,9 @@ function LocalTokenAuthRow({
       await onRotate();
       setConfirmOpen(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to rotate the local MCP token');
+      toast.error("Couldn't make a new token.", {
+        description: err instanceof Error ? err.message : 'The old one still works.',
+      });
     } finally {
       setIsRotating(false);
     }

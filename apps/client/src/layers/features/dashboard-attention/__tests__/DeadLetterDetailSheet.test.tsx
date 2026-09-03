@@ -25,7 +25,10 @@ vi.mock('@/layers/entities/relay', () => ({
 
 // Mock Sheet components — they use portals which don't work in jsdom.
 // Render children directly so test assertions work against rendered content.
-vi.mock('@/layers/shared/ui', () => ({
+// Everything else comes through untouched, so the real Collapsible (and any
+// primitive this sheet reaches for next) behaves as it does in the app.
+vi.mock('@/layers/shared/ui', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/ui')>()),
   Sheet: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   SheetContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   SheetHeader: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -132,32 +135,43 @@ describe('DeadLetterDetailSheet', () => {
     });
   });
 
-  it('renders "This item has been resolved" when group is not found', () => {
+  it('renders the already-cleared line when group is not found', () => {
     renderSheet({ deadLetters: [] });
-    expect(screen.getByText('This item has been resolved.')).toBeInTheDocument();
+    expect(screen.getByText('These are cleared already.')).toBeInTheDocument();
   });
 
-  it('renders "This item has been resolved" when deadLetters data is undefined', () => {
+  it('renders the already-cleared line when deadLetters data is undefined', () => {
     renderSheet({ deadLetters: undefined });
-    expect(screen.getByText('This item has been resolved.')).toBeInTheDocument();
+    expect(screen.getByText('These are cleared already.')).toBeInTheDocument();
   });
 
-  it('renders "This item has been resolved" when itemId does not match any group', () => {
+  it('renders the already-cleared line when itemId does not match any group', () => {
     renderSheet({
       itemId: 'other-adapter::timeout',
       deadLetters: [makeDeadLetterGroup()],
     });
-    expect(screen.getByText('This item has been resolved.')).toBeInTheDocument();
+    expect(screen.getByText('These are cleared already.')).toBeInTheDocument();
   });
 
+  // Plain words, not message-broker words (DOR-1755). This sheet opens straight
+  // off Home, so "undeliverable" was one of the first nouns a new person met.
   it('renders message count when group is found', () => {
     renderSheet({ deadLetters: [makeDeadLetterGroup({ count: 5 })] });
-    expect(screen.getByText('5 undeliverable messages')).toBeInTheDocument();
+    expect(screen.getByText(/5 messages couldn’t be delivered/)).toBeInTheDocument();
+    expect(screen.queryByText(/undeliverable/i)).not.toBeInTheDocument();
   });
 
   it('uses singular form for a single message', () => {
     renderSheet({ deadLetters: [makeDeadLetterGroup({ count: 1 })] });
-    expect(screen.getByText('1 undeliverable message')).toBeInTheDocument();
+    expect(screen.getByText(/1 message couldn’t be delivered/)).toBeInTheDocument();
+  });
+
+  it('says what these are and what clearing does', () => {
+    renderSheet({ deadLetters: [makeDeadLetterGroup()] });
+    expect(
+      screen.getByText(/meant for an agent and never got there/)
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Clearing them does not send them/)).toBeInTheDocument();
   });
 
   it('renders the group reason as a badge', () => {
@@ -170,11 +184,9 @@ describe('DeadLetterDetailSheet', () => {
     const lastSeen = new Date(Date.now() - 30 * 60 * 1000).toISOString();
     renderSheet({ deadLetters: [makeDeadLetterGroup({ firstSeen, lastSeen })] });
 
-    expect(screen.getByText(/First seen:/)).toBeInTheDocument();
-    expect(screen.getByText(/Last seen:/)).toBeInTheDocument();
     // firstSeen is 2h ago, lastSeen is 30m ago
-    expect(screen.getByText(/First seen: 2h ago/)).toBeInTheDocument();
-    expect(screen.getByText(/Last seen: 30m ago/)).toBeInTheDocument();
+    expect(screen.getByText(/First happened 2h ago/)).toBeInTheDocument();
+    expect(screen.getByText(/Last happened 30m ago/)).toBeInTheDocument();
   });
 
   it('renders source in the sheet description', () => {
@@ -182,36 +194,42 @@ describe('DeadLetterDetailSheet', () => {
     expect(screen.getByText('telegram-adapter')).toBeInTheDocument();
   });
 
-  it('renders sample payload when group has a sample', () => {
+  it('folds the example away, and still carries it', () => {
     const sample = { type: 'message', text: 'Hello' };
     renderSheet({ deadLetters: [makeDeadLetterGroup({ sample })] });
-    expect(screen.getByText('Sample payload')).toBeInTheDocument();
-    const pre = screen.getByText('Sample payload').parentElement?.querySelector('pre');
+    // The raw JSON is behind a closed disclosure now: useful to whoever wants
+    // it, noise to everyone else (DOR-1755).
+    const trigger = screen.getByRole('button', { name: 'What one of them looked like' });
+    expect(trigger).toHaveAttribute('data-state', 'closed');
+
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute('data-state', 'open');
+    const pre = document.querySelector('pre');
     expect(pre).toBeTruthy();
     expect(pre!.textContent).toContain('"type": "message"');
   });
 
-  it('does not render sample payload section when sample is absent', () => {
+  it('does not render the example section when there is no sample', () => {
     renderSheet({ deadLetters: [makeDeadLetterGroup({ sample: undefined })] });
-    expect(screen.queryByText('Sample payload')).not.toBeInTheDocument();
+    expect(screen.queryByText('What one of them looked like')).not.toBeInTheDocument();
   });
 
-  it('renders Dismiss Group button when group is found', () => {
+  it('renders Clear these button when group is found', () => {
     renderSheet({ deadLetters: [makeDeadLetterGroup()] });
-    expect(screen.getByRole('button', { name: 'Dismiss Group' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Clear these' })).toBeInTheDocument();
   });
 
-  it('does not render Dismiss Group button when group is not found', () => {
+  it('does not render Clear these button when group is not found', () => {
     renderSheet({ deadLetters: [] });
-    expect(screen.queryByRole('button', { name: 'Dismiss Group' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Clear these' })).not.toBeInTheDocument();
   });
 
-  it('calls dismiss mutation with source and reason when Dismiss Group is clicked', () => {
+  it('calls dismiss mutation with source and reason when Clear these is clicked', () => {
     renderSheet({
       deadLetters: [makeDeadLetterGroup({ source: 'telegram-adapter', reason: 'hop_limit' })],
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Dismiss Group' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear these' }));
 
     expect(mockDismissMutate).toHaveBeenCalledWith(
       { source: 'telegram-adapter', reason: 'hop_limit' },
@@ -226,7 +244,7 @@ describe('DeadLetterDetailSheet', () => {
       deadLetters: [makeDeadLetterGroup()],
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Dismiss Group' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear these' }));
 
     // Extract and invoke the onSuccess callback passed to mutate
     const [, { onSuccess }] = mockDismissMutate.mock.calls[0] as [
@@ -238,14 +256,14 @@ describe('DeadLetterDetailSheet', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it('disables Dismiss Group button when mutation is pending', () => {
+  it('disables Clear these button when mutation is pending', () => {
     mockUseDismissDeadLetterGroup.mockReturnValue({
       mutate: mockDismissMutate,
       isPending: true,
     });
     renderSheet({ deadLetters: [makeDeadLetterGroup()] });
 
-    expect(screen.getByRole('button', { name: 'Dismissing...' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Clearing…' })).toBeDisabled();
   });
 
   it('renders Close button', () => {
@@ -272,6 +290,6 @@ describe('DeadLetterDetailSheet', () => {
   it('parses itemId compound key correctly when source contains no double colon', () => {
     const group = makeDeadLetterGroup({ source: 'slack-bot', reason: 'timeout' });
     renderSheet({ itemId: 'slack-bot::timeout', deadLetters: [group] });
-    expect(screen.getByText('3 undeliverable messages')).toBeInTheDocument();
+    expect(screen.getByText(/3 messages couldn’t be delivered/)).toBeInTheDocument();
   });
 });

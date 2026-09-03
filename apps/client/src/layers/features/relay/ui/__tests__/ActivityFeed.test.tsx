@@ -510,18 +510,18 @@ describe('ActivityFeed', () => {
       expect(screen.queryByTestId('dead-letter-section')).not.toBeInTheDocument();
     });
 
-    it('renders the "Dead Letters" toggle button', () => {
+    it('renders the "Never arrived" toggle button', () => {
       mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={true} />);
 
-      expect(screen.getByRole('button', { name: 'Show dead letters' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Show messages that never arrived' })).toBeInTheDocument();
     });
 
     it('shows DeadLetterSection when failures toggle is clicked', () => {
       mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={true} />);
 
-      fireEvent.click(screen.getByRole('button', { name: 'Show dead letters' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Show messages that never arrived' }));
 
       const section = screen.getByTestId('dead-letter-section');
       expect(section).toBeInTheDocument();
@@ -532,7 +532,7 @@ describe('ActivityFeed', () => {
       mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={true} />);
 
-      const toggle = screen.getByRole('button', { name: 'Show dead letters' });
+      const toggle = screen.getByRole('button', { name: 'Show messages that never arrived' });
       fireEvent.click(toggle);
       expect(screen.getByTestId('dead-letter-section')).toBeInTheDocument();
 
@@ -544,7 +544,7 @@ describe('ActivityFeed', () => {
       mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={false} />);
 
-      fireEvent.click(screen.getByRole('button', { name: 'Show dead letters' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Show messages that never arrived' }));
 
       const section = screen.getByTestId('dead-letter-section');
       expect(section).toHaveAttribute('data-enabled', 'false');
@@ -559,9 +559,9 @@ describe('ActivityFeed', () => {
       render(<ActivityFeed enabled={true} />);
 
       // Dead letters auto-open the section; user manually closes it to reveal the badge.
-      fireEvent.click(screen.getByRole('button', { name: 'Show dead letters' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Show messages that never arrived' }));
 
-      const toggle = screen.getByRole('button', { name: 'Show dead letters' });
+      const toggle = screen.getByRole('button', { name: 'Show messages that never arrived' });
       const redDot = toggle.querySelector('.bg-red-500');
       expect(redDot).toBeInTheDocument();
     });
@@ -575,7 +575,7 @@ describe('ActivityFeed', () => {
       render(<ActivityFeed enabled={true} />);
 
       // Dead letters auto-open the section; user closes then re-opens — badge is gone when open.
-      const toggle = screen.getByRole('button', { name: 'Show dead letters' });
+      const toggle = screen.getByRole('button', { name: 'Show messages that never arrived' });
       fireEvent.click(toggle); // close
       fireEvent.click(toggle); // re-open
 
@@ -596,7 +596,7 @@ describe('ActivityFeed', () => {
       const { container } = render(<ActivityFeed enabled={true} />);
 
       // No dead letters — section is closed by default. Click opens it.
-      fireEvent.click(screen.getByRole('button', { name: 'Show dead letters' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Show messages that never arrived' }));
 
       // Verify the wrapper div that deadLetterRef would be attached to is in the DOM.
       const section = screen.getByTestId('dead-letter-section');

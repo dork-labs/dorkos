@@ -1,3 +1,4 @@
+import { ChevronRight } from 'lucide-react';
 import {
   Sheet,
   SheetContent,
@@ -7,6 +8,9 @@ import {
   SheetFooter,
   Badge,
   Button,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
   ScrollArea,
 } from '@/layers/shared/ui';
 import { useAggregatedDeadLetters, useDismissDeadLetterGroup } from '@/layers/entities/relay';
@@ -19,8 +23,15 @@ interface DeadLetterDetailSheetProps {
 }
 
 /**
- * Detail sheet for a dead letter group, showing message count, reason,
- * timestamps, sample payload, and a dismiss action.
+ * Detail sheet for a group of messages that never reached their agent, showing
+ * how many there were, why, when they happened, one example, and a way to clear
+ * them.
+ *
+ * The copy deliberately says none of "dead letter", "undeliverable", "payload"
+ * or "envelope" (DOR-1755). This sheet opens straight off Home, so it can be one
+ * of the first things a person sees, and message-broker vocabulary left them
+ * unable to tell whether anything was wrong, whose fault it was, or what
+ * clearing would do.
  */
 export function DeadLetterDetailSheet({ open, itemId, onClose }: DeadLetterDetailSheetProps) {
   const { data: deadLetters } = useAggregatedDeadLetters();
@@ -43,8 +54,10 @@ export function DeadLetterDetailSheet({ open, itemId, onClose }: DeadLetterDetai
     <Sheet open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
       <SheetContent side="right">
         <SheetHeader>
-          <SheetTitle>Dead Letters</SheetTitle>
-          <SheetDescription>{source ?? 'Unknown source'}</SheetDescription>
+          <SheetTitle>Messages that never arrived</SheetTitle>
+          <SheetDescription>
+            {source ?? 'We don’t know where these came from'}
+          </SheetDescription>
         </SheetHeader>
 
         <ScrollArea className="flex-1 px-4">
@@ -52,8 +65,12 @@ export function DeadLetterDetailSheet({ open, itemId, onClose }: DeadLetterDetai
             <div className="space-y-4">
               {/* Summary */}
               <div className="space-y-2">
+                <p className="text-muted-foreground text-sm">
+                  These messages were meant for an agent and never got there. Clearing them does
+                  not send them.
+                </p>
                 <p className="text-foreground text-sm">
-                  {group.count} undeliverable message{group.count === 1 ? '' : 's'}
+                  {group.count} message{group.count === 1 ? '' : 's'} couldn&rsquo;t be delivered
                 </p>
                 <Badge variant="secondary">{group.reason}</Badge>
               </div>
@@ -61,26 +78,32 @@ export function DeadLetterDetailSheet({ open, itemId, onClose }: DeadLetterDetai
               {/* Timestamps */}
               <div className="space-y-1 text-sm">
                 <p className="text-muted-foreground">
-                  First seen: {formatCompactAge(group.firstSeen)} ago
+                  First happened {formatCompactAge(group.firstSeen)} ago
                 </p>
                 <p className="text-muted-foreground">
-                  Last seen: {formatCompactAge(group.lastSeen)} ago
+                  Last happened {formatCompactAge(group.lastSeen)} ago
                 </p>
               </div>
 
-              {/* Sample payload */}
+              {/* One example, folded away: it is raw JSON, useful to whoever
+                  wants it and noise to everyone else. */}
               {group.sample != null && (
-                <div className="space-y-1">
-                  <p className="text-muted-foreground text-xs font-medium">Sample payload</p>
-                  <pre className="bg-muted overflow-x-auto rounded-md p-3 font-mono text-xs">
-                    {JSON.stringify(group.sample, null, 2)}
-                  </pre>
-                </div>
+                <Collapsible>
+                  <CollapsibleTrigger className="text-muted-foreground hover:text-foreground group flex items-center gap-1 text-xs font-medium transition-colors">
+                    <ChevronRight className="size-3 transition-transform group-data-[state=open]:rotate-90" />
+                    What one of them looked like
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <pre className="bg-muted mt-1 overflow-x-auto rounded-md p-3 font-mono text-xs">
+                      {JSON.stringify(group.sample, null, 2)}
+                    </pre>
+                  </CollapsibleContent>
+                </Collapsible>
               )}
             </div>
           ) : (
             <p className="text-muted-foreground py-8 text-center text-sm">
-              This item has been resolved.
+              These are cleared already.
             </p>
           )}
         </ScrollArea>
@@ -92,7 +115,7 @@ export function DeadLetterDetailSheet({ open, itemId, onClose }: DeadLetterDetai
               onClick={handleDismiss}
               disabled={dismissMutation.isPending}
             >
-              {dismissMutation.isPending ? 'Dismissing...' : 'Dismiss Group'}
+              {dismissMutation.isPending ? 'Clearing…' : 'Clear these'}
             </Button>
           )}
           <Button variant="outline" onClick={onClose}>

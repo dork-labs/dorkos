@@ -496,8 +496,8 @@ describe('CreateAgentDialog', () => {
     const { toast } = await import('sonner');
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
-        "Couldn't create that agent — Agent already exists",
-        expect.anything()
+        "Couldn't create that agent",
+        expect.objectContaining({ description: "Agent already exists" })
       )
     );
   });

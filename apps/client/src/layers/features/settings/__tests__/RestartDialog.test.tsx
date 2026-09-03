@@ -44,12 +44,12 @@ describe('RestartDialog', () => {
 
   it('displays confirmation text about active sessions', () => {
     render(<RestartDialog {...defaultProps} />, { wrapper: Wrapper });
-    expect(screen.getByText(/active sessions will be interrupted/i)).toBeInTheDocument();
+    expect(screen.getByText(/Anything running right now stops/i)).toBeInTheDocument();
   });
 
   it('calls transport.restartServer on confirm', async () => {
     render(<RestartDialog {...defaultProps} />, { wrapper: Wrapper });
-    fireEvent.click(screen.getByRole('button', { name: /restart server/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Restart DorkOS' }));
     await waitFor(() => {
       expect(mockTransport.restartServer).toHaveBeenCalled();
     });
@@ -57,7 +57,7 @@ describe('RestartDialog', () => {
 
   it('calls onRestartComplete callback on success', async () => {
     render(<RestartDialog {...defaultProps} />, { wrapper: Wrapper });
-    fireEvent.click(screen.getByRole('button', { name: /restart server/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Restart DorkOS' }));
     await waitFor(() => {
       expect(defaultProps.onRestartComplete).toHaveBeenCalled();
     });

@@ -94,14 +94,25 @@ export function useOnboarding() {
         pendingSkipped.current.clear();
       });
     },
-    onError: (_err, patch) => {
+    onError: (err, patch) => {
       pendingCompleted.current.clear();
       pendingSkipped.current.clear();
-      const keys = Object.keys(patch).join(', ');
-      toast.error(`Failed to save onboarding progress (${keys})`);
+      // The field names go to the console and the breadcrumb trail, never to
+      // the toast (DOR-1755). This fires in the first minutes of the product,
+      // where a person has the least context: "Failed to save onboarding
+      // progress (completedSteps, dismissedAt)" named internal identifiers at
+      // someone who had not yet learned what DorkOS is.
+      console.error('[onboarding] could not save progress', {
+        fields: Object.keys(patch),
+        error: err,
+      });
+      toast.error("DorkOS couldn't save where you got to in setup.", {
+        description: 'You can keep going. It will try again.',
+      });
     },
-    // Names which fields failed to save — richer than the shared mutation
-    // toast's static label, so this opts out of it rather than duplicating it.
+    // The shared mutation toast would name the mutation, not the moment; this
+    // one is written for a first-run screen, so it opts out of the generic one
+    // rather than showing two.
     meta: { suppressErrorToast: true },
   });
 

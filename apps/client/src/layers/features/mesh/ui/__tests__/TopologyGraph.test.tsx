@@ -457,7 +457,7 @@ describe('TopologyGraph', () => {
 
       // Wait for async layout to settle before checking error state
       await waitFor(() => {
-        expect(screen.getByText('Could not load the topology')).toBeInTheDocument();
+        expect(screen.getByText(/Couldn’t draw the map of your agents/)).toBeInTheDocument();
       });
       expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
     });

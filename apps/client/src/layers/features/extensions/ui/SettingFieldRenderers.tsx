@@ -66,7 +66,7 @@ export function TextSettingRow({
       // No success toast: the field already shows the value that was just
       // saved — a toast on top of it would say the same thing twice.
     } catch {
-      toast.error(`Failed to save ${status.label}`);
+      toast.error(`Couldn't save ${status.label}. Try again.`);
     } finally {
       setSaving(false);
     }
@@ -124,7 +124,7 @@ export function NumberSettingRow({
       // No success toast: the field already shows the value that was just
       // saved — a toast on top of it would say the same thing twice.
     } catch {
-      toast.error(`Failed to save ${status.label}`);
+      toast.error(`Couldn't save ${status.label}. Try again.`);
     } finally {
       setSaving(false);
     }
@@ -186,7 +186,7 @@ export function BooleanSettingRow({
       // a toast on top of it would say the same thing twice.
       await onChanged();
     } catch {
-      toast.error(`Failed to update ${status.label}`);
+      toast.error(`Couldn't change ${status.label}. Try again.`);
     } finally {
       setSaving(false);
     }
@@ -235,7 +235,7 @@ export function SelectSettingRow({
       // just chosen — a toast on top of it would say the same thing twice.
       await onChanged();
     } catch {
-      toast.error(`Failed to update ${status.label}`);
+      toast.error(`Couldn't change ${status.label}. Try again.`);
     } finally {
       setSaving(false);
     }

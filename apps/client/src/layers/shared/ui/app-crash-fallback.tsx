@@ -42,7 +42,33 @@ export function AppCrashFallback({ error }: FallbackProps) {
       }}
     >
       <p style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem' }}>
-        DorkOS encountered an unexpected error.
+        DorkOS stopped. Sorry about that.
+      </p>
+      <p
+        style={{
+          fontSize: '0.8125rem',
+          opacity: 0.75,
+          maxWidth: '32rem',
+          textAlign: 'center',
+          marginBottom: '1rem',
+        }}
+      >
+        Reload to pick up where you left off. Nothing you did was lost.
+      </p>
+      {/* The raw error still ships, because it is what a person pastes into a
+          bug report — but it is labelled and it goes UNDER the sentence written
+          for them (DOR-1755). It used to be the only explanation on the screen,
+          so a crash read as `ENOENT: no such file or directory, open …`. */}
+      <p
+        style={{
+          fontSize: '0.6875rem',
+          opacity: 0.4,
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+          marginBottom: '0.25rem',
+        }}
+      >
+        Details
       </p>
       <p
         style={{
@@ -50,6 +76,7 @@ export function AppCrashFallback({ error }: FallbackProps) {
           opacity: 0.6,
           maxWidth: '32rem',
           textAlign: 'center',
+          overflowWrap: 'anywhere',
         }}
       >
         {message}
