@@ -236,7 +236,9 @@ function SomethingWrongSection() {
         <LiveRuntimeCard type="codex" expanded storesDefaults={false} />
       </ShowcaseDemo>
 
-      <ShowcaseLabel>A runtime this server has not registered, with its setup behind a section</ShowcaseLabel>
+      <ShowcaseLabel>
+        A runtime this server has not registered, with its setup behind a section
+      </ShowcaseLabel>
       <ShowcaseDemo>
         <LiveRuntimeCard
           type="opencode"
