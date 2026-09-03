@@ -452,6 +452,21 @@ describe('RoomFlow — thread reply rows', () => {
     expect(screen.queryByTestId('room-thread-replies')).not.toBeInTheDocument();
   });
 
+  it('draws a whole page of replies as one thread once their root rides along', () => {
+    // DOR-690, at the size it actually happened. A page of fifty replies to one
+    // much older root used to be fifty flat rows with nothing on them saying
+    // they answered anything; the page now arrives with the root in front of it
+    // (`listRoomEntries`), and fifty rows collapse to a message and its thread.
+    const root = entry(1);
+    const replies = Array.from({ length: 50 }, (_, i) => reply(152 + i, 1));
+
+    renderTimeline({ entries: [root, ...replies] });
+
+    expect(screen.getAllByTestId('room-entry')).toHaveLength(1);
+    expect(screen.getByTestId('room-thread-replies')).toHaveTextContent('50 replies');
+    expect(screen.queryByTestId('room-entry-orphan')).not.toBeInTheDocument();
+  });
+
   it('keeps the unread rule between two rows the reader can see', () => {
     // The cursor sits on the root; the only thing above it is a reply, which is
     // off the flow. The rule belongs before the next top-level entry.

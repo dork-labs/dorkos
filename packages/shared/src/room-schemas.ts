@@ -1566,9 +1566,30 @@ export const ThreadListResponseSchema = z
 
 export type ThreadListResponse = z.infer<typeof ThreadListResponseSchema>;
 
-/** The `GET /api/rooms/:id/entries` envelope, oldest-first within the page. */
+/**
+ * The `GET /api/rooms/:id/entries` envelope, oldest-first within the page.
+ *
+ * **A page is self-describing** (DOR-690): a thread is a relation between
+ * entries (ADR 260728-022013), so a reply is only drawable as a reply while the
+ * entry heading its thread is loaded too — and a busy room pushes that root out
+ * of the trailing page long before the replies stop arriving. `threadRoots`
+ * carries exactly the roots this page points at and does not contain, so a
+ * reader never has to ask a second time to know what it is looking at.
+ *
+ * The two arrays are separate rather than merged because they answer different
+ * questions: `entries` is the PAGE — what `before` and `limit` selected, and
+ * what a backwards cursor must be taken from — while `threadRoots` is context
+ * from outside it, always older than the page's own oldest entry.
+ */
 export const RoomEntryListResponseSchema = z
-  .object({ entries: z.array(RoomEntrySchema) })
+  .object({
+    entries: z.array(RoomEntrySchema),
+    threadRoots: z
+      .array(RoomEntrySchema)
+      .describe(
+        "The thread roots entries in this page reply to that the page itself does not hold, oldest first. Empty whenever every reply's root came back in the page. Never part of the page: each one sits below its oldest entry, so a `before=` cursor is read from `entries` alone."
+      ),
+  })
   .openapi('RoomEntryListResponse');
 
 export type RoomEntryListResponse = z.infer<typeof RoomEntryListResponseSchema>;

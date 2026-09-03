@@ -81,6 +81,7 @@ import type {
   RoomAttachment,
   RoomEntry,
   RoomEntryBody,
+  RoomEntryListResponse,
   RoomEntryReaction,
   RoomKind,
   RoomBridgeInfo,
@@ -2739,6 +2740,60 @@ export class RoomService {
   ): RoomEntry[] {
     this.requireVisibleRoom(roomId, viewerAuthorId);
     return this.withRollups(roomId, this.store.listEntries(roomId, opts));
+  }
+
+  /**
+   * A page of history together with the thread roots it points OUTSIDE itself —
+   * what a reader needs to draw the page as threads (DOR-690).
+   *
+   * **A thread is a relation between entries** (ADR 260728-022013), so a reply
+   * is only legible as a reply while the entry heading its thread is loaded
+   * beside it. A page is the room's trailing window, and a thread outlives one:
+   * the default page is 50 entries, so any thread whose root is older than that
+   * arrived as a run of flat rows with nothing saying they answered anything —
+   * and the busier the room, the sooner it happened.
+   *
+   * **The page fetches them, rather than the reader asking a second time.** The
+   * alternative — the client collecting the ids it is missing and calling back
+   * — costs a round trip on the render path and a second cache beside the one
+   * the room's live stream owns, to answer a question this call already has the
+   * rows for. Here it is one indexed read by id, bounded by the page size,
+   * skipped entirely when the page is self-contained.
+   *
+   * **No root reaches a reader that the page itself could not have.** They are
+   * read by id from THIS room, and the gate above them is the same
+   * `requireVisibleRoom` the page passed — the same rows `before=` would have
+   * served this caller anyway, one page further back.
+   *
+   * @param roomId - The room.
+   * @param viewerAuthorId - The caller; must be on the roster.
+   * @param opts.before - Return entries with `seq` below this.
+   * @param opts.limit - Page size. Bounds the page, and with it the roots.
+   * @returns The page, and the roots it references but does not contain — each
+   *   one older than the page's own oldest entry, since a root the page's seq
+   *   range covers is already in the page.
+   */
+  listEntryPage(
+    roomId: string,
+    viewerAuthorId: string,
+    opts: { before?: number; limit: number }
+  ): RoomEntryListResponse {
+    const entries = this.listEntries(roomId, viewerAuthorId, opts);
+    const paged = new Set(entries.map((entry) => entry.id));
+    const missing = new Set<string>();
+    for (const entry of entries) {
+      // The SCOPE before the RELATION, exactly as the client's own placement
+      // reads it (`threadRootIdOf`): grouping is by the entry heading the
+      // thread, so a root resolved from anything else is a row the timeline
+      // would never hang this reply under.
+      const rootId = entry.threadRootEntryId ?? entry.parentEntryId;
+      if (rootId !== null && !paged.has(rootId)) missing.add(rootId);
+    }
+    if (missing.size === 0) return { entries, threadRoots: [] };
+    return {
+      entries,
+      threadRoots: this.withRollups(roomId, this.store.listEntriesByIds(roomId, [...missing])),
+    };
   }
 
   /**
