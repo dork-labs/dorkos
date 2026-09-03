@@ -1,11 +1,11 @@
 import { Button } from '@/layers/shared/ui';
 
 interface RelayEmptyStateProps {
-  /** Called when the user clicks the keystone "Add Integration" action. */
+  /** Called when the user clicks the keystone "Add a connection" action. */
   onAddIntegration: () => void;
 }
 
-/** Full-bleed ghost preview empty state for Relay Mode A (no integrations configured). */
+/** Full-bleed ghost preview empty state for Relay Mode A (no connections set up). */
 export function RelayEmptyState({ onAddIntegration }: RelayEmptyStateProps) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-6 py-16">
@@ -57,17 +57,15 @@ export function RelayEmptyState({ onAddIntegration }: RelayEmptyStateProps) {
         </div>
       </div>
 
-      {/* Copy: What, Why, Next */}
+      {/* Headline, one line of why, one action — the second paragraph said
+          what the button already says. */}
       <h3 className="mb-2 text-lg font-medium">Connect your agents to the world</h3>
-      <p className="text-muted-foreground mb-1 max-w-sm text-center text-sm">
-        Relay routes messages between your agents and external platforms.
-      </p>
       <p className="text-muted-foreground mb-6 max-w-sm text-center text-sm">
-        Add your first integration to start sending and receiving messages.
+        Connections let people and platforms reach your agents.
       </p>
 
       {/* Keystone action */}
-      <Button onClick={onAddIntegration}>Add Integration</Button>
+      <Button onClick={onAddIntegration}>Add a connection</Button>
     </div>
   );
 }

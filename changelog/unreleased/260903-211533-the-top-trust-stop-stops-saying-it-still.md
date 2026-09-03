@@ -5,6 +5,4 @@ covers:
 
 ### Fixed
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
-
-- The top trust stop stops saying it still asks (DOR-1754)
+- The strongest permission setting used to say it "still asks when it matters", which sounded just like the safer setting next to it. It now says plainly that it will not stop to ask you, even for risky steps.

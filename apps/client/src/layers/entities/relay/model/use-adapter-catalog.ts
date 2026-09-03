@@ -74,7 +74,7 @@ export function useRemoveAdapter() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [...CATALOG_KEY] });
       queryClient.invalidateQueries({ queryKey: [...ADAPTERS_KEY] });
-      toast.success('Adapter removed');
+      toast.success('Connection removed');
     },
     onError: (error) => {
       toast.error(getErrorMessage(error));

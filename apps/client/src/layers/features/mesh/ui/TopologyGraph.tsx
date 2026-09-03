@@ -302,12 +302,16 @@ function TopologyGraphInner({
       {/* Screen-reader summary. Also names the keyboard-accessible path to
           creating a connection: canvas binding is drag-only (no keyboard
           equivalent — see PR notes), so assistive-tech users are pointed at the
-          agent's Connections section, which is fully keyboard-operable. */}
+          agent's Connections section, which is fully keyboard-operable.
+
+          "Platform" is this graph's word for an adapter node, never
+          "connection": the EDGE is the connection here (ADR 260804-021140's
+          viewport test), and one word cannot mean both inside one canvas. */}
       <div id="topology-graph-summary" className="sr-only">
-        Network topology: {agentCount} agent{agentCount !== 1 ? 's' : ''}, {adapterCount} adapter
-        {adapterCount !== 1 ? 's' : ''}, {bindingCount} binding{bindingCount !== 1 ? 's' : ''}. To
-        create a connection between an adapter and an agent with the keyboard, use the agent&apos;s
-        Connections section.
+        Network topology: {agentCount} agent{agentCount !== 1 ? 's' : ''}, {adapterCount} platform
+        {adapterCount !== 1 ? 's' : ''}, {bindingCount} connection{bindingCount !== 1 ? 's' : ''}.
+        To connect a platform to an agent with the keyboard, use the agent&apos;s Connections
+        section.
       </div>
       <ReactFlow
         nodes={layoutedNodes}
@@ -374,12 +378,12 @@ function TopologyGraphInner({
       {/* Contextual hints for adapter/binding onboarding */}
       {relayEnabled && hasAgents && !hasAdapters && (
         <div className="bg-muted/80 text-muted-foreground pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-md px-3 py-1.5 text-xs">
-          Add adapters from the Relay panel to connect them to agents
+          Add a platform in Messaging, then connect it to an agent
         </div>
       )}
       {hasAdapters && hasAgents && !hasBindings && (
         <div className="bg-muted/80 text-muted-foreground pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-md px-3 py-1.5 text-xs">
-          Drag from an adapter to an agent to create a connection
+          Drag from a platform to an agent to connect them
         </div>
       )}
       {/* Subtle re-layout indicator — canvas stays mounted so the viewport is preserved. */}

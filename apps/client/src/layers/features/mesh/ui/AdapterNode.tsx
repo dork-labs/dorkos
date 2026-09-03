@@ -80,7 +80,7 @@ function AdapterCompactPill({
         'bg-card flex w-[120px] items-center gap-1.5 rounded-full border px-2.5 py-1 shadow-sm',
         selected && 'ring-primary ring-2'
       )}
-      aria-label={`Adapter: ${d.adapterName}, status ${d.adapterStatus}`}
+      aria-label={`${d.adapterName}, ${d.adapterType}, status ${d.adapterStatus}`}
     >
       <Handle type="source" position={Position.Right} isConnectable />
       <span className={cn('size-2 shrink-0 rounded-full', statusColor)} />
@@ -109,11 +109,11 @@ function AdapterDefaultCard({
         selected && 'ring-primary ring-2'
       )}
       style={{ width: ADAPTER_NODE_WIDTH, minHeight: ADAPTER_NODE_HEIGHT }}
-      aria-label={`Adapter: ${d.adapterName}, status ${d.adapterStatus}`}
+      aria-label={`${d.adapterName}, ${d.adapterType}, status ${d.adapterStatus}`}
     >
       <Handle type="source" position={Position.Right} isConnectable />
 
-      {/* Header row: status dot + icon + name + type badge */}
+      {/* Header row: status dot + platform icon + name */}
       <div className="flex items-center gap-2">
         <span className={cn('size-2.5 shrink-0 rounded-full', statusColor)} />
         <PlatformIcon adapterType={d.adapterType} />
@@ -125,9 +125,6 @@ function AdapterDefaultCard({
             <span className="text-muted-foreground truncate text-xs">{d.adapterName}</span>
           )}
         </div>
-        <Badge variant="outline" className="text-muted-foreground text-3xs ml-auto shrink-0">
-          Adapter
-        </Badge>
       </div>
 
       {/* Footer row: type label + binding count badge */}
@@ -165,10 +162,10 @@ function AdapterNodeInner({ data, selected }: NodeProps) {
         }}
         role="button"
         tabIndex={0}
-        aria-label="Add adapter"
+        aria-label="Add a platform"
       >
         <Plus className="text-muted-foreground size-4" />
-        <span className="text-muted-foreground text-sm">Add Adapter</span>
+        <span className="text-muted-foreground text-sm">Add a platform</span>
       </div>
     );
   }

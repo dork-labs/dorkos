@@ -163,6 +163,10 @@ function ContextBlockSection({
  *
  * Displays toggle switches for each tool context block (relay, mesh, adapter)
  * with read-only previews of the XML content injected into agent system prompts.
+ *
+ * The labels are the plain names the Settings Tools tab uses for the same three
+ * groups (`settings/config/tool-inventory.ts`) — never the subsystem behind
+ * them, which ADR 260804-021140 keeps out of the app's chrome.
  */
 export function ContextTab() {
   const relayEnabled = useRelayEnabled();
@@ -185,18 +189,18 @@ export function ContextTab() {
       <FieldCard>
         <FieldCardContent>
           <ContextBlockSection
-            label="Relay Tools"
-            description="Subject hierarchy, messaging workflows, and error codes for the Relay message bus."
+            label="Messaging"
+            description="How to send messages, where to send them, and what the errors mean."
             enabled={config.relayTools}
             available={relayEnabled}
-            unavailableReason="Relay is disabled"
+            unavailableReason="Messaging is off"
             onToggle={(v) => handleToggle('relayTools', v)}
             preview={RELAY_PREVIEW}
           />
 
           <ContextBlockSection
-            label="Mesh Tools"
-            description="Agent lifecycle, discovery workflow, and cross-tool orchestration with Relay."
+            label="Agent discovery"
+            description="How to find other agents, register new ones, and work with them."
             enabled={config.meshTools}
             available={true}
             onToggle={(v) => handleToggle('meshTools', v)}
@@ -204,11 +208,11 @@ export function ContextTab() {
           />
 
           <ContextBlockSection
-            label="Adapter Tools"
-            description="External platform subjects, adapter management, and binding routing conventions."
+            label="Connection management"
+            description="How to set up Telegram, Slack and webhooks, and route each chat to an agent."
             enabled={config.adapterTools}
             available={relayEnabled}
-            unavailableReason="Relay is disabled"
+            unavailableReason="Messaging is off"
             onToggle={(v) => handleToggle('adapterTools', v)}
             preview={ADAPTER_PREVIEW}
           />

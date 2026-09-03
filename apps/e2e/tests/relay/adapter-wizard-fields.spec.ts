@@ -68,7 +68,7 @@ function wizard(page: Page) {
  * Opens Configure on one already-added adapter.
  *
  * Every per-adapter action moved behind a kebab menu whose label reads
- * "Adapter actions" on every card (DOR-857), so there is no longer a
+ * "Connection actions" on every card (DOR-857), so there is no longer a
  * "Configure <name>" button to click and nothing in the menu distinguishes one
  * card from another. The card's own test id is what picks the right one.
  *
@@ -77,7 +77,7 @@ function wizard(page: Page) {
 async function openConfigure(page: Page, adapterId: string) {
   const card = page.getByTestId(`adapter-card-${adapterId}`);
   await expect(card).toBeVisible();
-  await card.getByRole('button', { name: 'Adapter actions' }).click();
+  await card.getByRole('button', { name: 'Connection actions' }).click();
   await page.getByRole('menuitem', { name: 'Configure' }).click();
 }
 

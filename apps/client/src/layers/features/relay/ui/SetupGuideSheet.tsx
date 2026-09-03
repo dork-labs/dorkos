@@ -37,7 +37,7 @@ export function SetupGuideSheet({ open, onOpenChange, title, content }: SetupGui
             {title} Setup Guide
           </SheetTitle>
           <SheetDescription>
-            Step-by-step instructions for configuring this adapter.
+            Step-by-step instructions for setting up this connection.
           </SheetDescription>
         </SheetHeader>
         <div className="mt-4 px-4">

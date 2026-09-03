@@ -277,10 +277,10 @@ export function BindingDialog({
                     /* Create mode: adapter and agent pickers */
                     <>
                       <div className="space-y-1.5">
-                        <Label htmlFor="binding-adapter">Adapter</Label>
+                        <Label htmlFor="binding-adapter">Connection</Label>
                         {adapterOptions.length === 0 ? (
                           <p className="text-muted-foreground border-input rounded-md border px-3 py-2 text-sm opacity-50">
-                            No adapters configured
+                            No connections set up yet
                           </p>
                         ) : (
                           <form.AppField name="adapterId">
@@ -293,7 +293,7 @@ export function BindingDialog({
                                 }}
                               >
                                 <SelectTrigger id="binding-adapter" className="w-full">
-                                  <SelectValue placeholder="Select an adapter" />
+                                  <SelectValue placeholder="Pick a connection" />
                                 </SelectTrigger>
                                 <SelectContent>
                                   {adapterOptions.map((opt) => (

@@ -216,7 +216,7 @@ export function BindingAdvancedSection({
               data-testid="trust-dial-unavailable"
               className="text-muted-foreground px-1 text-xs leading-relaxed"
             >
-              This integration is set to “{modeLabel}”. The agent behind it hasn’t said what it can
+              This connection is set to “{modeLabel}”. The agent behind it hasn’t said what it can
               do, so there is nothing to choose from yet — saving keeps it as it is.
             </p>
           ) : (
@@ -230,8 +230,8 @@ export function BindingAdvancedSection({
                 strandsWorkingMode
                 strandedNote={
                   <>
-                    This integration is set to “{modeLabel}”, which is not one of these. Saving
-                    keeps it as it is — pick a stop to change it.
+                    This connection is set to “{modeLabel}”, which is not one of these. Saving keeps
+                    it as it is — pick a stop to change it.
                   </>
                 }
               />

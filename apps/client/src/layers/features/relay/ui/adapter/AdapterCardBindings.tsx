@@ -112,7 +112,7 @@ export function AdapterCardBindings({
               className="text-muted-foreground hover:text-foreground mt-1 h-6 gap-1 px-2 text-xs"
             >
               <Plus className="size-3" />
-              Add integration
+              Add connection
             </Button>
           </QuickBindingPopover>
         </>
@@ -129,7 +129,7 @@ export function AdapterCardBindings({
             className="mt-1 h-6 gap-1 px-2 text-xs text-amber-600 hover:bg-amber-50 hover:text-amber-700 dark:text-amber-500 dark:hover:bg-amber-950"
           >
             <Plus className="size-3" />
-            Add integration
+            Add connection
           </Button>
         </QuickBindingPopover>
       ) : null}

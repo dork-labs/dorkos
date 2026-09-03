@@ -44,9 +44,9 @@ describe('ContextTab', () => {
 
   it('renders all three toggle sections', () => {
     const view = renderTab();
-    expect(view.getByText('Relay Tools')).toBeInTheDocument();
-    expect(view.getByText('Mesh Tools')).toBeInTheDocument();
-    expect(view.getByText('Adapter Tools')).toBeInTheDocument();
+    expect(view.getByText('Messaging')).toBeInTheDocument();
+    expect(view.getByText('Agent discovery')).toBeInTheDocument();
+    expect(view.getByText('Connection management')).toBeInTheDocument();
   });
 
   it('renders description text', () => {
@@ -92,10 +92,10 @@ describe('ContextTab', () => {
     expect(switches[2]).toBeDisabled();
   });
 
-  it('shows "Relay is disabled" badge when relay is off', () => {
+  it('shows "Messaging is off" badge when relay is off', () => {
     vi.mocked(useRelayEnabled).mockReturnValue(false);
     const view = renderTab();
-    const badges = view.getAllByText('Relay is disabled');
+    const badges = view.getAllByText('Messaging is off');
     expect(badges).toHaveLength(2); // One for relay section, one for adapter section
   });
 
@@ -145,9 +145,9 @@ describe('ContextTab', () => {
 
   it('has accessible labels for all switches', () => {
     const view = renderTab();
-    expect(view.getByLabelText('Toggle Relay Tools context')).toBeInTheDocument();
-    expect(view.getByLabelText('Toggle Mesh Tools context')).toBeInTheDocument();
-    expect(view.getByLabelText('Toggle Adapter Tools context')).toBeInTheDocument();
+    expect(view.getByLabelText('Toggle Messaging context')).toBeInTheDocument();
+    expect(view.getByLabelText('Toggle Agent discovery context')).toBeInTheDocument();
+    expect(view.getByLabelText('Toggle Connection management context')).toBeInTheDocument();
   });
 
   // DOR-1337. These previews are a SECOND telling of blocks the server owns, and

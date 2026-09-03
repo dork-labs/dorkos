@@ -240,7 +240,7 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
                 <div className="rounded border border-blue-200 bg-blue-50 px-2 py-1.5 text-xs dark:border-blue-900 dark:bg-blue-950">
                   <p className="font-medium text-blue-800 dark:text-blue-200">
                     {existingBindings.length} binding{existingBindings.length !== 1 ? 's' : ''}{' '}
-                    already exist{existingBindings.length === 1 ? 's' : ''} for this adapter
+                    already exist{existingBindings.length === 1 ? 's' : ''} for this connection
                   </p>
                 </div>
               )}

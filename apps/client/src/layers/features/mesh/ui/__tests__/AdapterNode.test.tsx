@@ -80,8 +80,8 @@ function makeMockProps(
 }
 
 /** Finds the adapter card element by its aria-label. */
-function getCard(name = 'Telegram Bot', status = 'running') {
-  return screen.getByLabelText(`Adapter: ${name}, status ${status}`);
+function getCard(name = 'Telegram Bot', type = 'telegram', status = 'running') {
+  return screen.getByLabelText(`${name}, ${type}, status ${status}`);
 }
 
 beforeEach(() => {
@@ -210,7 +210,7 @@ describe('AdapterNode', () => {
   });
 
   describe('ghost node', () => {
-    it('renders ghost node with "Add Adapter" text', () => {
+    it('renders ghost node with "Add a platform" text', () => {
       render(
         <AdapterNode
           {...makeMockProps({
@@ -222,8 +222,8 @@ describe('AdapterNode', () => {
           })}
         />
       );
-      expect(screen.getByText('Add Adapter')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /add adapter/i })).toBeInTheDocument();
+      expect(screen.getByText('Add a platform')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /add a platform/i })).toBeInTheDocument();
     });
 
     it('ghost node has no output handle', () => {
@@ -255,7 +255,7 @@ describe('AdapterNode', () => {
           })}
         />
       );
-      fireEvent.click(screen.getByRole('button', { name: /add adapter/i }));
+      fireEvent.click(screen.getByRole('button', { name: /add a platform/i }));
       expect(onGhostClick).toHaveBeenCalledTimes(1);
     });
 

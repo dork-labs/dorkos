@@ -435,8 +435,8 @@ export function ToolsTab({ agent, projectPath }: ToolsTabProps) {
     {
       key: 'adapter',
       configKey: 'adapterTools',
-      label: 'External Integrations',
-      description: 'Manage integrations with Slack, Telegram, and other platforms',
+      label: 'Connection management',
+      description: 'Set up Telegram, Slack, and webhooks, and route each chat to an agent',
       tools: toolNamesForDomain('adapter'),
       serverDisabled: !relayEnabled,
       serverDisabledReason: 'Disabled globally by server configuration.',
@@ -481,7 +481,7 @@ export function ToolsTab({ agent, projectPath }: ToolsTabProps) {
           <FieldCardContent>
             <p className="text-muted-foreground text-sm">
               This agent&rsquo;s runtime does not support DorkOS tool groups (Scheduling, Messaging,
-              Agent Discovery, External Integrations). These are delivered over MCP, which this
+              Agent Discovery, Connection management). These are delivered over MCP, which this
               runtime cannot consume.
             </p>
           </FieldCardContent>
