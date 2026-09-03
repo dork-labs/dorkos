@@ -140,7 +140,7 @@ This lets the playground pass mock data while the app continues using the hook. 
 <TunnelContent initialView="error" mockData={errorData} />
 ```
 
-**4. Keep mock data alongside showcases.** Mock data factories live in `dev/mock-factories.ts` and `dev/mock-samples.ts`. When adding a new showcase that needs mock data, add the factories there rather than inline in the showcase file. This keeps mock data reusable and the showcases focused on layout.
+**4. Keep mock data alongside showcases.** Mock data factories live in `dev/mock-factories.ts` and `dev/mock-samples/` (split by domain — DOR-1766, finding 20.8 — and re-exported from its `index.ts`). When adding a new showcase that needs mock data, add the factories there rather than inline in the showcase file. This keeps mock data reusable and the showcases focused on layout.
 
 ### When to refactor
 
@@ -262,7 +262,7 @@ When reviewing an existing playground showcase, verify:
 | `dev/ShowcaseDemo.tsx`                      | Demo container with responsive viewport toggle            |
 | `dev/ShowcaseLabel.tsx`                     | Label for distinguishing variants                         |
 | `dev/mock-factories.ts`                     | Mock data factory functions                               |
-| `dev/mock-samples.ts`                       | Sample data constants                                     |
+| `dev/mock-samples/`                         | Sample data constants, split by domain, barrelled from `index.ts` |
 | `dev/playground-pages.ts`                   | `PAGE_COMPONENTS` — maps page IDs to their page component |
 | `dev/DevPlayground.tsx`                     | Root component with page routing                          |
 | `dev/__tests__/playground-registry.test.ts` | The drift gate — lists every page-level array by name     |
