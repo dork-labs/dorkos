@@ -22,12 +22,30 @@ const RAIL_LABEL = 'Featured';
 // Sub-components
 // ---------------------------------------------------------------------------
 
+/**
+ * The rail's own query container — the `section` both renderings wrap in.
+ *
+ * A container query, not a viewport one: the rail shares its row with the
+ * sidebar and a dockable panel, so window width says nothing about how much
+ * room it actually has.
+ */
+const RAIL_SECTION = '@container/rail space-y-3';
+
+/**
+ * How the rail lays its three cards out, at the width it really has.
+ *
+ * Thresholds keep a card at roughly 240px or wider. Shared by the skeleton and
+ * the real grid so the two never disagree about how many columns are about to
+ * appear.
+ */
+const RAIL_GRID = 'grid grid-cols-1 gap-4 @lg/rail:grid-cols-2 @3xl/rail:grid-cols-3';
+
 /** Loading skeleton row shown while packages are being fetched. */
 function RailSkeleton() {
   return (
-    <section aria-label={RAIL_LABEL} className="space-y-3">
+    <section aria-label={RAIL_LABEL} className={RAIL_SECTION}>
       <h2 className="text-base font-semibold">{RAIL_LABEL}</h2>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
+      <div className={RAIL_GRID}>
         {Array.from({ length: SKELETON_COUNT }).map((_, i) => (
           <Skeleton key={i} className="h-48 rounded-xl" />
         ))}
@@ -46,9 +64,9 @@ function RailGrid({
   const requestInstall = useRequestInstall();
 
   return (
-    <section aria-label={RAIL_LABEL} className="space-y-3">
+    <section aria-label={RAIL_LABEL} className={RAIL_SECTION}>
       <h2 className="text-base font-semibold">{RAIL_LABEL}</h2>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
+      <div className={RAIL_GRID}>
         {packages.map((pkg) => (
           <div key={pkg.name} className="h-full">
             <PackageCard
