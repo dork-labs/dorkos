@@ -21,6 +21,33 @@ afterEach(() => cleanup());
  */
 const PRIMARY_CLASS = 'bg-primary';
 
+describe('LinkSafetyModal — the dialog claims it keeps (3.3)', () => {
+  it('moves focus inside the dialog on open, instead of leaving it on the trigger behind it', () => {
+    render(
+      <LinkSafetyModal
+        url="https://dorkos.ai/docs"
+        isOpen
+        onClose={() => {}}
+        onConfirm={() => {}}
+      />
+    );
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  });
+
+  it('closes on Escape, reaching the handler instead of the page underneath', () => {
+    const onClose = vi.fn();
+    render(
+      <LinkSafetyModal url="https://dorkos.ai/docs" isOpen onClose={onClose} onConfirm={() => {}} />
+    );
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('LinkSafetyModal — a link that can open', () => {
   it('offers to open it, with copy as the secondary action', () => {
     render(
@@ -70,7 +97,7 @@ describe('LinkSafetyModal — a link the seam refuses (DOR-547)', () => {
       />
     );
 
-    expect(screen.getByRole('dialog', { name: /cannot be opened/i })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: /doesn't open irc: links/i })).toBeInTheDocument();
     expect(screen.getByText("DorkOS doesn't open irc: links")).toBeInTheDocument();
     expect(
       screen.getByText("irc: links don't open from DorkOS, so nothing would happen.")
