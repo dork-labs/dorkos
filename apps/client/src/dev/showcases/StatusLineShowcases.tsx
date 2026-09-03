@@ -90,18 +90,12 @@ function BudgetTable() {
  */
 function useSessionPanelState() {
   const [open, setOpen] = useState(false);
-  const [sound, setSound] = useState(true);
-  const [refresh, setRefresh] = useState(false);
   const [planning, setPlanning] = useState(false);
 
   return {
     open,
     onOpenChange: setOpen,
     controls: {
-      sound,
-      onToggleSound: () => setSound((s) => !s),
-      refresh,
-      onToggleRefresh: () => setRefresh((r) => !r),
       plan: { active: planning, onToggle: setPlanning },
     },
   };

@@ -40,7 +40,7 @@ interface ExternalMcpCardProps {
   /**
    * Whether local login is on (`ServerConfig.auth.enabled`). Needed to tell the
    * two `authSource === 'none'` causes apart: login-on with no personal API keys
-   * minted yet (point at Settings → Security) vs the login-off degenerate
+   * minted yet (point at Settings → Access) vs the login-off degenerate
    * couldn't-generate-a-token state.
    */
   authEnabled: boolean;
@@ -56,9 +56,9 @@ interface ExternalMcpCardProps {
  * an agent tools from other MCP servers, on that agent's own Tools & MCP page — plan D7).
  *
  * MCP clients authenticate with a personal API key (Better Auth `apiKey` plugin),
- * created and revoked in Settings → Security → API keys, or via the `MCP_API_KEY`
+ * created and revoked in Settings → Access → API keys, or via the `MCP_API_KEY`
  * environment override for headless deployments. This card no longer mints a single
- * global key — key lifecycle lives in the Security section.
+ * global key — key lifecycle lives in the Access tab's "On this machine" section.
  */
 export function ExternalMcpCard({ mcp, authEnabled }: ExternalMcpCardProps) {
   const transport = useTransport();

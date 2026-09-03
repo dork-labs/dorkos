@@ -84,7 +84,10 @@ The globe is only there while remote access is running. Click it and you get:
 - A switch to turn remote access off
 - **Manage…**, which opens the full Remote Access window
 
-The full window is where the settings live:
+The same full settings are also one click away in **Settings → Remote Access**
+— the Control Center row, the beacon and the Settings tab all show the one
+tunnel, so turning it on or off from any of them updates the other two too.
+Either surface gives you:
 
 - **Custom domain**: set a static ngrok domain so your URL stays the same across restarts
 - **Connection quality indicator**: a green, yellow, or red dot showing how fast the tunnel is responding
@@ -101,7 +104,7 @@ If you have DorkOS open in several browser tabs, they all update together. Turn 
 By default, your tunnel gets a new random URL every time it starts. ngrok also offers free static domains that stay the same across restarts:
 
 1. Go to [dashboard.ngrok.com/domains](https://dashboard.ngrok.com/domains) and claim a free domain
-2. Enter it in the **Custom domain** field in the Remote Access dialog, or set `TUNNEL_DOMAIN`
+2. Enter it in the **Custom domain** field on the Remote Access tab, or set `TUNNEL_DOMAIN`
 
 That way, any QR code or bookmark you saved keeps working after you restart DorkOS.
 
@@ -139,7 +142,7 @@ before reaching DorkOS's own sign-in screen.
 Common issues:
 
 - **"Tunnel is already running"**: the server replies with a 409 status, its polite way of saying "one at a time." Stop the existing tunnel first.
-- **Auth token not found**: make sure `NGROK_AUTHTOKEN` is exported in your shell, or paste it into the Remote Access dialog.
+- **Auth token not found**: make sure `NGROK_AUTHTOKEN` is exported in your shell, or paste it into the Remote Access tab in Settings.
 - **Custom domain errors**: verify your domain is claimed at dashboard.ngrok.com/domains.
 - **Connection quality red**: latency to the tunnel is over 500ms, usually because the nearest ngrok edge server is far from you geographically.
 - **The tunnel dropped**: you get a notification either way, and it tells you which happened. ngrok sometimes loses its session and re-establishes it on its own — DorkOS says "reconnecting", keeps your address, and the globe dims until it is back. If the tunnel closed for good, DorkOS says so and stays off until you turn it back on.

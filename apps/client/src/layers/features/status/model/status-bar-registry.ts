@@ -21,7 +21,6 @@ import {
   Gauge,
   Shield,
   ClipboardList,
-  RefreshCw,
   Wifi,
   Users,
   UserRound,
@@ -48,8 +47,7 @@ export type StatusBarItemKey =
   | 'permission'
   | 'plan'
   | 'subagents'
-  | 'connection'
-  | 'polling';
+  | 'connection';
 
 /**
  * Which half of the strict two-cluster layout an item belongs to. `left` is who
@@ -59,8 +57,16 @@ export type StatusBarItemKey =
  */
 export type StatusBarCluster = 'left' | 'right';
 
-/** Section an item occupies in the Session popover. `null` — no row of its own. */
-export type StatusBarItemGroup = 'session' | 'controls' | 'diagnostics';
+/**
+ * Section an item occupies in the Session popover. `null` — no row of its own.
+ *
+ * There was a third section, `controls`, and it is gone with its last member
+ * (DOR-1758): both switches that lived there — `sound`, then `polling` — turned
+ * out to be machine-wide preferences wearing a per-session badge. The one switch
+ * still in the panel, `plan`, is genuinely this session's and sits in `session`
+ * where it can also be pinned into the line.
+ */
+export type StatusBarItemGroup = 'session' | 'diagnostics';
 
 /** Everything the promotion rules read. Assembled once per render by the status bar. */
 export interface StatusPromotionContext {
@@ -226,9 +232,8 @@ export interface StatusBarItemConfig {
   severity: (ctx: StatusPromotionContext) => number;
   /**
    * Set when the item can never enter the line at all, whatever its state and
-   * however hard someone pins it. `cache` is pure diagnostics; `sound` and
-   * `polling` are settings that only change when the person changes them, so
-   * they can never be news.
+   * however hard someone pins it. `cache` is pure diagnostics: a number that
+   * only changes when the runtime says so, and never news.
    */
   neverInLine?: true;
   /**
@@ -268,7 +273,6 @@ export interface StatusBarItemConfig {
 /** Human-readable labels for each popover group, used as section headers. */
 const GROUP_LABELS: Record<StatusBarItemGroup, string> = {
   session: 'Session',
-  controls: 'Controls',
   diagnostics: 'Diagnostics',
 };
 
@@ -473,17 +477,11 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
   // every-turn chime is the least important and the only one it could reach.
   // They are set together in Settings → Notifications, which is also where the
   // browser-notification and escalation settings live.
-  {
-    key: 'polling',
-    label: 'Background refresh',
-    description: 'Keep checking for updates while you are away',
-    cluster: 'right',
-    group: 'controls',
-    icon: RefreshCw,
-    promote: () => false,
-    severity: () => SEVERITY.QUIET,
-    neverInLine: true,
-  },
+  //
+  // `polling` ("Background refresh") is gone for exactly the same reason
+  // (DOR-1758): it read the global `enableMessagePolling` store field, so a
+  // person flipping it inside one session's panel changed every window on the
+  // machine. Settings → Preferences is its one home now.
 ] as const;
 
 /** Look up one registry item by key. */
@@ -494,8 +492,8 @@ export function getStatusBarItem(key: StatusBarItemKey): StatusBarItemConfig | u
 /**
  * Whether a person may pin this item into the line.
  *
- * Only Session rows are pinnable. Controls are toggles, not status. Diagnostics
- * are system-managed — that is the invariant that stops pins from quietly
+ * Only Session rows are pinnable. Diagnostics rows are system-managed — that is
+ * the invariant that stops pins from quietly
  * becoming ten visibility toggles again. And nothing marked
  * {@link StatusBarItemConfig.neverInLine} is pinnable, because a pin overrides a
  * promotion rule, not a categorical exclusion.
@@ -546,7 +544,7 @@ export function getGroupedRegistryItems(): {
   label: string;
   items: StatusBarItemConfig[];
 }[] {
-  const groups: StatusBarItemGroup[] = ['session', 'controls', 'diagnostics'];
+  const groups: StatusBarItemGroup[] = ['session', 'diagnostics'];
   return groups
     .map((group) => ({
       group,

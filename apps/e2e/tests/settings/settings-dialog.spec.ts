@@ -61,13 +61,14 @@ test.describe('Settings — Dialog @smoke', () => {
     // `toHaveCount` retries; `count()` does not, and sampling this mid-animation
     // is what once made this read 16 for a tab that has 8.
     //
-    // Eight since DOR-1522 removed the tasks-notifications toggle (it had no
-    // reader; the setting did nothing). Before that, nine since DOR-1385: six
-    // display and notification preferences this browser remembers, plus the two
-    // welcome-back switches, which the SERVER keeps — and the second
-    // (Next-step offers) renders only while the first is on, which it is by
-    // default.
-    await expect(settingsPage.switches).toHaveCount(8);
+    // Nine since DOR-1758 reshuffled the tab: five chat-display switches this
+    // browser remembers, plus the two that came back from the retired Advanced
+    // tab (the message box, background refresh) and the one about being shown
+    // things (feature suggestions) — minus the dev-tools switch, which went to
+    // Server → Diagnostics — plus the two welcome-back switches, which the
+    // SERVER keeps. The second welcome-back switch (Next-step offers) renders
+    // only while the first is on, which it is by default.
+    await expect(settingsPage.switches).toHaveCount(9);
 
     // Named, not just counted — a count alone passes on a tab that swapped every
     // preference for a different one. The name is the switch's `aria-label`; the
@@ -75,8 +76,12 @@ test.describe('Settings — Dialog @smoke', () => {
     const panel = settingsPage.activePanel;
     await expect(panel.getByRole('switch', { name: 'Show timestamps' })).toBeVisible();
     await expect(panel.getByRole('switch', { name: 'To-do celebrations' })).toBeVisible();
+    await expect(panel.getByRole('switch', { name: 'Format text as you type' })).toBeVisible();
+    await expect(panel.getByRole('switch', { name: 'Background refresh' })).toBeVisible();
     await expect(panel.getByRole('switch', { name: 'Welcome-back notes' })).toBeVisible();
     await expect(panel.getByRole('switch', { name: 'Next-step offers' })).toBeVisible();
+    // The developer panel is a debugging aid and left this tab with DOR-1758.
+    await expect(panel.getByRole('switch', { name: 'Show dev tools' })).toHaveCount(0);
   });
 
   /**

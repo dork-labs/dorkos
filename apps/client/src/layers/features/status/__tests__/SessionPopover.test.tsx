@@ -48,8 +48,6 @@ function promotionContext(overrides: Partial<StatusPromotionContext> = {}): Stat
 }
 
 const controls = {
-  refresh: false,
-  onToggleRefresh: vi.fn(),
   plan: null,
 };
 
@@ -139,11 +137,13 @@ describe('SessionPopover — the trigger', () => {
 });
 
 describe('SessionPopover — rows', () => {
-  it('groups rows under Session, Controls, and Diagnostics', () => {
+  it('groups rows under Session and Diagnostics', () => {
     renderPanel();
     expect(screen.getByText('Session', { selector: 'h3' })).toBeInTheDocument();
-    expect(screen.getByText('Controls')).toBeInTheDocument();
     expect(screen.getByText('Diagnostics')).toBeInTheDocument();
+    // The Controls section went with its last member (DOR-1758) — an empty
+    // heading is worse than no heading.
+    expect(screen.queryByText('Controls')).not.toBeInTheDocument();
   });
 
   it('shows the live value beside each Session row', () => {
@@ -195,10 +195,8 @@ describe('SessionPopover — pins', () => {
     expect(screen.queryByRole('button', { name: /Keep Subagents/ })).toBeNull();
   });
 
-  it('offers no pin on controls or on the cache row', () => {
+  it('offers no pin on the cache row', () => {
     renderPanel();
-    expect(screen.queryByRole('button', { name: /Keep Sound/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: /Keep Background refresh/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /Keep Cache/ })).toBeNull();
   });
 
@@ -239,14 +237,15 @@ describe('SessionPopover — pins', () => {
 });
 
 describe('SessionPopover — controls', () => {
-  it('renders the refresh setting as a switch, not a pin', () => {
+  it('no longer carries a background-refresh switch — it was never per-session', () => {
+    // It read the machine-wide `enableMessagePolling` preference, so flipping it
+    // inside one session changed every window on the machine (DOR-1758). Its one
+    // home is Settings → Preferences.
     renderPanel();
-    const refresh = screen.getByRole('switch', {
-      name: 'Keep checking for updates in the background',
-    });
-    expect(refresh).not.toBeChecked();
-    fireEvent.click(refresh);
-    expect(controls.onToggleRefresh).toHaveBeenCalled();
+    expect(
+      screen.queryByRole('switch', { name: 'Keep checking for updates in the background' })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Background refresh')).not.toBeInTheDocument();
   });
 
   it('no longer carries a sound switch — every sound is a Settings question now', () => {

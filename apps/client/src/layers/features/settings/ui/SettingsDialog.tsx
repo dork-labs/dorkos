@@ -1,20 +1,22 @@
+import { useMemo } from 'react';
 import {
   Palette,
   Settings2,
   Server,
   Wrench,
   Cpu,
-  Cog,
+  TriangleAlert,
   ShieldCheck,
   Lock,
-  Link2,
+  Globe,
   UserRound,
   FlaskConical,
   Bell,
   MessagesSquare,
 } from 'lucide-react';
 import { TabbedDialog, type TabbedDialogTab } from '@/layers/shared/ui';
-import { useAppStore, useSettingsDeepLink, type SettingsTab } from '@/layers/shared/model';
+import { useSettingsDeepLink, type SettingsTab } from '@/layers/shared/model';
+import { getPlatform } from '@/layers/shared/lib';
 import { ProfileTab } from './ProfileTab';
 import { AppearanceResetAction, AppearanceTab } from './tabs/AppearanceTab';
 import { PreferencesTab } from './tabs/PreferencesTab';
@@ -23,31 +25,45 @@ import { RoomsTab } from './tabs/RoomsTab';
 import { RuntimesTab } from './runtimes/RuntimesTab';
 import { ServerTab } from './ServerTab';
 import { ToolsResetAction, ToolsTab } from './ToolsTab';
-import { SecurityTab } from './SecurityTab';
-import { CloudAccountTab } from './CloudAccountTab';
+import { AccessTab } from './AccessTab';
+import { RemoteAccessTab } from './RemoteAccessTab';
 import { PrivacyTab } from './PrivacyTab';
-import { AdvancedTab } from './AdvancedTab';
+import { DangerZoneTab } from './DangerZoneTab';
 import { ExperimentsTab } from './ExperimentsTab';
-import { RemoteAccessAction } from './RemoteAccessAction';
 
 const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
-  // First, and promotion needs nothing else: ungrouped tabs render above the
-  // first group header (`tabbed-dialog.tsx`), and `appearance`/`preferences`
-  // are the only other ungrouped ones. The id is exactly `profile` because
-  // that is what the profile drawer's Edit button deep-links to.
-  { id: 'profile', label: 'Profile', icon: UserRound, component: ProfileTab },
+  // "You" names what used to be an unlabelled run of four tabs above the first
+  // section header — four loose things, then three real sections (DOR-1758).
+  // Every region is a labelled peer now.
+  //
+  // The id is exactly `profile` because that is what the profile drawer's Edit
+  // button deep-links to.
+  { id: 'profile', label: 'Profile', icon: UserRound, component: ProfileTab, group: 'You' },
   {
     id: 'appearance',
     label: 'Appearance',
     icon: Palette,
     component: AppearanceTab,
     actions: <AppearanceResetAction />,
+    group: 'You',
   },
-  { id: 'preferences', label: 'Preferences', icon: Settings2, component: PreferencesTab },
-  // Ungrouped, beside Preferences: "how loud may this be?" is a personal
-  // preference, not a system or access question, and every setting in it was
-  // reachable from Preferences before this tab existed.
-  { id: 'notifications', label: 'Notifications', icon: Bell, component: NotificationsTab },
+  {
+    id: 'preferences',
+    label: 'Preferences',
+    icon: Settings2,
+    component: PreferencesTab,
+    group: 'You',
+  },
+  // Beside Preferences: "how loud may this be?" is a personal preference, not a
+  // system or access question, and every setting in it was reachable from
+  // Preferences before this tab existed.
+  {
+    id: 'notifications',
+    label: 'Notifications',
+    icon: Bell,
+    component: NotificationsTab,
+    group: 'You',
+  },
   {
     id: 'tools',
     label: 'Tools',
@@ -74,10 +90,14 @@ const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
     group: 'Agents & sessions',
   },
   {
-    id: 'security',
-    label: 'Security',
+    // Security and DorkOS account were two tabs answering one question — who may
+    // get into this install, and as whom — with a 12-line and a 14-line wrapper
+    // for a body. One tab, two sections (DOR-1758). Old links keep working
+    // through the legacy map, which lands each on its own section.
+    id: 'access',
+    label: 'Access',
     icon: ShieldCheck,
-    component: SecurityTab,
+    component: AccessTab,
     group: 'Access & privacy',
   },
   {
@@ -88,26 +108,41 @@ const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
     group: 'Access & privacy',
   },
   {
-    id: 'account',
-    label: 'DorkOS account',
-    icon: Link2,
-    component: CloudAccountTab,
+    // A real tab, not the sidebar button it used to be: that button sat in the
+    // list of tabs, looked like a tab, and opened a second modal on top of the
+    // settings modal — with the phone's drill-in chevron, where the recovery
+    // gesture is worst.
+    id: 'remote-access',
+    label: 'Remote Access',
+    icon: Globe,
+    component: RemoteAccessTab,
     group: 'Access & privacy',
   },
   { id: 'server', label: 'Server', icon: Server, component: ServerTab, group: 'System' },
   {
-    // Between Server and Advanced on purpose: it is a place to try things, not a
-    // danger zone, and burying it under Advanced is how the last flag stayed
-    // invisible (DOR-1304). The tab renders whatever the server registers, so an
-    // empty registry shows an empty-state line rather than a missing tab —
-    // an experiments section that disappears would look like a regression.
+    // Between Server and the danger zone on purpose: it is a place to try
+    // things, not a danger zone, and burying it under "Advanced" is how the last
+    // flag stayed invisible (DOR-1304). The tab renders whatever the server
+    // registers, so an empty registry shows an empty-state line rather than a
+    // missing tab — an experiments section that disappears would look like a
+    // regression.
     id: 'experiments',
     label: 'Experiments',
     icon: FlaskConical,
     component: ExperimentsTab,
     group: 'System',
   },
-  { id: 'advanced', label: 'Advanced', icon: Cog, component: AdvancedTab, group: 'System' },
+  {
+    // Named after what it holds, which is now only the three actions you cannot
+    // take back by hand. "Advanced" was a junk drawer — a polling switch, the
+    // message box, logging and these buttons in one flat stack — and every other
+    // section moved somewhere its name predicts (DOR-1758).
+    id: 'danger',
+    label: 'Danger zone',
+    icon: TriangleAlert,
+    component: DangerZoneTab,
+    group: 'System',
+  },
 ];
 
 interface SettingsDialogProps {
@@ -118,14 +153,26 @@ interface SettingsDialogProps {
 /**
  * Tabbed Settings dialog (consumer of TabbedDialog primitive).
  *
- * The Remote Access dialog used to be a `useState` and a second `<TunnelDialog>`
- * right here, which is why Settings was the only place that could open it. It
- * is a registered dialog now (DOR-1743) and this action flips its store flag,
- * like every other door to it.
+ * Remote Access is one of its tabs (`remote-access`, DOR-1758) rather than a
+ * dialog this component opens on top of itself — a control that looks like a
+ * tab must swap the panel, not stack a second modal. `TunnelDialog` is a
+ * separate, independently-registered dialog now (DOR-1743): the Control
+ * Center row and the top-bar beacon are its other doors, and neither of them
+ * needs Settings open to reach it.
  */
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { activeTab: urlTab } = useSettingsDeepLink();
-  const setRemoteAccessOpen = useAppStore((s) => s.setRemoteAccessOpen);
+
+  // Remote access is a tunnel into this machine from somewhere else, which the
+  // Obsidian embed cannot open — the panel there would render nothing at all. A
+  // tab that shows an empty panel is worse than no tab.
+  const tabs = useMemo(
+    () =>
+      getPlatform().isEmbedded
+        ? SETTINGS_TABS.filter((tab) => tab.id !== 'remote-access')
+        : SETTINGS_TABS,
+    []
+  );
 
   return (
     <TabbedDialog
@@ -135,8 +182,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       description="Application settings"
       defaultTab="appearance"
       initialTab={urlTab}
-      tabs={SETTINGS_TABS}
-      sidebarExtras={<RemoteAccessAction onClick={() => setRemoteAccessOpen(true)} />}
+      tabs={tabs}
       extensionSlot="settings.tabs"
       maximized
       testId="settings-dialog"

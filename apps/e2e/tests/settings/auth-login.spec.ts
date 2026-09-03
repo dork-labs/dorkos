@@ -6,7 +6,7 @@ import { test, expect } from '../../fixtures';
  * Covers the full owner-login flow through the real UI:
  *   1. auth-OFF boots straight into the app with no login screen (zero-config
  *      regression check);
- *   2. enabling login via Settings → Security creates the owner and the session
+ *   2. enabling login via Settings → Access creates the owner and the session
  *      survives a full page reload;
  *   3. signing out returns to the login screen, and signing back in restores
  *      access; the run then disables login again to restore zero-config.
@@ -52,8 +52,8 @@ test.describe('Auth — local login lifecycle @auth', () => {
     await expect(basePage.page.locator('[data-testid="app-shell"]')).toBeVisible();
     await expect(authPage.loginHeading).toBeHidden();
 
-    // Progressive disclosure: Security shows only the (off) "Require login" toggle.
-    await authPage.openSecurityTab();
+    // Progressive disclosure: Access shows only the (off) "Require login" toggle.
+    await authPage.openAccessTab();
     await expect(authPage.requireLoginSwitch).not.toBeChecked();
   });
 
@@ -64,7 +64,7 @@ test.describe('Auth — local login lifecycle @auth', () => {
     await basePage.goto();
     await basePage.waitForAppReady();
 
-    await authPage.openSecurityTab();
+    await authPage.openAccessTab();
     // Toggling on launches owner-account creation; the flag flips once it exists.
     await authPage.requireLoginSwitch.click();
     await expect(authPage.ownerDialog).toBeVisible();
@@ -88,7 +88,7 @@ test.describe('Auth — local login lifecycle @auth', () => {
     await basePage.goto();
     await basePage.waitForAppReady();
 
-    await authPage.openSecurityTab();
+    await authPage.openAccessTab();
     await authPage.signOutButton.click();
 
     // With no session and login still required, the next reload's gated requests
@@ -102,7 +102,7 @@ test.describe('Auth — local login lifecycle @auth', () => {
     await expect(basePage.page.locator('[data-testid="app-shell"]')).toBeVisible();
 
     // Restore zero-config for the shared instance: turn login back off.
-    await authPage.openSecurityTab();
+    await authPage.openAccessTab();
     await authPage.requireLoginSwitch.click();
     await expect(authPage.requireLoginSwitch).not.toBeChecked();
   });

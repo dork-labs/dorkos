@@ -26,6 +26,7 @@ import {
   takeProfileOpener,
   clearProfileOpener,
   type SettingsRouteTarget,
+  type SettingsDeepLinkTarget,
 } from '../use-dialog-deep-link';
 import type { SettingsTab } from '../app-store/app-store-panels';
 
@@ -191,6 +192,19 @@ describe('resolveDeepLinkTarget', () => {
     expect(resolveDeepLinkTarget('integrations', mapWithRoute)).toEqual(routeTarget);
   });
 
+  // A merge leaves two live links per merged tab, and landing both at the top of
+  // the surviving tab loses the half the link was about (DOR-1758).
+  it('carries a section from a legacy id that named one half of a merged tab', () => {
+    const mapWithSection: Record<string, SettingsTab | SettingsDeepLinkTarget> = {
+      account: { kind: 'tab', tab: 'access', section: 'account' },
+    };
+    expect(resolveDeepLinkTarget('account', mapWithSection)).toEqual({
+      kind: 'tab',
+      tab: 'access',
+      section: 'account',
+    });
+  });
+
   it('resolves a route-mapped id with no search params', () => {
     const routeTarget: SettingsRouteTarget = { kind: 'route', path: '/connections' };
     const mapWithRoute: Record<string, SettingsTab | SettingsRouteTarget> = {
@@ -271,6 +285,40 @@ describe('useSettingsDeepLink', () => {
     });
     // Back must not land on the dead link and bounce forward again.
     expect(harness.actions).not.toContain('PUSH');
+  });
+
+  it.each([
+    ['security', 'security'],
+    ['account', 'account'],
+  ])(
+    'lands the retired settings=%s link on the Access tab, at its own section',
+    async (retiredId, section) => {
+      harness = buildHarness(`/?settings=${retiredId}`);
+      const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
+      await harness.waitForRouterReady();
+
+      expect(result.current.isOpen).toBe(true);
+      expect(result.current.activeTab).toBe('access');
+      expect(result.current.section).toBe(section);
+    }
+  );
+
+  it('sends the retired settings=advanced link to the Danger zone tab', async () => {
+    harness = buildHarness('/?settings=advanced');
+    const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+
+    expect(result.current.activeTab).toBe('danger');
+    expect(result.current.section).toBeNull();
+  });
+
+  it('lets an explicit settingsSection beat the one a legacy id carries', async () => {
+    harness = buildHarness('/?settings=security&settingsSection=account');
+    const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+
+    expect(result.current.activeTab).toBe('access');
+    expect(result.current.section).toBe('account');
   });
 
   it('returns section when settingsSection is set', async () => {

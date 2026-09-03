@@ -42,8 +42,8 @@ import { useCloudLink, type CloudLinkView } from '../model/use-cloud-link';
  * are independent systems, so this panel never gates on the auth session.
  *
  * All flow state lives in {@link useCloudLink}; this component only renders the
- * current view and wires the buttons. Composed into Settings via a
- * `features/settings` tab (sibling UI composition).
+ * current view and wires the buttons. Composed into the Settings dialog's Access
+ * tab (sibling UI composition).
  */
 export function CloudLinkPanel() {
   const { view, start, unlink, starting, unlinking, startError } = useCloudLink();
@@ -51,8 +51,8 @@ export function CloudLinkPanel() {
   return (
     <div className="space-y-4">
       <div className="space-y-1">
-        {/* No heading here: the Settings dialog draws the panel's own
-            "DorkOS account" header. This is the explainer that sits under it. */}
+        {/* No heading here: the Access tab draws the section heading this
+            sits under ("DorkOS account"). This is its explainer. */}
         <p className="text-muted-foreground text-sm">
           Link this instance to a DorkOS account to reach it from dorkos.ai and receive updates.
           Linking is independent of local login.

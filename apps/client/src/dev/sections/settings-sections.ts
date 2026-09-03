@@ -178,7 +178,16 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
     title: 'Settings Primitives',
     page: 'settings',
     category: 'Primitives',
-    keywords: ['fieldcard', 'settingrow', 'switch', 'row', 'card', 'wrapper'],
+    keywords: [
+      'fieldcard',
+      'settingrow',
+      'switch',
+      'row',
+      'card',
+      'wrapper',
+      'collapsible',
+      'disclosure',
+    ],
   },
   // Remote access — the Control Center row and the top-bar beacon, on one model.
   {

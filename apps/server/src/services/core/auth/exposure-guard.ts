@@ -125,7 +125,7 @@ export function bindRefusalMessage(host: string): string {
     `exposes DorkOS beyond this machine, but login is not configured.\n` +
     `Enable login first, then restart:\n` +
     `  - run \`dorkos auth enable\`, or\n` +
-    `  - open Settings > Security and turn on "Require login" (create an owner account).\n` +
+    `  - open Settings > Access and turn on "Require login" (create an owner account).\n` +
     `If this host is intentionally isolated (e.g. a container that owns the ` +
     `network boundary), set DORKOS_ALLOW_INSECURE_BIND=true to override.`
   );
@@ -198,7 +198,7 @@ export function a2aRefusalMessage(host: string): string {
     `discovery endpoints, which list agent names and descriptions) to the network.\n` +
     `Enable auth for the A2A surface, then restart:\n` +
     `  - set MCP_API_KEY=<secret> (A2A clients send it as \`Authorization: Bearer <secret>\`), or\n` +
-    `  - enable login (run \`dorkos auth enable\`, or Settings > Security > "Require login").\n` +
+    `  - enable login (run \`dorkos auth enable\`, or Settings > Access > "Require login").\n` +
     `If this host is intentionally isolated (e.g. a container that owns the network ` +
     `boundary), DORKOS_ALLOW_INSECURE_BIND=true also permits the mount.`
   );
