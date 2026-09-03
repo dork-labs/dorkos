@@ -59,7 +59,14 @@ export function AccountsFirstRun({ onSetUpCarrier }: { onSetUpCarrier: () => voi
               gap="sm"
               className="bg-card/50 items-start border-dashed"
             >
-              <div className="flex min-w-0 items-center gap-2">
+              {/* `w-full`: the card is a column with `items-start`, which
+                  sizes each child to its own content rather than stretching
+                  it to the card's width — so without it, a long service name
+                  had nothing forcing this row narrower than its own text and
+                  painted past the card's padding instead of truncating
+                  (DOR-1747). `min-w-0` is what then lets the row shrink
+                  below that content size at all. */}
+              <div className="flex w-full min-w-0 items-center gap-2">
                 <Icon className="text-muted-foreground/60 size-4 shrink-0" aria-hidden />
                 <span className="text-muted-foreground truncate text-sm font-medium">
                   {service.name}
