@@ -7610,7 +7610,7 @@
             "items": {
               "$ref": "#/components/schemas/RoomEntry"
             },
-            "description": "The thread roots entries in this page reply to that the page itself does not hold, oldest first. Empty whenever every reply's root came back in the page. Never part of the page: each one sits below its oldest entry, so a `before=` cursor is read from `entries` alone."
+            "description": "The thread roots entries in this page reply to that the page itself does not hold, oldest first. Empty whenever every reply's root came back in the page. Never part of the page: each one sits below its oldest entry, so a `before=` cursor is read from `entries` alone. Each carries `threadReplyCount`, because a thread reaching back past the page is also the one case where what a reader loaded is not the whole of it."
           }
         },
         "required": [
@@ -7709,6 +7709,11 @@
               "$ref": "#/components/schemas/RoomAttachment"
             },
             "description": "The files posted with this entry. Every path that delivers an entry to a reader carries it — the history page, the stream's hydration snapshot, a resume replay, and a live `entry` event. Optional only because the server's internal entry shape exists before the roll-up runs; on the wire it is always present, and absent should be read as empty."
+          },
+          "threadReplyCount": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "How many replies this entry's thread holds in the ROOM, which is not always how many the reader has. Unlike the two roll-ups above it, this is present on exactly one kind of entry: a thread root that came back in `threadRoots` because the page it belongs to does not contain it. That is the only case where the replies a client loaded are not the whole thread — a root INSIDE the page has every one of its replies in the page after it, so the loaded replies are the count, and a second number that could disagree with what is on screen would be worse than no number at all. Absent means \"count what you have\"."
           }
         },
         "required": [

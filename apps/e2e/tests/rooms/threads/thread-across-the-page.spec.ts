@@ -51,10 +51,10 @@ test.describe('Rooms — a thread whose root is older than the loaded page', () 
 
     // Read off the accessibility tree rather than a test id: the way into a
     // thread is a button, and what it promises is what its accessible name
-    // says. The number is deliberately not asserted — the row counts the
-    // replies this client has LOADED, which is the page, and a spec pinning
-    // "50" would be pinning the page size rather than the behaviour.
-    const threadRow = page.getByRole('button', { name: /replies · last/ });
+    // says. SIXTY is the room's own count, carried back on the root — this
+    // client holds fifty of them, and a row counting what it loaded would
+    // disagree with the Threads list about the same thread.
+    const threadRow = page.getByRole('button', { name: /^↳?\s*60 replies · last/ });
     await expect(threadRow).toBeVisible();
     await expect(threadRow).toHaveAttribute('aria-expanded', 'false');
 
@@ -70,11 +70,12 @@ test.describe('Rooms — a thread whose root is older than the loaded page', () 
     await expect(roomsPage.threadPanel).toBeVisible();
     await expect(roomsPage.threadOrphan).toHaveCount(0);
 
-    // Fifty-one messages in the thread's feed: the root, plus every reply this
-    // client holds. Asked of `aria-setsize` rather than by counting elements
-    // because the panel is a virtualized feed opened at its newest message — the
-    // root is genuinely not in the document, and the size is what a screen
-    // reader is told about the whole of it.
-    await expect(roomsPage.threadEntries.first()).toHaveAttribute('aria-setsize', '51');
+    // And the feed does not number itself: `-1` is the APG's "I do not know",
+    // which is the honest answer over the tail of a sixty-one message thread
+    // this client holds fifty-one of. Asked of `aria-setsize` rather than by
+    // counting elements because that is exactly what a screen reader is told —
+    // and "51 of 51" here would be the same lie the row above just stopped
+    // telling.
+    await expect(roomsPage.threadEntries.first()).toHaveAttribute('aria-setsize', '-1');
   });
 });

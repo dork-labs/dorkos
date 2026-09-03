@@ -923,6 +923,36 @@ describe('/api/rooms', () => {
         expect(roots[0].seq).toBeLessThan(entries[0].seq);
       });
 
+      it('tells the root how many replies the ROOM holds, not how many the page does', async () => {
+        // Sixty, beside a page that carries fifty of them. Without this the
+        // room would draw "50 replies" under a thread the Threads list calls
+        // sixty — one app disagreeing with itself about one conversation.
+        const room = await roomWithABuriedRoot();
+        const res = await request(app).get(`/api/rooms/${room.id}/entries`);
+
+        const [root] = res.body.threadRoots as { threadReplyCount: number }[];
+        expect(root.threadReplyCount).toBe(60);
+        expect(res.body.entries).toHaveLength(50);
+      });
+
+      it('leaves the count off a root the page holds, where the page IS the thread', async () => {
+        // The absent field is the instruction "count what you have", and it is
+        // absent on purpose: every reply to a root inside the page is written
+        // after it and the page runs to the newest entry, so a second number
+        // here could only ever disagree with what is on screen.
+        const room = await createChannel();
+        const root = await request(app)
+          .post(`/api/rooms/${room.id}/entries`)
+          .send({ text: 'why is the build slow?' });
+        await request(app)
+          .post(`/api/rooms/${room.id}/threads`)
+          .send({ rootEntryId: root.body.entryId, text: 'the cache is cold' });
+
+        const res = await request(app).get(`/api/rooms/${room.id}/entries`);
+        const entries = res.body.entries as { threadReplyCount?: number }[];
+        expect(entries.every((entry) => entry.threadReplyCount === undefined)).toBe(true);
+      });
+
       it('says nothing when the page holds every root it points at', async () => {
         const room = await createChannel();
         const root = await request(app)

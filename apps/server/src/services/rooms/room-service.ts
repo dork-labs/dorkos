@@ -2765,6 +2765,14 @@ export class RoomService {
    * `requireVisibleRoom` the page passed — the same rows `before=` would have
    * served this caller anyway, one page further back.
    *
+   * **Each root carries its true reply count, and only these roots do.** A
+   * thread that reaches back past the page is the one whose replies the page
+   * cannot hold all of, so it is the one place where counting what came back
+   * would understate the thread — the room would say "50 replies" beside a
+   * Threads list saying 60. A root inside the page needs no such number: every
+   * reply is written after it and the page runs to the newest entry, so what
+   * the reader has IS the thread ({@link RoomEntry.threadReplyCount}).
+   *
    * @param roomId - The room.
    * @param viewerAuthorId - The caller; must be on the roster.
    * @param opts.before - Return entries with `seq` below this.
@@ -2790,9 +2798,20 @@ export class RoomService {
       if (rootId !== null && !paged.has(rootId)) missing.add(rootId);
     }
     if (missing.size === 0) return { entries, threadRoots: [] };
+    const wanted = [...missing];
+    const sizes = this.store.countThreadRepliesFor(roomId, wanted);
     return {
       entries,
-      threadRoots: this.withRollups(roomId, this.store.listEntriesByIds(roomId, [...missing])),
+      threadRoots: this.withRollups(roomId, this.store.listEntriesByIds(roomId, wanted)).map(
+        (root) => ({
+          ...root,
+          // Never absent in practice — a root is only in this list because a
+          // reply in the page pointed at it — but read defensively rather than
+          // asserted, because the fallback is the count the reader would have
+          // been given anyway and a throw here would cost them the whole room.
+          threadReplyCount: sizes.get(root.id)?.replyCount,
+        })
+      ),
     };
   }
 

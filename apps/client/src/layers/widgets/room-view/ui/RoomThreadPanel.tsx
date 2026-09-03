@@ -179,9 +179,18 @@ export function RoomThreadPanel({
   // that page means the page starts somewhere inside this thread and the
   // replies above it are unread history, not absent replies. Counting what is
   // on screen would promise a reader "3 of 3" over the middle of a
-  // conversation. With the root present, every reply after it is loaded too,
-  // and the count is exact.
-  const articleCount = root === undefined ? -1 : 1 + replies.length;
+  // conversation.
+  //
+  // **And whenever the root itself says the thread is bigger than this**
+  // (DOR-690). A root fetched from behind the page arrives with the room's own
+  // reply count, so "the root is here" stopped being the same claim as "all of
+  // it is here" — the older half of a long thread is still missing, and the
+  // exact-count branch below would now promise "51 of 51" over the tail of
+  // sixty-one messages. The quiet line above this panel says how many there
+  // really are; the feed says it cannot number what it is showing.
+  const knownReplies = root?.threadReplyCount;
+  const partial = knownReplies !== undefined && knownReplies > replies.length;
+  const articleCount = root === undefined || partial ? -1 : 1 + replies.length;
 
   // Scoped to the REPLIES, never the root — `PresenceScope` says why an agent
   // triggered by the root is the room's business and not this thread's.
