@@ -73,6 +73,54 @@ export async function patch(pathname: string, body: unknown): Promise<void> {
   if (!res.ok) throw new Error(`PATCH ${pathname} → ${res.status}: ${await res.text()}`);
 }
 
+/**
+ * Wait for the app shell, and say what is on screen instead when it never
+ * comes.
+ *
+ * **A bare `waitForSelector` here reports the one thing that is never the
+ * cause.** The shell is what the app renders when nothing is wrong, so its
+ * absence is always a *different* screen having won — the first-run wizard, the
+ * server-unreachable screen, the crash fallback, or the blank gate the shell
+ * holds while config loads. `attempt` swallows the failure into a single `✗
+ * mobile-sessions-light skipped: Timeout 20000ms exceeded` line, and a run that
+ * finishes twenty minutes later leaves nothing else to go on — which is exactly
+ * how DOR-1423 arrived: a real timeout, on a real surface, with no way to tell
+ * which of those four it was. So the failure carries the URL and what the page
+ * was actually showing, and the next occurrence names itself.
+ *
+ * It did, immediately. Driving `mobile-sessions` nine times over turned up one
+ * failure, and this said what it was: the **crash fallback** ("DorkOS couldn't
+ * finish starting"), not a slow gate — the shell's 3s `loadingTimedOut`
+ * fall-through cannot produce a 20s wait, and the client boot crash that can is
+ * a product defect, tracked separately from the harness.
+ */
+export async function waitForAppShell(page: Page): Promise<void> {
+  try {
+    await page.waitForSelector('[data-testid="app-shell"]', { timeout: WAIT_MS });
+  } catch (err) {
+    // Both probes are best-effort, and must stay that way: this runs on a page
+    // that has already misbehaved, and a closed or navigating one would replace
+    // the timeout — the only evidence there is — with `Target closed`.
+    const unreachable = await page
+      .locator('[data-testid="server-unreachable"]')
+      .count()
+      .then((n) => n > 0)
+      .catch(() => false);
+    const onScreen = (
+      await page
+        .locator('body')
+        .innerText()
+        .catch(() => '')
+    ).trim();
+    throw new Error(
+      `app shell never rendered at ${page.url()} — ` +
+        `server-unreachable screen: ${unreachable ? 'yes' : 'no'}; ` +
+        `page text: ${JSON.stringify(onScreen.slice(0, 300)) || '(empty)'}`,
+      { cause: err }
+    );
+  }
+}
+
 /** Screenshot the viewport and save the raw, untouched PNG into the run. */
 export async function shoot(
   page: Page,

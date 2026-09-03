@@ -12,6 +12,7 @@ import {
   shoot,
   sleep,
   url,
+  waitForAppShell,
   WAIT_MS,
   type LoopMark,
   type LoopSpec,
@@ -50,7 +51,7 @@ import { shootTaskRuntimePicker } from './surfaces-desktop-tasks.js';
  */
 async function shootCockpit(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
   await page.goto(url('/'));
-  await page.waitForSelector('[data-testid="app-shell"]', { timeout: WAIT_MS });
+  await waitForAppShell(page);
   // The composer, not a seeded agent's name: Home is a room now
   // (`team-room-home` D3.2), so the money state is "the room has drawn" rather
   // than "the activity feed has an agent in it".
