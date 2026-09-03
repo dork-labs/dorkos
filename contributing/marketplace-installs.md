@@ -191,8 +191,9 @@ runTransaction<T>(opts: {
 
 `target` is the absolute install location the flow's `activate` renames onto (e.g. `<projectPath>/.dork/plugins/<name>` or `<dorkHome>/plugins/<name>`).
 
-Lifecycle:
+Lifecycle (all of it inside a per-`target` lock — see below):
 
+0. **Take the target lock.** The whole lifecycle runs inside `withFileLock` (`@dorkos/shared/atomic-write`) keyed on the resolved `target`, so a second transaction aimed at that directory waits instead of interleaving. Two installs of _different_ packages still run concurrently.
 1. **Create staging dir.** `mkdtemp(path.join(os.tmpdir(), 'dorkos-install-<name>-'))`.
 2. **Stage.** Call `opts.stage({ path: stagingDir })`. A thrown error removes the staging dir and re-raises. No backup has been taken yet, so `target` is left untouched.
 3. **Back up the target.** If `target` already exists, move it aside to a sibling `<target>.dorkos-bak-<timestamp>-<uuid>` via `atomicMove` (a sibling keeps the backup on the same filesystem, so the move and any restore are cheap atomic renames; the uuid guards against a same-millisecond collision). A fresh install (target absent) takes no backup.
@@ -201,6 +202,10 @@ Lifecycle:
 6. **Failure rollback.** Remove any partially-written `target`; if a backup was taken, restore it onto `target` via `atomicMove`; remove the staging directory. The original error is always re-raised. Every cleanup and restore step is wrapped defensively so a cleanup error never masks the original transaction error.
 
 The net guarantee: either the package is fully installed and visible, or (for a fresh install) it never existed, or (for a reinstall) the previous installation is intact. Overwrite installs are safe by design: the previous target survives a failed activation and is reaped on success.
+
+**Why step 0 exists (DOR-711).** Steps 3 and 6 are a pair — a rollback restores the snapshot step 3 took — and without serialisation two transactions on one directory could split that pair apart. A took the existing target as its backup; B then found no target at all and installed with no backup of its own; B succeeded; A's activation failed and its rollback deleted the target (B's fresh content) to put A's now-stale backup back. A failed install destroyed a successful one, and both callers got the response they expected. The lock makes move-aside → activate → rollback one critical section, so that interleaving cannot be built. An in-process mutex is the right scope rather than a lock file: installs run in the server and nowhere else — the CLI is a thin HTTP client into the same `MarketplaceInstaller` instance (section 2), so two concurrent installs are always two requests in one process. The lock is non-reentrant by design, so no flow may call `runTransaction` from inside another transaction on the same target; nothing does today (schedule materialisation runs after a flow's transaction has settled, not inside it).
+
+The uninstall flow has the same shape and does **not** share this lock: it runs its own staging + restore path (section 4) rather than `runTransaction`.
 
 ### 5.1 npm dependencies
 

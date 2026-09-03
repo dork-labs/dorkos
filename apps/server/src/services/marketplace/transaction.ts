@@ -18,6 +18,32 @@
  * transaction (the install already succeeded, so a leftover temp dir or backup is
  * a janitorial concern, not a correctness one).
  *
+ * ## Why the whole transaction is serialised per target (DOR-711)
+ *
+ * Each step above is sound on its own, and together they were still not safe
+ * for two transactions aimed at one directory. The backup a rollback restores
+ * is a snapshot of whatever stood at the target when THIS transaction took it,
+ * and the rollback puts it back without asking whether the target is still the
+ * one it moved aside. Two installs of the same package interleaved like this:
+ *
+ * 1. A moves the existing target aside as A's backup
+ * 2. B finds no target (A took it) and proceeds with no backup of its own
+ * 3. B renames its staged content into place and **succeeds**
+ * 4. A's `activate` fails; A's rollback removes the target — B's freshly
+ *    installed content — and restores A's now-stale backup
+ *
+ * A failed install had destroyed a successful one, and both callers saw the
+ * response they expected. So every transaction now runs inside
+ * {@link withFileLock} keyed on its resolved `target`: the move-aside, the
+ * activation and the rollback are one critical section, and the interleave
+ * above cannot be constructed. Serialisation is per target — two installs of
+ * different packages still run concurrently.
+ *
+ * An in-process mutex is the honest scope here, not an under-fix: marketplace
+ * installs run in the server and nowhere else. The CLI is a thin HTTP client
+ * into the same `MarketplaceInstaller` instance (`contributing/marketplace-installs.md`
+ * §2), so two concurrent installs are always two requests in one process.
+ *
  * This design supersedes the git backup-branch rollback of ADR-0231: it is
  * scoped to the actual install location (not `process.cwd()`), it restores
  * gitignored files under `.dork/` that a `git reset` cannot touch, and it has
@@ -29,6 +55,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { withFileLock } from '@dorkos/shared/atomic-write';
 import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
 import { atomicMove } from './lib/atomic-move.js';
 
@@ -71,7 +98,8 @@ export interface TransactionOptions<T> {
 }
 
 /**
- * Run a file-scoped marketplace install transaction.
+ * Run a file-scoped marketplace install transaction, serialised against every
+ * other transaction aimed at the same `target`.
  *
  * Lifecycle: create temp staging dir → `stage` → (if `target` exists, move it
  * aside to a sibling backup) → `activate` → cleanup. On a `stage` error the
@@ -80,10 +108,34 @@ export interface TransactionOptions<T> {
  * taken) is restored onto `target`, and the staging dir is removed before the
  * original error is re-raised.
  *
+ * The whole lifecycle — staging included — runs inside {@link withFileLock} on
+ * the resolved `target`, so a second transaction against that directory waits
+ * rather than interleaving with this one's backup and rollback (DOR-711; see
+ * the module header for the interleaving this prevents). Transactions against
+ * different targets are unaffected and still run concurrently.
+ *
+ * Do not call this from inside another transaction on the same `target`: the
+ * lock is deliberately non-reentrant and throws instead of deadlocking. No
+ * caller nests today — the installer materialises a package's schedules after
+ * its flow's transaction has settled, not inside it.
+ *
  * @param opts - Transaction options ({@link TransactionOptions})
  * @returns The result returned from `activate`.
  */
 export async function runTransaction<T>(opts: TransactionOptions<T>): Promise<T> {
+  return withFileLock(opts.target, () => runTransactionUnlocked(opts));
+}
+
+/**
+ * The transaction lifecycle itself, with no serialisation of its own.
+ *
+ * Split out from {@link runTransaction} purely so the public entry point is one
+ * readable `withFileLock` call; nothing may call this directly, because the
+ * lock is what makes the backup-and-restore dance safe under concurrency.
+ *
+ * @internal
+ */
+async function runTransactionUnlocked<T>(opts: TransactionOptions<T>): Promise<T> {
   const stagingDir = await mkdtemp(path.join(tmpdir(), `${STAGING_DIR_PREFIX}${opts.name}-`));
 
   // Phase 1: stage. No backup is taken yet, so a stage failure leaves the
