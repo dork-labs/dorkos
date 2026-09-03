@@ -13,6 +13,7 @@ import { cn, type ExecutionDeviation } from '@/layers/shared/lib';
 import {
   useExecutionExceptions,
   AgentAvatar,
+  resolveAgentVisual,
   type ExecutionException,
 } from '@/layers/entities/agent';
 import { useSettingsDeepLink } from '@/layers/shared/model';
@@ -100,6 +101,10 @@ export function ExecutionExceptionsStrip({
           const reason = report.isBroken
             ? report.breakages.map((b) => b.message).join(' ')
             : report.deviations.map((d) => deviationText(d.field, d.label)).join(', ');
+          // The same resolver every other AgentAvatar call site uses: an agent
+          // that never picked a colour gets one hashed from its id, so it still
+          // reads as an identity rather than as flat grey.
+          const visual = resolveAgentVisual(agent);
           return (
             <li key={path}>
               <button
@@ -108,11 +113,7 @@ export function ExecutionExceptionsStrip({
                 className="hover:bg-accent flex w-full items-center gap-2 px-3 py-2 text-left transition-colors"
                 data-testid={report.isBroken ? 'execution-exception-broken' : 'execution-exception'}
               >
-                <AgentAvatar
-                  color={agent.color ?? '#888'}
-                  emoji={agent.icon ?? '\u{1F916}'}
-                  size="xs"
-                />
+                <AgentAvatar color={visual.color} emoji={visual.emoji} size="xs" />
                 {/* Stacked on a phone, side by side from `sm` up. A single line
                   at 390px put the name at three letters and ran the reason off
                   the right edge — and the reason is the whole point of the row.

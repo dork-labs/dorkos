@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
-import { TooltipProvider } from '@/layers/shared/ui';
+import { STATUS_TONE_TEXT, TooltipProvider } from '@/layers/shared/ui';
 import { ContextItem } from '../ui/ContextItem';
 import type { ContextUsage } from '@dorkos/shared/types';
 
@@ -52,20 +52,20 @@ describe('ContextItem', () => {
     expect(screen.getByText('21%')).toBeInTheDocument();
   });
 
-  it('applies amber color class at 80%', () => {
+  it('applies the warning tint at 80%', () => {
     const usage: ContextUsage = { ...mockContextUsage, percentage: 82 };
     const { container } = render(<ContextItem percent={82} contextUsage={usage} />, {
       wrapper: Wrapper,
     });
-    expect(container.querySelector('.text-amber-500')).not.toBeNull();
+    expect(container.querySelector(`.${STATUS_TONE_TEXT.warning}`)).not.toBeNull();
   });
 
-  it('applies red color class at 95%', () => {
+  it('applies the error tint at 95%', () => {
     const usage: ContextUsage = { ...mockContextUsage, percentage: 97 };
     const { container } = render(<ContextItem percent={97} contextUsage={usage} />, {
       wrapper: Wrapper,
     });
-    expect(container.querySelector('.text-red-500')).not.toBeNull();
+    expect(container.querySelector(`.${STATUS_TONE_TEXT.error}`)).not.toBeNull();
   });
 
   it('renders without tooltip when contextUsage is null', () => {

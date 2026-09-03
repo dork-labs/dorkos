@@ -1,7 +1,13 @@
 import { Wifi, WifiOff } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import type { ConnectionState } from '@dorkos/shared/types';
-import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/layers/shared/ui';
+import {
+  HoverCard,
+  HoverCardTrigger,
+  HoverCardContent,
+  STATUS_TONE_DOT,
+  STATUS_TONE_TEXT,
+} from '@/layers/shared/ui';
 
 /** How one {@link ConnectionState} is drawn and named. */
 interface ConnectionStateConfig {
@@ -27,21 +33,21 @@ interface ConnectionStateConfig {
  */
 export const CONNECTION_STATE_CONFIG: Record<ConnectionState, ConnectionStateConfig> = {
   connecting: {
-    color: 'bg-amber-500',
+    color: STATUS_TONE_DOT.warning,
     label: 'Connecting',
     shortLabel: 'Connecting',
     icon: Wifi,
     tasks: true,
   },
   connected: {
-    color: 'bg-emerald-500',
+    color: STATUS_TONE_DOT.success,
     label: 'Connected',
     shortLabel: 'Connected',
     icon: Wifi,
     tasks: false,
   },
   reconnecting: {
-    color: 'bg-amber-500',
+    color: STATUS_TONE_DOT.warning,
     label: 'Reconnecting',
     shortLabel: 'Reconnecting',
     icon: Wifi,
@@ -56,7 +62,7 @@ export const CONNECTION_STATE_CONFIG: Record<ConnectionState, ConnectionStateCon
   // instead of an ungrammatical "Disconnecting" — there is no verb for the
   // terminal failure state, only for the states either side of it.
   disconnected: {
-    color: 'bg-red-500',
+    color: STATUS_TONE_DOT.error,
     label: 'Live updates lost',
     shortLabel: 'Offline',
     icon: WifiOff,
@@ -110,7 +116,7 @@ export function ConnectionItem({ connectionState, compact }: ConnectionItemProps
           <Icon
             className={cn(
               'mt-0.5 size-4 shrink-0',
-              connectionState === 'disconnected' ? 'text-red-500' : 'text-amber-500'
+              connectionState === 'disconnected' ? STATUS_TONE_TEXT.error : STATUS_TONE_TEXT.warning
             )}
           />
           <div className="min-w-0 space-y-1.5">

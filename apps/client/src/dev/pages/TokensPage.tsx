@@ -2,7 +2,14 @@ import { cn } from '@/layers/shared/lib';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { PlaygroundPageLayout } from '../PlaygroundPageLayout';
 import { ShowcaseLabel } from '../ShowcaseLabel';
-import { Button } from '@/layers/shared/ui';
+import {
+  Button,
+  STATUS_TONE_BORDER_LEFT,
+  STATUS_TONE_DOT,
+  STATUS_TONE_SURFACE,
+  STATUS_TONE_TEXT,
+  type StatusTone,
+} from '@/layers/shared/ui';
 import { Settings } from 'lucide-react';
 import { TOKENS_SECTIONS } from '../playground-registry';
 
@@ -75,6 +82,15 @@ const STATUS_ROWS = [
     fg: 'text-status-pending-fg',
   },
 ] as const;
+
+/**
+ * The five tones every status colour resolves to.
+ *
+ * The classes are NOT written out here — each row reads the real
+ * `STATUS_TONE_*` record, so a tone that changes in `shared/ui/status-dot.ts`
+ * changes on this page too and cannot quietly drift.
+ */
+const STATUS_TONES: StatusTone[] = ['success', 'warning', 'error', 'info', 'neutral'];
 
 const TYPE_SCALE = [
   { cls: 'text-3xs', label: 'text-3xs', px: '10px' },
@@ -186,6 +202,35 @@ function StatusColorsSection() {
                 Text
               </div>
             </div>
+          </div>
+        ))}
+      </div>
+
+      <ShowcaseLabel>Tones — what a dot, a word, a banner and a row edge each wear</ShowcaseLabel>
+      <p className="text-muted-foreground text-xs">
+        One fact, one spelling. Everything that reports state — an adapter dot, a relay row, a
+        context gauge, a connection banner — resolves through these five, so nothing has to pick a
+        green again.
+      </p>
+      <div className="space-y-2">
+        {STATUS_TONES.map((tone) => (
+          <div key={tone} className="flex items-center gap-3">
+            <span className="text-foreground w-16 text-xs font-medium">{tone}</span>
+            <span className={cn('size-2.5 shrink-0 rounded-full', STATUS_TONE_DOT[tone])} />
+            <span className={cn('text-xs font-medium', STATUS_TONE_TEXT[tone])}>Text</span>
+            <span
+              className={cn('rounded-md px-2 py-1 text-xs font-medium', STATUS_TONE_SURFACE[tone])}
+            >
+              Surface
+            </span>
+            <span
+              className={cn(
+                'bg-card rounded-r-md border-l-2 px-2 py-1 text-xs',
+                STATUS_TONE_BORDER_LEFT[tone]
+              )}
+            >
+              Row edge
+            </span>
           </div>
         ))}
       </div>
@@ -312,9 +357,9 @@ function SizesSection() {
       <ShowcaseLabel>Icon Sizes</ShowcaseLabel>
       <div className="flex items-end gap-6">
         {[
-          { label: 'icon-xs', cls: 'size-[var(--size-icon-xs)]' },
-          { label: 'icon-sm', cls: 'size-[var(--size-icon-sm)]' },
-          { label: 'icon-md', cls: 'size-[var(--size-icon-md)]' },
+          { label: 'icon-xs', cls: 'size-(--size-icon-xs)' },
+          { label: 'icon-sm', cls: 'size-(--size-icon-sm)' },
+          { label: 'icon-md', cls: 'size-(--size-icon-md)' },
         ].map((icon) => (
           <div key={icon.label} className="space-y-1.5 text-center">
             <Settings className={cn('text-foreground', icon.cls)} />

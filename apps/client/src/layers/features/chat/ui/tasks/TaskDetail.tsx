@@ -97,7 +97,7 @@ export function TaskDetail({ task, taskMap, statusSince, onScrollToTask }: TaskD
         <p className="text-muted-foreground text-xs whitespace-pre-wrap">{task.description}</p>
       )}
       {metaItems.length > 0 && (
-        <div className="text-muted-foreground flex flex-wrap items-center gap-1 text-[11px]">
+        <div className="text-muted-foreground text-2xs flex flex-wrap items-center gap-1">
           {metaItems.map((item, i) => (
             <span key={i} className="flex items-center gap-1">
               {i > 0 && <span className="text-muted-foreground/50">·</span>}

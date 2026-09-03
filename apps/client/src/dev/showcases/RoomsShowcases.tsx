@@ -437,7 +437,7 @@ function LoudnessMeterShowcase() {
                 <LoudnessMeter level={level} size="pill" />
                 <LoudnessMeter level={level} size="room" />
               </div>
-              <span className="text-muted-foreground text-[10px]">{LEVEL_CAPTIONS[level]}</span>
+              <span className="text-muted-foreground text-3xs">{LEVEL_CAPTIONS[level]}</span>
             </div>
           ))}
         </div>
@@ -452,7 +452,7 @@ function LoudnessMeterShowcase() {
                 <LoudnessMeter level={level} size="pill" dormant />
                 <LoudnessMeter level={level} size="room" dormant />
               </div>
-              <span className="text-muted-foreground text-[10px]">{LEVEL_CAPTIONS[level]}</span>
+              <span className="text-muted-foreground text-3xs">{LEVEL_CAPTIONS[level]}</span>
             </div>
           ))}
         </div>

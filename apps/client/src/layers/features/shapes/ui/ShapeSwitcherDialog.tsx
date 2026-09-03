@@ -225,7 +225,7 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
       >
         <DialogHeader className="space-y-1 px-5 pt-5">
           <DialogTitle className="flex items-center gap-2">
-            <Shapes className="text-muted-foreground size-[--size-icon-sm]" />
+            <Shapes className="text-muted-foreground size-(--size-icon-sm)" />
             Shapes
           </DialogTitle>
           <DialogDescription>
@@ -247,7 +247,7 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
           ) : !shapes || shapes.length === 0 ? (
             <div className="flex flex-col items-center gap-3 px-4 py-8 text-center">
               <span className="bg-muted flex size-11 items-center justify-center rounded-full">
-                <Shapes className="text-muted-foreground size-[--size-icon-md]" />
+                <Shapes className="text-muted-foreground size-(--size-icon-md)" />
               </span>
               <div className="space-y-1">
                 <p className="text-sm font-medium">No Shapes installed yet</p>
@@ -263,7 +263,7 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
                   void navigate({ to: '/marketplace' });
                 }}
               >
-                <Store className="size-[--size-icon-xs]" />
+                <Store className="size-(--size-icon-xs)" />
                 Browse Marketplace
               </Button>
             </div>
@@ -288,7 +288,7 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
                       )}
                     >
                       <span className="bg-muted text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-md">
-                        <Shapes className="size-[--size-icon-sm]" />
+                        <Shapes className="size-(--size-icon-sm)" />
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-medium">
@@ -301,13 +301,13 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
                         )}
                       </span>
                       {isPending ? (
-                        <Loader2 className="text-muted-foreground size-[--size-icon-sm] shrink-0 animate-spin" />
+                        <Loader2 className="text-muted-foreground size-(--size-icon-sm) shrink-0 animate-spin" />
                       ) : shape.active ? (
                         <Badge variant="secondary" className="shrink-0">
                           Active
                         </Badge>
                       ) : (
-                        <ArrowRight className="text-muted-foreground size-[--size-icon-sm] shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+                        <ArrowRight className="text-muted-foreground size-(--size-icon-sm) shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
                       )}
                     </button>
                   </li>
@@ -320,7 +320,7 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
           {arrival && (
             <div className="border-border bg-card mt-3 rounded-md border p-3">
               <div className="flex items-start gap-2.5">
-                <Sparkles className="text-primary mt-0.5 size-[--size-icon-sm] shrink-0" />
+                <Sparkles className="text-primary mt-0.5 size-(--size-icon-sm) shrink-0" />
                 <div className="min-w-0 flex-1 space-y-2">
                   <p className="text-sm">
                     This Shape suggests the{' '}
@@ -331,7 +331,7 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
                       agent. Quiet secondary line, matching the arrival ledger. */}
                   {arrival.scheduleSummary && (
                     <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
-                      <CalendarClock className="size-[--size-icon-xs] shrink-0" />
+                      <CalendarClock className="size-(--size-icon-xs) shrink-0" />
                       {arrival.scheduleSummary}
                     </p>
                   )}
@@ -379,7 +379,7 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
           {result && result.warnings.length > 0 && (
             <div className="border-border bg-muted/40 mt-3 space-y-1.5 rounded-md border p-3">
               <p className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium">
-                <TriangleAlert className="size-[--size-icon-xs]" />
+                <TriangleAlert className="size-(--size-icon-xs)" />
                 {result.warnings.length === 1 ? '1 note' : `${result.warnings.length} notes`}
               </p>
               <ul className="space-y-1">
@@ -467,7 +467,7 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
                   }}
                   className="text-muted-foreground"
                 >
-                  <Copy className="size-[--size-icon-xs]" />
+                  <Copy className="size-(--size-icon-xs)" />
                   Make your own version
                 </Button>
               </div>

@@ -105,7 +105,7 @@ function WidthColumn({
 }) {
   return (
     <div className="min-w-0">
-      <p className="text-muted-foreground mb-2 text-[10px] tracking-wide uppercase">
+      <p className="text-muted-foreground text-3xs mb-2 tracking-wide uppercase">
         {caption} ({px}px)
       </p>
       <div className="border-border/60 rounded-lg border border-dashed p-2" style={{ width: px }}>

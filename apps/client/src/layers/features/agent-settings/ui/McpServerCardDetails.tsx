@@ -38,9 +38,9 @@ function ToolList({ tools }: { tools: readonly McpToolSummary[] }) {
           key={tool.name}
           className="border-border/40 flex items-baseline gap-2 border-b py-1 last:border-b-0"
         >
-          <code className="text-foreground shrink-0 font-mono text-[11px]">{tool.name}</code>
+          <code className="text-foreground text-2xs shrink-0 font-mono">{tool.name}</code>
           {tool.description && (
-            <span className="text-muted-foreground truncate text-[11px]">{tool.description}</span>
+            <span className="text-muted-foreground text-2xs truncate">{tool.description}</span>
           )}
         </div>
       ))}
@@ -153,7 +153,7 @@ export function McpServerCardDetails({
 
       {rawName !== displayName && (
         <DetailRow label="Raw id">
-          <code className="font-mono text-[11px]">{rawName}</code>
+          <code className="text-2xs font-mono">{rawName}</code>
         </DetailRow>
       )}
 
@@ -167,7 +167,7 @@ export function McpServerCardDetails({
 
       {error && (
         <DetailRow label="Error">
-          <code className="font-mono text-[11px] break-all">{error}</code>
+          <code className="text-2xs font-mono break-all">{error}</code>
         </DetailRow>
       )}
     </div>

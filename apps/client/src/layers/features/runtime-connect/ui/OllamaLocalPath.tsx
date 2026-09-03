@@ -304,7 +304,7 @@ function VerdictLine({ verdict, explanation }: { verdict: OllamaFitVerdict; expl
   return (
     <div data-testid="ollama-verdict" data-verdict={verdict}>
       <p className={cn('text-xs font-medium', meta.tone)}>{meta.label}</p>
-      <p className="text-muted-foreground/80 text-[11px] leading-snug">{explanation}</p>
+      <p className="text-muted-foreground/80 text-2xs leading-snug">{explanation}</p>
     </div>
   );
 }
@@ -312,7 +312,7 @@ function VerdictLine({ verdict, explanation }: { verdict: OllamaFitVerdict; expl
 /** Small tier badge — omitted entirely when a model carries no tier. */
 function TierBadge({ tier }: { tier: ModelTier }) {
   return (
-    <Badge variant="outline" className="px-1.5 py-0 text-[10px] font-normal">
+    <Badge variant="outline" className="text-3xs px-1.5 py-0 font-normal">
       {TIER_LABELS[tier]}
     </Badge>
   );
@@ -509,7 +509,7 @@ function PullByNameInput({
         </Button>
       </div>
       {trimmed.length > 0 && !valid && (
-        <p className="text-muted-foreground text-[11px]">
+        <p className="text-muted-foreground text-2xs">
           Enter a valid Ollama tag, like <code className="text-2xs">qwen2.5-coder:32b</code>.
         </p>
       )}

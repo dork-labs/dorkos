@@ -44,7 +44,7 @@ export function NamespaceGroupDemo({
         <span className="text-xs font-semibold" style={{ color }}>
           {namespace}
         </span>
-        <span className="text-muted-foreground text-[10px]">
+        <span className="text-muted-foreground text-3xs">
           {activeCount}/{agentCount} agents
         </span>
         {activeCount > 0 && (

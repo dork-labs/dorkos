@@ -343,7 +343,7 @@ export function InputActionButton({
           </div>
         )}
         {queueDepth > 0 && buttonState === 'queue' && (
-          <span className="bg-foreground text-background absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-medium">
+          <span className="bg-foreground text-background text-3xs absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full font-medium">
             {queueDepth}
           </span>
         )}

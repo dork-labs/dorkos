@@ -552,16 +552,18 @@ function SetupDependencyRow({ dep }: { dep: DependencyCheck }) {
     <div className="space-y-2" data-testid="runtime-setup-dependency">
       {/* Stacked, not inline: the name owns its line so a long label never wraps
           beside a truncating description. */}
-      <div>
-        <div className="flex items-center gap-2">
-          {satisfied ? (
-            <Check className="size-3.5 shrink-0 text-emerald-500" />
-          ) : (
-            <CircleAlert className="size-3.5 shrink-0 text-amber-500" />
-          )}
-          <span className="text-sm">{dep.name}</span>
-        </div>
-        <p className="text-muted-foreground mt-1 pl-[1.375rem] text-xs">
+      {/* Two columns rather than a hand-measured indent: the description sits in
+          the name's column, so it lines up under the name whatever the icon's
+          size — the `pl-[1.375rem]` this replaced was 14px of icon plus 8px of
+          gap, written out as a number that silently broke if either moved. */}
+      <div className="grid grid-cols-[auto_1fr] items-center gap-x-2">
+        {satisfied ? (
+          <Check className="size-3.5 shrink-0 text-emerald-500" />
+        ) : (
+          <CircleAlert className="size-3.5 shrink-0 text-amber-500" />
+        )}
+        <span className="text-sm">{dep.name}</span>
+        <p className="text-muted-foreground col-start-2 mt-1 text-xs">
           {satisfied && dep.version ? `v${dep.version}` : dep.description}
         </p>
       </div>

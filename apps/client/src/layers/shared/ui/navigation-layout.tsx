@@ -280,7 +280,7 @@ function NavigationLayoutSectionHeader({
       role="presentation"
       data-slot="navigation-layout-section-header"
       className={cn(
-        'text-muted-foreground/70 px-4 pt-3 pb-1 text-[11px] font-medium tracking-wide uppercase select-none md:px-3',
+        'text-muted-foreground/70 text-2xs px-4 pt-3 pb-1 font-medium tracking-wide uppercase select-none md:px-3',
         className
       )}
     >

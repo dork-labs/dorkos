@@ -599,7 +599,7 @@ The bound behind all four: an identity's colour answers only where that identity
 
 **Two traps this grammar hit, which apply well beyond identity surfaces:**
 
-- **No Tailwind `border-<colour>` utility can change a border in this app.** `index.css` sets `border-color: hsl(var(--border))` on `*` in an **unlayered** rule, and an unlayered rule outranks every `@layer` — including Tailwind's `utilities`. `border-destructive`, `border-primary`, `border-transparent` and every other border colour class in the codebase currently render as the neutral border; verified in a browser. Until that rule is layered (a repo-wide change with its own visual review), a border colour has to be set **inline**, which does outrank it. Where the colour must also _move_, keep the inline declaration and put only its strength in a custom property a class can set — `TeamMemberCard` is the worked example.
+- **The app's default border colour lives in `@layer base`, and it must stay there.** `index.css` sets `border-color: hsl(var(--border))` on `*` so a bare `border` class paints the neutral line instead of the text colour. That rule used to be **unlayered**, and an unlayered declaration outranks every `@layer` — Tailwind's `utilities` included — so `border-primary`, `border-destructive` and even `border-transparent` all rendered as the same neutral line across 69 files. It is layered now (DOR-1750) and `border-<colour>` utilities work normally. If you ever move it out of `@layer base`, you silently break every coloured border in the app. A **runtime** colour still has to be inline, because no class expresses `color-mix()` of a custom property; where that colour must also _move_, put only its strength in a custom property a class can set — `TeamMemberCard` is the worked example.
 - **`group-hover:` matches ANY `.group` ancestor, not the nearest one.** Tailwind compiles it to `:where(.group):hover &`. The sidebar wraps its rows in an unnamed `.group` that spans most of the pane, so the bare form left every sidebar face permanently ringed. Always use a **named** group (`group/identity` + `group-hover/identity:`) when the control is anywhere it could be nested.
 
 **Press scales by target size:** `0.99` for a card, `0.98` for a row or chip, `0.94` for a mark used as a button. Scale down only; the release rides the hover duration back up.
@@ -945,21 +945,25 @@ The app uses a CSS custom property scale multiplier system that makes text, icon
 
 ### Icon Size Convention
 
-Three standard sizes, use `size-[--size-icon-*]` for all icon sizing:
+Three standard sizes, use `size-(--size-icon-*)` for all icon sizing:
 
-| Token     | Desktop | Use Case                                                 |
-| --------- | ------- | -------------------------------------------------------- |
-| `icon-xs` | 12px    | Decorative, status indicators, inline affordances        |
-| `icon-sm` | 16px    | Interactive icons in compact UI (sidebar, tool cards)    |
-| `icon-md` | 20px    | Primary action icons (buttons, navigation, prominent UI) |
+| Token     | Desktop | Mobile | Use Case                                                 |
+| --------- | ------- | ------ | -------------------------------------------------------- |
+| `icon-xs` | 12px    | 15px   | Decorative, status indicators, inline affordances        |
+| `icon-sm` | 16px    | 20px   | Interactive icons in compact UI (sidebar, tool cards)    |
+| `icon-md` | 20px    | 25px   | Primary action icons (buttons, navigation, prominent UI) |
 
 Usage:
 
 ```tsx
-<Check className="size-[--size-icon-xs] text-status-success" />
-<FolderOpen className="size-[--size-icon-sm] text-muted-foreground" />
-<PanelLeft className="size-[--size-icon-md]" />
+<Check className="size-(--size-icon-xs) text-status-success" />
+<FolderOpen className="size-(--size-icon-sm) text-muted-foreground" />
+<PanelLeft className="size-(--size-icon-md)" />
 ```
+
+**Parentheses, not brackets.** `size-(--size-icon-sm)` is Tailwind v4's syntax for "this arbitrary value is a custom property". The v3 spelling `size-[--size-icon-sm]` compiles to `width: --size-icon-sm`, which is not valid CSS — the browser drops it and the icon falls back to its intrinsic 24px. Two files shipped that way until DOR-1750; if an icon looks too big, check the brackets first.
+
+`Button` already applies `--size-icon-sm` to any `<svg>` a caller hands it unsized, so most icons inside a button need no class at all. Its `xs` and `icon-xs` sizes deliberately opt out and stay at a flat 12px — they are small chrome that should not grow.
 
 ### Hover Pattern Mobile Alternatives
 

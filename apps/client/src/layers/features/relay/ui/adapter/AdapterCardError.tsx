@@ -18,7 +18,7 @@ export function AdapterCardError({ instance }: AdapterCardErrorProps) {
   if (!errorCount && !lastError) return null;
 
   return (
-    <div className="mt-3 pl-[18px]">
+    <div className="mt-3 pl-4">
       {errorCount > 0 && !lastError && (
         <div className="flex items-center gap-1 text-xs text-red-500">
           <AlertTriangle className="size-3" />

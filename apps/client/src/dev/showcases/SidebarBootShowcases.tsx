@@ -64,13 +64,13 @@ export function SidebarBootShowcases() {
       <ShowcaseDemo>
         <div className="flex flex-wrap gap-6">
           <div className="space-y-2">
-            <p className="text-muted-foreground text-[11px]">Cold — nothing known yet</p>
+            <p className="text-muted-foreground text-2xs">Cold — nothing known yet</p>
             <Panel>
               <SidebarSkeleton />
             </Panel>
           </div>
           <div className="space-y-2">
-            <p className="text-muted-foreground text-[11px]">
+            <p className="text-muted-foreground text-2xs">
               Warm — the final shape, in the first frame
             </p>
             <Panel>
@@ -85,7 +85,7 @@ export function SidebarBootShowcases() {
       </ShowcaseLabel>
       <ShowcaseDemo>
         <div className="space-y-2">
-          <p className="text-muted-foreground text-[11px]">
+          <p className="text-muted-foreground text-2xs">
             A cold boot changes state exactly once. Under a reduced-motion preference the same
             change is instant.
           </p>
@@ -152,12 +152,12 @@ function BootCacheControl() {
 
   return (
     <div className="space-y-2">
-      <p className="text-muted-foreground text-[11px]">
+      <p className="text-muted-foreground text-2xs">
         The cockpit keeps its last answer for the panel’s handful of boot queries in this browser,
         so a reload paints the finished sidebar in the first frame. Clearing it makes the next load
         cold again.
       </p>
-      <ul className="text-muted-foreground space-y-1 font-mono text-[11px]">
+      <ul className="text-muted-foreground text-2xs space-y-1 font-mono">
         {reading.length === 0 && <li>Nothing remembered.</li>}
         {reading.map((entry) => (
           <li key={entry.key}>

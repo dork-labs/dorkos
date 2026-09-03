@@ -105,11 +105,45 @@
   'bg-status-success bg-status-warning-dot bg-status-error bg-status-info motion-safe:animate-pulse'
 );
 
+/*
+ * The status tone TEXT colours, from `status-dot.ts`'s `STATUS_TONE_TEXT`.
+ *
+ * Named rather than scanned for the same reason `STATUS_DOT_COLOR` is above:
+ * `status-dot.ts` also declares `STATUS_DOT_HALO`, which begins
+ * `absolute inset-0` — a window-escape utility this build refuses to emit
+ * unseen. Without this list, a component that reaches `STATUS_TONE_TEXT`
+ * through the shared module rather than writing the class as a literal —
+ * `SessionContextGauge` does, for its amber/red severity text — has nothing
+ * to scan: the class exists nowhere as text in an `@source`'d file, so
+ * Tailwind never emits it and the severity colour is invisible in the panel.
+ * `plugin-styles.test.ts` pins this list to `STATUS_TONE_TEXT` itself.
+ */
+@source inline(
+  'text-status-success-fg text-status-warning-fg text-status-error-fg text-status-info-fg'
+);
+
 @theme inline {
   --text-2xs: 0.6875rem;
   --text-2xs--line-height: 1rem;
   --text-3xs: 0.625rem;
   --text-3xs--line-height: 0.875rem;
+  /*
+   * Icon sizes, matching the client's desktop values (`index.css`'s `--_si` is
+   * always 1 above 767px, so these are the client's DESKTOP numbers, not a
+   * separate palette). Obsidian's own window is never a phone-width surface,
+   * so there is no mobile-scale variable to carry over here — a bare value is
+   * the honest equivalent, not a simplification that drops behaviour.
+   *
+   * Without these, `button.tsx`'s default icon size
+   * (`size-(--size-icon-sm)`) resolves an undeclared custom property: an
+   * invalid `width`/`height` falls back to the SVG's own intrinsic size (24px)
+   * rather than the intended 16px, on every unsized icon the roster renders.
+   * `plugin-styles.test.ts` pins this list to the three tokens `button.tsx`'s
+   * comment names.
+   */
+  --size-icon-xs: 0.75rem;
+  --size-icon-sm: 1rem;
+  --size-icon-md: 1.25rem;
   /* Use var() without hsl() wrapper — Obsidian provides raw color values */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -179,11 +213,20 @@
   --color-brand: var(--brand);
   --color-brand-foreground: var(--brand-foreground);
   --color-surface: var(--surface);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
+  /*
+   * Wrapped in hsl(), unlike the rest of this block — `--chart-*` below is a
+   * bare `H S% L%` triple (DOR-1750), matching the client's own shape so the
+   * two stylesheets' `--chart-N` custom properties mean the same thing. The
+   * client's `TASK_COLORS` / `CHART_COLORS` write `hsl(var(--chart-N))` as an
+   * INLINE STYLE, which no `@theme` mapping rescues — if `--chart-N` were
+   * already a complete `hsl(...)` colour here, that inline style would nest
+   * `hsl(hsl(...))`, an invalid value that resolves to transparent.
+   */
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
   --color-msg-command-fg: var(--msg-command-fg);
   --color-msg-compaction-fg: var(--msg-compaction-fg);
   --color-msg-timestamp: var(--msg-timestamp);
@@ -410,11 +453,16 @@
   /* DorkOS's own marks. Identity, so they do not become the vault's accent. */
   --brand: hsl(24 90% 44%);
   --brand-foreground: hsl(0 0% 100%);
-  --chart-1: hsl(24 90% 44%);
-  --chart-2: hsl(210 70% 45%);
-  --chart-3: hsl(152 60% 36%);
-  --chart-4: hsl(280 55% 52%);
-  --chart-5: hsl(43 90% 45%);
+  /*
+   * Bare `H S% L%` triples, NOT wrapped in hsl() — see the `--color-chart-*`
+   * mapping above for why the shape (not just the value) has to match the
+   * client's `index.css`. Same five hues as the client's light theme.
+   */
+  --chart-1: 24 90% 44%;
+  --chart-2: 210 70% 45%;
+  --chart-3: 152 60% 36%;
+  --chart-4: 280 55% 52%;
+  --chart-5: 43 90% 45%;
 
   /* Transcript furniture, in the vault's own text ramp. */
   --msg-command-fg: var(--text-muted);

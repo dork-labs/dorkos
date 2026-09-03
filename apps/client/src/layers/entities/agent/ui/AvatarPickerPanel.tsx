@@ -201,7 +201,7 @@ export function AvatarPickerPanel({
                 <motion.button
                   type="button"
                   onClick={handleResetDefaults}
-                  className="text-muted-foreground hover:text-foreground text-[10px] transition-colors"
+                  className="text-muted-foreground hover:text-foreground text-3xs transition-colors"
                   initial={{ opacity: 0, x: 8 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: 8 }}
@@ -234,7 +234,7 @@ export function AvatarPickerPanel({
       >
         {/* Color swatches */}
         <motion.div variants={fadeIn}>
-          <div className="text-muted-foreground mb-2 text-[10px] font-medium tracking-wider uppercase">
+          <div className="text-muted-foreground text-3xs mb-2 font-medium tracking-wider uppercase">
             Color
           </div>
           <AvatarColorGrid
@@ -252,7 +252,7 @@ export function AvatarPickerPanel({
 
         {/* Emoji grid */}
         <motion.div variants={fadeIn}>
-          <div className="text-muted-foreground mb-2 text-[10px] font-medium tracking-wider uppercase">
+          <div className="text-muted-foreground text-3xs mb-2 font-medium tracking-wider uppercase">
             Icon
           </div>
           <AvatarEmojiGrid

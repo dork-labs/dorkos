@@ -427,7 +427,7 @@ function GenericRowFromModel({
       trailing={
         row.unread.tier === 'directed' && row.unread.count !== undefined && !row.muted ? (
           <span
-            className="bg-brand/15 text-brand rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums"
+            className="bg-brand/15 text-brand text-3xs rounded-full px-1.5 py-0.5 font-medium tabular-nums"
             aria-label={`${row.unread.count} unread`}
           >
             {row.unread.count}

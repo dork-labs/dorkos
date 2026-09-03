@@ -93,7 +93,7 @@ function InfoChip({ className, children }: { className?: string; children: React
   return (
     <span
       className={cn(
-        'bg-muted text-muted-foreground inline-flex max-w-full items-center gap-1 truncate rounded-full px-2 py-0.5 text-[11px]',
+        'bg-muted text-muted-foreground text-2xs inline-flex max-w-full items-center gap-1 truncate rounded-full px-2 py-0.5',
         className
       )}
     >
@@ -329,7 +329,7 @@ function IdentityHoverCard({
                 control is the first thing an architect reading the source
                 notices, and it was true here. */}
             <span className="text-muted-foreground text-xs font-medium">View profile</span>
-            <span className="text-muted-foreground text-[10px] tracking-wide uppercase">soon</span>
+            <span className="text-muted-foreground text-3xs tracking-wide uppercase">soon</span>
           </div>
         )}
       </HoverCardContent>

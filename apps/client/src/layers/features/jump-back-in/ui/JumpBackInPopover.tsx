@@ -120,11 +120,11 @@ function JumpBackInOptionShell({
         <span className="flex w-full items-center gap-1.5">
           <span className="text-foreground min-w-0 flex-1 truncate text-sm">{label}</span>
           {relativeTime !== null && (
-            <span className="text-muted-foreground/60 shrink-0 text-[10px]">{relativeTime}</span>
+            <span className="text-muted-foreground/60 text-3xs shrink-0">{relativeTime}</span>
           )}
         </span>
         {summary !== null && (
-          <span className="text-muted-foreground/70 truncate text-[11px]">{summary}</span>
+          <span className="text-muted-foreground/70 text-2xs truncate">{summary}</span>
         )}
       </span>
     </div>

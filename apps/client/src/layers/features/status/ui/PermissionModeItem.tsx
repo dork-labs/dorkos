@@ -204,7 +204,7 @@ export function PermissionModeItem({
             <TooltipTrigger asChild>
               <p
                 data-testid="auto-unsupported-hint"
-                className="text-muted-foreground mt-2 flex items-center gap-1.5 px-1 text-[10px]"
+                className="text-muted-foreground text-3xs mt-2 flex items-center gap-1.5 px-1"
               >
                 <Sparkles className="size-(--size-icon-xs) shrink-0" />
                 Auto unavailable on this model

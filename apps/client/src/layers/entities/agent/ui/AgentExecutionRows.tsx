@@ -30,7 +30,7 @@ import {
 import { useModels } from '@/layers/entities/session';
 
 /** The field-label style every cell in the Runs on picker's metadata grid uses. */
-const LABEL_CLASS = 'text-muted-foreground text-[10px] font-medium tracking-wider uppercase';
+const LABEL_CLASS = 'text-muted-foreground text-3xs font-medium tracking-wider uppercase';
 
 /** One option in a row's picker. */
 interface RowOption {

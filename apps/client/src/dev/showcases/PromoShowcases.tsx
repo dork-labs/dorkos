@@ -59,7 +59,7 @@ function RegistryTable() {
                   {promo.placements.map((p) => (
                     <span
                       key={p}
-                      className="bg-muted text-muted-foreground rounded px-1.5 py-0.5 font-mono text-[10px]"
+                      className="bg-muted text-muted-foreground text-3xs rounded px-1.5 py-0.5 font-mono"
                     >
                       {p}
                     </span>
@@ -250,7 +250,7 @@ function OverrideControls() {
           {dismissedPromoIds.map((id) => (
             <span
               key={id}
-              className="bg-destructive/10 text-destructive rounded px-2 py-0.5 font-mono text-[10px]"
+              className="bg-destructive/10 text-destructive text-3xs rounded px-2 py-0.5 font-mono"
             >
               {id}
             </span>

@@ -227,7 +227,7 @@ export function MarketplaceSidebar() {
                 <button
                   type="button"
                   onClick={clearSources}
-                  className="text-muted-foreground hover:text-foreground focus-ring rounded-sm text-[10px] font-medium tracking-wide uppercase transition-colors"
+                  className="text-muted-foreground hover:text-foreground focus-ring text-3xs rounded-sm font-medium tracking-wide uppercase transition-colors"
                 >
                   Clear
                 </button>
@@ -262,7 +262,7 @@ export function MarketplaceSidebar() {
                 <button
                   type="button"
                   onClick={clearCategories}
-                  className="text-muted-foreground hover:text-foreground focus-ring rounded-sm text-[10px] font-medium tracking-wide uppercase transition-colors"
+                  className="text-muted-foreground hover:text-foreground focus-ring text-3xs rounded-sm font-medium tracking-wide uppercase transition-colors"
                 >
                   Clear
                 </button>

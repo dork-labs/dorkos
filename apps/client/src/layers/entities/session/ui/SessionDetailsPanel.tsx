@@ -101,7 +101,7 @@ export function SessionDetailsPanel({
         >
           <div
             className={cn(
-              'text-muted-foreground mx-2 space-y-1.5 px-3 pt-2 pb-2 text-[11px]',
+              'text-muted-foreground text-2xs mx-2 space-y-1.5 px-3 pt-2 pb-2',
               className
             )}
           >

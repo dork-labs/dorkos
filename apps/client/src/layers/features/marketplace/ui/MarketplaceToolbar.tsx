@@ -172,7 +172,7 @@ function MarketplaceSearchInput() {
         className="pr-10 pl-9 transition-shadow duration-200 focus:shadow-md"
       />
       {/* Keyboard shortcut hint */}
-      <kbd className="text-muted-foreground/60 pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 rounded border border-current/20 px-1.5 py-0.5 font-mono text-[10px] leading-none group-focus-within/search:opacity-0">
+      <kbd className="text-muted-foreground/60 text-3xs pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 rounded border border-current/20 px-1.5 py-0.5 font-mono leading-none group-focus-within/search:opacity-0">
         /
       </kbd>
     </div>

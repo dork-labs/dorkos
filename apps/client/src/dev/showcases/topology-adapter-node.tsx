@@ -38,7 +38,7 @@ export function AdapterDefaultCard({ d }: { d: AdapterDemoData }) {
           <span className="text-foreground truncate text-sm font-medium">{d.label || d.name}</span>
           {d.label && <span className="text-muted-foreground truncate text-xs">{d.name}</span>}
         </div>
-        <Badge variant="outline" className="text-muted-foreground ml-auto shrink-0 text-[10px]">
+        <Badge variant="outline" className="text-muted-foreground text-3xs ml-auto shrink-0">
           Adapter
         </Badge>
       </div>

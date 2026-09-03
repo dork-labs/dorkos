@@ -1,4 +1,5 @@
 import { useMessageTrace } from '@/layers/entities/relay';
+import { STATUS_TONE_DOT, type StatusTone } from '@/layers/shared/ui';
 import type { TraceSpan } from '@dorkos/shared/relay-schemas';
 
 interface MessageTraceProps {
@@ -6,23 +7,34 @@ interface MessageTraceProps {
   onClose?: () => void;
 }
 
+/**
+ * What each span in a trace is saying, in the app's one status vocabulary.
+ *
+ * `sent` is `info` — the same blue relay draws `pending` and `starting` in,
+ * because all three mean "on its way", not "look at me".
+ *
+ * `no_subscriber` is `neutral`: the message reached nobody, but nothing went
+ * wrong. `timeout` is `neutral` too, but for a different reason — it IS a
+ * failure with a clock on it, just not one the sender's own transport
+ * reported as `failed`; it keeps the grey it always drew rather than being
+ * promoted to the failure red on this sweep.
+ */
+const SPAN_TONE: Record<TraceSpan['status'], StatusTone> = {
+  delivered: 'success',
+  failed: 'error',
+  no_subscriber: 'neutral',
+  sent: 'info',
+  timeout: 'neutral',
+};
+
 /** Status color mapping for timeline dots. */
 function statusColor(status: TraceSpan['status']): string {
-  switch (status) {
-    case 'delivered':
-      return 'bg-green-500';
-    case 'failed':
-      return 'bg-red-500';
-    // Reached nobody, but nothing went wrong — grey, never the failure red.
-    case 'no_subscriber':
-      return 'bg-slate-400';
-    case 'sent':
-      return 'bg-yellow-500';
-    case 'timeout':
-      return 'bg-gray-500';
-    default:
-      return 'bg-gray-400';
-  }
+  // `?? STATUS_TONE_DOT.neutral`: a span status this build has not been
+  // compiled against (the server can add one before the client redeploys)
+  // falls back to a visible neutral dot rather than an unresolved
+  // `className={undefined}`, matching the defence `status-colors.ts`'s
+  // `toneOf()` keeps for the same situation.
+  return STATUS_TONE_DOT[SPAN_TONE[status]] ?? STATUS_TONE_DOT.neutral;
 }
 
 /** Format ISO 8601 timestamp to readable time. */

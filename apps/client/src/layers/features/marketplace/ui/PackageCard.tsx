@@ -141,7 +141,7 @@ export function PackageCard({
       />
 
       {/* Bridge line: what this adapter becomes on the Connections page */}
-      {bridge && <p className="text-muted-foreground/90 mb-3 text-[11px]">{bridge.line}</p>}
+      {bridge && <p className="text-muted-foreground/90 text-2xs mb-3">{bridge.line}</p>}
 
       {/* Description */}
       {pkg.description && (
@@ -154,7 +154,7 @@ export function PackageCard({
           borrowed one. It reads muted next to the author rather than as a
           badge: it is provenance, not a claim. */}
       {!isCompact && (authorLabel || pkg.marketplace) && (
-        <div className="text-muted-foreground mb-3 flex items-center gap-1.5 text-[11px]">
+        <div className="text-muted-foreground text-2xs mb-3 flex items-center gap-1.5">
           {authorLabel && (
             <>
               <User className="size-3 shrink-0" aria-hidden />

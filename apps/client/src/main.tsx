@@ -174,7 +174,7 @@ function DevToolsPanel() {
       <div className="flex h-8 shrink-0 items-center gap-0.5 border-b border-white/10 bg-[#181825] px-1">
         <button
           onClick={() => setActiveTab('query')}
-          className={`cursor-default rounded px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+          className={`text-2xs cursor-default rounded px-2.5 py-0.5 font-medium transition-colors ${
             activeTab === 'query' ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white/80'
           }`}
         >
@@ -182,7 +182,7 @@ function DevToolsPanel() {
         </button>
         <button
           onClick={() => setActiveTab('router')}
-          className={`cursor-default rounded px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+          className={`text-2xs cursor-default rounded px-2.5 py-0.5 font-medium transition-colors ${
             activeTab === 'router' ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white/80'
           }`}
         >
@@ -191,7 +191,7 @@ function DevToolsPanel() {
         <div className="ml-auto flex items-center gap-0.5">
           <button
             onClick={toggleMaximize}
-            className="cursor-default rounded p-1 text-[10px] leading-none text-white/40 transition-colors hover:bg-white/10 hover:text-white"
+            className="text-3xs cursor-default rounded p-1 leading-none text-white/40 transition-colors hover:bg-white/10 hover:text-white"
             aria-label={isMaximized ? 'Restore panel size' : 'Maximize panel'}
           >
             {isMaximized ? '▼' : '▲'}

@@ -28,7 +28,7 @@ export function UnverifiedCatalogNotice({ id }: { id?: string }) {
   return (
     <p
       id={id}
-      className="text-muted-foreground border-border rounded-lg border border-dashed p-2 text-[11px] leading-snug"
+      className="text-muted-foreground border-border text-2xs rounded-lg border border-dashed p-2 leading-snug"
       data-testid="model-catalog-unverified"
     >
       This is a short list of models nobody has confirmed you can run. Connect a provider to see the

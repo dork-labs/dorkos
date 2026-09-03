@@ -1,21 +1,27 @@
 import type { AdapterStatus } from '@dorkos/shared/relay-schemas';
+import { STATUS_DOT_PULSE, STATUS_TONE_DOT } from '@/layers/shared/ui';
 
 /**
  * Tailwind classes for the adapter state status dot.
  *
- * Color semantics:
- * - green = connected (live)
- * - gray (muted-foreground) = disconnected (idle, not a warning)
- * - red = error
- * - amber + pulse = transient (starting, stopping, reconnecting)
+ * Every colour here is a {@link STATUS_TONE_DOT} tone, so an adapter's green is
+ * the same green a session, a room and a task draw:
+ *
+ * - `success` = connected (live)
+ * - `neutral` = disconnected (idle, not a warning)
+ * - `error` = error
+ * - `warning` + pulse = transient (starting, stopping, reconnecting)
+ *
+ * The pulse is {@link STATUS_DOT_PULSE}, the same constant the identity dots
+ * use, rather than a second hand-typed `motion-safe:animate-pulse`.
  */
 export const ADAPTER_STATE_DOT_CLASS: Record<AdapterStatus['state'], string> = {
-  connected: 'bg-green-500',
-  disconnected: 'bg-muted-foreground',
-  error: 'bg-red-500',
-  starting: 'bg-amber-500 motion-safe:animate-pulse',
-  stopping: 'bg-amber-500 motion-safe:animate-pulse',
-  reconnecting: 'bg-amber-500 motion-safe:animate-pulse',
+  connected: STATUS_TONE_DOT.success,
+  disconnected: STATUS_TONE_DOT.neutral,
+  error: STATUS_TONE_DOT.error,
+  starting: `${STATUS_TONE_DOT.warning} ${STATUS_DOT_PULSE}`,
+  stopping: `${STATUS_TONE_DOT.warning} ${STATUS_DOT_PULSE}`,
+  reconnecting: `${STATUS_TONE_DOT.warning} ${STATUS_DOT_PULSE}`,
 };
 
 /** Humanized label for a raw adapter state, suitable for UI display. */

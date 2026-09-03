@@ -31,7 +31,7 @@ export function ArchivedMark() {
       // browser test has to be able to say "this row carries the mark" without
       // matching the word "Archived" wherever else it might appear on screen.
       data-testid="palette-archived-mark"
-      className="text-muted-foreground border-border shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium"
+      className="text-muted-foreground border-border text-3xs shrink-0 rounded-full border px-1.5 py-0.5 font-medium"
     >
       Archived
     </span>

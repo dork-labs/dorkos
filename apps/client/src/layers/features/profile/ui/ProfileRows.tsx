@@ -68,9 +68,9 @@ export function ProfileRows({ member, ctx, onPush }: ProfileRowsProps) {
       // The identity accent, drawn as a static 2px rule in this identity's own
       // colour (identity-micro-interactions §3D4). It lives on the body rather
       // than under the header so it exists exactly when there is something to
-      // separate. Inline because `index.css` sets `border-color` on `*` in an
-      // unlayered rule that outranks Tailwind's whole utilities layer — no
-      // `border-<colour>` class paints a border in this app.
+      // separate. Inline because the colour is a runtime value mixed with
+      // transparency — there is no Tailwind class for a `color-mix()` of a
+      // custom property.
       style={{
         borderTopColor: 'color-mix(in oklch, var(--identity-color) 55%, transparent)',
       }}

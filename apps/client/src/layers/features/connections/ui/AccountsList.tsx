@@ -109,7 +109,7 @@ export function AccountRow({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium">{name}</span>
-          <Badge variant={STATUS_BADGE_VARIANT[account.status]} className="text-[10px]">
+          <Badge variant={STATUS_BADGE_VARIANT[account.status]} className="text-3xs">
             {account.status}
           </Badge>
         </div>

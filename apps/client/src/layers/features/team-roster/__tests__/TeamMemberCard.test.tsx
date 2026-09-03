@@ -78,11 +78,11 @@ describe('TeamMemberCard', () => {
 
     it('paints its border from the identity’s colour at a movable strength', () => {
       // Two constraints meet here. An ancestor cannot inherit a property its
-      // child declares, so the card publishes the face colour itself. And
-      // `index.css` sets `border-color` on `*` in an UNLAYERED rule, which
-      // outranks Tailwind's whole utilities layer — so no `border-<colour>`
-      // class can paint a border in this app, and the colour has to be inline.
-      // Only its strength moves, through a property a class can still set.
+      // child declares, so the card publishes the face colour itself. And the
+      // border is a `color-mix()` of that runtime colour with the neutral one
+      // at an animatable strength — no Tailwind class expresses that, so the
+      // mix is inline. Only its strength moves, through a property a class can
+      // still set.
       const { container } = render(<TeamMemberCard member={SELF} onOpenProfile={() => {}} />);
       const card = cardOf(container);
 

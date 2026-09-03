@@ -1,12 +1,18 @@
 import { cn } from '@/layers/shared/lib';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
+import { STATUS_TONE_DOT, Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
 import type { SystemHealthState } from '../model/use-system-health';
 
-/** Tailwind class for each system health state. */
+/**
+ * Tailwind class for each system health state.
+ *
+ * `healthy` is deliberately NOT the success green: nothing is wrong, so the dot
+ * has nothing to say and fades into the bar. The other two speak in the app's
+ * shared status vocabulary.
+ */
 const DOT_STYLES: Record<SystemHealthState, string> = {
   healthy: 'bg-muted-foreground/30',
-  degraded: 'bg-amber-500',
-  error: 'bg-red-500',
+  degraded: STATUS_TONE_DOT.warning,
+  error: STATUS_TONE_DOT.error,
 } as const;
 
 /** Human-readable tooltip message for each system health state. */

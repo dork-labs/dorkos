@@ -61,7 +61,7 @@ export function BirthCertificate({ sessionId }: { sessionId: string | null }) {
         )}
         <Separator />
         <span className="min-w-0 truncate">
-          lives in <code className="text-[0.7rem]">{record.path}</code>
+          lives in <code className="text-2xs">{record.path}</code>
         </span>
         <Separator />
         <span className="shrink-0">runs on {runtimeLabel}</span>

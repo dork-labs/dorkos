@@ -294,7 +294,7 @@ function AskDorkBotButton({ labelled }: { labelled: boolean }) {
         'text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar/50 focus-ring font-medium whitespace-nowrap transition-colors duration-150 disabled:pointer-events-none disabled:opacity-50',
         labelled
           ? FOOTER_LABELLED_ROW
-          : 'inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11.5px]'
+          : 'text-2xs inline-flex items-center gap-1.5 rounded-md px-1.5 py-1'
       )}
     >
       <Sparkles className={cn('shrink-0', labelled ? 'size-(--size-icon-sm)' : 'size-3')} />

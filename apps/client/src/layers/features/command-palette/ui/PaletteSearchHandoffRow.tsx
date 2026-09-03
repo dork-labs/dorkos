@@ -57,7 +57,7 @@ export function PaletteSearchHandoffRow({
         Search {isScoped ? 'all messages' : 'messages'} for{' '}
         <mark className="text-foreground bg-transparent font-semibold">“{term}”</mark>…
       </span>
-      <kbd className="bg-muted text-muted-foreground shrink-0 rounded px-1 py-0.5 font-mono text-[10px]">
+      <kbd className="bg-muted text-muted-foreground text-3xs shrink-0 rounded px-1 py-0.5 font-mono">
         {isMac ? '⌘⇧F' : 'Ctrl⇧F'}
       </kbd>
     </CommandItem>

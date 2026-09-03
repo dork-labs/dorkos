@@ -189,7 +189,7 @@ function useReservationGuard(
  * clipped. The height is the part that was missing.
  */
 const ROW_SECOND_LINE_CLASS =
-  'text-sidebar-foreground/50 block min-h-4 truncate text-[11px] leading-4 font-normal';
+  'text-sidebar-foreground/50 block min-h-4 truncate text-2xs leading-4 font-normal';
 
 /**
  * What a drag layer hands a row it has made a drag source.

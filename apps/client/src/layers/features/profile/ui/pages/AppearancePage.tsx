@@ -24,7 +24,7 @@ import type { ProfilePageContentProps } from './types';
 /** A section heading, in the quiet register the rest of the profile uses. */
 function SectionLabel({ children }: { children: string }) {
   return (
-    <h3 className="text-muted-foreground text-[10px] font-medium tracking-wider uppercase">
+    <h3 className="text-muted-foreground text-3xs font-medium tracking-wider uppercase">
       {children}
     </h3>
   );

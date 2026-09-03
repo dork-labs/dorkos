@@ -76,7 +76,7 @@ export function MentionPalette({ rows, selectedIndex, onSelect }: MentionPalette
                   duplicate-name defect this repo has shipped before. */}
               <div
                 aria-hidden
-                className="text-muted-foreground/70 px-2 pt-1.5 pb-1 text-[11px] font-medium tracking-wide uppercase"
+                className="text-muted-foreground/70 text-2xs px-2 pt-1.5 pb-1 font-medium tracking-wide uppercase"
               >
                 {SECTION_LABELS[section]}
               </div>
@@ -126,7 +126,7 @@ export function MentionPalette({ rows, selectedIndex, onSelect }: MentionPalette
                       </span>
                     )}
                     {row.disabledReason !== undefined && (
-                      <span className="text-muted-foreground/70 ml-auto shrink-0 text-[11px]">
+                      <span className="text-muted-foreground/70 text-2xs ml-auto shrink-0">
                         {row.disabledReason}
                       </span>
                     )}

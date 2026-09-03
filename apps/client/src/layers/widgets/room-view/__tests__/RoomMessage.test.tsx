@@ -849,7 +849,7 @@ describe('RoomMessage — the origin mark beside an entry (chats-as-channels spe
  * work, and the page is quietly wrong. These are the assertions that notice.
  *
  * Each one pins a token no other slot carries, so a swap cannot land on a
- * lookalike — `text-xs` versus `text-[10px]` is the whole difference between the
+ * lookalike — `text-xs` versus `text-3xs` is the whole difference between the
  * timestamp on a group's first line and the one that appears in the gutter on
  * hover.
  */
@@ -896,7 +896,7 @@ describe('RoomMessage — the layout slot each part is drawn with', () => {
 
     cleanup();
     renderRow(entry(), { grouping: { position: 'middle' } });
-    expect(document.querySelector('time')).toHaveClass('text-[10px]');
+    expect(document.querySelector('time')).toHaveClass('text-3xs');
   });
 
   it('draws the words from the content slot and the toolbar from the actions slot', () => {

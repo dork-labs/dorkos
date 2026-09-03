@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { TriangleAlert } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { STATUS_TONE_SURFACE, STATUS_TONE_TEXT } from './status-dot';
 import {
   ResponsivePopover,
   ResponsivePopoverContent,
@@ -82,10 +83,8 @@ export function ProvenanceChip({
   const chip = (
     <span
       className={cn(
-        'inline-flex h-5 items-center gap-1 rounded-full px-2 text-[10px] leading-none whitespace-nowrap',
-        warning
-          ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400'
-          : 'bg-muted text-muted-foreground',
+        'text-3xs inline-flex h-5 items-center gap-1 rounded-full px-2 leading-none whitespace-nowrap',
+        warning ? STATUS_TONE_SURFACE.warning : STATUS_TONE_SURFACE.neutral,
         interactive && 'hover:bg-accent hover:text-accent-foreground transition-colors',
         className
       )}
@@ -125,9 +124,7 @@ export function ProvenanceChip({
       </ResponsivePopoverTrigger>
       <ResponsivePopoverContent className="w-64 p-2" align="start">
         <ResponsivePopoverTitle>Where this value comes from</ResponsivePopoverTitle>
-        {warning && (
-          <p className="px-2 pt-1 text-xs text-amber-700 dark:text-amber-400">{warning}</p>
-        )}
+        {warning && <p className={cn('px-2 pt-1 text-xs', STATUS_TONE_TEXT.warning)}>{warning}</p>}
         <button
           type="button"
           onClick={() => {

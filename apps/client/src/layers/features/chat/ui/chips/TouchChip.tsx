@@ -82,7 +82,7 @@ function accessibleNameFor(chip: TouchChipData): string {
 
 /** The pill a count sits in: the repeat badge and the hit badge share it. */
 const COUNT_BADGE =
-  'bg-muted text-muted-foreground shrink-0 rounded-full px-1.5 text-[10px] leading-[1.4] tabular-nums';
+  'bg-muted text-muted-foreground shrink-0 rounded-full px-1.5 text-3xs leading-[1.4] tabular-nums';
 
 /**
  * Render one chip: its verb glyph, its name, a `×N` badge once it has been

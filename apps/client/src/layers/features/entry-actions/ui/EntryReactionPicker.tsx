@@ -124,7 +124,7 @@ export function EntryReactionGrid({ mine, frequents, onPick, disabled }: EntryRe
             <section role="group" aria-labelledby={`${headingId}-frequents`}>
               <h3
                 id={`${headingId}-frequents`}
-                className="text-muted-foreground px-1 pb-1 text-[0.6875rem] font-medium"
+                className="text-muted-foreground text-2xs px-1 pb-1 font-medium"
               >
                 Your most used
               </h3>
@@ -138,7 +138,7 @@ export function EntryReactionGrid({ mine, frequents, onPick, disabled }: EntryRe
               >
                 <h3
                   id={`${headingId}-group-${index}`}
-                  className="text-muted-foreground px-1 pb-1 text-[0.6875rem] font-medium"
+                  className="text-muted-foreground text-2xs px-1 pb-1 font-medium"
                 >
                   {group.name}
                 </h3>

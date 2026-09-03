@@ -245,7 +245,7 @@ function SessionRowDemo({
       preview={item.summary}
       onSelect={() => {}}
       trailing={
-        <span className="text-sidebar-foreground/50 text-[11px]">
+        <span className="text-sidebar-foreground/50 text-2xs">
           {formatRelativeTime(item.lastActivityAt)}
         </span>
       }
@@ -270,7 +270,7 @@ function RoomRowDemo({ item, isActive = false }: { item: JumpBackInRoomItem; isA
       preview={item.summary}
       onSelect={() => {}}
       trailing={
-        <span className="text-sidebar-foreground/50 text-[11px]">
+        <span className="text-sidebar-foreground/50 text-2xs">
           {formatRelativeTime(item.lastActivityAt)}
         </span>
       }

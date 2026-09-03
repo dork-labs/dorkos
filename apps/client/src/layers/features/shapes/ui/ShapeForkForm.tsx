@@ -110,7 +110,7 @@ export function ShapeForkForm({
       )}
       <div className="flex flex-wrap gap-2 pt-1">
         <Button type="submit" size="sm" disabled={pending}>
-          {pending && <Loader2 className="size-[--size-icon-xs] animate-spin" />}
+          {pending && <Loader2 className="size-(--size-icon-xs) animate-spin" />}
           Create
         </Button>
         {/*

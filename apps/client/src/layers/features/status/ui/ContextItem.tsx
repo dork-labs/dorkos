@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Layers, RefreshCw } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
+import { STATUS_TONE_TEXT, Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import {
   resolveDisplayContextPercent,
@@ -45,7 +45,11 @@ export function ContextItem({ percent, contextUsage, compact }: ContextItemProps
   const displayPercent = resolveDisplayContextPercent(percent, contextUsage) ?? percent;
   const severity = contextSeverity(displayPercent);
   const colorClass =
-    severity === 'critical' ? 'text-red-500' : severity === 'warning' ? 'text-amber-500' : '';
+    severity === 'critical'
+      ? STATUS_TONE_TEXT.error
+      : severity === 'warning'
+        ? STATUS_TONE_TEXT.warning
+        : '';
   const showCompact = compact != null && displayPercent >= CONTEXT_ACTION_PERCENT;
 
   // The percent never abbreviates. The registry marks this item `rigid`, so the
@@ -135,7 +139,7 @@ function ContextBreakdown({ usage, children }: { usage: ContextUsage; children: 
           {significantCategories.length > 0 && (
             <div className="space-y-0.5">
               {significantCategories.map((cat) => (
-                <div key={cat.name} className="flex items-center justify-between gap-3 text-[10px]">
+                <div key={cat.name} className="text-3xs flex items-center justify-between gap-3">
                   <span className="flex items-center gap-1 truncate">
                     <span
                       className="inline-block size-1.5 shrink-0 rounded-full"

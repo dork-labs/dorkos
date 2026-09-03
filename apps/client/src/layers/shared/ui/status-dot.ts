@@ -34,6 +34,78 @@ export type IdentityStatus = 'idle' | 'working' | 'needs-you' | 'error';
 export type StatusSignal = Exclude<IdentityStatus, 'idle'> | 'unseen';
 
 /**
+ * The five tones every status colour in this app resolves to.
+ *
+ * A dot is not the only thing that says "this went wrong" — a relay row's left
+ * rule, a banner's tint, a context gauge's number and an adapter's chip all say
+ * it too, and each of them grew its own spelling of the same fact. Seven of
+ * them, at the last count: `bg-green-500` here, `bg-emerald-500` there,
+ * `text-red-600 dark:text-red-400` somewhere else. The tone is the fact; the
+ * four records below are the only places a tone turns into classes.
+ *
+ * `neutral` is the fifth on purpose. "Nothing to report" is a real answer — an
+ * idle adapter, a paused task, a message that reached nobody without failing —
+ * and it must not borrow the failure red.
+ */
+export type StatusTone = 'success' | 'warning' | 'error' | 'info' | 'neutral';
+
+/**
+ * The fill a dot, pip or small mark wears for a tone.
+ *
+ * `warning` spends `--status-warning-dot` rather than `--status-warning` — see
+ * {@link STATUS_DOT_COLOR} for why a mark that carries meaning by colour alone
+ * needs the darker amber.
+ */
+export const STATUS_TONE_DOT: Record<StatusTone, string> = {
+  success: 'bg-status-success',
+  warning: 'bg-status-warning-dot',
+  error: 'bg-status-error',
+  info: 'bg-status-info',
+  neutral: 'bg-muted-foreground',
+};
+
+/**
+ * The text colour a tone wears.
+ *
+ * The `-fg` tokens, which are tuned per theme — so a call site writes one class
+ * instead of the `text-red-600 dark:text-red-400` pair it used to hand-write,
+ * and a retune moves both themes at once.
+ */
+export const STATUS_TONE_TEXT: Record<StatusTone, string> = {
+  success: 'text-status-success-fg',
+  warning: 'text-status-warning-fg',
+  error: 'text-status-error-fg',
+  info: 'text-status-info-fg',
+  neutral: 'text-muted-foreground',
+};
+
+/** The tinted surface a tone wears when it is a banner, chip or callout — background and text together. */
+export const STATUS_TONE_SURFACE: Record<StatusTone, string> = {
+  success: 'bg-status-success-bg text-status-success-fg',
+  warning: 'bg-status-warning-bg text-status-warning-fg',
+  error: 'bg-status-error-bg text-status-error-fg',
+  info: 'bg-status-info-bg text-status-info-fg',
+  neutral: 'bg-muted text-muted-foreground',
+};
+
+/**
+ * The left rule a row wears when its whole state is written down the edge of
+ * it.
+ *
+ * `warning` spends `--status-warning-dot` rather than `--status-warning`, for
+ * the same reason {@link STATUS_DOT_COLOR} does: a 2px rule is a non-text mark
+ * that carries its meaning by colour alone, so it needs the darker amber
+ * WCAG 1.4.11 asks of one (`--status-warning` is 2.15:1 on a light surface).
+ */
+export const STATUS_TONE_BORDER_LEFT: Record<StatusTone, string> = {
+  success: 'border-l-status-success',
+  warning: 'border-l-status-warning-dot',
+  error: 'border-l-status-error',
+  info: 'border-l-status-info',
+  neutral: 'border-l-muted-foreground',
+};
+
+/**
  * The colour each signal wears — theme tokens, never raw palette values.
  *
  * Colour only. The motion lives in {@link STATUS_DOT_PULSE} /
@@ -50,10 +122,10 @@ export type StatusSignal = Exclude<IdentityStatus, 'idle'> | 'unseen';
  * its row's text); a sighted reader in bright light was.
  */
 export const STATUS_DOT_COLOR: Record<StatusSignal, string> = {
-  working: 'bg-status-success',
-  'needs-you': 'bg-status-warning-dot',
-  error: 'bg-status-error',
-  unseen: 'bg-status-info',
+  working: STATUS_TONE_DOT.success,
+  'needs-you': STATUS_TONE_DOT.warning,
+  error: STATUS_TONE_DOT.error,
+  unseen: STATUS_TONE_DOT.info,
 };
 
 /**

@@ -70,7 +70,7 @@ export function StepIndicator({
               </div>
               <span
                 className={cn(
-                  'text-[10px]',
+                  'text-3xs',
                   isActive ? 'text-foreground font-medium' : 'text-muted-foreground'
                 )}
               >

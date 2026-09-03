@@ -4,6 +4,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor, act } from '@testing-library/react';
+import { STATUS_TONE_BORDER_LEFT, STATUS_TONE_DOT } from '@/layers/shared/ui';
 import { AdapterCard } from '../AdapterCard';
 import type { AdapterManifest, CatalogInstance } from '@dorkos/shared/relay-schemas';
 
@@ -229,7 +230,7 @@ describe('AdapterCard', () => {
 
   it('does not render left border color classes', () => {
     const { container } = render(<AdapterCard {...defaultProps()} />);
-    expect(container.querySelector('.border-l-green-500')).toBeNull();
+    expect(container.querySelector(`.${STATUS_TONE_BORDER_LEFT.success}`)).toBeNull();
     expect(container.querySelector('.border-l-2')).toBeNull();
   });
 
@@ -274,26 +275,26 @@ describe('AdapterCard', () => {
   // Status dot
   // -------------------------------------------------------------------------
 
-  it('shows green status dot when connected with bindings', () => {
+  it('shows the success status dot when connected with bindings', () => {
     mockUseBindings.mockReturnValue({ data: [makeBinding()] });
     const { container } = render(<AdapterCard {...defaultProps()} />);
-    expect(container.querySelector('.bg-green-500')).toBeTruthy();
+    expect(container.querySelector(`.${STATUS_TONE_DOT.success}`)).toBeTruthy();
   });
 
-  it('shows amber pulsing status dot when connected with no bindings', () => {
+  it('shows a pulsing warning status dot when connected with no bindings', () => {
     const { container } = render(<AdapterCard {...defaultProps()} />);
-    expect(container.querySelector('.bg-amber-500')).toBeTruthy();
+    expect(container.querySelector(`.${STATUS_TONE_DOT.warning}`)).toBeTruthy();
     expect(container.querySelector('[class*="animate-pulse"]')).toBeTruthy();
   });
 
-  it('shows red status dot when adapter is in error state', () => {
+  it('shows the error status dot when adapter is in error state', () => {
     const { container } = render(<AdapterCard {...defaultProps({ instance: errorInstance })} />);
-    expect(container.querySelector('.bg-red-500')).toBeTruthy();
+    expect(container.querySelector(`.${STATUS_TONE_DOT.error}`)).toBeTruthy();
   });
 
-  it('shows gray status dot when adapter is disconnected', () => {
+  it('shows the neutral status dot when adapter is disconnected', () => {
     const { container } = render(<AdapterCard {...defaultProps({ instance: disabledInstance })} />);
-    expect(container.querySelector('.bg-muted-foreground')).toBeTruthy();
+    expect(container.querySelector(`.${STATUS_TONE_DOT.neutral}`)).toBeTruthy();
   });
 
   it('shows green status dot for CCA when connected (always considered bound)', () => {
@@ -301,8 +302,8 @@ describe('AdapterCard', () => {
     const { container } = render(
       <AdapterCard {...defaultProps({ instance: claudeInstance, manifest: claudeManifest })} />
     );
-    expect(container.querySelector('.bg-green-500')).toBeTruthy();
-    expect(container.querySelector('.bg-amber-500')).toBeNull();
+    expect(container.querySelector(`.${STATUS_TONE_DOT.success}`)).toBeTruthy();
+    expect(container.querySelector(`.${STATUS_TONE_DOT.warning}`)).toBeNull();
   });
 
   // -------------------------------------------------------------------------

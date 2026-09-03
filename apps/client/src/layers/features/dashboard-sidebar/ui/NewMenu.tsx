@@ -391,7 +391,7 @@ export function NewMenu() {
             type="button"
             data-testid="sidebar-new-button"
             className={cn(
-              'bg-sidebar-accent text-sidebar-accent-foreground hover:bg-sidebar-accent/70 focus-visible:ring-sidebar-ring flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium outline-hidden transition-colors duration-150 focus-visible:ring-2',
+              'bg-sidebar-accent text-sidebar-accent-foreground hover:bg-sidebar-accent/70 focus-visible:ring-sidebar-ring flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium outline-hidden transition-colors duration-150 focus-visible:ring-2',
               // 27px measured at 390×844 — the smallest control in the phone's
               // Home tab, and the one it exists to be pressed (P4 AC-4).
               isMobile && cn(TOUCH_TARGET_MIN_H, 'px-3')

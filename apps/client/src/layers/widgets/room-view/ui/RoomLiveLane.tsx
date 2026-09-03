@@ -369,7 +369,7 @@ export function RoomLiveLane({
           />
         ))}
         {claims.length > FACE_LIMIT && (
-          <span className="bg-muted text-muted-foreground ring-background flex size-4 items-center justify-center rounded-full text-[9px] ring-2">
+          <span className="bg-muted text-muted-foreground ring-background text-3xs flex size-4 items-center justify-center rounded-full ring-2">
             {`+${claims.length - FACE_LIMIT}`}
           </span>
         )}

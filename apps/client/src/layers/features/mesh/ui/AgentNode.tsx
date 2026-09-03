@@ -97,16 +97,16 @@ function CardHeader({ d }: { d: AgentNodeData }) {
 
       {/* Runtime + capability badges */}
       <div className="mt-1 flex flex-wrap gap-1">
-        <Badge variant="secondary" className="text-[10px]">
+        <Badge variant="secondary" className="text-3xs">
           {d.runtime}
         </Badge>
         {d.capabilities.slice(0, 3).map((cap) => (
-          <Badge key={cap} variant="outline" className="text-[10px]">
+          <Badge key={cap} variant="outline" className="text-3xs">
             {cap}
           </Badge>
         ))}
         {overflowCount > 0 && (
-          <Badge variant="outline" className="text-muted-foreground text-[10px]">
+          <Badge variant="outline" className="text-muted-foreground text-3xs">
             +{overflowCount}
           </Badge>
         )}
@@ -161,7 +161,7 @@ function DefaultCard({ d, selected }: { d: AgentNodeData; selected?: boolean }) 
           {hasTasks && (
             <span className="flex items-center gap-0.5">
               <Clock className="size-3" />
-              <span className="text-[10px]">{d.taskCount}</span>
+              <span className="text-3xs">{d.taskCount}</span>
             </span>
           )}
         </div>
@@ -202,13 +202,13 @@ function ExpandedCard({ d, selected }: { d: AgentNodeData; selected?: boolean })
             d.relayAdapters!.map((adapter) => (
               <span key={adapter} className="flex items-center gap-0.5">
                 <Zap className="size-3" />
-                <span className="text-[10px]">{adapter}</span>
+                <span className="text-3xs">{adapter}</span>
               </span>
             ))}
           {hasTasks && (
             <span className="flex items-center gap-0.5">
               <Clock className="size-3" />
-              <span className="text-[10px]">{d.taskCount}</span>
+              <span className="text-3xs">{d.taskCount}</span>
             </span>
           )}
         </div>
@@ -217,12 +217,10 @@ function ExpandedCard({ d, selected }: { d: AgentNodeData; selected?: boolean })
       {/* Bottom row: last seen + behavior mode */}
       <div className="mt-1 flex items-center gap-2">
         {d.lastSeenAt && (
-          <span className="text-muted-foreground text-[10px]">
-            {formatRelativeTime(d.lastSeenAt)}
-          </span>
+          <span className="text-muted-foreground text-3xs">{formatRelativeTime(d.lastSeenAt)}</span>
         )}
         {d.behavior && (
-          <Badge variant="outline" className="text-[10px]">
+          <Badge variant="outline" className="text-3xs">
             {d.behavior.responseMode}
           </Badge>
         )}

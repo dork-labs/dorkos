@@ -24,7 +24,10 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { STATUS_DOT_COLOR } from '../../../client/src/layers/shared/ui/status-dot';
+import {
+  STATUS_DOT_COLOR,
+  STATUS_TONE_TEXT,
+} from '../../../client/src/layers/shared/ui/status-dot';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PLUGIN_ROOT = path.resolve(HERE, '../..');
@@ -202,6 +205,32 @@ describe('the plugin bridges the client’s colour family', () => {
       });
     }
   });
+
+  it("declares `--size-icon-*`, so `button.tsx`'s default icon size resolves (DOR-1750)", () => {
+    // button.tsx's base class is `[&_svg:not([class*='size-'])]:size-(--size-icon-sm)`
+    // — the default size for every unsized svg a `<Button>` renders, and
+    // `button.tsx` is on this file's `@source` list. An undeclared custom
+    // property makes `width`/`height` invalid at computed-value time, so the
+    // rule is emitted but resolves to nothing and a lucide icon falls back to
+    // its intrinsic 24px instead of the intended 16.
+    for (const token of ['--size-icon-xs', '--size-icon-sm', '--size-icon-md']) {
+      expect(tokenValue(PLUGIN_CSS, token)).toBeTruthy();
+    }
+  });
+
+  it("gives `--chart-*` the client's bare-triple shape, not a wrapped hsl() (DOR-1750)", () => {
+    // `TASK_COLORS` (use-background-tasks.ts) and `CHART_COLORS` (ChartNode.tsx)
+    // both write `hsl(var(--chart-N))` as an INLINE STYLE, so no Tailwind
+    // emission rescues a mismatch. If `--chart-N` here were a complete
+    // `hsl(...)` colour, that inline style would nest `hsl(hsl(...))` — invalid,
+    // and it resolves to transparent rather than a colour.
+    for (let n = 1; n <= 5; n++) {
+      const client = tokenValue(CLIENT_CSS, `--chart-${n}`);
+      const plugin = tokenValue(PLUGIN_CSS, `--chart-${n}`);
+      expect(plugin).not.toMatch(/^hsl\(/);
+      expect({ chart: n, client, plugin }).toEqual({ chart: n, client, plugin: client });
+    }
+  });
 });
 
 describe('the built stylesheet', () => {
@@ -213,6 +242,20 @@ describe('the built stylesheet', () => {
     // list would have gone stale silently, which is the drift the safelist in
     // that file would otherwise invite.
     const missing = Object.values(STATUS_DOT_COLOR).filter((c) => !emitted.has(c));
+    expect(missing).toEqual([]);
+  });
+
+  it('emits a text colour for every status tone the shared vocabulary defines', () => {
+    const emitted = emittedUtilities(builtStylesheet());
+
+    // Driven off `STATUS_TONE_TEXT` itself, so a tone added there fails here
+    // until `plugin.css`'s text-tone `@source inline(...)` answers for it — the
+    // same discipline `STATUS_DOT_COLOR` gets above. `SessionContextGauge`
+    // reaches these through the shared module rather than a literal class
+    // string, so this build's own scanner has nothing else to find them by.
+    const missing = Object.values(STATUS_TONE_TEXT)
+      .filter((c) => c.startsWith('text-status-'))
+      .filter((c) => !emitted.has(c));
     expect(missing).toEqual([]);
   });
 

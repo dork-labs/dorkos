@@ -55,7 +55,7 @@ export function AdapterCardBindings({
   const overflowCount = boundAgentRows.length - MAX_VISIBLE_BINDINGS;
 
   return (
-    <div className="mt-3 space-y-1.5 pl-[18px]">
+    <div className="mt-3 space-y-1.5 pl-4">
       {isBuiltinClaude ? (
         <p className="text-muted-foreground text-sm">
           Serving {totalAgentCount} {totalAgentCount === 1 ? 'agent' : 'agents'} &middot; Chat +

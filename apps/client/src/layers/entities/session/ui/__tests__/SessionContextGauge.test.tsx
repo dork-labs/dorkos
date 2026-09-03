@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { createMockSession } from '@dorkos/test-utils';
 import type { SessionContextHealth } from '../../model/use-session-context-health';
+import { STATUS_TONE_TEXT } from '@/layers/shared/ui';
 import { SessionContextGauge } from '../SessionContextGauge';
 
 // Drive the gauge directly by mocking its merge hook — this isolates the three
@@ -16,7 +17,11 @@ vi.mock('../../model/use-session-context-health', () => ({
 }));
 
 // Render the tooltip content inline so its copy is assertable without hover.
-vi.mock('@/layers/shared/ui', () => ({
+// Partial, not total: the gauge also reads the shared status-tone records off
+// this barrel, and a total mock would replace the colour vocabulary with
+// `undefined` — the assertions below would then compare nothing to nothing.
+vi.mock('@/layers/shared/ui', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/ui')>()),
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipContent: ({ children }: { children: React.ReactNode }) => (
@@ -45,7 +50,7 @@ describe('SessionContextGauge', () => {
     render(<SessionContextGauge session={session} />);
 
     const gauge = screen.getByLabelText('Context 85% full');
-    expect(gauge.className).toContain('text-amber-500');
+    expect(gauge.className).toContain(STATUS_TONE_TEXT.warning);
     expect(screen.getByText('85%')).toBeInTheDocument();
   });
 
@@ -61,7 +66,7 @@ describe('SessionContextGauge', () => {
     render(<SessionContextGauge session={session} />);
 
     const gauge = screen.getByLabelText('Context 96% full');
-    expect(gauge.className).toContain('text-red-500');
+    expect(gauge.className).toContain(STATUS_TONE_TEXT.error);
   });
 
   it('adds an "as of" staleness line for a not-fresh (list) reading', () => {

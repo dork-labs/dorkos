@@ -85,7 +85,7 @@ export function TrustRow({
           </Button>
         ) : (
           <span
-            className="text-muted-foreground text-[10px] tracking-wide uppercase"
+            className="text-muted-foreground text-3xs tracking-wide uppercase"
             data-testid={`runtime-trust-global-${runtimeType}`}
           >
             Global setting

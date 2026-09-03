@@ -149,7 +149,7 @@ function DragDemo() {
   return (
     <div className="flex flex-wrap items-start gap-6">
       <div className="space-y-2">
-        <p className="text-muted-foreground text-[11px]">
+        <p className="text-muted-foreground text-2xs">
           The overlay under the cursor — the shipped {'`DragLiftChip`'}, lifted with the floating
           shadow
         </p>
@@ -158,7 +158,7 @@ function DragDemo() {
         </div>
       </div>
       <div className="space-y-2">
-        <p className="text-muted-foreground text-[11px]">
+        <p className="text-muted-foreground text-2xs">
           The drop target — a 2px inset ring at 45%, never a background wash
         </p>
         <Panel>

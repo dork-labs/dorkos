@@ -14,6 +14,19 @@ import {
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from './drawer';
 import { cn } from '../lib/utils';
 
+/**
+ * The drawer row's label size, in literal pixels on purpose.
+ *
+ * 17px is Apple's HIG body size, and this markup renders only below 768px —
+ * exactly where the app's `--_st` type scale is already multiplying every
+ * `text-*` token by 1.25. Spelling it as a token would scale it a second time
+ * and land at 21px, which is not what a native sheet row looks like.
+ */
+const MOBILE_ROW_LABEL = 'text-[17px] leading-snug';
+
+/** The drawer row's description size — HIG footnote, literal for the same reason as {@link MOBILE_ROW_LABEL}. */
+const MOBILE_ROW_DESCRIPTION = 'text-muted-foreground text-[13px] leading-snug';
+
 const ResponsiveDropdownMenuContext = React.createContext<{
   isDesktop: boolean;
   close: () => void;
@@ -228,9 +241,7 @@ function ResponsiveDropdownMenuRadioItem({
             {Icon && <Icon className="size-(--size-icon-xs) shrink-0" />}
             <div className="text-left">
               <div>{children}</div>
-              {description && (
-                <div className="text-muted-foreground text-[10px]">{description}</div>
-              )}
+              {description && <div className="text-muted-foreground text-3xs">{description}</div>}
             </div>
           </div>
         ) : (
@@ -275,10 +286,8 @@ function MobileRadioItem({
     >
       {Icon && <Icon className="size-5 shrink-0" />}
       <div className="min-w-0 flex-1">
-        <div className="text-[17px] leading-snug">{children}</div>
-        {description && (
-          <div className="text-muted-foreground text-[13px] leading-snug">{description}</div>
-        )}
+        <div className={MOBILE_ROW_LABEL}>{children}</div>
+        {description && <div className={MOBILE_ROW_DESCRIPTION}>{description}</div>}
       </div>
       {isSelected && <Check className="text-primary size-5 shrink-0" />}
     </button>
@@ -318,9 +327,7 @@ function ResponsiveDropdownMenuItem({
             {Icon && <Icon className="size-(--size-icon-xs) shrink-0" />}
             <div className="text-left">
               <div>{children}</div>
-              {description && (
-                <div className="text-muted-foreground text-[10px]">{description}</div>
-              )}
+              {description && <div className="text-muted-foreground text-3xs">{description}</div>}
             </div>
           </div>
         ) : (
@@ -345,10 +352,8 @@ function ResponsiveDropdownMenuItem({
     >
       {Icon && <Icon className="size-5 shrink-0" />}
       <div className="min-w-0 flex-1">
-        <div className="text-[17px] leading-snug">{children}</div>
-        {description && (
-          <div className="text-muted-foreground text-[13px] leading-snug">{description}</div>
-        )}
+        <div className={MOBILE_ROW_LABEL}>{children}</div>
+        {description && <div className={MOBILE_ROW_DESCRIPTION}>{description}</div>}
       </div>
     </button>
   );

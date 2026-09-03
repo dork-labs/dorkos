@@ -99,7 +99,7 @@ export interface AvatarColorGridProps {
   autoLabel?: string;
 }
 
-const DEFAULT_AUTO_ICON = <span className="text-[9px] leading-none font-bold">A</span>;
+const DEFAULT_AUTO_ICON = <span className="text-3xs leading-none font-bold">A</span>;
 const DEFAULT_AUTO_ACTIVE_RING = 'ring-muted-foreground/50 ring-dashed ring-2 ring-offset-2';
 const DEFAULT_AUTO_LABEL = 'Select default color';
 
@@ -225,7 +225,7 @@ function ColorSwatch({
   return (
     <Tooltip>
       <TooltipTrigger asChild>{button}</TooltipTrigger>
-      <TooltipContent side={tooltipSide} className="text-[10px]">
+      <TooltipContent side={tooltipSide} className="text-3xs">
         {tooltip}
       </TooltipContent>
     </Tooltip>

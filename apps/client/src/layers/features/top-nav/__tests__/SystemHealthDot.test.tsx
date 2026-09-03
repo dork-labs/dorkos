@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { render } from '@testing-library/react';
-import { TooltipProvider } from '@/layers/shared/ui';
+import { STATUS_TONE_DOT, TooltipProvider } from '@/layers/shared/ui';
 import { SystemHealthDot } from '../ui/SystemHealthDot';
 
 beforeAll(() => {
@@ -36,16 +36,16 @@ describe('SystemHealthDot', () => {
     expect(dot?.className).toContain('bg-muted-foreground/30');
   });
 
-  it('renders with amber color class for degraded state', () => {
+  it('renders the warning dot for degraded state', () => {
     const { container } = renderDot('degraded');
     const dot = container.querySelector('span');
-    expect(dot?.className).toContain('bg-amber-500');
+    expect(dot?.className).toContain(STATUS_TONE_DOT.warning);
   });
 
-  it('renders with red color class for error state', () => {
+  it('renders the error dot for error state', () => {
     const { container } = renderDot('error');
     const dot = container.querySelector('span');
-    expect(dot?.className).toContain('bg-red-500');
+    expect(dot?.className).toContain(STATUS_TONE_DOT.error);
   });
 
   it('has aria-label for healthy state', () => {

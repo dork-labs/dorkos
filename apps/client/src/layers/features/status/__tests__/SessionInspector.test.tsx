@@ -34,6 +34,7 @@ vi.mock('@/layers/features/connections', () => ({
 }));
 
 import { useAppStore } from '@/layers/shared/model';
+import { STATUS_TONE_DOT } from '@/layers/shared/ui';
 import { SessionInspector } from '../ui/SessionInspector';
 
 /** The value rendered beside a label, as text. */
@@ -138,7 +139,7 @@ describe('SessionInspector — the live group', () => {
       screen.getByText('Live updates').parentElement!.querySelector('span[aria-hidden]')!;
 
     render(<SessionInspector />);
-    expect(dotFor().className).toContain('bg-emerald-500');
+    expect(dotFor().className).toContain(STATUS_TONE_DOT.success);
 
     cleanup();
     mockDiagnostics.mockReturnValue(makeDiagnostics({ connectionState: 'disconnected' }));
@@ -147,12 +148,12 @@ describe('SessionInspector — the live group', () => {
     // row label already says "Live updates", so the value would otherwise
     // stutter it right back.
     expect(valueFor('Live updates')).toBe('Offline');
-    expect(dotFor().className).toContain('bg-red-500');
+    expect(dotFor().className).toContain(STATUS_TONE_DOT.error);
 
     cleanup();
     mockDiagnostics.mockReturnValue(makeDiagnostics({ connectionState: 'reconnecting' }));
     render(<SessionInspector />);
-    expect(dotFor().className).toContain('bg-amber-500');
+    expect(dotFor().className).toContain(STATUS_TONE_DOT.warning);
   });
 });
 

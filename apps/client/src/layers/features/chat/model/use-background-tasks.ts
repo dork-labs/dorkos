@@ -20,13 +20,20 @@ export interface VisibleBackgroundTask {
   command?: string;
 }
 
-/** Five-color pool shared across all visible tasks, matching the agent color palette. */
+/**
+ * Five-color pool shared across all visible tasks.
+ *
+ * The app's own categorical palette (`--chart-1..5`), which is the answer to "N
+ * same-kind things that must be told apart" everywhere else — `ChartNode` reads
+ * the same five. Tokens rather than literals because the palette is tuned per
+ * theme: a green that reads on a white page is too dark on a black one.
+ */
 export const TASK_COLORS = [
-  'hsl(210 80% 60%)', // blue
-  'hsl(150 60% 50%)', // green
-  'hsl(270 60% 65%)', // purple
-  'hsl(36 90% 55%)', // amber
-  'hsl(340 75% 60%)', // rose
+  'hsl(var(--chart-1))',
+  'hsl(var(--chart-2))',
+  'hsl(var(--chart-3))',
+  'hsl(var(--chart-4))',
+  'hsl(var(--chart-5))',
 ] as const;
 
 /** Minimum elapsed time (ms) before a bash task appears in the bar. */
