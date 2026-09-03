@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ChevronDown } from 'lucide-react';
+import type { PreviewSchedule } from '@dorkos/shared/marketplace-schemas';
 import { cn } from '@/layers/shared/lib';
 import {
   Input,
@@ -16,6 +17,7 @@ import { suggestionWindow } from '../lib/name-suggestions';
 import { FacePicker } from './FacePicker';
 import { RuntimePicker } from './RuntimePicker';
 import { AgentPreviewCard } from './AgentPreviewCard';
+import { OfferScheduleRows } from './OfferScheduleRows';
 
 /** How many name suggestions to show per reroll. */
 const SUGGESTION_WINDOW = 4;
@@ -37,6 +39,23 @@ export interface NamingStepProps {
   onCreate: () => void;
   /** True while the create request is in flight. */
   isCreating: boolean;
+  /**
+   * Every scheduled job the offered package brings, already carrying the mode it
+   * will really get. This step creates the same agent from the same package as
+   * the arrival card, and is one click from it via "Customize first" — so the
+   * disclosure travels here rather than being left behind on the card somebody
+   * skipped (DOR-644). Empty for an agent designed from scratch.
+   */
+  packageSchedules?: PreviewSchedule[];
+  /** True when DorkOS could not find out what the package schedules. */
+  offerCheckFailed?: boolean;
+  /**
+   * True while DorkOS is still asking what an offered package runs on its own.
+   * The arrival card holds its own create button for the same reason (DOR-644);
+   * the gate travels with the disclosure so neither is one click away from being
+   * skipped. Always false for an agent designed from scratch — there is no package.
+   */
+  isCheckingOffer?: boolean;
 }
 
 /**
@@ -59,6 +78,9 @@ export function NamingStep({
   onImportInstead,
   onCreate,
   isCreating,
+  packageSchedules = [],
+  offerCheckFailed = false,
+  isCheckingOffer = false,
 }: NamingStepProps) {
   const nameInputRef = useRef<HTMLInputElement>(null);
   const [rerollOffset, setRerollOffset] = useState(0);
@@ -250,10 +272,31 @@ export function NamingStep({
           jobLine={jobLine}
           capabilities={previewCapabilities}
         />
+        {/* The same ledger the arrival card shows, for the same reason: this
+            button creates the same agent from the same package, so what it
+            brings has to be readable from here too. */}
+        {(packageSchedules.length > 0 || offerCheckFailed) && (
+          <dl className="bg-muted/30 space-y-2.5 rounded-lg border p-3.5 text-sm">
+            <OfferScheduleRows
+              schedules={packageSchedules}
+              checkFailed={offerCheckFailed}
+              testIdPrefix="naming"
+            />
+          </dl>
+        )}
+        {isCheckingOffer && (
+          <p
+            className="text-muted-foreground text-center text-xs"
+            data-testid="naming-checking-offer"
+          >
+            Checking what this agent runs on its own. The first check downloads the package, so it
+            can take a moment.
+          </p>
+        )}
         <Button
           size="lg"
           onClick={onCreate}
-          disabled={!form.canSubmit || isCreating}
+          disabled={!form.canSubmit || isCreating || isCheckingOffer}
           data-testid="create-button"
         >
           {createLabel}

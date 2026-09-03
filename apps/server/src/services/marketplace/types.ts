@@ -67,10 +67,17 @@ export interface PreviewSchedule {
   /** How much the job may do without a human in the loop. */
   permissionMode: SchedulePermissionMode;
   /**
-   * Whether the job is created switched on. Shapes additionally create a
-   * schedule disabled when its agent is missing at apply time, which the
-   * preview cannot know in advance — so this reports the package's declared
-   * intent, which is always the more permissive of the two.
+   * Whether the package ASKED for the job to be switched on — its declared
+   * intent, never a promise about what happens.
+   *
+   * `true` here does not mean the job starts running: every packaged schedule
+   * reaches its row through `upsertFromFile` with `source: 'discovery'`, and
+   * `resolveFileArmStatus` parks every first sighting at `pending_approval`
+   * whatever this says (ADR `260823-200726`). Shapes additionally create a
+   * schedule disabled when its agent is missing at apply time, which the preview
+   * cannot know in advance — so this is always the more permissive of the
+   * possible outcomes, and user-facing copy must describe it as a request
+   * (`describeScheduleArrival` in `@dorkos/shared/marketplace-schemas`).
    */
   startsEnabled: boolean;
 }

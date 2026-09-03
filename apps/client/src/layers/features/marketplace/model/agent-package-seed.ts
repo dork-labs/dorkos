@@ -16,12 +16,19 @@ import { packageDisplayLabel } from '@/layers/shared/lib';
  * installing the package composes with creating the agent rather than replacing
  * an existing one's files.
  *
+ * The package's `name` rides along too. Nothing in a browse listing says whether
+ * a package ships a scheduled job — that lives in the SKILL.md files under its
+ * `.dork/tasks/`, which only the server has read — so the arrival confirm asks
+ * for the package's permission preview by name and discloses what it finds
+ * (DOR-644).
+ *
  * @param pkg - The aggregated agent package the user chose to install.
  * @returns A `marketplace-agent`-origin seed for `openWithSeed`.
  */
 export function agentPackageToCreationSeed(pkg: AggregatedPackage): CreationSeed {
   return {
     origin: 'marketplace-agent',
+    packageName: pkg.name,
     ...(pkg.marketplace ? { sourceLabel: pkg.marketplace } : {}),
     template: {
       source: pkg.source,
