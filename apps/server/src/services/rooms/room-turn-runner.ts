@@ -247,15 +247,26 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
    *
    * **A stop pressed during boot has nothing to land on.** The runtime binds a
    * turn only once its process is up, so `interruptQuery` a moment earlier
-   * answers `false` and stops nothing at all; the process then finishes booting
-   * and runs the prompt to completion. Measured on 2026-08-17 (rooms run F2):
-   * the interrupt reached a `bin/claude` that was still spawning and a whole
-   * seven-thousand-character answer was produced afterwards. The room already
-   * refuses to POST that answer (DOR-1313) — this is about not paying for it.
+   * answers `not-running` and stops nothing at all; the process then finishes
+   * booting and runs the prompt to completion. Measured on 2026-08-17 (rooms run
+   * F2): the interrupt reached a `bin/claude` that was still spawning and a
+   * whole seven-thousand-character answer was produced afterwards. The room
+   * already refuses to POST that answer (DOR-1313) — this is about not paying
+   * for it.
    *
    * So the stop is remembered rather than dropped, and re-aimed once, at the
    * first thing the turn's runtime actually produces: by then the turn exists
    * and can be stopped, so it is stopped instead of run.
+   *
+   * **`not-running` arms this, and NOTHING ELSE does** — narrowed from the
+   * boolean's `!stopped`, which is not the same set (spec
+   * `runtime-interrupt-receipts`). `unconfirmed` and `failed` also failed to
+   * stop the turn, and arming on them would be a bug rather than a wider net:
+   * both mean a turn IS already running and the runtime declined or could not be
+   * reached, so a re-aim would fire a SECOND stop at a turn that is past its boot
+   * window — the retry loop the "re-aimed ONCE" rule below exists to forbid,
+   * arrived at from the other direction. This latch is for the one ending that
+   * says the turn had not started yet.
    *
    * **Keyed by session, and cleared by the next turn on it**, which is the same
    * lifetime `RoomTriggerDispatcher.stoppedHere` keeps: a new turn is the room

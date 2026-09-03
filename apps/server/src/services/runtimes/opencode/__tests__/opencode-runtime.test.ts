@@ -1195,6 +1195,66 @@ describe('OpenCodeRuntime', () => {
       expect(events[events.length - 1]!.type).toBe('done');
     });
 
+    it('a sidecar that answers `false` is `unconfirmed`, never `acked` (D6, DOR-1299)', async () => {
+      // **The cell §4.2 spends pages forbidding.** `acked` here would take the
+      // Stop button away and suppress the "the agent may still be working"
+      // notice over a turn that never stopped — the DOR-1313 shape, the single
+      // most-reported Stop failure in this repo. DorkOS does not settle a turn
+      // it did not observe end, so the receipt says so and the turn stays open.
+      const harness = makeRuntime();
+      const { runtime, client } = harness;
+      const sessionId = nextSessionId();
+      vi.mocked(client.session.abort).mockResolvedValue({ data: false } as never);
+
+      const { finished } = consume(runtime.sendMessage(sessionId, 'work', { cwd: DIRECTORY }));
+      const connection = await openTurn(harness);
+      connection.push(globalEvent(DIRECTORY, statusEvent(OC_SESSION_A, { type: 'busy' })));
+
+      await expect(runtime.interruptQuery(sessionId)).resolves.toEqual({
+        outcome: 'unconfirmed',
+        reason: 'runtime-declined',
+        runtime: 'opencode',
+      });
+      expect(client.session.abort).toHaveBeenCalledWith({ path: { id: OC_SESSION_A } });
+
+      // And DorkOS ended nothing: the turn runs on and finishes on the
+      // sidecar's own terms, which is what `unconfirmed` promises. A mapper
+      // that had answered `acked` would be claiming this end as its own.
+      connection.push(globalEvent(DIRECTORY, partUpdated(textPart(OC_SESSION_A, 'prt_1', ''))));
+      connection.push(globalEvent(DIRECTORY, partDelta(OC_SESSION_A, 'prt_1', 'the whole answer')));
+      connection.push(globalEvent(DIRECTORY, sessionIdle(OC_SESSION_A)));
+      const events = await finished;
+      expect(events.some((e) => e.type === 'error')).toBe(false);
+      expect(events[events.length - 1]!.type).toBe('done');
+    });
+
+    it('an abort call that blows up is `failed`, never `acked`', async () => {
+      // The sidecar is down or the network is. Nothing was delivered and nothing
+      // ended the turn, so this is the one ending that reads as an error and
+      // asks the person to press Stop again. `acked` would tell them their agent
+      // wound down over a call that never arrived.
+      const harness = makeRuntime();
+      const { runtime, client } = harness;
+      const sessionId = nextSessionId();
+      vi.mocked(client.session.abort).mockRejectedValue(new Error('ECONNREFUSED'));
+
+      const { finished } = consume(runtime.sendMessage(sessionId, 'work', { cwd: DIRECTORY }));
+      const connection = await openTurn(harness);
+      connection.push(globalEvent(DIRECTORY, statusEvent(OC_SESSION_A, { type: 'busy' })));
+
+      // Resolves rather than rejecting: an adapter must not throw out of a stop
+      // (conformance I5) — the interrupt route would 500 and lose the queue it
+      // had already cleared.
+      await expect(runtime.interruptQuery(sessionId)).resolves.toEqual({
+        outcome: 'failed',
+        reason: 'delivery-failed',
+        runtime: 'opencode',
+      });
+
+      connection.push(globalEvent(DIRECTORY, sessionIdle(OC_SESSION_A)));
+      await finished;
+    });
+
     it('returns not-running when no turn is in flight', async () => {
       const { runtime } = makeRuntime();
       const sessionId = nextSessionId();

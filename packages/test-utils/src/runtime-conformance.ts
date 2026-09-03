@@ -2234,6 +2234,45 @@ export function runtimeConformance(
       });
     });
 
+    /**
+     * The `reason` half of §4's table, as a rule rather than as a per-cell copy.
+     *
+     * `reason` is documented as "present whenever it adds information the
+     * outcome does not carry", which is not a matter of taste in three of the
+     * five cases:
+     *
+     * - `not-running` and `unconfirmed` and `failed` MUST carry one. Each is an
+     *   ending a person is shown or asked to act on, and the reason is the only
+     *   thing that says whether the stop was declined, timed out, or never left
+     *   the building.
+     * - `acked` must NOT. §4 lists no reason on any acked cell, and every reason
+     *   in the vocabulary names why a graceful path was abandoned — which by
+     *   definition did not happen when the agent itself confirmed.
+     * - `closed` is the one genuine MAY: claude-code always has a reason (which
+     *   escalation ran), codex has none to give (it has no graceful path to
+     *   abandon).
+     *
+     * @param verb - Which call produced the receipt, for the failure message.
+     * @param receipt - The receipt to check.
+     */
+    function assertReasonPresence(verb: string, receipt: InterruptReceipt): void {
+      if (receipt.outcome === 'acked') {
+        expect(
+          receipt.reason,
+          `${verb} answered \`acked\` with a reason. Every reason names why a graceful stop was ` +
+            'abandoned, and nothing was abandoned when the agent confirmed the stop itself'
+        ).toBeUndefined();
+        return;
+      }
+      if (receipt.outcome === 'closed') return;
+      expect(
+        receipt.reason,
+        `${verb} answered \`${receipt.outcome}\` with no reason. This is an ending a person is ` +
+          'shown or asked to act on, and the outcome alone cannot say whether the stop was ' +
+          'declined, timed out, or never delivered (spec `runtime-interrupt-receipts` §4)'
+      ).toBeDefined();
+    }
+
     describe('interrupt semantics', () => {
       it('I1: with no turn open, interruptQuery resolves not-running — never failed', async () => {
         const runtime = makeRuntime();
@@ -2255,21 +2294,64 @@ export function runtimeConformance(
         ).toBe('no-open-turn');
       });
 
-      it('I2: every receipt parses, and names THIS runtime', async () => {
+      it('I2: a receipt from a LIVE turn parses, names THIS runtime, and carries its reason', async () => {
         const runtime = makeRuntime();
         const sessionId = nextSessionId();
         runtime.ensureSession(sessionId, sessionOpts(runtime));
 
-        // Both stop-shaped verbs on the runtime contract, because a receipt
-        // that named the wrong runtime — or carried an outcome outside the
-        // five — would reach the UI as a sentence about somebody else's agent.
+        // **A turn must actually be OPEN here, and that is the whole setup.**
+        // Every adapter's first branch is "no session, no turn -> not-running",
+        // so a version of this case that interrupted an idle session was only
+        // ever re-testing I1's precondition: it inspected the one receipt that
+        // is minted before any per-runtime mapping runs. Measured, not
+        // theorised — with that setup, pointing a runtime's LIVE mapping at
+        // another runtime's name left the whole suite green.
+        let live: InterruptReceipt;
+        if (hangingInterrupt) {
+          // The same staging C11 uses, for the same reason: on a runtime whose
+          // interrupt awaits a backend ack, only this driver can produce a
+          // genuinely active turn. Staged on REAL timers (a driver's own setup
+          // leans on macrotask delays), then the bound is advanced through so
+          // the receipt lands without spending three real seconds.
+          await hangingInterrupt(runtime, sessionId);
+          onTestFinished(() => {
+            vi.useRealTimers();
+          });
+          vi.useFakeTimers();
+          const pending = runtime.interruptQuery(sessionId);
+          await vi.advanceTimersByTimeAsync(10_000);
+          live = await pending;
+          vi.useRealTimers();
+        } else {
+          // No driver means this runtime's interrupt has nothing to await, so
+          // its turn can be opened the ordinary way and left running: pull ONE
+          // event off `sendMessage` and stop reading. The generator is returned
+          // in teardown rather than drained — a drained turn is a CLOSED turn,
+          // which is exactly what this case must not inspect.
+          const turn = runtime.sendMessage(sessionId, messageContent, { cwd: projectDir });
+          onTestFinished(() => {
+            void turn.return(undefined);
+          });
+          await turn.next();
+          live = await runtime.interruptQuery(sessionId);
+        }
+
+        expect(
+          live.outcome,
+          'the stop was aimed at a turn this case had just opened, so `not-running` means the ' +
+            'setup failed to open one — and every assertion below would then be about the ' +
+            'pre-mapping receipt rather than about this runtime`s own mapping'
+        ).not.toBe('not-running');
+
+        // Both stop-shaped verbs, live receipt included, because a receipt that
+        // named the wrong runtime — or carried an outcome outside the five —
+        // would reach the UI as a sentence about somebody else's agent.
         for (const [verb, receipt] of [
-          ['interruptQuery', await runtime.interruptQuery(sessionId)],
+          ['interruptQuery (live turn)', live],
           ['stopTask', await runtime.stopTask(sessionId, 'task-that-does-not-exist')],
         ] as const) {
-          const parsed = InterruptReceiptSchema.safeParse(receipt);
           expect(
-            parsed.success,
+            InterruptReceiptSchema.safeParse(receipt).success,
             `${verb} must answer the InterruptReceipt vocabulary and nothing else — ` +
               `got ${JSON.stringify(receipt)}`
           ).toBe(true);
@@ -2279,6 +2361,7 @@ export function runtimeConformance(
               'across runtimes (ADR-0310), and the copy that says "{Runtime} didn’t confirm ' +
               'it" reads this field'
           ).toBe(runtime.type);
+          assertReasonPresence(verb, receipt);
         }
       });
 

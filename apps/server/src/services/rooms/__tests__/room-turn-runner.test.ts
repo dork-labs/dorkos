@@ -1515,6 +1515,42 @@ describe('createSessionRoomTurnRunner', () => {
       await turn.answered;
     });
 
+    it('does NOT latch an `unconfirmed` stop — that turn is running, not booting', async () => {
+      // **The narrowing this case exists to pin** (spec
+      // `runtime-interrupt-receipts`). The boolean this replaced armed the latch
+      // on `!stopped`, which folded together two opposite facts: `not-running`
+      // ("the turn had not started yet" — the boot window this latch is FOR) and
+      // `unconfirmed` ("a turn IS running and the runtime declined"). Widening
+      // back to the old set re-aims a second stop at a turn that is well past
+      // its boot window, which is the retry loop the "re-aimed ONCE" rule
+      // forbids — reached from the other direction, so nothing else here catches
+      // it. `failed` is the same argument.
+      for (const outcome of ['unconfirmed', 'failed'] as const) {
+        interruptQuery.mockClear();
+        interruptQuery.mockImplementation(() => Promise.resolve(mockInterruptReceipt(outcome)));
+        const runner = createSessionRoomTurnRunner({ waitMs: () => 200, ceilingMs: () => 200 });
+        const turn = bootingTurn(runner, `sess-${outcome}`);
+        await settle();
+
+        expect(
+          (await runner.interrupt({ sessionId: `sess-${outcome}`, agentPath: '/repo/ana' })).outcome
+        ).toBe(outcome);
+
+        // The turn produces its first output — the moment the latch would fire.
+        turn.produce();
+        await settle();
+
+        expect(
+          interruptQuery.mock.calls,
+          `a \`${outcome}\` stop was latched and re-aimed. That receipt says a turn is ALREADY ` +
+            'running and the runtime would not confirm the stop, which is the opposite of the ' +
+            'boot window this latch is for — only `not-running` may arm it'
+        ).toEqual([[`sess-${outcome}`]]);
+        turn.close();
+        await turn.answered;
+      }
+    });
+
     it('reports a stop it could not even find a runtime for', async () => {
       // The narrowest failure there is, and the one most easily reported as a
       // success: an agent whose runtime this process does not have registered —

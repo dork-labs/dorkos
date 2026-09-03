@@ -9,15 +9,34 @@ status: specified
 
 > **Execution note (2026-09-03).** `tracker: DOR-1303` is the SPECIFY ticket and
 > is Done; `execute: DOR-1015` carries the implementation, and the two are linked
-> as related in Linear. DOR-1015 landed the vocabulary, the whole migration
-> inventory of §2, the per-runtime mapping of §4, the client's §5.1 copy and
-> re-enable predicate, and conformance I1/I2/I5. Still open, and named here so a
-> later reader does not mistake a partial for the whole: the durable
-> `turn_stopped` event and its eight registration points (§2), the reload story
-> and its stop markers (§3), the codex/opencode terminal-reason mapper change
-> (§4.1), the room halt's mixed notice (§5.2), the run-history panel copy (§5.3),
-> conformance I3/I4/I6, and AC-3, AC-5, AC-7, AC-8, AC-10 and AC-11. `status`
-> stays `specified` until those land.
+> as related in Linear.
+>
+> **Landed under DOR-1015:** the vocabulary (§1), the whole migration inventory
+> of §2, the per-runtime mapping of §4, the client's §5.1 copy and re-enable
+> predicate, and conformance **I1, I2 and I5**. I2 asserts the receipt from a
+> LIVE turn — it parses, names the adapter that produced it, and carries the
+> `reason` §4 owes for its outcome.
+>
+> **One API status change beyond the receipt shape, recorded because it is a
+> behaviour change and not a rename:** `POST /:id/tasks/:taskId/stop` used to
+> answer **409 `TASK_NOT_RUNNING`** for every non-success. It now answers **200
+> with the receipt** for `unconfirmed` and `failed`, and keeps the 409 (and the 404) only for `not-running`. A stop the CLI did not acknowledge leaves a task
+> that is very likely still running, and a 409 saying "already stopped" over it
+> is the exact lie this spec exists to remove.
+>
+> **Still open, and named here so a later reader does not mistake a partial for
+> the whole:** the durable `turn_stopped` event and its eight registration points
+> (§2), the reload story and its stop markers (§3), the codex/opencode
+> terminal-reason mapper change (§4.1), the room halt's mixed notice (§5.2), the
+> run-history panel copy (§5.3), conformance I3/I4/I6, and AC-3, AC-5, AC-7,
+> AC-8, AC-10 and AC-11. `status` stays `specified` until those land.
+>
+> **§5.1's `acked` and `closed` sentences are written but INERT until §3 lands.**
+> Their consumer is the transcript's stop marker, which is §3's durable-event
+> work; the live surface today shows only the two "stop requested" endings, since
+> those are the ones a person must act on the moment they happen. The copy module
+> carries all five and is tested over all five, so §3 renders them rather than
+> writing them.
 
 # Interrupt receipts — tell "the CLI stopped" from "DorkOS killed it"
 
