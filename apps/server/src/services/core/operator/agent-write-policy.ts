@@ -41,10 +41,12 @@
  * `true`, `false`, `null`, any object above it — refuses the whole patch,
  * because a patch that names the field is a patch about the field.
  *
- * "Any object above it" carries more weight than it reads, because a write here
- * REPLACES an object rather than merging into it: an object holding only keys
- * this table does not classify still overwrites every leaf under it. See
- * {@link touchedAgentPaths}, which is where that is enforced.
+ * "Any object above it" is the part that took a bypass to find: an object holding
+ * only keys this table does not classify names no guarded leaf, and it used to
+ * overwrite every leaf under it anyway. See {@link touchedAgentPaths}, which is
+ * where that is enforced, and which explains why the refusal stays now that
+ * {@link updateAgentManifest} merges these objects instead of replacing them
+ * (DOR-1719).
  *
  * ## Where the check runs, and what that costs
  *
@@ -251,6 +253,27 @@ export const OPERATOR_ONLY_AGENT_PATHS: readonly string[] = pathsWithAccess('ope
  */
 export const TIGHTEN_ONLY_AGENT_PATHS: readonly string[] = pathsWithAccess('tighten-only');
 
+/**
+ * The manifest fields whose value is an OBJECT of independently classified
+ * leaves, derived from the dotted keys of {@link AGENT_WRITE_POLICY} rather than
+ * written down a second time.
+ *
+ * {@link updateAgentManifest} merges a patch into the object already on disk for
+ * these, instead of replacing it, so naming one flag leaves its siblings exactly
+ * as they were stored (DOR-1719). Without that, every one of these objects is a
+ * schema with `.default()`s on its leaves — `ConventionsSchema` defaults all four
+ * to `true` — so a partial patch silently rewrote the ones it never mentioned.
+ *
+ * Derived rather than listed, so a nested field added to the wire gets the merge
+ * the moment the table classifies it, and a field that stops being nested loses
+ * it.
+ */
+export const NESTED_AGENT_FIELDS: ReadonlySet<string> = new Set(
+  Object.keys(AGENT_WRITE_POLICY)
+    .filter((path) => path.includes('.'))
+    .map((path) => path.slice(0, path.indexOf('.')))
+);
+
 /** {@link OPERATOR_ONLY_AGENT_PATHS}, prepared for matching. */
 const OPERATOR_ONLY_AGENT_GUARDED = prepareGuardedPaths(OPERATOR_ONLY_AGENT_PATHS);
 
@@ -259,7 +282,7 @@ const CLASSIFIED_AGENT_PATHS: ReadonlySet<string> = new Set(Object.keys(AGENT_WR
 
 /**
  * The dot-paths a patch reaches at THIS seam, which is more than the paths it
- * names — because writing here replaces an object rather than merging into it.
+ * names — because naming an object is naming what is under it.
  *
  * ## The bypass this closes (adversarial review of DOR-1506)
  *
@@ -270,19 +293,30 @@ const CLASSIFIED_AGENT_PATHS: ReadonlySet<string> = new Set(Object.keys(AGENT_WR
  * `enabledToolGroups.zzz`, which equals no policy key, is under none, and is
  * above none either.
  *
- * And that patch WRITES. Zod strips the unrecognised key, so `parsed.data`
- * carries `enabledToolGroups: {}` — but `updateAgentManifest` intersects the
- * parse result with the RAW body's own keys, and `enabledToolGroups` is one of
- * them, so the empty object survives into a merge that REPLACES the stored one.
- * Measured against a real manifest: `{"enabledToolGroups":{"zzz":1}}` answered
- * 200 and left `{}` on disk, clearing two documentation keys a person had turned
- * off AND `roomsManage: true`, which is a grant only a person may write — DOR-1506's
- * own defect, reachable through a key nobody had to guess right.
+ * And that patch WROTE. Zod strips the unrecognised key, so `parsed.data` carried
+ * `enabledToolGroups: {}` — and `updateAgentManifest` intersects the parse result
+ * with the RAW body's own keys, where `enabledToolGroups` is one of them, so the
+ * empty object survived into a write that REPLACED the stored one. Measured
+ * against a real manifest: `{"enabledToolGroups":{"zzz":1}}` answered 200 and
+ * left `{}` on disk, clearing two documentation keys a person had turned off AND
+ * `roomsManage: true`, which is a grant only a person may write — DOR-1506's own
+ * defect, reachable through a key nobody had to guess right.
  * `{"behavior":{"zzz":1}}` was worse in kind: `AgentBehaviorSchema` defaults
  * `responseMode`, so the write re-armed the MOST permissive setting (`always`)
  * and dropped `escalationThreshold`. A nested `{"__proto__":{…}}` took the same
  * road (it arrives as an own key over HTTP; as a literal it makes the object
  * empty, which was already refused).
+ *
+ * ## Why it stays now that the write merges
+ *
+ * DOR-1719 made {@link updateAgentManifest} merge these objects leaf by leaf, so
+ * an unrecognised key no longer clobbers anything on its own — that was the same
+ * defect on the AGENT-WRITABLE objects, where `{"conventions":{"zzz":1}}` reset
+ * four injection switches to `true`. The refusal is unchanged by that, for two
+ * reasons: naming the parent of a guarded leaf is still a patch about the leaf,
+ * and this seam answers such a patch with a sentence rather than a silent
+ * no-op. Two independent answers to one question, which is what a security
+ * control is supposed to have.
  *
  * ## The rule
  *
