@@ -606,7 +606,7 @@ The bound behind all four: an identity's colour answers only where that identity
 
 **Focus-visible parity is a rule, not a nicety.** If an area has a hover state, it has a focus-visible twin conveying the same information — a keyboard user must never learn less than a mouse user. The ring itself comes from the `focus-ring` utility; the _informational_ half (a colour step, an underline, a lift) gets an explicit `focus-visible:` twin beside every `hover:`. That includes a Surface: when the card's primary control takes focus, the **card** answers, not just the word inside it — `has-[[data-slot=team-member-open]:focus-visible]:` is how the roster card does it. The inverse is equally binding: **never put a `focus-visible:` ring on something no keyboard can reach.** A dormant ring on a `<span>` is an affordance wired to nothing.
 
-**Reduced motion needs no work.** `index.css` collapses every transition and animation duration to `0.01ms` under `prefers-reduced-motion: reduce`, globally. Every prescription above is therefore correct there for free — which is why none of them carries a `motion-reduce:` variant, and why every one of them is a _static_ end state that reads on its own (a ring is present, a border is coloured, a card is lifted). A design that only reads _because_ of the movement is broken there. The one thing the reset does not reach is `motion/react`, which writes inline styles from JS: any `motion.*` component must call `useReducedMotion()` and branch **off**, not shorter.
+**Reduced motion needs no work for CSS, and for most Motion props.** `index.css` collapses every transition and animation duration to `0.01ms` under `prefers-reduced-motion: reduce`, globally, and `MotionConfig reducedMotion="user"` (`App.tsx`) does the equivalent for `motion/react`'s **transform and layout** animations. Every prescription above is therefore correct there for free — which is why none of them carries a `motion-reduce:` variant, and why every one of them is a _static_ end state that reads on its own (a ring is present, a border is coloured, a card is lifted). A design that only reads _because_ of the movement is broken there. What neither reset reaches is **opacity, colour, or anything with `repeat: Infinity`** — those are inline styles `MotionConfig` does not suppress, so an infinite opacity or colour loop keeps running under reduced motion regardless of the global config. A `motion.*` component using any of the three must call `useReducedMotion()` itself and branch **off**, not shorter — put the branch in a pure function that also reports itself as a `data-` attribute so the two can never drift — `shouldAnimateRoster()`, below, is the shape to copy.
 
 **Touch invariant:** nothing that exists only on hover may carry information unavailable another way. A card's lift has no touch equivalent and costs nothing, because the tap opens the drawer; an avatar's hover card is reached by long-press (`identity-hover-card.tsx`), which is the one pattern for that — never invent a second.
 
@@ -1004,6 +1004,8 @@ site should be able to get wrong.
 
 ## Responsive Components
 
+See [`shared/ui/README.md`](../apps/client/src/layers/shared/ui/README.md) for which overlay, row, or form control to reach for — this section is the deep dive on the five overlay wrappers once you've picked one.
+
 Interactive overlays that need different UX on desktop vs mobile use responsive wrappers. These keep the Radix primitive on desktop (keyboard nav, precise positioning) and swap to a Vaul Drawer on mobile (large touch targets, bottom-sheet pattern).
 
 ### `ResponsiveDropdownMenu`
@@ -1068,7 +1070,7 @@ Use instead of plain `DropdownMenu` when the menu appears in a touch-accessible 
 
 ### `ResponsiveDialog`
 
-Use instead of plain `Dialog` when the dialog content needs full-screen treatment on mobile. Shows as a centered `Dialog` on desktop and a `Drawer` on mobile. See `components/ui/responsive-dialog.tsx`.
+Use instead of plain `Dialog` when the dialog content needs full-screen treatment on mobile. Shows as a centered `Dialog` on desktop and a `Drawer` on mobile. See `apps/client/src/layers/shared/ui/responsive-dialog.tsx`.
 
 ### `ResponsivePopover`
 
@@ -1100,6 +1102,29 @@ Two sizing rules that only surface once a software keyboard is involved, both of
 - **Give a scrollable list a `min-h` floor.** A landscape phone with the keyboard up leaves under 200px of sheet. A list that is only `flex-1` hands all of it to the parts that do not shrink and renders zero rows — a search field above a blank space. A floor plus the sheet's scroll of last resort keeps two rows on screen and the commit button one short scroll away.
 
 Sizes come from the system, not by hand: `Button` is already `responsive` by default (`size="sm"` → `h-10 md:h-8`), rows use `min-h-11` / `min-h-[44px]`, and `--_st` already scales every text token 1.25× below 768px — so writing `text-base md:text-sm` double-scales. When a control has to stay visually small, grow the target rather than the glyph with `after:absolute after:-inset-3 md:after:hidden`, the way `SidebarGroupAction` does.
+
+### `ResponsiveSheet`
+
+Use instead of plain `Sheet` for a right-side panel that should go full-width on a phone instead of leaving a visible strip of the page down one side. Unlike the other wrappers on this page, it does not swap primitives — it is always a `Sheet`; only `ResponsiveSheetContent`'s width changes.
+
+| Sub-component                                                  | Desktop (≥768px)       | Mobile (<768px)        |
+| -------------------------------------------------------------- | ---------------------- | ---------------------- |
+| `ResponsiveSheet`                                              | `Sheet`                | `Sheet`                |
+| `ResponsiveSheetTrigger`                                       | `SheetTrigger`         | `SheetTrigger`         |
+| `ResponsiveSheetContent`                                       | `sm:max-w-md`          | `w-full sm:max-w-full` |
+| `ResponsiveSheetHeader`/`Footer`/`Title`/`Description`/`Close` | matching `Sheet*` part | matching `Sheet*` part |
+
+### `ResponsiveContextMenu`
+
+Use instead of plain `ContextMenu` when the trigger appears in a touch-accessible area. A right-click opens a `ContextMenu` on desktop; a long-press opens a bottom `Drawer` on mobile. Plain `ContextMenu` is fine for desktop-only surfaces (dense data tables, right-click-only tools).
+
+| Sub-component                    | Desktop (≥768px)                   | Mobile (<768px)                    |
+| -------------------------------- | ---------------------------------- | ---------------------------------- |
+| `ResponsiveContextMenu`          | `ContextMenu`                      | `Drawer`                           |
+| `ResponsiveContextMenuTrigger`   | `ContextMenuTrigger` (right-click) | long-press (`useLongPress`)        |
+| `ResponsiveContextMenuContent`   | `ContextMenuContent`               | `DrawerContent`                    |
+| `ResponsiveContextMenuItem`      | `ContextMenuItem`                  | `<button>` row, `min-h-[44px]`     |
+| `ResponsiveContextMenuSeparator` | `ContextMenuSeparator`             | no-op — mobile rows use `border-b` |
 
 ---
 
