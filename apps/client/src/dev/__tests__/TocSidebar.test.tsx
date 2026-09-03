@@ -122,4 +122,35 @@ describe('TocSidebar', () => {
       expect(link).toHaveClass('text-muted-foreground');
     }
   });
+
+  it('renders a sub-heading for every distinct category (DOR-1766)', () => {
+    render(<TocSidebar sections={MOCK_SECTIONS} />);
+    for (const category of ['Colors', 'Layout', 'Shape']) {
+      expect(screen.getByText(category)).toBeInTheDocument();
+    }
+  });
+
+  it('folds consecutive same-category sections under one shared sub-heading', () => {
+    const grouped: PlaygroundSection[] = [
+      { id: 'a', title: 'A', page: 'tokens', category: 'Colors', keywords: ['a'] },
+      { id: 'b', title: 'B', page: 'tokens', category: 'Colors', keywords: ['b'] },
+      { id: 'c', title: 'C', page: 'tokens', category: 'Layout', keywords: ['c'] },
+    ];
+    render(<TocSidebar sections={grouped} />);
+    // One "Colors" sub-heading, not one per section it covers.
+    expect(screen.getAllByText('Colors')).toHaveLength(1);
+    expect(screen.getAllByText('Layout')).toHaveLength(1);
+  });
+
+  it('re-shows a category heading if the same category returns non-consecutively', () => {
+    // Non-consecutive runs are a real, if rare, page shape: this proves the
+    // grouping is positional (consecutive runs), not a dedup keyed on the name.
+    const nonConsecutive: PlaygroundSection[] = [
+      { id: 'a', title: 'A', page: 'tokens', category: 'Colors', keywords: ['a'] },
+      { id: 'b', title: 'B', page: 'tokens', category: 'Layout', keywords: ['b'] },
+      { id: 'c', title: 'C', page: 'tokens', category: 'Colors', keywords: ['c'] },
+    ];
+    render(<TocSidebar sections={nonConsecutive} />);
+    expect(screen.getAllByText('Colors')).toHaveLength(2);
+  });
 });
