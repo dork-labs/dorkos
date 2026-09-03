@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from 'react';
 import { ExternalLink, Copy, ShieldAlert } from 'lucide-react';
 import type { LinkSafetyModalProps } from 'streamdown';
 import { describeRefusal, linkRefusalHere } from '@/layers/shared/lib/link-navigation';
@@ -34,6 +35,29 @@ export function LinkSafetyModal({ url, isOpen, onClose, onConfirm }: LinkSafetyM
   // The modal closes the instant "Copy link" is pressed, so there is no
   // chrome left to morph — the toast fallback (`useCopyFeedback`'s TSDoc).
   const { copy } = useCopyFeedback({ toastOnSettle: true });
+
+  // Radix's own close-focus-restore only fires when `Dialog` has a
+  // `DialogTrigger` to remember — this one is driven by `isOpen` from a
+  // caller with no trigger element, so `context.triggerRef.current` is
+  // always null and `onCloseAutoFocus`'s default handler focuses nothing.
+  // Capture whatever was focused right before the dialog opened (the link
+  // itself, in every real call site) and restore it by hand on close.
+  //
+  // `useLayoutEffect`, not `useEffect`: a passive effect gated on `isOpen`
+  // would fire in the SAME commit that mounts `DialogContent`, and passive
+  // effects flush child-first — so it would run AFTER Radix's own
+  // `FocusScope` has already auto-focused something inside the dialog
+  // ("Copy link" — a passive effect itself), capturing that as the thing to
+  // "restore" instead of the real previous focus. Layout effects flush
+  // before ANY passive effect in the tree, so this always reads
+  // `document.activeElement` before that auto-focus has run.
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    if (isOpen) {
+      restoreFocusRef.current = document.activeElement as HTMLElement | null;
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   // Asked on every render rather than memoised: this is a pure string parse,
@@ -55,7 +79,18 @@ export function LinkSafetyModal({ url, isOpen, onClose, onConfirm }: LinkSafetyM
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-md rounded-xl sm:rounded-xl">
+      <DialogContent
+        className="max-w-md rounded-xl sm:rounded-xl"
+        onCloseAutoFocus={(event) => {
+          // Radix's own default handler (composed after this one, and only
+          // if this leaves the event unprevented) would try
+          // `triggerRef.current?.focus()` — always null here since nothing
+          // rendered a `DialogTrigger`. Prevent it and restore focus to
+          // wherever it was before the dialog opened instead.
+          event.preventDefault();
+          restoreFocusRef.current?.focus();
+        }}
+      >
         <DialogTitle className="flex items-center gap-2 text-lg">
           {refused ? <ShieldAlert className="size-5" /> : <ExternalLink className="size-5" />}
           {title}
