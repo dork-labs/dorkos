@@ -26,7 +26,12 @@ describe('CollapsibleContent', () => {
     expect(content?.className).toContain('data-[state=closed]:animate-collapsible-up');
     // Without this the body is fully drawn at its final size while the box
     // around it is still growing, and the reveal reads as a flicker.
-    expect(content?.className).toContain('overflow-hidden');
+    // `overflow-clip` rather than `overflow-hidden` (DOR-1751): the app's
+    // focus ring is a box-shadow, which `overflow-hidden` clips flush against
+    // the content box. `overflow-clip-margin` only takes effect on
+    // `overflow: clip`, so both classes travel together.
+    expect(content?.className).toContain('overflow-clip');
+    expect(content?.className).toContain('[overflow-clip-margin:8px]');
   });
 
   it('still lets a call site add its own classes', () => {

@@ -6,14 +6,14 @@ This project uses [Motion](https://motion.dev/) (version 12.x, formerly Framer M
 
 ## Key Files
 
-| Concept                      | Location                                                                                            |
-| ---------------------------- | --------------------------------------------------------------------------------------------------- |
-| Motion library import        | `motion/react` package                                                                              |
-| Animation utilities (CSS)    | `apps/client/src/index.css` (transition classes, keyframes)                                         |
-| Tailwind animation utilities | `tw-animate-css` (imported in index.css)                                                            |
-| Collapsible open/close       | `collapsible-down` / `collapsible-up` keyframes in `index.css`, worn by `shared/ui/collapsible.tsx` |
-| Text effect config           | `apps/client/src/layers/shared/lib/text-effects.ts`                                                 |
-| Common UI patterns           | `apps/client/src/layers/shared/ui/` (dropdowns, tooltips)                                           |
+| Concept                      | Location                                                                                                   |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Motion library import        | `motion/react` package                                                                                     |
+| Animation utilities (CSS)    | `apps/client/src/index.css` (transition classes, keyframes)                                                |
+| Tailwind animation utilities | `tw-animate-css` (imported in index.css)                                                                   |
+| Collapsible open/close       | `collapsible-down` / `collapsible-up` keyframes from `tw-animate-css`, worn by `shared/ui/collapsible.tsx` |
+| Text effect config           | `apps/client/src/layers/shared/lib/text-effects.ts`                                                        |
+| Common UI patterns           | `apps/client/src/layers/shared/ui/` (dropdowns, tooltips)                                                  |
 
 ## When to Use What
 
