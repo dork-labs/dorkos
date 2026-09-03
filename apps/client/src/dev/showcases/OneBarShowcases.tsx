@@ -302,6 +302,27 @@ export function OneBarShowcases() {
         </ShowcaseDemo>
 
         <ShowcaseLabel>
+          The same bar in a 236px frame — the width the page really has at 768px with the sidebar
+          and the right panel both docked. The strip used to give away every pixel here and render
+          16px wide, with no label and not even a fade. It now stops at one readable tab
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <BarFrame width={236}>
+            <OneBar
+              identity={
+                <BarTabStrip
+                  tabs={HOME_TABS}
+                  activeTabId="workspaces"
+                  label="Home sections, squeezed"
+                  indicatorLayoutId="playground-home-tabs-squeezed"
+                />
+              }
+              chips={<SystemHealthDot state="healthy" />}
+            />
+          </BarFrame>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
           The channel bar — the room&apos;s only masthead now. Name, topic, and the chips that say
           what is true of it
         </ShowcaseLabel>

@@ -293,4 +293,34 @@ describe('PackageGrid', () => {
     // PackageCard stops propagation on the install button click.
     expect(mockParams.openDetail).not.toHaveBeenCalled();
   });
+
+  // Marketplace never owns the whole window: the sidebar takes a slice and the
+  // right panel takes another. A viewport breakpoint cannot see that, and put
+  // three cards into a 236px column — 78px each, names cut mid-word. jsdom lays
+  // nothing out, so what these pin is which question the grid is asking.
+  describe('column count follows the column, not the window', () => {
+    const grid = (container: HTMLElement) => container.querySelector('[data-slot="package-grid"]');
+
+    it('sizes itself against a query container, never a viewport breakpoint', () => {
+      setMarketplaceState({ data: [PKG_ALPHA, PKG_BETA] });
+      const { container } = render(<PackageGrid />);
+
+      const el = grid(container);
+      expect(el?.className).toContain('@lg/packages:grid-cols-2');
+      expect(el?.className).not.toMatch(/\b(sm|md|lg):grid-cols-/);
+      expect(el?.closest('.\\@container\\/packages')).not.toBeNull();
+    });
+
+    it('gives the loading skeleton the same columns, so nothing jumps when data lands', () => {
+      setMarketplaceState({ isLoading: true });
+      const { container: loading } = render(<PackageGrid />);
+      const skeletonColumns = grid(loading)?.className;
+      cleanup();
+
+      setMarketplaceState({ data: [PKG_ALPHA, PKG_BETA] });
+      const { container: loaded } = render(<PackageGrid />);
+
+      expect(skeletonColumns).toBe(grid(loaded)?.className);
+    });
+  });
 });

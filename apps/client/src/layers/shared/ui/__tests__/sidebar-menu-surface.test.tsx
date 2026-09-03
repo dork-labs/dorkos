@@ -192,6 +192,50 @@ describe('SidebarMenuSurface', () => {
   });
 });
 
+describe('SidebarMenuSurface — onMenuIntent, and when it is allowed to be synchronous', () => {
+  function renderIntentSurface(onMenuIntent: () => void) {
+    return render(
+      <SidebarMenuSurface
+        nodes={[]}
+        actionsLabel="Clients group actions"
+        onMenuIntent={onMenuIntent}
+      >
+        <div data-testid="target">a row</div>
+      </SidebarMenuSurface>
+    );
+  }
+
+  it('fires straight away on a press and on a right-click', () => {
+    // Both gestures END in an open menu on the very same event, so a caller
+    // latching with `flushSync` has to have its nodes in hand before this
+    // handler returns.
+    const onIntent = vi.fn();
+    renderIntentSurface(onIntent);
+
+    fireEvent.pointerDown(screen.getByTestId('target'));
+    expect(onIntent).toHaveBeenCalledTimes(1);
+
+    fireEvent.contextMenu(screen.getByTestId('target'));
+    expect(onIntent).toHaveBeenCalledTimes(2);
+  });
+
+  it('hands the focus path over in a microtask instead', async () => {
+    // Focus can arrive while React is already rendering — a virtualized row
+    // remounting, a menu's close-time focus restore — and a `flushSync` there
+    // is refused with "React cannot flush when React is already rendering"
+    // (seven of them on a cold load of `/`). Nothing opens from focus alone, so
+    // the wake can wait a tick.
+    const onIntent = vi.fn();
+    renderIntentSurface(onIntent);
+
+    fireEvent.focusIn(screen.getByTestId('target'));
+    expect(onIntent).not.toHaveBeenCalled();
+
+    await Promise.resolve();
+    expect(onIntent).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('useGuardedMenuNodes — what arms the close-focus guard (DOR-329)', () => {
   /** Choose the item with this id, then close the menu, and say whether the
    * restore was prevented. */

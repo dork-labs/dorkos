@@ -134,10 +134,18 @@ export function TasksPanel() {
             </button>
           </div>
         ) : (
-          <TasksEmptyState
-            onCreateWithPreset={handleCreateWithPreset}
-            onCreateBlank={handleCreateBlank}
-          />
+          // Its own scroller and its own gutters: the gallery is taller than a
+          // dialog on a phone, and the empty state no longer carries padding
+          // of its own on the sides or across the top — `pt-6` here is this
+          // host's own top gutter, matching the `py-6` the page's
+          // `PageContainer` opens with, so the heading gets exactly one top
+          // gutter in either host, never zero and never two.
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-6">
+            <TasksEmptyState
+              onCreateWithPreset={handleCreateWithPreset}
+              onCreateBlank={handleCreateBlank}
+            />
+          </div>
         )}
         <CreateTaskDialog
           open={dialogOpen}
