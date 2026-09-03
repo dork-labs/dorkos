@@ -174,6 +174,120 @@ describe('billing stays operator-only (spec billing-account-ladder invariant 4)'
 });
 
 /**
+ * The same rule one level down (DOR-1719).
+ *
+ * `conventions` and `traits` are objects of independent leaves, and every leaf
+ * carries a Zod `.default()` at the permissive end — all four convention switches
+ * default to `true`, all six trait dials to `3`. The write replaced the whole
+ * object, so naming one flag rewrote the ones it never mentioned: a reviewer
+ * watched `memory` flip `false → true` on an unrelated edit, reversing a mute a
+ * person had chosen, and any trait nudge reset the other five.
+ */
+describe('a patch into a nested object leaves the flags it did not name (DOR-1719)', () => {
+  /** The reviewer's manifest: two switches the person deliberately turned off. */
+  const MUTED = {
+    ...SEED,
+    conventions: { soul: true, nope: true, memory: false, dorkosKnowledge: false },
+  } as unknown as AgentManifest;
+
+  it('keeps a muted MEMORY.md when another convention switch is written', async () => {
+    await writeManifest(agentPath, MUTED);
+
+    const updated = await updateAgentManifest({
+      agentPath,
+      body: { conventions: { soul: false } },
+    });
+
+    expect(updated.conventions?.soul).toBe(false);
+    // Before the fix: both `true`, because ConventionsSchema defaults them.
+    expect(updated.conventions?.memory).toBe(false);
+    expect(updated.conventions?.dorkosKnowledge).toBe(false);
+    expect(updated.conventions?.nope).toBe(true);
+
+    const onDisk = await readManifest(agentPath);
+    expect(onDisk?.conventions).toEqual({
+      soul: false,
+      nope: true,
+      memory: false,
+      dorkosKnowledge: false,
+    });
+  });
+
+  it('changes one personality dial without resetting the other five', async () => {
+    const updated = await updateAgentManifest({ agentPath, body: { traits: { humor: 5 } } });
+
+    expect(updated.traits?.humor).toBe(5);
+    // Before the fix: 3 and 3, the schema defaults, over a 4 and a 1 the agent
+    // had been given.
+    expect(updated.traits?.verbosity).toBe(4);
+    expect(updated.traits?.spice).toBe(1);
+
+    const onDisk = await readManifest(agentPath);
+    expect(onDisk?.traits).toEqual({ ...SEED.traits, humor: 5 });
+  });
+
+  it('writes nothing at all for an object carrying only an unrecognised key', async () => {
+    // The sibling of the DOR-1506 bypass, on the agent-WRITABLE objects: Zod
+    // strips the unknown key, the raw body still names the field, and the
+    // replacing write put a whole object of defaults on disk. `{"traits":{"zzz":1}}`
+    // reset six dials; `{"conventions":{"nope":…}}` is refused a layer up, but
+    // `{"conventions":{"zzz":1}}` was not, and it re-armed all four switches.
+    await writeManifest(agentPath, MUTED);
+
+    const updated = await updateAgentManifest({
+      agentPath,
+      body: { conventions: { zzz: 1 }, traits: { zzz: 1 } },
+    });
+
+    expect(updated.conventions).toEqual({
+      soul: true,
+      nope: true,
+      memory: false,
+      dorkosKnowledge: false,
+    });
+    expect(updated.traits).toEqual(SEED.traits);
+  });
+
+  it('writes nothing for an empty object either', async () => {
+    await writeManifest(agentPath, MUTED);
+
+    const updated = await updateAgentManifest({ agentPath, body: { conventions: {} } });
+
+    expect(updated.conventions?.memory).toBe(false);
+    expect(updated.conventions?.dorkosKnowledge).toBe(false);
+  });
+
+  it('still writes every leaf the caller DID name, including a false one', async () => {
+    // The mirror: the merge must not turn into a refusal to change anything. The
+    // cockpit's own toggles send the whole object, and all four have to land.
+    const updated = await updateAgentManifest({
+      agentPath,
+      body: { conventions: { soul: false, nope: true, memory: false, dorkosKnowledge: true } },
+    });
+
+    expect(updated.conventions).toEqual({
+      soul: false,
+      nope: true,
+      memory: false,
+      dorkosKnowledge: true,
+    });
+  });
+
+  it('merges onto an agent that has no such object stored yet', async () => {
+    const withoutTraits: AgentManifest = { ...SEED };
+    delete withoutTraits.traits;
+    await writeManifest(agentPath, withoutTraits);
+
+    const updated = await updateAgentManifest({ agentPath, body: { traits: { humor: 5 } } });
+
+    expect(updated.traits?.humor).toBe(5);
+    // The rest are absent, which the schema reads back as its defaults — the
+    // same answer a full write would have given.
+    expect((await readManifest(agentPath))?.traits?.verbosity).toBe(3);
+  });
+});
+
+/**
  * The self-grant seam, written as the reproduction it is (spec
  * `rooms-management-tools` §D6, DOR-1611; widened to the whole object by
  * DOR-1506).

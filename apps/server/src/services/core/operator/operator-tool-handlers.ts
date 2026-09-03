@@ -22,7 +22,6 @@ import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js'
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../../../lib/boundary.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
-import { readManifest } from '@dorkos/shared/manifest';
 import { updateAgentManifest, AgentUpdateError } from './agent-updater.js';
 import { sanitizedConfigSnapshot } from './config-patch.js';
 import { applyGuardedConfigWrite, OPERATOR_TOOL_AUTHORITY } from './config-write.js';
@@ -290,25 +289,18 @@ export function createUpdateAgentBoundariesHandler(deps: McpToolDeps) {
       const resolved = resolveAgentPath(deps, { agent_id, cwd });
       const agentPath = await validateBoundaryOrDorkHome(resolved);
 
-      // `conventions` is written whole by `updateAgentManifest` — it parses with
-      // `ConventionsSchema`, whose every key defaults to `true` — so sending the
-      // one flag alone would switch SOUL.md, MEMORY.md and the knowledge block
-      // back on behind the operator's back. The other three are read off the
-      // manifest and sent back unchanged.
-      let conventions: Record<string, unknown> | undefined;
-      if (enabled !== undefined) {
-        const existing = await readManifest(agentPath);
-        if (!existing) {
-          return jsonResult({ error: 'No agent registered at this path', code: 'NOT_FOUND' }, true);
-        }
-        conventions = { ...(existing.conventions ?? {}), nope: enabled };
-      }
-
+      // The mute rides `conventions.nope` and names nothing else.
+      // `updateAgentManifest` merges a nested field into the object already on
+      // disk (DOR-1719), so the other three switches keep whatever the person set
+      // — they used to be read here and sent back unchanged, because the write
+      // replaced the object and `ConventionsSchema` defaults every key to `true`,
+      // which switched SOUL.md, MEMORY.md and the knowledge block back on behind
+      // the operator's back.
       const updated = await updateAgentManifest({
         agentPath,
         body: {
           ...(nopeContent !== undefined ? { nopeContent } : {}),
-          ...(conventions ? { conventions } : {}),
+          ...(enabled !== undefined ? { conventions: { nope: enabled } } : {}),
         },
         meshCore: deps.meshCore,
       });

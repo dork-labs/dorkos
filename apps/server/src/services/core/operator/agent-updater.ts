@@ -35,6 +35,7 @@ import {
 import {
   describeAgentOperatorOnlyRefusal,
   findOperatorOnlyAgentPaths,
+  NESTED_AGENT_FIELDS,
 } from './agent-write-policy.js';
 
 /**
@@ -109,6 +110,70 @@ function conventionRefusal(error: z.ZodError): string {
   return `${file} is too long: the whole file has to fit in ${max.toLocaleString('en-US')} characters.`;
 }
 
+/** A JSON object, which is the only shape a nested manifest field can merge as. */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The value one field of the patch actually writes.
+ *
+ * For a scalar it is the parsed value, unchanged. For a NESTED field — one whose
+ * leaves {@link AGENT_WRITE_POLICY} classifies individually
+ * ({@link NESTED_AGENT_FIELDS}) — it is the object already on disk with only the
+ * leaves the caller actually sent laid over it.
+ *
+ * ## Why the merge exists (DOR-1719)
+ *
+ * These objects are Zod schemas whose leaves carry `.default()`, and every one of
+ * those defaults is the permissive end: `ConventionsSchema` defaults all four
+ * injection switches to `true`, `TraitsSchema` all six dials to `3`. So parsing
+ * `{"conventions":{"soul":false}}` hands back all four flags, and writing that
+ * whole object put the three the caller never mentioned back to their defaults —
+ * a reviewer watched `memory` flip `false → true` on an unrelated edit, silently
+ * reversing a mute a person had chosen. The same shape reset five personality
+ * dials whenever an agent nudged the sixth.
+ *
+ * The leaf intersection is the same rule the top-level patch uses, applied one
+ * level down: the raw body's own keys are the only thing that says what the
+ * caller meant. It also settles the unknown-key case — `{"traits":{"zzz":1}}`
+ * sends no leaf this schema knows, so it writes nothing rather than resetting the
+ * object it named, which is how the config seam has always behaved
+ * (`applyConfigPatch` deep-merges).
+ *
+ * **The base comes from the same lockless read every guard on this seam uses**
+ * (the `tierCeiling` check says the same thing at more length): read, decide,
+ * write, with nothing held over `.dork/agent.json`, so two PATCHes landing
+ * together can interleave. This change strictly NARROWS that window rather than
+ * opening it — the losing write used to clobber every leaf of the object, and now
+ * clobbers only the leaves it actually named. Closing it properly means locking
+ * the whole manifest, which is a change to this seam rather than to this function
+ * (DOR-1722).
+ *
+ * @param key - The manifest field being written.
+ * @param parsedValue - That field's value from the validated patch.
+ * @param rawValue - That field's value as the caller sent it (the record of what
+ *   was named).
+ * @param existingValue - That field's value as stored on disk.
+ * @returns The value to write for `key`.
+ */
+function mergedFieldValue(
+  key: string,
+  parsedValue: unknown,
+  rawValue: unknown,
+  existingValue: unknown
+): unknown {
+  if (!NESTED_AGENT_FIELDS.has(key)) return parsedValue;
+  if (!isPlainObject(parsedValue) || !isPlainObject(rawValue)) return parsedValue;
+
+  const sentLeaves = new Set(Object.keys(rawValue));
+  const changed = Object.entries(parsedValue).filter(([leaf]) => sentLeaves.has(leaf));
+  return {
+    ...(isPlainObject(existingValue) ? existingValue : {}),
+    ...Object.fromEntries(changed),
+  };
+}
+
 /** Minimal MeshCore surface needed for the post-write DB sync (ADR-0043). */
 interface MeshSyncLike {
   syncFromDisk(projectPath: string): Promise<SyncFromDiskResult>;
@@ -122,7 +187,9 @@ interface MeshSyncLike {
  * direction check, and the system-agent identity protections.
  * `soulContent`/`nopeContent`/
  * `memoryContent` are written to their convention files; remaining fields merge into `agent.json`
- * with `null` meaning "clear this field" (JSON can't carry `undefined`). After a
+ * with `null` meaning "clear this field" (JSON can't carry `undefined`), and a
+ * field whose value is an object of independent leaves merging leaf by leaf so a
+ * partial patch leaves its siblings alone ({@link mergedFieldValue}). After a
  * successful write it best-effort syncs the Mesh DB cache (never fatal).
  *
  * @param opts - Update inputs.
@@ -159,8 +226,8 @@ export async function updateAgentManifest(opts: {
   // that as a validation error would tell an agent to fix its types and try again
   // at a field it may never write. Naming the field at all (`true`, `false`,
   // `null`, or any object above it — including one whose keys DorkOS does not
-  // recognise, because the merge below REPLACES the object) is refused, since a
-  // patch that names the field is a patch about the field.
+  // recognise) is refused, since a patch that names the field is a patch about
+  // the field.
   //
   // Refused rather than stripped: an agent told nothing would report the change
   // as done (the DOR-1253 shape). All-or-nothing, matching
@@ -291,8 +358,19 @@ export async function updateAgentManifest(opts: {
   //
   // `null` still means "clear this field" — `undefined` cannot travel over JSON,
   // so the wire needs a value for the absence and `null` is it.
+  //
+  // **The same rule one level down, for the fields whose value is an object**
+  // ({@link mergedFieldValue}, DOR-1719). `conventions` and `traits` are objects
+  // of independent leaves, each with a Zod default, so replacing the object wrote
+  // defaults over every flag the caller had not named — reversing a deliberate
+  // mute or five personality dials on an edit that touched one.
   const sent = new Set(Object.keys(rawBody));
-  const patch = Object.fromEntries(Object.entries(parsed.data).filter(([key]) => sent.has(key)));
+  const stored: Record<string, unknown> = existing;
+  const patch = Object.fromEntries(
+    Object.entries(parsed.data)
+      .filter(([key]) => sent.has(key))
+      .map(([key, value]) => [key, mergedFieldValue(key, value, rawBody[key], stored[key])])
+  );
   const merged: Record<string, unknown> = { ...existing, ...patch };
   for (const key of Object.keys(merged)) {
     if (merged[key] === null) delete merged[key];
