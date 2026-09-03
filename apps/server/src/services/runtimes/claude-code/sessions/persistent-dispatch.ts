@@ -336,6 +336,16 @@ export class PersistentDispatch {
     // stopped — and the error-frame suppression it gates would swallow a
     // genuine failure three turns later. Both slots, because the pump's
     // `running` edge moves the live query between them (see below).
+    //
+    // The blast radius of getting this wrong GREW with DOR-1681. The record no
+    // longer only suppresses an error frame: it now rides the wire as
+    // `stopWasRequested` and settles the turn's LIFECYCLE, so a stale `true`
+    // three turns later would report a genuinely failed turn as one the operator
+    // stopped, which is the exact confusion that work removed. This loop is what
+    // keeps it per-turn, and the session write-lock is what makes the clearing
+    // safe to do here: one dispatch drives a session at a time and holds the
+    // lock for the whole of its stream, so no other turn's `result` can be
+    // reading the record while this clears it.
     for (const spent of [session.activeQuery, session.lastQuery]) {
       if (spent !== undefined) session.stoppedQueries?.delete(spent);
     }

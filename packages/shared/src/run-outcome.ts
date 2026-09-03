@@ -375,8 +375,13 @@ export function createRunOutcomeTracker(): RunOutcomeTracker {
   const decide = (): string | null => {
     // A stop, not a failure: the caller records a stopped run as `cancelled`.
     // Unless nobody asked for the abort and the window latched a fatal frame —
-    // then the run really did break, and filing it `cancelled` would say a
-    // scheduled run at 3am was called off rather than that it failed.
+    // then the run really did break, and answering `null` here files it as a
+    // SUCCESS. Not as `cancelled`: that status is written by a different branch
+    // entirely, the one that fires when DorkOS itself raised the abort signal
+    // (an operator cancel, a deadline, a shutdown). A run that aborted on its
+    // own never reaches that branch, so it lands on `failure ? 'failed' :
+    // 'completed'` and a 3am run that died on a refusal came back with a green
+    // tick (`task-scheduler-service.ts`, `relay/task-handler.ts`).
     if (isInterruptedTerminalReason(terminalReason)) {
       return isUnrequestedAbortFailure(stopWasRequested, latched !== null)
         ? composeMessage(latched)
@@ -398,10 +403,17 @@ export function createRunOutcomeTracker(): RunOutcomeTracker {
     observe(event: StreamEvent): void {
       // Checked first, so the reopen's reset cannot be undone by the very event
       // that caused it.
+      // No `stopWasRequested` reset here, and the asymmetry with the session
+      // normalizer's twin is deliberate rather than an omission. Here the record
+      // is READ only from inside the abort branch of `decide()`, which needs
+      // `terminalReason` to be an abort reason — and the only way to set one is
+      // the pair-latch below, which rewrites the record in the same statement.
+      // A stale value is therefore unreachable. The normalizer emits the field
+      // INDEPENDENTLY of whether a reason arrived, so its reset is load-bearing
+      // and this one would be dead code.
       if (!open && TURN_REOPENING_EVENT_TYPES.has(event.type)) {
         open = true;
         terminalReason = undefined;
-        stopWasRequested = undefined;
         latched = null;
       }
       const reason = readTerminalReason(event);

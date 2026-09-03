@@ -152,16 +152,26 @@ describe('createRunOutcomeTracker', () => {
       ).toBe('Sign in again: 401 Unauthorized');
     });
 
-    it('does not inherit an EARLIER window stop record after the runtime picks the work back up', () => {
-      // The latch is per-window: a reopen resets it, so the second window's
-      // ending is read with the second window's intent (here, none at all).
+    it('does not inherit an earlier stop record across a reopened window', () => {
+      // Built to actually discriminate. The second window must end on an ABORT
+      // that names NO record of its own: only then does a stale `false` from the
+      // first window change the answer, flipping a second abort nobody can speak
+      // for into a reported failure. Closing window two with `completed` would
+      // have proved nothing, because an absolving reason answers `null` whatever
+      // the record says.
+      //
+      // What clears it is the PAIR-LATCH, not the reopen: the record is only
+      // ever read beside a reason, and setting a reason rewrites the record in
+      // the same statement. See the tracker's reset block for why it therefore
+      // needs no reset of its own while the session normalizer's twin does.
       expect(
         settle([
           error({ message: 'refused' }),
           abortStatus('aborted_streaming', false),
           done(),
           text('picking it back up'),
-          status('completed'),
+          error({ message: 'a second, unattributable abort' }),
+          status('aborted_streaming'),
           done(),
         ])
       ).toBeNull();

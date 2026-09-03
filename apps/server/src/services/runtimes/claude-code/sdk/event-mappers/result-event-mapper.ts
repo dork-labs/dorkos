@@ -181,6 +181,17 @@ export async function* mapResultEvent(
     // carries and the intent that decides the error frame cannot disagree about
     // one result.
     //
+    // **Reading it this early is safe because of WHERE the record is written.**
+    // `interruptGivenQuery` adds the query to `stoppedQueries` BEFORE it attempts
+    // the interrupt (`sessions/session-store.ts`), precisely so a Stop still in
+    // flight is already on record. So any abort DorkOS caused already carries
+    // its record by the time the `result` it produced reaches this mapper, and
+    // moving the read ahead of the two yields below cannot lose it. The residual
+    // window is the opposite case — something else aborts the turn in the
+    // instant a Stop is landing — and there the early read reports `false`, so
+    // the turn settles `error` with its failure text kept. That is the more
+    // honest of the two answers for a turn nobody had yet stopped.
+    //
     // Undefined when the caller supplied no `wasStopped` probe at all (the
     // media-capture path), which is the honest answer: that caller holds no
     // session and so has no record to report. Settlement reads an absent signal

@@ -70,8 +70,8 @@ export interface StoppedTurnEvidence {
  * frame was never enough on its own: SETTLEMENT read the abort reason and
  * called the turn `interrupted` anyway, which erased the very frame this
  * predicate had deliberately preserved. So the mapper also stamps
- * `stopWasRequested` onto the `session_status` beside an abort reason, and the
- * projections AND the two exactly as this does
+ * `stopWasRequested` onto the `session_status` beside an abort reason, and every
+ * settlement reader ANDs the same two halves this predicate does
  * (`@dorkos/shared/run-outcome`, `isUnrequestedAbortFailure`). One decision, one
  * piece of evidence, read the same way at both layers.
  *
