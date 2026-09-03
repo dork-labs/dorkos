@@ -11,6 +11,7 @@
  * @module entities/marketplace/lib/describe-schedule
  */
 import {
+  describeScheduleArrival,
   describeSchedulePermissionMode,
   type PreviewSchedule,
   type SchedulePermissionMode,
@@ -79,28 +80,16 @@ function describeCron(cron: string): string {
  * `clampSchedulePermissionMode` before it reaches the client, so a package that
  * asked for `bypassPermissions` is described as the `acceptEdits` it gets.
  *
- * ## Why `startsEnabled: true` is not "starts switched on"
- *
- * It reads as one, and this sentence used to say so, which was the alarming
- * half of a claim that is not true on any path a preview can describe. Every
- * schedule a package brings reaches its row through `upsertFromFile` with
- * `source: 'discovery'` — the SKILL.md files it ships, the ones
- * `materialize-schedules.ts` writes for a plugin manifest, and the ones
- * `shape-schedule-service.ts` writes for a Shape manifest alike — and
- * `resolveFileArmStatus` parks EVERY first sighting at `pending_approval`
- * whatever `enabled` says (ADR `260823-200726`). `enabled` is the author's
- * intent, and intent is not permission.
- *
- * So the flag is described as what it is, a request, and the approval that
- * actually stands between the package and its first run is named instead.
+ * The arrival phrase comes from `describeScheduleArrival` in `@dorkos/shared`,
+ * which carries the reasoning for why `startsEnabled: true` is NOT "starts
+ * switched on" — and is shared because `dorkos install` renders the same fact in
+ * the terminal, where the identical false claim had to be corrected too.
  *
  * @param schedule - One scheduled job from a package's permission preview.
  * @returns A sentence naming the cadence, what it waits on, and the powers.
  */
 export function describePreviewSchedule(schedule: PreviewSchedule): string {
   const when = schedule.cron ? describeCron(schedule.cron) : 'Runs only when you ask';
-  const arrival = schedule.startsEnabled
-    ? 'waits for your approval before its first run'
-    : 'arrives switched off, and would wait for your approval too';
+  const arrival = describeScheduleArrival(schedule.startsEnabled);
   return `${when}, ${arrival}. This job ${describeSchedulePermissionMode(schedule.permissionMode)}.`;
 }

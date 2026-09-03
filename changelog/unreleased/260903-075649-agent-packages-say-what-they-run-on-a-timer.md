@@ -1,6 +1,8 @@
 ---
 covers:
-  - 'feat(client,server): an agent package says what it will run on a timer before you create it (DOR-644)'
+  - 'feat(client,server): an agent package says what it runs on a timer before you create it (DOR-644)'
+  - 'fix(client): the schedule disclosure travels, tells the truth, and survives a paused query (DOR-644)'
+  - 'fix(cli,shared,server): one shared sentence for what a packaged schedule does on arrival (DOR-644)'
 ---
 
 ### Added
@@ -9,4 +11,4 @@ covers:
 
 ### Changed
 
-- Install screens no longer say a package's scheduled job "starts switched on". Nothing a package brings ever starts on its own: DorkOS parks every new schedule until you approve it, so the wording now says that instead of promising the opposite (DOR-644)
+- Install screens no longer say a package's scheduled job "starts switched on" — in the app or in the terminal. Nothing a package brings ever starts on its own: DorkOS parks every new schedule until you approve it, so all three screens now say that instead of promising the opposite (DOR-644)

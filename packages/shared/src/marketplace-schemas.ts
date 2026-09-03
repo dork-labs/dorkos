@@ -243,6 +243,36 @@ export function describeSchedulePermissionMode(mode: string): string {
 }
 
 /**
+ * Describe what happens to a packaged scheduled job before it could first run.
+ *
+ * ## Why this is not "starts switched on"
+ *
+ * Because that is false, on every path a preview can describe. `startsEnabled`
+ * is the author's `enabled` flag read verbatim, but every schedule a package
+ * brings reaches its row through `TaskStore.upsertFromFile` with `source:
+ * 'discovery'` — the SKILL.md files the package ships, the ones
+ * `materialize-schedules.ts` writes for a plugin manifest, and the ones
+ * `shape-schedule-service.ts` writes for a Shape manifest alike — and
+ * `resolveFileArmStatus` parks EVERY first sighting at `pending_approval`
+ * whatever `enabled` says (ADR `260823-200726`). Intent is not permission.
+ *
+ * ## Why it lives in shared rather than beside one caller
+ *
+ * Three surfaces disclose this same fact to the same person — the install
+ * confirmation dialog, the agent arrival card (DOR-644), and `dorkos install` in
+ * the terminal. The false claim reached all three because each wrote the phrase
+ * itself. One function is what stops the next correction landing on two of them.
+ *
+ * @param startsEnabled - Whether the package ASKED for the job to be on.
+ * @returns A phrase completing "…, {phrase}."
+ */
+export function describeScheduleArrival(startsEnabled: boolean): string {
+  return startsEnabled
+    ? 'waits for your approval before its first run'
+    : 'arrives switched off, and would wait for your approval too';
+}
+
+/**
  * Plain-language phrasing for the harness hook events, keyed by Claude's event
  * name.
  *
@@ -318,7 +348,11 @@ export interface PreviewSchedule {
   cron: string | null;
   /** How much the job may do without a human in the loop. */
   permissionMode: SchedulePermissionMode;
-  /** Whether the job is created switched on. */
+  /**
+   * Whether the package asked for the job to be switched on. Its declared
+   * intent, not an outcome: `resolveFileArmStatus` parks every packaged
+   * schedule at `pending_approval` on first sighting whatever this says.
+   */
   startsEnabled: boolean;
 }
 

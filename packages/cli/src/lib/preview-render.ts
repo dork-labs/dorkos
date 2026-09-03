@@ -10,6 +10,7 @@
  */
 import {
   describeHookEvent,
+  describeScheduleArrival,
   describeSchedulePermissionMode,
 } from '@dorkos/shared/marketplace-schemas';
 
@@ -154,8 +155,12 @@ export function renderPreview(
     lines.push('Scheduled jobs:');
     for (const schedule of preview.schedules) {
       const when = schedule.cron ? `runs on ${schedule.cron}` : 'runs only when you ask';
-      const state = schedule.startsEnabled ? 'starts on' : 'starts off';
-      lines.push(`  ${schedule.name}: ${when}, ${state}`);
+      // Never "starts on": nothing a package brings starts by itself, whatever
+      // its `enabled` flag asked for. `describeScheduleArrival` holds the whole
+      // of that reasoning, and is shared with the two screens in the app that
+      // disclose the same fact — this line said the false thing precisely
+      // because it was written separately from theirs (DOR-644).
+      lines.push(`  ${schedule.name}: ${when}, ${describeScheduleArrival(schedule.startsEnabled)}`);
       lines.push(
         `    ${DIM}This job ${describeSchedulePermissionMode(schedule.permissionMode)}.${RESET}`
       );
