@@ -319,11 +319,20 @@ describe('createExternalMcpServer', () => {
     });
 
     it('marks resource-creating tools readOnlyHint: false, idempotentHint: false', () => {
-      for (const name of ['tasks_create', 'relay_send', 'mesh_register', 'create_agent']) {
+      for (const name of ['tasks_create', 'relay_send', 'create_agent']) {
         const annotations = findTool(name).annotations;
         expect(annotations?.readOnlyHint, name).toBe(false);
         expect(annotations?.idempotentHint, name).toBe(false);
       }
+    });
+
+    it('marks mesh_register idempotent, because a second call adopts what the first wrote', () => {
+      // It creates an agent only for a directory that has no `.dork/agent.json`;
+      // any directory that has one is adopted, so calling it twice on the same
+      // path converges instead of minting a second identity (DOR-1019).
+      const annotations = findTool('mesh_register').annotations;
+      expect(annotations?.readOnlyHint).toBe(false);
+      expect(annotations?.idempotentHint).toBe(true);
     });
 
     it('marks delete/unregister tools destructiveHint: true', () => {

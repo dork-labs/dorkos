@@ -512,9 +512,10 @@ const FIXTURE_AGENT_RUNTIME = 'codex';
  * agent nothing can see is a seam with a hole in it, not a fixture.
  *
  * **`syncFromDisk`, deliberately, and not `registerByPath`.** The suites'
- * workaround called `POST /api/mesh/agents`, which does more than register:
- * it mints a SECOND id distinct from the manifest's own (hence their teardown
- * having to remember it), rewrites the manifest it was just handed, and fires
+ * workaround called `POST /api/mesh/agents`, which does more than register: it
+ * used to mint a SECOND id distinct from the manifest's own and rewrite the
+ * manifest it was just handed (that half is gone — since DOR-1019 it adopts a
+ * manifest already on disk), and it still fires
  * `notifyAgentCreated` — whose reaction seats the agent in #team. On a server
  * the `chromium-team-room` project also drives, that is a cross-project side
  * effect nobody asked for. `syncFromDisk` is the same path `POST /api/agents`

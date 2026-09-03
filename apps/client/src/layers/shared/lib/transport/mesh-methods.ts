@@ -76,7 +76,7 @@ export function createMeshMethods(baseUrl: string) {
       });
     },
 
-    unregisterMeshAgent(id: string): Promise<{ success: boolean }> {
+    unregisterMeshAgent(id: string): Promise<{ success: boolean; blockedFromDiscovery?: boolean }> {
       return fetchJSON(baseUrl, `/mesh/agents/${id}`, { method: 'DELETE' });
     },
 

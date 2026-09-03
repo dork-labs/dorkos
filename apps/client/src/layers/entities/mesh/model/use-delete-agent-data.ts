@@ -7,6 +7,12 @@ export function useDeleteAgentData() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    // Without a label the shared mutation toast throws the server's sentence
+    // away and says "Action failed. Please try again." — which is a dead end
+    // for the one refusal this route has: the agent's file is tracked by git,
+    // so its folder is not DorkOS's to delete. That sentence tells the person
+    // what to do instead, and it only reaches them through here (DOR-1019).
+    meta: { errorLabel: `Couldn't delete this agent's files` },
     mutationFn: (id: string) => transport.deleteAgentData(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mesh', 'agents'] });

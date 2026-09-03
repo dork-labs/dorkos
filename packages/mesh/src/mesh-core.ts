@@ -171,6 +171,7 @@ export class MeshCore {
     };
     this.agentDeps = {
       registry,
+      denialList,
       relayBridge,
       topology,
       signalEmitter: options.signalEmitter,
@@ -200,10 +201,17 @@ export class MeshCore {
     return discovery.register(candidate, this.discoveryDeps, overrides, approver, scanRoot);
   }
 
-  /** Register an agent directly by project path without prior discovery. */
+  /**
+   * Register an agent directly by project path without prior discovery.
+   *
+   * A directory that already holds a `.dork/agent.json` is ADOPTED — the
+   * manifest on disk is untouched and its identity is what gets registered, so
+   * `partial` applies only to a directory that has none, and `name`/`runtime`
+   * are required only there (DOR-1019).
+   */
   async registerByPath(
     projectPath: string,
-    partial: Partial<AgentManifest> & { name: string; runtime: AgentRuntime },
+    partial: Partial<AgentManifest>,
     approver?: string,
     scanRoot?: string
   ): Promise<AgentManifest> {
@@ -247,8 +255,13 @@ export class MeshCore {
     return agentMgmt.syncFromDisk(projectPath, this.discoveryDeps);
   }
 
-  /** Unregister an agent by ID (ADR-0043: deletes manifest, DB entry, Relay endpoint). */
-  async unregister(agentId: string): Promise<void> {
+  /**
+   * Unregister an agent by ID (ADR-0043: releases the manifest, then the DB
+   * entry and Relay endpoint). A manifest git tracks is left on disk and its
+   * directory denied instead of deleted, which the result reports so a caller
+   * can tell the person (DOR-1019).
+   */
+  async unregister(agentId: string): Promise<agentMgmt.UnregisterResult> {
     return agentMgmt.unregister(this.agentDeps, agentId);
   }
 

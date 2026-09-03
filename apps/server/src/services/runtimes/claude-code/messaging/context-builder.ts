@@ -254,7 +254,10 @@ DorkOS Mesh is a local agent registry for discovering and communicating with AI 
 
 Agent lifecycle:
 1. ${T}mesh_discover(roots=["/path"]) — scan directories for agent candidates (looks for AGENTS.md, .dork/agent.json)
-2. ${T}mesh_register(path, name, runtime, capabilities) — register a candidate as a known agent
+2. ${T}mesh_register(path, name, runtime, capabilities) — register a candidate as a known agent.
+   A folder that already has a .dork/agent.json is ADOPTED, never overwritten: that file stays as
+   it is and the agent it describes is what gets registered, so the agent you get back may have a
+   different id and name than you asked for. Read the returned agent; it is the authoritative one.
 3. ${T}mesh_inspect(agentId) — get full manifest, health status, and relay endpoint
 4. ${T}mesh_status() — aggregate overview: total, active, stale agent counts
 5. ${T}mesh_list(runtime?, capability?) — filter agents by runtime or capability; every entry
@@ -268,6 +271,8 @@ Workflows:
 - Contact another agent: take their relaySubject from ${T}mesh_list (or ${T}mesh_inspect) and
   send to that exact string — it is the one address every access rule is written against
 - Register this project: ${T}mesh_register(path=cwd, name="project-name", runtime="claude-code")
+  — if the project already has a .dork/agent.json, this adopts that agent instead of creating one,
+  and the name and runtime you pass are ignored rather than written over it
 
 Runtimes: claude-code | cursor | codex | other
 </mesh_tools>`;

@@ -987,6 +987,73 @@ describe('the kebab', () => {
     expect(screen.queryByRole('menuitem', { name: 'Set as default' })).toBeNull();
   });
 
+  it('says the folder is blocked when the agent file had to stay on disk', async () => {
+    // The durable second effect of unregistering an agent whose manifest git
+    // tracks: the file is left alone and the folder denied, so the agent does
+    // not simply come back on the next scan. A toast that only said
+    // "unregistered" would leave the person to discover the block themselves
+    // (DOR-1019).
+    const transport = mockTransport();
+    transport.unregisterMeshAgent = vi
+      .fn()
+      .mockResolvedValue({ success: true, blockedFromDiscovery: true });
+    await renderProfile(MANAGED, { transport });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Actions for Warden' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Unregister' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Unregister' }));
+
+    await waitFor(() =>
+      expect(toasts.message).toHaveBeenCalledWith(
+        expect.stringContaining('blocked from scans'),
+        expect.anything()
+      )
+    );
+  });
+
+  it('says only that it is unregistered when the agent file was deleted', async () => {
+    const transport = mockTransport();
+    transport.unregisterMeshAgent = vi.fn().mockResolvedValue({ success: true });
+    await renderProfile(MANAGED, { transport });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Actions for Warden' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Unregister' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Unregister' }));
+
+    await waitFor(() =>
+      expect(toasts.message).toHaveBeenCalledWith('Warden unregistered', expect.anything())
+    );
+  });
+
+  it('passes the server’s refusal through when the files belong to a repo', async () => {
+    // The 409 this route can answer carries the only instruction the person
+    // gets. Without `meta.errorLabel` the shared mutation toast throws that
+    // sentence away and says "Action failed. Please try again." (DOR-1019).
+    const transport = mockTransport();
+    transport.deleteAgentData = vi
+      .fn()
+      .mockRejectedValue(
+        new Error('Cannot delete /repo/.dork: agent.json in it is tracked by git')
+      );
+    await renderProfile(MANAGED, { transport });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Actions for Warden' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Delete agent and data' }));
+    await userEvent.type(screen.getByTestId('delete-confirm-input'), 'Warden');
+    await userEvent.click(screen.getByRole('button', { name: 'Delete agent and data' }));
+
+    await waitFor(() =>
+      expect(toasts.error).toHaveBeenCalledWith(
+        expect.stringContaining('tracked by git'),
+        expect.anything()
+      )
+    );
+    expect(toasts.error).toHaveBeenCalledWith(
+      expect.stringContaining(`Couldn't delete this agent's files`),
+      expect.anything()
+    );
+  });
+
   it('holds Delete behind the agent’s name, typed out', async () => {
     const { transport } = await renderProfile(MANAGED);
     await userEvent.click(screen.getByRole('button', { name: 'Actions for Warden' }));
