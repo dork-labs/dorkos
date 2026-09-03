@@ -14,6 +14,17 @@ interface MessageContextValue {
    * DOR-302). Threaded to widget fences: only a newer widget fence stales one.
    */
   isLatestWidgetMessage: boolean;
+  /**
+   * Whether this message is the session's LAST one. Gates the Retry offer on an
+   * inline error card (DOR-1677): {@link MessageContextValue.onRetry} re-sends
+   * the session's last user message, which is only the prompt that failed while
+   * nothing has come after it.
+   *
+   * Separate from `isLatestWidgetMessage`, which asks a narrower question — is
+   * there a NEWER message carrying a widget fence — and answers `true`
+   * vacuously for the fence-less messages that make up most of a transcript.
+   */
+  isFinalMessage: boolean;
   activeToolCallId: string | null;
   onToolRef: ((handle: InteractiveToolHandle | null) => void) | undefined;
   focusedOptionIndex: number;
@@ -61,6 +72,7 @@ export function MessageProvider({
       value.sessionId,
       value.isStreaming,
       value.isLatestWidgetMessage,
+      value.isFinalMessage,
       value.activeToolCallId,
       value.onToolRef,
       value.focusedOptionIndex,
