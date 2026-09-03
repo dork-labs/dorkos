@@ -121,4 +121,28 @@ describe('TaskTemplateCard', () => {
       expect(btn.className).not.toContain('ring-primary');
     });
   });
+
+  describe('accessible name', () => {
+    it('gives the button a concise name instead of the whole prompt', () => {
+      render(<TaskTemplateCard preset={PRESET} variant="selectable" onSelect={vi.fn()} />);
+      const btn = screen.getByRole('button', {
+        name: 'Health Check: Run lint, tests, and type-check.',
+      });
+      expect(btn).toBeTruthy();
+    });
+
+    it('hides the cron line and prompt preview from the accessibility tree', () => {
+      const { container } = render(
+        <TaskTemplateCard preset={PRESET} variant="selectable" onSelect={vi.fn()} />
+      );
+      const cronLine = screen.getByText('cron:0 8 * * 1');
+      const promptLine = screen.getByText('Run the project health checks.');
+      expect(cronLine.getAttribute('aria-hidden')).toBe('true');
+      expect(promptLine.getAttribute('aria-hidden')).toBe('true');
+      // The full prompt must never reach the button's accessible name.
+      expect(container.querySelector('button')!.getAttribute('aria-label')).not.toContain(
+        'Run the project health checks.'
+      );
+    });
+  });
 });
