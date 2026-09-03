@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useIsRestoring } from '@tanstack/react-query';
-import { Loader2, TriangleAlert } from 'lucide-react';
+import { TriangleAlert } from 'lucide-react';
 import { Button, PageContainer } from '@/layers/shared/ui';
 import {
   DEFAULT_TEAM_FILTERS,
@@ -12,6 +12,7 @@ import { useProfileDeepLink } from '@/layers/shared/model';
 import { AgentGhostRows } from '@/layers/features/agents-list';
 import {
   TeamRosterGrid,
+  TeamRosterSkeleton,
   TeamRosterToolbar,
   TeamRosterWarnings,
 } from '@/layers/features/team-roster';
@@ -102,12 +103,9 @@ export function TeamPage({ filters, onFiltersChange }: TeamPageProps) {
 
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center p-8">
-        <Loader2
-          aria-label="Loading the team"
-          className="text-muted-foreground size-5 animate-spin"
-        />
-      </div>
+      <PageContainer width="full" className="flex flex-col gap-4">
+        <TeamRosterSkeleton />
+      </PageContainer>
     );
   }
 
