@@ -1,5 +1,5 @@
 import { SettingRow, Switch } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
+import { cn, createModalHandoff } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import {
   friendlyErrorMessage,
@@ -43,10 +43,10 @@ export function RemoteAccessRow() {
   const setRemoteAccessOpen = useAppStore((s) => s.setRemoteAccessOpen);
   const setControlCenterOpen = useAppStore((s) => s.setControlCenterOpen);
 
-  const openDialog = () => {
-    setControlCenterOpen(false);
-    setRemoteAccessOpen(true);
-  };
+  // Closes this flyout before the dialog opens — the shared `pointer-events`
+  // ordering, not a local one.
+  const openAndClose = createModalHandoff(() => setControlCenterOpen(false));
+  const openDialog = openAndClose(() => setRemoteAccessOpen(true));
 
   const configured = remote.tokenConfigured;
   const waiting = remote.state === 'starting' || remote.state === 'stopping';
@@ -62,12 +62,15 @@ export function RemoteAccessRow() {
     description = DESCRIPTIONS.off;
   } else if (!configured) {
     description = DESCRIPTIONS.unconfigured;
-  } else if (remote.state === 'error') {
+  } else if (remote.error !== null) {
+    // **Any error, not just the `error` STATE.** A refused stop leaves remote
+    // access `connected` with a reason attached, and gating this branch on the
+    // state meant the row snapped back to "On · host" and said nothing at all —
+    // the #1458 symptom class, one surface over. What went wrong is the news
+    // here; the host is ambient, and the switch still shows the true position.
     description = (
       <span className="flex min-w-0 items-baseline gap-1.5">
-        <span className="text-destructive truncate">
-          {friendlyErrorMessage(remote.error ?? 'Remote access could not start.')}
-        </span>
+        <span className="text-destructive truncate">{friendlyErrorMessage(remote.error)}</span>
         <button
           type="button"
           onClick={openDialog}

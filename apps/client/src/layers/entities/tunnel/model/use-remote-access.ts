@@ -135,7 +135,7 @@ export function useRemoteAccessReducer(): { tunnel: TunnelReport | undefined } {
   // spells this query by hand also picks its own `staleTime`, and observers on
   // one key do not average theirs — the tightest wins and the rest describe a
   // behaviour nobody gets.
-  const { data: serverConfig } = useConfig();
+  const { data: serverConfig, dataUpdatedAt } = useConfig();
   const tunnel = serverConfig?.tunnel;
 
   // Read once, at render, into primitives. The effects below depend on THESE
@@ -149,10 +149,14 @@ export function useRemoteAccessReducer(): { tunnel: TunnelReport | undefined } {
   const applyServerReport = useRemoteAccessStore((s) => s.applyServerReport);
   const noteTokenConfigured = useRemoteAccessStore((s) => s.noteTokenConfigured);
 
+  // `dataUpdatedAt` is in the dependencies on purpose, so this re-runs when the
+  // server ANSWERS AGAIN even if it says the same thing. That repetition is the
+  // only evidence there is that a `connected` nobody but this client believes in
+  // is stale — see `applyServerReport`, case 3.
   useEffect(() => {
     if (!answered) return;
-    applyServerReport(reportedStatus, reportedUrl);
-  }, [answered, applyServerReport, reportedStatus, reportedUrl]);
+    applyServerReport(reportedStatus, reportedUrl, dataUpdatedAt);
+  }, [answered, applyServerReport, reportedStatus, reportedUrl, dataUpdatedAt]);
 
   useEffect(() => {
     if (!answered) return;

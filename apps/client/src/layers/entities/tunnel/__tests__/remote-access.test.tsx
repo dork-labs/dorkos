@@ -82,6 +82,19 @@ function setup(initial: Partial<TunnelReport> = {}) {
     await waitFor(() => expect(result.current.remote.tunnel).toEqual(served));
   };
 
+  /**
+   * Change what the server WOULD answer, without asking it.
+   *
+   * For the case a real server always produces and a naive fixture never does:
+   * `POST /api/tunnel/start` returns only once the tunnel is up, so the very
+   * next `GET /api/config` reports it on. A fixture whose config stayed `off`
+   * through a successful start is describing a server that contradicts itself,
+   * and the reduction is right to correct it (`applyServerReport`, case 3).
+   */
+  const serverNowSays = (next: Partial<TunnelReport>) => {
+    served = { ...served, ...next };
+  };
+
   /** Re-answer the config query with the SAME facts, and prove it was re-asked. */
   const serverRepeatsItself = async () => {
     const before = vi.mocked(transport.getConfig).mock.calls.length;
@@ -91,7 +104,14 @@ function setup(initial: Partial<TunnelReport> = {}) {
     expect(vi.mocked(transport.getConfig).mock.calls.length).toBeGreaterThan(before);
   };
 
-  return { result, transport, queryClient, serverReports, serverRepeatsItself };
+  return {
+    result,
+    transport,
+    queryClient,
+    serverReports,
+    serverNowSays,
+    serverRepeatsItself,
+  };
 }
 
 /** Wait for the first config read to land, so the model has a server report. */
@@ -142,7 +162,7 @@ describe('a failed start stays on screen (DOR-1739, GitHub #1458)', () => {
   });
 
   it('clears when the person tries again and it works', async () => {
-    const { result, transport } = setup();
+    const { result, transport, serverNowSays } = setup();
     await settled(result);
     vi.mocked(transport.startTunnel).mockRejectedValue(new Error('ngrok exploded'));
     await act(async () => {
@@ -151,6 +171,7 @@ describe('a failed start stays on screen (DOR-1739, GitHub #1458)', () => {
     expect(result.current.remote.state).toBe('error');
 
     vi.mocked(transport.startTunnel).mockResolvedValue({ url: 'https://abc.ngrok.app' });
+    serverNowSays({ connected: true, isRunning: true, url: 'https://abc.ngrok.app' });
     await act(async () => {
       await result.current.actions.start();
     });
@@ -183,9 +204,12 @@ describe('a failed start stays on screen (DOR-1739, GitHub #1458)', () => {
 
 describe('a successful start does not flicker', () => {
   it('goes to connected and stays there while the config catches up', async () => {
-    const { result, transport, serverReports } = setup();
+    const { result, transport, serverReports, serverNowSays } = setup();
     await settled(result);
     vi.mocked(transport.startTunnel).mockResolvedValue({ url: 'https://abc.ngrok.app' });
+    // What a real server does: the start call returns only once the tunnel is
+    // up, so config agrees from the next read onward.
+    serverNowSays({ connected: true, isRunning: true, url: 'https://abc.ngrok.app' });
 
     await act(async () => {
       await result.current.actions.start();
@@ -239,6 +263,109 @@ describe('a successful start does not flicker', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('the change gate cannot park live chrome over a dead tunnel', () => {
+  it('corrects an optimistic connect the server never confirms', async () => {
+    // The failure the tuple-only gate allowed: `settleStart` writes `connected`
+    // while the last report was {off,null}; every later report is ALSO
+    // {off,null}, so the tuple never changes and the gate blocks forever. The
+    // beacon sat green, the row said "On · host", and only a reload cleared it.
+    const { result, transport, serverRepeatsItself } = setup();
+    await settled(result);
+    // The server answers `off` throughout — a start that reported a URL over a
+    // tunnel it does not actually have.
+    vi.mocked(transport.startTunnel).mockResolvedValue({ url: 'https://ghost.ngrok.app' });
+
+    await act(async () => {
+      await result.current.actions.start();
+    });
+    expect(result.current.remote.state).toBe('connected');
+
+    // The server is asked again and says `off` again. Same facts — but it has
+    // now SPOKEN over a state it owns and disagrees with.
+    await serverRepeatsItself();
+
+    await waitFor(() => expect(result.current.remote.state).toBe('off'));
+    expect(result.current.remote.url).toBeNull();
+    expect(result.current.remote.isLive).toBe(false);
+  });
+
+  it('corrects a 409 convergence the server never confirms either', async () => {
+    const { result, transport, serverRepeatsItself } = setup();
+    await settled(result);
+    vi.mocked(transport.startTunnel).mockRejectedValue(
+      Object.assign(new Error('Tunnel is already running'), { status: 409, body: {} })
+    );
+
+    await act(async () => {
+      await result.current.actions.start();
+    });
+    expect(result.current.remote.state).toBe('reconnecting');
+
+    await serverRepeatsItself();
+
+    // "Already running" turned out not to be true of anything the server can
+    // see, so the beacon must not keep breathing over it.
+    await waitFor(() => expect(result.current.remote.state).toBe('off'));
+  });
+
+  it('still lets a mounting surface REPLAY the cached answer without undoing anything', async () => {
+    // The other half, and the reason the gate is not simply "tuple unchanged
+    // AND the store agrees". Opening the Control Center mounts another reader,
+    // which hands the SAME cached answer round again — at the same
+    // `dataUpdatedAt`, because the server was never asked. That is not the
+    // server speaking, and it must not clobber an in-flight optimism.
+    const { result, transport, serverNowSays } = setup();
+    await settled(result);
+    vi.mocked(transport.startTunnel).mockResolvedValue({ url: 'https://abc.ngrok.app' });
+    serverNowSays({ connected: true, isRunning: true, url: 'https://abc.ngrok.app' });
+
+    await act(async () => {
+      await result.current.actions.start();
+    });
+    expect(result.current.remote.state).toBe('connected');
+
+    // A second surface mounting, spelled the way the reducer would call it.
+    const { lastReport } = useRemoteAccessStore.getState();
+    act(() => {
+      useRemoteAccessStore.getState().applyServerReport('off', null, lastReport?.fetchedAt ?? 0);
+    });
+
+    expect(result.current.remote.state).toBe('connected');
+    expect(result.current.remote.url).toBe('https://abc.ngrok.app');
+  });
+
+  it('leaves a failed start alone however often the server repeats itself', async () => {
+    // `error` is local-only: the server has no word for it, so a report that
+    // says the same thing again says nothing about it. This is the DOR-1739
+    // rule, and the item-3 mitigation must not eat it.
+    const { result, transport, serverRepeatsItself } = setup();
+    await settled(result);
+    vi.mocked(transport.startTunnel).mockRejectedValue(new Error('ngrok exploded'));
+    await act(async () => {
+      await result.current.actions.start();
+    });
+
+    await serverRepeatsItself();
+    await serverRepeatsItself();
+
+    expect(result.current.remote.state).toBe('error');
+    expect(result.current.remote.error).toBe('ngrok exploded');
+  });
+
+  it('leaves a start that is still in flight alone too', async () => {
+    const { result, transport, serverRepeatsItself } = setup();
+    await settled(result);
+    vi.mocked(transport.startTunnel).mockReturnValue(new Promise<{ url: string }>(() => {}));
+
+    act(() => void result.current.actions.start());
+    expect(result.current.remote.state).toBe('starting');
+
+    await serverRepeatsItself();
+
+    expect(result.current.remote.state).toBe('starting');
   });
 });
 
@@ -411,7 +538,7 @@ describe('a start against a tunnel that is already up converges (DOR-1738)', () 
     // owner setup is only useful if the thing they asked for happens
     // afterwards. `onComplete` fires long after the render that armed it, so
     // this also pins that the retry ref is tracking the LATEST start closure.
-    const { result, transport } = setup();
+    const { result, transport, serverNowSays } = setup();
     await settled(result);
     vi.mocked(transport.startTunnel).mockRejectedValue(
       Object.assign(new Error('Exposing DorkOS requires a login.'), {
@@ -425,6 +552,7 @@ describe('a start against a tunnel that is already up converges (DOR-1738)', () 
     expect(vi.mocked(transport.startTunnel)).toHaveBeenCalledTimes(1);
 
     vi.mocked(transport.startTunnel).mockResolvedValue({ url: 'https://abc.ngrok.app' });
+    serverNowSays({ connected: true, isRunning: true, url: 'https://abc.ngrok.app' });
     await act(async () => {
       getOwnerSetupRequest()?.onComplete();
     });
@@ -454,7 +582,13 @@ describe('stopping', () => {
     expect(result.current.remote.url).toBeNull();
   });
 
-  it('stays on, and says why, when the stop is refused', async () => {
+  it('stays on, and keeps the reason somewhere a surface can render it', async () => {
+    // The state stays `connected` — the tunnel really is still up — so the
+    // reason lives on `error` and NOT in the state. That combination is what
+    // made both renderers silent until they stopped gating on `state ===
+    // 'error'`; the sentence actually reaching a screen is asserted where the
+    // screens are (`RemoteAccessRow.test.tsx`, `RemoteAccessPanel.test.tsx`,
+    // and `src/__tests__/remote-access-surfaces-agree.test.tsx`).
     const { result, transport } = setup({
       connected: true,
       isRunning: true,
@@ -469,6 +603,7 @@ describe('stopping', () => {
     });
 
     expect(result.current.remote.state).toBe('connected');
+    expect(result.current.remote.isChecked).toBe(true);
     expect(result.current.remote.error).toBe('could not stop');
   });
 });
@@ -619,13 +754,15 @@ describe('status toasts speak only for changes the person did not make', () => {
   });
 });
 
-describe('two surfaces, one answer (DOR-1743)', () => {
+describe('two readers, one reduction (DOR-1743)', () => {
   /**
-   * The property a per-surface machine cannot have.
+   * The model mounted TWICE — the shape the app is really in, with the row, the
+   * beacon and the dialog all reading it.
    *
-   * Mounts the model TWICE — the shape the app is really in, with the Control
-   * Center row, the beacon and the dialog all reading it — and acts through one
-   * of them.
+   * This proves the MODEL is consistent with itself under N readers. That the
+   * two real SURFACES agree is a different claim and needs both components on
+   * screen, which no test in this layer may import — it lives in
+   * `src/__tests__/remote-access-surfaces-agree.test.tsx`.
    */
   function setupTwo(initial: Partial<TunnelReport> = {}) {
     let served: TunnelReport = { ...baseTunnel, ...initial };

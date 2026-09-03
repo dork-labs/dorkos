@@ -77,14 +77,17 @@ describe('usePromoActivation', () => {
     expect(screen.getByTestId('promo-dialog')).toBeInTheDocument();
   });
 
-  it('opens a standalone dialog for an `open-dialog` promo', () => {
-    function StubDialog({ open }: { open: boolean }) {
-      return open ? <div data-testid="standalone" /> : null;
-    }
-    render(<Harness promo={makePromo({ type: 'open-dialog', component: StubDialog })} />);
+  it('mounts no dialog of its own for an `action` promo', () => {
+    // The shape Remote Access takes since DOR-1743: the card flips the app's
+    // own dialog flag rather than mounting a second copy of that dialog. The
+    // retired `open-dialog` variant is what made the duplicate possible.
+    const handler = vi.fn();
+    render(<Harness promo={makePromo({ type: 'action', handler })} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Press' }));
-    expect(screen.getByTestId('standalone')).toBeInTheDocument();
+    expect(handler).toHaveBeenCalledOnce();
+    expect(screen.queryByTestId('promo-dialog')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('promo-dialog-closed')).not.toBeInTheDocument();
   });
 
   it('follows the link for a `navigate` promo, and mounts no dialog', () => {

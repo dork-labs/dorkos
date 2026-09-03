@@ -7,7 +7,8 @@
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { createChannel } from '@/layers/shared/lib';
-import { useEventSubscription, configKeys } from '@/layers/shared/model';
+import { useEventSubscription } from '@/layers/shared/model';
+import { configKeys } from '@/layers/entities/config';
 import { useRemoteAccessReducer } from './use-remote-access';
 
 const CHANNEL_NAME = 'dorkos-tunnel';

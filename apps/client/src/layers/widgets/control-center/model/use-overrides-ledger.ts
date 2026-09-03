@@ -25,7 +25,7 @@
  * @module widgets/control-center/model/use-overrides-ledger
  */
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
-import { permissionModeLabel } from '@/layers/shared/lib';
+import { createModalHandoff, permissionModeLabel } from '@/layers/shared/lib';
 import { stopLabel } from '@/layers/shared/ui';
 import {
   useAppStore,
@@ -93,17 +93,11 @@ export function useOverridesLedger(): OverridesLedger {
   const openConnections = useOpenConnections();
   const setControlCenterOpen = useAppStore((s) => s.setControlCenterOpen);
 
-  // Close the flyout BEFORE navigating or opening another surface. The flyout is
-  // a modal popover — it holds `body { pointer-events: none }` while open — so a
-  // deep link that left it open would land the person on an inert page (or stack
-  // a second modal over it). The ledger's whole purpose is to REACH the surface;
-  // leaving the lock on defeats it.
-  const openAndClose =
-    (go: () => void): (() => void) =>
-    () => {
-      setControlCenterOpen(false);
-      go();
-    };
+  // Close the flyout BEFORE navigating or opening another surface — the
+  // `pointer-events: none` hazard `createModalHandoff` documents. This used to
+  // be spelled inline here; the Remote-access row and the beacon's flyout are
+  // the same shape (DOR-1743), so the ordering lives in one place now.
+  const openAndClose = createModalHandoff(() => setControlCenterOpen(false));
 
   const isResolving = capabilityMap === undefined || config === undefined;
 

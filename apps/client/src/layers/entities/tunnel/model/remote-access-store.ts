@@ -44,6 +44,33 @@ import type { ReportedStatus } from './tunnel-report';
  */
 export type TunnelState = 'off' | 'starting' | 'connected' | 'reconnecting' | 'stopping' | 'error';
 
+/**
+ * The states the SERVER has no word for.
+ *
+ * It reports connected, running-but-unreachable, or neither. These three are
+ * this side's own account of what somebody just did, so a report that repeats
+ * itself says nothing about them and must not disturb them.
+ */
+const LOCAL_ONLY_STATES: ReadonlySet<TunnelState> = new Set(['starting', 'stopping', 'error']);
+
+/**
+ * The state a server report, on its own, would put the store in.
+ *
+ * Extracted so the change gate and the reduction below cannot drift: the gate
+ * asks "does the store already agree with this report?" and has to mean exactly
+ * what the reduction would do with it.
+ *
+ * @param status - What the server's tunnel block says.
+ * @param url - The public URL it names, or `null`. A tunnel that claims to be on
+ *   without saying where cannot be shown as connected, so it reads `off` — the
+ *   same fallback the reduction takes.
+ */
+function impliedState(status: ReportedStatus, url: string | null): TunnelState {
+  if (status === 'on' && url) return 'connected';
+  if (status === 'reconnecting') return 'reconnecting';
+  return 'off';
+}
+
 /** The reduced state every remote-access surface reads. */
 export interface RemoteAccessState {
   /** Where the tunnel is, as the app understands it right now. */
@@ -69,8 +96,13 @@ export interface RemoteAccessState {
    * `null` before the first report has been applied, which is not the same as
    * a report of `off`: without the distinction the first real answer looks like
    * a transition.
+   *
+   * `fetchedAt` is the query's `dataUpdatedAt` — when the SERVER last answered,
+   * not when a component asked. It is what separates "the server said the same
+   * thing again" from "a component mounted and replayed the cached answer", and
+   * those two need opposite treatment. See {@link RemoteAccessActions.applyServerReport}.
    */
-  lastReport: { status: ReportedStatus; url: string | null } | null;
+  lastReport: { status: ReportedStatus; url: string | null; fetchedAt: number } | null;
   /**
    * Whether the one-time ngrok setup is done, as the server last reported it.
    *
@@ -92,12 +124,35 @@ export interface RemoteAccessState {
 /** Every way the reduced state moves. */
 export interface RemoteAccessActions {
   /**
-   * Reduce a fresh server report — and only a FRESH one.
+   * Reduce a server report — and only one that is actually news.
+   *
+   * ## Three cases, and they are genuinely different
+   *
+   * 1. **The facts changed.** Apply, always. The server is describing a tunnel
+   *    this store has not heard about.
+   * 2. **A replay** — the same facts at the same `fetchedAt`. That is a
+   *    component MOUNTING and handing round the cached answer, not the server
+   *    speaking. Never let it overwrite anything: opening the Control Center
+   *    mid-start would otherwise snap the row back to Off over a tunnel that is
+   *    coming up.
+   * 3. **The server asked and answered again with the same facts.** Now it
+   *    matters what this store holds:
+   *    - `starting`, `stopping` and `error` are LOCAL-ONLY — the server has no
+   *      word for them, so a report that repeats itself says nothing about
+   *      them and they stand. This is the DOR-1739 rule: a failed start
+   *      survives a refetch that reports no change.
+   *    - `connected`, `reconnecting` and `off` are the SERVER'S to name. One
+   *      that disagrees with a freshly re-confirmed report is stale optimism —
+   *      a `settleStart` whose tunnel the server never saw — and gets
+   *      corrected. Without this the beacon could sit green over a dead tunnel
+   *      until the page was reloaded, because the tuple never changed.
    *
    * @param status - What the server's tunnel block says.
    * @param url - The public URL it names, or `null`.
+   * @param fetchedAt - When the server answered (`dataUpdatedAt`). Distinguishes
+   *   case 2 from case 3; a caller that passes a constant collapses them.
    */
-  applyServerReport: (status: ReportedStatus, url: string | null) => void;
+  applyServerReport: (status: ReportedStatus, url: string | null, fetchedAt: number) => void;
   /** Record whether the one-time ngrok setup is done. */
   noteTokenConfigured: (configured: boolean) => void;
   /** A start the person asked for is in flight. */
@@ -165,22 +220,43 @@ export const useRemoteAccessStore = create<RemoteAccessState & RemoteAccessActio
     (set, get) => ({
       ...INITIAL,
 
-      applyServerReport: (status, url) => {
+      applyServerReport: (status, url, fetchedAt) => {
         const previous = get().lastReport;
-        if (previous && previous.status === status && previous.url === url) return;
+        const sameFacts = previous !== null && previous.status === status && previous.url === url;
+
+        if (sameFacts) {
+          // Case 2: a replay of an answer already reduced. A component mounted;
+          // the server did not speak.
+          if (fetchedAt <= previous.fetchedAt) return;
+
+          // Case 3: the server re-confirmed the same facts. Note WHEN, then
+          // decide whether anything else should move.
+          const noteOnly = () =>
+            set({ lastReport: { status, url, fetchedAt } }, false, 'remoteAccess/reconfirmed');
+
+          // Local-only states outlive a report that says nothing about them.
+          if (LOCAL_ONLY_STATES.has(get().state)) return noteOnly();
+          // A server-owned state that already agrees needs nothing.
+          if (get().state === impliedState(status, url)) return noteOnly();
+          // Otherwise fall through and correct the disagreement.
+        }
 
         if (status === 'on' && url) {
-          set({ lastReport: { status, url }, state: 'connected', url, error: null }, false, {
-            type: 'remoteAccess/applyServerReport',
-            status,
-          });
+          set(
+            { lastReport: { status, url, fetchedAt }, state: 'connected', url, error: null },
+            false,
+            {
+              type: 'remoteAccess/applyServerReport',
+              status,
+            }
+          );
         } else if (status === 'reconnecting') {
           // The listener is still open, so the URL the person copied is still
           // the right one and is kept. Clearing it would empty every surface
           // over a tunnel that is about to answer again.
           set(
             (state) => ({
-              lastReport: { status, url },
+              lastReport: { status, url, fetchedAt },
               state: 'reconnecting',
               url: url ?? state.url,
               error: null,
@@ -189,10 +265,14 @@ export const useRemoteAccessStore = create<RemoteAccessState & RemoteAccessActio
             { type: 'remoteAccess/applyServerReport', status }
           );
         } else {
-          set({ lastReport: { status, url }, state: 'off', url: null, error: null }, false, {
-            type: 'remoteAccess/applyServerReport',
-            status,
-          });
+          set(
+            { lastReport: { status, url, fetchedAt }, state: 'off', url: null, error: null },
+            false,
+            {
+              type: 'remoteAccess/applyServerReport',
+              status,
+            }
+          );
         }
       },
 

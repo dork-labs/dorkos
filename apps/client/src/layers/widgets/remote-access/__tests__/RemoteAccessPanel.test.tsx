@@ -140,6 +140,51 @@ describe('the panel', () => {
     expect(useAppStore.getState().remoteAccessOpen).toBe(true);
   });
 
+  it('says why a refused stop failed, where the switch that failed is', async () => {
+    const { transport } = renderPanel();
+    vi.mocked(transport.stopTunnel).mockRejectedValue(new Error('ECONNREFUSED 127.0.0.1:4242'));
+    await waitFor(() =>
+      expect(screen.getByRole('switch', { name: 'Remote access' })).toBeChecked()
+    );
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Remote access' }));
+
+    const error = await screen.findByTestId('remote-access-panel-error');
+    expect(error).toHaveTextContent("Couldn't reach your DorkOS server. Make sure it's running.");
+    expect(error).toHaveAttribute('role', 'alert');
+    // Remote access is still on: the panel is not claiming the stop worked.
+    expect(screen.getByRole('switch', { name: 'Remote access' })).toBeChecked();
+  });
+
+  it('names the switch with the words next to it (WCAG 2.5.3)', async () => {
+    renderPanel();
+    await waitFor(() => expect(screen.getByTestId('remote-access-panel')).toBeInTheDocument());
+
+    // The visible label and the accessible name are the same words, so a voice
+    // user saying what they see actually hits the control — and they are the
+    // ROW's words too, one vocabulary for one switch.
+    const toggle = screen.getByRole('switch', { name: 'Remote access' });
+    const label = toggle.parentElement?.querySelector('span');
+    expect(label).toHaveTextContent('Remote access');
+  });
+
+  it('draws one heading on a phone, and it carries the state', async () => {
+    // The drawer supplies its own title there (`RemoteAccessBeacon` passes the
+    // same sentence), so a second visible heading inside the sheet would be two.
+    isMobile.current = true;
+    renderPanel();
+    await waitFor(() => expect(screen.getByTestId('remote-access-panel')).toBeInTheDocument());
+
+    expect(screen.queryByRole('heading')).not.toBeInTheDocument();
+  });
+
+  it('draws its own heading on a desktop, where no drawer title exists', async () => {
+    renderPanel();
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Remote access is on' })).toBeInTheDocument()
+    );
+  });
+
   it('carries nothing a glance does not need', async () => {
     renderPanel();
     await waitFor(() => expect(screen.getByTestId('remote-access-panel')).toBeInTheDocument());

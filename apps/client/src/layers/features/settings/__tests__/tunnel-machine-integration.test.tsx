@@ -101,6 +101,20 @@ function setup(initial: Partial<TunnelReport> = {}) {
     await waitFor(() => expect(result.current.machine.tunnel).toEqual(served));
   };
 
+  /**
+   * Change what the server WOULD answer, without asking it.
+   *
+   * For the case a real server always produces and a naive fixture never does:
+   * `POST /api/tunnel/start` returns only once the tunnel is up, so the very
+   * next `GET /api/config` reports it on. A fixture whose config stayed `off`
+   * through a successful start describes a server contradicting itself, and the
+   * shared model is right to correct the optimism rather than leave the dialog
+   * claiming a tunnel nothing can see (ADR 260903-210711).
+   */
+  const serverNowSays = (next: Partial<TunnelReport>) => {
+    served = { ...served, ...next };
+  };
+
   /** Re-answer the config query with the SAME facts, and prove it was re-asked. */
   const serverRepeatsItself = async () => {
     const before = vi.mocked(transport.getConfig).mock.calls.length;
@@ -110,7 +124,7 @@ function setup(initial: Partial<TunnelReport> = {}) {
     expect(vi.mocked(transport.getConfig).mock.calls.length).toBeGreaterThan(before);
   };
 
-  return { result, transport, serverReports, serverRepeatsItself, reopenDialog };
+  return { result, transport, serverReports, serverNowSays, serverRepeatsItself, reopenDialog };
 }
 
 /** Wait for the first config read to land, so the machine has a server report. */
@@ -163,7 +177,7 @@ describe('a failed start stays on screen (DOR-1739, GitHub #1458)', () => {
   });
 
   it('retries the start when the person presses Try again', async () => {
-    const { result, transport } = setup();
+    const { result, transport, serverNowSays } = setup();
     await settled(result);
     vi.mocked(transport.startTunnel).mockRejectedValue(new Error('ngrok exploded'));
     await act(async () => {
@@ -175,6 +189,7 @@ describe('a failed start stays on screen (DOR-1739, GitHub #1458)', () => {
     // person back on the switch they had already pressed — a button labelled
     // "Try again" that tried nothing.
     vi.mocked(transport.startTunnel).mockResolvedValue({ url: 'https://abc.ngrok.app' });
+    serverNowSays({ connected: true, isRunning: true, url: 'https://abc.ngrok.app' });
     await act(async () => {
       await result.current.actions.handleToggle(true);
     });
@@ -248,9 +263,10 @@ describe('the dialog outlives every close, so its FIELD errors must not (DOR-173
 
 describe('the dialog paints what the shared model says', () => {
   it('goes to connected and stays there while the config catches up', async () => {
-    const { result, transport, serverReports } = setup();
+    const { result, transport, serverReports, serverNowSays } = setup();
     await settled(result);
     vi.mocked(transport.startTunnel).mockResolvedValue({ url: 'https://abc.ngrok.app' });
+    serverNowSays({ connected: true, isRunning: true, url: 'https://abc.ngrok.app' });
 
     await act(async () => {
       await result.current.actions.handleToggle(true);
@@ -307,8 +323,10 @@ describe('the dialog paints what the shared model says', () => {
   });
 
   it('never paints an error over a tunnel that was already up (DOR-1738)', async () => {
-    const { result, transport } = setup();
+    const { result, transport, serverNowSays } = setup();
     await settled(result);
+    // "Already running" means the server HAS one, so its config says so too.
+    serverNowSays({ connected: true, isRunning: true, url: 'https://abc.ngrok.app' });
     vi.mocked(transport.startTunnel).mockRejectedValue(
       Object.assign(new Error('Tunnel is already running'), {
         status: 409,

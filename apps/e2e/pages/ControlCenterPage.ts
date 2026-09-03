@@ -16,12 +16,21 @@ export class ControlCenterPage {
   readonly body: Locator;
   /** The "Warm agents" power switch (`runtimes.claudeCode.persistentSession`). */
   readonly warmAgentsSwitch: Locator;
+  /**
+   * The Remote-access switch — the flyout's top row (DOR-1743).
+   *
+   * With no ngrok token saved it does not flip: it opens the Remote Access
+   * dialog for the one-time setup, which is the modal→dialog handoff this page
+   * object exists to let a test drive.
+   */
+  readonly remoteAccessSwitch: Locator;
 
   constructor(page: Page) {
     this.page = page;
     this.trigger = page.getByRole('button', { name: 'Control Center' });
     this.body = page.getByTestId('control-center-body');
     this.warmAgentsSwitch = page.getByRole('switch', { name: 'Warm agents' });
+    this.remoteAccessSwitch = page.getByRole('switch', { name: 'Remote access' });
   }
 
   /** Open the flyout from the glyph and wait for its body to render. */

@@ -29,7 +29,6 @@ export function usePromoActivation(promo: PromoDefinition): PromoActivation {
   const activate = useCallback(() => {
     switch (action.type) {
       case 'dialog':
-      case 'open-dialog':
         setDialogOpen(true);
         return;
       case 'navigate':
@@ -39,7 +38,7 @@ export function usePromoActivation(promo: PromoDefinition): PromoActivation {
         action.handler();
         return;
       default: {
-        // A fifth PromoAction member becomes a type error here rather than a
+        // A fourth PromoAction member becomes a type error here rather than a
         // press that silently does nothing.
         const exhaustive: never = action;
         throw new Error(`Unhandled promo action: ${JSON.stringify(exhaustive)}`);
@@ -50,8 +49,6 @@ export function usePromoActivation(promo: PromoDefinition): PromoActivation {
   const dialog =
     action.type === 'dialog' ? (
       <PromoDialog promo={promo} open={dialogOpen} onOpenChange={setDialogOpen} />
-    ) : action.type === 'open-dialog' ? (
-      <action.component open={dialogOpen} onOpenChange={setDialogOpen} />
     ) : null;
 
   return { activate, dialog };

@@ -11,12 +11,20 @@ import { cn } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { useRemoteAccess } from '@/layers/entities/tunnel';
 import { useConnectRipple } from '../model/use-connect-ripple';
+import { remoteAccessHeading } from '../model/remote-access-copy';
 import { RemoteAccessPanel } from './RemoteAccessPanel';
 
-/** What a screen reader hears, in the tense of what is actually happening. */
+/**
+ * What a screen reader hears, in the tense of what is actually happening.
+ *
+ * `stopping` has a branch of its own for the same reason the panel's heading
+ * does: during teardown the beacon is still drawn, and without it a reader was
+ * told remote access "is on" while it was being turned off.
+ */
 function announcementFor(state: string, host: string | null): string {
   if (state === 'starting') return 'Remote access is connecting';
   if (state === 'reconnecting') return 'Remote access is reconnecting';
+  if (state === 'stopping') return 'Remote access is turning off';
   return host ? `Remote access is on at ${host}` : 'Remote access is on';
 }
 
@@ -130,7 +138,9 @@ export function RemoteAccessBeacon() {
             aria-label="Remote access"
             className="w-72 max-w-[calc(100vw-1.5rem)] p-3"
           >
-            <ResponsivePopoverTitle>Remote access</ResponsivePopoverTitle>
+            {/* Drawn on a phone only, where it IS the sheet's one heading — so
+                it carries the state the panel's own (desktop) heading would. */}
+            <ResponsivePopoverTitle>{remoteAccessHeading(remote.state)}</ResponsivePopoverTitle>
             <RemoteAccessPanel onClose={() => setOpen(false)} />
           </ResponsivePopoverContent>
         </ResponsivePopover>

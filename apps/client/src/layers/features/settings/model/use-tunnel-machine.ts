@@ -99,9 +99,10 @@ export function useTunnelMachine({ open }: { open: boolean }): TunnelMachine {
   // without this, a refused token save would sit there for every later visit in
   // that browser session.
   //
-  // **The tunnel's own failure is deliberately NOT cleared here** — see
-  // `RemoteAccessState.error`. It is a state of remote access rather than of
-  // this dialog now, the Control Center row reports it continuously, and the
+  // **The tunnel's own failure is deliberately NOT cleared here** — see the
+  // `error` field's own doc in `entities/tunnel`'s store. It is a state of
+  // remote access rather than of this dialog now, the Control Center row
+  // reports it continuously, and the
   // "Fix…" link on that row exists precisely to open this dialog and read the
   // full sentence. Clearing it on the opening edge would empty the dialog that
   // link exists to fill.

@@ -15,16 +15,17 @@ export interface PromoDialogProps {
   onClose: () => void;
 }
 
-/** Props for standalone dialog components opened directly by promos. */
-export interface PromoOpenDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}
-
-/** Action types when user clicks the CTA */
+/**
+ * Action types when a person presses the CTA.
+ *
+ * There used to be a fourth, `open-dialog`, which mounted a whole standalone
+ * dialog component per promo card. Its only user was Remote Access, and it was
+ * a duplicate of the app's own dialog: DOR-1743 gave that dialog a store flag,
+ * so the card flips the flag through `action` like anything else. Nothing else
+ * ever wanted a private second copy of a dialog, so the variant went with it.
+ */
 export type PromoAction =
   | { type: 'dialog'; component: React.ComponentType<PromoDialogProps> }
-  | { type: 'open-dialog'; component: React.ComponentType<PromoOpenDialogProps> }
   | { type: 'navigate'; to: string }
   | { type: 'action'; handler: () => void };
 

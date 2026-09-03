@@ -9,7 +9,7 @@
  * @module entities/tunnel/model/use-remote-access-actions
  */
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
 import { requestOwnerSetup } from '@/layers/shared/lib';
@@ -121,5 +121,9 @@ export function useRemoteAccessActions(): RemoteAccessActionHandlers {
     useRemoteAccessStore.getState().clearError();
   }, []);
 
-  return { start, stop, toggle, clearError };
+  // The OBJECT is memoized, not just the callbacks in it. Two consumers put this
+  // straight into a dependency array — `useTunnelActions` and the palette's
+  // dispatcher — and a fresh literal every render would defeat their `useCallback`s
+  // as surely as an unstable callback would.
+  return useMemo(() => ({ start, stop, toggle, clearError }), [start, stop, toggle, clearError]);
 }

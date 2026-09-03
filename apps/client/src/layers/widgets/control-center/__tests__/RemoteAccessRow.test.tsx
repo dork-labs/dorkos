@@ -198,6 +198,35 @@ describe('a start that failed', () => {
     expect(useAppStore.getState().controlCenterOpen).toBe(false);
   });
 
+  it('says why a STOP was refused, over a tunnel that is still on', async () => {
+    // The state stays `connected` here — the tunnel did not go anywhere — so a
+    // renderer that gated on `state === 'error'` showed "On · host" and
+    // swallowed the reason entirely. That is the #1458 symptom class on this
+    // surface, and this is the assertion that would have caught it.
+    const { transport } = renderRow({
+      connected: true,
+      isRunning: true,
+      url: 'https://calm-otter.ngrok.app',
+    });
+    vi.mocked(transport.stopTunnel).mockRejectedValue(new Error('ECONNREFUSED 127.0.0.1:4242'));
+    await waitFor(() =>
+      expect(screen.getByRole('switch', { name: 'Remote access' })).toBeChecked()
+    );
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Remote access' }));
+
+    await waitFor(() =>
+      expect(description()).toHaveTextContent(
+        "Couldn't reach your DorkOS server. Make sure it's running."
+      )
+    );
+    // Still on, and still says so through the switch — the row is not claiming
+    // the stop worked.
+    expect(screen.getByRole('switch', { name: 'Remote access' })).toBeChecked();
+    // And the way to the full sentence is offered.
+    expect(screen.getByRole('button', { name: 'Fix…' })).toBeInTheDocument();
+  });
+
   it('leaves the switch off and usable, so pressing it retries', async () => {
     const { transport } = renderRow();
     await waitFor(() =>

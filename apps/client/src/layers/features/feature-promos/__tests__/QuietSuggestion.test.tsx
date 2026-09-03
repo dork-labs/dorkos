@@ -211,17 +211,18 @@ describe('QuietSuggestion', () => {
   });
 
   it('opens the promo dialog when the action is pressed', () => {
-    function StubDialog({ open }: { open: boolean }) {
-      return open ? <div data-testid="promo-dialog" /> : null;
-    }
+    // The real `PromoDialog` shell, not a stub: the `open-dialog` variant this
+    // used to lean on is gone (DOR-1743), and the shell is what every promo
+    // with a dialog actually renders. Asserted on the dialog ROLE, which is the
+    // thing a person meets.
     mockRegistry.push(
-      makePromo({ id: 'schedules', action: { type: 'open-dialog', component: StubDialog } })
+      makePromo({ id: 'schedules', action: { type: 'dialog', component: () => null } })
     );
     render(<QuietSuggestion />);
 
-    expect(screen.queryByTestId('promo-dialog')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Set up a schedule' }));
-    expect(screen.getByTestId('promo-dialog')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
   it('names what it is dismissing, so the X is not a mystery to a screen reader', () => {

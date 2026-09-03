@@ -2,30 +2,20 @@ import type { ReactNode } from 'react';
 import { Check, Copy, X } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { Button, Switch } from '@/layers/shared/ui';
-import { cn, useCopyFeedback } from '@/layers/shared/lib';
+import { cn, createModalHandoff, useCopyFeedback } from '@/layers/shared/lib';
 import { useAppStore, useIsMobile } from '@/layers/shared/model';
-import { TunnelQrCode, useRemoteAccess, useRemoteAccessActions } from '@/layers/entities/tunnel';
+import {
+  TunnelQrCode,
+  friendlyErrorMessage,
+  useRemoteAccess,
+  useRemoteAccessActions,
+} from '@/layers/entities/tunnel';
+import { remoteAccessHeading } from '../model/remote-access-copy';
 
 /** Props for {@link RemoteAccessPanel}. */
 export interface RemoteAccessPanelProps {
   /** Dismiss the flyout — every action in here that leads elsewhere calls it. */
   onClose: () => void;
-}
-
-/**
- * The heading, in the tense of whatever is actually happening.
- *
- * Every branch is spelled out rather than falling through to "is on": the
- * beacon only opens this while a tunnel is live, but a heading that ASSUMES
- * that is one refactor away from telling somebody remote access is on while it
- * is shutting down.
- */
-function headingFor(state: string): string {
-  if (state === 'connected') return 'Remote access is on';
-  if (state === 'starting') return 'Connecting…';
-  if (state === 'reconnecting') return 'Reconnecting…';
-  if (state === 'stopping') return 'Turning off…';
-  return 'Remote access';
 }
 
 /**
@@ -107,6 +97,9 @@ export function RemoteAccessPanel({ onClose }: RemoteAccessPanelProps) {
   const actions = useRemoteAccessActions();
   const isMobile = useIsMobile();
   const setRemoteAccessOpen = useAppStore((s) => s.setRemoteAccessOpen);
+  // Dismisses this flyout before the dialog opens — the shared
+  // `pointer-events` ordering, not a local one.
+  const openAndClose = createModalHandoff(onClose);
 
   const url = remote.url;
 
@@ -116,16 +109,35 @@ export function RemoteAccessPanel({ onClose }: RemoteAccessPanelProps) {
 
   return (
     <div className="flex flex-col gap-3" data-testid="remote-access-panel">
-      <header className="flex items-center gap-2">
-        <span
-          className={cn(
-            'inline-block size-2 shrink-0 rounded-full',
-            remote.state === 'connected' ? 'bg-status-success' : 'bg-status-warning-dot'
-          )}
-          aria-hidden
-        />
-        <h2 className="text-sm font-semibold">{headingFor(remote.state)}</h2>
-      </header>
+      {/* Desktop only. On a phone the drawer's own title says this sentence
+          (`RemoteAccessBeacon` passes it), and two headings in one sheet is one
+          heading too many — the same split `ControlCenter` makes. */}
+      {!isMobile && (
+        <header className="flex items-center gap-2">
+          <span
+            className={cn(
+              'inline-block size-2 shrink-0 rounded-full',
+              remote.state === 'connected' ? 'bg-status-success' : 'bg-status-warning-dot'
+            )}
+            aria-hidden
+          />
+          <h2 className="text-sm font-semibold">{remoteAccessHeading(remote.state)}</h2>
+        </header>
+      )}
+
+      {/* The off switch below is itself a refusal site — a stop the server
+          declines leaves remote access ON with a reason attached — so the
+          reason has somewhere to land. `role="alert"` because it appears in
+          response to something the person just pressed. */}
+      {remote.error !== null && (
+        <p
+          role="alert"
+          data-testid="remote-access-panel-error"
+          className="text-destructive text-xs"
+        >
+          {friendlyErrorMessage(remote.error)}
+        </p>
+      )}
 
       {url === null && (
         <p className="text-muted-foreground text-xs">
@@ -136,7 +148,10 @@ export function RemoteAccessPanel({ onClose }: RemoteAccessPanelProps) {
       {blocks}
 
       <div className="flex items-center justify-between gap-3 pt-1">
-        <span className="text-muted-foreground text-sm">Turn off</span>
+        {/* The visible words and the accessible name are the SAME words (WCAG
+            2.5.3), and they are the row's words too — one vocabulary for one
+            switch, wherever a person meets it. */}
+        <span className="text-muted-foreground text-sm">Remote access</span>
         <Switch
           checked={remote.isChecked}
           disabled={remote.isTransitioning}
@@ -149,10 +164,7 @@ export function RemoteAccessPanel({ onClose }: RemoteAccessPanelProps) {
         variant="ghost"
         size="sm"
         className="text-muted-foreground hover:text-foreground -mx-1 justify-start"
-        onClick={() => {
-          onClose();
-          setRemoteAccessOpen(true);
-        }}
+        onClick={openAndClose(() => setRemoteAccessOpen(true))}
       >
         Manage…
       </Button>

@@ -219,6 +219,9 @@ export type {
   IdentityRecord,
 } from './identity-face';
 export { useCopyFeedback } from './use-copy-feedback';
+// Close the modal flyout an action was pressed in BEFORE the action runs — the
+// `pointer-events: none` hazard, in one place. See the module's own doc.
+export { createModalHandoff } from './modal-handoff';
 export { useRenderSlot, useLatest, type RenderSlot } from './use-render-slot';
 export {
   executeUiCommand,
