@@ -46,6 +46,26 @@ describe('TranscriptReader', () => {
     transcriptReader = new mod.TranscriptReader();
   });
 
+  /**
+   * Mock `readdir` for BOTH levels a project listing walks (DOR-1550): the
+   * account's `projects` root answers WHICH slug directories exist, and each
+   * slug directory answers which transcripts are in it.
+   *
+   * A single flat `mockResolvedValue` would serve the transcript filenames to
+   * the root read as if they were slug directories, none of which is in scope
+   * for `/vault` — so every listing would come back empty for a reason that has
+   * nothing to do with the case under test.
+   *
+   * @param files - The transcript filenames in the project's slug directory.
+   * @param slugDirs - The slug directories the account holds. Defaults to just
+   *   `/vault`'s own, the directory every case here lists.
+   */
+  function mockProjectListing(files: string[], slugDirs: string[] = ['-vault']): void {
+    (fs.readdir as ReturnType<typeof vi.fn>).mockImplementation(async (dir: unknown) =>
+      String(dir) === `${MOCK_CLAUDE_ROOT}/projects` ? slugDirs : files
+    );
+  }
+
   describe('boundary enforcement', () => {
     it('listSessions rejects vaultRoot outside boundary', async () => {
       const { validateBoundaryOrDorkHome, BoundaryError } =
@@ -700,10 +720,7 @@ describe('TranscriptReader', () => {
     }
 
     it('returns session metadata from JSONL files', async () => {
-      (fs.readdir as ReturnType<typeof vi.fn>).mockResolvedValue([
-        'abc-123.jsonl',
-        'def-456.jsonl',
-      ]);
+      mockProjectListing(['abc-123.jsonl', 'def-456.jsonl']);
 
       const statResult = {
         birthtime: new Date('2024-01-01'),
@@ -772,10 +789,7 @@ describe('TranscriptReader', () => {
     });
 
     it('attributes a session to the listed project dir when no head record carries a cwd (ADR 260707-193314)', async () => {
-      (fs.readdir as ReturnType<typeof vi.fn>).mockResolvedValue([
-        'with-cwd.jsonl',
-        'without-cwd.jsonl',
-      ]);
+      mockProjectListing(['with-cwd.jsonl', 'without-cwd.jsonl']);
       const statResult = {
         birthtime: new Date('2026-03-05'),
         mtime: new Date('2026-03-05'),
@@ -814,7 +828,7 @@ describe('TranscriptReader', () => {
     });
 
     it('skips relay_context when extracting session title', async () => {
-      (fs.readdir as ReturnType<typeof vi.fn>).mockResolvedValue(['relay-session.jsonl']);
+      mockProjectListing(['relay-session.jsonl']);
 
       const statResult = {
         birthtime: new Date('2026-03-05'),
@@ -854,7 +868,7 @@ describe('TranscriptReader', () => {
     });
 
     it('classifies origin from a relay_context block with a From line, title still derives from the next real message', async () => {
-      (fs.readdir as ReturnType<typeof vi.fn>).mockResolvedValue(['relay-agent-session.jsonl']);
+      mockProjectListing(['relay-agent-session.jsonl']);
 
       const statResult = {
         birthtime: new Date('2026-03-05'),
@@ -890,7 +904,7 @@ describe('TranscriptReader', () => {
     });
 
     it('leaves origin absent for a plain session with no relay-context or task-scheduler marker', async () => {
-      (fs.readdir as ReturnType<typeof vi.fn>).mockResolvedValue(['plain-session.jsonl']);
+      mockProjectListing(['plain-session.jsonl']);
 
       const statResult = {
         birthtime: new Date('2026-03-05'),
@@ -914,7 +928,7 @@ describe('TranscriptReader', () => {
     });
 
     it('uses mtime cache on second call', async () => {
-      (fs.readdir as ReturnType<typeof vi.fn>).mockResolvedValue(['cached.jsonl']);
+      mockProjectListing(['cached.jsonl']);
 
       const statResult = {
         birthtime: new Date('2024-01-01'),
@@ -957,11 +971,7 @@ describe('TranscriptReader', () => {
     });
 
     it('filters non-JSONL files', async () => {
-      (fs.readdir as ReturnType<typeof vi.fn>).mockResolvedValue([
-        'abc-123.jsonl',
-        'other-file.json',
-        'notes.txt',
-      ]);
+      mockProjectListing(['abc-123.jsonl', 'other-file.json', 'notes.txt']);
 
       const statResult = {
         birthtime: new Date('2024-01-01'),
@@ -984,7 +994,7 @@ describe('TranscriptReader', () => {
     });
 
     it('skips unreadable files', async () => {
-      (fs.readdir as ReturnType<typeof vi.fn>).mockResolvedValue(['good.jsonl', 'bad.jsonl']);
+      mockProjectListing(['good.jsonl', 'bad.jsonl']);
 
       const statResult = {
         birthtime: new Date('2024-01-01'),
@@ -1011,7 +1021,7 @@ describe('TranscriptReader', () => {
     });
 
     it('truncates long titles to 80 characters', async () => {
-      (fs.readdir as ReturnType<typeof vi.fn>).mockResolvedValue(['long.jsonl']);
+      mockProjectListing(['long.jsonl']);
 
       const statResult = {
         birthtime: new Date('2024-01-01'),
@@ -1127,7 +1137,7 @@ describe('TranscriptReader', () => {
 
     it('uses the SDK customTitle over the derived first-message title', async () => {
       (await getSessionInfoMock()).mockResolvedValue(sdkInfo('My Renamed Session'));
-      (fs.readdir as ReturnType<typeof vi.fn>).mockResolvedValue(['s.jsonl']);
+      mockProjectListing(['s.jsonl']);
       (fs.stat as ReturnType<typeof vi.fn>).mockResolvedValue(stat);
       (fs.open as ReturnType<typeof vi.fn>).mockResolvedValue(
         mockFileHandle(userLine('What is the meaning of life?'))
@@ -1139,7 +1149,7 @@ describe('TranscriptReader', () => {
 
     it('falls back to the derived title when the SDK has no custom title', async () => {
       (await getSessionInfoMock()).mockResolvedValue(sdkInfo(undefined));
-      (fs.readdir as ReturnType<typeof vi.fn>).mockResolvedValue(['s.jsonl']);
+      mockProjectListing(['s.jsonl']);
       (fs.stat as ReturnType<typeof vi.fn>).mockResolvedValue(stat);
       (fs.open as ReturnType<typeof vi.fn>).mockResolvedValue(
         mockFileHandle(userLine('Untitled chat'))
@@ -1151,7 +1161,7 @@ describe('TranscriptReader', () => {
 
     it('falls back to the derived title when getSessionInfo throws', async () => {
       (await getSessionInfoMock()).mockRejectedValue(new Error('SDK boom'));
-      (fs.readdir as ReturnType<typeof vi.fn>).mockResolvedValue(['s.jsonl']);
+      mockProjectListing(['s.jsonl']);
       (fs.stat as ReturnType<typeof vi.fn>).mockResolvedValue(stat);
       (fs.open as ReturnType<typeof vi.fn>).mockResolvedValue(
         mockFileHandle(userLine('Resilient title'))
@@ -1175,7 +1185,7 @@ describe('TranscriptReader', () => {
     it('invalidate() drops the cached title so a rename surfaces without an mtime change', async () => {
       const getInfo = await getSessionInfoMock();
       getInfo.mockResolvedValue(sdkInfo('Old Title'));
-      (fs.readdir as ReturnType<typeof vi.fn>).mockResolvedValue(['s.jsonl']);
+      mockProjectListing(['s.jsonl']);
       (fs.stat as ReturnType<typeof vi.fn>).mockResolvedValue(stat);
       (fs.open as ReturnType<typeof vi.fn>).mockResolvedValue(mockFileHandle(userLine('orig')));
 
@@ -1192,11 +1202,7 @@ describe('TranscriptReader', () => {
 
   describe('listTranscripts()', () => {
     it('returns session IDs from JSONL filenames', async () => {
-      (fs.readdir as ReturnType<typeof vi.fn>).mockResolvedValue([
-        'abc-123.jsonl',
-        'def-456.jsonl',
-        'other-file.json',
-      ]);
+      mockProjectListing(['abc-123.jsonl', 'def-456.jsonl', 'other-file.json']);
 
       const ids = await transcriptReader.listTranscripts('/vault');
 
