@@ -77,6 +77,8 @@ export function communityDir(dorkHome: string, community: CommunityRef): string 
  * @param dorkHome - The resolved DorkOS data directory (from `resolveDorkHome`).
  * @param community - The community whose credential to resolve.
  * @returns The credential (hex string, or the operator's env value).
+ * @throws If the credential file exists but is blank or unreadable. It is never
+ *   overwritten: the remote side may already know whatever it holds.
  */
 export function resolveCommunityCredential(dorkHome: string, community: CommunityRef): string {
   // eslint-disable-next-line no-restricted-syntax -- reading an env override, not a homedir path

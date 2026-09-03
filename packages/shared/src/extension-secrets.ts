@@ -10,7 +10,6 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { existsSync, readFileSync } from 'node:fs';
 import { withFileLock } from './atomic-write.js';
 import { assertValidExtensionId } from './extension-id.js';
 import { claimSecretBytes } from './secret-file.js';
@@ -140,17 +139,20 @@ export class ExtensionSecretStore {
     return cachedDerivedKey;
   }
 
+  /**
+   * The host key, published on first use.
+   *
+   * There is deliberately no `existsSync` fast path here. Reading first meant
+   * two processes on a fresh data directory could both find no key and both
+   * mint one, leaving the loser encrypting under a key no longer on disk — every
+   * secret it wrote would be permanently unreadable — and it also accepted a
+   * zero-byte `host.key` as a key, silently deriving from nothing. The claim is
+   * the single path: whoever publishes first wins, everyone else adopts that
+   * key, and a file of the wrong length is refused rather than used or
+   * overwritten (DOR-712).
+   */
   private loadOrCreateHostKey(): Buffer {
-    const keyPath = this.hostKeyPath;
-    if (existsSync(keyPath)) {
-      return readFileSync(keyPath);
-    }
-    // First boot. Two processes reaching a fresh data directory can both find
-    // no key here, and a plain write would leave the loser encrypting under a
-    // key that is no longer on disk — every secret it wrote would be
-    // permanently unreadable. The exclusive create makes whoever gets there
-    // first the winner, and everyone else adopts that key (DOR-712).
-    return claimSecretBytes(keyPath, randomBytes(KEY_LENGTH), HOST_KEY_MODE).value;
+    return claimSecretBytes(this.hostKeyPath, randomBytes(KEY_LENGTH), HOST_KEY_MODE).value;
   }
 
   /**

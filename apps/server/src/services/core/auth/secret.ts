@@ -77,6 +77,10 @@ function readEnvSecret(): string | undefined {
  * @param dorkHome - The resolved DorkOS data directory (from `resolveDorkHome`).
  *   The persisted secret lives at `<dorkHome>/better-auth-secret`.
  * @returns The signing secret (hex string, or the operator's env value).
+ * @throws If the secret file exists but is blank or unreadable. It is never
+ *   overwritten: minting over it would invalidate every session signed with
+ *   whatever it holds, so a boot that stops with the message beats one that
+ *   silently signs out everybody.
  */
 export function resolveBetterAuthSecret(dorkHome: string): string {
   const fromEnv = readEnvSecret();

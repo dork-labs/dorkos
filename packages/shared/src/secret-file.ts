@@ -1,168 +1,212 @@
 /**
- * First-writer-wins creation of a machine-managed secret file.
+ * First-writer-wins publication of a machine-managed secret file.
  *
  * Every secret DorkOS manages for itself — the Better Auth signing secret, the
- * local MCP token, a community credential, the `host.key` that encrypts
- * extension secrets — follows one shape: read the file if it is there,
- * otherwise mint a random value and persist it `0600`. Written the obvious way
- * (`existsSync` or a failed read, then a plain write) that shape has a
- * time-of-check/time-of-use hole, and it is the one file where the hole is
- * unrecoverable: two processes reaching a fresh data directory at the same
- * moment — a server plus a CLI command, a dev server plus the dogfood app, two
- * processes in a test — both see nothing, both mint, and the last write wins.
- * The loser keeps its own value in memory for that whole run, so everything it
- * encrypted or signed is derived from a key no longer on disk. Nothing reports
- * it; decryption simply starts failing later (DOR-712).
+ * local MCP token, a community credential, this install's VAPID keypair, the
+ * `host.key` that encrypts extension secrets — follows one shape: read the file
+ * if it is there, otherwise mint a random value and persist it `0600`. Written
+ * the obvious way (`existsSync` or a failed read, then a plain write) that
+ * shape has a time-of-check/time-of-use hole, and it is the one file where the
+ * hole is unrecoverable: two processes reaching a fresh data directory at the
+ * same moment — a server plus a CLI command, a dev server plus the dogfood app,
+ * two processes in a test — both see nothing, both mint, and the last write
+ * wins. The loser keeps its own value in memory for that whole run, so
+ * everything it encrypted or signed is derived from a key no longer on disk.
+ * Nothing reports it; decryption simply starts failing later (DOR-712).
  *
- * The fix is to make creation itself the claim. `O_EXCL` (Node's `wx` flag)
- * fails with `EEXIST` when the file already exists, so exactly one racer
- * creates it and every other racer reads the winner's value and adopts it —
- * the same idiom the instance lock uses to claim a data directory
- * (`apps/server/src/lib/instance-lock.ts`).
+ * ## Why a link and not `wx`
+ *
+ * `O_EXCL` (Node's `wx` flag) makes the *creation* exclusive, which is most of
+ * the answer but not all of it: creating the file and writing its bytes are two
+ * steps, so a racer that reads in between finds the file present and EMPTY.
+ * Whatever it does with that — adopt an empty secret, or decide the file is
+ * junk and overwrite it — puts the original bug back, and a reviewer staging a
+ * descheduled winner reproduced exactly that.
+ *
+ * So the content is complete before the name exists. {@link publishSecretFile}
+ * writes a temp file in the destination directory, then `link(2)`s it to the
+ * destination: the link is atomic, it fails with `EEXIST` when the destination
+ * is taken, and the file it publishes is whole from the instant it is
+ * reachable. There is no window to read, so there is no retry loop and no
+ * "maybe it is still being written" guess anywhere in this module.
+ *
+ * A destination that exists but holds no usable secret is therefore never
+ * something this module wrote. It predates this code or something else made it,
+ * and {@link claimSecretBytes} / {@link claimSecretText} REFUSE it loudly rather
+ * than overwriting: a secret that cannot be read is not the same as a secret
+ * that is not there, and treating the second as the first is how the data is
+ * lost. Callers that genuinely want to replace an unusable file (the VAPID
+ * keypair authorises nothing when it does not parse) move it aside with
+ * {@link quarantineSecretFile} and claim again, so even the replacement is a
+ * first-writer-wins publication.
+ *
+ * Hard links are assumed to work in the data directory. Every filesystem DorkOS
+ * can run on supports them — the same ones must support SQLite's locking — and
+ * a link failure surfaces as an error rather than silently degrading to a
+ * racier write.
  *
  * Deliberately synchronous: every caller resolves its secret on the boot path,
  * before anything it protects can be used, and the atomicity lives in the
- * kernel's `open(2)` rather than in any in-process lock — so unlike
+ * kernel rather than in any in-process lock — so unlike
  * {@link module:shared/atomic-write}, this holds across processes.
  *
  * @module shared/secret-file
  */
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
-
-/**
- * Backoff, in milliseconds, between attempts to read the winner's value after
- * losing the race.
- *
- * The winner creates the file and writes its bytes as two steps, so a loser
- * that reads in between sees an empty file. That window is microseconds wide
- * and the retries cover it many times over; a file still empty after all of
- * them is not a race, it is a truncated leftover from a crashed write, and the
- * caller's own value is adopted instead.
- */
-const ADOPT_RETRY_DELAYS_MS = [1, 2, 5, 10, 25];
+import { randomUUID } from 'node:crypto';
+import {
+  chmodSync,
+  linkSync,
+  readFileSync,
+  mkdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 
 /** The outcome of a claim: the value in force, and who put it there. */
 export interface SecretFileClaim<T> {
   /**
    * The value every process ends up agreeing on — this caller's own when it
-   * created the file, the winner's when it did not.
+   * published the file, the winner's when it did not.
    */
   value: T;
   /**
-   * `true` when THIS caller created the file. Callers log the first-boot
+   * `true` when THIS caller published the file. Callers log the first-boot
    * "generated a secret" line only when it is set, so losing the race stays
    * quiet rather than announcing a value that was thrown away.
    */
   minted: boolean;
 }
 
-/**
- * Block the calling thread for `ms`.
- *
- * The claim is synchronous by design (see the module note), so the retry that
- * covers the winner's create-then-write window cannot await a timer. `Atomics.wait`
- * on a throwaway buffer is the only sleep that does not spin a CPU core.
- */
-function sleepSync(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+/** A unique temp path beside `filePath`, so the publishing link stays in one filesystem. */
+function tempPathFor(filePath: string): string {
+  return join(dirname(filePath), `.${basename(filePath)}.${process.pid}.${randomUUID()}.tmp`);
 }
 
 /**
- * Read the winner's bytes, retrying while the file is still blank.
+ * The refusal every claim raises rather than overwriting a file it cannot use.
  *
- * Returns `null` when the file is readable but holds nothing usable after the
- * last retry, or has vanished — in both cases the caller is free to take it
- * over. Any other read failure is rethrown rather than reported as blank: a
- * file another account owns is unreadable here but is somebody's live secret,
- * and overwriting it would be the very loss this module exists to prevent.
+ * Deliberately loud and terminal. A boot that stops with this message costs an
+ * operator one manual step; a boot that "recovered" by minting over the file
+ * costs them every secret stored under the old one, silently.
  */
-function readWinner(filePath: string, isUsable: (bytes: Buffer) => boolean): Buffer | null {
-  for (let attempt = 0; attempt <= ADOPT_RETRY_DELAYS_MS.length; attempt++) {
-    if (attempt > 0) sleepSync(ADOPT_RETRY_DELAYS_MS[attempt - 1]!);
-    try {
-      const bytes = readFileSync(filePath);
-      if (isUsable(bytes)) return bytes;
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
-    }
-  }
-  return null;
+function unusableSecretError(filePath: string, detail: string): Error {
+  return new Error(
+    `'${filePath}' exists but does not hold a usable secret (${detail}). ` +
+      'DorkOS will not overwrite it: if anything was encrypted or signed with it, ' +
+      'overwriting makes that unreadable forever. Move the file aside or delete it to mint a new secret.'
+  );
 }
 
 /**
- * Create `filePath` holding `contents`, or adopt what a racing process already
- * put there.
+ * Publish `contents` at `filePath` if nothing is there yet.
  *
- * @param filePath - Absolute path to the secret file. Parent directories are created.
- * @param contents - The value this caller would mint, used only if it wins.
- * @param mode - Permission bits for the file, re-asserted after the write
- *   because the process umask can clear bits from a create-time mode.
- * @param isUsable - Whether bytes read back count as a real secret; anything
- *   else is treated as a truncated leftover and overwritten.
+ * The destination is created by linking a fully-written temp file into place,
+ * so it never exists holding partial content: any process that can see the
+ * path can read the whole secret. The temp file is removed on every path.
+ *
+ * @param filePath - Absolute destination path. Parent directories are created.
+ * @param contents - The complete file contents.
+ * @param mode - Permission bits, applied to the temp file so the destination
+ *   carries them from the instant it exists.
+ * @returns `true` when this caller published the file, `false` when another
+ *   writer already had.
  */
-function claim(
+export function publishSecretFile(
   filePath: string,
-  contents: Buffer,
-  mode: number,
-  isUsable: (bytes: Buffer) => boolean
-): SecretFileClaim<Buffer> {
+  contents: Buffer | string,
+  mode: number
+): boolean {
   mkdirSync(dirname(filePath), { recursive: true });
-
+  const tempPath = tempPathFor(filePath);
   try {
-    // 'wx' fails when the file exists, which makes the mint atomic against
-    // another process minting the same secret at the same moment.
-    writeFileSync(filePath, contents, { flag: 'wx', mode });
-    chmodSync(filePath, mode);
-    return { value: contents, minted: true };
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+    writeFileSync(tempPath, contents, { mode });
+    // The write mode is subject to the umask, so re-assert it BEFORE the link:
+    // the destination shares this inode and inherits whatever it has now.
+    chmodSync(tempPath, mode);
+    try {
+      linkSync(tempPath, filePath);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'EEXIST') return false;
+      throw err;
+    }
+    return true;
+  } finally {
+    rmSync(tempPath, { force: true });
   }
+}
 
-  const winner = readWinner(filePath, isUsable);
-  if (winner) return { value: winner, minted: false };
-
-  // Readable and blank: a create that died between the open and its content.
-  // Nothing can have been encrypted or signed with an empty secret, so take the
-  // file over. This last write is a plain one — two processes finding the same
-  // blank file could still both take it over, which is the one interleave this
-  // module does not close, and it can only happen after a crashed mint.
-  writeFileSync(filePath, contents, { mode });
-  chmodSync(filePath, mode);
-  return { value: contents, minted: true };
+/**
+ * Move an unusable secret file out of the way, so a fresh one can be claimed.
+ *
+ * The file is renamed beside itself rather than deleted — it is somebody's data
+ * even when nothing can be done with it, and a support question is answerable
+ * with it on disk. Two processes doing this at once is safe: one rename wins,
+ * the other finds nothing to move, and both then race to publish the
+ * replacement through {@link publishSecretFile}, where only one can win.
+ *
+ * @param filePath - Absolute path to the file to set aside.
+ * @returns Where the file was moved, or `null` when it was already gone.
+ */
+export function quarantineSecretFile(filePath: string): string | null {
+  const quarantinePath = `${filePath}.unusable-${randomUUID()}`;
+  try {
+    renameSync(filePath, quarantinePath);
+    return quarantinePath;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw err;
+  }
 }
 
 /**
  * Claim a secret file holding raw bytes, first writer wins.
  *
+ * A file that is already there is adopted only when it holds exactly as many
+ * bytes as `contents` — every byte secret in this repo has one canonical
+ * length, so a shorter file is a leftover rather than a secret, and adopting it
+ * would mean deriving keys from a value nobody chose.
+ *
  * @param filePath - Absolute path to the secret file. Parent directories are created.
  * @param contents - The bytes this caller would mint, used only if it wins.
  * @param mode - Permission bits for the file (`0o600` for every secret today).
- * @returns The bytes now in force, and whether this caller created the file.
+ * @returns The bytes now in force, and whether this caller published them.
+ * @throws If the file exists and is the wrong length, or cannot be read.
  */
 export function claimSecretBytes(
   filePath: string,
   contents: Buffer,
   mode: number
 ): SecretFileClaim<Buffer> {
-  return claim(filePath, contents, mode, (bytes) => bytes.length > 0);
+  if (publishSecretFile(filePath, contents, mode)) return { value: contents, minted: true };
+
+  const existing = readFileSync(filePath);
+  if (existing.length !== contents.length) {
+    throw unusableSecretError(
+      filePath,
+      `expected ${contents.length} bytes, found ${existing.length}`
+    );
+  }
+  return { value: existing, minted: false };
 }
 
 /**
  * Claim a secret file holding text, first writer wins.
  *
  * The text counterpart of {@link claimSecretBytes}: the value read back is
- * trimmed, and a file holding only whitespace counts as empty — the same
- * "blank means unset" rule every text secret in this repo already applies on
- * the read path. `contents` is trimmed before it is written, so the winner and
- * every adopter hold a byte-identical string.
+ * trimmed, and a file holding only whitespace is unusable — the same "blank
+ * means unset" rule every text secret in this repo applies on the read path.
+ * `contents` is trimmed before it is written, so the winner and every adopter
+ * hold a byte-identical string. Length is NOT checked: unlike the byte secrets,
+ * an operator may legitimately have written their own value here.
  *
  * @param filePath - Absolute path to the secret file. Parent directories are created.
  * @param contents - The text this caller would mint, used only if it wins.
  * @param mode - Permission bits for the file (`0o600` for every secret today).
- * @returns The text now in force, and whether this caller created the file.
+ * @returns The text now in force, and whether this caller published it.
  * @throws If `contents` is blank — a secret nobody can tell from an unset one is
- *   a caller bug, and persisting it would make every later boot mint again.
+ *   a caller bug — or if the file exists and is blank or unreadable.
  */
 export function claimSecretText(
   filePath: string,
@@ -172,11 +216,9 @@ export function claimSecretText(
   const text = contents.trim();
   if (!text) throw new Error(`Refusing to claim '${filePath}' with a blank secret.`);
 
-  const claimed = claim(filePath, Buffer.from(text, 'utf8'), mode, (bytes) =>
-    Boolean(bytes.toString('utf8').trim())
-  );
-  return {
-    value: claimed.minted ? text : claimed.value.toString('utf8').trim(),
-    minted: claimed.minted,
-  };
+  if (publishSecretFile(filePath, text, mode)) return { value: text, minted: true };
+
+  const existing = readFileSync(filePath, 'utf8').trim();
+  if (!existing) throw unusableSecretError(filePath, 'the file is blank');
+  return { value: existing, minted: false };
 }

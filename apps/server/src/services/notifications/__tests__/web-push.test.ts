@@ -80,7 +80,7 @@ describe('VAPID keys', () => {
     expect(second).toBe(first);
   });
 
-  it('replaces a keypair file that cannot be read', () => {
+  it('replaces a keypair file that cannot be read, keeping the old one aside', () => {
     const file = vapidKeyPath(dorkHome);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, 'not json at all');
@@ -90,6 +90,15 @@ describe('VAPID keys', () => {
     expect(key).toBeTruthy();
     expect(JSON.parse(fs.readFileSync(file, 'utf-8'))).toHaveProperty('privateKey');
     expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+    // Moved aside rather than deleted: it is still somebody's data, and it is
+    // what a support question about a dead push leg would be answered with.
+    const setAside = fs
+      .readdirSync(path.dirname(file))
+      .filter((name) => name.startsWith('vapid.json.unusable-'));
+    expect(setAside).toHaveLength(1);
+    expect(fs.readFileSync(path.join(path.dirname(file), setAside[0]!), 'utf-8')).toBe(
+      'not json at all'
+    );
   });
 
   it('reports push as unavailable rather than throwing when the keys cannot be written', () => {

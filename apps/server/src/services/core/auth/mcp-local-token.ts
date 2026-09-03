@@ -83,6 +83,9 @@ let cachedPath: string | null = null;
  * @param dorkHome - The resolved DorkOS data directory (from `resolveDorkHome`).
  *   The token lives at `<dorkHome>/mcp-local-token`.
  * @returns The local token, or `null` when an `MCP_API_KEY` env override is set.
+ * @throws If the token file exists but is blank or unreadable. It is never
+ *   overwritten: minting over it would break every client already configured
+ *   with whatever it holds.
  */
 export function resolveMcpLocalToken(dorkHome: string): string | null {
   // 1. Env override: MCP_API_KEY IS the bearer clients use (acceptor 1), so the

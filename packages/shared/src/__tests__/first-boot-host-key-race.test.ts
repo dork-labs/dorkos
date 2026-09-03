@@ -10,11 +10,24 @@
  * ciphertexts must still decrypt afterwards. Before DOR-712 the loser's key was
  * overwritten and its secret became permanently unreadable.
  *
+ * A barrier is not a guarantee, so the race is run {@link RACE_TRIALS} times and
+ * every racer reports whether the key file existed when it started. A run where
+ * no trial had both racers arrive first would have proved nothing, and fails
+ * rather than passing quietly.
+ *
  * @vitest-environment node
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -26,11 +39,19 @@ const EXTENSION_SECRETS_URL = pathToFileURL(join(HERE, '..', 'extension-secrets.
 const TSX_LOADER_URL = pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href;
 
 /**
+ * How many times the race is run. Each trial is a fresh data directory, and one
+ * trial where both racers see no key is enough to have driven the bug; the
+ * repetition is what keeps this a regression guard rather than a coin flip.
+ */
+const RACE_TRIALS = 8;
+
+/**
  * What each child runs: announce readiness, spin until the parent opens the
- * barrier, then mint-or-adopt the host key and encrypt one probe value with it.
- * Passed as `-e` source (the precedent in `session-pump-shutdown.integration.test.ts`)
- * with every parameter arriving through the environment, so nothing is
- * interpolated into the program text.
+ * barrier, record whether the key file was there on arrival, then mint-or-adopt
+ * the host key and encrypt one probe value with it. Passed as `-e` source (the
+ * precedent in `session-pump-shutdown.integration.test.ts`) with every parameter
+ * arriving through the environment, so nothing is interpolated into the
+ * program text.
  */
 const CHILD_SOURCE = `
 const { existsSync, writeFileSync } = await import('node:fs');
@@ -40,8 +61,10 @@ const deadline = Date.now() + 10_000;
 while (!existsSync(process.env.BARRIER_PATH)) {
   if (Date.now() > deadline) throw new Error('barrier never opened');
 }
+const arrivedFirst = !existsSync(process.env.HOST_KEY_PATH);
 const store = new ExtensionSecretStore(process.env.EXTENSION_ID, process.env.RACE_HOME);
 await store.set('probe', process.env.PLAINTEXT);
+writeFileSync(process.env.RESULT_PATH, arrivedFirst ? 'first' : 'second');
 `;
 
 /** Run one racer to completion, rejecting on any non-zero exit. */
@@ -78,12 +101,10 @@ async function waitForReady(readyPaths: string[]): Promise<void> {
 }
 
 describe('first-boot host.key race (real processes)', () => {
-  let dorkHome: string;
   let control: string;
 
   beforeEach(() => {
     control = mkdtempSync(join(tmpdir(), 'host-key-race-'));
-    dorkHome = join(control, 'dork');
     resetKeyCache();
   });
 
@@ -93,44 +114,75 @@ describe('first-boot host.key race (real processes)', () => {
   });
 
   it('leaves both racers encrypting under the same host key', async () => {
-    const barrierPath = join(control, 'barrier');
     const racers = [
       { extensionId: 'racer-a', plaintext: 'secret-from-a' },
       { extensionId: 'racer-b', plaintext: 'secret-from-b' },
     ];
-    const readyPaths = racers.map((r) => join(control, `ready-${r.extensionId}`));
+    let trialsWhereBothArrivedFirst = 0;
 
-    const running = racers.map((racer, i) =>
-      runChild({
-        MODULE_URL: EXTENSION_SECRETS_URL,
-        RACE_HOME: dorkHome,
-        EXTENSION_ID: racer.extensionId,
-        PLAINTEXT: racer.plaintext,
-        READY_PATH: readyPaths[i]!,
-        BARRIER_PATH: barrierPath,
-      })
-    );
+    for (let trial = 0; trial < RACE_TRIALS; trial++) {
+      const trialDir = join(control, `trial-${trial}`);
+      mkdirSync(trialDir, { recursive: true });
+      const dorkHome = join(trialDir, 'dork');
+      const barrierPath = join(trialDir, 'barrier');
+      const readyPaths = racers.map((r) => join(trialDir, `ready-${r.extensionId}`));
+      const resultPaths = racers.map((r) => join(trialDir, `result-${r.extensionId}`));
 
-    await waitForReady(readyPaths);
-    // Both racers are spinning on this file; creating it releases them within
-    // microseconds of each other, straight into the mint path.
-    writeFileSync(barrierPath, 'go');
-    await Promise.all(running);
+      const running = racers.map((racer, i) =>
+        runChild({
+          MODULE_URL: EXTENSION_SECRETS_URL,
+          RACE_HOME: dorkHome,
+          HOST_KEY_PATH: join(dorkHome, 'host.key'),
+          EXTENSION_ID: racer.extensionId,
+          PLAINTEXT: racer.plaintext,
+          READY_PATH: readyPaths[i]!,
+          RESULT_PATH: resultPaths[i]!,
+          BARRIER_PATH: barrierPath,
+        })
+      );
 
-    // A third process reads whatever host key survived. Every value encrypted
-    // during the race must still decrypt under it.
-    resetKeyCache();
-    for (const racer of racers) {
-      const store = new ExtensionSecretStore(racer.extensionId, dorkHome);
-      await expect(store.get('probe')).resolves.toBe(racer.plaintext);
+      await waitForReady(readyPaths);
+      // Both racers are spinning on this file; creating it releases them within
+      // microseconds of each other, straight into the mint path.
+      writeFileSync(barrierPath, 'go');
+      await Promise.all(running);
+
+      if (resultPaths.every((p) => readFileSync(p, 'utf8') === 'first')) {
+        trialsWhereBothArrivedFirst++;
+      }
+
+      // A third process reads whatever host key survived. Every value encrypted
+      // during the race must still decrypt under it.
+      resetKeyCache();
+      for (const racer of racers) {
+        const store = new ExtensionSecretStore(racer.extensionId, dorkHome);
+        await expect(store.get('probe')).resolves.toBe(racer.plaintext);
+      }
     }
-  }, 40_000);
+
+    // Without this the suite could pass by never reproducing the interleave.
+    expect(trialsWhereBothArrivedFirst).toBeGreaterThan(0);
+  }, 120_000);
 
   it.skipIf(process.platform === 'win32')('keeps the host key owner-only', async () => {
+    const dorkHome = join(control, 'modes');
     const store = new ExtensionSecretStore('mode-check', dorkHome);
     await store.set('probe', 'value');
 
     const mode = statSync(join(dorkHome, 'host.key')).mode & 0o777;
     expect(mode & 0o077).toBe(0);
+  });
+
+  it('refuses a truncated host.key instead of minting over it', async () => {
+    const dorkHome = join(control, 'leftover');
+    mkdirSync(dorkHome, { recursive: true });
+    const keyPath = join(dorkHome, 'host.key');
+    // What a crashed pre-DOR-712 mint left behind. Deriving from it silently
+    // was one bug; replacing it silently is the other.
+    writeFileSync(keyPath, Buffer.alloc(0), { mode: 0o600 });
+
+    const store = new ExtensionSecretStore('leftover', dorkHome);
+    await expect(store.set('probe', 'value')).rejects.toThrow(/does not hold a usable secret/);
+    expect(readFileSync(keyPath).length).toBe(0);
   });
 });
