@@ -108,10 +108,7 @@ export function AdapterCard({
       // the same on every card, so the card is the only thing left that can
       // tell them apart. Matches the `provider-card-<type>` convention next door.
       data-testid={`adapter-card-${instance.id}`}
-      className={cn(
-        'shadow-soft hover:shadow-elevated rounded-xl border p-5 transition-shadow',
-        isBuiltinClaude && 'border-dashed'
-      )}
+      className="shadow-soft hover:shadow-elevated rounded-xl border p-5 transition-shadow"
     >
       <AdapterCardHeader
         manifest={manifest}

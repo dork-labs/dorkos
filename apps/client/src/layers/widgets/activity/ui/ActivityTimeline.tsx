@@ -6,6 +6,7 @@ import {
   ActivityRow,
   ActivityGroupHeader,
   ActivityEmptyState,
+  ActivityErrorState,
   groupByTime,
   useActivityKeyboardNav,
 } from '@/layers/features/activity-feed-page';
@@ -93,6 +94,10 @@ export interface ActivityTimelineProps {
   items: ActivityItem[];
   /** When true shows a skeleton loader instead of items. */
   isLoading: boolean;
+  /** When true the feed failed to load — shows the error state instead of items. */
+  isError: boolean;
+  /** Retries the failed fetch. Required whenever `isError` can be true. */
+  onRetry: () => void;
   /** When true every item is filtered out — shows filtered empty state. */
   isFiltered: boolean;
   className?: string;
@@ -102,12 +107,15 @@ export interface ActivityTimelineProps {
  * Time-grouped activity timeline.
  *
  * Groups items into Today / Yesterday / This Week / Earlier buckets.
- * Renders a sticky group header above each bucket. Shows a skeleton
- * shimmer while data is loading, or an empty state when no items match.
+ * Renders a sticky group header above each bucket. Shows a skeleton shimmer
+ * while data is loading, an error state with retry when the fetch failed, or
+ * an empty state when no items match.
  */
 export function ActivityTimeline({
   items,
   isLoading,
+  isError,
+  onRetry,
   isFiltered,
   className,
 }: ActivityTimelineProps) {
@@ -118,6 +126,17 @@ export function ActivityTimeline({
     return (
       <div data-slot="activity-timeline" className={cn(className)}>
         <ActivityTimelineSkeleton />
+      </div>
+    );
+  }
+
+  // Gated on `items.length === 0`, the same guard `InboxList` uses for its own
+  // feed: a page 2 that fails to load leaves page 1's items on screen rather
+  // than replacing a working feed with an error.
+  if (isError && items.length === 0) {
+    return (
+      <div data-slot="activity-timeline" className={cn(className)}>
+        <ActivityErrorState onRetry={onRetry} />
       </div>
     );
   }

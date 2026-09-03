@@ -244,18 +244,30 @@ describe('AdapterCard', () => {
     expect(card?.className).toContain('shadow-soft');
   });
 
-  it('renders external adapter with solid border (not dashed)', () => {
+  it('renders external adapter with a solid border', () => {
     const { container } = render(<AdapterCard {...defaultProps()} />);
     const card = container.firstElementChild;
     expect(card?.className).not.toContain('border-dashed');
   });
 
-  it('renders CCA card with dashed border', () => {
+  it('renders the built-in Claude Code card with a solid border too', () => {
+    // Batch 06, finding 6.6: dashed used to mean two contradictory things on
+    // the same page — "not connectable yet" everywhere else on /connections,
+    // and "this is the built-in, live, actively-serving adapter" here. The
+    // built-in still reads as different through its "internal" category badge
+    // (below), so the border no longer needs to say it too.
     const { container } = render(
       <AdapterCard {...defaultProps({ instance: claudeInstance, manifest: claudeManifest })} />
     );
     const card = container.firstElementChild;
-    expect(card?.className).toContain('border-dashed');
+    expect(card?.className).not.toContain('border-dashed');
+  });
+
+  it('still marks the built-in Claude Code card "internal" via its category badge', () => {
+    render(
+      <AdapterCard {...defaultProps({ instance: claudeInstance, manifest: claudeManifest })} />
+    );
+    expect(screen.getByText('internal')).toBeInTheDocument();
   });
 
   // -------------------------------------------------------------------------

@@ -4,7 +4,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { TransportProvider } from '@/layers/shared/model';
 import { findTeamOwner } from '@/layers/entities/team';
-import { TeamMemberCard } from '@/layers/features/team-roster';
+import { TeamMemberCard, TeamRosterSkeleton } from '@/layers/features/team-roster';
 import { TeamPage } from '@/layers/widgets/team';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -102,6 +102,14 @@ export function TeamShowcases() {
         <ShowcaseLabel>No agents yet — the roster still is not empty</ShowcaseLabel>
         <ShowcaseDemo>
           <TeamPageDemo members={peopleOnly} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          Loading — mirrors TeamMemberCard&rsquo;s own dimensions so the grid does not jump when the
+          real roster lands (batch 06, finding 6.5)
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <TeamRosterSkeleton />
         </ShowcaseDemo>
       </PlaygroundSection>
 

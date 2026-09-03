@@ -78,6 +78,16 @@ describe('TaskRow', () => {
     expect(row.className).toContain('border-amber-400');
   });
 
+  it('carries its own hover and focus tint (batch 06, finding 6.3)', () => {
+    // Before this fix the row's className varied by status and by dependency
+    // highlight, never by its own pointer-hover or keyboard-focus — a keyboard
+    // user tabbing the list had no way to see which row Enter would activate.
+    render(<TaskRow task={pendingTask} {...baseProps} />);
+    const row = screen.getByRole('button');
+    expect(row.className).toContain('hover:bg-muted/40');
+    expect(row.className).toContain('focus-visible:bg-muted/40');
+  });
+
   it('calls onHover with task id on mouse enter', () => {
     const onHover = vi.fn();
     render(<TaskRow task={pendingTask} {...baseProps} onHover={onHover} />);
