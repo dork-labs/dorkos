@@ -11,13 +11,16 @@
  * @module widgets/session/ui/ChatPanel
  */
 import { useRef, useMemo, useCallback, useEffect } from 'react';
-import { AnimatePresence } from 'motion/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import type { TaskUpdateEvent } from '@dorkos/shared/types';
 import { useAgentBirthRecord, useSlotContributions } from '@/layers/shared/model';
-import { PermissionPrimer, useNotificationCues } from '@/layers/features/notifications';
-import { PromptSuggestionChips } from '@/layers/shared/ui';
+import {
+  PermissionPrimer,
+  useNotificationCues,
+  usePermissionPrimer,
+} from '@/layers/features/notifications';
+import { BottomSlot, PromptSuggestionChips, type BottomSlotCandidate } from '@/layers/shared/ui';
 import { useCommands } from '@/layers/entities/command';
 import {
   useSessionChatStore,
@@ -553,6 +556,80 @@ export function ChatPanel({
     files: fileUpload,
   });
 
+  // Whether the browser-notification question is fair to ask right now. Asked
+  // here, not inside the card, because the slot below has to know who qualifies
+  // before it renders anybody — and because the timer that arms the question has
+  // to keep running while another card holds the slot.
+  const permissionPrimer = usePermissionPrimer(status === 'streaming');
+
+  /**
+   * What may speak in the gap between the transcript and the composer, highest
+   * priority first.
+   *
+   * **One offer at a time.** Suggestion chips, the extensions' chips and the
+   * notification question each used to gate themselves on their own predicate,
+   * and they co-occur — three unrelated offers stacked over the box a person is
+   * trying to type in. ADR 260819-210153 settled this question for the sidebar;
+   * this is the same arbiter, and the order below is the whole of the policy.
+   *
+   * The order: the model's follow-ups first, because they are about the answer
+   * still on screen and they expire on their own the moment a turn starts or a
+   * key is pressed — so nothing waits behind them for long. The permission
+   * question next: it is asked once ever, it arms mid-turn when the chips are
+   * hidden anyway, and it stands until answered. The extension chips last,
+   * because a contribution can decide it has nothing to offer only by rendering
+   * null, so a card that draws nothing can starve only the cards below it — and
+   * below it there are none.
+   *
+   * What is deliberately NOT here: the live lane (a reserved line by design),
+   * the to-do panel (content about the running turn, not an offer), and the
+   * error and turn-failed blocks. A failure must never be arbitrated away.
+   */
+  const offers = useMemo<BottomSlotCandidate[]>(
+    () => [
+      {
+        id: 'prompt-suggestions',
+        show: showSuggestions,
+        render: () => (
+          <PromptSuggestionChips
+            suggestions={promptSuggestions}
+            onChipClick={handleSuggestionClick}
+          />
+        ),
+      },
+      {
+        id: 'permission-primer',
+        show: permissionPrimer.eligible,
+        render: () => (
+          <PermissionPrimer
+            onAllow={permissionPrimer.allow}
+            onNotNow={permissionPrimer.notNow}
+          />
+        ),
+      },
+      {
+        id: 'extension-chips',
+        // Never mid-turn: an extension's offer must not interrupt a running turn.
+        show: status === 'idle' && suggestionChips.length > 0,
+        render: () => (
+          <>
+            {suggestionChips.map((chip) => (
+              <chip.component key={chip.id} />
+            ))}
+          </>
+        ),
+      },
+    ],
+    [
+      showSuggestions,
+      promptSuggestions,
+      handleSuggestionClick,
+      permissionPrimer,
+      status,
+      suggestionChips,
+    ]
+  );
+
   const laneState = useSessionLaneState({
     asks: sessionAsks,
     status,
@@ -600,18 +677,14 @@ export function ChatPanel({
           every turn. */}
         <Conversation.LiveLane state={laneState} scope="session" />
 
-        <AnimatePresence>
-          {showSuggestions && (
-            <PromptSuggestionChips
-              suggestions={promptSuggestions}
-              onChipClick={handleSuggestionClick}
-            />
-          )}
-        </AnimatePresence>
-
-        {/* Suggestion chips (e.g. the living tour's offer) only appear when the
-          session is idle — never interrupt an in-flight turn. */}
-        {status === 'idle' && suggestionChips.map((chip) => <chip.component key={chip.id} />)}
+        {/* Everything that OFFERS rather than reports, arbitrated: one card at
+          a time, in the order declared above. */}
+        <BottomSlot
+          candidates={offers}
+          ready={hydrated}
+          name="session-bottom-slot"
+          className="px-4 pb-2"
+        />
 
         <CelebrationOverlay
           celebration={celebrations.activeCelebration}
@@ -647,12 +720,6 @@ export function ChatPanel({
             />
           </div>
         )}
-
-        {/* Asked once, and only after a turn has run long enough to walk away
-            from — never at launch. Sits here because this is where a person is
-            when the question first makes sense. Draws nothing until then, and
-            takes no space either. */}
-        <PermissionPrimer streaming={status === 'streaming'} />
 
         <SessionComposer
           chatInputRef={chatInputRef}

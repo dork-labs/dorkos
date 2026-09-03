@@ -1,5 +1,5 @@
 /**
- * One pinned slot at the bottom of a sidebar, showing one card at a time.
+ * One pinned slot at the bottom of a surface, showing one card at a time.
  *
  * Four things used to compete for the bottom of the cockpit's panel: the
  * getting-started progress card, the update pill, the profile prompt and a
@@ -13,7 +13,12 @@
  * and it renders the first whose `show` is true. That keeps the arbiter in
  * `shared/` — the cockpit's candidates come from three different features, and
  * the Obsidian embed's list is one promo — without this layer knowing what any
- * of them are.
+ * of them are. The corollary binds callers: a candidate's `show` must be
+ * answerable WITHOUT rendering it, or a card that draws nothing still wins the
+ * slot and the next one never speaks.
+ *
+ * The zone between a session's transcript and its composer is the second
+ * surface with the same problem, and uses the same slot (DOR-1759).
  *
  * @module shared/ui/bottom-slot
  */
@@ -86,6 +91,15 @@ export interface BottomSlotProps {
    * under eight skeleton bones.
    */
   ready: boolean;
+  /**
+   * What this slot is, written to `data-slot`.
+   *
+   * The sidebar was the first surface to arbitrate its cards and its name is the
+   * default; the session's zone above the composer is the second. Each surface
+   * names its own slot so a test or a browser sweep counting one cannot
+   * accidentally count the other.
+   */
+  name?: string;
   /** Extra classes for the slot container. */
   className?: string;
 }
@@ -98,7 +112,12 @@ export interface BottomSlotProps {
  * anything to say, and a test can assert the slot's POSITION without a card
  * having to qualify first.
  */
-export function BottomSlot({ candidates, ready, className }: BottomSlotProps) {
+export function BottomSlot({
+  candidates,
+  ready,
+  name = 'sidebar-bottom-slot',
+  className,
+}: BottomSlotProps) {
   const shouldReduceMotion = useReducedMotion();
   const isMobile = useIsMobile();
   // Nothing at all until the panel is ready — see {@link BottomSlotProps.ready}.
@@ -132,7 +151,7 @@ export function BottomSlot({ candidates, ready, className }: BottomSlotProps) {
 
   return (
     <div
-      data-slot="sidebar-bottom-slot"
+      data-slot={name}
       className={cn('shrink-0 px-2 pb-2 empty:p-0', isMobile && TOUCH_FLOOR, className)}
     >
       <AnimatePresence initial={false}>
