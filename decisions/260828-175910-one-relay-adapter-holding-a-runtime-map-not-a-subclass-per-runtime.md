@@ -58,7 +58,25 @@ adapter manager does not dispatch.
   segment of `relay.agent.<runtimeType>.<sessionId>`, or a task dispatch
   payload's `runtime` field — and never guessed. A message naming a runtime this
   build did not register is **refused by name**, before it takes a concurrency
-  slot, rather than quietly run on another one.
+  slot, rather than quietly run on another one. **Amended 2026-09-03
+  (DOR-1627):** one subject shape names an AGENT and no runtime — the mesh
+  endpoint `relay.agent.<namespace>.<agentId>`, which is what one agent's
+  `relay_send` to another arrives on. Taking the default for it meant a Codex
+  agent DM'd by another agent was answered by Claude Code. The adapter now asks
+  the host, through a `resolveAgentRuntimeType` seam wired to the same
+  manifest-then-default ladder rooms and chat bindings already use, so who
+  answers for an agent no longer depends on which door the message came
+  through. Only that shape: a session subject keeps the runtime its
+  conversation started on (ADR-0255), and a named runtime still wins over a
+  manifest. **Known gap, deliberately left open and pinned by a test:** nothing
+  on an agent-scoped subject's path calls `persistSessionRuntime` — a chat
+  binding does, when it creates a session, but a mesh endpoint creates no
+  session — so that shape has no binding to consult and its manifest is re-read
+  every turn. Change an
+  agent's runtime mid-conversation and the remaining turns go to a program
+  handed a session key it has no transcript for (the DOR-764 shape). Closing it
+  needs a binding write made only after a turn has started, plus
+  `resolveTurnRuntimeType`; threading a session key alone would be inert.
 - The discriminator the subject parse uses is the union of the adapter's own
   registered keys and the built-in `RUNTIME_TYPES` list, so a runtime registered
   under a type outside that list still routes to itself, and a type the product

@@ -30,7 +30,9 @@ vi.mock('@dorkos/shared/manifest', () => ({
 }));
 
 const { runtimeRegistry } = await import('../../../core/runtime-registry.js');
-const { resolveTurnRuntimeType } = await import('../resolve-agent-runtime-type.js');
+const { logger } = await import('../../../../lib/logger.js');
+const { resolveAgentRuntimeType, resolveTurnRuntimeType } =
+  await import('../resolve-agent-runtime-type.js');
 
 describe('resolveTurnRuntimeType', () => {
   beforeEach(() => {
@@ -93,5 +95,53 @@ describe('resolveTurnRuntimeType', () => {
       await resolveTurnRuntimeType({ sessionId: 'room-session', agentPath: '/repo/ana' })
     ).toBe('opencode');
     expect(() => runtimeRegistry.get('opencode')).toThrow(/not registered/);
+  });
+});
+
+describe('resolveAgentRuntimeType says when it substitutes', () => {
+  beforeEach(() => {
+    agentManifest = null;
+    runtimeRegistry.setDb(createTestDb());
+    runtimeRegistry.register(new FakeAgentRuntime('claude-code'));
+    runtimeRegistry.setDefault('claude-code');
+  });
+
+  it('warns when an agent runs on a runtime this server did not start', async () => {
+    // The soft fallback is deliberate — a test-mode server could trigger
+    // nothing without it — but it is still a different program answering under
+    // that agent's name, and an operator has no other way to find that out.
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    agentManifest = { runtime: 'opencode' };
+
+    expect(await resolveAgentRuntimeType('/repo/ana')).toBe('claude-code');
+
+    expect(warn).toHaveBeenCalledOnce();
+    const line = String(warn.mock.calls[0]?.[0]);
+    expect(line).toContain('/repo/ana');
+    expect(line).toContain('opencode');
+    expect(line).toContain('claude-code');
+    warn.mockRestore();
+  });
+
+  it('says nothing when the manifest names a runtime it can have', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    agentManifest = { runtime: 'claude-code' };
+
+    expect(await resolveAgentRuntimeType('/repo/ana')).toBe('claude-code');
+
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('says nothing when the agent expressed no preference at all', async () => {
+    // Nothing was substituted: an agent with no manifest runtime asked for
+    // nothing, and the default is the answer rather than a replacement for one.
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    agentManifest = {};
+
+    expect(await resolveAgentRuntimeType('/repo/ana')).toBe('claude-code');
+
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 });

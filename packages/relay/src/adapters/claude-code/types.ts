@@ -63,6 +63,32 @@ export type ExecutionSettingsResolver = (opts: {
 }) => Promise<TurnExecutionSettings>;
 
 /**
+ * Which runtime an AGENT runs on, asked of the host by agent directory.
+ *
+ * A seam, for the same reason {@link ExecutionSettingsResolver} is one: the
+ * answer is the agent's `.dork/agent.json` filtered by which runtimes this
+ * server actually registered, and both of those live host-side. The server
+ * wires this to `services/runtimes/shared/resolve-agent-runtime-type.ts`, the
+ * single copy of that ladder that rooms and the chat bindings already ask
+ * (DOR-1614) — a second copy here is a second thing that can disagree about
+ * which program answers for an agent.
+ *
+ * Asked only for a subject that names no runtime AND identifies an AGENT rather
+ * than a session — a mesh `relay.agent.<namespace>.<agentId>` endpoint, which
+ * is what one agent's `relay_send` to another arrives on (DOR-1627). A named
+ * runtime still wins, and a session subject keeps the runtime its conversation
+ * started on (ADR-0255).
+ *
+ * Tolerant by contract: a rejection means "no preference" and the turn runs on
+ * the host's default runtime. A manifest that cannot be read must never drop
+ * somebody's message.
+ *
+ * @param agentDirectory - The addressed agent's project directory, the one
+ *   holding `.dork/agent.json`.
+ */
+export type AgentRuntimeTypeResolver = (agentDirectory: string) => Promise<string>;
+
+/**
  * Minimal interface for agent session management.
  *
  * This is a structural subset of the `AgentRuntime` interface from
@@ -228,6 +254,13 @@ export interface ClaudeCodeAdapterDeps {
    * is what every host did before this existed.
    */
   resolveExecutionSettings?: ExecutionSettingsResolver;
+  /**
+   * Which runtime the AGENT a mesh subject addresses runs on — see
+   * {@link AgentRuntimeTypeResolver}. Absent means the host's default runtime
+   * answers every agent-to-agent send, which is what every host did before
+   * DOR-1627.
+   */
+  resolveAgentRuntimeType?: AgentRuntimeTypeResolver;
   /**
    * Whether a click on a chat platform may authorize one session's tool call.
    *

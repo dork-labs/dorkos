@@ -33,6 +33,7 @@ import type {
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { logger, createTaggedLogger } from '../../lib/logger.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
+import { resolveAgentRuntimeType } from '../runtimes/shared/resolve-agent-runtime-type.js';
 import { AdapterError } from './adapter-error.js';
 import { createTurnExecutionSettingsResolver } from './turn-execution-settings.js';
 
@@ -161,6 +162,12 @@ export async function createAdapter(
         // resolves which runtime a message belongs to and asks about THAT one,
         // so the answer is per turn rather than per adapter (DOR-1614).
         resolveExecutionSettings: createTurnExecutionSettingsResolver(),
+        // Who answers a message addressed to an AGENT rather than a session —
+        // the shape an agent-to-agent `relay_send` arrives on. The same single
+        // copy of the manifest-then-default ladder rooms and the chat bindings
+        // ask, so one agent DM'ing another cannot get a different program than
+        // the same agent reached from Telegram would (DOR-1627).
+        resolveAgentRuntimeType,
         // Every approval that arrives on the relay bus is checked here too,
         // before the runtime is touched (spec `ask-entitlement` §5.3).
         approvalAuthorizer: deps.approvalAuthorizer,

@@ -8,6 +8,11 @@
  * that it is taken from what the message NAMES rather than guessed, and that a
  * message for a runtime this build did not register is refused out loud rather
  * than quietly answered by a different program.
+ *
+ * Plus the one shape that names nothing to take: a mesh `relay.agent.<ns>.<id>`
+ * subject addresses an AGENT, so the agent's own manifest answers for it
+ * (DOR-1627). Without that, an agent-to-agent DM was the one door left where a
+ * Codex agent got a Claude Code answer.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RelayEnvelope, TaskDispatchPayload } from '@dorkos/shared/relay-schemas';
@@ -15,12 +20,13 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import { ClaudeCodeAdapter } from '../index.js';
 import type {
   AgentRuntimeLike,
+  AgentRuntimeTypeResolver,
   ClaudeCodeAdapterDeps,
   ExecutionSettingsResolver,
   TasksStoreLike,
   TraceStoreLike,
 } from '../index.js';
-import type { RelayPublisher } from '../../../types.js';
+import type { AdapterContext, RelayPublisher } from '../../../types.js';
 
 /** A runtime double that finishes a turn immediately. */
 function mockRuntime(type: string): AgentRuntimeLike {
@@ -174,7 +180,8 @@ describe('the relay adapter picks the runtime a message names', () => {
       expect(codex.sendMessage).not.toHaveBeenCalled();
     });
 
-    it('runs a mesh agent-scoped subject on the default runtime', async () => {
+    it('runs a mesh agent-scoped subject on the default runtime when nothing says otherwise', async () => {
+      // No context, so no agent directory, so no manifest to read (DOR-1627).
       const envelope = agentEnvelope('relay.agent.ana.01AGENTULID');
 
       await adapter.deliver(envelope.subject, envelope);
@@ -367,6 +374,184 @@ describe('the relay adapter picks the runtime a message names', () => {
 
       expect(claude.sendMessage).toHaveBeenCalledOnce();
       expect(extra.sendMessage).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("an agent-to-agent send takes the target agent's own runtime (DOR-1627)", () => {
+    // `relay.agent.<namespace>.<agentId>` is the shape one agent's `relay_send`
+    // to another arrives on, and it names no runtime. Taking the default for it
+    // meant a Codex agent DM'd by another agent was answered by Claude Code —
+    // the wrong program under the right agent's name, which is the exact failure
+    // DOR-1614 closed for Telegram and Slack.
+    const AGENT_ID = '01AGENTULID';
+    const MESH_SUBJECT = `relay.agent.ana.${AGENT_ID}`;
+    const AGENT_DIR = '/agents/ana';
+
+    /** The context `AdapterManager.buildContext` builds for a mesh subject. */
+    function meshContext(directory = AGENT_DIR): AdapterContext {
+      return { agent: { directory, runtime: 'claude-code' } };
+    }
+
+    let resolveAgentRuntimeType: ReturnType<typeof vi.fn<AgentRuntimeTypeResolver>>;
+    let withManifest: ClaudeCodeAdapter;
+
+    beforeEach(async () => {
+      resolveAgentRuntimeType = vi.fn<AgentRuntimeTypeResolver>().mockResolvedValue('codex');
+      withManifest = new ClaudeCodeAdapter('claude-code', {}, { ...deps, resolveAgentRuntimeType });
+      await withManifest.start(mockRelay());
+    });
+
+    it('answers on the runtime the target agent runs on, not the default', async () => {
+      const envelope = agentEnvelope(MESH_SUBJECT);
+
+      const result = await withManifest.deliver(envelope.subject, envelope, meshContext());
+
+      expect(result.success).toBe(true);
+      expect(resolveAgentRuntimeType).toHaveBeenCalledWith(AGENT_DIR);
+      expect(codex.sendMessage).toHaveBeenCalledOnce();
+      expect(claude.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('asks the settings resolver about that runtime too', async () => {
+      // Model and effort live in one runtime's namespace, so a turn routed to
+      // codex and priced against claude-code defaults is still half wrong.
+      await withManifest.deliver(MESH_SUBJECT, agentEnvelope(MESH_SUBJECT), meshContext());
+
+      expect(resolveExecutionSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ runtimeType: 'codex' })
+      );
+    });
+
+    it('lets the runtime a subject NAMES win over the manifest', async () => {
+      // The subject segment comes from a session's own ownership row — the
+      // recorded owner of a conversation that already exists, which outranks a
+      // preference expressed about the agent (ADR-0255).
+      const envelope = agentEnvelope('relay.agent.claude-code.session-2');
+
+      await withManifest.deliver(envelope.subject, envelope, meshContext());
+
+      expect(claude.sendMessage).toHaveBeenCalledOnce();
+      expect(codex.sendMessage).not.toHaveBeenCalled();
+      expect(resolveAgentRuntimeType).not.toHaveBeenCalled();
+    });
+
+    it('leaves a legacy three-token session subject on the default runtime', async () => {
+      // That subject names a SESSION, not an agent. Reading a manifest for it
+      // would hand a running conversation to a program holding none of it.
+      const envelope = agentEnvelope('relay.agent.01AGENTULID');
+
+      await withManifest.deliver(envelope.subject, envelope, meshContext());
+
+      expect(claude.sendMessage).toHaveBeenCalledOnce();
+      expect(resolveAgentRuntimeType).not.toHaveBeenCalled();
+    });
+
+    it('still refuses a subject naming a runtime this build did not register', async () => {
+      // The refusal path must not become reachable-by-manifest: a named runtime
+      // is answered by that runtime or by nobody.
+      const envelope = agentEnvelope('relay.agent.opencode.session-3');
+
+      const result = await withManifest.deliver(envelope.subject, envelope, meshContext());
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('opencode');
+      expect(claude.sendMessage).not.toHaveBeenCalled();
+      expect(codex.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('refuses when the agent runs on a runtime the relay does not hold', async () => {
+      // A wiring mismatch — the composition root passes every registered runtime
+      // — and answering it on another program is the failure this ladder exists
+      // to prevent, so it refuses rather than substituting.
+      resolveAgentRuntimeType.mockResolvedValue('opencode');
+      const envelope = agentEnvelope(MESH_SUBJECT);
+
+      const result = await withManifest.deliver(envelope.subject, envelope, meshContext());
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('opencode');
+      expect(claude.sendMessage).not.toHaveBeenCalled();
+      expect(codex.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('answers on the default runtime when the manifest cannot be read', async () => {
+      // Tolerant by contract: an unreadable manifest is not a reason to drop
+      // somebody's message.
+      resolveAgentRuntimeType.mockRejectedValue(new Error('EACCES'));
+      const envelope = agentEnvelope(MESH_SUBJECT);
+
+      const result = await withManifest.deliver(envelope.subject, envelope, meshContext());
+
+      expect(result.success).toBe(true);
+      expect(claude.sendMessage).toHaveBeenCalledOnce();
+    });
+
+    it('does not ask when nothing resolved an agent directory', async () => {
+      // A mesh agent the registry does not know: `buildContext` returns nothing,
+      // and there is no manifest to look for.
+      await withManifest.deliver(MESH_SUBJECT, agentEnvelope(MESH_SUBJECT));
+
+      expect(resolveAgentRuntimeType).not.toHaveBeenCalled();
+      expect(claude.sendMessage).toHaveBeenCalledOnce();
+    });
+
+    it('re-reads the manifest every turn, so an edit mid-conversation moves it (known gap)', async () => {
+      // PINNING WHAT IS TRUE, not what should be. An agent-scoped subject
+      // resumes a conversation — the handler reuses the SDK session id it
+      // persisted under this agent's key — but nothing on THIS shape's path
+      // binds that session (a chat binding does bind, when it creates one; a
+      // mesh endpoint creates none), so there is no owner to consult and the
+      // manifest is asked again every turn. Flip it between turns and the
+      // second turn goes to a
+      // program that is handed the id its predecessor minted and holds no
+      // transcript for it: the DOR-764 shape, still open here. Closing it is a
+      // binding write plus `resolveTurnRuntimeType`, and this test is what will
+      // go red when that lands — deliberately, and with the fix in hand.
+      const store = new Map<string, string>();
+      const sticky = new ClaudeCodeAdapter(
+        'claude-code',
+        {},
+        {
+          ...deps,
+          resolveAgentRuntimeType,
+          agentRuntimes: new Map([
+            ['claude-code', claude],
+            // Only this runtime reports an SDK id, so the key the second turn
+            // resumes under is unambiguously the one codex created.
+            ['codex', { ...codex, getSdkSessionId: () => 'sdk-id-minted-by-codex' }],
+          ]),
+          agentSessionStore: {
+            get: (agentId: string) => store.get(agentId),
+            set: (agentId: string, sdkSessionId: string) => void store.set(agentId, sdkSessionId),
+          },
+        }
+      );
+      await sticky.start(mockRelay());
+
+      await sticky.deliver(MESH_SUBJECT, agentEnvelope(MESH_SUBJECT), meshContext());
+      expect(codex.sendMessage).toHaveBeenCalledWith(
+        AGENT_ID,
+        expect.anything(),
+        expect.anything()
+      );
+
+      resolveAgentRuntimeType.mockResolvedValue('claude-code');
+      await sticky.deliver(MESH_SUBJECT, agentEnvelope(MESH_SUBJECT), meshContext());
+
+      expect(claude.sendMessage).toHaveBeenCalledWith(
+        'sdk-id-minted-by-codex',
+        expect.anything(),
+        expect.anything()
+      );
+    });
+
+    it('leaves a host that wires no resolver exactly as it was', async () => {
+      const envelope = agentEnvelope(MESH_SUBJECT);
+
+      await adapter.deliver(envelope.subject, envelope, meshContext());
+
+      expect(claude.sendMessage).toHaveBeenCalledOnce();
+      expect(codex.sendMessage).not.toHaveBeenCalled();
     });
   });
 

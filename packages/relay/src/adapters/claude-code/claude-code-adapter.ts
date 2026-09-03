@@ -27,6 +27,10 @@
  * - `relay.agent.<runtimeType>.<sessionId>` — the runtime segment, which
  *   `BindingRouter` resolves from the session's own ownership row.
  * - `relay.system.tasks.<taskId>` — the dispatch payload's `runtime` field.
+ * - `relay.agent.<namespace>.<agentId>` — a mesh endpoint, the shape one
+ *   agent's `relay_send` to another arrives on. It names an AGENT and no
+ *   runtime, so the addressed agent's own manifest answers, through the host's
+ *   `resolveAgentRuntimeType` seam (DOR-1627).
  * - anything that names none (a legacy three-token subject, a task dispatch
  *   from before the field existed) — the host's default runtime, which is the
  *   single runtime every host used to pass.
@@ -485,8 +489,11 @@ export class ClaudeCodeAdapter implements RelayAdapter {
    *
    * A three-token legacy subject and an agent-scoped mesh subject
    * (`relay.agent.<namespace>.<agentId>`, a direct agent-to-agent send) both
-   * name none. That is honest rather than a gap: neither shape has ever carried
-   * a runtime, and the host's default is what ran them before this existed.
+   * name none: neither shape has ever carried a runtime. What happens next
+   * differs between them, and {@link ClaudeCodeAdapter.resolveRuntime} is where
+   * — an agent subject names an AGENT, whose own manifest answers this
+   * (DOR-1627); a legacy subject names a session, which keeps the runtime its
+   * conversation started on.
    *
    * The parse is told {@link ClaudeCodeAdapter.addressableRuntimeTypes} rather
    * than left on the built-in literal list. On the literal list, a runtime
@@ -504,22 +511,108 @@ export class ClaudeCodeAdapter implements RelayAdapter {
   }
 
   /**
+   * The runtime an agent's own manifest asks for, for a message addressed to an
+   * AGENT and naming no runtime — `undefined` for every other message.
+   *
+   * This is the agent-to-agent case (DOR-1627). A mesh subject
+   * `relay.agent.<namespace>.<agentId>` carries no runtime segment, so before
+   * this a Codex agent DM'd over `relay_send` was answered by Claude Code —
+   * the same wrong-program-under-the-right-name failure DOR-1614 closed for
+   * Telegram and Slack, left open on the one door agents use to reach each
+   * other.
+   *
+   * Two conditions, and both matter:
+   *
+   * - **The subject is `agent-scoped`.** It names an agent, and which runtime an
+   *   agent runs on is a property of the agent. A legacy three-token subject
+   *   names a SESSION id — an id the cockpit can bind through
+   *   `persistSessionRuntime` — so the manifest is not asked for one at all.
+   * - **The context carries the agent's directory**, which is where its
+   *   `.dork/agent.json` lives; the host's `AdapterManager.buildContext` fills
+   *   it from the Mesh registry. A payload `cwd` is deliberately not consulted:
+   *   that moves where a turn RUNS, a fact about one message, and it must not
+   *   re-decide which program answers for the agent.
+   *
+   * The resolver is the host's — see {@link AgentRuntimeTypeResolver} — and a
+   * host that wires none behaves exactly as it did before this existed. A
+   * rejection is "no preference", never a dropped message.
+   *
+   * ## Known gap: this is asked EVERY turn, not once per conversation
+   *
+   * An agent-scoped subject resumes a conversation as surely as a session
+   * subject does — `agent-handler.ts` reuses the SDK session id it persisted
+   * under the same agent key — but nothing on THIS subject shape's path ever
+   * calls `persistSessionRuntime`, so there is no binding to consult and the
+   * manifest is re-read on every turn. (The relay does bind elsewhere: a chat
+   * binding writes an owner at the one moment it creates a session,
+   * `binding-subsystem.ts`, which is why a Telegram or Slack conversation is
+   * not exposed to this. A mesh endpoint creates no session for anyone to
+   * record.) Change an agent's runtime mid-conversation and
+   * the remaining turns go to a program that is handed the session key its
+   * predecessor created and has no transcript for: the DOR-764 shape, which
+   * ADR-0255 closed for the cockpit and rooms and which this path does not yet
+   * honour. Named here rather than papered over, and pinned by a test so the
+   * behaviour cannot change unnoticed. Closing it means binding these sessions
+   * — a write, made only once a turn has actually started, or the orphan rows
+   * `room-turn-runner.ts` warns about arrive one per message — and then asking
+   * `resolveTurnRuntimeType` instead. Threading the session key alone would
+   * change nothing: with no row to find, that function falls straight through
+   * to this same manifest read.
+   *
+   * @param subject - The subject the message arrived on.
+   * @param context - The delivery context, for the agent's directory.
+   */
+  private async manifestRuntimeType(
+    subject: string,
+    context: AdapterContext | undefined
+  ): Promise<string | undefined> {
+    const resolve = this.deps.resolveAgentRuntimeType;
+    const directory = context?.agent?.directory;
+    if (!resolve || !directory) return undefined;
+    if (parseAgentSubject(subject, this.addressableRuntimeTypes)?.format !== 'agent-scoped') {
+      return undefined;
+    }
+    try {
+      return await resolve(directory);
+    } catch (err) {
+      (this.deps.logger ?? console).warn(
+        `[CCA] could not read which runtime '${directory}' runs on (${
+          err instanceof Error ? err.message : String(err)
+        }); answering on '${this.defaultRuntimeType}'.`
+      );
+      return undefined;
+    }
+  }
+
+  /**
    * The runtime that answers this message, or a refusal saying why not.
+   *
+   * Three rungs, narrowing from what the message states to what the agent
+   * prefers to what the host runs: the runtime the message NAMES, then — for a
+   * mesh agent subject alone — the addressed agent's own manifest
+   * ({@link manifestRuntimeType}), then the host's default.
    *
    * The refusal is the point: a session bound to a runtime this build did not
    * register must not be answered by a different one. Silently substituting the
    * default would put a Claude Code answer in a Codex agent's chat, under that
-   * agent's name, with nothing anywhere saying the wrong program ran it.
+   * agent's name, with nothing anywhere saying the wrong program ran it. It
+   * guards the manifest rung for the same reason — a manifest naming a runtime
+   * the host registered but did not wire into the relay is a composition-root
+   * mismatch, and answering it on some other program is the failure this whole
+   * ladder exists to prevent.
    *
    * @param subject - The subject the message arrived on.
    * @param envelope - The envelope, for a task dispatch's payload.
+   * @param context - The delivery context, for the agent's directory.
    */
-  private resolveRuntime(
+  private async resolveRuntime(
     subject: string,
-    envelope: RelayEnvelope
-  ): { runtime: AgentRuntimeLike; runtimeType: string } | { error: string } {
+    envelope: RelayEnvelope,
+    context: AdapterContext | undefined
+  ): Promise<{ runtime: AgentRuntimeLike; runtimeType: string } | { error: string }> {
     const named = this.namedRuntimeType(subject, envelope);
-    const runtimeType = named ?? this.defaultRuntimeType;
+    const runtimeType =
+      named ?? (await this.manifestRuntimeType(subject, context)) ?? this.defaultRuntimeType;
     const runtime = this.agentRuntimes.get(runtimeType);
     if (!runtime) {
       return {
@@ -628,7 +721,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
     // next message wait behind it. The refusal reports the same way a slot
     // refusal does — `success: false` and no run-row write — because it is the
     // same kind of event: the handler never started.
-    const selected = this.resolveRuntime(subject, envelope);
+    const selected = await this.resolveRuntime(subject, envelope, context);
     if ('error' in selected) {
       this.status = {
         ...this.status,
