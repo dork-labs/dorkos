@@ -288,7 +288,81 @@ export function createApp() {
 }
 
 /**
- * Cache-Control for the SPA shell, on both the static hit and the fallback.
+ * Content-Security-Policy for the app's own page (DOR-560).
+ *
+ * The app renders agent-authored markdown, gen-UI widgets and marketplace card
+ * content on its own privileged origin, where a script can call every `/api`
+ * route as you. Until this header existed nothing stopped injected content from
+ * pulling a script off the internet and running it there. It is set on the
+ * shell document — the only response whose policy governs the app — so the CLI,
+ * the desktop shell and the phone all get the same one; the per-route policies
+ * on raw file and diff responses (`routes/files.ts`, `routes/diff.ts`) are
+ * about different documents and are left exactly as they are.
+ *
+ * Every directive that is not `'self'` is here because a shipped surface needs
+ * it:
+ * - `script-src` allows inline because `index.html` carries the boot sentinel
+ *   and the theme script — and because a `srcdoc` iframe INHERITS this policy,
+ *   so a hash-only script-src would also kill every MCP App's inline script
+ *   inside its sandbox (verified in Chromium, not assumed). No remote script
+ *   host is listed, and `'unsafe-eval'` is absent; `'wasm-unsafe-eval'` is the
+ *   narrow exception the bundled Draco/Basis decoders need to open a
+ *   compressed 3D model, and it grants WebAssembly only, never `eval`.
+ * - `style-src`/`font-src` name Google Fonts because the appearance settings
+ *   load a chosen font family from there.
+ * - `img-src`/`media-src`/`frame-src` are open to the web because that is the
+ *   product: agent markdown embeds remote images, and the canvas browser frames
+ *   whatever page you point it at, including a dev server on another port. They
+ *   are no wider than that: `frame-src` omits `data:` and `blob:`, which the
+ *   canvas rejects as frame targets anyway (`canvas/lib/browser-url.ts`).
+ * - `object-src` is the PDF canvas, which hands the browser's built-in viewer
+ *   an `<object>` pointing at a served file, a remote URL, or a
+ *   `data:application/pdf` URI (`canvas/lib/media-src.ts`) — the one place the
+ *   otherwise-standard `object-src 'none'` would have broken a shipped surface.
+ * - `worker-src` allows `blob:` for the workers canvas-confetti and the 3D
+ *   decoders build in-page.
+ * - `connect-src` reaches the web, and this is the directive it is tempting to
+ *   write too tight. Almost everything the app fetches is its own server —
+ *   `'self'` covers the `ws://` terminal and event streams on that same origin
+ *   too (verified in Chromium) — but real features fetch elsewhere, and the
+ *   plain-`http:` one is the trap: before the canvas frames a dev server it
+ *   asks the BROWSER whether it can reach `http://localhost:5173`
+ *   (`canvas/lib/probe-direct.ts`), and a blocked fetch is indistinguishable
+ *   there from a refused connection, so a policy without `http:` reports every
+ *   healthy dev server as unreachable and never frames it — while `frame-src`
+ *   happily permits the frame it just talked itself out of showing. The tunnel
+ *   panel's latency probe and remote CSV/3D canvas sources need the same reach.
+ *   The exfiltration this leaves open is the one `img-src` already leaves open
+ *   for the same product reason, so the honest accounting is that this
+ *   directive keeps the app's fetches describable, not that it seals them.
+ *
+ * `frame-ancestors 'none'`, `base-uri 'self'` and `form-action 'self'` close
+ * the classic non-script escapes: nobody may frame the app, retarget its
+ * relative URLs, or post its forms elsewhere.
+ *
+ * Not covered: the Vite dev server serves its own shell with no header, so this
+ * is a production policy. `electron-vite preview` loads the built shell off
+ * `file://` and gets none either — neither ships to anyone.
+ */
+const SHELL_CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' data: https://fonts.gstatic.com",
+  "img-src 'self' data: blob: https: http:",
+  "media-src 'self' data: blob: https: http:",
+  "object-src 'self' data: https: http:",
+  "frame-src 'self' https: http:",
+  "worker-src 'self' blob:",
+  "connect-src 'self' data: https: http:",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join('; ');
+
+/**
+ * The headers the SPA shell carries, on both the static hit and the deep-link
+ * fallback: what may cache it, and what its page is allowed to do.
  *
  * `no-store` rather than the `max-age=0` + ETag default: the shell names the
  * exact content-hashed bundles of the build that produced it, so a shell held
@@ -297,8 +371,13 @@ export function createApp() {
  * this right; a cache that cannot revalidate (offline, an intercepting proxy,
  * a poisoned entry) does not. The shell is a few KB, so never storing it costs
  * nothing and removes the failure mode outright.
+ *
+ * The policy is {@link SHELL_CSP}.
  */
-const SHELL_HEADERS = { 'Cache-Control': 'no-store' } as const;
+const SHELL_HEADERS = {
+  'Cache-Control': 'no-store',
+  'Content-Security-Policy': SHELL_CSP,
+} as const;
 
 /**
  * Cache-Control for content-hashed bundles under `/assets/`.
@@ -357,7 +436,14 @@ export function finalizeApp(app: express.Express): void {
     app.use(
       express.static(distPath, {
         setHeaders: (res, filePath) => {
-          if (path.basename(filePath) === 'index.html') noteShellServed();
+          if (path.basename(filePath) === 'index.html') {
+            noteShellServed();
+            // The shell served straight off disk (`/`, `/index.html`) has to
+            // carry the policy too — the fallback below is only reached by deep
+            // links, so setting it there alone would leave the app's most
+            // common entry unprotected.
+            res.setHeader('Content-Security-Policy', SHELL_HEADERS['Content-Security-Policy']);
+          }
           const cacheControl = cacheControlForDistFile(distPath, filePath);
           if (cacheControl) res.setHeader('Cache-Control', cacheControl);
         },

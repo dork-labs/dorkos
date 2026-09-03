@@ -157,6 +157,15 @@ class MockBrowserWindowImpl {
   bounds: Rectangle;
   webContents = {
     id: nextWebContentsId++,
+    /**
+     * The session this window's content runs in. A getter rather than a
+     * captured value so it follows `resetElectronMock`, and the DEFAULT session
+     * because no window sets a `partition` — which is exactly why a policy
+     * applied per window still lands on one shared session.
+     */
+    get session() {
+      return session.defaultSession;
+    },
     send: vi.fn<(channel: string, ...args: unknown[]) => void>(),
     on: vi.fn((event: string, listener: (...args: unknown[]) => unknown) => {
       this.webContentsBus.on(event, listener);
@@ -329,19 +338,40 @@ export const app = {
   removeAllListeners: (): void => appBus.clear(),
 };
 
-/**
- * Test double for `session`. Only the two clears the main process makes are
- * modelled (see `cache-hygiene.ts`), and both are drivable to *failure*: on
- * every path that calls them — version-change hygiene, and the renderer
- * supervisor's recovery ladder — swallowing the failure and carrying on is the
- * behavior under test.
- */
-export const session = {
-  defaultSession: {
+/** The permission handlers a session can be given, captured for tests to invoke directly. */
+interface MockSession {
+  clearCache: ReturnType<typeof vi.fn<() => Promise<void>>>;
+  clearStorageData: ReturnType<typeof vi.fn<(options?: unknown) => Promise<void>>>;
+  setPermissionRequestHandler: ReturnType<typeof vi.fn<(handler: unknown) => void>>;
+  setPermissionCheckHandler: ReturnType<typeof vi.fn<(handler: unknown) => void>>;
+  setDisplayMediaRequestHandler: ReturnType<typeof vi.fn<(handler: unknown) => void>>;
+}
+
+/** A fresh session double — the shape `session.defaultSession` and every `webContents.session` share. */
+function makeMockSession(): MockSession {
+  return {
     clearCache: vi.fn<() => Promise<void>>(() => Promise.resolve()),
     clearStorageData: vi.fn<(options?: unknown) => Promise<void>>(() => Promise.resolve()),
-  },
-};
+    setPermissionRequestHandler: vi.fn<(handler: unknown) => void>(),
+    setPermissionCheckHandler: vi.fn<(handler: unknown) => void>(),
+    setDisplayMediaRequestHandler: vi.fn<(handler: unknown) => void>(),
+  };
+}
+
+/**
+ * Test double for `session`. The two clears the main process makes are modelled
+ * (see `cache-hygiene.ts`), and both are drivable to *failure*: on every path
+ * that calls them — version-change hygiene, and the renderer supervisor's
+ * recovery ladder — swallowing the failure and carrying on is the behavior
+ * under test. The three permission setters are modelled as recorders: a test
+ * pulls the registered handler out of `.mock.calls` and asks it about a
+ * permission, which is the only way to prove the deny-by-default policy
+ * (`permission-policy.ts`) without a real Chromium.
+ *
+ * Every window's `webContents.session` is this same object, as it is in a real
+ * app where no window sets a `partition`.
+ */
+export const session = { defaultSession: makeMockSession() };
 
 export const ipcMain = {
   on: vi.fn<(channel: string, listener: (...args: unknown[]) => unknown) => void>(),
@@ -558,8 +588,7 @@ export function resetElectronMock(): void {
   app.setAsDefaultProtocolClient = vi.fn(() => true);
   app.dock = { setMenu: vi.fn(), setBadge: vi.fn() };
 
-  session.defaultSession.clearCache = vi.fn(() => Promise.resolve());
-  session.defaultSession.clearStorageData = vi.fn(() => Promise.resolve());
+  session.defaultSession = makeMockSession();
 
   ipcMain.on = vi.fn();
   ipcMain.handle = vi.fn();

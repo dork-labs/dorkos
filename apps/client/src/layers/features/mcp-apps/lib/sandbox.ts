@@ -46,6 +46,14 @@ const PERMISSION_TO_ALLOW: Record<McpAppPermission, string> = {
  * Restricts each directive to the frame itself (`'self'`) and returns undefined
  * when the App declared nothing, so the attribute is omitted entirely.
  *
+ * In the desktop app these declarations are inert: the shell's permission
+ * policy (`apps/desktop/src/main/permissions/`) denies camera, microphone and
+ * geolocation outright, and refuses everything else to any frame that is not
+ * the app's own origin — which this one, on its opaque `null` origin, never is.
+ * An App that declares `camera` therefore gets an `allow` attribute and still
+ * no camera there. That is the intended order: `allow` narrows what the frame
+ * may ask for, and the shell decides what is answered.
+ *
  * @param permissions - Permissions the App declared (already validated server-side).
  * @returns The `allow` attribute value, or undefined when no permissions apply.
  */
