@@ -369,6 +369,9 @@
               },
               "hasSuggestions": {
                 "type": "boolean"
+              },
+              "alwaysAllowScope": {
+                "$ref": "#/components/schemas/AlwaysAllowScope"
               }
             },
             "required": [
@@ -473,6 +476,14 @@
               "message"
             ]
           }
+        ]
+      },
+      "AlwaysAllowScope": {
+        "type": "string",
+        "enum": [
+          "session",
+          "project",
+          "user"
         ]
       },
       "QuestionItem": {
@@ -905,6 +916,16 @@
           "approvalHasSuggestions": {
             "type": "boolean",
             "description": "Whether \"Always Allow\" is available"
+          },
+          "approvalAlwaysAllowScope": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AlwaysAllowScope"
+              },
+              {
+                "description": "Scope an accepted \"Always Allow\" grants — session, project, or the operator's global settings"
+              }
+            ]
           },
           "approvalOutcome": {
             "type": "string",
@@ -1735,6 +1756,9 @@
               },
               "hasSuggestions": {
                 "type": "boolean"
+              },
+              "alwaysAllowScope": {
+                "$ref": "#/components/schemas/AlwaysAllowScope"
               }
             },
             "required": [
@@ -10826,6 +10850,9 @@
                         },
                         "hasSuggestions": {
                           "type": "boolean"
+                        },
+                        "alwaysAllowScope": {
+                          "$ref": "#/components/schemas/AlwaysAllowScope"
                         }
                       },
                       "required": [

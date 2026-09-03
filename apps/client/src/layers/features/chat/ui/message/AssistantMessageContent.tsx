@@ -266,6 +266,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           approvalBlockedPath={toolPart.approvalBlockedPath}
           approvalDecisionReason={toolPart.approvalDecisionReason}
           approvalHasSuggestions={toolPart.approvalHasSuggestions}
+          approvalAlwaysAllowScope={toolPart.approvalAlwaysAllowScope}
           isActive={isActive}
           onDecided={onToolDecided ? () => onToolDecided(toolPart.toolCallId) : undefined}
           allowsDenyReason={allowsDenyReason}

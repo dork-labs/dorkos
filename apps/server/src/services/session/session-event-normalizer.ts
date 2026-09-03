@@ -27,7 +27,8 @@
  * @module services/session/session-event-normalizer
  */
 import { isNonFatalErrorCode, readStopWasRequested } from '@dorkos/shared/run-outcome';
-import type { StreamEvent, TerminalReason } from '@dorkos/shared/types';
+import { AlwaysAllowScopeSchema } from '@dorkos/shared/schemas';
+import type { AlwaysAllowScope, StreamEvent, TerminalReason } from '@dorkos/shared/types';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { RawSessionEvent, SessionStateProjector } from './session-state-projector.js';
 import { CAPABILITY_APPROVAL_HOLD_CAP_MS } from '../core/capabilities/capability-approval-hold.js';
@@ -443,7 +444,19 @@ function toApprovalEvent(data: StreamData): RawOf<'approval_required'> {
     ...(data.description !== undefined ? { description: String(data.description) } : {}),
     ...(data.blockedPath !== undefined ? { blockedPath: String(data.blockedPath) } : {}),
     ...(data.decisionReason !== undefined ? { decisionReason: String(data.decisionReason) } : {}),
+    // Validated rather than cast: this one drives the sentence beside "Always
+    // Allow", and a runtime that shipped an unrecognised word would have the
+    // card make a promise nobody wrote. An unreadable value is simply absent,
+    // which renders as the plain button it always was.
+    ...(isAlwaysAllowScope(data.alwaysAllowScope)
+      ? { alwaysAllowScope: data.alwaysAllowScope }
+      : {}),
   };
+}
+
+/** Whether a raw stream value is one of the three scopes a card can name. */
+function isAlwaysAllowScope(value: unknown): value is AlwaysAllowScope {
+  return AlwaysAllowScopeSchema.safeParse(value).success;
 }
 
 /** Map a `question_prompt` StreamEvent to its session-stream member. */

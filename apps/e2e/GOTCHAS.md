@@ -111,10 +111,15 @@ Learned while writing the DOR-1214 suites (`tests/chat/interactive-prompts.ts`,
 locator that was pointing at the wrong thing.
 
 - **Button accessible names carry their keyboard hint.** Approve's name is
-  `"Approve Enter"`, Always Allow's is `"Always Allow Shift+Enter"`, Deny's is
-  `"Deny Esc"` — a `<Kbd>` child folds into the name, and it only renders while
-  the card is ACTIVE, so the name is not stable either. `{ name: 'Approve',
-exact: true }` never matches.
+  `"Approve Enter"` and Deny's is `"Deny Esc"` — a `<Kbd>` child folds into the
+  name, and it only renders while the card is ACTIVE, so the name is not stable
+  either. `{ name: 'Approve', exact: true }` never matches.
+- **Always Allow is the exception, and its name states the GRANT.** It carries
+  an explicit `aria-label`: `"Always Allow, this session"` / `", this project"` /
+  `", all your Claude sessions"`, or plain `"Always Allow"` when the runtime
+  named no scope (DOR-1462). No keyboard hint in it, and it does not change when
+  the card goes active. Its visible text differs from its name — a middot sits
+  where the comma is — so match on the name, not on `textContent`.
 - **`/^Approve\b/` does NOT exclude "Approve All".** The word boundary sits
   between `Approve` and the space, so it is satisfied by the exact string it
   looks like it rules out — same for `/^Deny\b/` and "Deny All". Use a negative

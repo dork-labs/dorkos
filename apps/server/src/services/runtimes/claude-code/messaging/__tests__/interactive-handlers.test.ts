@@ -13,7 +13,7 @@ import { resolveApprovalDecision } from '../../../opencode/approvals.js';
 import { toRawSessionEvent } from '../../../../session/session-event-normalizer.js';
 import type { StreamEvent, QuestionItem } from '@dorkos/shared/types';
 import { PermissionModeSchema, type PermissionMode } from '@dorkos/shared/schemas';
-import type { ElicitationRequest } from '@anthropic-ai/claude-agent-sdk';
+import type { ElicitationRequest, PermissionUpdate } from '@anthropic-ai/claude-agent-sdk';
 
 /** Build a minimal interactive session with a configurable permission mode. */
 function makeSession(
@@ -1390,6 +1390,101 @@ describe('a prompt nobody answers parks, then is refused', () => {
       await expect(elicitation).resolves.toEqual({ action: 'decline' });
     } finally {
       vi.useRealTimers();
+    }
+  });
+});
+
+describe('the scope an "Always Allow" card names (DOR-1462)', () => {
+  /** A tool rule bound for one settings destination, as a real card carries it. */
+  function rule(destination: PermissionUpdate['destination']): PermissionUpdate {
+    return {
+      type: 'addRules',
+      rules: [{ toolName: 'Bash', ruleContent: 'ls:*' }],
+      behavior: 'allow',
+      destination,
+    };
+  }
+
+  /** Raise one approval card and hand back everything it produced. */
+  function raise(suggestions?: PermissionUpdate[]) {
+    const session = makeBareSession();
+    const context = {
+      signal: new AbortController().signal,
+      toolUseID: 'scope-1',
+      ...(suggestions !== undefined ? { suggestions } : {}),
+    } as ToolApprovalContext;
+    void handleToolApproval(session, 'scope-1', 'Bash', { command: 'ls' }, context);
+    const pushed = session.eventQueue.find((e) => e.type === 'approval_required');
+    return {
+      data: pushed?.data as Record<string, unknown> | undefined,
+      snapshot: session.pendingInteractions.get('scope-1')?.snapshot as
+        Record<string, unknown> | undefined,
+      // The normalizer is the seam that decides which fields survive to the
+      // client, so the assertion runs through the real one rather than stopping
+      // at the raw payload.
+      member: pushed ? toRawSessionEvent(pushed) : null,
+    };
+  }
+
+  it('names the operator’s global settings when the batch would write them', () => {
+    // The bug this closes: a card offering a `userSettings` suggestion moved the
+    // operator's global CLI defaults on one click, and said only "Always Allow".
+    const { data, snapshot, member } = raise([
+      { type: 'setMode', mode: 'acceptEdits', destination: 'session' },
+      rule('userSettings'),
+    ]);
+
+    expect(data).toMatchObject({ hasSuggestions: true, alwaysAllowScope: 'user' });
+    // And on the recovery snapshot too, or a reloaded tab would draw the same
+    // button with the scope silently gone.
+    expect(snapshot).toMatchObject({ hasSuggestions: true, alwaysAllowScope: 'user' });
+    expect(member).toMatchObject({ type: 'approval_required', alwaysAllowScope: 'user' });
+  });
+
+  it('names this project for a settings-file grant that stops at the repo', () => {
+    const { data, member } = raise([rule('localSettings')]);
+    expect(data).toMatchObject({ alwaysAllowScope: 'project' });
+    expect(member).toMatchObject({ alwaysAllowScope: 'project' });
+  });
+
+  it('names this session for a grant that dies with the conversation', () => {
+    const { data, member } = raise([
+      { type: 'setMode', mode: 'acceptEdits', destination: 'session' },
+    ]);
+    expect(data).toMatchObject({ alwaysAllowScope: 'session' });
+    expect(member).toMatchObject({ alwaysAllowScope: 'session' });
+  });
+
+  it('says nothing at all on a card with no "Always Allow" to describe', () => {
+    // A scope beside a button that is never drawn would be a promise about
+    // nothing; the field is absent, and the card reads as it always did.
+    const { data, snapshot, member } = raise();
+    expect(data).toMatchObject({ hasSuggestions: false });
+    expect(data).not.toHaveProperty('alwaysAllowScope');
+    expect(snapshot).not.toHaveProperty('alwaysAllowScope');
+    expect(member).not.toHaveProperty('alwaysAllowScope');
+  });
+
+  it('logs the raw destinations the card would write to', () => {
+    // The deferred half of DOR-1462: whether wide scopes should ever be
+    // stripped is answered by a week of these lines, so they carry the SDK's
+    // own destination names rather than the reduced label.
+    const info = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    try {
+      raise([rule('projectSettings'), rule('userSettings')]);
+      const said = info.mock.calls.filter(
+        ([message]) => message === '[handleToolApproval] always-allow suggestions offered'
+      );
+      expect(said.map(([, fields]) => fields)).toEqual([
+        {
+          toolName: 'Bash',
+          toolUseID: 'scope-1',
+          scope: 'user',
+          destinations: ['projectSettings', 'userSettings'],
+        },
+      ]);
+    } finally {
+      info.mockRestore();
     }
   });
 });
