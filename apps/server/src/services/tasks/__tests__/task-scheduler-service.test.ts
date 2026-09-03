@@ -9,7 +9,12 @@ import {
   singleRuntimeSource,
   type SchedulerAgentManager,
   type SchedulerRuntimes,
+  type RelayRuntimePredicate,
 } from '../task-scheduler-service.js';
+import { assessTaskDispatch, RELAY_DISPATCH_OK } from '../../relay/task-dispatch/readiness.js';
+import { AdapterRegistry } from '@dorkos/relay';
+import type { AdapterStatus, RelayAdapter, RelayPublisher } from '@dorkos/relay';
+import { taskDispatchSubject, TASK_DISPATCH_SUBJECT_PREFIX } from '@dorkos/shared/relay-schemas';
 import { buildTaskAppend } from '../task-append.js';
 import { isTerminalRunStatus, TaskStore, type CreateTaskStoreInput } from '../task-store.js';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -2305,7 +2310,7 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
   function scheduler(
     registered: string[],
     relay: RelayCore | null = null,
-    relayHoldsRuntime?: (runtimeType: string) => boolean
+    relayHoldsRuntime?: RelayRuntimePredicate
   ): TaskSchedulerService {
     return new TaskSchedulerService({
       store,
@@ -2604,6 +2609,21 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
     });
   });
 
+  /** A relay that can serve every runtime asked of it. */
+  const HOLDS_EVERYTHING: RelayRuntimePredicate = () => RELAY_DISPATCH_OK;
+
+  /**
+   * A relay that can serve exactly these runtimes and refuses the rest by name.
+   *
+   * @param types - The runtimes on the bus.
+   */
+  function holdsOnly(...types: string[]): RelayRuntimePredicate {
+    return (runtimeType) =>
+      types.includes(runtimeType)
+        ? RELAY_DISPATCH_OK
+        : { deliverable: false, reason: 'runtime-not-on-bus' };
+  }
+
   describe('routing asks the relay which runtimes it holds (DOR-1614)', () => {
     let relay: { publish: ReturnType<typeof vi.fn> };
 
@@ -2624,7 +2644,7 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
       const service = scheduler(
         ['claude-code', 'codex'],
         relay as unknown as RelayCore,
-        () => true
+        HOLDS_EVERYTHING
       );
 
       await service.triggerManualRun(task.id);
@@ -2643,7 +2663,7 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
       const service = scheduler(
         ['claude-code', 'codex'],
         relay as unknown as RelayCore,
-        () => true
+        HOLDS_EVERYTHING
       );
 
       await service.triggerManualRun(task.id);
@@ -2662,7 +2682,7 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
       const service = scheduler(
         ['claude-code', 'codex'],
         relay as unknown as RelayCore,
-        (runtimeType) => runtimeType === 'claude-code'
+        holdsOnly('claude-code')
       );
 
       await runToCompletion(service, task.id);
@@ -2683,13 +2703,159 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
       // test mode, so there IS something on the far side to run the turn. If
       // this test ever has to change, the e2e/capture path changed with it.
       const task = store.createTask(taskInput({ name: 'Test mode', runtime: 'test-mode' }));
-      const service = scheduler(['test-mode'], relay as unknown as RelayCore, () => true);
+      const service = scheduler(['test-mode'], relay as unknown as RelayCore, HOLDS_EVERYTHING);
 
       await service.triggerManualRun(task.id);
       await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
 
       const [, payload] = relay.publish.mock.calls[0] as [string, TaskDispatchPayload];
       expect(payload.runtime).toBe('test-mode');
+      await service.stop();
+    });
+  });
+
+  describe('routing reads LIVE adapter state, not a boot-time map (DOR-1636)', () => {
+    // The predicate here is the PRODUCTION rule — `assessTaskDispatch` over a
+    // real `AdapterRegistry` — so what these tests drive is the registry's own
+    // register/unregister lifecycle, not a hand-written stand-in for it. That
+    // matters because the bug was never in the rule the scheduler applied; it
+    // was in the FACT it applied the rule to. `AdapterManager.hasAgentRuntime`
+    // answered from a map built in the constructor, which adapter lifecycle
+    // never touches, so a disabled or boot-failed adapter still read as
+    // deliverable and the run it green-lit died with "No receiver for the
+    // scheduled run" — where the direct path would have run it.
+    let relay: { publish: ReturnType<typeof vi.fn> };
+    let registry: AdapterRegistry;
+
+    /**
+     * A stand-in for the built-in Claude Code adapter's claim on task dispatch:
+     * the same prefix, and nothing else this test needs.
+     *
+     * @param state - The connection state it reports.
+     */
+    function tasksReceiver(state: AdapterStatus['state'] = 'connected'): RelayAdapter {
+      return {
+        id: 'claude-code',
+        subjectPrefix: ['relay.agent.', TASK_DISPATCH_SUBJECT_PREFIX],
+        displayName: 'Claude Code',
+        start: vi.fn().mockResolvedValue(undefined),
+        stop: vi.fn().mockResolvedValue(undefined),
+        deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
+        getStatus: () => ({ state, messageCount: { inbound: 0, outbound: 0 }, errorCount: 0 }),
+      };
+    }
+
+    /**
+     * The production predicate, over this test's live registry.
+     *
+     * @param heldRuntimes - What the relay was wired with, the half
+     *   `AdapterManager` answers from its runtime map.
+     */
+    function livePredicate(heldRuntimes: string[]): RelayRuntimePredicate {
+      return (runtimeType, subject) =>
+        assessTaskDispatch(registry.getBySubject(subject), heldRuntimes.includes(runtimeType));
+    }
+
+    beforeEach(() => {
+      vi.mocked(isRelayEnabled).mockReturnValue(true);
+      relay = { publish: vi.fn().mockResolvedValue({ messageId: 'm-1', deliveredTo: 1 }) };
+      registry = new AdapterRegistry();
+      registry.setLogger({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() });
+      registry.setRelay({} as RelayPublisher);
+    });
+
+    afterEach(() => {
+      vi.mocked(isRelayEnabled).mockReturnValue(false);
+    });
+
+    it('rides the bus while the receiver is registered and connected', async () => {
+      // The healthy control. Everything below asserts a NEGATIVE, and a
+      // predicate that had simply broken would pass all of them.
+      await registry.register(tasksReceiver());
+      const task = store.createTask(taskInput({ name: 'Healthy bus', runtime: 'claude-code' }));
+      const service = scheduler(
+        ['claude-code'],
+        relay as unknown as RelayCore,
+        livePredicate(['claude-code'])
+      );
+
+      await service.triggerManualRun(task.id);
+      await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
+
+      expect(managers['claude-code']!.sendMessage).not.toHaveBeenCalled();
+      await service.stop();
+    });
+
+    it('runs DIRECT and COMPLETES once the adapter is unregistered, as disable does', async () => {
+      // `POST /api/relay/adapters/:id/disable` flips the config and unregisters
+      // the adapter — this is that second half. The run used to publish to a
+      // subject nobody claimed and fail; it must now simply run here.
+      await registry.register(tasksReceiver());
+      await registry.unregister('claude-code');
+      // What the bus really answers with nothing claiming the subject, so the
+      // old reading fails this test the way the bug failed in production: a
+      // `failed` row reading "No receiver for the scheduled run".
+      relay.publish.mockResolvedValue({ messageId: 'm-1', deliveredTo: 0 });
+      const task = store.createTask(taskInput({ name: 'Disabled bus', runtime: 'claude-code' }));
+      const service = scheduler(
+        ['claude-code'],
+        relay as unknown as RelayCore,
+        livePredicate(['claude-code'])
+      );
+
+      const row = await runToCompletion(service, task.id);
+
+      expect(row.status).toBe('completed');
+      expect(row.error).toBeNull();
+      expect(relay.publish).not.toHaveBeenCalled();
+      expect(managers['claude-code']!.sendMessage).toHaveBeenCalledOnce();
+      await service.stop();
+    });
+
+    it('runs DIRECT when the adapter never registered, as a failed start pass leaves it', async () => {
+      // `AdapterManager.initialize()` fires its start pass WITHOUT awaiting it,
+      // and `AdapterRegistry.register` files an adapter only after `start()`
+      // resolves — so a built-in that failed to build or failed to start leaves
+      // a fully-populated runtime map behind an empty registry. Reproduced
+      // through the real register(), which rejects and files nothing.
+      const broken = tasksReceiver();
+      broken.start = vi.fn().mockRejectedValue(new Error('boom'));
+      await expect(registry.register(broken)).rejects.toThrow('boom');
+      relay.publish.mockResolvedValue({ messageId: 'm-1', deliveredTo: 0 });
+
+      const task = store.createTask(taskInput({ name: 'Boot-failed bus', runtime: 'claude-code' }));
+      const service = scheduler(
+        ['claude-code'],
+        relay as unknown as RelayCore,
+        livePredicate(['claude-code'])
+      );
+
+      const row = await runToCompletion(service, task.id);
+
+      expect(row.status).toBe('completed');
+      expect(row.error).toBeNull();
+      expect(relay.publish).not.toHaveBeenCalled();
+      expect(managers['claude-code']!.sendMessage).toHaveBeenCalledOnce();
+      await service.stop();
+    });
+
+    it('asks about the subject THIS dispatch would publish to', async () => {
+      // Liveness is a property of the CLAIM. Asking about any other subject
+      // reads some other adapter's health — or none — and the answer stops
+      // meaning anything, silently.
+      await registry.register(tasksReceiver());
+      const task = store.createTask(taskInput({ name: 'Subject', runtime: 'claude-code' }));
+      const asked: string[] = [];
+      const service = scheduler(['claude-code'], relay as unknown as RelayCore, (rt, subject) => {
+        asked.push(subject);
+        return livePredicate(['claude-code'])(rt, subject);
+      });
+
+      await service.triggerManualRun(task.id);
+      await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
+
+      expect(asked).toEqual([taskDispatchSubject(task.id)]);
+      expect(relay.publish.mock.calls[0]![0]).toBe(taskDispatchSubject(task.id));
       await service.stop();
     });
   });

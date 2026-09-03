@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { AdapterManager, AdapterError, normalizeAgentRuntimes } from '../adapter-manager.js';
-import type { AdapterRegistry, RelayAdapter } from '@dorkos/relay';
+import { AdapterRegistry, ClaudeCodeAdapter } from '@dorkos/relay';
+import type { AdapterStatus, RelayAdapter, RelayPublisher } from '@dorkos/relay';
+import { taskDispatchSubject } from '@dorkos/shared/relay-schemas';
 import type { AdapterManagerDeps, AdapterMeshCoreLike } from '../adapter-manager.js';
 import { BridgeStore } from '../chat-bridge/bridge-store.js';
 import { RoomStore } from '../../rooms/room-store.js';
@@ -106,7 +108,9 @@ vi.mock('@dorkos/relay', async () => {
     ClaudeCodeAdapter: vi.fn().mockImplementation(function (id: string) {
       return {
         id,
-        subjectPrefix: 'relay.agent.',
+        // Both claims the real adapter makes. The tasks one is not decorative
+        // here: it is what `canRunTaskOnBus` reads liveness off (DOR-1636).
+        subjectPrefix: ['relay.agent.', 'relay.system.tasks.'],
         displayName: 'Claude Code',
         start: vi.fn().mockResolvedValue(undefined),
         stop: vi.fn().mockResolvedValue(undefined),
@@ -2221,32 +2225,137 @@ describe('AdapterManager', () => {
     });
   });
 
-  describe('hasAgentRuntime — what the Tasks scheduler asks before using the bus (DOR-1614)', () => {
+  describe('canRunTaskOnBus — what the Tasks scheduler asks before using the bus (DOR-1614, DOR-1636)', () => {
     // The scheduler routes a run to the relay only when this says yes, so an
     // answer that is always-true strands codex/opencode runs on a bus that would
     // refuse them, and an always-false answer silently sends every run direct.
     // Measured: `return true` here survived 810 tests, so both directions are
     // pinned below rather than just the happy one.
+    //
+    // It runs against a REAL AdapterRegistry, not the mock the rest of this file
+    // uses, because liveness is the whole question now (DOR-1636): the mock's
+    // `getBySubject` is a bare `vi.fn()`, so a test over it would only ever be
+    // asserting what the mock was told to say. Registering, unregistering and a
+    // failing start are all driven through the real class here.
+    const SUBJECT = taskDispatchSubject('01J8ZQ2K3M4N5P6Q7R8S9T0V');
+    /** The built-in adapter's config entry, the one a disable would flip. */
+    const BUILTIN_CONFIG = JSON.stringify({
+      adapters: [
+        { id: 'claude-code', type: 'claude-code', enabled: true, builtin: true, config: {} },
+      ],
+    });
+    let live: AdapterRegistry;
+
+    beforeEach(() => {
+      live = new AdapterRegistry();
+      live.setLogger({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() });
+      live.setRelay({} as RelayPublisher);
+    });
+
+    /**
+     * A manager over the live registry, holding the given runtimes.
+     *
+     * @param types - Runtime types the host wired the relay with.
+     */
     const withRuntimes = (types: string[]): AdapterManager =>
-      new AdapterManager(registry, configPath, {
+      new AdapterManager(live, configPath, {
         ...mockDeps,
         agentRuntimes: new Map(
           types.map((t) => [t, { ensureSession: vi.fn(), sendMessage: vi.fn() }])
         ),
       });
 
-    it('says yes for a runtime the map holds', () => {
-      expect(withRuntimes(['claude-code', 'codex']).hasAgentRuntime('codex')).toBe(true);
+    /**
+     * An adapter claiming the task-dispatch prefix, as the built-in one does.
+     *
+     * @param state - The connection state it reports.
+     */
+    function tasksReceiver(state: AdapterStatus['state'] = 'connected'): RelayAdapter {
+      return {
+        id: 'claude-code',
+        subjectPrefix: ['relay.agent.', 'relay.system.tasks.'],
+        displayName: 'Claude Code',
+        start: vi.fn().mockResolvedValue(undefined),
+        stop: vi.fn().mockResolvedValue(undefined),
+        deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
+        getStatus: () => ({ state, messageCount: { inbound: 0, outbound: 0 }, errorCount: 0 }),
+      };
+    }
+
+    it('says yes for a live receiver and a runtime the map holds', async () => {
+      await live.register(tasksReceiver());
+      expect(withRuntimes(['claude-code', 'codex']).canRunTaskOnBus('codex', SUBJECT)).toEqual({
+        deliverable: true,
+      });
     });
 
-    it('says no for a runtime this build never registered', () => {
+    it('says no, naming the runtime, for one this build never registered', async () => {
       // The half that matters: `opencode` is a real product runtime, so the
       // wrong answer here is not a type error, it is a stranded run.
-      expect(withRuntimes(['claude-code', 'codex']).hasAgentRuntime('opencode')).toBe(false);
+      await live.register(tasksReceiver());
+      expect(withRuntimes(['claude-code', 'codex']).canRunTaskOnBus('opencode', SUBJECT)).toEqual({
+        deliverable: false,
+        reason: 'runtime-not-on-bus',
+      });
     });
 
-    it('says no when the map is empty', () => {
-      expect(withRuntimes([]).hasAgentRuntime('claude-code')).toBe(false);
+    it('says no when nothing claims the dispatch subject at all', () => {
+      expect(withRuntimes(['claude-code']).canRunTaskOnBus('claude-code', SUBJECT)).toEqual({
+        deliverable: false,
+        reason: 'no-receiver',
+      });
+    });
+
+    it('says no once the adapter is DISABLED, though the runtime map is untouched', async () => {
+      // The whole of DOR-1636 at this seam. `disable` unregisters the adapter
+      // and leaves the constructor-built runtime map exactly as it was, so the
+      // old reading — which asked only that map — still said yes and every
+      // scheduled run failed with "No receiver for the scheduled run".
+      vi.mocked(readFile).mockResolvedValue(BUILTIN_CONFIG);
+      const m = withRuntimes(['claude-code']);
+      await m.initialize();
+      await m.adaptersStarted();
+      expect(m.canRunTaskOnBus('claude-code', SUBJECT)).toEqual({ deliverable: true });
+
+      await m.disable('claude-code');
+
+      expect(m.canRunTaskOnBus('claude-code', SUBJECT)).toEqual({
+        deliverable: false,
+        reason: 'no-receiver',
+      });
+    });
+
+    it('says no when the built-in FAILED TO START, though the runtime map is full', async () => {
+      // `initialize()` fires the start pass without awaiting it, so a built-in
+      // that throws on start leaves the manager fully constructed and the
+      // registry empty. The map cannot see that; the registry is the only thing
+      // that can.
+      vi.mocked(readFile).mockResolvedValue(BUILTIN_CONFIG);
+      vi.mocked(ClaudeCodeAdapter).mockImplementationOnce(function (id: string) {
+        const adapter = tasksReceiver();
+        return { ...adapter, id, start: vi.fn().mockRejectedValue(new Error('boom')) };
+      } as unknown as typeof ClaudeCodeAdapter);
+      const m = withRuntimes(['claude-code']);
+
+      await m.initialize();
+      await m.adaptersStarted();
+
+      expect(live.get('claude-code')).toBeUndefined();
+      expect(m.canRunTaskOnBus('claude-code', SUBJECT)).toEqual({
+        deliverable: false,
+        reason: 'no-receiver',
+      });
+    });
+
+    it('says no for a receiver that is registered but not connected', async () => {
+      // What `unregister` leaves behind when an adapter will not stop: still in
+      // the registry, its own status left in `error`. An unattended run must not
+      // be handed to a connection nobody can vouch for.
+      await live.register(tasksReceiver('error'));
+      expect(withRuntimes(['claude-code']).canRunTaskOnBus('claude-code', SUBJECT)).toEqual({
+        deliverable: false,
+        reason: 'receiver-not-connected',
+      });
     });
   });
 

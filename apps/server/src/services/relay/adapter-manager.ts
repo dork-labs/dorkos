@@ -47,6 +47,7 @@ import {
   broadcastUnclaimedChat,
   broadcastUnclaimedChatBurst,
 } from './relay-sse-events.js';
+import { assessTaskDispatch, type RelayDispatchVerdict } from './task-dispatch/readiness.js';
 import { BindingSubsystem, type BindingSubsystemDeps } from './binding-subsystem.js';
 import { reportsVisibility, type BridgeVisibility } from './chat-bridge/index.js';
 import type { UnclaimedChatStore } from './unclaimed-chat-store.js';
@@ -261,25 +262,38 @@ export class AdapterManager {
   }
 
   /**
-   * Whether the relay can actually run a turn on this runtime.
+   * Whether the relay can actually run a turn on this runtime, right now.
    *
-   * The one question a caller OUTSIDE the relay legitimately has about this
-   * map, and the Tasks scheduler is that caller: it decides per run whether to
+   * The one question a caller OUTSIDE the relay legitimately has about adapter
+   * state, and the Tasks scheduler is that caller: it decides per run whether to
    * hand the run to the bus or execute it in this process, and the bus is only
-   * an option for a runtime something on the far side can drive (DOR-1614).
-   * Before this existed the scheduler answered it with the literal
+   * an option for a runtime something on the far side is subscribed to drive
+   * (DOR-1614). Before this existed the scheduler answered it with the literal
    * `'claude-code'`, which was true while the relay held exactly one runtime and
    * silently wrong the moment it held more.
    *
-   * Deliberately narrower than handing out the map or its keys: a caller may ask
-   * about a runtime it names, and may not enumerate or reach the runtimes
-   * themselves. Nothing outside the relay should be calling into a runtime this
-   * map holds — that is what the registry is for.
+   * **Both halves, in this order** (DOR-1636). Its first version asked only the
+   * constructor-built runtime map, which adapter lifecycle never touches — so it
+   * said yes for an adapter that had been disabled or had failed to start, and
+   * the run it green-lit died as "No receiver for the scheduled run". The
+   * registry is what tracks the bus's real state; the map only says which
+   * programs this host wired.
+   *
+   * Deliberately narrower than handing out the map, its keys, or the adapter: a
+   * caller may ask about a runtime it names, and may not enumerate or reach the
+   * runtimes themselves. Nothing outside the relay should be calling into a
+   * runtime this map holds — that is what the registry is for.
    *
    * @param runtimeType - The runtime type to ask about.
+   * @param subject - The exact subject the dispatch would publish to, so
+   *   liveness is read off the claim that would actually carry it.
+   * @returns Deliverable, or the reason it is not.
    */
-  hasAgentRuntime(runtimeType: string): boolean {
-    return this.agentRuntimes.has(runtimeType);
+  canRunTaskOnBus(runtimeType: string, subject: string): RelayDispatchVerdict {
+    return assessTaskDispatch(
+      this.registry.getBySubject(subject),
+      this.agentRuntimes.has(runtimeType)
+    );
   }
 
   /** Credential store + manifests used to materialize adapter secrets (DOR-280). */
@@ -556,6 +570,16 @@ export class AdapterManager {
    * The unregister is serialized through {@link enqueue}: if the background
    * start pass is mid-register for this adapter, the queued unregister lands
    * after the pass settles, so the adapter can never survive a disable.
+   *
+   * **No built-in guard here, unlike {@link removeAdapter}, and that asymmetry
+   * is deliberate** (DOR-1636). Turning the built-in claude-code adapter off is
+   * a legitimate, reversible operator choice — {@link enable} puts it back, and
+   * the config entry survives — while removing it destroys an entry nothing in
+   * the product recreates. What made a disabled built-in dangerous was never the
+   * disable: it was the Tasks scheduler believing a disabled adapter could still
+   * run a scheduled turn, which {@link canRunTaskOnBus} now answers honestly. A
+   * guard here would take away a working capability to paper over a bug that is
+   * fixed.
    */
   async disable(id: string): Promise<void> {
     const config = this.configs.find((c) => c.id === id);

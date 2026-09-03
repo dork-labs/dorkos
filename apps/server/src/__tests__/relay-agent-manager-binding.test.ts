@@ -100,19 +100,40 @@ describe('the Tasks scheduler asks the relay which runtimes it holds', () => {
     ).toMatch(/relayHoldsRuntime:/);
   });
 
-  it('answers it from the relay adapter map, not a literal', () => {
+  it('answers it from LIVE adapter state, not a literal and not a boot-time map', () => {
     // The predicate must READ THE RELAY. A hardcoded `() => true` would strand
     // runs on a bus that refuses them; a hardcoded runtime name is the v1 bug
-    // this replaced. `hasAgentRuntime` is the one narrow question the relay
-    // exposes for it.
-    expect(schedulerConstruction()).toMatch(/adapterManager\?\.hasAgentRuntime\(/);
+    // this replaced. `canRunTaskOnBus` is the one narrow question the relay
+    // exposes for it — and it is the LIVENESS-reading one: its predecessor,
+    // `hasAgentRuntime`, answered from a map built in the AdapterManager
+    // constructor, so a disabled or boot-failed adapter still read as
+    // deliverable and every scheduled run it green-lit failed with "No receiver
+    // for the scheduled run" (DOR-1636).
+    const construction = schedulerConstruction();
+    expect(construction).toMatch(/adapterManager\?\.canRunTaskOnBus\(/);
+    expect(
+      construction,
+      'hasAgentRuntime is the map-only reading DOR-1636 removed; asking it again reinstates ' +
+        'the bug with nothing in this suite to notice.'
+    ).not.toMatch(/hasAgentRuntime/);
+  });
+
+  it('asks about the subject the dispatch would publish to', () => {
+    // Liveness is a property of the CLAIM: the answer is only meaningful when
+    // it is read off the subject this run would actually be published to. A
+    // call site that dropped the second argument would typecheck as `undefined`
+    // nowhere — but one that passed a constant would compile and lie.
+    expect(schedulerConstruction()).toMatch(/canRunTaskOnBus\(runtimeType,\s*subject\)/);
   });
 
   it('falls closed when the relay never built or failed building', () => {
     // `adapterManager` is undefined before Phase C and is RESET to undefined
     // when Phase C throws. Optional-chaining alone yields `undefined`, which is
-    // falsy but not a boolean; `?? false` is what makes the contract explicit.
-    expect(schedulerConstruction()).toMatch(/hasAgentRuntime\(runtimeType\)\s*\?\?\s*false/);
+    // neither deliverable nor a verdict; `?? RELAY_NOT_BUILT` is what makes the
+    // contract explicit — and carries the reason an operator needs.
+    expect(schedulerConstruction()).toMatch(
+      /canRunTaskOnBus\(runtimeType,\s*subject\)\s*\?\?\s*RELAY_NOT_BUILT/
+    );
   });
 
   it('reads a real TaskSchedulerService construction, not an empty slice', () => {
