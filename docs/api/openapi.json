@@ -5621,7 +5621,7 @@
           }
         },
         "default": {},
-        "description": "Per-agent tool groups. The four domain keys (tasks, relay, mesh, adapter) are documentation settings: undefined = inherit global default, and off means the agent is not told about the group, not that the tools are blocked. Binding tools follow adapter toggle. Trace tools follow relay toggle. roomsManage is different: it is a per-agent grant the server enforces, absent means off with no global default, and only a person may set it."
+        "description": "Per-agent tool groups. The four domain keys (tasks, relay, mesh, adapter) are documentation settings: undefined = inherit global default, and off means the agent is not told about the group, not that the tools are blocked. Binding tools follow adapter toggle. Trace tools follow relay toggle. roomsManage is different: it is a per-agent grant the server enforces, and absent means off with no global default. Only a person sets any of the five: the agent-reachable write path refuses this object outright."
       },
       "ManagedMcpServer": {
         "type": "object",

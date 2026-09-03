@@ -292,8 +292,6 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
             return res.status(400).json({ error: err.message, details: err.details });
           case 'NOT_FOUND':
             return res.status(404).json({ error: err.message });
-          case 'IMMUTABLE_NAME':
-            return res.status(400).json({ error: err.message });
           case 'SYSTEM_PROTECTED':
           case 'OPERATOR_ONLY':
             return res.status(403).json({ error: err.message });

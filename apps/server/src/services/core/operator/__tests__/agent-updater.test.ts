@@ -175,16 +175,20 @@ describe('billing stays operator-only (spec billing-account-ladder invariant 4)'
 
 /**
  * The self-grant seam, written as the reproduction it is (spec
- * `rooms-management-tools` §D6, DOR-1611 — the narrow half of DOR-1506).
+ * `rooms-management-tools` §D6, DOR-1611; widened to the whole object by
+ * DOR-1506).
  *
  * `UpdateAgentRequestSchema` picks `enabledToolGroups`, so the field is on the
  * agent-reachable wire, and this service is where `PATCH /api/agents/current` and
- * the `update_agent` MCP tool both land. Before the guard, an agent could turn its
- * own hard filter on and the filter was theatre. Four of the object's five keys
- * decide what an agent is TOLD about and stay writable here; only the enforced one
- * is refused.
+ * the `update_agent` MCP tool both land. `roomsManage` is the enforced grant — an
+ * agent that could write it could turn its own hard filter off and the filter
+ * would be theatre. The other four decide what the agent is TOLD about, and they
+ * are refused too: their global twins (`agentContext.*`) are operator-only at the
+ * config seam, a per-agent value beats the global one, so leaving these writable
+ * meant an agent could undo a narrowing the person had made to its own tool
+ * context.
  */
-describe('an agent cannot grant itself the rooms-management group', () => {
+describe('an agent cannot write its own tool groups', () => {
   it('refuses `roomsManage: true` on the agent-reachable self-edit path', async () => {
     await expect(
       updateAgentManifest({ agentPath, body: { enabledToolGroups: { roomsManage: true } } })
@@ -224,17 +228,82 @@ describe('an agent cannot grant itself the rooms-management group', () => {
     ).rejects.toThrow(/set by a person/i);
   });
 
-  it('still lets an agent write the four documentation keys beside it', async () => {
-    // The guard is narrow on purpose. Those four steer an agent rather than
-    // restricting it (DOR-519), and turning this into a blanket refusal of
-    // `enabledToolGroups` would take a working feature away to fix another one.
+  it('refuses the four documentation keys beside it (DOR-1506)', async () => {
+    // The reproduction from the issue: a person turns an agent's tool-context
+    // blocks off, and the agent turns its own back on. `resolveToolConfig` reads
+    // `agent.<group> ?? globalConfig.<group>Tools`, so this per-agent write BEAT
+    // the operator's global switch — which DOR-1497 had already made
+    // operator-only at the config seam.
+    await expect(
+      updateAgentManifest({
+        agentPath,
+        body: { enabledToolGroups: { tasks: true, relay: true } },
+      })
+    ).rejects.toMatchObject({ code: 'OPERATOR_ONLY' });
+
+    const onDisk = await readManifest(agentPath);
+    expect(onDisk?.enabledToolGroups).toEqual({});
+  });
+
+  it('refuses an empty object too — replacing all five is a write to all five', async () => {
+    await expect(
+      updateAgentManifest({ agentPath, body: { enabledToolGroups: {} } })
+    ).rejects.toMatchObject({ code: 'OPERATOR_ONLY' });
+  });
+});
+
+/**
+ * The rest of the classification, exercised through the seam rather than through
+ * the table (DOR-1506). Each of these was agent-writable until the table landed,
+ * and none of them is reachable from the cockpit through this route — the
+ * person's own surface is `PATCH /api/mesh/agents/:id`.
+ */
+describe('the manifest fields only a person may set', () => {
+  it('refuses a self-rename of the slug, and points at displayName', async () => {
+    await expect(
+      updateAgentManifest({ agentPath, body: { name: 'warden-prime' } })
+    ).rejects.toMatchObject({ code: 'OPERATOR_ONLY' });
+
+    await expect(
+      updateAgentManifest({ agentPath, body: { name: 'warden-prime' } })
+    ).rejects.toThrow(/displayName/);
+
+    const onDisk = await readManifest(agentPath);
+    expect(onDisk?.name).toBe('warden');
+  });
+
+  it('refuses a namespace move, which would choose its own side of the access rules', async () => {
+    await expect(
+      updateAgentManifest({ agentPath, body: { namespace: 'infra' } })
+    ).rejects.toMatchObject({ code: 'OPERATOR_ONLY' });
+
+    const onDisk = await readManifest(agentPath);
+    expect(onDisk?.namespace).toBeUndefined();
+  });
+
+  it('refuses an agent voting itself the floor in every room', async () => {
+    await expect(
+      updateAgentManifest({ agentPath, body: { behavior: { responseMode: 'always' } } })
+    ).rejects.toMatchObject({ code: 'OPERATOR_ONLY' });
+  });
+
+  it('still lets an agent write what it is called and how it sounds', async () => {
+    // The mirror: the refusals above must not turn into a blanket refusal of
+    // self-edit. An agent editing its own display name, model and personality is
+    // the feature working.
     const updated = await updateAgentManifest({
       agentPath,
-      body: { enabledToolGroups: { tasks: false, relay: true } },
+      body: {
+        displayName: 'The Warden',
+        model: 'sonnet',
+        runtime: 'codex',
+        traits: { ...SEED.traits, humor: 5 },
+      },
     });
 
-    expect(updated.enabledToolGroups).toEqual({ tasks: false, relay: true });
-    const onDisk = await readManifest(agentPath);
-    expect(onDisk?.enabledToolGroups).toEqual({ tasks: false, relay: true });
+    expect(updated.displayName).toBe('The Warden');
+    expect(updated.model).toBe('sonnet');
+    expect(updated.runtime).toBe('codex');
+    expect(updated.traits?.humor).toBe(5);
   });
 });
