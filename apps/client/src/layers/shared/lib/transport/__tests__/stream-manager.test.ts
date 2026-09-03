@@ -397,6 +397,24 @@ describe('StreamManager', () => {
         postTokens: 8000,
       } as SessionEvent,
     ],
+    // A tool call the runtime refused before anyone could be asked (DOR-795).
+    // The registration pin above proves the NAME is in the map; this proves the
+    // frame is actually routed with its attribution intact, which is the half
+    // that matters: for a backgrounded subagent's auto-denial this event is the
+    // only notice that a piece of the work never happened, and `agentId` is the
+    // only thing that says which helper it was.
+    [
+      'permission_denied',
+      {
+        type: 'permission_denied',
+        seq: 9,
+        toolCallId: 'toolu_async_1',
+        toolName: 'Bash',
+        message: 'Backgrounded agents cannot request permission.',
+        reasonType: 'asyncAgent',
+        agentId: 'agent_child_7',
+      } as SessionEvent,
+    ],
     // The in-session capability hold (DOR-939) and its resolution. Same failure
     // mode as the four above and the reason DOR-963 exists: the pair shipped
     // with a server emitter, a store fold, and an inline card — and no entry in

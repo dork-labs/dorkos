@@ -2,6 +2,7 @@
 covers:
   - 'fix(server,client,shared): say which background helper was blocked, and keep saying it (DOR-795)'
   - 'fix(server): a denial in a turn that never ends is written anyway (DOR-795)'
+  - 'fix(client): register permission_denied on the stream frame allowlist (DOR-795)'
 ---
 
 ### Fixed
