@@ -51,6 +51,14 @@
  * break every pin and the pins would be bumped reflexively, which is worse than
  * a boundary written down. The migration table itself is also never followed
  * into (see {@link MIGRATION_TABLE}).
+ *
+ * There is a second, narrower blind spot in the same family. {@link maskNonCode}
+ * blanks the inside of template literals wholesale, interpolations included, so
+ * a call written as `` `${backfillSomething(store)}` `` is not a call this walk
+ * can see. Nothing in `config-manager.ts` is written that way today and nothing
+ * should be — a migration body has no reason to compute a string out of another
+ * migration helper — but a body that did would be pinned with a hole in it. The
+ * mask is deliberately not a parser, and this is what that costs.
  */
 
 /**
