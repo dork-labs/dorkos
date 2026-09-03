@@ -2748,8 +2748,12 @@ async function start() {
   // Wire global session-list discovery → unified SSE stream (ADR-0265/0266).
   // ALWAYS ON: fans every registered runtime's transition-only session-list
   // stream (session_upserted/session_removed/session_status) onto /api/events
-  // with no timer poll (ADR-0310 fan-in). Started here because all runtimes
-  // are registered by this point.
+  // (ADR-0310 fan-in). This layer adds no poll of its own; a runtime beneath it
+  // may still run one, and the Claude Code adapter now does — a reconcile sweep
+  // that re-reads its projects directories because chokidar drops what happens
+  // while it is attaching (DOR-577). It changes nothing here: the sweep is a
+  // source of rescans, and what reaches this fan-in is still transitions only.
+  // Started here because all runtimes are registered by this point.
   // The registry is passed as the settings store too: every broadcast session
   // carries the operator's persisted mode/model, so a client refreshing its
   // list from this stream agrees with GET /api/sessions (DOR-463).

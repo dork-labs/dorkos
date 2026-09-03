@@ -29,53 +29,39 @@ function jsonlLine(cwd: string, text: string): string {
 /**
  * Await the next event, failing loudly instead of hanging the suite.
  *
- * The guard is generous (45s) on purpose: this is a REAL chokidar + real-fs
- * test, so the wait measures filesystem-watch latency, not CPU work. Under load
- * (a busy CI box, or several concurrent agents each running their own suite on
- * one machine) fs-event delivery — especially detecting a brand-new directory
- * mid-watch — can take several seconds, and a tight guard turned that into a
- * false-negative gate failure (DOR-121). Reproduced repeatedly under genuine
- * cross-process CPU contention (several concurrent package suites, including
- * ANOTHER agent's own gate run sharing the machine): a 15s guard missed by
- * ~35ms, then a 30s guard missed by ~20ms, always on the SAME step (detecting
- * a session in a brand-new project directory — the trickiest case per the
- * module doc's addDir/scan-then-attach race).
+ * This used to re-write the transcript every 1.5s while it waited, on the
+ * theory that a write landing in the same instant as its directory could slip
+ * past a watcher that was still registering the directory, and that another
+ * write would give a working watcher a second chance. The first half was right
+ * and the second half was not: when chokidar misses the directory it never
+ * watches the file either, so re-writing it produces nothing, and the wait
+ * simply ran out (DOR-577). Nothing nudges anything now — the watcher's own
+ * reconcile sweep is what recovers a dropped event, and if it did not, this
+ * test should say so.
  *
- * There is a real ceiling here, not just a slow one: under SEVERE simultaneous
- * oversubscription (4 concurrent package suites' full worker pools plus
- * CPU-pegging background load — deliberately extreme, not a realistic single
- * push) the same event failed to arrive even at a 180s diagnostic timeout, and
- * unrelated tests elsewhere in the suite failed too, indicating the box itself
- * was starved rather than this watcher being broken. The realistic pre-push
- * gate (single agent, `--concurrency=1`, no artificial CPU load) passes this
- * suite reliably every time; 45s is calibrated to absorb realistic
- * concurrent-agent contention on a shared box, not to survive that extreme. A
- * broken watcher never fires at all, so this guard still catches the
- * regression the suite exists for; it only stops penalizing a
- * slow-but-working watcher under ordinary contention.
+ * The guard stays generous (45s) because it is not the thing under test. This
+ * is REAL chokidar on a real filesystem, and the wait measures fs-event
+ * delivery on a box that may be running several agents' suites at once; a
+ * tighter guard has twice been missed by tens of milliseconds and failed a gate
+ * for no reason (DOR-121). What it now bounds is at most one sweep interval
+ * plus one debounce, so 45s is many times the real ceiling and a watcher that
+ * has genuinely stopped working still trips it.
  */
 async function nextEvent(
   it: AsyncIterator<SessionListEvent>,
-  label: string,
-  options: { nudge?: () => Promise<void> } = {}
+  label: string
 ): Promise<SessionListEvent> {
-  // A write that lands in the same instant a directory is created can slip
-  // past the watcher while it is still registering the new dir (frequent under
-  // full-suite load). Re-touching the file every second or two gives a
-  // WORKING watcher another change event to catch; a broken watcher (the glob
-  // regression this suite guards) never fires no matter how often we nudge.
-  const nudgeTimer = options.nudge
-    ? setInterval(() => void options.nudge?.().catch(() => undefined), 1_500)
-    : undefined;
-  const timeout = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error(`timed out waiting for ${label}`)), 45_000)
-  );
+  let guard: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    guard = setTimeout(() => reject(new Error(`timed out waiting for ${label}`)), 45_000);
+  });
   try {
     const result = await Promise.race([it.next(), timeout]);
     if (result.done) throw new Error(`stream ended while waiting for ${label}`);
     return result.value;
   } finally {
-    if (nudgeTimer) clearInterval(nudgeTimer);
+    // Or every satisfied wait leaves a 45s timer holding the worker open.
+    if (guard) clearTimeout(guard);
   }
 }
 
@@ -112,12 +98,8 @@ describe('watchSessionList (real chokidar integration)', () => {
     // multi-project half of SRV-I4 and the glob regression in one assertion.
     const dirB = join(projectsRoot, '-work-beta');
     await mkdir(dirB);
-    const writeB1 = () =>
-      writeFile(join(dirB, 'session-b1.jsonl'), jsonlLine('/work/beta', 'Beta hello'));
-    await writeB1();
-    const upserted = await nextEvent(iterator, 'live session_upserted in new dir', {
-      nudge: writeB1,
-    });
+    await writeFile(join(dirB, 'session-b1.jsonl'), jsonlLine('/work/beta', 'Beta hello'));
+    const upserted = await nextEvent(iterator, 'live session_upserted in new dir');
     expect(upserted).toMatchObject({
       type: 'session_upserted',
       session: { id: 'session-b1', cwd: '/work/beta' },
@@ -129,4 +111,27 @@ describe('watchSessionList (real chokidar integration)', () => {
     expect(removed).toEqual({ type: 'session_removed', sessionId: 'session-b1' });
     // Overall budget covers three sequential 45s fs-watch guards under load.
   }, 140_000);
+
+  // The DOR-577 scenario at full scale: a project that comes into existence in
+  // the SAME TICK the watcher starts, which is what a Claude Code CLI session
+  // opening while the server boots looks like. Measured on chokidar 5.0.0, this
+  // is the window where it reports nothing at all and never recovers, because
+  // `chokidar.watch()` scans the root before it attaches `fs.watch` to it. The
+  // assertion is deliberately about the OUTCOME and not the mechanism — either
+  // the initial inventory or the reconcile sweep may be the one that finds it,
+  // and which one wins depends on how the two directory reads interleave. What
+  // must never happen again is neither of them finding it.
+  it('finds a project created in the same tick the watcher started', async () => {
+    iterator = watchSessionList(new TranscriptReader(), [projectsRoot])[Symbol.asyncIterator]();
+
+    const dirC = join(projectsRoot, '-work-gamma');
+    await mkdir(dirC);
+    await writeFile(join(dirC, 'session-c1.jsonl'), jsonlLine('/work/gamma', 'Gamma hello'));
+
+    const upserted = await nextEvent(iterator, 'session_upserted for a boot-window project');
+    expect(upserted).toMatchObject({
+      type: 'session_upserted',
+      session: { id: 'session-c1', cwd: '/work/gamma' },
+    });
+  }, 60_000);
 });
