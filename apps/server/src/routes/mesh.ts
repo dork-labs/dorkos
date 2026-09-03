@@ -7,7 +7,7 @@
 import path from 'path';
 import { Router } from 'express';
 import { z } from 'zod';
-import type { MeshCore } from '@dorkos/mesh';
+import { ManifestUnreadableError, type MeshCore } from '@dorkos/mesh';
 import type { AgentManifest, AgentHealthStatus, TopologyView } from '@dorkos/shared/mesh-schemas';
 import {
   DiscoverRequestSchema,
@@ -524,14 +524,18 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
     // rebuild would erase all four (DOR-486 review). Answered as a 409 with the
     // reason: the request is fine, the state on disk is not, and the operator
     // can act on the sentence.
+    // Narrowed to the sentinel class on purpose. An unconditional catch here
+    // also swallowed `writeManifest`'s schema rejection and any I/O failure, and
+    // answered all of them `409 MANIFEST_UNREADABLE` with the raw message —
+    // a wrong status over a wrong story, and internals on the wire (DOR-486
+    // re-review). Anything else rethrows to the error middleware, which is where
+    // an unexpected failure belongs.
     let updated;
     try {
       updated = await meshCore.update(req.params.id, explicitFields);
     } catch (err) {
-      return res.status(409).json({
-        error: err instanceof Error ? err.message : String(err),
-        code: 'MANIFEST_UNREADABLE',
-      });
+      if (!(err instanceof ManifestUnreadableError)) throw err;
+      return res.status(409).json({ error: err.message, code: 'MANIFEST_UNREADABLE' });
     }
     if (!updated) {
       return res.status(404).json({ error: 'Agent not found' });

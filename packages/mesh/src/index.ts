@@ -42,7 +42,7 @@ export type { AgentRegistryEntry } from './agent-registry.js';
 // assert what production ACTUALLY carries can run a real registry entry through
 // the real strip, instead of hand-writing a fixture that quietly claims a field
 // the wire never has (`GET /api/team`, DOR-971).
-export { toManifest } from './mesh-agent-management.js';
+export { toManifest, ManifestUnreadableError } from './mesh-agent-management.js';
 export { DenialList } from './denial-list.js';
 
 // Manifest

@@ -149,6 +149,44 @@ describe('a session that is not an agent', () => {
     expect(await readMemory(root)).toBeNull();
   });
 
+  // The same boundary against a session whose identity is SWITCHED OFF rather
+  // than absent (DOR-486). A revoked or expired token used to resolve to nothing
+  // and land on the case above by omission; it now resolves to a named identity
+  // marked `inactive`, so without the explicit test this jail would have opened
+  // for a dead token — an aged-out session writing the live agent's memory file.
+  it('refuses an EXPIRED identity, and writes nothing', async () => {
+    // The state that reaches this handler at all. An expired identity keeps its
+    // recorded ceiling, so the tier gate lets an `act` verb through and this
+    // jail is the only thing left — which is exactly why it must read the mark.
+    const registry = registryWithRoom(null);
+
+    const result = (await registry.invoke(
+      'memory.write',
+      { action: 'add', text: 'a note from a dead token' },
+      { identity: { ...identityAt(alphaPath, 'Alpha'), inactive: 'expired' } }
+    )) as Outcome;
+
+    expect(result.saved).toBe(false);
+    expect(result.code).toBe('no-agent');
+    expect(await readMemory(alphaPath)).toBeNull();
+  });
+
+  it('never even reaches the handler for a REVOKED identity', async () => {
+    // Defence in depth: a revoked identity is capped at `observe`, so the tier
+    // gate refuses this `act` verb before the jail is consulted. Both rows share
+    // the property that matters — nothing is written.
+    const registry = registryWithRoom(null);
+
+    await expect(
+      registry.invoke(
+        'memory.write',
+        { action: 'add', text: 'a note from a dead token' },
+        { identity: { ...identityAt(alphaPath, 'Alpha'), inactive: 'revoked' } }
+      )
+    ).rejects.toThrow(/access was turned off/);
+    expect(await readMemory(alphaPath)).toBeNull();
+  });
+
   it('returns rather than throwing, so the turn survives it', async () => {
     const registry = registryWithRoom(null);
 

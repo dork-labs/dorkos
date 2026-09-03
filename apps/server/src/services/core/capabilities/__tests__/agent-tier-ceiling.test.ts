@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { createTestDb } from '@dorkos/test-utils/db';
+import { agentIdentityTokens, type Db } from '@dorkos/db';
 import { writeManifest, readManifest } from '@dorkos/shared/manifest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
@@ -36,6 +37,7 @@ import { eventFanOut } from '../../event-fan-out.js';
 import {
   initAgentIdentityService,
   resetAgentIdentityService,
+  TOKEN_ABSOLUTE_TTL_MS,
   type AgentIdentityService,
 } from '../../agent-identity/agent-identity-service.js';
 import { resolveAgentTokenEnv, AGENT_TOKEN_ENV_VAR } from '../../agent-identity/agent-token-env.js';
@@ -109,6 +111,7 @@ const MANAGE_ROOMS = defineCapability({
 
 let agentPath: string;
 let service: AgentIdentityService;
+let identityDb: Db;
 
 /** Spawn a session the way a runtime does, and resolve the token it was handed. */
 async function spawnAndResolve() {
@@ -136,7 +139,8 @@ beforeEach(async () => {
   agentPath = await mkdtemp(join(tmpdir(), 'tier-ceiling-'));
   await writeManifest(agentPath, SEED);
   resetAgentIdentityService();
-  service = initAgentIdentityService(createTestDb());
+  identityDb = createTestDb();
+  service = initAgentIdentityService(identityDb);
   vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
   initCapabilityTierGate({ approvals: new ApprovalService(createTestDb()) });
 });
@@ -307,6 +311,64 @@ describe('revoking a capped agent shuts it off, and never widens it', () => {
 
     expect(identity?.inactive).toBeUndefined();
     expect(identity?.tierCeiling).toBe('act');
+  });
+});
+
+describe('a token that has aged out cannot spend what the live agent was granted', () => {
+  /** Age every stored token past the absolute cap, which no use resets. */
+  function expireEveryToken(): void {
+    const longAgo = new Date(Date.now() - TOKEN_ABSOLUTE_TTL_MS - 60_000).toISOString();
+    identityDb.update(agentIdentityTokens).set({ createdAt: longAgo, lastUsedAt: longAgo }).run();
+  }
+
+  it('refuses to resolve a standing permission for an expired identity', async () => {
+    // Found by the DOR-486 sweep rather than by review. A standing permission is
+    // keyed on `agentPath`, and an expired token used to arrive as `undefined` —
+    // no identity, no grant. It now arrives NAMED and keeps its recorded ceiling,
+    // so without the `inactive` test in `resolveStandingGrant` a dead token could
+    // spend a permission a person granted the LIVE agent and skip the card.
+    initCapabilityTierGate({
+      approvals: new ApprovalService(createTestDb()),
+      standingGrants: {
+        enabled: () => true,
+        findLive: () => ({ id: 'grant-1' }) as never,
+      },
+    });
+    const env = await resolveAgentTokenEnv(agentPath, 'Warden');
+    expireEveryToken();
+    const identity = await service.resolve(env[AGENT_TOKEN_ENV_VAR]!);
+    expect(identity?.inactive).toBe('expired');
+
+    const decision = enforceCapabilityTier({
+      action: UNINSTALL,
+      identity,
+      input: { name: 'sentry-monitor' },
+      retryChannel: 'mcp-argument',
+    });
+
+    // A person is asked, exactly as if no permission existed.
+    expect(decision.outcome).toBe('approval_required');
+  });
+
+  it('still resolves it for the live agent, which is the control', async () => {
+    initCapabilityTierGate({
+      approvals: new ApprovalService(createTestDb()),
+      standingGrants: {
+        enabled: () => true,
+        findLive: () => ({ id: 'grant-1' }) as never,
+      },
+    });
+    const env = await resolveAgentTokenEnv(agentPath, 'Warden');
+    const identity = await service.resolve(env[AGENT_TOKEN_ENV_VAR]!);
+
+    const decision = enforceCapabilityTier({
+      action: UNINSTALL,
+      identity,
+      input: { name: 'sentry-monitor' },
+      retryChannel: 'mcp-argument',
+    });
+
+    expect(decision.outcome).toBe('allowed');
   });
 });
 

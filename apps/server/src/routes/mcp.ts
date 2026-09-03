@@ -19,12 +19,18 @@ export interface McpCaller {
   /**
    * Whether an `X-DorkOS-Agent` header was there at all, resolved or not.
    *
-   * A THIRD fact, and the one the pair above cannot express: a revoked or
-   * expired token leaves {@link identity} empty while still saying a machine is
+   * A THIRD fact, and the one the pair above cannot express: a token that
+   * resolves to NOTHING — one from no agent at all — still says a machine is
    * calling. Without it a capability that resolves the caller to a domain
    * principal reads "no agent token" and, on a login-off install, answers with
    * the operator — which is how `post_to_room` came to write under the person's
    * name (DOR-1361). Never an authorization: the tier gate is unchanged by it.
+   *
+   * **A revoked or expired token is no longer one of those cases** (DOR-486): it
+   * fills {@link identity} with an `inactive` mark instead of leaving it empty,
+   * so the capability gate can tell a shut-off agent from a stranger. The
+   * consumers that key on presence therefore test the mark AS WELL as this flag
+   * — see `rooms/room-capabilities.ts` and `mesh/mcp-capability-deps.ts`.
    */
   agentIdentityPresented?: boolean;
   /** The signed-in person behind the call, when login is on and one was verified. */

@@ -819,7 +819,15 @@ function resolveStandingGrant(
   identity?: AgentIdentity
 ): Extract<GrantedApproval, { via: 'standing-grant' }> | undefined {
   const lookup = gate?.standingGrants;
-  if (!lookup || !identity) return undefined;
+  // `identity.inactive` found by the DOR-486 sweep, not by the review that
+  // prompted it. A standing permission is keyed on `agentPath`, and a revoked or
+  // expired token used to arrive here as `undefined` — no identity, no grant. It
+  // now arrives NAMED, so without this an aged-out or switched-off token could
+  // spend a permission a person granted to the LIVE agent and skip the approval
+  // card entirely. A revoked identity is capped at `observe` and would be refused
+  // above this line anyway; an expired one keeps its recorded ceiling and would
+  // not, which is exactly why the test is on `inactive` rather than on `revoked`.
+  if (!lookup || !identity || identity.inactive) return undefined;
   try {
     if (!lookup.enabled()) return undefined;
     const grant = lookup.findLive(identity.agentPath, action.id);
