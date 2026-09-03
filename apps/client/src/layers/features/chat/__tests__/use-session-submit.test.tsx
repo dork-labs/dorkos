@@ -697,12 +697,10 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
       { id: 'm1', content: 'one', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'me' },
       { id: 'm2', content: 'two', disposition: 'queue', enqueuedAt: 2, enqueuedBy: 'me' },
     ];
-    const interruptSession = vi
-      .fn()
-      .mockResolvedValue({
-        receipt: { outcome: 'acked', runtime: 'claude-code' },
-        cancelledQueued,
-      });
+    const interruptSession = vi.fn().mockResolvedValue({
+      receipt: { outcome: 'acked', runtime: 'claude-code' },
+      cancelledQueued,
+    });
     const transport = createMockTransport({ interruptSession });
 
     const { result } = renderHook(() => useChatSession('s1'), {

@@ -678,12 +678,10 @@ describe('SessionComposer — Stop clears the queue (task 4.7)', () => {
 
   it('asks first and names the count when messages are queued, and does not stop yet', async () => {
     seedQueue('one', 'two', 'three');
-    const stop = vi
-      .fn()
-      .mockResolvedValue({
-        receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
-        cancelled: [],
-      });
+    const stop = vi.fn().mockResolvedValue({
+      receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
+      cancelled: [],
+    });
     render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
 
     await act(async () => {
@@ -696,12 +694,10 @@ describe('SessionComposer — Stop clears the queue (task 4.7)', () => {
   });
 
   it('stops immediately with no dialog when nothing is queued', async () => {
-    const stop = vi
-      .fn()
-      .mockResolvedValue({
-        receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
-        cancelled: [],
-      });
+    const stop = vi.fn().mockResolvedValue({
+      receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
+      cancelled: [],
+    });
     render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
 
     await act(async () => {
@@ -955,12 +951,10 @@ describe('SessionComposer — Stop trusts the local rewrite over the queue PATCH
     // early and what the composer ends up holding is the leave-queue handoff
     // alone. (Row `q0` is still queued below — it is this mock, not an empty
     // queue, that makes the restore step a no-op.)
-    const stop = vi
-      .fn()
-      .mockResolvedValue({
-        receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
-        cancelled: [],
-      });
+    const stop = vi.fn().mockResolvedValue({
+      receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
+      cancelled: [],
+    });
     render(<ControlledStopComposer {...baseProps} stop={stop} status="streaming" />);
 
     editSecondRowAndRewrite('TWO REWRITTEN');
@@ -1072,12 +1066,10 @@ describe('SessionComposer — Stop acknowledges instantly and cannot double-fire
     // Case: the response lands BEFORE turn_end — a successful `stop()` alone
     // must not clear pending, or a person watches the button go live again
     // while the agent is still winding down.
-    const stop = vi
-      .fn()
-      .mockResolvedValue({
-        receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
-        cancelled: [],
-      });
+    const stop = vi.fn().mockResolvedValue({
+      receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
+      cancelled: [],
+    });
     const { rerender } = render(
       <SessionComposerBench {...baseProps} stop={stop} status="streaming" />
     );
@@ -1140,12 +1132,10 @@ describe('SessionComposer — Stop acknowledges instantly and cannot double-fire
 
   it('starts pending on CONFIRM, not on opening the confirm dialog', async () => {
     seedQueue('one');
-    const stop = vi
-      .fn()
-      .mockResolvedValue({
-        receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
-        cancelled: [],
-      });
+    const stop = vi.fn().mockResolvedValue({
+      receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
+      cancelled: [],
+    });
     render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
 
     await act(async () => {
@@ -1291,12 +1281,10 @@ describe('SessionComposer — the Stop question goes away when its queue does (D
     // The live finding: the count decayed to 0 under the dialog's own nose and
     // the dialog stayed, reading "Stop, and put 0 queued messages back?" over a
     // composer it blocked until dismissed by hand.
-    const stop = vi
-      .fn()
-      .mockResolvedValue({
-        receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
-        cancelled: [],
-      });
+    const stop = vi.fn().mockResolvedValue({
+      receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
+      cancelled: [],
+    });
     seedQueue('one', 'two');
     render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
 
@@ -1316,12 +1304,10 @@ describe('SessionComposer — the Stop question goes away when its queue does (D
   });
 
   it('leaves Stop working immediately afterwards — one click, no second question', async () => {
-    const stop = vi
-      .fn()
-      .mockResolvedValue({
-        receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
-        cancelled: [],
-      });
+    const stop = vi.fn().mockResolvedValue({
+      receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
+      cancelled: [],
+    });
     seedQueue('one');
     render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
 
@@ -1344,12 +1330,10 @@ describe('SessionComposer — the Stop question goes away when its queue does (D
     // the count: a derived-only guard leaves the flag true, so the next
     // `queue_update` that puts a message back on the queue would re-open a
     // dialog nobody asked for.
-    const stop = vi
-      .fn()
-      .mockResolvedValue({
-        receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
-        cancelled: [],
-      });
+    const stop = vi.fn().mockResolvedValue({
+      receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
+      cancelled: [],
+    });
     seedQueue('one');
     render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
 
@@ -1417,12 +1401,10 @@ describe('SessionComposer — the Stop question goes away when its queue does (D
     //
     // Session B has a queue of its OWN, so the auto-dismiss above cannot be
     // what hides it — only the session key can.
-    const stop = vi
-      .fn()
-      .mockResolvedValue({
-        receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
-        cancelled: [],
-      });
+    const stop = vi.fn().mockResolvedValue({
+      receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
+      cancelled: [],
+    });
     const { rerender } = render(
       <SessionComposerBench
         {...baseProps}
