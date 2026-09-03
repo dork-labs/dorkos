@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { scanInstalledPlugins } from '../installed.js';
+import type { ClaudeHooksConfig } from '../../generate/hooks.js';
 
 let projectRoot = '';
 let dorkHome = '';
@@ -237,5 +238,80 @@ describe('scanInstalledPlugins', () => {
     const proj = scanInstalledPlugins({ dorkHome, projectRoot }).find((p) => p.name === 'hooky')!;
     expect(proj.hooks).toHaveProperty('Stop');
     expect(proj.hooks).not.toHaveProperty('Bad');
+  });
+});
+
+describe('scanInstalledPlugins — malformed hook matcher groups (DOR-646)', () => {
+  /** Write a plugin whose only content is the given raw `hooks/hooks.json` text. */
+  function writeHookyPlugin(hooksJson: string): void {
+    projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
+    dorkHome = mkdtempSync(join(tmpdir(), 'harness-home-'));
+    const plugin = join(projectRoot, '.dork', 'plugins', 'hooky');
+    writeManifest(plugin, 'hooky', ['hooks']);
+    mkdirSync(join(plugin, 'hooks'), { recursive: true });
+    writeFileSync(join(plugin, 'hooks', 'hooks.json'), hooksJson);
+  }
+
+  /** Scan and return the `hooky` fixture plugin's normalized hooks. */
+  function scanHooks(): ClaudeHooksConfig | undefined {
+    return scanInstalledPlugins({ dorkHome, projectRoot }).find((p) => p.name === 'hooky')?.hooks;
+  }
+
+  // The four shapes the PR #552 differential sweep found reaching the projector
+  // and crashing it. Each is dropped here instead, so nothing downstream ever
+  // maps over a group that has no commands to map.
+  it('drops a matcher group whose command entry has no `command`', () => {
+    writeHookyPlugin(JSON.stringify({ Stop: [{ hooks: [{ type: 'command' }] }] }));
+    expect(scanHooks()).toBeUndefined();
+  });
+
+  it('drops a matcher group whose `command` is not a string', () => {
+    writeHookyPlugin(JSON.stringify({ Stop: [{ hooks: [{ type: 'command', command: 42 }] }] }));
+    expect(scanHooks()).toBeUndefined();
+  });
+
+  it('drops a null matcher group', () => {
+    writeHookyPlugin(JSON.stringify({ Stop: [null] }));
+    expect(scanHooks()).toBeUndefined();
+  });
+
+  it('keeps the readable group when one good and one bad group share an event', () => {
+    writeHookyPlugin(
+      JSON.stringify({ Stop: [{ hooks: [{ command: 'good.sh' }] }, { hooks: 'nope' }] })
+    );
+    expect(scanHooks()).toEqual({ Stop: [{ hooks: [{ type: 'command', command: 'good.sh' }] }] });
+  });
+
+  it('normalizes a matcher only when it is a non-empty string, as the preview discloses it', () => {
+    writeHookyPlugin(
+      JSON.stringify({
+        PreToolUse: [
+          { matcher: 'Bash', hooks: [{ type: 'command', command: 'a.sh' }] },
+          { matcher: 42, hooks: [{ type: 'command', command: 'b.sh' }] },
+          { matcher: '', hooks: [{ type: 'command', command: 'c.sh' }] },
+        ],
+      })
+    );
+    expect(scanHooks()).toEqual({
+      PreToolUse: [
+        { matcher: 'Bash', hooks: [{ type: 'command', command: 'a.sh' }] },
+        { hooks: [{ type: 'command', command: 'b.sh' }] },
+        { hooks: [{ type: 'command', command: 'c.sh' }] },
+      ],
+    });
+  });
+
+  it('keeps fields it does not interpret and defaults a missing hook type', () => {
+    // `timeout` is a real Claude Code hook field: a reader that kept only what it
+    // recognized would silently change a working hook.
+    writeHookyPlugin(JSON.stringify({ Stop: [{ hooks: [{ command: 'slow.sh', timeout: 60 }] }] }));
+    expect(scanHooks()).toEqual({
+      Stop: [{ hooks: [{ type: 'command', command: 'slow.sh', timeout: 60 }] }],
+    });
+  });
+
+  it('reports no hooks at all for an event whose every group is unusable', () => {
+    writeHookyPlugin(JSON.stringify({ Stop: [], PostToolUse: [{ hooks: [] }] }));
+    expect(scanHooks()).toBeUndefined();
   });
 });

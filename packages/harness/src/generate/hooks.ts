@@ -47,6 +47,24 @@ export interface HookMatcherGroup {
 export type ClaudeHooksConfig = Record<string, HookMatcherGroup[]>;
 
 /**
+ * An empty hooks config with NO prototype — the only safe accumulator for a
+ * record keyed by event names.
+ *
+ * Event names come from a third-party package's `hooks.json` (and from a
+ * user-owned settings file), so `__proto__` is a key a package can choose.
+ * Assigning it on a `{}` literal invokes `Object.prototype`'s inherited setter
+ * rather than creating a property: the groups vanish without an error, and the
+ * accumulator's own prototype is replaced by whatever was assigned. Every stage
+ * that accumulates hooks by event name therefore starts from this — one hop
+ * still using a `{}` literal re-opens the hole for the whole chain.
+ *
+ * @returns a fresh, prototype-less hooks config.
+ */
+export function emptyHooksConfig(): ClaudeHooksConfig {
+  return Object.create(null) as ClaudeHooksConfig;
+}
+
+/**
  * A generated matcher-group hooks object (Codex `.codex/hooks.json`), keyed by
  * the target harness's event name. Same shape as {@link ClaudeHooksConfig}.
  */
@@ -235,12 +253,18 @@ function translateHooks(
   const warnings: HookWarning[] = [];
 
   for (const [event, groups] of Object.entries(claudeHooks)) {
-    const canonical = CLAUDE_TO_CANONICAL_EVENT_NAMES[event];
+    // `Object.hasOwn`, never a bare lookup: the event name is package-chosen, and
+    // `map["constructor"]` on a plain object answers with a FUNCTION off the
+    // prototype — a truthy "canonical event" that no target map can resolve, and
+    // a drop reason naming a class instead of an event.
+    const canonical = Object.hasOwn(CLAUDE_TO_CANONICAL_EVENT_NAMES, event)
+      ? CLAUDE_TO_CANONICAL_EVENT_NAMES[event]
+      : undefined;
     if (!canonical) {
       dropped.push({ event, reason: `no canonical mapping for Claude event "${event}"` });
       continue;
     }
-    const targetEvent = eventMap[canonical];
+    const targetEvent = Object.hasOwn(eventMap, canonical) ? eventMap[canonical] : undefined;
     if (!targetEvent) {
       dropped.push({
         event,

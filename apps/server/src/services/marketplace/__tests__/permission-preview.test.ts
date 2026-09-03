@@ -19,6 +19,8 @@ import type {
   SkillPackPackageManifest,
 } from '@dorkos/marketplace';
 import { TASK_PERMISSION_MODES } from '@dorkos/skills/schedule-schema';
+import { projectedHooks, scanInstalledPlugins } from '@dorkos/harness';
+import type { PreviewHook } from '../types.js';
 import type { AdapterManager } from '../../relay/adapter-manager.js';
 import { ConflictDetector } from '../conflict-detector.js';
 import { AgentInstallFlow, type AgentCreatorLike } from '../flows/install-agent.js';
@@ -417,6 +419,77 @@ describe('PermissionPreviewBuilder', () => {
       expect(preview.hooks).toEqual([]);
       expect(preview.unreadableHooks).toEqual([]);
       expect(preview.schedules).toEqual([]);
+    });
+
+    // The preview's whole promise is that it describes what the projector will
+    // do. These are the four shapes on which the two used to disagree: the
+    // preview disclosed the readable command, the projector threw (DOR-646).
+    //
+    // Every case carries a readable sibling, so agreement cannot be reached by
+    // both sides salvaging NOTHING: each assertion has a subject, and a
+    // regression that dropped the whole event would fail rather than pass.
+    describe.each([
+      [
+        'a group whose command entry has no `command`',
+        { Stop: [{ hooks: [{ command: 'good.sh' }] }, { hooks: [{ type: 'command' }] }] },
+      ],
+      [
+        'a group whose `command` is not a string',
+        {
+          Stop: [
+            { hooks: [{ command: 'good.sh' }] },
+            { hooks: [{ type: 'command', command: 42 }] },
+          ],
+        },
+      ],
+      ['a null group', { Stop: [{ hooks: [{ command: 'good.sh' }] }, null] }],
+      [
+        'one good group beside one bad group',
+        { Stop: [{ hooks: [{ command: 'good.sh' }] }, { hooks: 'nope' }] },
+      ],
+      // A package can choose `__proto__` as an event name. Accumulating it into a
+      // `{}` literal hits the inherited setter, so the groups vanish without an
+      // error — the projector would silently install nothing for an event the
+      // preview had just disclosed.
+      [
+        'an event named `__proto__` beside a real one',
+        {
+          Stop: [{ hooks: [{ command: 'good.sh' }] }],
+          ['__proto__' as string]: [{ hooks: [{ command: 'sneaky.sh' }] }],
+        },
+      ],
+    ])('agrees with the harness projector on %s', (_label, hooksObj) => {
+      it('discloses exactly the commands the projector will install', async () => {
+        const name = 'differential';
+        const hooksJson = JSON.stringify(hooksObj);
+        const manifest = pluginManifest(name);
+        const pkgPath = await createFixturePackage(pkgRoot, manifest, { hooksJson });
+
+        // The projector's own reader, over the same bytes at the install
+        // destination — the real seam, not a restatement of the keep rule.
+        const projectRoot = await mkdtemp(join(tmpdir(), 'permission-preview-repo-'));
+        try {
+          const installDir = join(projectRoot, '.dork', 'plugins', name);
+          await mkdir(join(installDir, '.dork'), { recursive: true });
+          await writeFile(join(installDir, '.dork', 'manifest.json'), JSON.stringify(manifest));
+          await mkdir(join(installDir, 'hooks'), { recursive: true });
+          await writeFile(join(installDir, 'hooks', 'hooks.json'), hooksJson);
+
+          const preview = await builder.build(pkgPath, manifest);
+          const projected = projectedHooks(scanInstalledPlugins({ projectRoot }), projectRoot);
+
+          // Sorted on both sides: the projector orders its rows and the preview
+          // keeps document order, and only the SET of commands has to agree.
+          const byEventThenCommand = (a: PreviewHook, b: PreviewHook) =>
+            a.event.localeCompare(b.event) || a.command.localeCompare(b.command);
+          const projectedRows = projected.flatMap((p) => p.hooks).sort(byEventThenCommand);
+          expect(projectedRows).toEqual([...preview.hooks].sort(byEventThenCommand));
+          // Non-vacuous: every case carries a readable command.
+          expect(projectedRows.some((row) => row.command === 'good.sh')).toBe(true);
+        } finally {
+          await rm(projectRoot, { recursive: true, force: true });
+        }
+      });
     });
   });
 
