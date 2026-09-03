@@ -452,6 +452,36 @@ describe('RoomFlow — thread reply rows', () => {
     expect(screen.queryByTestId('room-thread-replies')).not.toBeInTheDocument();
   });
 
+  it('draws a whole page of replies as one thread once their root rides along', () => {
+    // DOR-690, at the size it actually happened. A page of fifty replies to one
+    // much older root used to be fifty flat rows with nothing on them saying
+    // they answered anything; the page now arrives with the root in front of it
+    // (`listRoomEntries`), and fifty rows collapse to a message and its thread.
+    const root = entry(1, { threadReplyCount: 60 });
+    const replies = Array.from({ length: 50 }, (_, i) => reply(152 + i, 1));
+
+    renderTimeline({ entries: [root, ...replies] });
+
+    expect(screen.getAllByTestId('room-entry')).toHaveLength(1);
+    expect(screen.queryByTestId('room-entry-orphan')).not.toBeInTheDocument();
+
+    // SIXTY, not the fifty this client holds. The root came back from behind
+    // the page carrying the room's own count, and the Threads list reads that
+    // same number — a row saying "50" here would be the app disagreeing with
+    // itself about one conversation.
+    expect(screen.getByTestId('room-thread-reply-count')).toHaveTextContent('60');
+    expect(screen.getByTestId('room-thread-replies')).toHaveTextContent('60 replies');
+  });
+
+  it('counts the replies it holds for a thread that never left the page', () => {
+    // The complement, and the reason the count above is a field rather than a
+    // rule: a root the page holds carries no count, because every reply to it
+    // is in the page after it and the array IS the answer.
+    renderTimeline({ entries: [entry(1), reply(2, 1), reply(3, 1)] });
+
+    expect(screen.getByTestId('room-thread-replies')).toHaveTextContent('2 replies');
+  });
+
   it('keeps the unread rule between two rows the reader can see', () => {
     // The cursor sits on the root; the only thing above it is a reply, which is
     // off the flow. The rule belongs before the next top-level entry.

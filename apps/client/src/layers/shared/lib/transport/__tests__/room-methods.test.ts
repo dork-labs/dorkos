@@ -74,6 +74,57 @@ describe('postToRoom', () => {
   });
 });
 
+describe('listRoomEntries', () => {
+  /**
+   * Answer the entries route with a page and the roots it points at outside it.
+   *
+   * `seq` is all these assertions read, so the entries are the two fields that
+   * decide where a row lands and nothing else — a full `RoomEntry` here would be
+   * thirty lines of fixture standing between the reader and the property.
+   */
+  function servePage(entries: number[], threadRoots: number[]) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            entries: entries.map((seq) => ({ seq, id: `entry-${seq}` })),
+            threadRoots: threadRoots.map((seq) => ({ seq, id: `entry-${seq}` })),
+          }),
+      })
+    );
+  }
+
+  it('puts the roots the page replies to in front of it (DOR-690)', async () => {
+    // The room that made the ticket: every entry in the page is a reply to one
+    // message far behind it. Dropping the root here is what left the timeline
+    // fifty flat rows with nothing marking them as answers — and the order is
+    // the other half of the contract, because everything above reads this as one
+    // array in `seq` order.
+    servePage([152, 153, 154], [1]);
+
+    const history = await setup().listRoomEntries('room-1');
+
+    expect(history.map((entry) => entry.seq)).toEqual([1, 152, 153, 154]);
+  });
+
+  it('is the page alone when the page already holds every root', async () => {
+    servePage([1, 2, 3], []);
+
+    const history = await setup().listRoomEntries('room-1');
+
+    expect(history.map((entry) => entry.seq)).toEqual([1, 2, 3]);
+  });
+
+  it('sends the paging window it was given', async () => {
+    servePage([9], []);
+    await setup().listRoomEntries('room-1', { before: 10, limit: 5 });
+    expect(lastCall()[0]).toBe('http://localhost:4242/api/rooms/room-1/entries?before=10&limit=5');
+  });
+});
+
 describe('room settings and roster writes', () => {
   it('patches a room in place', async () => {
     await setup().updateRoom('room-1', { title: 'Backend' });

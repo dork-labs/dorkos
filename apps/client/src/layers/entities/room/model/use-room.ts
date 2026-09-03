@@ -69,6 +69,12 @@ function roomEntriesQuery(transport: Transport, roomId: string | null) {
  * Scrolling further back than that page is `?before=`, which the server serves
  * and no client surface asks for yet.
  *
+ * **A page can arrive with entries older than itself in front of it**: the
+ * thread roots it replies to that fell out of the window (DOR-690), so a thread
+ * still draws as a thread once its root is fifty entries back. They are part of
+ * this history like anything else — the same `seq` order, the same grouping,
+ * the same cursor — which is why nothing downstream has to know about them.
+ *
  * **This is the room's owner of its history, and there should be one.** The
  * cache entry it fills is also where the live stream merges arriving entries
  * (`useRoomStream`), so a second fetch of the same key can overwrite an entry
