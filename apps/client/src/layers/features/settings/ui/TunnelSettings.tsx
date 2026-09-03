@@ -33,7 +33,7 @@ function StatusChip({ active, label }: { active: boolean; label: string }) {
       )}
     >
       {active ? (
-        <Check className="size-3 text-green-500" />
+        <Check className="text-status-success size-3" />
       ) : (
         <span className="text-muted-foreground/40">○</span>
       )}

@@ -18,23 +18,44 @@ const OPERATOR_COOKIE_REQUIRED = 'operator_cookie_required';
  */
 const OPERATOR_ONLY_CONFIG = 'operator_only_config';
 
+/** The shape `fetchJSON` throws for a non-OK response. */
+interface TransportFailure {
+  code?: string;
+  status?: number;
+  body?: { details?: string[] };
+}
+
 /**
  * Describe a refused or failed `tunnel.*` config write.
  *
- * ## The server's own sentence is the default, and that is the whole bug fix
+ * ## What `PATCH /api/config` actually sends, exit by exit
  *
- * `PATCH /api/config` answers a bad patch with a specific 400, and `fetchJSON`
- * puts that sentence on the thrown error as `.message`. The Remote Access dialog
- * used to `catch {}` all of it and show "Could not save token. Try again."
- * instead — which is why #1458 spent 15+ attempts across several hours retrying
- * a save whose real reason was sitting in the response the whole time. So the
- * server's wording wins by default, matching `ClaudeAccountsSection`'s
- * `describeWriteFailure` for the same class of write.
+ * The rule below is shaped around the real bodies rather than a wish about them,
+ * because the obvious rule — "always prefer the server's own sentence" — turns
+ * out to have nothing to prefer on two of these four exits:
  *
- * ## Why the two refusal codes are the exception
+ * | Exit | `error` (becomes `.message`) | Where the useful text is |
+ * | --- | --- | --- |
+ * | Schema reject (400) | `'Validation failed'` | `body.details[]`, one entry per field |
+ * | Bad body / guard (4xx) | a real sentence | `.message` |
+ * | Anything thrown (500) | `'Internal server error'` | nowhere |
+ * | Never reached the server | `'Failed to fetch'`, or the timeout line | nowhere |
  *
- * These two do NOT get the server's sentence, and the reason is a property of
- * this route rather than a preference about wording:
+ * So the sentence is taken from a **4xx** only, where the server is describing
+ * something about THIS request: `body.details[0]` first, because a 400's
+ * `.message` is the constant `'Validation failed'` and the field problem is the
+ * whole point, then `.message` for the 4xx exits that do write one.
+ *
+ * A 500 and a network throw both fall back. That is deliberate and it is the
+ * narrow case where showing the server's string would be WORSE than the generic
+ * line it replaced: "Internal server error" and "Failed to fetch" are jargon
+ * that tell a person nothing they can act on, and the second is not even the
+ * server speaking.
+ *
+ * ## The two refusal codes are decided before any of that
+ *
+ * They do NOT get the server's sentence, for a reason that is a property of this
+ * route rather than a preference about wording:
  *
  * - **`PATCH /api/config` sends the SAME `error` for both.** Its 403 body pairs
  *   one shared `error` — "Only a person can change those settings" — with a
@@ -47,25 +68,32 @@ const OPERATOR_ONLY_CONFIG = 'operator_only_config';
  *   deliberately aimed at an agent reading a tool result. Piping it into a
  *   dialog would tell somebody they are not themselves.
  *
- * Both replacements are checked against the same bar the server's own copy is,
- * and both are worded for the token field and the domain field alike, because
- * one helper serves both saves.
+ * Both replacements are worded for the token field and the domain field alike,
+ * because one helper serves both saves.
  *
  * @param err - Whatever the transport rejected with.
- * @param fallback - What to say when the failure carries no message at all — a
- *   network-level throw, or a transport that rejects with a non-`Error`.
+ * @param fallback - What to say when nothing the failure carries was written for
+ *   a person: a 500, a network-level throw, or a rejection that is not an
+ *   `Error` at all.
  * @returns The sentence to show.
  */
 export function describeTunnelWriteFailure(err: unknown, fallback: string): string {
-  const code = (err as { code?: string } | null)?.code;
+  const failure = (err ?? {}) as TransportFailure;
 
-  if (code === OPERATOR_COOKIE_REQUIRED) {
+  if (failure.code === OPERATOR_COOKIE_REQUIRED) {
     return 'Sign in to DorkOS first — only a signed-in person can change Remote Access settings.';
   }
 
-  if (code === OPERATOR_ONLY_CONFIG) {
+  if (failure.code === OPERATOR_ONLY_CONFIG) {
     return 'Only you can change Remote Access settings — an agent cannot. Nothing changed.';
   }
 
-  return (err instanceof Error && err.message) || fallback;
+  const status = failure.status;
+  if (typeof status === 'number' && status >= 400 && status < 500) {
+    const detail = failure.body?.details?.[0];
+    if (detail) return detail;
+    if (err instanceof Error && err.message) return err.message;
+  }
+
+  return fallback;
 }

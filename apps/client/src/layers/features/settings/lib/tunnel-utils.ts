@@ -34,10 +34,17 @@ export function friendlyErrorMessage(raw: string): string {
   return raw;
 }
 
-/** Determine quality color from latency. */
+/**
+ * Determine quality color from latency.
+ *
+ * Reads from the cockpit's dot vocabulary (`shared/ui/status-dot.ts`) rather
+ * than the raw palette, so the latency dot moves with the theme like every
+ * other coloured dot. `-dot` on the amber is the variant tuned to 3:1 against a
+ * light surface, which is what a colour-only graphic needs.
+ */
 export function latencyColor(ms: number | null): string {
-  if (ms === null) return 'bg-gray-400';
-  if (ms < 200) return 'bg-green-500';
-  if (ms < 500) return 'bg-amber-400';
-  return 'bg-red-500';
+  if (ms === null) return 'bg-muted-foreground/40';
+  if (ms < 200) return 'bg-status-success';
+  if (ms < 500) return 'bg-status-warning-dot';
+  return 'bg-status-error';
 }

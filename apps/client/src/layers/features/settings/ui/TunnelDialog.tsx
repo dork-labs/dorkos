@@ -59,15 +59,19 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
 
   if (getPlatform().isEmbedded) return null;
 
+  // The cockpit's own dot vocabulary (`shared/ui/status-dot.ts`), not the raw
+  // palette. `-dot` on the amber is load-bearing: it is the variant taken to
+  // 3:1 against a light surface, which a coloured dot needs and the fill-tuned
+  // `--status-warning` does not meet.
   const dotColor = {
-    off: 'bg-gray-400',
-    starting: 'bg-amber-400',
-    connected: 'bg-green-500',
+    off: 'bg-muted-foreground/40',
+    starting: 'bg-status-warning-dot',
+    connected: 'bg-status-success',
     // Amber, like `starting`, and for the same reason: the tunnel is on its way
     // to being reachable, not off and not broken.
-    reconnecting: 'bg-amber-400',
-    stopping: 'bg-gray-400',
-    error: 'bg-destructive',
+    reconnecting: 'bg-status-warning-dot',
+    stopping: 'bg-muted-foreground/40',
+    error: 'bg-status-error',
   }[machine.state];
 
   // Pulses while the dialog is waiting on something, which now includes ngrok
@@ -175,12 +179,13 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
 
             {machine.viewState === 'error' && machine.error && (
               <motion.div key="error" {...viewMotion}>
+                {/* Retries, rather than tidying the error away and leaving the
+                    person to find the switch again — "Try again" on a failure
+                    means try the thing that failed. `startTunnel` clears the
+                    error itself on the way in. */}
                 <TunnelError
                   error={machine.error}
-                  onRetry={() => {
-                    machine.setState('off');
-                    machine.setError(null);
-                  }}
+                  onRetry={() => void actions.handleToggle(true)}
                 />
               </motion.div>
             )}

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
 import { render, screen, waitFor, cleanup } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
@@ -142,6 +143,30 @@ describe('TunnelDialog', () => {
     await waitFor(() => {
       expect(screen.queryByTestId('tunnel-setup')).toBeNull();
     });
+  });
+
+  it('retries the start when Try again is pressed', async () => {
+    const user = userEvent.setup();
+    const transport = createTunnelTransport({ tokenConfigured: true });
+    vi.mocked(transport.startTunnel).mockRejectedValue(new Error('ngrok exploded'));
+    render(<TunnelDialog open={true} onOpenChange={vi.fn()} />, {
+      wrapper: createWrapper(transport),
+    });
+
+    // Fail a start, so the error view is on screen with its button.
+    await waitFor(() => expect(screen.getByRole('switch')).toBeDefined());
+    await user.click(screen.getByRole('switch'));
+    await waitFor(() => expect(screen.getByTestId('tunnel-error')).toBeDefined());
+    expect(vi.mocked(transport.startTunnel)).toHaveBeenCalledTimes(1);
+
+    // The button has to actually try again. Wired to a handler that only reset
+    // the state, it cleared the message and left the person to find the switch —
+    // and no assertion on the machine alone can see that, because the wiring is
+    // in the dialog.
+    vi.mocked(transport.startTunnel).mockResolvedValue({ url: 'https://abc.ngrok.app' });
+    await user.click(screen.getByRole('button', { name: /try again/i }));
+
+    await waitFor(() => expect(vi.mocked(transport.startTunnel)).toHaveBeenCalledTimes(2));
   });
 
   it('does not render content when closed', () => {

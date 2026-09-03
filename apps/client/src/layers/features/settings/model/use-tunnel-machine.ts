@@ -22,60 +22,30 @@
  * @module features/settings/model/use-tunnel-machine
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
 import { toast } from 'sonner';
-import type { ServerConfig } from '@dorkos/shared/types';
 import { useConfig } from '@/layers/entities/config';
 import {
   type TunnelState,
   type ViewState,
+  type ReportedStatus,
+  type TunnelReport,
+  readTunnelReport,
   LATENCY_INTERVAL_MS,
   LATENCY_PROBE_TIMEOUT_MS,
   deriveViewState,
 } from './tunnel-view-state';
 
-/**
- * What the server says about the tunnel, plus the field DOR-1738 is adding.
- *
- * `isRunning` answers "is the listener still open", which is a different
- * question from `connected` ("is it reachable right now"). While ngrok
- * re-establishes a dropped session the first is true and the second is false,
- * and a client that only knows `connected` has to call that OFF.
- *
- * It is declared here rather than on the shared DTO because `schemas.ts` belongs
- * to DOR-1738; this widening disappears when that lands. Optional on purpose —
- * a server that has not shipped it yet sends nothing, and
- * {@link readTunnelReport} falls back to the old meaning.
- */
-type TunnelReport = NonNullable<ServerConfig['tunnel']> & { isRunning?: boolean };
-
-/** The three states the server's report can put the tunnel in. */
-type ReportedStatus = 'on' | 'reconnecting' | 'off';
-
-/**
- * Read the server's tunnel block into the three states the dialog distinguishes.
- *
- * The `?? connected` fallback is what makes this safe to ship before DOR-1738:
- * against a server with no `isRunning`, `reconnecting` can never be produced and
- * every reading is exactly what it was.
- */
-function readTunnelReport(tunnel: TunnelReport | undefined): {
-  status: ReportedStatus;
-  url: string | null;
-} {
-  const connected = tunnel?.connected ?? false;
-  const running = tunnel?.isRunning ?? connected;
-  return {
-    status: connected ? 'on' : running ? 'reconnecting' : 'off',
-    url: tunnel?.url ?? null,
-  };
-}
-
 /** Aggregated state + setters returned by {@link useTunnelMachine}. */
 export interface TunnelMachine {
   // State
   state: TunnelState;
-  setState: (s: TunnelState) => void;
+  /**
+   * The raw React setter, updater form included — a caller that only wants to
+   * undo an `error` needs to read the current state to do it, and reading it off
+   * this object instead would be a second source of truth for the same value.
+   */
+  setState: Dispatch<SetStateAction<TunnelState>>;
   url: string | null;
   setUrl: (u: string | null) => void;
   error: string | null;
@@ -103,7 +73,12 @@ export interface TunnelMachine {
   setUserInitiated: (v: boolean) => void;
   latencyMs: number | null;
   // Derived
-  tunnel: ServerConfig['tunnel'] | undefined;
+  /**
+   * The server's tunnel block as this dialog reads it — the DTO plus the
+   * `isRunning` DOR-1738 adds, so a consumer sees the same shape the derivation
+   * does rather than a narrower one that hides the field.
+   */
+  tunnel: TunnelReport | undefined;
   tokenConfigured: boolean;
   viewState: ViewState;
   isTransitioning: boolean;
@@ -125,6 +100,12 @@ export function useTunnelMachine({ open }: { open: boolean }): TunnelMachine {
   const { data: serverConfig } = useConfig();
 
   const tunnel = serverConfig?.tunnel;
+  // Whether `GET /api/config` has ANSWERED yet, which is not the same question
+  // as whether it reported a tunnel. Before it answers, `readTunnelReport`
+  // reads `undefined` as `off` — a placeholder, not a fact — and the toast
+  // effect below must not mistake the first real answer for a change away from
+  // it.
+  const hasServerReport = serverConfig !== undefined;
   // Read once, at render, into two primitives. The effects below depend on
   // THESE rather than on `tunnel` — an object identity that changes on every
   // refetch — so each one re-runs exactly when the answer changed and not when
@@ -193,6 +174,24 @@ export function useTunnelMachine({ open }: { open: boolean }): TunnelMachine {
     if (tunnel?.tokenConfigured) setShowSetup(false);
   }, [tunnel?.tokenConfigured]);
 
+  // Every error this dialog can show is cleared when it is next opened.
+  //
+  // Not housekeeping — the dialog is mounted for the life of the app.
+  // `DialogHost` renders every contribution unconditionally, `SettingsDialog`
+  // renders `TunnelDialog` as a sibling of its own tabs, and `open` only ever
+  // gates what is PAINTED. So this hook's state is never torn down: without
+  // this, a start that failed once left the error view, and the failure that
+  // caused it, sitting there for every later visit in that browser session.
+  /* eslint-disable react-hooks/set-state-in-effect -- reset transient errors on the dialog's opening edge */
+  useEffect(() => {
+    if (!open) return;
+    setError(null);
+    setTokenError(null);
+    setDomainError(null);
+    setState((current) => (current === 'error' ? 'off' : current));
+  }, [open]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
   // Toasts for a change the person did NOT make.
   //
   // A toast is an interruption, and the only thing worth interrupting somebody
@@ -205,6 +204,13 @@ export function useTunnelMachine({ open }: { open: boolean }): TunnelMachine {
   // The old description also promised "Attempting to reconnect...", which
   // nothing in DorkOS does. Remote access stays off until it is turned back on.
   useEffect(() => {
+    // Say nothing until the server has actually spoken. `reportedStatus` is
+    // `off` while the config read is in flight, so seeding the baseline from
+    // that placeholder made the first real answer look like a transition: open
+    // the app with a tunnel already up and it announced "Remote access is on",
+    // about a tunnel that had been on the whole time and a change nobody made.
+    if (!hasServerReport) return;
+
     const previous = prevStatusRef.current;
     prevStatusRef.current = reportedStatus;
     if (previous === undefined || previous === reportedStatus) return;
@@ -233,7 +239,7 @@ export function useTunnelMachine({ open }: { open: boolean }): TunnelMachine {
     } else if (reportedUrl) {
       toast.success('Remote access is on', { id: 'tunnel-status', description: reportedUrl });
     }
-  }, [reportedStatus, reportedUrl]);
+  }, [hasServerReport, reportedStatus, reportedUrl]);
 
   // Latency measurement when connected and dialog is open.
   //

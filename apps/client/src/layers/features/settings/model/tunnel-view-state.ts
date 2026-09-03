@@ -23,6 +23,8 @@
  * @module features/settings/model/tunnel-view-state
  */
 
+import type { ServerConfig } from '@dorkos/shared/types';
+
 /**
  * Tunnel lifecycle state, as the dialog currently understands it.
  *
@@ -36,6 +38,48 @@ export type TunnelState = 'off' | 'starting' | 'connected' | 'reconnecting' | 's
 
 /** UI view selected by the dialog based on tunnel + setup state. */
 export type ViewState = 'landing' | 'setup' | 'ready' | 'connecting' | 'connected' | 'error';
+
+/**
+ * What the server says about the tunnel, plus the field DOR-1738 is adding.
+ *
+ * `isRunning` answers "is the listener still open", which is a different
+ * question from `connected` ("is it reachable right now"). While ngrok
+ * re-establishes a dropped session the first is true and the second is false,
+ * and a client that only knows `connected` has to call that OFF.
+ *
+ * It is declared here rather than on the shared DTO because `schemas.ts` belongs
+ * to DOR-1738; this widening disappears when that lands.
+ */
+export type TunnelReport = NonNullable<ServerConfig['tunnel']> & { isRunning?: boolean };
+
+/** The three states the server's report can put the tunnel in. */
+export type ReportedStatus = 'on' | 'reconnecting' | 'off';
+
+/**
+ * Read the server's tunnel block into the three states the dialog distinguishes.
+ *
+ * `reconnecting` needs `isRunning` to be present AND true, so a server that has
+ * not shipped the field cannot produce it and every reading against one is
+ * exactly what it was before. That is a property of `undefined` being falsy
+ * rather than of any fallback written here — an earlier version spelled the
+ * default `?? connected`, which reads like it is doing that work but cannot,
+ * since `running` is only consulted on the branch where `connected` is already
+ * false.
+ *
+ * @param tunnel - The `tunnel` block of `GET /api/config`, or `undefined` while
+ *   the config read is still in flight.
+ */
+export function readTunnelReport(tunnel: TunnelReport | undefined): {
+  status: ReportedStatus;
+  url: string | null;
+} {
+  const connected = tunnel?.connected ?? false;
+  const running = tunnel?.isRunning ?? false;
+  return {
+    status: connected ? 'on' : running ? 'reconnecting' : 'off',
+    url: tunnel?.url ?? null,
+  };
+}
 
 /** Interval between latency probes when the tunnel is connected and dialog is open. */
 export const LATENCY_INTERVAL_MS = 30_000;

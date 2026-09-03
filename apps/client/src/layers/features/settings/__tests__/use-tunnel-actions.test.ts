@@ -192,11 +192,19 @@ describe('useTunnelActions — handleSaveToken surfaces why the save failed', ()
     expect(machine.setShowSetup).toHaveBeenCalledWith(false);
   });
 
-  it("shows the server's own sentence instead of the generic retry line", async () => {
+  it('shows the field problem a rejected patch names, not "Validation failed"', async () => {
     const { transport, machine, actions } = setup();
+    // The REAL 400: `applyConfigPatch` answers with the constant headline
+    // `'Validation failed'` and puts the per-field text in `details[]`, so the
+    // only useful sentence is in the body. `fetchJSON` builds `.message` from
+    // `error`, which is the headline.
     vi.mocked(transport.updateConfig).mockRejectedValue(
-      Object.assign(new Error('tunnel.authtoken: Expected string, received number'), {
+      Object.assign(new Error('Validation failed'), {
         status: 400,
+        body: {
+          error: 'Validation failed',
+          details: ['tunnel.authtoken: Expected string, received number'],
+        },
       })
     );
 
@@ -205,7 +213,49 @@ describe('useTunnelActions — handleSaveToken surfaces why the save failed', ()
     expect(machine.setTokenError).toHaveBeenLastCalledWith(
       'tunnel.authtoken: Expected string, received number'
     );
+    expect(machine.setTokenError).not.toHaveBeenCalledWith('Validation failed');
     expect(machine.setTokenError).not.toHaveBeenCalledWith('Could not save token. Try again.');
+  });
+
+  it("shows a 4xx's own sentence when it wrote one instead of details", async () => {
+    const { transport, machine, actions } = setup();
+    // `applyConfigPatch`'s other 400, and the 428 autonomy gate, both send a
+    // real sentence and no `details`.
+    vi.mocked(transport.updateConfig).mockRejectedValue(
+      Object.assign(new Error('Request body must be a JSON object'), { status: 400 })
+    );
+
+    await actions.current.handleSaveToken();
+
+    expect(machine.setTokenError).toHaveBeenLastCalledWith('Request body must be a JSON object');
+  });
+
+  it('does not repeat "Internal server error" at a person', async () => {
+    const { transport, machine, actions } = setup();
+    // Every throw inside the route lands here, and the body is that constant —
+    // jargon that names nothing the person can act on. Showing it raw would be
+    // WORSE than the generic line, which at least suggests what to do.
+    vi.mocked(transport.updateConfig).mockRejectedValue(
+      Object.assign(new Error('Internal server error'), {
+        status: 500,
+        body: { error: 'Internal server error' },
+      })
+    );
+
+    await actions.current.handleSaveToken();
+
+    expect(machine.setTokenError).toHaveBeenLastCalledWith('Could not save token. Try again.');
+  });
+
+  it('does not repeat a raw network failure at a person', async () => {
+    const { transport, machine, actions } = setup();
+    // `fetch` rejecting never reaches the `!res.ok` branch, so there is no
+    // status and no body — just the browser's own words.
+    vi.mocked(transport.updateConfig).mockRejectedValue(new TypeError('Failed to fetch'));
+
+    await actions.current.handleSaveToken();
+
+    expect(machine.setTokenError).toHaveBeenLastCalledWith('Could not save token. Try again.');
   });
 
   it('tells a caller with no session cookie to sign in', async () => {
@@ -308,10 +358,13 @@ describe('useTunnelActions — handleSaveDomain no longer swallows failures', ()
     expect(transport.updateConfig).not.toHaveBeenCalled();
   });
 
-  it("shows the server's sentence for a refused domain write", async () => {
+  it('shows the field problem a rejected domain patch names', async () => {
     const { transport, machine, actions } = setup();
     vi.mocked(transport.updateConfig).mockRejectedValue(
-      Object.assign(new Error('tunnel.domain: must be a hostname'), { status: 400 })
+      Object.assign(new Error('Validation failed'), {
+        status: 400,
+        body: { error: 'Validation failed', details: ['tunnel.domain: must be a hostname'] },
+      })
     );
 
     await actions.current.handleSaveDomain();

@@ -48,14 +48,17 @@ function setup(initial: Partial<Tunnel> = {}) {
   });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
-  const { result } = renderHook(
-    () => {
-      // `open: false` — the latency probe is not under test and would put a
-      // real `fetch` at an ngrok URL from jsdom.
-      const machine = useTunnelMachine({ open: false });
+  const { result, rerender } = renderHook(
+    // `open` defaults to false — the latency probe is not under test and would
+    // put a real `fetch` at an ngrok URL from jsdom. It is a prop rather than a
+    // constant because this hook is mounted for the life of the app, so opening
+    // and closing the dialog is the ONLY lifecycle event it ever sees.
+    ({ open }: { open: boolean }) => {
+      const machine = useTunnelMachine({ open });
       return { machine, actions: useTunnelActions({ machine, transport, queryClient }) };
     },
     {
+      initialProps: { open: false },
       wrapper: ({ children }: { children: React.ReactNode }) => (
         <QueryClientProvider client={queryClient}>
           <TransportProvider transport={transport}>{children}</TransportProvider>
@@ -63,6 +66,16 @@ function setup(initial: Partial<Tunnel> = {}) {
       ),
     }
   );
+
+  /** Close the dialog and open it again, without unmounting anything. */
+  const reopenDialog = async () => {
+    await act(async () => {
+      rerender({ open: false });
+    });
+    await act(async () => {
+      rerender({ open: true });
+    });
+  };
 
   /**
    * Change what `GET /api/config` reports, then wait until the dialog has
@@ -90,7 +103,7 @@ function setup(initial: Partial<Tunnel> = {}) {
     expect(vi.mocked(transport.getConfig).mock.calls.length).toBeGreaterThan(before);
   };
 
-  return { result, transport, serverReports, serverRepeatsItself };
+  return { result, transport, serverReports, serverRepeatsItself, reopenDialog };
 }
 
 /** Wait for the first config read to land, so the machine has a server report. */
@@ -142,21 +155,85 @@ describe('a failed start stays on screen (DOR-1739, GitHub #1458)', () => {
     expect(result.current.machine.error).toBe('ngrok exploded');
   });
 
-  it('clears only when the person asks it to', async () => {
+  it('retries the start when the person presses Try again', async () => {
     const { result, transport } = setup();
     await settled(result);
     vi.mocked(transport.startTunnel).mockRejectedValue(new Error('ngrok exploded'));
     await act(async () => {
       await result.current.actions.handleToggle(true);
     });
+    expect(result.current.machine.viewState).toBe('error');
 
-    // What the "Try again" button does — reachable now that the view persists.
-    act(() => {
-      result.current.machine.setState('off');
-      result.current.machine.setError(null);
+    // What the button now does. It used to only clear the error and drop the
+    // person back on the switch they had already pressed — a button labelled
+    // "Try again" that tried nothing.
+    vi.mocked(transport.startTunnel).mockResolvedValue({ url: 'https://abc.ngrok.app' });
+    await act(async () => {
+      await result.current.actions.handleToggle(true);
     });
 
+    expect(vi.mocked(transport.startTunnel)).toHaveBeenCalledTimes(2);
+    expect(result.current.machine.viewState).toBe('connected');
+    expect(result.current.machine.error).toBeNull();
+  });
+});
+
+describe('the dialog outlives every close, so its errors must not (DOR-1739)', () => {
+  // `DialogHost` renders every contribution unconditionally and `SettingsDialog`
+  // renders `TunnelDialog` beside its own tabs, so this hook is mounted for the
+  // life of the app and `open` only gates what is painted. Nothing is ever torn
+  // down, which is why none of this clears itself.
+  it('clears a failed start when the dialog is opened again', async () => {
+    const { result, transport, reopenDialog } = setup();
+    await settled(result);
+    vi.mocked(transport.startTunnel).mockRejectedValue(new Error('ngrok exploded'));
+    await act(async () => {
+      await result.current.actions.handleToggle(true);
+    });
+    expect(result.current.machine.viewState).toBe('error');
+
+    await reopenDialog();
+
+    // Otherwise every later visit in that browser session opens onto a stale
+    // "Tunnel failed" from something that happened an hour ago.
+    expect(result.current.machine.state).toBe('off');
+    expect(result.current.machine.error).toBeNull();
     expect(result.current.machine.viewState).toBe('ready');
+  });
+
+  it('clears a refused token save when the dialog is opened again', async () => {
+    const { result, transport, reopenDialog } = setup();
+    await settled(result);
+    vi.mocked(transport.updateConfig).mockRejectedValue(new TypeError('Failed to fetch'));
+    await act(async () => {
+      await result.current.actions.handleSaveToken();
+    });
+    expect(result.current.machine.tokenError).not.toBeNull();
+
+    await reopenDialog();
+
+    expect(result.current.machine.tokenError).toBeNull();
+    expect(result.current.machine.domainError).toBeNull();
+  });
+
+  it('clears a failed start once a token is saved', async () => {
+    const { result, transport } = setup();
+    await settled(result);
+    vi.mocked(transport.startTunnel).mockRejectedValue(new Error('No ngrok auth token configured'));
+    await act(async () => {
+      await result.current.actions.handleToggle(true);
+    });
+    expect(result.current.machine.viewState).toBe('error');
+
+    // Saving a token answers the most common reason a start failed, so the old
+    // failure stops being news — and without this the setup view steps aside
+    // and drops the person straight back onto it.
+    await act(async () => {
+      await result.current.actions.handleSaveToken();
+    });
+
+    expect(result.current.machine.state).toBe('off');
+    expect(result.current.machine.error).toBeNull();
   });
 });
 
@@ -246,10 +323,12 @@ describe('a reconnecting tunnel is still ON (DOR-1738)', () => {
     expect(result.current.machine.isChecked).toBe(false);
   });
 
-  it('behaves exactly as before against a server with no isRunning field', async () => {
-    // The whole point of the `?? connected` fallback: this branch has to be
-    // shippable before DOR-1738 lands, and on an older server `reconnecting`
-    // must be unreachable rather than sticky.
+  it('turns off, not reconnecting, when the server never sends isRunning', async () => {
+    // The compatibility case end-to-end. What PROVES it cannot regress is the
+    // derivation test — `tunnel-view-state.test.ts` runs both payload shapes
+    // through `readTunnelReport`, which is the only way to tell a correct `off`
+    // from an `off` a broken derivation would also produce. This pins that the
+    // machine wires that derivation up.
     const { result, serverReports } = setup({ connected: true, url: 'https://abc.ngrok.app' });
     await settled(result);
     await waitFor(() => expect(result.current.machine.state).toBe('connected'));
@@ -390,6 +469,71 @@ describe('status toasts speak only for changes the person did not make', () => {
     expect(toast.error).not.toHaveBeenCalled();
 
     await serverReports({ connected: false, url: null });
+
+    expect(toast.error).toHaveBeenCalledTimes(1);
+  });
+
+  it('says nothing on load, however the tunnel already was', async () => {
+    // The baseline used to be seeded from `reportedStatus` BEFORE the config
+    // query answered, where it is the placeholder `off`. So opening the app with
+    // a tunnel already up read as off → on and announced "Remote access is on"
+    // about a tunnel that had been on all along and a change nobody made.
+    const { result } = setup({ connected: true, isRunning: true, url: 'https://abc.ngrok.app' });
+    await settled(result);
+    await waitFor(() => expect(result.current.machine.state).toBe('connected'));
+
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(toast.warning).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('announces a recovery nobody asked for, with the address back', async () => {
+    // The positive case, which nothing asserted: every other toast test in this
+    // file checks that something did NOT fire, and a suite shaped only like that
+    // passes just as well against a machine that never toasts at all.
+    const { result, serverReports } = setup({
+      connected: true,
+      isRunning: true,
+      url: 'https://abc.ngrok.app',
+    });
+    await settled(result);
+    await waitFor(() => expect(result.current.machine.state).toBe('connected'));
+    await serverReports({ connected: false, isRunning: true });
+
+    await serverReports({ connected: true, isRunning: true, url: 'https://abc.ngrok.app' });
+
+    expect(toast.success).toHaveBeenCalledTimes(1);
+    const [title, options] = vi.mocked(toast.success).mock.calls[0] ?? [];
+    expect(title).toBe('Remote access is on');
+    expect((options as { description?: string })?.description).toBe('https://abc.ngrok.app');
+  });
+
+  it('still reports a real drop after a start that converged on a 409', async () => {
+    // A start that 409s changes nothing — the tunnel was already up — so the
+    // refetch reports no transition and there is nothing for the suppression to
+    // be consumed by. Left armed, it would sit there until the next genuine drop
+    // and eat the one toast that mattered.
+    //
+    // The setup is the shape that makes the 409 reachable: the server says
+    // connected but names no URL, which the dialog cannot show as connected, so
+    // it reads `off` and offers the switch over a tunnel that is really running.
+    const { result, transport, serverReports } = setup({ connected: true, url: null });
+    await settled(result);
+    await waitFor(() => expect(result.current.machine.state).toBe('off'));
+
+    vi.mocked(transport.startTunnel).mockRejectedValue(
+      Object.assign(new Error('Tunnel is already running'), {
+        status: 409,
+        body: { error: 'Tunnel is already running', url: null },
+      })
+    );
+    await act(async () => {
+      await result.current.actions.handleToggle(true);
+    });
+    expect(result.current.machine.state).toBe('reconnecting');
+    expect(toast.error).not.toHaveBeenCalled();
+
+    await serverReports({ connected: false, isRunning: false, url: null });
 
     expect(toast.error).toHaveBeenCalledTimes(1);
   });

@@ -93,6 +93,11 @@ export function useTunnelActions({
       // into connected; without one the tunnel is up but unreachable, which is
       // exactly `reconnecting`. The refetch corrects either reading.
       if (refusal.status === 409) {
+        // Disarmed like every other exit from this catch. The tunnel was ALREADY
+        // up, so the refetch below reports no change and consumes nothing — and
+        // a flag left armed here would sit there until the next genuine drop and
+        // swallow the one toast that mattered.
+        machine.setUserInitiated(false);
         const liveUrl = refusal.body?.url ?? machine.url;
         machine.setState(liveUrl ? 'connected' : 'reconnecting');
         if (liveUrl) machine.setUrl(liveUrl);
@@ -145,6 +150,12 @@ export function useTunnelActions({
       machine.setAuthToken('');
       machine.setShowTokenInput(false);
       machine.setShowSetup(false);
+      // A saved token answers the most common reason a start failed, so the old
+      // failure is no longer news — and this dialog outlives every close, so
+      // nothing else would ever clear it. Leaving it up would drop the person
+      // back onto "Tunnel failed" the moment the setup view stepped aside.
+      machine.setError(null);
+      machine.setState((current) => (current === 'error' ? 'off' : current));
       queryClient.invalidateQueries({ queryKey: configKeys.all });
     } catch (err) {
       machine.setTokenError(describeTunnelWriteFailure(err, 'Could not save token. Try again.'));
