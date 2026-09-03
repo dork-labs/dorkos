@@ -687,8 +687,24 @@
   opacity: 0.55;
 }
 
-*:where(:not(.copilot-view-content *)) {
-  border-color: hsl(var(--border));
+/* The app's default border colour. Tailwind's own preflight resets every
+   element to `border: 0 solid`, which leaves `border-color` at `currentColor` —
+   so a bare `border` class would paint the text colour. This restores the
+   neutral default the design system expects.
+
+   It MUST stay inside `@layer base`. Unlayered, it outranked every
+   `border-<colour>` utility in the app — a layered declaration always loses to
+   an unlayered one, whatever the specificity — so `border-primary`,
+   `border-destructive` and even `border-transparent` all rendered as the same
+   neutral line on 69 files (DOR-1750). Inside `base` it sits below Tailwind's
+   `utilities` layer, so it is only the fallback it was meant to be.
+
+   The `:where()` exclusion keeps Obsidian's own chrome untouched: inside the
+   plugin's `.copilot-view-content`, the host app owns border colour. */
+@layer base {
+  *:where(:not(.copilot-view-content *)) {
+    border-color: hsl(var(--border));
+  }
 }
 
 html {

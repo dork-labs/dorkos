@@ -198,12 +198,10 @@ export function TeamMemberCard({
       //
       // - An ancestor cannot inherit a property its child declares, so the card
       //   publishes the face colour itself rather than reading it off the disc.
-      // - `index.css` sets a neutral `border-color` on `*` in an UNLAYERED
-      //   rule, and an unlayered rule outranks every `@layer` — Tailwind's
-      //   utilities included. No `border-<colour>` class can change a border in
-      //   this app (see the note in `contributing/design-system.md`). An inline
-      //   declaration does outrank it, so the colour is painted here and only
-      //   its strength moves, through a custom property a class CAN set.
+      // - The colour is a RUNTIME value mixed with the neutral border at a
+      //   strength that has to animate. Tailwind has no class for that, so the
+      //   `color-mix()` is declared inline and only its strength moves, through
+      //   a custom property a class CAN set.
       style={
         {
           '--identity-color': face.color,
@@ -216,7 +214,7 @@ export function TeamMemberCard({
         // The resting strength is a CLASS, not part of the inline style above:
         // an inline declaration outranks every stylesheet rule, so a resting
         // value written inline would be one the `hover:` step could never move.
-        // Only what must beat the unlayered `*` border default stays inline.
+        // Only the mix itself stays inline.
         '[--identity-border-strength:0%]',
         onOpenProfile && [
           // Surface tier: the whole area is one action, so the whole card
@@ -320,12 +318,12 @@ export function TeamMemberCard({
           </h3>
           {/* A flag on a row, never a branch: the card is the same card. */}
           {member.isSelf && (
-            <Badge variant="secondary" className="px-1.5 py-0 text-[0.625rem]">
+            <Badge variant="secondary" className="px-1.5 py-0 text-3xs">
               you
             </Badge>
           )}
           {member.agent?.isDefault && (
-            <Badge variant="outline" className="px-1.5 py-0 text-[0.625rem]">
+            <Badge variant="outline" className="px-1.5 py-0 text-3xs">
               default
             </Badge>
           )}
