@@ -96,9 +96,41 @@ permissions:
 jobs:
   typecheck:
     runs-on: ubuntu-latest
-    # A full cold typecheck (no turbo cache) is ~35-40s on a warm developer
-    # machine; generous headroom for a colder/slower CI runner.
-    timeout-minutes: 10
+    # MEASURED, not inherited: this was `10` unchanged since the workflow's
+    # first commit (PR #606, 2026-07-29) and never revisited — same shape as
+    # `test`'s old 45-minute ceiling before DOR-1726. Job-level start/complete
+    # (the time `timeout-minutes` actually governs, NOT workflow-run time,
+    # which also counts runner-queue wait) over a 207-run sample of
+    # merge_group `typecheck` jobs spanning 2026-08-11 through 2026-09-03:
+    # 206 green, wall clock min 3.07 min, p50 4.62, p90 7.64, p95 7.83, max
+    # 8.52. A 10-minute ceiling left the slowest sampled honest run under 1.5
+    # minutes of margin, and that thin margin cashed out twice: PR #1280
+    # (2026-08-25) and PR #1530 (2026-09-03) both hit "the job has exceeded
+    # the maximum execution time of 10m0s" and were reported `cancelled`
+    # ("the operation was canceled") with their typechecks still passing —
+    # evicting a fully green entry from the merge queue on wall-clock alone,
+    # not a defect. Normal duration for this job is 3-6 minutes.
+    #
+    # This job serves BOTH `pull_request` and `merge_group` with the SAME
+    # full-monorepo `turbo typecheck` (see the KNOWN GAPS comment above), so
+    # this ceiling is felt on both legs — unlike `test`, where the timeout
+    # sits on a job that is a multi-minute shard fan-in on merge_group and a
+    # much larger affected sweep on pull_request. `pull_request` runs here are
+    # typically faster and tighter (own runner, no merge-queue rivals for the
+    # same capacity), so the tail risk this ceiling exists to absorb is almost
+    # entirely a `merge_group` one.
+    #
+    # 20, not more: leaves the slowest sampled honest run (8.52 min) over 11
+    # minutes of room — comparable margin to DOR-1726's `test` ceiling — while
+    # still killing a genuinely hung `tsc`/turbo process in a bounded time.
+    # The merge queue's own check_response_timeout_minutes is 120, so this
+    # cannot stall the queue either way (`main: merge queue` ruleset).
+    #
+    # Checked lint.yml (`timeout-minutes: 15`) and site-build.yml (`30`) for
+    # the same trap: no merge_group `cancelled`/`timed_out` runs turned up for
+    # either in the sampled history, so neither shows this failure class and
+    # neither changes here. (DOR-1775)
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
