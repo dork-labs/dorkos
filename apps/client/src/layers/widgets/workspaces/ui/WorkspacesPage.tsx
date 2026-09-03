@@ -203,11 +203,17 @@ export function WorkspacesPage() {
             A worktree is a second copy of your project, on its own branch, so one agent&rsquo;s
             edits can&rsquo;t collide with another&rsquo;s. They show up here once they exist.
           </p>
-          {/* On its own line and styled as code, never spliced into the
-              sentence: a path has no spaces to wrap at, so inside running prose
-              it ran off the card and off a phone screen entirely. */}
+          {/* The folder, on its own line and styled as code, never spliced into
+              the sentence. A path has no spaces, so the browser has no wrap
+              opportunity: inline in prose it ran past the card and off the phone
+              screen (DOR-1747). On its own line it truncates to an ellipsis, and
+              the full value is one hover or long-press away. */}
           {root && (
-            <p className="text-muted-foreground mt-3 text-xs">
+            <p
+              className="text-muted-foreground mt-3 truncate text-xs"
+              title={root}
+              data-slot="workspaces-root-path"
+            >
               Looking in <InlineCode>{shortenHomePath(root)}</InlineCode>
             </p>
           )}

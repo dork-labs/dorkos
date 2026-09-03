@@ -237,4 +237,28 @@ describe('WorkspacesPage', () => {
     expect(viewport).not.toBeNull();
     expect(viewport).toContainElement(empty);
   });
+
+  it('keeps the folder out of the sentence, on a line that can truncate', async () => {
+    // A path has no spaces, so inline in prose the browser had nowhere to wrap
+    // it: the string ran out of the card and off a phone screen, which the
+    // operator hit on a real device (DOR-1747). On its own line it ellipsises,
+    // and the whole value is one hover away.
+    const { container } = renderWithScan({
+      root: '/home/me/.dork/workspaces/a-very-long-folder-name-with-no-spaces',
+      worktrees: [],
+    });
+
+    await screen.findByText('No worktrees yet');
+    const path = container.querySelector('[data-slot="workspaces-root-path"]');
+    expect(path).toHaveClass('truncate');
+    expect(path).toHaveAttribute(
+      'title',
+      '/home/me/.dork/workspaces/a-very-long-folder-name-with-no-spaces'
+    );
+
+    // And the prose above it says nothing about a folder — the sentence is the
+    // one place the string cannot be contained.
+    const prose = screen.getByText(/A worktree is a second copy/);
+    expect(prose.textContent).not.toContain('.dork/workspaces');
+  });
 });
