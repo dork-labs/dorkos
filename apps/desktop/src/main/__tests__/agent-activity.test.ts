@@ -211,7 +211,7 @@ describe('watchAgentActivity', () => {
   });
 
   it('stops for good once stopped', async () => {
-    await start();
+    const onChange = await start();
     stream.sendStatus('session-a', 'streaming');
     await eventually(() => expect(getActiveAgentCount()).toBe(1));
 
@@ -219,7 +219,17 @@ describe('watchAgentActivity', () => {
 
     expect(getActiveAgentCount()).toBe(0);
     const connectionsAtStop = stream.connections;
+    const callsAtStop = onChange.mock.calls.length;
+
+    // Nothing the server says after the stop is heard — this is the assertion
+    // that fails if `stop()` forgets the count but leaves the subscription
+    // open. Without it the leak only showed up as collateral damage in whatever
+    // case happened to run next (DOR-1730).
+    stream.sendStatus('session-b', 'streaming');
     await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(getActiveAgentCount()).toBe(0);
+    expect(onChange).toHaveBeenCalledTimes(callsAtStop);
     expect(stream.connections).toBe(connectionsAtStop);
   });
 });

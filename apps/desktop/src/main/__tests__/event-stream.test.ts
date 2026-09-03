@@ -115,6 +115,47 @@ describe('event-stream sharing (DOR-1386)', () => {
   });
 });
 
+describe('event-stream teardown (DOR-1730)', () => {
+  it('a connection the last unsubscribe tore down cannot reach into the next subscriber', async () => {
+    // Node emits ECONNRESET on an in-flight request a tick AFTER `destroy()`
+    // returned, so the connection this first subscriber opens calls back once
+    // the second subscriber below already has a connection of its own. That
+    // late callback used to destroy the second connection and tell its
+    // subscriber the stream was lost — which is how `agent-activity.test.ts`
+    // came apart, one case reaching its ceiling and the next reading a count
+    // that had been cleared out from under it.
+    subscribeEventStream({ getPort: () => stream.port }, { onFrame: () => {} }).unsubscribe();
+
+    const frames: string[] = [];
+    const connectionLost = vi.fn();
+    const second = subscribeEventStream(
+      { getPort: () => stream.port },
+      { onFrame: (frame) => frames.push(frame.name), onConnectionLost: connectionLost }
+    );
+
+    try {
+      await vi.waitFor(() => expect(frames).toContain('connected'), {
+        timeout: 2_000,
+        interval: 10,
+      });
+      stream.sendStatus('session-a', 'streaming');
+      await vi.waitFor(() => expect(frames).toContain('session_status'), {
+        timeout: 2_000,
+        interval: 10,
+      });
+      // The survivor's connection is its own: nothing told it the stream was
+      // lost, and it never had to come back. One connection reached the server,
+      // the survivor's — the first subscriber's request was destroyed before it
+      // was even written. Two here is the bug: the survivor being reached into
+      // and reconnecting a second later.
+      expect(connectionLost).not.toHaveBeenCalled();
+      expect(stream.connections).toBe(1);
+    } finally {
+      second.unsubscribe();
+    }
+  });
+});
+
 describe('event-stream throw isolation (DOR-1386 review)', () => {
   it('a subscriber that throws on a frame does not stop another subscriber, and the throw never escapes as an uncaught exception', async () => {
     const uncaught = vi.fn();
