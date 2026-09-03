@@ -71,8 +71,9 @@ export function CandidateCard({
       className={cn('flex items-start justify-between rounded-xl border p-4', className)}
     >
       <div className="min-w-0 flex-1 space-y-2">
-        {/* Name */}
-        <p className="text-sm leading-tight font-semibold">
+        {/* Name. `truncate` because the last fallback is the whole path, which
+            is one unbroken string and would run out of the card (DOR-1747). */}
+        <p className="truncate text-sm leading-tight font-semibold">
           {hints.suggestedName || path.split('/').pop() || path}
         </p>
 
