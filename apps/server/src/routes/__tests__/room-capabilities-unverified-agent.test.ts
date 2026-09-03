@@ -311,9 +311,10 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
       // `callerAuthor` and get its 400. Asserting one code would pin the order
       // the gates happen to run in rather than the property (DOR-486).
       expect(refused.status).not.toBe(200);
-      expect([REFUSAL_CODE, undefined]).toContain(
-        refused.body.code === undefined ? undefined : REFUSAL_CODE
-      );
+      // Either this seam's own code, or none because the tier gate answered
+      // first with its `denied` payload. Asserting the value itself rather than
+      // a ternary over it — the ternary was a tautology that could not fail.
+      expect([REFUSAL_CODE, undefined]).toContain(refused.body.code);
       expect(refused.body.posted).toBeUndefined();
       // The half that matters: nothing was written under anybody's name.
       expect(entryCount()).toBe(1);
