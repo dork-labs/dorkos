@@ -106,6 +106,15 @@ mockups/running-figure-v3.html
 # left on disk only after a hard crash mid-activate.
 *.dorkos-bak-*
 vitest-shard-report.json
+# Written by scripts/vitest-flake-reporter.ts into each package it runs in, and
+# read by the merge-queue leg of .github/workflows/test.yml. A local artifact
+# like the one above; nothing commits it.
+vitest-flake-report.json
+# The throwaway fixture tree scripts/__tests__/vitest-flake-reporter.test.ts
+# generates under scripts/ (it has to live inside the repo so the fixture's
+# `import 'vitest'` resolves). Removed in afterAll — this line is what stops an
+# interrupted run leaving a deliberately-failing spec file behind.
+scripts/.flake-fixture-*/
 # Entity slices written into the source tree by the cross-entity DAG guard
 # (apps/client/__tests__/entity-dag-lint.test.ts). They have to live under
 # `entities/` because the lint rule they exercise is scoped to that path, and

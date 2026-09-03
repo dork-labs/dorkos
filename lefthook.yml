@@ -165,10 +165,14 @@ pre-push:
       #
       #   VITEST_RETRY=2 absorbs timing flake in integration tests at the gate
       #     only (wired into vitest configs). It rides globalPassThroughEnv, so
-      #     it is NOT hashed and does not fork the cache key. CI deliberately
-      #     does NOT set it, so the same commit can pass here and fail there;
-      #     when that happens the test is flaky and the CI verdict is the
-      #     honest one.
+      #     it is NOT hashed and does not fork the cache key. CI does not set
+      #     this variable; its merge-queue leg passes `--retry=1` on the command
+      #     line and names every test that only passed because of it (DOR-1701,
+      #     .github/workflows/test.yml). This gate cannot do the same — the
+      #     reporter would be a passthrough flag, and the constraint above is
+      #     exactly why it is not one — so a retried pass is still silent here.
+      #     A commit can therefore pass here and be named as a flake there; when
+      #     that happens the test is flaky and the CI verdict is the honest one.
       use_stdin: true
       run: |
         saw_ref=0

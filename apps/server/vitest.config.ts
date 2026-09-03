@@ -334,11 +334,16 @@ export default defineConfig({
     include: ['src/**/__tests__/**/*.test.ts'],
     // The lefthook pre-push gate sets VITEST_RETRY to absorb timing flake in
     // integration tests on a developer machine already busy with other agents.
-    // CI deliberately does NOT set it (see .github/workflows/test.yml): a
-    // runner is not contended the same way, and a retry budget there would turn
-    // a real intermittent failure into a green check. It rides turbo's
-    // globalPassThroughEnv, so it never forks the cache key; dev runs get
-    // retry: 0 and surface flake loudly.
+    // It rides turbo's globalPassThroughEnv, so it never forks the cache key;
+    // dev runs get retry: 0 and surface flake loudly.
+    //
+    // CI does not set this variable either, but it is no longer at zero
+    // retries: the merge-queue leg passes `--retry=1` on the command line and
+    // loads scripts/vitest-flake-reporter.ts, which NAMES every test the retry
+    // absorbed (DOR-1701). The flag rather than the variable, because the flag
+    // reaches all 18 packages while this variable is wired into two configs.
+    // See .github/workflows/test.yml for why a named retry is a different
+    // bargain from a silent one.
     retry: process.env.VITEST_RETRY ? Number(process.env.VITEST_RETRY) : 0,
     coverage: {
       provider: 'v8',
