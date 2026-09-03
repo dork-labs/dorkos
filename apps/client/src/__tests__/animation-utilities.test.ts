@@ -27,6 +27,19 @@ describe('animation utilities wiring (index.css)', () => {
     expect(animateIndex).toBeGreaterThan(tailwindIndex);
   });
 
+  it('defines the collapsible keyframes the Collapsible primitive wears', () => {
+    // This repo has shipped a class name whose keyframe did not exist twice
+    // (`animate-tasks` for months, and `animations.md` pointed at accordion
+    // keyframes that were never written) — a dead animation looks exactly like
+    // a working one in a diff. `shared/ui/collapsible.tsx` wears both of these.
+    for (const name of ['collapsible-down', 'collapsible-up']) {
+      expect(indexCss).toMatch(new RegExp(`@keyframes\\s+${name}\\s*\\{`));
+      expect(indexCss).toMatch(new RegExp(`@utility\\s+animate-${name}\\s*\\{`));
+    }
+    // The height the keyframes grow to is Radix's own measurement, not a guess.
+    expect(indexCss).toContain('var(--radix-collapsible-content-height)');
+  });
+
   it('leaves the blintz cascade-layer pin intact', () => {
     // tw-animate-css must not disturb the layer order that keeps blintz below
     // utilities (PR #311) — its utilities ride the `utilities` layer above blintz.

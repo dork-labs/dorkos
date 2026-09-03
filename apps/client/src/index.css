@@ -544,12 +544,29 @@
 }
 
 /* Hoverable card: lifts to the elevated shadow and firms up its border.
-   Pair with a base surface (bg-card), a border, and shadow-soft. */
+   Pair with a base surface (bg-card), a border, and shadow-soft.
+
+   **The focus-visible branch is a rule, not a nicety** (design-system.md, the
+   identity grammar): if an area has a hover state it has a focus-visible twin
+   saying the same thing, so a keyboard user never learns less than a mouse
+   user. `:has(:focus-visible)` covers the common shape where the card is a
+   plain box and the control inside it is what takes focus.
+
+   The transition names its properties. `transition: all` here animated border
+   width, padding and any layout property a consumer added later — and the
+   `-1px` lift below is exactly the kind of thing that would have dragged the
+   whole box with it. */
 @utility card-interactive {
-  transition: all 150ms ease-out;
-  &:hover {
+  transition:
+    box-shadow 150ms ease-out,
+    border-color 150ms ease-out,
+    translate 150ms ease-out;
+  &:hover,
+  &:focus-visible,
+  &:has(:focus-visible) {
     box-shadow: var(--elevation-elevated);
     border-color: hsl(var(--border) / 0.8);
+    translate: 0 -1px;
   }
 }
 
@@ -872,6 +889,47 @@ body {
   animation-duration: 1.6s;
   animation-timing-function: ease-in-out;
   animation-iteration-count: infinite;
+}
+
+/* Radix Collapsible opening and closing (DOR-1751).
+
+   Radix has always published `--radix-collapsible-content-height` and the
+   `data-[state]` attributes so a consumer can animate this, and nothing did:
+   every collapsible in Settings, Connections, onboarding and agent creation
+   teleported its body in and shoved the page below it down in one frame. The
+   chat layer had honoured the 300ms expand/collapse timing all along, purely
+   because it hand-rolls its cards with Motion instead of using the primitive.
+
+   Height is a layout property, which `contributing/animations.md` otherwise
+   lists as a thing not to animate — this is the sanctioned exception, because
+   revealing content IS the layout change and there is no transform that fakes
+   it. 200ms and the entrance curve are the design system's "expand/collapse"
+   row. The global reduced-motion reset in this file flattens both to 0.01ms,
+   so neither needs a `motion-safe:` gate at the call site. */
+@keyframes collapsible-down {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-collapsible-content-height);
+  }
+}
+
+@utility animate-collapsible-down {
+  animation: collapsible-down 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+@keyframes collapsible-up {
+  from {
+    height: var(--radix-collapsible-content-height);
+  }
+  to {
+    height: 0;
+  }
+}
+
+@utility animate-collapsible-up {
+  animation: collapsible-up 200ms cubic-bezier(0.4, 0, 1, 1);
 }
 
 /* The message action capsule's entrance: a 5px rise that overshoots a pixel and
