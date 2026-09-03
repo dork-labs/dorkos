@@ -96,6 +96,16 @@ A room message's whole row is wrapped in `EntryActionMenu`, whose desktop trigge
 
 **Desktop Electron scope note.** The Electron shell registers no `context-menu` handler on any `webContents` at all (only `apps/desktop/src/main/tray.ts`, the system tray icon — unrelated). It shows no native context menu for anything in the renderer, links included, on any surface — a pre-existing gap, unrelated to this fix, tracked separately.
 
+### The public site renders plain anchors instead (apps/site, DOR-1296)
+
+`apps/site` renders marketplace package READMEs through the same Streamdown package (`apps/site/src/layers/features/marketplace/ui/StreamdownMarkdown.tsx`), so it inherited the same `linkSafety` default and, until DOR-1296, shipped the same hrefless `<button>` — on a public page, where it also meant no crawlable `href`. It passes an `a` override too, for the same reason: there is no "off" path through Streamdown's own component.
+
+**Its anchor has no confirmation step, and that is the deliberate difference between the two surfaces.** The app confirms because a markdown link there is written by an agent mid-conversation and, in the desktop shell, dispatch can reach an OS protocol handler. The site is a public web page a reader chose to open; the browser is the only thing that dispatches its links, there is no `openExternalLink` seam in that process at all, and Streamdown's sanitizer has already stripped `javascript:`/`data:`/`vbscript:` before an anchor exists. A modal there would be friction with nothing behind it — so the site's links behave like links anywhere else on the web: hover shows the destination, ⌘-click opens a tab, "Copy Link Address" works.
+
+The site's anchor does carry one attribute the app's does not: `rel="nofollow ugc noopener noreferrer"`. A README is fetched from the package author's own repository at build/ISR time and can change after the package was listed, so its links are third-party user content that must not pass dorkos.ai's ranking along. `apps/site/src/layers/features/marketplace/ui/__tests__/StreamdownMarkdown.test.tsx` renders real Streamdown and pins both halves — real `<a href>` for the safe schemes, no anchor for the dangerous ones — so a Streamdown upgrade cannot quietly restore the button.
+
+Nothing else on this page applies to `apps/site`: `classifyLink`, `DISPATCHABLE_PROTOCOLS` and `LinkSafetyModal` are `apps/client` code and the site does not import them.
+
 ## Links inside untrusted machine output
 
 Error text is not prose and is not ours: a runtime error can be authored by a remote provider, and it routinely carries the one address that would fix the problem ("add credits at ..."). It used to reach the screen as an inert text node, so the address had to be retyped by hand.
@@ -131,3 +141,4 @@ There is a third edit whenever you take the carve-out: `isWebUrl` in `link-navig
 - `apps/client/src/layers/shared/ui/link-safety-modal.tsx` — the shared confirmation surface every untrusted link renders through. Its "Copy link" is the reason a refused link still gets a modal rather than being turned away at the click: it is the one useful thing left for a link DorkOS will not open.
 - `apps/client/src/layers/shared/ui/markdown-link.tsx` — the real-anchor `a` override every Streamdown instance in the app uses, unconditionally, instead of Streamdown's own button-rendering `linkSafety` handling (DOR-1272), and the caller that put markdown links back on this page's policy (DOR-547).
 - `apps/client/src/layers/shared/ui/linkified-text.tsx` — the linkify-only renderer for untrusted machine output (error messages), which reuses `MarkdownLink` for the anchor itself.
+- `apps/site/src/layers/features/marketplace/ui/StreamdownMarkdown.tsx` — the public site's own `a` override for marketplace READMEs: a plain anchor with no confirmation, for [the reasons above](#the-public-site-renders-plain-anchors-instead-appssite-dor-1296).
