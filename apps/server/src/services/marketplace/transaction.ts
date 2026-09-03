@@ -18,6 +18,67 @@
  * transaction (the install already succeeded, so a leftover temp dir or backup is
  * a janitorial concern, not a correctness one).
  *
+ * ## Why the whole transaction is serialised per target (DOR-711)
+ *
+ * Each step above is sound on its own, and together they were still not safe
+ * for two transactions aimed at one directory. The backup a rollback restores
+ * is a snapshot of whatever stood at the target when THIS transaction took it,
+ * and the rollback puts it back without asking whether the target is still the
+ * one it moved aside. Two installs of the same package interleaved like this:
+ *
+ * 1. A moves the existing target aside as A's backup
+ * 2. B finds no target (A took it) and proceeds with no backup of its own
+ * 3. B renames its staged content into place and **succeeds**
+ * 4. A's `activate` fails; A's rollback removes the target — B's freshly
+ *    installed content — and restores A's now-stale backup
+ *
+ * A failed install had destroyed a successful one, and both callers saw the
+ * response they expected. So every transaction now runs inside
+ * {@link withInstallTargetLock}: the move-aside, the activation and the
+ * rollback are one critical section, and the interleave above cannot be
+ * constructed. Serialisation is per target — two installs of different
+ * packages still run concurrently. The uninstall flow, which runs the same
+ * move-aside-and-restore dance through its own staging path, takes the same
+ * lock, so an install and an uninstall of one package cannot interleave
+ * either.
+ *
+ * ## The key is canonical, not the caller's spelling
+ *
+ * {@link withFileLock} keys on `path.resolve`, which normalises `..` and
+ * relative segments but does NOT follow symlinks — and its own module header
+ * says callers must not lean on the key normalising for them. A project-scope
+ * install target is built by joining a caller-supplied `projectPath`, and one
+ * directory reachable by two spellings (`/work/proj` and a symlink
+ * `/work/current` pointing at it) is two lock keys and therefore no lock at
+ * all: the full destruction above reproduces straight through it. So the key
+ * is realpath-resolved here ({@link canonicalTargetKey}) before the lock is
+ * taken, which makes it a property of the filesystem rather than of the
+ * request body. The `POST /api/marketplace/packages/:name/install` route now
+ * also passes the canonical `projectPath` that its boundary check already
+ * resolved, so the two agree; this resolution is the belt to that braces, and
+ * it covers every other caller — MCP tools, Shape fork, schedule
+ * materialisation — without each having to remember.
+ *
+ * ## Residual: this is an in-process mutex
+ *
+ * The scope is deliberate and matches the deployment: marketplace installs run
+ * in the server, and the CLI is a thin HTTP client into the same
+ * `MarketplaceInstaller` instance (`contributing/marketplace-installs.md` §2),
+ * so two concurrent installs are normally two requests in one process.
+ *
+ * One case is outside that and is a named residual rather than a covered one.
+ * A project-scope install writes under `{projectPath}/.dork/`, which is keyed
+ * to the project rather than to a `dorkHome` — two servers with different data
+ * directories opened on the same project (the dogfood setup runs exactly two:
+ * dev on :6242 and the built app on :4242) each hold their own lock map and
+ * cannot see the other's. Note that the acceptance `atomic-write.ts` offers
+ * for its own two cross-process edges does NOT transfer here: there, losing
+ * mutual exclusion degrades to last-writer-wins over a whole file, never
+ * corruption. Here it degrades to the destruction this module exists to
+ * prevent — a failed install rolling back over a successful one. Closing it
+ * needs an on-disk lock, which is a separate decision (stale-holder reaping is
+ * the part that is easy to get wrong) and is not made here.
+ *
  * This design supersedes the git backup-branch rollback of ADR-0231: it is
  * scoped to the actual install location (not `process.cwd()`), it restores
  * gitignored files under `.dork/` that a `git reset` cannot touch, and it has
@@ -26,9 +87,10 @@
  * @module services/marketplace/transaction
  */
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { withFileLock } from '@dorkos/shared/atomic-write';
 import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
 import { atomicMove } from './lib/atomic-move.js';
 
@@ -71,7 +133,72 @@ export interface TransactionOptions<T> {
 }
 
 /**
- * Run a file-scoped marketplace install transaction.
+ * Resolve an install target to the lock key that identifies it uniquely.
+ *
+ * `path.resolve` alone is not enough: it normalises `..` but not symlinks, so
+ * two spellings of one directory would take two different locks and serialise
+ * against nothing (see the module header). The target itself usually does not
+ * exist yet — a fresh install is a rename ONTO it — so this realpaths the
+ * deepest ancestor that does exist and re-joins the missing tail, the same rule
+ * `lib/boundary.ts` applies to a path it is validating.
+ *
+ * Best-effort by construction. An ancestor that cannot be read (EACCES, or a
+ * platform that refuses `realpath` here) falls back to the resolved-but-not-
+ * canonical path, which is exactly the key this used before and never worse.
+ *
+ * @param target - The transaction's install target, absolute or relative.
+ * @returns The canonical absolute path to lock on.
+ * @internal
+ */
+async function canonicalTargetKey(target: string): Promise<string> {
+  const absolute = path.resolve(target);
+  const missingTail: string[] = [];
+  let current = absolute;
+
+  for (;;) {
+    try {
+      const real = await realpath(current);
+      return path.join(real, ...missingTail.reverse());
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return absolute;
+      const parent = path.dirname(current);
+      // `dirname` is a fixed point at the filesystem root; nothing above it
+      // exists to resolve, so the resolved path is the best key available.
+      if (parent === current) return absolute;
+      missingTail.push(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
+/**
+ * Run `fn` with exclusive access to a marketplace install target, serialised
+ * against every other holder of that same directory.
+ *
+ * This is the seam that makes the engine's move-aside-and-restore dance safe
+ * under concurrency (DOR-711 — the module header has the interleaving it
+ * prevents). {@link runTransaction} takes it for every install, and the
+ * uninstall flow takes it for its own staging-and-restore path, so the two
+ * cannot interleave against one package either.
+ *
+ * The key is realpath-resolved ({@link canonicalTargetKey}), so two spellings
+ * of one directory are one lock. Non-reentrant: calling this for a target the
+ * current async context already holds throws rather than deadlocking.
+ *
+ * @param target - Absolute path to the install target to serialise on.
+ * @param fn - The critical section.
+ * @returns Whatever `fn` returns.
+ */
+export async function withInstallTargetLock<T>(target: string, fn: () => Promise<T>): Promise<T> {
+  const key = await canonicalTargetKey(target);
+  // The writer `withFileLock` hands its callback is deliberately unused: this
+  // caller serialises a directory-level rename dance, not a file write.
+  return withFileLock(key, fn);
+}
+
+/**
+ * Run a file-scoped marketplace install transaction, serialised against every
+ * other transaction aimed at the same `target`.
  *
  * Lifecycle: create temp staging dir → `stage` → (if `target` exists, move it
  * aside to a sibling backup) → `activate` → cleanup. On a `stage` error the
@@ -80,10 +207,35 @@ export interface TransactionOptions<T> {
  * taken) is restored onto `target`, and the staging dir is removed before the
  * original error is re-raised.
  *
+ * The whole lifecycle — staging included — runs inside
+ * {@link withInstallTargetLock}, so a second transaction against that
+ * directory (or an uninstall of the same package) waits rather than
+ * interleaving with this one's backup and rollback (DOR-711; see the module
+ * header for the interleaving this prevents). Transactions against different
+ * targets are unaffected and still run concurrently.
+ *
+ * Do not call this from inside another transaction on the same `target`: the
+ * lock is deliberately non-reentrant and throws instead of deadlocking. No
+ * caller nests today — the installer materialises a package's schedules after
+ * its flow's transaction has settled, not inside it.
+ *
  * @param opts - Transaction options ({@link TransactionOptions})
  * @returns The result returned from `activate`.
  */
 export async function runTransaction<T>(opts: TransactionOptions<T>): Promise<T> {
+  return withInstallTargetLock(opts.target, () => runTransactionUnlocked(opts));
+}
+
+/**
+ * The transaction lifecycle itself, with no serialisation of its own.
+ *
+ * Split out from {@link runTransaction} purely so the public entry point is one
+ * readable `withFileLock` call; nothing may call this directly, because the
+ * lock is what makes the backup-and-restore dance safe under concurrency.
+ *
+ * @internal
+ */
+async function runTransactionUnlocked<T>(opts: TransactionOptions<T>): Promise<T> {
   const stagingDir = await mkdtemp(path.join(tmpdir(), `${STAGING_DIR_PREFIX}${opts.name}-`));
 
   // Phase 1: stage. No backup is taken yet, so a stage failure leaves the

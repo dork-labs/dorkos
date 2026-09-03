@@ -348,7 +348,8 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
 
   /**
    * Confine a body-supplied `projectPath` to the directory boundary, answering
-   * `403` with a message that names the field.
+   * `403` with a message that names the field, and hand back the CANONICAL
+   * spelling of the path it accepted.
    *
    * Kept separate from the catch blocks below so a boundary refusal raised
    * DEEPER in the install pipeline — a `./local/path` install identifier
@@ -356,22 +357,52 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
    * mislabelled as a `projectPath` problem. That one falls through to
    * {@link mapErrorToStatus}.
    *
+   * ## Why the canonical path is returned rather than discarded (DOR-711)
+   *
+   * `validateBoundary` realpaths what it validates, and this helper used to
+   * throw that result away, leaving every route below to act on the raw body
+   * string. Two spellings of one project directory — `/work/proj` and a
+   * symlink `/work/current` pointing at it — then produced two different
+   * install targets for one directory, which is one directory being installed
+   * into under two names. The install engine's per-target lock now resolves its
+   * own key too, so it holds either way; passing the canonical path is the
+   * other half, and it also keeps the path an install is RECORDED against the
+   * same one it was CHECKED against.
+   *
+   * Only the EFFECT is re-pointed — the install, uninstall, update and preview
+   * calls, which are what compute an install target on disk. Two things
+   * deliberately keep the caller's own spelling:
+   *
+   * - **The tier gate.** An approval token binds to the arguments the caller
+   *   sent, and `dorkos call marketplace.uninstall` must still mint a token
+   *   this route honours, so rewriting the hashed arguments would break that
+   *   parity.
+   * - **{@link MarketplaceRouteDeps.onPluginsChanged}.** It is a notification
+   *   keyed to the caller's project, not a filesystem write, and its listeners
+   *   match it against project paths spelled the way the person picked them.
+   *
+   * Neither is load-bearing for the race: the install engine resolves its own
+   * lock key from the filesystem, so it holds however the caller spelled the
+   * path.
+   *
    * @param res - The response to answer on.
    * @param projectPath - The body's `projectPath`, when it sent one.
-   * @returns The sent `403` when refused, otherwise `undefined`. Callers must
-   *   `return` a truthy result so the effect below never runs.
+   * @returns `{ refused }` carrying the sent `403`, or `{ projectPath }` with
+   *   the canonical path (or `undefined` when the body sent none). Callers must
+   *   `return` the refusal so the effect below never runs.
    */
-  const refuseOutOfBoundsProjectPath = async (
+  const confineProjectPath = async (
     res: Response,
     projectPath: string | undefined
-  ): Promise<Response | undefined> => {
-    if (!projectPath) return undefined;
+  ): Promise<{ refused: Response } | { refused?: undefined; projectPath?: string }> => {
+    if (!projectPath) return {};
     try {
-      await validateBoundary(projectPath);
-      return undefined;
+      return { projectPath: await validateBoundary(projectPath) };
     } catch (err) {
       if (err instanceof BoundaryError) {
-        return res.status(403).json({ error: 'Access denied: projectPath outside boundary' });
+        return {
+          refused: res.status(403).json({ error: 'Access denied: projectPath outside boundary' }),
+        };
       }
       throw err;
     }
@@ -680,11 +711,12 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       // so an unbounded preview answers "does this directory exist, and what is
       // in it" for any absolute path on the machine, with no approval card in
       // the way.
-      const refused = await refuseOutOfBoundsProjectPath(res, parsed.data.projectPath);
-      if (refused) return refused;
+      const confined = await confineProjectPath(res, parsed.data.projectPath);
+      if (confined.refused) return confined.refused;
       const { preview, manifest, packagePath } = await installer.preview({
         name: req.params.name,
         ...parsed.data,
+        ...(confined.projectPath !== undefined && { projectPath: confined.projectPath }),
       });
       return res.json({ preview, manifest, packagePath });
     } catch (err) {
@@ -709,8 +741,8 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     }
 
     try {
-      const refused = await refuseOutOfBoundsProjectPath(res, parsed.data.projectPath);
-      if (refused) return refused;
+      const confined = await confineProjectPath(res, parsed.data.projectPath);
+      if (confined.refused) return confined.refused;
       // `marketplace.install` is tier `act`, so this passes for every caller
       // today and no approval card appears for a person clicking Install. It is
       // gated anyway so the route answers to the capability's declared tier
@@ -724,6 +756,7 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       const result = await installer.install({
         name: req.params.name,
         ...parsed.data,
+        ...(confined.projectPath !== undefined && { projectPath: confined.projectPath }),
       });
       // Report the RESOLVED manifest name, never the raw `:name` route param.
       // For `dorkos install ./local/path` or `github:user/repo` the param is
@@ -765,8 +798,8 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     }
 
     try {
-      const refused = await refuseOutOfBoundsProjectPath(res, parsed.data.projectPath);
-      if (refused) return refused;
+      const confined = await confineProjectPath(res, parsed.data.projectPath);
+      if (confined.refused) return confined.refused;
       // The door DOR-467 closed. `marketplace.uninstall` is the one `destructive`
       // capability, and this route used to remove a package with no tier check,
       // no approval and no attribution — which is what `dorkos uninstall`, the
@@ -784,6 +817,7 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       const result = await uninstallFlow.uninstall({
         name: req.params.name,
         ...parsed.data,
+        ...(confined.projectPath !== undefined && { projectPath: confined.projectPath }),
       });
       // Resolved name, not the raw route param — see the install route (DOR-264).
       onPluginsChanged?.({
@@ -809,8 +843,8 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     }
 
     try {
-      const refused = await refuseOutOfBoundsProjectPath(res, parsed.data.projectPath);
-      if (refused) return refused;
+      const confined = await confineProjectPath(res, parsed.data.projectPath);
+      if (confined.refused) return confined.refused;
       // Only an APPLIED update is an effect. Without `apply` this route reports
       // what a newer version would change and touches nothing, so gating it would
       // be gating a read. An applied update reinstalls the package in place
@@ -826,6 +860,7 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       const result = await updateFlow.run({
         name: req.params.name,
         ...parsed.data,
+        ...(confined.projectPath !== undefined && { projectPath: confined.projectPath }),
       });
       // An applied in-place update reinstalls the package, so its skills and
       // commands may have changed: treat it like an install for projection +

@@ -191,8 +191,9 @@ runTransaction<T>(opts: {
 
 `target` is the absolute install location the flow's `activate` renames onto (e.g. `<projectPath>/.dork/plugins/<name>` or `<dorkHome>/plugins/<name>`).
 
-Lifecycle:
+Lifecycle (all of it inside a per-`target` lock — see below):
 
+0. **Take the target lock.** The whole lifecycle runs inside `withInstallTargetLock`, which wraps `withFileLock` (`@dorkos/shared/atomic-write`) on the **realpath-resolved** `target`, so a second transaction aimed at that directory — under any spelling — waits instead of interleaving. Two installs of _different_ packages still run concurrently. The uninstall flow takes the same lock.
 1. **Create staging dir.** `mkdtemp(path.join(os.tmpdir(), 'dorkos-install-<name>-'))`.
 2. **Stage.** Call `opts.stage({ path: stagingDir })`. A thrown error removes the staging dir and re-raises. No backup has been taken yet, so `target` is left untouched.
 3. **Back up the target.** If `target` already exists, move it aside to a sibling `<target>.dorkos-bak-<timestamp>-<uuid>` via `atomicMove` (a sibling keeps the backup on the same filesystem, so the move and any restore are cheap atomic renames; the uuid guards against a same-millisecond collision). A fresh install (target absent) takes no backup.
@@ -201,6 +202,17 @@ Lifecycle:
 6. **Failure rollback.** Remove any partially-written `target`; if a backup was taken, restore it onto `target` via `atomicMove`; remove the staging directory. The original error is always re-raised. Every cleanup and restore step is wrapped defensively so a cleanup error never masks the original transaction error.
 
 The net guarantee: either the package is fully installed and visible, or (for a fresh install) it never existed, or (for a reinstall) the previous installation is intact. Overwrite installs are safe by design: the previous target survives a failed activation and is reaped on success.
+
+**Why step 0 exists (DOR-711).** Steps 3 and 6 are a pair — a rollback restores the snapshot step 3 took — and without serialisation two transactions on one directory could split that pair apart. A took the existing target as its backup; B then found no target at all and installed with no backup of its own; B succeeded; A's activation failed and its rollback deleted the target (B's fresh content) to put A's now-stale backup back. A failed install destroyed a successful one, and both callers got the response they expected. The lock makes move-aside → activate → rollback one critical section, so that interleaving cannot be built. The lock is non-reentrant by design, so no flow may call `runTransaction` from inside another transaction on the same target; nothing does today (schedule materialisation runs after a flow's transaction has settled, not inside it).
+
+**The key is canonical, not the caller's spelling.** `withFileLock` keys on `path.resolve`, which normalises `..` but does not follow symlinks — and its own header tells callers not to lean on the key normalising for them. A project-scope target is built by joining a caller-supplied `projectPath`, so `/work/proj` and a symlink `/work/current` pointing at it are one directory under two keys, which is no lock at all. `withInstallTargetLock` therefore realpaths the target (resolving through its deepest existing ancestor, since a fresh install's target does not exist yet) before locking. The install/uninstall/update/preview routes independently pass the canonical `projectPath` that their boundary check already resolved, instead of the raw body string — belt and braces. The tier-gate calls still hash the **raw** arguments, so an approval token minted by `dorkos call marketplace.uninstall` is still honoured.
+
+**Uninstall shares the lock.** `flows/uninstall.ts` does not use `runTransaction`, but it has the identical destructive pair (move the install root aside; restore that copy if a side-effect throws), so it takes `withInstallTargetLock` on the located install root. Its `locate()` runs outside the lock — the path to lock is not known until it has — and the residue there is loud rather than destructive: a package removed between the probe and the lock makes the flow's `atomicMove` throw `ENOENT`.
+
+**Two residuals, both named on purpose.**
+
+- **Cross-process.** The lock lives in one process's memory. That matches the deployment for global installs, but a project-scope install writes under `{projectPath}/.dork/`, which is keyed to the project rather than to a `dorkHome` — and the dogfood setup runs two servers (dev on :6242, the built app on :4242) that can be opened on the same project. The acceptance `atomic-write.ts` states for its own cross-process edges does **not** transfer here: there, losing mutual exclusion degrades to last-writer-wins over a whole file; here it degrades to the destruction above. Closing it needs an on-disk lock, which is a separate decision.
+- **`MarketplaceInstaller.update()`.** It is uninstall-then-install, and each half takes and releases the lock separately, so the two are not one critical section. Between them `update()` also removes the data-only install root by hand. An install landing in that window can still be lost.
 
 ### 5.1 npm dependencies
 
@@ -229,7 +241,9 @@ A new flow gets none of this for free — the call lives in each flow's `stage`,
 
 The rollback operates on the install target directory using pure filesystem moves. That is deliberate: the install target is `<dorkHome>/plugins/<name>` or a project-local `.dork/` subtree (not `process.cwd()`), and installs write gitignored `.dork/` files that a `git reset` can neither restore nor remove. The superseded ADR-0231 rollback ran `git reset --hard` against `process.cwd()`, which protected the wrong tree, could not touch gitignored files, and destructively reverted every uncommitted tracked-file change in the whole repo (forcing every test to mock `isGitRepo`). ADR-0304 has the full rationale.
 
-There is no `isGitRepo` mock and no `git reset --hard`. Tests exercise the engine against a temp `dorkHome`; the `_internal` export surfaces only filesystem helpers (`moveTargetAside`, `cleanupStaging`, `removePath`) for simulating cleanup or restore failures. The `install-adapter` flow still keeps its own compensating `removeAdapter` call, because a filesystem restore cannot reach the `relay-adapters.json` config file. Uninstall uses its own non-git staging + restore path.
+There is no `isGitRepo` mock and no `git reset --hard`. Tests exercise the engine against a temp `dorkHome`; the `_internal` export surfaces only filesystem helpers (`moveTargetAside`, `cleanupStaging`, `removePath`) for simulating cleanup or restore failures. The `install-adapter` flow still keeps its own compensating `removeAdapter` call, because a filesystem restore cannot reach the `relay-adapters.json` config file. Uninstall uses its own non-git staging + restore path, under the shared per-target lock.
+
+The concurrency guarantees have their own suite (`__tests__/transaction-concurrency.test.ts`): it drives two real transactions against real temp directories and asserts on the **bytes that survive**, never on what the calls returned. Nothing there is stubbed, because the defect it pins is an interleaving of the engine's own steps — a mock of either step would only encode the hypothesis. A sequential test cannot fail any of those assertions.
 
 ## 6. Permission preview
 

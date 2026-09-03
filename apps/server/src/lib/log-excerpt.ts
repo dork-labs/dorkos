@@ -57,7 +57,17 @@ function parseLine(raw: string): LogLine | undefined {
   }
 }
 
-/** Format one log line for the excerpt: `time level [tag] message`. */
+/**
+ * Format one log line for the excerpt: `time level [tag] message`.
+ *
+ * **Known gap, recorded so it is not rediscovered as a bug.** Since DOR-802 the
+ * NDJSON line also carries `error`, `stack` and the `cause` chain, and this
+ * excerpt shows none of it — a bug report still says "Failed to load workspaces"
+ * without the reason underneath. Widening it is not free: every added field goes
+ * through the same scrubbing and competes for `MAX_LOG_EXCERPT_LEN`, and a raw
+ * stack is a poor trade against the number of lines it would displace. Deciding
+ * that trade is its own piece of work, not a line to slip in here.
+ */
 function formatLine(line: LogLine): string {
   const tag = line.tag ? `[${line.tag}] ` : '';
   return `${line.time ?? ''} ${line.level ?? 'info'} ${tag}${line.msg ?? ''}`.trim();

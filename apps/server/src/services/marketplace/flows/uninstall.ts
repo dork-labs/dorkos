@@ -13,6 +13,11 @@
  * error during the side-effect phase restores the package from staging back to
  * its original install path.
  *
+ * Concurrency: this flow does not use `runTransaction`, but it does take the
+ * same per-target lock (`withInstallTargetLock`), because it has the same
+ * destructive pair — move the install root aside, restore that copy on failure
+ * — and therefore the same way of stepping on a concurrent install (DOR-711).
+ *
  * Data preservation: when `purge` is false (the default), the contents of
  * `<installRoot>/.dork/data/` and `<installRoot>/.dork/secrets.json` are
  * copied back into the live install location after the package files have
@@ -31,6 +36,7 @@ import type { MarketplacePackageManifest, PackageType } from '@dorkos/marketplac
 import { INSTALL_ROOTS_WITH_TYPE } from '../lib/install-roots.js';
 import { assertPackageName } from '../lib/package-paths.js';
 import { readInstallMetadata } from '../installed-metadata.js';
+import { withInstallTargetLock } from '../transaction.js';
 
 /** Staging directory prefix used by the uninstall flow. */
 const STAGING_DIR_PREFIX = 'dorkos-uninstall-';
@@ -171,6 +177,21 @@ export class UninstallFlow {
    * the `marketplace_uninstall` MCP tool. Both validate too; this is the guard
    * that holds when a future caller forgets to (`lib/package-paths.ts`).
    *
+   * Everything after the package is located runs inside
+   * {@link withInstallTargetLock} on the located install root — the same lock
+   * the install engine takes (DOR-711). This flow has the identical
+   * destructive pair: it moves the install root aside, and on a side-effect
+   * failure restores that copy over whatever is at the path now. Unserialised,
+   * an install that landed in between would be deleted by an uninstall's
+   * rollback, and a fresh install could land inside the window where the
+   * uninstall has taken the directory away, only to be overwritten when the
+   * uninstall restores it.
+   *
+   * {@link UninstallFlow.locate} stays OUTSIDE the lock, because the path to
+   * lock is not known until it has run. The residue is narrow — a package
+   * removed between the probe and the lock leaves this flow's `atomicMove`
+   * throwing `ENOENT`, which is a loud failure, not a destructive one.
+   *
    * @param req - Uninstall request — name, optional purge flag, optional project path.
    * @returns The uninstall result, including any data paths preserved on disk.
    * @throws {InvalidPackageNameError} If the name is not a canonical package name.
@@ -179,6 +200,24 @@ export class UninstallFlow {
   async uninstall(req: UninstallRequest): Promise<UninstallResult> {
     assertPackageName(req.name);
     const located = await this.locate(req);
+    return withInstallTargetLock(located.installRoot, () => this.removeLocated(req, located));
+  }
+
+  /**
+   * Stage the located package aside, run its side-effects, and either commit
+   * the removal or restore the staged copy.
+   *
+   * Split from {@link UninstallFlow.uninstall} so that entry point is one
+   * readable "locate, then do it under the target's lock" pair. Never call this
+   * directly: the lock is what keeps the move-aside and the restore from being
+   * split apart by a concurrent install.
+   *
+   * @internal
+   */
+  private async removeLocated(
+    req: UninstallRequest,
+    located: LocatedPackage
+  ): Promise<UninstallResult> {
     const stagingDir = await mkdtemp(path.join(tmpdir(), `${STAGING_DIR_PREFIX}${req.name}-`));
     const stagingPath = path.join(stagingDir, 'pkg');
 
