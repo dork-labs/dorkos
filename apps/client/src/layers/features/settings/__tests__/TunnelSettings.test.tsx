@@ -12,11 +12,13 @@ afterEach(() => {
 const defaultProps = {
   authToken: '',
   tokenError: null as string | null,
+  tokenConfigured: true,
   showTokenInput: false,
   onAuthTokenChange: vi.fn(),
   onSaveToken: vi.fn().mockResolvedValue(undefined),
   onShowTokenInput: vi.fn(),
   domain: '',
+  domainError: null as string | null,
   onDomainChange: vi.fn(),
   onDomainSave: vi.fn(),
 };
@@ -147,6 +149,46 @@ describe('TunnelSettings', () => {
       await expandSettings();
       await userEvent.type(screen.getByLabelText('Custom domain'), 'a');
       expect(onDomainChange).toHaveBeenCalled();
+    });
+
+    it('shows a refused domain save instead of the field hint', async () => {
+      render(
+        <TunnelSettings
+          {...defaultProps}
+          domainError="Sign in to DorkOS first — only a signed-in person can change Remote Access settings."
+        />
+      );
+      await expandSettings();
+
+      expect(
+        screen.getByText(
+          'Sign in to DorkOS first — only a signed-in person can change Remote Access settings.'
+        )
+      ).toBeInTheDocument();
+      // The hint steps aside so the two cannot be read as one sentence.
+      expect(
+        screen.queryByText('Leave blank to use a randomly assigned ngrok URL.')
+      ).not.toBeInTheDocument();
+    });
+
+    it('shows the hint and no error when the domain saved cleanly', async () => {
+      render(<TunnelSettings {...defaultProps} />);
+      await expandSettings();
+      expect(
+        screen.getByText('Leave blank to use a randomly assigned ngrok URL.')
+      ).toBeInTheDocument();
+    });
+  });
+
+  describe('token status chip', () => {
+    it('reports a configured token', () => {
+      render(<TunnelSettings {...defaultProps} />);
+      expect(screen.getByText('Token')).toBeInTheDocument();
+    });
+
+    it('reports the absence of one rather than always claiming a token', () => {
+      render(<TunnelSettings {...defaultProps} tokenConfigured={false} />);
+      expect(screen.getByText('No token')).toBeInTheDocument();
     });
   });
 });

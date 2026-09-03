@@ -2,43 +2,77 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook } from '@testing-library/react';
 import { QueryClient } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import { getOwnerSetupRequest, clearOwnerSetupRequest } from '@/layers/shared/lib';
 import { useTunnelActions } from '../model/use-tunnel-actions';
 import type { TunnelMachine } from '../model/use-tunnel-machine';
 
-/** Minimal fake machine — only the setters `handleToggle`/`startTunnel` touch. */
-function fakeMachine(): TunnelMachine {
+/**
+ * Minimal fake machine — the setters the actions touch, plus the two field
+ * values they read. Every setter is a spy, so nothing here is real React state
+ * and no assertion needs `act`.
+ */
+function fakeMachine(overrides: Partial<TunnelMachine> = {}): TunnelMachine {
   return {
+    authToken: 'ngrok-auth-token',
+    // The field holds something the server has not got, so a save is a real
+    // change. `handleSaveDomain` compares the two.
+    domain: 'my-box.ngrok.app',
+    tunnel: undefined,
     setState: vi.fn(),
     setError: vi.fn(),
     setUrl: vi.fn(),
+    setAuthToken: vi.fn(),
+    setShowTokenInput: vi.fn(),
+    setShowSetup: vi.fn(),
+    setTokenError: vi.fn(),
+    setDomainError: vi.fn(),
+    markUserInitiated: vi.fn(),
+    ...overrides,
   } as unknown as TunnelMachine;
 }
 
-describe('useTunnelActions — exposure guard', () => {
-  afterEach(() => {
-    clearOwnerSetupRequest();
-    vi.clearAllMocks();
-  });
+/** Mount the actions over a fake machine and a mock transport. */
+function setup(overrides: Partial<TunnelMachine> = {}) {
+  const transport = createMockTransport();
+  const machine = fakeMachine(overrides);
+  const queryClient = new QueryClient();
+  const { result } = renderHook(() => useTunnelActions({ machine, transport, queryClient }));
+  return { transport, machine, actions: result };
+}
 
+/**
+ * A refusal shaped the way `PATCH /api/config` sends one and `fetchJSON` throws
+ * it: the SAME `error` sentence for both codes, with the distinguishing detail
+ * in `body.message`. Getting this shape right is the point — a fixture that gave
+ * each code its own `.message` would let a broken implementation pass by reading
+ * the message alone.
+ */
+function configRefusal(code: string) {
+  return Object.assign(new Error('Only a person can change those settings'), {
+    code,
+    status: 403,
+    body: { error: 'Only a person can change those settings', code, message: 'server detail' },
+  });
+}
+
+afterEach(() => {
+  clearOwnerSetupRequest();
+  vi.clearAllMocks();
+});
+
+describe('useTunnelActions — exposure guard', () => {
   it('routes a AUTH_REQUIRED_FOR_EXPOSURE tunnel-start rejection into owner setup', async () => {
-    const transport = createMockTransport();
+    const { transport, machine, actions } = setup();
     const exposureError = Object.assign(
       new Error('Exposing DorkOS requires a login. Create an owner account first.'),
       { code: 'AUTH_REQUIRED_FOR_EXPOSURE', status: 409 }
     );
     vi.mocked(transport.startTunnel).mockRejectedValue(exposureError);
 
-    const machine = fakeMachine();
-    const queryClient = new QueryClient();
-    const { result } = renderHook(() => useTunnelActions({ machine, transport, queryClient }));
-
-    await act(async () => {
-      await result.current.handleToggle(true);
-    });
+    await actions.current.handleToggle(true);
 
     const request = getOwnerSetupRequest();
     expect(request).not.toBeNull();
@@ -49,19 +83,227 @@ describe('useTunnelActions — exposure guard', () => {
   });
 
   it('surfaces a normal tunnel-start failure as an error (no owner setup)', async () => {
-    const transport = createMockTransport();
+    const { transport, machine, actions } = setup();
     vi.mocked(transport.startTunnel).mockRejectedValue(new Error('ngrok exploded'));
 
-    const machine = fakeMachine();
-    const queryClient = new QueryClient();
-    const { result } = renderHook(() => useTunnelActions({ machine, transport, queryClient }));
-
-    await act(async () => {
-      await result.current.handleToggle(true);
-    });
+    await actions.current.handleToggle(true);
 
     expect(getOwnerSetupRequest()).toBeNull();
     expect(machine.setState).toHaveBeenCalledWith('error');
     expect(machine.setError).toHaveBeenCalledWith('ngrok exploded');
+  });
+});
+
+describe('useTunnelActions — start timeout is the request timeout (DOR-1739)', () => {
+  it('stays connecting while the start request is still in flight', async () => {
+    vi.useFakeTimers();
+    try {
+      const { transport, machine, actions } = setup();
+      let settleStart: (result: { url: string }) => void = () => {};
+      vi.mocked(transport.startTunnel).mockReturnValue(
+        new Promise<{ url: string }>((resolve) => {
+          settleStart = resolve;
+        })
+      );
+
+      const toggled = actions.current.handleToggle(true);
+
+      // Twenty seconds: past the 15s timer this hook used to arm, and still
+      // well inside the transport's own 30s `REQUEST_TIMEOUT_MS` window. The
+      // dialog must still be connecting, because nothing has answered yet.
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(machine.setState).toHaveBeenCalledWith('starting');
+      expect(machine.setState).not.toHaveBeenCalledWith('error');
+      expect(machine.setError).not.toHaveBeenCalledWith(expect.stringContaining('timed out'));
+
+      // ...and when the slow start succeeds, it lands on connected rather than
+      // correcting an error the dialog had already shown.
+      settleStart({ url: 'https://slow-but-fine.ngrok.app' });
+      await toggled;
+
+      expect(machine.setState).toHaveBeenLastCalledWith('connected');
+      expect(machine.setUrl).toHaveBeenCalledWith('https://slow-but-fine.ngrok.app');
+      expect(machine.setState).not.toHaveBeenCalledWith('error');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows the transport its own timeout when the request really does run out', async () => {
+    const { transport, machine, actions } = setup();
+    vi.mocked(transport.startTunnel).mockRejectedValue(
+      new Error('Request timed out after 30s — check your network')
+    );
+
+    await actions.current.handleToggle(true);
+
+    expect(machine.setState).toHaveBeenCalledWith('error');
+    expect(machine.setError).toHaveBeenCalledWith(
+      'Request timed out after 30s — check your network'
+    );
+  });
+});
+
+describe('useTunnelActions — handleSaveToken surfaces why the save failed', () => {
+  it('clears the error and resets the field when the save goes through', async () => {
+    const { transport, machine, actions } = setup();
+
+    await actions.current.handleSaveToken();
+
+    expect(transport.updateConfig).toHaveBeenCalledWith({
+      tunnel: { authtoken: 'ngrok-auth-token' },
+    });
+    expect(machine.setTokenError).toHaveBeenCalledWith(null);
+    expect(machine.setTokenError).not.toHaveBeenCalledWith(expect.any(String));
+    expect(machine.setAuthToken).toHaveBeenCalledWith('');
+    expect(machine.setShowTokenInput).toHaveBeenCalledWith(false);
+    expect(machine.setShowSetup).toHaveBeenCalledWith(false);
+  });
+
+  it("shows the server's own sentence instead of the generic retry line", async () => {
+    const { transport, machine, actions } = setup();
+    vi.mocked(transport.updateConfig).mockRejectedValue(
+      Object.assign(new Error('tunnel.authtoken: Expected string, received number'), {
+        status: 400,
+      })
+    );
+
+    await actions.current.handleSaveToken();
+
+    expect(machine.setTokenError).toHaveBeenLastCalledWith(
+      'tunnel.authtoken: Expected string, received number'
+    );
+    expect(machine.setTokenError).not.toHaveBeenCalledWith('Could not save token. Try again.');
+  });
+
+  it('tells a caller with no session cookie to sign in', async () => {
+    const { transport, machine, actions } = setup();
+    vi.mocked(transport.updateConfig).mockRejectedValue(configRefusal('operator_cookie_required'));
+
+    await actions.current.handleSaveToken();
+
+    expect(machine.setTokenError).toHaveBeenLastCalledWith(
+      'Sign in to DorkOS first — only a signed-in person can change Remote Access settings.'
+    );
+  });
+
+  it('tells an agent that Remote Access settings are not its to change', async () => {
+    const { transport, machine, actions } = setup();
+    vi.mocked(transport.updateConfig).mockRejectedValue(configRefusal('operator_only_config'));
+
+    await actions.current.handleSaveToken();
+
+    expect(machine.setTokenError).toHaveBeenLastCalledWith(
+      'Only you can change Remote Access settings — an agent cannot. Nothing changed.'
+    );
+  });
+
+  it('keeps the two operator refusals apart, which the server sentence cannot', async () => {
+    const cookie = setup();
+    vi.mocked(cookie.transport.updateConfig).mockRejectedValue(
+      configRefusal('operator_cookie_required')
+    );
+    await cookie.actions.current.handleSaveToken();
+
+    const agent = setup();
+    vi.mocked(agent.transport.updateConfig).mockRejectedValue(
+      configRefusal('operator_only_config')
+    );
+    await agent.actions.current.handleSaveToken();
+
+    const [cookieMessage] = vi.mocked(cookie.machine.setTokenError).mock.lastCall ?? [];
+    const [agentMessage] = vi.mocked(agent.machine.setTokenError).mock.lastCall ?? [];
+    expect(cookieMessage).not.toBe(agentMessage);
+    // Neither one repeats the single sentence the route sends for both.
+    expect(cookieMessage).not.toBe('Only a person can change those settings');
+    expect(agentMessage).not.toBe('Only a person can change those settings');
+  });
+
+  it('falls back to the generic line when the failure carries no message', async () => {
+    const { transport, machine, actions } = setup();
+    vi.mocked(transport.updateConfig).mockRejectedValue(new Error(''));
+
+    await actions.current.handleSaveToken();
+
+    expect(machine.setTokenError).toHaveBeenLastCalledWith('Could not save token. Try again.');
+  });
+});
+
+describe('useTunnelActions — handleSaveDomain no longer swallows failures', () => {
+  it('clears the error when the save goes through', async () => {
+    const { transport, machine, actions } = setup();
+
+    await actions.current.handleSaveDomain();
+
+    expect(transport.updateConfig).toHaveBeenCalledWith({
+      tunnel: { domain: 'my-box.ngrok.app' },
+    });
+    expect(machine.setDomainError).toHaveBeenCalledWith(null);
+    expect(machine.setDomainError).not.toHaveBeenCalledWith(expect.any(String));
+  });
+
+  it('sends null when a saved domain is deliberately cleared', async () => {
+    const { transport, actions } = setup({
+      domain: '   ',
+      tunnel: { domain: 'my-box.ngrok.app' } as TunnelMachine['tunnel'],
+    });
+
+    await actions.current.handleSaveDomain();
+
+    expect(transport.updateConfig).toHaveBeenCalledWith({ tunnel: { domain: null } });
+  });
+
+  it('writes nothing when the field was only blurred, not changed', async () => {
+    const { transport, machine, actions } = setup({
+      domain: 'my-box.ngrok.app',
+      tunnel: { domain: 'my-box.ngrok.app' } as TunnelMachine['tunnel'],
+    });
+
+    await actions.current.handleSaveDomain();
+
+    expect(transport.updateConfig).not.toHaveBeenCalled();
+    expect(machine.setDomainError).not.toHaveBeenCalled();
+  });
+
+  it('writes nothing when an empty field is blurred over an unset domain', async () => {
+    // The shape that used to wipe a saved domain: the input renders empty
+    // because the config DTO reported no LIVE domain, and a blur past it wrote
+    // `null` over whatever was stored.
+    const { transport, actions } = setup({ domain: '', tunnel: undefined });
+
+    await actions.current.handleSaveDomain();
+
+    expect(transport.updateConfig).not.toHaveBeenCalled();
+  });
+
+  it("shows the server's sentence for a refused domain write", async () => {
+    const { transport, machine, actions } = setup();
+    vi.mocked(transport.updateConfig).mockRejectedValue(
+      Object.assign(new Error('tunnel.domain: must be a hostname'), { status: 400 })
+    );
+
+    await actions.current.handleSaveDomain();
+
+    expect(machine.setDomainError).toHaveBeenLastCalledWith('tunnel.domain: must be a hostname');
+  });
+
+  it('applies the operator-refusal copy to the domain save too', async () => {
+    const { transport, machine, actions } = setup();
+    vi.mocked(transport.updateConfig).mockRejectedValue(configRefusal('operator_cookie_required'));
+
+    await actions.current.handleSaveDomain();
+
+    expect(machine.setDomainError).toHaveBeenLastCalledWith(
+      'Sign in to DorkOS first — only a signed-in person can change Remote Access settings.'
+    );
+  });
+
+  it('falls back to the generic line when the failure carries no message', async () => {
+    const { transport, machine, actions } = setup();
+    vi.mocked(transport.updateConfig).mockRejectedValue(new Error(''));
+
+    await actions.current.handleSaveDomain();
+
+    expect(machine.setDomainError).toHaveBeenLastCalledWith('Could not save domain. Try again.');
   });
 });

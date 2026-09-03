@@ -13,14 +13,36 @@ export type TunnelState = 'off' | 'starting' | 'connected' | 'stopping' | 'error
 /** UI view selected by the dialog based on tunnel + setup state. */
 export type ViewState = 'landing' | 'setup' | 'ready' | 'connecting' | 'connected' | 'error';
 
-/** Hard timeout for the start-tunnel action before forcing the error view. */
-export const START_TIMEOUT_MS = 15_000;
-
-/** Recovery timeout for transitional states stuck in starting/stopping. */
-export const STUCK_STATE_TIMEOUT_MS = 30_000;
-
-/** Interval between latency probes when the tunnel is connected and dialog is open. */
+/**
+ * Interval between latency probes when the tunnel is connected and dialog is
+ * open.
+ *
+ * ## Both of this file's other timeouts are gone, deliberately (DOR-1739)
+ *
+ * `START_TIMEOUT_MS` (15s) and `STUCK_STATE_TIMEOUT_MS` (30s) each raced the
+ * transport's own 30s request timeout, and a race between two clocks over one
+ * request is decided by the shorter one — which is not the one holding the
+ * answer. The 15s timer showed "Tunnel timed out after 15 seconds" over a start
+ * that was still in flight, then flipped the very same dialog to connected when
+ * it succeeded at 20s. The 30s one was simply unreachable behind it.
+ *
+ * Neither came back, because there is nothing left for them to recover: every
+ * path into `starting` and `stopping` is an awaited transport call, and every
+ * settlement of that call — resolve or reject — sets the next state itself.
+ * `HttpTransport` guarantees the settlement, arming `AbortSignal.timeout` on
+ * every request. A replacement net could only ever fire while the request it
+ * was netting was still running, which is the defect, not the fix.
+ */
 export const LATENCY_INTERVAL_MS = 30_000;
+
+/**
+ * How long a single latency probe may run before it is abandoned.
+ *
+ * Shorter than {@link LATENCY_INTERVAL_MS} on purpose: a probe that outlived
+ * the gap to the next one would let requests to an unreachable tunnel pile up
+ * one deep every 30 seconds for as long as the dialog stayed open.
+ */
+export const LATENCY_PROBE_TIMEOUT_MS = 10_000;
 
 /**
  * Derive which view to show based on tunnel config, state, and user navigation.

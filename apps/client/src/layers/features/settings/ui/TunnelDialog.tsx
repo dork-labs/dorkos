@@ -183,11 +183,13 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
                 <TunnelSettings
                   authToken={machine.authToken}
                   tokenError={machine.tokenError}
+                  tokenConfigured={machine.tokenConfigured}
                   showTokenInput={machine.showTokenInput}
                   onAuthTokenChange={machine.setAuthToken}
                   onSaveToken={actions.handleSaveToken}
                   onShowTokenInput={() => machine.setShowTokenInput(true)}
                   domain={machine.domain}
+                  domainError={machine.domainError}
                   onDomainChange={machine.setDomain}
                   onDomainSave={actions.handleSaveDomain}
                 />

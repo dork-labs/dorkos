@@ -46,11 +46,18 @@ function StatusChip({ active, label }: { active: boolean; label: string }) {
 export interface TunnelSettingsProps {
   authToken: string;
   tokenError: string | null;
+  /**
+   * Whether the server holds an ngrok token. Passed in rather than assumed: the
+   * chip used to be hardcoded `active`, which was true only because the dialog
+   * happens to mount this panel behind that same check.
+   */
+  tokenConfigured: boolean;
   showTokenInput: boolean;
   onAuthTokenChange: (value: string) => void;
   onSaveToken: () => Promise<void>;
   onShowTokenInput: () => void;
   domain: string;
+  domainError: string | null;
   onDomainChange: (value: string) => void;
   onDomainSave: () => void;
 }
@@ -59,11 +66,13 @@ export interface TunnelSettingsProps {
 export function TunnelSettings({
   authToken,
   tokenError,
+  tokenConfigured,
   showTokenInput,
   onAuthTokenChange,
   onSaveToken,
   onShowTokenInput,
   domain,
+  domainError,
   onDomainChange,
   onDomainSave,
 }: TunnelSettingsProps) {
@@ -96,7 +105,7 @@ export function TunnelSettings({
       {/* Status chips — visible when collapsed */}
       {!open && (
         <div className="mt-1.5 flex gap-3 pl-5">
-          <StatusChip active label="Token" />
+          <StatusChip active={tokenConfigured} label={tokenConfigured ? 'Token' : 'No token'} />
           <StatusChip active={!!domain.trim()} label={domain.trim() || 'No domain'} />
         </div>
       )}
@@ -131,7 +140,7 @@ export function TunnelSettings({
                       <Button
                         type="button"
                         size="sm"
-                        onClick={onSaveToken}
+                        onClick={() => void onSaveToken()}
                         disabled={!authToken.trim()}
                       >
                         Save
@@ -153,7 +162,7 @@ export function TunnelSettings({
               </div>
 
               {/* Custom domain field */}
-              <Field>
+              <Field data-invalid={domainError ? true : undefined}>
                 <FieldLabel className="text-sm">Custom domain</FieldLabel>
                 <Input
                   type="text"
@@ -164,9 +173,13 @@ export function TunnelSettings({
                   placeholder="your-domain.ngrok.app"
                   aria-label="Custom domain"
                 />
-                <FieldDescription className="text-xs">
-                  Leave blank to use a randomly assigned ngrok URL.
-                </FieldDescription>
+                {domainError ? (
+                  <FieldError>{domainError}</FieldError>
+                ) : (
+                  <FieldDescription className="text-xs">
+                    Leave blank to use a randomly assigned ngrok URL.
+                  </FieldDescription>
+                )}
               </Field>
             </div>
           </motion.div>

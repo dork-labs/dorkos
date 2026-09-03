@@ -11,11 +11,19 @@ describe('friendlyErrorMessage', () => {
     );
   });
 
-  it('maps timeout errors', () => {
+  it('maps timeout errors without blaming the network', () => {
     expect(friendlyErrorMessage('connection ETIMEDOUT')).toBe(
-      'Tunnel timed out. Check your network.'
+      'The tunnel took too long to respond. Try again.'
     );
-    expect(friendlyErrorMessage('timeout after 30s')).toBe('Tunnel timed out. Check your network.');
+    expect(friendlyErrorMessage('timeout after 30s')).toBe(
+      'The tunnel took too long to respond. Try again.'
+    );
+    // The transport's own wording, which is what the dialog actually sees when a
+    // start runs out of time. It says "timed out" — two words — so the original
+    // `/timeout/i` pattern missed the one message this panel renders most.
+    expect(friendlyErrorMessage('Request timed out after 30s — check your network')).toBe(
+      'The tunnel took too long to respond. Try again.'
+    );
   });
 
   it('maps tunnel limit errors', () => {

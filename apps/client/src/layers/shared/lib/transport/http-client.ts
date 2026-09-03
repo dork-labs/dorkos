@@ -5,7 +5,17 @@
  */
 import { setAuthRequired } from '../auth-signal';
 
-/** Default timeout for fetchJSON requests (ms). */
+/**
+ * Default timeout for fetchJSON requests (ms).
+ *
+ * **This is the only clock a caller may wait on.** A surface that arms a second,
+ * shorter timer over a transport call decides the outcome before the request
+ * has answered, and the request then contradicts it: the Remote Access dialog
+ * ran a 15s timer over this 30s one, so a slow start showed "Tunnel timed out
+ * after 15 seconds" and then flipped the same dialog to connected when it
+ * succeeded at 20s (DOR-1739). Pass `timeout` here to wait a different length of
+ * time; never race this from outside.
+ */
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 /**
