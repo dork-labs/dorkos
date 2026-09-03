@@ -1011,6 +1011,25 @@ describe('Marketplace Routes', () => {
       });
     });
 
+    it('installs into the CANONICAL projectPath, not the raw body spelling (DOR-711)', async () => {
+      // `validateBoundary` realpaths what it validates (mocked here to return
+      // `/resolved/project`). The route used to throw that away and hand the
+      // installer the raw string, so one project directory reached by two
+      // spellings — its real path and a symlink to it — became two install
+      // targets for one directory, and the per-target serialisation that keeps
+      // a failed install from rolling back over a successful one keyed on the
+      // spelling rather than on the directory.
+      installer.install.mockResolvedValue(buildSampleInstallResult());
+
+      await request(app)
+        .post('/api/marketplace/packages/sample-plugin/install')
+        .send({ projectPath: '/some/project' });
+
+      expect(installer.install.mock.calls[0][0]).toMatchObject({
+        projectPath: '/resolved/project',
+      });
+    });
+
     it('passes projectPath: undefined to onPluginsChanged for a global install', async () => {
       installer.install.mockResolvedValue(buildSampleInstallResult());
 
