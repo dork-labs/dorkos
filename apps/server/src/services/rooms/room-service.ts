@@ -15,23 +15,25 @@
  * could widen another agent's addressing could drive replies nobody asked for,
  * from inside the room where it is hardest to notice.
  *
- * **Those three are the whole list. `updateRoom` is deliberately not on it** —
- * a room's title, topic and archived flag are writable by any member, so an
- * agent can rename or archive a room it belongs to. That is pre-existing and
- * survives DOR-598 unchanged, and it is not a gate anyone forgot: the naive fix
- * (`requireOperator` in `updateRoom`) breaks `createRoom`'s DM un-archive path,
- * where the caller re-opening its own archived direct message may legitimately
- * be that agent. Closing it properly means splitting the re-open out first.
- * Tracked as DOR-608; do not add the gate without that split.
+ * **`updateRoom` joined that list in DOR-608.** A room's title, topic and
+ * archived flag used to be writable by any member, so an agent could rename or
+ * archive a room it belonged to — the owner's own channel included. The naive
+ * gate was a trap, which is why it stood so long: `createRoom`'s DM un-archive
+ * path re-opens a conversation on behalf of whoever asked for it, and for a DM
+ * between the owner and an agent that caller is legitimately the agent. The
+ * write half is now `applyRoomPatch`, which asks nothing about the caller, and
+ * three callers sit above it — `updateRoom` (operator-only, what the routes and
+ * the community adapter use), `updateRoomFromTool` (an agent renaming a channel
+ * or writing a topic, reachable only from the `roomsManage` capability verbs),
+ * and `adoptExistingDm`'s un-archive (no check, by design).
  *
- * **One narrow exception now exists: a SYSTEM room** — a room carrying a
- * well-known key, which today means the #team channel `ensureTeamRoom` opens at
- * boot (team-room-home spec D3.1). Renaming or archiving one is refused for
- * anyone but the owner. It is not the blanket gate above and cannot become it:
- * the refusal reads `wellKnown`, a DM never has one, so the un-archive path
- * DOR-608 protects is untouched by construction. The product renders its home
- * tab from that room, so an agent that could rename or put it away could take
- * the cockpit's front door with it.
+ * **Two field refusals survive on the tool path**, because being an agent on the
+ * roster is not enough for either. A SYSTEM room — one carrying a well-known
+ * key, which today means the #team channel `ensureTeamRoom` opens at boot
+ * (team-room-home spec D3.1) — refuses a rename from anyone but the owner: the
+ * product renders its home tab from that room, so an agent that could rename it
+ * could take the cockpit's front door with it. And a DIRECT MESSAGE cannot be
+ * renamed by an agent at all, because a DM's name is its roster.
  *
  * **The gates ask who the OWNER is, never whether the author is a human**
  * (DOR-598). Those were the same question only while this table held exactly one
@@ -1276,15 +1278,23 @@ export class RoomService {
    * conversation, un-archived if it was away, with `created: false` telling the
    * caller which of the two answers they got.
    *
+   * **The un-archive goes through {@link RoomService.applyRoomPatch}, not
+   * {@link RoomService.updateRoom}, and that is DOR-608's whole difficulty in one
+   * line.** The caller here is whoever asked for the conversation, which for a
+   * DM between the owner and an agent is routinely the AGENT — so this write is
+   * a non-owner's and must go through, while the same write arriving at
+   * `PATCH /api/rooms/:id` is refused. Visibility needs no re-check: this room
+   * matched on a member set that always contains the caller, so it is a room
+   * they are in by construction.
+   *
    * @param existing - The DM holding exactly this member set.
    * @param creatorAuthorId - Whoever asked to open it.
    */
   private adoptExistingDm(existing: Room, creatorAuthorId: string): OpenedRoom {
-    // `updateRoom` re-checks visibility and broadcasts `room_updated`, which
-    // is what a sidebar holding a stale list needs to hear. Its slug-reclaim
-    // branch is channel-only, so it is inert here.
+    // Broadcasts `room_updated`, which is what a sidebar holding a stale list
+    // needs to hear. The slug-reclaim branch is channel-only, so it is inert here.
     const reopened = existing.archived
-      ? this.updateRoom(existing.id, creatorAuthorId, { archived: false })
+      ? this.applyRoomPatch(existing, creatorAuthorId, { archived: false })
       : this.withRoster(existing, creatorAuthorId);
     return { ...reopened, created: false };
   }
@@ -2146,8 +2156,115 @@ export class RoomService {
   }
 
   /**
-   * Patch a room's title, topic, archived flag, or — on a bridged room — its
-   * `deliverNotices` override.
+   * Patch a room's title, topic, archived flag, its four automatic-reply limits,
+   * or — on a bridged room — its `deliverNotices` override. **Operator-only**
+   * (DOR-608).
+   *
+   * **The gate is the caller, and reaching it took a split.** Until DOR-608 this
+   * method had every field check a room needs and no caller check at all, so a
+   * verified agent that belonged to a room could rename it or archive it — the
+   * owner's own channel included, and archive is a room-level flag everyone in
+   * the room feels. The one-line `requireOperator` was a trap: it passed the
+   * whole suite and broke a flow none of it covered, because `createRoom`'s
+   * idempotent DM branch un-archives the conversation it matched, and the caller
+   * doing that is legitimately the AGENT re-opening its own direct message. So
+   * the write half moved into {@link RoomService.applyRoomPatch}, which asks
+   * nothing about who is calling, and the two paths that must not be gated reach
+   * it without passing through here: that un-archive
+   * ({@link RoomService.adoptExistingDm}) and the agent-facing
+   * {@link RoomService.updateRoomFromTool}.
+   *
+   * **An agent's surface for a room's name and topic is `update_room`, not this
+   * one** — the shape the roster verbs took in DOR-1611, a second method rather
+   * than a parameter, so a surface added tomorrow gets the operator-only one by
+   * default. Nothing an agent was meant to write moved out of reach: `archived`
+   * and the four limit overrides were never on a tool at all.
+   *
+   * **A second HUMAN author is refused too**, which is the half worth stating.
+   * An invited member, or a cached remote member from a community (ADR
+   * 260727-184933 D6), is not this install's owner and never inherits its
+   * powers — the same correction {@link RoomService.seesEveryRoom} carries.
+   *
+   * Checked AFTER visibility and BEFORE any write, so a caller probing a room it
+   * is not in learns 404 exactly as it would from reading it, and only somebody
+   * who can genuinely see the room learns 403 `OPERATOR_ONLY`.
+   *
+   * **The four turn-limit overrides get their own SENTENCE, not their own gate**
+   * (DOR-1429). They are spend authority — `turnLimitsEnabled: false` removes
+   * this room's cascade guard and its hourly ceiling in one write, and
+   * everything that happens next is billed to the person who owns the install —
+   * so the refusal names them instead of saying "a room", which is what makes it
+   * actionable in a log and in the panel that sent it. The gate itself is the
+   * blanket one, which is strictly stronger and refuses exactly the same
+   * callers. The install-wide twins of these fields are already `operator-only`
+   * in `config-write-policy.ts`; this is the same decision at the room's grain.
+   *
+   * **An omitted override and an explicit `null` are different instructions.**
+   * Absent leaves the stored value alone; `null` clears the override, putting
+   * the room back to following Settings. Zod strips absent optional keys, so
+   * the distinction survives all the way to `RoomStore.updateRoom`'s `set`.
+   *
+   * @param roomId - The room id.
+   * @param viewerAuthorId - The caller; must be the person who owns this install.
+   * @param patch - The validated update request.
+   * @returns The updated room with its roster.
+   */
+  updateRoom(roomId: string, viewerAuthorId: string, patch: UpdateRoomRequest): RoomWithRoster {
+    const room = this.requireVisibleRoom(roomId, viewerAuthorId);
+    this.requireOperator(
+      viewerAuthorId,
+      ROOM_TURN_LIMIT_FIELDS.some((field) => Object.hasOwn(patch, field))
+        ? 'how much a room may spend on automatic replies'
+        : 'what a room is called, what it is about, or whether it is put away'
+    );
+    return this.applyRoomPatch(room, viewerAuthorId, patch);
+  }
+
+  /**
+   * Rename a channel or write a room's topic as an AGENT on its roster — the
+   * agent-facing half of {@link RoomService.updateRoom} (spec
+   * `rooms-management-tools` §D12, DOR-1611).
+   *
+   * **A second method rather than a flag**, for the reason
+   * {@link RoomService.requireRosterWriteAllowed} gives at the roster seam: the
+   * two field refusals below are the whole of what an agent has to clear, and a
+   * branch inside the public method would leave that narrowness one boolean away
+   * from every caller that arrives later. This one is reachable only from the
+   * rooms capability domain, itself gated on the `roomsManage` grant at
+   * `registry.invoke` — no route calls it.
+   *
+   * **`archived` is not on the signature, and the type is the point.** Putting a
+   * room away is a room-level flag everyone in it feels; no tool has ever
+   * offered it, and none can offer it by accident from here. The turn-limit
+   * overrides cannot arrive either, for the same reason.
+   *
+   * @param roomId - The room to change; the caller must be able to see it.
+   * @param callerAuthorId - The agent asking, already resolved.
+   * @param patch - The title and topic half of an update.
+   * @returns The updated room with its roster.
+   */
+  updateRoomFromTool(
+    roomId: string,
+    callerAuthorId: string,
+    patch: { title?: string; topic?: string | null }
+  ): RoomWithRoster {
+    const room = this.requireVisibleRoom(roomId, callerAuthorId);
+    this.requireSystemRoomWritable(room, callerAuthorId, patch);
+    this.requireDmTitleWritable(room, callerAuthorId, patch);
+    return this.applyRoomPatch(room, callerAuthorId, patch);
+  }
+
+  /**
+   * Write a patch onto a room and tell both streams — the half of an update that
+   * asks nothing about who is calling.
+   *
+   * **The split DOR-608 needed.** Its three callers have three different answers
+   * to "who may do this": {@link RoomService.updateRoom} is operator-only,
+   * {@link RoomService.updateRoomFromTool} takes two field checks, and
+   * {@link RoomService.adoptExistingDm}'s un-archive takes none at all — an
+   * agent asking for its own direct message again is a non-owner write that has
+   * to go through. One gated method cannot serve all three, and gating the
+   * method they used to share is exactly what broke the third.
    *
    * **Renaming a channel moves its `#slug` with the title.** A channel's name
    * IS its slug — it is what the sidebar draws, what a person types, and the
@@ -2171,54 +2288,19 @@ export class RoomService {
    * means a caller who sent `{ title, deliverNotices }` for an unbridged room
    * never sees a half-applied rename.
    *
-   * **A system room refuses a rename or an archive from anyone but the owner**
-   * (team-room-home spec D3.1). See {@link RoomService.requireSystemRoomWritable}
-   * for why that is a field check here rather than the blanket `requireOperator`
-   * DOR-608 forbids. The topic is deliberately NOT covered: describing what a
-   * room is for is ordinary participation, and #team is a room agents live in.
-   *
-   * **The four turn-limit overrides are OPERATOR-only, in every room**
-   * (DOR-1429) — the same gate the roster writes take, and for the same reason
-   * they were corrected off `kind === 'human'`. These fields are spend
-   * authority: `turnLimitsEnabled: false` removes this room's cascade guard and
-   * its hourly ceiling in one write, and everything that happens next is billed
-   * to the person who owns the install. A person-kind check would have been
-   * enough while an install minted exactly one human author, and wrong the
-   * moment a second one exists — an invited member, or a cached remote member
-   * from a community (ADR 260727-184933 D6) — because either could then uncap a
-   * room on somebody else's account. The install-wide twins of these fields are
-   * already `operator-only` in `config-write-policy.ts`; this is the same
-   * decision at the room's grain, and it is why no room capability tool exposes
-   * them at all.
-   *
-   * Checked AFTER visibility and BEFORE any write, so a caller probing a room it
-   * is not in learns 404 exactly as it would from reading it, and only somebody
-   * who can genuinely see the room learns 403 `OPERATOR_ONLY`.
-   *
-   * **Only the limit fields tighten.** Title, topic and archive keep the gate
-   * they had — `updateRoom` still has no blanket operator check, because adding
-   * one breaks `createRoom`'s DM un-archive path (see
-   * {@link RoomService.requireSystemRoomWritable}), and this refusal cannot
-   * reach that path: it fires only on fields that call never sends.
-   *
-   * **An omitted override and an explicit `null` are different instructions.**
-   * Absent leaves the stored value alone; `null` clears the override, putting
-   * the room back to following Settings. Zod strips absent optional keys, so
-   * the distinction survives all the way to `RoomStore.updateRoom`'s `set`.
-   *
-   * @param roomId - The room id.
-   * @param viewerAuthorId - The caller; must be on the roster.
-   * @param patch - The validated update request.
+   * @param room - The room as it stands, already resolved and visible to the caller.
+   * @param viewerAuthorId - The caller, for the roster projection and for naming
+   *   a slug collision in terms they are allowed to hear.
+   * @param patch - The validated update.
    * @returns The updated room with its roster.
    */
-  updateRoom(roomId: string, viewerAuthorId: string, patch: UpdateRoomRequest): RoomWithRoster {
-    const room = this.requireVisibleRoom(roomId, viewerAuthorId);
+  private applyRoomPatch(
+    room: Room,
+    viewerAuthorId: string,
+    patch: UpdateRoomRequest
+  ): RoomWithRoster {
+    const roomId = room.id;
     const { deliverNotices, ...roomPatch } = patch;
-    if (ROOM_TURN_LIMIT_FIELDS.some((field) => Object.hasOwn(roomPatch, field))) {
-      this.requireOperator(viewerAuthorId, 'how much a room may spend on automatic replies');
-    }
-    this.requireSystemRoomWritable(room, viewerAuthorId, roomPatch);
-    this.requireDmTitleWritable(room, viewerAuthorId, roomPatch);
     if (deliverNotices !== undefined && !this.bridges.findBridgeByRoom(roomId)) {
       throw new RoomError('NOT_A_BRIDGED_ROOM', 'This room is not bridged to an external chat');
     }
@@ -5061,14 +5143,18 @@ export class RoomService {
    * Refuse a rename or an archive of a SYSTEM room from anyone but the owner
    * (team-room-home spec D3.1).
    *
-   * **A field check, not a caller check, and that is what makes it safe to add
-   * here at all.** DOR-608's open hole is that `updateRoom` has no operator
-   * gate, and the reason it stays open is that adding one breaks
-   * `createRoom`'s DM un-archive path — an agent legitimately re-opening its
-   * own archived direct message. This refusal cannot reach that path: it fires
-   * only on `wellKnown`, which no DM and no caller-created room ever carries.
-   * So the hole is closed for the rooms the product cannot work without, and
-   * every ordinary room behaves exactly as it did.
+   * **A field check, not a caller check**, which is what made it safe to add
+   * while `updateRoom` still had no operator gate — it fires only on
+   * `wellKnown`, which no DM and no caller-created room ever carries, so it
+   * could never reach `createRoom`'s DM un-archive path. DOR-608 has since
+   * closed the blanket hole by splitting that path off
+   * ({@link RoomService.applyRoomPatch}), and this refusal outlived it: it is
+   * now what stops an agent renaming #team through
+   * {@link RoomService.updateRoomFromTool}, the one surface that still writes a
+   * room's name for a caller who is not the owner. **The `archived` half is
+   * belt-and-braces** — that surface has no such field and `updateRoom` refuses
+   * the caller outright — and it stays because this method is the sentence
+   * "#team is not an ordinary room", not a patch on one particular route.
    *
    * **Rename and archive, not topic, and not delete.** The title is a channel's
    * address (renaming it moves the `#slug`), and archiving takes the room off
@@ -5111,9 +5197,10 @@ export class RoomService {
    * whole verb.
    *
    * The shape is {@link RoomService.requireSystemRoomWritable}'s, deliberately:
-   * a FIELD check rather than a blanket gate, so it cannot reach `createRoom`'s
-   * DM un-archive path (which sends `archived` and never `title`), and the TOPIC
-   * stays writable — describing a room you are in is ordinary participation.
+   * a FIELD check rather than a blanket gate, so the TOPIC stays writable —
+   * describing a room you are in is ordinary participation. Since DOR-608 both
+   * live on {@link RoomService.updateRoomFromTool}, which is the only path left
+   * that writes a room's name for somebody who is not the owner.
    *
    * **The owner is exempt**, as she is there. The cockpit is the person, a name
    * she chose for her own conversation is hers to change, and the rule this
@@ -5250,8 +5337,8 @@ export class RoomService {
    * **`requireOperator` itself is unchanged, and four of its call sites must
    * never gain an agent path.** `setFallbackSeat` and `updateMembership` decide
    * who answers what, which is arbitration by another name (ADR 260726-170125);
-   * `archiveBridgedRoom` and `updateRoom`'s turn-limit branch are spend
-   * authority. Only `addMember` and `removeMember` move here.
+   * `archiveBridgedRoom` and {@link RoomService.updateRoom} are spend authority
+   * and room-level state. Only `addMember` and `removeMember` move here.
    *
    * **What this deliberately does NOT decide.** Four refusals sit beside it and
    * stay exactly where they are, because each is a FIELD check rather than a

@@ -326,8 +326,8 @@ export const rooms = sqliteTable(
      * **It is also the system-room flag**, and one column rather than two on
      * purpose: "DorkOS created this room and the product needs it" and "nothing
      * else may take its key" are the same fact. A non-null value is what makes
-     * `RoomService.updateRoom` refuse a rename or an archive from anyone but
-     * the owner (DOR-608's hole, closed for exactly the rooms it matters for).
+     * `RoomService.updateRoomFromTool` refuse a rename from an agent that is
+     * otherwise allowed to rename the channels it belongs to.
      *
      * Unique, and NULL is distinct from NULL in a SQLite unique index, so every
      * ordinary room sits under it for free.

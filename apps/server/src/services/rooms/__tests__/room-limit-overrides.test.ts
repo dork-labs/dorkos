@@ -305,16 +305,30 @@ describe('who may set a room limit', () => {
     expect(wired.service.getRoom(wired.room.id, wired.human)?.maxAgentDepth).toBe(4);
   });
 
-  it('still lets both of them patch a topic, so the gate is the fields', () => {
-    // Only the limit fields tightened. Describing what a room is for stays
-    // ordinary participation for everyone who can see the room.
-    const { wired, priya, ana } = ownedRoom();
-    expect(wired.service.updateRoom(wired.room.id, ana, { topic: 'the API' }).topic).toBe(
+  it('leaves an agent its topic through the TOOL, which is the surface it has', () => {
+    // Describing what a room is for stays ordinary participation. Since DOR-608
+    // it is `updateRoomFromTool` that says so — `updateRoom` is the route's
+    // method and refuses every non-owner, this one included.
+    const { wired, ana } = ownedRoom();
+
+    expect(wired.service.updateRoomFromTool(wired.room.id, ana, { topic: 'the API' }).topic).toBe(
       'the API'
     );
-    expect(wired.service.updateRoom(wired.room.id, priya, { topic: 'the API v2' }).topic).toBe(
-      'the API v2'
+    expect(() => wired.service.updateRoom(wired.room.id, ana, { topic: 'the API' })).toThrow(
+      expect.objectContaining({ code: 'OPERATOR_ONLY' })
     );
+  });
+
+  it('refuses a second PERSON the topic as well — she has no tool and no ownership', () => {
+    // The honest consequence of DOR-608, stated rather than left to be
+    // discovered: an invited human is not the owner, and a capability verb is
+    // an agent's surface, not hers. Asking the owner is the way through.
+    const { wired, priya } = ownedRoom();
+
+    expect(() => wired.service.updateRoom(wired.room.id, priya, { topic: 'the API v2' })).toThrow(
+      expect.objectContaining({ code: 'OPERATOR_ONLY' })
+    );
+    expect(wired.service.getRoom(wired.room.id, wired.human)?.topic).toBeNull();
   });
 });
 

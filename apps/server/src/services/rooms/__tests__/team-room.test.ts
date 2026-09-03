@@ -19,7 +19,6 @@
  * and not a test.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { RoomError } from '../room-errors.js';
 import {
   ensureTeamRoom,
   joinTeamRoom,
@@ -538,26 +537,34 @@ describe('#team is a system room', () => {
     };
   }
 
-  it('refuses a rename from an agent', () => {
+  it('refuses a rename from an agent, on the one path that could still write a name', () => {
+    // `updateRoom` refuses every agent since DOR-608, so the interesting caller
+    // is the TOOL: `update_room` renames the channels an agent belongs to, and
+    // this refusal is what keeps #team out of that set.
     const { harness, roomId, agent } = seated();
 
-    expect(() => harness.service.updateRoom(roomId, agent, { title: 'Ops' })).toThrow(
+    expect(() => harness.service.updateRoomFromTool(roomId, agent, { title: 'Ops' })).toThrow(
       expect.objectContaining({ code: 'SYSTEM_ROOM' })
     );
     expect(harness.store.getRoom(roomId)?.slug).toBe('team');
   });
 
   it('refuses an archive from an agent', () => {
+    // Twice over, and deliberately: the route refuses the caller (DOR-608), and
+    // `updateRoomFromTool` has no `archived` on its signature at all, so no
+    // capability verb can grow one by accident.
     const { harness, roomId, agent } = seated();
 
-    expect(() => harness.service.updateRoom(roomId, agent, { archived: true })).toThrow(RoomError);
+    expect(() => harness.service.updateRoom(roomId, agent, { archived: true })).toThrow(
+      expect.objectContaining({ code: 'OPERATOR_ONLY' })
+    );
     expect(harness.store.getRoom(roomId)?.archived).toBe(false);
   });
 
   it('lets an agent still describe the room it lives in', () => {
     const { harness, roomId, agent } = seated();
 
-    harness.service.updateRoom(roomId, agent, { topic: 'shipping the cockpit' });
+    harness.service.updateRoomFromTool(roomId, agent, { topic: 'shipping the cockpit' });
 
     expect(harness.store.getRoom(roomId)?.topic).toBe('shipping the cockpit');
   });
@@ -571,7 +578,7 @@ describe('#team is a system room', () => {
     expect(harness.store.getRoom(roomId)?.archived).toBe(true);
   });
 
-  it('leaves an ordinary room exactly as writable as it was', () => {
+  it('leaves an ordinary channel exactly as renameable through the tool as it was', () => {
     const harness = install();
     ensureTeamRoom(harness.deps);
     const dorkbot = harness.authors.resolveAgent(DORKBOT, 'DorkBot').id;
@@ -580,22 +587,26 @@ describe('#team is a system room', () => {
       harness.human
     );
 
-    const renamed = harness.service.updateRoom(ordinary.id, dorkbot, { title: 'Backend two' });
+    const renamed = harness.service.updateRoomFromTool(ordinary.id, dorkbot, {
+      title: 'Backend two',
+    });
 
     expect(renamed.slug).toBe('backend-two');
   });
 
-  it('leaves the DM un-archive path alone — the reason the blanket gate is refused', () => {
+  it('leaves the DM un-archive path alone — the reason the blanket gate needed a split', () => {
     // DOR-608's trap: an agent re-opening its own archived direct message is a
-    // legitimate `updateRoom({ archived: false })` from a non-owner. A DM has no
-    // well-known key, so the system-room guard cannot reach it.
+    // legitimate un-archive from a non-owner, so `createRoom` reaches the write
+    // through `applyRoomPatch` rather than through the now-gated `updateRoom`.
     const harness = install();
     const dm = harness.service.createRoom(
       { kind: 'dm', title: 'Nova', members: [], agentPaths: [NOVA] },
       harness.human
     );
     const nova = harness.authors.resolveAgent(NOVA, 'Nova').id;
-    harness.service.updateRoom(dm.id, nova, { archived: true });
+    // The OWNER puts it away — an agent archiving her DM is exactly what the
+    // gate now refuses, and this test is about the way back, not the way out.
+    harness.service.updateRoom(dm.id, harness.human, { archived: true });
 
     const reopened = harness.service.createRoom(
       { kind: 'dm', title: 'Nova', members: [harness.human], agentPaths: [NOVA] },

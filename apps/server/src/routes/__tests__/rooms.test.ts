@@ -468,14 +468,31 @@ describe('/api/rooms', () => {
       expect(res.body.code).toBe('OPERATOR_ONLY');
     });
 
-    it('still lets an agent patch a topic, so the gate is the fields and not the route', async () => {
+    it('names the limit fields in the refusal, where an ordinary field gets the general one', async () => {
+      // The whole route is operator-only since DOR-608 (`rooms-update-gate.test.ts`
+      // owns that), so this block's remaining job is the SENTENCE: a refused
+      // limit change has to say which family of settings it was about, because
+      // the panel that sent it shows the reader that answer.
       const room = await createChannel();
       const token = await anaIn(room.id);
-      const res = await request(app)
-        .patch(`/api/rooms/${room.id}`)
-        .set('X-DorkOS-Agent', token)
-        .send({ topic: 'what we are working on' });
-      expect(res.status).toBe(200);
+
+      const [limit, topic] = await Promise.all([
+        request(app)
+          .patch(`/api/rooms/${room.id}`)
+          .set('X-DorkOS-Agent', token)
+          .send({ maxAgentDepth: 99 }),
+        request(app)
+          .patch(`/api/rooms/${room.id}`)
+          .set('X-DorkOS-Agent', token)
+          .send({ topic: 'what we are working on' }),
+      ]);
+
+      expect(limit.body.error).toBe(
+        'Only you can change how much a room may spend on automatic replies'
+      );
+      expect(topic.body.error).toBe(
+        'Only you can change what a room is called, what it is about, or whether it is put away'
+      );
     });
 
     it('answers 404, not 403, when an agent aims a limit patch at a room it cannot see', async () => {
