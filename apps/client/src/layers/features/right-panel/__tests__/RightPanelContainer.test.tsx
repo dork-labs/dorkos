@@ -681,6 +681,25 @@ describe('RightPanelContainer', () => {
 
       expect(screen.getByTestId('sheet-content')).not.toHaveClass('sm:max-w-full');
     });
+
+    // The tablet is the second surface that reaches this Sheet without being a
+    // phone (the Obsidian embed is the other). CONTENT_SIZED_MOBILE_TABS is a
+    // 390×844 measurement — a tablet was never measured, so a short tab keeps
+    // the full-height sheet here rather than collapsing to a content-height box
+    // on a surface nobody checked (DOR-1753, finding 7.8 + adversarial I3).
+    it('leaves a measured-short tab at full height — 390×844 is not a tablet', () => {
+      mockIsMobile = false;
+      mockIsBelowDesktop = true;
+      mockRightPanelOpen = true;
+      mockActiveRightPanelTab = 'pulse';
+      mockContributions = [makeContribution('pulse')];
+
+      render(<RightPanelContainer pathname={mockPathname} />);
+
+      const className = screen.getByTestId('sheet-content').className;
+      expect(className).not.toContain('!h-auto');
+      expect(className).not.toContain('!bottom-auto');
+    });
   });
 
   // DOR-1753 (finding 7.8): Pulse and Files were the two tabs the audit
