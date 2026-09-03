@@ -309,10 +309,13 @@ export function DataDisplayShowcases() {
           </p>
         </ShowcaseDemo>
 
-        <ShowcaseLabel>A scheme the seam refuses — confirms too, and offers only Copy link</ShowcaseLabel>
+        <ShowcaseLabel>
+          A scheme the seam refuses — confirms too, and offers only Copy link
+        </ShowcaseLabel>
         <ShowcaseDemo>
           <p className="text-sm">
-            Reach the on-call agent over <MarkdownLink href="irc://irc.example.net/ops">IRC</MarkdownLink>.
+            Reach the on-call agent over{' '}
+            <MarkdownLink href="irc://irc.example.net/ops">IRC</MarkdownLink>.
           </p>
         </ShowcaseDemo>
       </PlaygroundSection>
@@ -330,12 +333,7 @@ export function DataDisplayShowcases() {
           </MarkdownErrorBoundary>
         </ShowcaseDemo>
 
-        <ShowcaseLabel>Caught — the fallback in place of a crashed render</ShowcaseLabel>
-        <ShowcaseDemo>
-          <MarkdownErrorBoundary>
-            <ThrowingChild />
-          </MarkdownErrorBoundary>
-        </ShowcaseDemo>
+        <MarkdownErrorBoundaryCaughtShowcase />
       </PlaygroundSection>
 
       <ProvenanceChipShowcase />
@@ -366,9 +364,46 @@ export function DataDisplayShowcases() {
   );
 }
 
-/** A child that throws on demand, for {@link MarkdownErrorBoundary}'s caught-state demo. */
-function ThrowingChild(): never {
-  throw new Error('Simulated render failure for the playground');
+/** A child that throws only when told to, for {@link MarkdownErrorBoundaryCaughtShowcase}. */
+function ThrowingChild({ shouldThrow }: { shouldThrow: boolean }) {
+  if (shouldThrow) throw new Error('Simulated render failure for the playground');
+  return <p className="text-sm">This content rendered fine.</p>;
+}
+
+/**
+ * `MarkdownErrorBoundary`'s caught state, triggered on demand.
+ *
+ * Matches `ErrorStateShowcases`'s controlled-trigger pattern: the boundary
+ * only throws when a person clicks the button, so the page is clean on
+ * load rather than logging a caught error on every visit. The boundary is
+ * remounted (`key={attempt}`) on each toggle so it always starts from a
+ * clean `hasError: false` before deciding whether to throw again.
+ */
+function MarkdownErrorBoundaryCaughtShowcase() {
+  const [shouldThrow, setShouldThrow] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+
+  return (
+    <>
+      <ShowcaseLabel>Interactive — Toggle Error</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="flex flex-col gap-3">
+          <button
+            className="text-muted-foreground hover:text-foreground w-fit text-xs underline"
+            onClick={() => {
+              setShouldThrow((prev) => !prev);
+              setAttempt((a) => a + 1);
+            }}
+          >
+            {shouldThrow ? 'Reset' : 'Trigger error'}
+          </button>
+          <MarkdownErrorBoundary key={attempt}>
+            <ThrowingChild shouldThrow={shouldThrow} />
+          </MarkdownErrorBoundary>
+        </div>
+      </ShowcaseDemo>
+    </>
+  );
 }
 
 /** `LinkSafetyModal` open, controlled locally — it has no trigger of its own. */

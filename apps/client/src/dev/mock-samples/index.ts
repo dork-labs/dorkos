@@ -4,7 +4,8 @@
  * Was one 1,187-line file mixing roughly eight unrelated concerns — batch 20
  * audit finding 20.8 (DOR-1766) split it along the domain boundaries already
  * visible in its `export const` list, the same discipline
- * `sections/features-sections.ts` already applied to playground _sections_.
+ * `sections/features-agent-sections.ts` and `features-surface-sections.ts`
+ * already applied to playground _sections_.
  * Re-exported from this one barrel so no import site changes: every consumer
  * still writes `from '../mock-samples'` or `from './mock-samples'`, which
  * resolves here exactly as it resolved to the single file before.

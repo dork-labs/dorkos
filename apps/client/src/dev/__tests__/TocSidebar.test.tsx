@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, within } from '@testing-library/react';
 import { TocSidebar } from '../TocSidebar';
 import type { PlaygroundSection } from '../playground-registry';
 
@@ -142,15 +142,26 @@ describe('TocSidebar', () => {
     expect(screen.getAllByText('Layout')).toHaveLength(1);
   });
 
-  it('re-shows a category heading if the same category returns non-consecutively', () => {
-    // Non-consecutive runs are a real, if rare, page shape: this proves the
-    // grouping is positional (consecutive runs), not a dedup keyed on the name.
+  it('merges non-consecutive occurrences of the same category under one heading', () => {
+    // Non-consecutive runs are a real page shape (batch 20 audit finding I2,
+    // DOR-1766) — six pages split a category across non-adjacent positions.
+    // Grouping is keyed by name, not position, so this still renders one
+    // "Colors" heading rather than showing it twice.
     const nonConsecutive: PlaygroundSection[] = [
       { id: 'a', title: 'A', page: 'tokens', category: 'Colors', keywords: ['a'] },
       { id: 'b', title: 'B', page: 'tokens', category: 'Layout', keywords: ['b'] },
       { id: 'c', title: 'C', page: 'tokens', category: 'Colors', keywords: ['c'] },
     ];
     render(<TocSidebar sections={nonConsecutive} />);
-    expect(screen.getAllByText('Colors')).toHaveLength(2);
+    expect(screen.getAllByText('Colors')).toHaveLength(1);
+    // Both Colors sections still get their links, grouped together.
+    expect(screen.getByRole('link', { name: 'A' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'C' })).toBeInTheDocument();
+  });
+
+  it('associates each heading with its section list via aria-labelledby', () => {
+    render(<TocSidebar sections={MOCK_SECTIONS} />);
+    const group = screen.getByRole('group', { name: 'Colors' });
+    expect(within(group).getByRole('link', { name: 'Section One' })).toBeInTheDocument();
   });
 });

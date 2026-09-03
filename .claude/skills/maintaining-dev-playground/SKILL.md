@@ -55,13 +55,13 @@ A component does NOT belong if it's:
 
 Match to the existing page structure. The playground has **5** sidebar groups, each derived from `PageConfig.group` in `dev/playground-config.ts` — check there rather than trusting this table, which is a summary and can age:
 
-| Group             | Pages                                                                                                                                                          | Use for                                                       |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| **Design System** | Design Tokens, Forms, Components, Tables                                                                                                                       | Shared primitives, design tokens, form elements               |
-| **Generative UI** | Widgets                                                                                                                                                         | Agent-authored widgets rendered from UI fences                |
-| **Session**       | Conversation, Entry Actions, Simulator                                                                                                                          | Chat UI, message rendering, streaming                          |
-| **Agents**        | Identity, Agent & Relay, Home Inbox & Approvals, Topology, Rooms, Marketplace                                                                                    | Faces and handles, Relay, Mesh, Tasks, approvals & inbox, graph nodes |
-| **App Shell**     | Tour Spotlight, Command Palette, Filter Bar, Onboarding, Error States, Feature Promos, Settings, Sidebar Model, Sidebar Boot & Motion, One Bar                 | App-wide chrome, navigation, onboarding flows                 |
+| Group             | Pages                                                                                                                                          | Use for                                                               |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| **Design System** | Design Tokens, Forms, Components, Tables                                                                                                       | Shared primitives, design tokens, form elements                       |
+| **Generative UI** | Widgets                                                                                                                                        | Agent-authored widgets rendered from UI fences                        |
+| **Session**       | Conversation, Entry Actions, Simulator                                                                                                         | Chat UI, message rendering, streaming                                 |
+| **Agents**        | Identity, Agent & Relay, Home, Inbox & Approvals, Topology, Rooms, Marketplace                                                                 | Faces and handles, Relay, Mesh, Tasks, approvals & inbox, graph nodes |
+| **App Shell**     | Tour Spotlight, Command Palette, Filter Bar, Onboarding, Error States, Feature Promos, Settings, Sidebar Model, Sidebar Boot & Motion, One Bar | App-wide chrome, navigation, onboarding flows                         |
 
 ### When to create a new page
 
@@ -83,7 +83,7 @@ The accepted cost: a borrowed section still groups under its owning page in Cmd+
 
 ### Grouping within a page
 
-Group components that work together. The `category` field drives the TOC: `TocSidebar` renders a sub-heading over every run of CONSECUTIVE same-`category` sections (batch 20 audit finding 20.3, DOR-1766), so keep entries for one category adjacent in the section array — scattering the same category across non-consecutive positions draws it as two separate groups instead of one. Cmd+K still groups by `page` only (`PlaygroundSearch`); `category` has never been a search grouping. Use the feature/subsystem name — "Relay", "Mesh", "Tasks", "Identity" — the same words a reader would look for in the TOC.
+Group components that work together. The `category` field drives the TOC: `TocSidebar` renders one sub-heading per distinct `category`, keyed by name rather than position (batch 20 audit finding 20.3/I2, DOR-1766) — a category's entries don't need to be adjacent in the section array, since every section sharing a name lands under the same heading regardless of where else it appears. Cmd+K still groups by `page` only (`PlaygroundSearch`); `category` has never been a search grouping. Use the feature/subsystem name — "Relay", "Mesh", "Tasks", "Identity" — the same words a reader would look for in the TOC.
 
 ## The Parity Problem
 
@@ -162,12 +162,12 @@ When adding a component to the playground:
 Add entries to the appropriate section file in `dev/sections/`:
 
 ```ts
-// dev/sections/features-sections.ts
+// dev/sections/features-agent-sections.ts
 {
   id: 'tunneldialog',           // anchor ID — lowercase, no spaces
   title: 'TunnelDialog',        // display name
   page: 'features',             // which page (must match Page type)
-  category: 'Tunnel',           // groups the TOC — keep same-category entries adjacent
+  category: 'Tunnel',           // groups the TOC — same name anywhere in the array shares one heading
   keywords: ['tunnel', 'remote', 'ssh', 'connect', 'security'],
 }
 ```
@@ -251,18 +251,18 @@ When reviewing an existing playground showcase, verify:
 
 ## Files to Know
 
-| File                                        | Purpose                                                   |
-| ------------------------------------------- | --------------------------------------------------------- |
-| `dev/playground-config.ts`                  | Page metadata — add new pages here                        |
-| `dev/playground-registry.ts`                | Section type, Page type, full registry                    |
-| `dev/sections/*.ts`                         | Section entries per page (drives TOC + search)            |
-| `dev/showcases/*.tsx`                       | Showcase components (the actual demos)                    |
-| `dev/pages/*.tsx`                           | Page components that compose showcases                    |
-| `dev/PlaygroundSection.tsx`                 | Section card wrapper                                      |
-| `dev/ShowcaseDemo.tsx`                      | Demo container with responsive viewport toggle            |
-| `dev/ShowcaseLabel.tsx`                     | Label for distinguishing variants                         |
-| `dev/mock-factories.ts`                     | Mock data factory functions                               |
+| File                                        | Purpose                                                           |
+| ------------------------------------------- | ----------------------------------------------------------------- |
+| `dev/playground-config.ts`                  | Page metadata — add new pages here                                |
+| `dev/playground-registry.ts`                | Section type, Page type, full registry                            |
+| `dev/sections/*.ts`                         | Section entries per page (drives TOC + search)                    |
+| `dev/showcases/*.tsx`                       | Showcase components (the actual demos)                            |
+| `dev/pages/*.tsx`                           | Page components that compose showcases                            |
+| `dev/PlaygroundSection.tsx`                 | Section card wrapper                                              |
+| `dev/ShowcaseDemo.tsx`                      | Demo container with responsive viewport toggle                    |
+| `dev/ShowcaseLabel.tsx`                     | Label for distinguishing variants                                 |
+| `dev/mock-factories.ts`                     | Mock data factory functions                                       |
 | `dev/mock-samples/`                         | Sample data constants, split by domain, barrelled from `index.ts` |
-| `dev/playground-pages.ts`                   | `PAGE_COMPONENTS` — maps page IDs to their page component |
-| `dev/DevPlayground.tsx`                     | Root component with page routing                          |
-| `dev/__tests__/playground-registry.test.ts` | The drift gate — lists every page-level array by name     |
+| `dev/playground-pages.ts`                   | `PAGE_COMPONENTS` — maps page IDs to their page component         |
+| `dev/DevPlayground.tsx`                     | Root component with page routing                                  |
+| `dev/__tests__/playground-registry.test.ts` | The drift gate — lists every page-level array by name             |

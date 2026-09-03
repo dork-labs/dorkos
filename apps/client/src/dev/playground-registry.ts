@@ -37,10 +37,10 @@ export interface PlaygroundSection {
   /**
    * The feature or subsystem this section belongs to.
    *
-   * `TocSidebar` groups the page's TOC by consecutive runs of this field into
-   * labeled sub-headings (DOR-1766, batch 20 audit finding 20.3) — keep a
-   * category's entries adjacent in the array, since a category split across
-   * non-consecutive positions draws as two separate groups. ⌘K still groups
+   * `TocSidebar` groups the page's TOC by this field into labeled
+   * sub-headings, keyed by name (DOR-1766, batch 20 audit finding 20.3) — a
+   * category can appear anywhere in the array and its sections still render
+   * under one heading, positioned at its first occurrence. ⌘K still groups
    * only by `page` (`PlaygroundSearch`); this has never been a search
    * grouping.
    */

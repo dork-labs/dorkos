@@ -226,7 +226,7 @@ function MessagingRegionShowcase() {
   return (
     <PlaygroundSection
       title="MessagingRegion"
-      description="The composed panel behind Connections' Messaging region — the health bar, the live adapter, and the policy card, real components throughout."
+      description="The composed panel behind Connections' Messaging region — the health bar and the live adapter, real components throughout. The claim queue and policy card render nothing in this fixture (see TSDoc)."
     >
       <ShowcaseDemo>
         <QueryClientProvider client={client}>
