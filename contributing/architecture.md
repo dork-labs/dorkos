@@ -1005,7 +1005,7 @@ The CLI reads from `ConfigManager` and sets environment variables before importi
 
 ### REST API Integration
 
-`PATCH /api/config` accepts partial config objects, deep-merges with current config, validates via `UserConfigSchema.safeParse()`, and persists via `ConfigManager`. Returns warnings for sensitive fields.
+`PATCH /api/config` accepts partial config objects, deep-merges with current config, validates via `UserConfigSchema.safeParse()`, and persists via `ConfigManager`. Returns warnings for sensitive fields, and answers with the curated disclosure snapshot rather than the stored file, so no credential rides the response body (DOR-1740).
 
 ### CLI Subcommands
 
