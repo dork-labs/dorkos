@@ -30,11 +30,10 @@ export default defineConfig({
     ],
     // The lefthook pre-push gate sets VITEST_RETRY to absorb timing flake in
     // integration tests on a developer machine already busy with other agents.
-    // CI deliberately does NOT set it (see .github/workflows/test.yml): a
-    // runner is not contended the same way, and a retry budget there would turn
-    // a real intermittent failure into a green check. It rides turbo's
-    // globalPassThroughEnv, so it never forks the cache key; dev runs get
-    // retry: 0 and surface flake loudly.
+    // It rides turbo's globalPassThroughEnv, so it never forks the cache key;
+    // dev runs get retry: 0 and surface flake loudly. CI does not set the
+    // variable; its merge-queue leg passes `--retry=1` with a reporter that
+    // names every absorbed retry instead (DOR-1701, .github/workflows/test.yml).
     // watcher-manager.test.ts drives a real chokidar watcher against real tmpdir
     // writes with a tight 5s timeout, which is exactly the kind of test this
     // exists for — see apps/server/vitest.config.ts for the original wiring.

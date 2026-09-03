@@ -242,8 +242,8 @@ jobs:
       E2E_SHARD_TOTAL: ${{ strategy.job-total }}
       # RETRIES: the suite runs with ONE retry in CI (playwright.config.ts,
       # `retries: CI ? 1 : 0`) — a decision, not a default, so here is the
-      # reasoning. Zero would be the principled choice (test.yml deliberately
-      # refuses VITEST_RETRY in CI), but the suite carries one TRACKED,
+      # reasoning. Zero would be the principled choice, but the suite carries
+      # one TRACKED,
       # test-side readiness flake — DOR-698, mention-picker's combobox, ~6% in
       # isolation and rarer in full runs — and a gate that goes red on a known
       # ticket trains people to route around it (test.yml's header has the

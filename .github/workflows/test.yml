@@ -58,12 +58,42 @@ name: test
 # falsely fails two tests, so full runs go through turbo, never through vitest
 # directly.
 #
-# VITEST_RETRY is deliberately NOT set here. Under lefthook it is 2, to absorb
-# timing flake on a loaded developer machine; a CI runner is not contended the
-# same way, and a retry budget in CI would quietly convert a real intermittent
-# failure into a green check. Flake that shows up here should be fixed, not
-# retried. (This does mean the same commit can pass one gate and fail the other
-# — the retry setting is the reason, and it is intentional.)
+# RETRIES: the queue leg runs with ONE retry, and every test that only passes
+# because of it is NAMED (DOR-1701). Both halves of that are the decision; the
+# retry alone would be the thing this comment used to refuse.
+#
+# Until 2026-09-03 the queue leg ran at zero retries, on the argument that a
+# retry budget in CI quietly converts a real intermittent failure into a green
+# check. That argument is right about a SILENT retry and says nothing about a
+# named one — and the zero-retry position had a cost of its own: under lefthook
+# VITEST_RETRY is 2, so a test that flakes on a contended machine is absorbed
+# locally with nobody told, then fails a queue run on a tree nobody touched, and
+# the only record of it is a red check somebody re-runs. Neither gate ever
+# produced a NAME.
+#
+# So the bargain is the one browser-test.yml already struck for Playwright
+# (`retries: CI ? 1 : 0`, plus the flaky-naming block in
+# scripts/assert-browser-tests-executed.sh): one retry absorbs the
+# cold-start/contention class, and the pass it buys costs visibility rather than
+# nothing. The reporter is scripts/vitest-flake-reporter.ts, loaded by the
+# passthrough below because vitest's built-in json reporter carries no retry
+# information at all; the "Name the tests that only passed on a retry" step
+# turns what it writes into annotations and a job summary. A test that still
+# fails after its retry is untouched by any of this and stays red.
+#
+# One retry, not two: a single retry covers the class this exists for, while a
+# wider budget starts absorbing tests that are genuinely broken half the time. A
+# test named by that step three times over is a flake to FIX (DOR-1007), not a
+# budget to widen.
+#
+# VITEST_RETRY itself is still not set here — the budget is a CLI flag, which
+# reaches all 18 packages, while the env var is wired into only two vitest
+# configs. The lefthook gate keeps the env var and gets no reporter: its
+# passthrough is pinned to exactly `-- --run` because turbo hashes passthrough
+# args into the task cache key, so a flag there would force a full re-run of
+# every suite on every push (see lefthook.yml's CACHE-KEY CONSTRAINT). The queue
+# leg already carries --shard and the json reporter, so it has already forked
+# that key and pays nothing more.
 # TWO EVENTS, TWO DEPTHS, ONE REQUIRED CONTEXT (2026-08-23/24). The full suite
 # runs on `merge_group`, where it is a REQUIRED check of the merge queue — the
 # ruleset toggle this file's `merge_group` trigger always anticipated. That
@@ -191,16 +221,24 @@ jobs:
       # failures makes the gate a coin toss, and a gate people cannot trust is
       # a gate people route around.
       #
-      # `--shard`, `--passWithNoTests` and the reporter flags are vitest flags,
-      # not turbo flags — they ride the same `--` passthrough as `--run`, so
-      # every package's suite (including the five bare-`vitest` scripts and
-      # obsidian-plugin's chained script, where pnpm appends to the final
-      # command) receives them. The json reporter writes each package's
+      # `--shard`, `--retry`, `--passWithNoTests` and the reporter flags are
+      # vitest flags, not turbo flags — they ride the same `--` passthrough as
+      # `--run`, so every package's suite (including the five bare-`vitest`
+      # scripts and obsidian-plugin's chained script, where pnpm appends to the
+      # final command) receives them. The json reporter writes each package's
       # collected-file record to <package>/vitest-shard-report.json (cwd of
       # that package's vitest); the default reporter is re-stated because
       # naming any --reporter replaces the default set.
+      #
+      # The flake reporter is named by a RELATIVE path, and that path is only
+      # correct because every workspace package sits exactly two directories
+      # deep (`apps/*`, `packages/*` in pnpm-workspace.yaml) — one path
+      # therefore resolves from all of them. That assumption is pinned by
+      # scripts/__tests__/vitest-flake-reporter.test.ts, which also pins the
+      # two flags on this line; a workspace glob at another depth would make
+      # vitest fail to load the reporter rather than quietly skip it.
       - name: Run every package's test suite (shard ${{ matrix.shard }}/4)
-        run: pnpm exec turbo test --summarize --continue --concurrency=1 -- --run --shard=${{ matrix.shard }}/4 --passWithNoTests --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json
+        run: pnpm exec turbo test --summarize --continue --concurrency=1 -- --run --shard=${{ matrix.shard }}/4 --retry=1 --passWithNoTests --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
 
       # THE POINT OF THIS STEP: turbo caches `test`, and a full cache hit prints
       # "Tasks: 29 successful, 29 total" (18 test tasks plus the 11 builds they
@@ -221,6 +259,70 @@ jobs:
       - name: Prove the suite actually executed
         if: ${{ success() }}
         run: bash scripts/assert-tests-executed.sh
+
+      # The price of the retry on the suite line above: every test it absorbed
+      # is named here, in the log, in the job summary, and as a `::warning`
+      # annotation so it is visible without opening either. Same bargain, same
+      # shape and same wording as the flaky block in
+      # scripts/assert-browser-tests-executed.sh — keep them in step.
+      #
+      # This step NEVER fails on a flake; a run with retried passes is still a
+      # green run. It fails on exactly two things, and both are the same
+      # mistake: reporting "nothing flaked" from evidence it never had. Finding
+      # no report at all is not a clean run — scripts/vitest-flake-reporter.ts
+      # writes the file unconditionally, so an empty list means "nothing flaked"
+      # and a missing file means the reporter never loaded. And a report it
+      # cannot parse is not a clean run either; see the pipefail note in the
+      # script. Without both distinctions a broken passthrough reads exactly
+      # like a healthy suite, which is the failure mode this whole mechanism
+      # exists to close.
+      #
+      # The annotations are raised HERE rather than by the reporter itself
+      # because turbo prefixes every line a task prints with `<package>:test: `,
+      # and a workflow command that does not start its own line is not parsed —
+      # `::warning` from inside the suite would render as plain text. The
+      # reporter writes a file; this step, whose output turbo never touches,
+      # turns it into annotations.
+      #
+      # Annotations are capped at ten because GitHub stops displaying warning
+      # annotations past that per step; the full list is always in the log and
+      # the summary.
+      - name: Name the tests that only passed on a retry
+        run: |
+          # pipefail, because every read below is the LAST stage of a pipe and
+          # bash otherwise reports the exit status of that last stage only. A
+          # truncated or half-written report made `jq` exit non-zero, `sort`
+          # exit 0 over the empty stream it got, and this step print "no test
+          # needed a retry to pass" and go green — the exact fail-open shape
+          # the whole mechanism exists to close, one layer up from the missing
+          # -file case below. (It is also why the ten-annotation cap is a
+          # `sed -n` range rather than `head`: a reader that exits early can
+          # SIGPIPE the writer feeding it, which under pipefail is a failure.)
+          set -o pipefail
+          reports=$(find apps packages -mindepth 2 -maxdepth 2 -name vitest-flake-report.json)
+          [ -n "$reports" ] || { echo 'no vitest-flake-report.json found in any package — the flake reporter passthrough is broken' >&2; exit 1; }
+          if ! named=$(echo "$reports" | xargs jq -r '(.cwd | split("/") | .[-2:] | join("/")) as $pkg | .flaky[] | "\($pkg)/\(.file) › \(.test) (\(.retries) retry)"' | sort); then
+            echo 'a vitest-flake-report.json could not be read (jq failed above) — refusing to certify this shard flake-free on a report nothing could parse' >&2
+            exit 1
+          fi
+          if [ -z "$named" ]; then
+            echo "shard ${{ matrix.shard }}/4: no test needed a retry to pass."
+            exit 0
+          fi
+          count=$(printf '%s\n' "$named" | wc -l | tr -d ' ')
+          printf 'WARNING — %s test(s) only passed on a retry:\n' "$count"
+          printf '%s\n' "$named" | sed 's/^/  /'
+          {
+            printf '### Shard %s/4 — %s test(s) only passed on a retry\n\n' '${{ matrix.shard }}' "$count"
+            printf '%s\n' "$named" | sed 's/^/- `/; s/$/`/'
+            printf '\nA test named here three times over is a flake to fix (DOR-1007), not a retry budget to widen.\n\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' "$named" | sed -n '1,10p' | while IFS= read -r test; do
+            printf '::warning title=vitest test passed only on a retry::%s\n' "$test"
+          done
+          if [ "$count" -gt 10 ]; then
+            printf '::warning title=vitest tests passed only on a retry::and %s more — see the step log and the job summary for every name.\n' "$((count - 10))"
+          fi
 
       # Gather what this shard's vitest runs actually collected, for the
       # fan-in's union check. One line per collected test file, repo-relative.
