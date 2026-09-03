@@ -23,7 +23,6 @@ import type {
   TaskItem,
   ModelOption,
   CommandRegistry,
-  EffortLevel,
   InterruptReceipt,
   SessionSettings,
 } from '@dorkos/shared/types';
