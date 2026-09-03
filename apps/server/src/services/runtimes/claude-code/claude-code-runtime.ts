@@ -6,6 +6,7 @@
  *
  * @module services/runtimes/claude-code/claude-code-runtime
  */
+import path from 'path';
 import { renameSession as sdkRenameSession, query } from '@anthropic-ai/claude-agent-sdk';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import type { McpServerEntry } from '@dorkos/shared/transport';
@@ -1094,10 +1095,26 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * a guess: resolving the ladder here instead would answer with the account a
    * launch WOULD pick, which is wrong for any session started from a per-send
    * hint or an agent manifest, and wrong in both directions at once.
+   *
+   * **`path.resolve` is load-bearing, not tidiness.** The contract is that two
+   * sessions on one account answer the same string, and the roots reaching this
+   * method are spelled by whoever typed them: `resolveLaunchAccountRoot` returns
+   * a registry row's `path` verbatim (`claude-config-dir.ts`), the
+   * `defaultAccount` rung returns that field verbatim, and the config schema
+   * constrains neither to be absolute or slash-free. So one session launched
+   * from a hint naming `/x/.claude2/` and another from the default naming
+   * `/x/.claude2` are the SAME account with two spellings — and the watch
+   * compares with `===`. Left raw, a sign-in fixed on one spelling could never
+   * resolve an episode raised under the other, and the notice would stand for
+   * the life of the install. Every sibling comparison in this subsystem
+   * normalizes the same way (`samePath` in `launch-fingerprint.ts`,
+   * `claudeConfigDirEnv` in `claude-config-dir.ts`); this is not the place to be
+   * the exception.
    */
   getSessionAccount(sessionId: string): string | undefined {
     const session = this.sessionStore.findSession(sessionId);
-    return session?.launchedAccountRoot ?? session?.accountRoot;
+    const root = session?.launchedAccountRoot ?? session?.accountRoot;
+    return root === undefined ? undefined : path.resolve(root);
   }
 
   /** @inheritdoc */

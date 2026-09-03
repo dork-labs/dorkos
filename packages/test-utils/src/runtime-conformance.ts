@@ -1373,14 +1373,30 @@ export function runtimeConformance(
         ).toBe('string');
         expect(account, 'an empty account name distinguishes nothing').not.toBe('');
 
-        // (3) STABLE across reads, which is the property the watch actually
-        // depends on: it reads the account at the failing edge and again at the
-        // resolving edge, and an answer that moved between them would leave an
-        // episode filed under a key no later turn could ever match — a notice
-        // that outlives the fix.
+        // (3) The SAME string for a DIFFERENT session on the same account, which
+        // is the property the watch actually depends on and the one a per-session
+        // check cannot see. Its two edges are never the same session: one turn
+        // discovers the dead credential, and a LATER turn on some other session
+        // is what proves it working again. So an identity that varies by how a
+        // session was started reads as two accounts, and the condition raised
+        // under one spelling can never be resolved by the other — a notice that
+        // stands for the life of the install.
+        //
+        // What this half can and cannot catch, stated so nobody over-reads it:
+        // it fails any runtime whose identity is DERIVED per session (a session
+        // id folded in, a counter, a fresh object's `toString`). It cannot fail a
+        // runtime whose identity merely varies with how a session was STARTED,
+        // because the suite has one way of starting one. That case needs a
+        // fixture that can produce two spellings, which only the adapter's own
+        // suite can build — claude-code's lives beside its conformance call.
+        const secondId = nextSessionId();
+        runtime.ensureSession(secondId, sessionOpts(runtime));
+        await warmSession(runtime, secondId);
+
         expect(
-          getSessionAccount(sessionId),
-          'getSessionAccount must answer the same account twice for one session'
+          getSessionAccount(secondId),
+          'two sessions on one account must answer the SAME string — canonicalize the identity in ' +
+            'the adapter rather than handing on however the caller happened to spell it'
         ).toBe(account);
       });
 

@@ -1384,12 +1384,23 @@ export interface AgentRuntime {
    *
    * ## What the string is, and what it is not
    *
-   * An OPAQUE identity, stable for as long as the session runs on that account.
-   * Consumers compare it and never parse it: claude-code answers with the
+   * An OPAQUE identity that is **CANONICAL FOR THE RUNTIME**: every session on
+   * one account answers the same string, byte for byte, whichever route put that
+   * session on it. Consumers compare it with `===` and never parse it, so the
+   * adapter owns the normalizing — claude-code answers with the *resolved*
    * absolute Claude config directory a launch is pinned to (`~/.claude`,
-   * `~/.claude2`, …), and a future runtime may answer with an email, a
-   * workspace id, or anything else it can tell its own credentials apart by.
-   * Nothing outside the adapter may assume a shape.
+   * `~/.claude2`, …), and a future runtime may answer with an email, a workspace
+   * id, or anything else it can tell its own credentials apart by. Nothing
+   * outside the adapter may assume a shape.
+   *
+   * **Cross-session equality is the contract, not just per-session stability.**
+   * The consumer's two edges are different sessions: one turn discovers a dead
+   * credential, and a LATER turn — on some other session — is what proves it
+   * works again. An account whose spelling varies by how a session was started
+   * therefore reads as two accounts, and a condition raised under one spelling
+   * can never be resolved by the other. A runtime whose identity source is
+   * caller-spelled (a path from config, a directory a person typed) must
+   * normalize it here rather than hand the variation on.
    *
    * It is NOT the working directory ({@link getSessionCwd}) and NOT a
    * credential — it names WHICH sign-in a turn used, never the secret itself,

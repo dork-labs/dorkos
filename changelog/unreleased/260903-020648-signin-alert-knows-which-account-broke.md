@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server,shared,test-utils): key sign-in episodes by the account a turn ran on (DOR-1682)'
+  - 'fix(server,shared,test-utils): canonicalize the account identity and prove the lazy read (DOR-1682)'
 ---
 
 ### Fixed

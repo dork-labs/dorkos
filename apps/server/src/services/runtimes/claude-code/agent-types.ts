@@ -48,9 +48,16 @@ export interface AgentSession {
    */
   accountRoot?: string;
   /**
-   * The Claude root the most recent launch on this session actually ran on —
-   * `session.accountRoot` when disk had already decided, otherwise whatever the
+   * The Claude root the most recent launch RESOLUTION on this session settled on
+   * — `session.accountRoot` when disk had already decided, otherwise whatever the
    * launch ladder picked (`resolveLaunch`, ADR 260821-205323).
+   *
+   * "Settled on", not "ran on", and the difference is real: `resolveLaunch` also
+   * runs on the pump's compare path, where the dispatch it was resolving can
+   * still be refused before any process is spoken to. So this is the account the
+   * next launch of this session WOULD use, which the account it last ran on can
+   * only differ from while a dispatch is being refused — and a refused dispatch
+   * produces no turn, so it produces no edge for the watch to mis-credit either.
    *
    * **Deliberately a second field, and never written back to
    * {@link accountRoot}.** That one is disk-derived truth, and its presence is

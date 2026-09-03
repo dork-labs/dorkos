@@ -208,12 +208,15 @@ function registryRunning(
 function registryWithAccounts(
   runtimeType: string,
   scenarios: Array<() => AsyncGenerator<StreamEvent>>,
-  accounts: Record<string, string>
+  accounts: Record<string, string> | ((sessionId: string) => string | undefined)
 ): RuntimeRegistry {
   const registry = new RuntimeRegistry();
   const runtime = new FakeAgentRuntime(runtimeType);
   runtime.withScenarios(scenarios);
-  runtime.getSessionAccount = (sessionId: string): string | undefined => accounts[sessionId];
+  runtime.getSessionAccount =
+    typeof accounts === 'function'
+      ? accounts
+      : (sessionId: string): string | undefined => accounts[sessionId];
   registry.register(runtime);
   return registry;
 }
@@ -726,6 +729,82 @@ describe('a machine with more than one account on one runtime', () => {
     await drain(registry, 'claude-code', 'sess-live');
 
     expect(retired()).toHaveLength(1);
+  });
+
+  it('places a failure on a session whose account was only decided by the launch', async () => {
+    // **Why the account is read LATE, and not when the turn is set up.** A
+    // brand-new session has no account until its launch resolves one, and the
+    // launch does not happen until the first event is pulled — so a read at
+    // turn-start answers `undefined` for exactly the turn a dead credential
+    // fails on, files it as unattributable, and lets any other account's clean
+    // turn clear it. That is the original bug, surviving in the one case it
+    // hurts most: the first turn of a new session.
+    //
+    // The runtime here answers nothing until its turn has begun, which is what a
+    // real claude-code session does.
+    let launched = false;
+    async function* launchesThenFails(): AsyncGenerator<StreamEvent> {
+      // Pulling the first event is what runs the launch.
+      launched = true;
+      yield { type: 'text_delta', data: { text: 'starting' } } as StreamEvent;
+      yield {
+        type: 'error',
+        data: { message: 'Your sign-in stopped working.', category: 'auth_error' },
+      } as StreamEvent;
+    }
+    const roots: Record<string, string> = {
+      'sess-new': '~/.claude',
+      'sess-live': '~/.claude2',
+    };
+    const registry = registryWithAccounts(
+      'claude-code',
+      [launchesThenFails, cleanTurn],
+      (sessionId) => (launched ? roots[sessionId] : undefined)
+    );
+
+    await drain(registry, 'claude-code', 'sess-new');
+    expect(raisedRows()).toHaveLength(1);
+
+    vi.advanceTimersByTime(ONE_MINUTE_MS);
+    await drain(registry, 'claude-code', 'sess-live');
+
+    // Attributed to the account the launch settled on, so the OTHER account's
+    // clean turn is no evidence at all. Read the account at turn-start instead
+    // and this resolves.
+    expect(retired()).toEqual([]);
+  });
+
+  it('keeps a named account standing when only the unplaceable failure is answered', async () => {
+    // The mixed episode: one failure this runtime could place, one it could not.
+    // A clean turn on some THIRD account answers the unplaceable one — that is
+    // the best evidence anything can offer against "we could not tell" — and
+    // must leave the named one exactly where it was.
+    const registry = registryWithAccounts(
+      'claude-code',
+      [authErrorTurn, authErrorTurn, cleanTurn, cleanTurn],
+      {
+        'sess-a-fail': '~/.claude',
+        // `sess-unplaceable` is deliberately absent from the map.
+        'sess-live': '~/.claude2',
+        'sess-a-fixed': '~/.claude',
+      }
+    );
+
+    await drain(registry, 'claude-code', 'sess-a-fail');
+    vi.advanceTimersByTime(ONE_MINUTE_MS);
+    await drain(registry, 'claude-code', 'sess-unplaceable');
+    expect(raisedRows()).toHaveLength(1);
+
+    vi.advanceTimersByTime(ONE_MINUTE_MS);
+    await drain(registry, 'claude-code', 'sess-live');
+    expect(retired()).toEqual([]);
+
+    vi.advanceTimersByTime(ONE_MINUTE_MS);
+    await drain(registry, 'claude-code', 'sess-a-fixed');
+
+    // Only now: the map is empty, so the one notice covering both ends.
+    expect(retired()).toHaveLength(1);
+    expect(clearedRows()).toHaveLength(1);
   });
 
   it('is unchanged for a runtime that has only one sign-in to speak of', async () => {
