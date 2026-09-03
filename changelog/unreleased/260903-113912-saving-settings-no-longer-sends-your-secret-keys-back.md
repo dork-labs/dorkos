@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server,shared): saving settings no longer sends your secret keys back (DOR-1740)'
+  - 'fix(server,shared): pin the redacted PATCH answer to its published contract (DOR-1740)'
 ---
 
 ### Security
