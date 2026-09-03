@@ -37,6 +37,7 @@ import {
 } from '../services/core/operator/config-write-policy.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
 import {
+  isLocalCaller,
   readCallerAuthority,
   requireOperatorCookieUnderLogin,
   requireStandingGrantsLogin,
@@ -94,7 +95,7 @@ function configuredRuntimes(): string[] {
   return runtimes;
 }
 
-router.get('/', async (_req, res) => {
+router.get('/', async (req, res) => {
   let claudeCliPath: string | null = null;
   try {
     claudeCliPath = resolveClaudeCliPath() ?? null;
@@ -109,6 +110,13 @@ router.get('/', async (_req, res) => {
     version: SERVER_VERSION,
     latestVersion,
     isDevMode: IS_DEV_BUILD,
+    // The one field in this DTO that describes the CALLER, not the server, and
+    // the reason it is here: the connect endpoints under `/api/runtimes` are
+    // loopback-only, so a phone reaching DorkOS over the tunnel was shown a
+    // Sign in button that could only ever 403 (DOR-1655). Answered by the same
+    // reader those endpoints refuse with, so the app is told exactly what they
+    // would do rather than a guess of its own.
+    isLocalCaller: isLocalCaller(req),
     dismissedUpgradeVersions:
       (configManager.get('ui') as { dismissedUpgradeVersions?: string[] } | undefined)
         ?.dismissedUpgradeVersions ?? [],

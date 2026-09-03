@@ -7,10 +7,13 @@
  * component, and these hooks only run when a sign-in is actually on screen.
  *
  * The split goes one level deeper than it looks. `SessionSigninActions` is
- * where the session-list read lives, and it mounts ONLY when there is a session
- * to read — so the no-session fallback needs neither a QueryClient nor a
- * Transport, which is what lets a bare `<ErrorMessageBlock category="auth_error" />`
- * render anywhere without providers.
+ * where every read lives — the session list, and the locality answer that
+ * decides whether signing in is even possible from this browser — and it mounts
+ * ONLY when there is a session to read. So the no-session fallback needs
+ * neither a QueryClient nor a Transport, which is what lets a bare
+ * `<ErrorMessageBlock category="auth_error" />` render anywhere without
+ * providers. Any read added here has to stay below that guard;
+ * `ErrorMessageBlock-no-providers.test.tsx` goes red if one climbs above it.
  *
  * @module features/chat/ui/message/AuthErrorActions
  */
@@ -18,6 +21,7 @@ import { Check, Loader2, LogIn, RotateCcw } from 'lucide-react';
 import { runtimeSupportsLogin } from '@dorkos/shared/agent-runtime';
 import { Button } from '@/layers/shared/ui';
 import { useSettingsDeepLink } from '@/layers/shared/model';
+import { useLocalCaller } from '@/layers/entities/config';
 import { getLoginCopy, useDelegateRuntimeLogin } from '@/layers/entities/runtime';
 import { useSessions } from '@/layers/entities/session';
 
@@ -52,10 +56,15 @@ function SettingsFallbackLink({ label }: { label: string }) {
  * machine signs into the default account, reads "Signed in", and watches the
  * session keep failing (DOR-1652 built the pin; this is its first caller).
  *
- * Every way the endpoint can refuse — it is loopback-only, and the Obsidian
- * embed declines it outright — arrives as this card's error state with a real
- * message and a retry, so the button is never dead even where it cannot work.
- * Reaching sign-in from a phone or tunnel is DOR-1655.
+ * This is the LOCAL card. A browser that is not on this machine never reaches
+ * it — `SessionSigninActions` routes those to {@link RemoteSigninGuidance}
+ * before the runtime is even resolved (DOR-1655), because the endpoint is
+ * loopback-only and this button could only 403 there.
+ *
+ * The ways the endpoint can still refuse from here — the Obsidian embed
+ * declines it outright, a vendor CLI can fail or time out — arrive as this
+ * card's error state with a real message and a retry, so the button is never
+ * dead even where it cannot work.
  */
 function InlineSigninActions({
   runtime,
@@ -143,6 +152,44 @@ function InlineSigninActions({
 }
 
 /**
+ * What the card offers a person who is NOT on the machine DorkOS runs on — a
+ * phone over the tunnel, a laptop on the LAN, a browser behind a proxy.
+ *
+ * Everything that would fix a sign-in happens on that machine: the login spawns
+ * the vendor CLI there, and pasting an API key writes to its credential store.
+ * Both endpoints are loopback-only, so from here the Sign in button and the
+ * "Use an API key instead" link were two doors onto the same 403. The link is
+ * gone rather than kept and re-explained: naming a second thing that also
+ * cannot work is noise, and "open DorkOS there" already covers whichever way
+ * they choose to fix it.
+ *
+ * Retry stays, because it is the one action that DOES work from here, and it is
+ * what the person wants the moment they have signed in on that computer. The
+ * wording only promises it when it is actually on screen.
+ *
+ * Runtime-generic on purpose: this is the same answer for Claude Code, Codex
+ * and OpenCode, so it is decided before the runtime is even known.
+ */
+function RemoteSigninGuidance({ onRetry }: { onRetry?: () => void }) {
+  return (
+    <div className="mt-3" data-testid="auth-error-remote-guidance">
+      <p className="text-muted-foreground text-sm">Signing in needs the computer DorkOS runs on.</p>
+      <p className="text-muted-foreground mt-1 text-sm">
+        {onRetry
+          ? 'Open DorkOS there and sign in, then press Retry here.'
+          : 'Open DorkOS there and sign in.'}
+      </p>
+      {onRetry && (
+        <Button variant="outline" size="sm" onClick={onRetry} className="mt-2 gap-1.5">
+          <RotateCcw className="size-3" />
+          Retry
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/**
  * Auth-error actions for a runtime with no sign-in to run — OpenCode, whose
  * "connect" is picking where the model comes from, not logging in — and for
  * every card with no session to sign in for.
@@ -180,7 +227,14 @@ function SessionSigninActions({
   onSigninComplete?: () => void;
 }) {
   const { sessions, isLoading } = useSessions();
+  const isLocalCaller = useLocalCaller();
   const runtime = sessions.find((s) => s.id === sessionId)?.runtime;
+
+  // Answered before the runtime is, and without waiting for the session list,
+  // because it does not depend on either: nothing that repairs a sign-in —
+  // vendor login or pasted key, on any runtime — can run from a browser that is
+  // not on this machine (DOR-1655).
+  if (!isLocalCaller) return <RemoteSigninGuidance onRetry={onRetry} />;
 
   // While the list is still loading the runtime is unknown, not absent —
   // rendering the deep-link now would flip to a Sign in button a moment later.

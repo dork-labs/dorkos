@@ -47,6 +47,9 @@ export const MOCK_SERVER_CONFIG: ServerConfig = {
   version: '0.30.0',
   latestVersion: '0.30.0',
   isDevMode: false,
+  // The playground is opened on the machine DorkOS runs on, so every showcase
+  // renders the local variant of anything that degrades remotely.
+  isLocalCaller: true,
   dismissedUpgradeVersions: [],
   dismissedPromoIds: [],
   // The shipped defaults, so the Notifications tab renders its out-of-the-box
