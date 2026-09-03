@@ -7,6 +7,7 @@
 import path from 'path';
 import { Router } from 'express';
 import { z } from 'zod';
+import { isManifestGitTracked } from '@dorkos/mesh';
 import type { MeshCore } from '@dorkos/mesh';
 import type { AgentManifest, AgentHealthStatus, TopologyView } from '@dorkos/shared/mesh-schemas';
 import {
@@ -242,7 +243,14 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
     }
   });
 
-  // POST /agents — Register an agent by path
+  // POST /agents — Register an agent by path.
+  //
+  // A directory that already holds a `.dork/agent.json` is ADOPTED: the file is
+  // left exactly as it is and the identity it describes is what gets
+  // registered, so the response's name and id can differ from what was asked
+  // for. Registration used to write over that file, which cost this repo its
+  // own committed manifest (DOR-1019). A manifest that is there but unreadable
+  // is refused with a 422 naming the file.
   router.post('/agents', async (req, res) => {
     const result = RegisterAgentRequestSchema.safeParse(req.body);
     if (!result.success) {
@@ -549,6 +557,19 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
       validatedPath = await validateBoundary(projectPath);
     } catch {
       return res.status(403).json({ error: `Path outside boundary: ${projectPath}` });
+    }
+
+    // A manifest git tracks belongs to somebody's repo, and this route deletes
+    // the whole `.dork/` directory around it — so it refuses outright rather
+    // than half-deleting, and says what to do instead (DOR-1019). Removing the
+    // agent without its data still works and leaves the file alone.
+    if (await isManifestGitTracked(validatedPath, logger)) {
+      return res.status(409).json({
+        error:
+          `Cannot delete ${path.join(validatedPath, '.dork')}: agent.json in it is tracked by ` +
+          `git, so it belongs to that repository. Remove the agent without its data, then delete ` +
+          `the files with git if you want them gone.`,
+      });
     }
 
     await meshCore.unregister(req.params.id);

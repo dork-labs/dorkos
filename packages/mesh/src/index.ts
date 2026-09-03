@@ -48,6 +48,12 @@ export { DenialList } from './denial-list.js';
 // Manifest
 export { readManifest, writeManifest, removeManifest } from './manifest.js';
 
+// The one question that decides whether a manifest is DorkOS's to delete
+// (DOR-1019). Exported because `DELETE /api/mesh/agents/:id/data` removes the
+// whole `.dork/` directory outside `unregister`, and it has to ask the same
+// question or the guard has a door beside it.
+export { isManifestGitTracked } from './git-tracked.js';
+
 // The contract that stopped collapsing a refused duplicate manifest into
 // "there is nothing here" (ADR 260801-003050). Only this one leaves the
 // package: `UpsertResult`, `AutoImportResult` and `ManifestProbe` are internal

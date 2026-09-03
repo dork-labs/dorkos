@@ -1,4 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import fs from 'fs/promises';
+import os from 'os';
+import path from 'path';
+import { execFileSync } from 'child_process';
 import express from 'express';
 import request from 'supertest';
 
@@ -19,8 +23,12 @@ vi.mock('../../lib/boundary.js', () => ({
   },
 }));
 
-// Mock removeDorkDirectory — default to resolved promise
-vi.mock('@dorkos/shared/manifest', () => ({
+// Stub the one destructive export and keep the rest real. A whole-module
+// factory would blank `MANIFEST_DIR`/`MANIFEST_FILE` for every OTHER consumer
+// that loads through this mock — including the mesh package's own git-tracked
+// guard, which then builds `undefined` into a path and throws (DOR-1019).
+vi.mock('@dorkos/shared/manifest', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@dorkos/shared/manifest')>()),
   removeDorkDirectory: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -81,6 +89,14 @@ const MOCK_MANIFEST = {
 describe('Mesh routes', () => {
   let app: express.Application;
   let meshCore: ReturnType<typeof createMockMeshCore>;
+  /** Real directories a test made on disk, removed after it. */
+  const tempDirs: string[] = [];
+
+  afterEach(async () => {
+    for (const dir of tempDirs.splice(0)) {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -805,6 +821,35 @@ describe('Mesh routes', () => {
       expect(res.body.error).toBe('Agent project path not found');
       expect(meshCore.unregister).not.toHaveBeenCalled();
       expect(removeDorkDirectory).not.toHaveBeenCalled();
+    });
+
+    it('refuses to delete a .dork directory whose agent.json git tracks', async () => {
+      // A real repo with a real committed manifest: the guard shells out to
+      // git, so a fake path would only prove that git said "no repo here".
+      const repo = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'mesh-route-')));
+      tempDirs.push(repo);
+      const gitArgs = ['-c', 'user.name=Test', '-c', 'user.email=test@example.com'];
+      execFileSync('git', [...gitArgs, 'init', '-q', '-b', 'main'], { cwd: repo, stdio: 'pipe' });
+      await fs.mkdir(path.join(repo, '.dork'));
+      await fs.writeFile(path.join(repo, '.dork', 'agent.json'), '{}', 'utf-8');
+      execFileSync('git', [...gitArgs, 'add', '-A'], { cwd: repo, stdio: 'pipe' });
+      execFileSync('git', [...gitArgs, 'commit', '-q', '-m', 'manifest'], {
+        cwd: repo,
+        stdio: 'pipe',
+      });
+
+      meshCore.get.mockReturnValue(MOCK_MANIFEST);
+      meshCore.getProjectPath.mockReturnValue(repo);
+
+      const res = await request(app).delete('/api/mesh/agents/agent-1/data');
+
+      expect(res.status).toBe(409);
+      expect(res.body.error).toContain('agent.json');
+      expect(res.body.error).toContain('tracked by git');
+      // Nothing was touched: not the registry row, not the directory.
+      expect(meshCore.unregister).not.toHaveBeenCalled();
+      expect(removeDorkDirectory).not.toHaveBeenCalled();
+      expect(await fs.readFile(path.join(repo, '.dork', 'agent.json'), 'utf-8')).toBe('{}');
     });
 
     it('unregisters agent, deletes .dork directory, and returns success', async () => {

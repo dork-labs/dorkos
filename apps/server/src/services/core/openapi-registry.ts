@@ -1863,6 +1863,11 @@ registry.registerPath({
   path: '/api/mesh/agents',
   tags: ['Mesh'],
   summary: 'Register a mesh agent',
+  description:
+    'A directory that already holds a `.dork/agent.json` is ADOPTED, never overwritten: the file ' +
+    'is left untouched and the agent it describes is what gets registered, so the returned id and ' +
+    'name can differ from the ones sent. A manifest that is there but cannot be read is refused ' +
+    'with a 422 rather than replaced.',
   request: {
     body: {
       content: { 'application/json': { schema: RegisterAgentRequestSchema } },
@@ -1870,11 +1875,15 @@ registry.registerPath({
   },
   responses: {
     201: {
-      description: 'Registered agent',
+      description: 'Registered agent (adopted, when the directory already had one)',
       content: { 'application/json': { schema: AgentManifestSchema } },
     },
     400: {
       description: 'Validation error',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    422: {
+      description: 'Registration refused — an existing manifest there could not be read or adopted',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

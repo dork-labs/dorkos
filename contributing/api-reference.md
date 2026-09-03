@@ -1038,6 +1038,8 @@ Trigger peer discovery for a given working directory. Scans for `.dork/agent.jso
 
 Register an agent in the mesh.
 
+**A directory that already holds a `.dork/agent.json` is adopted, never overwritten** (DOR-1019). The file is left byte-identical and the agent it describes is what gets registered, so the returned `id` and `name` can differ from the ones sent — `overrides` apply only to a directory with no manifest. A manifest that is present but unreadable, or that names an agent already registered somewhere else, is refused with a `422` naming the file. Registration also clears any denial recorded against the directory.
+
 **Request body:** `AgentManifest` (from `@dorkos/shared/mesh-schemas`)
 
 ```json
@@ -1084,12 +1086,23 @@ Update a registered agent's manifest fields.
 
 ### DELETE /api/mesh/agents/:id
 
-Unregister an agent from the mesh.
+Unregister an agent from the mesh. Deletes its `.dork/agent.json` so the next scan does not adopt it back — **unless git is tracking that file**, in which case it belongs to somebody's repository: the file is left alone and the directory is denied instead, which keeps the agent from returning without touching the repo (DOR-1019). Registering the directory again clears that denial.
 
 **Responses:**
 
 - `200` - `{ ok: true }`
 - `404` - Agent not found
+
+### DELETE /api/mesh/agents/:id/data
+
+Unregister an agent and delete its whole `.dork/` directory.
+
+**Responses:**
+
+- `200` - `{ success: true, deletedPath: string }`
+- `403` - Path outside boundary
+- `404` - Agent not found, or it has no project path
+- `409` - Its `.dork/agent.json` is tracked by git, so the directory is not DorkOS's to delete. Unregister without data instead (DOR-1019)
 
 ### GET /api/mesh/agents/:id/access
 
