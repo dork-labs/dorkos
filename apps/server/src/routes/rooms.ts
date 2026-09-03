@@ -168,16 +168,19 @@ router.get('/:id', (req, res) => {
  * spec §6.2). `NOT_A_BRIDGED_ROOM` (409) when `deliverNotices` is sent for a
  * room with no bridge.
  *
- * **The four limit fields are operator-only** (DOR-1429): anyone but the person
- * who owns this install is refused 403 `OPERATOR_ONLY`, an unverifiable agent
- * token is refused 401 by `resolveCaller` before this handler runs, and no room
- * capability tool offers them at all. Not merely person-only — these fields are
- * spend authority, and a second human author (an invited member, a cached
- * remote one) must not be able to uncap a room on the owner's account. The gate
- * lives in `RoomService.updateRoom` rather than here, one line after the
- * visibility check, so a caller probing a room it cannot see gets the same 404
- * reading it would. Sending one of these fields as `null` clears the room's
- * override; omitting it leaves whatever is stored alone.
+ * **This whole route is operator-only** (DOR-608): anyone but the person who
+ * owns this install is refused 403 `OPERATOR_ONLY`, and an unverifiable agent
+ * token is refused 401 by `resolveCaller` before this handler runs. Not merely
+ * person-only — a second human author (an invited member, a cached remote one)
+ * is refused too, for the reason `RoomService.seesEveryRoom` gives. An agent's
+ * surface for a room's name and topic is the `update_room` capability verb,
+ * which takes its own field refusals and cannot archive anything; `archived`
+ * and the four limit fields are reachable from here and nowhere else.
+ *
+ * The gate lives in `RoomService.updateRoom` rather than in this handler, one
+ * line after the visibility check, so a caller probing a room it cannot see
+ * gets the same 404 reading it would. Sending a limit field as `null` clears
+ * the room's override; omitting it leaves whatever is stored alone.
  */
 router.patch('/:id', (req, res) => {
   const body = parseBody(UpdateRoomRequestSchema, req.body, res);

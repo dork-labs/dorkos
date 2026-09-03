@@ -14,8 +14,15 @@ import {
 import { shouldAnimateRoster } from '../lib/roster-layout';
 import { TeamMemberCard } from './TeamMemberCard';
 
-/** The one grid the roster is drawn in — one column on a phone, more as there is room. */
-const GRID = 'grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3';
+/**
+ * The one grid the roster is drawn in — one column on a phone, more as there
+ * is room.
+ *
+ * Exported so `TeamRosterSkeleton` can lay its placeholder cards out in the
+ * exact same grid, which is what keeps the loading state from jumping when
+ * the real roster replaces it.
+ */
+export const TEAM_ROSTER_GRID = 'grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3';
 
 export interface TeamRosterGridProps {
   /** The rows to draw, already filtered, in the order the endpoint returned them. */
@@ -213,7 +220,7 @@ export function TeamRosterGrid({
       // show, and it is on screen at every width.
       data-testid={TOUR_ANCHORS.teamRoster}
       data-layout-animated={String(animated)}
-      className={cn(GRID, className)}
+      className={cn(TEAM_ROSTER_GRID, className)}
     >
       {/* `popLayout` pops an exiting card out of the layout flow, so the
           survivors close the gap around it instead of waiting for it to finish

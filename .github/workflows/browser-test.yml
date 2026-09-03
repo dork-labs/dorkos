@@ -80,6 +80,16 @@ name: browser-test
 # precisely so the fan-in job could keep the context string the ruleset
 # requires. Rename it and the queue deadlocks on a check that never reports.
 #
+# THE PR PAYS FOR THAT TRADE IN ONE SPECIFIC WAY, AND `copy-spec-drift` IS THE
+# REFUND (DOR-1647). apps/e2e deliberately asserts literal product copy, so a PR
+# that rewrites a string is green here at PR time and reds in the queue — where a
+# red is an EJECTION that also silently disarms auto-merge, costing a dequeue, a
+# fix and a re-arm with operator attention in the middle. That happened twice in
+# one day on 2026-08-31 (#1397's em-dash sweep, #1406's setting removal). The
+# third job below is a static cross-reference that answers the string half of
+# that class in seconds, on the PR, before anything can be ejected. It is a
+# signal, not the gate: the shards above still decide the merge.
+#
 # ONE LIVE EXTERNAL DEPENDENCY, STATED SO NOBODY DISCOVERS IT MID-INCIDENT. The
 # site leg's /marketplace pages fetch the dork-labs/marketplace registry from
 # raw.githubusercontent.com SERVER-side on every run, and the marketplace specs
@@ -232,8 +242,8 @@ jobs:
       E2E_SHARD_TOTAL: ${{ strategy.job-total }}
       # RETRIES: the suite runs with ONE retry in CI (playwright.config.ts,
       # `retries: CI ? 1 : 0`) — a decision, not a default, so here is the
-      # reasoning. Zero would be the principled choice (test.yml deliberately
-      # refuses VITEST_RETRY in CI), but the suite carries one TRACKED,
+      # reasoning. Zero would be the principled choice, but the suite carries
+      # one TRACKED,
       # test-side readiness flake — DOR-698, mention-picker's combobox, ~6% in
       # isolation and rarer in full runs — and a gate that goes red on a known
       # ticket trains people to route around it (test.yml's header has the
@@ -526,3 +536,71 @@ jobs:
             exit 1
           fi
           bash scripts/assert-browser-tests-executed.sh "${reports[@]}"
+
+  # THE PR-TIME SIGNAL (DOR-1647). See the header: the suite above defers to the
+  # queue on a PR, and the one regression class that costs is a copy rewrite
+  # that strands a literal assertion. This job cross-references the two
+  # statically — the runs of authored copy the change deleted, against every
+  # string under apps/e2e — and reds in about two minutes instead of forty.
+  #
+  # A SEPARATE JOB, NOT A STEP IN `browser-test`. That job's name is the context
+  # string the merge-queue ruleset requires (see its own comment), and stapling
+  # a second, differently-shaped assertion onto it would mean a copy-drift
+  # finding blocks the queue the day the ruleset is edited, which is not this
+  # signal's job. Its own name keeps the two verdicts separately readable.
+  #
+  # IT IS DELIBERATELY NOT A REQUIRED CHECK, and making it one is a
+  # branch-protection change only the operator can make. It reports on
+  # `merge_group` anyway — a required check that never reports blocks the queue
+  # until `check_response_timeout_minutes` expires (ADR 260728-112203), so a
+  # check that might be promoted later has to report from the start. Nothing
+  # here needs editing when that day comes.
+  #
+  # A red is still not free: `scripts/should-arm-automerge.sh` refuses to arm
+  # auto-merge while ANY check is failing, so a false positive costs a human
+  # look. That is why the script's thresholds are calibrated on replayed history
+  # rather than picked — its module doc has the numbers, and the pin suite
+  # `scripts/__tests__/check-copy-spec-drift.test.ts` holds them still.
+  copy-spec-drift:
+    runs-on: ubuntu-latest
+    # Nothing here runs a browser or a build. Two minutes is the install; ten is
+    # a backstop, not a budget.
+    timeout-minutes: 10
+    steps:
+      # `fetch-depth: 0` because the gate diffs against the base commit, and the
+      # default shallow fetch of a merge ref does not contain it.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The base differs by event and neither payload carries the other's field,
+      # so it is resolved here rather than guessed by the script: a pull request
+      # is measured against its own base, a queue build against the commit the
+      # group was cut from (i.e. every PR in the group at once).
+      #
+      # The `[ -f ]` guard is the same one the proof step above carries, for the
+      # same reason: a workflow is evaluated from a different ref than the tree
+      # it checks out, so on a branch that predates this script the run would
+      # otherwise die with a bare `exit 127` naming neither the file nor the fix.
+      - name: Cross-reference changed copy against the browser suite
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: |
+          if [ ! -f scripts/check-copy-spec-drift.ts ]; then
+            echo "::error::scripts/check-copy-spec-drift.ts is not in this checkout — this tree predates the script the workflow calls. Update the branch from main (or merge main in) to pick it up."
+            exit 1
+          fi
+          if [ -z "$BASE_SHA" ]; then
+            echo "::error::neither pull_request.base.sha nor merge_group.base_sha was set on a '${{ github.event_name }}' event, so there is no base to diff against. Refusing rather than certifying an unchecked tree."
+            exit 1
+          fi
+          pnpm exec tsx scripts/check-copy-spec-drift.ts "$BASE_SHA"

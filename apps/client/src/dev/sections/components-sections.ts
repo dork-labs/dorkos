@@ -46,6 +46,13 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     ],
   },
   {
+    id: 'press-ladder',
+    title: 'Press ladder',
+    page: 'components',
+    category: 'Buttons',
+    keywords: ['press', 'active', 'scale', 'tap', 'feedback', 'motion', 'ladder'],
+  },
+  {
     id: 'badge',
     title: 'Badge',
     page: 'components',

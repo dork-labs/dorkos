@@ -315,6 +315,18 @@ describe('ScheduleRow', () => {
     expect(onToggleExpand).toHaveBeenCalledTimes(1);
   });
 
+  it('gives its primary click target hover and focus feedback (batch 06, finding 6.2)', () => {
+    // Every action button nested inside the row already carries a hover
+    // treatment; the row body itself — the largest and most-clicked target —
+    // used to carry none at all.
+    const { container } = renderScheduleRow(activeSchedule);
+
+    const row = container.querySelector('[role="button"]');
+    expect(row).not.toBeNull();
+    expect(row!.className).toContain('hover:bg-accent/50');
+    expect(row!.className).toContain('focus-visible:bg-accent/50');
+  });
+
   describe('schedule target display', () => {
     it('shows agent color dot, icon, and name when agent prop is provided', () => {
       const agent = {

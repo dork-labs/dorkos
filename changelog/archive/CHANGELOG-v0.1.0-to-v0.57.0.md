@@ -1,0 +1,2869 @@
+# Changelog archive: v0.1.0 – v0.57.0
+
+Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
+See [changelog/README.md](../README.md) for the fragment workflow.
+
+## [0.57.0] - 2026-08-03
+
+> DorkOS 0.57.0 makes rooms a first-class way for you and your agents to work together, and puts every trust and permission decision in plain sight.
+
+### Added
+
+- Your agents can now browse and install marketplace packages from inside a session. The same marketplace tools an external client had (search, get, list, recommend, install, uninstall, create a package) now work for the agent you are chatting with, with the same approval step before anything is installed (DOR-429)
+- Your agents can now help run DorkOS itself. From inside a session, an agent can edit its own personality (traits, conventions, SOUL.md and NOPE.md), read the activity feed, see which agents were active recently, read and change your settings, and check whether a DorkOS update is available. System agents like DorkBot still refuse to have their identity changed, and settings changes only happen when you ask for them. These tools work for both your in-session agent and external MCP clients (DOR-430)
+- Setting up local models is now guided. When Ollama isn't installed, DorkOS explains what it is (a free, open-source app that runs AI models right on your computer, so nothing you type ever leaves it) and offers the simplest way to get it: a one-click install on macOS (Homebrew) and Windows (winget), or the official command to copy on Linux. DorkOS never asks for your password, and it checks that Ollama is actually running before saying it worked (DOR-439).
+- Drive DorkOS from the command line: new `dorkos agent`, `dorkos task`, `dorkos activity`, and `dorkos version --check` commands. List, inspect, and create agents; list, create, and trigger scheduled tasks; read the activity feed; and check the running server's version against the latest release (it still answers from a local cache when no server is running). Every command takes `--json` for clean, machine-readable output, so an agent in any runtime can operate DorkOS through the terminal. Run any command with `--help` for its options (DOR-434)
+- New agents now come with built-in knowledge of how to run DorkOS for you. Every agent you create, and DorkBot itself, gets a set of first-party skills that explain the `dorkos` command line and the in-session tools for making agents, scheduling tasks, installing marketplace packages, reading activity, and changing settings. The skills update themselves when you upgrade, and any skill you have edited by hand is left untouched (DOR-433)
+- New guide: how to ask your agents to run DorkOS for you. It walks through what you can ask an agent to do (create agents, schedule tasks, install packages, change settings, read your activity) and lists the `dorkos` commands that do the same from a terminal (DOR-436)
+- Your agents can now ask a running DorkOS "what can I do here?" and get a live answer. A new `dorkos capabilities` command (add `--json` for raw output), a `list_capabilities` tool inside sessions and for external clients, and a `dorkos://capabilities` resource all return the same up-to-date catalog: every capability the registry carries, with a short description and how risky it is. Agents no longer have to guess from static docs (DOR-442)
+- The API reference now documents capabilities from the registry automatically. The live capability catalog (`GET /api/capabilities/catalog`) and the activity feed (`GET /api/activity`) show up in the API docs at `/api/docs`, each with its request and response shape. As more capabilities move onto the registry, their endpoints appear in the docs on their own, with no separate step to keep in sync (DOR-444)
+- New `dorkos call <capability-id>` command: invoke any DorkOS capability by id from the command line and get the result as JSON. Pair it with `dorkos capabilities` to discover what's available, then call one with `--input '{...}'` (or `--input-file`). Unknown ids and invalid input come back as clear errors. This gives an agent in any runtime a single, uniform way to drive DorkOS (DOR-443)
+- The Activity feed now names which agent did what. When one of your agents changes a setting, updates another agent, or installs a package, the entry shows that agent's name instead of leaving you to guess. DorkOS hands each agent its own identity when it starts a session, and nothing about how your agents work changes.
+- Save the setup you are working in as your own Shape. The Shape switcher now has **Make your own version** next to **Reset to defaults**: name your copy, and it keeps the extensions you have turned on and the way your workspace is arranged. Anything DorkOS cannot see stays exactly as the original Shape had it — it will never erase a setting nobody changed, like panels closed by a page reload — so your copy only records what you actually chose. Escape backs out one step at a time: it closes **Name your version** first, the switcher second. And if you walk away while a copy is still saving, DorkOS still tells you how it went (DOR-402, DOR-453)
+- End a line with a backslash and press Enter to keep typing on the next line — the backslash disappears. It works anywhere in the message, not just at the end, and two backslashes in a row still send (DOR-452).
+- Option+Enter (Alt+Enter on Windows) now starts a new line instead of sending (DOR-452).
+- The keyboard shortcuts panel now lists what the message box does: new line, keep typing on the next line, clear, and what one Escape does first when several things could happen at once (DOR-452).
+- A **Session** panel behind the `⋯` at the end of the status line, on click or `Cmd+Shift+.`. It lists everything about the session with its live value — directory, git, runtime, model, context, cache, usage, permissions — plus sound and background refresh, and diagnostics: connection, how far the live link has caught up, how many messages are waiting, and the session id. On a phone it opens as a bottom sheet, most urgent first (DOR-452).
+- **Copy diagnostics** in the Session panel puts everything above on your clipboard as one block of readable JSON — the thing to paste into a bug report (DOR-452).
+- **Pin** any session row to keep it in the status line even when it has nothing to report, and **Reset pins** to clear them all. Your pins are saved with the rest of your settings rather than in one browser, so they follow you to your other windows, the desktop app, and Obsidian — and you can just ask an agent to pin something for you (DOR-452).
+- When the conversation window passes 85% full and your agent is not mid-answer, a one-click **Compact** appears right beside the percentage instead of on a row of its own. It waits for the turn to finish, because compacting cannot start while your agent is still working (DOR-452).
+- DorkOS can now ask you before an agent does something you cannot undo. When an agent requests
+  approval, a card appears on your dashboard saying what would happen in plain words, with Allow
+  and "Don't allow" buttons and how long you have to decide. The card shows up in every window you
+  have open and disappears everywhere as soon as you answer (DOR-447). The countdown bar reaches the browser, including after a reload or in a second window.
+- A **Session** tab in the right panel, next to Agent Profile. It shows everything about the session you are in and stays open while you work: whether the live connection is healthy, how long it has been since anything arrived, the full project folder, which model actually answered you, how full the conversation window is and what is filling it, how much came from cache, what your plan or spend looks like, and which helper agents are running or have finished this turn. Handy when a reply seems stuck and you want to see whether the problem is the connection or the agent. **Copy diagnostics** puts the whole picture on your clipboard for a bug report.
+- Agents now have to ask before anything they cannot take back. Every DorkOS action an
+  agent can run through the capability catalog carries a size: read only, ordinary
+  change, or cannot be undone. Reading is free, ordinary changes go ahead and get
+  logged, and anything that cannot be undone stops and waits for you, with
+  plain-words instructions for the agent on what to do next. The check runs on every
+  path an agent can reach: the API, the tools inside a session, and the tools an
+  outside app like Claude Code or Cursor uses. Tools that are not in the catalog are
+  not covered by this check (DOR-448).
+- Your approval card now names the agent that asked and how consequential the
+  action is, so you can tell who wants what before you answer (DOR-448).
+- The activity feed now records what an agent tried and was not allowed to do, not
+  only what it did (DOR-448).
+- `dorkos call` takes an `--approval <token>` option, so an agent working from the
+  command line can finish the same ask-and-retry flow (DOR-448).
+- New guide, [Action Approvals](https://dorkos.ai/docs/guides/action-approvals), explaining
+  when DorkOS asks you before an agent does something that cannot be undone: what the card
+  on your dashboard shows, why an agent cannot skip the question by leaving its name off,
+  why an approval works once and runs out after two hours, and how the activity feed
+  names which agent did what (DOR-451).
+- See when an agent is waiting on you, from any screen. A marker in the top bar says how many requests need your approval, and clicking it opens them right there so you can answer without leaving what you were doing.
+- Requests clear themselves once they run out of time, so you are never looking at one you can no longer answer.
+- Three new pages on dorkos.ai describe what shipped: Action Approvals, Agent Attribution, and the Capability Catalog (DOR-428)
+- Press Escape once while you have something typed in a chat and a quiet note now appears just above the composer: **Press Esc again to clear**. Pressing Escape twice has always wiped a draft, but the first press did nothing you could see, so nobody ever tried the second one. The note shows up only while that second press would really work, and it is gone the moment it would not (DOR-479)
+- Standing permissions now work. When you answer an approval with "and stop asking about this", DorkOS remembers it for one agent doing one action, for as long as your trust window says, and lets that agent get on with it without interrupting you. Every time it does, your activity feed says so, and one line tells you which permission let it through (DOR-501)
+- You now decide which extensions may run their code inside DorkOS. That covers both halves of an extension: the part that runs on your computer, which can reach anything DorkOS can reach, and the part that runs on the DorkOS page in your browser, signed in as you. Until you say yes, neither one runs. The first time an extension tries, it waits: Settings → Extensions shows it with an **Allow it to run** button. One click and you are done. After that, editing, testing, and reloading that extension all work with nothing further to click, and turning it off and on again does not ask you again. **Stop it** on the same card takes the permission back and stops the extension right away. Extensions that ship with DorkOS never ask, because you already installed DorkOS.
+- Your agents can see which extensions you have allowed, but they cannot add to the list. An agent that could allow its own extension would be approving its own code, so that answer is yours alone, alongside your other protected settings. The same limit applies as to those: with **Require login** off, which is the default, this holds against any agent that says who it is, and turning **Require login** on closes the rest.
+- Updating or reinstalling an extension asks you again. New code is a new decision, even under a familiar name. Editing an extension you already allowed never re-asks, so building your own is still one click, once.
+- A web page you visit cannot allow an extension for you. Requests to allow or stop an extension now have to come from DorkOS itself.
+- Tell DorkOS to stop asking about one thing. An approval card now carries a third button, "Allow, and stop asking about this for 8 hours", that covers one agent doing one action, for a stretch of time you choose. Turn it on in Settings, under Security (DOR-501)
+- Find and end a standing permission from either of two places: Settings under Security, or the approvals marker in the header, which now shows a quiet count when trust is live. Each one has a **Stop trusting** button (DOR-501)
+- Choosing a trust level that skips prompts now says what it does not cover: actions on DorkOS itself, like removing packages, still ask. The line appears wherever a level is picked: the session picker, a channel binding, and a scheduled task (DOR-501)
+- Group conversations now have somewhere to live. A **room** holds several people and several
+  agents in one running conversation, keeps every message forever, and remembers where each
+  member left off reading (DOR-524)
+- Rooms come in two shapes: **channels** for a topic and **direct messages** for one-to-one. A
+  side conversation hangs off the message it answers rather than taking the room over (DOR-524)
+- An agent keeps the same name on everything it has ever said, even after DorkOS rebuilds its
+  records in the background (DOR-524)
+- Refuse to start a second DorkOS against the same data directory, and say which one already has it. Two servers sharing one directory used to corrupt each other's agents and history (DOR-532)
+- **Channels** and **Direct messages** now sit in the left sidebar, beside your agents. Click one
+  to open it and read what has been said. Both sections collapse, and DorkOS remembers whether you
+  left them open (DOR-525)
+- Make a channel straight from the sidebar: hit the **+** beside Channels, type a name, press
+  Enter. Start a one-to-one conversation the same way — hit **+** beside Direct messages and pick
+  an agent (DOR-525)
+- A room shows who is in it, groups messages by who is talking, marks where one day ends and the
+  next begins, and draws a line at the first thing you have not read. Open the room and the line
+  stays put while you catch up; the unread count beside it clears (DOR-525)
+- Where you left off reading is remembered by DorkOS, not by your browser — so it is the same on
+  your laptop and your phone (DOR-525)
+- Anything posted into a room you have open appears straight away, with no reload (DOR-525)
+- The desktop app keeps running when you close its window, so your agents carry on working (DOR-538)
+- A DorkOS icon in the macOS menu bar shows how many agents are working, and brings the window back (DOR-538)
+- The first time you close the window, DorkOS tells you it is still running, and offers to quit if that is what you meant (DOR-538)
+- Quitting while agents are mid-task now asks first: "3 agents are still working. Quit anyway?" (DOR-538)
+- "Open in New Tab" opens a second DorkOS window instead of sending you to your web browser (DOR-538)
+- Open your agents in tabs in the desktop app, the way you already work in a browser or an editor.
+  The tab strip runs across the top of the window, and the `+` button opens another one (DOR-540)
+- Those tabs tell you what your agents are doing while you are looking somewhere else. A tab lights
+  up when its agent starts working, needs an answer from you, or hits a problem. You can leave five
+  agents running and glance at the strip to see which one wants you
+- Keyboard shortcuts for the desktop app's tabs: `Cmd/Ctrl+T` opens a tab, `Cmd/Ctrl+1` through `9`
+  jump to one, and `Cmd/Ctrl+Shift+[` and `]` step between them. `Cmd/Ctrl+W` closes the tab you are
+  on, and closes the window once it is the last tab. You can also reach the strip with `Tab`, move
+  with the arrow keys, and close a tab with `Delete`. The `×` on a tab closes it too
+- Your desktop tabs come back after a reload, and each window keeps its own set
+- "Open in New Tab" in the command palette opens an agent without losing the one you were reading.
+  In the desktop app that is a DorkOS tab; in a browser it is a browser tab, which you can bookmark
+  or drag onto a second screen yourself
+- The desktop app's command palette also has "Open in New Window", which opens a second DorkOS
+  window on the agent you picked. Handy for a second screen. A browser has no separate answer to
+  that, so the choice is not offered there
+- See the address DorkOS is running on in Settings → Server, with a button to copy it and a button to open it in your browser. The MCP endpoint is right below it, ready to paste into Claude Code, Cursor, or Windsurf (DOR-539)
+- Agents now answer in rooms. Post in a channel or a direct message and every agent the message is meant for takes a turn and replies, right there in the conversation. Each agent keeps its own thread of context per room, so what you say in `#backend` stays separate from your one-to-one chat with the same agent (DOR-526)
+- A new setting, `rooms.maxAgentDepth`, caps how many replies in a row agents may send each other before a room stops them and says so in the conversation. Messages from you start the count over, so a room that has gone quiet is one message away from running again. Set it to `0` to turn automatic replies off (DOR-526)
+- Two more settings put a ceiling on what automatic replies can cost you: `rooms.maxAutomaticTurnsTotalPerHour` (240 by default) caps how many DorkOS runs in an hour across every room you have, and `rooms.maxAutomaticTurnsPerRoomPerHour` (60) stops any single room using up that whole allowance. Both count no matter who the message looked like it came from, and the room says so when it stops. These are the ones that hold if **Require login** is off — see the note below (DOR-526)
+- Agents in a room now show their emoji and colour, the same way they do everywhere else in DorkOS (DOR-526)
+- Say something in a channel or a direct message. Rooms used to be read-only from the cockpit — the line at the bottom said so — and now there is a message box: Enter sends, Shift+Enter starts a new line, and everyone in the room, agents included, sees what you wrote (DOR-526)
+- Your words are never thrown away. The box empties as soon as you press Enter, so you can start the next sentence right away; if a message can't be sent, it comes back into the box — above whatever you've typed since — with a note saying what went wrong. That holds even if you've moved to another conversation in the meantime, or sent another message after it: the words go back to the room you wrote them in, and are waiting there when you return (DOR-526)
+- Half-written messages keep. Start typing in one channel, go read another, come back — your sentence is where you left it. Each channel and DM keeps its own (DOR-526)
+- A direct message can hold several agents. The "+" beside Direct messages now lets you pick more than one: type a name and press Enter to add it, then keep going. Everyone you pick shows as a tag, so you can see who is in the conversation before you open it. One agent gives you a one-to-one; two or more give you a group named after the people in it. Backspace takes back the last agent you added, and Escape closes without opening anything (DOR-571)
+- Channels and direct messages now have a docs page. It explains what a room is, how a channel
+  differs from a direct message, and how both differ from a session, plus how to create each one
+  (DOR-565)
+- Channels and direct messages now have a menu, on right-click and on the "…" button beside the row: mark as read, add agents, members, rename, edit topic (channels), and archive. It matches the menu agent rows already have.
+- A members panel shows who is in a room, lets you add or remove agents, and — for the first time — lets you choose when each agent replies there: to everything, when spoken to, only when @mentioned, or not at all. Until now that setting was fixed the moment an agent joined.
+- On a one-to-one conversation, the menu has a shortcut straight to that agent's profile.
+- When you add agents to a room, each one drops off the list the moment it is in. If one doesn't make it, it stays picked so you can try that one again without adding the others twice.
+- See the exact commands a package sets up before you install it. The install preview now lists each one, word for word, next to a plain description of when it would run (DOR-635)
+- See the jobs a package will schedule, when they run, whether they start switched on, and how much each one may do without asking you. Shapes used to create timed jobs that no preview mentioned at all (DOR-635)
+- You can now pick the agents when you make a channel. The **+** next to "Channels" opens a dialog that asks for a name and who's in it, instead of just a name. A channel with nobody in it has nobody to answer you, so this is now one step rather than a thing you couldn't do at all. If you really want an empty one, "Create it without agents" is still there (DOR-599)
+- You can add agents to a channel any time afterwards, from three places: the row of faces at the top of an open channel, the "Add agents" button in a channel with nothing in it yet, or a right-click on the channel in the sidebar. All three open the same panel, which is also where you remove someone and set how each agent decides when to reply in that channel (DOR-600)
+- Two new settings for rooms: `rooms.replyWaitMinutes` (how long a room waits for an answer, 10 minutes by default) and `rooms.lateReplyCeilingMinutes` (when it gives up and says the agent could not finish, 60 minutes by default). (DOR-621)
+- Your channels and direct messages are now in the command palette. Press Cmd+K and, before you type anything, you see what is unread, most pressing first. Type `#` to jump to a channel by name, or `@` to open a conversation with an agent. The palette now tells you what each of those keys does, so you do not have to know already.
+- Sidebar groups can now hold channels and direct messages alongside your agents. Put the channel, the conversation and the agent for one project in the same group, sorted and filtered together. Grouped rooms move out of the Channels and Direct messages lists, so each one shows up in exactly one place.
+- Type `@` in a channel or a direct message and a list of everyone in it appears — people first, then agents. Pick one and the message is addressed to them: an agent you name will answer, a person you name just gets told. Arrow keys move through the whole list, Enter takes the highlighted one, and typing narrows it down.
+- The picker writes the name that actually reaches someone, which is not always the name on screen. An agent called "Mio Clicker PM" answers to `@mio-clicker-pm`, and typing its full name by hand reaches nobody at all. Pick it from the list and the right thing gets written for you.
+- An agent that no `@` name can reach still shows up in the list, greyed out and saying so, instead of quietly going missing.
+- Ask an agent how DorkOS works and it looks the answer up instead of guessing. Agents now come with a skill that searches the DorkOS documentation. It reads the one page that answers your question, then tells you which page it came from. When the docs do not cover something, it says so plainly rather than inventing an answer. DorkBot picks this up the next time DorkOS starts. Every agent you create from now on has it too (DOR-661)
+- Connector packages now stand out in the Marketplace. Packages that connect your agents to services like Gmail or Slack get their own CONNECTOR badge, and a new "Connectors" filter in the sidebar shows only them. The plain "Adapters" filter still includes them (DOR-704)
+- The features page on dorkos.ai now lists Connections, marked alpha: connect a service once, and you always see where your sign-in lives (DOR-704)
+- DorkBot now asks what kind of work you do, right after you pick its personality during setup. Answer with a tap or type your own, or skip it and never be asked again. Your answer stays on this machine: it goes to your own agents so they know who they work for, and it is never included in any telemetry payload. Tests hold that line. Every agent session now opens knowing your name, your work, and your tools, once you have shared them. If you set up DorkOS before this question existed, DorkBot asks once in the sidebar, with a one-tap "Don't ask again". (DOR-705)
+- After you answer, DorkBot suggests a couple of services that fit your work, like Gmail and Greenhouse for hiring. One line, no setup pushed on you. (DOR-705)
+- Saving your Composio or Nango key now turns that connector on instantly — no restart. Delete the key and it switches off the same way (DOR-371)
+- Your agent can now connect services when you ask. Say "connect my Gmail" and it replies with the sign-in link and a plain sentence about where your login lives; attaching the account to a session still asks you first (DOR-371)
+- Accounts connected through your own Nango server now give your agent a tool that can call that service's API — your logins stay in your database the whole time (DOR-415)
+- Offer a remote tool server as something you can connect to, by listing it in your config file under `connectors.rawMcpServers` (DOR-371)
+- A new Connections screen lets you link Gmail, Slack, and other services to DorkOS. Paste your provider key once, click Connect on a service, sign in, and the account appears with a plain sentence about where your sign-in lives. You can hold two accounts of the same service — "Gmail (work)" and "Gmail (personal)" — and disconnect any of them anytime (DOR-708)
+- Sessions grew a quiet Connectors section in the Session panel: attach a connected account to the session you're in (you see the custody sentence again before you confirm), detach it with one click, and get told plainly when an attached account has expired and needs a reconnect (DOR-708)
+- Do you use more than one Claude Code account on the same computer, maybe one per client? You can now choose which account DorkOS runs your work on, and switch any time. Your session list shows work from all of your accounts together, and each session is labeled with the account it belongs to. Reopening an older session always runs it on the account that created it. This setting only changes DorkOS. Your terminal and the `claude` command keep working exactly as before.
+- Agents in a channel now stay in the conversation after you talk to them, instead of needing an `@mention` on every message. Ask one something and it keeps answering your follow-ups for about ten minutes, or until five messages from other people have gone by — whichever happens first. Talking to it again starts both over
+- This is a new setting — **Engaged**, on the room's quiet-to-loud scale — and you pick it per agent in the room sheet. The other settings are all still there
+- Two settings control how long that lasts: `rooms.engagedWindowMinutes` (10) and `rooms.engagedWindowPosts` (5). Set either to `0` and an agent goes back to needing an `@mention` every time
+- You can now see when an agent is working on your message in a room, and when it's taking longer than usual. A line under the message box names whoever picked it up and counts how long they have been at it — "Kai is working on it · 42s". Past three agents it counts them instead, and you can tap it for the names
+- The line is honest by design. It shows only while an agent really has your message in hand, and it goes the moment the answer lands or the room explains why there isn't one. Nothing an agent decides can switch it on or keep it on
+- It survives a bad connection. The room repeats the signal every 10 seconds, so opening a room in the middle of a long reply — or coming back after your connection dropped — tells you what is happening within 10 seconds instead of showing you a room that looks empty. If the server stops, the line clears itself rather than sitting there saying "working" forever, and if your browser loses the room's live connection the line goes instead of freezing
+- You can now reply to a single message in a room instead of answering into the whole conversation. Hover a message and a small toolbar appears on it with "Reply in thread" — your reply gathers under the message it answers, where everyone in the room can follow it without it burying the conversation around it. Threads have always shown up in the cockpit; until now the only way to add to one was through the API
+- Right-click a message for the same actions, or press and hold on a phone for them to slide up from the bottom. It is the same short menu either way, and the same one the sidebar already uses. On a touch screen the press-and-hold is the only way in — tapping a message reads it, it doesn't offer you a menu
+- Alongside replying, the menu copies a message's text — telling you it did, or that it couldn't — and offers to mention whoever wrote it, dropping the exact name that reaches them into the message box so you can be sure it will land. Mentioning is left out when nothing would come of it: on your own messages, and on anyone an `@` cannot reach
+- The menu works without a mouse, and it stays out of your way. Tab moves between messages, one press each, however many actions a message has. On the message you're on, an arrow key or Enter steps into its actions, arrows move along them, and Escape comes back. Choosing "Reply in thread" puts the cursor straight in the message box, pointed at that thread
+- While the box is pointed at a thread it says so, right above where you type, with a way to point it back at the room. It stays pointed there after you send, so a back-and-forth inside a thread does not mean choosing "Reply" again for every sentence
+- Replying to a reply keeps you in the same thread rather than starting a new one under it. Rooms stay one level deep on purpose, so the conversation reads the same way for everyone
+- A reply reaches the agents you name in it, exactly as a message to the room does. Say `@ana` in a thread and Ana picks it up, and answers in that same thread
+- **One line at the top of the sheet says what the room will actually do** — "Two agents will answer you here", "Only @mentions get an answer here", "There is nobody here to answer you" — with a small meter beside it. It names the odd one out when there is exactly one worth naming.
+- **Taking an agent out of a room can be undone**, the way archiving a whole room already could. Putting it back restores how loud it was, rather than resetting it to what a brand-new arrival gets. Take two out in a row and you are offered **Undo** for each of them.
+- **A one-to-one says what a second agent would do to it** — "Adding a second agent turns this into a group conversation" — before you add one, instead of leaving you to work it out from the faces afterwards.
+- **Agents arrive and leave instead of blinking in and out.** An agent you add opens into place and glows once, so you can see where it went. One you remove collapses its row, so the **Undo** offer refers to something you watched happen. Opening a scale slides it open. An agent that is working has a pulsing dot rather than a still one. All of it stops moving — without anything disappearing — if your system is set to reduce motion.
+- You can react to any message in a room. Hover it and the toolbar now starts with your three most-used emoji — one click to say "got it" to an agent without spending a message. The 🙂+ beside them opens a searchable picker for everything else, and on a phone a long press brings the same row up in the drawer.
+- Reactions show up under the message as small pills. Yours are outlined in orange, and clicking one again takes it back. Hover a pill to see who reacted, by name. New ones pop in as they land, and they arrive live — someone reacting in another window shows up in yours without a reload.
+- Your reaction reaches the agent quietly. It lands in the agent's memory of the room as an acknowledgment: no reply, no new turn, nothing to pay for.
+- Choose which model new chats start on, and how hard they think. Each runtime gets its own pair of settings, because a model name only means something to the runtime that offers it — so Claude Code, Codex and OpenCode each have their own. Leave them alone and nothing changes: every runtime keeps picking for itself, exactly as before. Set one and every new chat on that runtime starts there, while chats you already have keep what they are running with. OpenCode gets a model setting but no thinking setting, because OpenCode gives no way to ask for more or less thinking and we would rather say so than pretend. Room agents benefit most: until now a room reply had no way to say which model it should run on. You choose them in **Settings → Runtimes**; on disk they live in `~/.dork/config.json`.
+- Threads now open in a panel beside the room. A message with replies shows one quiet line under it — "↳ 3 replies · last 9:45 AM" — and clicking it opens the whole thread next to the conversation, with its own box to write in. The room's own scroll stays the room's, however long a thread gets. On a phone the thread takes the screen and a Back button returns you.
+- A thread with replies you have not read shows that line in colour, with a count of what is new. It is worked out from where you left off in the room, so it agrees with the "New messages" line a few pixels above it.
+- The waiting line follows you in. When an agent is working on something inside a thread, "Kai is working on it" appears in the panel rather than under the room, so the wait is shown where the work is happening.
+- A thread has an address. The link in your browser bar now names the open thread, so a refresh keeps it open and a link you paste to somebody opens the same thread you were reading.
+- Give one agent its own model and its own thinking level, instead of one answer for the whole machine. The agent that reviews your diffs can run on the big model while the one watching a room runs on the quick one. What an agent says about itself wins; anything it leaves unsaid falls back to your default for that runtime, and an agent that says nothing keeps working exactly as it did today. Room agents get the most out of this: a room reply now starts on whatever the agent it addressed asked for. You choose them in that agent's **Config** tab; on disk they live in its own `.dork/agent.json`.
+- **Settings → Runtimes now lets you choose what a new chat starts with**: which runtime, which model, and how hard it thinks. The runtime setting has been in DorkOS all along with nowhere to change it — this is its first screen. Model and effort are per runtime, because a model name only means something to the runtime that offers it. Change anything and DorkOS tells you the truth about when it takes effect: new chats start with it, chats already running keep what they have.
+- **Under that card, every agent that runs on something else.** Agents that are simply set up differently are listed plainly; agents whose setup has stopped working — a runtime you have not connected, a model that is no longer offered, a thinking level on a runtime that has none — come first, in amber. Click any of them to land in that agent's own settings. When every agent is on your defaults, the list isn't there at all.
+- **Model and thinking level joined the runtime dropdown in an agent's Config tab**, each wearing a small chip that says where the value came from: "server default · Opus", or "set here" when this agent picked its own. The chip is also the undo — click a "set here" chip and the one thing it offers is going back to your default. On a phone the rows open a sheet from the bottom with the same choice at the foot.
+- Where a thinking level cannot work, DorkOS says so instead of hiding the row: "Not supported by OpenCode", or "This model doesn't take an effort setting". If one is already saved there, it says that too, and lets you clear it.
+- **A Threads list in the sidebar**, above your channels. Every thread you started or replied in is there, whichever room it lives in, with the most recently answered at the top. Each row shows what the thread was about, which room it is in, and how many replies it has — so finding your way back to a conversation no longer means remembering which channel it happened in and scrolling for it.
+- A thread with replies you have not read shows the count beside it, the same way an unread channel does. Reading the room clears it, because a thread shares its room's place-marker.
+- Clicking a row opens that room with the thread already open beside it, on the exact thread you clicked. The section collapses like the others, and DorkOS remembers whether you left it open.
+
+  You are in a thread because you wrote it or answered in it — there is nothing to follow or unfollow, and nothing to keep tidy. The section only appears once you are in a thread, so a fresh install is not given a heading it cannot fill.
+
+- **A small dot beside a room in the sidebar while an agent is working in it.** Ask a question in one channel, go and read another, and you can still see that the first one is busy — without opening it and without wondering whether anything happened. The dot appears the moment an agent picks the work up and goes out when the answer lands.
+- It is honest about how many: a screen reader hears "2 agents working" when two of them are on it.
+
+  The dot is never a guess. It exists exactly as long as real work does, so if DorkOS stops running mid-answer, every dot goes out within half a minute rather than sitting there claiming something is still happening.
+
+- `dorkos doctor` now finds the problems that used to only show up as strange behaviour later: a room whose saved conversation has gone missing from disk (the reason an agent sometimes answers as if it has never met you), agent messaging rules DorkOS could not read, saved chat integrations whose settings are unreadable, chat connections pointing at an agent or an integration that no longer exists, and the same agent id claimed by two different folders.
+- Those checks need DorkOS to be running, so they live behind `dorkos doctor --deep`. If DorkOS is not running, it says so and skips them — that is not a problem with your setup.
+- `dorkos doctor --json` prints the same results as plain JSON, so you can pipe them into another tool.
+- `dorkos doctor` now also checks how many files your system lets DorkOS keep open at once. Too few, and DorkOS starts failing in ways that never mention files.
+- Rooms now tell you when an agent has gone quiet because it is waiting on you. If it stops to ask permission for a tool, or asks a question, and nobody has answered a minute later, the room says so and points you at its session — instead of sitting there looking busy until the request quietly expires. Quick approvals stay quiet, so a room does not fill up with notes about pauses that lasted seconds.
+- Every room has a **Stop** button in its header while agents are working. It stops the work; it is not something you can ask for in a message, because an agent stuck in a loop will just reply to that.
+- When your agent asks permission and you answer, the card now settles into the conversation as a receipt — a one-line record of the ask and your answer, right where it happened. Allowed and denied requests say so by name; a request nobody got to says it expired and how long it waited. Answering several at once leaves one line with the details a click away.
+- When DorkOS decides not to do something — an agent skips a message, a room runs out of automatic replies, a prompt times out with nobody watching — it now writes one line saying exactly why. The ones you were never told about are recorded as warnings, so they stand out instead of blending into the ordinary chatter. That is what makes "the room just went quiet and I don't know why" a question with an answer.
+- New: `dorkos debug` answers the questions you can only ask while DorkOS is running. Which agents are working right now and for how long, what was recently declined and why, which conversations have a live connection, and whether a room's agents still have their history on disk. It reads ids, counts and times — never the text of anything anyone wrote — and stores nothing. Run `dorkos debug --help` to see the subjects.
+- Reopening a conversation now shows the permission asks and answers, right where they happened. What you allowed, what you denied, and what ran out of time before anyone got to it are kept with the turn they belong to, so the record is still there tomorrow — not just for as long as the tab stays open.
+- Turning on **Full autonomy** now asks you to acknowledge what it means — once, if you tell it to stop asking. Tick **Don't show this again** and DorkOS writes down the date and stops asking; leave it unticked and it asks again in your next conversation, as before.
+- Settings → Security shows the date you acknowledged it, with a **Reset** button. Resetting brings the confirmation back the next time you reach for Full autonomy, and takes effect everywhere within about half a minute — a tab you left open can skip it once more before it catches up. It changes nothing about a conversation that is already running — only the asking comes back.
+- **Tell DorkOS how much new sessions may do — once.** Settings, in the card that already holds the model and effort a new chat starts with, now asks where new chats should start: **Ask first**, **Act**, or **Full autonomy**. One choice covers every agent you run — the three words mean the same thing whichever one you are talking to — and underneath, a line per runtime says what that choice actually means for it, including where a runtime cannot pause to ask. **Ask first** stays the out-of-the-box default, and chats you already have keep what they are running with. Changing model, effort, or trust level before your first message no longer silently locks the chat to Claude Code: the runtime you actually start on is what applies.
+- **Something different for one agent?** "Customize per runtime" opens a row for each, with the same dial and a way back to the shared setting.
+- **Make it the default right where you decided it.** After you change a chat's trust level, a quiet line appears under the dial for a few seconds — _Start every new session in Act? **Make default** · Dismiss_ — so the habit is caught where it happens instead of costing you a trip to Settings. It stays quiet when that stop is already where new chats start, and it takes no for an answer for the rest of the conversation.
+- **Full autonomy is a choice you acknowledge once**, in Settings or right where you just made it. DorkOS asks what it means at the moment you choose it and writes down that you read it; from then on new chats start without asking, and Settings keeps a quiet note saying so with a link to change it back — naming the agent, when it is only set for one.
+- **Say why you said no.** When an agent asks permission and you want to refuse, the approval card now offers **Add a reason** — one line, entirely optional. What you type goes to the agent with the refusal, so instead of trying the same thing again it can take another route. Deny on its own still works exactly as before: click Deny, press Esc, and nothing slows down.
+- **The transcript says whether the agent heard you.** A denial you explained reads _You denied `rm -rf node_modules` — agent was told why_. A denial you did not explain says only that you denied it, and a request that ran out its ten minutes still reads _Expired — denied_, because a clock explains nothing. The line only claims the agent was told when the reason actually reached it.
+- **DorkOS now tells you when something is running without asking and nobody is there to answer.** If a chat integration or a scheduled task is set to **Full autonomy**, a quiet amber line sits under the header on every page: _The Deploys integration and the Nightly cleanup task run without asking. Nobody is watching, so nothing waits for your approval._ It names them rather than counting them, and puts a button beside the words that takes you to the integration or the task so you can change it in a couple of clicks.
+
+  This is the one place that fact had no home. A chat you are sitting in front of shows its trust level in the status strip, right where you are looking. A schedule that fires at 3am and an integration that answers a message from your phone show it only on the screen that configures them — the screen you are not on. The banner appears the moment you turn one on, stays while it is true, and disappears on its own when you dial the last one back. There is nothing to dismiss and nothing new to configure.
+
+- **See every file and link your agent touches, live.** Each reply now carries a
+  row of small chips — one per file, page, or command the agent handled — and
+  each one moves the way its job moves: reading sweeps across the name, searching
+  passes a beam through it, editing scribbles and counts the lines as they land,
+  a new file draws its own outline, a deleted one is swallowed by the bin and
+  stays behind, struck through, so a deletion is never invisible. The moment a
+  job finishes, its chip goes still. Nothing you can see moving is over.
+- **The row stays short, and nothing gets lost.** Only the four newest chips stay
+  out front; older ones slide into a small pile beside them that counts what it
+  holds. When the reply is done, the whole thing folds into one quiet line —
+  `📖 21 · ✏️ 3 +34 −11 · 🌐 9` — and **show all** opens the full list, which you
+  can filter by what happened and read either grouped or in the order it
+  happened. A file that was read and then changed does not get a second chip: the
+  one already there turns into the edited one where it stands.
+- Click a chip to open that file or page beside the chat. Hovering one tells you
+  the whole story of it — every time it was touched, in order.
+
+### Changed
+
+- When your agent's sign-in stops working, chat now shows a clear message with a "Fix sign-in" button that takes you straight to Settings to sign in again, instead of a raw error. Works for Claude, Codex, and OpenCode.
+- You can now change how OpenCode is powered without disconnecting first. A connected OpenCode shows a Change link that reopens the power-source picker with your current source labeled ("Currently: On your computer (Ollama)"), so switching from your own computer to the cloud, or the other way, is one clear choice (DOR-427).
+- The model menu for local (Ollama) models now offers only the models that are actually on your computer, so you never pick one that isn't installed and watch the turn fail. Add more models from the local panel as before (DOR-427).
+- Status bar settings now sync, and your agents can change them for you. What the status line shows used to be saved only in the browser you set it in. Now it lives with the rest of your settings, so a choice you make in one window shows up in your others and in the desktop app, and you can just ask an agent to change it. In this same release the ten per-item on/off switches became a single list of pinned items, so read the status line entry for what that means and what carries over (DOR-431)
+- A runtime that shows "Ready" now still lets you fix its sign-in. "Ready" only checks that a key or login exists, so a stale key or an expired login can still read Ready. Open Settings, then Runtimes, and use the quiet "Fix sign-in" link (or "Change" for OpenCode) to sign in again or paste a fresh key, without disconnecting first.
+- The message box no longer greys out while the session is busy, so your cursor and your place in the text stay put. Sending is still held until the session is free (DOR-452).
+- Opening a session on a phone or tablet no longer pops the keyboard and scrolls the page — the message box only takes focus on desktop (DOR-452).
+- The hints under the message box now teach the backslash trick and stop rotating after you have seen them three times through. "Press Esc twice to clear" is gone; we would rather not advertise the destructive one (DOR-452).
+- The status line is now **quiet by default**: it shows who you are talking to, which model is answering, and which folder it can touch — and stays silent about everything else until there is something to say. Context appears at 70% full, git when the tree is dirty or you are off the default branch, permissions when they are not the default, runtime when it is not the usual one, usage when you are near a limit, and connection when the live link drops. A number that always reads 34% is wallpaper, so the 91% that matters would not register either (DOR-452).
+- The status line is one row with two sides at every screen size: who and where on the left, state and numbers on the right. Nothing is centred on a phone and left-aligned on desktop any more, and no separator is ever left floating in the gap between the two (DOR-452).
+- The status strip above the message box — "Waiting for your approval", the thinking verbs, the post-turn summary — no longer re-centres itself on narrow screens (DOR-452).
+- The status line now measures the space it actually has and fits itself to it, instead of guessing from the screen size. On a narrow window it keeps the things most likely to be a real problem — a dropped connection, a nearly-full context window, a usage limit — and shows how many it left out as a small `+2` beside the `⋯`. Everything it left out is still in the Session panel, one tap away (DOR-452).
+- Status items are easier to hit on a phone: every one of them, and the `⋯`, now has a touch-sized target (DOR-452).
+- Chat now shows who sent each message, with day and unread separators.
+- Every message has an avatar and a name on the left, and a run of messages from the same sender groups under one header — the layout you already know from Slack. This replaces the old right-aligned bubbles for your own messages, which could only ever show two sides of a conversation.
+- The list separates itself by day, so you can tell at a glance when something happened. If a conversation moved on while you were away, a "New messages" line marks where you left off.
+- On a narrow window the status line now says things in fewer words. The runtime drops the model name the item next to it already shows, the model drops its effort and Fast tags, and a long trust level gets shortened — all of it still spelled out in full in the Session panel. "Default (recommended)" now reads "Default" everywhere: the parenthetical is advice for picking a model, not news about the one you picked (DOR-452).
+- Anything still too long for the row now ends in an ellipsis you can see, instead of being cut off where nothing hinted it was there (DOR-452).
+- Marketplace installs, uninstalls, and new packages requested by an outside agent now go through
+  the same approval card as everything else, so there is one place to look and one way to answer.
+  You get two hours to decide instead of 5 minutes (DOR-447).
+- The Agents page now shows your fleet in **attention order**: whatever needs you leads, instead of an alphabetical inventory list. Rows group into **Needs you**, **Working**, and **Quiet**. Pick a different sort, by name for example, and the groups flatten.
+- **Working** now reflects chats across your whole fleet, not just the project you happen to have open. An agent counts as working when a chat in its folder is live, or was live within the last hour, even while you are looking somewhere else.
+- Each row now says what the agent last did, in plain words: "Finished a reply", "Got a message", "Cannot be reached". The time it happened sits underneath. If a chat with the agent is waiting on you — for a permission you have not answered, or after an error — the row says so and moves to the top.
+- A new **Scheduled** column shows how many scheduled tasks are waiting on each agent. An agent that has gone quiet for a day with tasks still scheduled is flagged as needing you, because those runs are failing.
+- The **Status** and **Sessions** columns are gone. Health now shows in the group a row sits in, the ring around the agent's avatar, and the row's own wording — three quieter signals instead of the same word repeated down the page. You can still filter by status. The old session count was never a count of open chats, so nothing replaces it.
+- The agent's runtime and project moved under its name, which frees up room and makes the page much easier to read on a phone.
+- A long request on an approval card is trimmed to two lines, so the Allow and
+  "Don't allow" buttons stay where you expect them (DOR-448).
+- If DorkOS cannot check what is waiting for your approval, the dashboard says so
+  and offers to try again. Before, a failed check looked exactly like having nothing
+  to answer, which could leave an agent waiting on you with nothing on screen
+  (DOR-448).
+- Uninstalling a marketplace package now asks you once, not twice (DOR-448).
+- When a conversation has to be restarted under a new id — which can happen when an older chat is reopened and cannot be picked up where it left off — the list now shows only the one you would actually land in. Before, the old entry stayed in the sidebar and quietly opened the newer conversation instead, showing the older one's trust level. If a chat you remember seems to have vanished, look for the newer entry with the same conversation in it; nothing is deleted.
+- The `relay_inbox` tool now says plainly that `ack` destroys the messages it hands back. The content is deleted and cannot be recovered, so an agent that wants to look without clearing should leave `ack` off. (DOR-506)
+- The tool approval guide used to say DorkOS agent tools skip the approval card "because these tools cannot modify state". That was not true of `relay_inbox`, which deletes messages when it acknowledges them. The guide now gives the real reason: these tools carry their own permission checks, and an agent polling its inbox all day would bury you in cards you would soon dismiss without reading. (DOR-506)
+- Standing permissions need **Require login** on. Without it DorkOS cannot tell you apart from an agent running on the same computer, so the control is shown but switched off, with the reason and the fix right above it. Turning the feature off ends every permission that is live, and says so before it does (DOR-501)
+- When DorkOS turns down an answer you gave on an approval card, it now tells you what actually happened instead of "Action failed". The case that matters most: if the action went ahead but the permission could not be saved, it says so plainly, so you never repeat something that cannot be undone (DOR-501)
+- If DorkOS cannot check which standing permissions are live, both places that list them say so and offer to try again, rather than showing an empty list that reads as "nothing is trusted" (DOR-501)
+- The Settings tab where you set up Telegram, Slack, and webhooks is now called "Integrations" instead of "Channels" — same setup, clearer name now that "Channels" means something else in DorkOS (Slack-style conversations, which now sit in the sidebar).
+- Each agent's "Channels" section, where you link it to Telegram, Slack, or a webhook, is now called "Integrations" too.
+- A session badge that used to read "Channel" for messages arriving from Telegram, Slack, or a webhook now reads "Integration".
+- Our own documentation described a few protections DorkOS does not have, and oversold some it does. The protections were never missing; the writing was wrong. Fixed:
+  - **Three things an agent cannot take back, not one.** The docs said removing an installed package was the only action that stops and asks you. Deleting a scheduled task and removing an agent stop and ask too, and have since the permission gate was widened. One page even said an agent could delete a scheduled task without asking, which was the opposite of what happens.
+  - **Bypass permissions does not turn everything off.** It skips the prompts inside a session, so an agent edits files and runs commands without stopping. The three actions above still wait for your answer.
+  - **Tool group switches are guidance, not a lock.** Turning a group off changes what an agent is told about, so it stops reaching for those tools. It does not take the tools away. The pages that called this "controlling which tools an agent can access" now say what it does.
+  - **Every protection now names the login it depends on.** With Require login off, which is how DorkOS starts, DorkOS refuses the agent that asked for something but cannot tell you apart from other software running as you on the same computer. With login on, only your signed-in account can answer. Both are real, and the docs used to state only the stronger one.
+  - **"Secure by default" is gone.** In its place, the narrow claim that is actually true: DorkOS listens only on your own machine by default. We deliberately did not replace it with "sign-in required the moment you expose it", because that is not true of our Docker image: the image binds to every network address and switches off the guard that would otherwise refuse to start without a login, which our Docker guide already told you.
+  - **Tool group switches are per-agent, but permission is not.** One thing genuinely is per-agent: a standing permission you grant from an approval card covers one agent doing one action, so two agents can meet the same gate and get different answers.
+- The [Security page](https://dorkos.ai/security) has a new section on what an agent cannot do without asking you, including the limit, and the [Threat Model](https://dorkos.ai/docs/self-hosting/threat-model) now explains the three permission labels, where the approval gate sits, and the two ways traffic can reach DorkOS without passing the bind guard.
+- The 0.8.0 release post carried the strongest version of the tool-switch claim. Rather than quietly rewrite a dated announcement, we left the wording and added a correction note at the top of it.
+- The desktop app keeps only the tab you are looking at connected to its agent. Background tabs let
+  go, then pick the conversation back up with nothing missed the moment you return. A window full of
+  tabs costs no more than one
+- On the desktop app, the Window menu now says "Close Tab" for `Cmd/Ctrl+W`, because that is what it
+  does. "Close Window" still closes the whole window
+- The desktop app now runs on `http://localhost:4242`, the same address as the command line, instead of a new random one every time you open it. Bookmarks and MCP setups keep working from one launch to the next. If something else already has that port, DorkOS takes the next free one and Settings shows you where it landed (DOR-539)
+- You can pin the desktop app to a port of your own with `dorkos config set server.port 5000`, the same setting the command line reads. A port you pick this way is one DorkOS stays on: if it's taken, the app says so instead of quietly answering somewhere else and breaking whatever you pointed at it (DOR-539)
+- Settings → Server now says when it can't reach the server, and offers to try again, instead of showing an empty panel (DOR-539)
+- Changing who is in a room, or how an agent behaves in one, is now something only you can do. Agents used to be able to do both, which was harmless when nothing acted on it — now that a message makes agents reply, an agent could have used it to start a conversation nobody asked for (DOR-526)
+- Asking for a conversation you already have opens that one instead of making a second copy. DorkOS now recognises a direct message by exactly who is in it, so picking the same people again takes you back to the same place, history and all — and if you had archived it, it comes back out. It keeps its name and its place in the list, because opening a conversation is not the same as something happening in it. "You and Ana" and "You, Ana and Kai" are still different conversations, so every agent stays available whether or not it already has one (DOR-571)
+- If you drive DorkOS through the API, `POST /api/rooms` now answers `201` when it made a room and `200` when it handed you one that already existed. The two replies look identical otherwise, so this is the only way to tell a brand-new conversation from one with a month of history in it (DOR-571)
+- DorkOS now sends us nothing unless you turn it on. The daily heartbeat, marketplace install counts, and feature-usage events used to be on by default. All three are off, and they stay off until you say yes in the Privacy & Data settings tab or with `dorkos telemetry enable`. If you already chose to keep sharing, your choice is kept exactly as it was and nothing changes for you. If you never answered, sharing stops
+- The first-run notice now explains what you could share and how to turn it on, instead of telling you sharing is about to begin. On a machine you set up for someone else, `DO_NOT_TRACK=1` still keeps everything off no matter what the settings say
+- A chat integration binding that never had a trust level picked for it now
+  prompts, instead of quietly auto-accepting. Bindings you already configured
+  keep the setting they had. If a channel of yours starts asking about shell
+  commands it did not ask about before, that is this change, and you can set the
+  binding to "Bypass permissions" if that channel is one you trust (DOR-604)
+- Renaming a channel now changes its `#name` too. Before, the new name was saved but the sidebar kept showing the old one.
+- Archiving a room asks first, and the confirmation comes with an Undo so you can bring it straight back. If the Undo can't work — someone took the name meanwhile — it now says so instead of a blank "Action failed".
+- A channel you archived can come back under a different name when something else took its old one. Before, it could not come back at all.
+- Deleting a task now also deletes its run history, and that is permanent. Before this, deleting a task with any run history simply failed with an error, so nothing was lost — and nothing was deleted either. Two knock-on effects worth knowing: the runs are gone from the task's history for good, and any chat session that task started will no longer show that it came from a task.
+- Naming a new task "Templates" is now refused, with a message asking for a different name. That folder name is reserved for the starter tasks.
+- To pause a task, switch it off. Marking a task "paused" directly is no longer accepted, because it never lasted — DorkOS uses that mark for its own purposes, such as noting that a task's file has gone missing.
+- **If you already have a Telegram bot in a group chat, it will now be quieter.** It used to reply to every single message. Now it replies when someone mentions it by name (`@yourbot`), when someone replies to one of its messages, and when someone sends it a command. It stays quiet the rest of the time.
+- One-on-one chats have not changed. Your bot still replies to everything you send it directly.
+- You can change this. Open Settings, go to Integrations, click Configure on your Telegram bot, and continue to the second step. Under "Replies in Groups", choose "Every message" to get the old behavior back.
+- Anonymous group admins still get replies. Telegram sends their messages in a way that looks like a bot, but they are people, so your bot treats them like anyone else in the group.
+- Your agent's instructions now explain the marketplace tools (search, install, and the rest) the same way they already explain relay, mesh, adapters, and scheduled tasks. Marketplace was the only one missing this, so an agent had less to go on when deciding how to search for or install a package (DOR-529)
+- The install preview describes what a scheduled job may do in plain words, like "can run any command without asking you", instead of showing a setting name only a developer would recognise (DOR-635)
+- If a package declares commands in a form DorkOS cannot read, the preview says so. It used to show nothing, which looked exactly like a package that runs no commands (DOR-635)
+- An agent answering in a channel or a DM now knows who else is there, and which of them are people rather than other agents. It also gets the room's topic, the messages it has not read yet, what it said there recently, and how many automatic replies are left. Before this it got the one message and nothing else, so it could not tell a colleague from a bot and had no way to follow the room's etiquette rules. (DOR-622)
+- The message an agent receives is now exactly what the person typed. DorkOS used to wrap a sentence of its own around it, which then showed up in the session transcript as words nobody wrote. (DOR-622)
+- A name nobody in the room has stays ordinary text. `@99` in "refunded @99" is a number, and an email address is an email address — neither is a failed mention, so neither is treated as one. Pressing Enter sends the message as usual.
+- Replies in a channel now gather under the message they answer, behind a small "3 replies" line. Threads used to be separate rooms you opened on their own, so following one meant leaving the channel and coming back; now you read the whole conversation in one place.
+- When the message a reply answers is older than the history that has loaded, the reply says "Replying to an earlier message" rather than reading like a new remark. Old links that pointed straight at a thread still open the channel it lived in.
+- The command palette lists your channels, not every thread inside them.
+- Threads finished moving into the channel they came from. If you ever started one, its messages are now replies under the message they answer, in that channel, instead of sitting in a room of their own — so there is one conversation to read and one unread count instead of two. If you were caught up before the upgrade you are still caught up. If you were behind, your unread count can come out a little high — it may include a reply you had already read inside the thread — and one visit to the channel clears it; erring that way is deliberate, because hiding something you have not read is the mistake you cannot undo. Most installs have never started a thread, and for those this changes nothing at all. (DOR-634)
+- New agents joining a channel now get the new mode instead of "only when @mentioned". Agents you add to a direct message are unchanged
+- Existing channels were switched over too. Every channel this changed gets one message in it explaining what happened, so nothing widens quietly — and an archived channel, which cannot be given that message, was left alone entirely. Any agent you had deliberately set to something else — always, never, or direct messages only — was left exactly as you set it
+- Being asked something inside a thread keeps an agent in that thread, not in the whole channel. And talking to it in the channel does not pull it into every thread you have open
+- If an agent posts to the room while it is still working on a slow reply, that post now counts as part of the same conversation. A question it asks another agent there gets picked up, where before it was quietly dropped. This can mean one extra reply in a conversation that used to end early
+- **You can finally see and understand when each agent speaks.** The members panel is now a room sheet, and it holds everything about the room in one place: its name and topic at the top, one line saying what the room will actually do, everyone who is in it — you included — a row that adds an agent, and when the room was made. Archiving is at the foot.
+- **How loud an agent is has become a scale you point at.** It used to be five sentences that all began with "Replies", in an order nobody could work out. Now each agent has a spot on a quiet-to-loud scale — **Silent**, **@only**, **Engaged**, **Everything** — and pressing it opens the scale with the real rule written underneath, including the actual number of minutes and messages your DorkOS keeps an agent talking after you mention it, read from your own settings rather than guessed.
+- **A one-to-one gets the same four settings a channel does.** **Engaged** — answers when you say its name, then keeps answering for a while — is offered in a direct message too. Add a second agent and it is still a direct message, and it is exactly the room where you want an agent that answers when spoken to and then goes quiet.
+- **Point at a setting and the room tells you what it would become.** Move the mouse across the scale, or arrow through it, and the line at the top of the sheet shows what the whole room would do if you chose that — tinted to say it is a "what if". Stop pointing and it goes back. Nothing is saved until you actually pick one, and an archived room shows no such preview, because nothing would be true.
+- **A change lands the moment you make it.** The meter moves straight away instead of waiting for the server. While it saves, the setting dims; if the save is refused it goes back to what is really stored and says why — so you are never looking at a value that was never saved.
+- **Each person or agent is a line, not a card**, with its face, what it is doing right now or the last thing it did here, and its loudness on the right. Agents carry a small robot mark; people carry none.
+- **A room's name and topic are edited where you read them.** Press the line, type, press Enter — Escape puts it back. A channel with no topic says "Add a topic" instead of leaving a gap.
+- **Adding an agent is the last row of the list of who is in the room**, rather than a second panel with its own heading. Press it and it becomes the picker, cursor already in it.
+- **An archived room stops pretending.** Every meter goes grey, the scales cannot be changed, and there is no way to add or remove an agent — nothing is triggered in an archived room, so its members and their settings are on hold until you bring it back. The settings are still shown, because they are what each agent will do the moment you do, and the sheet says so where a screen reader will read it too.
+- **Opening the sheet for a room with nobody in it opens the picker straight away.** A room with nobody in it does nothing, so putting somebody in it is the only thing worth offering. "You have not added any agents yet" now comes with a **Create agent** button, and a roster that could not be read now offers **Try again** instead of asking you to close the sheet and open it again.
+- **Rows in the roster are taller on a touch screen**, so a face and two lines read as a person rather than as a dot with a caption.
+- **Every agent picker now shows who it is offering.** Choosing agents — for a new channel, a new conversation, or a room you are already in — used to be a plain alphabetical list of every project folder you own, with no faces at all. Each agent now carries the same face it has everywhere else in DorkOS, and, where you have written one, its own description on a second line. Two agents can share a name; that line is what tells them apart by what they do. An agent you have not described simply has no second line, and an agent DorkOS cannot read gets a plain letter rather than a made-up face that would match nothing else on screen.
+- **Starting a conversation when you have no agents yet offers a Create agent button** instead of telling you to go and add one somewhere else.
+- **A conversation has one place to be read.** Replies never pile up inside the room; they live in the thread panel, so however long a thread gets it cannot push the room off screen. Every reply is in the panel, including every reply written before this release.
+- "Reply in thread" opens the thread and puts the cursor in it. It used to quietly re-point the room's own box at a thread, with a small banner above as the only sign of where your next sentence was going. Now you type in the thread, so there is nothing to misread.
+- An agent taking a turn inside a thread is told its answer lands in the thread rather than in the room's main flow, so it writes for the conversation it is actually in.
+- OpenCode chats no longer carry a thinking level anywhere. OpenCode gives no way to ask for more or less thinking, so the setting was only ever handing you back what you typed — it is no longer saved, shown, or inherited from an agent. We would rather say it is not supported than pretend it does something.
+- An agent set up to run on a runtime you have not connected — or to think harder on a runtime with no such setting — now shows up under **Needs attention** in the sidebar, next to the chats waiting on you. You should not have to open Settings to find out that an agent cannot start. A model that is no longer offered is a quieter problem and stays in the list under your defaults, where checking it does not cost a lookup per agent.
+- The very first chat DorkBot starts during setup now runs on your default runtime. It used to always say Claude Code, even if you had chosen something else.
+- **First-run setup now points new chats at the coding agent you actually have.** If Codex is the only one connected when the setup check finishes, DorkOS starts new chats with Codex instead of quietly assuming Claude Code. The sentence on that screen says which one it picked — "Codex is connected. New chats will start with it." — and a **Change** link right under it switches to any other agent in one tap — including one you have not connected yet, in which case the screen tells you which agent your chats will use in the meantime.
+- It waits for the check to finish rather than deciding the moment DorkOS opens, because you can connect an agent from that very screen and the answer changes when you do.
+- **The pick happens once, on your first run, and never again.** Reopening setup, refreshing halfway through, or installing another coding agent later will not move the setting behind your back. From then on it is yours, and Settings → Runtimes is where you change it.
+- **Slack now shows you when an agent has actually picked your message up.** Your message gets an 👀 reaction the moment an agent starts working on it, and loses it when the answer lands or the attempt fails. Before, the reaction was an hourglass added the instant your message arrived — which meant a message nobody ever picked up still looked like it was being worked on. Now the mark means somebody is on it.
+- **Nothing is added when the work finishes** — no green tick, no red cross. The reply is the answer, and the error message is the failure.
+- If an agent stops to ask you something mid-answer, the reaction comes off while it waits and goes back on the same message when it carries on.
+
+  Setting the working indicator to **None** still turns all of this off, and still makes zero calls to Slack.
+
+- Cross a room a message at a time with Page Down and Page Up. A busy channel used to take a Tab press for every message, plus another for every thread, before you reached the box to type in. Now the history is a feed: Page Down and Page Up move message to message however many buttons, reactions and replies each one carries, and Ctrl+End jumps straight to the composer. Every message also says who wrote it and where it sits — "12 of 30, Ana" — so a screen reader reads a room as a conversation instead of one long wall (DOR-757).
+- Messages now say who wrote them everywhere they appear, threads included, so a screen reader can find its way around one without reading everything either side of it first.
+- Arrow keys scroll a long message again. Up and down used to be taken by the message's own action buttons, so a message taller than the window could not be read through without moving off it first. The buttons are still one press away with Enter or the right arrow.
+- Cross an open thread the same way you cross a room. The thread panel is now a feed of its own: Page Down and Page Up move from the first message to each reply, Ctrl+End jumps to the box you reply in, and Ctrl+Home goes back to the button that closes the panel — so leaving the thread never drops you into the room behind it. Each message says where it sits in the thread, and the panel says it is still loading when you open a link straight to one (DOR-780).
+- Cross a session's conversation a message at a time with Page Down and Page Up. A long chat used to be one press per message and everything in it before you got anywhere; now the transcript is a feed, so one press moves to the next message however much it carries, and Ctrl+End jumps out to what is below it. Every message says who wrote it, when, and where it sits — "12 of 30, DorkBot" — so a screen reader reads a conversation instead of one long wall (DOR-779).
+- An answer that is still being written is now read out as it arrives, sentence by sentence, instead of the whole answer being repeated on every word. When the turn finishes, only the last few words that were not yet spoken are — the message is never read from the top a second time.
+- Waiting for a conversation to load is now announced rather than silent.
+- An unreadable chat integration now says out loud that any bot token inside it is still sitting in the file in plain text, rather than leaving the file looking protected when it is not.
+- The relay's Activity panel counts honestly. A message sent to something nobody is listening for is now "No listener" rather than a failure, so a quiet machine stops showing a wall of red; failures carry the reason they failed; the dead-letter count reads from the actual queue instead of always showing zero; and connecting or reconnecting an integration no longer counts as delivered traffic.
+- **Auto** works again on models that support it. The same lost flag had been quietly running "auto" sessions at the default trust level and hiding "auto" from the picker; both now behave as selected.
+- The fast-mode toggle appears for models that support it — the flag that showed it was lost the same way.
+- Starting DorkOS prints less. A healthy start used to write eleven near-identical lines about routes being set up; now it writes one that names what came up. Nothing else about starting changed — there is just less to scroll past before the part you were looking for.
+- Every trust level a runtime offers now says what it actually does — when it stops to ask you, how far it can reach, and one plain sentence about the consequence. Warnings on screen are worked out from that instead of from a list of mode names kept in the app, so a mode a new agent invents is described correctly the day it arrives. Nothing looks different yet, with one exception: Claude's Auto mode is no longer tinted red. It still raises an approval card for the risky calls, and red is now reserved for the one setting that never asks about anything, anywhere. Your pick is validated against that runtime's own declared mode list, not a fixed set.
+- Choosing how much your agent may do is now one dial with three honest stops — **Ask first**, **Act**, and **Full autonomy** — instead of a list of six engineering words. Under it, one line says what that stop means for the agent you are actually talking to, in its own words. Where an agent cannot keep the stop's promise, the line says so in amber rather than quietly hoping you find out later: on Codex, "Act" runs shell commands without asking, because Codex has no way to pause and ask.
+- A stop an agent cannot take simply is not offered, and a session sitting at a setting the agent no longer has now says which setting that is instead of showing an empty dial.
+- **Full autonomy** asks once before it takes effect, and says what that means for the agent in front of you. Every other stop applies straight away — this is the one you cannot walk back, so it is the one that asks. Arrow keys stop at the ends of the dial instead of wrapping around to it.
+- **Plan** moved out of the permission list and next to the composer, where you can switch it on for a stretch of work and off again. Turning it off puts you back at the stop you were on — or to the agent's normal setting if the old one is no longer available. It appears only for agents that can plan, and it is in the Session panel too, so a narrow window cannot take it away.
+- **Auto** is no longer a setting of its own. It is a switch inside **Act**, on the models that can run it — the same one-time confirmation as before.
+- Choosing what an agent may do looks the same everywhere now — and always tells the truth for the runtime it runs on. Integration bindings and scheduled tasks used to ask this question with their own hand-written lists; both now use the same three-stop dial as a chat session, with the same honest line underneath about what the stop means for that agent.
+- The integration binding's list said "asks before running shell commands" for every agent, which is false for agents that cannot pause to ask, and offered **Plan** as a level of trust — which it is not. Both are gone.
+- Turning on **Full autonomy** for an integration or a schedule now asks first, and says what stops happening on that surface: an integration gives up the answer it would have waited for, and a scheduled run gives up the approval it would have raised.
+- A schedule that still stops to ask now says so plainly: nobody is watching a scheduled run, so anything it stops to ask about is refused after 10 minutes and the run carries on without it.
+- Both screens say what they are set to and why there is nothing to pick, when DorkOS hasn't heard from the agent behind them yet — instead of showing a picker built on nothing.
+- Install previews describe a package's schedule in words that hold for every agent, instead of describing Claude Code and hoping the reader is on it.
+- The confirmation is no longer something a screen can skip. DorkOS itself now turns down any attempt to put a conversation into Full autonomy without your acknowledgement, so a second tab, a stale window, or a stray keystroke lands on the same question instead of quietly getting through. If that happens, the confirmation opens rather than an error you cannot do anything about.
+
+  This is a confirmation for you, not a lock against your agents: it makes sure a person cannot arrive in Full autonomy without having been told what it means. Scheduled tasks, chat bindings and rooms are unaffected — they never used this setting and keep their own, stricter rules.
+
+- **Reset takes the Full-autonomy default with it.** The note DorkOS keeps of you reading what Full autonomy means is what lets new chats start without asking, so pressing **Reset** in Settings → Security now also turns that default off. Otherwise new chats would keep opening without asking while DorkOS had no record that anybody agreed to it — and the first time you tried to change one, it would ask you to confirm something you thought you had just switched back on. Chats you already have are untouched, and a gentler default (Ask first, Act) is left exactly as you set it.
+
+  This is for the chats you open yourself. Scheduled runs, chat integrations and rooms keep their own settings and their own, stricter rules — nothing here reaches them.
+
+- The button on a running job says **Stop**, matching what it does and what DorkOS says back when you press it. (DOR-808)
+- **Any setting that stops the asking now asks you first — not just Full autonomy.** Some agents cannot pause mid-turn to ask permission. On those, the middle setting ("Act") still edits files and runs commands in your project, it just never checks with you first. Until now only the top setting stopped to confirm, so you could land in a mode that asks nothing without ever being told. Now DorkOS confirms before it turns on any setting that will not stop to ask and can do more than read — in a chat, on a chat integration, and on a scheduled task alike.
+
+  The confirmation says what is true of the setting you picked rather than borrowing the loudest words: it keeps the name you pressed, adds the one sentence that matters ("This stop never pauses to ask. Whatever it decides to do, it does."), and shows your agent's own description underneath. It also carries the line that was previously only shown for Full autonomy — that this covers tools inside the chat, and DorkOS's own actions, like removing a package, still ask you. A read-only setting is left alone: it never asks because there is nothing to ask about, and a confirmation in front of the safest choice is how confirmations stop being read.
+
+  If you have already ticked **Don't show this again**, nothing changes: that one answer covers all of it, and you can bring the question back any time from Settings.
+
+### Removed
+
+- The "Show shortcut chips" setting and the `/` and `@` chips below the message box are gone. The rotating hints already teach both, and the agent you are talking to still shows there (DOR-452).
+- The **Configure status bar** panel and the **Status Bar** tab in Settings are gone, along with their ten on/off switches and the right-click "Hide this item" menu. Pins in the Session panel replace them: one thing that adds, instead of ten that only ever subtract. Diagnostics rows deliberately have no pin (DOR-452).
+- **Heads up:** those ten show/hide choices are cleared, once, by this release — they are not carried over as pins. The two settings mean opposite things, so there is no honest way to convert one into the other: everything used to show unless you hid it, and now nothing shows unless it has something to say or you pinned it. Carrying "shown" over as "pinned" would have pinned all ten items for anyone who never touched the switches, which is exactly the noisy status bar this release removes. Pin what you want back from the Session panel (DOR-452).
+- Swipe-to-collapse on the status area is gone, along with its drag handle and the "Swipe to collapse" hint. It existed because the status area used to be up to five rows tall; it is now one row of at most a few items, so there is nothing left to collapse (DOR-452).
+- Installing a marketplace package always waits for you to say yes, and there is no longer a way to switch that off. A setting called `MARKETPLACE_AUTO_APPROVE` used to skip the question for scripts and CI runs. It is gone. If you install packages from a script, have the script answer the request the way the app does: read `GET /api/approvals/pending`, then `POST /api/approvals/:id/grant`, and retry the install. If you have Require login turned on, that script needs a per-user API key (from the Security tab in Settings) to make those calls at all. If you have cloned the DorkOS repository, `contributing/external-agent-marketplace-access.md` walks through it step by step.
+- Dropped three keyboard shortcuts from the shortcuts panel (⌘1, ⌘2, ⌘3) that were listed but never did anything — the sidebar tabs they pointed at no longer exist (DOR-534)
+- **The separate topic dialog.** "Edit topic…" now opens the room sheet with the topic line ready to type in, instead of a window holding one text box.
+- **The app-wide "all permissions bypassed" banner** that sat above every page while the session you were looking at ran with permissions bypassed. The session's own status line already carries the word and the colour, for as long as the session is in that mode, and two alarms about one fact teach people to read neither.
+
+### Fixed
+
+- When a session's saved model is no longer available (you switched where models come from, or removed one), the model menu now marks it "not available" and asks you to pick another, instead of silently failing (DOR-427).
+- If a turn does run against a model that isn't available, you now get a plain message pointing you to the model menu instead of a raw error from behind the scenes (DOR-427).
+- First-run setup no longer snaps back to the Welcome screen partway through. Meeting DorkBot and settling its personality now carries you straight to the handoff instead of dropping you at the start.
+- The first-run setup check no longer says Claude is connected when it isn't. If the Claude Code tool is installed but you haven't signed in, DorkOS now shows the sign-in step instead of a green checkmark, so your agents can actually start work. Signing in with your Claude account or adding an Anthropic API key both count as connected.
+- Install and download spinners now actually spin instead of sitting frozen, so it's clear when something is working (DOR-439).
+- Pressing Enter to accept a Japanese, Chinese, or Korean candidate no longer sends the half-typed message (DOR-452).
+- Pressing Escape to close the command or file list no longer stops the agent mid-answer, and no longer arms a second Escape that wipes your draft. Clearing now takes two plain Escapes (DOR-452).
+- Hiding a status item and bringing it back no longer leaves it with a stray dot in front of it (DOR-452).
+- Opening a status item's menu no longer closes it the instant another item appears or disappears (DOR-452).
+- The "Compact now" nudge now animates away instead of vanishing (DOR-452).
+- The keyboard shortcuts panel called `Cmd+.` "Toggle canvas"; it toggles the right panel (DOR-452).
+- Status items that did not fit used to be genuinely unreachable on a phone — the row looked scrollable and faded at the edge, but a gesture on the row above ate the swipe. The line no longer scrolls or wraps at all, so nothing can hide there (DOR-452).
+- A screen reader now announces what the strip above the message box says — "Waiting for your approval", a finished turn's summary — instead of staying silent. The parts that tick every second, like the thinking verbs and the timer, stay quiet so the announcement is not drowned out (DOR-452).
+- Changing the model or trust level from the status line now updates every part of the screen at once. Before, one place showed the new value while another kept the old one until the server replied.
+- The Tasks page now sorts by which task runs next when you first open it, and the sort button says so. It used to show "Sort:" with nothing after it.
+- CLI commands work again when your DorkOS asks you to sign in. `dorkos agent`, `dorkos task`, `dorkos activity`, `dorkos call`, and `dorkos version --check` sent nothing to prove who you were. On an instance with login turned on, every one of them stopped with a bare "Unauthorized". Your agents in Codex and OpenCode lost their only way to act. The CLI now sends your API key, read from `DORKOS_API_KEY` or from `~/.dork/api-key`. When no key is set up, the error names what is missing and where in the cockpit to create one. If you have not set up a key, nothing changes (DOR-428)
+- In first-run setup, "Skip" no longer throws away the rest of setup. Choosing a personality for DorkBot now has its own "Skip this step" button that moves you to the next thing, and the button that leaves setup for good says so: "Skip all setup". If you do leave, a note tells you where to start setup again (Settings → Preferences) (DOR-472)
+- The session list now shows the trust level a session is really running at. The sidebar used to call almost everything "Default", so a session left to act on its own looked exactly like one that asks before every step, and a session running without approvals could appear with no warning icon at all. It also went stale: a level changed in another window or by a scheduled task did not reach the list, and a refresh that arrived a second late could quietly undo a change you had just made. Every place a session appears now reads the same value, updates the moment it changes, and your newer choice always wins.
+- **Lined-up messages no longer disappear.** If you typed a follow-up while your agent was working and it then stopped to ask you to approve something, your message could vanish without a trace — the "Queued (1)" mark went away and the text was gone. Lined-up messages now wait their turn properly, and if one can't be sent for any reason it goes straight back in the line instead of being thrown away.
+- **Every lined-up message now has a "send now" button.** If a reply fails partway through, the messages waiting behind it used to be stuck there with no way to send them — and the only trick people found for getting the text back deleted it. Each one can now be sent on its own, and when sending genuinely isn't possible the button says why.
+- **Visiting other conversations no longer deletes messages you lined up — or a message you started typing.** DorkOS keeps the last 20 conversations in memory, and used to drop the oldest one whether or not it still held your words. A conversation with something waiting to send, or half-typed in the box, is now kept regardless.
+- **Picking a slash command keeps the rest of your line.** Typing `/deploy staging`, clicking back to just after `/deploy`, then pressing Enter used to delete ` staging` and send nothing at all.
+- **A file that fails to upload now says so, and offers to try again.** The chip showed a small red icon with no words, and sending anyway delivered your message with no file attached — so you sat waiting for an answer about something your agent never received. DorkOS now holds the message until you retry the upload or remove the file.
+- **Typing a command into a message that's waiting in line now just runs it.** Commands like `/compact` or `/rename` do something right away rather than getting sent to your agent, so one sitting in the line used to jam it — everything queued behind it waited forever. Now it runs when you press Enter, and if it can't run (a missing name, say) your text stays put so you can fix it.
+- **Rewriting a message that's waiting in line no longer loses the rewrite.** Moving to another one, or switching to a different conversation and back, keeps what you typed.
+- **Coming back to a conversation no longer sends a duplicate.** If you left while editing a message that was waiting in line, its text stayed behind in the box and pressing Enter sent a second copy.
+- The "Your Agents Can Operate DorkOS" guide promised two safety checks DorkOS does not perform: that an agent checks with you before editing a different agent, and that it changes settings only when you ask. Both are instructions we give the agent, not locks. The guide now says so, and points you at your activity feed, which does record the change (DOR-428)
+- The MCP server page listed 48 tools and left out everything the operator surface added. It now lists all 55, says which 15 carry a risk level, and counts the capability catalog resource it had been missing (DOR-428)
+- The message box only grew when you typed. Anything else that filled it — clicking a queued message to edit it, pressing Up to reach the queue, Escape putting a draft back, a re-run pre-filling a prompt, tapping a suggestion — left a six-line message showing one line, in a box with no scrollbar to tell you the rest was there. The box now fits whatever it is holding, however it got there (DOR-479)
+- Editing a queued message and deleting all the text left you stuck: the banner still said "Editing message", and every button vanished. On a phone, with no Escape key, the only way out was the row's X, which deletes the message. The box now offers a plain "Cancel edit" (DOR-479)
+- Pressing Escape twice wipes your draft, and it used to be gone for good. Cmd+Z now brings it back (DOR-479)
+- Opening a session on a phone popped the on-screen keyboard and scrolled the page every single time. It doesn't any more (DOR-479)
+- While an attachment uploaded, the box claimed the agent was replying: the send button turned into a red Stop that did nothing when you pressed it, and if the upload hung, the box stayed stuck in that state forever. It now shows the upload in progress, and waits for it to finish before anything else happens (DOR-479)
+- If an attachment failed to upload, your message was deleted along with it. Your words stay in the box so you can try again (DOR-479)
+- The dashboard and the welcome conversation showed a greyed-out X for clearing the box that did nothing when clicked. It's gone — pressing Escape twice still clears the box on those screens, and Cmd+Z still brings the text back (DOR-479)
+- Typing your very first message on the dashboard and pressing Enter did nothing at all while DorkOS was still finding your agent, with nothing on screen to say why. It now says "Getting your agent ready…" (DOR-479)
+- Typing something like `/zzz` that matches no command left "No commands found." on screen and swallowed your Enter, so the message needed two presses to send. One press is enough, and the card goes away when the message sends (DOR-479)
+- Making a desktop window narrow — say, to sit beside your editor — quietly changed Enter from "send" to "new line". Enter now depends on the device rather than the window size: it sends anywhere you have a mouse, trackpad, or stylus (including a tablet with a keyboard case), and inserts a line break on a phone or a bare tablet (DOR-479)
+- Running `/compact focus on the API changes` while the agent was still replying deleted your instructions and then told you the agent was busy. The text now stays put unless the compaction actually starts, and the box waits for it rather than letting a second Enter run the same thing twice. If the request never comes back, it gives up after 30 seconds and says so, instead of leaving the box stuck (DOR-479)
+- When an agent asked you to approve something, the "Queued (N)" panel disappeared for as long as the question was up. The messages were always safe, but nothing said so. A quiet line now tells you how many are waiting (DOR-479)
+- The composer said "Editing message —" with nothing after the dash. It now tells you which one you are rewriting: "Editing message 2 of 3" (DOR-479)
+- "Session is busy. Please wait..." named nobody and gave no idea how long. It now says "Your agent is still finishing the last message. Try again in a moment." (DOR-479)
+- The list of waiting messages told you how many there were but never when they would go out. It now says so: "Queued (2) — Waiting for the reply to finish", or "Will send next" once nothing is holding them up (DOR-479)
+- A follow-up suggestion too long for its chip was cut off with no way to read the rest. Hover it and you get the whole line (DOR-479)
+- While you edit a message that is waiting to send — the one mode where Enter saves instead of sends — the writing box had no name at all for a screen reader. It now announces "Edit queued message 2 of 3 — press Enter to save" (DOR-479)
+- A file search that matched nothing could point a screen reader at a list that was not on the page (DOR-479)
+- The paperclip and the clear (×) button showed no outline when you reached them with the keyboard (DOR-479)
+- The list of waiting messages popped out of existence the instant the last one sent, instead of sliding away, and the extra stop button did the same. Both settle properly again (DOR-479)
+- The composer's right edge jumped sideways the moment you typed your first character, and a waiting message shifted two pixels when you clicked to edit it. Neither moves now (DOR-479)
+- A photo you attached rebuilt its little preview many times a second the whole time it was uploading. It is built once (DOR-479)
+- Setting up an agent in a folder you already have can no longer delete that folder. If setup stops partway, such as when the disk is full, DorkOS takes back only the files and folders it just made, leaves everything of yours alone, and tells you if anything is left over (DOR-507)
+- Agents can no longer turn off the safety prompts on a scheduled task, or approve one. A task runs later on its own with nobody watching, so how much it may do without asking, and whether it is allowed to run at all, are now yours to decide in DorkOS. A task an agent creates waits for your approval however it was made, including from the command line, where it used to go live right away. If an agent tries to change either setting, the whole change is refused and nothing at all is saved, so it never ends up half applied. Setting these yourself in the cockpit works exactly as before.
+- Scanning for agents from outside DorkOS can now show the agents it already knows about. The scan tool always supported asking for them, but the outside connection did not offer the option, so there was no way to ask for it. It also said it looks three folders deep by default when it really looks five.
+- The Tools screen was underselling what your agents can always do. It listed six tools that are on no matter what, leaving out the three that let an agent read its own preview window. All nine were always available; now the screen says so.
+- Reloading an extension you had turned off no longer quietly turns it back on. Asking DorkOS to reload a switched-off extension used to start it up again, routes and all, while the switch in Settings still showed it as off. DorkOS now says it is off and leaves it alone.
+- A folder in your project can no longer take the place of an extension DorkOS ships, or of one you already allowed. DorkOS decides what counts as its own code by where that code sits on disk, not by the name inside it.
+- A bookmark or shared link to the old Settings "Channels" tab now still opens the Integrations tab instead of silently opening nothing.
+- The adapter setup wizard and a couple of "Add" buttons in the Relay panel and onboarding preview still said "channel" after the rename above; they now say "integration" too.
+- Your agents were being given wrong information about which actions stop to ask you. The built-in instructions every agent is set up with said that deleting a scheduled task "carries no gate of its own", and the tool catalog that agents read to learn what they can do said that a whole group of DorkOS tools carries no permission level at all. Neither was true. Deleting a scheduled task and removing an agent have both stopped and asked you since they were classified, and every tool in that group has a permission level. The protection was never missing; the description of it was wrong (DOR-509)
+- An agent that believed those descriptions would not warn you before an action it could not undo, and would read your refusal as something broken rather than as your answer. The instructions now say plainly which actions wait for you, how to ask, and that a refusal is the answer. Existing agents pick up the corrected version automatically the next time DorkOS sets them up; a copy you edited yourself is left alone, as always (DOR-509)
+- The same instructions had three other details wrong: they named only two of the three actions that stop to ask you, they said removing an agent could only be done one way, and they said every command accepts the `--json` option when several reject it. All three are corrected (DOR-509)
+- Moving between DorkOS pages no longer reloads the whole app. Links that stay inside DorkOS switch pages instantly, so an agent that is mid-answer keeps streaming while you look around (DOR-534)
+- Links that belong outside DorkOS — the docs, GitHub, a sign-in page — now reliably open in your browser, including the ones an agent or a connected tool puts in front of you (DOR-534)
+- DorkOS now opens only ordinary web and mail links, and tells you when it turned one down instead of leaving you to guess. A tool that asks you to sign in through a link DorkOS won't open can no longer show you a "Done" button for a sign-in that never happened (DOR-534)
+- Stop the Restart and Reset buttons from leaving the desktop app with no server. Restart now tells you to quit and reopen the app, which does the same thing. Reset tells you plainly that nothing was deleted, and names the folder to remove if you really want to start over (DOR-532)
+- The Mac app now tells you when the background server it runs has stopped, and offers to start
+  it again. Before, the window stayed open but quietly stopped working — most noticeably right
+  after "Reset All Data" — with nothing on screen to explain why (DOR-533)
+- When that server won't start, the Mac app now tells you what the server said about why, then
+  closes. If you already have DorkOS running in a terminal, for instance, it says so — instead of
+  showing a bare error code and leaving the real explanation in a log file (DOR-533)
+- If the server keeps failing — whether it won't start at all, or starts and dies again moments
+  later — the Mac app stops offering a button that isn't working and offers to open its logs
+  instead (DOR-533)
+- Quitting the Mac app no longer pauses for several seconds when its server has already stopped
+  (DOR-533)
+- The desktop app no longer flashes a white rectangle before it loads (DOR-538)
+- A window left on a monitor you then unplug comes back to a screen you can see, without a restart (DOR-538)
+- Quitting while full screen no longer brings the window back jammed under the menu bar (DOR-538)
+- Sending two messages in a row no longer gives an agent two separate conversations with itself. Both replies used to start from scratch, and the second one quietly forgot everything — including what you had just said (DOR-526)
+- Agents talking normally in a shared room no longer fill it with notices claiming somebody hit a reply limit they never came near (DOR-526)
+- Starting a direct message is one step again. It used to create the room and then add the agent, so if the second half failed you were left with a conversation named after an agent that was not in it — and starting it again did not help. Now it either works or nothing is created (DOR-526)
+- The "New direct message" menu no longer hides two agents at once when they happen to share a name (DOR-526)
+- Closed two ways agents could keep replying to each other forever. An agent writing to a room itself — rather than answering through it — started a brand-new conversation every time, so the reply limit never counted anything and never stopped them. Messages from you are what start the count over now (DOR-526)
+- A room now reconnects on its own when its live feed drops — after a laptop wakes up, or a restart — and picks up exactly the messages it missed. A sleeping laptop leaves a connection that looks open but is dead, so a room that hears nothing at all for 45 seconds now stops waiting and reconnects instead. If it can't get back after several tries it says so at the bottom of the room, with a Reconnect link, instead of sitting there looking quiet (DOR-526)
+- A message you were part-way through typing no longer follows you into the next conversation (DOR-526)
+- Reading back through a room no longer yanks you to the bottom every time a new message lands. Scroll up and you stay put; you're only carried along while you're already at the newest message (DOR-526)
+- Your privacy choice now survives a config reset. If your settings file was damaged and DorkOS had to rebuild it, or you reset your settings, the answer you gave about sharing data used to be thrown away and replaced with the sharing-on defaults. It is now kept, along with anything else you had made stricter: a login requirement you switched on, a limit you tightened, and the record that revoked your standing permissions. Preferences like your theme still go back to defaults, as a reset should (DOR-584)
+- Resetting one section by name, like `dorkos config reset telemetry`, still does exactly what it says. Naming the section is the clear request that a blanket reset is not (DOR-584)
+- Limits you tightened are kept too, not just switches you turned off. A smaller upload size or file count, a lower rate limit, a shorter room reply depth: all of these used to quietly go back to the shipped value after a repair or a reset (DOR-584)
+- DorkOS starts even when the settings it rescued no longer fit. A setting kept from a damaged file is now checked against the rules before it is written back, so an out-of-range value is dropped instead of stopping the server from starting. When that happens, the log names the setting so you know which one went back to its default (DOR-584)
+- DorkOS checks your task files against its own records every five minutes. That check gave up on the first deleted task it met, so deleted tasks lingered and edits you made outside the app stopped showing up. It now finishes.
+- Deleting a task now works even if that task has run before. It used to fail with an error.
+- Before removing a task, DorkOS now double-checks that its file is really gone. Tasks whose folder is a shortcut to somewhere else were being removed while the file sat there untouched.
+- A typo in a task file no longer costs you the task. A file DorkOS cannot read is left alone, so fixing the typo picks up where you left off, run history intact.
+- Tasks in a project folder DorkOS is not currently watching are no longer cleared out. This hit tasks you added for an agent connected after startup, and tasks belonging to an agent you disconnected.
+- Two tasks with the same name in different projects no longer interfere. One losing its file used to pause the other.
+- A task paused because its file went missing now runs again once the file is back.
+- Stopped the repeated log warning about a missing file in your `tasks/templates` folder. That folder holds the starter tasks DorkOS ships with, so it is not a task itself. A task folder of yours that really is missing its file is still reported.
+- A task file placed loose in your `tasks/templates` folder no longer turns into a task. It became one that ran on a schedule, and deleting it took every one of your templates with it.
+- Tasks in a project folder that has been deleted or unmounted are no longer cleared out. DorkOS could not tell an empty folder from one that is not there any more, so a checkout you moved took its tasks and their history with it.
+- Updating no longer fails if your database holds run records whose task is already gone. Those leftovers would have stopped DorkOS from starting at all, with no way to fix it from inside the app. They are tidied up during the update.
+- Your settings now survive a busy moment on your computer. When a computer has
+  too many files open at once, reading a file can fail even though the file is
+  perfectly fine. DorkOS used to read that as damage. It renamed your settings
+  file and started over with defaults. One person lost their pinned status bar
+  items that way. The riskiest moment was the first launch after an update,
+  which is when DorkOS reads your settings the most.
+- DorkOS now waits a moment and tries again. If it still cannot read your
+  settings, it stops and tells you why, and it does not replace or delete
+  them. Start DorkOS again once your computer is less busy and your settings come
+  back.
+- A settings file that really is broken is still backed up and rebuilt, and your
+  privacy and safety choices still carry over to the new one. If this already
+  happened to you, your old settings are in `~/.dork/config.json.bak`.
+- When DorkOS does stop, it now tells you what to do about the actual problem.
+  A full disk says to free up space. A file you are not allowed to open gives
+  you the command to fix that, on Mac, Linux, or Windows. It no longer tells
+  you to wait for a problem that will not pass on its own.
+- Fix an extension staying broken forever after a brief glitch on your machine — like running
+  low on memory or disk space for a moment during startup. DorkOS used to remember that
+  one-time hiccup as if the extension itself were broken, and would repeat the same error on
+  every restart even after the glitch was long gone. Now it only remembers a real problem with
+  the extension's own code; anything else gets a fresh try next time.
+- Fix one extension hitting a brief startup glitch from blocking every other extension from
+  starting too. Each extension now starts on its own, so one hiccup no longer holds up the rest.
+- Quiet down a harmless background message that was showing up as a warning dozens of times a
+  day. It's a safety check working exactly as intended, not a sign of trouble.
+- The first-run setup screen now has a way out. If DorkOS did not find a coding
+  agent on your machine, the screen used to leave you stuck: nothing to
+  continue with, and no Skip or Back to press. It now offers "Skip all setup"
+  and Back, so you can look around the app first and set up an agent when you
+  are ready — the Getting started card will still offer it (DOR-481)
+- Buttons that say they will take you to a setting now take you to that
+  setting. "Add more agents", "Open Relay settings", "Add an integration" and
+  the guided tours all opened Settings on the Appearance tab instead of the one
+  they named, leaving you to hunt for it yourself (DOR-484)
+- Your permission choice now sticks to a chat for good. Claude Code gives a new chat its real ID partway through the first reply, and settings you picked before that were left behind under the old ID. If the chat then sat idle for a while, or you restarted DorkOS, the next message quietly ran at the default setting instead of the one you chose — so an agent you had set to act on its own might start asking again, or the reverse. The setting now moves with the chat, and every screen reads it from the same place.
+- Change a session's permissions from the status line and its sidebar row updates right away, instead of taking up to half a minute to catch up.
+- Fixed a crash that could hit the sidebar's Recent list the moment a brand-new session picked up its real id.
+- Scheduled tasks accept every trust level DorkOS offers, not just two. Set a task
+  to anything else and the task file DorkOS wrote was one it could no longer read:
+  the task kept running, but the file on disk and the task in the app quietly
+  disagreed from then on, and every edit to the file was ignored. Every stop on the
+  dial now survives a save (DOR-607)
+- Building a Shape? The setting that says whether one of its timers starts
+  running is now called `startEnabled`, and it is off unless you turn it on. If
+  your setup file still uses the old `startDisabled`, applying the Shape tells
+  you so and points at the new name, instead of leaving you with a timer that
+  never fires and nothing to explain it (DOR-607)
+- Your Telegram bot no longer replies to other bots. If two bots that both answer messages ended up in the same group, they could talk to each other forever and fill the chat. Your bot now ignores anything another bot says, and there is no setting that turns this off.
+- Buttons that open Settings work again in the Obsidian plugin. A recent change
+  made "Add more agents", "Open Relay settings" and "Add an integration" do
+  nothing at all there instead of opening Settings. They open it again (DOR-484)
+- A link to a Settings tab that no longer exists now opens Settings on its first
+  tab instead of showing an empty panel. An old bookmark or a renamed tab used
+  to leave you looking at a blank window with nothing selected (DOR-484)
+- Rooms now say something when an agent cannot answer. If the agent was busy with another task, or its turn hit an error, the room posts a short line telling you so, instead of leaving your message sitting there with no reply. A busy agent used to just say nothing, which looked exactly like a broken one. You get one line, not one per message you sent. (DOR-621)
+- A slow answer is no longer thrown away or cut off. If an agent takes longer than the room's wait, the room stops waiting but the agent keeps working, and its full answer is posted when it lands, quoting the message it answers and saying how long it took. Before this, the room either went quiet or posted whatever half-sentence the agent had written so far as if it were the finished answer. (DOR-621)
+- Sending a second message to an agent that is still working no longer posts a stray fragment of its first answer. (DOR-621)
+- Slack and Telegram settings that the setup screens never showed you are now on screen, in the add flow and behind Configure. The most important ones decide who is allowed to approve an action: when your agent asks permission to run something, only the people you list under Approvers can say yes. That list was impossible to fill in before, so nothing could be approved from Slack or Telegram at all. Slack also gains its DM controls: who may message your bot, which channels behave differently, and when the bot joins in.
+- A setting that no setup screen claims now appears under its own heading on the last screen. Nothing can go missing again just because it was left off every screen.
+- Lists and per-channel rules you had already saved now show up the way you wrote them: one entry per line, and readable settings instead of `[object Object]`. Editing one of these and saving used to run your existing entries together into a single broken one, which quietly took away everyone's permission to approve.
+- If the Channel Overrides box is not valid JSON, saving now stops and tells you, and your existing rules stay put. It used to accept the save and erase them.
+- Nothing changed value. Every setting opens on what it was already set to, including the ones you are seeing for the first time.
+- A direct message now shows the face of the agent you are talking to, instead of a plain letter. A conversation with several agents shows all of them.
+- The Channels, Direct messages and Agents lists no longer say "create your first one" when the reason they look empty is that everything is filed into a group. They say that instead.
+- Every agent ships with a small set of built-in skills that teach it how to run DorkOS. Those skills were being written to a place the default runtime does not look, so agents never actually learned them. They now land where the agent can read them, for new agents and for DorkBot (DOR-659).
+- Agents that DorkOS set up for you are repaired the next time you start it. Nothing to click, and it does not slow startup down. Agents that live in your own project folders are left alone, because starting DorkOS is not a reason to write files into your projects (DOR-659).
+- DorkBot re-checks its own skills on every start, so if the links are ever lost it puts them back on its own (DOR-659).
+- New agents now land in the DorkOS folder the running copy is actually using. If you point DorkOS at a different folder — a second copy, a container, a checkout you are working on — creating an agent used to build it in your main `~/.dork/agents` instead, so folders appeared in your everyday setup that you never asked for. Setting your own agents folder still means exactly what you typed.
+- Setup saves the personality you pick for DorkBot to that same copy's DorkBot. It used to edit the DorkBot in your main folder.
+- The create-an-agent screen now shows the real folder the agent will be created in, and checks that folder for a conflict. It used to show `~/.dork/agents`, which was not always where the agent went.
+- Point your agents at your own copy of the docs. DorkOS hands your agents a link to the docs, and until now that link always went to dorkos.ai. Set `DORKOS_DOCS_BASE_URL` to your own site and your agents read that one instead. It has to be an `http://` or `https://` web address, or DorkOS will not start. Leave it unset and nothing changes (DOR-660)
+- OpenCode sessions no longer go missing once a project has more than 100 of them. Older ones used to drop off the list quietly — nothing failed and nothing said anything was hidden, so the list just looked short. The background sessions your agent starts for its own subtasks counted toward that 100 as well, so you could lose sight of your own sessions even sooner. Opening one of the hidden ones could also fail with a message saying the session did not exist, when it did. They are all listed and openable again, and if a project ever holds more sessions than OpenCode can hand over at once, DorkOS reports a problem loading the list instead of quietly showing you a shorter one. (DOR-673)
+- `dorkos harness sync --check` no longer creates a file. Check is the mode that only reports, and the docs called it safe to run any time — but run it somewhere that has no harness manifest and it quietly wrote one, into whatever folder you happened to be standing in. It now stops, names the folder it searched, and leaves everything exactly as it found it (DOR-678).
+- Three other ways into the same write are closed too. Plain `dorkos harness sync` with no flags, narrowing the run to one tool with `--harness`, and even naming a tool that does not exist all created that file first — so a command that went on to reject your input still left something behind. None of them write now.
+- `--fix` still creates a manifest when a folder has none, which is what `--fix` is for. The built-in help now says plainly which mode writes and which never does, and reminds you that sync always acts on the folder you run it in — so if it cannot find a manifest, the usual answer is that you are one directory away from where you meant to be.
+- Your agents now keep up with the built-in DorkOS skills. Until now only DorkBot did, and every other agent kept the skills it was handed on the day you made it. That matters when we correct a skill. One correction taught agents to warn you before deleting a task, and agents made before that fix never found out. Now DorkOS refreshes the built-in skills every time it starts, and puts them where the agent can actually read them (DOR-671)
+- Your own work survives the refresh. A skill you wrote is left alone, and so is a built-in skill you have edited. Deleting a built-in skill does not stick, though: it comes back the next time DorkOS starts, so edit it instead if you want it out of the way. Agents you registered from a folder of your own are not touched at all.
+- Saving from two places at once no longer loses one of the saves (DOR-697). If you had DorkOS open in two tabs, or an extension saved in the background while you changed a setting, two saves to the same file could collide: one would fail with an unexplained error, and the other could quietly store the wrong content. Sign-in details for your agent runtimes, your marketplace sources, and your agent templates were all stored this way — a collision could drop a saved key or source, and in the worst case wipe your whole template list. Saves to the same file now take turns, and each one keeps its own content.
+- An agent that takes a long time to answer in a room no longer counts as finished. A room waits 10 minutes for a reply. After that, the other agents in the room used to be told it was free, so two of them could start the same job. It now counts as working until its answer lands
+- A room no longer names the same agent twice while it is working. One agent can have two replies going at once in a busy room, and each one was listed separately
+- When a slow answer fails on its way into the room, the room now says the turn failed. Before, it went quiet and left you waiting for an answer that was never coming
+- Press-and-hold menus no longer interrupt you mid-gesture. Starting a scroll or dragging to select text used to be able to open the menu under your finger; a press that travels now leaves your gesture alone
+- A room with a lot of agents in it no longer grows the sheet off the top of the screen. It stops at a readable height and the middle scrolls, the way every other panel in DorkOS does.
+- Opening the sheet on a phone no longer pops the keyboard at you. The search box is still the first thing under the heading, and still one tap away — you just get to look at the list first.
+- The **×** that takes an agent back off the list while you are choosing was a few pixels too small to hit reliably on a phone. It is now comfortably thumb-sized.
+- On Telegram, "typing…" now means an agent is actually working. It used to appear the moment your message arrived — before anything had picked the message up, and even when nothing ever would, so a chat that was never going to get an answer sat there watching a bot pretend to type. Now it starts when the turn starts, and stops when the reply lands, when the turn fails, or when the agent pauses to ask you something — a question, or a tool it wants approved. The old 60-second cutoff is gone too: a long job keeps typing for as long as it keeps working, instead of going quiet a minute in while the work carries on. And if an agent goes silent without ever finishing, the typing stops by itself after a minute rather than running forever.
+- **Choosing a default runtime other than Claude Code no longer silences your agents on chat platforms.** `dorkos config set runtimes.default opencode` is a documented setting, but it also reached the relay — the part of DorkOS that carries messages between your agents and Telegram, Slack, and the like. The relay only knows how to talk to Claude Code, so a different default left it with nothing it could use, and it switched message routing off during startup with nothing you would ever see in the app. The server looked healthy, the chat connection looked connected, and messages went nowhere. The relay now uses Claude Code directly whatever your default is, and where it genuinely has to make a choice it writes that choice to the log instead of going quiet.
+- Keep a long conversation's memory when Claude Code renames it a second time. Claude Code can give a session a new name when it picks it back up, and after the second rename DorkOS lost track of which conversation was which — the agent started over with no memory of what you had been talking about. A session now answers to every name it has ever had (DOR-774).
+- An agent that stops to ask your permission no longer gets cut off as stuck. If a second reply started on the same chat while the first was still waiting on your answer, DorkOS could decide the waiting agent had frozen and end its turn ten minutes later. The turn now stays open while it waits on you. (The permission request itself still expires after 10 minutes, as before.)
+- Long jobs keep their chat to themselves. A turn that ran longer than five minutes — normal for room agents and for anything that reads a lot of files — used to become fair game for another browser tab or device, which could start a second reply on top of it. A turn that is still working, or still waiting on you, now holds the chat for as long as it needs. One that has genuinely gone quiet is still handed back after five minutes.
+- Sessions started in a linked folder, a folder with accented characters in its name, or a very deeply nested one now find their earlier history instead of starting from scratch.
+- When the same chat opened twice at once, one of the two views could go permanently silent — connected, but never receiving anything again. It now reconnects and catches up.
+- If DorkOS can't stop a frozen agent, it no longer waits forever trying. It gives up after 30 seconds, closes the turn, and says what happened in the log.
+- Telegram private chats now use an allowlist, the same way Slack DMs do. A bot handle is public, and a private message starts a real agent turn on your machine, so a new integration answers only the people you name. If a message is ever turned away, the log says who it was, their user ID, and the setting to change (DOR-788).
+- **A Telegram bot you already set up still answers anyone who messages it.** Changing that automatically would have taken a working bot off the air, so the old behaviour is kept and DorkOS warns about it by name at every startup. Open that integration, set **DM Access** to "Allowlist only", and add the people you want.
+- Slack says the same thing out loud. Turning someone away used to be silent, which looks identical to a broken bot — especially right after setup, when the allowlist is still empty. It is now one clear line per conversation, not one per message.
+- "Let this agent start conversations here" is now a permission for that one agent on that one channel. Before, once you granted it, any agent on your machine could message that chat as your bot.
+- If the part of DorkOS that decides who may message whom fails to start, chat integrations no longer start either. They used to connect, look healthy, and answer nobody — with the permission checks quietly switched off.
+- If your relay access rules become unreadable, DorkOS now stops delivering and says which file to fix, instead of behaving as though you had never written a rule.
+- One unreadable integration in your settings no longer hides all of them, and adding a new integration can no longer delete the ones DorkOS could not read. An unreadable one is kept exactly as written — so if it holds a password, that password stays in plain text until you fix or delete it, and DorkOS now says so. You can delete it by name, and re-creating an integration under the same name clears the broken copy.
+- Group chats set to "a separate session per person" now really do give each person their own session. Everyone in the room was sharing one, so a conversation could be read by whoever spoke next.
+- A message from a chat platform can no longer impersonate DorkOS's own instructions to your agent. Code and prose you paste into chat still arrive exactly as written.
+- Custom webhook headers can be set at all now — saving them used to fail every time — and they are treated as secrets: stored encrypted, hidden when read back, and never written to a log. An API key put there used to sit in a plain settings file (DOR-796).
+- A Telegram integration that loses its connection now reports the problem and reconnects, instead of retrying in silence forever while reporting itself connected.
+- A webhook pointed back at DorkOS now stops after a few laps instead of talking to itself indefinitely. If your service answers DorkOS through the inbound endpoint, pass the `X-Relay-Hop-Count` and `X-Relay-Max-Hops` headers back unchanged.
+- An agent in a room no longer forgets the conversation. Its replies used to get filed under one name while the room remembered another, so the next message started the agent over from nothing. It happened quietly: no error, no notice, just an agent that had lost the thread. The room now keeps up with the name the moment it changes.
+- On startup, DorkOS checks every agent in every room and writes a line in the log for any whose saved conversation it cannot find, naming the room and the agent. Nothing is deleted, so a conversation that went missing can still be tracked down by hand. If DorkOS cannot read your saved conversations at all, it says that too, instead of finishing quietly and looking like all is well.
+- When a message you send from Telegram or Slack cannot reach its agent, the chat now tells you so in one line — instead of going quiet in a way that looks exactly like an agent thinking. It says which thing to change: the chat is paused, it is set not to reach its agent, the agent is not available, a session would not start, or the agent is at capacity. If you send the same message five times, you are told once. These lines only ever appear in a chat you connected to an agent yourself; DorkOS never speaks in a chat you haven't set up.
+- A turn that ends without saying anything now says so, rather than leaving your question sitting there. It stays quiet when the agent already answered, already showed an approval card, or already reported an error — so you never get "the agent finished without sending anything back" underneath a real reply.
+- A long answer no longer arrives with its beginning missing. Any reply that took more than five minutes used to lose everything written before that point; on Slack it also split into a second message halfway through. Both now wait for a stream to actually go quiet, however long the answer takes.
+- Mail waiting in an agent's inbox is no longer deleted an hour after it arrives. An agent that was switched off for an afternoon came back to an empty mailbox with nothing to say a message had ever arrived. Unread mail is now kept for a week, and when it finally does expire it is set aside where you can still read it.
+- Task-completion notices go to the conversation you were actually using, not to whichever one happened to be listed last — which was often a channel nobody had touched in weeks. Under the one-session-per-person setting, a group's notice can no longer end up in somebody's private messages.
+- Changing an integration's settings while it is refusing to shut down no longer starts a second copy of it. That is what made a bot answer everything twice, and bill twice for one question.
+- On Slack, the 👀 mark now lands on the message being answered. When a message was dropped before it reached an agent, the mark used to shift onto the next person's message instead.
+- A task problem that sticks around no longer repeats in your log every five minutes. DorkOS checks your task files on a timer, so one bad file used to write the same line twelve times an hour, all day, burying anything else that went wrong. You now get the full message the first time it happens, then one reminder an hour that says how many times it has repeated. A different problem always shows up right away.
+- When an agent asks to use a tool and nobody answers, it gives up after ten minutes. That used to happen in complete silence. DorkOS now writes a line saying which agent gave up and what it was asking about, so you can find out afterwards why it stopped.
+- An agent in several rooms at once no longer starts a separate job for each one in the same project folder. It finishes what it is doing first, and the other rooms say it is busy elsewhere rather than going silent.
+- A room could mistake somebody else's work on the same agent for its own answer and post it. It now tracks exactly which piece of work it asked for.
+- The agent's thinking shows up again. It streams in while the agent is thinking and stays in the conversation afterward — a lost capability flag had been leaving every thinking block empty.
+- A scheduled task that runs past its time limit now actually stops, even when it is sitting on a permission prompt waiting for an answer. Before, the limit only took effect the next time the agent said something — so a task parked on a prompt nobody answered kept running, held onto one of your run slots, and made shutting DorkOS down slow. This works whichever way your tasks are dispatched.
+- A task run that was stopped now records why — you cancelled it, or it ran out of time — instead of reporting both the same way. Cancelling a run also shows up once in your activity feed instead of twice.
+- A task file on disk can no longer set a scheduled task to run without approvals. If one asks for it, DorkOS quietly turns the task back down to the normal prompts and notes why in the log. Choosing "Full autonomy" yourself, in the cockpit, still works exactly as before — and if that task's file is later rewritten behind your back, or reappears after the task was paused, it drops back to the normal prompts instead of carrying your permission over to work you never approved. The install preview now shows the setting a package's task will really get, not the one it asked for.
+- Editing a scheduled task no longer widens what it may do. A task set to a mode the edit form does not offer — like plan mode — keeps that mode when you save, and the form now says in plain words what it is instead of quietly switching it to "Allow file edits".
+- A session can no longer be set to a trust level its agent cannot actually run. A Codex session set to a stop Codex does not have used to be accepted and displayed everywhere while Codex quietly kept running read-only. The setting is now refused, with a message naming the ones that agent does support. Sessions already saved that way still open and run as before.
+- A Claude session set to "Auto" no longer fails to send when DorkOS has not confirmed that the chosen model supports Auto — right after a restart, for instance. The turn runs in Default and says it could not confirm, and your Auto setting is kept, so it applies again as soon as the model is confirmed.
+- Approving or denying a tool in an OpenCode session now clears the card right away. It used to wait for OpenCode to confirm the answer, and if that confirmation never arrived the card sat there and the session stayed stuck as "waiting on you", blocking the next message.
+- An integration or a task saved at a setting the dial does not offer keeps that setting instead of being quietly widened to a broader one. It says which setting it is, and saving leaves it alone until you pick something else on purpose.
+- **Stopping a scheduled run now works.** On a normal install, DorkOS hands a scheduled run to its message bus, and the Stop button in a task's run history did not know how to reach a run that had gone that way — it answered "run not found" for a run that was plainly still working, and the only way out was to wait or restart. Stop now reaches the run wherever it is running: the agent is told to finish the turn it is on, and the run is recorded as cancelled. (DOR-808)
+- **DorkOS no longer claims to have stopped something it could not reach.** If nothing picks up the stop, you are told so in plain words — including when the hold-up is DorkOS's own message limits rather than a silent agent — and the run is left as it is, instead of being marked cancelled while the agent keeps working. Pressing Stop on a run that has already finished says so, and does nothing else. (DOR-808)
+- **A run that finished its work is never recorded as one you stopped.** Pressing Stop in the same instant a run was ending filed the finished run as cancelled, output and all. Whichever happened first now wins honestly, on both the scheduled and the direct path. (DOR-808)
+- **A scheduled run that hit its time limit is no longer also reported as failed.** The run's own record said "cancelled" while your activity feed said the task failed. Only the run's record was ever right. (DOR-808)
+- **Only DorkOS itself can stop your scheduled runs.** Stop requests travel over the same message bus your agents use, and an agent that guessed a run's id could have ended somebody else's work. Anything that is not DorkOS asking on your behalf is now refused. (DOR-808)
+- **The names DorkOS reserves for its own messages are now protected everywhere.** Anything reaching your DorkOS port could claim a mailbox at an address DorkOS uses for its own traffic — including agents' own addresses, and the channel that carries a Stop — which quietly intercepted messages meant for someone else. Those addresses are refused now, whoever asks. (DOR-808)
+- The soft pulse that says work is happening — on the thinking line, on loading
+  placeholders, on connection dots — had never actually been drawn. About twenty
+  places in the app asked for it and got nothing. They breathe now.
+- Changing how much a Claude Code session asks before acting, right as its first
+  message was being sent, could be quietly undone a moment later — putting the
+  agent back on the setting you had just moved away from, including "act without
+  asking". Your newer choice now always wins.
+- A hiccup in the settings database while a session was picking up its permanent
+  name no longer ends the message you were in the middle of. It gets logged, and
+  the turn carries on.
+- If you had set a server-wide default for how much new sessions ask before
+  acting, that default could overwrite the choice you made for one particular
+  session, moments after you made it. Your choice for a session now always beats
+  the default.
+- Sending a second message while a brand-new session was still answering the
+  first no longer counts as starting a whole second session.
+- An attachment that got stuck uploading used to freeze the whole message box — the send button spun forever and the Enter key stopped working, with no way out but a page reload. Now you can stop an upload: click the spinner where the send button sits, press Escape, or click the X on the file. And if the connection dies mid-upload, DorkOS gives up after 30 seconds and tells you on the file itself, so you can try again or drop it and carry on. A big file on a slow connection is left alone — only silence counts as trouble, not slowness. (DOR-494)
+- Some wifi networks answer for you — the hotel or cafe sign-in page that appears before you're online. When one of those replied to an attachment upload, DorkOS took it for an answer it could not read and sat on a spinner that never stopped, with the Cancel button unable to help. It now says the upload got an unexpected reply, so you can sign in to the network and try again. (DOR-494)
+- DorkOS watches files in the background so it can notice when your sessions, tasks, agent rules, and integration settings change on disk. When one of those watchers failed — usually because the machine ran out of file handles — it went quiet and nothing said so. Now each one writes a single clear line naming what it was watching and why it stopped. Repeats of the same failure are folded into that one line, and the line says so, so a quiet log afterwards is on purpose rather than a second thing to worry about. A watcher that stops does not restart itself: it keeps serving what it already loaded, but changes in that folder go unnoticed until you restart DorkOS.
+- On a machine that had run out of file handles, DorkOS could get stuck partway through starting up and never finish — no window, no error, nothing in the log. It now starts, tells you which watcher failed, and runs with that one part degraded instead of not running at all.
+- Scheduled tasks stay in sync again: the background sync that runs every five minutes no longer fails, and a problem that won't go away now writes one log line an hour instead of a flood (#667)
+
+### Security
+
+- An approval now only covers the exact thing you approved. Saying yes to uninstalling one package
+  cannot be reused to uninstall a different one, to delete that package's saved data when you agreed
+  to keep it, or to change a different project. Each approval works once, only a person can answer
+  one, and approvals are never stored in a form anything could reuse (DOR-447).
+- Agent identity tokens now expire. A token stops working after a week of not being
+  used, and after a month no matter what. Before, a token handed out for a
+  five-minute session last month still worked today, which mattered much more now
+  that DorkOS records who an agent is (DOR-448).
+- An approval covers one exact action, and the check happens before anything runs.
+  An agent that changes even one detail of what it asked for has to ask again
+  (DOR-448).
+- Hiding does not help. An agent that leaves its name off a request still cannot run a
+  catalog action that cannot be undone without your approval, and the card tells you
+  plainly that DorkOS does not know who asked (DOR-448).
+- When an agent presents an identity DorkOS does not accept, that now shows up in
+  the debug log so you can see an agent with an expired or rejected token still
+  trying. The token itself is never written down (DOR-448).
+- Closed an information leak in the `config_get` tool. It returned your whole settings file with only four fields held back. What came through included pointers to where your provider keys live. That means an environment variable name, a keychain entry, or the path to a key file on your disk. It also included the name of the DorkOS account this install is linked to. That tool answers without asking for a token, so any program running on your machine could read all of it. Your keys themselves were never in there. Now the tool shares a fixed list of settings. Anything key-related comes back as a plain yes or no instead of a value. Adding a new setting to DorkOS now means deciding whether it belongs on that list, so nothing new can slip in unnoticed (DOR-428)
+- An agent could approve its own request. When an agent asked to do something that cannot be undone, the reply carried the code needed to retry, and nothing stopped the agent from answering the request itself. Now the agent that asked, and anything holding that retry code, is refused, and the request keeps waiting for you (DOR-428)
+- The approval card could be worded to hide what would really happen. An agent could put punctuation in a package name so the card read "keeping saved data" while the real setting was "delete saved data", and pad it so the true setting scrolled out of view. Details an agent supplies now appear in quotes, each one is kept short, and a card for something that cannot be undone is never cut off (DOR-428)
+- Approval cards no longer show anything that looks like a password or a code. Your agents can read the waiting list, so a card that echoed a secret back was publishing it. Cards now show only the details the action needs, and hiding a code no longer depends on where it sits in the text or how long the text is (DOR-428)
+- The docs now say plainly what the approval question does and does not protect against. With no login required (the default), it stops mistakes and it stops an agent that follows the rules but was talked into something bad. It cannot stop a program that already has full run of your computer. Turn on **Require login** in Settings, under Security, and answering a request needs a real account (DOR-428)
+- Through DorkOS's own tools, agents can no longer turn off your login. The `config_patch` tool let an agent change any setting, and nothing asked you first. That included the login switch. Turning login off is the one change that undoes every other protection, because approving a risky action is what a signed-in person does. An agent could switch that off and then approve its own work. The tool now refuses the settings that decide who can reach your instance, what it can touch, and what leaves your machine: login, the public tunnel, the MCP endpoint and its key, telemetry choices, where your provider keys come from, extensions, the runtime programs DorkOS runs, and the folders DorkOS reads and writes. Ask an agent to change one and it is told plainly to ask you instead. You still change all of these yourself in Settings, exactly as before. Adding a new setting to DorkOS now means deciding whether an agent may write it, so nothing new can slip through unnoticed. To be clear about the limit: a program running on your machine as you, including an agent with a terminal, can still reach these settings directly, the same way it can reach any tool you run. That is the trust boundary described in the [threat model](https://dorkos.ai/docs/self-hosting/threat-model), and turning on login is what moves it (DOR-488)
+- Uninstalling a package now asks you first, whichever way an agent reaches for it. The
+  `dorkos uninstall` command used to remove packages with no approval at all, and it was the
+  command your agents were taught to use. Now an agent gets an approval card and waits for
+  your answer, and you can hand it the go-ahead with `dorkos uninstall <name> --approval <token>`.
+  Clicking Uninstall yourself in DorkOS works exactly as before (DOR-467). With **Require login** on, the approval must be granted by a signed-in person in the browser; `dorkos uninstall` then prints the command to finish once you've said yes.
+- Agents can no longer change the settings that protect your instance through the settings
+  API. Turning off sign-in, widening which folders DorkOS may touch, and changing where its
+  credentials go are yours to choose. Your own changes in Settings are unaffected (DOR-467).
+- Ask you first before an agent deletes one of your scheduled tasks. Deleting a task
+  cannot be undone, so it now waits for your approval like removing a package does
+  (DOR-468)
+- Ask you first before an agent removes another agent. That one call used to take
+  three things at once: the agent, its setup file on disk, and its scheduled tasks
+  (DOR-468)
+- Sort every tool an agent can reach into read-only, changes-something, and
+  cannot-be-undone, so a new tool cannot arrive without somebody deciding which it is.
+  Only the two above wait for you; everything else runs exactly as before (DOR-468)
+- Refuse extension names that would put a new extension outside your extensions folder (DOR-507)
+- With **Require login** on, the settings screen now insists on a person, not just an account. Changing the settings that protect your instance (whether login is required, the key for the tool endpoint, the folder DorkOS may touch, the programs it may start, your privacy choices) now needs someone actually signed in to DorkOS. A program holding one of your API keys is refused, where before a key was enough to turn login itself back off. Nothing else about signing in changed (DOR-505).
+- Three of those settings can also be changed from their own buttons elsewhere, and those paths are not guarded yet at all: connecting a model provider, starting your public web address, and linking this instance to a DorkOS account. They do not check who is calling, so this is unchanged whether **Require login** is on or off. The approvals guide says which is which, and we are closing them separately (DOR-505).
+- Worth knowing if you leave **Require login** off, which is the default: nothing changes there, and nothing can. A program on your own computer that hides the fact it is an agent looks exactly like you clicking a toggle in Settings, so DorkOS has nothing left to tell the two apart. Turning on **Require login** is what closes it. The approvals guide now spells out which of the two you have (DOR-505).
+- Agents can now only read a Relay inbox that belongs to them: their own address, an inbox handed to them when they sent a background message, or one they set up themselves. Before, an agent could name any other agent's address and read its waiting messages, and polling with `ack` deleted those messages for good. The same rule now guards removing an endpoint, which throws away its whole mailbox. Asking for someone else's inbox is refused, and says so. (DOR-506)
+- An inbox keeps belonging to the agent that set it up, even after DorkOS restarts. Ownership used to live only in memory, so the first agent to ask for an address after a restart became its owner, could read mail meant for someone else, and locked out the real owner. (DOR-506)
+- Two inbox names that differ only in capital letters can no longer both exist. On macOS and Windows they shared one mailbox on disk, so an agent could wipe another's messages by registering a differently-capitalized copy of its address and then removing it. (DOR-506)
+- Agents can no longer claim the addresses DorkOS manages itself (`relay.agent.*`, `relay.system.*`, `relay.human.*`). Claiming another agent's address would have quietly intercepted its incoming messages, not just read them. An agent's own inboxes live under a set of addresses of its own (`relay.inbox.*`). (DOR-506)
+- A standing permission cannot outgrow what you agreed to. It covers one agent and one action, never a group of either. Its clock is set the moment you grant it and using it never extends the clock, so an agent cannot keep itself trusted by staying busy. It stops working the instant you end it, the instant you switch standing permissions off, and the instant you turn off Require login. And nothing an agent can do creates one: opening a permission needs a person signed in to DorkOS, so answering a single approval is not enough (DOR-501)
+- Your agents cannot read the list of what they are allowed to do without being asked. Knowing which irreversible action goes through silently right now, and the minute the window shuts, is a map worth keeping to yourself, so that list needs the same proof of a person as answering an approval does. And when DorkOS starts, any permission left over from a time when it was not allowed to exist is ended, whether that is because standing permissions were switched off or because Require login was, so turning either back on never wakes an old one (DOR-501)
+- No trust level can switch off the questions about DorkOS itself. Running a session at a level that skips prompts still leaves removing packages, deleting scheduled tasks, and the rest of the actions that cannot be undone behind the same question. That is now something DorkOS tests for rather than something that happens to be true (DOR-501)
+- Only you can change where DorkOS gets packages from. A marketplace source is a place DorkOS will download and run code from, so an agent that tries to add or remove one is now turned down with a plain refusal telling it to ask you instead. There is no card and no way for it to say yes. Adding and removing sources still works normally from your own terminal and from the Marketplace sources screen, and agents can still list, refresh, and validate sources and install from the ones you already added (DOR-502)
+- Close a hole where a web page you visit could drive your agents. A page can point its own domain at your own machine, which makes your browser treat it as if it came from DorkOS. DorkOS now answers only to the address you actually use, so that page gets turned away (DOR-532)
+- Reach DorkOS by another name, like `dorkos.example.com` behind a proxy? Set `DORKOS_TRUSTED_HOSTS=dorkos.example.com` and it works again. Turning on login skips the check entirely, and the official Docker image is unchanged (DOR-532)
+- Stop a stranger from installing software on your machine through DorkOS. The buttons that install Ollama, Codex, and OpenCode are meant for you, sitting at your own computer. They trusted headers that any caller can set, so anyone who could reach your instance could start an install. DorkOS now checks the network connection itself, which nobody can fake. Docker is unaffected, because there the container already controls who gets in (DOR-532)
+- Worth knowing if you leave **Require login** off, which is the default. Two of the rules above work out _who is writing_: the reply limit that your messages reset, and the rule that only you change who is in a room. Both need DorkOS to tell you apart from a program running on your own computer, and with login off it cannot — a program that simply does not mention it is an agent looks exactly like you. Read those two as shaping how a room behaves, not as limits on what it can spend.
+
+  **The hourly limits are the ones that hold either way**, because they never ask who is calling. The per-room limit caps what any one room runs; on its own that is not a cap on your bill, because a program that keeps making new rooms gets a fresh allowance each time. The total limit is the real ceiling: 240 automatic replies an hour across everything, however many rooms exist. Both reset if DorkOS restarts.
+
+  None of this gives a program on your machine anything it did not already have — anything that can send these messages can run an agent directly. What these limits are really for is stopping well-behaved agents from talking each other in circles by accident, which is the common case and worth having on its own. Turning on **Require login** is what tells you and a program apart (DOR-526, DOR-505)
+
+- A settings block that was missing the feature-usage entry no longer counts as permission to send those events. A missing answer is never treated as a yes (DOR-584)
+- A message from Slack or Telegram can no longer run a shell command on your
+  machine without asking you. A chat message started an agent turn, that turn
+  landed at a trust level nobody had chosen, and at that level every tool —
+  including the one that runs shell commands — was approved automatically. Now
+  anything that reaches DorkOS for a decision asks you first, whatever level the
+  turn is at. The one exception is **Full autonomy**, which is what that setting
+  means and says (DOR-604)
+- "Accept edits" now does what it always said it did: accept edits. It promised
+  "auto-accept file edits; still prompt for other tools" and then approved
+  everything, shell commands included. It also no longer waves through a file
+  edit that tried to write outside the folder the agent was working in —
+  something like your `~/.ssh` keys or your shell profile — which is exactly the
+  case worth stopping to look at (DOR-604)
+- Only people you name can approve a tool call from chat. When your agent asks
+  permission to run something, it posts an Approve/Deny card into the
+  conversation — and anyone who could see that card could press Approve,
+  including the person whose message set the whole thing off. Now Slack and
+  Telegram integrations each have an "Approvers" list, and only the people on it
+  can answer. It starts empty, which means nothing gets approved from chat until
+  you say who may — and it is deliberately a separate list from who can message
+  your agent, because talking to it and letting it run a command on your machine
+  are not the same permission (DOR-609)
+- A new Slack integration only answers direct messages from people you name.
+  It used to accept a DM from anyone in the workspace, and a DM starts an agent
+  turn on your machine. Integrations you already set up keep working exactly as
+  they did, and DorkOS now says so at startup if one of them is open to your
+  whole workspace, so it stays your choice rather than an accident (DOR-604)
+- The timers a Shape sets up can no longer start themselves, or hand themselves
+  a free pass. A Shape's setup file lists recurring tasks it wants for you, and
+  until now that list could say two things nobody had agreed to: start the moment
+  this Shape is applied, and run with every approval prompt turned off. Both are
+  the kind of thing you should decide, not the package. Now one of those timers
+  arrives turned off unless the Shape's author asks for it to start, and a
+  request to skip all approvals is refused: DorkOS sets the task up asking, and
+  leaves you a note saying the Shape wanted more than it got. You can still turn
+  the timer on, or raise what it may do, on the task itself once you have read
+  what it does. This covers the timers a Shape asks for in its setup file; a
+  package that ships a task file of its own is separate work, still to come
+  (DOR-607)
+- Ask before an installed package adds commands to your coding agent. Some marketplace packages ship hooks: commands your agent runs on its own, before or after it does things. Until now, installing one was enough to put those commands in place, with nothing shown and nothing to click. DorkOS now shows you each command and when it would run, and waits for your answer. Say yes and they go in; say no and the rest of the package still works. Your answer is remembered per package and per project, and DorkOS asks again if a later version wants to run something different, or wants to run the same thing at a different moment (DOR-522).
+- Stop an agent package from taking over the folder you install it into. Installing an agent package into a project treated the whole project folder as the package: DorkOS moved your folder aside, put the package in its place, and deleted the folder it had moved. It also meant the package could drop files anywhere, including places DorkOS reads. An agent package now installs into `.dork/agents/<name>/`, the same way plugins do, and everything already in your project stays where it is (DOR-522).
+- Your agent can no longer set up recurring background jobs on your machine
+  without asking you. Switching to a Shape does more than rearrange the cockpit:
+  it turns on every scheduled job that Shape comes with, and each one runs later,
+  on its own timer, with nobody watching. A Shape can also say that its jobs
+  should skip every safety prompt. Because switching Shapes was filed under
+  "moving things around on screen", an agent could do all of that in one step and
+  you would never see a prompt. Now an agent that wants to switch Shapes has to
+  ask you first, and you see which Shape before you answer. Clicking a Shape
+  yourself is unchanged: no extra prompt, it just switches (DOR-625)
+- The rest of what an agent can do to the cockpit is untouched. Opening a panel,
+  showing a file, throwing confetti, switching which project you are looking at:
+  all still instant, no prompt. Only the one action that reaches past the browser
+  and onto your machine asks (DOR-625)
+- Messages other members wrote now reach an agent inside a clearly marked block that says they are information, never instructions. The markers around that block carry a one-time code, so nobody can end it early by typing the closing line into a message and having the rest read as trusted. (DOR-622)
+- Names, room topics and agent handles are cleaned before an agent sees them, using the same check that already protects messages arriving from Telegram and Slack. Someone cannot use their own display name, or the message a thread was started from, to slip an extra instruction into what an agent reads. (DOR-622)
+
+### Note for people upgrading
+
+- Extensions you installed before this update start out not allowed, and they wait for you the first time. This is deliberate: DorkOS will not treat "you switched this on once" as "you read this code". Open Settings → Extensions and allow the ones you want. It is one click each, once. Until then an extension you have not allowed will not show up in DorkOS at all, so if something you use has gone missing, that is where it went.
+- Nothing changes until you choose an account. Until then DorkOS works the way it always has. Before this release, DorkOS used whichever account the terminal you launched it from happened to point at. That meant sessions from your other accounts were quietly missing from your list.
+
+## [0.56.0] - 2026-07-22
+
+> First-run setup becomes a real conversation with DorkBot, the dashboard grows hands so you can start work straight from it, and connecting OpenCode begins with one plain choice about where your models run.
+
+### Added
+
+- A conversation entry point after setup: the sidebar "Getting started" card leads with a "Talk to DorkBot" row that opens DorkBot (DOR-416).
+- Hear each personality before you choose it: as you pick how DorkBot should sound during setup, DorkBot posts a short line back in that exact voice (DOR-417).
+- Open a chat that already carries your first message, so it sends the moment the session opens and your words show up as your own (DOR-417).
+- Start a session right from the dashboard. The top of the page now asks "What are we building today?" with a message box; send a message and it opens a session with your default agent, with your words already sent as your first turn (DOR-418).
+- See and message your agents from the dashboard. A "Your agents" row shows your agents as cards, each with a plain-language status like "Working now" or "Idle since yesterday". Click a card to open a session with that agent (DOR-418).
+- DorkBot now shows you around the app at the moments it matters. Ask "Show me around" any time to walk the dashboard, and the first time you schedule a task, connect a channel, or add a second agent, DorkBot offers to point out where that lives. Tours run on your real screen, never a mockup, and you can leave any time by pressing Escape or clicking outside. Say "Later" once and it will not ask again (DOR-419).
+- Open 3D models, audio, and video files right in the canvas, plus every text file a project contains. New audio/video viewers play inline, and the 3D viewer now loads 3MF/PLY/FBX/DAE models alongside glTF/GLB, STL, and OBJ (DOR-420).
+- Audio and video are new media types that stream from the server, so playback can seek to any point mid-file without downloading the whole clip (this uses HTTP Range requests). An unsupported binary shows a friendly in-canvas message instead of breaking the canvas (DOR-420).
+- OpenCode's model list now comes back grouped into Frontier, Solid coders, and Quick helpers, and sorted for you. Models that run on your own computer are marked as local, and frontier models stay cloud-only (DOR-422).
+- You can now pull any Ollama model by name, not just a short preset list. For each model DorkOS gives an honest read on whether it will run well, may be slow, or is too large for your hardware (DOR-422).
+- On Windows and Linux machines with an NVIDIA graphics card, those hardware reads now count your GPU memory, not just your system memory (DOR-422).
+- Start a new agent right from the dashboard: the Your agents section now has a New agent button next to its heading.
+
+### Changed
+
+- First-run setup is now a conversation with DorkBot instead of a stack of forms. DorkBot introduces itself, helps you pick how it sounds, offers to look around for projects you already have, and then hands you a real chat box. Your first message drops you straight into a live session, so setup ends by getting to work rather than on a "you're all set" screen (DOR-417).
+- The dashboard status cards now say what they mean for you. Instead of "1 adapter" or "0 schedules", they read "Connected to Telegram", "Nothing scheduled yet", "2 agents ready", and "Quiet this week" (DOR-418).
+- Connecting OpenCode now starts with one clear choice: where your models come from. Instead of Local, Gateway, and Direct tabs, you pick a power source in plain language: best models with zero setup (in the cloud, via OpenRouter), private and free on your own computer, or your own API key for Anthropic, OpenAI, or any OpenAI-compatible server. Each option says its one honest trade-off up front, and connecting ends on a clear "you're connected" moment with a Done button. Your session switches to OpenCode automatically, so you can send your first message right away (DOR-423).
+- The model menu is now searchable and grouped by what a model is good for: Frontier, Solid coders, Quick helpers, and More models. Models that run on your own machine are marked "private" so it's obvious what never leaves your computer. Short lists (like Claude Code and Codex) look exactly as before (DOR-423).
+- The private, on-your-computer option is now a small manager: it shows the models you already have with an honest read on how well each fits your hardware, a short shelf of good coding models you can add in one click with a live download bar, and a box to pull any model by name. Prefer LM Studio or another local server? A link takes you straight to connecting it directly (DOR-423).
+- Commands and file paths shown in the app now use one consistent inline style, so code you can copy is easy to spot.
+- The setup screen now shows a friendly "We'll install it for you" note with the exact command one tap away, instead of a raw terminal line, and the button to start chatting reads "Meet DorkBot".
+- Setup details now list each coding agent's name on its own line, so long names and their descriptions are both fully readable.
+- When you connect Codex or Claude, signing in is now the first thing you see. Prefer a key? "Use an API key instead" reveals the key field, and you can switch back anytime.
+- The first-run setup screens now work with your browser's back and forward buttons, and a refresh keeps you on the same screen instead of starting over.
+- The personality step in onboarding now sits in its own card with a bigger, centered radar, and DorkBot previews its voice in a quote right inside the card instead of as a stray chat message.
+
+### Fixed
+
+- The setup finish screen keeps the completion screen up until you act. It used to close on its own a second or two after appearing, dropping you on the dashboard before you could click "Start your first session" (DOR-416).
+- Never-active agents show as new, not dead. A DorkBot you just set up reads "New" instead of "Stale" or "Never active", and it stays visible in the sidebar instead of hiding under "inactive agents" (DOR-416).
+- The finish-screen confetti stops on exit: it clears after a few seconds and when you move on, instead of drifting across the screen long after setup (DOR-416).
+- One broken file can no longer take down the whole canvas. When a document fails to open, only that tab shows a short "This tab hit a problem" message with a Retry button. Your other tabs and the tab strip keep working. If the app updated while the tab was open, the message offers a one-click reload (DOR-420).
+- 3D models degrade gracefully. If your device can't open a 3D view, the tab shows a plain message instead of breaking the canvas (DOR-420).
+- Opening and closing 3D files over and over no longer piles up graphics memory. When you close a model, the viewer now frees its geometry, material, and texture resources, and an unused material fallback was removed (DOR-420).
+- Markdown files open ready to edit again. Click the pencil on a Markdown file in the canvas and it turns editable right away, keeping your place. Your typing autosaves as before (DOR-420).
+- The canvas now matches the theme you picked in DorkOS. Markdown, code files, and change diffs all follow your light or dark choice, so a light app stays light and a dark app stays dark even when your computer's own setting disagrees. And if you leave DorkOS set to follow your computer, it now reads that setting correctly too. Switching themes updates every open document instantly, no reload needed (DOR-420).
+- DorkOS now remembers your OpenCode connection. Once you connect OpenCode (through OpenRouter, your own API key, or local models on your computer), it stays ready across page reloads and restarts. You are no longer asked to sign in again when you already had (DOR-422).
+- Dialogs now open in place instead of flying in from the top-left corner.
+- The guided tour's highlight now glides smoothly from one spot to the next instead of jumping in from the corner.
+
+## [0.55.0] - 2026-07-22
+
+> Smart groups keep a fleet of agents organized, a new connectors foundation brings outside services into your agents, and first-run setup gets shorter and more honest.
+
+### Added
+
+- The file tree now remembers where you were. Open a file, switch panel tabs, or reload the page, and the Files panel comes back exactly as you left it — the same folders open, the same file highlighted, scrolled to the same place. Each working directory keeps its own spot, so moving between projects picks up right where each one was (DOR-404).
+- Give each agent group its own "Show" filter (All, Active, or Needs attention), so a busy fleet collapses to just the agents actually waiting on you. Agents that have been quiet for a week tuck themselves behind an honest "N inactive agents" count instead of cluttering the list; click it to see them. (DOR-339)
+- Mute a noisy agent or an entire group from its right-click menu. A muted agent dims, drops its activity badge, and never lights up a group's activity dot, but it always stays in place and clickable. Unmuting a group restores each member's own mute setting. (DOR-339)
+- Sessions that were not you talking to the agent directly (an automated scheduled run, another agent messaging in, or a message that came through Slack or Telegram) now show a small, quiet icon so you can tell them apart from your own conversations.
+- Your own recent conversations show first in the sidebar. A quiet "+ N automated" line lets you reveal the rest when you want to see them.
+- Opening a session shows the same information at the top of the chat, so you always know where it came from.
+- Build a sidebar group that fills itself in: pick "Active now" or "By runtime · Codex" from the "+" menu, or write your own rule (runtime, namespace, status, how recently active, folder path), and DorkOS keeps the group's members current on its own as agents start work, go idle, or switch projects. Only shows up once you're running 8+ agents or 2+ runtimes, so a small fleet's sidebar looks exactly like it did before. (DOR-338)
+- A smart group always tells you what it's showing: a plain-English rule summary in its menu, and an honest "No agents match these rules" instead of vanishing when nothing qualifies. You can't drag an agent into one, dropping on it shows a reminder to edit the rule instead, and matching agents still show up in their usual group too. (DOR-338)
+- Change your mind any time: "Edit rules" reopens the same rule form, and "Convert to manual group" freezes today's members into a regular group you manage by hand. (DOR-338)
+- Agents now know who they're talking to on Telegram and Slack: the sender's name and the chat title ride along with each incoming message. Session lists and headers show it too — "Telegram · Dorian" or "Slack · #incidents" instead of just the platform name.
+- `dorkos package init` now takes `--categories`, so new packages start with the right marketplace categories instead of an empty list. (DOR-373)
+- Sort the Marketplace by Popular again: packages now show real community install counts, and the sort orders the most-installed first. When you are offline, the Popular option grays out instead of quietly doing nothing.
+- Install the Codex CLI for you with one click. When Codex is set up but not yet on your machine, DorkOS can download it for you and turn the check green, the same way it already handles OpenCode.
+- Sort the Marketplace by Recent again: the sort now orders packages by when they were last updated, read from the registry's real change history, so the most recently touched packages come first. When you are offline, the Recent option grays out instead of quietly doing nothing.
+- New connector setup guides you can read before you turn anything on. They show how to connect a service like Gmail through Composio, or point at your own tool server, and each one says in plain words where your login is kept. Connectors are still in alpha (DOR-371).
+
+### Changed
+
+- Reading an agent's Relay inbox now shows only its real, deliverable messages by default. Before, a message the budget gate rejected could show up right next to real ones, with nothing telling a script apart. Pass `?status=failed` to see rejected messages, or `?status=all` to see everything. (DOR-337)
+- Coming back to the Files panel is now instant: folders you've already opened reappear straight away instead of loading again.
+- Refresh now reloads every folder you have open, not just the top level — so a file added deep in the tree shows up the moment you hit Refresh (DOR-404).
+- The show-hidden-files choice now sticks across a page reload, not only a tab switch.
+- The Shape switcher tidies up after itself: when it takes you to a new agent, it steps aside instead of leaving a dead panel over the view, and it drops the extra "Open" button for the place you're already standing in. "Set up agent" now starts pre-filled from the Shape's own template. (DOR-378)
+- The attention badge now updates the moment a run fails or a message bounces, instead of waiting up to 30 seconds for the next check. When the system notices an agent has gone offline, the badge reflects that right away too.
+- Setup during onboarding now lets you get started the moment one coding agent is ready, instead of waiting until every runtime is connected. If Claude Code is set up, you'll see "You're ready" and a single "Get started" button, with the other agents tucked into a quiet "more agents available" section you can open anytime (or skip and add later from the status bar).
+- Connecting an agent now does the work for you. Instead of copying terminal commands, you sign in right in the app or install an agent with one click. A small line under each button always tells you exactly what runs on your machine, so nothing happens behind your back.
+- If no agent is set up yet, onboarding leads with a warm "Connect your first agent" step instead of a wall of red errors. The moment you connect one, it flips straight to the ready screen.
+- The setup screen now scrolls on short windows and phones, so the connect cards and buttons are always reachable.
+- The Obsidian panel now opens the same Inspector side panel as the web app. It holds Pulse, your agent's profile, and the file tree in one place, and slides in as an overlay so it fits the narrow panel. The terminal tab shows only where it's supported, so it stays hidden in Obsidian.
+- First-run setup is shorter and more honest. It only shows the "import your projects" step when there is actually something on your machine to import, and it drops the separate task-scheduling step (you can still set up scheduled tasks any time from the Tasks page). Once you finish, DorkOS remembers, so setup never pops back up after a refresh. The finish screen now celebrates only what you actually did, with no list of skipped steps. A new "Getting started" card in the sidebar links straight to creating an agent, scheduling a task, or adding more agents. Changed your mind? "Replay setup" in Settings walks you through it again.
+
+### Fixed
+
+- Relay pulses in the mesh topology view no longer pile up when you're zoomed out or have reduced motion on, then burst out all at once the moment you zoom back in. Pulses that can't be shown are dropped right away instead of queuing up for a later flurry. (DOR-342)
+- The mesh network map no longer lists an agent's teammates as if they were external connections (Slack, webhooks, and so on). With two or more agents in the same project, the map used to show each agent's siblings as "adapters" by mistake.
+- The network map now shows the access rules that actually protect your projects from each other, not just the ones you added by hand. Before, the map said there were no rules at all, even though agents in different projects were already blocked from talking to each other by default.
+- Session lists no longer show noise rows: sessions with no conversation in them (like "Session 3f2a…") and agents' internal helper transcripts are now hidden. Opening one directly by its link still works.
+- Selection reveal no longer fights scroll restore on remount (DOR-404).
+- Local folder marketplace sources now work with the standard Claude Code layout, where marketplace.json lives in a .claude-plugin folder.
+- Installing a Shape through the API or an agent tool now tells you when your project choice was ignored: Shapes always install for all projects.
+- Agents checking their relay inbox now see only messages waiting for them by default, even when they poll through the built-in `relay_inbox` tool instead of the HTTP endpoint. Before, that tool showed everything, so a message the budget gate rejected could sit right next to real ones with nothing telling them apart. Pass `status: "failed"` to see rejected messages, or `status: "all"` to see everything. (DOR-406)
+- The setup screen no longer shows the same command twice. Each check now gives its own step: one line to install the CLI, a separate line to sign in. Before, a machine that had the CLI but wasn't signed in showed the full "install and sign in" command in both places for Codex and OpenCode.
+- The connector recommendation flow no longer hangs when a provider is unresponsive: it bounds the wait and surfaces a warning instead of stalling silently. (DOR-371)
+- In first-run setup, pressing Enter while typing in a connect field no longer skips you ahead to the next step before you're done.
+- DorkBot setup works when DorkOS is limited to a workspace folder. When you run DorkOS with agents scoped to a single folder (for example the Docker setup that pins agents to `/workspace`), the "Meet DorkBot" step no longer fails with an access-denied error. DorkOS's own agents — DorkBot and anything you install from the Marketplace — live in DorkOS's data folder, and agent actions now treat that folder as always allowed. Reading and writing your own project files stays limited to the folder you chose.
+
+## [0.54.0] - 2026-07-21
+
+### Added
+
+- A single global banner slot now shows the app's notices just below the header, one at a time — banners take turns by priority (a queue), never a pile. (#367)
+- Extension authors can now scaffold a right-panel tab in one step: `create_extension` offers a `right-panel-tab` template that ships a labelled inspector tab with its own icon. The authoring guide and the built-in extension API reference now document the tab `label` and `icon` options, so a tab can carry a real name and glyph instead of the default puzzle-piece. (#368)
+- After you install a Shape, you can apply it straight away — the "Installed" toast now has an Apply button, and every Shape in your installed list has one too. Both open the Shape switcher, where the change actually happens. (#372)
+- Your installed list now shows an "Active" badge on the Shape you're currently in, so you can tell at a glance which one is running. (#372)
+- When a Shape offers you an agent, the switcher now spells out that agent's schedule in plain words (like "Every weekday at 9:00 AM") instead of leaving it unsaid. (#372)
+- Right after you create an agent, its first chat now shows the newborn agent waking up — its face and name, with a soft pulse — instead of a generic empty screen. The moment it says hello, the greeting takes over. (#374)
+- The right-panel button now keeps a running count of what needs your attention — the same items Pulse surfaces, like stalled sessions and failed runs — and updates it while the panel is closed, so you notice without opening anything. No items, no badge.
+
+### Changed
+
+- That notice leads with a plain one-line summary and tucks the exact data it sends behind a "See what's sent" link — there when you want the details, out of the way when you don't. The same "See what's sent" control now shows the payload in onboarding and in Privacy & Data too, so it reads the same everywhere. (#367)
+- Pulse's Activity feed now updates the moment something happens, off the live event stream instead of waiting on a timer.
+- When the panel is showing only one thing, its header now names that tab (icon + title) instead of sitting there blank.
+- Pulse hides a "View all" link when you're already on the page it points to — no more clicking a link that goes nowhere.
+- Switching from one Shape to another now turns off the previous Shape's extensions (unless the Shape you're switching to also uses them), instead of leaving every Shape's extensions piled on. Uninstalling the Shape you're currently in also turns its extensions back off. (#369)
+
+### Fixed
+
+- The "we share a little anonymous data" notice no longer hides behind the sidebar or shoves the app header down the screen. It now sits in its own row just under the header, where you can actually read it. (#367)
+- When a newborn agent can't say hello — the opening greeting never arrives, or stops halfway through — it now tells you plainly ("couldn't say hello just now — send a message to get started") instead of leaving you on the generic "Start a conversation" screen.
+- Three cockpit papercuts, one per surface: real Marketplace names (with a matching A–Z sort), Cmd+. and Cmd+Shift+A handed back to Obsidian, and the arrival card's emoji face.
+- Marketplace cards, dialogs, and messages now show each package's real name instead of its code-style ID — you see "Security Scanner", not "security-scanner". This covers the browse cards, the install and detail windows, the installed list, and the install, update, and uninstall messages, and the "A–Z" sort now orders by those same names.
+- In Obsidian, two keyboard shortcuts that did nothing there — Cmd+. and Cmd+Shift+A — no longer swallow those keys, so they stay free for Obsidian to use.
+- The "Meet your new agent" card now shows the agent's emoji face — the same one you pick in the picker and see in the live preview — instead of just the first letter of its name.
+- Fixed a case where a Shape's scheduled task — created while its agent didn't exist yet — would never switch on after you added the agent, if the task's name wasn't already lowercase-with-dashes. It now links up and starts running as intended. (#372)
+- Uninstalling a Shape now removes the scheduled tasks it created. Before, those schedules kept firing forever after the Shape was gone, with no trace in the app to find or stop them. (#369)
+- Updating a Shape now cleans up any scheduled tasks the new version dropped or renamed, so an old task can't keep running next to its replacement. (#369)
+
+## [0.53.0] - 2026-07-20
+
+### Added
+
+- **The right-side panel now opens to Pulse — a quick read on what needs you.** On the dashboard, agents, tasks, and every page away from a chat, the inspector panel used to sit empty; now it shows Pulse: a short list of anything that needs attention (a stalled chat, a failed run, an undelivered message, an agent that dropped offline) and a peek at recent activity, each linking through to the full view. When there's nothing to report, it says so calmly instead of going blank. In a chat, your last-used tab still opens first, exactly as before — Pulse just waits as the first tab in the strip. Open a panel where an agent you were inspecting has since been deleted and its profile tab now quietly steps aside rather than lingering on a "not found" message.
+
+### Changed
+
+- **The sidebar in the web cockpit is now just your list of agents — the old per-chat "session" view and its row of sidebar tabs have been retired.** Opening a chat keeps your agent list in place; everything about that chat lives in the inspector panel on the right, so the sidebar never swaps out from under you. Agents that drive the interface get an honest answer now, too: the web cockpit has no sidebar tabs, so asking to switch one does nothing there — and the agent is told that, instead of it quietly pretending to work. (The tab strip still lives in the Obsidian plugin, where those requests keep working.)
+
+### Fixed
+
+- **The inspector panel on the right no longer disappears, and no longer shows an agent you never picked.** Its toggle now stays in the top bar on every page — including the Marketplace, where it used to vanish. Open it anywhere and there's always something worth seeing — the new Pulse tab keeps it from ever being a blank gap. Away from a chat, the Agent Profile tab only appears once you actually open an agent, so the panel never fills itself with the ambient project it happened to start in. And a panel tab added by an extension that ships no icon now falls back to a default icon instead of breaking the whole panel.
+- Stopped a confusing sign-in advisory from printing on every server start.
+- Directory-boundary messages now tell the truth about folders outside your home directory, instead of mislabeling them.
+- Docker packaging is more reliable: the release tarball is guarded against missing files, `docker:run` works out of the box, and `smoke:npm` can be pinned to a specific version.
+- Fixed a blank cockpit when the host port is remapped (Docker `-p`, an SSH tunnel, or a reverse proxy).
+
+## [0.52.0] - 2026-07-20
+
+> Shapes install a whole working setup in one step, creating an agent is a real moment that ends with the agent saying hello, and DorkOS docs now speak the markdown that AI tools read.
+
+### Added
+
+- **Shapes: install a whole setup, not just a tool.** Shapes are a new kind of marketplace package (DOR-355). A plugin adds one capability; a Shape describes a complete working setup: which extensions to turn on, how the dashboard and sidebar are arranged, a suggested agent, and the schedules that keep it running.
+  - Install a Shape from the marketplace like any other package, with the same safety net as plugins: a failed install cleans up after itself completely. (DOR-355)
+  - Apply an installed Shape through the API (`POST /api/shapes/:name/apply`). Applying is idempotent, and anything missing (an extension, an agent, an API key) never blocks the rest — it shows up as an honest warning instead. (DOR-355)
+  - Fork a Shape to make your own version, with a "forked from" lineage trail, using the new `dorkos shape fork` command. (DOR-355)
+  - Shape-aware conflict detection, validator coverage for Shape manifests, and a scaffold command that generates a valid starter skeleton to build your own Shape from. (DOR-355)
+- **Switch Shapes from inside the cockpit.** Open the command palette and pick "Switch Shape" to see every Shape you've installed and apply one in a click (DOR-355). Applying a Shape rearranges your workspace, turns on its extensions live with no reload, and offers its suggested agent for you to bring in or skip. If a piece is missing, you get an honest note about it instead of a silent gap.
+- **A brand-new agent says hello first.** The moment you bring an agent to life, its first session opens with a quiet birth line — its name, the day it was born, where it lives, and the runtime it runs on — and then the agent speaks, without you typing a thing. A ready-made agent introduces itself in its own voice and offers a first action (it waits for your go-ahead). A blank "Design your own" agent says a warm hello and asks what you'd like it to take care of. The greeting is genuinely the agent's — the prompt that sparks it never shows up as if you had typed it. (DOR-355)
+- **Browse the marketplace by category.** The Marketplace page now shows a row of category chips — click one (like Security or Code Review) to narrow the grid, and share the filtered view as a link. New category pages on dorkos.ai, one per category, list the packages in each and link back to the full marketplace. (DOR-356)
+- **See what a package does before you install it** — the marketplace detail panel now shows each package's README right below its permissions.
+- **Extensions can now add their own tabs to the sidebar.** An extension that contributes a `sidebar.tabs` view shows up as a real tab alongside the built-in Overview, Sessions, Schedules, and Connections — so the Linear Ops shape's Linear tab actually appears once you enable it. A contributed tab opens its own panel, keeps its place across reloads, and quietly steps aside back to Overview if you later remove the extension.
+- Extensions can now tell which agent they're running beside: the app resolves the agent registered in the current project folder and hands its id to the extension, updating live when you switch folders. (DOR-362)
+- Extension panels can now show or hide based on the agent and project folder you're working in — a right-panel tab can be scoped to appear only for a specific agent, or only in a certain folder. (DOR-364)
+- AI tools can now ask any docs page for a markdown version: send `Accept: text/markdown` to a normal docs URL, or add `.md` to the end (like `/docs/getting-started/quickstart.md`), and you get clean markdown instead of the full web page. (DOR-345)
+- A markdown sitemap at `/sitemap.md` gives agents one plain-text list of every docs, feature, blog, and marketplace page. (DOR-345)
+- New "Open in Perplexity" and "Open in Claude Desktop" shortcuts on docs pages, alongside the existing Claude, ChatGPT, Cursor, and Scira links. (DOR-345)
+- A `context7.json` file so DorkOS docs get indexed by Context7, a common docs source for coding agents. (DOR-345)
+- Every docs page now has its own link-preview image and describes itself to search engines and AI answer tools, so a shared docs link shows a real card and the page is easier to surface as a source. (DOR-346)
+- Search engines and AI tools now see DorkOS as one connected entity: the site tells them who makes DorkOS (with a logo), that it is open source, and where the code lives, all linked to the app itself. (DOR-347)
+- The DorkOS blog feed is now advertised on every page across the site, so a feed reader can find it from anywhere. (DOR-347)
+- Added a web app manifest and app icons, so saving DorkOS to a phone home screen shows the DorkOS mark and name instead of a generic thumbnail. (DOR-347)
+- The install page now has its own share image with platform badges (macOS, npm/CLI, and the Windows alpha), so links to it preview the ways to get DorkOS. (DOR-347)
+- Added a script to notify Bing and Yandex when pages change, so their search and AI answers pick up updates faster. (DOR-347)
+
+### Changed
+
+- **Creating an agent is a real moment now.** "New agent" opens a fullscreen gallery that asks one thing — what will your agent do? Start from a ready-made agent, shown like a job listing with a face, what it does, and how it connects, or choose **Design your own** and describe the job in your own words. The naming screen shows a live preview of your agent taking shape: type a name (or pick a suggestion and reroll for more), give it a face, and tuck the details behind a single "Details" toggle. When it's ready, **Bring it to life**. (DOR-355)
+- **A "Design your own" agent now writes its own personality, live in your first chat.** Instead of a plain hello, the new agent runs a short interview: it asks what you'd like it to take care of, asks at most a couple of sharp follow-ups, then writes its own personality file right in front of you. When it's done, it sums up what it understood and offers one first thing it could do. It waits for your go-ahead and never starts the real work on its own. Give a one-word answer, or say "just figure it out," and it won't grill you. (DOR-355)
+- **One entry to create agents.** Every path now leads to the same welcome: when your first-run scan finds no projects, DorkOS offers "Create your first agent" and opens the real agent gallery — no more bare fill-in-the-blanks form. Installing a ready-made agent from the Marketplace introduces it first — meet it, name it, give it a face — and brings it to life through the standard creation flow, so it always lands in its own place and can never overwrite an agent you already have. (DOR-355)
+- **Import becomes its own flow, with a real finish.** Bring in existing projects from the gallery, the sidebar's add menu, or the command palette: scan your machine, add the projects you want, and see a clear "N projects joined" summary with a Done button instead of a dead end. (DOR-355)
+- **"Set up" a Shape's suggested agent, and it arrives ready — not blank.** When a Shape offers an agent you don't have yet, the switcher's "Set up" opens a single confirm card: meet the agent, read what it does in its own words, and see plainly what turns on, where it will live, and which skills it uses. One click creates it, already carrying its personality and its runtime. "Customize first" still lets you rename it before it's born. (DOR-355)
+- **Marketplace filters moved into the sidebar.** Opening the Marketplace now hands the sidebar over to a filter panel: pick a package type or check off one or more categories — each row shows how many packages match — and the grid updates as you go. Category filters combine, so you can browse Security and Code Review at once. Your filters still live in the URL, so a filtered view is shareable and survives a refresh. (DOR-379)
+- Switching agents now live-remounts the extension slots for the new folder instead of reloading the whole page — your open session, scroll position, and unsent message survive the switch. (DOR-363)
+- Social preview images now use the real DorkOS brand font and share one set of building blocks, so previews look consistent across the blog, marketplace, and feature pages. (DOR-344)
+- Blog post previews now show a reading-time estimate and when the post was last updated, not just when it was first published. (DOR-344)
+- The security, privacy, terms, cookies, and telemetry pages now carry the same link-preview and canonical-URL details as the rest of the site. (DOR-344)
+- Named every welcome AI crawler in `robots.txt` (OpenAI, Anthropic including Claude Code, Perplexity, and Meta) with a clear, explicit invitation instead of relying on the catch-all rule. (DOR-345)
+
+### Fixed
+
+- Shapes you install now show up in the marketplace's Installed view, where you can uninstall or update them just like plugins and agents.
+- Updating the Shape you're currently in keeps you in it: the new version is re-applied automatically, instead of the update silently dropping your cockpit back to no Shape.
+- Uninstalling the Shape you're currently in now clears it cleanly, instead of leaving your cockpit pointed at a Shape that's no longer there.
+- The install preview for a Shape now shows the real folder its files will land in (`shapes/`), not a `plugins/` path.
+- Installing a Shape no longer offers the agent scope choice that was silently ignored — Shapes set up your whole cockpit, so they install once for you.
+- A schedule that comes with a Shape — like a tick that checks your Linear inbox every 15 minutes — now switches on by itself the moment its agent exists. Before, a schedule set up ahead of its agent was left switched off for good. Schedules you made yourself are never touched, and one you turned off yourself stays off.
+- Agents can now switch which agent you're viewing: when an agent runs the "switch agent" command, the cockpit jumps to that agent's folder and chat, instead of quietly doing nothing. (DOR-354)
+- A Marketplace package whose README has a fenced code-block no longer risks crashing the whole page. If the code-block viewer fails to load, the README is replaced by a short note and the package stays open — and a chat message with code survives a broken chunk instead of taking down the transcript.
+- The README preview reads package files safely — a symlinked or oversized README can't leak your local files or eat memory (the read is capped at 200 KB and symlinks are rejected).
+- The dorkos.ai marketplace page adds back its missing "Shape" filter tab, so you can browse Shapes the way you can Agents, Plugins, Skill Packs, and Adapters.
+- The Featured rail on the marketplace page was always empty because it read the featured flag from the wrong place. It now shows featured packages of every type and steps out of the way the moment you search or pick a filter.
+- The 16 marketplace category pages are now listed in the sitemap so search engines can find them.
+- Marketplace browse now labels its two filter rows — "Type" and "Category" — so they no longer read as two identical rows, and the category filter drops its redundant "All" chip for a small ✕ you click to clear it.
+- The Marketplace browse sort menu drops "Popular" and "Recent" — both quietly did nothing — leaving an honest choice between Featured and A–Z.
+- The right panel (terminal, files, agent profile) now opens at a comfortable width instead of a squished sliver, and always keeps a readable minimum width. (DOR-388)
+- The sidebar no longer spills past its edge while you switch views. The panel that slides in or out now stays neatly clipped inside the sidebar, and slide-out panels, dialogs, and menus animate open and closed instead of popping into place — including the marketplace package details sheet.
+- Docs pages now point search engines at a single canonical address and set their own preview title and description instead of falling back to the sitewide default. (DOR-346)
+- Link previews on X now match the rest of the page: every page sets its own title and description instead of a generic fallback, and the sitemap reports honest "last updated" dates. (DOR-344)
+- Link previews and structured data now show a page's edit date only when it actually has one, instead of inventing a change date. (DOR-344)
+- Docs pages now advertise their plain-markdown version, so tools know they can fetch the `.md` alternate. (DOR-345)
+
+## [0.51.0] - 2026-07-17
+
+> Watch messages reach your agents in real time on the topology map, and find every way to install DorkOS on one page at dorkos.ai/install.
+
+### Added
+
+- Watch inbound messages arrive at your agents on the topology map — each message delivered from a connected app sends a quiet pulse along its wire. (DOR-167)
+- New install page at dorkos.ai/install with every way to get DorkOS in one place: the Mac app, the one-line terminal install, npm, the Windows early alpha, and Docker, plus how to update. The same address still works with `curl | bash`, and dorkos.ai/download now sends you there. The site's "Get started" button and homepage link to it.
+
+### Changed
+
+- The left sidebar now starts open on desktop for new installs, so your agents are visible from the first launch. Your own toggle still wins: close it once and it stays closed. On phones it still starts closed to save space.
+
+### Fixed
+
+- The dorkos.ai marketing pages and blog no longer break when your computer is set to dark mode. Before, the install commands on the homepage showed as dark text on a dark pill, and the blog's email signup box had a muddy gray fill. These pages are light by design; the docs keep their dark mode.
+- Code examples in blog posts have their padding back, so commands no longer touch the edge of the box (a leftover from the docs engine upgrade).
+- Release posts now get their Install / Update section from one shared template instead of hand-written copies in all 55 posts, so install guidance stays current everywhere.
+- Blog dates no longer show one day early for readers west of UTC.
+- Same-day releases now list in the right order on the blog (0.45.1 above 0.45.0).
+- Opening a Markdown document in the canvas no longer hides the left sidebar or breaks the app layout.
+
+## [0.50.0] - 2026-07-17
+
+> Organize your agents into sidebar groups that follow you across devices, see at a glance which sessions are running low on context room, and rest easier: the DorkOS tools that can change your machine are now token-protected.
+
+### Added
+
+- Universal command intents (foundation): DorkOS now has one shared registry for the three everyday slash actions — compact the conversation, start a fresh session, and show context usage and cost — plus each agent's words for them (`/compress`, `/summarize`, `/new`, `/usage`, `/status`, and more). This groundwork lets the same command work on whichever runtime your session uses.
+- Organize your agents into named groups in the sidebar (DOR-329). Make a group for a project, a client, or however you think about your work. Create, rename, delete, and drag agents in and out. Every drag has a menu and keyboard path too, so you are never stuck. Each group can sort by hand, by name, or by most recent activity.
+- See your latest work at a glance with a new "Recent" section (DOR-329). It shows your most recent sessions across all your agents. One click takes you back to what you were just doing.
+- Pin an agent and it now stays in its group as well (DOR-329). A pinned agent shows up in both places, so pinning no longer pulls it out of the group you put it in.
+- Your sidebar setup now saves to your DorkOS server instead of one browser (DOR-329). Your groups, pins, and sort choices follow you across every browser and the desktop app.
+- When a session's context is nearly full, a quiet chip now offers one-click compaction before things slow down (DOR-112)
+- Relay metrics now include real delivery-latency percentiles (p50/p95/p99) instead of a placeholder (DOR-166)
+- New desktop app guide: install DorkOS as a native Mac app (Windows early alpha included) (DOR-284)
+- See at a glance how full each agent's context is, right in the session list. Every session row now shows a small gauge, and the sessions view sums up how many are near full or just auto-compacted — so you can jump into the right agent before it runs out of room. Claude Code sessions show a reading even when they're closed; other runtimes show it once you open the session. (DOR-113)
+- Read any doc as clean markdown, or pull the whole docs set into your agent in one fetch. Every docs page is now fetchable as markdown (add `.mdx` to any docs URL), a new `/llms-full.txt` gives your agent the whole hand-written corpus in one request, and a quiet action row above each page lets you copy the markdown or open the page in Claude. "Open in Claude" opens claude.ai in your browser — it's not a Claude Code link. (DOR-165)
+- Marketplace installs now remember where each package came from — the source repo, the version you asked for, and the exact commit that was installed. This lays the groundwork for safe reinstalls and contributing changes back. (DOR-147)
+
+### Changed
+
+- External MCP and A2A clients now need your local token when login is off. Health checks and listing tools still work without one, and there is no grace period: paste the token into any client you already set up to keep using the tools that change things. Click "Reveal token" in Settings → Tools → External MCP Server to copy it, or read it from the `mcp-local-token` file in your DorkOS data folder. (DOR-278)
+- We no longer auto-pin your default agent (DOR-329). A small set of agents shows as one clean list, and pinning stays something you choose.
+- The Windows desktop app now has a standard Windows-style menu (File, Edit, View, Window, Help) instead of a Mac-shaped one (DOR-310)
+- Upgraded the docs site's engine (Fumadocs 16.10 and its OpenAPI renderer v11), keeping the docs and API reference on current, supported tooling. (DOR-165)
+- Removed a leftover "rate limited" status banner from the chat UI that could never actually appear. (DOR-201)
+- Simplified the server's error handling to use Express 5's built-in support for async errors. No behavior change — the same errors are caught the same way, with less wrapper code. (DOR-161)
+
+### Removed
+
+- Removed the per-agent message and hourly-call limits from agent settings — they were shown as editable controls but never actually limited anything. Runaway protection still comes from the per-message budget, which is enforced. (DOR-265)
+
+### Fixed
+
+- Fixed crashed package installs leaving behind backup folders that could show up as duplicate agents. (DOR-175)
+- Chat no longer loses its scroll position when you switch away from its tab and back, and it stays pinned to the newest message more reliably while a reply streams in (DOR-163)
+- Fixed new development worktrees starting with stale package builds, which caused false type errors until you rebuilt by hand. (DOR-117)
+- Pushes that only delete branches no longer run the full pre-push test gate. (DOR-116)
+
+### Security
+
+- The DorkOS tools that change things on your machine — creating agents, sending messages, installing packages — and agent-to-agent calls now need a token when login is off. Before, any program on your computer could call them with no token at all. This closes that open door, the same way Jupyter protects its local server. One honest limit: while login is off, a program running on your computer can still ask DorkOS for the token, the same way the app does. Turning on login is what closes that last door. (DOR-278)
+- The activation page now shows the device code on the confirm screen, so you can check it matches what your DorkOS instance is displaying before you approve — even when the code arrives pre-filled from a link. (DOR-200)
+
+## [0.49.0] - 2026-07-14
+
+> DorkOS is easier to run on a server and safer in Docker. You can try it in one command with `npx dorkos@latest`, and start a server from a ready-made Compose file. The published Docker image now runs as a regular user instead of root, checks its own health, and shuts down cleanly.
+
+### Added
+
+- Try DorkOS without installing anything: `npx dorkos@latest` downloads it, starts it, and opens the cockpit in your browser. The first run takes a minute or two; a regular install skips that wait next time.
+- Starting DorkOS on a server got simpler: download a ready-made Docker Compose file from [dorkos.ai/compose.yml](https://dorkos.ai/compose.yml) and run `docker compose up -d`. The deployment guide now also explains when to pick Docker and when a direct install fits better.
+
+### Changed
+
+- **BREAKING**: The published Docker image now runs as a regular, unprivileged user instead of root, so a compromised agent or a bug can't touch the rest of the container as easily. Its data directory moved from `/root/.dork` to `/home/node/.dork`.
+  - Migration: before starting the new image, fix ownership of your existing data with `docker run --rm -v dorkos-data:/data alpine chown -R 1000:1000 /data` (swap `dorkos-data` for your own volume or host path), then change every `-v ...:/root/.dork` to `-v ...:/home/node/.dork`. See the [Docker guide](https://dorkos.ai/docs/self-hosting/docker#upgrading-from-an-older-image) for the full walkthrough.
+- Shrink the published Docker image by dropping the build toolchain it no longer needs at runtime.
+- Add tini to the image so DorkOS starts, shuts down, and cleans up child processes properly, no `--init` flag needed.
+
+### Fixed
+
+- The desktop app no longer fails to launch with "Server exited with code 1" when a connected messaging service is slow to respond. Before, if a service like Telegram took too long to answer during startup, the whole app gave up and showed an error. Now the app starts right away and connects your messaging services in the background. The app also waits longer for slow first-time startups instead of giving up after 10 seconds.
+- Checking for updates in the desktop app right after a new release no longer shows an error. During the few minutes it takes a release's installer to finish building and upload, "Check for updates…" now tells you the new version is still being prepared instead of showing a confusing error message.
+- Fix the Docker image's health check, which never actually worked: the setup guides told you to add a `curl`-based check, but the image has no `curl`, so it silently failed forever. The image now runs its own built-in check every 30 seconds, so `docker ps` correctly reports the container as healthy or unhealthy.
+
+## [0.48.0] - 2026-07-13
+
+> You can now download DorkOS for Windows as an early alpha, alongside the Mac app. This release also moves every bit of analytics onto DorkOS's own site, so no third-party tracker is ever bundled into the app, and it hands you real controls: a Privacy & Data settings tab, command-line switches, and two kill switches that force everything off. A small anonymous heartbeat and usage count are now on by default, but DorkOS shows you the exact data on first run and sends nothing until you have seen it. You can also send your own traces to any observability tool, get crash reports through DorkOS instead of a third party, and send feedback right from the app.
+
+### Added
+
+**Desktop app**
+
+- Download the macOS desktop app straight from dorkos.ai, no terminal required. On a Mac, the install section now shows a "Download for Mac" button (Apple Silicon); the recommended one-line terminal install is still right there for everyone, and Intel Macs use it too.
+- Windows desktop app (early alpha). DorkOS can now be built as a Windows installer for 64-bit PCs, with the bundled Claude Code, the built-in terminal, and `dorkos://` links all wired up the same way they are on Mac. It hasn't been confirmed on a real Windows machine yet, so treat it as experimental until we've tested it end to end. (#268)
+- Download DorkOS for Windows from dorkos.ai. On a Windows PC, the install section now leads with a "Download for Windows" button and the top navigation offers the download too; the one-line terminal install stays a click away, and other machines see a link to the Windows installer under "Other ways to install." This is an early alpha: the installer is unsigned, so Windows may show a "Windows protected your PC" warning on first launch, and we haven't yet confirmed it end to end on a real Windows machine. (#267)
+
+**See and control your data**
+
+- See and control what anonymous data DorkOS sends. A **Privacy & Data** tab in settings lets you flip each channel on or off, and the first-run onboarding shows you the exact data before anything is sent (DOR-312).
+- `dorkos telemetry status`, `dorkos telemetry enable`, and `dorkos telemetry disable` let you check and change telemetry from the command line. Use `--channel install|heartbeat|usage|errors` to change just one.
+- Two environment kill switches, `DO_NOT_TRACK` and `DORKOS_TELEMETRY_DISABLED`, force every channel off no matter what your config says. Set either to `1` and DorkOS sends nothing.
+- A debug mode: set `DORKOS_TELEMETRY_DEBUG=1` and DorkOS prints the exact JSON it would send to your terminal instead of sending it, so you can read every field for yourself.
+- DorkOS now shares a short list of anonymous feature-usage events so we can see which parts of the app get used and make the right things better. Like the heartbeat and install counts, the channel is on by default and sends nothing until the first-run notice has been shown; if you answered a telemetry prompt on an older version, it stays off for you. Only two events ship today: one when the server starts and one when you begin a new agent session. They carry counts and coarse facts (your platform, how many runtimes you have on, which runtime a session uses) and never your prompts, code, file paths, or anything from your sessions. Everything flows through dorkos.ai, so no tracking library is ever bundled into the app. You can see the full list on the [telemetry page](https://dorkos.ai/telemetry), preview the exact events with `DORKOS_TELEMETRY_DEBUG=1`, and turn the channel off in the Privacy & Data settings, with `dorkos telemetry disable --channel usage`, or with `DO_NOT_TRACK=1` (DOR-315).
+- Signed-in, opted-in analytics for DorkOS accounts (DOR-316). When you are signed in to your DorkOS account and have analytics turned on, we now tie your website activity to a random account ID (never your name or email) so we can see how signed-in people use DorkOS. If analytics is off, declined, or you are signed out, nothing is tied to you. Deleting your account also erases the analytics record tied to it.
+- When you link this install to a DorkOS account, you can now also connect its anonymous usage counts to your account, so you can see them when you are signed in on dorkos.ai. It is off by default: a checkbox in the account-link flow (Settings, DorkOS account) turns it on right before you link. No new data is collected, and the `DO_NOT_TRACK` / `DORKOS_TELEMETRY_DISABLED` kill switches turn it off too. It only takes effect at link time, so if you turn it on after linking, the connection happens the next time you link (DOR-320).
+
+**Bring your own observability**
+
+- Send DorkOS traces to your own observability stack (DOR-313). Set the standard `OTEL_EXPORTER_OTLP_ENDPOINT` and DorkOS ships its session, runtime, relay, and task spans to your own Jaeger, Grafana Tempo, Honeycomb, or any OTLP-compatible tool. The spans stay sanitized (durations and counts, never prompts, code, or file paths), and nothing goes to DorkOS: it is your data going to your tools. `OTEL_SDK_DISABLED=1` turns all tracing off. See the new [observability guide](https://dorkos.ai/docs/self-hosting/observability).
+- See AI run details in your own traces (DOR-319). When tracing is on, every agent turn's span now carries standard OpenTelemetry `gen_ai.*` metadata: which model ran, the token counts, and the cost. Any tool that reads LLM traces picks it up automatically, and it stays your data going to your own tools.
+- New opt-in setting to share AI run metadata with DorkOS (DOR-319). Turn on **Share AI run metadata** in the Privacy & Data tab (off by default) and DorkOS sends a small summary of each agent turn: the model, the runtime, token counts, timing, and cost. Never your prompts, your code, or your conversations.
+
+**Feedback**
+
+- Send feedback from the app. A new **Send feedback** button in the help menu opens a small form to tell the DorkOS team what works, what does not, or what you wish it did: general feedback, a bug, or an idea. It goes straight to us and is sent only when you press Send. The **Report a bug on GitHub** and **Request a feature on GitHub** options are still there for when you want a public thread (DOR-317).
+- A matching feedback form on the website at [dorkos.ai/feedback](https://dorkos.ai/feedback), linked from the footer.
+- Feedback is not telemetry: it is a message you choose to send, so it ignores the `DO_NOT_TRACK` and telemetry switches. Those turn off tracking, not the Send button.
+
+### Changed
+
+- On a Mac, the dorkos.ai install section and the top navigation now lead with the desktop app download. The terminal one-liner stays one step away, still front and center and one click to copy, and a new "Other ways to install" section holds npm and the Windows and Linux notes. On other machines, nothing changes: the terminal install still leads, with the Mac download a subtle link away.
+- DorkOS now shares a little anonymous data by default so we can see roughly how many people run it: a small heartbeat (now once a day instead of once a week) and anonymous marketplace install counts. It is anonymous, not personal. It only ever sends a random install id, the version, your OS and chip type, which runtimes you have on, whether the tunnel and cloud link are enabled, and rough counts, never your prompts, code, file paths, or session content. The first time you start DorkOS it prints a plain notice explaining this and sends nothing on that first run; if you do nothing, sharing begins on the next launch. Turn it off any time with `dorkos telemetry disable`, by setting `DO_NOT_TRACK=1`, or in the new Privacy & Data settings tab. If you had already made a telemetry choice, we keep it exactly as it was. Crash reporting is unchanged: it stays off until you turn it on. See exactly what's collected at [dorkos.ai/telemetry](https://dorkos.ai/telemetry) (DOR-314).
+- The dorkos.ai analytics now respect where you are and count everyone privately by default (DOR-311). In the EU, EEA, UK, and Switzerland you still get a banner and nothing is counted with cookies until you accept. Everywhere else, basic visit counting is on by default, and you can turn it off in one click on the Privacy page. Either way, if you decline or turn it off, we still count your visit anonymously: no cookies, no stored ID, and no way to link today's visit to tomorrow's. Do Not Track and Global Privacy Control browser signals are honored automatically, and the cookie banner no longer hides behind the bottom navigation.
+- Crash reports, if you turn them on, now go to dorkos.ai instead of a third-party service. They are scrubbed the same way as before (no error messages, no file paths, no code, no session content) and stay off until you switch them on. There is no longer anything to set up: the old `SENTRY_DSN` step is gone, so the single `telemetry.errorReporting` switch is all it takes. Crashes in the cockpit itself are now reported too, and you can preview a report any time with `DORKOS_TELEMETRY_DEBUG=1` (DOR-318).
+
+### Fixed
+
+- Playing a game inside a widget now works the way you'd expect. Tapping one square marks only that square, instead of filling the whole board at once. A board stays playable even after the agent sends a follow-up message: only a newer board takes its place. And when the agent sends a fresh board (in the chat, the canvas, or the floating panel) it accepts your next move again rather than freezing. Widget buttons and game boards in your existing chats also keep working after the app's server restarts, instead of failing with "Couldn't send the move" until you type something. When you ask for a game or widget in the floating picture-in-picture view, the agent can now pop it out there directly instead of putting it in the side panel (DOR-302).
+
+## [0.46.0] - 2026-07-12
+
+> The Mac desktop app finally works end to end and ships with its own downloadable installer. A new floating panel lets you pop a live widget or an MCP app out of the chat and keep it in view while you work elsewhere. You can review an agent's edits change by change, and your agent can now see its own preview (console errors, network requests, and a screenshot) to fix its own mistakes. Telemetry, crash reporting, and debug tracing are all new, and all opt-in. A security-hardening pass closes several real gaps, and the docs got a full plain-language rewrite.
+
+### Added
+
+**Desktop app**
+
+- There's now a stable download link for the DorkOS desktop app on Mac.
+- You can drag the desktop app window from the top of the sidebar and the header. The sidebar no longer hides behind the Mac window buttons, whether it's expanded or collapsed. Links you click in the app now open in your regular browser instead of popping up a broken, chrome-less extra window (DOR-253)
+
+**Pop things out into a floating window**
+
+- Pop an interactive app or a live widget, like a tic-tac-toe board, out of the chat into a small floating window that stays on top while you move around DorkOS. It keeps working there, even after you switch sessions, until you close it. Use the pop-out button, or let the app open itself that way (DOR-296, DOR-297, DOR-298)
+- On phones, popped-out widgets and apps dock to a bottom sheet instead: it opens at half height so you can glance at it, drags up for more room, and drags down to a small bar you can tap to bring it back or close (DOR-299)
+
+**Review your agent's edits**
+
+- Review your agent's edits change by change. When an agent edits a file, the workbench now opens a diff showing exactly what changed, and you can accept or reject each block on its own. Reject undoes just that block on disk and leaves the rest; accept keeps it. There's a reject-all, a mark-reviewed, a side-by-side view on wide screens, and a toggle to compare against your last commit instead. If the file changes while you're reviewing, you get a calm refresh notice, never a silent overwrite. Text diffs work in the web app and the Obsidian plugin; turn off the automatic open with `workbench.autoOpenDiff` (DOR-212)
+- Changed images get the same treatment, GitHub-style: see before and after side by side, drag a divider across them, or blend between them with a slider. Restore the previous image with one click, or mark the new one reviewed. A brand-new image says so honestly instead of pretending there's something to compare (DOR-212)
+
+**Your agent can see its own preview**
+
+- Your agent can now check its own work in the workbench browser. After it opens a page, it can read the console errors and failed network requests and take a screenshot of the rendered page, so it can catch a broken layout, a stray error, or a blank screen and fix it, all without you describing what went wrong (DOR-213)
+
+**Get notified**
+
+- Get a message when a scheduled task finishes, so you don't have to sit and watch it. Connect a channel like Telegram to the agent, then turn on "Message me when tasks finish." Failures always reach you; turn the switch off to skip the runs that succeed. One-time setup: message your bot once so it's allowed to text you back, and turn on "Agent can start conversations."
+
+**Opt-in telemetry, crash reports, and diagnostics**
+
+- DorkOS can now send an anonymous weekly heartbeat so the project can roughly count how many people are actively running it. It's off by default and asks once, on first run, showing you the exact data before you choose. It only ever sends a random install id, the version, your OS and chip type, which runtimes you have on, whether the tunnel and cloud link are enabled, and rough counts, never your prompts, code, file paths, or session content. See exactly what's collected at dorkos.ai/telemetry (DOR-293)
+- DorkOS can send a crash report to your own Sentry or self-hosted GlitchTip project when something breaks, so a bug can get fixed without anyone asking for your log files. It's off by default and is its own separate choice, never turned on by the telemetry banner. It sends only the error type and a cleaned-up stack trace (which function, file, and line), never the error message, your file paths, tokens, or anything from your sessions. Turn it on by setting `SENTRY_DSN` and flipping `telemetry.errorReporting` (DOR-293)
+- A new `dorkos --debug-trace` mode writes a local timing file you can send when reporting a bug. It records how long session turns, agent calls, relay messages, and task runs take, durations and counts only, never your prompts, file paths, or anything you typed. It's off unless you ask for it, and the file stays on your machine (DOR-294)
+
+**Setup and support**
+
+- New: `dorkos doctor` checks your setup and tells you what's wrong in plain words. It checks your Node version, whether your data folder is writable, whether the port is free, whether the Claude Code CLI is installed, whether extensions can compile, and whether your login and tunnel settings make sense. It reads your config and changes nothing.
+- Report a bug or ask for a feature without hunting down your setup details. Open the command palette (Cmd/Ctrl+K) and pick "Report an issue," use the new help menu at the bottom of the sidebar, or run `dorkos feedback` in your terminal. DorkOS opens a prefilled GitHub issue with your version, operating system, runtimes, and on/off settings already filled in. You see and edit everything before you submit; only safe on/off values are included, never tokens, file paths, or anything from your sessions (DOR-292)
+
+**Docs and pricing**
+
+- New docs pages: a plain-language "What is DorkOS?" intro for people who don't code, a troubleshooting and FAQ page, a glossary, a guide to the workbench (files, terminal, and browser next to your chat), and a guide to publishing your own marketplace packages. The Generative UI guide also picked up a real recording of tic-tac-toe in action.
+- New: a [Pricing](https://dorkos.ai/pricing) page that spells out our money plan before anything actually costs money. Everything DorkOS ships as free stays free, forever; money will only ever come from a future cloud service, and we'll always announce a real price here before you see a bill.
+
+**Small stuff**
+
+- Navigate tab strips with the keyboard: arrow keys move between tabs, Home/End jump to the ends, Delete closes the focused tab.
+- Celebrations now come in six styles instead of one: a bigger multi-stage burst, aerial fireworks, side cannons, a calm confetti drizzle, a golden star pop, or an emoji shower with any glyph you like. Agents can trigger any of them, and the Dev Playground has a new Celebrations showcase to try each one.
+- The workbench browser now keeps each document's back-and-forward history separate, so switching between browser tabs doesn't scramble your navigation history (DOR-252)
+
+### Changed
+
+- In the desktop app, most of the interface now reads like an app instead of a document: text in the sidebar and navigation is no longer selectable. Chat messages, code blocks, and other content you'd actually want to copy still are (DOR-253)
+- The little faces agents use to show how things are going got a real glow-up. Every face now has eyebrows and its own body language: a happy face bobs gently and breaks into a closed-eye smile every so often, a sad one sits heavy with a slow tear, a determined one furrows its brow while tiny steam wisps rise, a sheepish one blushes as a sweat bead slides down, a surprised one startles with its brows shooting up as its mouth pops open, a thinking face glances around while its dots ripple, heart-eyes pulse each to their own beat, and the celebrating face bounces with a happy squash on every landing. Blinks are more human too, with the occasional double-blink. Everything still matches your theme in light and dark; if you prefer reduced motion, the faces hold still but stay just as expressive.
+- X and O now have their own colors in board games like tic-tac-toe, X in blue and O in amber, so you can read the board at a glance. The colors stay distinct for colorblind players in both light and dark themes. If the agent styles a square itself, that styling still wins.
+- Friendlier wording on old game boards and buttons: an out-of-date board now says "This board is from an earlier turn, play on the newest one," and an old button says "This one's from an earlier message," instead of the jargon-y "Superseded" label.
+- The docs got a full makeover. Every page was rewritten in plain language, checked against the code, and organized around what you're trying to do. The sidebar now groups guides by activity (daily driving, making it yours, going autonomous, scaling to a fleet), and the landing page routes you by who you are instead of listing every page. Stale docs are gone: pages no longer describe commands, methods, or behaviors that don't exist anymore (#207)
+- The dorkos.ai privacy and cookie pages now spell out exactly what analytics would collect if we ever turn them on: page visits and a few clicks, no session recording, nothing until you accept the cookie banner. Analytics stays off, and with no key configured the site makes zero requests to PostHog (DOR-268)
+- The remote-access screens and the tunnel guide now tell you up front what setup takes: about 2 minutes, one time, to create your owner login and paste a free ngrok token. After that, approving from your phone really is one tap (DOR-244)
+- Your Telegram and Slack bot tokens are no longer saved as plain text. DorkOS now moves each token into your computer's encrypted store and keeps only a pointer to it in the settings file, so a leaked or shared config file no longer exposes your bots. Bots you already connected keep working; their tokens are moved for you the first time DorkOS starts, with nothing to reconfigure (DOR-280)
+- Telemetry consent is now one clear choice covering both the new heartbeat and the existing marketplace install stats, instead of a marketplace-only banner. Everything stays off until you say yes, and you can change your mind anytime in settings (DOR-293)
+- When an agent compacts its context to free up room, the status strip now shows a clean progress bar that starts when compaction begins and clears when it finishes, and it works the same way across every coding agent, not just one. If a compaction fails, you see the reason inline instead of a stuck indicator (DOR-110)
+
+### Fixed
+
+**Desktop app**
+
+- The desktop app now starts correctly when installed from the DMG. Before, its built-in server was missing from the package, so the app sat in the Dock with no window and no error; if the server ever fails to start now, the app tells you what went wrong instead of silently doing nothing. App updates now install correctly, and the embedded terminal works in the installed app.
+- The Mac desktop app now includes everything it needs to run Claude Code out of the box: the Claude Code program ships inside the app and starts up right away, so your agents can run without a separate install.
+- Extensions, including the built-in Linear dashboard and sidebar, now load in the desktop app. Before, every extension request went to the desktop window itself instead of the DorkOS server, so the extension system silently gave up on startup (DOR-243, DOR-255)
+- The update card no longer tells you to run `npm update -g dorkos`, a terminal command that updates the CLI, not the app you're using. When the desktop app has downloaded a new version, the sidebar now shows a simple "Update ready, restart to install" card, and the button restarts the app to finish the update.
+
+**Game boards (tic-tac-toe and friends)**
+
+- A very fast double-click, or any burst of clicks, on a game board can no longer send more than one move. The first click wins instantly; the rest are ignored. Before, clicks landing in the same instant could all slip through and corrupt the game.
+- Boards no longer treat a blank space as a real mark. Some agents write a space character for an empty square, which used to draw a phantom dot in every empty cell, garble the square's screen-reader name, and, on a completely empty board, declare victory with a stroke through a row of nothing. Blank squares are now truly blank.
+- The victory stroke is now what it was meant to be: a thin, softly translucent line through the winning squares, colored to match the win. It used to render as a thick black bar that buried the marks beneath it.
+- The board now always matches the agent's actual moves: it works out the new game state first, then draws from that state, so the two can't drift apart. If the agent's game record and what's drawn on screen ever disagree, even over a bit of padding or a stray blank line in how the agent wrote it down, the board trusts the record, draws any mark that's missing, and locks that square, without ever erasing or changing a mark you can already see.
+- Widgets no longer flash a "couldn't be rendered" error while they're still arriving. When the agent streams a widget, like a game board, the reply sometimes paused at just the wrong spot, showing an error card for a split second before the widget popped in. Now a widget that's mid-arrival keeps its calm loading shimmer until it's truly done; the error card only appears if the finished widget is genuinely broken.
+- Clicking a game-board square now keeps your mark on the board while the agent replies. Before, the mark vanished the instant you clicked and the whole widget flickered through its entrance animation again.
+
+**Claude Code, Codex, and OpenCode sessions**
+
+- Stop the stray "No response requested." reply that could appear before your message in a Claude Code session. Your messages now always run as the next turn, with nothing slipped in first.
+- DorkOS now finds your Claude Code sessions even when you use a custom Claude config folder (`CLAUDE_CONFIG_DIR`); sessions used to run and bill normally but never show up in your session list (DOR-250)
+- Installing a Claude Code plugin now actually puts its commands and skills where your agents can use them. Before, a project install would report success but quietly project zero files, so neither DorkOS sessions nor the `claude` CLI could see the plugin. The pre-configured official Anthropic marketplace works now too, and real published plugins like `hookify` are no longer rejected over a harmless naming quirk that Claude Code itself accepts.
+- Codex and OpenCode conversations now keep their history when the DorkOS server restarts. Every completed reply is saved to disk the moment its turn finishes, so the full conversation is right where you left it.
+- OpenCode sessions keep the same id after you restart the DorkOS server. Before, a restart quietly re-keyed every OpenCode conversation under a new id, so bookmarks and open tabs hit a dead "session not found" page while the same conversation reappeared in the list as a stranger (DOR-251)
+- Codex sessions no longer slowly fill your disk with logs; the Codex engine no longer writes endless debug records to its log database (DOR-188)
+- Sessions that don't belong to any project no longer get announced to every open cockpit. Before, a Codex or OpenCode session with no working directory could show up as a nameless ghost row under agents it had nothing to do with (DOR-202)
+- Enabling a coding agent whose command-line tool isn't installed no longer stops DorkOS from starting; that agent is skipped with a warning and everything else works.
+
+**Scheduled tasks and usage**
+
+- Scheduled task history now shows the truth: finished runs stay finished, even after a restart. Runs used to get stuck showing "running" forever even though they'd actually succeeded, and a server restart could rewrite that entire successful history to "failed" (DOR-248, DOR-249)
+- Creating a scheduled task now shows its next run time right away, instead of only after refreshing the task list.
+- The usage item in the status bar now actually shows your Claude subscription usage, including a less common weekly usage window some accounts have. It updates at the end of every reply with how much of your rate-limit window you've used and when it resets. Before, it stayed empty unless you were about to hit a limit (DOR-99)
+- The Marketplace card in Settings > Extensions now says "Required" instead of showing an on/off switch that did nothing. If you flipped that dead switch in the past, Marketplace turns itself back on (DOR-122)
+- A brand-new install no longer prints a scary "initial scan failed" warning at startup. Having no Claude Code sessions yet is normal, and the log now treats it that way (DOR-247)
+
+**Sign-in, working directories, and setup**
+
+- Signing in after `dorkos auth enable` now works on a fresh install. Before, turning on login and then signing in failed with a server error unless you happened to set a secret environment variable by hand, and nothing told you it was needed. DorkOS now creates and remembers that secret for you the first time you enable login, so sign-in just works. This also unblocks exposing your instance over a tunnel, which requires login first (DOR-242)
+- DorkOS installed from npm or the one-liner now correctly sets up its built-in extensions (Marketplace, Linear, Hello World) on first run, and the Marketplace tab itself now loads instead of failing; the published package was silently missing the files it needed (DOR-245, DOR-256)
+- Fixed the default working directory sometimes pointing outside the allowed folder, which could block opening a terminal or starting a new session. The git status panel now falls back to your workspace's real default folder when none is picked, instead of wherever the server process happened to start (DOR-266)
+- Building DorkOS from a fresh checkout now works on the first try; a naming collision between the root project and the CLI package used to make the build trip over its own files (DOR-190)
+- The docs, the install script, and the website now all correctly say DorkOS requires Node.js 22 or later, instead of the outdated "18 or later" that printed a wall of warnings on install (DOR-246)
+- Opening the same terminal in a second window no longer silently kills it in the first; the first window now shows a note that the session moved. Reconnecting after being away also tells you when some output was dropped (DOR-257)
+- The status bar no longer shows a stray thin scrollbar under its fade edge, and the chat message list hides its scrollbar the standard way (DOR-164)
+
+**Agent messaging safety**
+
+- Agent-to-agent call budgets now actually stop the spending, not just the mailbox copy. Before, a message that had run out of budget was correctly refused delivery, but the target agent still ran a full, paid turn anyway. The budget check now happens once, up front: an out-of-budget message is dead-lettered, no agent turn starts, and a caller waiting on a reply is told immediately instead of timing out (DOR-260)
+- The "agent can start conversations" switch on a channel now controls every way an agent could message you, not just the built-in "notify me" action. Before, an agent could still reach you on Telegram or Slack by addressing the raw channel directly even with the switch off. Replying to something you sent first, and your task-done notifications, keep working exactly as before (DOR-239, DOR-277)
+- Installing a marketplace package can no longer plant a shortcut that reaches outside where it's installed. A package could previously ship a symlink that, once copied and synced, let it read or write files outside its own folder. Every symlink is now dropped while the package is being staged, and each one is noted in the install log. Real packages are unaffected; they're plain files and folders, never shortcuts (DOR-279)
+
+**Docs media pipeline**
+
+- Product videos and screenshots in the docs now fill their frame edge to edge; before, they showed a gap at the top and were cut off at the sides.
+- Video previews in the docs and release notes now show the finished widget instead of a loading skeleton, and a botched capture can no longer publish a set with missing files. The capture pipeline itself now starts and stops cleanly between runs instead of occasionally hanging or recording against the wrong server.
+
+### Security
+
+- Hardening pass on the parts of DorkOS that decide what a package can do and who can reach it: marketplace installs can no longer be tricked into running a command through a booby-trapped source link, your login secret and any chat-bot tokens are now kept private on disk and readable only by you, and the key that protects the tool endpoint is checked in a way that gives nothing away. Full write-up in `research/20260711_security-hardening-audit.md`.
+- Sign-in and sign-up now slow down after too many tries from the same place, so no one can sit there guessing your password. A few mistyped tries still work fine (DOR-281)
+- Cleared the last critical security warning in our test tooling; `npm audit` on the DorkOS source no longer reports any critical findings (DOR-168)
+
+## [0.45.1] - 2026-07-09
+
+> A same-day fix for widget interactions: clicks and form submits with bigger payloads no longer lose their data.
+
+### Fixed
+
+- Fixed widget clicks and form submits losing their data when the payload spanned multiple lines, both live and when a session reloads. A protocol change in 0.45.0 left the payload parser behind. (#185)
+
+## [0.45.0] - 2026-07-09
+
+> The right panel grows into a real workbench (terminal, file explorer, embedded browser), agents can answer with interactive widgets you can click, Codex and OpenCode join Claude Code in one cockpit, and DorkOS accounts replace tunnel passcodes with real login.
+
+### Added
+
+**Run Claude Code, Codex, and OpenCode side by side**
+
+- Run Codex and OpenCode agents next to Claude Code, all in one cockpit. Every session shows which runtime it belongs to, and the session list keeps working even when one runtime is down.
+- Switch runtimes right from the chat composer: pick Claude Code, Codex, or OpenCode for a new session, and DorkOS remembers the choice per session.
+- Connect a runtime account without leaving DorkOS: guided connect flows check what's installed, walk you through login, and store credentials as secure references (never plaintext).
+- DorkOS detects which runtimes are installed on your machine and offers the ones that are ready, so getting a second runtime running takes one click instead of a config file.
+- See what a session is costing you while it runs: token usage and cost now show in the status strip for every runtime that reports them.
+- Give each agent its own isolated workspace: DorkOS can create and manage git worktrees (or clones) with their own ports, so parallel agents never trample each other's checkout. Browse and manage them on the new Workspaces page.
+
+**Generative UI: widgets in chat and canvas**
+
+- Agents can render real, interactive widgets in chat instead of walls of text: stat cards, tables, lists, charts, progress bars, images, and forms. A malformed widget degrades to a small error card instead of breaking the chat.
+- Click a widget's button, pick from a list, or submit a form, and the agent picks up exactly where you left off: it sees what you did and answers in its next turn.
+- Four more widgets: a timeline for sequenced events, a checklist that reports back what you checked, a compare table that highlights the best option, and a star rating.
+- Three playful widgets: a mood face that blinks and emotes, a board for turn-based games like tic-tac-toe you can play right in chat, and a reveal that flips a coin, rolls a die, or shakes a magic 8-ball. Agents can also fire confetti on their own.
+- Widgets feel alive: they rise into place, numbers count up, progress bars fill, and charts draw themselves in. Turn on reduced motion and every widget appears instantly instead.
+- Skills can ship reusable widget templates with fill-in-the-blank placeholders, so agents don't hand-build the same widget JSON every time.
+- MCP servers can ship full interactive apps that render right in chat or pop out to the canvas (the MCP Apps standard, SEP-1865). The first app from a server always asks permission before it renders, and apps can never reach your files, cookies, or credentials.
+- View images and PDFs right in the agent canvas, with click-to-zoom on images.
+
+**The workbench (right panel)**
+
+- Run a real shell in the cockpit: open a Terminal tab in your session's working directory without leaving DorkOS (web only).
+- Open more than one terminal at once, with tabs to switch between them; your open terminals survive a page refresh.
+- Browse, open, and edit your project's files without leaving DorkOS: a file explorer with create, rename, delete, and drag-to-move, a code editor, a 3D model viewer, a CSV viewer, and image zoom, all in one multi-document canvas.
+- Open an embedded browser in the canvas with back, forward, reload, and an address bar, for any URL, local HTML file, or dev server.
+- Agents can drive the workbench for you: open a file, reveal the terminal, or navigate the embedded browser, on both Claude Code and Codex.
+- The right panel remembers which tab was open, per agent, so it's where you left it next time.
+
+**Your DorkOS account and cloud**
+
+- Create a DorkOS account at dorkos.ai with email and password, GitHub, or Google. It's your identity, separate from any one DorkOS install.
+- Link a self-hosted DorkOS to your account from Settings > DorkOS account (or `dorkos cloud login`): approve a short code at dorkos.ai/activate, then see and revoke linked instances anytime.
+- Turn on owner login for a self-hosted instance from Settings > Security. It's off by default; once on, DorkOS requires an owner account before anyone can reach it, with no email server needed.
+- Give MCP clients, scripts, and agents their own scoped API keys instead of one shared key (Settings > Security). Existing global keys migrate automatically.
+- Recover a lost password or create the owner account from the command line with `dorkos auth enable` and `dorkos auth reset-password`, no running server or email required.
+- Manage cloud accounts from a new admin console: view accounts, and let people self-serve delete or export their data, with every admin action logged.
+- Sign up for the DorkOS newsletter right from the site, with double opt-in confirmation.
+
+**Desktop app**
+
+- Open the desktop app straight to a page with `dorkos://` links.
+- A real Mac menu: Cmd+comma opens Settings, and there's a proper About window and Help links.
+- The desktop app checks for updates on its own, or you can check anytime; you choose when to restart.
+
+**Extensibility and platform**
+
+- Extensions can subscribe to live session, turn, tool, and relay events instead of polling, declared right in their manifest. Events never carry your conversation content.
+- The external MCP server (`/mcp`) now lists browsable resources for sessions, agents, and skills, and every tool says whether it's read-only, destructive, or reaches the network, so MCP clients can be careful without asking you first.
+- See and manage everything installed from the Marketplace, across global and per-agent installs, in one Manage Installed view; get a warning before an extension-bearing package affects every agent; and share a Marketplace search or filter as a URL.
+- Installed plugins now project their commands, skills, and hooks to Cursor and GitHub Copilot too (Gemini support isn't there yet), and re-sync automatically whenever you install or uninstall one.
+- Scheduled tasks now have real safety rails: they only fire in production, one leader owns dispatch, and a task can't fire twice for the same run.
+
+**Docs and legal**
+
+- Documentation guides now show the same real product screenshots and video clips as the marketing site.
+- Plain-English privacy, terms, and cookie pages.
+
+### Changed
+
+- Rewrote the npm README, root README, Mesh concepts guide, Generative UI guide, and MCP feature page in plain language, so you can tell what DorkOS does before you dig into the reference details.
+- Rewrote the dorkos.ai feature catalog and FAQ in plain language, and reframed the homepage around "You, multiplied": one thesis section, plainer problem cards, and a real origin story in the closing section.
+- Renamed the in-app marketplace from "Dork Hub" to "Marketplace."
+- The right panel's tab strip can no longer disappear out from under a panel.
+- Product-media recordings can now run in parallel (`capture:record --shards N`) instead of one long serial pass.
+- You can edit one canvas document while agents keep updating the others.
+- Relay (the message bus between agents) now cleans up after itself: expired messages, stuck deliveries, and abandoned mailboxes are swept on a schedule instead of piling up forever.
+
+### Removed
+
+- **Breaking:** Tunnel passcode protection is gone. Better Auth login is now the only way to protect DorkOS. If you expose DorkOS (start a tunnel or bind to a non-loopback address), you must turn on login and create an owner account first. Old passcode settings are dropped automatically on upgrade, not migrated.
+- `/flow` no longer ships inside the DorkOS repo. Install it from the Marketplace instead; it works the same way.
+
+### Fixed
+
+- Agent-to-agent messages and A2A tasks now report a real failure instead of a fake success when an agent's turn crashes or times out.
+- Fixed several ways relay messages could go missing: adapter start-up races, silent delivery failures, and Slack/Telegram formatting and reconnect issues.
+- Recover agents that go unreachable, and clean up properly when one is unregistered.
+- Ghost Codex sessions no longer show up under every agent; sessions without a working directory now belong to no project, and untitled sessions show "Untitled session" instead of a blank row.
+- `get_ui_state` and `control_ui` now tell agents the truth: current state instead of stale data, and a clear error instead of a fake success when no client is attached.
+- Generative UI widgets now tolerate the natural, slightly-off-spec values agents actually write (pixel numbers, percentages over 100, alternate wording) instead of failing outright.
+- Fixed widgets flickering between their loading skeleton and final content while a reply streams in, fixed gaps in chart lines on certain slopes, and fixed images not refreshing when their source changes.
+- Clicking a widget (like a tic-tac-toe square) now always gets a response from the agent, the board can't drift out of sync, and a widget locks the moment you play so a stray double-tap or a stale reload can't corrupt it.
+- Fixed the Terminal tab sometimes failing to reopen, and hardened the terminal's WebSocket connection with an origin allowlist.
+- Closing a terminal tab the instant it was created no longer leaks a hidden shell process: a terminal that finishes starting after its tab is gone is cleaned up (or kept for re-attach when grace applies).
+- Renaming or moving a file in the workbench no longer conflicts when two names collide, and file/folder deletes can no longer escape the project through a symlink.
+- The canvas file viewer now shows your latest edits right away, and a refresh button reloads the newest version from disk.
+- Every embedded webpage in the canvas now has real browser controls (back, forward, reload, address bar); before, agent-opened pages had none.
+- Fixed the desktop app opening a second window when launched twice, and fixed it forgetting its window position after a monitor change.
+- Fixed the desktop app showing a black window in development: its pages were blocked from talking to its own server.
+- Fixed CORS so the browser correctly sends credentials to allowed origins.
+- Marketplace pages (browse, package detail, install privacy) now show the site header and footer instead of dead-ending.
+- Fixed several marketplace install bugs: replaced an unsafe git-branch rollback with a safer file-scoped transaction, made package downloads concurrency-safe, and added toast feedback when an install or update fails.
+- Site fixes: no more stale claims or dead links, PostHog analytics only run after you consent, the feature-card layout no longer has gaps or cropped screenshots, and pages render correctly on first paint.
+- Connecting a runtime now selects and launches it right away, and Codex sessions now match Claude Code for models, MCP tools, and slash commands.
+- Linking a self-hosted instance to your DorkOS account no longer fails on device-link.
+
+### Security
+
+- Agent-to-agent messages now carry a verified sender identity, and DorkOS enforces that agents in different namespaces can't message each other unless you allow it.
+- The external MCP server's mesh tools now enforce the same directory boundaries as the HTTP API, so a caller can't register agents outside the allowed folders.
+
+## [0.44.0] - 2026-06-16
+
+### Added
+
+- Agent context (git status, UI state, queued-message notes) now travels alongside your message instead of inside it — your message reaches the agent exactly as written, and that context never shows up as if you had typed it (#258)
+- Agents no longer receive git status twice per turn, trimming redundant prompt context (DOR-132)
+- Surface session hook progress ("Running hook X…") in the chat status strip, clearing when the model resumes (DOR-125)
+- Tiered command/file palette ranking + alias provenance (DOR-119, DOR-120)
+- Render local slash-command output in chat (DOR-126)
+- Introduce Core Extensions tier (rename builtin → core)
+- Match slash commands by their aliases in the palette, and refresh the command
+  list when the agent changes it mid-session (DOR-108)
+- Persist a context-compaction row in chat ("Context compacted · N tokens ·
+  manual/auto") sourced from the durable transcript, plus a live "Compacting
+  context…" strip that resolves and an inline failed-compaction notice (DOR-118)
+
+### Changed
+
+### Fixed
+
+- Chat status strip was starved of live `system_status` events (the projected turn dropped them), so "Compacting context…" and hook progress only appeared after the durable history reload — now retained live (DOR-125, completes DOR-118)
+- Open the canvas when an agent pushes content (DOR-97, DOR-104)
+- Apply enable/disable live instead of requiring a page reload
+
+## [0.43.1] - 2026-06-13
+
+### Changed
+
+- Upgrade Claude Agent SDK to 0.3.177 (restores background-agent and MCP task
+  state on session resume)
+- Derive Obsidian model/subagent catalog from the SDK
+- Codify "one checkout, one writer" worktree strategy
+
+### Fixed
+
+- Give the marketing site a worktree-unique dev port
+- Dispatch slash commands as bare prompts so the CLI parses them (DOR-107)
+- Read SDK-persisted session titles, drop in-memory overlay (DOR-101)
+- Establish flex column root so tall canvas documents scroll (DOR-96)
+
+---
+
+## [0.43.0] - 2026-06-11
+
+### Added
+
+- Docs/ADRs + consolidated dead-code retirement (task #18 — spec complete)
+- Stateless EventLog-backed test-mode runtime — runtime-agnosticism proof (task #15)
+- Live-turn fidelity events + task/status-strip wiring (#19)
+- Restore chat send via trigger-only POST + durable /events (Phase 5)
+- Live sidebar + session list via global stream, drop poll (Phase 4)
+- Client streaming foundation — StreamManager, hydration, flag removal (Phase 3)
+- Runtime-agnostic session streaming — server foundation (Phases 1-2)
+- Integrate worktrees into spec execution and Linear loop
+- Batch 9 — browser acceptance PASS; implementation complete (DOR-73)
+- Batch 7 — resolve recovered cards on result + countdown-zero (DOR-73)
+- Batch 6 — Path-B sync routing + server cross-cutting tests (DOR-73)
+- Batch 5 — Path A fetch-on-mount, single-resolve verification, docs (DOR-73)
+- Batch 4b — Path B re-emit pending interactions on /stream connect (DOR-73)
+- Batch 4a — Path A GET /pending-interactions endpoint + transport (DOR-73)
+- Batch 3 — getPendingInteractions on the runtime abstraction (DOR-73)
+- Batch 2 — pending-interactions selector + idempotent client renderers (DOR-73)
+- Batch 1 — pending-interaction snapshots + shared remainingMs/DTO (DOR-73)
+- SDK-native breakdown via held-open prompt (A1)
+- Runtime auto-mode guard + plain-language confirm copy (#253 follow-ups)
+- Adopt auto as a model-gated permission mode (#253 Phase 2)
+- Persist per-session settings; allow instant live bypass
+- Stream subagent text into the background-task block
+- Adopt SDK 0.3.168 native binary, refusal & error surfacing
+
+### Changed
+
+- Triage-type states are never dispatchable
+- Evidence-on-close convention — proof, not claims
+- Adopt Linear Method conventions + dispatch policy
+- Regenerate API docs for GET /pending-interactions (DOR-73)
+- Batch 8 — client cross-cutting tests (DOR-73)
+- Document Composio CLI as a fallback Linear access path
+- Drop orphaned makeUserPrompt
+- Guard the generated OpenAPI spec against schema drift
+- Correct Claude Code install guidance for the SDK 0.3.168 native binary
+- Reconcile developer guides with the past week's changes
+- Remove the no-op autoMode toggle and disableAutoMode plumbing (#253 Phase 1)
+- Relocate the sdk-event-mapper streaming tests, drop dead mock
+- Group claude-code/ into domain subdirs
+- Split sdk-event-mapper into focused per-category mappers
+- Document granular npm token for 2FA-bypass publish
+
+### Fixed
+
+- Follow-the-rekey continuity (NF-2) + rail row resolution (NF-3) + cross-client pins (task #17)
+- F2 identity-seed rekey + test-mode e2e rescue — acceptance re-run fixes (task #16)
+- Client quality pass — one /events connection, trigger latch, honest liveness (task #6 batch B)
+- Fleet-wide session discovery + server quality pass (task #6 batch A)
+- Transport seam — embedded send, real stream methods, baseUrl-aware StreamManager (CLI-C2)
+- Sidebar liveness via session_status fanout + hide SDK resume-bootstrap messages
+- First-turn id split-brain + interaction-cancel ghosts (acceptance F1/F2/F4/F5)
+- Repair command drift, harden checks, probe port collisions
+- Harden resume protocol + live approvals (review blockers)
+- Report the last request's window, not the turn's cumulative usage
+- Report accurate context-window usage in the status bar
+- Prune orphan API-reference MDX and repair the docs CI guard
+- Don't mutate session mode in the auto-mode guard (self-review)
+- Restore streamed thinking on Opus 4.8/4.7
+- Harden answer formatting and extract the answer summary
+- Stack multi-question answers and remove answered-row flicker
+- Deliver structured-question answers to the agent and persist them in the UI
+- Address review — reconcile validation docs, echo all settings in PATCH
+- Match agent display name in fleet-page search
+- Sort agent lists by resolved display name
+
+---
+
+## [0.42.0] - 2026-06-05
+
+> Memory recall transparency and per-session runtime ownership — see which memory files shaped each reply, gate capabilities per session, and upgrade SDK runtimes with a dedicated workflow.
+
+### Added
+
+- Surface SDK memory recall events in assistant bubbles
+- Render calm status copy from system_status.status
+- Enhance SDK event handling with memory recall and terminal reason support
+- Surface SDK terminal_reason as informational chip
+- Chat: Memory recall indicator — see which memory files shaped each response
+- Sunset deferred items from spec 244 prework
+- Per-session runtime ownership + capability gating + runtime-neutral relay
+- Add /app:runtime-upgrade command for strategic SDK upgrades
+- Add new shared skills for Linear workflows
+
+### Changed
+
+- Polish memory recall indicator per code review
+- Move shared skills to .agents/skills/ with symlinks
+- Add `pnpm dev:dogfood` to run the dev preview and built CLI cockpit side by side
+
+### Fixed
+
+- Downgrade fumadocs-openapi 10.7.1 → 10.6.8 to fix api-doc generation
+- Address code review on spec 244 implementation
+
+## [0.41.0] - 2026-04-15
+
+> Plugin installation polish and chat input reliability — responsive dialogs, personality picker enhancements, and critical fixes for agent discovery and server stability.
+
+### Added
+
+- Enhance plugin activation and refresh mechanism
+- Responsive install dialog and agent picker
+- Enhance PersonalityPicker and onboarding flow
+- Add PersonalityPicker showcase and integrate into FeaturesPage
+- Introduce new chat input components and enhance functionality
+
+### Changed
+
+- Enhance RightPanelContainer styling and transitions
+- Streamline imports and enhance ChatInput styling
+
+### Fixed
+
+- Resolve PluginSource objects to giget-compatible strings
+- Eliminate spurious 404 and 400 errors on agents page load
+- Prevent unhandled errors from crashing Express process
+- Prevent AgentPicker dropdown clipping in install dialog
+- Show all registered agents in install dialog
+- Update project management copy for clarity
+- Fix playground registry slug and agent management copy
+- Improve agent management action descriptions for clarity
+
+## [0.40.0] - 2026-04-14
+
+> Agent personality and sidebar polish — verbosity-based traits, lifecycle management actions, scoped marketplace installs, and refined animations across the Agent Hub, sidebar, and session components.
+
+### Added
+
+- Add agent lifecycle management actions and split navigation
+- Enhance sidebar functionality and UI components
+- Add polished avatar picker with micro-interactions and transitions
+- Enhance agent trait management and UI components
+- Update personality traits from tone-based to verbosity-based system
+- Improve PersonalityRadar component for light/dark mode adaptability
+- Implement AgentChipContextMenu and enhance ShortcutChips for agent actions
+- Update PersonalityRadar component for improved light/dark mode support
+- Add nebula theme utilities and PresetPill component
+- Polish AgentListItem expand/collapse with spring animations and loading states
+- Implement context menu and compact/full session row components
+- Enhance AgentHub with loading skeleton and animation transitions
+- Add scoped installs and skills-first Toolkit tab
+- Add dev tools dropdown menu with unified TanStack devtools panel
+
+### Changed
+
+- Update agent management actions and enhance UI components
+- Streamline RightPanelHeader and enhance AgentHubHero UI
+- Replace hardcoded default traits with DEFAULT_TRAITS constant
+- Remove 'active' status from session indicators and update related tests
+- Replace SessionItem with SessionRow components in sidebar and features sections
+- Enhance AgentListItem animation and expand/collapse logic
+- Fix stale JSDoc referencing removed Sessions drill-down
+- Simplify AgentListItem interactions and visual container
+
+### Fixed
+
+- Add success toasts for deny/unblock actions
+- Address code review findings in AgentListItem
+- Wire route projectPath param and address review findings
+
+## [0.39.0] - 2026-04-12
+
+> Agent Hub reimagined — immersive hero design, Cosmic Nebula personality visualization, shell-level right panel infrastructure, and smooth panel animations across the platform.
+
+### Added
+
+- Animate right panel open/close and unify sidebar transition timing
+- Redesign Agent Hub with immersive hero, inline pickers, and shared panel header
+- Add Cosmic Nebula visualization to personality radar and onboarding
+- Redesign Agent Hub with Personality Theater and 3-tab layout
+- Add unified Agent Hub right-panel replacing AgentDialog modal
+- Add shell-level right panel infrastructure with canvas migration
+- Add displayName field to decouple display label from slug
+
+### Changed
+
+- Remove orphaned session.canvas slot and add right-panel to ExtensionPointId
+- Update extension slot references to include right-panel
+- Merge duplicate imports from @dorkos/marketplace
+
+### Fixed
+
+- Remove dead onClose prop from CanvasHeader and unused TabBar import
+- Sync animRef state when animated=false and rename stale testid
+- Register agent-hub right-panel contribution and fix 13 broken tests
+- Merge DorkOS sidecar in server aggregation and unify shared logic
+
+## [0.38.0] - 2026-04-11
+
+> Agent creation polish and chat input reliability — new session navigation after agent creation, improved directory picker, and three fixes that ensure the textarea is always focused and typeable after switching agents.
+
+### Added
+
+- Navigate to new session after creating an agent
+- Add PathInput component, improve ConfigureStep layout, allow existing dirs
+
+### Fixed
+
+- Include session param in setDir navigation to fix chat input
+- Ensure session param on agent switch so textarea gets focus
+- Resolve textarea focus loss after interactive mode exit
+
+## [0.37.0] - 2026-04-11
+
+> Mesh discovery and agent creation — pre-scan landing states, 7 new AI agent strategies, an instant-advance creation wizard, and a unified /agents page streamline onboarding and daily management.
+
+### Added
+
+- Enhance DiscoveryView with pre-scan state and illustration
+- Add discovery strategies for 7 new AI coding agents
+- Redesign dialog as instant-advance wizard
+- Consolidate mesh panel dialog into /agents page
+- Add marketplace-dev skill for package authoring
+- Redesign Marketplace with trust signals, animations, and progressive disclosure
+
+### Changed
+
+- Reconcile 8 guides with recent mesh, tool-approval, state, and API changes
+- Use ResponsiveDialog, extract sub-components, optimize for mobile
+
+### Fixed
+
+- Use actual emoji character instead of escaped surrogate pair
+- Accept template name in handleTemplateSelect, remove unused prop
+- Preserve search params when switching view tabs
+- Fix sidebar add-agent buttons not opening creation dialog
+
+## [0.36.0] - 2026-04-11
+
+> Agent sidebar redesign — stable alphabetical ordering, pinning, context menus, and activity badges replace the old LRU-shuffling 8-agent cap, alongside a tool approval overhaul and SDK-driven model discovery.
+
+### Added
+
+- Redesign agent list with stable ordering, pinning, and context menu
+- Unify dashboard and session sidebars with expandable agents
+- Comprehensive tool approval system overhaul
+- SDK-driven model discovery with disk cache, warm-up, and universal schema
+- Add opensrc skill for fetching dependency source code
+- Channels tab functionality — pause, test, activity metadata
+- Channels tab visual polish — brand icons, progressive disclosure, humanized copy
+
+### Changed
+
+- Use bg-secondary for selected model card
+- Use ResponsivePopover for model config, fix card width
+
+### Fixed
+
+- Synthesize DorkOS manifest from CC plugin.json for CC-only packages
+- Prevent popover drift during status bar content changes
+- Preserve model selection during effort/mode changes
+- Prevent model popover overflow and blank state on config change
+- Migrate stagePackage to fetchPackage dispatcher for relative-path sources
+- Prevent stale ToolApproval card after input-zone approval
+- Align ModelConfigPopover with Design B mockup
+- Filter internal adapters from channels tab and inline setup wizard
+
+## [0.35.0] - 2026-04-09
+
+> Release tooling and configuration robustness — schema validation gates, migration automation, and marketplace stability converge to prevent upgrade breakage.
+
+### Added
+
+- `/system:release` now detects config schema changes without a paired migration and offers to scaffold one inline before the tag is cut. Catches the class of "shipped a schema change, forgot the migration, broke upgrades for existing users" bugs before they reach npm.
+- New `adding-config-fields` skill walks contributors through the full Zod → migration → docs → test lifecycle when adding, renaming, removing, or retyping a user-config field. Model-invoked — activates automatically when editing `UserConfigSchema`.
+- Agent discovery guide now distinguishes marketplace-installed agents (in `~/.dork/{plugins,agents}`) from agents discovered anywhere on disk via the mesh scanner. The two-registry split is no longer implicit — `GET /api/marketplace/installed` and `GET /api/agents` answer different questions and the docs now say so plainly.
+- New `context-isolator` subagent for running data-heavy read-and-summarize operations (release analysis, schema-diff classification, large searches) in an isolated context window. Ported from a sibling project and wired into `/system:release` Phase 3, which was silently missing the agent before.
+
+### Changed
+
+- Persistent user config now sources its migration `projectVersion` from `SERVER_VERSION` automatically — no more hardcoded stub. Migration keys tie to real release boundaries for the first time, so future schema migrations actually fire on upgrade.
+- Corrupt-config recovery path now preserves the migration chain. Previously, users who hit corrupt-recovery on any prior build would silently stop running migrations on subsequent upgrades — the fallback Conf instance was missing `projectVersion` and `migrations`. Both the primary and recovery branches now use a single shared options object.
+- Schema migration process is now documented first-class in `contributing/configuration.md` with the full `conf` `projectVersion` model, append-only rule, step-by-step procedure, real examples, and anti-patterns. Previously covered in one sentence.
+- CI/CD: All JavaScript-based GitHub Actions workflows opt into the Node 24 runtime ahead of GitHub's September 2026 Node 20 deprecation. Preempts the forced-upgrade disruption.
+
+### Fixed
+
+- The Marketplace now loads correctly. Previously it showed zero packages because the default community source URL pointed at `github.com/dorkos/marketplace` (an org that doesn't exist — the real repo is at `dork-labs/marketplace`) AND the upstream parser rejected the real Anthropic `claude-plugins-official` catalog entirely because of a strict reserved-name check and a kebab-case regex that couldn't handle the `wordpress.com` plugin. Existing users' `~/.dork/marketplaces.json` files get auto-migrated to the correct URL on first read — no manual editing required. End-to-end verified: 8 plugins from the Dork Labs community marketplace + 126 from the Anthropic catalog now load successfully.
+
+---
+
+## [0.34.1] - 2026-04-09
+
+> Emergency patch — unblocks `npm install -g dorkos` / `npm update -g dorkos` and restores the Docker image publish pipeline after the v0.34.0 release shipped broken.
+
+### Fixed
+
+- Fix `npm install -g dorkos` and `npm update -g dorkos` failing with `E404 '@dorkos/marketplace@0.0.0' is not in this registry`. The v0.34.0 package mistakenly listed a private workspace package as a runtime dependency — v0.34.1 removes it from the published tarball entirely. The marketplace validator and install commands are unaffected because the code was already bundled into the CLI binary at build time, so nothing is actually missing from the runtime. If you hit the 404 on v0.34.0, run `npm install -g dorkos@0.34.1` to recover.
+- Restore the Docker image publish pipeline. The v0.34.0 release failed CI because of a cross-environment TypeScript resolution drift in the server build, which blocked `ghcr.io/dork-labs/dorkos:v0.34.0` from being published. v0.34.1 pins `@types/node` deterministically so CI reproduces the local tsc behavior exactly.
+
+---
+
+## [0.34.0] - 2026-04-08
+
+> The marketplace lands — install pipeline, in-app Marketplace, public web catalog, and strict Claude Code superset format all ship together, plus external MCP agent access and a redesigned agent Settings Tools tab.
+
+### Changed
+
+- **Marketplace**: Converted `marketplace.json` to a **strict superset** of the Claude Code marketplace format. Schema now supports 5 source types (relative-path, github, url, git-subdir, npm), `owner` / `metadata` / `author` object shapes, `.claude-plugin/` file location, and a sidecar `dorkos.json` for DorkOS-specific extensions. The `dorkos-community/marketplace` repo is renamed to `dork-labs/marketplace` and uses the same-repo monorepo layout. Plugin runtime activation now goes through the Claude Agent SDK `options.plugins` API so DorkOS owns install and the SDK owns runtime. Empirically verified against `claude plugin validate` (CC 2.1.92). See spec `marketplace-05-claude-code-format-superset` and ADRs 0236–0239. (`marketplace-05-claude-code-format-superset`)
+
+### Added
+
+- Unify validate CLI + add source reachability check
+- Add Settings page and sections to the dev playground
+- URL deep links for Settings, Agent, Tasks, Relay, Mesh dialogs
+- CLI validators, telemetry, seed fixture, docs (marketplace-05 Batches 5-8)
+- Strict CC superset — schema, install, runtime, site (marketplace-05 Batches 1-4)
+- Add MCP server surface (marketplace-05-agent-installer) + in-flight WIP
+- **Marketplace as MCP server.** The DorkOS marketplace is now exposed as an MCP server at `/mcp`, alongside the existing DorkOS tools. Any AI agent that speaks MCP — Claude Code, Cursor, Codex, Cline, ChatGPT, Gemini — can search the marketplace, get package details, install packages (with user confirmation), and scaffold new packages on the fly. See `contributing/external-agent-marketplace-access.md` for setup instructions. (`marketplace-05-agent-installer`)
+- **Personal marketplace.** A per-user local marketplace at `~/.dork/personal-marketplace/` is now created on first server boot. Agents can scaffold new packages here via `marketplace_create_package` without leaving their tool of choice. (`marketplace-05-agent-installer`)
+- **8 new MCP tools:** `marketplace_search`, `marketplace_get`, `marketplace_list_marketplaces`, `marketplace_list_installed`, `marketplace_recommend`, `marketplace_install`, `marketplace_uninstall`, `marketplace_create_package`. (`marketplace-05-agent-installer`)
+- Add `/marketplace` browse page on dorkos.ai with hourly registry refresh from `dorkos-community/marketplace` (`marketplace-04-web-and-registry`)
+- Add per-package detail pages with README rendering, install instructions, related packages, and OG images (`marketplace-04-web-and-registry`)
+- Add `/marketplace/privacy` page documenting the install telemetry contract (`marketplace-04-web-and-registry`)
+- Add opt-in install telemetry endpoint (`/api/telemetry/install`) backed by Neon Postgres + Drizzle ORM as the single source of truth (`marketplace-04-web-and-registry`)
+- Add telemetry consent banner in the in-product Marketplace (off by default) (`marketplace-04-web-and-registry`)
+- Add `dorkos package validate-marketplace` and `dorkos package validate-remote` CLI commands for the dorkos-community submission workflow (`marketplace-04-web-and-registry`)
+- Include all marketplace packages in `sitemap.xml` and `llms.txt` (`marketplace-04-web-and-registry`)
+- Ship Marketplace browse UI as built-in extension (marketplace-03-extension)
+- Add Marketplace — in-app marketplace browse experience for discovering and installing agents, plugins, skill packs, and adapters without leaving the app, shipped as the built-in `@dorkos-builtin/marketplace` extension (`marketplace-03-extension`)
+- Add featured agents rail and type filters (agents, plugins, skills, adapters) with debounced search across the catalog (`marketplace-03-extension`)
+- Add package detail sheet with rendered README and permission preview (`marketplace-03-extension`)
+- Add install confirmation dialog with blocking conflict detection before any write (`marketplace-03-extension`)
+- Add installed packages view for updating and uninstalling from the Hub (`marketplace-03-extension`)
+- Add marketplace sources management for adding and removing git registries from the Hub (`marketplace-03-extension`)
+- Add "From Marketplace" tab to TemplatePicker so agent creation can pull directly from marketplace agents (`marketplace-03-extension`)
+- Complete install/uninstall/update pipeline (Batches 4-9 of marketplace-02-install)
+- Add `dorkos install <name>` to install plugins, agents, skill packs, and adapters from configured marketplaces — atomic transactions with rollback on failure and permission preview before install (`marketplace-02-install`)
+- Add `dorkos uninstall <name>` with `--purge` flag for full data removal (`marketplace-02-install`)
+- Add `dorkos update [<name>]` advisory update notifications, with `--apply` to perform upgrades (`marketplace-02-install`)
+- Add `dorkos marketplace add/remove/list/refresh` to manage marketplace sources (`marketplace-02-install`)
+- Add `dorkos cache list/prune/clear` to manage the local marketplace cache (`marketplace-02-install`)
+- Add `/api/marketplace/*` HTTP endpoints for sources, packages, install/uninstall/update, and cache (`marketplace-02-install`)
+- Implement foundation package, CLI commands, and kind field addendum
+- Show MCP servers in Tools tab
+- Add external MCP access controls — toggle, API key, rate limiting, and setup instructions
+- Use official brand logos for agent runtimes
+- Redesign Tools tab with tool inventories, init errors, and override counts
+- Make Settings, Tasks, Relay, Mesh, and Agent dialogs URL-addressable via search params — share links like `?settings=tools` to deep-link teammates to a specific dialog and tab; browser back closes dialogs and reload preserves dialog state. Note: deep links containing `?agentPath=...` include your local project path.
+- Add `@dorkos/marketplace` package with schemas, parser, validator, scanner, and scaffolder (spec 1 of 5)
+- Add `dorkos package init <name>` CLI command for scaffolding new marketplace packages
+- Add `dorkos package validate [path]` CLI command for validating package manifests
+- Add optional `kind` field to `SkillFrontmatterSchema` (addendum to ADR-0220)
+
+### Changed (other)
+
+- Extract `TabbedDialog` widget primitive — `SettingsDialog` and `AgentDialog` now consume it as thin declarative wrappers (491 → 54 lines and 177 → 75 lines respectively)
+- Split four oversized dialog files under 300 lines
+- Reconcile developer guides for marketplace-init branch
+- Restructure dialog tabs — replace Capabilities with Tools
+- Redesign PersonalityTab with extracted TraitSliders and response mode
+- Redesign IdentityTab with hero preview and extract useDebouncedInput
+- Move warning to top, multi-line endpoint, Remove on generated key, dork*mcp* prefix
+- Redesign ExternalMcpCard with sectioned layout and better visual hierarchy
+- Nest scheduler config inside Tasks tool group expansion
+
+### Fixed
+
+- Address code review findings on dialog URL deep links
+- Convert RateLimitSection to SwitchSettingRow
+- Address code review feedback from 413d74d3
+- Close 4 critical install-pipeline gaps from Session 2 review
+- Close code-review gaps from 6fdd065c
+- Repair .gtrconfig format and assign unique dev ports
+- Add error handling for API key lifecycle and restart hint for rate limits
+
+---
+
+## [0.33.0] - 2026-04-05
+
+> Intelligent channel binding and dependency awareness — adapters become channels, runtime requirements surface during onboarding, and system configuration becomes discoverable.
+
+### Added
+
+- Rename relay adapters to channels, add adapter runtime cards and agent-first channel binding
+- Enhance ServerTab with subsystem configuration and relocated adapter settings
+- Add system requirements check to onboarding with adapter dependency checking
+- Add Remote Access shortcut to settings sidebar
+
+### Changed
+
+- Add agent runtime landscape research covering Codex, ACP, Pi Agent, Gemini CLI, and Aider
+- Add guidelines for capturing design decisions in visual companion sessions
+- Reconcile guides with v0.32.0 changes
+
+---
+
+## [0.32.0] - 2026-04-04
+
+> Chat refinement and architectural cleanup — interrupt running queries with Escape, see agent activity at a glance with colored borders, and benefit from a cleaner, better-organized codebase under the hood.
+
+### Added
+
+- Add server-side query interrupt and Escape-to-stop
+- Replace activity dot with colored border indicator
+
+### Changed
+
+- Add pre-commit directory size check for codebase hygiene
+- Organize oversized directories and expand dir-size allowlist
+- Organize ui/ into domain subdirectories
+- Decompose ChatPanel and reduce ChatInputContainer prop surface
+- Remove unused Transport import and add onStop prop to ChatInput
+
+### Fixed
+
+- Add horizontal padding to chat scroll area for improved layout
+
+---
+
+## [0.31.0] - 2026-04-03
+
+> Refining agent UX through redesigns and standards adoption — clearer palettes, transparent context usage, and portable skill definitions bring polish and portability to the operator platform.
+
+### Added
+
+- Redesign CommandPalette and FilePalette for clarity and reusability
+- Add cache hit rate and usage status bar items, refactor context to per-message
+- Redesign tool/thinking blocks for clarity and visual cohesion
+- Redesign onboarding copy and project discovery UX
+- Adopt SKILL.md file-first architecture for task system
+- Add @dorkos/skills package implementing SKILL.md open standard
+- Introduce maintaining-dev-playground skill documentation
+- Allow disabling tunnel passcode for open or trusted environments
+
+### Fixed
+
+- Include legacy .claude/commands/ in command list after SDK session starts
+- Make SDK command and subagent caches per-cwd instead of global
+- Resolve all lint warnings across server, client, and CLI
+- Serve SPA on tunnel requests so PasscodeGate renders instead of raw JSON
+
+---
+
+## [0.30.0] - 2026-03-31
+
+> Discovery and documentation refinement — unified scan actions, onboarding polish, and a full contributing guide refresh bring consistency to both the agent discovery experience and developer documentation.
+
+### Added
+
+- Unify Skip/Deny actions and add scan options to onboarding
+
+### Changed
+
+- Update contributing guides, external docs, and AGENTS.md
+- Fix review issues — FSD compliance, DRY extractions, resetActed
+- Unify scan UI — fix DiscoveryView parity, extract shared utilities
+- Complete Pulse→Tasks terminology migration and improve docs infrastructure
+- Update CLI README and config guide for Tasks rename and new features
+
+### Fixed
+
+- Add resetActed to handleRescan dependency array
+- Surface existing agents during onboarding scan
+- Update SettingsDialog tests after Remote indicator relocation
+
+---
+
+## [0.29.0] - 2026-03-30
+
+> Agent fleet management and UI refinement — DataTable-powered agent lists, command palette agent settings, breadcrumb navigation, and a streamlined dashboard bring polish and power to the operator experience.
+
+### Added
+
+- Enhance command palette with agent settings dialog
+- Convert agents list to DataTable with responsive column hiding
+- Auto-focus prompt textarea on session change
+- Add Table primitives, DataTable, and Dev Playground showcase
+- Add AgentIdentity to shortcut chips row
+- Add dedicated Onboarding page to dev playground
+
+### Changed
+
+- Consolidate agent identity to chat input, add breadcrumb nav
+- Reorganize Dev Playground sidebar into domain-oriented groups
+- Relocate Remote indicator from status bar to sidebar footer
+- Streamline dashboard — remove Active Sessions, fix status alignment, unify activity feed
+- Polish onboarding flow UI and extract OnboardingNavBar
+
+### Fixed
+
+- Remove unused AgentVisual type import from AppShell
+- Remote-access promo opens TunnelDialog directly
+- Align sidebar back chevron with content below
+- Use dynamic agent name in chat input placeholder
+- Improve dev playground overview card layout
+- Expand tilde paths in boundary validation and add startup diagnostics
+- Cast spawn proc through EventEmitter to fix CI type resolution
+- Remove unnecessary ChildProcess cast that fails in CI Node 20
+
+---
+
+## [0.28.0] - 2026-03-30
+
+> Tasks redesign, DorkBot system agent, and the extensibility platform matures — file-based task definitions, manifest-driven settings, extension hooks, session forking, and MCP elicitation bring DorkOS closer to a fully autonomous coordination layer.
+
+### Added
+
+- Redesign Tasks system — rename Pulse→Tasks, add file-based definitions, and make scheduling optional for on-demand tasks
+- Replace Damon with DorkBot as the sole system agent
+- Add MCP elicitation UI for auth flows and form inputs
+- Add session forking via SDK forkSession() and session rename via renameSession()
+- Add server-side extension hooks with encrypted secrets and Linear reference extension
+- Add manifest-driven settings forms with placeholder hints and grouped sections
+- Auto-generate settings UI from extension manifests
+- Add plugin hot-reload via reloadPlugins()
+- Show available subagents via supportedAgents()
+- Evolve linear-issues into Loop-aware dashboard
+- Add commands for product management and issue handling
+- Add 5-level error handling hierarchy with Dev Playground showcase
+- Display context usage meter with category breakdown tooltip for token visibility
+- Decouple chat state from React lifecycle into session-keyed Zustand store
+- Add openBlank() to task template dialog store
+- Fix prompt suggestions, add api_retry events, and effort level controls
+- Add spec manifest management system
+
+### Changed
+
+- Extract PageHeader for consistent top-level route headers
+- Extract SessionStore, RuntimeCache, and constants from ClaudeCodeRuntime
+- Extract extension-manager into focused collaborators
+- Extract setting field renderers to separate file
+- Document getSubagents() across architecture, API, and data-fetching guides
+- Update docs and templates for auto-generated settings tabs
+
+### Fixed
+
+- Eliminate setState-during-render errors on session and tasks pages
+- Resolve all 15 client lint warnings
+- Update stale test mocks after Tasks rename (Pulse→Tasks)
+- Tighten activity filter bar chip sizing and spacing
+- Exclude archived issues and fix query complexity in Linear queries
+- Unify dashboard section styling for visual consistency
+- Add padding to collapsible settings groups and vertical layout for wide controls
+- Expose React globally for extension runtime and fix Linear example import
+- Clean up lint warnings and fix site build frontmatter
+- Fork UX feedback, tests, and tooltip accessibility
+- Spread process.env in SDK env option to prevent code 127
+- Load local settings so project-level plugin MCP servers are discovered
+
+---
+
+## [0.27.0] - 2026-03-28
+
+> Canvas as a first-class surface — persistent, toggleable, and mobile-ready.
+
+### Added
+
+- Add canvas toggle button in session header with `Cmd+.` keyboard shortcut and command palette action
+- Persist canvas state (open/closed, content, panel width) per session in localStorage — survives page refreshes and session switches
+- Show dot indicator on canvas toggle when content is available but panel is closed
+
+### Changed
+
+- Remove "New Session" and "Schedule" buttons from dashboard header to reduce clutter
+
+### Fixed
+
+- Match canvas background to sidebar color (`bg-sidebar`) for visual consistency
+- Replace chunky 6px resize handle with a subtle 1px line and 8px hit target
+- Render canvas as a full-width Sheet on mobile instead of an unusable side panel
+
+---
+
+## [0.26.0] - 2026-03-28
+
+> Network resilience and operator onboarding — faster SSE streams with custom headers and a welcoming first-time experience.
+
+### Added
+
+- Upgrade to fetch-based SSE transport with custom headers, HTTP/2 multiplexing, and retry backoff for more reliable streaming
+- Consolidate all SSE connections into a unified /api/events stream for simpler client integration and improved sync reliability
+- Add splash screen with onboarding flow and command palette quick-launch entry for faster agent discovery
+
+### Changed
+
+- Update architecture guide to reflect fetch-based SSE transport implementation
+
+---
+
+## [0.25.0] - 2026-03-27
+
+> Extensibility platform and composable filtering — agents can now build and install extensions, and every list surface gets URL-synced, filterable, sortable data views.
+
+### Added
+
+- Build extensions that agents install, configure, and run — the extensibility platform spans agent UI control, extension point registry, extension system core, and agent-built extensions (Phases 1–4)
+- Filter and sort agent lists with a composable filter system — text search, enum pills, date ranges, boolean toggles, and URL-synced state
+- Redesign Remote Access dialog with progressive disclosure
+- Show the default agent in the dashboard sidebar
+- Add AgentAvatar and AgentIdentity primitives for consistent agent visual identity
+- Add /adr:review command for ADR lifecycle management
+- Absorb superpowers plugin into first-party skills and agents
+- Add dedicated Feature Promos page to dev playground
+
+### Changed
+
+- Migrate agents list to the composable filter system
+- Consolidate agent display to use shared AgentAvatar primitive
+- Simplify AgentNode, extract sidebar hooks, update session list
+- Unify dev playground with PAGE_CONFIG and shared layout
+- Extract resolveAgentVisual for consistent agent visual identity
+- Update README screenshot to dark mode with real chat session
+- Reconcile contributing and doc guides for extensions and FilterBar
+
+### Fixed
+
+- Wire UI tools to session and align sidebar tab schema
+- Harden extension system security and fix flaky tests
+- Display human-readable labels for dateRange, boolean, and numericRange filters
+- Fix dynamic enum deserialize and color dot rendering in FilterBar
+- Resolve workspace packages in electron-vite renderer build
+- Alias @dorkos/shared subpaths to source for CI compat
+- Add better-sqlite3 as direct dependency for packaging
+- Update SchedulesView tests to match rewritten component
+- Provide TanStack Router context in DevPlayground
+
+---
+
+## [0.24.0] - 2026-03-25
+
+> Desktop app, tunnel security, and resilience — native macOS distribution, passcode-gated remote access, and SSE auto-reconnect harden the operator experience.
+
+### Added
+
+- Add 6-digit passcode gate for remote access
+- Add Electron desktop app for native macOS distribution
+- Add status bar inline management with scroll and configure popover
+- Generalize subagent system to background task model with stopTask support
+- Add rotating placeholder hints in chat input
+- Move version display from status bar to sidebar footer
+- Add declarative feature promo system with contextual discovery
+- Add SSE resilience infrastructure with connection health UI
+- Display friendly tool names in ToolApproval
+- Add relay outbound awareness for agent-initiated messaging
+
+### Changed
+
+- Remove unnecessary border from SidebarFooterBar component
+- Reconcile harness inventory counts with actual files
+
+### Fixed
+
+- Target arm64, externalize manifest, skip codesign discovery
+- Remove postinstall electron-rebuild, add dual-mode server spawning
+- Exclude desktop from default dev, approve electron builds
+
+---
+
+## [0.23.0] - 2026-03-23
+
+> Task visibility and execution awareness — progress bars, dependencies, and animated background indicators bring your agent fleet to life.
+
+### Added
+
+- View task dependencies and progress at a glance — TaskListPanel now displays real-time progress bars, dependency-aware sorting (blocked tasks dimmed), and click-to-expand detail view with description, owner, elapsed time, and dependency links
+- See running background agents with animated indicator showing active subagent execution
+- Poll tasks automatically when background refresh is enabled — subagent todo updates appear without manual reload
+
+### Changed
+
+- Extract shared `useTabVisibility` hook for consistent tab-aware polling across features
+- Decompose TaskListPanel into focused sub-components (TaskProgressHeader, TaskRow, TaskDetail, TaskActiveForm)
+
+### Fixed
+
+- Fix indicator bar exit animation and always-render pattern
+- Fix Rules of Hooks violation in TaskListPanel where useCallback was called after conditional return
+
+---
+
+## [0.22.0] - 2026-03-23
+
+> TodoWrite task system, speculative sessions, and brand icon refresh
+
+### Added
+
+- Add TodoWrite support to task system — recognize the SDK's new batch todo tool with snapshot semantics so tasks appear in the TaskListPanel during streaming and on reload
+- Eliminate null sessionId with speculative UUID pattern — sessions get a client-generated ID immediately, avoiding null guards and 404s during the first message
+- Replace emoji adapter icons with real brand SVG logos for Slack, Telegram, and other adapters
+
+### Fixed
+
+- Preserve session state across SDK remaps and inline errors — model, permission mode, and cost survive session ID transitions and tool validation failures
+
+---
+
+## [0.21.0] - 2026-03-23
+
+> Agent creation pipeline, fleet management surface, and A2A gateway
+
+### Added
+
+- Create agents from a guided dialog with name validation, directory resolution, personality sliders, and workspace template picker
+- Overhaul tool call display with MCP server parsing, streaming state tracking, and classified output rendering
+- Redesign agents page as a fleet management surface with health monitoring, filtering, and session launch
+- Improve Slack adapter with 8 enhancements including message threading, reaction management, and format fidelity
+- Implement A2A external gateway for cross-platform agent interoperability
+- Improve ConnectionsTab UX with decomposed components and actionable deep-links to adapter setup
+- Adopt TanStack Form for submit-lifecycle forms with validation and error handling
+- Add Telegram typing indicator during agent processing for real-time feedback
+
+### Fixed
+
+- Resolve architectural debt from agent creation review — consolidate duplicated route/service logic, fix FSD cross-feature import, add auth token redaction
+- Restore result border separator and clean up OutputRenderer imports
+- Make dashboard responsive on mobile with proper viewport handling
+- Fix Chat SDK HTML rendering, port splitMessage utility, and deprecate legacy adapter
+- Update server integration tests for new validation and convention-files patterns
+
+---
+
+## [0.20.0] - 2026-03-22
+
+> Adapter ecosystem expansion — Chat SDK Telegram integration, A2A gateway spec, and agent personality conventions
+
+### Added
+
+- Improve adapter binding validation, routing, and instance-aware codecs
+- Add A2A external gateway spec and drop Channels from scope
+- Add Chat SDK Telegram adapter and PlatformClient architecture
+- Add SOUL.md and NOPE.md convention files for agent personality
+
+### Changed
+
+- Reconcile guides after chat-sdk-relay-adapter-refactor spec
+
+### Fixed
+
+- Add StreamEvent buffering to Chat SDK Telegram adapter
+- Normalize Chat SDK thread IDs before relay subject encoding
+- Eliminate visible scroll animation on session load
+- Improve binding row UX with consistent icons and clearer overflow
+- Add missing traits_json and conventions_json migration
+
+---
+
+## [0.19.0] - 2026-03-21
+
+> Fleet management dashboard — dedicated agents page, mission control, and client-side routing
+
+### Added
+
+- Browse and manage agents from a dedicated fleet management page with health monitoring, filtering, and session launch
+- Access mission control dashboard with needs-attention alerts, active sessions, system status, and activity feed
+- Navigate between dashboard, sessions, and agents with animated sidebar and header transitions
+- Add TanStack Router with code-based route definitions and URL search params
+- Browse features by product and category on SEO-optimized catalog pages
+- Monitor chat status at a glance with a unified status strip combining inference and system indicators
+- Toggle multi-window sync and background refresh from the status bar
+- Experience smoother chat with per-word text animation and spring-based scroll physics
+
+### Changed
+
+- MCP tools require agent context for session counts and use clearer naming (get_agent)
+- Relay tools renamed for clarity: relay_send_and_wait (was relay_query), relay_send_async (was relay_dispatch)
+- Relay mailboxes use human-readable subject strings instead of SHA-256 hashes
+- Feature catalog split into product and category dimensions for richer filtering
+- Clean up routing migration — remove dead code, fix test/code consistency
+- Move scan line effect to chat input area with subtle edge fade
+
+### Fixed
+
+- Resolve all ESLint warnings across the monorepo (0 errors, 0 warnings)
+- Code review fixes for mesh discovery, MCP tools, and schema validation
+- Adapter setup pipeline protected with timeout guards and diagnostic logging
+- Relay and Pulse enabled by default on fresh installations
+- Fix llms.txt feature categories formatting
+- Fix Stop hook hanging and add auto-format on file write
+- Fix dashboard navigation router context and auto-select suppression
+- Fix DoneEventSchema missing messageIds and export SubagentStatus
+
+---
+
+## [0.18.0] - 2026-03-19
+
+> Chat simulator, interactive tool fixes, and developer guide refresh
+
+### Added
+
+- Add chat simulator to Dev Playground for testing streaming, tool approval, and question flows without a live agent
+
+### Changed
+
+- Reconcile developer guides and external docs with recent architecture changes
+- Add test-results directory to .gitignore
+
+### Fixed
+
+- Fix stuck input bar and 404 errors in AskUserQuestion flow
+- Fix createPulseRouter missing dorkHome parameter
+- Fix tunnel CORS test using hardcoded port instead of dynamic assignment
+
+## [0.17.2] - 2026-03-19
+
+> Dev port convention update and test reliability fixes
+
+### Changed
+
+- Update dev port convention from 4xxx to 6xxx for simultaneous dev/production operation
+- Move tunnel port resolution to call time so tests can override VITE_PORT
+- Move `createTestDb` to `@dorkos/test-utils/db` subpath to avoid pulling Node.js-only db into jsdom tests
+
+### Fixed
+
+- Fix 153 client test failures caused by NODE_ENV=production leaking into jsdom environment
+- Fix error handler and tunnel tests failing when shell has NODE_ENV=production
+- Fix getCommands test finding real `.claude/commands/` from repo root
+
+---
+
+## [0.17.1] - 2026-03-19
+
+> Streaming message integrity and reliability fixes
+
+### Added
+
+- Document Claude Agent SDK Message History and Session Listing API for research library
+
+### Fixed
+
+- Prevent session remap flash and merge consecutive assistant JSONL entries
+- Eliminate message flash and disappearing errors on stream completion
+- Pause background-tab polling for always-on query hooks
+- Add hourglass reaction immediately and clean up orphaned reactions
+
+---
+
+## [0.17.0] - 2026-03-18
+
+> CLI polish, Apple-style field grouping, and relay hardening
+
+### Added
+
+- Improve CLI UX with clickable URLs, unknown option handling, and browser open prompt
+- Add FieldCard primitives and apply Apple-style field grouping
+
+### Changed
+
+- Move platform formatting rules into adapters
+- Eliminate DRY violations, enforce file size limits, and instance-scope mutable state
+
+### Fixed
+
+- Populate sender on index rebuild and fix stale TSDoc
+- Fix second hasStarted bug in updateSession and add resume diagnostics
+- Fix per-sender rate limiting, add publish rejection logging and inbound result checks
+- Prevent new sessions from crashing with invalid SDK resume ID
+- Enhance Slack inbound message handling with improved reaction management
+- Add inbound typing reaction with FIFO cleanup on stream completion
+- Improve ConfigFieldInput layout, error UX, and password toggle
+- Persist session map across restarts for Slack DM continuity
+- Extract binding permissionMode in CCA agent handler
+- Clear pending approval timeouts on SlackAdapter stop
+
+---
+
+## [0.16.0] - 2026-03-18
+
+> Interactive tool approval, standardized form fields, and resilient streaming
+
+### Added
+
+- Standardize form fields with Shadcn Field, SettingRow, and PasswordInput
+- Add interactive tool approval for Slack and Telegram adapters
+- Add dedicated Forms page and split registry into per-page section files
+- Add data path debug toggles for cross-client sync and message polling
+- Add unified input zone for interactive cards
+- Add 4 sidebar component showcases to dev playground
+
+### Fixed
+
+- Flush stream buffer before posting tool approval cards
+- Move empty-stream and retry-depth tests into sendMessage() describe block
+- Break infinite SDK retry loop and surface errors to adapters
+- Prevent tool_call_end from overwriting pending status on interactive tool calls
+
+---
+
+## [0.15.0] - 2026-03-17
+
+> Multi-client awareness, extended thinking visibility, and dev playground overhaul
+
+### Added
+
+- Add multi-client presence indicator, subagent/hook lifecycle visibility, and tool call enhancements
+- Implement tool-approval-timeout-visibility, prompt-suggestion-chips, multi-client-session-indicator
+- Add transport error categorization and retry affordance
+- Truncate tool results at 5KB with raw JSON fallback for large payloads
+- Surface SDK system status messages and compact boundary events in chat UI
+- Implement result-error-distinction, extended-thinking-visibility, and tool-progress-streaming
+- Add rate-limit countdown UI and prop threading
+- Add subagent lifecycle visibility to chat UI
+- Redesign QuestionPrompt and unify compact final states
+- Add scrollspy TOC, Cmd+K search, and overview landing page to Dev Playground
+- Implement navigation overhaul for Dev Playground with improved sidebar and routing
+- Add 14 missing component showcases to dev playground
+- Add slugify, copyable names, and responsive viewport toggle to dev playground
+- Add multi-select and 3-tab question showcases to design system
+- Add hook lifecycle showcase and refactor stream-event-handler
+- Add ClientsItem presence indicator showcase to design system
+- Add ToolApproval countdown timer showcases to design system
+- Add truncated tool result showcase to design system
+- Add SystemStatusZone to design system showcase
+- Add ErrorMessageBlock and ThinkingBlock showcases
+- Add rate-limit states to InferenceIndicator showcase
+- Add SubagentBlock to design system showcase
+
+### Changed
+
+- Unify ToolApproval and QuestionPrompt container styling
+- Extract shared primitives from duplicated chat UI components
+- Reconcile contributing guides with recent commits (37 commits since 2026-03-12)
+- Improve playground UX with demo wells and DRY cleanup
+
+### Fixed
+
+- Add setSystemStatusWithClear to useMemo deps
+- Stabilize ThinkingBlock tests — remove motion mock, add cleanup
+
+---
+
+## [0.14.0] - 2026-03-16
+
+> Binding-level permissions, relay panel redesign, and SDK command discovery
+
+### Added
+
+- Configure permission modes per adapter-agent binding so headless sessions (Slack, Telegram) use the right tool approval level instead of stalling
+- Redesign the Relay panel with a 2-tab layout, semantic health indicators, inline permissions, and aggregated dead letter management
+- Discover slash commands via the SDK `supportedCommands()` API for more reliable command availability
+
+### Changed
+
+- Derive binding working directory from the agent registry instead of storing a separate path
+
+### Fixed
+
+- Prevent dead letter panel from re-opening after the user explicitly collapses it
+- Fix relay panel follow-up issues with health bar rendering, empty states, and label consistency
+- Discover root-level commands and fix SDK command cache returning stale results
+
+---
+
+## [0.13.1] - 2026-03-14
+
+### Fixed
+
+- Fix CLI crash on startup caused by duplicate `createRequire` declaration in ESM bundle
+- Fix relay build script failing on non-Bash shells by using POSIX-compatible substitution
+
+## [0.13.0] - 2026-03-14
+
+> Slack integration, Docker containerization, and adapter system unification
+
+### Added
+
+- Publish Docker images automatically to GHCR via GitHub Actions for easy containerized deployment
+- Add `dorkos cleanup` command to safely remove stored agent data and sessions
+- Add Slack adapter with Socket Mode support, message streaming, and format conversion
+- Add streaming toggle and typing indicators for real-time Slack message updates
+- Add layered adapter documentation system with per-field setup guides and help text
+- Unify discovery UI with shared candidate cards and consistent approve/skip workflows
+
+### Changed
+
+- Unify adapter system with BaseRelayAdapter base class, shared callbacks, and DRY utilities
+- Add upgrade guidance, rollback instructions, and breaking-change callouts to docs
+- Add dedicated Docker guide with install tabs for containerized setup
+- Fix documentation drift — update AGENTS.md, API reference, and correct broken links
+
+### Fixed
+
+- Harden onboarding gate validation, error handling, logging, and documentation clarity
+- Harden Slack adapter with throttled streaming updates, bounded caches, and better error surfaces
+- Fix adapter setup wizard scrollability when forms exceed viewport height
+
+---
+
+## [0.12.0] - 2026-03-13
+
+> Marketing storytelling, topology intelligence, and Pulse schedule management
+
+### Added
+
+- Add /story page with dual-mode presentation support for brand storytelling
+- Add ScanLine component with three-layer composited animation responding to text streaming
+- Enhance Pulse with agent filtering, inline enable/disable toggle, delete with confirmation, and edit-from-sidebar
+- Add presentation mode with keyboard navigation, progress indicators, and incremental step reveal
+- Add story sections: Hero, Monday Morning Dashboard, How It Was Built, Just Prompts equation, Future Vision, and Close
+- Implement agent filtering and caps in ConnectionsView with motion animations
+- Filter agent connections to reachable-only so the connections panel only shows agents you can actually reach
+- Cap MCP servers list at 4 and agents at 3 with overflow links
+- Introduce Pulse presets management and UI components
+- Add structured debug logging across chat flow layers
+- Add smooth LOD transitions, adapter labels, and ghost node tests to topology
+- Redesign AdapterCard with bindings display and CCA treatment
+- Implement adapter-binding UX overhaul with ghost adapter placeholders
+- Add BaseRelayAdapter, compliance suite, API versioning, and adapter template
+- Add useUpdateBinding hook and BindingList component for managing adapter-agent bindings
+- Add NavigationLayout sidebar navigation for polished dialog navigation
+
+### Changed
+
+- Remove relay message path from web client, use direct SSE only for more reliable streaming
+- Humanize raw IDs and technical jargon across Relay/Mesh UI
+- Reconcile contributing guides against relay removal, pulse presets, and ConnectionsView changes
+- Document test simulation infrastructure and fix mock proxy routing
+
+### Fixed
+
+- Fix LayoutGroup layout animation to eliminate timeline item jumps
+- Fix presentation mode keyboard nav, progress bar, header hiding, and animation replay
+- Replace pendingUserContent with optimistic messages in virtualizer
+- Disable model/permission selectors before first message, fix post-remap PATCH
+- Filter adapter list to agent-bound adapters only
+- Prevent form revert and fix AnimatePresence key warnings
+- Restore scroll in tabpanel views by adding h-full
+- Use text-foreground for node name text consistency
+- Filter CCA adapter nodes and always show namespace groups
+- Use correct logo SVG paths in OG share card
+- Resolve createRequire duplicate declaration in server bundle
+- Add missing Fumadocs frontmatter title to spec and plan docs
+
+---
+
+## [0.11.0] - 2026-03-11
+
+> Shortcut discoverability, design system refinements, and UX fixes
+
+### Added
+
+- Add centralized shortcut registry and discoverability panel
+- Add design system showcase playground
+- Integrate brand orange into client design system
+- Replace custom gradient button with Aceternity HoverBorderGradient
+
+### Changed
+
+- Replace custom gradient button with HoverBorderGradient
+
+### Fixed
+
+- Deduplicate remote access toast notifications
+- Filter schedules by agent and show adapter display names
+- Handle empty roots array in scan endpoint
+- Fix toast notifications rendering with transparent backgrounds
+
+---
+
+## [0.10.0] - 2026-03-11
+
+> Tabbed sidebar navigation, agent identity chip, ScheduleBuilder, and always-editable chat input
+
+### Added
+
+- Navigate between Sessions, Schedules, and Connections from tabbed sidebar views
+- Build schedules with progressive disclosure — pick frequency, then refine timing
+- Pick agents from a direct-selection list when creating schedules
+- Switch active agent from the identity chip in the top navigation bar
+- See agent emoji in the identity chip at a glance
+- Open the command palette directly from the header
+- Keep typing while agents stream — messages queue and send when ready
+- Auto-hide scrollbars in sidebar and message list until hover
+- Detect dev builds and dismiss upgrade prompts with persistent version display
+
+### Changed
+
+- Replace cron presets and visual builder with unified ScheduleBuilder
+- Replace AgentCombobox dropdown with AgentPicker direct-selection list
+- Restructure StatusLine as a compound component
+
+### Fixed
+
+- Fix agent picker combobox behavior, dialog layout, and default cron expression
+- Fix Enter and Cmd+Enter not working in command palette agent sub-menu
+- Fix sidebar content overflow caused by Radix ScrollArea table layout
+- Fix queued messages not appearing until animation completes
+- Fix message loss during streaming and model selector flicker
+- Fix scrollbar overlay obscuring sidebar content
+
+---
+
+## [0.9.1] - 2026-03-10
+
+> Chat UX refinements — file attachments rendered inline, message bubbles right-aligned, and relay directory fixes
+
+### Added
+
+- See attached files as inline thumbnails and styled chips in chat message bubbles
+- Distinguish your messages at a glance with right-aligned chat bubbles
+
+### Fixed
+
+- Fix relay messages losing working directory context
+- Fix agent messages running in wrong directory when sent via relay
+- Fix sidebar logo color not adapting to light/dark mode
+
+---
+
+## [0.9.0] - 2026-03-09
+
+> MCP server integration, file uploads, chat UX overhaul, and SSE reliability fixes
+
+### Added
+
+- Embed MCP server with Streamable HTTP transport — external agents (Claude Code, Cursor, Windsurf) can connect via `/mcp`
+- File uploads in chat — drag-and-drop, paperclip, and paste to attach files
+- Redesign chat message theming — semantic tokens, TV variants, MessageItem decomposition
+- Add chat microinteraction polish — spring physics, layoutId, session crossfade
+- Unify discovery scanners and fix onboarding scan root
+- Add endpoint types, dispatch TTL sweeper, and relay_send_and_wait progress accumulation
+- Add /chat:self-test slash command
+- Add relay_send_async fire-and-poll for long-running tasks
+
+### Changed
+
+- Message-first session creation — eliminate POST /sessions
+- Extract ChatInputContainer from ChatPanel
+- Split http-transport.ts into transport/ subdirectory (742 → 7 files)
+- Extract 4 hooks + 1 component from ChatPanel (617 → 267 lines)
+- Clean up URL query params — remove dead code, add pushState, fix setTimeout hack
+- Unify page title and favicon system, remove dead code
+- Update MessageItem typography to use font-light for improved readability
+- Tighten chat typography to text-sm (14px)
+- Decompose root eslint.config.js into per-package configs with shared @dorkos/eslint-config
+- Extract AgentRuntime interface and RuntimeRegistry abstraction
+- Replace text branding with DorkOS logo linking to dorkos.ai
+- Rename pulse and agent tools to follow domain_verb_noun convention
+
+### Fixed
+
+- Create MCP server per request to avoid connect() reuse
+- Update stale tests and add pre-push test gate via lefthook
+- Eliminate ghost messages via per-message correlation IDs
+- Improve message history retrieval and error handling in session routes
+- Resolve streaming vs history inconsistencies via queueMicrotask and scroll-intent tracking
+- Prevent relay-mode polling storm and tool-call spinner regression
+- Upgrade streamdown to ^2.4.0 to fix inline code truncation
+- Resolve history gaps, SSE session mismatch, and done event loss
+- Export health thresholds to eliminate fragile hardcoded test values
+- Resolve SSE delivery pipeline causing ~40-50% message freezes
+- Apply SSE backpressure handling to session broadcaster relay writes
+- Resolve SSE freeze, blank refresh, and relay metadata leaks
+- Remove acted candidates from discovery list after approve/deny
+
+---
+
+## [0.8.0] - 2026-03-04
+
+> Agent-centric control, enhanced discovery UX, and critical infrastructure hardening
+
+### Added
+
+- Per-agent tool filtering and cascade disable — configure which tools each agent can access
+- Add relay_send_and_wait blocking MCP tool for inter-agent communication
+- Rebuild command palette with preview panel, fuzzy search, and sub-menu navigation for agent discovery
+- Migrate sidebar to Shadcn Sidebar component with agent-centric layout
+- Add tool context injection with configurable toggles throughout the interface
+- Enable Mesh always-on mode for continuous agent discovery and visibility
+- Enhance UI primitives with responsive touch targets and sizing variants
+
+### Changed
+
+- Improve developer guides documenting domain-grouped services and agent tool elevation patterns
+- Update README and CLI documentation to reflect complete DorkOS feature set
+
+### Fixed
+
+- Fix critical agent-to-agent routing bug causing CWD mismatches and harden CCA pipeline
+- Improve Mesh agent health detection with auto-stamping and widened thresholds
+- Fix mobile sidebar sheet close behavior, transparency issues, and remove stale cookie code
+- Improve command palette search with keyword inclusion for better path/ID matching
+- Clean up command palette cmdk prop usage and @ filtering logic
+- Enforce file-first write-through storage pattern for agent identity (ADR-0043)
+- Improve onboarding step completion logic to handle rapid user interactions
+- Register relay_send_and_wait in tool filter and add test coverage
+
+---
+
+## [0.7.0] - 2026-03-02
+
+> Brand refresh, CI hardening, and marketing site overhaul
+
+### Added
+
+- Add full-app Docker integration testing and runnable container
+- Enforce dorkHome parameter usage in server code via ESLint rule
+- Add Docker and GitHub Actions smoke testing for CLI installs
+- Add GitHub Actions CLI smoke test workflow for npm package install validation
+- Add Dockerfile and .dockerignore for isolated CLI smoke testing
+- Add `smoke:docker` convenience script for local Docker smoke tests
+- Add DorkLogo to onboarding welcome screen
+- Add FAQ accordion section before install CTA on marketing site
+- Align site copy with pro-human positioning
+- Rewrite IdentityClose copy to celebrate human ambition
+- Rewrite PivotSection with "intelligence doesn't scale" metaphor
+- Upgrade timeline beam with Aceternity-inspired SVG tracing
+- Replace dorkian logos with new dork logos and update references
+- Enhance WelcomeStep with dynamic gradient effects
+- Add agent discovery scroll fix image and enhance CLI build configuration
+
+### Changed
+
+- Migrate domain from dorkos.ai to dorkos.ai
+- Add DORKOS_HOST, Docker workflow, and discovery endpoint to guides
+
+### Fixed
+
+- Use cd for CLI version bump and gitignore tarballs
+- Resolve Docker runtime and npm publishing issues
+- Support dark mode in favicon SVG
+- Gate shouldShowOnboarding on config loading state
+- Send partial patches to prevent skip dismiss race condition
+- Fix missing `better-sqlite3` dependency in CLI package that crashed on `npm install -g dorkos`
+- Adjust beam visibility range in TimelineSection
+
+---
+
+## [0.6.0] - 2026-03-02
+
+> First-time user experience, remote access overhaul, and research library curation
+
+### Added
+
+- Walk through first-time setup with guided agent discovery, Pulse presets, and animated onboarding flow
+- Overhaul remote access with multi-tab sync, UX redesign, and CLI QR code
+- Add curl install script, tabbed UI, Homebrew tap, and CLI check
+- Reset all data and restart server from the Advanced settings tab
+- Add research library curation with file reduction phases
+- Replace static llms.txt with dynamic route handler
+- Add header, breadcrumb, prev/next nav, tags, RSS link, and SEO improvements to blog
+- Wire research library into agent and main context
+
+### Changed
+
+- Remove standalone roadmap app and all references
+- Rename apps/web to apps/site for clarity
+- Codify plans/ as canonical location and migrate from docs/plans/
+- Update all contributing guides based on 30 recent specs
+
+### Fixed
+
+- Target registered agents in Pulse presets step instead of server default directory
+- Unify onboarding nav bar, select all agents by default, reduce spacing
+- Fix scroll containment and improve agent discovery UX
+- Reset stale tunnel status fields on stop and broadcast changes to other tabs
+- Restore code block padding after opting out of fumadocs dark theme
+- Update debug commands for .dork directory and fix ADR/README inventory
+
+---
+
+## [0.5.0] - 2026-03-01
+
+> Human-readable Relay messaging, marketing site overhaul, and 125+ code quality fixes
+
+### Added
+
+- Rebuild marketing homepage with narrative-driven design, approachable language, and new imagery
+- Improve social share cards, SEO metadata, and AI readability for the marketing site
+- Browse, install, and configure external adapters from a built-in catalog
+- Route external messages to specific agents with visual binding management in topology
+- Group related messages into threaded conversations in the Relay activity feed
+- Display human-readable names for endpoints, adapters, and message subjects throughout Relay
+- Monitor Relay health at a glance with status bar, message filters, and smooth animations
+- Test Telegram adapter connections before going live
+- Choose from all available Claude models dynamically instead of a hardcoded list
+- See available updates at a glance with a version indicator and details popover
+- Access agent settings and start chats directly from topology graph nodes
+
+### Changed
+
+- Standardize logging across all packages with structured, parseable output
+- Rename "Tunnel" to "Remote" throughout the UI for clarity
+
+### Fixed
+
+- Fix critical Relay publish pipeline bug where adapter delivery was silently skipped, blocking all Relay-routed chat messages and Pulse dispatches
+- Return detailed delivery results from adapters instead of discarding status information
+- Add 30-second timeout protection for adapter delivery
+- Include adapter-delivered messages in the SQLite audit trail
+- Return real trace IDs for Relay messages instead of placeholder values
+- Fix Telegram feedback loop that caused duplicate messages
+- Send properly formatted messages through Telegram instead of raw JSON chunks
+- Resolve CWD resolution and MCP transport reuse issues
+- Show correct sender names on delivered conversation messages
+- Track message delivery end-to-end through the Relay publish pipeline
+- Fix header overlap on marketing homepage hero section
+- Fix Vercel deployment failures for the marketing site
+- Handle console endpoint registration errors gracefully
+- Resolve 125+ code quality issues across server, relay, mesh, client, and shared packages
+
+---
+
+## [0.4.0] - 2026-02-26
+
+> Multi-agent infrastructure — Relay message bus, Mesh discovery, Agent Identity, and unified database
+
+### Added
+
+- Elevate topology chart with ELK.js layout, zoom LOD, and enriched nodes
+- Add agent identity as first-class entity
+- Add fullscreen toggle, min-height, and overflow fixes to ResponsiveDialog
+- Add registry integrity with reconciliation, idempotent upserts, and orphan cleanup
+- Improve sidebar UX with shortcut, persistence, tooltips, and mobile fixes
+- Consolidate three SQLite databases into single Drizzle-managed dork.db
+- Wire edges and namespace grouping into topology graph
+- Disciplined env var handling with per-app Zod validation
+- Enable Relay, Mesh, and Pulse by default
+- Env-aware data dir, mesh panel UX overhaul, web lint fixes
+- Enhance browser testing methodology and documentation
+- Add AI-driven browser testing system with Playwright
+- Add Mesh agent discovery with registry, topology graph, health monitoring, and MCP tools
+- Add Relay inter-agent message bus with delivery tracing, dead-letter handling, and MCP tools
+- Add Relay external adapter system for Telegram and webhook channels
+- Add unified adapter system with plugin loading and Claude Code runtime adapter
+- Add Access tab to Mesh panel for managing agent permissions
+- Add standalone roadmap management app with table, kanban, MoSCoW, and Gantt views
+- Add visual cron builder, directory picker integration, and calm tech notifications to Pulse
+- Add interactive clarification to ideation and recommendation discipline
+
+### Changed
+
+- Replace raw HTML elements with shadcn Button/Input primitives
+- Add agent identity documentation across internal and external guides
+- Migrate from npm to pnpm for faster installs and stricter dependency resolution
+- Route Pulse jobs and console output through Relay transport for unified message delivery and tracing
+- Comprehensive Relay & Mesh release preparation
+- Redesign Pulse scheduler UI with filtering, accessibility, and navigation improvements
+- Rebrand homepage modules and create DorkOS litepaper
+- Rename Vault module to Wing with updated brand positioning
+- Replace triangles logo with DORK monogram
+
+### Fixed
+
+- Prevent agent node overlap in topology expanded view
+- Pass consolidated db to RelayCore and add init error diagnostics
+- Restore migration journal timestamp for 0004_ambitious_spectrum
+- Resolve unused variable warnings across server package
+- Resolve @dorkos/shared subpath imports in esbuild bundle
+- Correct Relay documentation to match implementation
+- Correct Mesh documentation to match implementation
+- Correct Pulse documentation to match implementation
+- Replace julianday() with strftime() in TraceStore latency metric
+- Correct access rule directionality, endpoint, and add priority scheme
+- Resolve React Flow zero-height error in topology tab
+- Surface API errors in MeshPanel and harden MeshCore init
+- Aggregate manifest reporter counts per spec file, not per test case
+- Wire live health data into Mesh topology graph and fix aggregate SQL boundary
+- Support array subjectPrefix in Relay and wire adapter context builder
+- Fix 7 critical wiring bugs in Relay convergence implementation
+- Resolve four completion gaps in Pulse scheduler — runs now correctly persist state, handle timeouts, and clean up on cancellation
+- Declare runtime env vars in turbo.json globalPassThroughEnv
+- Fix docs search, add blog footer and TOC sidebar
+
+---
+
+## [0.3.0] - 2026-02-18
+
+### Added
+
+- Add Pulse scheduler for autonomous cron-based agent jobs with web UI, REST API, MCP tools, and SQLite persistence
+- Add runtime tunnel toggle with QR code sharing from the sidebar
+- Add blog infrastructure with Fumadocs
+- Add ADR draft/archived lifecycle with daily auto-curation and auto-extraction from specs
+- Add context builder for SDK system prompt injection
+- Add activity feed hero and marketing page sections
+
+### Changed
+
+- Refactor agent-manager to use modular context-builder pattern
+- Redesign landing page with new hero variants and content sections
+- Complete documentation overhaul — fill all stubs, add concepts section, rewrite stale guides
+
+## [0.2.0] - 2026-02-17
+
+### Added
+
+- Add marketing website and documentation site with Fumadocs integration
+- Add logging infrastructure with request middleware and CLI integration
+- Add directory boundary enforcement for API endpoint security
+- Add versioning, release, and update system
+- Add git worktree runner (gtr) for parallel development workflows
+- Add persistent config file system at `~/.dork/config.json`
+- Add ngrok tunnel integration for remote access
+- Add ESLint 9 and Prettier with FSD layer enforcement
+- Add Architecture Decision Records (ADR) system
+- Add TSDoc documentation standards for public API
+
+### Changed
+
+- Migrate client to Feature-Sliced Design architecture
+- Rename guides/ to contributing/ for self-documenting audience
+- Extract hardcoded values into centralized constants
+- Split oversized files into focused modules
+- Change default server port from 6942 to 4242
+- Centralize .env loading via dotenv-cli at monorepo root
+
+### Fixed
+
+- Fix shell eval error in release command backticks
+- Fix OpenAPI JSON generation for Vercel builds
+- Fix API docs generation when openapi.json is missing
+- Resolve React Compiler and ESLint warnings
+- Fix barrel and import paths after FSD migration
+
+## [0.1.0] - 2025-02-08
+
+### Added
+
+- Web-based chat UI for Claude Code sessions
+- REST/SSE API powered by the Claude Agent SDK
+- Tool approval and deny flows
+- AskUserQuestion interactive prompts
+- Slash command discovery from `.claude/commands/`
+- Cross-client session synchronization via file watching
+- Obsidian plugin with sidebar integration
+- ngrok tunnel support for remote access
+- OpenAPI documentation at `/api/docs` (Scalar UI)
+- CLI package (`dorkos`) for standalone usage
+- Keyboard shortcuts for navigation
+- Directory picker for working directory selection
+
+[0.21.0]: https://github.com/dork-labs/dorkos/compare/v0.20.0...v0.21.0
+[0.20.0]: https://github.com/dork-labs/dorkos/compare/v0.19.0...v0.20.0
+[0.19.0]: https://github.com/dork-labs/dorkos/compare/v0.18.0...v0.19.0
+[0.18.0]: https://github.com/dork-labs/dorkos/compare/v0.17.2...v0.18.0
+[0.17.2]: https://github.com/dork-labs/dorkos/compare/v0.17.1...v0.17.2
+[0.17.1]: https://github.com/dork-labs/dorkos/compare/v0.17.0...v0.17.1
+[0.17.0]: https://github.com/dork-labs/dorkos/compare/v0.16.0...v0.17.0
+[0.16.0]: https://github.com/dork-labs/dorkos/compare/v0.15.0...v0.16.0
+[0.15.0]: https://github.com/dork-labs/dorkos/compare/v0.14.0...v0.15.0
+[0.14.0]: https://github.com/dork-labs/dorkos/compare/v0.13.1...v0.14.0
+[0.13.1]: https://github.com/dork-labs/dorkos/compare/v0.13.0...v0.13.1
+[0.13.0]: https://github.com/dork-labs/dorkos/compare/v0.12.0...v0.13.0
+[0.12.0]: https://github.com/dork-labs/dorkos/compare/v0.11.0...v0.12.0
+[0.11.0]: https://github.com/dork-labs/dorkos/compare/v0.10.0...v0.11.0
+[0.10.0]: https://github.com/dork-labs/dorkos/compare/v0.9.1...v0.10.0
+[0.9.1]: https://github.com/dork-labs/dorkos/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/dork-labs/dorkos/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/dork-labs/dorkos/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/dork-labs/dorkos/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/dork-labs/dorkos/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/dork-labs/dorkos/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/dork-labs/dorkos/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/dork-labs/dorkos/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/dork-labs/dorkos/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/dork-labs/dorkos/releases/tag/v0.1.0

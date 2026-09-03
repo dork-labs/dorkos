@@ -12,7 +12,7 @@ amends: null
 
 ## Status
 
-Proposed — specified by `specs/runtime-interrupt-receipts/02-specification.md` (DOR-1303).
+Accepted — specified by `specs/runtime-interrupt-receipts/02-specification.md` (DOR-1303).
 
 ## Context
 

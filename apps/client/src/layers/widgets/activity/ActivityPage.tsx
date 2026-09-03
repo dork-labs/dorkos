@@ -29,7 +29,7 @@ export function ActivityPage() {
   const { queryFilters, isFiltered } = useActivityFilters();
   const lastVisitedAt = useLastVisitedActivity();
 
-  const { data, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage } =
+  const { data, isLoading, isError, refetch, isFetchingNextPage, hasNextPage, fetchNextPage } =
     useFullActivityFeed(queryFilters);
 
   // Flatten all pages into a single sorted item array
@@ -53,7 +53,13 @@ export function ActivityPage() {
       <ActivitySinceLastVisit lastVisitedAt={lastVisitedAt} items={allItems} />
 
       {/* Time-grouped event rows */}
-      <ActivityTimeline items={allItems} isLoading={isLoading} isFiltered={isFiltered} />
+      <ActivityTimeline
+        items={allItems}
+        isLoading={isLoading}
+        isError={isError}
+        onRetry={() => void refetch()}
+        isFiltered={isFiltered}
+      />
 
       {/* Cursor-based pagination trigger */}
       <ActivityLoadMore

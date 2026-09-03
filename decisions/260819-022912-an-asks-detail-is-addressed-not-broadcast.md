@@ -12,7 +12,7 @@ superseded-by: null
 
 ## Status
 
-Proposed (extracted from spec: `ask-entitlement`, DOR-1356).
+Accepted (extracted from spec: `ask-entitlement`, DOR-1356).
 
 ## Context
 

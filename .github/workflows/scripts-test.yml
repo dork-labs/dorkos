@@ -106,6 +106,16 @@ name: scripts-test
 ### without anything going red, which is the exact history that suite exists for
 ### (DOR-668).
 ###
+### test.yml is in the filter for that same reason once more, and this one is
+### sharper than most: `scripts/__tests__/vitest-flake-reporter.test.ts` asserts
+### that its merge-queue leg still passes `--retry=1` and still loads
+### scripts/vitest-flake-reporter.ts (DOR-1701). Drop either flag and nothing
+### goes red — the suite runs exactly as before, absorbing nothing and naming
+### nothing — so the guard has to fire on the one PR shape that regression takes,
+### an edit to test.yml alone. `scripts/` belongs to no workspace package, so
+### `turbo test` cannot reach that guard from test.yml's own full-monorepo sweep;
+### THIS job is the only place in CI it runs at all.
+###
 ### operating-skills-version-check.yml is in the filter for the same reason:
 ### test-seeded-pack-changed.sh asserts that seeded-pack-changed.sh's default
 ### PACK_FILE and SKILLS_DIR match that workflow's job `env:`, which is where
@@ -132,6 +142,7 @@ on:
       - '.github/workflows/claude-code-review.yml'
       - '.github/workflows/merge-tail.yml'
       - '.github/workflows/operating-skills-version-check.yml'
+      - '.github/workflows/test.yml'
   push:
     branches: [main]
     paths:
@@ -151,6 +162,7 @@ on:
       - '.github/workflows/claude-code-review.yml'
       - '.github/workflows/merge-tail.yml'
       - '.github/workflows/operating-skills-version-check.yml'
+      - '.github/workflows/test.yml'
 
 # Opt into Node 24 for JavaScript-based actions (checkout) ahead of GitHub's
 # Sept 2026 cutoff for the Node 20 runtime.

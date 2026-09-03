@@ -87,7 +87,16 @@ export function MobileTabBar({
             // browser spec whatever it ends up being called.
             data-mobile-tab=""
             className={cn(
-              'focus-ring relative flex flex-1 flex-col items-center justify-center gap-0.5 text-[11px] transition-colors duration-150',
+              'focus-ring relative flex flex-1 flex-col items-center justify-center gap-0.5 text-[11px] transition-[color,background-color,scale] duration-150',
+              // **A tap has to answer, and on a phone there is no hover to
+              // answer with.** Below 768px this bar is the whole navigation, and
+              // it used to change only weight and colour — after the route
+              // resolved. 0.96 rather than the row ladder's 0.98 because the
+              // target is a full-height column: press scales by target size.
+              //
+              // The tint is what survives `prefers-reduced-motion`, which drops
+              // the scale, so the tap is still acknowledged there.
+              'active:bg-sidebar-accent motion-safe:active:scale-[0.96]',
               // **Weight AND contrast, because one of them was not enough and
               // the other was not real.** Measured in Chromium at 390×844: the
               // current destination came out at `oklab(0.2044 … / 0.7224)` and

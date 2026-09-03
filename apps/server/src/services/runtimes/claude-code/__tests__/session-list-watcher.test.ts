@@ -27,7 +27,11 @@ const { mockWatcher, mockChokidar } = vi.hoisted(() => {
 });
 vi.mock('chokidar', () => ({ default: mockChokidar }));
 
-import { watchSessionList } from '../sessions/session-list-watcher.js';
+import {
+  SESSION_LIST_DEBOUNCE_MS,
+  SESSION_LIST_RECONCILE_MS,
+  watchSessionList,
+} from '../sessions/session-list-watcher.js';
 import { logger } from '../../../../lib/logger.js';
 
 function makeSession(id: string, overrides: Partial<Session> = {}): Session {
@@ -133,6 +137,36 @@ describe('watchSessionList', () => {
     await flushIoUntil(() =>
       [dirA, dirB].every((dir) => listSessionsInDir.mock.calls.some(([arg]) => arg === dir))
     );
+  }
+
+  /**
+   * Await the next event with NO chokidar event to help it along, so the
+   * reconcile sweep is the only thing that can produce one.
+   *
+   * Neither kind of pumping gets there alone: the sweep only starts when the
+   * faked clock reaches it, its `readdir`/`stat` only land when the REAL loop
+   * turns, and the rescan it schedules only fires when the faked clock moves
+   * again. Alternating the two until the event arrives keeps this a wait on the
+   * condition rather than a guess about how long real fs I/O takes — the same
+   * lesson {@link flushIoUntil} records.
+   */
+  async function nextEventViaSweep(
+    it: AsyncIterator<SessionListEvent>,
+    timeoutMs = 5_000
+  ): Promise<SessionListEvent> {
+    let event: SessionListEvent | undefined;
+    void it.next().then((result) => {
+      if (!result.done) event = result.value;
+    });
+    const deadline = Date.now() + timeoutMs;
+    while (event === undefined) {
+      if (Date.now() > deadline) {
+        throw new Error(`nextEventViaSweep: no event from the sweep within ${timeoutMs}ms`);
+      }
+      await vi.advanceTimersByTimeAsync(SESSION_LIST_RECONCILE_MS + SESSION_LIST_DEBOUNCE_MS);
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    return event;
   }
 
   afterEach(async () => {
@@ -242,6 +276,65 @@ describe('watchSessionList', () => {
 
     expect((await nextPromise).value).toEqual({ type: 'session_removed', sessionId: 'alpha-1' });
     await it.return?.();
+  });
+
+  // DOR-577. Every test above hands the watcher a chokidar event; these two
+  // hand it NOTHING, because that is the measured failure. `chokidar.watch()`
+  // scans the root before it attaches `fs.watch` to it, and on the installed
+  // chokidar 5.0.0 a project dir created inside that window produced no
+  // `addDir` and no `add` in 35 of 35 runs — so the mocked watcher staying
+  // silent here is not a convenient stand-in for the bug, it IS the bug. The
+  // filesystem underneath is real, and the reconcile sweep reads it.
+  it('discovers a slug dir chokidar never reported at all', async () => {
+    const it = start();
+    await awaitInitialScan();
+
+    const dirC = join(projectsRoot, '-work-gamma');
+    await mkdir(dirC);
+    inventory[dirC] = [makeSession('gamma-1', { cwd: '/work/gamma' })];
+
+    expect(await nextEventViaSweep(it)).toEqual({
+      type: 'session_upserted',
+      session: makeSession('gamma-1', { cwd: '/work/gamma' }),
+    });
+    await it.return?.();
+  });
+
+  // The other direction: a slug dir that disappears with no `unlinkDir` still
+  // owes its sessions a removal, or the sidebar keeps offering a project that
+  // is no longer on disk.
+  it('removes the sessions of a slug dir that vanished with no chokidar event', async () => {
+    inventory[dirA] = [makeSession('alpha-1')];
+    const it = start();
+    await it.next(); // drain the initial upsert
+    await awaitInitialScan();
+
+    await rm(dirA, { recursive: true, force: true });
+    inventory[dirA] = []; // dir gone: the reader now serves []
+
+    expect(await nextEventViaSweep(it)).toEqual({
+      type: 'session_removed',
+      sessionId: 'alpha-1',
+    });
+    await it.return?.();
+  });
+
+  // A discarded watcher must take its sweep with it. One of these exists per
+  // consumer of the session-list stream, so a sweep that outlives the consumer
+  // that armed it is a `readdir` of every projects root every five seconds,
+  // forever, on behalf of an SSE client that has already disconnected — and
+  // nothing else in this file would notice, because a leaked timer breaks no
+  // assertion about events.
+  it('stops the reconcile sweep when the consumer stops iterating', async () => {
+    const it = start();
+    await awaitInitialScan();
+    // Precondition: the sweep really is armed, or the assertion below passes
+    // for the wrong reason.
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+    await it.return?.();
+
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   // The guard admits only immediate children of the root: an addDir for the

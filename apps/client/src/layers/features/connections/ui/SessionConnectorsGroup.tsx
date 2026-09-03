@@ -176,7 +176,7 @@ function AttachPopover({
                   <button
                     type="button"
                     onClick={() => setCandidate(account)}
-                    className="hover:bg-accent focus-visible:ring-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm focus-visible:ring-2 focus-visible:outline-none"
+                    className="hover:bg-accent focus-visible:ring-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
                   >
                     <Icon className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
                     {accountDisplayName(capitalize(account.toolkit), account.label)}

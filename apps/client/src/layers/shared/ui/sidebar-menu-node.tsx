@@ -583,10 +583,13 @@ interface SidebarMenuSurfaceProps {
    * right-click target anyway — the alternative is a row with no menu at all
    * until someone hovers it.
    *
-   * It fires on the CAPTURE phase, before the menus' own handlers, so a caller
-   * that builds its nodes synchronously (a `flushSync` latch) has them in place
-   * by the time either menu opens. It may fire many times; latching is the
-   * caller's job.
+   * On the two gestures that OPEN a menu — a press and a right-click — it fires
+   * on the capture phase, before the menus' own handlers, so a caller that
+   * builds its nodes synchronously (a `flushSync` latch) has them in place by
+   * the time either menu opens. On focus it is deferred to a microtask instead:
+   * focus can arrive while React is already rendering, where a synchronous
+   * flush is not allowed, and nothing opens from focus alone. It may fire many
+   * times; latching is the caller's job.
    */
   onMenuIntent?: () => void;
   /** The row or header the menus belong to. */
@@ -753,6 +756,15 @@ export function SidebarMenuSurface({
    * right-click, and focus arriving in the row (from where `ArrowRight` reaches
    * the "⋮"). Deliberately NOT `pointerenter` — a mouse crossing the panel would
    * build every menu it passed over, which is the standing cost this avoids.
+   *
+   * **Focus goes through a microtask, and the other two do not.** A capture-phase
+   * focus handler can run while React is mid-render — a row remounting under
+   * virtualization, or a menu's own close-time focus restore, both land inside a
+   * commit — and a caller latching with `flushSync` there gets React's "cannot
+   * flush when React is already rendering" warning and no flush at all (seven of
+   * them on a cold load of `/`, two on `/session`). Deferring costs nothing on
+   * this path: no menu opens from focus alone, so "in hand before the event
+   * finishes bubbling" is a requirement of the press and the right-click only.
    */
   const intentProps =
     onMenuIntent === undefined
@@ -760,7 +772,7 @@ export function SidebarMenuSurface({
       : {
           onPointerDownCapture: onMenuIntent,
           onContextMenuCapture: onMenuIntent,
-          onFocusCapture: onMenuIntent,
+          onFocusCapture: () => queueMicrotask(onMenuIntent),
         };
 
   const kebabTrigger = hideActionsTrigger ? null : (

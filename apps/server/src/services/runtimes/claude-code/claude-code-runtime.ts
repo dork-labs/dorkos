@@ -1090,8 +1090,10 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * outside DorkOS (ADR-0263). Each session carries its true `cwd` from the
    * JSONL head, so multi-project clients route events to the right list
    * (SRV-I4), and the account it belongs to. `ctx` is unused: the contract is
-   * "ALL sessions the adapter can observe", not a per-cwd scope. Debounced; no
-   * timer poll.
+   * "ALL sessions the adapter can observe", not a per-cwd scope. Debounced, and
+   * emitted only on a real transition — a reconcile sweep re-reads the projects
+   * directories on a timer, but it is a source of rescans, not of events, and
+   * exists because chokidar drops what happens while it is attaching (DOR-577).
    */
   subscribeSessionList(_ctx: SessionOpts): AsyncIterable<SessionListEvent> {
     return watchSessionList(this.transcriptReader);

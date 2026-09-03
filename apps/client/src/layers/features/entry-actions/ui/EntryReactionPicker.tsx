@@ -1,6 +1,13 @@
 import { useId, useMemo, useState, type KeyboardEvent, type Ref } from 'react';
 import { cn } from '@/layers/shared/lib';
-import { Button, Input, Popover, PopoverContent, PopoverTrigger } from '@/layers/shared/ui';
+import {
+  Button,
+  Input,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  PRESS_MARK,
+} from '@/layers/shared/ui';
 import { EMOJI_GROUPS, emojiLabel, searchEmoji } from '../lib/emoji-catalog';
 
 interface EntryReactionGridProps {
@@ -73,7 +80,7 @@ export function EntryReactionGrid({ mine, frequents, onPick, disabled }: EntryRe
       title={emojiLabel(emoji)}
       className={cn(
         'focus-ring hover:bg-accent flex size-8 items-center justify-center rounded-md text-base',
-        'motion-safe:transition-transform motion-safe:active:scale-95',
+        PRESS_MARK,
         'disabled:pointer-events-none disabled:opacity-50',
         mine.includes(emoji) && 'bg-brand/15 ring-brand/40 ring-1'
       )}

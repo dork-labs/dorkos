@@ -59,7 +59,7 @@ export function TaskRow({
         onMouseEnter={() => onHover(task.id)}
         onMouseLeave={() => onHover(null)}
         className={cn(
-          'relative flex items-center gap-2 rounded py-0.5 text-xs transition-colors',
+          'hover:bg-muted/40 focus-visible:bg-muted/40 relative flex items-center gap-2 rounded py-0.5 text-xs transition-colors',
           task.status === 'completed' && 'text-muted-foreground/50 line-through',
           task.status === 'in_progress' && 'text-foreground font-medium',
           task.status === 'pending' && !isBlocked && 'text-muted-foreground',

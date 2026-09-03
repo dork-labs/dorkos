@@ -9,8 +9,8 @@
  * entirely outside DorkOS (ADR-0263). Each emitted session carries its true
  * `cwd` (read from the JSONL head, since the slug is lossy), which is how
  * multi-project clients route the event to the right list (SRV-I4), and the
- * account it belongs to. Emission is on lifecycle transitions only; there is NO
- * timer poll.
+ * account it belongs to. Emission is on lifecycle transitions only — nothing is
+ * emitted unless a session actually appeared, changed or went away.
  *
  * The watch targets each projects ROOT directory with `depth: 1` and filters to
  * `.jsonl` files in the handler. It must NOT pass a glob to `chokidar.watch`:
@@ -20,11 +20,28 @@
  * directories created while the server runs.
  *
  * A new or removed slug dir (`addDir`/`unlinkDir`) additionally triggers a
- * rescan of that dir. This is the recovery path for a race: chokidar attaches a
- * new directory's own watch only AFTER its initial scan, so a per-file `add`
- * that lands in that scan-then-attach window is lost, not late. The dir-level
- * event fires from the long-lived root watch before that window, so its rescan
- * deterministically surfaces the first session in a brand-new project dir.
+ * rescan of that dir, which is how the first session in a brand-new project
+ * reaches the list without waiting for a per-file event.
+ *
+ * CHOKIDAR IS THE FAST PATH, NOT THE SOURCE OF TRUTH. `chokidar.watch()`
+ * returns before it has attached anything: it scans the root first and only
+ * then calls `fs.watch` on it (`handler.js` `_handleDir` — the read is awaited,
+ * the watch comes after). Anything created inside that window is invisible
+ * FOREVER — measured on the installed chokidar 5.0.0, a project dir created in
+ * the same tick as `watch()` produced no `addDir` and no `add` in 35 of 35
+ * runs, and no `raw` event either in 32 of them, so there is nothing to recover
+ * from and no amount of re-writing the file helps (the file is not watched
+ * either, so it fires nothing when it changes). The window is
+ * proportional to the size of the projects tree and to how busy the machine is,
+ * which is why this surfaced as a load-dependent flake (DOR-577) rather than a
+ * constant failure. So a periodic reconcile sweep ({@link
+ * SESSION_LIST_RECONCILE_MS}) re-derives the truth from disk: one `readdir` of
+ * each root plus one `stat` per slug dir, rescanning only the dirs whose mtime
+ * moved since the previous sweep and the ones that have disappeared. A slug
+ * dir's mtime changes whenever a transcript is created or deleted in it, so the
+ * sweep costs a couple of syscalls per project and emits nothing at all when
+ * nothing changed. Emission stays transition-only; the sweep is a source of
+ * rescans, never of events.
  *
  * Rescans are debounced PER SLUG DIRECTORY ({@link SESSION_LIST_DEBOUNCE_MS})
  * so a streaming turn's JSONL append burst collapses into one re-scan of just
@@ -38,7 +55,7 @@
  * @module services/runtimes/claude-code/sessions/session-list-watcher
  */
 import chokidar, { type FSWatcher } from 'chokidar';
-import { readdir } from 'fs/promises';
+import { readdir, stat } from 'fs/promises';
 import { dirname, join } from 'path';
 import type { Session } from '@dorkos/shared/types';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
@@ -53,6 +70,19 @@ import { logger } from '../../../../lib/logger.js';
  * {@link WATCHER.DEBOUNCE_MS} because a list re-scan is heavier than a tail read.
  */
 export const SESSION_LIST_DEBOUNCE_MS = 250;
+
+/**
+ * Gap between reconcile sweeps (ms) — the worst-case delay before a session
+ * chokidar never reported reaches the list anyway (see the module doc).
+ *
+ * This is a ceiling on a recovery, not the normal path: when chokidar does its
+ * job the event arrives in milliseconds and the sweep finds nothing to do. Five
+ * seconds keeps a dropped session inside the window where a person is still
+ * looking at the screen that should have shown it, while leaving the steady-state
+ * cost at one `readdir` plus one `stat` per project every five seconds — a few
+ * milliseconds even for someone with hundreds of projects.
+ */
+export const SESSION_LIST_RECONCILE_MS = 5_000;
 
 /**
  * Compare two sessions on the fields that matter to the sidebar/global view.
@@ -102,6 +132,25 @@ function diffInventory(
 }
 
 /**
+ * The modification time of `dirPath` in milliseconds, or `undefined` when it is
+ * not a readable directory — it was deleted (the normal end of a project's
+ * life), it is a stray file sitting in the projects root, or it cannot be
+ * stat'd at all.
+ *
+ * `stat` rather than the `readdir` dirent: it follows symlinks, so a slug dir
+ * that is a symlink to a directory elsewhere is treated as the directory it
+ * points at, the same reading {@link TranscriptReader.listSessionsInDir} gives.
+ */
+async function dirMtime(dirPath: string): Promise<number | undefined> {
+  try {
+    const stats = await stat(dirPath);
+    return stats.isDirectory() ? stats.mtimeMs : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Watch every Claude account's projects root and yield session-list transitions
  * for every project. Yields the initial fleet-wide inventory as
  * `session_upserted`s, then live upserts/removals as transcripts change on disk
@@ -131,11 +180,20 @@ export function watchSessionList(
   // sessions — nor another account's copy of the same project.
   const known = new Map<string, Map<string, Session>>();
 
+  // The mtime each slug dir had at the sweep that last scheduled a rescan for
+  // it, keyed by absolute path. Only the sweep writes here, and it writes the
+  // mtime it OBSERVED, before the rescan it triggers has run: anything landing
+  // in between leaves the dir looking changed again next sweep, so the error is
+  // always one rescan too many rather than one too few. A dir missing from this
+  // map has never been swept — the state a chokidar-dropped directory is in.
+  const dirMtimes = new Map<string, number>();
+
   // Buffered events awaiting delivery, and the single waiter (if `next()` is
   // blocked on an empty queue). `closed` short-circuits delivery after `return()`.
   const queue: SessionListEvent[] = [];
   let waiter: ((result: IteratorResult<SessionListEvent>) => void) | null = null;
   const debounceTimers = new Map<string, NodeJS.Timeout>();
+  let sweepTimer: NodeJS.Timeout | undefined;
   let closed = false;
 
   /** Hand `event` to a blocked consumer, or buffer it for the next `next()`. */
@@ -183,6 +241,82 @@ export function watchSessionList(
   };
 
   /**
+   * Re-derive one root's slug dirs from disk and rescan the ones that moved.
+   *
+   * This is the half of the watcher that does not believe chokidar (module
+   * doc). It reads the root once and stats each child; a dir whose mtime moved
+   * since the previous sweep has gained or lost a transcript, and a dir the
+   * sweep has never seen is one chokidar never reported. Both get the same
+   * debounced rescan a chokidar event would have triggered, so an unchanged
+   * tree costs one `readdir` plus one `stat` per project and emits nothing.
+   *
+   * Appends to an existing transcript deliberately do NOT move a directory's
+   * mtime and so do not show up here — the per-file watch chokidar attached
+   * when it first saw the file carries those, and a sweep that re-listed every
+   * project on every turn would be a poll of the whole tree rather than a
+   * backstop.
+   */
+  const sweepRoot = async (projectsRoot: string): Promise<void> => {
+    let names: string[];
+    try {
+      names = await readdir(projectsRoot);
+    } catch (err) {
+      // A missing projects root is the normal first-run state, same as in the
+      // initial scan; anything else is worth one line per sweep.
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        logger.warn('[session-list-watcher] reconcile sweep failed', {
+          projectsRoot,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      return;
+    }
+    const present = new Set<string>();
+    for (const name of names) {
+      if (closed) return;
+      const dir = join(projectsRoot, name);
+      const mtimeMs = await dirMtime(dir);
+      // Not a readable directory — a stray file in the projects root, or an
+      // entry that vanished between the readdir and the stat. Left out of
+      // `present` so it is never taken for a live slug dir, and never rescanned,
+      // because listing a non-directory only produces a warning.
+      if (mtimeMs === undefined) continue;
+      present.add(dir);
+      if (dirMtimes.get(dir) === mtimeMs) continue;
+      dirMtimes.set(dir, mtimeMs);
+      scheduleRescan(dir);
+    }
+    // A slug dir that vanished without an `unlinkDir` still owes its sessions a
+    // `session_removed`; the rescan lists the absent dir as `[]` and emits them.
+    // Driven off `known` rather than the sweep's own ledger so a project deleted
+    // before the first sweep is covered too, and skipped once the dir holds no
+    // sessions, so a long-gone project is not re-listed every five seconds.
+    for (const [dir, sessions] of known) {
+      if (dirname(dir) !== projectsRoot || present.has(dir) || sessions.size === 0) continue;
+      dirMtimes.delete(dir);
+      scheduleRescan(dir);
+    }
+  };
+
+  /**
+   * Run the next sweep across every root, then queue the one after it. A
+   * self-rescheduling timeout rather than an interval: a sweep of a large tree
+   * on a busy machine can outlast the gap, and sweeps must not overlap.
+   */
+  const scheduleSweep = (): void => {
+    if (closed || projectsRoots.length === 0) return;
+    sweepTimer = setTimeout(() => {
+      void (async () => {
+        for (const projectsRoot of projectsRoots) {
+          if (closed) return;
+          await sweepRoot(projectsRoot);
+        }
+        scheduleSweep();
+      })();
+    }, SESSION_LIST_RECONCILE_MS);
+  };
+
+  /**
    * Attach one account's watcher and kick off its initial inventory. Every guard
    * below closes over THIS root, which is what keeps N accounts from
    * misattributing each other's events.
@@ -207,14 +341,19 @@ export function watchSessionList(
       // chokidar attaches a new dir's own fs.watch only AFTER scanning it, so a
       // file created in that scan-then-attach window emits no per-file `add` (lost,
       // not late). This `addDir` fires from the long-lived root watch before that
-      // window; the rescan recovers whatever landed. On `unlinkDir` the rescan
-      // lists an absent dir as `[]`, emitting `session_removed` for its sessions.
+      // window, so its rescan recovers whatever landed — when the root watch is
+      // live at all. When it is not, this handler never runs and the reconcile
+      // sweep is what finds the directory. On `unlinkDir` the rescan lists an
+      // absent dir as `[]`, emitting `session_removed` for its sessions.
       scheduleRescan(dirPath);
     };
 
-    // Register the watch BEFORE the initial scan so externally-added files that
-    // land during the first enumeration are not missed. NO glob (see module doc);
-    // depth 1 = the root's slug dirs and the JSONL files directly inside them.
+    // Asking for the watch here does NOT mean it is armed here: chokidar scans
+    // the root before it calls `fs.watch` on it, and everything created in
+    // between is invisible to it forever (module doc). The reconcile sweep, not
+    // the ordering of these lines, is what covers that window. NO glob (see
+    // module doc); depth 1 = the root's slug dirs and the JSONL files directly
+    // inside them.
     const watcher: FSWatcher = chokidar.watch(projectsRoot, {
       persistent: true,
       ignoreInitial: true, // initial inventory delivered by the scan below
@@ -301,12 +440,15 @@ export function watchSessionList(
   };
 
   const watchers = projectsRoots.map(watchRoot);
+  scheduleSweep();
 
   const close = async (): Promise<void> => {
     if (closed) return;
     closed = true;
     for (const timer of debounceTimers.values()) clearTimeout(timer);
     debounceTimers.clear();
+    if (sweepTimer) clearTimeout(sweepTimer);
+    sweepTimer = undefined;
     if (waiter) {
       const resolve = waiter;
       waiter = null;

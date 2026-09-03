@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed (spec: fleet-context-health, DOR-113)
+Accepted (spec: fleet-context-health, DOR-113)
 
 ## Context
 

@@ -498,13 +498,3 @@ export async function writeManifest(
   };
   await writeJsonFile(path.join(outputDir, 'manifest.json'), manifest);
 }
-
-/** Ensure the output dir exists and is empty of previously generated assets. */
-export async function resetOutputDir(): Promise<void> {
-  await fs.mkdir(OUTPUT_DIR, { recursive: true });
-  for (const entry of await fs.readdir(OUTPUT_DIR)) {
-    if (entry.endsWith('.png') || entry.endsWith('.webm') || entry === 'manifest.json') {
-      await fs.rm(path.join(OUTPUT_DIR, entry));
-    }
-  }
-}

@@ -19,6 +19,7 @@ export {
 } from './use-theme';
 export { useReportIssue } from './report-issue/use-report-issue';
 export { useIsMobile } from './media/use-is-mobile';
+export { useIsBelowDesktop } from './media/use-is-below-desktop';
 export { useIsTouchOnly } from './media/use-is-touch-only';
 export { useVisualViewportBottomInset } from './viewport/use-visual-viewport-inset';
 export { useFavicon } from './use-favicon';

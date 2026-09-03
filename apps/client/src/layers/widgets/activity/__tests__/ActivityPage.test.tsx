@@ -8,6 +8,13 @@ vi.mock('@/layers/features/activity-feed-page', () => ({
   useFullActivityFeed: () => ({
     data: { pages: [{ items: [], nextCursor: null }] },
     isLoading: false,
+    // Kept alongside the fields above rather than omitted: `ActivityPage`
+    // reads both and wires `refetch` into `onRetry` (batch 06, finding 6.4).
+    // `ActivityTimeline` is mocked below so nothing here calls `onRetry`
+    // today, but a hook shape this file doesn't otherwise reproduce is a
+    // false green waiting for that mock to come off.
+    isError: false,
+    refetch: vi.fn(),
     isFetchingNextPage: false,
     hasNextPage: false,
     fetchNextPage: vi.fn(),

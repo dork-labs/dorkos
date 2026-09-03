@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { Hand } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
+import { PRESS_ROW, Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
 import { RuntimeMark } from '@/layers/entities/runtime';
 import { useSessionBorderState } from '../model/use-session-border-state';
 import { usePulseMotion } from '../model/use-pulse-motion';
@@ -92,7 +92,8 @@ export function SessionRowCompact({
             data-testid="session-row"
             onClick={onClick}
             className={cn(
-              'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors duration-100 active:scale-[0.98]',
+              'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs',
+              PRESS_ROW,
               isActive
                 ? 'bg-secondary text-foreground'
                 : 'text-muted-foreground hover:bg-accent hover:text-foreground'

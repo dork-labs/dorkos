@@ -40,13 +40,21 @@ function TableFooter({ className, ...props }: React.ComponentProps<'tfoot'>) {
   );
 }
 
-/** Table row — hover highlight and selected state via data attribute. */
+/**
+ * Table row — hover highlight and selected state via data attribute.
+ *
+ * The hover is `bg-accent`, the app's own "you are pointing at this" token, and
+ * not the `bg-muted/50` it shipped with: on the dark theme `--muted` is 9%
+ * lightness against a 4% page, and half of that blends to a 2.5-point step
+ * nobody can see (measured by pixel-diffing hover crops, DOR-1751). `--accent`
+ * is 12% — the same step a dropdown item or a ghost button answers with.
+ */
 function TableRow({ className, ...props }: React.ComponentProps<'tr'>) {
   return (
     <tr
       data-slot="table-row"
       className={cn(
-        'hover:bg-muted/50 data-[state=selected]:bg-muted border-b transition-colors',
+        'hover:bg-accent data-[state=selected]:bg-muted border-b transition-colors duration-150',
         className
       )}
       {...props}

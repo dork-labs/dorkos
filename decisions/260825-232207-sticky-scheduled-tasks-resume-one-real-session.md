@@ -12,7 +12,7 @@ amends: null
 
 ## Status
 
-Proposed (DOR-1571).
+Accepted (DOR-1571).
 
 ## Context
 

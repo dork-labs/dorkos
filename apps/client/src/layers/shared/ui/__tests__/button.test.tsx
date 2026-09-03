@@ -44,3 +44,34 @@ describe('Button responsive touch-target height', () => {
     expect(getByRole('button').className).not.toContain('h-11');
   });
 });
+
+describe('Button press and disabled feedback', () => {
+  it('answers a press with the 0.97 scale the design system asks every button for', () => {
+    const { getByRole } = render(<Button>Save</Button>);
+    expect(getByRole('button').className).toContain('motion-safe:active:scale-[0.97]');
+  });
+
+  it('gives every variant the same press — the primitive owns it, not the call site', () => {
+    const { getByRole } = render(
+      <Button variant="ghost" size="icon-sm" aria-label="More">
+        •
+      </Button>
+    );
+    expect(getByRole('button').className).toContain('motion-safe:active:scale-[0.97]');
+  });
+
+  it('names the properties it transitions, so the md: height swap is not animated', () => {
+    // `transition-all` animated `height` too: dragging a window across 768px
+    // re-ran RESPONSIVE_SIZE_CLASSES as an animation on every button on screen.
+    const { getByRole } = render(<Button>Save</Button>);
+    expect(getByRole('button').className).not.toContain('transition-all');
+    expect(getByRole('button').className).toContain(
+      'transition-[color,background-color,border-color,box-shadow,scale]'
+    );
+  });
+
+  it('says "not allowed" when disabled, like Input and Checkbox do', () => {
+    const { getByRole } = render(<Button disabled>Save</Button>);
+    expect(getByRole('button').className).toContain('disabled:cursor-not-allowed');
+  });
+});

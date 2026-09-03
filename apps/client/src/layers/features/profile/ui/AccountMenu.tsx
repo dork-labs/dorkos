@@ -17,6 +17,7 @@ import {
   IdentityAvatar,
   identityMarkRing,
   IDENTITY_MARK_GROUP,
+  PRESS_MARK,
   ResponsiveDropdownMenu,
   ResponsiveDropdownMenuContent,
   ResponsiveDropdownMenuTrigger,
@@ -73,10 +74,7 @@ export function AccountMenu({
           // DISABLED — so your own face read as switched off the moment you
           // pointed at it. Your colour answers instead, on the disc, through the
           // named group, and a keyboard gets the identical ring.
-          className={cn(
-            IDENTITY_MARK_GROUP,
-            'focus-ring rounded-md p-1 transition-[scale] duration-(--identity-press) ease-(--identity-ease-out) active:scale-[0.94]'
-          )}
+          className={cn(IDENTITY_MARK_GROUP, 'focus-ring rounded-md p-1', PRESS_MARK)}
           aria-label={`Your account: ${member.displayName}`}
         >
           <IdentityAvatar

@@ -1,11 +1,13 @@
 import { useMemo } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { asMarketplaceCategory, CATEGORY_LABELS } from '@dorkos/marketplace';
+import { cn } from '@/layers/shared/lib';
 import { useMarketplacePackages, useInstalledPackages } from '@/layers/entities/marketplace';
 import { useRequestInstall } from '../model/use-request-install';
 import { useMarketplaceParams } from '../model/use-marketplace-params';
 import { filterPackages } from '../lib/package-filter';
 import { sortPackages } from '../lib/package-sort';
+import { PACKAGE_GRID_COLUMNS, PACKAGE_GRID_CONTAINER } from '../lib/package-grid-layout';
 import { PackageCard } from './PackageCard';
 import { PackageLoadingSkeleton } from './PackageLoadingSkeleton';
 import { PackageEmptyState } from './PackageEmptyState';
@@ -129,7 +131,7 @@ export function PackageGrid() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className={cn(PACKAGE_GRID_CONTAINER, 'space-y-4')}>
       {/* Section header with count (sort lives in the page header now) */}
       <div className="flex items-center justify-between gap-4">
         <h2 className="text-base font-semibold">
@@ -143,7 +145,8 @@ export function PackageGrid() {
         variants={prefersReducedMotion ? undefined : gridVariants}
         initial="hidden"
         animate="visible"
-        className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
+        data-slot="package-grid"
+        className={PACKAGE_GRID_COLUMNS}
       >
         {visible.map((pkg, index) => (
           <motion.div

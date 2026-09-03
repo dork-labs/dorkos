@@ -44,6 +44,13 @@ tmp/
 apps/e2e/capture/library/*
 !apps/e2e/capture/library/README.md
 
+# Where the process phase parks the previous published set while it rewrites it
+# (`publishWithRollback` in apps/e2e/capture/process.ts), one directory per pid.
+# Removed once its contents are safely back; a hard kill, or a restore that
+# could not finish, deliberately leaves one standing — it may be the only copy
+# of that media, and it must not read as 30 MB of untracked files when it is.
+apps/site/public/product/.publish-backup-*/
+
 # The browser-suite manifest: every run rewrites lastRun/run/pass counts and
 # reformats the file, so no legitimate action could ever leave it clean when
 # tracked — a standing trap two branches had to hand-restore before committing
@@ -106,6 +113,15 @@ mockups/running-figure-v3.html
 # left on disk only after a hard crash mid-activate.
 *.dorkos-bak-*
 vitest-shard-report.json
+# Written by scripts/vitest-flake-reporter.ts into each package it runs in, and
+# read by the merge-queue leg of .github/workflows/test.yml. A local artifact
+# like the one above; nothing commits it.
+vitest-flake-report.json
+# The throwaway fixture tree scripts/__tests__/vitest-flake-reporter.test.ts
+# generates under scripts/ (it has to live inside the repo so the fixture's
+# `import 'vitest'` resolves). Removed in afterAll — this line is what stops an
+# interrupted run leaving a deliberately-failing spec file behind.
+scripts/.flake-fixture-*/
 # Entity slices written into the source tree by the cross-entity DAG guard
 # (apps/client/__tests__/entity-dag-lint.test.ts). They have to live under
 # `entities/` because the lint rule they exercise is scoped to that path, and

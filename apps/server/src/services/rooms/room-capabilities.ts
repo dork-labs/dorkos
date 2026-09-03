@@ -1420,7 +1420,11 @@ export const roomsDomain: CapabilityDomain = {
           });
         }
         answering(() =>
-          rooms.updateRoom(input.roomId, caller.id, {
+          // `updateRoomFromTool`, never the operator-only `updateRoom` a route
+          // calls (DOR-608): this verb's whole audience is an agent on the
+          // room's roster, and the two field refusals it takes are what stand
+          // between that agent and somebody else's room name.
+          rooms.updateRoomFromTool(input.roomId, caller.id, {
             ...(input.title !== undefined ? { title: input.title } : {}),
             ...(input.topic !== undefined ? { topic: input.topic } : {}),
           })

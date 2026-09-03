@@ -189,10 +189,15 @@ describe('runTransaction (concurrent, same target)', () => {
 
   it('serialises two transactions against the same target', async () => {
     const target = path.join(scratch, 'plugins', 'serialised');
+    const probeTarget = path.join(scratch, 'plugins', 'unrelated-probe');
     let inFlight = 0;
     let maxInFlight = 0;
+    let secondEnteredStage = false;
 
-    const install = (label: string): Promise<string> =>
+    const firstEnteredStage = deferred();
+    const releaseFirst = deferred();
+
+    const install = (label: string, onStage: () => Promise<void>): Promise<string> =>
       runTransaction({
         name: label,
         target,
@@ -200,9 +205,7 @@ describe('runTransaction (concurrent, same target)', () => {
           stagingDirsObserved.push(staging.path);
           inFlight += 1;
           maxInFlight = Math.max(maxInFlight, inFlight);
-          // Yield long enough that an unserialised engine would have both
-          // transactions staging at once.
-          await delay(20);
+          await onStage();
           await writeFile(path.join(staging.path, 'who.txt'), label, 'utf8');
         },
         activate: async (staging) => {
@@ -213,10 +216,55 @@ describe('runTransaction (concurrent, same target)', () => {
         },
       });
 
-    await expect(Promise.all([install('first'), install('second')])).resolves.toEqual([
-      'first',
-      'second',
-    ]);
+    // Reaching `stage` proves the transaction holds the lock: the engine takes
+    // it before it even creates the staging directory. Starting `second` only
+    // from here is what makes the ordering below a fact instead of a coin
+    // flip. Launching both in one tick does NOT order them: each reaches the
+    // lock through `canonicalTargetKey`'s `realpath` walk, whose calls settle
+    // in libuv threadpool order, so the one written first is not reliably the
+    // one that acquires first (measured at ~1 run in 5 flipped, in isolation
+    // and under load alike — DOR-1725). Mutual exclusion was never the thing
+    // that wobbled; the engine promises exclusion, not fairness.
+    const first = install('first', async () => {
+      firstEnteredStage.resolve();
+      await releaseFirst.promise;
+    });
+    await firstEnteredStage.promise;
+
+    const second = install('second', async () => {
+      secondEnteredStage = true;
+    });
+
+    // `second` now gets every scheduling opportunity it needs to reach its own
+    // `stage`: three whole unrelated transactions run start to finish while
+    // `first` still holds the lock, and each does strictly more work than the
+    // realpath walk plus `mkdtemp` that is all `second` has left. Bounding the
+    // wait on the engine's own steps rather than on a timer is what keeps this
+    // assertion honest on a loaded machine (DOR-1689).
+    for (const probe of ['probe-a', 'probe-b', 'probe-c']) {
+      await runTransaction({
+        name: probe,
+        target: probeTarget,
+        stage: async (staging) => {
+          stagingDirsObserved.push(staging.path);
+          await writeFile(path.join(staging.path, 'who.txt'), probe, 'utf8');
+        },
+        activate: async (staging) => {
+          await mkdir(path.dirname(probeTarget), { recursive: true });
+          await atomicMove(staging.path, probeTarget);
+          return probe;
+        },
+      });
+    }
+
+    // The serialisation itself: `second` has not started staging, and only one
+    // transaction is inside the critical section.
+    expect(secondEnteredStage).toBe(false);
+    expect(inFlight).toBe(1);
+
+    releaseFirst.resolve();
+
+    await expect(Promise.all([first, second])).resolves.toEqual(['first', 'second']);
 
     expect(maxInFlight).toBe(1);
     // Serialised means last-one-wins, not one-lost-entirely: the second

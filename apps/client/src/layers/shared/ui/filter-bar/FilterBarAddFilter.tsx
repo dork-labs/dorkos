@@ -79,7 +79,7 @@ function FilterBarAddFilter({ dynamicOptions, className }: FilterBarAddFilterPro
               key={name}
               type="button"
               onClick={() => selectFilter(name)}
-              className="hover:bg-accent flex items-center gap-2 rounded-sm px-2 py-1.5 text-xs"
+              className="hover:bg-accent flex items-center gap-2 rounded-sm px-2 py-1.5 text-xs transition-colors duration-150"
             >
               <Icon className="text-muted-foreground size-3.5" />
               <span className="flex-1 text-left">{label}</span>
@@ -103,7 +103,7 @@ function FilterBarAddFilter({ dynamicOptions, className }: FilterBarAddFilterPro
         <button
           type="button"
           onClick={goBack}
-          className="hover:bg-accent -mx-1 flex items-center gap-1 rounded-sm px-1 py-1 text-xs font-medium"
+          className="hover:bg-accent -mx-1 flex items-center gap-1 rounded-sm px-1 py-1 text-xs font-medium transition-colors duration-150"
         >
           <ArrowLeftIcon className="size-3" />
           {label}

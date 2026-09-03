@@ -43,7 +43,7 @@ import { apiKey } from '@better-auth/api-key';
 import { user, session, account, verification, apikey, eq, type Db } from '@dorkos/db';
 import { env } from '../../../env.js';
 import { logger } from '../../../lib/logger.js';
-import { resolveTrustedOrigins } from '../../../lib/trusted-origins.js';
+import { resolveAuthTrustedOrigins } from '../../../lib/trusted-origins.js';
 import { findOwnerAccount, type Account } from './accounts.js';
 import { resolveBetterAuthSecret } from './secret.js';
 import { seedLegacyMcpApiKey } from './seed-legacy-mcp-key.js';
@@ -164,9 +164,14 @@ export function createAuth(db: Db, dorkHome: string) {
     // now-inert defaults on purpose: rewriting a SQLite column default means
     // rebuilding the table for zero behavior change.
     plugins: [apiKey({ rateLimit: { enabled: false } })],
-    // CSRF/origin surface: reuse the dynamic origin policy (loopback dev origins
-    // + live tunnel origin) shared with the CORS allowlist.
-    trustedOrigins: () => resolveTrustedOrigins(),
+    // CSRF/origin surface: the dynamic origin policy (loopback dev origins + the
+    // live tunnel origin) plus the operator's explicit `DORKOS_CORS_ORIGIN`
+    // list, so the origins this server already answers over HTTP and over the
+    // socket are the same ones it will accept a login from. It read only the
+    // first half until DOR-1744, which is why the desktop dev renderer could
+    // load the whole app and then fail to create the owner account. See
+    // `resolveAuthTrustedOrigins` for what it drops and why.
+    trustedOrigins: () => resolveAuthTrustedOrigins(),
     advanced: {
       // Secure in production; `trust proxy` in app.ts keeps this correct behind
       // the ngrok hop. `sameSite: 'lax'` is required by the P2 device flow and

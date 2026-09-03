@@ -119,10 +119,11 @@ export function WidgetActionButton({ action, label, variant, fullWidth }: Widget
   if (!interactive) return buttonEl;
 
   return (
+    // No `whileTap` here: the Button inside answers its own press now, and a
+    // wrapper scaling too would compound into a squash twice the size.
     <motion.div
       className={cn('inline-flex', fullWidth && 'w-full')}
       whileHover={{ scale: 1.02 }}
-      whileTap={{ scale: 0.97 }}
       transition={WIDGET_SPRING}
     >
       {buttonEl}

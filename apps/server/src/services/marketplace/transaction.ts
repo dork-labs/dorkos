@@ -185,6 +185,16 @@ async function canonicalTargetKey(target: string): Promise<string> {
  * of one directory are one lock. Non-reentrant: calling this for a target the
  * current async context already holds throws rather than deadlocking.
  *
+ * **Exclusion, not fairness.** Two callers that start in the same tick reach
+ * the lock through {@link canonicalTargetKey}'s `realpath` walk, and those
+ * calls settle in libuv threadpool order, so the one called first is not
+ * reliably the one that acquires first. Nothing needs that ordering — two
+ * concurrent installs of one package are two independent requests, and either
+ * one landing last is correct — but a caller or a test that assumes it is
+ * assuming a guarantee this does not make (measured at ~1 run in 5 flipped;
+ * DOR-1725). To order two of these deterministically, start the second only
+ * after the first has provably entered its critical section.
+ *
  * @param target - Absolute path to the install target to serialise on.
  * @param fn - The critical section.
  * @returns Whatever `fn` returns.

@@ -25,6 +25,7 @@ import { classifySchemaLeaves } from '../config-disclosure.js';
 import {
   AGENT_OPERATOR_ONLY_STAKES,
   AGENT_WRITE_POLICY,
+  NESTED_AGENT_FIELDS,
   OPERATOR_ONLY_AGENT_PATHS,
   TIGHTEN_ONLY_AGENT_PATHS,
   describeAgentOperatorOnlyRefusal,
@@ -95,6 +96,17 @@ describe('AGENT_WRITE_POLICY drift guard', () => {
         // Which other agents this one can reach.
         'namespace',
       ].sort()
+    );
+  });
+
+  it('names every field whose value is an object of independent leaves', () => {
+    // What {@link updateAgentManifest} merges into rather than replaces
+    // (DOR-1719). Derived from the dotted keys of the table, so this asserts the
+    // derivation as much as the set: a field that stops appearing here goes back
+    // to being written whole, which is how a partial patch used to reset the
+    // flags it never named.
+    expect([...NESTED_AGENT_FIELDS].sort()).toEqual(
+      ['behavior', 'conventions', 'enabledToolGroups', 'traits'].sort()
     );
   });
 
@@ -210,9 +222,10 @@ describe('findOperatorOnlyAgentPaths', () => {
 
     it('still lets an unknown key through above fields nobody guards', () => {
       // The rule is scoped by the TABLE, not by the shape: `traits` holds no
-      // operator-only leaf, so an unrecognised key under it is somebody else's
-      // problem (it replaces the object with schema defaults — the same
-      // whole-object write every `traits` patch does) and not a refusal here.
+      // operator-only leaf, so an unrecognised key under it is not a refusal
+      // here. It is not a silent reset either any more — `updateAgentManifest`
+      // merges a nested field leaf by leaf, so a patch naming only `zzz` writes
+      // nothing at all (DOR-1719, pinned in `agent-updater.test.ts`).
       expect(findOperatorOnlyAgentPaths({ traits: { zzz: 1 } })).toEqual([]);
     });
 

@@ -72,12 +72,11 @@ export type RoomErrorCode =
    * a room carrying a well-known key, which today means #team (team-room-home
    * spec D3.1).
    *
-   * **Narrow on purpose, and that narrowness is the whole design.**
-   * `RoomService.updateRoom` stays ungated for ordinary rooms, because the
-   * blanket `requireOperator` fix breaks `createRoom`'s DM un-archive path
-   * (DOR-608). A DM never carries a well-known key, so this refusal cannot
-   * reach that path — it closes the hole for the one room the product cannot
-   * work without, and changes nothing anywhere else.
+   * **Narrow on purpose, and what it now guards is the TOOL path.**
+   * `RoomService.updateRoom` is operator-only since DOR-608, so this code can no
+   * longer come from a route; it comes from `update_room`, the capability verb
+   * an agent renames a channel with. #team is the one channel that verb may not
+   * touch, because the product renders its home tab from it.
    *
    * A 403 rather than a 404: the caller is a member of a room it can see, and
    * "you may not rename this one" is more useful than pretending it is gone.

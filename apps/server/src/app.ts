@@ -35,7 +35,7 @@ import { requestLogger } from './middleware/request-logger.js';
 import { buildAuthRateLimiter } from './middleware/auth-rate-limit.js';
 import { resolveAgentIdentity } from './middleware/agent-identity.js';
 import { getAuth, toNodeHandler, sessionGate } from './services/core/auth/index.js';
-import { resolveTrustedOrigins } from './lib/trusted-origins.js';
+import { parseConfiguredOrigins, resolveTrustedOrigins } from './lib/trusted-origins.js';
 import { logger } from './lib/logger.js';
 import { testControlRouter } from './routes/test-control.js';
 import { createMockMcpOAuthRouter } from './routes/mock-mcp-oauth-server.js';
@@ -96,11 +96,16 @@ function buildCors(): express.RequestHandler {
         'you visit read and write this DorkOS. Set it to the exact origins that need ' +
         'access instead (comma-separated, e.g. https://dorkos.example.com) and restart.'
     );
-  } else if (envOrigin) {
-    // User-specified origins (comma-separated) — static, no per-request check.
-    const origins = envOrigin.split(',').map((o) => o.trim());
-    return cors({ origin: origins, credentials: true });
   }
+
+  // User-specified origins (comma-separated) — static, no per-request check.
+  // Read through the shared `parseConfiguredOrigins`, which is also what the
+  // WebSocket upgrade check and Better Auth's CSRF allowlist read, so one value
+  // cannot mean different things on the three surfaces that honour it. It
+  // returns nothing for the wildcard, which is what drops the request through to
+  // the per-request policy below.
+  const configuredOrigins = parseConfiguredOrigins(envOrigin);
+  if (configuredOrigins.length > 0) return cors({ origin: configuredOrigins, credentials: true });
 
   // Dynamic per-request policy.
   return cors<express.Request>((req, done) => {

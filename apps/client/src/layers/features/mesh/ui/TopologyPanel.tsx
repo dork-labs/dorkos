@@ -31,7 +31,7 @@ function NamespaceGroup({ namespace, agentCount, agents }: NamespaceGroupProps) 
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="hover:bg-muted/50 flex w-full items-center gap-2 px-4 py-3 text-left"
+        className="hover:bg-muted/50 flex w-full items-center gap-2 px-4 py-3 text-left transition-colors duration-150"
       >
         {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
         <span className="text-sm font-medium">{namespace}</span>
