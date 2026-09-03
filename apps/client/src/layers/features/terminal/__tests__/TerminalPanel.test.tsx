@@ -477,7 +477,7 @@ describe('TerminalPanel', () => {
     renderTerminal(transport);
 
     await waitFor(() =>
-      expect(xterm.writes.join('')).toContain('[opened in another window — session moved]')
+      expect(xterm.writes.join('')).toContain('[opened in another window, session moved]')
     );
     // Tab kept (dead but labeled), no fresh shell spawned to replace it.
     expect(screen.getByRole('tab', { name: /Terminal 1/ })).toBeInTheDocument();
@@ -537,7 +537,7 @@ describe('TerminalPanel', () => {
 
     renderTerminal(transport);
     await waitFor(() =>
-      expect(xterm.writes.join('')).toContain('[opened in another window — session moved]')
+      expect(xterm.writes.join('')).toContain('[opened in another window, session moved]')
     );
 
     // The close control is a sibling of the tab (a non-tab-stop button), so it
@@ -590,7 +590,7 @@ describe('TerminalPanel', () => {
 
     await waitFor(() =>
       expect(xterm.writes.join('')).toContain(
-        'Too many terminals open — close some or wait a few minutes.'
+        'Too many terminals open. Close some or wait a few minutes.'
       )
     );
     // The raw server string is replaced, not appended.

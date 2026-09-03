@@ -92,7 +92,7 @@ export function TeamShowcases() {
     <>
       <PlaygroundSection
         title="Team Roster"
-        description="Every person and agent on this install, in one grid. Driven by a two-people / four-agent / two-owner fixture the product cannot produce yet — the shape the cards, chips and grouping have to already work for. Try the chips, the search, an agent's 'by @handle' attribution, and Group: manager."
+        description="Every person and agent on this install, in one grid. Driven by a two-people / four-agent / two-owner fixture the product cannot produce yet — the shape the cards, chips and grouping have to already work for. Try the chips, the search, an agent's 'by @handle' attribution, and Group by owner."
       >
         <ShowcaseLabel>Two people, four agents, two owners</ShowcaseLabel>
         <ShowcaseDemo responsive>

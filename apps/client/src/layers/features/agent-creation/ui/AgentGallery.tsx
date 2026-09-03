@@ -87,7 +87,7 @@ export function AgentGallery({ onDesignYourOwn, onSelectTemplate, onImport }: Ag
           variant="design"
           face={<Sparkles className="text-primary size-7" />}
           title="Design your own"
-          subtitle="Describe the job in your own words — your agent takes shape as you talk to it."
+          subtitle="Describe the job in your own words. Your agent takes shape as you talk to it."
           tabIndex={roving.tabIndexFor(0)}
           onSelect={onDesignYourOwn}
           onKeyDown={(e) => roving.handleKeyDown(e, 0)}
@@ -129,8 +129,8 @@ export function AgentGallery({ onDesignYourOwn, onSelectTemplate, onImport }: Ag
           data-testid="gallery-templates-note"
         >
           {error
-            ? 'Could not load ready-made agents. Check your marketplace sources in Settings — you can still design your own above.'
-            : 'No ready-made agents yet — design your own above, or add a marketplace source in Settings.'}
+            ? 'Could not load ready-made agents. Check your marketplace sources in Settings. You can still design your own above.'
+            : 'No ready-made agents yet. Design your own above, or add a marketplace source in Settings.'}
         </p>
       )}
 

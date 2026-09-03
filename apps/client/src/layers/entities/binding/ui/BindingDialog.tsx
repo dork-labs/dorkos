@@ -243,7 +243,7 @@ export function BindingDialog({
                       channelType:
                         values.channelType !== SELECT_ANY ? values.channelType : undefined,
                     });
-                    return `${sentence} — routed to ${resolvedAgentName}.`;
+                    return `${sentence}. Routed to ${resolvedAgentName}.`;
                   })()
                 : null;
             // SELECT_ANY means "no filter selected" — used for badge and clear button visibility.

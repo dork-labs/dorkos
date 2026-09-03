@@ -130,7 +130,7 @@ describe('SessionRowSidebar', () => {
   it.each([
     ['streaming', 'Working', 'bg-status-success'],
     ['pendingApproval', 'Awaiting your approval', 'bg-status-warning-dot'],
-    ['error', 'Error — check session', 'bg-status-error'],
+    ['error', 'Error: check session', 'bg-status-error'],
   ] as const)('draws a %s dot with its label in words', (kind, label, colorClass) => {
     if (kind === 'error') {
       useSessionChatStore.setState({
@@ -281,7 +281,7 @@ describe('SessionRowSidebar', () => {
     );
 
     expect(
-      screen.getByRole('img', { name: 'Full power — acts without approval prompts' })
+      screen.getByRole('img', { name: 'Full power: acts without approval prompts' })
     ).toBeInTheDocument();
   });
 
@@ -297,7 +297,7 @@ describe('SessionRowSidebar', () => {
       />
     );
 
-    const mark = screen.getByRole('img', { name: 'Full power — acts without approval prompts' });
+    const mark = screen.getByRole('img', { name: 'Full power: acts without approval prompts' });
     expect(mark.getAttribute('class')).toContain('text-status-success');
     expect(mark.getAttribute('class')).not.toMatch(/red/);
   });
@@ -305,7 +305,7 @@ describe('SessionRowSidebar', () => {
   it('leaves the mark off a session that asks first', () => {
     renderRow(<SessionRowSidebar session={makeSession()} isActive={false} onSelect={() => {}} />);
     expect(
-      screen.queryByRole('img', { name: 'Full power — acts without approval prompts' })
+      screen.queryByRole('img', { name: 'Full power: acts without approval prompts' })
     ).not.toBeInTheDocument();
   });
 

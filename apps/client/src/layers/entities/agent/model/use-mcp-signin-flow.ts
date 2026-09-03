@@ -31,7 +31,7 @@ const FLOW_POLL_INTERVAL_MS = 2_000;
 const MAX_POLL_REQUEST_FAILURES = 5;
 
 /** What a person reads while poll requests are failing but the flow is still alive. */
-const POLL_RETRY_NOTICE = 'Couldn’t check the sign-in — retrying.';
+const POLL_RETRY_NOTICE = 'Couldn’t check the sign-in. Retrying.';
 
 /** What a person reads once the poll requests have failed too many times running. */
 const POLL_UNREACHABLE_MESSAGE =

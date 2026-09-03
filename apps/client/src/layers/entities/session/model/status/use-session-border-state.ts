@@ -67,7 +67,7 @@ const LABELS: Record<SessionBorderKind, string> = {
   idle: 'Idle',
   pendingApproval: 'Awaiting your approval',
   streaming: 'Working',
-  error: 'Error — check session',
+  error: 'Error: check session',
   unseen: 'New activity',
 };
 

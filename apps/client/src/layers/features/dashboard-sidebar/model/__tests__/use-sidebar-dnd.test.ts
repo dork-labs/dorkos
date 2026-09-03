@@ -451,7 +451,7 @@ describe('R3 — a drop into a computed zone', () => {
 
   it('says how to keep the row in place, rather than only refusing', () => {
     expect(COMPUTED_ZONE_REJECTION).toBe(
-      'Heads up and Today are computed — pin it to Library to keep it in place.'
+      'Heads up and Today are computed. Pin it to Library to keep it in place.'
     );
   });
 
@@ -628,7 +628,7 @@ describe('buildSidebarAnnouncements', () => {
       over: over({ type: 'container', container: inGroup('g1') }),
     });
     expect(msg).toBe(
-      "Can't move api-server into Clients — membership is rule-based. Edit rules instead."
+      "Can't move api-server into Clients. membership is rule-based. Edit rules instead."
     );
   });
 
@@ -639,7 +639,7 @@ describe('buildSidebarAnnouncements', () => {
         ...active(agentNode('/api', PINNED)),
         over: over({ type: 'container', container: { kind: 'computed', zone: 'today' } }),
       })
-    ).toBe(`Can't move api-server there — ${COMPUTED_ZONE_REJECTION}`);
+    ).toBe(`Can't move api-server there. ${COMPUTED_ZONE_REJECTION}`);
   });
 
   it('names Heads up and Today on drag-over', () => {

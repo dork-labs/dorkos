@@ -172,7 +172,7 @@ describe('WidgetFence pop-out (PIP) affordance', () => {
 
     expect(mockTransport.sendUiAction).not.toHaveBeenCalled();
     // The board cell underneath is untouched — still playable.
-    expect(screen.getByLabelText('Row 1, column 1: empty — play here')).toBeInTheDocument();
+    expect(screen.getByLabelText('Row 1, column 1: empty, play here')).toBeInTheDocument();
   });
 
   it('keeps the widget tree node identity stable when the affordance appears alongside it', () => {

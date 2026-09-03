@@ -188,7 +188,7 @@ function explainEngaged(window: EngagedWindow | null): RungExplanation {
   }
   return {
     sentence:
-      `Answers when you @mention it — then keeps answering for ` +
+      `Answers when you @mention it, then keeps answering for ` +
       `${count(window.engagedWindowMinutes, 'more minute')} or ` +
       `${count(window.engagedWindowPosts, 'more message')}, whichever runs out first.`,
     note: quietAgain,

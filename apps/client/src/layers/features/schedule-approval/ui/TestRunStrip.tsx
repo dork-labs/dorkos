@@ -104,7 +104,7 @@ export function TestRunStrip({ testRun, onOpenRun, className }: TestRunStripProp
           {/* The reason, whenever the server gave one. A bare "it failed" is
               the least useful thing this line could say to somebody deciding
               whether to let the same prompt run unattended every night. */}
-          <span className="min-w-0 break-words">Test run failed{error ? ` — ${error}` : '.'}</span>
+          <span className="min-w-0 break-words">Test run failed{error ? `: ${error}` : '.'}</span>
         </>
       )}
     </p>

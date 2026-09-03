@@ -72,7 +72,7 @@ export function WelcomeBackCard() {
         {enabled && (
           <SwitchSettingRow
             label="Next-step offers"
-            description="A note can end with one thing your agent wants you to decide. There is no way to know it has one without asking, so each offer runs that agent for a turn — at most one turn per agent that left you a note."
+            description="A note can end with one thing your agent wants you to decide. There is no way to know it has one without asking, so each offer runs that agent for a turn, at most one turn per agent that left you a note."
             checked={offersEnabled}
             onCheckedChange={setOffersEnabled}
           />

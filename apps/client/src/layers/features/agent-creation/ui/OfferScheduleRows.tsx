@@ -52,7 +52,7 @@ export function OfferScheduleRows({
           <dd className="min-w-0 space-y-1">
             {schedules.map((job, index) => (
               <p key={`${job.name}-${index}`}>
-                <span className="font-medium">{job.name}</span> — {describePreviewSchedule(job)}
+                <span className="font-medium">{job.name}</span>: {describePreviewSchedule(job)}
               </p>
             ))}
           </dd>

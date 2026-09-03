@@ -875,7 +875,7 @@ describe('PinnedTriageHeader', () => {
         expect.objectContaining({ detail: 'offline-agent', itemId: 'tangerines' })
       )
     );
-    expect(await screen.findByText('Offline Agents')).toBeInTheDocument();
+    expect(await screen.findByText('Agents that aren’t answering')).toBeInTheDocument();
   });
 
   it('draws both groups at once when both have something to say', async () => {

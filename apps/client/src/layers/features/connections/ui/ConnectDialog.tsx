@@ -244,7 +244,7 @@ function ConnectSetupStep({
         />
         <p className="text-muted-foreground text-xs">
           {hasAccountAlready
-            ? `You already have a ${service.displayName} account connected — a label tells them apart.`
+            ? `You already have a ${service.displayName} account connected. A label tells them apart.`
             : 'A label helps when you later connect a second account of the same service.'}
         </p>
       </div>
@@ -316,7 +316,7 @@ function ConnectWaitingStep({
         <p className="text-sm">Waiting for you to finish signing in…</p>
       </div>
       <p className="text-muted-foreground text-xs">
-        You can close this window — we keep checking, and {service.displayName} will appear in your
+        You can close this window. We keep checking, and {service.displayName} will appear in your
         accounts once the sign-in finishes.
       </p>
       <Button variant="ghost" size="sm" onClick={onClose}>

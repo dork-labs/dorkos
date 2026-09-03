@@ -16,7 +16,7 @@ describe('presenceSentence', () => {
 
   it('says a single long wait out loud', () => {
     expect(presenceSentence(['Kai'], 'working_late')).toBe(
-      'Kai is still working — this is taking longer than usual'
+      'Kai is still working, this is taking longer than usual'
     );
   });
 
@@ -33,7 +33,7 @@ describe('presenceSentence', () => {
     // the room stopped saying that anything was slow — the exact case where a
     // person most needs to be told. Red if the count decides the wording again.
     expect(presenceSentence(['Kai', 'Ana'], 'working_late')).toBe(
-      'Kai and Ana are still working — this is taking longer than usual'
+      'Kai and Ana are still working, this is taking longer than usual'
     );
     expect(presenceSentence(['Kai', 'Ana', 'Sam'], 'working_late')).toBe(
       'Kai, Ana and Sam are still working — this is taking longer than usual'
@@ -50,7 +50,7 @@ describe('presenceCountSentence', () => {
 
   it('carries the long wait into the count', () => {
     expect(presenceCountSentence(4, 'working_late')).toBe(
-      '4 agents are still working — this is taking longer than usual'
+      '4 agents are still working, this is taking longer than usual'
     );
   });
 });

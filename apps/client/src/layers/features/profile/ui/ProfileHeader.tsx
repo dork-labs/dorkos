@@ -149,7 +149,7 @@ export function ProfileHeader({
         <button
           type="button"
           onClick={copyHandle}
-          aria-label={failed ? "Couldn't copy @handle — try again" : 'Copy @handle'}
+          aria-label={failed ? "Couldn't copy @handle. Try again" : 'Copy @handle'}
           className={cn(
             'focus-ring max-w-full truncate rounded-sm px-1 text-xs transition-colors',
             failed ? 'text-destructive' : 'text-muted-foreground hover:text-foreground'

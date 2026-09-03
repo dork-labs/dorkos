@@ -199,7 +199,7 @@ export function FileTreeRow({
             <button
               type="button"
               aria-label="Retry loading"
-              title="Couldn't load — retry"
+              title="Couldn't load. Retry"
               onClick={(e) => {
                 e.stopPropagation();
                 onRetry();

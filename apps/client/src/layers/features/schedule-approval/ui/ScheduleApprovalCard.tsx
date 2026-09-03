@@ -367,7 +367,7 @@ export function ScheduleApprovalCard({
             )}
           >
             Runs as: {permissionModeLabel(task.permissionMode)}
-            {bypasses && ' — acts without approval prompts'}
+            {bypasses && ', acts without approval prompts'}
           </span>
         </div>
         <CollapsibleContent>
@@ -428,7 +428,7 @@ export function ScheduleApprovalCard({
             tone={answered === 'approved' ? 'allowed' : 'denied'}
           >
             {answered === 'approved'
-              ? `Approved${firstRuns ? ` — first run ${firstRuns.first}` : ''}`
+              ? `Approved${firstRuns ? `. First run ${firstRuns.first}` : ''}`
               : 'Rejected'}
           </AskCard.Receipt>
           {/* Live for as long as the DELETE has not been sent. Once the window

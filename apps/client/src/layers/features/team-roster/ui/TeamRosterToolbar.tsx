@@ -112,7 +112,11 @@ export function TeamRosterToolbar({
             }
             className="shrink-0"
           >
-            Group: manager
+            {/* The value stays `manager` in code and on the wire; only the word
+                a person reads changes. Everything else on /team says "owner"
+                for the same idea, and nothing here ever explained "manager"
+                (DOR-1755). */}
+            Group by owner
           </Button>
 
           <div className="relative flex-1 sm:w-56 sm:flex-none">

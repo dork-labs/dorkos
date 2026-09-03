@@ -35,7 +35,7 @@ import { RoomFileConflictResponseSchema, type RoomFileConflict } from '@dorkos/s
 const SAVE_REFUSAL_COPY = new Map<string, string>([
   [
     'REQUEST_TOO_LARGE',
-    'That is too much text to send in one go, so nothing was saved. A room’s files are for documents people read — anything this big belongs in the room’s attachments.',
+    'That is too much text to send in one go, so nothing was saved. A room’s files are for documents people read. Anything this big belongs in the room’s attachments.',
   ],
   ['FILE_TOO_LARGE', 'This file would be bigger than this room allows, so nothing was saved.'],
   [
@@ -48,7 +48,7 @@ const SAVE_REFUSAL_COPY = new Map<string, string>([
   ],
   [
     'MERGE_IN_FLIGHT',
-    'Somebody else is writing to this room’s files right now. Nothing was saved — try again in a moment.',
+    'Somebody else is writing to this room’s files right now. Nothing was saved. Try again in a moment.',
   ],
   [
     'PEOPLE_ONLY',

@@ -149,7 +149,7 @@ function renderRow(row: SidebarRowModel) {
 
 /** The "N live" chip, or `null` when the row drew none. */
 function chip() {
-  return screen.queryByRole('button', { name: /live sessions — open the session switcher/i });
+  return screen.queryByRole('button', { name: /live sessions, open the session switcher/i });
 }
 
 // ---------------------------------------------------------------------------

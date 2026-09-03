@@ -57,7 +57,7 @@ function formatTimeRange(firstSeen: string, lastSeen: string): string {
   const first = formatRelativeTime(firstSeen);
   const last = formatRelativeTime(lastSeen);
   if (first === last) return last;
-  return `${first} — ${last}`;
+  return `${first} to ${last}`;
 }
 
 interface AggregatedCardProps {

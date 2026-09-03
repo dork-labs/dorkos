@@ -61,7 +61,7 @@ function computeInstallButtonLabel(state: {
     return state.isReinstall ? 'Reinstalling…' : 'Installing…';
   }
   if (state.hasBlockingConflicts) {
-    return 'Cannot install — conflicts detected';
+    return 'Cannot install: conflicts detected';
   }
   return state.isReinstall ? 'Reinstall' : 'Install';
 }

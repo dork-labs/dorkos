@@ -211,7 +211,7 @@ export function BindingAdvancedSection({
               className="text-muted-foreground px-1 text-xs leading-relaxed"
             >
               This connection is set to “{modeLabel}”. The agent behind it hasn’t said what it can
-              do, so there is nothing to choose from yet — saving keeps it as it is.
+              do, so there is nothing to choose from yet. Saving keeps it as it is.
             </p>
           ) : (
             <>
@@ -225,7 +225,7 @@ export function BindingAdvancedSection({
                 strandedNote={
                   <>
                     This connection is set to “{modeLabel}”, which is not one of these. Saving keeps
-                    it as it is — pick a stop to change it.
+                    it as it is. Pick a stop to change it.
                   </>
                 }
               />
@@ -301,7 +301,7 @@ export function BindingAdvancedSection({
           </p>
           {notifyBootstrapHint && (
             <p className="text-muted-foreground text-xs">
-              Message your bot once to activate notifications — bots can’t text you first.
+              Message your bot once to activate notifications. Bots can’t text you first.
             </p>
           )}
         </div>
@@ -316,7 +316,7 @@ export function BindingAdvancedSection({
             where your integration can show buttons, it arrives in the chat as Approve and Deny, and
             only the people on the approver list may answer. Either way an ask nobody answers is
             refused after 10 minutes and the agent carries on without it. Here nothing is asked at
-            all — anyone who can send a message through this integration sets off whatever the agent
+            all. Anyone who can send a message through this integration sets off whatever the agent
             decides to do.
           </>
         }

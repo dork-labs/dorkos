@@ -72,7 +72,7 @@ export const MCP_STATUS_META: Record<McpCardStatus, McpStatusMeta> = {
   },
   off: {
     label: 'Off',
-    tooltip: 'Turned off — its tools are not given to the agent.',
+    tooltip: 'Turned off. Its tools are not given to the agent.',
     tone: 'calm',
   },
 };
@@ -121,8 +121,8 @@ export interface McpSentenceContext {
  * degrades to what is still true rather than claiming "0 tools".
  */
 function connectedSentence({ toolCount, justSignedIn }: McpSentenceContext): string {
-  const prefix = justSignedIn ? 'Signed in just now — ' : '';
-  if (toolCount === null) return `${prefix || 'This server answered — '}its tools are available.`;
+  const prefix = justSignedIn ? 'Signed in just now. ' : '';
+  if (toolCount === null) return `${prefix || 'This server answered. '}Its tools are available.`;
   return `${prefix}${toolCount} tool${toolCount === 1 ? '' : 's'} available.`;
 }
 
@@ -163,7 +163,7 @@ export function cardSentence(status: McpCardStatus, context: McpSentenceContext)
     case 'not-checked':
       return 'Nothing has checked this server yet.';
     case 'off':
-      return 'Turned off — the agent doesn’t see this server.';
+      return 'Turned off. The agent doesn’t see this server.';
   }
 }
 
@@ -186,24 +186,24 @@ export function signInRowCopy(args: {
   clientOrigin?: ManagedMcpServerView['authClientOrigin'];
 }): string {
   const { connection, authStatus, clientOrigin } = args;
-  if (connection.transport === 'stdio') return 'None — this server doesn’t need one.';
+  if (connection.transport === 'stdio') return 'None. This server doesn’t need one.';
   if (connection.authKind === 'oauth2') {
     if (clientOrigin === 'manual') {
       const held =
         authStatus === 'connected' ? 'signed in, and it renews automatically' : 'not signed in yet';
-      return `OAuth — using your own app credentials, ${held}. DorkOS holds the key; the agent never sees it.`;
+      return `OAuth: using your own app credentials, ${held}. DorkOS holds the key; the agent never sees it.`;
     }
     if (authStatus === 'connected') {
-      return 'OAuth — signed in, and it renews automatically. DorkOS holds the key; the agent never sees it.';
+      return 'OAuth: signed in, and it renews automatically. DorkOS holds the key; the agent never sees it.';
     }
-    return 'OAuth — DorkOS will hold the key for you; the agent never sees it.';
+    return 'OAuth: DorkOS will hold the key for you; the agent never sees it.';
   }
   const hasOwnHeader = Object.keys(connection.headers).some(
     (header) => header.toLowerCase() === 'authorization'
   );
-  if (hasOwnHeader) return 'Access key — you added a key when setting this up.';
-  if (authStatus === undefined) return 'None yet — not checked.';
-  return 'None — this server doesn’t need one.';
+  if (hasOwnHeader) return 'Access key: you added a key when setting this up.';
+  if (authStatus === undefined) return 'Nothing has checked this yet.';
+  return 'None. This server doesn’t need one.';
 }
 
 /**
@@ -217,7 +217,7 @@ export function sourceRowCopy(connection: McpServerTransport): string {
     return `Runs \`${connection.command}\` on this computer`;
   }
   const host = hostOf(connection.url);
-  return host ? `${host} — web service` : `${connection.url} — web service`;
+  return host ? `${host} (web service)` : `${connection.url} (web service)`;
 }
 
 /**

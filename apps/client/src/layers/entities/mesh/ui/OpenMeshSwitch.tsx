@@ -14,7 +14,7 @@ export const OPEN_MESH_LABEL = 'Let all my agents talk to each other';
 /** What the switch grants, on the Access view where the pair rules also live. */
 const OPEN_MESH_DESCRIPTION =
   'Off by default. On, every agent can message every other agent on this machine. Off, only ' +
-  'agents working in the same project can — plus any pairs you allow below.';
+  'agents working in the same project can, plus any pairs you allow below.';
 
 /** The same fact, said where a person is in the middle of making an agent. */
 const OPEN_MESH_NOTICE_DESCRIPTION =

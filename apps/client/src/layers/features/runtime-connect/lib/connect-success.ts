@@ -17,7 +17,7 @@ const OPENCODE_CONNECTED_TITLE = 'OpenCode is connected.';
 
 /** The shared closing line: model choice now lives in the toolbar, always. */
 const OPENCODE_HANDOFF_LINE =
-  'This session will use OpenCode — pick any model from the model menu, anytime.';
+  'This session will use OpenCode. Pick any model from the model menu, anytime.';
 
 /** Cloud (OpenRouter) success: the approved verbatim frontier-unlock copy. */
 export const CLOUD_CONNECT_SUCCESS: RuntimeConnectSuccess = {
@@ -50,6 +50,6 @@ export const LOCAL_CONNECT_SUCCESS: RuntimeConnectSuccess = {
 export function loginConnectSuccess(label: string): RuntimeConnectSuccess {
   return {
     title: `${label} is connected.`,
-    body: `This session will use ${label} — pick any model from the model menu, anytime.`,
+    body: `This session will use ${label}. Pick any model from the model menu, anytime.`,
   };
 }

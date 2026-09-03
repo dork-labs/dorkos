@@ -102,7 +102,7 @@ function powerSources(): PowerSources {
       step: 'cloud',
       title: 'Best models, zero setup',
       description:
-        "Claude, GPT, Gemini and 300+ more, running in the cloud — your hardware doesn't matter.",
+        "Claude, GPT, Gemini and 300+ more, running in the cloud. Your hardware doesn't matter.",
       sub: 'One OpenRouter account covers all of them. Pay only for what you use.',
       tradeOff: "Your prompts and code are sent to the model's provider.",
       recommended: true,
@@ -110,9 +110,9 @@ function powerSources(): PowerSources {
     local: {
       step: 'local',
       title: 'Private and free, on your computer',
-      description: `Models run on ${localDeviceNoun()} — nothing you type ever leaves it.`,
+      description: `Models run on ${localDeviceNoun()}. Nothing you type ever leaves it.`,
       sub: 'Runs Quick helpers and Solid coders. Frontier models stay cloud-only.',
-      tradeOff: 'Smaller models — great for edits and quick help, not frontier-level reasoning.',
+      tradeOff: 'Smaller models: great for edits and quick help, not frontier-level reasoning.',
     },
     direct: {
       step: 'direct',

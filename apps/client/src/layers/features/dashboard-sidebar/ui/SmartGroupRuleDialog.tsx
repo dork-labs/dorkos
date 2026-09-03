@@ -159,7 +159,7 @@ export function SmartGroupRuleDialog({
         <DialogHeader>
           <DialogTitle>{mode === 'create' ? 'New smart group' : 'Edit rules'}</DialogTitle>
           <DialogDescription>
-            Membership is derived from these rules and updates on its own — no dragging agents in or
+            Membership is derived from these rules and updates on its own. No dragging agents in or
             out.
           </DialogDescription>
         </DialogHeader>

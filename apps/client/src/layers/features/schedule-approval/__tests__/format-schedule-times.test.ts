@@ -35,7 +35,7 @@ describe('formatCadence', () => {
   });
 
   it('says a task with no cron is on demand', () => {
-    expect(formatCadence(null, 'UTC')).toBe('On demand — it only runs when something asks it to');
+    expect(formatCadence(null, 'UTC')).toBe('On demand. It only runs when something asks it to');
   });
 });
 

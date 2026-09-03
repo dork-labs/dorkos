@@ -190,7 +190,7 @@ function OutboundToolsCrossLink() {
   return (
     <p className="text-muted-foreground text-xs leading-relaxed">
       Want to give one of your agents tools from another MCP server instead? That is the other
-      direction — open the agent’s profile and go to Tools & MCP.{' '}
+      direction. Open the agent’s profile and go to Tools & MCP.{' '}
       <Button
         variant="link"
         size="sm"

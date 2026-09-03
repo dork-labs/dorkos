@@ -121,7 +121,7 @@ function ActionBoardCell({
     if (cell.action.kind !== 'agent') return;
     dispatched.catch(() => {
       toast.error("Couldn't send the move", {
-        description: 'The agent may be busy right now — try again in a moment.',
+        description: 'The agent may be busy right now. Try again in a moment.',
       });
     });
   };
@@ -130,7 +130,7 @@ function ActionBoardCell({
     const prefix = `Row ${row + 1}, column ${col + 1}`;
     if (state.isDispatched) return `${prefix}: ${optimisticMark || 'played'}`;
     if (cell.glyph || cell.icon) return `${prefix}: ${contentLabel(cell)}`;
-    return state.interactive ? `${prefix}: empty — play here` : `${prefix}: empty`;
+    return state.interactive ? `${prefix}: empty, play here` : `${prefix}: empty`;
   })();
 
   // Every inert flavor explains itself (mirrors WidgetActionButton's copy) —
@@ -139,9 +139,9 @@ function ActionBoardCell({
   // drawn mark IS the feedback.
   let tooltipText: string | null = null;
   if (state.superseded)
-    tooltipText = 'This board is from an earlier turn — play on the newest one.';
+    tooltipText = 'This board is from an earlier turn. Play on the newest one.';
   else if (state.unavailable) tooltipText = "Interactions aren't available here";
-  else if (state.latched) tooltipText = "Move sent — waiting for the agent's reply";
+  else if (state.latched) tooltipText = "Move sent. Waiting for the agent's reply";
 
   const buttonEl = (
     <motion.button

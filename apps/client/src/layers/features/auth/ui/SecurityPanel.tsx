@@ -71,7 +71,7 @@ export function SecurityPanel() {
             description={
               authEnabled
                 ? 'An owner account is required to use this instance.'
-                : 'Off — this instance starts with no login (localhost only).'
+                : 'Off. This instance starts with no login (localhost only).'
             }
           >
             <Switch

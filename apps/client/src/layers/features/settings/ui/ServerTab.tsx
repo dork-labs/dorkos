@@ -45,7 +45,7 @@ export function ServerTab() {
                 Development Build
               </span>
               <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">
-                Running from source — version checks disabled
+                Running from source. Version checks disabled
               </p>
             </div>
           ) : (

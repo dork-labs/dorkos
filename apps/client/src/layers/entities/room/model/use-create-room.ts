@@ -129,7 +129,7 @@ export function useCreateChannel({
     meta: { suppressErrorToast: true },
     onError: (error) => {
       if (isChannelNameConflict(error) && isInlineErrorVisible()) return;
-      toast.error(`Couldn't create that channel — ${error.message}`);
+      toast.error("Couldn't create that channel.", { description: error.message });
     },
   });
 }

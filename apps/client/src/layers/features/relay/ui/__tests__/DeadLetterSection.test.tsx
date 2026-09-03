@@ -176,17 +176,17 @@ describe('DeadLetterSection', () => {
   });
 
   describe('dismiss action', () => {
-    it('shows "Mark Resolved" button on each card', () => {
+    it('shows "Clear these" button on each card', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [hopLimitGroup], isLoading: false });
       render(<DeadLetterSection />);
       expect(screen.getByText('Clear these')).toBeInTheDocument();
     });
 
-    it('opens confirmation dialog when "Mark Resolved" is clicked', () => {
+    it('opens confirmation dialog when "Clear these" is clicked', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [hopLimitGroup], isLoading: false });
       render(<DeadLetterSection />);
       fireEvent.click(screen.getByText('Clear these'));
-      expect(screen.getByText('Mark dead letters as resolved?')).toBeInTheDocument();
+      expect(screen.getByText('Clear these messages?')).toBeInTheDocument();
     });
 
     it('shows count, source, and reason in the confirmation dialog', () => {
@@ -196,14 +196,14 @@ describe('DeadLetterSection', () => {
       // The description text is split across multiple DOM nodes due to JSX interpolation
       const _description = screen.getByRole('alertdialog').querySelector('[id^="radix-"]');
       const descText =
-        screen.getByText('Mark dead letters as resolved?').closest('[role="alertdialog"]')
+        screen.getByText('Clear these messages?').closest('[role="alertdialog"]')
           ?.textContent ?? '';
       expect(descText).toMatch(/15044/);
       expect(descText).toMatch(/slack-adapter/);
       expect(descText).toMatch(/Hop Limit/);
     });
 
-    it('uses singular "dead letter" when count is 1', () => {
+    it('uses singular "message" when count is 1', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({
         data: [unknownReasonGroup],
         isLoading: false,
@@ -211,18 +211,18 @@ describe('DeadLetterSection', () => {
       render(<DeadLetterSection />);
       fireEvent.click(screen.getByText('Clear these'));
       const descText =
-        screen.getByText('Mark dead letters as resolved?').closest('[role="alertdialog"]')
+        screen.getByText('Clear these messages?').closest('[role="alertdialog"]')
           ?.textContent ?? '';
       // count=1 should not append 's'
-      expect(descText).toMatch(/1 dead letter[^s]/);
+      expect(descText).toMatch(/1 message[^s]/);
     });
 
     it('calls dismiss mutation after confirming in the dialog', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [hopLimitGroup], isLoading: false });
       render(<DeadLetterSection />);
       fireEvent.click(screen.getByText('Clear these'));
-      // Click the "Mark Resolved" action button inside the dialog
-      const dialogActions = screen.getAllByText('Mark Resolved');
+      // Click the "Clear these" action button inside the dialog
+      const dialogActions = screen.getAllByText('Clear these');
       fireEvent.click(dialogActions[dialogActions.length - 1]);
       expect(mockDismissMutate).toHaveBeenCalledWith({
         source: 'slack-adapter',
@@ -238,7 +238,7 @@ describe('DeadLetterSection', () => {
       expect(mockDismissMutate).not.toHaveBeenCalled();
     });
 
-    it('disables "Mark Resolved" trigger button while mutation is pending', () => {
+    it('disables "Clear these" trigger button while mutation is pending', () => {
       mockUseDismissDeadLetterGroup.mockReturnValue({
         mutate: mockDismissMutate,
         isPending: true,

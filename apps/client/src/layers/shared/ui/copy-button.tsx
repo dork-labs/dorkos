@@ -91,7 +91,7 @@ export function CopyButton({
       size="icon-sm"
       className={cn('text-muted-foreground hover:text-foreground', className)}
       onClick={() => void copy(value)}
-      aria-label={failed ? "Couldn't copy — try again" : label}
+      aria-label={failed ? "Couldn't copy. Try again" : label}
     >
       {/* `mode="wait"`, so the outgoing glyph is gone before the next arrives —
           two 14px icons stacked in one 14px box would otherwise overlap. */}

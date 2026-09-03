@@ -191,7 +191,7 @@ export function TerminalInstance({
         // session back either) and skips the PTY destroy when this tab is later
         // closed — the shell belongs to the other window now.
         if (handle.closeInfo?.code === TERMINAL_CLOSE_SUPERSEDED) {
-          term.write('\r\n\x1b[2m[opened in another window — session moved]\x1b[0m\r\n');
+          term.write('\r\n\x1b[2m[opened in another window, session moved]\x1b[0m\r\n');
           onSupersededRef.current();
           return;
         }
@@ -209,7 +209,7 @@ export function TerminalInstance({
           // operational state, not a fault — show human copy in-panel and keep
           // the (empty) tab so the message stays visible; the user closes it.
           term.write(
-            '\r\n\x1b[31mToo many terminals open — close some or wait a few minutes.\x1b[0m\r\n'
+            '\r\n\x1b[31mToo many terminals open. Close some or wait a few minutes.\x1b[0m\r\n'
           );
         } else if (initialPtyId !== null) {
           // A re-attach target that is gone (dead id) — prune the tab silently

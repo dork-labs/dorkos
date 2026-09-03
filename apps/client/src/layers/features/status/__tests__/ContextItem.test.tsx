@@ -121,7 +121,7 @@ describe('ContextItem — the inline Compact action', () => {
       }
     );
     expect(screen.getByText('88%')).toBeInTheDocument();
-    expect(screen.getByLabelText('Context 88% full — compact now')).toBeInTheDocument();
+    expect(screen.getByLabelText('Context 88% full. Compact now')).toBeInTheDocument();
   });
 
   it('fires the compact intent when clicked', () => {

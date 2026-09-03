@@ -236,7 +236,7 @@ function ManageRoomsCard({
         <p className="text-muted-foreground text-sm">
           <span className="text-foreground font-medium">This switch is a lock, not a hint.</span>{' '}
           Unlike the groups above, turning it off blocks the calls: the agent is refused, and told
-          to ask you. It is off until you turn it on, and only you can change it &mdash; the agent
+          to ask you. It is off until you turn it on, and only you can change it. The agent
           cannot turn it on for itself.
         </p>
         <p className="text-muted-foreground text-sm">
@@ -326,7 +326,7 @@ function TierCeilingCard({ agent }: { agent: AgentManifest }) {
             edge is unstated reads as a sandbox, and this is not one. */}
         <p className="text-muted-foreground text-sm">
           This covers what the agent asks DorkOS to do. An agent that can run terminal commands can
-          still act outside DorkOS &mdash; turn on Require login, in Settings under Security, to
+          still act outside DorkOS. Turn on Require login, in Settings under Security, to
           close that door too.
         </p>
       </FieldCardContent>
@@ -447,7 +447,7 @@ export function ToolsTab({ agent, projectPath }: ToolsTabProps) {
           <p className="text-muted-foreground text-sm">
             Choose which tool groups this agent is told about. Turn a group off and the agent stops
             being told those tools exist, so it stops reaching for them. This is guidance, not a
-            lock &mdash; an agent that asks for one anyway still gets it. Leave a group unset to
+            lock: an agent that asks for one anyway still gets it. Leave a group unset to
             inherit the global default.
           </p>
 

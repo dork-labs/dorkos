@@ -42,7 +42,7 @@ function PrivacyNote() {
   return (
     <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
       <Lock className="size-3 shrink-0" aria-hidden />
-      Private — only the DorkOS core team sees these. Never public.
+      Private. Only the DorkOS core team sees these. Never public.
     </p>
   );
 }
@@ -102,7 +102,7 @@ function DiagnosticsPreview({
 
       {kind === 'bug' && (
         <p className="text-muted-foreground text-xs">
-          A scrubbed excerpt of recent server logs is added when you send — home paths shown as ~,
+          A scrubbed excerpt of recent server logs is added when you send. Home paths shown as ~,
           tokens removed.
         </p>
       )}
@@ -140,7 +140,7 @@ function ConversationPreview({
   return (
     <div className="flex flex-col gap-2">
       <p className="text-muted-foreground text-xs">
-        The last ~10 turns of this conversation, gathered and scrubbed when you send — home paths
+        The last ~10 turns of this conversation, gathered and scrubbed when you send. Home paths
         shown as ~, tokens removed, long tool output trimmed.
       </p>
       <pre className="text-foreground bg-muted/40 rounded-md p-3 font-mono text-xs break-words whitespace-pre-wrap">

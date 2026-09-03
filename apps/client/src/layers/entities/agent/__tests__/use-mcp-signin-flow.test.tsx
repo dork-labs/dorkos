@@ -221,7 +221,7 @@ describe('useMcpSigninFlow', () => {
       // browser's own words never reach the person.
       expect(result.current.state.step).toBe('waiting');
       expect(result.current.state.error).toBeNull();
-      expect(result.current.state.retryNotice).toBe('Couldn’t check the sign-in — retrying.');
+      expect(result.current.state.retryNotice).toBe('Couldn’t check the sign-in. Retrying.');
 
       // The next attempt, on the backed-off interval, finds the finished sign-in.
       await tick(4_000);
@@ -284,10 +284,10 @@ describe('useMcpSigninFlow', () => {
       await tick(0);
       act(() => result.current.authOpened());
       await tick(0);
-      expect(result.current.state.retryNotice).toBe('Couldn’t check the sign-in — retrying.');
+      expect(result.current.state.retryNotice).toBe('Couldn’t check the sign-in. Retrying.');
 
       // One healthy poll later the flow is plainly fine again. A cumulative
-      // counter leaves "Couldn’t check the sign-in — retrying." on screen for the
+      // counter leaves "Couldn’t check the sign-in. Retrying." on screen for the
       // rest of the flow, and the backoff permanently widened.
       await tick(4_000);
       expect(result.current.state.retryNotice).toBeNull();

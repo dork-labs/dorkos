@@ -155,7 +155,7 @@ export function RelayHealthBar({ enabled = true, onFailedClick }: RelayHealthBar
                 type="button"
                 onClick={onFailedClick}
                 className="truncate text-left hover:underline"
-                aria-label={`${message} — click to view failures`}
+                aria-label={`${message}. Click to view failures`}
               >
                 {message}
               </button>

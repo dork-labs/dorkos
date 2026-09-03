@@ -67,7 +67,7 @@ describe('AgentActivityBadge', () => {
   });
 
   it('passes aria-label for screen readers', () => {
-    render(<AgentActivityBadge status="error" label="Error — check session" />);
-    expect(screen.getByLabelText('Error — check session')).toBeInTheDocument();
+    render(<AgentActivityBadge status="error" label="Error: check session" />);
+    expect(screen.getByLabelText('Error: check session')).toBeInTheDocument();
   });
 });

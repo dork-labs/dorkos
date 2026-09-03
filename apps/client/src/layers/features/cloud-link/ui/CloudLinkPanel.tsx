@@ -243,7 +243,7 @@ function PendingState({ view }: { view: Extract<CloudLinkView, { kind: 'pending'
           <button
             className="text-muted-foreground hover:text-foreground shrink-0 rounded-sm p-2 transition-colors"
             onClick={() => void copy(view.userCode)}
-            aria-label={failed ? "Couldn't copy code — try again" : 'Copy code'}
+            aria-label={failed ? "Couldn't copy code. Try again" : 'Copy code'}
           >
             {copied ? (
               <Check className="size-4 text-green-500" />

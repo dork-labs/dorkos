@@ -94,7 +94,7 @@ describe('SessionConnectorsGroup', () => {
     renderGroup(transport);
 
     expect(await screen.findByText('no tools')).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent('expired — reconnect');
+    expect(screen.getByRole('alert')).toHaveTextContent('expired. Reconnect');
   });
 
   it('shows the custody disclosure before the attach consent click', async () => {

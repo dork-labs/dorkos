@@ -130,7 +130,7 @@ export function SidebarDnd({ children, displayNames, rooms }: SidebarDndProps) {
     // so a rejected drop surfaces a hint instead of silently doing nothing.
     const op = classifySidebarDrop(latestPrefs.read(), drag, drop);
     if (op.kind === 'reject-smart-group') {
-      toast.info('Membership is rule-based — edit rules instead.', {
+      toast.info('Membership is rule-based. Edit rules instead.', {
         description: groupName(op.groupId),
       });
       return;

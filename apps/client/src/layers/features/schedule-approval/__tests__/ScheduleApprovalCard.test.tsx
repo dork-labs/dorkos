@@ -395,7 +395,7 @@ describe('ScheduleApprovalCard — answering it', () => {
     expect(receipt).toHaveAttribute('data-tone', 'allowed');
     // Not a bare "Approved": the whole point of the card is that a person knows
     // what they just armed, and the first run is the fact they were weighing.
-    expect(receipt).toHaveTextContent(/^Approved — first run /);
+    expect(receipt).toHaveTextContent(/^Approved. First run /);
   });
 
   it('says only "Approved" when there was no first run to promise', async () => {

@@ -706,7 +706,7 @@ describe('CreateAgentDialog', () => {
 
     await waitFor(() =>
       expect(screen.getByTestId('conflict-status')).toHaveTextContent(
-        'Directory exists — will create project inside'
+        'That folder is already there. The project goes inside it.'
       )
     );
   });

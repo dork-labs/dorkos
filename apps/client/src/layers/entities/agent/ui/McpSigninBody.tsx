@@ -56,7 +56,7 @@ function connectedCopy(toolCount: number | null): string {
  * @param serverName - The provider whose site the person will approve on.
  */
 function fallbackCustody(serverName: string): string {
-  return `You approve access on ${serverName}'s own site. DorkOS keeps the resulting key here — the agent never sees it, and removing the server removes the key.`;
+  return `You approve access on ${serverName}'s own site. DorkOS keeps the resulting key here. The agent never sees it, and removing the server removes the key.`;
 }
 
 /**
