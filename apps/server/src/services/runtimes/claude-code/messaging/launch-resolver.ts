@@ -263,6 +263,14 @@ export async function resolveLaunch(args: {
       agentAccountId: manifest?.account,
     });
   const accountEnv = claudeConfigDirEnv(accountRoot);
+  // Record which account this launch settled on, so the session can say later
+  // which credential its turns ran under (`ClaudeCodeRuntime.getSessionAccount`,
+  // read by the sign-in watch). Written HERE rather than in the two callers for
+  // the same reason this function exists at all: the turn path and the pump
+  // would otherwise each keep their own copy, and a copy that drifted would
+  // attribute a dead sign-in to the wrong account. It is deliberately not
+  // `session.accountRoot` — see `AgentSession.launchedAccountRoot`.
+  session.launchedAccountRoot = accountRoot;
 
   const sdkOptions: Options = {
     cwd: effectiveCwd,

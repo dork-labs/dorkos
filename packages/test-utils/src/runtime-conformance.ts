@@ -1314,6 +1314,88 @@ export function runtimeConformance(
         ).toBe(projectDir);
       });
 
+      it('C12: getSessionAccount names the credential a turn ran on, stably, or does not exist', async (ctx) => {
+        // The account half of C10, and the seam the sign-in watch keys its
+        // episodes on (DOR-1682): with no way to ask which credential a turn
+        // used, a clean turn on a healthy Claude account cleared a condition a
+        // DEAD one had raised — an all-clear that never happened.
+        //
+        // Optional, and omitting it is the RIGHT answer for a runtime with one
+        // set of credentials (codex and opencode each have one home directory).
+        // The watch reads the absence as "do not distinguish" and behaves
+        // exactly as it did before accounts existed.
+        const runtime = makeRuntime();
+        const getSessionAccount = runtime.getSessionAccount?.bind(runtime);
+        if (getSessionAccount === undefined) {
+          // A SKIP, not a pass, for C7's reason: an `it` that returns early is
+          // indistinguishable from one that asserted something.
+          ctx.skip(
+            'this runtime does not implement `getSessionAccount`, so every one of its turns runs ' +
+              'on the same credential and the sign-in watch keys on the runtime alone ' +
+              '(see AgentRuntime.getSessionAccount)'
+          );
+          return;
+        }
+
+        // (1) ANSWERABLE for a session it has never heard of, never a throw. The
+        // caller is an observer wrapped around somebody else's turn, so a lookup
+        // that dereferences a missing entry would fail a turn it only watches.
+        const strangerId = nextSessionId();
+        expect(
+          () => getSessionAccount(strangerId),
+          'getSessionAccount must answer for a session it has never heard of, not throw'
+        ).not.toThrow();
+        expect(
+          getSessionAccount(strangerId),
+          'an id this runtime has never heard of must answer undefined, never a guessed account — ' +
+            'a guess files a dead credential under the wrong key, which is wrong in both directions'
+        ).toBeUndefined();
+
+        // (2) It NAMES the account once a turn has actually run. A runtime that
+        // answers undefined here has implemented nothing the watch can use, and
+        // is better off omitting the method — the absence is a supported,
+        // documented answer and a constant undefined only pretends otherwise.
+        if (!warmSession) return;
+
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
+        await warmSession(runtime, sessionId);
+
+        const account = getSessionAccount(sessionId);
+        expect(
+          typeof account,
+          'a session that has taken a turn must have its account named — a runtime that can never ' +
+            'name one should omit getSessionAccount rather than always answer undefined'
+        ).toBe('string');
+        expect(account, 'an empty account name distinguishes nothing').not.toBe('');
+
+        // (3) The SAME string for a DIFFERENT session on the same account, which
+        // is the property the watch actually depends on and the one a per-session
+        // check cannot see. Its two edges are never the same session: one turn
+        // discovers the dead credential, and a LATER turn on some other session
+        // is what proves it working again. So an identity that varies by how a
+        // session was started reads as two accounts, and the condition raised
+        // under one spelling can never be resolved by the other — a notice that
+        // stands for the life of the install.
+        //
+        // What this half can and cannot catch, stated so nobody over-reads it:
+        // it fails any runtime whose identity is DERIVED per session (a session
+        // id folded in, a counter, a fresh object's `toString`). It cannot fail a
+        // runtime whose identity merely varies with how a session was STARTED,
+        // because the suite has one way of starting one. That case needs a
+        // fixture that can produce two spellings, which only the adapter's own
+        // suite can build — claude-code's lives beside its conformance call.
+        const secondId = nextSessionId();
+        runtime.ensureSession(secondId, sessionOpts(runtime));
+        await warmSession(runtime, secondId);
+
+        expect(
+          getSessionAccount(secondId),
+          'two sessions on one account must answer the SAME string — canonicalize the identity in ' +
+            'the adapter rather than handing on however the caller happened to spell it'
+        ).toBe(account);
+      });
+
       it('says when the person last wrote, or says why it cannot (BC-16)', async () => {
         // Purpose: `Session.userLastMessageAt` is half the sidebar's Today
         // order key, and the contract is "omission, never a guess". Two honest
