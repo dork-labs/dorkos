@@ -606,7 +606,12 @@ describe('a Stop that had to kill the process settles as the stop it was (DOR-13
     process: FakeCliProcess
   ): Promise<void> {
     process.interruptRejectsWith = new Error('control write failed: the process is gone');
-    expect(await runtime.interruptQuery(sessionId), 'Stop did not reach the live turn').toBe(true);
+    // DOR-1015 receipts: an escalated close answers { outcome: 'closed' } with the
+    // escalation's cause as its reason, where the old contract answered `true`.
+    expect(
+      await runtime.interruptQuery(sessionId),
+      'Stop did not reach the live turn'
+    ).toMatchObject({ outcome: 'closed', reason: 'refused' });
   }
 
   /** Feed one turn's events through the real normalizer and projector. */
@@ -796,7 +801,7 @@ describe('a Stop that had to kill the process settles as the stop it was (DOR-13
     await vi.waitFor(() => expect(process.received).toHaveLength(2));
 
     const askedAt = Date.now();
-    expect(await runtime.interruptQuery(sessionId)).toBe(true);
+    expect(await runtime.interruptQuery(sessionId)).toMatchObject({ outcome: 'acked' });
     const ackMs = Date.now() - askedAt;
 
     expect(process.interrupts).toBe(1);
