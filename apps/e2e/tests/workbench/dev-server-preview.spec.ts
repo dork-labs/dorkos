@@ -1,4 +1,5 @@
 import { createServer, type Server } from 'node:http';
+import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { test, expect } from '../../fixtures';
 import type { Page } from '@playwright/test';
@@ -20,10 +21,22 @@ import type { RightPanelPage } from '../../pages/RightPanelPage';
  * mechanism that now delivers it — a preview origin of its own, on a port
  * DorkOS opened, which the deep-path test proves survives the one-time
  * bootstrap redirect that moves the token into a cookie.
+ *
+ * The last one is about what the agent gets out of it (DOR-1305): the preview's
+ * own `console.log` has to reach the conversation's capture buffer, which is the
+ * buffer `browser_read_console` reads. That relay was dead in the browser app for
+ * months — it asked a store field only the Obsidian embed ever writes — and no
+ * test noticed, because every test of it ran with that field set by hand.
  */
 
 /** What the fixture app writes into the page once its module script has run. */
 const APP_READY = 'app-ready';
+
+/**
+ * What the fixture app logs to its own console, for the relay test to find in the
+ * batch the cockpit posts to the session's capture buffer.
+ */
+const CONSOLE_MARKER = 'dev-server-console-marker';
 
 /** A deep path the fixture serves the same HTML for, as a client-side router does. */
 const DEEP_PATH = '/projects/promo/edit';
@@ -40,7 +53,8 @@ const INDEX_HTML = `<!doctype html>
 </html>`;
 
 const MAIN_JS = `document.getElementById('root').innerHTML =
-  '<h1 data-testid="${APP_READY}">hello from the dev server</h1>';`;
+  '<h1 data-testid="${APP_READY}">hello from the dev server</h1>';
+console.log('${CONSOLE_MARKER}');`;
 
 /** Start a Vite-shaped static server on an ephemeral port. */
 async function startDevServer(): Promise<{ port: number; server: Server }> {
@@ -70,13 +84,17 @@ async function reserveClosedPort(): Promise<number> {
 /**
  * Open the canvas browser on `url`, the way a person does: open the right panel,
  * pick Canvas, start a web page from the splash, then type the address.
+ *
+ * Pass `sessionId` to land on a named conversation — the browser app keeps that
+ * in the URL, and it is what the capture relay reports captures under.
  */
 async function openInCanvasBrowser(
   page: Page,
   rightPanel: RightPanelPage,
-  url: string
+  url: string,
+  sessionId?: string
 ): Promise<void> {
-  await rightPanel.goto('/session');
+  await rightPanel.goto(sessionId ? `/session?session=${sessionId}` : '/session');
   await rightPanel.ensureTabStripOpen();
   await rightPanel.header.getByRole('tab', { name: 'Canvas' }).click();
 
@@ -134,6 +152,41 @@ test.describe('Canvas — a dev server running on this machine @smoke', () => {
     // token into a cookie without losing the route on the way.
     expect(framed.pathname).toBe(DEEP_PATH);
     expect(framed.searchParams.get('__dorkos_preview')).toBeNull();
+  });
+
+  test('relays the preview’s console into the conversation an agent reads (DOR-1305)', async ({
+    page,
+    rightPanel,
+  }) => {
+    const sessionId = randomUUID();
+
+    /** Every capture batch the cockpit posted, in the order it posted them. */
+    const ingests: { url: string; body: unknown }[] = [];
+    page.on('request', (request) => {
+      if (request.method() !== 'POST' || !request.url().includes('/devtools/ingest')) return;
+      ingests.push({ url: request.url(), body: request.postDataJSON() });
+    });
+
+    await openInCanvasBrowser(page, rightPanel, `http://localhost:${devPort}/`, sessionId);
+    const frame = page.frameLocator('iframe[title="Web Page"]');
+    await expect(frame.getByTestId(APP_READY)).toBeVisible({ timeout: 15_000 });
+
+    // The whole path, end to end: the shim captured the page's own `console.log`,
+    // posted it to the cockpit, and the cockpit relayed it to THIS conversation's
+    // buffer — the one `browser_read_console` reads server-side. Before the fix
+    // this array stayed empty in a browser, however long you waited.
+    await expect
+      .poll(
+        () =>
+          ingests.some((ingest) => {
+            if (!ingest.url.includes(`/api/sessions/${sessionId}/devtools/ingest`)) return false;
+            const entries =
+              (ingest.body as { console?: { text?: string }[] } | null)?.console ?? [];
+            return entries.some((entry) => entry.text?.includes(CONSOLE_MARKER));
+          }),
+        { timeout: 15_000 }
+      )
+      .toBe(true);
   });
 
   test('says nothing is listening rather than framing a dead port', async ({

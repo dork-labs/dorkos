@@ -6,22 +6,44 @@ import { renderHook, cleanup, act } from '@testing-library/react';
 import { useRef, type RefObject } from 'react';
 import { WORKBENCH_SANDBOX_ISOLATED } from '../lib/browser-url';
 
-// Controllable store + transport, mirroring CanvasBrowserContent.test.tsx.
-const mockState = { sessionId: 'session-1' as string | null };
 const ingestDevtoolsCapture = vi.fn(async () => {});
 
-vi.mock('@/layers/shared/model', () => {
-  const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
-  return {
-    useAppStore,
-    useTransport: () => ({ ingestDevtoolsCapture }),
-  };
-});
+/**
+ * ONE transport object for the life of the suite, deliberately.
+ *
+ * The real `useTransport` is a context read: it returns the same object across
+ * renders, so the bridge's listener effect (keyed on `[transport, iframeRef]`)
+ * mounts once and its pending flush timer survives every re-render. A mock
+ * returning a fresh object per render re-ran that effect on each render, which
+ * tore the listener down and cleared the timer with it — so no test could ever
+ * observe what happens to a batch that is still coalescing when something
+ * changes. The flush-window session bleed lived in that blind spot.
+ */
+const transport = { ingestDevtoolsCapture };
+
+/**
+ * The routed cockpit's `?session=`.
+ *
+ * The REAL `useSessionId` runs in these tests, and `useSafeSearch` is the one
+ * thing stubbed for it — the platform flag and the app store are the genuine
+ * articles. That split is deliberate: the bug this file now guards (DOR-1305)
+ * was the bridge reading the store field, which only the Obsidian embed ever
+ * writes, so a test that stubbed the session hook itself would have agreed with
+ * the broken code.
+ */
+let searchSession: string | undefined;
+
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
+  useTransport: () => transport,
+  useSafeSearch: () => (searchSession === undefined ? {} : { session: searchSession }),
+}));
 
 // Controllable stream-manager tap: tests emit session events by invoking the
 // registered listeners directly (the real manager gates to the attached session).
 const sessionEventListeners = new Set<(sessionId: string, event: unknown) => void>();
-vi.mock('@/layers/shared/lib', () => ({
+vi.mock('@/layers/shared/lib', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/lib')>()),
   streamManager: {
     subscribeSessionEvent: (handler: (sessionId: string, event: unknown) => void) => {
       sessionEventListeners.add(handler);
@@ -37,7 +59,30 @@ vi.mock('../lib/load-rasterizer', () => ({
   loadRasterizerSource: () => loadRasterizerSource(),
 }));
 
+import { setPlatformAdapter } from '@/layers/shared/lib';
+import { useAppStore } from '@/layers/shared/model';
 import { useDevtoolsBridge } from '../model/use-devtools-bridge';
+
+/** Attach a session the way the browser and desktop app do: in the URL. */
+function attachInUrl(id: string): void {
+  searchSession = id;
+}
+
+/**
+ * Attach a session the way the Obsidian embed does: in the store, with no URL
+ * to read. Flips the platform for the rest of the test; `beforeEach` puts it
+ * back.
+ */
+function attachInStore(id: string): void {
+  setPlatformAdapter({ isEmbedded: true, openFile: async () => {} });
+  useAppStore.getState().setSessionId(id);
+}
+
+/** No conversation open at all — neither address carries one. */
+function detachSession(): void {
+  searchSession = undefined;
+  useAppStore.getState().setSessionId(null);
+}
 
 let iframe: HTMLIFrameElement;
 
@@ -84,7 +129,11 @@ const networkEntry = {
 
 beforeEach(() => {
   vi.useFakeTimers();
-  mockState.sessionId = 'session-1';
+  // The default surface is the standalone browser app, where the conversation
+  // lives in the URL. The embed is the exception each of its tests declares.
+  setPlatformAdapter({ isEmbedded: false, openFile: async () => {} });
+  useAppStore.getState().setSessionId(null);
+  attachInUrl('session-1');
   ingestDevtoolsCapture.mockClear();
   loadRasterizerSource.mockClear();
   sessionEventListeners.clear();
@@ -204,7 +253,7 @@ describe('useDevtoolsBridge — resource errors the canvas can show', () => {
   it('counts them with no session attached — the banner is for the person watching', () => {
     // Relaying captures to a session is gated on attach; telling the user their
     // page is broken is not.
-    mockState.sessionId = null;
+    detachSession();
     const { result } = mountCounting();
     act(() => {
       postFrom(iframe.contentWindow, { __dorkosDevtools: 'resource-error', url: '/main.js' });
@@ -265,7 +314,7 @@ describe('useDevtoolsBridge — handshake', () => {
     // after ~15 hello retries, so a gated ack would leave that page load
     // permanently un-instrumented. The ack carries no captured data — the
     // attached-session gate applies to CAPTURES only.
-    mockState.sessionId = null;
+    detachSession();
     const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
     mount();
     postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
@@ -273,7 +322,7 @@ describe('useDevtoolsBridge — handshake', () => {
   });
 
   it('never acks a hello from a foreign frame, attached or not', () => {
-    mockState.sessionId = null;
+    detachSession();
     const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
     mount();
     postFrom(foreignFrame.contentWindow, { __dorkosDevtools: 'hello' });
@@ -310,7 +359,7 @@ describe('useDevtoolsBridge — relay', () => {
   });
 
   it('does not relay when no session is attached', () => {
-    mockState.sessionId = null;
+    detachSession();
     mount();
     postFrom(iframe.contentWindow, {
       __dorkosDevtools: 'batch',
@@ -337,6 +386,135 @@ describe('useDevtoolsBridge — relay', () => {
     const [, batch] = (ingestDevtoolsCapture as Mock).mock.calls[0];
     expect(batch.reset).toBe(true);
     expect(batch.console).toHaveLength(0); // pre-navigation captures dropped
+  });
+});
+
+describe('useDevtoolsBridge — which session is the attached one (DOR-1305)', () => {
+  /** Post one console batch from the frame and let the debounce fire. */
+  function sendOneBatch(): void {
+    postFrom(iframe.contentWindow, {
+      __dorkosDevtools: 'batch',
+      seq: 1,
+      console: [consoleEntry],
+      network: [],
+    });
+    vi.advanceTimersByTime(500);
+  }
+
+  it('relays in the browser app, where the conversation lives in the URL', () => {
+    // The regression: the bridge used to read `app-store.sessionId`, which the
+    // routed cockpit never writes, so this count was zero on every surface but
+    // Obsidian and an agent's `browser_read_console` came back empty.
+    attachInUrl('session-from-url');
+    useAppStore.getState().setSessionId(null); // the store is empty here, as it really is
+    mount();
+    sendOneBatch();
+
+    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
+    expect((ingestDevtoolsCapture as Mock).mock.calls[0][0]).toBe('session-from-url');
+  });
+
+  it('relays a screenshot result in the browser app too', () => {
+    attachInUrl('session-from-url');
+    useAppStore.getState().setSessionId(null);
+    mount();
+    postFrom(iframe.contentWindow, {
+      __dorkosDevtools: 'capture-result',
+      requestId: 'r1',
+      dataUrl: 'data:image/png;base64,AAAA',
+    });
+
+    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
+    expect((ingestDevtoolsCapture as Mock).mock.calls[0][0]).toBe('session-from-url');
+  });
+
+  it('still relays in the Obsidian embed, where it lives in the store', () => {
+    searchSession = undefined; // no URL to read in the embed
+    attachInStore('session-from-store');
+    mount();
+    sendOneBatch();
+
+    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
+    expect((ingestDevtoolsCapture as Mock).mock.calls[0][0]).toBe('session-from-store');
+  });
+
+  /**
+   * Mount the bridge so the test can re-render it after moving the address —
+   * which is how the attached session changes for a mounted preview.
+   */
+  function mountSwitchable() {
+    return renderHook(() => {
+      const ref = useRef<HTMLIFrameElement | null>(iframe) as RefObject<HTMLIFrameElement | null>;
+      useDevtoolsBridge({
+        iframeRef: ref,
+        documentId: 'doc',
+        logicalUrl: 'preview.html',
+        reloadNonce: 0,
+        previewOrigin: null,
+      });
+      return ref;
+    });
+  }
+
+  /** Post a console batch carrying `text`, without letting the debounce fire. */
+  function sendBatch(text: string, seq: number): void {
+    postFrom(iframe.contentWindow, {
+      __dorkosDevtools: 'batch',
+      seq,
+      console: [{ ...consoleEntry, text }],
+      network: [],
+    });
+  }
+
+  it('relays a batch to the session it was captured under, not the one open when it flushes', () => {
+    // The coalescing window is 300ms, which is plenty of time to switch
+    // conversations. Reading the CURRENT session at flush time put this preview's
+    // console into whichever conversation happened to be open by then.
+    attachInUrl('session-a');
+    const { rerender } = mountSwitchable();
+    sendBatch('captured-under-a', 1);
+
+    attachInUrl('session-b');
+    act(() => rerender()); // the address moved; the bridge re-renders under B
+    act(() => void vi.advanceTimersByTime(500));
+
+    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
+    const [sid, batch] = (ingestDevtoolsCapture as Mock).mock.calls[0];
+    expect(sid).toBe('session-a');
+    expect(batch.console[0].text).toBe('captured-under-a');
+  });
+
+  it('closes the pending group on a switch, so neither session gets the other’s captures', () => {
+    // The reciprocal leak: with only the send-time binding fixed, a batch
+    // arriving under B during A's still-open window would have joined A's group
+    // and gone out under A's id.
+    attachInUrl('session-a');
+    const { rerender } = mountSwitchable();
+    sendBatch('captured-under-a', 1);
+
+    attachInUrl('session-b');
+    act(() => rerender());
+    sendBatch('captured-under-b', 2);
+    act(() => void vi.advanceTimersByTime(500));
+
+    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(2);
+    const [firstSid, firstBatch] = (ingestDevtoolsCapture as Mock).mock.calls[0];
+    expect(firstSid).toBe('session-a');
+    expect(firstBatch.console.map((e: { text: string }) => e.text)).toEqual(['captured-under-a']);
+    const [secondSid, secondBatch] = (ingestDevtoolsCapture as Mock).mock.calls[1];
+    expect(secondSid).toBe('session-b');
+    expect(secondBatch.console.map((e: { text: string }) => e.text)).toEqual(['captured-under-b']);
+  });
+
+  it('never relays to a session the embed left behind in the store', () => {
+    // Standalone reads the URL and nothing else: a store id left over from an
+    // earlier surface must not decide where a browser preview's captures go.
+    detachSession();
+    useAppStore.getState().setSessionId('stale-store-session');
+    mount();
+    sendOneBatch();
+
+    expect(ingestDevtoolsCapture).not.toHaveBeenCalled();
   });
 });
 
@@ -448,7 +626,7 @@ describe('useDevtoolsBridge — screenshot round-trip (DOR-213 Phase 3)', () => 
   });
 
   it('drops a capture-result when no session is attached', () => {
-    mockState.sessionId = null;
+    detachSession();
     mount();
     postFrom(iframe.contentWindow, {
       __dorkosDevtools: 'capture-result',

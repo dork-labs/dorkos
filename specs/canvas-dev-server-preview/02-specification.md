@@ -201,5 +201,5 @@ Evidence kept in `./evidence/`: the Video pipeline app at a deep path rendering 
 
 ### 5.4 Follow-ups filed
 
-- **DOR-1305** — DevTools capture relay is inert in the standalone web cockpit: `use-devtools-bridge` gates on `app-store.sessionId`, which only embedded mode writes; router mode keeps the id in search params. Pre-existing; measured zero ingest POSTs with a live shim. `resource-error` counting is unaffected. (Not a gap: the agent-side read tools `browser_read_console/network` exist and read the buffer in-process.)
+- **DOR-1305 — CLOSED.** DevTools capture relay was inert in the standalone web app: `use-devtools-bridge` gated on `app-store.sessionId`, which only embedded mode writes; router mode keeps the id in search params. Pre-existing; measured zero ingest POSTs with a live shim. `resource-error` counting was unaffected. Fixed by reading the dual-mode `useSessionId()` instead, with unit coverage of both surfaces and an e2e that drives the real preview and asserts the fixture's `console.log` reaching the conversation's ingest route.
 - **DOR-1306** — workbench routes absent from the OpenAPI registry / `/api/docs`.

@@ -45,6 +45,11 @@ vi.mock('@/layers/shared/model', () => {
   return {
     useAppStore,
     useTransport: () => ({ createServeUrl, createProxyUrl, probeLoopbackPort }),
+    // The DevTools bridge this component mounts asks `useSessionId` which
+    // conversation is open, and that reads the route's search params. No
+    // conversation is open in these tests, which is what an empty search means —
+    // the relay stays idle and nothing here depends on it.
+    useSafeSearch: () => ({}),
   };
 });
 
