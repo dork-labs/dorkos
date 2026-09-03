@@ -12,7 +12,7 @@ covers:
 
 ### Fixed
 
-- Fixed several buttons on the phone that were too small to tap reliably — the queued-message actions in the composer, the terminal and canvas tab close buttons, the schedule builder's day-of-week picker, and the activity page's filter chips all now have a proper-sized tap area, even though the button you see stays the same size. (DOR-1753)
-- Fixed search and filter boxes across Tasks, Team and other pages that were quietly disabled from growing on a phone, and a few that had ended up smaller on a phone than on a full-size screen. (DOR-1753)
-- What a background agent last did is now shown in the task list on every screen size, not just when you hover with a mouse — useful on a phone, where nothing hovers. (DOR-1753)
+- Fixed several buttons on the phone that were too small to tap reliably — the queued-message actions in the composer, the terminal and canvas tab close buttons, the schedule builder's day-of-week picker, the activity page's filter chips, the Tasks/Team/Activity filter toolbar (Status, Filter, Sort, and the active-filters badge), and the background-task bar's expand arrow all now have a proper-sized tap area, even though the button you see stays the same size. (DOR-1753)
+- Fixed the search box on Tasks, Team and other pages, which was quietly disabled from growing on a phone, and a few controls that had ended up smaller on a phone than on a full-size screen. (DOR-1753)
+- What a background agent last did is now shown from a normal-sized screen up. On a phone, the task list keeps the agent's full description visible instead of shortening it to make room. (DOR-1753)
 - The side panel on a phone no longer stretches to fill the whole screen when it has almost nothing to show — Pulse and the Files list now size to their own content instead of leaving most of the screen empty. (DOR-1753)

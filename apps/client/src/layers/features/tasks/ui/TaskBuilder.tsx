@@ -435,12 +435,10 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
                     aria-label={day.label}
                     aria-pressed={isActive}
                     className={cn(
-                      'relative inline-flex min-h-11 items-center justify-center rounded-md border px-2.5 py-1 text-xs font-medium transition-colors md:min-h-0',
-                      // The pills wrap (`flex-wrap`) with a 6px gap on both
-                      // axes, so 3px — half that gap — is as far as one pill's
-                      // reach can go before it meets its neighbor's, whichever
-                      // side that neighbor is on.
-                      'after:absolute after:-inset-[3px] md:after:hidden',
+                      // `min-h-11` alone already clears 44px (measured
+                      // 53.4×44px) — no `after:` reach needed on top of it
+                      // (DOR-1753, adversarial review nit N2).
+                      'inline-flex min-h-11 items-center justify-center rounded-md border px-2.5 py-1 text-xs font-medium transition-colors md:min-h-0',
                       isActive
                         ? 'border-primary bg-primary/10 text-primary'
                         : 'border-input text-muted-foreground hover:bg-accent hover:text-accent-foreground'

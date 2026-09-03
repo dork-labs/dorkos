@@ -263,10 +263,13 @@ export function AgentRunner({ agent, index }: AgentRunnerProps) {
           pointer has, and up to four of these can be on screen at once, so
           "always visible" here would stack four overlapping boxes rather
           than reveal one. The tap-to-expand task list (the chevron beside
-          the bar) is the touch path to the same facts, `lastToolName`
-          included — see `TaskDetailRow`. */}
+          the bar, given real touch reach — see
+          `EXPAND_TOGGLE_TOUCH_REACH` in `BackgroundTaskBar.tsx`) is the
+          touch path to the same facts, `lastToolName` included — see
+          `TaskDetailRow`. */}
       {phase === 'running' && (
         <div
+          data-testid="agent-runner-tooltip"
           className={cn(
             'pointer-events-none absolute bottom-[calc(100%+8px)] left-1/2 hidden',
             '-translate-x-1/2 translate-y-1 opacity-0 transition-all duration-150',

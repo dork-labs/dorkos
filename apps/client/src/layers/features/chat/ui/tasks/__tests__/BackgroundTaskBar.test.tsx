@@ -226,10 +226,12 @@ describe('BackgroundTaskBar', () => {
 
     const { container } = render(<BackgroundTaskBar tasks={tasks} onStopTask={vi.fn()} />);
 
-    const badge = screen.getByText('+2');
-    const tooltip = badge.nextElementSibling;
-    expect(tooltip?.className).toContain('hidden');
-    expect(tooltip?.className).toContain('md:block');
+    // `data-testid`, not a positional sibling query (DOR-1753, adversarial
+    // review nit N5) — `badge.nextElementSibling` happened to work only
+    // because nothing else sits between the badge and the tooltip today.
+    const tooltip = screen.getByTestId('overflow-badge-tooltip');
+    expect(tooltip.className).toContain('hidden');
+    expect(tooltip.className).toContain('md:block');
     // Sanity: this really is the overflow tooltip, not some other sibling.
     expect(container.textContent).toContain('Agent 4');
   });

@@ -28,6 +28,17 @@ const TYPE_ICONS: Record<string, typeof ListIcon> = {
   numericRange: HashIcon,
 };
 
+/**
+ * Invisible reach that grows this 28px pill to a 44px touch target below `md`.
+ *
+ * Vertical reach (`-inset-y-2`, 8px each side) lands exactly on 28+16=44px.
+ * Horizontal reach (`-inset-x-1`, 4px each side) stays inside half of the
+ * toolbar's `gap-2` (8px) so neighbouring pills' reach zones meet without
+ * overlapping — the same anisotropic budget `PresenceStrip` uses for its row
+ * of chips.
+ */
+const TOUCH_REACH = 'relative after:absolute after:-inset-x-1 after:-inset-y-2 md:after:hidden';
+
 const DATE_PRESETS = [
   { label: 'Past 1h', value: '1h' },
   { label: 'Past 24h', value: '24h' },
@@ -166,12 +177,7 @@ function FilterBarAddFilter({ dynamicOptions, className }: FilterBarAddFilterPro
           </label>
         ))}
         {selected.length > 0 && (
-          <Button
-            variant="ghost"
-            size="xs"
-            className="mt-1 self-start"
-            onClick={() => clear(name)}
-          >
+          <Button variant="ghost" size="xs" className="mt-1 self-start" onClick={() => clear(name)}>
             Clear
           </Button>
         )}
@@ -198,12 +204,7 @@ function FilterBarAddFilter({ dynamicOptions, className }: FilterBarAddFilterPro
           </button>
         ))}
         {current.preset && (
-          <Button
-            variant="ghost"
-            size="xs"
-            className="mt-1 self-start"
-            onClick={() => clear(name)}
-          >
+          <Button variant="ghost" size="xs" className="mt-1 self-start" onClick={() => clear(name)}>
             Clear
           </Button>
         )}
@@ -278,6 +279,7 @@ function FilterBarAddFilter({ dynamicOptions, className }: FilterBarAddFilterPro
         data-slot="filter-bar-add-filter"
         className={cn(
           'border-muted text-muted-foreground hover:text-foreground hover:border-input inline-flex h-7 items-center gap-1 rounded-md border border-dashed px-2.5 text-xs',
+          TOUCH_REACH,
           className
         )}
       >

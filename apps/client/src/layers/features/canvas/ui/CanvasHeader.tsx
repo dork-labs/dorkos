@@ -38,18 +38,24 @@ const CONTENT_TYPE_ICONS = {
 /**
  * Invisible reach that grows the tab close button below `md`, vertically only.
  *
- * **No horizontal reach, on purpose.** The close button already sits inside
- * `pr-7` — 28px the tab button reserves for it — and at `p-1.5` (below `md`)
- * its 24px box fills that reservation edge to edge (`right-1` plus 24px of
- * box is 28px). Reaching sideways from there would spend the tab's OWN
- * clickable label area, so a tap meant to select the tab would close it
- * instead — worse than the small target this replaces. The tab grew to
- * `py-3` below `md` specifically to give this reach somewhere safe to go:
- * an 8px vertical slack opens on each side of the now-centered 24px box,
- * bounded by the row itself, so `-inset-y-2` cannot spill onto anything
+ * **`after:inset-x-0` is required, not decorative.** An absolutely positioned
+ * empty pseudo-element with only `top`/`bottom` set shrink-wraps to 0px wide —
+ * it catches nothing. Pinning `left`/`right` to the button's own edges (`0`,
+ * not a negative inset) gives the `::after` the button's 24px width without
+ * spending any of it: the box stays exactly as wide as the close button.
+ *
+ * **No horizontal GROWTH beyond that, on purpose.** The close button already
+ * sits inside `pr-7` — 28px the tab button reserves for it — and at `p-1.5`
+ * (below `md`) its 24px box fills that reservation edge to edge (`right-1`
+ * plus 24px of box is 28px). Reaching sideways from there would spend the
+ * tab's OWN clickable label area, so a tap meant to select the tab would
+ * close it instead — worse than the small target this replaces. The tab grew
+ * to `py-3` below `md` specifically to give the vertical reach somewhere safe
+ * to go: an 8px vertical slack opens on each side of the now-centered 24px
+ * box, bounded by the row itself, so `-inset-y-2` cannot spill onto anything
  * outside this tab.
  */
-const TAB_CLOSE_TOUCH_REACH = 'after:absolute after:-inset-y-2 md:after:hidden';
+const TAB_CLOSE_TOUCH_REACH = 'after:absolute after:inset-x-0 after:-inset-y-2 md:after:hidden';
 
 /** DOM id of the canvas content region the active tab controls. */
 export const CANVAS_PANEL_ID = 'canvas-panel';

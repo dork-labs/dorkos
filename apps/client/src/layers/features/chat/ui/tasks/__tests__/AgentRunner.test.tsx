@@ -138,12 +138,16 @@ describe('AgentRunner', () => {
   // four of these can render at once, and four always-open boxes over a
   // 22px-wide figure would overlap into an unreadable stack.
   it('keeps the hover tooltip desktop-only (hidden md:block)', () => {
-    const { container } = render(<AgentRunner agent={makeAgent('running')} index={0} />);
+    const { getByTestId } = render(<AgentRunner agent={makeAgent('running')} index={0} />);
 
-    const tooltip = container.querySelector('svg[aria-label="Background agent"]')
-      ?.nextElementSibling;
-    expect(tooltip?.className).toContain('hidden');
-    expect(tooltip?.className).toContain('md:block');
+    // `data-testid`, not a positional sibling query: `AgentRunnerBurst`
+    // renders between the svg and this tooltip during the celebrating
+    // phase, so a `nextElementSibling` walk would silently start reading the
+    // wrong node the moment that ordering shifted (DOR-1753, adversarial
+    // review nit N5).
+    const tooltip = getByTestId('agent-runner-tooltip');
+    expect(tooltip.className).toContain('hidden');
+    expect(tooltip.className).toContain('md:block');
   });
 
   it('goes back to running if the task starts again before it settles', () => {

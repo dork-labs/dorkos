@@ -120,13 +120,17 @@ describe('TaskDetailPanel', () => {
     expect(screen.getByText('45s')).toBeInTheDocument();
   });
 
-  // DOR-1753: the runner figure's hover tooltip is desktop-only, so this row
-  // is the only place a touch user ever sees the last tool an agent ran.
-  it('shows the last tool an agent ran, the touch path to the desktop hover tooltip', () => {
+  // DOR-1753: shown from `md` up. Below `md` it is hidden rather than
+  // truncating the row's only flexible element, the description (adversarial
+  // review finding I5) — so it is a `md`-and-up companion to the desktop
+  // hover tooltip, not a touch replacement for it.
+  it('shows the last tool an agent ran, from `md` up', () => {
     const tasks = [makeTask({ taskId: 'a-1', taskType: 'agent', lastToolName: 'Read' })];
 
     render(<TaskDetailPanel tasks={tasks} onStopTask={vi.fn()} />);
-    expect(screen.getByText('Last: Read')).toBeInTheDocument();
+    const chip = screen.getByText('Last: Read');
+    expect(chip).toBeInTheDocument();
+    expect(chip).toHaveClass('hidden', 'md:inline');
   });
 
   it('says nothing about a last tool for a bash task or an agent that has not run one yet', () => {

@@ -351,11 +351,15 @@ function SecretRow({
     <SettingRow label={secret.label} description={description}>
       <div className="flex items-center gap-2">
         <PasswordInput
-          responsive={false}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder={secret.placeholder ?? secret.key}
-          className="h-8 w-48 text-sm"
+          // `md:h-8` keeps this row's desktop density (its own default is
+          // `md:h-9`); leaving `responsive` at its default lets the mobile
+          // `h-11` scale through instead of pinning `h-8` everywhere, which
+          // used to leave the Save button beside it 44px tall against a 32px
+          // input on a phone (DOR-1753, adversarial review nit N3).
+          className="w-48 text-sm md:h-8"
           onKeyDown={(e) => {
             if (e.key === 'Enter') void handleSave();
           }}

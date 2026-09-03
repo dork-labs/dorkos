@@ -242,7 +242,17 @@ export function RightPanelContainer({ pathname, variant = 'resizable' }: RightPa
           className={cn(
             'bg-sidebar text-sidebar-foreground flex w-full flex-col gap-0 p-0',
             (variant === 'overlay' || isPhone) && 'sm:max-w-full',
-            activeTab &&
+            // `isPhone` is required, not redundant with the branch guard above:
+            // that guard is `variant === 'overlay' || overlayOnly`, so two
+            // surfaces reach this Sheet without being a phone — the overlay
+            // variant (the Obsidian embed, narrow-paned even on a desktop-width
+            // viewport) and a tablet. The 390×844 measurement this set is named
+            // for was taken on neither, so without this term their default
+            // Pulse/Files panel silently swaps from a full-height slide-over to
+            // a content-height box on a surface nobody measured (DOR-1753,
+            // adversarial review finding I3).
+            isPhone &&
+              activeTab &&
               CONTENT_SIZED_MOBILE_TABS.has(activeTab) &&
               // `!` because the base `side="right"` classes already claim
               // `inset-y-0` (top AND bottom) and `h-full`. Without

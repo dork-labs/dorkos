@@ -762,6 +762,22 @@ describe('RightPanelContainer', () => {
       expect(container.innerHTML).toBe('');
     });
 
+    // DOR-1753 adversarial review (finding I3): CONTENT_SIZED_MOBILE_TABS is a
+    // 390×844 measurement (see the constant's TSDoc) — it must not apply on the
+    // embed's desktop-width viewport, which nobody measured.
+    it('does not content-size Pulse on a wide (non-mobile) viewport', () => {
+      mockIsMobile = false;
+      mockRightPanelOpen = true;
+      mockActiveRightPanelTab = 'pulse';
+      mockContributions = [makeContribution('pulse', { title: 'Pulse', isGlobal: true })];
+
+      render(<RightPanelContainer pathname={mockPathname} variant="overlay" />);
+
+      const className = screen.getByTestId('sheet-content').className;
+      expect(className).not.toContain('!h-auto');
+      expect(className).not.toContain('!bottom-auto');
+    });
+
     it('drops a transport-gated tab (the terminal) under the in-process transport', () => {
       // The embed's DirectTransport reports supportsTerminal=false, so the
       // terminal tab hides while the other contextual tabs stay — the capability

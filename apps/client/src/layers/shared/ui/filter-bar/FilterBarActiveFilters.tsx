@@ -17,6 +17,17 @@ import {
 } from '@/layers/shared/ui/sheet';
 import { useFilterBar } from './FilterBarContext';
 
+/**
+ * Invisible reach that grows this 28px pill to a 44px touch target.
+ *
+ * No `md:after:hidden` — this trigger only renders in the `isMobile` branch
+ * below, so there is no desktop pointer case to disable it for. Vertical
+ * reach (`-inset-y-2`, 8px each side) lands exactly on 28+16=44px; horizontal
+ * reach (`-inset-x-1`, 4px each side) stays inside half of the toolbar's
+ * `gap-2` (8px), matching the other filter-bar pills.
+ */
+const TOUCH_REACH = 'relative after:absolute after:-inset-x-1 after:-inset-y-2';
+
 interface FilterBarActiveFiltersProps {
   className?: string;
 }
@@ -79,6 +90,7 @@ function FilterBarActiveFilters({ className }: FilterBarActiveFiltersProps) {
           data-slot="filter-bar-active-filters"
           className={cn(
             'border-primary/50 inline-flex h-7 items-center gap-1 rounded-md border px-2 text-xs',
+            TOUCH_REACH,
             className
           )}
         >
