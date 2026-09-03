@@ -1389,8 +1389,11 @@ export type TerminalReason = z.infer<typeof TerminalReasonSchema>;
  * The CLI collapses nine distinct abort causes — an operator interrupt, a
  * shutdown, an API refusal fallback, an unlabelled internal teardown — into
  * these same two strings, and the distinction never reaches the SDK surface. So
- * a caller that needs "a PERSON stopped this" must AND this with its own record
- * of having asked (see `claude-code/agent-types.ts`, `stoppedQueries`).
+ * a caller that needs "a PERSON stopped this" must AND this with a record of
+ * having asked (`claude-code/agent-types.ts`, `stoppedQueries`), which rides the
+ * wire as {@link SessionStatusEventSchema}'s `stopWasRequested` and reaches
+ * settlement through `turn_end`. `isUnrequestedAbortFailure` in `run-outcome` is
+ * the one place that ANDs the two.
  */
 export const INTERRUPTED_TERMINAL_REASONS: ReadonlySet<string> = new Set([
   'interrupted',
@@ -1489,6 +1492,29 @@ export const SessionStatusEventSchema = z
     cacheCreationTokens: z.number().int().optional(),
     /** Why the query loop terminated (SDK 0.2.91+ `result.terminal_reason`). */
     terminalReason: TerminalReasonSchema.optional(),
+    /**
+     * Whether DorkOS ASKED this turn to stop — the INTENT half of a settlement
+     * that `terminalReason` can only ever answer as shape.
+     *
+     * {@link INTERRUPTED_TERMINAL_REASONS} says a turn was aborted and never by
+     * whom, so the two turns a person cares most about telling apart — "I
+     * pressed Stop" and "it broke and gave up" — arrive wearing the same string.
+     * A runtime that keeps its own record of having asked puts it here, beside
+     * the reason it belongs to, and settlement reads the pair.
+     *
+     * **Carried beside a reason, not on every status.** A runtime attaches it
+     * only when the reason it accompanies is one of the abort reasons, because
+     * that is the only place it decides anything; on every other terminal the
+     * field would be a fact no reader consults, written into the durable event
+     * log of every turn forever.
+     *
+     * **Absent means unknown, and unknown settles as a stop.** A runtime with no
+     * stop record of its own (codex, opencode) and every transcript written
+     * before this field existed simply omit it, and settlement then behaves
+     * exactly as it did before — an abort is a stop. Only a positive `false`,
+     * paired with a fatal error frame, moves a turn to `error`.
+     */
+    stopWasRequested: z.boolean().optional(),
     /**
      * Runtime-neutral usage/cost descriptor. Folded onto the durable
      * `status_change` projection so the merged Usage & cost status item can
