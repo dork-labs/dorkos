@@ -6,6 +6,9 @@ covers:
   - 'fix(client): one way to open an "Advanced" section (DOR-1759)'
   - 'fix(client,dev): the notification card keeps its buttons on a narrow screen (DOR-1759)'
   - "refactor(client): destructure the primer offer so the slot's memo can hold (DOR-1759)"
+  - "fix(client,e2e): Pulse's de-dup respects the panel's real geometry (DOR-1759)"
+  - 'fix(client): Full autonomy earns its badge on a closed Advanced section (DOR-1759)'
+  - 'fix(client): Setup details says how much it is hiding (DOR-1759)'
 ---
 
 ### Fixed
