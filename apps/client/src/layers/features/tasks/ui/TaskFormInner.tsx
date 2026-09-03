@@ -15,7 +15,7 @@ import {
   UnattendedAutonomyDialog,
 } from '@/layers/shared/ui';
 import { useAppForm } from '@/layers/shared/lib/form';
-import { permissionModeLabel } from '@/layers/shared/lib';
+import { isBypassPermissionMode, permissionModeLabel } from '@/layers/shared/lib';
 import type { EffortLevel, PermissionMode, Task } from '@dorkos/shared/types';
 import { ScheduleBuilder, isCronValid } from './TaskBuilder';
 import { TimezoneCombobox } from './TimezoneCombobox';
@@ -256,6 +256,11 @@ export function ScheduleForm({
     effortOverride !== '',
     maxRuntime !== DEFAULT_MAX_RUNTIME,
     sticky,
+    // Permissions lives inside this same section, and it is the one setting
+    // here that changes what an unattended run may do to the machine — a
+    // closed "Advanced settings" with Full autonomy inside must never read
+    // like one hiding nothing (`contributing/design-system.md` §Disclosure).
+    isBypassPermissionMode(permissionMode),
   ].filter(Boolean).length;
 
   // Every picker agent's own runtime, off the manifest that owns it (ADR-0043).
