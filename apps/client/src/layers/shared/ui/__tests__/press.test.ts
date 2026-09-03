@@ -1,7 +1,9 @@
 /**
- * The press ladder has three stops and the numbers are the design system's, not
- * an author's taste. Before it existed the codebase held nine of them (0.85,
- * 0.90, 0.93, 0.94, 0.95, 0.97, 0.98, 0.99) across two mechanisms — DOR-1751.
+ * `press.ts`'s own card/row/mark ladder has three stops and the numbers are
+ * the design system's, not an author's taste. Before it existed the codebase
+ * held nine of them (0.85, 0.90, 0.93, 0.94, 0.95, 0.97, 0.98, 0.99) across two
+ * mechanisms — DOR-1751. `Button`'s own `0.97` and the other named exceptions
+ * intentionally sit outside this ladder; see `press.ts`'s module doc.
  */
 import { describe, it, expect } from 'vitest';
 import { PRESS_CARD, PRESS_MARK, PRESS_ROW } from '../press';
@@ -13,11 +15,6 @@ describe('press ladder', () => {
     expect(PRESS_MARK).toContain('motion-safe:active:scale-[0.94]');
   });
 
-  it('is three stops, never two that happen to look different', () => {
-    const scale = (stop: string) => stop.match(/active:scale-\[([\d.]+)\]/)?.[1];
-    expect(new Set([scale(PRESS_CARD), scale(PRESS_ROW), scale(PRESS_MARK)]).size).toBe(3);
-  });
-
   it('lands the press in 80ms and lets the release ride the slower answer back up', () => {
     for (const stop of [PRESS_CARD, PRESS_ROW, PRESS_MARK]) {
       expect(stop).toContain('motion-safe:duration-(--identity-answer)');
@@ -26,9 +23,15 @@ describe('press ladder', () => {
   });
 
   it('names `scale` in the transition, which is the property Tailwind writes', () => {
-    // A list saying `transform` transitions nothing here: Tailwind v4's scale
-    // utilities write the standalone `scale` property. Two shipped call sites
-    // had exactly that bug before they moved onto this ladder.
+    // An arbitrary list that spells `transform` literally transitions nothing
+    // here: Tailwind v4's scale utilities write the standalone `scale`
+    // property, not `transform`. `shared/ui/sidebar.tsx`'s
+    // `transition-[width,height,padding,background-color,color,transform]`
+    // had exactly that bug before it moved onto this ladder — measured against
+    // the compiled stylesheet, `motion-safe:transition-transform` (the NAMED
+    // utility `EntryActionMenu.tsx` and `EntryReactionPicker.tsx` used before
+    // their own migration) already expands to `transform, translate, scale,
+    // rotate` and was never actually broken.
     for (const stop of [PRESS_CARD, PRESS_ROW, PRESS_MARK]) {
       expect(stop).toContain('scale]');
     }
