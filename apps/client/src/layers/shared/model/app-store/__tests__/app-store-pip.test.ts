@@ -41,11 +41,11 @@ describe('PipSlice', () => {
     expect(stored).toEqual(geometry);
   });
 
-  it('resetPreferences clears pipContent and pipGeometry and removes the persisted key', () => {
+  it('resetAllSettings clears pipContent and pipGeometry and removes the persisted key', () => {
     useAppStore.getState().openPip({ kind: 'demo', title: 'Demo' });
     useAppStore.getState().setPipGeometry({ x: 1, y: 2, width: 300, height: 200 });
 
-    useAppStore.getState().resetPreferences();
+    useAppStore.getState().resetAllSettings();
 
     expect(useAppStore.getState().pipContent).toBeNull();
     expect(useAppStore.getState().pipGeometry).toBeNull();

@@ -65,7 +65,7 @@
  * @module services/session/resolve-session-defaults
  */
 import type { UserConfig } from '@dorkos/shared/config-schema';
-import type { ExecutionDefaults, PermissionMode, SessionSettings } from '@dorkos/shared/types';
+import type { ExecutionDefaults, PermissionModeId, SessionSettings } from '@dorkos/shared/types';
 import type {
   PermissionModeDescriptor,
   PermissionStop,
@@ -413,15 +413,10 @@ export function resolveUnattendedDefaultStop(opts?: {
 function resolveTrustMode(opts: {
   stop: PermissionStop | null;
   descriptors: readonly PermissionModeDescriptor[] | undefined;
-}): PermissionMode | undefined {
+}): PermissionModeId | undefined {
   if (!opts.stop || !opts.descriptors) return undefined;
   const match = resolveTrustStops(opts.descriptors).find((s) => s.stop === opts.stop);
-  // The cast is the wire's legacy narrowing, not a claim about this id.
-  // `PermissionMode` is a closed enum of the ids the three shipped runtimes
-  // happen to use, while a mode id is whatever its runtime declared (test-mode's
-  // `always-allow`) and the column holding it is plain text. The id here came
-  // from the runtime's own profile, so it is by definition one that runtime runs.
-  return match ? (match.mode.id as PermissionMode) : undefined;
+  return match?.mode.id;
 }
 
 /**

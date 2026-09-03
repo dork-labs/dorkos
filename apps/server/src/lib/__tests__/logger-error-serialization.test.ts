@@ -17,6 +17,27 @@ describe('NDJSON error serialization', () => {
     vi.resetModules();
     loggerModule = await import('../logger.js');
     loggerModule.initLogger({ level: 5, logDir });
+
+    // Point consola's CONSOLE reporter at a sink, leaving the file reporter —
+    // the thing actually under test — alone. Every assertion here reads the
+    // NDJSON back off disk, so console output proves nothing in this file, and
+    // it is not free noise: the clipping DOR-802 added guards what the FILE
+    // reporter writes, not what the console reporter prints, so the huge-message
+    // case below emitted a single ~2.0 MB line. On STDERR, not stdout —
+    // BasicReporter routes anything below level 2 to `options.stderr`, so
+    // reproducing this with `> file` and no `2>&1` shows you nothing at all.
+    // A GitHub runner serialises on a line that size: it spent ~10.6 minutes on
+    // the 621,377 characters that survived the pipe in CI, which is what turned
+    // an ordinary 37-minute affected-test run into a 46-minute timeout kill on
+    // PR #1486 (DOR-1726). How much of the 2 MB lands varies run to run, because
+    // `stream.write()` on a pipe is async and the process exits mid-drain.
+    //
+    // The console reporter being unclipped at all is a product gap, not a test
+    // problem — that is DOR-1728, and fixing it there makes this sink redundant.
+    // BasicReporter reads `.columns` off the stream before it writes to it.
+    const sink = { columns: 80, write: () => true } as unknown as NodeJS.WriteStream;
+    loggerModule.logger.options.stdout = sink;
+    loggerModule.logger.options.stderr = sink;
   });
 
   afterEach(() => {

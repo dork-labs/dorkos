@@ -9,7 +9,7 @@
  * @see ../runtime-constants.ts
  */
 import { describe, it, expect } from 'vitest';
-import { CLAUDE_CODE_CAPABILITIES } from '../runtime-constants.js';
+import { CLAUDE_CODE_CAPABILITIES, narrowToClaudeCodeMode } from '../runtime-constants.js';
 
 describe('CLAUDE_CODE_CAPABILITIES', () => {
   it('exposes the five Claude SDK permission modes DorkOS surfaces', () => {
@@ -47,5 +47,35 @@ describe('CLAUDE_CODE_CAPABILITIES', () => {
 
   it('declares no native context kinds (server injects all via the bag, ADR-0273 A2)', () => {
     expect(CLAUDE_CODE_CAPABILITIES.nativeContext).toEqual([]);
+  });
+});
+
+describe('narrowToClaudeCodeMode (DOR-885)', () => {
+  it('passes every mode this runtime declares through untouched', () => {
+    // The five ids the picker offers are the five the SDK takes, so none of
+    // them may be turned into something else on the way to a query.
+    for (const descriptor of CLAUDE_CODE_CAPABILITIES.permissionModes.values) {
+      expect(narrowToClaudeCodeMode(descriptor.id, 'default')).toBe(descriptor.id);
+    }
+  });
+
+  it("passes 'dontAsk' through — the SDK takes it even though the picker hides it", () => {
+    // The question this function answers is "will the SDK accept this id?", not
+    // "does the picker offer it?". `dontAsk` is a real SDK mode DorkOS declines
+    // to surface, and coercing it would be a change nobody asked for.
+    expect(narrowToClaudeCodeMode('dontAsk', 'default')).toBe('dontAsk');
+  });
+
+  it('falls back for an id the SDK never heard of, rather than passing it on', () => {
+    // `always-allow` is `test-mode`'s real declared default, and it can reach a
+    // Claude Code session through the settings store, which is one plain text
+    // column shared by every runtime. Sending it to the SDK fails the whole turn
+    // with a 400; falling back to the caller's mode asks about everything.
+    expect(narrowToClaudeCodeMode('always-allow', 'default')).toBe('default');
+    expect(narrowToClaudeCodeMode('a-mode-nobody-declares', 'default')).toBe('default');
+  });
+
+  it('falls back when there is no id at all', () => {
+    expect(narrowToClaudeCodeMode(undefined, 'default')).toBe('default');
   });
 });

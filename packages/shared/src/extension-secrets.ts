@@ -9,16 +9,18 @@
  */
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { withFileLock } from './atomic-write.js';
 import { assertValidExtensionId } from './extension-id.js';
+import { claimSecretBytes } from './secret-file.js';
 
 const ALGORITHM = 'aes-256-gcm';
 const KEY_LENGTH = 32;
 const IV_LENGTH = 16;
 const AUTH_TAG_LENGTH = 16;
 const SALT = 'dorkos-ext-secrets';
+/** Owner-only file mode for the host key (`rw-------`). */
+const HOST_KEY_MODE = 0o600;
 
 /** Per-process cache of the derived encryption key. */
 let cachedDerivedKey: Buffer | null = null;
@@ -137,15 +139,20 @@ export class ExtensionSecretStore {
     return cachedDerivedKey;
   }
 
+  /**
+   * The host key, published on first use.
+   *
+   * There is deliberately no `existsSync` fast path here. Reading first meant
+   * two processes on a fresh data directory could both find no key and both
+   * mint one, leaving the loser encrypting under a key no longer on disk — every
+   * secret it wrote would be permanently unreadable — and it also accepted a
+   * zero-byte `host.key` as a key, silently deriving from nothing. The claim is
+   * the single path: whoever publishes first wins, everyone else adopts that
+   * key, and a file of the wrong length is refused rather than used or
+   * overwritten (DOR-712).
+   */
   private loadOrCreateHostKey(): Buffer {
-    const keyPath = this.hostKeyPath;
-    if (existsSync(keyPath)) {
-      return readFileSync(keyPath);
-    }
-    const key = randomBytes(KEY_LENGTH);
-    mkdirSync(dirname(keyPath), { recursive: true });
-    writeFileSync(keyPath, key, { mode: 0o600 });
-    return key;
+    return claimSecretBytes(this.hostKeyPath, randomBytes(KEY_LENGTH), HOST_KEY_MODE).value;
   }
 
   /**

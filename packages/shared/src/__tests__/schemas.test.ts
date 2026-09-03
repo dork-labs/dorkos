@@ -8,9 +8,11 @@ import {
   OperationProgressEventSchema,
   PendingInteractionDTOSchema,
   SessionSchema,
+  SessionSettingsSchema,
   SessionStatusEventSchema,
   UsageStatusSchema,
   UiActionRequestSchema,
+  UpdateSessionRequestSchema,
   UI_ACTION_ID_MAX_LENGTH,
   UI_ACTION_TITLE_MAX_LENGTH,
   UI_ACTION_PAYLOAD_MAX_LENGTH,
@@ -53,6 +55,46 @@ describe('SessionSchema', () => {
     };
     const result = SessionSchema.parse(testModeSession);
     expect(result.permissionMode).toBe('always-allow');
+  });
+});
+
+describe('SessionSettingsSchema', () => {
+  it('parses a permission-mode id outside the shared enum (DOR-885)', () => {
+    // Purpose: this schema describes what a PATCH asks for, what
+    // `session_metadata.permission_mode` holds, and what a runtime is handed
+    // back — all three of which carry the id the owning runtime declared, not a
+    // member of `PermissionModeSchema`. `always-allow` is the real default
+    // `test-mode` declares (`TEST_MODE_CAPABILITIES` in
+    // `apps/server/src/services/runtimes/test-mode/runtime-constants.ts`), so a
+    // row for one of its sessions already holds a value this schema rejected.
+    // Named rather than invented, so the test fails the moment that runtime's
+    // actual shipped id stops parsing.
+    const result = SessionSettingsSchema.parse({ permissionMode: 'always-allow' });
+    expect(result.permissionMode).toBe('always-allow');
+  });
+
+  it('still refuses a mode id no runtime could declare', () => {
+    // The shape bound survives the widening: what stopped being the authority
+    // is the LIST of names, not the check that an id is a well-formed one. The
+    // owning runtime refuses ids it does not declare (`PATCH /api/sessions/:id`);
+    // this keeps a value no runtime could ever name out of a persisted row.
+    expect(SessionSettingsSchema.safeParse({ permissionMode: 'not a mode' }).success).toBe(false);
+    expect(SessionSettingsSchema.safeParse({ permissionMode: '' }).success).toBe(false);
+  });
+
+  it('is the whole shape UpdateSessionRequestSchema widens nothing back out of', () => {
+    // The request schema used to re-declare `permissionMode` purely to widen the
+    // narrow parent (DOR-885). With the parent already wide the override is
+    // gone, and this pins that removing it changed nothing about what a request
+    // may carry.
+    const result = UpdateSessionRequestSchema.parse({
+      permissionMode: 'always-allow',
+      title: 'A renamed session',
+    });
+    expect(result.permissionMode).toBe('always-allow');
+    expect(UpdateSessionRequestSchema.safeParse({ permissionMode: 'not a mode' }).success).toBe(
+      false
+    );
   });
 });
 

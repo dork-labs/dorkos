@@ -50,12 +50,17 @@ import { isTasksEnabled } from '../../../tasks/task-state.js';
 import type { AgentSession } from '../agent-types.js';
 import { claudeConfigDirEnv, resolveLaunchAccountRoot } from '../claude-config-dir.js';
 import type { AgentIdentityPin, LaunchParams } from '../sessions/launch-fingerprint.js';
+import { narrowToClaudeCodeMode } from '../runtime-constants.js';
 import { resolveToolConfig } from '../tooling/tool-filter.js';
 import { loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
 import { buildSystemPromptAppend, renderContextEntry } from './context-builder.js';
 import { createCanUseTool, handleElicitation } from './interactive-handlers.js';
 import { mcpToolTimeoutFloorEnv } from './mcp-tool-timeout-env.js';
-import { AUTO_DOWNGRADE_STATUS, resolveEffectivePermissionMode } from './permission-mode-guard.js';
+import {
+  AUTO_DOWNGRADE_STATUS,
+  UNKNOWN_MODE_STATUS,
+  resolveEffectivePermissionMode,
+} from './permission-mode-guard.js';
 import { resolveThinkingOptions } from './thinking-config.js';
 import { createEditBaselineCapture, detectSlashCommandName } from './message-sender-shared.js';
 import type { MessageSenderOpts } from './message-sender-shared.js';
@@ -361,9 +366,33 @@ export async function resolveLaunch(args: {
   // the status note fires each send the model can't be trusted with Auto, and Auto
   // resumes automatically once it can be. The note's wording follows the REASON —
   // an unconfirmed model must not be described as one that lacks Auto.
+  //
+  // The session's own id is checked into the SDK's vocabulary FIRST, because a
+  // mode id is whatever its runtime declared (DOR-885): the session may be
+  // sitting in one this runtime has since retired, or in one only another
+  // runtime ever offered, and a name the SDK has never heard of fails the entire
+  // turn with a 400. `'default'` — ask about everything — is the only safe
+  // reading of a mode nothing here can weigh.
+  //
+  // And it is announced, for the same reason the auto downgrade below is: this
+  // coercion is per query and never rewrites `session.permissionMode`, so the
+  // panel keeps showing the saved mode while the agent asks about everything.
+  // Silence there is the whole complaint — a person watching it ask would have
+  // no way to learn why. The note is user-facing and says what changes for them;
+  // the log line beside it carries the id, which is the half a person cannot use
+  // and an operator reading logs needs.
+  const declaredMode = narrowToClaudeCodeMode(session.permissionMode, 'default');
+  if (declaredMode !== session.permissionMode) {
+    logger.warn('[sendMessage] saved permission mode is not one this runtime offers', {
+      session: sessionId,
+      stored: session.permissionMode,
+      running: declaredMode,
+    });
+    statusEvents.push({ type: 'system_status', data: { message: UNKNOWN_MODE_STATUS } });
+  }
   const { permissionMode: effectivePermissionMode, autoDowngrade } = resolveEffectivePermissionMode(
     {
-      permissionMode: session.permissionMode,
+      permissionMode: declaredMode,
       modelSupportsAutoMode: opts.modelSupportsAutoMode,
     }
   );
@@ -373,7 +402,8 @@ export async function resolveLaunch(args: {
       data: { message: AUTO_DOWNGRADE_STATUS[autoDowngrade] },
     });
   }
-  // The schema validates valid values upstream; no allowlist needed here.
+  // Every value that reaches here is one the SDK accepts: `narrowToClaudeCodeMode`
+  // checked the id and the guard above resolved Auto, so no allowlist is needed.
   sdkOptions.permissionMode = effectivePermissionMode;
   // Always launch with the bypass capability (ADR-0261). The flag is a pure
   // capability gate the SDK consults ONLY when permissionMode is

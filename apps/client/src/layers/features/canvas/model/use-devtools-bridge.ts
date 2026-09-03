@@ -20,9 +20,18 @@
  *   Everything else is rejected — including a dev server framed by its own
  *   address, which carries no shim and so cannot drive the bridge by posting
  *   messages that look like the shim's.
- * - **Attached session only.** Captures relay to the attached session
- *   (`app-store.sessionId`) and no other, so one session's preview can never feed
- *   another session's buffer.
+ * - **Attached session only.** Captures relay to the session they were CAPTURED
+ *   under and no other, so one session's preview can never feed another
+ *   session's buffer — including across the 300ms coalescing window, which is
+ *   long enough for the operator to switch conversations mid-batch (see
+ *   `pendingSessionId`; reading the current session at send time is a bleed, not
+ *   a guarantee).
+ *   Which session that is comes from {@link useSessionId}, the dual-mode hook —
+ *   the URL's `?session=` in the browser and desktop app, the store in the
+ *   Obsidian embed. Reading `app-store.sessionId` directly instead is what left
+ *   this relay dead everywhere but Obsidian (DOR-1305): only the embedded branch
+ *   ever writes that field, so in a browser the gate below never opened and an
+ *   agent's `browser_read_console` saw nothing.
  *
  * It also drives the `browser_screenshot` round-trip (DOR-213 Phase 3): a
  * `devtools_capture_request` on the attached session's event stream is
@@ -46,8 +55,9 @@ import type {
   DevtoolsNetworkEntry,
 } from '@dorkos/shared/schemas';
 import { DEVTOOLS_CONSOLE_BATCH_MAX, DEVTOOLS_NETWORK_BATCH_MAX } from '@dorkos/shared/schemas';
+import { useSessionId } from '@/layers/entities/session';
 import { streamManager } from '@/layers/shared/lib';
-import { useAppStore, useTransport } from '@/layers/shared/model';
+import { useTransport } from '@/layers/shared/model';
 import { loadRasterizerSource } from '../lib/load-rasterizer';
 
 /** How long to coalesce shim batches before one ingest POST. */
@@ -125,7 +135,10 @@ export function useDevtoolsBridge({
   previewOrigin,
 }: UseDevtoolsBridgeParams): DevtoolsBridge {
   const transport = useTransport();
-  const sessionId = useAppStore((s) => s.sessionId);
+  // The attached conversation, asked the way every other surface asks: the URL in
+  // the browser and desktop app, the store in the Obsidian embed. Never the store
+  // alone — see the module doc's third guarantee.
+  const [sessionId] = useSessionId();
 
   // Failed resources for the CURRENT document only. Reset during render rather
   // than in an effect (React's documented "adjusting state when a prop changes"
@@ -159,11 +172,27 @@ export function useDevtoolsBridge({
   const pendingReset = useRef(false);
   const lastSeq = useRef(0);
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * The session the pending captures were captured UNDER, recorded when they are
+   * accumulated rather than read when they are sent.
+   *
+   * The 300ms debounce is a window in which the attached session can change, and
+   * for that window the current session and the pending batch's session are two
+   * different facts. Reading `sessionIdRef` at fire time answered with the first
+   * and posted the second, so a switch mid-window put A's console into B's
+   * buffer. `null` means nothing is pending.
+   */
+  const pendingSessionId = useRef<string | null>(null);
 
   useEffect(() => {
+    /** Relay whatever is pending to the session it was captured under. */
     function flush(): void {
-      flushTimer.current = null;
-      const sid = sessionIdRef.current;
+      if (flushTimer.current !== null) {
+        clearTimeout(flushTimer.current);
+        flushTimer.current = null;
+      }
+      const sid = pendingSessionId.current;
+      pendingSessionId.current = null;
       if (!sid) {
         pendingConsole.current = [];
         pendingNetwork.current = [];
@@ -240,15 +269,24 @@ export function useDevtoolsBridge({
       const sid = sessionIdRef.current;
       if (!sid) return;
 
+      // A conversation switch CLOSES the pending group instead of letting it
+      // carry across: whatever was captured under the previous session goes to
+      // that session now, before anything captured under this one joins it. The
+      // debounce window and a session switch are independent clocks, and this is
+      // the only place they are reconciled.
+      if (pendingSessionId.current !== null && pendingSessionId.current !== sid) flush();
+
       switch (data.__dorkosDevtools) {
         case 'navigated':
           // Mark a navigation boundary and drop stale, not-yet-flushed captures.
+          pendingSessionId.current = sid;
           pendingReset.current = true;
           pendingConsole.current = [];
           pendingNetwork.current = [];
           schedule();
           return;
         case 'batch':
+          pendingSessionId.current = sid;
           if (Array.isArray(data.console)) pendingConsole.current.push(...data.console);
           if (Array.isArray(data.network)) pendingNetwork.current.push(...data.network);
           if (typeof data.seq === 'number') lastSeq.current = data.seq;
