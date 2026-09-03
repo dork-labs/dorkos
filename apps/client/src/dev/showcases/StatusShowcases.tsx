@@ -17,7 +17,7 @@ import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { SAMPLE_TASKS } from '../mock-chat-data';
-import { IDENTITY_STATUSES } from '../mock-samples';
+import { IDENTITY_STATUSES, SAMPLE_LONG_PLAN } from '../mock-samples';
 
 /** A fixed "three hours from now", picked once at import: a showcase reads the clock nowhere near a render. */
 const SHOWCASE_RESETS_AT = new Date(Date.now() + 3 * 3600 * 1000).toISOString();
@@ -291,6 +291,20 @@ export function StatusShowcases() {
             activeForm="Implementing authentication service"
             isCollapsed={taskCollapsed2}
             onToggleCollapse={() => setTaskCollapsed2((c) => !c)}
+            statusTimestamps={new Map()}
+          />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          A ten-item plan scrolls inside itself, rather than pushing the conversation off screen
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <TaskListPanel
+            tasks={SAMPLE_LONG_PLAN}
+            taskMap={new Map(SAMPLE_LONG_PLAN.map((t) => [t.id, t]))}
+            activeForm="Implementing authentication service"
+            isCollapsed={false}
+            onToggleCollapse={() => {}}
             statusTimestamps={new Map()}
           />
         </ShowcaseDemo>

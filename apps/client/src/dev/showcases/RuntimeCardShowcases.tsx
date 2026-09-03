@@ -235,6 +235,19 @@ function SomethingWrongSection() {
       <ShowcaseDemo>
         <LiveRuntimeCard type="codex" expanded storesDefaults={false} />
       </ShowcaseDemo>
+
+      <ShowcaseLabel>A runtime this server has not registered, with its setup behind a section</ShowcaseLabel>
+      <ShowcaseDemo>
+        <LiveRuntimeCard
+          type="opencode"
+          expanded
+          setupDetails={
+            <p className="text-muted-foreground text-xs">
+              Not registered with this server. Install it, then enable it in your DorkOS config.
+            </p>
+          }
+        />
+      </ShowcaseDemo>
     </PlaygroundSection>
   );
 }
