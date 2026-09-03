@@ -13,7 +13,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { FakeAgentRuntime } from '@dorkos/test-utils';
+import { FakeAgentRuntime, mockInterruptReceipt } from '@dorkos/test-utils';
 
 vi.mock('../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),
@@ -417,7 +417,7 @@ describe('POST /api/sessions/:id/messages — the receipt', () => {
 
 describe('POST /api/sessions/:id/interrupt — Stop clears the queue (task 4.7)', () => {
   it('empties the queue and hands every message back, in order', async () => {
-    fakeRuntime.interruptQuery.mockResolvedValue(true);
+    fakeRuntime.interruptQuery.mockResolvedValue(mockInterruptReceipt('acked'));
     await post('one', 'client-a');
     await post('two', 'client-b');
     await post('three', 'client-a');
@@ -425,7 +425,7 @@ describe('POST /api/sessions/:id/interrupt — Stop clears the queue (task 4.7)'
     const res = await request(server).post(`/api/sessions/${SESSION_ID}/interrupt`);
 
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
+    expect(res.body.receipt.outcome).toBe('acked');
     expect(res.body.cancelledQueued.map((m: { content: string }) => m.content)).toEqual([
       'one',
       'two',
@@ -435,18 +435,18 @@ describe('POST /api/sessions/:id/interrupt — Stop clears the queue (task 4.7)'
     expect(await readQueue()).toEqual([]);
   });
 
-  it('makes no promise it cannot keep: still clears the queue when the runtime returns ok:false', async () => {
-    // A CLI that does not advertise `interrupt_cancel_queued_v1` (or whose turn
-    // already finished) resolves the interrupt falsy. The DorkOS queue is ours
-    // and is cleared regardless; the response never claims more than happened.
-    fakeRuntime.interruptQuery.mockResolvedValue(false);
+  it('makes no promise it cannot keep: still clears the queue when the stop found nothing', async () => {
+    // A turn that already finished resolves `not-running` — nothing failed, and
+    // nothing was stopped. The DorkOS queue is ours and is cleared regardless;
+    // the response never claims more than happened.
+    fakeRuntime.interruptQuery.mockResolvedValue(mockInterruptReceipt('not-running'));
     await post('one', 'client-a');
     await post('two', 'client-a');
 
     const res = await request(server).post(`/api/sessions/${SESSION_ID}/interrupt`);
 
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(false);
+    expect(res.body.receipt.outcome).toBe('not-running');
     expect(res.body.cancelledQueued.map((m: { content: string }) => m.content)).toEqual([
       'one',
       'two',
@@ -455,12 +455,12 @@ describe('POST /api/sessions/:id/interrupt — Stop clears the queue (task 4.7)'
   });
 
   it('an empty queue interrupts with nothing to hand back', async () => {
-    fakeRuntime.interruptQuery.mockResolvedValue(true);
+    fakeRuntime.interruptQuery.mockResolvedValue(mockInterruptReceipt('acked'));
 
     const res = await request(server).post(`/api/sessions/${OTHER_SESSION_ID}/interrupt`);
 
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
+    expect(res.body.receipt.outcome).toBe('acked');
     expect(res.body.cancelledQueued).toEqual([]);
   });
 
@@ -468,7 +468,9 @@ describe('POST /api/sessions/:id/interrupt — Stop clears the queue (task 4.7)'
     // The queue was already emptied before the interrupt runs. A thrown
     // interrupt must not 500 those rows into the void — the person confirmed
     // "put N back", and dropping them would break the one promise this feature
-    // exists to keep. It reports ok:false and still returns the words.
+    // exists to keep. It reports the `failed` receipt and still returns the
+    // words — and `failed` rather than `not-running`, because nothing ended the
+    // turn and pressing Stop again is the person's only move.
     fakeRuntime.interruptQuery.mockRejectedValue(new Error('interrupt wedged'));
     await post('one', 'client-a');
     await post('two', 'client-a');
@@ -476,11 +478,57 @@ describe('POST /api/sessions/:id/interrupt — Stop clears the queue (task 4.7)'
     const res = await request(server).post(`/api/sessions/${SESSION_ID}/interrupt`);
 
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(false);
+    expect(res.body.receipt).toEqual({
+      outcome: 'failed',
+      reason: 'delivery-failed',
+      runtime: 'fake',
+    });
     expect(res.body.cancelledQueued.map((m: { content: string }) => m.content)).toEqual([
       'one',
       'two',
     ]);
     expect(await readQueue()).toEqual([]);
+  });
+});
+
+describe('POST /api/sessions/:id/tasks/:taskId/stop — the same receipt vocabulary', () => {
+  it('answers the receipt for a stop that reached a real task', async () => {
+    fakeRuntime.stopTask.mockResolvedValue(mockInterruptReceipt('acked'));
+
+    const res = await request(server).post(`/api/sessions/${SESSION_ID}/tasks/task-1/stop`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      receipt: { outcome: 'acked', runtime: 'fake' },
+      taskId: 'task-1',
+    });
+  });
+
+  it('keeps `unconfirmed` a 200, not the 409 that would claim the task was already stopped', async () => {
+    // The distinction the boolean could not carry: the CLI did not answer, so
+    // the task is very likely STILL RUNNING. A 409 saying "already stopped"
+    // would be the exact lie the receipt vocabulary exists to remove, and the
+    // surface has to be able to say "stop requested" about it instead.
+    fakeRuntime.stopTask.mockResolvedValue(mockInterruptReceipt('unconfirmed'));
+    fakeRuntime.hasSession.mockReturnValue(true);
+
+    const res = await request(server).post(`/api/sessions/${SESSION_ID}/tasks/task-1/stop`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.receipt.outcome).toBe('unconfirmed');
+  });
+
+  it('keeps the 409 for `not-running` on a live session, and the 404 without one', async () => {
+    fakeRuntime.stopTask.mockResolvedValue(mockInterruptReceipt('not-running'));
+
+    fakeRuntime.hasSession.mockReturnValue(true);
+    const conflict = await request(server).post(`/api/sessions/${SESSION_ID}/tasks/gone/stop`);
+    expect(conflict.status).toBe(409);
+    expect(conflict.body.code).toBe('TASK_NOT_RUNNING');
+
+    fakeRuntime.hasSession.mockReturnValue(false);
+    const missing = await request(server).post(`/api/sessions/${SESSION_ID}/tasks/gone/stop`);
+    expect(missing.status).toBe(404);
+    expect(missing.body.code).toBe('SESSION_NOT_FOUND');
   });
 });

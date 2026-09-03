@@ -1137,7 +1137,15 @@ describe('CodexRuntime', () => {
       const first = await gen.next();
       expect(first.value).toEqual({ type: 'text_delta', data: { text: 'partial answer' } });
 
-      await expect(runtime.interruptQuery(sessionId)).resolves.toBe(true);
+      // `closed`, never `acked` (spec `runtime-interrupt-receipts` D7): codex's
+      // only interrupt primitive SIGTERMs the per-turn subprocess, and nothing
+      // in codex acknowledges a stop. Reporting `acked` would tell the person
+      // the agent wound down when it did not. No `reason`, because every reason
+      // names why a graceful attempt was abandoned and there is none to abandon.
+      await expect(runtime.interruptQuery(sessionId)).resolves.toEqual({
+        outcome: 'closed',
+        runtime: 'codex',
+      });
       expect(capturedSignal?.aborted).toBe(true);
 
       const rest: StreamEvent[] = [];
@@ -1148,12 +1156,20 @@ describe('CodexRuntime', () => {
       // The thread binding still landed (thread.started arrived before the abort).
       expect(threadMap.getThreadId(sessionId)).toBe(THREAD_ID);
       // The turn is settled — a second interrupt has nothing to abort.
-      await expect(runtime.interruptQuery(sessionId)).resolves.toBe(false);
+      await expect(runtime.interruptQuery(sessionId)).resolves.toEqual({
+        outcome: 'not-running',
+        reason: 'no-open-turn',
+        runtime: 'codex',
+      });
     });
 
-    it('resolves false when no turn is in flight', async () => {
+    it('resolves not-running when no turn is in flight', async () => {
       const { runtime } = makeRuntime();
-      await expect(runtime.interruptQuery(crypto.randomUUID())).resolves.toBe(false);
+      await expect(runtime.interruptQuery(crypto.randomUUID())).resolves.toEqual({
+        outcome: 'not-running',
+        reason: 'no-open-turn',
+        runtime: 'codex',
+      });
     });
   });
 
@@ -1315,7 +1331,13 @@ describe('CodexRuntime', () => {
       expect(runtime.approveTool(sessionId, 'tool-1', true)).toBe(false);
       expect(runtime.submitAnswers(sessionId, 'tool-1', { '0': 'yes' })).toBe(false);
       expect(runtime.submitElicitation(sessionId, 'int-1', 'accept')).toBe(false);
-      await expect(runtime.stopTask(sessionId, 'task-1')).resolves.toBe(false);
+      // Codex has no addressable background tasks: `not-running` is the honest
+      // report and is NOT a failure — nothing broke, there was nothing to stop.
+      await expect(runtime.stopTask(sessionId, 'task-1')).resolves.toEqual({
+        outcome: 'not-running',
+        reason: 'no-open-turn',
+        runtime: 'codex',
+      });
     });
   });
 

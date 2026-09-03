@@ -62,6 +62,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
   },
 }));
 
+import { mockInterruptReceipt } from '@dorkos/test-utils';
 import { createApp, finalizeApp } from '../../app.js';
 import { createRoomSubsystem, getRoomService, setRoomService } from '../../services/rooms/index.js';
 import type { RoomTurnRequest, RoomTurnResult } from '../../services/rooms/room-trigger.js';
@@ -102,7 +103,7 @@ describe('two rooms, one agent, over HTTP', () => {
     return {
       turns: [] as never[],
       interrupted: [] as never[],
-      interrupt: () => Promise.resolve(false),
+      interrupt: () => Promise.resolve(mockInterruptReceipt('not-running')),
       run(req: RoomTurnRequest): Promise<RoomTurnResult> {
         return new Promise<RoomTurnResult>((resolve) => {
           turns.push({

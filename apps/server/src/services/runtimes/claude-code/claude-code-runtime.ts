@@ -39,6 +39,7 @@ import type {
   DeliverIntoTurnOpts,
   RuntimeDeliveryResult,
   SessionUpdateResult,
+  InterruptReceipt,
 } from '@dorkos/shared/agent-runtime';
 import type {
   SessionSnapshot,
@@ -835,19 +836,23 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   /** @inheritdoc */
-  async stopTask(sessionId: string, taskId: string): Promise<boolean> {
+  async stopTask(sessionId: string, taskId: string): Promise<InterruptReceipt> {
     return this.sessionStore.stopTask(sessionId, taskId);
   }
 
   /** @inheritdoc */
-  async interruptQuery(sessionId: string): Promise<boolean> {
-    if (await this.sessionStore.interruptQuery(sessionId)) return true;
+  async interruptQuery(sessionId: string): Promise<InterruptReceipt> {
+    const receipt = await this.sessionStore.interruptQuery(sessionId);
+    // Only `not-running` falls through. A stop that reached a live query and
+    // then failed is a fact about THAT query, and re-aiming it at the booting
+    // one would report the second attempt's ending for the first attempt's turn.
+    if (receipt.outcome !== 'not-running') return receipt;
     // Nothing on the ordinary path — but a persistent session's FIRST turn may
     // still be booting, so the pump holds a live query the `running` edge has
     // not yet armed `session.activeQuery` with (DOR-1191). Reach that turn
     // through the same interrupt→close escalation the running path uses.
     const bootingQuery = this.persistent.bootingQuery(sessionId);
-    if (bootingQuery === undefined) return false;
+    if (bootingQuery === undefined) return receipt;
     return this.sessionStore.interruptGivenQuery(sessionId, bootingQuery);
   }
 

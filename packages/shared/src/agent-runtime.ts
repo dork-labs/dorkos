@@ -23,6 +23,7 @@ import type {
 import type { AdditionalContext, ContextKind } from './additional-context.js';
 import type { SessionSnapshot, SessionEvent, SessionListEvent } from './session-stream.js';
 import type { RuntimeCommandIntentId } from './command-intents.js';
+import type { InterruptReceipt } from './types.js';
 
 /**
  * The message-delivery vocabulary of the runtime contract, re-exported here so
@@ -38,6 +39,17 @@ export type {
   MessageDeliveryOutcome,
   QueuedMessage,
 } from './types.js';
+
+/**
+ * The stop vocabulary of the runtime contract, re-exported here for the same
+ * reason the delivery one is: an adapter reads its whole contract from one
+ * module.
+ *
+ * Defined once as Zod in `schemas.js` — the receipt is a wire type as well as a
+ * contract type (it rides the interrupt and stop-task routes).
+ */
+export type { InterruptOutcome, InterruptReason, InterruptReceipt } from './types.js';
+export { turnEnded, worthRetrying } from './schemas.js';
 
 /**
  * Where a permission mode sits on the one question the permission surface asks:
@@ -1110,22 +1122,39 @@ export interface AgentRuntime {
   /**
    * Stop a running background task (agent or bash command).
    *
+   * Answers the same {@link InterruptReceipt} vocabulary `interruptQuery` does,
+   * for the same reason: a boolean cannot tell "there was no such task" from
+   * "the runtime declined and it is still running". A runtime with no
+   * addressable background tasks answers `not-running` / `no-open-turn` —
+   * honest, and not a failure.
+   *
    * @param sessionId - Target session
    * @param taskId - The background task to stop
-   * @returns true if the task was found and stopped, false otherwise
+   * @returns A receipt naming which of the five endings the stop reached
    */
-  stopTask(sessionId: string, taskId: string): Promise<boolean>;
+  stopTask(sessionId: string, taskId: string): Promise<InterruptReceipt>;
 
   /**
    * Interrupt the active query for a session.
    *
-   * Attempts a graceful interrupt first (SDK `query.interrupt()`). If that fails,
-   * escalates to a forceful close (SDK `query.close()`).
+   * **Returns a receipt, never a boolean** (spec `runtime-interrupt-receipts`).
+   * The boolean it replaced was `true` for two endings that are not the same
+   * ending — the agent heard the stop and stopped, and DorkOS gave up waiting
+   * and killed the process — and `false` for three more that are not the same as
+   * each other. Callers read the receipt through `turnEnded` and
+   * `worthRetrying`, never by string equality, and the client's copy follows the
+   * stop-requested rule: "stopped" is only said about an ending DorkOS observed.
+   *
+   * **An adapter MUST NOT throw for an ordinary refusal** — `failed` /
+   * `delivery-failed` is the receipt for that, matching the rule ADR
+   * `260816-143752` set for {@link AgentRuntime.deliverIntoTurn}. Every mapping
+   * is gated by `runtimeConformance` (cases I1–I5), so a new adapter cannot omit
+   * one.
    *
    * @param sessionId - Target session
-   * @returns true if the query was interrupted, false if no active query
+   * @returns A receipt naming which of the five endings the stop reached
    */
-  interruptQuery(sessionId: string): Promise<boolean>;
+  interruptQuery(sessionId: string): Promise<InterruptReceipt>;
 
   /**
    * Deliver a message into a session WITHOUT opening a turn of its own.

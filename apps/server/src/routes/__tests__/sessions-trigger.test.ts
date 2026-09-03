@@ -11,7 +11,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { SessionEvent, SessionSnapshot } from '@dorkos/shared/session-stream';
-import { FakeAgentRuntime } from '@dorkos/test-utils';
+import { FakeAgentRuntime, mockInterruptReceipt } from '@dorkos/test-utils';
 
 vi.mock('../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),
@@ -475,7 +475,7 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
     // production threshold) with a short stallTimeoutMs, but read back over the
     // REAL durable stream. Existing tests in this file use real timers +
     // vi.waitFor, so the watchdog runs against a real (short) clock here too.
-    fakeRuntime.interruptQuery.mockResolvedValue(true);
+    fakeRuntime.interruptQuery.mockResolvedValue(mockInterruptReceipt('acked'));
     fakeRuntime.withScenarios([
       async function* () {
         yield { type: 'text_delta', data: { text: 'partial' } } as StreamEvent;
@@ -625,10 +625,10 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
   });
 
   it('stall watchdog: interruptQuery finding no in-flight turn still settles with the leak details', async () => {
-    // interruptQuery resolving false means the runtime found nothing to abort
-    // (likely a leaked process). The turn must STILL close (the injected sequence
-    // does not depend on the interrupt outcome), with the leak surfaced.
-    fakeRuntime.interruptQuery.mockResolvedValue(false);
+    // `not-running` means the runtime found nothing to abort (likely a leaked
+    // process). The turn must STILL close (the injected sequence does not depend
+    // on the interrupt outcome), with the leak surfaced.
+    fakeRuntime.interruptQuery.mockResolvedValue(mockInterruptReceipt('not-running'));
     fakeRuntime.withScenarios([
       async function* () {
         yield { type: 'text_delta', data: { text: 'partial' } } as StreamEvent;

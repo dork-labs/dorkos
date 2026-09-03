@@ -18,7 +18,7 @@ import {
   RecentSessionsQuerySchema,
   SessionDailyCountsQuerySchema,
 } from '@dorkos/shared/schemas';
-import type { ModelOption, PermissionModeId } from '@dorkos/shared/types';
+import type { InterruptReceipt, ModelOption, PermissionModeId } from '@dorkos/shared/types';
 import type { AgentRuntime, PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { MeshCore } from '@dorkos/mesh';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
@@ -1491,14 +1491,20 @@ router.post('/:id/tasks/:taskId/stop', async (req, res) => {
 
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
   try {
-    const stopped = await runtime.stopTask(sessionId, taskId);
-    if (!stopped) {
+    const receipt = await runtime.stopTask(sessionId, taskId);
+    // Only `not-running` is an error status, and only that one: it is the
+    // ending that says there was no such task. `unconfirmed` and `failed` are
+    // 200s carrying the receipt — the request WAS made against a real task and
+    // the surface has to be able to say "stop requested" about it, which a 409
+    // saying "already stopped" would flatly contradict (spec
+    // `runtime-interrupt-receipts` §2).
+    if (receipt.outcome === 'not-running') {
       if (runtime.hasSession(sessionId)) {
         return sendError(res, 409, 'Task not found or already stopped', 'TASK_NOT_RUNNING');
       }
       return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
     }
-    res.json({ success: true, taskId });
+    res.json({ receipt, taskId });
   } catch (_err) {
     return sendError(res, 500, 'Failed to stop task', 'STOP_TASK_ERROR');
   }
@@ -1515,30 +1521,34 @@ router.post('/:id/interrupt', async (req, res) => {
   // between it and the interrupt — so the turn ending here cannot let the pump
   // release the head of the queue on its way out. The removed messages ride
   // back on the response: nothing a person typed is destroyed by a Stop, it
-  // returns to their composer. The narrower promise of exactly WHAT the runtime
-  // cancelled (the CLI's own in-flight queue via `cancel_queued`) is owned by
-  // the `runtime-interrupt-receipts` spec (D7) and not redefined here; until it
-  // lands `interruptQuery` stays a bare boolean and the client says "stop
-  // requested" rather than "stopped".
+  // returns to their composer. That promise holds on EVERY outcome, `failed`
+  // included.
   const cancelledQueued = clearQueuedMessages(sessionId);
   try {
-    const interrupted = await runtime.interruptQuery(sessionId);
-    // Best-effort: ok:false when the query already finished is expected (race
-    // between natural completion and the interrupt arriving). Not an error.
-    res.json({ ok: interrupted, cancelledQueued });
+    // A receipt, not an `ok` (spec `runtime-interrupt-receipts` D3). The boolean
+    // this replaced was wrong on `not-running` in both directions at once —
+    // nothing failed, yet `ok` was `false` — and it told the person nothing
+    // about the one ending where pressing Stop again is the only move they have.
+    const receipt = await runtime.interruptQuery(sessionId);
+    res.json({ receipt, cancelledQueued });
   } catch (err) {
-    // The interrupt is best-effort, but the queue clear that ran just above is
-    // NOT — those rows are already gone. Failing the request here would drop
-    // `cancelledQueued`, and the client's best-effort `stop()` would hand the
-    // person back nothing: they pressed Stop, confirmed "put N back", and the
-    // words would be lost. So a thrown interrupt reports `ok: false` and still
-    // returns the cleared messages, keeping the "nothing typed is destroyed"
-    // promise. The failure is logged rather than swallowed.
+    // Adapters are contractually forbidden from throwing for an ordinary refusal
+    // (`AgentRuntime.interruptQuery`, conformance I5), so reaching here means
+    // something genuinely broke. The queue clear that ran just above is NOT
+    // best-effort — those rows are already gone — so failing the request would
+    // drop `cancelledQueued` and the person would press Stop, confirm "put N
+    // back", and lose the words. Answer the `failed` receipt instead, hand the
+    // messages back, and log the failure rather than swallowing it.
     logger.warn('[POST /interrupt] interrupt threw; queue was still cleared', {
       sessionId,
       ...logError(err),
     });
-    res.json({ ok: false, cancelledQueued });
+    const receipt: InterruptReceipt = {
+      outcome: 'failed',
+      reason: 'delivery-failed',
+      runtime: runtime.type,
+    };
+    res.json({ receipt, cancelledQueued });
   }
 });
 

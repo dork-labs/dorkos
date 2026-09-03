@@ -384,7 +384,7 @@ export const roomsHaltStopsCase: EvalCase = {
 
       // **Wind the scripted turn down BEFORE this case returns, and wait for it.**
       // A halt interrupts the room's WAIT; the runtime's own stream still closes
-      // the ordinary way, and `TestModeRuntime.interruptQuery` reports `true`
+      // the ordinary way, and `TestModeRuntime.interruptQuery` reports `closed`
       // for aborting the interaction gate without stopping the scripted turn
       // behind it — so the `long-turn` scenario is still ticking here, and it
       // still has its whole answer to deliver. Left running, it outlives the

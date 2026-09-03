@@ -26,7 +26,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
 import type { Session } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
-import type { MessageDisposition, QueuedMessage } from '@dorkos/shared/schemas';
+import type { InterruptReceipt, MessageDisposition, QueuedMessage } from '@dorkos/shared/schemas';
 import type { ClientContext } from '@dorkos/shared/additional-context';
 import { useTransport, useAppStore, useAgentBirthStore } from '@/layers/shared/model';
 import { TIMING, buildUiStateSnapshot, prepareUiStateForSend } from '@/layers/shared/lib';
@@ -54,13 +54,16 @@ import type { ChatSessionOptions, ChatStatus } from './chat-types';
 type PostMessageOptions = NonNullable<Parameters<Transport['postMessage']>[3]>;
 
 /**
- * What a Stop concluded — the server's own verdict plus the queue it cleared.
- * See {@link useSessionSubmit}'s `stop` for what `ok: false` does and does not
- * mean (DOR-1300).
+ * What a Stop concluded — the runtime's own receipt plus the queue it cleared.
+ *
+ * The receipt replaced an `ok` boolean whose own TSDoc had to spend a paragraph
+ * explaining that `false` "covers two different server-side cases the client
+ * cannot tell apart from here". It can now: see `stop-copy.ts` for what each of
+ * the five endings says and whether the button comes back.
  */
 export interface StopOutcome {
-  /** Whether the server reports the turn as actually stopped. */
-  ok: boolean;
+  /** Which of the five endings the stop reached, and on which runtime. */
+  receipt: InterruptReceipt;
   /** Queued messages the server removed, head first — restore these to the composer. */
   cancelled: QueuedMessage[];
 }
@@ -648,29 +651,33 @@ export function useSessionSubmit({
    * messages the server took off the queue, head first, so the caller can hand
    * the words back to the composer — nothing typed is destroyed by a Stop.
    *
-   * `ok` carries the server's own verdict rather than being swallowed: `true`
-   * means the turn was interrupted (or the process closed on the server's
-   * bounded escalation, `STOP_ACK_TIMEOUT_MS` — both count as "stopped" to the
-   * route). `false` covers two different server-side cases the client cannot
-   * tell apart from here — the turn had already finished on its own (the
-   * ordinary race, and by far the common case: `interruptQuery`'s escalation
-   * path returns `true` for nearly everything short of that), or the interrupt
-   * genuinely threw. A caller that wants to re-offer Stop on `ok: false` should
-   * still trust `isStreaming` as the primary signal — the turn's own settle —
-   * and treat `ok` as the tie-breaker for "is this worth pressing again."
-   * Resolves `{ ok: true, cancelled: [] }` when there was no session to stop,
-   * since nothing was owed to the server and there is nothing to retry.
+   * `receipt` carries the runtime's own verdict rather than being swallowed:
+   * which of the five endings the stop reached, and on which runtime. Callers
+   * read it through `stopNotice` (what to say) and `shouldReofferStop` (whether
+   * the button comes back), never by string equality, and `isStreaming` stays
+   * the primary signal for whether the turn is open — the receipt only resolves
+   * the disagreement.
+   *
+   * With no session there is nothing to stop and nothing to retry, so this
+   * answers `not-running` without a round trip. A request that never got an
+   * answer at all (network failure, timeout) is `failed` / `delivery-failed`:
+   * nothing ended the turn, so the person must be able to press again.
    */
   const stop = useCallback(async (): Promise<StopOutcome> => {
-    if (!sessionId) return { ok: true, cancelled: [] };
+    if (!sessionId) {
+      return {
+        receipt: { outcome: 'not-running', reason: 'no-open-turn', runtime: 'unknown' },
+        cancelled: [],
+      };
+    }
     try {
-      const { ok, cancelledQueued } = await transport.interruptSession(sessionId);
-      return { ok, cancelled: cancelledQueued ?? [] };
+      const { receipt, cancelledQueued } = await transport.interruptSession(sessionId);
+      return { receipt, cancelled: cancelledQueued ?? [] };
     } catch {
-      // The request itself never got an answer (network failure, timeout) —
-      // distinct from the server's own `ok: false`, but the same outcome for a
-      // caller deciding whether to let the person retry.
-      return { ok: false, cancelled: [] };
+      return {
+        receipt: { outcome: 'failed', reason: 'delivery-failed', runtime: 'unknown' },
+        cancelled: [],
+      };
     }
   }, [sessionId, transport]);
 

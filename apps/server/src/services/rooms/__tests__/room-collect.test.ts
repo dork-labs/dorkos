@@ -25,6 +25,8 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { Room, RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import type { InterruptReceipt } from '@dorkos/shared/types';
+import { mockInterruptReceipt } from '@dorkos/test-utils';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
 import type { RoomTurnRequest, RoomTurnResult } from '../room-trigger.js';
@@ -74,7 +76,7 @@ function heldRunner(say: (request: RoomTurnRequest) => string = () => 'on it'): 
   return {
     turns,
     interrupted,
-    interrupt(request): Promise<boolean> {
+    interrupt(request): Promise<InterruptReceipt> {
       interrupted.push(request);
       // A real interrupt ENDS the turn: the runtime stops, the stream closes,
       // and the collector resolves with whatever there was. A fake that only
@@ -86,7 +88,7 @@ function heldRunner(say: (request: RoomTurnRequest) => string = () => 'on it'): 
         for (const gate of queued.splice(0)) gate();
         stoppedSomething = true;
       }
-      return Promise.resolve(stoppedSomething);
+      return Promise.resolve(mockInterruptReceipt(stoppedSomething ? 'acked' : 'not-running'));
     },
     run(request: RoomTurnRequest): Promise<RoomTurnResult> {
       turns.push({

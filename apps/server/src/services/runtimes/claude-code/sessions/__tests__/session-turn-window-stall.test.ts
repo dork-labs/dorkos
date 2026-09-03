@@ -16,6 +16,7 @@ import os from 'os';
 import path from 'path';
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import { mockInterruptReceipt } from '@dorkos/test-utils';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { withStallGuard } from '../../../../session/stall-guard.js';
 import { TurnWindowSignal } from '../../../../session/turn-window-signal.js';
@@ -137,7 +138,7 @@ function harness() {
     },
   });
   const src = createControlledSource();
-  const onStall = vi.fn(async () => true);
+  const onStall = vi.fn(async () => mockInterruptReceipt('acked'));
   const collector = collect(
     withStallGuard(src.source, {
       sessionId: SESSION_ID,

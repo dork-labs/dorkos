@@ -180,7 +180,7 @@ describe('ClaudeCodeAdapter — stopping an agent turn', () => {
       // is what makes this test about the WHOLE path rather than one call.
       interruptQuery: vi.fn(async () => {
         turn.end();
-        return true;
+        return { outcome: 'acked' as const, runtime: 'claude-code' };
       }),
     };
     traceStore = { insertSpan: vi.fn(), updateSpan: vi.fn() };

@@ -388,10 +388,14 @@ describe('Stop reaches a turn, never a process that is merely warm', () => {
 
     // Honest "there was nothing to stop". The alternative is not cosmetic:
     // `interruptQuery` escalates to `close()` when `interrupt()` rejects, so a
-    // `true` here means a healthy warm subprocess was destroyed and the session
-    // reports `crashed` — a person pressing Stop on an idle chat losing the
-    // agent they were about to talk to.
-    expect(interrupted, 'Stop claimed it interrupted a turn that was not running').toBe(false);
+    // `closed` here would mean a healthy warm subprocess was destroyed and the
+    // session reports `crashed` — a person pressing Stop on an idle chat losing
+    // the agent they were about to talk to.
+    expect(interrupted, 'Stop claimed it interrupted a turn that was not running').toEqual({
+      outcome: 'not-running',
+      reason: 'no-open-turn',
+      runtime: 'claude-code',
+    });
     expect(process.closed, 'Stop reached for the forceful close on an idle process').toBe(0);
     expect(process.ended).toBe(false);
     expect(runtime.getSessionWarmth(sessionId)).toBe('warm');
@@ -402,7 +406,7 @@ describe('Stop reaches a turn, never a process that is merely warm', () => {
     await turn(sessionId);
     await runtime.reapSession(sessionId);
 
-    expect(await runtime.interruptQuery(sessionId)).toBe(false);
+    expect((await runtime.interruptQuery(sessionId)).outcome).toBe('not-running');
     expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
   });
 
@@ -419,7 +423,10 @@ describe('Stop reaches a turn, never a process that is merely warm', () => {
 
     // The discriminating half: a guard that simply never armed `activeQuery`
     // would pass both cases above and fail here.
-    expect(await runtime.interruptQuery(sessionId), 'Stop could not reach a live turn').toBe(true);
+    expect(
+      (await runtime.interruptQuery(sessionId)).outcome,
+      'Stop could not reach a live turn'
+    ).toBe('acked');
 
     process.answer(process.received[1]!);
     await running;
@@ -448,9 +455,9 @@ describe('Stop reaches a turn, never a process that is merely warm', () => {
 
     // The person presses Stop while the mis-send is still booting.
     expect(
-      await runtime.interruptQuery(sessionId),
+      (await runtime.interruptQuery(sessionId)).outcome,
       'Stop could not reach a turn that was still booting'
-    ).toBe(true);
+    ).toBe('acked');
     // And it actually reached the process, through the same graceful interrupt
     // the running path uses — not a bookkeeping `true` that stopped nothing.
     expect(process.interrupts).toBe(1);
@@ -499,7 +506,12 @@ describe('Stop reaches a turn, never a process that is merely warm', () => {
     // The graceful interrupt rejects the way a dead-process control write does.
     process.interruptRejectsWith = new Error('control write failed: the process is gone');
 
-    expect(await runtime.interruptQuery(sessionId)).toBe(true);
+    // `closed / refused`: the CLI answered with a failure and DorkOS escalated.
+    expect(await runtime.interruptQuery(sessionId)).toEqual({
+      outcome: 'closed',
+      reason: 'refused',
+      runtime: 'claude-code',
+    });
     // Graceful attempted, then escalated to the forceful close — one of each.
     expect(process.interrupts).toBe(1);
     expect(process.closed).toBe(1);
@@ -532,7 +544,7 @@ describe('Stop reaches a turn, never a process that is merely warm', () => {
     // Turn 2: the person stops it, and the CLI acks and winds down.
     const stopped = turn(sessionId, 'stop this one');
     await vi.waitFor(() => expect(process.received).toHaveLength(2));
-    expect(await runtime.interruptQuery(sessionId)).toBe(true);
+    expect((await runtime.interruptQuery(sessionId)).outcome).toBe('acked');
     process.emit(abortedResult(process.received[1]!));
     const stoppedEvents = await stopped;
     expect(
@@ -594,7 +606,12 @@ describe('a Stop that had to kill the process settles as the stop it was (DOR-13
     process: FakeCliProcess
   ): Promise<void> {
     process.interruptRejectsWith = new Error('control write failed: the process is gone');
-    expect(await runtime.interruptQuery(sessionId), 'Stop did not reach the live turn').toBe(true);
+    // DOR-1015 receipts: an escalated close answers { outcome: 'closed' } with the
+    // escalation's cause as its reason, where the old contract answered `true`.
+    expect(
+      await runtime.interruptQuery(sessionId),
+      'Stop did not reach the live turn'
+    ).toMatchObject({ outcome: 'closed', reason: 'refused' });
   }
 
   /** Feed one turn's events through the real normalizer and projector. */
@@ -784,7 +801,7 @@ describe('a Stop that had to kill the process settles as the stop it was (DOR-13
     await vi.waitFor(() => expect(process.received).toHaveLength(2));
 
     const askedAt = Date.now();
-    expect(await runtime.interruptQuery(sessionId)).toBe(true);
+    expect(await runtime.interruptQuery(sessionId)).toMatchObject({ outcome: 'acked' });
     const ackMs = Date.now() - askedAt;
 
     expect(process.interrupts).toBe(1);
@@ -1686,9 +1703,9 @@ describe('a session keeps its ONE warm process across an SDK rekey (DOR-1309)', 
     // under `sessionId`, the session's stable map key) and report nothing to
     // stop — DOR-1191's whole point, reintroduced by the id mismatch.
     expect(
-      await runtime.interruptQuery(canonical),
+      (await runtime.interruptQuery(canonical)).outcome,
       'Stop could not reach the relaunch that was still booting'
-    ).toBe(true);
+    ).toBe('acked');
     expect(process2.interrupts).toBe(1);
 
     process2.reportReady();

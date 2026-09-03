@@ -33,6 +33,7 @@ import {
   settleUntil,
   type ScriptedTurnRunner,
 } from '../../../rooms/__tests__/room-test-harness.js';
+import { mockInterruptReceipt } from '@dorkos/test-utils';
 import { ChatBridgePresence } from '../presence.js';
 import type { Bridge } from '../bridge-store.js';
 
@@ -59,7 +60,7 @@ function gatedTurn(): { runner: ScriptedTurnRunner; handed(): boolean; release()
   const runner: ScriptedTurnRunner = {
     turns: [],
     interrupted: [],
-    interrupt: () => Promise.resolve(false),
+    interrupt: () => Promise.resolve(mockInterruptReceipt('not-running')),
     run(request: RoomTurnRequest): Promise<RoomTurnResult> {
       handedFlag = true;
       const sessionId = request.sessionId ?? `session-${request.authorId}`;

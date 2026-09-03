@@ -630,7 +630,8 @@ runtimeConformance(
           // itself, in the shared C11 case) proves the turn is armed rather
           // than guessing at a tick count. No session-scoped escalation exists
           // on expiry (`INTERRUPT_ACK_TIMEOUT_MS`'s TSDoc), so the pinned
-          // settle value is `false` — honest, not an escalation.
+          // settle is `unconfirmed / ack-timeout` — honest, not an escalation,
+          // and the ending that keeps the Stop button pressable.
           hangingInterrupt: async (runtime, sessionId) => {
             const client = lastClient;
             if (!client) {
@@ -656,7 +657,7 @@ runtimeConformance(
             });
             void hungTurn.next();
             await vi.waitFor(() => expect(client.session.promptAsync).toHaveBeenCalled());
-            return false;
+            return { outcome: 'unconfirmed', reason: 'ack-timeout', runtime: 'opencode' };
           },
         }),
   }

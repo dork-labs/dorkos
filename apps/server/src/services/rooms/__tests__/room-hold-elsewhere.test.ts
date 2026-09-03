@@ -34,6 +34,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { RoomEntry, RoomEvent, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import type { InterruptReceipt } from '@dorkos/shared/types';
+import { mockInterruptReceipt } from '@dorkos/test-utils';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
 import type { RoomTurnRequest, RoomTurnResult } from '../room-trigger.js';
@@ -88,7 +90,7 @@ function gatedRunner(): GatedRunner {
   return {
     turns,
     interrupted,
-    interrupt(request): Promise<boolean> {
+    interrupt(request): Promise<InterruptReceipt> {
       interrupted.push(request);
       // A real interrupt ENDS the turn: the runtime stops and the stream closes.
       // A fake that only recorded the call would leave the dispatcher awaiting a
@@ -99,7 +101,7 @@ function gatedRunner(): GatedRunner {
         held.delete(authorId);
         stoppedSomething = true;
       }
-      return Promise.resolve(stoppedSomething);
+      return Promise.resolve(mockInterruptReceipt(stoppedSomething ? 'acked' : 'not-running'));
     },
     run(request: RoomTurnRequest): Promise<RoomTurnResult> {
       turns.push({

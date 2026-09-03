@@ -41,7 +41,14 @@ import {
   SessionListEventSchema,
   type SessionListEvent,
 } from '@dorkos/shared/session-stream';
-import type { HistoryMessage, PermissionModeId, Session, StreamEvent } from '@dorkos/shared/types';
+import type {
+  HistoryMessage,
+  InterruptReceipt,
+  PermissionModeId,
+  Session,
+  StreamEvent,
+} from '@dorkos/shared/types';
+import { InterruptReceiptSchema } from '@dorkos/shared/schemas';
 
 /**
  * Tuning knobs for legitimate cross-runtime differences. Defaults describe
@@ -347,17 +354,18 @@ export interface RuntimeConformanceOpts {
    * `controller.abort()`, test-mode's in-process abort — proves the property
    * by construction, and the case asserts exactly that shape instead.
    *
-   * @returns The EXACT value `interruptQuery` must settle to once the suite
-   *   advances past the bound — not merely "some boolean". The two shipped
+   * @returns The EXACT receipt `interruptQuery` must settle to once the suite
+   *   advances past the bound — not merely "some receipt". The two shipped
    *   drivers disagree on purpose: claude-code escalates an unacked
-   *   interrupt to `query.close()` and reports `true` (the process WAS
-   *   stopped, just not gracefully); opencode has no session-scoped
-   *   escalation to reach for and reports `false` (honest, not a lie of
-   *   omission). Pinning the value, rather than accepting either, is what
-   *   would catch a runtime that silently started returning the wrong one
-   *   on expiry.
+   *   interrupt to `query.close()` and reports `closed` / `ack-timeout` (the
+   *   process WAS stopped, just not gracefully); opencode has no session-scoped
+   *   escalation to reach for and reports `unconfirmed` / `ack-timeout`
+   *   (honest, not a lie of omission). Pinning the receipt, rather than
+   *   accepting either, is what catches a runtime that silently started
+   *   answering the wrong one on expiry — and the two differ in `outcome`, so
+   *   the distinction the boolean could not carry is exactly what is pinned.
    */
-  hangingInterrupt?: (runtime: AgentRuntime, sessionId: string) => Promise<boolean>;
+  hangingInterrupt?: (runtime: AgentRuntime, sessionId: string) => Promise<InterruptReceipt>;
   /**
    * Waives the safety invariant that a runtime's DEFAULT permission mode must
    * still stop for the person — one that would need a consent ritual if a person
@@ -2304,16 +2312,155 @@ export function runtimeConformance(
       });
     });
 
+    /**
+     * The `reason` half of §4's table, as a rule rather than as a per-cell copy.
+     *
+     * `reason` is documented as "present whenever it adds information the
+     * outcome does not carry", which is not a matter of taste in three of the
+     * five cases:
+     *
+     * - `not-running` and `unconfirmed` and `failed` MUST carry one. Each is an
+     *   ending a person is shown or asked to act on, and the reason is the only
+     *   thing that says whether the stop was declined, timed out, or never left
+     *   the building.
+     * - `acked` must NOT. §4 lists no reason on any acked cell, and every reason
+     *   in the vocabulary names why a graceful path was abandoned — which by
+     *   definition did not happen when the agent itself confirmed.
+     * - `closed` is the one genuine MAY: claude-code always has a reason (which
+     *   escalation ran), codex has none to give (it has no graceful path to
+     *   abandon).
+     *
+     * @param verb - Which call produced the receipt, for the failure message.
+     * @param receipt - The receipt to check.
+     */
+    function assertReasonPresence(verb: string, receipt: InterruptReceipt): void {
+      if (receipt.outcome === 'acked') {
+        expect(
+          receipt.reason,
+          `${verb} answered \`acked\` with a reason. Every reason names why a graceful stop was ` +
+            'abandoned, and nothing was abandoned when the agent confirmed the stop itself'
+        ).toBeUndefined();
+        return;
+      }
+      if (receipt.outcome === 'closed') return;
+      expect(
+        receipt.reason,
+        `${verb} answered \`${receipt.outcome}\` with no reason. This is an ending a person is ` +
+          'shown or asked to act on, and the outcome alone cannot say whether the stop was ' +
+          'declined, timed out, or never delivered (spec `runtime-interrupt-receipts` §4)'
+      ).toBeDefined();
+    }
+
     describe('interrupt semantics', () => {
-      it('interruptQuery resolves to a boolean — false when no query is active', async () => {
+      it('I1: with no turn open, interruptQuery resolves not-running — never failed', async () => {
         const runtime = makeRuntime();
         const sessionId = nextSessionId();
         runtime.ensureSession(sessionId, sessionOpts(runtime));
 
-        const result = await runtime.interruptQuery(sessionId);
-        expect(typeof result).toBe('boolean');
-        // Contract: true only when an active query was interrupted.
-        expect(result).toBe(false);
+        const receipt = await runtime.interruptQuery(sessionId);
+        expect(
+          receipt.outcome,
+          'a stop that arrives after the turn finished on its own is a RACE, not a failure — ' +
+            '`not-running` is what says so, and it is the one ending the client stays quiet ' +
+            'about. Answering `failed` here would put "Couldn’t stop it. Try again." over a ' +
+            'session with nothing left to stop'
+        ).toBe('not-running');
+        expect(
+          receipt.reason,
+          '`not-running` carries `no-open-turn`: the outcome says nothing ended, the reason ' +
+            'says why'
+        ).toBe('no-open-turn');
+      });
+
+      it('I2: a receipt from a LIVE turn parses, names THIS runtime, and carries its reason', async () => {
+        const runtime = makeRuntime();
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
+
+        // **A turn must actually be OPEN here, and that is the whole setup.**
+        // Every adapter's first branch is "no session, no turn -> not-running",
+        // so a version of this case that interrupted an idle session was only
+        // ever re-testing I1's precondition: it inspected the one receipt that
+        // is minted before any per-runtime mapping runs. Measured, not
+        // theorised — with that setup, pointing a runtime's LIVE mapping at
+        // another runtime's name left the whole suite green.
+        let live: InterruptReceipt;
+        if (hangingInterrupt) {
+          // The same staging C11 uses, for the same reason: on a runtime whose
+          // interrupt awaits a backend ack, only this driver can produce a
+          // genuinely active turn. Staged on REAL timers (a driver's own setup
+          // leans on macrotask delays), then the bound is advanced through so
+          // the receipt lands without spending three real seconds.
+          await hangingInterrupt(runtime, sessionId);
+          onTestFinished(() => {
+            vi.useRealTimers();
+          });
+          vi.useFakeTimers();
+          const pending = runtime.interruptQuery(sessionId);
+          await vi.advanceTimersByTimeAsync(10_000);
+          live = await pending;
+          vi.useRealTimers();
+        } else {
+          // No driver means this runtime's interrupt has nothing to await, so
+          // its turn can be opened the ordinary way and left running: pull ONE
+          // event off `sendMessage` and stop reading. The generator is returned
+          // in teardown rather than drained — a drained turn is a CLOSED turn,
+          // which is exactly what this case must not inspect.
+          const turn = runtime.sendMessage(sessionId, messageContent, { cwd: projectDir });
+          onTestFinished(() => {
+            void turn.return(undefined);
+          });
+          await turn.next();
+          live = await runtime.interruptQuery(sessionId);
+        }
+
+        expect(
+          live.outcome,
+          'the stop was aimed at a turn this case had just opened, so `not-running` means the ' +
+            'setup failed to open one — and every assertion below would then be about the ' +
+            'pre-mapping receipt rather than about this runtime`s own mapping'
+        ).not.toBe('not-running');
+
+        // Both stop-shaped verbs, live receipt included, because a receipt that
+        // named the wrong runtime — or carried an outcome outside the five —
+        // would reach the UI as a sentence about somebody else's agent.
+        for (const [verb, receipt] of [
+          ['interruptQuery (live turn)', live],
+          ['stopTask', await runtime.stopTask(sessionId, 'task-that-does-not-exist')],
+        ] as const) {
+          expect(
+            InterruptReceiptSchema.safeParse(receipt).success,
+            `${verb} must answer the InterruptReceipt vocabulary and nothing else — ` +
+              `got ${JSON.stringify(receipt)}`
+          ).toBe(true);
+          expect(
+            receipt.runtime,
+            `${verb}'s receipt must name the adapter that produced it: the receipt travels ` +
+              'across runtimes (ADR-0310), and the copy that says "{Runtime} didn’t confirm ' +
+              'it" reads this field'
+          ).toBe(runtime.type);
+          assertReasonPresence(verb, receipt);
+        }
+      });
+
+      it('I5: a stop aimed at a session this runtime never saw resolves, never rejects', async () => {
+        const runtime = makeRuntime();
+
+        // Never `ensureSession`d: the adapter has no state for this id at all,
+        // which is the cheapest way to reach whatever internal lookup its stop
+        // path starts with. Adapters MUST NOT throw for an ordinary refusal —
+        // `failed` is the receipt for that (ADR 260816-143752's rule for
+        // `deliverIntoTurn`, applied to the stop verbs) — and a rejection here
+        // would escape the interrupt route into a 500 that loses the queue it
+        // had already cleared.
+        await expect(
+          runtime.interruptQuery('00000000-0000-4000-8000-00000000dead'),
+          'interruptQuery must resolve a receipt for an unknown session, not reject'
+        ).resolves.toBeDefined();
+        await expect(
+          runtime.stopTask('00000000-0000-4000-8000-00000000dead', 'no-such-task'),
+          'stopTask must resolve a receipt for an unknown session, not reject'
+        ).resolves.toBeDefined();
       });
 
       it('C11: interruptQuery against a backend that never answers still resolves within a bound', async () => {
@@ -2340,7 +2487,7 @@ export function runtimeConformance(
             vi.useRealTimers();
           });
           vi.useFakeTimers();
-          let settled: boolean | typeof NOT_SETTLED = NOT_SETTLED;
+          let settled: InterruptReceipt | typeof NOT_SETTLED = NOT_SETTLED;
           void runtime.interruptQuery(sessionId).then((result) => {
             settled = result;
           });
@@ -2354,7 +2501,7 @@ export function runtimeConformance(
               'microtask hop could settle this, and none did (see ' +
               'RuntimeConformanceOpts.hangingInterrupt)'
           ).not.toBe(NOT_SETTLED);
-          expect(typeof settled).toBe('boolean');
+          expect(InterruptReceiptSchema.safeParse(settled).success).toBe(true);
           return;
         }
 
@@ -2389,9 +2536,11 @@ export function runtimeConformance(
           'a bounded interrupt must settle once the suite has advanced well past any ' +
             'reasonable ack timeout — an unbounded one hangs here until the TEST ITSELF ' +
             'times out, which is the mutant this case exists to catch. It must also settle to ' +
-            'EXACTLY the value the driver declared, not merely some boolean — a runtime that ' +
-            'silently flips true/false on expiry is a lie this pin exists to catch.'
-        ).resolves.toBe(expectedSettle);
+            'EXACTLY the receipt the driver declared, not merely some receipt — the whole ' +
+            'point of the vocabulary is that a runtime which escalated to a close (`closed`) ' +
+            'and one which could not confirm anything (`unconfirmed`) are different endings, ' +
+            'and a runtime that silently swapped them is what this pin catches.'
+        ).resolves.toEqual(expectedSettle);
       });
     });
 
