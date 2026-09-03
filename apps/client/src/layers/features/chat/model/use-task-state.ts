@@ -192,9 +192,11 @@ export function useTaskState(sessionId: string | null, isStreaming: boolean = fa
     });
   }, []);
 
-  // Whether the person put the plan away themselves. A hand-collapsed panel stays
-  // shut through the next turn; re-opening it hands the panel back to the rule
-  // below.
+  // Whether the person put the plan away themselves. A hand-collapsed panel
+  // stays shut through every LATER turn, not just the next one — the effect
+  // below only reopens on a running transition when this is false, and nothing
+  // ever clears it on its own. Reopening it by hand (`toggleCollapse`) is the
+  // only thing that hands the panel back to the auto-fold rule.
   const collapsedByHandRef = useRef(false);
   const toggleCollapse = useCallback(() => {
     setIsCollapsed((prev) => {

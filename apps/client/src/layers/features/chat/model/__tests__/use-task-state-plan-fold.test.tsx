@@ -82,17 +82,19 @@ describe('useTaskState — when the plan is open', () => {
     expect(result.current.isCollapsed).toBe(true);
   });
 
-  it('leaves a plan opened by hand open until the next turn ends', () => {
+  it('leaves a plan opened by hand open across a re-render with no turn transition', () => {
     const { result, rerender } = renderHook(() => useTaskState('s1'), { wrapper: createWrapper() });
     act(() => result.current.toggleCollapse());
     expect(result.current.isCollapsed).toBe(false);
 
-    // Still idle: nothing has happened that would close it again.
+    // Still idle: nothing has happened that would close it again. This only
+    // proves the panel does not flap on an unrelated re-render — the next case
+    // is the one that proves the hand-collapse latch outlives a turn boundary.
     rerender();
     expect(result.current.isCollapsed).toBe(false);
   });
 
-  it('does not re-open a plan the person put away', () => {
+  it('does not re-open a plan the person put away, across a later turn', () => {
     mockLifecycle = 'streaming';
     const { result, rerender } = renderHook(() => useTaskState('s1'), { wrapper: createWrapper() });
     act(() => result.current.toggleCollapse());
