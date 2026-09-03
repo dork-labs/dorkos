@@ -498,9 +498,11 @@ describe('the relay adapter picks the runtime a message names', () => {
     it('re-reads the manifest every turn, so an edit mid-conversation moves it (known gap)', async () => {
       // PINNING WHAT IS TRUE, not what should be. An agent-scoped subject
       // resumes a conversation — the handler reuses the SDK session id it
-      // persisted under this agent's key — but nothing on the relay path binds
-      // that session, so there is no owner to consult and the manifest is asked
-      // again on every turn. Flip it between turns and the second turn goes to a
+      // persisted under this agent's key — but nothing on THIS shape's path
+      // binds that session (a chat binding does bind, when it creates one; a
+      // mesh endpoint creates none), so there is no owner to consult and the
+      // manifest is asked again every turn. Flip it between turns and the
+      // second turn goes to a
       // program that is handed the id its predecessor minted and holds no
       // transcript for it: the DOR-764 shape, still open here. Closing it is a
       // binding write plus `resolveTurnRuntimeType`, and this test is what will

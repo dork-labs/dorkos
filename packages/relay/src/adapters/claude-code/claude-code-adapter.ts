@@ -541,9 +541,13 @@ export class ClaudeCodeAdapter implements RelayAdapter {
    *
    * An agent-scoped subject resumes a conversation as surely as a session
    * subject does — `agent-handler.ts` reuses the SDK session id it persisted
-   * under the same agent key — but nothing on the relay path ever calls
-   * `persistSessionRuntime`, so there is no binding to consult and the manifest
-   * is re-read on every turn. Change an agent's runtime mid-conversation and
+   * under the same agent key — but nothing on THIS subject shape's path ever
+   * calls `persistSessionRuntime`, so there is no binding to consult and the
+   * manifest is re-read on every turn. (The relay does bind elsewhere: a chat
+   * binding writes an owner at the one moment it creates a session,
+   * `binding-subsystem.ts`, which is why a Telegram or Slack conversation is
+   * not exposed to this. A mesh endpoint creates no session for anyone to
+   * record.) Change an agent's runtime mid-conversation and
    * the remaining turns go to a program that is handed the session key its
    * predecessor created and has no transcript for: the DOR-764 shape, which
    * ADR-0255 closed for the cockpit and rooms and which this path does not yet

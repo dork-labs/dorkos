@@ -69,8 +69,10 @@ adapter manager does not dispatch.
   through. Only that shape: a session subject keeps the runtime its
   conversation started on (ADR-0255), and a named runtime still wins over a
   manifest. **Known gap, deliberately left open and pinned by a test:** nothing
-  on the relay path calls `persistSessionRuntime`, so an agent-scoped subject
-  has no binding to consult and its manifest is re-read every turn — change an
+  on an agent-scoped subject's path calls `persistSessionRuntime` — a chat
+  binding does, when it creates a session, but a mesh endpoint creates no
+  session — so that shape has no binding to consult and its manifest is re-read
+  every turn. Change an
   agent's runtime mid-conversation and the remaining turns go to a program
   handed a session key it has no transcript for (the DOR-764 shape). Closing it
   needs a binding write made only after a turn has started, plus
