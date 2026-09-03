@@ -110,6 +110,15 @@ export type PermissionMode = z.infer<typeof PermissionModeSchema>;
  * `SessionListBroadcaster`, emptying the session list for that runtime's
  * sessions entirely. The two directions are the same contract — a runtime
  * names its own modes — so they share this one schema.
+ *
+ * ## And the shape of the STORED id (DOR-885)
+ *
+ * {@link SessionSettingsSchema} is the third face of the same value: what a
+ * PATCH asks for, what `session_metadata.permission_mode` holds, and what a
+ * runtime is handed back on the next turn. It kept the narrow enum until
+ * DOR-885 — a type lie about a text column that already held `always-allow` —
+ * and every `as PermissionMode` between the store and a display surface existed
+ * to paper over it. In, out and at rest are one contract.
  */
 export const PermissionModeIdSchema = z
   .string()
@@ -436,7 +445,17 @@ export type SessionUpdateResponse = z.infer<typeof SessionUpdateResponseSchema>;
  * "no change" / "no explicit preference" (the runtime default applies).
  */
 export const SessionSettingsSchema = z.object({
-  permissionMode: PermissionModeSchema.optional(),
+  /**
+   * The mode to run under — any id the session's own runtime declares, not a
+   * member of {@link PermissionModeSchema} (DOR-885). This is the SAME kind of
+   * value in every direction: what a request asks for, what
+   * `session_metadata.permission_mode` (a plain text column) holds, and what a
+   * runtime reports back. `test-mode` persists `always-allow` there today, so a
+   * narrow enum here was a type lie about a row that already exists. See
+   * {@link PermissionModeIdSchema} for what still validates the id — the
+   * owning runtime, not this shape.
+   */
+  permissionMode: PermissionModeIdSchema.optional(),
   model: z.string().optional(),
   effort: EffortLevelSchema.optional(),
   fastMode: z.boolean().optional(),
@@ -445,12 +464,6 @@ export const SessionSettingsSchema = z.object({
 export type SessionSettings = z.infer<typeof SessionSettingsSchema>;
 
 export const UpdateSessionRequestSchema = SessionSettingsSchema.extend({
-  /**
-   * The mode to switch to — any id the session's runtime declares, checked
-   * against that runtime rather than against a fixed list of names. See
-   * {@link PermissionModeIdSchema}.
-   */
-  permissionMode: PermissionModeIdSchema.optional(),
   title: z.string().min(1).max(200).optional(),
   /**
    * "The person asked for this, and they were told what it means." Required —
