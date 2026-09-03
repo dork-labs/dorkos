@@ -173,15 +173,25 @@ export function useSessionStatus(
       const request: UpdateSessionRequest = { ...(runtime ? { runtime } : {}), ...opts };
 
       try {
-        // The pending flag is a fact about THIS write, not about the session, so
-        // it is split off before anything is cached: leaving it on the session
-        // would keep saying "starts on your next reply" long after that reply
-        // happened (DOR-1435).
-        const { permissionModePendingUntilNextTurn, ...updated } = await transport.updateSession(
-          sessionId,
-          request,
-          selectedCwd ?? undefined
-        );
+        // Both flags are facts about THIS write, not about the session, so both
+        // are split off before anything is cached.
+        //
+        // The pending one, because leaving it on the session would keep saying
+        // "starts on your next reply" long after that reply happened (DOR-1435).
+        //
+        // `runtimeUnbound` (DOR-1693) for a sharper reason: this cache does not
+        // wash it out. `syncSessionDetailCache` merges list rows OVER the entry
+        // (`{ ...cached, ...incoming }`) and re-stamps its freshness, and a list
+        // row is a plain `Session` that has no such field — so a `true` cached
+        // here would survive the binding that made it false and be renewed every
+        // time the list refreshed. That module's own header names this hazard.
+        // A stale caveat is worse than no caveat: it would call a settled
+        // runtime a guess, which is the fixed bug pointing the other way.
+        const {
+          permissionModePendingUntilNextTurn,
+          runtimeUnbound: _runtimeUnbound,
+          ...updated
+        } = await transport.updateSession(sessionId, request, selectedCwd ?? undefined);
         if (permissionModePendingUntilNextTurn) {
           // The dial moves either way — the choice IS saved, and reverting it
           // would be the bigger lie. What the person is owed is the one thing

@@ -577,6 +577,11 @@ export interface Transport extends RoomTransport {
    * saved but could not be delivered to the reply already in flight — that
    * reply keeps the looser mode it started under, and a surface showing the new
    * one has to say so (DOR-1435).
+   *
+   * It carries `runtimeUnbound` when the `runtime` it reports is the inference a
+   * session with no recorded owner falls back to, rather than that owner — it
+   * can even differ from the `runtime` this call passed. Read the runtime as a
+   * guess whenever it is there (DOR-1693).
    */
   updateSession(
     id: string,
