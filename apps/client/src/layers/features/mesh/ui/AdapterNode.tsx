@@ -151,7 +151,7 @@ function AdapterNodeInner({ data, selected }: NodeProps) {
   if (d.isGhost) {
     return (
       <div
-        className="border-muted-foreground/30 bg-card/40 flex items-center gap-2 rounded-lg border border-dashed px-3 py-2 opacity-40 transition-opacity hover:opacity-70"
+        className="border-muted-foreground/30 bg-card/40 focus-ring flex items-center gap-2 rounded-lg border border-dashed px-3 py-2 opacity-40 transition-opacity hover:opacity-70"
         style={{ width: ADAPTER_NODE_WIDTH, height: ADAPTER_NODE_HEIGHT }}
         onClick={d.onGhostClick}
         onKeyDown={(e) => {

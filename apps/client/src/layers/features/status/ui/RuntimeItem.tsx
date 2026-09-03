@@ -25,6 +25,7 @@ import {
 } from '@/layers/shared/ui';
 import { claudeAccountName } from '@/layers/shared/lib';
 import { DEFAULT_ACCOUNT_VALUE, useAccountSwitch } from '../model/use-account-switch';
+import { STATUS_ITEM_TRIGGER_CLASS } from '../lib/status-item-classes';
 
 /** The runtime whose sessions belong to a Claude account. */
 const CLAUDE_CODE = 'claude-code';
@@ -177,7 +178,7 @@ export function RuntimeItem({
     <>
       <ResponsiveDropdownMenu>
         <ResponsiveDropdownMenuTrigger asChild>
-          <button className="hover:text-foreground inline-flex min-w-0 transition-colors duration-150">
+          <button className={STATUS_ITEM_TRIGGER_CLASS}>
             <RuntimeIdentity
               runtime={runtime}
               model={shownModel}

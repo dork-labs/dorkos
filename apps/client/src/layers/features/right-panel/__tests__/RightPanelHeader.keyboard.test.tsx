@@ -74,8 +74,18 @@ describe('RightPanelHeader — keyboard accessibility (WAI-ARIA Tabs)', () => {
   });
   afterEach(cleanup);
 
-  it('exposes exactly one Tab stop: the active tab is tabIndex 0, the rest -1', () => {
+  it('exposes exactly one Tab stop after entry: the active tab is tabIndex 0, the rest -1', async () => {
+    // The roving-focus group hands off its tab stop to the active item the
+    // first time real focus enters it (see the "Tab enters the strip" case
+    // below) rather than computing it eagerly on render — the tablist itself
+    // is the entry point until then. Check the invariant post-entry, the way
+    // a keyboard user actually reaches the strip.
+    const user = userEvent.setup();
     renderStrip('canvas');
+
+    screen.getByRole('button', { name: 'before' }).focus();
+    await user.tab();
+
     expect(tab('Agent')).toHaveAttribute('tabindex', '-1');
     expect(tab('Canvas')).toHaveAttribute('tabindex', '0');
     expect(tab('Terminal')).toHaveAttribute('tabindex', '-1');
