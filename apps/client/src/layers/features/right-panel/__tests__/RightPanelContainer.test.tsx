@@ -683,6 +683,52 @@ describe('RightPanelContainer', () => {
     });
   });
 
+  // DOR-1753 (finding 7.8): Pulse and Files were the two tabs the audit
+  // actually measured as short at 390×844 — every other tab keeps the
+  // full-height sheet it has today.
+  describe('mobile sheet sizes to content on the two measured-short tabs only', () => {
+    it('caps the sheet to its content on the Pulse tab', () => {
+      mockIsMobile = true;
+      mockIsBelowDesktop = true;
+      mockRightPanelOpen = true;
+      mockActiveRightPanelTab = 'pulse';
+      mockContributions = [makeContribution('pulse')];
+
+      render(<RightPanelContainer pathname={mockPathname} />);
+
+      const className = screen.getByTestId('sheet-content').className;
+      expect(className).toContain('!bottom-auto');
+      expect(className).toContain('!h-auto');
+      expect(className).toContain('max-h-dvh');
+    });
+
+    it('caps the sheet to its content on the Files tab', () => {
+      mockIsMobile = true;
+      mockIsBelowDesktop = true;
+      mockRightPanelOpen = true;
+      mockActiveRightPanelTab = 'files';
+      mockContributions = [makeContribution('files')];
+
+      render(<RightPanelContainer pathname={mockPathname} />);
+
+      expect(screen.getByTestId('sheet-content').className).toContain('!h-auto');
+    });
+
+    it('leaves every other tab at full height, Terminal included', () => {
+      mockIsMobile = true;
+      mockIsBelowDesktop = true;
+      mockRightPanelOpen = true;
+      mockActiveRightPanelTab = 'terminal';
+      mockContributions = [makeContribution('terminal')];
+
+      render(<RightPanelContainer pathname={mockPathname} />);
+
+      const className = screen.getByTestId('sheet-content').className;
+      expect(className).not.toContain('!h-auto');
+      expect(className).not.toContain('!bottom-auto');
+    });
+  });
+
   // variant='overlay' is the narrow Obsidian embed: always a slide-over Sheet,
   // never the resizable inset Panel — even on a wide (non-mobile) viewport,
   // since the embed has no PanelGroup to split.
