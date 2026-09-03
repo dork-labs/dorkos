@@ -20,6 +20,8 @@
     "@anthropic-ai/claude-agent-sdk-win32-x64": "0.3.224",
     "@esbuild/darwin-arm64": "0.28.2",
     "@esbuild/win32-x64": "0.28.2",
+    "@ngrok/ngrok-darwin-arm64": "1.7.0",
+    "@ngrok/ngrok-win32-x64-msvc": "1.7.0",
     "@openai/codex-darwin-arm64": "npm:@openai/codex@0.147.0-darwin-arm64",
     "@openai/codex-win32-x64": "npm:@openai/codex@0.147.0-win32-x64"
   },

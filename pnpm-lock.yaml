@@ -512,6 +512,12 @@ importers:
       '@esbuild/win32-x64':
         specifier: 0.28.2
         version: 0.28.2
+      '@ngrok/ngrok-darwin-arm64':
+        specifier: 1.7.0
+        version: 1.7.0
+      '@ngrok/ngrok-win32-x64-msvc':
+        specifier: 1.7.0
+        version: 1.7.0
       '@openai/codex-darwin-arm64':
         specifier: npm:@openai/codex@0.147.0-darwin-arm64
         version: '@openai/codex@0.147.0-darwin-arm64'
