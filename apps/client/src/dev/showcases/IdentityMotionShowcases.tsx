@@ -171,7 +171,7 @@ function BadgeWakeRow() {
             fallback={face.fallback}
             className={IDENTITY_BADGE_WAKE}
           />
-          <span className="text-muted-foreground text-[0.625rem]">{size}</span>
+          <span className="text-muted-foreground text-3xs">{size}</span>
         </div>
       ))}
     </div>

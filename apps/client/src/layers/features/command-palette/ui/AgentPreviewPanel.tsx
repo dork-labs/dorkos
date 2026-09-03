@@ -51,7 +51,7 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
           {health && (
             <Badge
               variant={health.status === 'active' ? 'default' : 'secondary'}
-              className="px-1.5 py-0 text-[10px]"
+              className="px-1.5 py-0 text-3xs"
             >
               {health.status}
             </Badge>
@@ -64,7 +64,7 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
         {/* Recent sessions */}
         {recentSessions.length > 0 && (
           <div className="space-y-1 pt-1">
-            <p className="text-muted-foreground text-[10px] font-medium tracking-wider uppercase">
+            <p className="text-muted-foreground text-3xs font-medium tracking-wider uppercase">
               Recent
             </p>
             <ul className="space-y-0.5">

@@ -225,7 +225,7 @@ export function InstallConfirmationDialog() {
                 </p>
               ) : (
                 <>
-                  <div className="text-muted-foreground text-[10px] font-medium tracking-wider uppercase">
+                  <div className="text-muted-foreground text-3xs font-medium tracking-wider uppercase">
                     Install for
                   </div>
                   <RadioGroup

@@ -87,7 +87,7 @@ function PermissionDetails({ items, label }: { items: PermissionDetailItem[]; la
       </summary>
       <ul className="bg-muted/40 mt-1.5 max-h-64 space-y-0.5 overflow-y-auto rounded-md p-2">
         {items.map((detail, index) => (
-          <li key={index} className="flex items-baseline gap-2 font-mono text-[11px]">
+          <li key={index} className="flex items-baseline gap-2 font-mono text-2xs">
             {detail.tag && (
               <span
                 className={cn(

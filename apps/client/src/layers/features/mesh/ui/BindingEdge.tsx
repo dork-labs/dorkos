@@ -147,7 +147,7 @@ function BindingEdgeInner({
             onMouseLeave={() => setHovered(false)}
           >
             <div className="flex items-center gap-1">
-              <span className="text-muted-foreground truncate text-[10px]">{displayLabel}</span>
+              <span className="text-muted-foreground truncate text-3xs">{displayLabel}</span>
               {selected && d?.onDelete && (
                 <button
                   onClick={handleDelete}
@@ -162,12 +162,12 @@ function BindingEdgeInner({
             {(d?.chatId || d?.channelType) && (
               <div className="flex items-center gap-1">
                 {d.chatId && (
-                  <span className="bg-muted text-muted-foreground rounded px-1 py-px text-[9px]">
+                  <span className="bg-muted text-muted-foreground rounded px-1 py-px text-3xs">
                     {d.chatId}
                   </span>
                 )}
                 {d.channelType && (
-                  <span className="bg-muted text-muted-foreground rounded px-1 py-px text-[9px]">
+                  <span className="bg-muted text-muted-foreground rounded px-1 py-px text-3xs">
                     {chatTypeLabel(d.channelType)}
                   </span>
                 )}

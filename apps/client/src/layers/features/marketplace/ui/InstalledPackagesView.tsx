@@ -73,12 +73,12 @@ function PackageRow({
             v{version}
           </Badge>
           {scope === 'agent-local' && (
-            <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-medium text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+            <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-3xs font-medium text-blue-700 dark:bg-blue-900 dark:text-blue-300">
               Local
             </span>
           )}
           {scope === 'override' && (
-            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-700 dark:bg-amber-900 dark:text-amber-300">
+            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-3xs font-medium text-amber-700 dark:bg-amber-900 dark:text-amber-300">
               Overrides global
             </span>
           )}

@@ -143,7 +143,7 @@ function BudgetedLine({
 
   return (
     <div className="space-y-1.5">
-      <p className="text-muted-foreground font-mono text-[10px]">
+      <p className="text-muted-foreground font-mono text-3xs">
         {width}px · density <span className="text-foreground">{budget.density}</span> · right budget{' '}
         <span className="text-foreground">{budget.rightBudget}</span> · showing{' '}
         <span className="text-foreground">{items.length}</span> ·{' '}

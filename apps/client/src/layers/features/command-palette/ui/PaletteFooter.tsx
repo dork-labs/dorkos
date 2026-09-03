@@ -11,7 +11,7 @@ interface PaletteFooterProps {
   isScoped: boolean;
 }
 
-const KBD_CLASS = 'bg-muted rounded px-1 py-0.5 font-mono text-[10px]' as const;
+const KBD_CLASS = 'bg-muted rounded px-1 py-0.5 font-mono text-3xs' as const;
 
 /**
  * Dynamic keyboard hint bar at the bottom of the command palette.

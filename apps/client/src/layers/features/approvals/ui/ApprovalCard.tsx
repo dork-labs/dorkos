@@ -158,7 +158,7 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
             <Badge
               variant="outline"
               className={cn(
-                'shrink-0 text-[10px]',
+                'shrink-0 text-3xs',
                 approval.tier === 'destructive' && 'border-destructive/30 text-destructive'
               )}
             >
@@ -299,7 +299,7 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
               >
                 Allow, and stop asking about this for {formatTrustWindow(windowMinutes)}
               </Button>
-              <p className="text-muted-foreground max-w-xs text-[11px] @[34rem]/approval:text-right">
+              <p className="text-muted-foreground max-w-xs text-2xs @[34rem]/approval:text-right">
                 Covers {agentLabel} doing &ldquo;{approval.capabilityTitle}&rdquo;, and nothing
                 else. End it any time in Settings, under Security.
               </p>

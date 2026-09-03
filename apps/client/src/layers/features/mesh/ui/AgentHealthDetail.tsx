@@ -114,7 +114,7 @@ export function AgentHealthDetail({ agentId, onClose }: AgentHealthDetailProps) 
 
         <div>
           <span className="text-muted-foreground">Runtime: </span>
-          <Badge variant="secondary" className="text-[0.625rem]">
+          <Badge variant="secondary" className="text-3xs">
             {health.runtime}
           </Badge>
         </div>
@@ -129,7 +129,7 @@ export function AgentHealthDetail({ agentId, onClose }: AgentHealthDetailProps) 
             <span className="text-muted-foreground mb-1 block">Capabilities:</span>
             <div className="flex flex-wrap gap-1">
               {health.capabilities.map((cap: string) => (
-                <Badge key={cap} variant="outline" className="text-[0.625rem]">
+                <Badge key={cap} variant="outline" className="text-3xs">
                   {cap}
                 </Badge>
               ))}

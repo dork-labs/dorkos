@@ -71,7 +71,7 @@ export function MessageSearchScope({ className }: MessageSearchScopeProps) {
  */
 export function MessageSearchScopeLine({ className }: MessageSearchScopeProps) {
   return (
-    <p className={cn('text-muted-foreground/80 px-3 py-2 text-[11px] leading-relaxed', className)}>
+    <p className={cn('text-muted-foreground/80 px-3 py-2 text-2xs leading-relaxed', className)}>
       {SEARCH_SCOPE_SUMMARY}
     </p>
   );

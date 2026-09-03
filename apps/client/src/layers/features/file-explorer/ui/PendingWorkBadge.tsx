@@ -92,7 +92,7 @@ export function PendingWorkBadge({ roomId }: PendingWorkBadgeProps) {
       // A title rather than a popover: the names are the answer, and the detail
       // behind them is something a person checks once and acts on elsewhere.
       title={detail.join('\n')}
-      className="text-muted-foreground bg-muted/50 inline-flex min-w-0 items-center gap-1 rounded px-1.5 py-0.5 text-[11px]"
+      className="text-muted-foreground bg-muted/50 inline-flex min-w-0 items-center gap-1 rounded px-1.5 py-0.5 text-2xs"
     >
       <GitBranch className="size-3 flex-shrink-0" />
       {/* The visible label is truncated to fit a header, so the accessible text

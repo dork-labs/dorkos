@@ -49,7 +49,7 @@ const accentVariants = cva('pointer-events-none absolute inset-y-0 left-0 w-0.5'
 
 /** The status chip: a pill whose color echoes the word it already says. */
 const chipVariants = cva(
-  'shrink-0 rounded-full px-2 py-0.5 text-[11px] leading-4 font-medium whitespace-nowrap',
+  'shrink-0 rounded-full px-2 py-0.5 text-2xs leading-4 font-medium whitespace-nowrap',
   {
     variants: {
       chip: {
@@ -118,7 +118,7 @@ function McpScopeBadge({
       <TooltipTrigger asChild>
         <Badge
           variant="secondary"
-          className="text-muted-foreground shrink-0 px-1.5 py-0 text-[10px] font-normal"
+          className="text-muted-foreground shrink-0 px-1.5 py-0 text-3xs font-normal"
         >
           {scope}
         </Badge>

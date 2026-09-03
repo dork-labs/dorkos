@@ -140,7 +140,7 @@ function AgentActivityBadgeShowcase() {
               <div className="bg-muted flex size-8 items-center justify-center rounded-md">
                 <AgentActivityBadge status={status} label={label} />
               </div>
-              <span className="text-muted-foreground text-[10px]">{status}</span>
+              <span className="text-muted-foreground text-3xs">{status}</span>
             </div>
           ))}
         </div>

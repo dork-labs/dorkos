@@ -266,7 +266,7 @@ export function AgentRunner({ agent, index }: AgentRunnerProps) {
             '-translate-x-1/2 translate-y-1 opacity-0 transition-all duration-150',
             'group-hover:translate-y-0 group-hover:opacity-100',
             'border-border bg-popover z-10 rounded-lg border px-3 py-2 whitespace-nowrap',
-            'text-foreground text-[0.6875rem] shadow-lg'
+            'text-foreground text-2xs shadow-lg'
           )}
         >
           {/* Title with colored dot */}
@@ -279,13 +279,13 @@ export function AgentRunner({ agent, index }: AgentRunnerProps) {
           </div>
 
           {/* Meta: tool count + duration */}
-          <div className="text-muted-foreground font-mono text-[0.625rem]">
+          <div className="text-muted-foreground font-mono text-3xs">
             {agent.toolUses ?? 0} tool calls · {Math.round((agent.durationMs ?? 0) / 1000)}s
           </div>
 
           {/* Last tool name */}
           {agent.lastToolName && (
-            <div className="text-muted-foreground/60 mt-0.5 font-mono text-[0.5625rem]">
+            <div className="text-muted-foreground/60 mt-0.5 font-mono text-3xs">
               Last: {agent.lastToolName}
             </div>
           )}

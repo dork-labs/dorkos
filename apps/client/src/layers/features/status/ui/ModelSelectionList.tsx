@@ -236,7 +236,7 @@ function ModelCard({ model, isSelected }: { model: ModelOption; isSelected: bool
         <div className="text-foreground line-clamp-2 text-sm font-medium break-words">
           {model.displayName}
           {model.local && (
-            <span className="text-muted-foreground ml-1.5 text-[10px] font-normal">
+            <span className="text-muted-foreground ml-1.5 text-3xs font-normal">
               {localDeviceNoun()} · private
             </span>
           )}
@@ -246,14 +246,14 @@ function ModelCard({ model, isSelected }: { model: ModelOption; isSelected: bool
             reads to tell two near-identical rows apart. */}
         <ModelIdLine
           text={model.description}
-          className="text-muted-foreground text-[11px] leading-tight"
+          className="text-muted-foreground text-2xs leading-tight"
         />
         {limitation && (
           // WARNING — never truncated, never clamped. It is the one line on the
           // card that exists to change a decision, and half a warning is worse
           // than none. It is a short sentence, so wrapping costs a row at most.
           <div
-            className="mt-0.5 text-[11px] leading-tight text-amber-600 dark:text-amber-500"
+            className="mt-0.5 text-2xs leading-tight text-amber-600 dark:text-amber-500"
             data-testid={`model-limitation-${model.value}`}
           >
             {limitation}
@@ -262,7 +262,7 @@ function ModelCard({ model, isSelected }: { model: ModelOption; isSelected: bool
       </div>
 
       {model.contextWindow && (
-        <Badge variant="secondary" className="shrink-0 text-[10px]">
+        <Badge variant="secondary" className="shrink-0 text-3xs">
           {formatContextWindow(model.contextWindow)}
         </Badge>
       )}
@@ -285,7 +285,7 @@ function UnavailableSavedModel({ value }: { value: string }) {
             the half that says which.
 
             This is the same component at a bigger type scale (`text-sm`, not
-            `text-[11px]`) sharing its row with a `shrink-0` sibling, and that
+            `text-2xs`) sharing its row with a `shrink-0` sibling, and that
             combination is exactly what broke the treatment this replaced: a tail
             that could not shrink took the row and left the head 8 real pixels at
             390px — too few even to draw an ellipsis, so the line simply began
@@ -293,12 +293,12 @@ function UnavailableSavedModel({ value }: { value: string }) {
             no per-line budget to get right. */}
         <div className="flex min-w-0 flex-1 items-baseline gap-1.5">
           <ModelIdLine text={value} className="text-foreground min-w-0 text-sm font-medium" />
-          <span className="text-muted-foreground shrink-0 text-[11px] font-normal">
+          <span className="text-muted-foreground shrink-0 text-2xs font-normal">
             (not available)
           </span>
         </div>
       </div>
-      <p className="text-muted-foreground text-[11px] leading-snug">
+      <p className="text-muted-foreground text-2xs leading-snug">
         This model isn&apos;t available anymore. Pick another.
       </p>
     </div>
@@ -309,7 +309,7 @@ function UnavailableSavedModel({ value }: { value: string }) {
 function TierGroupHeader({ slug, label }: { slug: TierGroupSlug; label: string }) {
   return (
     <div
-      className="text-muted-foreground mt-2 mb-1 text-[11px] font-medium tracking-wide uppercase first:mt-0"
+      className="text-muted-foreground mt-2 mb-1 text-2xs font-medium tracking-wide uppercase first:mt-0"
       data-testid={`model-group-${slug}`}
     >
       {label}

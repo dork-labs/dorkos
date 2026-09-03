@@ -27,7 +27,7 @@ export const messageItem = tv({
      * old absolute timestamp was: it is a hover affordance, and touch has none.
      */
     avatarTimestamp:
-      'absolute top-0.5 right-0 hidden text-[10px] leading-none whitespace-nowrap tabular-nums transition-colors duration-150 sm:block',
+      'absolute top-0.5 right-0 hidden text-3xs leading-none whitespace-nowrap tabular-nums transition-colors duration-150 sm:block',
     body: 'flex min-w-0 flex-1 flex-col',
     header: 'flex items-baseline gap-2',
     authorName: 'truncate text-sm font-medium',

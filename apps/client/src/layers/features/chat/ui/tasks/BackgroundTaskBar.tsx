@@ -107,7 +107,7 @@ export function BackgroundTaskBar({ tasks, onStopTask }: BackgroundTaskBarProps)
             </span>
 
             {/* Stats — tools and max duration */}
-            <span className="text-muted-foreground/60 ml-auto font-mono text-[0.6875rem] whitespace-nowrap">
+            <span className="text-muted-foreground/60 ml-auto font-mono text-2xs whitespace-nowrap">
               {totalTools > 0 && <>{totalTools} tools &middot; </>}
               {maxDurationSeconds}s
             </span>
@@ -120,7 +120,7 @@ export function BackgroundTaskBar({ tasks, onStopTask }: BackgroundTaskBarProps)
               aria-label={isExpanded ? 'Collapse task details' : 'Expand task details'}
               aria-expanded={isExpanded}
             >
-              <span className="text-[0.625rem] tabular-nums">{count}</span>
+              <span className="text-3xs tabular-nums">{count}</span>
               <ChevronDown
                 className={cn(
                   'size-3.5 transition-transform duration-200',
@@ -211,7 +211,7 @@ function OverflowBadge({ count, overflowTasks }: OverflowBadgeProps) {
   return (
     <div className="group relative">
       <div
-        className="text-muted-foreground bg-muted flex size-6 shrink-0 items-center justify-center rounded-full text-[0.625rem] font-semibold"
+        className="text-muted-foreground bg-muted flex size-6 shrink-0 items-center justify-center rounded-full text-3xs font-semibold"
         aria-label={`${count} more subagent${count === 1 ? '' : 's'} running`}
       >
         +{count}
@@ -224,7 +224,7 @@ function OverflowBadge({ count, overflowTasks }: OverflowBadgeProps) {
           '-translate-x-1/2 translate-y-1 opacity-0 transition-all duration-150',
           'group-hover:translate-y-0 group-hover:opacity-100',
           'border-border bg-popover z-10 rounded-lg border px-3 py-2 whitespace-nowrap',
-          'text-foreground text-[0.6875rem] shadow-lg'
+          'text-foreground text-2xs shadow-lg'
         )}
       >
         {overflowTasks.map((task) => (
@@ -233,7 +233,7 @@ function OverflowBadge({ count, overflowTasks }: OverflowBadgeProps) {
               className="size-1.5 shrink-0 rounded-full"
               style={{ backgroundColor: task.color }}
             />
-            <span className="text-[0.625rem]">{task.description}</span>
+            <span className="text-3xs">{task.description}</span>
           </div>
         ))}
         <div className="border-t-border absolute top-full left-1/2 -translate-x-1/2 border-5 border-transparent" />

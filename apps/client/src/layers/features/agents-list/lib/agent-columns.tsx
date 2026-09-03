@@ -115,7 +115,7 @@ function IdentityCell({ row, onOpen }: { row: AgentTableRow; onOpen: () => void 
         // there would squeeze the name it is meant to label.
         <Badge
           variant="outline"
-          className="shrink-0 text-[10px] max-md:border-0 max-md:px-0 max-md:py-0"
+          className="shrink-0 text-3xs max-md:border-0 max-md:px-0 max-md:py-0"
         >
           <Star className="size-2.5 fill-current md:mr-0.5" />
           <span className="sr-only md:not-sr-only">Default</span>

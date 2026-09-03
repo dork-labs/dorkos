@@ -128,17 +128,17 @@ export function ProfileHeader({
         <h2 className="text-center text-base font-semibold">{member.displayName}</h2>
         {/* Flags on a row, never branches: the portrait is the same portrait. */}
         {member.isSelf && (
-          <Badge variant="secondary" className="px-1.5 py-0 text-[0.625rem]">
+          <Badge variant="secondary" className="px-1.5 py-0 text-3xs">
             you
           </Badge>
         )}
         {member.agent?.isSystem && (
-          <Badge variant="outline" className="px-1.5 py-0 text-[0.625rem]">
+          <Badge variant="outline" className="px-1.5 py-0 text-3xs">
             system
           </Badge>
         )}
         {member.agent?.isDefault && (
-          <Badge variant="outline" className="px-1.5 py-0 text-[0.625rem]">
+          <Badge variant="outline" className="px-1.5 py-0 text-3xs">
             default
           </Badge>
         )}
@@ -195,7 +195,7 @@ export function ProfileHeader({
               fallback={ownerFace.fallback}
               origin={ownerFace.origin}
               badge={null}
-              className="size-4 text-[0.5rem]"
+              className="size-4 text-3xs"
             />
             {/* The owner's NAME, not their handle. The line names a person the
                 way the portrait above names one — `teamMemberLabel` would read

@@ -62,7 +62,7 @@ export function ServerTab() {
                   </div>
                   <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">
                     Run{' '}
-                    <code className="rounded bg-amber-100 px-1 py-0.5 font-mono text-[10px] dark:bg-amber-900/50">
+                    <code className="rounded bg-amber-100 px-1 py-0.5 font-mono text-3xs dark:bg-amber-900/50">
                       npm update -g dorkos
                     </code>{' '}
                     to update
@@ -112,7 +112,7 @@ function ServerUnreachable({
         It may be restarting. Give it a moment and try again.
       </p>
       {detail ? (
-        <p className="mt-1 font-mono text-[10px] break-words text-amber-700/80 dark:text-amber-300/80">
+        <p className="mt-1 font-mono text-3xs break-words text-amber-700/80 dark:text-amber-300/80">
           {detail}
         </p>
       ) : null}

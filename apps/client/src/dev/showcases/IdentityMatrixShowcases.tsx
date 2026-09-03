@@ -143,7 +143,7 @@ export function IdentityShapeMatrixShowcase() {
         <div className="grid grid-cols-[8rem_repeat(3,4rem)] items-center gap-x-4 gap-y-3">
           <span />
           {FACES.map((face) => (
-            <span key={face} className="text-muted-foreground text-center text-[10px]">
+            <span key={face} className="text-muted-foreground text-center text-3xs">
               {face}
             </span>
           ))}
@@ -187,7 +187,7 @@ export function IdentityShapeMatrixShowcase() {
         <div className="grid grid-cols-[8rem_repeat(4,5rem)] items-center gap-x-4 gap-y-3">
           <span />
           {IDENTITY_STATUSES.map(({ status, label }) => (
-            <span key={status} className="text-muted-foreground text-center text-[10px]">
+            <span key={status} className="text-muted-foreground text-center text-3xs">
               {label}
             </span>
           ))}
@@ -230,7 +230,7 @@ export function IdentityShapeMatrixShowcase() {
                   origin={identity.origin}
                   resolved
                 />
-                <p className="text-muted-foreground truncate text-[10px]">
+                <p className="text-muted-foreground truncate text-3xs">
                   {identity.handle ? `@${identity.handle}` : 'no handle'}
                   {isWorking(identity) ? ' · working' : ''}
                 </p>
@@ -253,7 +253,7 @@ export function IdentityShapeMatrixShowcase() {
             return (
               <div key={member.id} className="flex w-32 flex-col items-center gap-2 text-center">
                 <IdentityAvatar {...face} size="md" />
-                <span className="text-muted-foreground truncate text-[10px]">
+                <span className="text-muted-foreground truncate text-3xs">
                   {member.handle ? `@${member.handle}` : `${member.displayName} · no handle`}
                 </span>
               </div>
@@ -278,15 +278,15 @@ export function IdentityShapeMatrixShowcase() {
         <div className="flex flex-wrap items-end gap-6">
           <div className="flex flex-col items-center gap-2">
             <IdentityAvatar color="#6366f1" fallback="A" kind="agent" size="md" />
-            <span className="text-muted-foreground text-[10px]">real colour → fill</span>
+            <span className="text-muted-foreground text-3xs">real colour → fill</span>
           </div>
           <div className="flex flex-col items-center gap-2">
             <IdentityAvatar color="currentColor" fallback="A" kind="agent" size="md" />
-            <span className="text-muted-foreground text-[10px]">currentColor → tint</span>
+            <span className="text-muted-foreground text-3xs">currentColor → tint</span>
           </div>
           <div className="flex flex-col items-center gap-2">
             <IdentityAvatar color="var(--color-orange-500)" fallback="A" kind="agent" size="md" />
-            <span className="text-muted-foreground text-[10px]">theme token → tint</span>
+            <span className="text-muted-foreground text-3xs">theme token → tint</span>
           </div>
           <div className="flex flex-col items-center gap-2">
             <IdentityAvatar
@@ -295,7 +295,7 @@ export function IdentityShapeMatrixShowcase() {
               kind="agent"
               size="md"
             />
-            <span className="text-muted-foreground text-[10px]">hsl(var(...)) → tint</span>
+            <span className="text-muted-foreground text-3xs">hsl(var(...)) → tint</span>
           </div>
         </div>
       </ShowcaseDemo>

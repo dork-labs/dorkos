@@ -104,7 +104,7 @@ export function AgentIdentityShowcases() {
             {(['xs', 'sm', 'md', 'lg'] as const).map((size) => (
               <div key={size} className="flex flex-col items-center gap-2">
                 <AgentAvatar {...WARDEN} size={size} />
-                <span className="text-muted-foreground text-[10px]">{size}</span>
+                <span className="text-muted-foreground text-3xs">{size}</span>
               </div>
             ))}
           </div>
@@ -132,7 +132,7 @@ export function AgentIdentityShowcases() {
             {IDENTITY_STATUSES.map(({ status, label }) => (
               <div key={status} className="flex flex-col items-center gap-2">
                 <AgentAvatar {...WARDEN} size="md" status={status} />
-                <span className="text-muted-foreground text-[10px]">{label}</span>
+                <span className="text-muted-foreground text-3xs">{label}</span>
               </div>
             ))}
           </div>
@@ -148,7 +148,7 @@ export function AgentIdentityShowcases() {
           <div className="flex flex-col gap-4">
             {(['xs', 'sm', 'md', 'lg'] as const).map((size) => (
               <div key={size} className="flex items-center gap-4">
-                <span className="text-muted-foreground w-6 text-[10px]">{size}</span>
+                <span className="text-muted-foreground w-6 text-3xs">{size}</span>
                 <AgentIdentity {...WARDEN} size={size} />
               </div>
             ))}
@@ -160,13 +160,13 @@ export function AgentIdentityShowcases() {
           <div className="flex flex-col gap-4">
             {(['xs', 'sm', 'md', 'lg'] as const).map((size) => (
               <div key={size} className="flex items-center gap-4">
-                <span className="text-muted-foreground w-6 text-[10px]">{size}</span>
+                <span className="text-muted-foreground w-6 text-3xs">{size}</span>
                 <AgentIdentity
                   {...WARDEN}
                   size={size}
                   detail={
                     <span className="flex items-center gap-1">
-                      <Badge variant="secondary" className="text-[10px]">
+                      <Badge variant="secondary" className="text-3xs">
                         claude-code
                       </Badge>
                       <span>3m ago</span>

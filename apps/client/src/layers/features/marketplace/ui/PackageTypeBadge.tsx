@@ -68,7 +68,7 @@ export function PackageTypeBadge({ type, adapterType, className }: PackageTypeBa
     <Badge
       variant="outline"
       className={cn(
-        'font-mono text-[10px] tracking-wider',
+        'font-mono text-3xs tracking-wider',
         isConnector ? CONNECTOR_STYLE : TYPE_STYLES[type],
         className
       )}

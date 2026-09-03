@@ -50,7 +50,7 @@ export function UsageDetail({ usage }: UsageStatusItemProps) {
     return (
       <div className="space-y-1">
         <div className="text-xs font-medium">Subscription Usage</div>
-        <div className="space-y-0.5 text-[10px]">
+        <div className="space-y-0.5 text-3xs">
           <DetailRow label="Utilization" value={`${pct}%`} />
           {usage.windowLabel && <DetailRow label="Window" value={usage.windowLabel} />}
           {resetsAtLabel && <DetailRow label="Resets at" value={resetsAtLabel} />}
@@ -67,7 +67,7 @@ export function UsageDetail({ usage }: UsageStatusItemProps) {
   return (
     <div className="space-y-1">
       <div className="text-xs font-medium">Session Cost</div>
-      <div className="space-y-0.5 text-[10px]">
+      <div className="space-y-0.5 text-3xs">
         {usage.costUsd != null && <DetailRow label="Cost" value={`$${usage.costUsd.toFixed(2)}`} />}
         {usage.detail && <div className="text-muted-foreground">{usage.detail}</div>}
       </div>
@@ -157,7 +157,7 @@ export function UsageStatusItem({ usage }: UsageStatusItemProps) {
       <TooltipContent side="top" className="max-w-56">
         <div className="space-y-1">
           <div className="text-xs font-medium">Session Cost</div>
-          <div className="text-muted-foreground text-[10px]">{usage.detail}</div>
+          <div className="text-muted-foreground text-3xs">{usage.detail}</div>
         </div>
       </TooltipContent>
     </Tooltip>

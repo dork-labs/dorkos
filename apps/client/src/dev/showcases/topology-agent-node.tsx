@@ -75,11 +75,11 @@ export function AgentDefaultCard({ d }: { d: AgentDemoData }) {
         <HealthDot status={d.healthStatus} />
       </div>
       <div className="mt-1 flex flex-wrap gap-1">
-        <Badge variant="secondary" className="text-[10px]">
+        <Badge variant="secondary" className="text-3xs">
           {d.runtime}
         </Badge>
         {d.capabilities.slice(0, 3).map((cap) => (
-          <Badge key={cap} variant="outline" className="text-[10px]">
+          <Badge key={cap} variant="outline" className="text-3xs">
             {cap}
           </Badge>
         ))}
@@ -90,7 +90,7 @@ export function AgentDefaultCard({ d }: { d: AgentDemoData }) {
           {hasTasks && (
             <span className="flex items-center gap-0.5">
               <Clock className="size-3" />
-              <span className="text-[10px]">{d.taskCount}</span>
+              <span className="text-3xs">{d.taskCount}</span>
             </span>
           )}
         </div>
@@ -115,11 +115,11 @@ export function AgentExpandedCard({ d }: { d: AgentDemoData }) {
         <HealthDot status={d.healthStatus} />
       </div>
       <div className="mt-1 flex flex-wrap gap-1">
-        <Badge variant="secondary" className="text-[10px]">
+        <Badge variant="secondary" className="text-3xs">
           {d.runtime}
         </Badge>
         {d.capabilities.slice(0, 3).map((cap) => (
-          <Badge key={cap} variant="outline" className="text-[10px]">
+          <Badge key={cap} variant="outline" className="text-3xs">
             {cap}
           </Badge>
         ))}
@@ -133,21 +133,21 @@ export function AgentExpandedCard({ d }: { d: AgentDemoData }) {
             d.relayAdapters!.map((adapter) => (
               <span key={adapter} className="flex items-center gap-0.5">
                 <Zap className="size-3" />
-                <span className="text-[10px]">{adapter}</span>
+                <span className="text-3xs">{adapter}</span>
               </span>
             ))}
           {hasTasks && (
             <span className="flex items-center gap-0.5">
               <Clock className="size-3" />
-              <span className="text-[10px]">{d.taskCount}</span>
+              <span className="text-3xs">{d.taskCount}</span>
             </span>
           )}
         </div>
       )}
       <div className="mt-1 flex items-center gap-2">
-        {d.lastSeenAt && <span className="text-muted-foreground text-[10px]">{d.lastSeenAt}</span>}
+        {d.lastSeenAt && <span className="text-muted-foreground text-3xs">{d.lastSeenAt}</span>}
         {d.behavior && (
-          <Badge variant="outline" className="text-[10px]">
+          <Badge variant="outline" className="text-3xs">
             {d.behavior.responseMode}
           </Badge>
         )}

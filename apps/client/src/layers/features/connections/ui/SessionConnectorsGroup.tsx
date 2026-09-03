@@ -60,7 +60,7 @@ export function SessionConnectorsGroup({ sessionId }: { sessionId: string }) {
           <button
             type="button"
             onClick={() => void navigate({ to: '/connections' })}
-            className="text-muted-foreground hover:text-foreground focus-visible:ring-ring inline-flex items-center gap-0.5 rounded text-[10px] font-medium normal-case focus-visible:ring-2 focus-visible:outline-none"
+            className="text-muted-foreground hover:text-foreground focus-visible:ring-ring inline-flex items-center gap-0.5 rounded text-3xs font-medium normal-case focus-visible:ring-2 focus-visible:outline-none"
           >
             Manage
             <ArrowUpRight className="size-3" aria-hidden />
@@ -111,7 +111,7 @@ function AttachedAccountRow({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="truncate">{name}</span>
-          <Badge variant={row.exposed ? 'secondary' : 'outline'} className="text-[10px]">
+          <Badge variant={row.exposed ? 'secondary' : 'outline'} className="text-3xs">
             {row.exposed ? 'tools on' : 'no tools'}
           </Badge>
         </div>

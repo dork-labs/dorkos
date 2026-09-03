@@ -149,7 +149,7 @@ export function SessionRowCompact({
                 className="text-muted-foreground/50"
               />
               <AccountMark account={session.account} className="text-muted-foreground/60" />
-              <span className="text-muted-foreground/60 text-[10px]">{relativeTime}</span>
+              <span className="text-muted-foreground/60 text-3xs">{relativeTime}</span>
             </span>
           </button>
         </TooltipTrigger>

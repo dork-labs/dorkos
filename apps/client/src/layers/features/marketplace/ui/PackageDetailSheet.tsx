@@ -168,7 +168,7 @@ function InstallationRow({
           <div className="flex items-center gap-2">
             <span className="truncate text-sm font-medium">{title}</span>
             {installation.scope === 'override' && (
-              <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-700 dark:bg-amber-900 dark:text-amber-300">
+              <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-3xs font-medium text-amber-700 dark:bg-amber-900 dark:text-amber-300">
                 Overrides global
               </span>
             )}
@@ -434,7 +434,7 @@ export function PackageDetailSheet() {
               {/* Metadata chips */}
               <div className="flex flex-wrap gap-2">
                 {version && (
-                  <Badge variant="outline" className="font-mono text-[10px]">
+                  <Badge variant="outline" className="font-mono text-3xs">
                     v{version}
                   </Badge>
                 )}

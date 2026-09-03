@@ -163,7 +163,9 @@ describe('SectionHeader', () => {
   it('writes its label at 11px, the one size every header in the panel uses', () => {
     render(<SectionHeader label="Channels" collapsed={false} onToggle={vi.fn()} />);
     const toggle = screen.getByRole('button', { name: 'Channels' });
-    expect(toggle.className).toContain('text-[11px]');
+    // `text-2xs` IS 11px — spelled as the token, so the label rides the mobile
+    // type scale with the rest of the app instead of staying 11px on a phone.
+    expect(toggle.className).toContain('text-2xs');
     expect(toggle.className).toContain('font-medium');
     // 12px was the section header's old size and the zone label's was 11 — two
     // levels, two sizes. There is one level now.

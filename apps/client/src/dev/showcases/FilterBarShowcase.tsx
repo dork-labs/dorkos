@@ -307,16 +307,16 @@ export function FilterBarShowcase() {
                       </span>
                       <div>
                         <p className="text-sm font-medium">{agent.name}</p>
-                        <p className="text-muted-foreground text-[11px]">{agent.namespace}</p>
+                        <p className="text-muted-foreground text-2xs">{agent.namespace}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="text-[10px]">
+                      <Badge variant="outline" className="text-3xs">
                         {agent.runtime}
                       </Badge>
                       <Badge
                         variant={STATUS_BADGE_VARIANT[agent.healthStatus] ?? 'outline'}
-                        className="text-[10px]"
+                        className="text-3xs"
                       >
                         {agent.healthStatus}
                       </Badge>

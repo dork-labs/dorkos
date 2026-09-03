@@ -69,7 +69,7 @@ export function BridgeVisibilityBadge({ visibility, className }: BridgeVisibilit
           aria-haspopup="dialog"
           aria-expanded={open}
           className={cn(
-            'text-muted-foreground hover:text-foreground focus-visible:ring-ring inline-flex h-6 shrink-0 items-center rounded-full border px-2.5 text-[11px] font-medium outline-hidden transition-colors focus-visible:ring-2',
+            'text-muted-foreground hover:text-foreground focus-visible:ring-ring inline-flex h-6 shrink-0 items-center rounded-full border px-2.5 text-2xs font-medium outline-hidden transition-colors focus-visible:ring-2',
             className
           )}
         >

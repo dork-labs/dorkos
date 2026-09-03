@@ -191,7 +191,7 @@ export function SidebarFooterMenu({ labelled = false }: SidebarFooterMenuProps) 
               >
                 <Icon className="size-(--size-icon-sm)" />
                 Theme
-                <span className="text-sidebar-foreground/50 ml-auto text-[11px]">
+                <span className="text-sidebar-foreground/50 ml-auto text-2xs">
                   {THEME_LABELS[theme]}
                 </span>
               </DropdownMenuItem>
@@ -213,7 +213,7 @@ export function SidebarFooterMenu({ labelled = false }: SidebarFooterMenuProps) 
               <LayoutGrid className="size-(--size-icon-sm)" />
               Dev Playground
               <span className="text-sidebar-foreground/50 ml-auto flex items-center gap-1.5">
-                <kbd className="text-[10px]">{formatShortcutKey(SHORTCUTS.DEV_PLAYGROUND)}</kbd>
+                <kbd className="text-3xs">{formatShortcutKey(SHORTCUTS.DEV_PLAYGROUND)}</kbd>
                 <ExternalLink className="size-3" />
               </span>
             </DropdownMenuItem>

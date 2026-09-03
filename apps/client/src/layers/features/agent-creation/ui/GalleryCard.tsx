@@ -76,7 +76,7 @@ export function GalleryCard({
           {chips.map((chip) => (
             <span
               key={chip}
-              className="bg-muted text-muted-foreground rounded-full px-2 py-0.5 text-[11px]"
+              className="bg-muted text-muted-foreground rounded-full px-2 py-0.5 text-2xs"
             >
               {chip}
             </span>

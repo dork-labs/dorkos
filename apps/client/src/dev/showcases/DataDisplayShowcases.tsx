@@ -315,7 +315,7 @@ export function IdentityAvatarShowcase() {
             <div key={size} className="flex flex-col items-center gap-2">
               <IdentityAvatar color="#6366f1" emoji="🔍" size={size} />
               <IdentityAvatar color="#6366f1" fallback="R" size={size} />
-              <span className="text-muted-foreground text-[10px]">{size}</span>
+              <span className="text-muted-foreground text-3xs">{size}</span>
             </div>
           ))}
         </div>
@@ -332,7 +332,7 @@ export function IdentityAvatarShowcase() {
             <div key={size} className="flex flex-col items-center gap-2">
               <IdentityAvatar color="#6366f1" emoji="🔍" size={size} badge={<Bot />} />
               <IdentityAvatar color="#10b981" fallback="P" size={size} />
-              <span className="text-muted-foreground text-[10px]">{size}</span>
+              <span className="text-muted-foreground text-3xs">{size}</span>
             </div>
           ))}
         </div>
@@ -397,7 +397,7 @@ export function IdentityAvatarShowcase() {
           ).map(({ label, ...identity }) => (
             <div key={label} className="flex flex-col items-center gap-2">
               <IdentityAvatar color="#0ea5e9" fallback="D" size="lg" {...identity} />
-              <span className="text-muted-foreground text-[10px]">{label}</span>
+              <span className="text-muted-foreground text-3xs">{label}</span>
             </div>
           ))}
         </div>
@@ -419,7 +419,7 @@ export function IdentityAvatarShowcase() {
                 origin={identity.origin}
                 size="md"
               />
-              <span className="text-muted-foreground text-[10px]">{label}</span>
+              <span className="text-muted-foreground text-3xs">{label}</span>
             </div>
           ))}
         </div>
@@ -441,7 +441,7 @@ export function IdentityAvatarShowcase() {
                   size={size}
                 />
               ))}
-              <span className="text-muted-foreground text-[10px]">{size}</span>
+              <span className="text-muted-foreground text-3xs">{size}</span>
             </div>
           ))}
         </div>
@@ -452,19 +452,19 @@ export function IdentityAvatarShowcase() {
         <div className="flex items-end gap-4">
           <div className="flex flex-col items-center gap-2">
             <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" size="md" />
-            <span className="text-muted-foreground text-[10px]">kind only</span>
+            <span className="text-muted-foreground text-3xs">kind only</span>
           </div>
           <div className="flex flex-col items-center gap-2">
             <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" shape="circle" size="md" />
-            <span className="text-muted-foreground text-[10px]">shape=&quot;circle&quot;</span>
+            <span className="text-muted-foreground text-3xs">shape=&quot;circle&quot;</span>
           </div>
           <div className="flex flex-col items-center gap-2">
             <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" variant="tint" size="md" />
-            <span className="text-muted-foreground text-[10px]">variant=&quot;tint&quot;</span>
+            <span className="text-muted-foreground text-3xs">variant=&quot;tint&quot;</span>
           </div>
           <div className="flex flex-col items-center gap-2">
             <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" badge={null} size="md" />
-            <span className="text-muted-foreground text-[10px]">badge={'{null}'}</span>
+            <span className="text-muted-foreground text-3xs">badge={'{null}'}</span>
           </div>
         </div>
       </ShowcaseDemo>
@@ -477,23 +477,23 @@ export function IdentityAvatarShowcase() {
         <div className="flex items-end gap-4">
           <div className="flex flex-col items-center gap-2">
             <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" status="working" size="md" />
-            <span className="text-muted-foreground text-[10px]">agent, working</span>
+            <span className="text-muted-foreground text-3xs">agent, working</span>
           </div>
           <div className="flex flex-col items-center gap-2">
             <IdentityAvatar color="#10b981" fallback="P" kind="human" status="working" size="md" />
-            <span className="text-muted-foreground text-[10px]">person, working</span>
+            <span className="text-muted-foreground text-3xs">person, working</span>
           </div>
           <div className="flex flex-col items-center gap-2">
             <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" status="needs-you" size="md" />
-            <span className="text-muted-foreground text-[10px]">needs you</span>
+            <span className="text-muted-foreground text-3xs">needs you</span>
           </div>
           <div className="flex flex-col items-center gap-2">
             <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" status="error" size="md" />
-            <span className="text-muted-foreground text-[10px]">error</span>
+            <span className="text-muted-foreground text-3xs">error</span>
           </div>
           <div className="flex flex-col items-center gap-2">
             <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" status="working" size="xs" />
-            <span className="text-muted-foreground text-[10px]">xs</span>
+            <span className="text-muted-foreground text-3xs">xs</span>
           </div>
         </div>
       </ShowcaseDemo>
@@ -521,7 +521,7 @@ export function IdentityAvatarShowcase() {
                 />
                 <IdentityAvatar color="#10b981" fallback="P" shape="circle" size={size} />
               </div>
-              <span className="text-muted-foreground text-[10px]">{size}</span>
+              <span className="text-muted-foreground text-3xs">{size}</span>
             </div>
           ))}
         </div>
@@ -534,15 +534,15 @@ export function IdentityAvatarShowcase() {
         <div className="flex items-end gap-4">
           <div className="flex flex-col items-center gap-2">
             <IdentityAvatar color="#6366f1" emoji="🔍" variant="fill" shape="square" size="lg" />
-            <span className="text-muted-foreground text-[10px]">emoji fill</span>
+            <span className="text-muted-foreground text-3xs">emoji fill</span>
           </div>
           <div className="flex flex-col items-center gap-2">
             <IdentityAvatar color="#fde68a" fallback="R" variant="fill" shape="square" size="lg" />
-            <span className="text-muted-foreground text-[10px]">light fill → dark letter</span>
+            <span className="text-muted-foreground text-3xs">light fill → dark letter</span>
           </div>
           <div className="flex flex-col items-center gap-2">
             <IdentityAvatar color="#1e1b4b" fallback="R" variant="fill" shape="square" size="lg" />
-            <span className="text-muted-foreground text-[10px]">dark fill → light letter</span>
+            <span className="text-muted-foreground text-3xs">dark fill → light letter</span>
           </div>
         </div>
       </ShowcaseDemo>

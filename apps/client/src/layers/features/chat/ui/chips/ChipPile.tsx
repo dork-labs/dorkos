@@ -74,7 +74,7 @@ export function ChipPile({ chips, expanded, controls, onExpand }: ChipPileProps)
             key={chip.key}
             aria-hidden="true"
             className={cn(
-              'bg-card border-border flex size-5 items-center justify-center rounded-full border text-[10px] leading-none',
+              'bg-card border-border flex size-5 items-center justify-center rounded-full border text-3xs leading-none',
               STACK_LAYER[index]
             )}
           >
@@ -84,7 +84,7 @@ export function ChipPile({ chips, expanded, controls, onExpand }: ChipPileProps)
       </motion.span>
       <span
         data-testid="chip-pile-count"
-        className="bg-primary text-primary-foreground rounded-full px-1.5 text-[10px] tabular-nums"
+        className="bg-primary text-primary-foreground rounded-full px-1.5 text-3xs tabular-nums"
       >
         {chips.length}
       </span>

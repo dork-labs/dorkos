@@ -182,7 +182,7 @@ function PowerSourceButton({
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">{source.title}</span>
           {source.recommended && (
-            <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+            <Badge variant="secondary" className="px-1.5 py-0 text-3xs">
               Recommended
             </Badge>
           )}
@@ -233,7 +233,7 @@ function ConnectStep({
         <div className="space-y-1" data-testid="connect-step-details">
           {source.sub && <p className="text-muted-foreground/80 text-xs">{source.sub}</p>}
           {source.tradeOff && (
-            <p className="text-muted-foreground/70 text-[11px] leading-snug">
+            <p className="text-muted-foreground/70 text-2xs leading-snug">
               <span className="font-medium">Trade-off:</span> {source.tradeOff}
             </p>
           )}

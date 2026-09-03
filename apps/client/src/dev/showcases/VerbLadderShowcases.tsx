@@ -178,7 +178,7 @@ export function VerbLadderShowcases() {
         <div className="space-y-4">
           {RUNGS.map((rung) => (
             <div key={rung.sessionId} className="space-y-1">
-              <p className="text-muted-foreground text-[11px]">{rung.rung}</p>
+              <p className="text-muted-foreground text-2xs">{rung.rung}</p>
               <Panel>
                 <LadderRow rung={rung} />
               </Panel>
@@ -194,7 +194,7 @@ export function VerbLadderShowcases() {
         <div className="flex flex-wrap gap-4">
           {(['light', 'dark'] as const).map((theme) => (
             <div key={theme} className={theme}>
-              <p className="text-muted-foreground mb-1 text-[11px]">{theme}</p>
+              <p className="text-muted-foreground mb-1 text-2xs">{theme}</p>
               <Panel>
                 {SIGNAL_ROWS.map((rung) => (
                   <LadderRow key={rung.sessionId} rung={rung} />

@@ -311,7 +311,7 @@ function DevPlaygroundShell() {
                 >
                   <Search className="size-3.5" />
                   Search
-                  <kbd className="bg-muted rounded px-1 py-0.5 font-mono text-[10px]">
+                  <kbd className="bg-muted rounded px-1 py-0.5 font-mono text-3xs">
                     {MOD_KEY}K
                   </kbd>
                 </Button>

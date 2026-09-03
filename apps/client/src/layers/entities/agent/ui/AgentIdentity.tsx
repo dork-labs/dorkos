@@ -46,7 +46,7 @@ const nameVariants = cva('truncate', {
 const detailVariants = cva('text-muted-foreground truncate', {
   variants: {
     size: {
-      xs: 'text-[10px]',
+      xs: 'text-3xs',
       sm: 'text-xs',
       md: 'text-xs',
       lg: 'text-sm',

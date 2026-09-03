@@ -184,7 +184,7 @@ export function SectionHeader({
   // medium at `--sidebar-header-x`, and nothing else. Spelled once so a section
   // that cannot fold cannot end up looking like a different kind of thing.
   const line = cn(
-    'text-sidebar-foreground/70 flex min-w-0 flex-1 items-center gap-1.5 text-[11px] font-medium',
+    'text-sidebar-foreground/70 flex min-w-0 flex-1 items-center gap-1.5 text-2xs font-medium',
     SECTION_HEADER_INSET,
     height,
     emphasized && 'text-sidebar-foreground font-semibold'
@@ -211,7 +211,7 @@ export function SectionHeader({
           // halfway through one reads as a second, unrelated event. `motion-safe`
           // and nothing else: under a reduced-motion preference the count is
           // simply there, which is the same rule the chevron beside it follows.
-          className="text-sidebar-foreground/70 motion-safe:animate-sidebar-rollup-in truncate text-[11px] font-normal tabular-nums"
+          className="text-sidebar-foreground/70 motion-safe:animate-sidebar-rollup-in truncate text-2xs font-normal tabular-nums"
         >
           {trailing}
         </span>

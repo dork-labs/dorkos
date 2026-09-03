@@ -109,7 +109,7 @@ export function StatusShowcases() {
             {SIGNALS.map(({ signal, means }) => (
               <div key={signal} className="flex items-center gap-2">
                 <span className={cn('size-1.5 shrink-0 rounded-full', statusDotClass(signal))} />
-                <span className="text-muted-foreground text-[11px]">{means}</span>
+                <span className="text-muted-foreground text-2xs">{means}</span>
               </div>
             ))}
           </div>
@@ -124,7 +124,7 @@ export function StatusShowcases() {
             {IDENTITY_STATUSES.map(({ status, label }) => (
               <div key={status} className="flex flex-col items-center gap-2">
                 <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" status={status} size="md" />
-                <span className="text-muted-foreground text-[10px]">{label}</span>
+                <span className="text-muted-foreground text-3xs">{label}</span>
               </div>
             ))}
           </div>
@@ -141,7 +141,7 @@ export function StatusShowcases() {
             {SIGNALS.map(({ signal }) => (
               <div key={signal} className="flex items-center gap-2">
                 <span className={cn('size-1.5 shrink-0 rounded-full', statusDotClass(signal))} />
-                <span className="text-muted-foreground text-[11px]">
+                <span className="text-muted-foreground text-2xs">
                   announced as “{STATUS_DOT_LABEL[signal]}”
                 </span>
               </div>
@@ -157,7 +157,7 @@ export function StatusShowcases() {
             {(['streaming', 'pendingApproval', 'error', 'unseen', 'idle'] as const).map((kind) => (
               <div key={kind} className="flex items-center gap-2">
                 <AgentActivityBadge status={kind} label={kind} />
-                <span className="text-muted-foreground text-[11px]">{kind}</span>
+                <span className="text-muted-foreground text-2xs">{kind}</span>
               </div>
             ))}
           </div>

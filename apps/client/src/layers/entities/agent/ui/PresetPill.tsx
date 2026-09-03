@@ -47,7 +47,7 @@ export function PresetPill({
       type="button"
       className={cn(
         'inline-flex shrink-0 items-center gap-1.5 rounded-full border font-medium transition-all',
-        size === 'sm' ? 'px-2.5 py-1 text-[11px]' : 'px-3 py-1 text-xs',
+        size === 'sm' ? 'px-2.5 py-1 text-2xs' : 'px-3 py-1 text-xs',
         active
           ? 'text-foreground'
           : 'bg-accent text-muted-foreground hover:text-foreground border-transparent',

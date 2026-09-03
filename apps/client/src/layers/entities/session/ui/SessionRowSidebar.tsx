@@ -309,7 +309,7 @@ export function SessionRowSidebar({
             className="text-sidebar-foreground/50"
           />
           <AccountMark account={session.account} className="text-sidebar-foreground/60" />
-          <span className="text-sidebar-foreground/50 text-[10px] tabular-nums">
+          <span className="text-sidebar-foreground/50 text-3xs tabular-nums">
             {relativeTime}
           </span>
         </>

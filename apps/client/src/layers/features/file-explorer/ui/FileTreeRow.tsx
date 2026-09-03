@@ -249,7 +249,7 @@ export function FileTreeRow({
           // `max-w-[45%]` rather than a fixed column: the pane is narrow and the
           // filename is what a person came to read, so provenance gives way
           // first and truncates rather than pushing the name off screen.
-          className="text-muted-foreground/70 max-w-[45%] flex-shrink-0 truncate text-[11px] tabular-nums"
+          className="text-muted-foreground/70 max-w-[45%] flex-shrink-0 truncate text-2xs tabular-nums"
           title={line.title ?? undefined}
         >
           {line.label}

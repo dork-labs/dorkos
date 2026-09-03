@@ -146,7 +146,7 @@ function SurfaceColumn({
 
   return (
     <div className="min-w-0 flex-1">
-      <p className="text-muted-foreground mb-2 text-[10px] tracking-wide uppercase">{label}</p>
+      <p className="text-muted-foreground mb-2 text-3xs tracking-wide uppercase">{label}</p>
       <Conversation.Root
         surface={surface}
         capabilities={capabilities}

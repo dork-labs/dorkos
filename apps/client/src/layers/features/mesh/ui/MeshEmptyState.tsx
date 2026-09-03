@@ -54,7 +54,7 @@ export function TopologyPreview() {
         <div className="bg-background flex size-10 items-center justify-center rounded-lg border">
           <span className="text-sm">A</span>
         </div>
-        <span className="text-muted-foreground text-[10px]">frontend</span>
+        <span className="text-muted-foreground text-3xs">frontend</span>
       </div>
       {/* Edge */}
       <div className="bg-border h-px w-8" />
@@ -63,7 +63,7 @@ export function TopologyPreview() {
         <div className="bg-background flex size-10 items-center justify-center rounded-lg border">
           <span className="text-sm">B</span>
         </div>
-        <span className="text-muted-foreground text-[10px]">backend</span>
+        <span className="text-muted-foreground text-3xs">backend</span>
       </div>
       {/* Edge */}
       <div className="bg-border h-px w-8" />
@@ -72,7 +72,7 @@ export function TopologyPreview() {
         <div className="bg-background flex size-10 items-center justify-center rounded-lg border">
           <span className="text-sm">C</span>
         </div>
-        <span className="text-muted-foreground text-[10px]">shared</span>
+        <span className="text-muted-foreground text-3xs">shared</span>
       </div>
     </div>
   );

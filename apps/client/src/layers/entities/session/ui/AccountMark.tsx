@@ -35,7 +35,7 @@ export function AccountMark({ account, className }: AccountMarkProps) {
       <TooltipTrigger asChild>
         <span
           aria-label={`Account: ${name}`}
-          className={cn('max-w-24 shrink-0 truncate text-[10px]', className)}
+          className={cn('max-w-24 shrink-0 truncate text-3xs', className)}
         >
           {name}
         </span>

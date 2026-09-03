@@ -87,7 +87,7 @@ export function MobileTabBar({
             // browser spec whatever it ends up being called.
             data-mobile-tab=""
             className={cn(
-              'focus-ring relative flex flex-1 flex-col items-center justify-center gap-0.5 text-[11px] transition-[color,background-color,scale] duration-150',
+              'focus-ring relative flex flex-1 flex-col items-center justify-center gap-0.5 text-2xs transition-[color,background-color,scale] duration-150',
               // **A tap has to answer, and on a phone there is no hover to
               // answer with.** Below 768px this bar is the whole navigation, and
               // it used to change only weight and colour — after the route
@@ -149,7 +149,7 @@ export function MobileTabBar({
                   // treatment (`bg-brand/15 text-brand`) was the other
                   // candidate and measures 3.75:1 on the light bar, so it is
                   // not one.
-                  className="absolute -top-1.5 -right-2.5 min-w-4 rounded-full bg-amber-500 px-1 text-center text-[10px] leading-4 font-semibold text-amber-950 tabular-nums"
+                  className="absolute -top-1.5 -right-2.5 min-w-4 rounded-full bg-amber-500 px-1 text-center text-3xs leading-4 font-semibold text-amber-950 tabular-nums"
                 >
                   {badge}
                 </span>

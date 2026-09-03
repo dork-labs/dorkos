@@ -232,8 +232,8 @@ export function DiscoveryView({ fullBleed = false, onRegistered }: DiscoveryView
             <ul className="space-y-1 pl-4">
               {DETECTION_STRATEGIES.map((s) => (
                 <li key={s.name} className="flex items-baseline gap-1.5">
-                  <code className="text-foreground/70 text-[10px]">{s.signal}</code>
-                  <span className="text-muted-foreground text-[10px]">→ {s.label}</span>
+                  <code className="text-foreground/70 text-3xs">{s.signal}</code>
+                  <span className="text-muted-foreground text-3xs">→ {s.label}</span>
                 </li>
               ))}
             </ul>

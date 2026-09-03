@@ -420,7 +420,7 @@ function RefinementRow({
       <Sparkles className="text-muted-foreground size-(--size-icon-xs) shrink-0" aria-hidden />
       <span className="text-foreground truncate">{refinement.label}</span>
       {tag && (
-        <span className="bg-muted text-muted-foreground rounded px-1 py-px text-[10px] font-medium tracking-wide uppercase">
+        <span className="bg-muted text-muted-foreground rounded px-1 py-px text-3xs font-medium tracking-wide uppercase">
           {tag}
         </span>
       )}

@@ -54,7 +54,7 @@ import { useMessageSearch } from '../model/use-message-search';
 import { useMessageSearchShortcut } from '../model/use-message-search-shortcut';
 
 /** `<kbd>` styling, matching the palette's own footer. */
-const KBD_CLASS = 'bg-muted rounded px-1 py-0.5 font-mono text-[10px]' as const;
+const KBD_CLASS = 'bg-muted rounded px-1 py-0.5 font-mono text-3xs' as const;
 
 /**
  * The search box, where there is something behind it to search.
@@ -265,7 +265,7 @@ function MessageSearchBox() {
               <p
                 key={warning.source}
                 role="status"
-                className="text-muted-foreground flex items-start gap-2 px-3 pt-2 text-[11px] leading-relaxed"
+                className="text-muted-foreground flex items-start gap-2 px-3 pt-2 text-2xs leading-relaxed"
               >
                 <Info className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
                 <span>{warning.message}</span>

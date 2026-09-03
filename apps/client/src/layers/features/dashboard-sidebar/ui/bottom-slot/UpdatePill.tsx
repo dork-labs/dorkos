@@ -36,7 +36,7 @@ const INSTALL_FAILED_COPY =
 
 /** Shared by both shapes of the pill, so the amber reads the same either way. */
 const PILL_CLASSES =
-  'focus-ring inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 transition-colors duration-150 hover:bg-amber-500/25 dark:text-amber-300';
+  'focus-ring inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-2xs font-medium text-amber-700 transition-colors duration-150 hover:bg-amber-500/25 dark:text-amber-300';
 
 /**
  * What the copy button says this frame.
@@ -105,7 +105,7 @@ export function UpdatePill({ update }: UpdatePillProps) {
     // anyone clicks it.
     return (
       <div role="group" aria-label="Update install failed" className="flex flex-col gap-1.5 px-0.5">
-        <p className="text-sidebar-foreground/70 text-[11px] leading-snug">{INSTALL_FAILED_COPY}</p>
+        <p className="text-sidebar-foreground/70 text-2xs leading-snug">{INSTALL_FAILED_COPY}</p>
         <button
           type="button"
           onClick={update.downloadFresh}

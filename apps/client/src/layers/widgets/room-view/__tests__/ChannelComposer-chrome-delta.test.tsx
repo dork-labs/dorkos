@@ -20,7 +20,11 @@
  *   (`role="presentation"`, `data-composer-card`, and the hidden
  *   `<input type="file">` react-dropzone mounts), plus the paperclip button and
  *   the second hidden input behind it, with `pl-3` leaving the action row
- *   because the paperclip now supplies that edge.
+ *   because the paperclip now supplies that edge;
+ * - **and, since DOR-1750, one token rename in the mention palette** — its
+ *   label's literal `text-[11px]` became the `text-2xs` token. The same 11px on
+ *   a desktop, and the mobile type scale on a phone. It shows up in the
+ *   mention-open state only, which is the only state that draws the palette.
  *
  * The attach nodes are stripped from the ACTUAL tree before the diff runs,
  * rather than re-baselined away. The differ walks children by index, so four
@@ -275,10 +279,19 @@ function classSwaps(diff: readonly DomDiffEntry[]): ClassSwap[] {
  * Two claims, in the order they matter. First: nothing that is not a class
  * moved — no node added, removed, retagged, reordered, or reattributed — and
  * the failure prints the offending nodes rather than a count. Second: the class
- * tokens that did move are exactly the two swaps this migration exists for, at
- * exactly the two nodes it is allowed to touch.
+ * tokens that did move are exactly the swaps this migration exists for, at
+ * exactly the nodes it is allowed to touch.
+ *
+ * @param diff - The state's diff against its committed baseline.
+ * @param extraSwaps - Swaps this state alone carries, identified by their
+ *   tokens rather than a path, in DOM order and ahead of the attach swap every
+ *   state carries. A state that grows one silently is a state that changed
+ *   without anyone reading the change.
  */
-function expectIntendedChromeDelta(diff: readonly DomDiffEntry[]) {
+function expectIntendedChromeDelta(
+  diff: readonly DomDiffEntry[],
+  extraSwaps: readonly { added: string[]; removed: string[] }[] = []
+) {
   const notChrome = diff.filter(
     (entry) => entry.kind !== 'class-added' && entry.kind !== 'class-removed'
   );
@@ -291,12 +304,13 @@ function expectIntendedChromeDelta(diff: readonly DomDiffEntry[]) {
     { path: LANE_PATH, added: LANE_CLASSES_ADDED, removed: LANE_CLASSES_REMOVED },
   ]);
 
-  // The one swap attach costs, and the only node it may cost it at: the action
-  // row drops `pl-3` because the paperclip now supplies that edge. Matched by
-  // its tokens rather than by a path — the row sits one child further down when
-  // the composer is also drawing a refusal line.
-  const fromAttach = swaps.filter((swap) => swap.path !== ROOT_PATH && swap.path !== LANE_PATH);
-  expect(fromAttach.map(({ added, removed }) => ({ added, removed }))).toEqual([
+  // Everything outside the card and its lane. The one every state carries is
+  // attach's: the action row drops `pl-3` because the paperclip now supplies
+  // that edge. Matched by tokens rather than by a path — the row sits one child
+  // further down when the composer is also drawing a refusal line.
+  const elsewhere = swaps.filter((swap) => swap.path !== ROOT_PATH && swap.path !== LANE_PATH);
+  expect(elsewhere.map(({ added, removed }) => ({ added, removed }))).toEqual([
+    ...extraSwaps,
     { added: [], removed: ['pl-3'] },
   ]);
 }
@@ -339,7 +353,12 @@ describe('ChannelComposer — serialized-DOM delta against the pre-migration bas
         import.meta.url,
         'room-composer.mention-open',
         serializeWithoutAttach(container)
-      )
+      ),
+      // The palette's own label, and this state alone shows it: the literal
+      // `text-[11px]` became the `text-2xs` token (DOR-1750). Same 11px on a
+      // desktop; on a phone it now rides the mobile type scale like every other
+      // label, which is the whole reason the token exists.
+      [{ added: ['text-2xs'], removed: ['text-[11px]'] }]
     );
   });
 

@@ -34,7 +34,7 @@ export function TaskDetailRow({ task, onStop }: TaskDetailRowProps) {
       <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: task.color }} />
 
       {/* Type badge */}
-      <span className="text-muted-foreground/60 shrink-0 text-[0.625rem] tracking-wider uppercase">
+      <span className="text-muted-foreground/60 shrink-0 text-3xs tracking-wider uppercase">
         {task.taskType}
       </span>
 
@@ -43,14 +43,14 @@ export function TaskDetailRow({ task, onStop }: TaskDetailRowProps) {
 
       {/* Tool count — agent tasks only */}
       {task.taskType === 'agent' && task.toolUses !== undefined && task.toolUses > 0 && (
-        <span className="text-muted-foreground/60 shrink-0 font-mono text-[0.625rem]">
+        <span className="text-muted-foreground/60 shrink-0 font-mono text-3xs">
           {task.toolUses} tools
         </span>
       )}
 
       {/* Duration */}
       {durationSeconds > 0 && (
-        <span className="text-muted-foreground/60 shrink-0 font-mono text-[0.625rem]">
+        <span className="text-muted-foreground/60 shrink-0 font-mono text-3xs">
           {durationSeconds}s
         </span>
       )}

@@ -247,13 +247,13 @@ export function SessionSwitcher({
             : { preview: session.lastMessagePreview ?? null })}
           trailing={
             <>
-              <span className="text-sidebar-foreground/50 text-[11px] tabular-nums">
+              <span className="text-sidebar-foreground/50 text-2xs tabular-nums">
                 {formatRelativeTime(session.updatedAt)}
               </span>
               {isCurrent && (
                 <span
                   data-slot="session-switcher-current"
-                  className="border-sidebar-border text-sidebar-foreground/70 rounded border px-1 py-px text-[10px] leading-none"
+                  className="border-sidebar-border text-sidebar-foreground/70 rounded border px-1 py-px text-3xs leading-none"
                 >
                   current
                 </span>
@@ -281,7 +281,7 @@ export function SessionSwitcher({
           <ResponsiveDialogTitle className="flex items-center gap-2 text-sm font-semibold">
             <AgentAvatar color={agentVisual.color} emoji={agentVisual.emoji} size="xs" />
             {agentName} — sessions
-            <span className="text-muted-foreground ml-auto text-[11px] font-normal tabular-nums">
+            <span className="text-muted-foreground ml-auto text-2xs font-normal tabular-nums">
               {sessions.length} total
             </span>
           </ResponsiveDialogTitle>
@@ -354,7 +354,7 @@ export function SessionSwitcher({
             </Button>
           </div>
         ) : (
-          <footer className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 px-4 pt-1 pb-4 text-[11px]">
+          <footer className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 px-4 pt-1 pb-4 text-2xs">
             <span>
               <Kbd>↵</Kbd> continue
             </span>
@@ -375,7 +375,7 @@ export function SessionSwitcher({
 function SwitcherGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <section aria-label={label}>
-      <h3 className="text-muted-foreground px-2 pt-3 pb-1 text-[10px] font-semibold tracking-[0.05em] uppercase">
+      <h3 className="text-muted-foreground px-2 pt-3 pb-1 text-3xs font-semibold tracking-[0.05em] uppercase">
         {label}
       </h3>
       <SidebarMenu>{children}</SidebarMenu>
@@ -419,7 +419,7 @@ function OriginMark({ origin, label }: { origin?: SessionOrigin; label?: string 
  */
 export function LiveSessionsChip({ count }: { count: number }) {
   return (
-    <span className="bg-status-success/15 text-status-success flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums">
+    <span className="bg-status-success/15 text-status-success flex items-center gap-1 rounded-full px-1.5 py-0.5 text-3xs font-semibold tabular-nums">
       <span className={cn('size-1.5 rounded-full', statusDotClass('working'))} />
       {count} live
     </span>

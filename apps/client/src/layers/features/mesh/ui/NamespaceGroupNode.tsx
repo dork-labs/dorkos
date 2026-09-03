@@ -32,7 +32,7 @@ function NamespaceGroupNodeComponent({ data }: NodeProps) {
         <span className="text-xs font-semibold" style={{ color: d.color }}>
           {d.namespace}
         </span>
-        <span className="text-muted-foreground text-[10px]">
+        <span className="text-muted-foreground text-3xs">
           {d.activeCount}/{d.agentCount} agents
         </span>
         {d.activeCount > 0 && (

@@ -347,7 +347,7 @@ function SheetGroupLabel({
   return (
     <div
       data-menu-group-id={id}
-      className="text-sidebar-foreground/60 flex items-center gap-2 px-4 pt-3 pb-1 text-[11px] font-medium"
+      className="text-sidebar-foreground/60 flex items-center gap-2 px-4 pt-3 pb-1 text-2xs font-medium"
     >
       {children}
     </div>
@@ -526,7 +526,7 @@ function renderNodes(nodes: SidebarMenuNode[], slots: SidebarMenuSlots): ReactNo
             <Icon className="mr-2 size-4" />
             {node.opensInput ? `${node.label}…` : node.label}
             {node.hint !== undefined && (
-              <span className="text-muted-foreground/60 ml-auto pl-3 text-[11px] tabular-nums">
+              <span className="text-muted-foreground/60 ml-auto pl-3 text-2xs tabular-nums">
                 {node.hint}
               </span>
             )}

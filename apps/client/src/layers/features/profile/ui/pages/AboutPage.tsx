@@ -22,7 +22,7 @@ import type { ProfilePageContentProps } from './types';
 /** A field heading, in the quiet register the rest of the profile uses. */
 function FieldLabel({ children }: { children: string }) {
   return (
-    <div className="text-muted-foreground text-[10px] font-medium tracking-wider uppercase">
+    <div className="text-muted-foreground text-3xs font-medium tracking-wider uppercase">
       {children}
     </div>
   );
