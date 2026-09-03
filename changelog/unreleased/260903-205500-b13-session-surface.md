@@ -5,6 +5,7 @@ covers:
   - 'fix(client): Pulse stops repeating the page it sits beside (DOR-1759)'
   - 'fix(client): one way to open an "Advanced" section (DOR-1759)'
   - 'fix(client,dev): the notification card keeps its buttons on a narrow screen (DOR-1759)'
+  - "refactor(client): destructure the primer offer so the slot's memo can hold (DOR-1759)"
 ---
 
 ### Fixed
