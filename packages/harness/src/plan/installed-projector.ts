@@ -51,6 +51,7 @@ import { join } from 'node:path';
 import type { HarnessId } from '../manifest/schema.js';
 import type { ProjectionAction, ProjectionWarning } from './types.js';
 import type { InstalledPlugin } from '../sources/installed.js';
+import { emptyHooksConfig } from '../generate/hooks.js';
 import type { ClaudeHooksConfig, HookMatcherGroup } from '../generate/hooks.js';
 import { setActionContent } from './content-map.js';
 // Codex reads `.agents/skills/<name>` directly; Claude Code reads `.claude/skills`.
@@ -275,7 +276,7 @@ export function rewritePluginRootInHooks(
   absInstallDir: string
 ): ClaudeHooksConfig | undefined {
   if (!hooks) return undefined;
-  const out: ClaudeHooksConfig = {};
+  const out = emptyHooksConfig();
   for (const [event, groups] of Object.entries(hooks)) {
     out[event] = groups.map((group) => ({
       ...group,
@@ -394,7 +395,7 @@ function toManagedHooks(
 ): ClaudeHooksConfig | undefined {
   const rewritten = rewritePluginRootInHooks(plugin.hooks, absInstallDir);
   if (!rewritten) return undefined;
-  const out: ClaudeHooksConfig = {};
+  const out = emptyHooksConfig();
   for (const [event, groups] of Object.entries(rewritten)) {
     out[event] = groups.map((group): ManagedHookGroup => ({
       ...group,
@@ -775,7 +776,7 @@ export function dropWholePlugin(plugin: InstalledPlugin, reason: string): Projec
 export function mergeHookConfigs(
   configs: ReadonlyArray<ClaudeHooksConfig | undefined>
 ): ClaudeHooksConfig {
-  const merged: ClaudeHooksConfig = {};
+  const merged = emptyHooksConfig();
   for (const config of configs) {
     if (!config) continue;
     for (const [event, groups] of Object.entries(config)) {

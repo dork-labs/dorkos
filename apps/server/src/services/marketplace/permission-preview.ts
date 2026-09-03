@@ -296,10 +296,12 @@ function readManifestSchedules(manifest: MarketplacePackageManifest): PreviewSch
  *   `hooks/hooks.json` to disk and nothing ever reads it. The UI therefore says
  *   the package "declares" these commands rather than that it "will run" them —
  *   this preview is read BEFORE installing, the approval card BEFORE running.
- * - `readPluginHooks` validates only that an event's value is an array; the
- *   group interior is unchecked, and malformed groups make the PROJECTOR throw
- *   rather than skip (tracked separately). This reader validates the interior
- *   too, which is why it can report a partially-bad file instead of dying on it.
+ * - `readPluginHooks` salvages exactly the same commands this reader does — the
+ *   same keep rule at the event, group and command level (DOR-646) — so what the
+ *   preview discloses from a partially-bad file is what the projector will
+ *   actually install. The two differ only in what they do with the rest: this
+ *   reader reports every discarded declaration in `unreadable`, while the
+ *   projector simply has nothing to project for it.
  */
 async function readPackageHooks(
   packagePath: string

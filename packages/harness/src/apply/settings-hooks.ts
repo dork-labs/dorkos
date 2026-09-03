@@ -24,6 +24,7 @@
  */
 import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { emptyHooksConfig } from '../generate/hooks.js';
 import type { ClaudeHooksConfig, HookMatcherGroup } from '../generate/hooks.js';
 import { MANAGED_HOOK_SENTINEL_KEY } from '../plan/installed-projector.js';
 
@@ -62,7 +63,7 @@ function isManagedGroup(group: HookMatcherGroup): boolean {
 
 /** Drop every managed matcher group, preserving user groups and dropping now-empty events. */
 function stripManagedHooks(hooks: ClaudeHooksConfig | undefined): ClaudeHooksConfig {
-  const out: ClaudeHooksConfig = {};
+  const out = emptyHooksConfig();
   if (!hooks) return out;
   for (const [event, groups] of Object.entries(hooks)) {
     if (!Array.isArray(groups)) continue;
@@ -77,7 +78,7 @@ function appendManagedHooks(
   existing: ClaudeHooksConfig,
   managed: ClaudeHooksConfig
 ): ClaudeHooksConfig {
-  const out: ClaudeHooksConfig = { ...existing };
+  const out = Object.assign(emptyHooksConfig(), existing);
   for (const [event, groups] of Object.entries(managed)) {
     out[event] = [...(out[event] ?? []), ...groups];
   }
