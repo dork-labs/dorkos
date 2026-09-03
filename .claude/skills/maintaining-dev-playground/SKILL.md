@@ -39,7 +39,7 @@ A component belongs in the playground if it meets **any** of these:
 - **Visual and reusable** — renders UI that appears in more than one place, or could
 - **Has multiple meaningful states** — loading, empty, error, active, disabled, etc.
 - **Part of the design system** — buttons, inputs, cards, badges, overlays
-- **A composed widget or panel** — RelayPanel, MeshPanel, TunnelDialog, etc.
+- **A composed widget or panel** — TasksPanel, MessagingConnections, TunnelDialog, etc.
 - **Complex enough to regress** — more than trivial markup; has conditional rendering, animations, or data-dependent layout
 
 A component does NOT belong if it's:
@@ -55,17 +55,19 @@ A component does NOT belong if it's:
 
 Match to the existing page structure. The playground has **5** sidebar groups, each derived from `PageConfig.group` in `dev/playground-config.ts` — check there rather than trusting this table, which is a summary and can age:
 
-| Group             | Pages                                                                                           | Use for                                            |
-| ----------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| **Design System** | Design Tokens, Forms, Components, Tables                                                        | Shared primitives, design tokens, form elements    |
-| **Generative UI** | Widgets                                                                                         | Agent-authored widgets rendered from UI fences     |
-| **Session**       | Chat Components, Entry Actions, Simulator                                                       | Chat UI, message rendering, streaming              |
-| **Agents**        | Identity, Subsystems, Topology, Rooms, Marketplace                                              | Faces and handles, Relay, Mesh, Tasks, graph nodes |
-| **App Shell**     | Tour Spotlight, Command Palette, Filter Bar, Onboarding, Error States, Feature Promos, Settings | App-wide chrome, navigation, onboarding flows      |
+| Group             | Pages                                                                                                                                                          | Use for                                                       |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| **Design System** | Design Tokens, Forms, Components, Tables                                                                                                                       | Shared primitives, design tokens, form elements               |
+| **Generative UI** | Widgets                                                                                                                                                         | Agent-authored widgets rendered from UI fences                |
+| **Session**       | Conversation, Entry Actions, Simulator                                                                                                                          | Chat UI, message rendering, streaming                          |
+| **Agents**        | Identity, Agent & Relay, Home Inbox & Approvals, Topology, Rooms, Marketplace                                                                                    | Faces and handles, Relay, Mesh, Tasks, approvals & inbox, graph nodes |
+| **App Shell**     | Tour Spotlight, Command Palette, Filter Bar, Onboarding, Error States, Feature Promos, Settings, Sidebar Model, Sidebar Boot & Motion, One Bar                 | App-wide chrome, navigation, onboarding flows                 |
 
 ### When to create a new page
 
 Create a new page when a feature has **5+ sections** that don't fit naturally into an existing page, OR when the feature is a complex multi-component system that benefits from dedicated space (e.g., a full dialog with multiple sub-views like TunnelDialog).
+
+**Soft cap: ~20 sections per page** (batch 20 audit finding 20.2, DOR-1766) — where the playground's own distribution already breaks: every page under that settles fine, and the pages that crossed 2.5-3× it (Conversation, the old combined "Subsystems", Components) are the ones a reader gets lost on. **When a page's section file needs the 500-line split, split the page along the same seam.** The Agent & Relay / Home, Inbox & Approvals split is the worked example: the section array had already been split into `features-agent-sections.ts` / `features-surface-sections.ts` for the file-size cap, and the page above it followed the same boundary rather than staying one list. `TocSidebar`'s category sub-headings (§ Grouping within a page) help every oversized page regardless, but they are a mitigation, not a substitute — a page that keeps growing past the cap still wants a split.
 
 ### Showing one component on two pages
 
@@ -81,7 +83,7 @@ The accepted cost: a borrowed section still groups under its owning page in Cmd+
 
 ### Grouping within a page
 
-Group components that work together. The `category` field is **documentation only — nothing reads it.** Cmd+K groups by `page` (`PlaygroundSearch`) and the TOC renders flat (`TocSidebar`); `category` has never been a search grouping. Keep filling it in as a note to the next reader (use the feature/subsystem name — "Relay", "Mesh", "Tasks", "Identity"), but never write code that branches on it.
+Group components that work together. The `category` field drives the TOC: `TocSidebar` renders a sub-heading over every run of CONSECUTIVE same-`category` sections (batch 20 audit finding 20.3, DOR-1766), so keep entries for one category adjacent in the section array — scattering the same category across non-consecutive positions draws it as two separate groups instead of one. Cmd+K still groups by `page` only (`PlaygroundSearch`); `category` has never been a search grouping. Use the feature/subsystem name — "Relay", "Mesh", "Tasks", "Identity" — the same words a reader would look for in the TOC.
 
 ## The Parity Problem
 
@@ -89,13 +91,13 @@ Group components that work together. The `category` field is **documentation onl
 
 ### Current state
 
-Today, showcases render only leaf components (individual cards, empty states, buttons). Full widget panels like `RelayPanel`, `MeshPanel`, and `TasksPanel` are NOT showcased — only their children are. This means the composed experience (how the parts work together) is invisible in the playground.
+Most showcases render only leaf components (individual cards, empty states, buttons). Full widget panels are usually NOT showcased — only their children are — which means the composed experience (how the parts work together) is invisible in the playground for most of them. `TasksPanel` and relay's `MessagingConnections` are the worked examples (DOR-1766): each is showcased with an isolated, pre-seeded `QueryClient` per the data-injection pattern below. Mesh's composed panels, `TopologyPanel` and `DiscoveryView`, are not showcased yet.
 
 ### The pattern to follow
 
 When showcasing a composed widget (a dialog, panel, or multi-component feature):
 
-**1. Separate content from chrome.** The dialog wrapper (e.g., `RelayDialogWrapper`) handles `ResponsiveDialog` chrome and open/close state. The content component (e.g., `RelayPanel`) handles the actual UI. The playground should render the _content component_, not the dialog wrapper.
+**1. Separate content from chrome.** The dialog wrapper (e.g., `TasksDialogWrapper`) handles `ResponsiveDialog` chrome and open/close state. The content component (e.g., `TasksPanel`) handles the actual UI. The playground should render the _content component_, not the dialog wrapper.
 
 ```
 App renders:                     Playground renders:
@@ -108,24 +110,26 @@ DialogWrapper                    PlaygroundSection
 
 ```tsx
 // BEFORE: tightly coupled to hooks — can't showcase with mock data
-function RelayPanel() {
-  const { data } = useAdapters();
-  return <AdapterList adapters={data} />;
+function WidgetPanel() {
+  const { data } = useWidgetData();
+  return <ItemList items={data} />;
 }
 
 // AFTER: accepts props OR falls back to hook
-interface RelayPanelProps {
-  adapters?: Adapter[];
+interface WidgetPanelProps {
+  items?: Item[];
 }
 
-function RelayPanel({ adapters: adaptersProp }: RelayPanelProps) {
-  const query = useAdapters();
-  const adapters = adaptersProp ?? query.data;
-  return <AdapterList adapters={adapters} />;
+function WidgetPanel({ items: itemsProp }: WidgetPanelProps) {
+  const query = useWidgetData();
+  const items = itemsProp ?? query.data;
+  return <ItemList items={items} />;
 }
 ```
 
 This lets the playground pass mock data while the app continues using the hook. No duplication.
+
+**2b. Or seed an isolated `QueryClient`, when the component is TanStack-Query-only and a props refactor isn't warranted.** A component whose only obstacle is `useQuery` — no Zustand, no other outside state — can be shown as-is: wrap it in its own `QueryClient` (`retry: false, staleTime: Infinity` so nothing refetches against a server that isn't running) and `setQueryData` the exact keys it reads, then render the REAL component inside a `<QueryClientProvider client={...}>`. `MarketplaceShowcases.tsx`, `SidebarShowcases.tsx` and (DOR-1766) `TasksShowcases.tsx`/`RelayShowcases.tsx`/`ConnectionsShowcases.tsx` all use this. Export the query key alongside its hook (`export const CATALOG_KEY = …`) so the showcase can import it rather than re-typing the array by hand. **Check every hook the component reaches for a `null`-vs-`undefined` landmine first**: the playground's ambient transport resolves every unseeded call to `null`, and a destructured default (`const { data = [] } = useX()`) only fires on `undefined` — so a hook whose consumer does `data.map(...)` with no optional chaining will crash on an unseeded query. Either seed that key too, or confirm the consumer already guards with `?.`/`??`/an explicit `if (!data)`.
 
 **3. Support controlled state for state machines.** Components with internal state machines (like TunnelDialog's landing/setup/connecting/connected/error views) should accept an optional `initialState` or `state` prop so the playground can showcase each state independently:
 
@@ -163,7 +167,7 @@ Add entries to the appropriate section file in `dev/sections/`:
   id: 'tunneldialog',           // anchor ID — lowercase, no spaces
   title: 'TunnelDialog',        // display name
   page: 'features',             // which page (must match Page type)
-  category: 'Tunnel',           // documentation only — nothing reads it
+  category: 'Tunnel',           // groups the TOC — keep same-category entries adjacent
   keywords: ['tunnel', 'remote', 'ssh', 'connect', 'security'],
 }
 ```
