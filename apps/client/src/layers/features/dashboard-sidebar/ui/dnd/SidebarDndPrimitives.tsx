@@ -25,6 +25,37 @@ const SidebarDndEnabledContext = createContext(false);
 /** Provider used by `SidebarDnd` to switch the drag primitives on. */
 export const SidebarDndEnabledProvider = SidebarDndEnabledContext.Provider;
 
+/**
+ * The ARIA role the drag root wears, overriding dnd-kit's `button` default.
+ *
+ * **A whole sidebar row is the drag root, and a row is not a button — it
+ * CONTAINS one** (DOR-1418). dnd-kit assumes the draggable is a bare handle and
+ * defaults its `attributes` to `role="button"`; spread onto the wrapper around
+ * a row, that put a `button` around the row's real `<button>`, its "⋮" and its
+ * glyph action, which is the `nested-interactive` axe violation — 21 of them on
+ * the sidebar once sections became draggable too. Screen readers do not reliably
+ * announce a control nested inside another, so the outer role was actively
+ * hiding the row it wrapped.
+ *
+ * `group` is the honest answer and it is not a widget role, so it may contain
+ * focusable content: the wrapper really is a container of related controls, it
+ * still takes `tabIndex`, `aria-disabled`, `aria-describedby` (dnd-kit's
+ * keyboard instructions) and `aria-roledescription="sortable"` — which needs an
+ * explicit role to be valid at all, so simply deleting the role would have
+ * traded one violation for another.
+ *
+ * It costs `aria-pressed`, which dnd-kit emits only while the role is its
+ * `button` default, and that is a real trade rather than a free one: the grabbed
+ * state stops being a QUERYABLE attribute and becomes announcement-only, so a
+ * reader who re-reads the row mid-drag is told nothing about it. What it is
+ * traded for is that the row is announced at all — and announcement-only drag
+ * state is the ARIA Authoring Practices drag-and-drop pattern, not a shortfall
+ * of it: `buildSidebarAnnouncements` speaks the pick-up, every move and the drop
+ * through the live region, which is how a keyboard drag here has always been
+ * reported.
+ */
+const SORTABLE_ROOT_ROLE = 'group';
+
 /** Read whether the sidebar drag layer is active in the current subtree. */
 function useSidebarDndEnabled(): boolean {
   return useContext(SidebarDndEnabledContext);
@@ -92,7 +123,7 @@ function SortableInner({
     transition,
     isDragging,
     isOver,
-  } = useSortable({ id, data });
+  } = useSortable({ id, data, attributes: { role: SORTABLE_ROOT_ROLE } });
   // Register the row as its own activator node. KeyboardSensor only starts a
   // drag when `event.target === activatorNode`, so Space/Enter on nested
   // interactive controls (the "…" trigger, "New session", session rows, the

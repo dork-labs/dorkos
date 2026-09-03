@@ -1,6 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
+import { describeViolation, runAxe } from '../../axe';
+
+/**
+ * What the a11y sweep below is pointed at: the sidebar panel, and none of the
+ * app around it. The same node `DashboardSidebarPage.panel` locates.
+ */
+const SIDEBAR_PANEL = '[data-slot="sidebar-inner"]';
 
 /**
  * The empty-section placeholder, matched as a PATTERN rather than a literal.
@@ -409,5 +416,67 @@ test.describe('Dashboard Sidebar — Sections @smoke', () => {
     // And back, so a reader who stepped out to a control steps back in.
     await page.keyboard.press('ArrowLeft');
     await expect(row).toBeFocused();
+  });
+
+  test('nests no interactive control inside another, drag layer and all', async ({
+    page,
+    dashboardSidebar,
+  }) => {
+    // DOR-1418. dnd-kit defaults a draggable to `role="button"`, and the sidebar
+    // makes whole ROWS draggable — so every agent row, every channel row and
+    // (since sections became draggable top-level) every section header carried a
+    // `button` wrapped around the real `<button>` inside it. axe called that
+    // `nested-interactive`, twenty-one times on a working panel, and a screen
+    // reader announces a control nested inside another unreliably or not at all.
+    //
+    // **Asserted against the REAL panel, not the Dev Playground.** The showcase
+    // page draws rows without a `DndContext`, so the drag layer is off there and
+    // its axe sweep could never have seen this. Here the layer is live, which is
+    // the only place the wrapper exists at all.
+    //
+    // A group is created first because a user-made section is what makes a
+    // section HEADER a drag source; the rows are draggable either way.
+    await dashboardSidebar.createGroup(groupName);
+    await expect(dashboardSidebar.groupContainer(groupName)).toBeVisible();
+    await expect(dashboardSidebar.agentRow(agentName)).toBeVisible();
+
+    // **The role, read off every drag root directly.** Measured on the broken
+    // build, this seeded panel held five drag roots and every one of them wore
+    // `role="button"`. The role is the single thing the fix changed, so it is
+    // asserted as itself rather than only through what axe infers from it —
+    // a direct reading cannot go undecided, and it names the offending count in
+    // its own failure message. axe below is then the independent second opinion
+    // on the same panel: it, not this, is what says the nesting is really gone.
+    const dragRoots = page.locator(`${SIDEBAR_PANEL} [aria-roledescription="sortable"]`);
+    const roles = await dragRoots.evaluateAll((nodes) =>
+      nodes.map((node) => node.getAttribute('role'))
+    );
+    expect(
+      roles.length,
+      'the drag layer put no sortable root in the panel, so nothing below proves anything'
+    ).toBeGreaterThan(0);
+    expect(
+      [...new Set(roles)].sort(),
+      `${roles.length} sortable drag roots in the panel, and at least one wears a role other than the container role`
+    ).toEqual(['group']);
+
+    // One rule, not the whole default set: this spec asks one question about one
+    // widget, and the page-wide sweep the showcase spec runs is what answers the
+    // rest.
+    const results = await runAxe(page, SIDEBAR_PANEL, ['nested-interactive']);
+    // **Violations AND `incomplete` together.** "axe could not decide" is not a
+    // pass, and a rule that goes undecided is exactly how a defect hides from
+    // the gate written to catch it (the same lesson the showcase spec's
+    // `color-contrast` allowlist is built on).
+    expect(
+      [...results.violations, ...results.incomplete].map(describeViolation),
+      'the sidebar nests interactive controls — see DOR-1418, the drag root must not wear a widget role'
+    ).toEqual([]);
+    // The rule has to have actually run: axe reports an empty `violations` for a
+    // context it never evaluated just as happily as for a clean one.
+    expect(
+      results.passes.map((pass) => pass.id),
+      'axe did not evaluate nested-interactive on the sidebar at all, so the empty violation list means nothing'
+    ).toContain('nested-interactive');
   });
 });
