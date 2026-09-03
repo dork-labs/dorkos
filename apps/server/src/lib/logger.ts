@@ -2,6 +2,7 @@ import { createConsola, type LogObject } from 'consola';
 import fs from 'fs';
 import path from 'path';
 import { currentDispatchId } from './dispatch-context.js';
+import { normalizeLogContext } from './serialize-error.js';
 
 /**
  * Central logger module for DorkOS server.
@@ -42,6 +43,9 @@ let configuredLevel = 3; // info
  * An explicit `dispatchId` in a call site's context object wins over the ambient
  * one, so a caller that legitimately logs about a DIFFERENT dispatch is not
  * silently mislabelled. Same for an explicit `tag`.
+ *
+ * The context is passed through `normalizeLogContext` on the way in, because
+ * spreading an Error yields `{}` — see `lib/serialize-error.ts` (DOR-802).
  */
 function createFileReporter() {
   return {
@@ -68,7 +72,7 @@ function createFileReporter() {
         msg: msgParts.join(' '),
         tag: logObj.tag || extractTag(msgParts[0]),
         ...(dispatchId !== undefined ? { dispatchId } : {}),
-        ...context,
+        ...(context !== undefined ? normalizeLogContext(context) : {}),
       });
       fs.appendFileSync(logFile, entry + '\n');
     },
@@ -235,7 +239,13 @@ export function createTaggedLogger(tag: string) {
   return logger.withTag(tag);
 }
 
-/** Extract structured error fields for consistent NDJSON logging. */
+/**
+ * Extract structured error fields for consistent NDJSON logging.
+ *
+ * Handing the error straight to the logger — `logger.error(msg, err)` — now
+ * writes the same `error` and `stack` fields on its own (DOR-802), so this is
+ * for call sites that fold an error into a wider context object.
+ */
 export function logError(err: unknown): { error: string; stack?: string } {
   if (err instanceof Error) return { error: err.message, stack: err.stack };
   return { error: String(err) };
