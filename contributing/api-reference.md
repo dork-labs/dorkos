@@ -474,11 +474,11 @@ This flag also controls the behavior of `POST /api/sessions/:id/messages`:
 
 Other relevant environment variables:
 
-| Variable               | Default              | Description                                                                                                                                                                           |
-| ---------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DORKOS_PORT`          | `4242` (dev: `6242`) | Express server port                                                                                                                                                                   |
-| `DORKOS_CORS_ORIGIN`   | (unset)              | Comma-separated origin allowlist. Unset, origins are resolved per request (loopback + live tunnel + same-origin). `*` is ignored with a warning on both the HTTP and WebSocket paths. |
-| `DORKOS_TASKS_ENABLED` | `true`               | `/api/tasks/*` routes (task definitions and runs)                                                                                                                                     |
+| Variable               | Default              | Description                                                                                                                                                                                                                                    |
+| ---------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DORKOS_PORT`          | `4242` (dev: `6242`) | Express server port                                                                                                                                                                                                                            |
+| `DORKOS_CORS_ORIGIN`   | (unset)              | Comma-separated origin allowlist, honoured by CORS, the WebSocket upgrade check, and Better Auth's CSRF allowlist. Unset, origins are resolved per request (loopback + live tunnel + same-origin). `*` is ignored with a warning on all three. |
+| `DORKOS_TASKS_ENABLED` | `true`               | `/api/tasks/*` routes (task definitions and runs)                                                                                                                                                                                              |
 
 ## Agent Endpoints
 

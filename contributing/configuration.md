@@ -1158,7 +1158,9 @@ This env var controls process-level Relay initialization and must be set before 
 
 Configures the `Access-Control-Allow-Origin` header on the Express server. When unset, defaults to localhost on `DORKOS_PORT` and `VITE_PORT` (code default 4241, dev convention 6241), plus the live tunnel origin and same-origin requests. Set a comma-separated list of origins to allow multiple production origins.
 
-`*` is **not** accepted: it is ignored with a warning on both the HTTP path (`buildCors`) and the WebSocket path (`isTrustedUpgradeOrigin`), and the server falls back to the per-request policy. Login is off by default, so a wildcard would let any page the operator visits read and write the whole API cross-origin.
+The list is also Better Auth's CSRF allowlist (`resolveAuthTrustedOrigins`, DOR-1744), so an origin you list here can sign in as well as call the API. Without that, a surface CORS answers gets an app where everything works except logging in, which is what the desktop dev renderer hit. What reaches the auth list is narrower in two ways: an entry containing `*` or `?` is dropped (Better Auth reads those as wildcard patterns; CORS reads them as literals), and so is an empty entry. `routes/extensions-approval.ts` still does not consult this variable at all, on purpose.
+
+`*` is **not** accepted: it is ignored with a warning on the HTTP path (`buildCors`), the WebSocket path (`isTrustedUpgradeOrigin`), and the auth allowlist, and the server falls back to the per-request policy. Login is off by default, so a wildcard would let any page the operator visits read and write the whole API cross-origin. All three surfaces read one parser (`parseConfiguredOrigins` in `apps/server/src/lib/trusted-origins.ts`) so the same value cannot mean different things on each.
 
 ```bash
 export DORKOS_CORS_ORIGIN=https://myapp.example.com

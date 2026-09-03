@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../env.js', () => ({ env: { DORKOS_PORT: 4242, NODE_ENV: 'development' } }));
 vi.mock('../../services/core/tunnel-manager.js', () => ({
@@ -6,6 +6,7 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
 }));
 
 import { env } from '../../env.js';
+import { tunnelManager } from '../../services/core/tunnel-manager.js';
 import {
   getLocalCockpitOrigin,
   getStaticLocalOrigins,
@@ -13,7 +14,10 @@ import {
   isLoopbackHost,
   isLoopbackHostHeader,
   isLoopbackPeer,
+  parseConfiguredOrigins,
   parseHostname,
+  resolveAuthTrustedOrigins,
+  resolveTrustedOrigins,
 } from '../trusted-origins.js';
 
 describe('parseHostname', () => {
@@ -171,7 +175,8 @@ describe('isLocalRequest', () => {
  *
  * It belongs here rather than in a route test because the function has at least
  * four consumers (the extension approve route, the CORS delegate, the host guard,
- * and Better Auth), so pinning it at the definition closes the row for all of them
+ * and Better Auth, through `resolveAuthTrustedOrigins`), so pinning it at the
+ * definition closes the row for all of them
  * at once. Pinning it downstream is how the DNS-rebinding bug in DOR-516 happened:
  * the route computed its expected origin from something the CALLER controlled
  * instead of from its own configuration.
@@ -278,5 +283,162 @@ describe('getStaticLocalOrigins', () => {
         hostname
       );
     }
+  });
+});
+
+/**
+ * The one parser every surface that honours `DORKOS_CORS_ORIGIN` reads.
+ *
+ * Pinned here because the drift it replaced was invisible from any single
+ * surface: a padded `" * "` read as the wildcard in `buildCors` and as a
+ * one-entry allowlist on the socket, so HTTP kept working while the app's own
+ * WebSocket went dark. Three copies of a split-and-trim can disagree; one
+ * cannot.
+ */
+describe('parseConfiguredOrigins', () => {
+  it.each<[string | undefined, string]>([
+    [undefined, 'unset'],
+    ['', 'empty'],
+    ['   ', 'whitespace'],
+    ['*', 'the wildcard'],
+    [' * ', 'a padded wildcard, which is the same typo on every surface'],
+  ])('returns no origins for %s (%s)', (value) => {
+    expect(parseConfiguredOrigins(value)).toEqual([]);
+  });
+
+  it('splits a comma-separated list and trims each entry', () => {
+    expect(parseConfiguredOrigins(' https://a.example , https://b.example ')).toEqual([
+      'https://a.example',
+      'https://b.example',
+    ]);
+  });
+
+  it('keeps a single origin as a one-entry list', () => {
+    expect(parseConfiguredOrigins('http://localhost:5174')).toEqual(['http://localhost:5174']);
+  });
+
+  it('passes empty entries through, so a list of nothing stays a list', () => {
+    // Not a nicety: `buildCors` and the upgrade check both branch on "did the
+    // operator configure a list at all", and dropping the empties here would
+    // silently turn `DORKOS_CORS_ORIGIN=","` from "allow nothing" into "fall
+    // back to the per-request policy" on both. The auth allowlist drops them
+    // itself, where an empty pattern would actually be dangerous.
+    expect(parseConfiguredOrigins(',')).toEqual(['', '']);
+  });
+});
+
+/**
+ * Better Auth's CSRF allowlist (DOR-1744).
+ *
+ * It is `resolveTrustedOrigins()` plus the operator's `DORKOS_CORS_ORIGIN` list,
+ * and it is a SEPARATE function on purpose: `routes/extensions-approval.ts`
+ * reads `resolveTrustedOrigins()` and documents that it does not consult
+ * `DORKOS_CORS_ORIGIN`, because "which sites may read my responses" is not
+ * "which page may record a person's security decision". Widening the shared
+ * function would have answered the second with the first, silently.
+ */
+describe('resolveAuthTrustedOrigins', () => {
+  const originalVitePort = process.env.VITE_PORT;
+  const originalCorsOrigin = process.env.DORKOS_CORS_ORIGIN;
+
+  /** Set or clear `DORKOS_CORS_ORIGIN` so the operator list is never ambient. */
+  function setCorsOrigin(value: string | undefined): void {
+    if (value === undefined) delete process.env.DORKOS_CORS_ORIGIN;
+    else process.env.DORKOS_CORS_ORIGIN = value;
+  }
+
+  beforeEach(() => {
+    process.env.VITE_PORT = '4241';
+    setCorsOrigin(undefined);
+    tunnelManager.status.url = null;
+  });
+
+  afterEach(() => {
+    if (originalVitePort === undefined) delete process.env.VITE_PORT;
+    else process.env.VITE_PORT = originalVitePort;
+    setCorsOrigin(originalCorsOrigin);
+    tunnelManager.status.url = null;
+  });
+
+  it('is exactly the static loopback origins when nothing else is configured', () => {
+    expect(resolveAuthTrustedOrigins()).toEqual(getStaticLocalOrigins());
+  });
+
+  it('includes the origins the operator listed in DORKOS_CORS_ORIGIN', () => {
+    // The bug: `pnpm dev:desktop` serves the renderer from electron-vite's own
+    // port and hands the server that origin as DORKOS_CORS_ORIGIN, so REST
+    // worked and every auth route answered "Invalid origin".
+    setCorsOrigin('http://localhost:5174');
+    expect(resolveAuthTrustedOrigins()).toEqual([
+      ...getStaticLocalOrigins(),
+      'http://localhost:5174',
+    ]);
+  });
+
+  it('includes every origin in a multi-entry list, trimmed', () => {
+    setCorsOrigin(' https://a.example , https://b.example ');
+    expect(resolveAuthTrustedOrigins()).toEqual([
+      ...getStaticLocalOrigins(),
+      'https://a.example',
+      'https://b.example',
+    ]);
+  });
+
+  it.each([['*'], [' * ']])('never folds in the wildcard %s', (value) => {
+    // A wildcard on THIS list is worse than on the CORS one: Better Auth matches
+    // its trusted origins as patterns, so a bare `*` would trust every origin
+    // there is. `buildCors` ignores it; so does this.
+    setCorsOrigin(value);
+    expect(resolveAuthTrustedOrigins()).toEqual(getStaticLocalOrigins());
+  });
+
+  it('drops an entry Better Auth would read as a wildcard PATTERN', () => {
+    // `https://*.example.com` matches nothing in CORS (a literal string
+    // comparison) and every subdomain here, which would make the auth list WIDER
+    // than the CORS list it mirrors. The literal beside it still passes.
+    setCorsOrigin('https://*.example.com,https://ok.example.com,https://who?.example.com');
+    expect(resolveAuthTrustedOrigins()).toEqual([
+      ...getStaticLocalOrigins(),
+      'https://ok.example.com',
+    ]);
+  });
+
+  it('drops empty entries, which would match everything on a non-http scheme', () => {
+    setCorsOrigin(',https://ok.example,');
+    expect(resolveAuthTrustedOrigins()).toEqual([...getStaticLocalOrigins(), 'https://ok.example']);
+  });
+
+  it('still includes the live tunnel origin', () => {
+    tunnelManager.status.url = 'https://abc123.ngrok-free.app';
+    expect(resolveAuthTrustedOrigins()).toContain('https://abc123.ngrok-free.app');
+  });
+
+  it('includes the tunnel origin AND the operator list together', () => {
+    // The operator list is added to the dynamic policy, never in place of it.
+    // Locking someone out of localhost for setting a production allowlist would
+    // be an outage, not a boundary.
+    tunnelManager.status.url = 'https://abc123.ngrok-free.app';
+    setCorsOrigin('https://dorkos.example.com');
+    expect(resolveAuthTrustedOrigins()).toEqual([
+      ...getStaticLocalOrigins(),
+      'https://abc123.ngrok-free.app',
+      'https://dorkos.example.com',
+    ]);
+  });
+
+  it('lists an origin once when the operator names one DorkOS already trusts', () => {
+    setCorsOrigin('http://localhost:4242');
+    const origins = resolveAuthTrustedOrigins();
+    expect(origins.filter((origin) => origin === 'http://localhost:4242')).toHaveLength(1);
+    expect(origins).toEqual(getStaticLocalOrigins());
+  });
+
+  it('leaves `resolveTrustedOrigins` itself untouched, so the approval route is unchanged', () => {
+    // The whole reason this is a second function. `extensions-approval.ts`
+    // refuses an operator-listed origin on purpose; if this assertion ever
+    // fails, that refusal has quietly stopped being true.
+    setCorsOrigin('https://dorkos.example.com');
+    expect(resolveTrustedOrigins()).not.toContain('https://dorkos.example.com');
+    expect(resolveTrustedOrigins()).toEqual(getStaticLocalOrigins());
   });
 });

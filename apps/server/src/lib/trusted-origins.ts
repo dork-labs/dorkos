@@ -232,6 +232,88 @@ export function resolveTrustedOrigins(): string[] {
   return tunnelOrigin ? [...origins, tunnelOrigin] : origins;
 }
 
+/**
+ * Parse `DORKOS_CORS_ORIGIN` — the operator's explicit allowlist — into the
+ * origins it names.
+ *
+ * The ONE parser every surface that honours the variable reads: `buildCors` in
+ * `app.ts`, branch 3 of {@link isTrustedUpgradeOrigin}, and
+ * {@link resolveAuthTrustedOrigins}. Two copies of a split-and-trim are how a
+ * padded `" * "` once meant the wildcard on one surface and a one-entry
+ * allowlist on the next, which blacked out the app's own socket while HTTP kept
+ * working. One parser cannot drift from itself.
+ *
+ * `*` parses to NO origins, on every surface. A wildcard is not an allowlist: it
+ * would hand the whole API to any page the operator visits, and login is off by
+ * default so nothing else would stop it. `buildCors` warns once when it sees
+ * one; this is the half that makes the warning true.
+ *
+ * Entries are trimmed but otherwise passed through verbatim, including empty
+ * ones, so a value that reaches CORS as a list of nothing still reads as a list
+ * of nothing everywhere else.
+ *
+ * @param value - The raw `DORKOS_CORS_ORIGIN` value, or `undefined` when unset.
+ * @returns The origins the operator named; `[]` when unset, blank, or `*`.
+ */
+export function parseConfiguredOrigins(value: string | undefined): string[] {
+  const trimmed = value?.trim();
+  if (!trimmed || trimmed === '*') return [];
+  return trimmed.split(',').map((entry) => entry.trim());
+}
+
+/**
+ * The origins Better Auth accepts on its CSRF allowlist: everything
+ * {@link resolveTrustedOrigins} trusts, plus the origins the operator listed in
+ * `DORKOS_CORS_ORIGIN`.
+ *
+ * ## Why the auth surface needs its own resolver
+ *
+ * Better Auth refuses any state-changing request whose `Origin` is not on this
+ * list, so a surface the CORS layer already answers but this list does not know
+ * gets an app where reading works, streaming works, and signing in is the one
+ * thing that fails. That was DOR-1744: `pnpm dev:desktop` serves the renderer
+ * from electron-vite's own port and hands the server that origin as
+ * `DORKOS_CORS_ORIGIN`, so every REST call worked and the owner-setup dialog
+ * died on `Invalid origin`, which blocks Remote Access setup outright. Branch 3
+ * of {@link isTrustedUpgradeOrigin} settled the identical question for
+ * WebSockets and for the same reason: a surface refusing what a request accepts
+ * is a silent outage rather than an error anyone can read.
+ *
+ * ## Why NOT fold it into `resolveTrustedOrigins` itself
+ *
+ * Because `routes/extensions-approval.ts` reads that function and documents, at
+ * length, that it does not consult `DORKOS_CORS_ORIGIN` on purpose: "which sites
+ * may read my responses" is a different question from "which page may record a
+ * person's security decision". Widening the shared function would answer the
+ * second with the first silently. So the widening lives here, where the only
+ * consumer is the CSRF check, and that deliberate exclusion stays intact.
+ *
+ * ## What is dropped, and why
+ *
+ * An entry Better Auth would read as a PATTERN rather than a literal origin.
+ * Its `matchesOriginPattern` treats `*` and `?` as wildcards, so
+ * `https://*.example.com` would trust every subdomain here while matching
+ * nothing at all in CORS — the auth list would end up WIDER than the CORS list
+ * it is meant to mirror. Blank entries go too: an origin nobody can send is
+ * noise, and Better Auth falls back to a `startsWith` comparison for a
+ * non-http(s) scheme, where an empty pattern matches everything.
+ *
+ * Resolved at call time (Better Auth takes a callback), so a tunnel that
+ * connects after boot is trusted without a restart, exactly as before.
+ */
+export function resolveAuthTrustedOrigins(): string[] {
+  const trusted = resolveTrustedOrigins();
+  // eslint-disable-next-line no-restricted-syntax -- DORKOS_CORS_ORIGIN is not in env.ts; read the same way app.ts reads it
+  const configured = parseConfiguredOrigins(process.env.DORKOS_CORS_ORIGIN).filter(
+    (origin) =>
+      origin.length > 0 &&
+      !origin.includes('*') &&
+      !origin.includes('?') &&
+      !trusted.includes(origin)
+  );
+  return [...trusted, ...configured];
+}
+
 /** The facts {@link isTrustedUpgradeOrigin} decides on, all resolved by the caller. */
 export interface UpgradeOriginFacts {
   /** The upgrade's `Origin` header. Absent for every non-browser client. */
@@ -437,18 +519,11 @@ export function isTrustedUpgradeOrigin(facts: UpgradeOriginFacts): boolean {
 
   // An explicit `DORKOS_CORS_ORIGIN` list makes branch 4 unreachable, as it does
   // in `buildCors` — which switches to a static allowlist and drops its own
-  // same-origin branch. Split and trimmed the same way, and the wildcard is
-  // treated as no list at all (see the doc). The value is trimmed FIRST, so a
-  // padded `" * "` means what the operator typed on both surfaces; without it,
-  // that typo became a one-entry list here while `buildCors` read it as the
-  // wildcard, which blacks out the app's own socket while HTTP keeps working.
-  const configured = facts.configuredOrigins?.trim();
-  if (configured && configured !== '*') {
-    return configured
-      .split(',')
-      .map((entry) => entry.trim())
-      .includes(origin);
-  }
+  // same-origin branch. Read through the shared {@link parseConfiguredOrigins},
+  // which is also what `buildCors` and Better Auth's allowlist read, so the same
+  // value cannot mean different things on the three surfaces that honour it.
+  const configured = parseConfiguredOrigins(facts.configuredOrigins);
+  if (configured.length > 0) return configured.includes(origin);
 
   // Same-origin as this request, gated on the host allowlist (see the doc).
   // A deployment that owns its network boundary additionally satisfies the
