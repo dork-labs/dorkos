@@ -16,15 +16,24 @@ const PULSE_ACTIVITY_CAP = 5;
  * split (Linear), this is a capped peek — "Open activity →" leads to the full,
  * filterable history stream at /activity. Collapses to a calm all-clear line when
  * there is nothing recent.
+ *
+ * **Except on /activity itself, where it draws nothing.** A teaser exists to
+ * point at a place you are not; beside the full feed it showed the same rows at
+ * the same timestamps, twice on one screen, and spent a quarter of the panel
+ * saying nothing (DOR-1759).
  */
 export function PulseActivitySection() {
   const navigate = useNavigate();
-  // "Open activity" navigates to /activity. Omit the link when it would be a
-  // no-op (already there) and in the router-less Obsidian embed, where there is
-  // no activity route to reach — an honest omission, not a dead-end button.
+  // "Open activity" navigates to /activity. Omitted in the router-less Obsidian
+  // embed, where there is no activity route to reach — an honest omission, not a
+  // dead-end button. On /activity the whole section is gone, so the link has no
+  // second way to be a no-op.
   const pathname = useSafePathname();
-  const showOpenActivity = !getPlatform().isEmbedded && pathname !== '/activity';
+  const showOpenActivity = !getPlatform().isEmbedded;
   const { groups, isLoading } = useDashboardActivity();
+
+  // Beside the feed itself, this section is the feed again. Say nothing.
+  if (pathname === '/activity') return null;
 
   // Flatten the time-bucketed groups back into one most-recent-first list and cap
   // it. The dashboard groups by Today/Yesterday/… for scanning; Pulse wants a
