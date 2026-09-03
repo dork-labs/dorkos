@@ -165,11 +165,11 @@ export function TaskRow({
 
   return (
     <>
-      <div className="rounded-lg border">
+      <div className="overflow-hidden rounded-lg border">
         <div
           role="button"
           tabIndex={0}
-          className="flex cursor-pointer items-center gap-3 p-3"
+          className="hover:bg-accent/50 focus-visible:bg-accent/50 flex cursor-pointer items-center gap-3 p-3 transition-colors"
           onClick={onToggleExpand}
           onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onToggleExpand()}
         >

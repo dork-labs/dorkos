@@ -107,7 +107,7 @@ export function SessionRowFull({
         style={borderState.pulse ? undefined : { borderLeftColor: borderState.color }}
         className={cn(
           'group relative rounded-lg border-l-2 transition-colors duration-150',
-          isActive && 'text-foreground'
+          isActive ? 'text-foreground' : 'hover:bg-secondary/60'
         )}
       >
         {isActive && (

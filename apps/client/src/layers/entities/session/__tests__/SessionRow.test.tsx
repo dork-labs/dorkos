@@ -703,6 +703,22 @@ describe('Session border indicator', () => {
     );
     expect(getBorderColor(container)).toBe('var(--color-blue-500)');
   });
+
+  it('gets a hover tint when not active, matching the compact row (batch 06, finding 6.1)', () => {
+    const { container } = renderRow(
+      <SessionRow variant="full" session={makeSession()} isActive={false} onClick={() => {}} />
+    );
+    const item = container.querySelector('[data-testid="session-row"]') as HTMLElement;
+    expect(item.className).toContain('hover:bg-secondary/60');
+  });
+
+  it('leaves the hover tint off the active row — its own background already answers', () => {
+    const { container } = renderRow(
+      <SessionRow variant="full" session={makeSession()} isActive={true} onClick={() => {}} />
+    );
+    const item = container.querySelector('[data-testid="session-row"]') as HTMLElement;
+    expect(item.className).not.toContain('hover:bg-secondary/60');
+  });
 });
 
 // ==========================================================================

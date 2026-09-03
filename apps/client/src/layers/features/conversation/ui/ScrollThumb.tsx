@@ -153,7 +153,7 @@ export function ScrollThumb({ scrollRef }: ScrollThumbProps) {
       <div
         ref={thumbRef}
         onPointerDown={handleThumbPointerDown}
-        className="bg-border absolute right-0.5 w-1.5 cursor-pointer rounded-full transition-opacity duration-200"
+        className="bg-border hover:bg-foreground/40 absolute right-0.5 w-1.5 cursor-pointer rounded-full transition-[opacity,background-color] duration-200"
         style={{ opacity: visible ? 1 : 0 }}
       />
     </div>
