@@ -14,7 +14,12 @@ import { readTerminalTabs, writeTerminalTabs } from '../lib/terminal-id-store';
 // Shared, hoist-safe capture of everything written to the stubbed xterm, so
 // tests can assert the `[reconnected]` cue and the TERMINAL_LIMIT copy — plus
 // a focus() call count for the keyboard-vs-pointer focus gate (DOR-229).
-const xterm = vi.hoisted(() => ({ writes: [] as string[], focusCalls: 0 }));
+const xterm = vi.hoisted(() => ({
+  writes: [] as string[],
+  focusCalls: 0,
+  /** Every option bag the stubbed `Terminal` was constructed with, in order. */
+  options: [] as { fontFamily?: string }[],
+}));
 
 // xterm touches canvas/WebGL, which jsdom cannot provide — stub the terminal,
 // its fit addon, the WebGL renderer, and the CSS side-effect import so instances
@@ -23,6 +28,9 @@ vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     cols = 80;
     rows = 24;
+    constructor(options: { fontFamily?: string }) {
+      xterm.options.push(options);
+    }
     loadAddon() {}
     open() {}
     onData() {}
@@ -80,6 +88,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   xterm.writes.length = 0;
   xterm.focusCalls = 0;
+  xterm.options.length = 0;
+  document.documentElement.style.removeProperty('--font-mono');
   resizeCallbacks.length = 0;
   sessionStorage.clear();
   useAppStore.setState({ selectedCwd: CWD, sessionId: null });
@@ -154,6 +164,27 @@ describe('TerminalPanel', () => {
     expect(screen.getByRole('tablist', { name: 'Open terminals' })).toBeInTheDocument();
     // …but never the container-owned header close button.
     expect(screen.queryByRole('button', { name: 'Close panel' })).not.toBeInTheDocument();
+  });
+
+  // The terminal already derives its background and foreground from the live
+  // theme. The font was the one thing it did not: a person who picked their own
+  // monospace font in Settings → Appearance saw it in every code block and
+  // message, and not here (DOR-1750).
+  it('draws in the app’s own --font-mono, so a font override reaches the terminal', async () => {
+    document.documentElement.style.setProperty('--font-mono', '"Zed Mono", monospace');
+    const transport = liveTransport();
+    renderTerminal(transport);
+
+    await waitFor(() => expect(xterm.options.length).toBeGreaterThan(0));
+    expect(xterm.options[0].fontFamily).toBe('"Zed Mono", monospace');
+  });
+
+  it('falls back to the app default font when nothing sets --font-mono', async () => {
+    const transport = liveTransport();
+    renderTerminal(transport);
+
+    await waitFor(() => expect(xterm.options.length).toBeGreaterThan(0));
+    expect(xterm.options[0].fontFamily).toContain('ui-monospace');
   });
 
   it('shows the empty state when no working directory is selected', () => {

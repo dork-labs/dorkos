@@ -132,8 +132,7 @@ export function TerminalInstance({
 
     const term = new Terminal({
       cursorBlink: true,
-      fontFamily:
-        'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
+      fontFamily: readTerminalFontFamily(container),
       fontSize: 13,
       theme: readTerminalTheme(container),
       allowProposedApi: true,
@@ -329,6 +328,22 @@ function readTerminalTheme(container: HTMLElement): { background: string; foregr
     background: styles.backgroundColor || '#1e1e1e',
     foreground: styles.color || '#d4d4d4',
   };
+}
+
+/**
+ * The font stack the terminal draws in — the app's own `--font-mono`, read the
+ * same way the theme above is, so a custom monospace font picked in Settings →
+ * Appearance reaches the terminal like it reaches every code block. xterm wants
+ * a resolved string at construction, so this cannot be a class name.
+ *
+ * The fallback is `index.css`'s own default, for the one case a computed style
+ * cannot answer: a container not yet in the document.
+ */
+function readTerminalFontFamily(container: HTMLElement): string {
+  const family = getComputedStyle(container).getPropertyValue('--font-mono').trim();
+  return (
+    family || 'ui-monospace, "SF Mono", "Cascadia Code", "Fira Code", Menlo, Consolas, monospace'
+  );
 }
 
 /** Extract a human-readable message from an unknown thrown value. */
