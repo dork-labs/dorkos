@@ -5,6 +5,4 @@ covers:
 
 ### Fixed
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
-
-- FilterBarSort's direction toggle gets a real tab stop (DOR-1749)
+- The sort-direction button next to filter dropdowns (on Team, Tasks, and Activity) now works with the keyboard, not just a mouse click.

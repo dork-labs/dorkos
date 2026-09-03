@@ -5,6 +5,4 @@ covers:
 
 ### Fixed
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
-
-- Bare focus: rings become focus-visible in five shared primitives (DOR-1749)
+- Badges, dialogs, and dropdowns no longer flash a focus ring when you click them with a mouse — it now only shows up for keyboard navigation, where it belongs.

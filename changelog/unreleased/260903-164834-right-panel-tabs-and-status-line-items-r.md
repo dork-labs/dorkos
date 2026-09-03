@@ -5,6 +5,4 @@ covers:
 
 ### Fixed
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
-
-- Right-panel tabs and status-line items regain their focus ring (DOR-1749)
+- Tabbing through the right panel's tabs and the composer's status line (runtime, model, plan, and permission chips) now shows the app's keyboard focus ring instead of the browser's default one.
