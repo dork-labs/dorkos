@@ -3,6 +3,7 @@ covers:
   - 'fix(client): Remote Access says what actually went wrong (DOR-1739)'
   - 'fix(client): a toggle that failed stops suppressing the next real toast (DOR-1739)'
   - 'fix(client): a reconnecting tunnel reads as on, not as off (DOR-1739)'
+  - 'fix(client): Remote Access errors survive review (DOR-1739)'
 ---
 
 ### Fixed
