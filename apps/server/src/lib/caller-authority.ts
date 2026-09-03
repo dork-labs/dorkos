@@ -1,6 +1,12 @@
 /**
- * Read, from one Express request, exactly the facts that decide whether a caller
- * is a person acting for themselves (spec `agent-trust` §3.3, DOR-467).
+ * Read, from one Express request, exactly the facts that decide WHO a caller is
+ * and WHERE it is calling from — the two questions several surfaces each have to
+ * answer the same way, kept in one place so they cannot answer them differently.
+ *
+ * Most of this file is the first question: whether a caller is a person acting
+ * for themselves (spec `agent-trust` §3.3, DOR-467). The second is
+ * {@link isLocalCaller} at the bottom, and it is here for the identical reason
+ * rather than a related one — read its own doc for what it rests on.
  *
  * There is one predicate for that question — `resolveDecisionAuthority` — and two
  * kinds of surface that need it: the endpoints that DECIDE an approval
@@ -62,6 +68,8 @@ import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import type { RequestUser } from '../services/core/auth/session-gate.js';
 import { configManager } from '../services/core/config-manager.js';
+import { env } from '../env.js';
+import { isLocalRequest } from './trusted-origins.js';
 
 /**
  * Build the {@link DecisionAuthorityRequest} for an incoming request.
@@ -244,4 +252,81 @@ export function requireOperatorCookie(
     requireStandingGrantsLogin(isLoginEnabled) ??
     requireOperatorCookieUnderLogin(res, 'standing permissions', isLoginEnabled)
   );
+}
+
+/**
+ * Whether this request came from a person at this machine.
+ *
+ * Three surfaces ask, and they are the reason this is one function rather than
+ * three: `routes/runtimes.ts` and `routes/mcp-oauth.ts` ask in order to REFUSE a
+ * caller that is not local, and `routes/config.ts` asks in order to REPORT the
+ * same fact to the app, so a person on their phone is told sign-in needs the
+ * computer DorkOS runs on instead of being shown a button that 403s (DOR-1655).
+ * The first two held byte-identical private copies before that third caller
+ * existed, which is the duplication this removes.
+ *
+ * A report computed even slightly differently from the refusal — `req.hostname`
+ * instead of the raw header, a forgotten `DORKOS_ALLOW_INSECURE_BIND` branch —
+ * would give the app a story the endpoint contradicts. One reader is what makes
+ * "the app is told exactly what the endpoint would do" true rather than merely
+ * intended.
+ *
+ * ## What the answer rests on
+ *
+ * Two independent signals, and BOTH must hold, because each one alone admits a
+ * different attacker (DOR-532 review):
+ *
+ * - **The TCP peer must be loopback.** This is the part a caller cannot write.
+ *   Header-only checks fell to a raw socket from another host on the LAN:
+ *   `Host: localhost` from peer `192.168.86.200` returned 200 and would have run
+ *   a Homebrew/winget install. `req.hostname` and `req.ip` are both derived
+ *   through `trust proxy` from `X-Forwarded-*` and are caller-controlled, so
+ *   neither is usable here; only `req.socket.remoteAddress` is.
+ * - **The `Host` header must name loopback.** This is the part that stops a
+ *   browser. Under DNS rebinding the peer genuinely IS `127.0.0.1` — the request
+ *   comes from the user's own browser — but the page was served from `evil.com`,
+ *   and the browser writes that into `Host` and cannot lie about it.
+ *
+ * Socket alone admits the rebound browser; `Host` alone admits the remote
+ * caller. Neither substitutes for the other. A live tunnel is the clearest case:
+ * its agent runs on this machine, so the peer IS loopback, and only the `Host`
+ * check (which sees the public tunnel domain) turns that traffic away. That same
+ * case is why the app has to be TOLD this answer — a phone reaching DorkOS over
+ * the tunnel looks local at the socket and is not.
+ *
+ * ## `DORKOS_ALLOW_INSECURE_BIND` relaxes this, as it does the host guard
+ *
+ * In a container the browser's request arrives from the bridge gateway rather
+ * than loopback, so requiring a loopback peer would refuse runtime provisioning
+ * for every Docker operator — a feature that works today, broken for the people
+ * the flag already exists to accommodate. The flag's established meaning is
+ * "this deployment owns its network boundary", and the official image sets it;
+ * `docs/self-hosting/docker.mdx` already states that anyone who reaches the
+ * published port has full control. Refusing here would not shrink that blast
+ * radius (such a caller can already run agent turns and open shells), so it buys
+ * nothing and costs a working feature. Honoring the flag is the same decision
+ * `middleware/host-guard.ts` makes, for the same reason.
+ *
+ * The flag reaches the REPORT too, and that is deliberate rather than
+ * incidental: under it the connect endpoints accept, so telling a Docker
+ * operator that sign-in needs some other computer would be false. The app is
+ * told what the endpoint would actually do, never a stricter story of its own.
+ *
+ * Unflagged — the default on a normal machine — both signals are still required.
+ *
+ * One residual remains and is inherent: a reverse proxy on this same host
+ * connects from `127.0.0.1`, so it is indistinguishable from a local caller at
+ * the socket layer (see `isLoopbackPeer` in `lib/trusted-origins.ts`). Its
+ * forwarded `Host` normally carries the public name and is refused, but an
+ * operator who rewrites `Host` to `localhost` re-opens it.
+ *
+ * @param req - The incoming request, read for its TCP peer and raw `Host`.
+ * @returns True when the request may reach an action reserved for this machine.
+ */
+export function isLocalCaller(req: Request): boolean {
+  return isLocalRequest({
+    peer: req.socket.remoteAddress,
+    hostHeader: req.headers.host,
+    allowInsecureBind: env.DORKOS_ALLOW_INSECURE_BIND,
+  });
 }

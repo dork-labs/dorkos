@@ -46,6 +46,7 @@ export { settingsForRuntime } from './lib/settings-for-runtime';
 export { listRuntimeTypes } from './lib/list-runtime-types';
 export { DependencyInstallHint } from './ui/DependencyInstallHint';
 export { CommandTransparencyNote } from './ui/CommandTransparencyNote';
+export { RemoteSigninNotice } from './ui/RemoteSigninNotice';
 export { RuntimeSetupDialog, RuntimeSetupPanel } from './ui/RuntimeSetupDialog';
 export type {
   RuntimeConnectSlot,

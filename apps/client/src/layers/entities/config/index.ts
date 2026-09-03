@@ -9,6 +9,7 @@
 
 export { configKeys, CONFIG_STALE_TIME_MS } from './api/query-keys';
 export { useConfig } from './model/use-config';
+export { useLocalCaller } from './model/use-local-caller';
 export { useEngagedWindow } from './model/use-engaged-window';
 export { useRoomTurnLimits } from './model/use-room-turn-limits';
 export type { RoomTurnLimits, RoomTurnLimitsState } from './model/use-room-turn-limits';
