@@ -8,6 +8,7 @@ covers:
   - 'fix(client): raw height overrides stop rendering smaller on mobile than desktop (DOR-1753)'
   - 'fix(client): activity filter chips grow their tap target without growing the pill (DOR-1753)'
   - 'fix(client): mobile right-panel sheet sizes to content for the two tabs measured short (DOR-1753)'
+  - 'fix(client): address adversarial review findings for touch-target audit batch 07 (DOR-1753)'
 ---
 
 ### Fixed
