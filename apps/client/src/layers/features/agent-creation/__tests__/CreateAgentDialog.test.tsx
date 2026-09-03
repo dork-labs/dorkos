@@ -944,7 +944,35 @@ describe('CreateAgentDialog', () => {
     expect(screen.getByTestId('arrival-create')).toBeDisabled();
   });
 
-  it('keeps the disclosure across "Customize first" instead of letting it be skipped', async () => {
+  it('carries the whole disclosure through "Customize first", not just the gate', async () => {
+    // The naming step creates the same agent from the same package, and is one
+    // click from the arrival card. A gate that travelled without the ledger let
+    // a person wait out the check and then create, having read nothing.
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.previewMarketplacePackage).mockResolvedValue(
+      previewWithSchedule({
+        name: 'overnight-sweep',
+        cron: '0 3 * * *',
+        permissionMode: 'acceptEdits',
+        startsEnabled: true,
+      }) as never
+    );
+    renderDialog(transport);
+    useAgentCreationStore.getState().openWithSeed(packageSeed());
+    await screen.findByTestId('arrival-package-schedules');
+
+    await user.click(screen.getByTestId('arrival-customize'));
+    await screen.findByLabelText('Name');
+
+    const row = await screen.findByTestId('naming-package-schedules');
+    expect(row).toHaveTextContent('overnight-sweep');
+    expect(row).toHaveTextContent('At 03:00 AM');
+    expect(row).toHaveTextContent('can change files on its own');
+    expect(screen.getByTestId('create-button')).toBeEnabled();
+  });
+
+  it('holds the naming step too while the check is still in flight', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
     // Never resolves: the check is still in flight for the whole test.
@@ -957,6 +985,20 @@ describe('CreateAgentDialog', () => {
 
     expect(screen.getByTestId('naming-checking-offer')).toBeInTheDocument();
     expect(screen.getByTestId('create-button')).toBeDisabled();
+  });
+
+  it('carries a failed check through to the naming step as well', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.previewMarketplacePackage).mockRejectedValue(new Error('offline'));
+    renderDialog(transport);
+    useAgentCreationStore.getState().openWithSeed(packageSeed());
+    await screen.findByTestId('arrival-offer-check-failed');
+
+    await user.click(screen.getByTestId('arrival-customize'));
+    await screen.findByLabelText('Name');
+
+    expect(await screen.findByTestId('naming-offer-check-failed')).toBeInTheDocument();
   });
 
   it('never asks the server about an offer that came from a Shape, not a package', async () => {

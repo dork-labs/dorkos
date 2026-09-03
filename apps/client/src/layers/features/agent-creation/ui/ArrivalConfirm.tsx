@@ -1,4 +1,4 @@
-import { AlertTriangle, CalendarClock, FolderOpen, Puzzle, Wrench } from 'lucide-react';
+import { CalendarClock, FolderOpen, Puzzle, Wrench } from 'lucide-react';
 import type { PreviewSchedule } from '@dorkos/shared/marketplace-schemas';
 import {
   Button,
@@ -8,8 +8,8 @@ import {
 } from '@/layers/shared/ui';
 import { isSingleEmoji } from '@/layers/shared/lib';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
-import { describePreviewSchedule } from '@/layers/entities/marketplace';
 import type { CreationSeed } from '@/layers/shared/model';
+import { OfferScheduleRows } from './OfferScheduleRows';
 
 /** Props for {@link ArrivalConfirm} — the M1 arrival confirm (one agent, no fork). */
 export interface ArrivalConfirmProps {
@@ -149,34 +149,11 @@ export function ArrivalConfirm({
             <dd>{schedule}</dd>
           </div>
         )}
-        {/* What the package itself schedules, in the same words the install
-            dialog uses for every other package type — including the permission
-            mode, which is the fact that decides how much an unattended job may
-            do. The modes here are already clamped server-side, so this says what
-            the job GETS rather than what its author asked for. */}
-        {packageSchedules.length > 0 && (
-          <div className="flex items-start gap-2" data-testid="arrival-package-schedules">
-            <CalendarClock className="text-muted-foreground mt-0.5 size-4 shrink-0" />
-            <dt className="text-muted-foreground shrink-0">Brings a schedule</dt>
-            <dd className="min-w-0 space-y-1">
-              {packageSchedules.map((job, index) => (
-                <p key={`${job.name}-${index}`}>
-                  <span className="font-medium">{job.name}</span> — {describePreviewSchedule(job)}
-                </p>
-              ))}
-            </dd>
-          </div>
-        )}
-        {offerCheckFailed && (
-          <div className="flex items-start gap-2" data-testid="arrival-offer-check-failed">
-            <AlertTriangle className="text-warning mt-0.5 size-4 shrink-0" />
-            <dt className="text-muted-foreground shrink-0">Not checked</dt>
-            <dd className="min-w-0">
-              DorkOS could not find out whether this agent brings work on a timer. Anything it does
-              bring still has to be approved before it runs.
-            </dd>
-          </div>
-        )}
+        <OfferScheduleRows
+          schedules={packageSchedules}
+          checkFailed={offerCheckFailed}
+          testIdPrefix="arrival"
+        />
         {capabilities && capabilities.length > 0 && (
           <div className="flex items-start gap-2">
             <Wrench className="text-muted-foreground mt-0.5 size-4 shrink-0" />
@@ -205,7 +182,8 @@ export function ArrivalConfirm({
             className="text-muted-foreground text-center text-xs"
             data-testid="arrival-checking-offer"
           >
-            Checking what this agent runs on its own…
+            Checking what this agent runs on its own. The first check downloads the package, so it
+            can take a moment.
           </p>
         )}
         <Button

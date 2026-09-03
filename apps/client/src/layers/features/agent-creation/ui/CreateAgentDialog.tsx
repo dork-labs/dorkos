@@ -290,6 +290,8 @@ export function CreateAgentDialog() {
                     onImportInstead={handleImport}
                     onCreate={handleCreate}
                     isCreating={createAgent.isPending}
+                    packageSchedules={offerSchedules.schedules}
+                    offerCheckFailed={offerSchedules.failed}
                     isCheckingOffer={offerSchedules.isChecking}
                   />
                 )}

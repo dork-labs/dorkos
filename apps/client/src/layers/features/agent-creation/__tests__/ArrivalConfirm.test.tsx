@@ -124,10 +124,28 @@ describe('ArrivalConfirm — what the package runs on its own (DOR-644)', () => 
     const row = screen.getByTestId('arrival-package-schedules');
     expect(row).toHaveTextContent('overnight-sweep');
     expect(row).toHaveTextContent('At 03:00 AM');
-    expect(row).toHaveTextContent('starts switched on');
+    expect(row).toHaveTextContent('waits for your approval before its first run');
     // The mode in plain words — the fact that decides how much an unattended
     // job may do, and the one nothing in this flow used to show at all.
     expect(row).toHaveTextContent('can change files on its own');
+  });
+
+  it('never claims a packaged job starts switched on, because none can', () => {
+    // `schedule.enabled: true` in a SKILL.md is the author's intent, not
+    // permission: every package schedule reaches its row through
+    // `upsertFromFile({ source: 'discovery' })`, and `resolveFileArmStatus`
+    // parks EVERY first sighting at `pending_approval`. Saying "starts switched
+    // on" would assert exactly the alarming thing that cannot happen — and would
+    // contradict this card's own "has to be approved before it runs" copy.
+    renderArrival(makeSeed(), {
+      packageSchedules: [
+        { name: 'eager', cron: '0 3 * * *', permissionMode: 'acceptEdits', startsEnabled: true },
+      ],
+    });
+
+    expect(screen.getByTestId('arrival-package-schedules')).not.toHaveTextContent(
+      'starts switched on'
+    );
   });
 
   it('says a job runs only when asked rather than inventing a cadence', () => {
@@ -139,7 +157,7 @@ describe('ArrivalConfirm — what the package runs on its own (DOR-644)', () => 
 
     const row = screen.getByTestId('arrival-package-schedules');
     expect(row).toHaveTextContent('Runs only when you ask');
-    expect(row).toHaveTextContent('starts switched off');
+    expect(row).toHaveTextContent('arrives switched off');
     expect(row).toHaveTextContent('can only read and plan');
   });
 

@@ -45,11 +45,23 @@ export interface OfferSchedules {
  */
 export function useOfferSchedules(seed: CreationSeed | null): OfferSchedules {
   const packageName = seed?.packageName ?? null;
-  const { data, isLoading, isError } = usePermissionPreview(packageName);
+  const { data, isError } = usePermissionPreview(packageName);
 
   return {
-    schedules: data?.preview.schedules ?? [],
-    isChecking: packageName !== null && isLoading,
+    // Optional through `preview` as well as `data`: a 200 whose body is missing
+    // the key would otherwise throw inside a hook, taking the dialog down rather
+    // than degrading to "not checked". `InstallConfirmationDialog` guards the
+    // same read the same way.
+    schedules: data?.preview?.schedules ?? [],
+    // Deliberately NOT `isLoading`. That is `isPending && isFetching`, and a
+    // query can be pending without fetching — TanStack pauses one while the
+    // persisted cache restores, and pauses it again on any future networkMode
+    // that can pause. Every paused state reported `isLoading: false` with no
+    // data, which opened the gate and rendered "nothing scheduled" for a package
+    // nobody had asked the server about yet. Asking whether the ANSWER is here
+    // cannot go wrong that way: no data and no error means we still do not know.
+    // (Same class of bug as `use-onboarding-restoring.test.tsx` pins.)
+    isChecking: packageName !== null && data === undefined && !isError,
     failed: packageName !== null && isError,
   };
 }
