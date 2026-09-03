@@ -6,6 +6,12 @@ import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import { isTerminalRunStatus, type TaskStore } from './task-store.js';
 import type { ActivityService } from '../activity/activity-service.js';
 import { isRelayEnabled } from '../relay/relay-state.js';
+import {
+  describeRelayRefusal,
+  RELAY_DISPATCH_OK,
+  type RelayDispatchVerdict,
+} from '../relay/task-dispatch/readiness.js';
+import { taskDispatchSubject } from '@dorkos/shared/relay-schemas';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { createRunOutcomeTracker } from '@dorkos/shared/run-outcome';
 import { createTaggedLogger, logError } from '../../lib/logger.js';
@@ -36,14 +42,15 @@ import { runtimeRegistry } from '../core/runtime-registry.js';
 
 /**
  * Whether the relay can run a turn on this runtime — asked per run, answered by
- * the relay itself (DOR-1614).
+ * the relay itself (DOR-1614, DOR-1636).
  *
  * This was the literal `'claude-code'`, and that was honest while the relay held
  * exactly one runtime: a codex or opencode run handed to the bus would have been
  * run by the wrong program or by none, so those went DIRECT. The relay now holds
  * every registered runtime and picks per message, so the question is no longer
- * "is it claude-code" but "is it one the relay actually has" — and only the relay
- * can answer that. `AdapterManager.hasAgentRuntime` is the production answer.
+ * "is it claude-code" but "can the bus actually run this, right now" — and only
+ * the relay can answer that. `AdapterManager.canRunTaskOnBus` is the production
+ * answer.
  *
  * A predicate rather than a set for two reasons. The relay is built after the
  * scheduler's collaborators and can be rebuilt or absent entirely, so the answer
@@ -51,9 +58,14 @@ import { runtimeRegistry } from '../core/runtime-registry.js';
  * is the whole question: the scheduler must not enumerate the relay's runtimes
  * or reach the runtimes themselves.
  *
+ * It takes the SUBJECT as well as the runtime because liveness is a property of
+ * the claim, not of the map: the relay answers about the exact subject this
+ * dispatch would publish to (see `task-dispatch/readiness.ts`).
+ *
  * @param runtimeType - The runtime this run resolved to.
+ * @param subject - The subject the dispatch would publish to.
  */
-export type RelayRuntimePredicate = (runtimeType: string) => boolean;
+export type RelayRuntimePredicate = (runtimeType: string, subject: string) => RelayDispatchVerdict;
 
 /**
  * What a caller that wired a relay but never said which runtimes it holds means:
@@ -67,9 +79,13 @@ export type RelayRuntimePredicate = (runtimeType: string) => boolean;
  * those tests stop testing the bus.
  *
  * Production never takes this default; `index.ts` passes
- * `AdapterManager.hasAgentRuntime`.
+ * `AdapterManager.canRunTaskOnBus`, which is the only answer that reads live
+ * adapter state.
  */
-const V1_RELAY_RUNTIME: RelayRuntimePredicate = (runtimeType) => runtimeType === 'claude-code';
+const V1_RELAY_RUNTIME: RelayRuntimePredicate = (runtimeType) =>
+  runtimeType === 'claude-code'
+    ? RELAY_DISPATCH_OK
+    : { deliverable: false, reason: 'runtime-not-on-bus' };
 
 export type { CancelRunOutcome } from './run-cancel.js';
 
@@ -275,7 +291,7 @@ export interface SchedulerDeps {
    * **Absent means the v1 answer — claude-code and nothing else** — so every
    * caller that wired a relay before this field existed routes exactly as it
    * did. See {@link V1_RELAY_RUNTIME}. Production (`index.ts`) passes
-   * `AdapterManager.hasAgentRuntime`.
+   * `AdapterManager.canRunTaskOnBus`.
    */
   relayHoldsRuntime?: RelayRuntimePredicate;
   /** Optional MeshCore instance for resolving agent CWDs from agent IDs. */
@@ -1029,42 +1045,29 @@ export class TaskSchedulerService {
           model: execution.settings.model ?? null,
         });
 
-        // **Only a runtime the relay can actually drive** (DOR-1614). This read
-        // `execution.runtimeType === 'claude-code'` while the relay held one
-        // runtime; it now asks the relay itself, so a codex or opencode task
-        // rides the bus exactly when there is something on the far side to run
-        // it, and goes DIRECT — same run, same row, same accounting, executed in
-        // this process — when there is not.
+        // **Only a runtime the relay can actually drive, right now** (DOR-1614,
+        // DOR-1636). This read `execution.runtimeType === 'claude-code'` while
+        // the relay held one runtime; it now asks the relay itself, so a codex
+        // or opencode task rides the bus exactly when there is something on the
+        // far side to run it, and goes DIRECT — same run, same row, same
+        // accounting, executed in this process — when there is not.
         //
         // The far side refuses a runtime it does not hold rather than
         // substituting one, so a false negative here costs nothing (the run
         // still happens, in process) while a false positive would strand it.
-        // That asymmetry is why production answers "no" for a relay that never
-        // built (`index.ts` reads the live `adapterManager` through `?? false`)
-        // rather than guessing. It is NOT why the predicate is optional — an
-        // absent predicate takes the v1 reading instead, see
-        // {@link V1_RELAY_RUNTIME}.
-        //
-        // KNOWN GAP, accepted as parity rather than fixed here. The production
-        // predicate answers from a map built in the AdapterManager constructor,
-        // so it says YES for a built-in adapter that is no longer LIVE: one
-        // disabled through `POST /api/relay/adapters/:id/disable`, or one whose
-        // non-awaited start pass failed. Such a run publishes to a subject
-        // nobody claims, comes back `deliveredTo === 0`, and fails with "No
-        // receiver for the scheduled run" — where the direct path would have run
-        // it. Widening the map widens that blast radius from claude-code to
-        // EVERY runtime the map holds. It is shipped anyway because the same
-        // failure already exists on main today for claude-code tasks in exactly
-        // those states, so this is parity, not a new class of breakage. A
-        // lowered relay turn ceiling produces the same "No receiver" shape for
-        // the same reason (DOR-791), and belongs to the same follow-up.
-        // Tightening the predicate to adapter LIVENESS — asking the registry
-        // (`registry.getBySubject`) whether something is actually subscribed,
-        // rather than asking the map whether a runtime was ever registered — is
-        // deliberate follow-up work, not an oversight.
-        const viaRelay =
-          isRelayEnabled() && this.relay !== null && this.relayHoldsRuntime(execution.runtimeType);
+        // That asymmetry is the whole shape of `assessTaskDispatch`, and it is
+        // why a relay that never built answers "no" rather than being guessed
+        // at. It is NOT why the predicate is optional — an absent predicate
+        // takes the v1 reading instead, see {@link V1_RELAY_RUNTIME}.
+        const relayVerdict = this.assessRelayDispatch(execution.runtimeType, task.id);
+        const viaRelay = relayVerdict.deliverable;
         span.setAttr(ATTR.TASK_DISPATCH, viaRelay ? 'relay' : 'direct');
+        if (!relayVerdict.deliverable) {
+          span.setAttr(ATTR.TASK_DISPATCH_REASON, relayVerdict.reason);
+          logger.debug(
+            `run ${run.id} runs in this process: ${describeRelayRefusal(relayVerdict.reason)}`
+          );
+        }
         try {
           const result = viaRelay
             ? await dispatchRunViaRelay(
@@ -1088,6 +1091,25 @@ export class TaskSchedulerService {
         }
       })
     );
+  }
+
+  /**
+   * Whether this run may ride the bus, and why not when it may not.
+   *
+   * Three questions, cheapest first, and each has its own answer because they
+   * send an operator to three different places: the relay feature switch, a
+   * server that failed to build one, and the state of the adapter itself
+   * (DOR-1636). Only the last is delegated — the scheduler owns the first two,
+   * since a relay it was never given cannot answer for itself.
+   *
+   * @param runtimeType - What this run resolved to run on.
+   * @param taskId - The task, which names the subject a dispatch would use.
+   * @returns The verdict the dispatch routes on.
+   */
+  private assessRelayDispatch(runtimeType: string, taskId: string): RelayDispatchVerdict {
+    if (!isRelayEnabled()) return { deliverable: false, reason: 'relay-off' };
+    if (this.relay === null) return { deliverable: false, reason: 'relay-not-built' };
+    return this.relayHoldsRuntime(runtimeType, taskDispatchSubject(taskId));
   }
 
   /**

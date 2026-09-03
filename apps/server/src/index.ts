@@ -128,6 +128,7 @@ import { createMcpOAuthRouter } from './routes/mcp-oauth.js';
 import type { McpCapabilityDeps } from './services/mesh/mcp-capability-deps.js';
 import { setRelayEnabled, setRelayInitError } from './services/relay/relay-state.js';
 import { AdapterManager } from './services/relay/adapter-manager.js';
+import { RELAY_NOT_BUILT } from './services/relay/task-dispatch/readiness.js';
 import {
   createInitiateConsentGate,
   createAgentSubjectResolver,
@@ -2470,7 +2471,8 @@ async function start() {
         firingReason: firing.reason,
       },
       relay: relayCore,
-      // Which runtimes the bus can actually run a turn on (DOR-1614). Read
+      // Whether the bus can actually run a turn on this runtime, asked per run
+      // (DOR-1614) and answered from LIVE adapter state (DOR-1636). Read
       // through the live `adapterManager` rather than captured at this line.
       // Phase C runs earlier than this in the current ordering, so capturing
       // would happen to work today — but the binding is deliberately late for
@@ -2478,9 +2480,11 @@ async function start() {
       // silently freeze a stale value, and Phase C RESETS `adapterManager` to
       // `undefined` when its init throws (see its catch), which a captured
       // reference could not see. A relay that never built, or that failed
-      // building, must answer "no" — which is what `?? false` says — and then
-      // every run executes in this process, as it always did with the relay off.
-      relayHoldsRuntime: (runtimeType) => adapterManager?.hasAgentRuntime(runtimeType) ?? false,
+      // building, must answer "no" — which is what `?? RELAY_NOT_BUILT` says —
+      // and then every run executes in this process, as it always did with the
+      // relay off.
+      relayHoldsRuntime: (runtimeType, subject) =>
+        adapterManager?.canRunTaskOnBus(runtimeType, subject) ?? RELAY_NOT_BUILT,
       meshCore,
       activityService,
       dorkHome,

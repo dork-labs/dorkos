@@ -63,6 +63,13 @@ export const ATTR = {
   TASK_TRIGGER: 'dorkos.task_trigger',
   /** Task dispatch path: `'relay'` | `'direct'`. */
   TASK_DISPATCH: 'dorkos.task_dispatch',
+  /**
+   * Why a run took the direct path — one of `RelayDispatchRefusal`'s five
+   * states (DOR-1636). Set only when the answer was `'direct'`, because
+   * "it rode the bus" has no reason to give. Coarse by construction: an
+   * enum member, never an id, a path or a subject.
+   */
+  TASK_DISPATCH_REASON: 'dorkos.task_dispatch_reason',
 
   // --- OpenTelemetry GenAI semantic-convention attributes (ADR 260713-143958
   // Phase 7). Set on the runtime-turn span so an operator's own trace/OTLP stack
