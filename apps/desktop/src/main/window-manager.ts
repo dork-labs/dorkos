@@ -8,6 +8,7 @@ import type {
 import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { forwardFullscreenState } from './fullscreen';
+import { applyPermissionPolicy } from './permissions';
 import { forwardFocusState } from './window-focus';
 import {
   attachWindowStatePersistence,
@@ -20,7 +21,9 @@ import {
  * How the cockpit's windows are made: their web preferences, what they are
  * allowed to navigate to, and what happens when the page asks for a second one.
  *
- * Geometry lives next door in `window-state.ts`.
+ * Geometry lives next door in `window-state.ts`; what a page may ask the machine
+ * for (camera, notifications, clipboard) lives in `permissions/`, applied per
+ * window below.
  */
 
 /** Minimum size below which the cockpit's layout stops working. */
@@ -315,6 +318,12 @@ export function createWindow(options: CreateWindowOptions = {}): BrowserWindow {
   });
 
   applyLinkPolicy(win, options);
+  // What the page may ask the machine for. Same live origin accessor the link
+  // guards use, so a permission and a link are judged by one answer to "is this
+  // our own page?" — including after a crash restart moves the server's port.
+  applyPermissionPolicy(win.webContents.session, (url) =>
+    isOwnOrigin(url, options.getRendererUrl?.())
+  );
   revealWhenReady(win, state);
   loadRenderer(win, options);
   forwardFullscreenState(win);

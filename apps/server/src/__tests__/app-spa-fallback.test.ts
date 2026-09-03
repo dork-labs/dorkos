@@ -174,4 +174,135 @@ describe('finalizeApp — production SPA fallback (Express 5)', () => {
       expect(res.headers['cache-control']).not.toContain('immutable');
     });
   });
+
+  /**
+   * Content-Security-Policy on the shell (DOR-560). The app renders
+   * agent-authored markdown, gen-UI widgets and marketplace card content on its
+   * own privileged origin, and before this header nothing stopped injected
+   * content from loading and running a script off the internet there.
+   *
+   * The shell document is the only response whose policy governs the app, so
+   * these tests pin it at BOTH the doors a person can arrive through — the
+   * static file and the deep-link fallback — and pin the two directives whose
+   * absence would make the header decorative.
+   *
+   * **This file is the only coverage the policy has.** The browser suite cannot
+   * see it: `apps/e2e` loads the app from the Vite dev server, which serves its
+   * own shell with no header at all (see the note on the Vite leg in
+   * `apps/e2e/playwright.config.ts`). So the exact header is asserted whole
+   * below rather than by substring — a reviewer changing a directive has to
+   * change a string that reads like the thing they are shipping, and the diff
+   * shows the policy, not a fragment of it.
+   */
+  describe('content security policy', () => {
+    /**
+     * The policy exactly as it goes out, byte for byte.
+     *
+     * Every directive here was verified against the real bundle in Chromium
+     * (DOR-560), and two are here because the obvious stricter value BREAKS a
+     * shipped surface, which no substring assertion would have recorded:
+     * `object-src` is not `'none'` because the PDF canvas is an `<object>`, and
+     * `connect-src` includes `http:` because the canvas asks the browser
+     * whether it can reach a plain-http dev server before framing one.
+     */
+    const EXPECTED_CSP = [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' data: https://fonts.gstatic.com",
+      "img-src 'self' data: blob: https: http:",
+      "media-src 'self' data: blob: https: http:",
+      "object-src 'self' data: https: http:",
+      "frame-src 'self' https: http:",
+      "worker-src 'self' blob:",
+      "connect-src 'self' data: https: http:",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+    ].join('; ');
+
+    /** The directives of the shell's CSP, as a name -> value lookup. */
+    async function policyFor(url: string): Promise<Record<string, string>> {
+      const res = await request(app).get(url);
+      expect(res.status).toBe(200);
+      const header = res.headers['content-security-policy'];
+      expect(header, `no CSP on ${url}`).toBeTruthy();
+      return Object.fromEntries(
+        header.split(';').map((directive: string) => {
+          const [name, ...values] = directive.trim().split(/\s+/);
+          return [name, values.join(' ')];
+        })
+      );
+    }
+
+    it('serves the whole policy with the shell at /', async () => {
+      const res = await request(app).get('/');
+      expect(res.headers['content-security-policy']).toBe(EXPECTED_CSP);
+    });
+
+    it('serves the whole policy with the shell requested by name', async () => {
+      const res = await request(app).get('/index.html');
+      expect(res.headers['content-security-policy']).toBe(EXPECTED_CSP);
+    });
+
+    it('serves the whole policy with the shell behind a deep link', async () => {
+      // A deep link is served by different Express machinery from `/` (the
+      // sendFile fallback, not the static hit), so the header has to be set in
+      // two places and is asserted in both.
+      const res = await request(app).get('/agents/deep/route');
+      expect(res.headers['content-security-policy']).toBe(EXPECTED_CSP);
+    });
+
+    it('allows no remote script host and no eval', async () => {
+      const scriptSrc = (await policyFor('/'))['script-src'];
+      // 'unsafe-inline' stays (the boot sentinel is inline, and a srcdoc frame
+      // inherits this policy) — what must never appear is a way to run code
+      // that arrived from somewhere else.
+      expect(scriptSrc).not.toContain('http');
+      expect(scriptSrc).not.toContain("'unsafe-eval'");
+      expect(scriptSrc.split(/\s+/)).toContain("'self'");
+    });
+
+    it('lets the browser probe a plain-http dev server before the canvas frames it', async () => {
+      // `canvas/lib/probe-direct.ts` fetches `http://localhost:<port>` and
+      // reads a rejection as "nothing is listening". A CSP rejection is
+      // indistinguishable from a refused connection there, so dropping `http:`
+      // makes every healthy dev server report as unreachable and never framed —
+      // measured in Chromium, and the reason this assertion is a behavior, not
+      // a directive.
+      const connectSrc = (await policyFor('/'))['connect-src'].split(/\s+/);
+      expect(connectSrc).toContain("'self'");
+      expect(connectSrc).toContain('http:');
+      expect(connectSrc).toContain('https:');
+    });
+
+    it('lets nobody frame the app', async () => {
+      expect((await policyFor('/'))['frame-ancestors']).toBe("'none'");
+    });
+
+    it('keeps the surfaces that render remote content working', async () => {
+      const policy = await policyFor('/');
+      // Agent markdown embeds remote images; the canvas browser frames pages;
+      // the 3D decoders and confetti build workers from blob URLs. Each of
+      // these was verified against the real bundle — a policy that broke them
+      // would be reverted, so it is pinned here rather than rediscovered.
+      expect(policy['img-src']).toContain('https:');
+      expect(policy['frame-src']).toContain('https:');
+      expect(policy['worker-src']).toContain('blob:');
+      expect(policy['style-src']).toContain('https://fonts.googleapis.com');
+      // The PDF canvas is an `<object>` pointing at a served file, a remote
+      // URL, or a data: URI — `object-src 'none'`, which every hardening guide
+      // reaches for first, would show a blank pane instead of the document.
+      expect(policy['object-src']).toContain("'self'");
+      expect(policy['object-src']).toContain('data:');
+    });
+
+    it('does not put the shell policy on hashed bundles', async () => {
+      // The policy belongs to the document, not its assets — a second copy on
+      // every bundle is bytes that enforce nothing.
+      const res = await request(app).get(`/assets/${HASHED_ASSET}`);
+      expect(res.status).toBe(200);
+      expect(res.headers['content-security-policy']).toBeUndefined();
+    });
+  });
 });
