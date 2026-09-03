@@ -4713,6 +4713,20 @@ export const ConfigPatchRequestSchema = z
 
 export type ConfigPatchRequest = z.infer<typeof ConfigPatchRequestSchema>;
 
+/**
+ * What `PATCH /api/config` answers with.
+ *
+ * `config` is the **curated snapshot**, not the stored file: the server projects
+ * its config through the disclosure allowlist before answering, so no credential
+ * ever rides a response body (DOR-1740). A stored secret shows up only as a
+ * boolean `…Configured` sibling — `tunnel.authtokenConfigured` rather than
+ * `tunnel.authtoken` — which says whether the write landed without saying what
+ * landed.
+ *
+ * The `config` shape below documents the fields callers read most often, not
+ * every field the snapshot carries; the authoritative list is
+ * `CONFIG_DISCLOSURE` in the server's `config-disclosure.ts`.
+ */
 export const ConfigPatchResponseSchema = z
   .object({
     success: z.boolean(),
@@ -4722,8 +4736,10 @@ export const ConfigPatchResponseSchema = z
       tunnel: z.object({
         enabled: z.boolean(),
         domain: z.string().nullable(),
-        authtoken: z.string().nullable(),
-        auth: z.string().nullable(),
+        /** Whether an ngrok authtoken is stored. The token itself never ships. */
+        authtokenConfigured: z.boolean(),
+        /** Whether tunnel sign-in credentials are stored. The value never ships. */
+        authConfigured: z.boolean(),
       }),
       ui: z.object({ theme: z.enum(['light', 'dark', 'system']) }),
     }),

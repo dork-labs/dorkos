@@ -73,17 +73,26 @@ export function resetClaudeAccountApplier(): void {
  * Use this for any surface that returns config to an untrusted or persisted
  * context — the operator `config_get` / `config_patch` MCP tool results, which
  * reach the tokenless external `/mcp` carve-out and land in the model's
- * tool-result context and the session transcript.
+ * tool-result context and the session transcript, and the body
+ * `PATCH /api/config` answers with (DOR-1740).
  *
  * It is an **allowlist**, not `getAll()` minus a denylist: only fields explicitly
  * classified `expose` in `config-disclosure.ts` are copied, so a newly added
  * config field is withheld until someone classifies it (and the drift guard fails
  * the build until they do). See that module for what is withheld and why.
  *
+ * @param config - The config to project. Defaults to the stored one, which is
+ *   what a plain read wants. A caller that has just WRITTEN passes the config its
+ *   write returned instead: that value is already in hand, and re-reading the
+ *   store would add a window in which something else moved — the same reason
+ *   {@link ConfigPatchResult} hands `before` back rather than letting the caller
+ *   go and fetch it.
  * @returns A fresh object safe to serialize to an untrusted caller.
  */
-export function sanitizedConfigSnapshot(): Record<string, unknown> {
-  return projectDisclosedConfig(configManager.getAll() as unknown as Record<string, unknown>);
+export function sanitizedConfigSnapshot(
+  config: UserConfig = configManager.getAll()
+): Record<string, unknown> {
+  return projectDisclosedConfig(config as unknown as Record<string, unknown>);
 }
 
 /**

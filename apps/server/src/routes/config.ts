@@ -23,7 +23,7 @@ import {
   USER_PROFILE_DEFAULTS,
 } from '@dorkos/shared/config-schema';
 import { describeExperiments } from '../services/core/config/describe-experiments.js';
-import { deepMerge } from '../services/core/operator/config-patch.js';
+import { deepMerge, sanitizedConfigSnapshot } from '../services/core/operator/config-patch.js';
 import {
   applyGuardedConfigWrite,
   logConfigWrite,
@@ -538,7 +538,30 @@ router.patch('/', (req, res) => {
 
     return res.json({
       success: true,
-      config: result.config,
+      // ## The answer is the CURATED snapshot, never the stored file (DOR-1740)
+      //
+      // This used to be `result.config` — everything on disk — so saving an ngrok
+      // token got that token straight back in the response body, and after that
+      // EVERY unrelated patch carried it too, along with `tunnel.auth`,
+      // `mcp.apiKey` and `cloud.instanceToken`.
+      //
+      // A response body is not a private channel. It is logged by whatever sits
+      // in front of the server, it lands in caches and devtools history, and when
+      // a person uses DorkOS from their phone it crosses the public internet over
+      // the built-in tunnel. That is the same reasoning that keeps the local MCP
+      // token off `GET /api/config` and behind a POST-only reveal (see that route
+      // below), and the reason the `config_patch` operator tool already answers
+      // with this projection rather than the raw config. This door was the one
+      // that never caught up, and it is the door the cockpit uses.
+      //
+      // The projection is an ALLOWLIST (`config-disclosure.ts`), so a
+      // secret-bearing field added tomorrow is withheld until somebody classifies
+      // it, rather than exposed until somebody remembers to hide it. Each
+      // withheld credential comes back as a boolean `…Configured` sibling, so a
+      // caller can still tell that the write landed without being told what
+      // landed — which `null` could not do, since it cannot be told apart from
+      // "nothing is set".
+      config: sanitizedConfigSnapshot(result.config),
       ...(result.warnings.length > 0 && { warnings: result.warnings }),
     });
   } catch (err) {

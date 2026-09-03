@@ -1514,6 +1514,8 @@ Content-Type: application/json
 }
 ```
 
+**The answer is the curated snapshot, not the stored file (DOR-1740).** `config` is the config the write returned, put through `sanitizedConfigSnapshot` — the same disclosure allowlist the `config_patch` operator tool already answers with (`services/core/operator/config-disclosure.ts`; what it withholds and why is listed in [the agent operator surface guide](agent-operator-surface.md)). It used to be the raw stored config, so a patch that saved `tunnel.authtoken` got the token straight back, and after that every unrelated patch carried it too, along with `tunnel.auth`, `mcp.apiKey` and `cloud.instanceToken`. A response body is logged by whatever fronts the server, cached by the browser, and over the built-in tunnel it crosses the public internet — the same reasoning that keeps the local MCP token off `GET /api/config` and behind a POST-only reveal. Each withheld credential comes back as a boolean `…Configured` sibling, so a caller can still tell that the write landed without being told what landed; `null` could not, because it cannot be told apart from "nothing is set". Nothing reads the body today — `Transport.updateConfig` returns `void` and the cockpit invalidates and refetches — so the projection costs no caller anything.
+
 **Success response (200):**
 
 ```json
@@ -1522,7 +1524,12 @@ Content-Type: application/json
   "config": {
     "version": 1,
     "server": { "port": 8080, "cwd": null, "boundary": null },
-    "tunnel": { "enabled": false, "domain": null, "authtoken": null, "auth": null },
+    "tunnel": {
+      "enabled": false,
+      "domain": null,
+      "authtokenConfigured": false,
+      "authConfigured": false
+    },
     "ui": { "theme": "dark" },
     "logging": { "level": "info", "maxLogSizeKb": 500, "maxLogFiles": 14 },
     "relay": { "enabled": true, "dataDir": null },
