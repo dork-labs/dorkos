@@ -467,6 +467,39 @@ function crashResult(crash: PumpCrash): SDKMessage {
 }
 
 /**
+ * The `result` for a process a STOP killed — the same synthetic close as
+ * {@link crashResult}, told honestly (DOR-1302).
+ *
+ * A Stop the CLI neither acks nor refuses escalates to `query.close()`
+ * (`session-store.ts`), and on the pump that close is a process death like any
+ * other: the same seam, the same abandoned window. What differs is who asked.
+ * Settling it as a crash reported the operator's own Stop as the agent falling
+ * over — a red frame in the durable record of a turn they ended on purpose.
+ *
+ * **It carries the terminal the CLI never got to send.** `'interrupted'` is
+ * DorkOS's own reason for exactly this case, the one the resume path already
+ * supplies from `message-sender.ts` when a close ends its stream with no
+ * `result` at all. The mapper reads it as an abort, ANDs it with DorkOS's stop
+ * record, and therefore drops the error frame and settles the turn
+ * `interrupted` — one rule for a stopped turn, wherever the turn was running.
+ *
+ * The subtype stays `error_during_execution`, matching what the CLI itself
+ * sends for a stop it DID ack: the turn did not finish, and the suppression
+ * above is what keeps that from reading as a failure.
+ */
+function stoppedResult(crash: PumpCrash): SDKMessage {
+  return {
+    type: 'result',
+    subtype: 'error_during_execution',
+    is_error: true,
+    terminal_reason: 'interrupted',
+    errors: ['This reply was stopped, so DorkOS ended the agent that was writing it.'],
+    uuid: `stopped-${crash.sessionId}`,
+    session_id: crash.sessionId,
+  } as unknown as SDKMessage;
+}
+
+/**
  * Whether this message is the CLI STARTING a turn, rather than bookkeeping it
  * emits between them.
  *
@@ -861,7 +894,8 @@ export class SessionTurnWindows {
   }
 
   /**
-   * The pump's `onCrash` seam: close the open window as a failure.
+   * The pump's `onCrash` seam: close the open window on the process's death —
+   * as a failure, or as the Stop that caused it ({@link stoppedResult}).
    *
    * Exactly one terminal, because the window's stream ends immediately behind
    * the synthesized `result` — a relaunch's output can only land in a new
@@ -899,7 +933,9 @@ export class SessionTurnWindows {
     this.current = undefined;
     // Whatever this window was waiting for, the process that owed it is gone.
     this.finalizeGrace(record);
-    record.channel.push(crashResult(crash));
+    // A death the operator ASKED for is not a crash to whoever is watching the
+    // turn, even though it reached this seam as one (DOR-1302).
+    record.channel.push(crash.stopRequested === true ? stoppedResult(crash) : crashResult(crash));
     record.channel.end();
     this.opts.onWindowClose?.(record.window);
   }
