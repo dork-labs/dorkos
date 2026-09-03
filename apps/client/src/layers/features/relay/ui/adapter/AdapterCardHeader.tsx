@@ -45,7 +45,10 @@ export function AdapterCardHeader({
     <>
       {/* Header row: status dot, icon, name, toggle, kebab */}
       <div className="flex items-start justify-between">
-        <div className="flex min-w-0 items-center gap-2.5">
+        {/* `gap-2` beside the `size-2` dot puts the icon at 8 + 8 = 16px, which
+            is the `pl-4` every line below the header lines up on. The gap was
+            10px and the indent an off-grid `pl-[18px]` chasing it. */}
+        <div className="flex min-w-0 items-center gap-2">
           <div className={statusDotClass} aria-hidden />
           <AdapterIcon
             iconId={manifest.iconId}
@@ -92,7 +95,7 @@ export function AdapterCardHeader({
       </div>
 
       {/* Subtitle: secondary name + category + deprecation badge */}
-      <div className="mt-1 flex items-center gap-2 pl-[18px]">
+      <div className="mt-1 flex items-center gap-2 pl-4">
         {secondaryName && <span className="text-muted-foreground text-xs">{secondaryName}</span>}
         {secondaryName && <span className="text-muted-foreground/50 text-xs">&middot;</span>}
         <Badge
