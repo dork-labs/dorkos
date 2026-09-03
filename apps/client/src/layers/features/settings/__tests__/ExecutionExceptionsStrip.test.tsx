@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-import type { ExecutionException } from '@/layers/entities/agent';
+import { resolveAgentVisual, type ExecutionException } from '@/layers/entities/agent';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { useProfileStore } from '@/layers/features/profile';
@@ -181,6 +181,23 @@ describe('ExecutionExceptionsStrip — an injected fleet (showcase path)', () =>
     );
     return transport;
   }
+
+  it('gives a colourless agent its hashed identity colour, not a flat grey', async () => {
+    // Every other AgentAvatar call site resolves through `resolveAgentVisual`,
+    // which hashes a stable colour from the agent's id so an agent that never
+    // picked one still reads as AN identity. This strip used to hand the disc a
+    // literal `#888` for that case (DOR-1750) — the one production site that
+    // skipped the resolver, for exactly the case it exists to answer.
+    const colourless = { ...exception('scout', false), agent: agent('scout', { color: undefined }) };
+    renderInjected([colourless]);
+
+    const disc = await screen.findByTestId('execution-exceptions-strip');
+    const avatar = disc.querySelector('[data-slot="agent-avatar"]') as HTMLElement;
+    const resolved = resolveAgentVisual(colourless.agent);
+
+    expect(resolved.color).not.toBe('#888');
+    expect(avatar.style.getPropertyValue('--identity-color')).toBe(resolved.color);
+  });
 
   it('draws what it was handed, over a fleet that deviates in nothing', async () => {
     // The transport's fleet is empty, so every row on screen came from the prop.
