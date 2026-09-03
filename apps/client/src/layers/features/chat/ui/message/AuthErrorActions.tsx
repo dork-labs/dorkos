@@ -22,7 +22,11 @@ import { runtimeSupportsLogin } from '@dorkos/shared/agent-runtime';
 import { Button } from '@/layers/shared/ui';
 import { useSettingsDeepLink } from '@/layers/shared/model';
 import { useLocalCaller } from '@/layers/entities/config';
-import { getLoginCopy, useDelegateRuntimeLogin } from '@/layers/entities/runtime';
+import {
+  getLoginCopy,
+  RemoteSigninNotice,
+  useDelegateRuntimeLogin,
+} from '@/layers/entities/runtime';
 import { useSessions } from '@/layers/entities/session';
 
 /** Settings tab that hosts runtime sign-in — where the quiet fallback link goes. */
@@ -155,17 +159,13 @@ function InlineSigninActions({
  * What the card offers a person who is NOT on the machine DorkOS runs on — a
  * phone over the tunnel, a laptop on the LAN, a browser behind a proxy.
  *
- * Everything that would fix a sign-in happens on that machine: the login spawns
- * the vendor CLI there, and pasting an API key writes to its credential store.
- * Both endpoints are loopback-only, so from here the Sign in button and the
- * "Use an API key instead" link were two doors onto the same 403. The link is
- * gone rather than kept and re-explained: naming a second thing that also
- * cannot work is noise, and "open DorkOS there" already covers whichever way
- * they choose to fix it.
- *
- * Retry stays, because it is the one action that DOES work from here, and it is
- * what the person wants the moment they have signed in on that computer. The
- * wording only promises it when it is actually on screen.
+ * The wording is {@link RemoteSigninNotice}'s, in `entities/runtime`, because
+ * Settings → Runtimes says the same thing on the same condition and the two
+ * must not drift. What belongs to chat is the surrounding decision: the Sign in
+ * button and the "Use an API key instead" link were two doors onto the same
+ * 403, and both are GONE here rather than kept and re-explained. Retry survives
+ * because it is the one action that still works from here — and it is exactly
+ * what the person wants the moment they have signed in on that computer.
  *
  * Runtime-generic on purpose: this is the same answer for Claude Code, Codex
  * and OpenCode, so it is decided before the runtime is even known.
@@ -173,18 +173,7 @@ function InlineSigninActions({
 function RemoteSigninGuidance({ onRetry }: { onRetry?: () => void }) {
   return (
     <div className="mt-3" data-testid="auth-error-remote-guidance">
-      <p className="text-muted-foreground text-sm">Signing in needs the computer DorkOS runs on.</p>
-      <p className="text-muted-foreground mt-1 text-sm">
-        {onRetry
-          ? 'Open DorkOS there and sign in, then press Retry here.'
-          : 'Open DorkOS there and sign in.'}
-      </p>
-      {onRetry && (
-        <Button variant="outline" size="sm" onClick={onRetry} className="mt-2 gap-1.5">
-          <RotateCcw className="size-3" />
-          Retry
-        </Button>
-      )}
+      <RemoteSigninNotice {...(onRetry ? { onRetry } : {})} />
     </div>
   );
 }

@@ -3532,7 +3532,7 @@ export const ServerConfigSchema = z
       .openapi({ description: 'Whether the server is running a development build' }),
     isLocalCaller: z.boolean().openapi({
       description:
-        'Whether THIS request reached DorkOS from the machine it runs on. The one field here that describes the caller rather than the server: it is answered per request by the same predicate that guards the loopback-only connect endpoints (`lib/local-caller.ts`), so a client can be told in advance what those endpoints would do instead of discovering it from a 403. False for a phone or any browser arriving over the tunnel, over the LAN, or through a reverse proxy. True whenever `DORKOS_ALLOW_INSECURE_BIND` is set, because under that flag those endpoints accept',
+        'Whether THIS request reached DorkOS from the machine it runs on. The one field here that describes the caller rather than the server: it is answered per request by the same predicate that guards the loopback-only connect endpoints (`lib/caller-authority.ts`), so a client can be told in advance what those endpoints would do instead of discovering it from a 403. False for a phone or any browser arriving over the tunnel, over the LAN, or through a reverse proxy. True whenever `DORKOS_ALLOW_INSECURE_BIND` is set, because under that flag those endpoints accept',
     }),
     dismissedUpgradeVersions: z
       .array(z.string())

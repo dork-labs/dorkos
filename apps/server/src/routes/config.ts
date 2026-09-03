@@ -106,6 +106,14 @@ router.get('/', async (req, res) => {
   const tunnel = tunnelManager.status;
   const latestVersion = await getLatestVersion();
 
+  // This response is per-CALLER, not per-server, since `isLocalCaller` below
+  // answers for the request that asked. A shared cache between DorkOS and a
+  // browser — a reverse proxy, or the tunnel provider's edge — could otherwise
+  // hand a phone the answer it computed for a request from the machine itself,
+  // which is the one wrong answer that matters: it puts back the Sign in button
+  // that can only 403.
+  res.setHeader('Cache-Control', 'no-store');
+
   res.json({
     version: SERVER_VERSION,
     latestVersion,

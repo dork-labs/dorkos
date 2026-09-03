@@ -54,7 +54,7 @@ const router = Router();
  * Reject non-local requests with 403; returns `true` when the request was
  * rejected.
  *
- * The locality question itself lives in `lib/local-caller.ts`, because
+ * The locality question itself lives in `lib/caller-authority.ts`, because
  * `GET /api/config` now asks it too — to TELL the app what this refusal would
  * do, so a phone over the tunnel is given honest guidance instead of a button
  * that 403s (DOR-1655). Read that module for what the answer rests on; the two

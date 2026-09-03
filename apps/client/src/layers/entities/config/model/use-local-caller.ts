@@ -9,7 +9,7 @@
  *
  * The answer is the SERVER's, not a guess assembled from `window.location`.
  * `GET /api/config` reports `isLocalCaller` per request, computed by the very
- * reader those endpoints refuse with (`apps/server/src/lib/local-caller.ts`), so
+ * reader those endpoints refuse with (`apps/server/src/lib/caller-authority.ts`), so
  * what this hook says and what the endpoint would do cannot drift apart. A
  * hostname check here would drift immediately: `localhost` names whichever
  * machine is looking at the page, a LAN address and a reverse-proxy name look
