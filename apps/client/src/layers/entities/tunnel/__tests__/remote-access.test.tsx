@@ -405,6 +405,34 @@ describe('a start against a tunnel that is already up converges (DOR-1738)', () 
     expect(result.current.remote.state).toBe('off');
     expect(result.current.remote.error).toBeNull();
   });
+
+  it('resumes the start once the owner account exists', async () => {
+    // The half of the exposure guard nothing asserted: routing somebody into
+    // owner setup is only useful if the thing they asked for happens
+    // afterwards. `onComplete` fires long after the render that armed it, so
+    // this also pins that the retry ref is tracking the LATEST start closure.
+    const { result, transport } = setup();
+    await settled(result);
+    vi.mocked(transport.startTunnel).mockRejectedValue(
+      Object.assign(new Error('Exposing DorkOS requires a login.'), {
+        status: 409,
+        code: 'AUTH_REQUIRED_FOR_EXPOSURE',
+      })
+    );
+    await act(async () => {
+      await result.current.actions.start();
+    });
+    expect(vi.mocked(transport.startTunnel)).toHaveBeenCalledTimes(1);
+
+    vi.mocked(transport.startTunnel).mockResolvedValue({ url: 'https://abc.ngrok.app' });
+    await act(async () => {
+      getOwnerSetupRequest()?.onComplete();
+    });
+
+    await waitFor(() => expect(vi.mocked(transport.startTunnel)).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.remote.state).toBe('connected'));
+    expect(result.current.remote.url).toBe('https://abc.ngrok.app');
+  });
 });
 
 describe('stopping', () => {
