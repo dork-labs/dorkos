@@ -82,6 +82,13 @@ export {
   PALETTE_QUICK_ACTIONS,
   PALETTE_DEV_ACTIONS,
 } from './model/palette-contributions';
+// The rows that exist only while remote access is in a state where they would
+// do something — derived per render rather than registered at startup.
+export {
+  remoteAccessPaletteItems,
+  useRemoteAccessPaletteItems,
+  REMOTE_ACCESS_PALETTE_ACTIONS,
+} from './model/palette-remote-access';
 
 /** @internal Exported for testing only. */
 export { usePreviewData } from './model/use-preview-data';

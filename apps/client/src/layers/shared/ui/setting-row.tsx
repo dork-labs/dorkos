@@ -6,8 +6,15 @@ import { Switch } from './switch';
 interface SettingRowProps {
   /** Label content displayed on the left. Accepts strings or React nodes (e.g., icon + text). */
   label: React.ReactNode;
-  /** Description text below the label. */
-  description: string;
+  /**
+   * Description below the label.
+   *
+   * A node rather than a string, because a description sometimes has to carry
+   * the way out of what it describes — the Control Center's Remote-access row
+   * pairs a failure with a "Fix…" link, and splitting that across two slots
+   * would put the link somewhere it does not read as part of the sentence.
+   */
+  description: React.ReactNode;
   /** Control element (Switch, Button, Select, etc.) rendered on the right (horizontal) or below (vertical). */
   children: React.ReactNode;
   /**
@@ -57,8 +64,8 @@ function SettingRow({
 interface SwitchSettingRowProps {
   /** Label text. */
   label: string;
-  /** Description text below the label. */
-  description: string;
+  /** Description below the label. See {@link SettingRowProps.description}. */
+  description: React.ReactNode;
   /** Switch checked state. */
   checked: boolean;
   /** Switch onCheckedChange handler. */

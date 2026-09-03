@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { renderHook, cleanup } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import { renderHook, cleanup, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
+import type { ServerConfig } from '@dorkos/shared/types';
+import type { Transport } from '@dorkos/shared/transport';
+import { createMockTransport } from '@dorkos/test-utils';
 
 // Partially mock @/layers/shared/lib — preserve all real exports, override createChannel only
 vi.mock('@/layers/shared/lib', async (importOriginal) => {
@@ -27,20 +30,31 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 });
 
 import { useTunnelSync, broadcastTunnelChange } from '../model/use-tunnel-sync';
+import { resetRemoteAccessStore, useRemoteAccessStore } from '../model/remote-access-store';
 import { createChannel } from '@/layers/shared/lib';
-import { useEventSubscription } from '@/layers/shared/model';
+import { useEventSubscription, TransportProvider } from '@/layers/shared/model';
+
+beforeEach(() => {
+  resetRemoteAccessStore();
+});
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
 });
 
-function createWrapper() {
+/** The tunnel block a config read answers with, or none at all. */
+function createWrapper(tunnel?: Record<string, unknown>) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  const transport = createMockTransport({
+    getConfig: vi.fn(() => Promise.resolve({ tunnel } as unknown as ServerConfig)),
+  }) as Transport;
   return ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={transport}>{children}</TransportProvider>
+    </QueryClientProvider>
   );
 }
 
@@ -79,6 +93,24 @@ describe('useTunnelSync', () => {
 
     expect(mockUnsub).toHaveBeenCalled();
     expect(mockClose).toHaveBeenCalled();
+  });
+
+  it('reduces the server report into the shared store, so ⌘K can read it', async () => {
+    // The shell's guarantee (DOR-1743). `useRemoteAccessSnapshot` has no query
+    // of its own, so without this its answer would depend on whether some other
+    // component happened to be mounted on the current route.
+    renderHook(() => useTunnelSync(), {
+      wrapper: createWrapper({
+        connected: true,
+        isRunning: true,
+        url: 'https://abc.ngrok.app',
+        tokenConfigured: true,
+      }),
+    });
+
+    await waitFor(() => expect(useRemoteAccessStore.getState().state).toBe('connected'));
+    expect(useRemoteAccessStore.getState().url).toBe('https://abc.ngrok.app');
+    expect(useRemoteAccessStore.getState().tokenConfigured).toBe(true);
   });
 });
 

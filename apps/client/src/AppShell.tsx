@@ -39,6 +39,7 @@ import { useBindingsSync } from '@/layers/entities/binding';
 import { useRelayAdaptersSync } from '@/layers/entities/relay';
 import { useUnattendedAutonomySync } from '@/layers/entities/unattended-autonomy';
 import { useTasksSync } from '@/layers/entities/tasks';
+import { useTunnelSync, useRemoteAccessAnnouncer } from '@/layers/entities/tunnel';
 import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { DialogHost, FeedbackDialogHost } from '@/layers/widgets/app-layout';
 import { AppBannerSlot, useAppBanners } from '@/layers/widgets/app-banner';
@@ -75,6 +76,7 @@ import {
 } from '@/layers/shared/ui';
 import { MobileTabsLayout, useMobilePanelStore } from '@/layers/widgets/mobile-tabs';
 import { ControlCenter, useControlCenterShortcut } from '@/layers/widgets/control-center';
+import { RemoteAccessBeacon } from '@/layers/widgets/remote-access';
 import {
   AppTabBar,
   APP_TAB_PANEL_ID,
@@ -316,6 +318,15 @@ export function AppShell() {
   // Live task list (DOR-1380): a schedule an agent proposes via MCP parks at
   // pending_approval and otherwise sits invisible until the next reload.
   useTasksSync();
+  // Remote access, live and audible — the two halves that must happen exactly
+  // once for the whole app (DOR-1743). `useTunnelSync` refreshes the config
+  // read from other tabs and from the server's `tunnel_status` stream, which
+  // nothing had been listening to since the sidebar footer's globe went;
+  // `useRemoteAccessAnnouncer` says something when a tunnel drops or comes back
+  // without you. Both were previously reachable only through the Remote Access
+  // dialog's own hook, which is a dialog and not a place for app-wide plumbing.
+  useTunnelSync();
+  useRemoteAccessAnnouncer();
   // Make the Pulse Activity teaser live off `/api/events`: invalidate the
   // activity caches when an activity-generating broadcast (relay traffic/topology,
   // extension reloads) fires, coalescing bursts. Attention's live source
@@ -740,6 +751,12 @@ export function AppShell() {
                             D7). Outside the cross-fade like the cluster, so it
                             never blinks on navigation. */}
                       <ControlCenter />
+                      {/* The remote-access beacon, beside it and on the same
+                            terms — present on every route, outside the
+                            cross-fade — but only while a tunnel is actually
+                            starting, up, or re-establishing itself. With remote
+                            access off it draws nothing at all (DOR-1743). */}
+                      <RemoteAccessBeacon />
                       {/* ── Search · inbox · right-panel toggle. Outside the
                             cross-fade and after it, which is both halves of
                             I1: they stay mounted so the corner never blinks on

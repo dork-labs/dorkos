@@ -1,6 +1,6 @@
 import { Globe, MessageSquare, Moon, MessagesSquare } from 'lucide-react';
+import { useAppStore } from '@/layers/shared/model';
 import type { PromoDefinition } from './promo-types';
-import { TunnelDialog } from '@/layers/features/settings';
 import { RelayAdaptersDialog } from '../ui/dialogs/RelayAdaptersDialog';
 import { SchedulesDialog } from '../ui/dialogs/SchedulesDialog';
 import { AgentChatDialog } from '../ui/dialogs/AgentChatDialog';
@@ -57,7 +57,13 @@ export const PROMO_REGISTRY: PromoDefinition[] = [
       shortDescription: 'Access your agents from anywhere',
       ctaLabel: 'Learn more',
     },
-    action: { type: 'open-dialog', component: TunnelDialog },
+    // Flips the shared flag rather than mounting a `<TunnelDialog>` of its own
+    // (DOR-1743). The card used to carry a second instance, so pressing it put
+    // a duplicate of the app's Remote Access dialog on screen.
+    action: {
+      type: 'action',
+      handler: () => useAppStore.getState().setRemoteAccessOpen(true),
+    },
   },
   {
     id: 'relay-adapters',

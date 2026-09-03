@@ -257,6 +257,15 @@ vi.mock('@/layers/entities/tasks', async (importOriginal) => {
   };
 });
 
+// Remote access rides the same stream (DOR-1743): `useTunnelSync` refreshes the
+// config read on a `tunnel_status` event, and `useRemoteAccessAnnouncer` reads
+// that config. No-op'd here for the same reason as the *Sync hooks above.
+vi.mock('@/layers/entities/tunnel', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/tunnel')>()),
+  useTunnelSync: () => {},
+  useRemoteAccessAnnouncer: () => {},
+}));
+
 vi.mock('react-resizable-panels', () => ({
   Panel: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   PanelGroup: ({ children }: React.PropsWithChildren) => <div>{children}</div>,

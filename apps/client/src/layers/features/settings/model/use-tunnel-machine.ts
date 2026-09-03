@@ -1,36 +1,27 @@
 /**
- * Owns the Remote Access dialog state machine — local state declarations,
- * server-config sync, latency measurement, and disconnect/reconnect toasts.
+ * The Remote Access dialog's own state — what nothing outside the dialog needs.
  *
- * ## The one rule this hook exists to keep (DOR-1739)
+ * ## What moved out, and why (DOR-1743)
  *
- * There are two things that can move the tunnel state, and they are not peers:
- * an ACTION the person took (`use-tunnel-actions.ts`), and a REPORT from the
- * server about what the tunnel is actually doing. An action's outcome is the
- * newest fact in the room, so nothing here may overwrite it — a sync effect
- * gets to speak only when the server's report has genuinely CHANGED.
+ * This hook used to own remote access outright: the lifecycle, the URL, the
+ * failure, the server sync and the status toasts. That was fine while the
+ * dialog was the only way to see or change any of it. It is not any more —
+ * the Control Center has a Remote-access row and the top bar has a beacon —
+ * and three copies of a `useState` machine would each start a tunnel the other
+ * two did not know about. All of that now lives in `@/layers/entities/tunnel`
+ * and is read here through {@link useRemoteAccess}.
  *
- * This used to be the other way round, with catastrophic results. The sync
- * effect listed `state` in its own dependencies and wrote `state`, so every
- * local transition re-ran it and it pushed the state straight back to `off`:
- * a failed start rendered the error view for a single paint before erasing it,
- * so the "Try again" button was unreachable and every ngrok failure read as
- * "the switch did nothing" — the exact symptom reported in #1458. A SUCCESSFUL
- * start flickered connected → ready → connected for the same reason, while it
- * waited for the config refetch to catch up.
+ * What is left is genuinely the dialog's: which view it has navigated to, the
+ * token and domain fields, the errors those two writes can produce, and the
+ * latency probe that only runs while the dialog is on screen.
  *
  * @module features/settings/model/use-tunnel-machine
  */
 
-import { useState, useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
-import { toast } from 'sonner';
-import { useConfig } from '@/layers/entities/config';
+import { useState, useEffect } from 'react';
+import { useRemoteAccess, type TunnelReport, type TunnelState } from '@/layers/entities/tunnel';
 import {
-  type TunnelState,
   type ViewState,
-  type ReportedStatus,
-  type TunnelReport,
-  readTunnelReport,
   LATENCY_INTERVAL_MS,
   LATENCY_PROBE_TIMEOUT_MS,
   deriveViewState,
@@ -38,18 +29,23 @@ import {
 
 /** Aggregated state + setters returned by {@link useTunnelMachine}. */
 export interface TunnelMachine {
-  // State
+  // --- Shared with every other remote-access surface (read-only here) ---
+  /** Where remote access is, as the app understands it. */
   state: TunnelState;
-  /**
-   * The raw React setter, updater form included — a caller that only wants to
-   * undo an `error` needs to read the current state to do it, and reading it off
-   * this object instead would be a second source of truth for the same value.
-   */
-  setState: Dispatch<SetStateAction<TunnelState>>;
+  /** The public URL, or `null`. */
   url: string | null;
-  setUrl: (u: string | null) => void;
+  /** Why the last start or stop failed, or `null`. */
   error: string | null;
-  setError: (e: string | null) => void;
+  /**
+   * The server's tunnel block — the DTO as `GET /api/config` reports it, or
+   * `undefined` while that read is in flight.
+   */
+  tunnel: TunnelReport | undefined;
+  tokenConfigured: boolean;
+  isTransitioning: boolean;
+  isChecked: boolean;
+
+  // --- The dialog's own ---
   showSetup: boolean;
   setShowSetup: (v: boolean) => void;
   authToken: string;
@@ -62,59 +58,20 @@ export interface TunnelMachine {
   setDomain: (d: string) => void;
   domainError: string | null;
   setDomainError: (e: string | null) => void;
-  /**
-   * Arm or disarm the toast suppression around a change the person asked for.
-   *
-   * Armed before the toggle acts, so a status change it causes is not announced
-   * back to them as news; disarmed again if the toggle FAILED, because then no
-   * transition is coming and a flag left armed would silently eat the next
-   * genuine one.
-   */
-  setUserInitiated: (v: boolean) => void;
   latencyMs: number | null;
-  // Derived
-  /**
-   * The server's tunnel block as this dialog reads it — the DTO plus the
-   * `isRunning` DOR-1738 adds, so a consumer sees the same shape the derivation
-   * does rather than a narrower one that hides the field.
-   */
-  tunnel: TunnelReport | undefined;
-  tokenConfigured: boolean;
   viewState: ViewState;
-  isTransitioning: boolean;
-  isChecked: boolean;
 }
 
 /**
- * Owns the Remote Access dialog state machine — local state, server-config sync,
- * stuck-state recovery, latency measurement, and disconnect/reconnect toasts.
+ * The Remote Access dialog's own state — navigation, its two fields, and the
+ * latency probe.
  *
  * @param open - Whether the parent dialog is open (gates the latency interval)
  */
 export function useTunnelMachine({ open }: { open: boolean }): TunnelMachine {
-  // The shared config read, not a second one of its own. An observer that spells
-  // this query by hand also picks its own `staleTime`, and observers on one key
-  // do not average theirs — the tightest wins and the rest describe a behaviour
-  // nobody gets. This hook asked for 5 minutes and was silently on the 30s every
-  // other reader sets (`CONFIG_STALE_TIME_MS`).
-  const { data: serverConfig } = useConfig();
+  const remote = useRemoteAccess();
+  const tunnel = remote.tunnel;
 
-  const tunnel = serverConfig?.tunnel;
-  // Whether `GET /api/config` has ANSWERED yet, which is not the same question
-  // as whether it reported a tunnel. Before it answers, `readTunnelReport`
-  // reads `undefined` as `off` — a placeholder, not a fact — and the toast
-  // effect below must not mistake the first real answer for a change away from
-  // it.
-  const hasServerReport = serverConfig !== undefined;
-  // Read once, at render, into two primitives. The effects below depend on
-  // THESE rather than on `tunnel` — an object identity that changes on every
-  // refetch — so each one re-runs exactly when the answer changed and not when
-  // the query merely spoke again.
-  const { status: reportedStatus, url: reportedUrl } = readTunnelReport(tunnel);
-
-  const [state, setState] = useState<TunnelState>('off');
-  const [url, setUrl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [showSetup, setShowSetup] = useState(false);
   const [authToken, setAuthToken] = useState('');
   const [tokenError, setTokenError] = useState<string | null>(null);
@@ -122,46 +79,6 @@ export function useTunnelMachine({ open }: { open: boolean }): TunnelMachine {
   const [domain, setDomain] = useState('');
   const [domainError, setDomainError] = useState<string | null>(null);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
-
-  const prevStatusRef = useRef<ReportedStatus | undefined>(undefined);
-  // The last thing the SERVER said, so this hook can tell a fresh report from a
-  // re-render. Without it there is no way to distinguish "the tunnel dropped"
-  // from "the config query handed back the same answer again".
-  const lastReportRef = useRef<{ status: ReportedStatus; url: string | null } | null>(null);
-  // Set by the toggle before it acts, so the connect/disconnect toasts stay
-  // quiet for the transition the person just asked for.
-  const userInitiatedRef = useRef(false);
-
-  // Sync state from server config — only when that config actually changed.
-  //
-  // The change check IS the fix. `state` is deliberately absent from the deps
-  // and from the body: a local transition must not be able to re-run this, and
-  // an effect that cannot re-run on local state has nothing to guard against.
-  // The old `state !== 'starting' && state !== 'stopping'` condition was trying
-  // to do this job by naming the two states it had noticed being clobbered; it
-  // could not name `error` or a freshly-set `connected`, and those were the two
-  // that mattered.
-  /* eslint-disable react-hooks/set-state-in-effect -- sync local UI state from a changed server tunnel report */
-  useEffect(() => {
-    const previous = lastReportRef.current;
-    if (previous && previous.status === reportedStatus && previous.url === reportedUrl) return;
-    lastReportRef.current = { status: reportedStatus, url: reportedUrl };
-
-    if (reportedStatus === 'on' && reportedUrl) {
-      setState('connected');
-      setUrl(reportedUrl);
-    } else if (reportedStatus === 'reconnecting') {
-      // The listener is still open, so the URL the person copied is still the
-      // right one and is kept. Clearing it would empty the dialog over a tunnel
-      // that is about to answer again.
-      setState('reconnecting');
-      if (reportedUrl) setUrl(reportedUrl);
-    } else {
-      setState('off');
-      setUrl(null);
-    }
-  }, [reportedStatus, reportedUrl]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing local domain input from server config
@@ -174,72 +91,27 @@ export function useTunnelMachine({ open }: { open: boolean }): TunnelMachine {
     if (tunnel?.tokenConfigured) setShowSetup(false);
   }, [tunnel?.tokenConfigured]);
 
-  // Every error this dialog can show is cleared when it is next opened.
+  // The two FIELD errors are cleared when the dialog is next opened.
   //
   // Not housekeeping — the dialog is mounted for the life of the app.
-  // `DialogHost` renders every contribution unconditionally, `SettingsDialog`
-  // renders `TunnelDialog` as a sibling of its own tabs, and `open` only ever
-  // gates what is PAINTED. So this hook's state is never torn down: without
-  // this, a start that failed once left the error view, and the failure that
-  // caused it, sitting there for every later visit in that browser session.
-  /* eslint-disable react-hooks/set-state-in-effect -- reset transient errors on the dialog's opening edge */
+  // `DialogHost` renders every contribution unconditionally and `open` only
+  // ever gates what is PAINTED, so this hook's state is never torn down:
+  // without this, a refused token save would sit there for every later visit in
+  // that browser session.
+  //
+  // **The tunnel's own failure is deliberately NOT cleared here** — see
+  // `RemoteAccessState.error`. It is a state of remote access rather than of
+  // this dialog now, the Control Center row reports it continuously, and the
+  // "Fix…" link on that row exists precisely to open this dialog and read the
+  // full sentence. Clearing it on the opening edge would empty the dialog that
+  // link exists to fill.
+  /* eslint-disable react-hooks/set-state-in-effect -- reset transient field errors on the dialog's opening edge */
   useEffect(() => {
     if (!open) return;
-    setError(null);
     setTokenError(null);
     setDomainError(null);
-    setState((current) => (current === 'error' ? 'off' : current));
   }, [open]);
   /* eslint-enable react-hooks/set-state-in-effect */
-
-  // Toasts for a change the person did NOT make.
-  //
-  // A toast is an interruption, and the only thing worth interrupting somebody
-  // for here is news. Flipping the switch yourself is not news — it produced the
-  // very view you are looking at — so a toggle marks the transition it is about
-  // to cause and this effect stays quiet for it. Until DOR-1738 the server never
-  // reported a drop at all, so the one transition anybody actually saw was their
-  // own stop, announced in red as if something had gone wrong.
-  //
-  // The old description also promised "Attempting to reconnect...", which
-  // nothing in DorkOS does. Remote access stays off until it is turned back on.
-  useEffect(() => {
-    // Say nothing until the server has actually spoken. `reportedStatus` is
-    // `off` while the config read is in flight, so seeding the baseline from
-    // that placeholder made the first real answer look like a transition: open
-    // the app with a tunnel already up and it announced "Remote access is on",
-    // about a tunnel that had been on the whole time and a change nobody made.
-    if (!hasServerReport) return;
-
-    const previous = prevStatusRef.current;
-    prevStatusRef.current = reportedStatus;
-    if (previous === undefined || previous === reportedStatus) return;
-
-    // Consumed on the first real transition either way, so a stop that the
-    // server never reports cannot leave the next genuine drop silent.
-    if (userInitiatedRef.current) {
-      userInitiatedRef.current = false;
-      return;
-    }
-
-    if (reportedStatus === 'reconnecting') {
-      // "Reconnecting" is a promise, and this is the one state in which DorkOS
-      // can keep it: ngrok's own agent retries a dropped session and emits
-      // `connected` again on recovery. The old code said it on every drop,
-      // including a permanent one, where nothing was retrying anything.
-      toast.warning('Remote access is reconnecting', {
-        id: 'tunnel-status',
-        description: 'Your other devices may not reach DorkOS until it is back.',
-      });
-    } else if (reportedStatus === 'off') {
-      toast.error('Remote access turned off', {
-        id: 'tunnel-status',
-        description: 'Your other devices can no longer reach DorkOS. Turn it back on to restore.',
-      });
-    } else if (reportedUrl) {
-      toast.success('Remote access is on', { id: 'tunnel-status', description: reportedUrl });
-    }
-  }, [hasServerReport, reportedStatus, reportedUrl]);
 
   // Latency measurement when connected and dialog is open.
   //
@@ -251,10 +123,11 @@ export function useTunnelMachine({ open }: { open: boolean }): TunnelMachine {
   // dialog the person may have closed several states ago.
   /* eslint-disable react-hooks/set-state-in-effect -- periodic latency measurement via interval */
   useEffect(() => {
-    if (state !== 'connected' || !url || !open) {
+    if (remote.state !== 'connected' || !remote.url || !open) {
       setLatencyMs(null);
       return;
     }
+    const url = remote.url;
     const controller = new AbortController();
     const measure = async () => {
       try {
@@ -280,28 +153,17 @@ export function useTunnelMachine({ open }: { open: boolean }): TunnelMachine {
       clearInterval(interval);
       controller.abort();
     };
-  }, [state, url, open]);
+  }, [remote.state, remote.url, open]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  const tokenConfigured = !!tunnel?.tokenConfigured;
-  const viewState = deriveViewState(tokenConfigured, showSetup, state, !!url);
-  const isTransitioning = state === 'starting' || state === 'stopping';
-  // Reconnecting counts as ON — the listener is open and the person did not turn
-  // anything off — but NOT as transitioning, because that would disable the very
-  // switch they need in order to turn it off while ngrok keeps retrying.
-  const isChecked =
-    state === 'connected' ||
-    state === 'starting' ||
-    state === 'stopping' ||
-    state === 'reconnecting';
-
   return {
-    state,
-    setState,
-    url,
-    setUrl,
-    error,
-    setError,
+    state: remote.state,
+    url: remote.url,
+    error: remote.error,
+    tunnel,
+    tokenConfigured: remote.tokenConfigured,
+    isTransitioning: remote.isTransitioning,
+    isChecked: remote.isChecked,
     showSetup,
     setShowSetup,
     authToken,
@@ -314,14 +176,7 @@ export function useTunnelMachine({ open }: { open: boolean }): TunnelMachine {
     setDomain,
     domainError,
     setDomainError,
-    setUserInitiated: (v: boolean) => {
-      userInitiatedRef.current = v;
-    },
     latencyMs,
-    tunnel,
-    tokenConfigured,
-    viewState,
-    isTransitioning,
-    isChecked,
+    viewState: deriveViewState(remote.tokenConfigured, showSetup, remote.state, !!remote.url),
   };
 }

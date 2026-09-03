@@ -40,7 +40,8 @@ After this one-time setup, remote access really is one tap: scan the QR code and
 export NGROK_AUTHTOKEN=your-token-here
 ```
 
-Or paste it directly in the UI when you open the Remote Access dialog (see [UI Toggle](#ui-toggle) below).
+Or paste it directly in the app the first time you turn remote access on (see
+[Turning it on in the app](#turning-it-on-in-the-app) below).
 
 </Step>
 
@@ -68,20 +69,30 @@ The tunnel URL appears in your terminal with a QR code. Scan it with your phone'
 </Step>
 </Steps>
 
-## UI Toggle
+## Turning it on in the app
 
-You can also start and stop the tunnel from the DorkOS interface, without restarting the server:
+You can start and stop remote access from the DorkOS window, without restarting the server:
 
-1. Click the **Globe** icon at the bottom of the sidebar
-2. Toggle **Enable remote access** on
-3. The tunnel URL and a QR code appear once it connects
+1. Open the **Control Center** — the ⚡ icon in the top bar
+2. Flip **Remote access** on. The first time, this opens a short setup where you paste your ngrok token
+3. Once it connects, a **globe appears in the top bar**
 
-The dialog also gives you:
+The globe is only there while remote access is running. Click it and you get:
+
+- Your address, with a **Copy link** button
+- A **QR code** to scan with your phone
+- A switch to turn remote access off
+- **Manage…**, which opens the full Remote Access window
+
+The full window is where the settings live:
 
 - **Custom domain**: set a static ngrok domain so your URL stays the same across restarts
 - **Connection quality indicator**: a green, yellow, or red dot showing how fast the tunnel is responding
 - **Copy URL**: copy the tunnel URL to your clipboard
 - **Copy session link**: copy a direct link to the current session
+
+You can do all of it from the keyboard too: press ⌘K and type "remote" to copy the link, show the QR
+code, or turn remote access on or off.
 
 If you have DorkOS open in several browser tabs, they all update together. Turn the tunnel on or off in one tab, and every other open tab reflects it within about a second.
 
@@ -131,7 +142,7 @@ Common issues:
 - **Auth token not found**: make sure `NGROK_AUTHTOKEN` is exported in your shell, or paste it into the Remote Access dialog.
 - **Custom domain errors**: verify your domain is claimed at dashboard.ngrok.com/domains.
 - **Connection quality red**: latency to the tunnel is over 500ms, usually because the nearest ngrok edge server is far from you geographically.
-- **Disconnected toast**: if the tunnel drops unexpectedly, you'll see a notification. DorkOS tries to reconnect automatically.
+- **The tunnel dropped**: you get a notification either way, and it tells you which happened. ngrok sometimes loses its session and re-establishes it on its own — DorkOS says "reconnecting", keeps your address, and the globe dims until it is back. If the tunnel closed for good, DorkOS says so and stays off until you turn it back on.
 
 ## Reference: how the tunnel works under the hood
 

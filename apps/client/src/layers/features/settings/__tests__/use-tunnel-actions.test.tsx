@@ -3,14 +3,22 @@
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
-import { QueryClient } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
-import { getOwnerSetupRequest, clearOwnerSetupRequest } from '@/layers/shared/lib';
+import { TransportProvider } from '@/layers/shared/model';
 import { useTunnelActions } from '../model/use-tunnel-actions';
 import type { TunnelMachine } from '../model/use-tunnel-machine';
 
 /**
- * Minimal fake machine — the setters the actions touch, plus the two field
+ * Turning remote access on and off is no longer this hook's business — three
+ * surfaces do that and it lives once in `@/layers/entities/tunnel` (DOR-1743),
+ * where `remote-access.test.tsx` drives it. What is left here is the pair of
+ * writes only the dialog makes: the ngrok token and the custom domain.
+ */
+
+/**
+ * Minimal fake machine — the setters these two writes touch, plus the field
  * values they read. Every setter is a spy, so nothing here is real React state
  * and no assertion needs `act`.
  */
@@ -21,15 +29,11 @@ function fakeMachine(overrides: Partial<TunnelMachine> = {}): TunnelMachine {
     // change. `handleSaveDomain` compares the two.
     domain: 'my-box.ngrok.app',
     tunnel: undefined,
-    setState: vi.fn(),
-    setError: vi.fn(),
-    setUrl: vi.fn(),
     setAuthToken: vi.fn(),
     setShowTokenInput: vi.fn(),
     setShowSetup: vi.fn(),
     setTokenError: vi.fn(),
     setDomainError: vi.fn(),
-    setUserInitiated: vi.fn(),
     ...overrides,
   } as unknown as TunnelMachine;
 }
@@ -38,8 +42,14 @@ function fakeMachine(overrides: Partial<TunnelMachine> = {}): TunnelMachine {
 function setup(overrides: Partial<TunnelMachine> = {}) {
   const transport = createMockTransport();
   const machine = fakeMachine(overrides);
-  const queryClient = new QueryClient();
-  const { result } = renderHook(() => useTunnelActions({ machine, transport, queryClient }));
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const { result } = renderHook(() => useTunnelActions({ machine }), {
+    wrapper: ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>{children}</TransportProvider>
+      </QueryClientProvider>
+    ),
+  });
   return { transport, machine, actions: result };
 }
 
@@ -59,121 +69,7 @@ function configRefusal(code: string) {
 }
 
 afterEach(() => {
-  clearOwnerSetupRequest();
   vi.clearAllMocks();
-});
-
-describe('useTunnelActions — exposure guard', () => {
-  it('routes a AUTH_REQUIRED_FOR_EXPOSURE tunnel-start rejection into owner setup', async () => {
-    const { transport, machine, actions } = setup();
-    const exposureError = Object.assign(
-      new Error('Exposing DorkOS requires a login. Create an owner account first.'),
-      { code: 'AUTH_REQUIRED_FOR_EXPOSURE', status: 409 }
-    );
-    vi.mocked(transport.startTunnel).mockRejectedValue(exposureError);
-
-    await actions.current.handleToggle(true);
-
-    const request = getOwnerSetupRequest();
-    expect(request).not.toBeNull();
-    expect(request?.reason).toBe('exposure');
-    expect(request?.message).toBe('Exposing DorkOS requires a login.');
-    // The dialog is opened, not an inline tunnel error.
-    expect(machine.setState).toHaveBeenCalledWith('off');
-  });
-
-  it('surfaces a normal tunnel-start failure as an error (no owner setup)', async () => {
-    const { transport, machine, actions } = setup();
-    vi.mocked(transport.startTunnel).mockRejectedValue(new Error('ngrok exploded'));
-
-    await actions.current.handleToggle(true);
-
-    expect(getOwnerSetupRequest()).toBeNull();
-    expect(machine.setState).toHaveBeenCalledWith('error');
-    expect(machine.setError).toHaveBeenCalledWith('ngrok exploded');
-  });
-});
-
-describe('useTunnelActions — start timeout is the request timeout (DOR-1739)', () => {
-  it('stays connecting while the start request is still in flight', async () => {
-    vi.useFakeTimers();
-    try {
-      const { transport, machine, actions } = setup();
-      let settleStart: (result: { url: string }) => void = () => {};
-      vi.mocked(transport.startTunnel).mockReturnValue(
-        new Promise<{ url: string }>((resolve) => {
-          settleStart = resolve;
-        })
-      );
-
-      const toggled = actions.current.handleToggle(true);
-
-      // Twenty seconds: past the 15s timer this hook used to arm, and still
-      // well inside the transport's own 30s request window. The dialog must
-      // still be connecting, because nothing has answered yet.
-      await vi.advanceTimersByTimeAsync(20_000);
-      expect(machine.setState).toHaveBeenCalledWith('starting');
-      expect(machine.setState).not.toHaveBeenCalledWith('error');
-      expect(machine.setError).not.toHaveBeenCalledWith(expect.stringContaining('timed out'));
-
-      // ...and when the slow start succeeds, it lands on connected rather than
-      // correcting an error the dialog had already shown.
-      settleStart({ url: 'https://slow-but-fine.ngrok.app' });
-      await toggled;
-
-      expect(machine.setState).toHaveBeenLastCalledWith('connected');
-      expect(machine.setUrl).toHaveBeenCalledWith('https://slow-but-fine.ngrok.app');
-      expect(machine.setState).not.toHaveBeenCalledWith('error');
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('disarms the toast suppression when the start fails', async () => {
-    const { transport, machine, actions } = setup();
-    vi.mocked(transport.startTunnel).mockRejectedValue(new Error('ngrok exploded'));
-
-    await actions.current.handleToggle(true);
-
-    // Armed before acting so a status change the person caused is not announced
-    // back to them — but a start that failed causes none, and a flag left armed
-    // would swallow the next drop they DID need telling about.
-    expect(machine.setUserInitiated).toHaveBeenNthCalledWith(1, true);
-    expect(machine.setUserInitiated).toHaveBeenLastCalledWith(false);
-  });
-
-  it('disarms the toast suppression when the stop fails', async () => {
-    const { transport, machine, actions } = setup();
-    vi.mocked(transport.stopTunnel).mockRejectedValue(new Error('could not stop'));
-
-    await actions.current.handleToggle(false);
-
-    expect(machine.setUserInitiated).toHaveBeenNthCalledWith(1, true);
-    expect(machine.setUserInitiated).toHaveBeenLastCalledWith(false);
-  });
-
-  it('leaves the suppression armed when the toggle succeeds', async () => {
-    const { transport, machine, actions } = setup();
-    vi.mocked(transport.startTunnel).mockResolvedValue({ url: 'https://abc.ngrok.app' });
-
-    await actions.current.handleToggle(true);
-
-    expect(machine.setUserInitiated).toHaveBeenCalledExactlyOnceWith(true);
-  });
-
-  it('shows the transport its own timeout when the request really does run out', async () => {
-    const { transport, machine, actions } = setup();
-    vi.mocked(transport.startTunnel).mockRejectedValue(
-      new Error('Request timed out after 30s — check your network')
-    );
-
-    await actions.current.handleToggle(true);
-
-    expect(machine.setState).toHaveBeenCalledWith('error');
-    expect(machine.setError).toHaveBeenCalledWith(
-      'Request timed out after 30s — check your network'
-    );
-  });
 });
 
 describe('useTunnelActions — handleSaveToken surfaces why the save failed', () => {

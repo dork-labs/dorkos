@@ -165,6 +165,15 @@ vi.mock('@/layers/entities/tasks', async (importOriginal) => ({
   useTasksSync: () => {},
 }));
 
+// Remote access rides the same stream (DOR-1743): `useTunnelSync` refreshes the
+// config read on a `tunnel_status` event, and `useRemoteAccessAnnouncer` reads
+// that config. No-op'd here for the same reason as the *Sync hooks above.
+vi.mock('@/layers/entities/tunnel', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/tunnel')>()),
+  useTunnelSync: () => {},
+  useRemoteAccessAnnouncer: () => {},
+}));
+
 // The shell's banner slot reads the Inbox, to raise a standing row while a
 // runtime's sign-in is dead (`widgets/app-banner`, DOR-1680). That hook
 // subscribes to the `notification` stream like the rest of this section, and a

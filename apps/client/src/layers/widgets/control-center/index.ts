@@ -12,6 +12,9 @@
  */
 export { ControlCenter } from './ui/ControlCenter';
 export { ControlCenterBody } from './ui/ControlCenterBody';
+// The Remote-access row on its own, for the Dev Playground's state gallery —
+// the panel only ever shows the one state a running server happens to be in.
+export { RemoteAccessRow } from './ui/RemoteAccessRow';
 export { useControlCenterShortcut } from './model/use-control-center-shortcut';
 export { useOverridesLedger } from './model/use-overrides-ledger';
 export type { OverrideKind, OverrideRow, OverridesLedger } from './model/use-overrides-ledger';

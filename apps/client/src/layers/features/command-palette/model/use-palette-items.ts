@@ -13,6 +13,7 @@ import { usePaletteRooms, type PaletteRooms } from './use-palette-rooms';
 import { usePaletteCommandCenter, type PaletteContinueRow } from './use-palette-command-center';
 import { paletteRoomKeywords } from './palette-rooms';
 import { PALETTE_NEW_ACTION_IDS } from './palette-contributions';
+import { useRemoteAccessPaletteItems } from './palette-remote-access';
 import { paletteSessionKeywords, type PaletteSessionItem } from './palette-sessions';
 import type { PaletteRecentEntry } from './palette-recent';
 import type { SearchableItem } from './use-palette-search';
@@ -167,9 +168,17 @@ export function usePaletteItems(activeCwd: string | null, now: number): PaletteI
     [allPaletteItems]
   );
 
+  // Remote access contributes rows that only make sense while it is in a
+  // particular state, so they are derived per render rather than registered
+  // once at startup — see `palette-remote-access.ts`.
+  const remoteAccessActions = useRemoteAccessPaletteItems();
+
   const quickActions = useMemo(
-    () => allPaletteItems.filter((item) => item.category === 'quick-action'),
-    [allPaletteItems]
+    () => [
+      ...allPaletteItems.filter((item) => item.category === 'quick-action'),
+      ...remoteAccessActions,
+    ],
+    [allPaletteItems, remoteAccessActions]
   );
 
   const newActions = useMemo(

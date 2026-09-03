@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import {
   Palette,
   Settings2,
@@ -15,7 +14,7 @@ import {
   MessagesSquare,
 } from 'lucide-react';
 import { TabbedDialog, type TabbedDialogTab } from '@/layers/shared/ui';
-import { useSettingsDeepLink, type SettingsTab } from '@/layers/shared/model';
+import { useAppStore, useSettingsDeepLink, type SettingsTab } from '@/layers/shared/model';
 import { ProfileTab } from './ProfileTab';
 import { AppearanceResetAction, AppearanceTab } from './tabs/AppearanceTab';
 import { PreferencesTab } from './tabs/PreferencesTab';
@@ -30,7 +29,6 @@ import { PrivacyTab } from './PrivacyTab';
 import { AdvancedTab } from './AdvancedTab';
 import { ExperimentsTab } from './ExperimentsTab';
 import { RemoteAccessAction } from './RemoteAccessAction';
-import { TunnelDialog } from './TunnelDialog';
 
 const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
   // First, and promotion needs nothing else: ungrouped tabs render above the
@@ -117,27 +115,31 @@ interface SettingsDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-/** Tabbed Settings dialog (consumer of TabbedDialog primitive). */
+/**
+ * Tabbed Settings dialog (consumer of TabbedDialog primitive).
+ *
+ * The Remote Access dialog used to be a `useState` and a second `<TunnelDialog>`
+ * right here, which is why Settings was the only place that could open it. It
+ * is a registered dialog now (DOR-1743) and this action flips its store flag,
+ * like every other door to it.
+ */
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { activeTab: urlTab } = useSettingsDeepLink();
-  const [tunnelDialogOpen, setTunnelDialogOpen] = useState(false);
+  const setRemoteAccessOpen = useAppStore((s) => s.setRemoteAccessOpen);
 
   return (
-    <>
-      <TabbedDialog
-        open={open}
-        onOpenChange={onOpenChange}
-        title="Settings"
-        description="Application settings"
-        defaultTab="appearance"
-        initialTab={urlTab}
-        tabs={SETTINGS_TABS}
-        sidebarExtras={<RemoteAccessAction onClick={() => setTunnelDialogOpen(true)} />}
-        extensionSlot="settings.tabs"
-        maximized
-        testId="settings-dialog"
-      />
-      <TunnelDialog open={tunnelDialogOpen} onOpenChange={setTunnelDialogOpen} />
-    </>
+    <TabbedDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Settings"
+      description="Application settings"
+      defaultTab="appearance"
+      initialTab={urlTab}
+      tabs={SETTINGS_TABS}
+      sidebarExtras={<RemoteAccessAction onClick={() => setRemoteAccessOpen(true)} />}
+      extensionSlot="settings.tabs"
+      maximized
+      testId="settings-dialog"
+    />
   );
 }

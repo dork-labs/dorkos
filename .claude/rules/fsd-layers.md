@@ -67,6 +67,7 @@ The graph as it stands (2026-09) — every slice not listed imports no other ent
 | Slice       | Depends on                                               |
 | ----------- | -------------------------------------------------------- |
 | `session`   | `runtime`                                                |
+| `tunnel`    | `config`                                                 |
 | `binding`   | `config`, `mesh`, `relay`, `runtime`                     |
 | `recents`   | `interactions`, `room`, `session`                        |
 | `agent`     | `config`, `mesh`, `relay`, `runtime`, `session`, `tasks` |

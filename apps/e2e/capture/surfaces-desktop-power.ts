@@ -32,8 +32,9 @@ import { attempt, isShotSkipped, patch, seedThemeOnContext, shoot, url, WAIT_MS 
  * does not fit at ANY viewport height — this is the surface as it exists, not a
  * capture-viewport artifact — and the choice is only which end of it to frame.
  * The top is the right end: the "Power" dial is what the panel is FOR, and the
- * four switches under it are what the release notes describe. The Exceptions
- * ledger sits below the fold, reachable by scroll.
+ * switches under it are what the release notes describe — Remote access first
+ * since DOR-1743. The Exceptions ledger sits below the fold, reachable by
+ * scroll.
  *
  * **That ledger would read as its calm empty state anyway, deliberately.** Two
  * of its four row sources cannot fire in a capture at all: the task and binding
@@ -70,7 +71,9 @@ export async function shootControlCenter(
   // the frame is honest either way — but a seed that ever sets `openMesh: true`
   // could publish that switch in the wrong position with nothing failing. Wait
   // on the topology query the day that changes. (The "Limit automatic replies"
-  // switch guards itself: it renders disabled until its limits land.)
+  // switch guards itself: it renders disabled until its limits land. So does
+  // the Remote-access row, which holds its switch until the config read has
+  // actually answered — the same config this wait already covers.)
   await page
     .locator('[data-testid="overrides-ledger-empty"], [data-testid^="override-row-"]')
     .first()
