@@ -1,4 +1,5 @@
-import { CalendarClock, FolderOpen, Puzzle, Wrench } from 'lucide-react';
+import { AlertTriangle, CalendarClock, FolderOpen, Puzzle, Wrench } from 'lucide-react';
+import type { PreviewSchedule } from '@dorkos/shared/marketplace-schemas';
 import {
   Button,
   ResponsiveDialogTitle,
@@ -7,12 +8,35 @@ import {
 } from '@/layers/shared/ui';
 import { isSingleEmoji } from '@/layers/shared/lib';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
+import { describePreviewSchedule } from '@/layers/entities/marketplace';
 import type { CreationSeed } from '@/layers/shared/model';
 
 /** Props for {@link ArrivalConfirm} — the M1 arrival confirm (one agent, no fork). */
 export interface ArrivalConfirmProps {
   /** The agent taking shape, with everything the offer already knows about it. */
   seed: CreationSeed;
+  /**
+   * Every scheduled job the offer's package ships, each already carrying the
+   * permission mode it will really get. Empty for an offer that schedules
+   * nothing, and for a Shape offer, whose cadence arrives as
+   * `seed.template.schedule` instead.
+   */
+  packageSchedules: PreviewSchedule[];
+  /**
+   * True while DorkOS is still asking what the package runs on its own. The
+   * create action waits for the answer — an agent package gets no install
+   * confirmation dialog, so this card is the only place the person is told, and
+   * a card that lets you say yes before it knows is the silence DOR-644 is
+   * about.
+   */
+  isCheckingOffer: boolean;
+  /**
+   * True when that question could not be answered. Said out loud rather than
+   * swallowed: "we could not check" must never render the same as "there is
+   * nothing to check". It does not block — the schedule still cannot arm itself
+   * without a separate approval once the agent exists.
+   */
+  offerCheckFailed: boolean;
   /**
    * Where the agent will live once created (`defaultDirectory/slug`), using the
    * absolute directory the server reports. Empty until the config arrives — the
@@ -46,10 +70,19 @@ export interface ArrivalConfirmProps {
  * lists its capabilities, lists skills without claiming they are installed, and
  * shows a schedule line only when the offer actually declares a cadence.
  *
+ * That last part is why `packageSchedules` exists. A marketplace agent package
+ * can ship a scheduled job inside its own files, which no browse listing can
+ * see — and because `useRequestInstall` sends agent packages here instead of to
+ * the install confirmation dialog, this card is the only chance a person gets to
+ * read it before saying yes (DOR-644).
+ *
  * @param props - The seed to introduce plus the arrival actions.
  */
 export function ArrivalConfirm({
   seed,
+  packageSchedules,
+  isCheckingOffer,
+  offerCheckFailed,
   resolvedDirectory,
   canSubmit,
   isCreating,
@@ -116,6 +149,34 @@ export function ArrivalConfirm({
             <dd>{schedule}</dd>
           </div>
         )}
+        {/* What the package itself schedules, in the same words the install
+            dialog uses for every other package type — including the permission
+            mode, which is the fact that decides how much an unattended job may
+            do. The modes here are already clamped server-side, so this says what
+            the job GETS rather than what its author asked for. */}
+        {packageSchedules.length > 0 && (
+          <div className="flex items-start gap-2" data-testid="arrival-package-schedules">
+            <CalendarClock className="text-muted-foreground mt-0.5 size-4 shrink-0" />
+            <dt className="text-muted-foreground shrink-0">Brings a schedule</dt>
+            <dd className="min-w-0 space-y-1">
+              {packageSchedules.map((job, index) => (
+                <p key={`${job.name}-${index}`}>
+                  <span className="font-medium">{job.name}</span> — {describePreviewSchedule(job)}
+                </p>
+              ))}
+            </dd>
+          </div>
+        )}
+        {offerCheckFailed && (
+          <div className="flex items-start gap-2" data-testid="arrival-offer-check-failed">
+            <AlertTriangle className="text-warning mt-0.5 size-4 shrink-0" />
+            <dt className="text-muted-foreground shrink-0">Not checked</dt>
+            <dd className="min-w-0">
+              DorkOS could not find out whether this agent brings work on a timer. Anything it does
+              bring still has to be approved before it runs.
+            </dd>
+          </div>
+        )}
         {capabilities && capabilities.length > 0 && (
           <div className="flex items-start gap-2">
             <Wrench className="text-muted-foreground mt-0.5 size-4 shrink-0" />
@@ -139,10 +200,18 @@ export function ArrivalConfirm({
             This agent still needs a name — choose &ldquo;Customize first&rdquo; to give it one.
           </p>
         )}
+        {isCheckingOffer && (
+          <p
+            className="text-muted-foreground text-center text-xs"
+            data-testid="arrival-checking-offer"
+          >
+            Checking what this agent runs on its own…
+          </p>
+        )}
         <Button
           size="lg"
           onClick={onCreate}
-          disabled={isCreating || !canSubmit}
+          disabled={isCreating || !canSubmit || isCheckingOffer}
           data-testid="arrival-create"
         >
           {isCreating ? 'Creating…' : `Create ${displayName}`}

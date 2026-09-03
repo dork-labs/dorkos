@@ -865,6 +865,111 @@ describe('CreateAgentDialog', () => {
     });
   });
 
+  // ---- What a marketplace agent runs on its own, said before yes (DOR-644) ----
+
+  /**
+   * A seed of the shape `agentPackageToCreationSeed` produces: it carries the
+   * package name, which is the only thing that lets this card ask the server
+   * what lives in the package's own `.dork/tasks` SKILL.md files.
+   */
+  function packageSeed() {
+    return {
+      origin: 'marketplace-agent' as const,
+      sourceLabel: 'dork-labs',
+      packageName: '@dorkos/night-sweeper',
+      template: {
+        displayName: 'Night Sweeper',
+        source: 'github:dork-labs/marketplace/agents/night-sweeper',
+        persona: 'I tidy the repo overnight.',
+      },
+    };
+  }
+
+  /** A preview reply carrying one scheduled job, and nothing else. */
+  function previewWithSchedule(schedule: Record<string, unknown>) {
+    return {
+      manifest: { name: '@dorkos/night-sweeper', type: 'agent' },
+      packagePath: '/tmp/staged',
+      preview: {
+        fileChanges: [],
+        extensions: [],
+        hooks: [],
+        unreadableHooks: [],
+        schedules: [schedule],
+        secrets: [],
+        npmDependencies: [],
+        externalHosts: [],
+        requires: [],
+        conflicts: [],
+      },
+    };
+  }
+
+  it('discloses a packaged cron and the mode it actually gets', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.previewMarketplacePackage).mockResolvedValue(
+      // `bypassPermissions` in the SKILL.md; `clampSchedulePermissionMode` has
+      // already knocked it down to `acceptEdits` by the time it reaches here.
+      previewWithSchedule({
+        name: 'overnight-sweep',
+        cron: '0 3 * * *',
+        permissionMode: 'acceptEdits',
+        startsEnabled: true,
+      }) as never
+    );
+    renderDialog(transport);
+    useAgentCreationStore.getState().openWithSeed(packageSeed());
+
+    const row = await screen.findByTestId('arrival-package-schedules');
+    expect(row).toHaveTextContent('overnight-sweep');
+    expect(row).toHaveTextContent('At 03:00 AM');
+    expect(row).toHaveTextContent('can change files on its own');
+    expect(transport.previewMarketplacePackage).toHaveBeenCalledWith(
+      '@dorkos/night-sweeper',
+      undefined
+    );
+    await waitFor(() => expect(screen.getByTestId('arrival-create')).toBeEnabled());
+  });
+
+  it('holds Create until it knows what the package runs on its own', async () => {
+    const transport = createMockTransport();
+    // Never resolves: the card stays in the state it is in while it waits.
+    vi.mocked(transport.previewMarketplacePackage).mockReturnValue(new Promise(() => {}) as never);
+    renderDialog(transport);
+    useAgentCreationStore.getState().openWithSeed(packageSeed());
+
+    // This card is the one approval an agent package ever gets, so it must not
+    // let a person say yes to something it has not read yet.
+    expect(await screen.findByTestId('arrival-checking-offer')).toBeInTheDocument();
+    expect(screen.getByTestId('arrival-create')).toBeDisabled();
+  });
+
+  it('keeps the disclosure across "Customize first" instead of letting it be skipped', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    // Never resolves: the check is still in flight for the whole test.
+    vi.mocked(transport.previewMarketplacePackage).mockReturnValue(new Promise(() => {}) as never);
+    renderDialog(transport);
+    useAgentCreationStore.getState().openWithSeed(packageSeed());
+
+    await user.click(await screen.findByTestId('arrival-customize'));
+    await screen.findByLabelText('Name');
+
+    expect(screen.getByTestId('naming-checking-offer')).toBeInTheDocument();
+    expect(screen.getByTestId('create-button')).toBeDisabled();
+  });
+
+  it('never asks the server about an offer that came from a Shape, not a package', async () => {
+    const transport = createMockTransport();
+    renderDialog(transport);
+    useAgentCreationStore.getState().openWithSeed(seedFor());
+    await screen.findByText('Meet Linear Keeper');
+
+    expect(transport.previewMarketplacePackage).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('arrival-checking-offer')).not.toBeInTheDocument();
+    expect(screen.getByTestId('arrival-create')).toBeEnabled();
+  });
+
   it('a host onCreated hook runs on create instead of navigating away', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();

@@ -4,6 +4,7 @@
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import type { PreviewSchedule } from '@dorkos/shared/marketplace-schemas';
 import { ResponsiveDialog, ResponsiveDialogContent } from '@/layers/shared/ui';
 import type { CreationSeed } from '@/layers/shared/model';
 import { ArrivalConfirm } from '../ui/ArrivalConfirm';
@@ -44,12 +45,22 @@ function makeSeed(overrides: Partial<CreationSeed['template']> = {}): CreationSe
   };
 }
 
-function renderArrival(seed: CreationSeed) {
+/** The offer-disclosure props, defaulted to "checked, nothing scheduled". */
+interface OfferProps {
+  packageSchedules?: PreviewSchedule[];
+  isCheckingOffer?: boolean;
+  offerCheckFailed?: boolean;
+}
+
+function renderArrival(seed: CreationSeed, offer: OfferProps = {}) {
   return render(
     <ResponsiveDialog open onOpenChange={() => {}}>
       <ResponsiveDialogContent>
         <ArrivalConfirm
           seed={seed}
+          packageSchedules={offer.packageSchedules ?? []}
+          isCheckingOffer={offer.isCheckingOffer ?? false}
+          offerCheckFailed={offer.offerCheckFailed ?? false}
           resolvedDirectory="/home/me/.dork/agents/reviewer"
           canSubmit
           isCreating={false}
@@ -90,5 +101,75 @@ describe('ArrivalConfirm — avatar face', () => {
 
     expect(screen.getByText('R')).toBeInTheDocument();
     expect(screen.queryByText('robot-icon')).not.toBeInTheDocument();
+  });
+});
+
+describe('ArrivalConfirm — what the package runs on its own (DOR-644)', () => {
+  afterEach(cleanup);
+
+  it('names the cadence and the effective permission mode of a packaged schedule', () => {
+    renderArrival(makeSeed(), {
+      // What the server sends after `clampSchedulePermissionMode` has already
+      // refused the `bypassPermissions` this package's SKILL.md asked for.
+      packageSchedules: [
+        {
+          name: 'overnight-sweep',
+          cron: '0 3 * * *',
+          permissionMode: 'acceptEdits',
+          startsEnabled: true,
+        },
+      ],
+    });
+
+    const row = screen.getByTestId('arrival-package-schedules');
+    expect(row).toHaveTextContent('overnight-sweep');
+    expect(row).toHaveTextContent('At 03:00 AM');
+    expect(row).toHaveTextContent('starts switched on');
+    // The mode in plain words — the fact that decides how much an unattended
+    // job may do, and the one nothing in this flow used to show at all.
+    expect(row).toHaveTextContent('can change files on its own');
+  });
+
+  it('says a job runs only when asked rather than inventing a cadence', () => {
+    renderArrival(makeSeed(), {
+      packageSchedules: [
+        { name: 'manual-audit', cron: null, permissionMode: 'plan', startsEnabled: false },
+      ],
+    });
+
+    const row = screen.getByTestId('arrival-package-schedules');
+    expect(row).toHaveTextContent('Runs only when you ask');
+    expect(row).toHaveTextContent('starts switched off');
+    expect(row).toHaveTextContent('can only read and plan');
+  });
+
+  it('shows no schedule row at all for an offer that schedules nothing', () => {
+    renderArrival(makeSeed());
+
+    expect(screen.queryByTestId('arrival-package-schedules')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('arrival-offer-check-failed')).not.toBeInTheDocument();
+  });
+
+  it('holds the create button until it knows what the package runs', () => {
+    renderArrival(makeSeed(), { isCheckingOffer: true });
+
+    expect(screen.getByTestId('arrival-create')).toBeDisabled();
+    expect(screen.getByTestId('arrival-checking-offer')).toBeInTheDocument();
+  });
+
+  it('says the check failed rather than rendering it as "nothing scheduled"', () => {
+    renderArrival(makeSeed(), { offerCheckFailed: true });
+
+    expect(screen.getByTestId('arrival-offer-check-failed')).toBeInTheDocument();
+    // A failed check does not trap the person: nothing the package brings can
+    // arm itself without a separate approval once the agent exists.
+    expect(screen.getByTestId('arrival-create')).toBeEnabled();
+  });
+
+  it("leaves a Shape offer's own cadence line untouched", () => {
+    renderArrival(makeSeed({ schedule: 'Every weekday at 9:00 AM' }));
+
+    expect(screen.getByTestId('arrival-schedule')).toHaveTextContent('Every weekday at 9:00 AM');
+    expect(screen.queryByTestId('arrival-package-schedules')).not.toBeInTheDocument();
   });
 });

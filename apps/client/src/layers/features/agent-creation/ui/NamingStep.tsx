@@ -37,6 +37,14 @@ export interface NamingStepProps {
   onCreate: () => void;
   /** True while the create request is in flight. */
   isCreating: boolean;
+  /**
+   * True while DorkOS is still asking what an offered package runs on its own.
+   * The arrival card holds its own create button for the same reason (DOR-644);
+   * this step is reachable from that card via "Customize first", so the gate has
+   * to travel with it or the disclosure is one click away from being skipped.
+   * Always false for an agent designed from scratch — there is no package.
+   */
+  isCheckingOffer?: boolean;
 }
 
 /**
@@ -59,6 +67,7 @@ export function NamingStep({
   onImportInstead,
   onCreate,
   isCreating,
+  isCheckingOffer = false,
 }: NamingStepProps) {
   const nameInputRef = useRef<HTMLInputElement>(null);
   const [rerollOffset, setRerollOffset] = useState(0);
@@ -250,10 +259,18 @@ export function NamingStep({
           jobLine={jobLine}
           capabilities={previewCapabilities}
         />
+        {isCheckingOffer && (
+          <p
+            className="text-muted-foreground text-center text-xs"
+            data-testid="naming-checking-offer"
+          >
+            Checking what this agent runs on its own…
+          </p>
+        )}
         <Button
           size="lg"
           onClick={onCreate}
-          disabled={!form.canSubmit || isCreating}
+          disabled={!form.canSubmit || isCreating || isCheckingOffer}
           data-testid="create-button"
         >
           {createLabel}
