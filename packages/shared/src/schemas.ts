@@ -3555,7 +3555,17 @@ export const ServerConfigSchema = z
         'What a new session starts with — the runtime, and the model and effort per runtime (spec execution-defaults)',
     }),
     claudeCliPath: z.string().nullable(),
-    tunnel: TunnelStatusSchema,
+    // The live status, plus what the SETTING says — two different facts, the
+    // same pair `tasks` and `relay` report below. While no tunnel is running,
+    // `domain`, `authEnabled` and `tokenConfigured` describe what a start would
+    // use (environment first, then the stored config), so a saved custom domain
+    // still reads back after a restart.
+    tunnel: TunnelStatusSchema.extend({
+      enabledInConfig: z.boolean().optional().openapi({
+        description:
+          "What the user's setting says (`tunnel.enabled`), which is not always what is running: `enabled` only moves when a tunnel is actually opened or closed",
+      }),
+    }),
     tasks: z
       .object({
         enabled: z.boolean().openapi({ description: 'Whether the Tasks scheduler is enabled' }),
