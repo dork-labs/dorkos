@@ -1,6 +1,15 @@
 import crypto from 'node:crypto';
 import { vi } from 'vitest';
-import type { Session, StreamEvent, CommandEntry, Task, TaskRun } from '@dorkos/shared/types';
+import type {
+  Session,
+  StreamEvent,
+  CommandEntry,
+  InterruptOutcome,
+  InterruptReason,
+  InterruptReceipt,
+  Task,
+  TaskRun,
+} from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import type { WorktreeScanResult } from '@dorkos/shared/workspace';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
@@ -229,8 +238,18 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     batchDeny: vi.fn().mockResolvedValue({ results: [] }),
     submitAnswers: vi.fn().mockResolvedValue({ ok: true }),
     submitElicitation: vi.fn().mockResolvedValue({ ok: true }),
-    stopTask: vi.fn().mockResolvedValue({ success: true, taskId: '' }),
-    interruptSession: vi.fn().mockResolvedValue({ ok: true, cancelledQueued: [] }),
+    // `not-running` is the default for both, not `acked`: a mock transport with
+    // no turn behind it has nothing to have stopped, and defaulting to a
+    // stopped-and-confirmed receipt would let a test assert the "stopped" copy
+    // without anything ever producing that ending.
+    stopTask: vi.fn().mockResolvedValue({
+      receipt: { outcome: 'not-running', reason: 'no-open-turn', runtime: 'mock' },
+      taskId: '',
+    }),
+    interruptSession: vi.fn().mockResolvedValue({
+      receipt: { outcome: 'not-running', reason: 'no-open-turn', runtime: 'mock' },
+      cancelledQueued: [],
+    }),
     getCommands: vi.fn(),
     health: vi.fn(),
     updateSession: vi.fn(),
@@ -1020,5 +1039,37 @@ export function createMockAdapter(overrides: Partial<RelayAdapter> = {}): RelayA
     deliver: vi.fn().mockResolvedValue(undefined),
     getStatus: vi.fn().mockReturnValue(defaultStatus),
     ...overrides,
+  };
+}
+
+/**
+ * Build one {@link InterruptReceipt} for a test.
+ *
+ * The stop vocabulary is five outcomes and six reasons, and a test that spells
+ * a literal out inline is a test that can spell one WRONG — a `not-running`
+ * carrying `refused` type-checks perfectly and means nothing. This picks each
+ * outcome's canonical reason so a caller states only what it cares about.
+ *
+ * @param outcome - Which of the five endings to stage
+ * @param overrides - `runtime` (defaults to `'fake'`) and an explicit `reason`,
+ *   for the cells where the outcome alone carries the fact — a bare `closed`,
+ *   which is what a runtime with no graceful path to abandon answers
+ */
+export function mockInterruptReceipt(
+  outcome: InterruptOutcome,
+  overrides: { runtime?: string; reason?: InterruptReason | null } = {}
+): InterruptReceipt {
+  const canonicalReason: Record<InterruptOutcome, InterruptReason | undefined> = {
+    acked: undefined,
+    closed: 'ack-timeout',
+    'not-running': 'no-open-turn',
+    unconfirmed: 'runtime-declined',
+    failed: 'delivery-failed',
+  };
+  const reason = overrides.reason === undefined ? canonicalReason[outcome] : overrides.reason;
+  return {
+    outcome,
+    ...(reason ? { reason } : {}),
+    runtime: overrides.runtime ?? 'fake',
   };
 }

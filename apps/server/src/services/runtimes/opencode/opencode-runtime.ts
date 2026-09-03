@@ -40,6 +40,7 @@ import type {
   TaskItem,
   CommandRegistry,
   SessionSettings,
+  InterruptReceipt,
 } from '@dorkos/shared/types';
 import type {
   AgentRuntime,
@@ -556,8 +557,8 @@ export class OpenCodeRuntime implements AgentRuntime {
   }
 
   /** OpenCode exposes no addressable background tasks — nothing to stop. */
-  async stopTask(): Promise<boolean> {
-    return false;
+  async stopTask(): Promise<InterruptReceipt> {
+    return { outcome: 'not-running', reason: 'no-open-turn', runtime: this.type };
   }
 
   /**
@@ -566,17 +567,28 @@ export class OpenCodeRuntime implements AgentRuntime {
    * Aborts the in-flight turn via `POST /session/{id}/abort`, bounded by
    * {@link awaitAbortAck} (DOR-1299): a wedged sidecar drops the request the
    * same way an ended stdin drops claude-code's, and nothing then answers it,
-   * ever. Past {@link INTERRUPT_ACK_TIMEOUT_MS} this gives up and answers
-   * `false` — honest, not an escalation; see {@link INTERRUPT_ACK_TIMEOUT_MS}
-   * for why there is nothing session-scoped to escalate TO here.
+   * ever. Past {@link INTERRUPT_ACK_TIMEOUT_MS} this gives up; see
+   * {@link INTERRUPT_ACK_TIMEOUT_MS} for why there is nothing session-scoped to
+   * escalate TO here.
    *
    * On the acked path the wire carries `session.error{MessageAbortedError}` +
    * `session.idle`, which the mapper normalizes to a quiet `done` —
    * user-initiated, not an error.
+   *
+   * **Nothing here is ever `closed`, and DorkOS does not settle a turn it did
+   * not observe end** (spec `runtime-interrupt-receipts` §4.2, D6). An abort
+   * that answers `false`, or that nothing answers at all, is `unconfirmed`: the
+   * DorkOS-side turn stays open, Stop stays pressable, and the person is told
+   * the stop was requested but not confirmed. Fabricating an end instead would
+   * show a stopped turn that goes on producing text and disagrees with the
+   * runtime's own store at the next hydrate — the DOR-1313 shape. Escalating by
+   * killing the sidecar is not available either: it is DorkOS-managed and shared
+   * by every OpenCode session on the machine (ADR-0308), so stopping one turn
+   * that way would stop every other one too.
    */
-  async interruptQuery(sessionId: string): Promise<boolean> {
+  async interruptQuery(sessionId: string): Promise<InterruptReceipt> {
     const turn = this.activeTurns.get(sessionId);
-    if (!turn) return false;
+    if (!turn) return { outcome: 'not-running', reason: 'no-open-turn', runtime: this.type };
     const ack = await awaitAbortAck(async () => {
       const client = await this.provider.getClient(turn.cwd);
       return (
@@ -592,16 +604,20 @@ export class OpenCodeRuntime implements AgentRuntime {
       case 'settled':
         if (ack.aborted) {
           logger.debug('[OpenCodeRuntime] interrupted in-flight turn', { sessionId });
-        } else {
-          logger.warn('[OpenCodeRuntime] interrupt returned false', { sessionId });
+          return { outcome: 'acked', runtime: this.type };
         }
-        return ack.aborted;
+        logger.warn('[OpenCodeRuntime] interrupt returned false', { sessionId });
+        return { outcome: 'unconfirmed', reason: 'runtime-declined', runtime: this.type };
       case 'refused':
+        // The call itself blew up — the sidecar is down, or the network is. The
+        // turn is untouched and nothing DorkOS did ended it, which is `failed`
+        // rather than `unconfirmed`: this one reads as an error and asks the
+        // person to try again.
         logger.warn('[OpenCodeRuntime] interrupt call failed', { sessionId });
-        return false;
+        return { outcome: 'failed', reason: 'delivery-failed', runtime: this.type };
       case 'unacked':
         logger.warn('[OpenCodeRuntime] interrupt timed out waiting for an ack', { sessionId });
-        return false;
+        return { outcome: 'unconfirmed', reason: 'ack-timeout', runtime: this.type };
     }
   }
 

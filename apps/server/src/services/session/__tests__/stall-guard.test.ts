@@ -9,7 +9,8 @@
  * and a completed stream leaves no timer behind to fire late.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { StreamEvent } from '@dorkos/shared/types';
+import type { InterruptReceipt, StreamEvent } from '@dorkos/shared/types';
+import { mockInterruptReceipt } from '@dorkos/test-utils';
 import { withStallGuard } from '../stall-guard.js';
 import type { StallGuardOpts } from '../stall-guard.js';
 import { SESSIONS } from '../../../config/constants.js';
@@ -139,7 +140,7 @@ function makeOpts(overrides: Partial<StallGuardOpts> = {}): StallGuardOpts {
     sessionId: SESSION_ID,
     timeoutMs: TEN_MINUTES,
     isPaused: () => false,
-    onStall: vi.fn(async () => true),
+    onStall: vi.fn(async () => mockInterruptReceipt('acked')),
     ...overrides,
   };
 }
@@ -157,7 +158,7 @@ afterEach(() => {
 describe('withStallGuard', () => {
   it('forwards events and resets the inactivity clock on each one', async () => {
     const src = createControlledSource();
-    const onStall = vi.fn(async () => true);
+    const onStall = vi.fn(async () => mockInterruptReceipt('acked'));
     const collector = collect(withStallGuard(src.source, makeOpts({ onStall })));
     await flush();
 
@@ -182,10 +183,10 @@ describe('withStallGuard', () => {
 
   it('fires the stall: onStall awaited once, return() fired, then exactly the three closing events', async () => {
     const src = createControlledSource();
-    let resolveStall!: (v: boolean) => void;
+    let resolveStall!: (v: InterruptReceipt) => void;
     const onStall = vi.fn(
       () =>
-        new Promise<boolean>((resolve) => {
+        new Promise<InterruptReceipt>((resolve) => {
           resolveStall = resolve;
         })
     );
@@ -202,7 +203,7 @@ describe('withStallGuard', () => {
     // so nothing is yielded until onStall settles, proof it is awaited.
     expect(collector.events).toEqual([]);
 
-    resolveStall(true);
+    resolveStall(mockInterruptReceipt('acked'));
     await flush();
     expect(collector.events).toEqual(stallCloseEvents('aborted'));
     expect(collector.isEnded()).toBe(true);
@@ -228,7 +229,10 @@ describe('withStallGuard', () => {
   it('closes with the leaked-process details when onStall resolves false', async () => {
     const src = createControlledSource();
     const collector = collect(
-      withStallGuard(src.source, makeOpts({ onStall: vi.fn(async () => false) }))
+      withStallGuard(
+        src.source,
+        makeOpts({ onStall: vi.fn(async () => mockInterruptReceipt('not-running')) })
+      )
     );
     await flush();
 
@@ -267,7 +271,7 @@ describe('withStallGuard', () => {
   it('re-arms while paused and fires only a full threshold after unpause', async () => {
     const src = createControlledSource();
     let paused = true;
-    const onStall = vi.fn(async () => true);
+    const onStall = vi.fn(async () => mockInterruptReceipt('acked'));
     const collector = collect(
       withStallGuard(src.source, makeOpts({ isPaused: () => paused, onStall }))
     );
@@ -295,7 +299,7 @@ describe('withStallGuard', () => {
 
   it('clears the timer on normal completion (no late fire)', async () => {
     const src = createControlledSource();
-    const onStall = vi.fn(async () => true);
+    const onStall = vi.fn(async () => mockInterruptReceipt('acked'));
     const collector = collect(withStallGuard(src.source, makeOpts({ onStall })));
     await flush();
 
@@ -315,7 +319,7 @@ describe('withStallGuard', () => {
 
   it('rethrows a source throw and clears the timer (guardTurnErrors owns translation)', async () => {
     const src = createControlledSource();
-    const onStall = vi.fn(async () => true);
+    const onStall = vi.fn(async () => mockInterruptReceipt('acked'));
     const collector = collect(withStallGuard(src.source, makeOpts({ onStall })));
     await flush();
 
@@ -407,7 +411,7 @@ describe('withStallGuard', () => {
 
     it('ends a turn that never yields at the first-event window, not the full one', async () => {
       const src = createControlledSource();
-      const onStall = vi.fn(async () => true);
+      const onStall = vi.fn(async () => mockInterruptReceipt('acked'));
       const collector = collect(
         withStallGuard(src.source, makeOpts({ onStall, firstEventTimeoutMs: TWO_MINUTES }))
       );
@@ -445,7 +449,7 @@ describe('withStallGuard', () => {
 
     it('hands a turn the FULL window the moment it yields once', async () => {
       const src = createControlledSource();
-      const onStall = vi.fn(async () => true);
+      const onStall = vi.fn(async () => mockInterruptReceipt('acked'));
       const collector = collect(
         withStallGuard(src.source, makeOpts({ onStall, firstEventTimeoutMs: TWO_MINUTES }))
       );
@@ -470,7 +474,7 @@ describe('withStallGuard', () => {
 
     it('never lengthens a shorter inactivity window a caller asked for', async () => {
       const src = createControlledSource();
-      const onStall = vi.fn(async () => true);
+      const onStall = vi.fn(async () => mockInterruptReceipt('acked'));
       collect(
         withStallGuard(
           src.source,
@@ -502,7 +506,7 @@ describe('withStallGuard', () => {
   it('gives up on an interrupt that never settles, closing the turn at the bound', async () => {
     const src = createControlledSource();
     // interruptQuery that hangs forever — the failure this bound exists for.
-    const onStall = vi.fn(() => new Promise<boolean>(() => {}));
+    const onStall = vi.fn(() => new Promise<InterruptReceipt>(() => {}));
     const collector = collect(withStallGuard(src.source, makeOpts({ onStall })));
     await flush();
 
@@ -542,7 +546,7 @@ describe('withStallGuard', () => {
           makeOpts({
             onStall: vi.fn(
               () =>
-                new Promise<boolean>((_resolve, reject) => {
+                new Promise<InterruptReceipt>((_resolve, reject) => {
                   failStall = reject;
                 })
             ),

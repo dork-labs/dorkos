@@ -70,11 +70,32 @@ describe('interruptTurn', () => {
   });
 
   it('resolves cleanly and logs nothing when interruptQuery reports no in-flight turn', async () => {
-    const agentManager = fakeAgentManager(vi.fn().mockResolvedValue(false));
+    const agentManager = fakeAgentManager(
+      vi.fn().mockResolvedValue({ outcome: 'not-running', reason: 'no-open-turn', runtime: 'fake' })
+    );
     const logger = fakeLogger();
     await interruptTurn(agentManager, 'sess-1', 'turn <t1>', logger);
     expect(logger.debug).toHaveBeenCalledWith(
       '[CCA] turn <t1>: runtime reported no in-flight turn to interrupt'
+    );
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('warns when the runtime could not confirm the stop — the turn may still be running', async () => {
+    // The distinction the boolean could not carry, and the one that matters to
+    // whoever reads this log: the caller finalizes its work either way, so an
+    // `unconfirmed` means it is finalizing over an agent that is still spending
+    // money. `not-running` above is not that and stays at debug.
+    const agentManager = fakeAgentManager(
+      vi
+        .fn()
+        .mockResolvedValue({ outcome: 'unconfirmed', reason: 'ack-timeout', runtime: 'opencode' })
+    );
+    const logger = fakeLogger();
+    await interruptTurn(agentManager, 'sess-1', 'turn <t1>', logger);
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[CCA] turn <t1>: the turn was not confirmed stopped (unconfirmed/ack-timeout)'
     );
     expect(logger.error).not.toHaveBeenCalled();
   });

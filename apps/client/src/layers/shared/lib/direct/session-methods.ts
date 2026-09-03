@@ -22,7 +22,12 @@ import type { ClientContext } from '@dorkos/shared/additional-context';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import type { ClaudePluginTransport } from '@dorkos/shared/transport';
 import type { PendingInteractionsResponse } from '@dorkos/shared/interaction-events';
-import type { UiActionRequest, MessageDisposition, QueuedMessage } from '@dorkos/shared/schemas';
+import type {
+  UiActionRequest,
+  MessageDisposition,
+  QueuedMessage,
+  InterruptReceipt,
+} from '@dorkos/shared/schemas';
 import { formatUiActionMessage } from '@dorkos/shared/ui-widget';
 import type { DirectTransportServices } from './services';
 
@@ -60,6 +65,20 @@ async function resolveDirectMessagesCwd(
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The one stop receipt this transport MINTS rather than passes through.
+ *
+ * Used only where the embedded runtime cannot be asked at all — it implements no
+ * stop method, or the in-process call threw. `failed` rather than `not-running`,
+ * deliberately: nothing ended the turn, so claiming there was nothing to stop
+ * would send the person away from a Stop button that is still their only move.
+ *
+ * @param runtimeType - The embedded runtime's own `type`, when it has one
+ */
+function stopNotDelivered(runtimeType: string | undefined): InterruptReceipt {
+  return { outcome: 'failed', reason: 'delivery-failed', runtime: runtimeType ?? 'unknown' };
 }
 
 /**
@@ -437,20 +456,20 @@ export function createDirectSessionMethods(
     async stopTask(
       sessionId: string,
       taskId: string
-    ): Promise<{ success: boolean; taskId: string }> {
+    ): Promise<{ receipt: InterruptReceipt; taskId: string }> {
+      // The DirectTransport runtime interface predates stopTask — use a structural check
+      // to forward the call only when the method is present (Obsidian plugin compatibility).
+      const runtime = services.runtime as {
+        type?: string;
+        stopTask?: (s: string, t: string) => Promise<InterruptReceipt>;
+      };
       try {
-        // The DirectTransport runtime interface predates stopTask — use a structural check
-        // to forward the call only when the method is present (Obsidian plugin compatibility).
-        const runtime = services.runtime as {
-          stopTask?: (s: string, t: string) => Promise<boolean>;
-        };
         if (typeof runtime.stopTask !== 'function') {
-          return { success: false, taskId };
+          return { receipt: stopNotDelivered(runtime.type), taskId };
         }
-        const success = await runtime.stopTask(sessionId, taskId);
-        return { success, taskId };
+        return { receipt: await runtime.stopTask(sessionId, taskId), taskId };
       } catch {
-        return { success: false, taskId };
+        return { receipt: stopNotDelivered(runtime.type), taskId };
       }
     },
 
@@ -459,21 +478,27 @@ export function createDirectSessionMethods(
      * runtime if supported. Embedded hosts run without a queue store, so nothing
      * is ever waiting and `cancelledQueued` is always empty — the same reason
      * the queue-mutation methods above refuse honestly rather than pretend.
+     *
+     * The runtime's own receipt is passed straight through — nothing is
+     * synthesised from it. The one receipt this seam MINTS is for the embedded
+     * runtime that has no `interruptQuery` at all: `failed`, because nothing
+     * stopped the turn and the person should be able to press again, never
+     * `not-running`, which would claim there was nothing to stop.
      */
     async interruptSession(
       sessionId: string
-    ): Promise<{ ok: boolean; cancelledQueued: QueuedMessage[] }> {
+    ): Promise<{ receipt: InterruptReceipt; cancelledQueued: QueuedMessage[] }> {
+      const runtime = services.runtime as {
+        type?: string;
+        interruptQuery?: (s: string) => Promise<InterruptReceipt>;
+      };
       try {
-        const runtime = services.runtime as {
-          interruptQuery?: (s: string) => Promise<boolean>;
-        };
         if (typeof runtime.interruptQuery !== 'function') {
-          return { ok: false, cancelledQueued: [] };
+          return { receipt: stopNotDelivered(runtime.type), cancelledQueued: [] };
         }
-        const ok = await runtime.interruptQuery(sessionId);
-        return { ok, cancelledQueued: [] };
+        return { receipt: await runtime.interruptQuery(sessionId), cancelledQueued: [] };
       } catch {
-        return { ok: false, cancelledQueued: [] };
+        return { receipt: stopNotDelivered(runtime.type), cancelledQueued: [] };
       }
     },
 

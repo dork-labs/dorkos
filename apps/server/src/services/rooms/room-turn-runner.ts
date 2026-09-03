@@ -43,6 +43,7 @@ import {
   type BlockingInteractionEventType,
   type SessionActivity,
 } from '@dorkos/shared/session-stream';
+import type { InterruptReceipt } from '@dorkos/shared/types';
 import { logger } from '../../lib/logger.js';
 import { ROOMS } from '../../config/constants.js';
 import { projectRoomAttachments } from './attachments/attachment-projection.js';
@@ -772,7 +773,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       };
     },
 
-    async interrupt({ sessionId, agentPath }): Promise<boolean> {
+    async interrupt({ sessionId, agentPath }): Promise<InterruptReceipt> {
       // Exactly as `run` resolves it, and that is the whole requirement: a stop
       // aimed at a runtime other than the one running the turn stops nothing.
       // The session's own binding answers first, and the agent's manifest only
@@ -785,14 +786,20 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // recoveries (re-enable the runtime, or remove and re-add the agent) — see
       // the note above the identical `get` in `run`. Nothing was running to stop
       // in that state anyway, since no turn could have started.
-      const runtime = runtimeRegistry.get(await resolveTurnRuntimeType({ sessionId, agentPath }));
+      const runtimeType = await resolveTurnRuntimeType({ sessionId, agentPath });
+      const runtime = runtimeRegistry.get(runtimeType);
       // No runtime is no stop: nothing was reached, and saying so is the whole
-      // point of answering at all (DOR-1425). Unreachable against the real
-      // registry, whose `get` throws; the tests' stub is what returns nothing.
-      if (!runtime) return false;
-      const stopped = await runtime.interruptQuery(sessionId);
-      logger.info('[rooms] interrupted a turn', { sessionId, stopped });
-      if (!stopped) {
+      // point of answering at all (DOR-1425). `failed` rather than
+      // `not-running` — a runtime this build does not have is a delivery
+      // problem, not evidence that the turn was over. Unreachable against the
+      // real registry, whose `get` throws; the tests' stub is what returns
+      // nothing.
+      if (!runtime) {
+        return { outcome: 'failed', reason: 'delivery-failed', runtime: runtimeType };
+      }
+      const receipt = await runtime.interruptQuery(sessionId);
+      logger.info('[rooms] interrupted a turn', { sessionId, ...receipt });
+      if (receipt.outcome === 'not-running') {
         // **The stop landed on nothing, and the turn may still be COMING UP.**
         // A halt pressed while the agent's process is still starting reaches a
         // runtime that has not bound the turn yet, so there is nothing to
@@ -802,7 +809,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         // see {@link stopsWaitingForATurn}.
         stopsWaitingForATurn.set(sessionId, runtime);
       }
-      return stopped;
+      return receipt;
     },
   };
 }

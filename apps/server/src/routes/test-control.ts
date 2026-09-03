@@ -12,7 +12,11 @@ import { localDialHost } from '../lib/local-dial-host.js';
 import { env } from '../env.js';
 import { heldProcesses } from '../services/runtimes/test-mode/held-process.js';
 import { interactionGate } from '../services/runtimes/test-mode/interaction-gate.js';
-import { requestFinishTurn, scenarioStore } from '../services/runtimes/test-mode/scenario-store.js';
+import {
+  declareInterruptOutcome,
+  requestFinishTurn,
+  scenarioStore,
+} from '../services/runtimes/test-mode/scenario-store.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import {
   getRoomService,
@@ -72,6 +76,37 @@ testControlRouter.post('/scenario', (req, res) => {
 testControlRouter.post('/finish-turn', (_req, res) => {
   requestFinishTurn();
   res.json({ ok: true });
+});
+
+const interruptOutcomeSchema = z.object({
+  outcome: z.enum(['acked', 'closed', 'unconfirmed', 'failed']).nullable(),
+});
+
+/**
+ * `POST /api/test/interrupt-outcome` — declare which of the five stop endings
+ * the next Stop on a scripted turn answers with (spec
+ * `runtime-interrupt-receipts` D10).
+ *
+ * The endings a real runtime only produces under conditions a browser test
+ * cannot arrange — an agent that acks, a runtime that declines, a call that
+ * blows up — staged deterministically so the composer's per-outcome copy can be
+ * asserted. `outcome: null` restores test-mode's honest `closed` default.
+ *
+ * `unconfirmed` and `failed` do NOT stop the turn: they stage the ending a stop
+ * that did not land produces, and a turn that quietly ended underneath that copy
+ * would prove nothing about it.
+ *
+ * Process-wide and sticky, like `POST /api/test/finish-turn`.
+ */
+testControlRouter.post('/interrupt-outcome', (req, res) => {
+  const result = interruptOutcomeSchema.safeParse(req.body);
+  if (!result.success) {
+    return res
+      .status(400)
+      .json({ error: 'Validation failed', details: z.flattenError(result.error) });
+  }
+  declareInterruptOutcome(result.data.outcome ?? undefined);
+  res.json({ ok: true, outcome: result.data.outcome });
 });
 
 const stepSchema = z.object({ sessionId: z.string().uuid() });

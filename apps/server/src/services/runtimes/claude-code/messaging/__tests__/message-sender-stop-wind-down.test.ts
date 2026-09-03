@@ -15,6 +15,7 @@
  * a turn that stopped rather than as a red failure.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { InterruptReceipt } from '@dorkos/shared/types';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import { SessionStore } from '../../sessions/session-store.js';
 import { feedProjector } from '../../../../session/session-event-normalizer.js';
@@ -265,7 +266,7 @@ describe('a Stop pressed while the turn is winding down (DOR-1244)', () => {
   });
 
   it('ends the reopened turn, and settles it as interrupted rather than as finished', async () => {
-    let stopOutcome: boolean | undefined;
+    let stopOutcome: InterruptReceipt | undefined;
     const run = await runTurn((store) => [
       initMsg(),
       textDeltaMsg('working on it'),
@@ -282,8 +283,14 @@ describe('a Stop pressed while the turn is winding down (DOR-1244)', () => {
     ]);
 
     // The Stop was answered — it did not hang waiting for an ack that could not
-    // come, and it took the only route left.
-    expect(stopOutcome).toBe(true);
+    // come, and it took the only route left. `stdin-ended` is the reason, and it
+    // is the whole point of the receipt: the process WAS stopped, the agent got
+    // no wind-down, and the boolean said neither.
+    expect(stopOutcome).toEqual({
+      outcome: 'closed',
+      reason: 'stdin-ended',
+      runtime: 'claude-code',
+    });
     expect(run.cli.calls.close).toBe(1);
 
     // Two windows: the turn, and the continuation the CLI woke itself for.
@@ -339,7 +346,7 @@ describe('a Stop pressed while the turn is winding down (DOR-1244)', () => {
     // "The agent did not respond" and settling `error`, so the operator saw the
     // crash notice "Claude Code stopped unexpectedly" for something they did on
     // purpose. A stopped turn with nothing in it is a turn somebody ended.
-    let stopOutcome: boolean | undefined;
+    let stopOutcome: InterruptReceipt | undefined;
     const run = await runTurn(
       (store) => [
         initMsg(),
@@ -350,7 +357,8 @@ describe('a Stop pressed while the turn is winding down (DOR-1244)', () => {
       { interrupt: 'rejects' }
     );
 
-    expect(stopOutcome).toBe(true);
+    // The CLI answered with a failure, so DorkOS escalated: `closed / refused`.
+    expect(stopOutcome).toEqual({ outcome: 'closed', reason: 'refused', runtime: 'claude-code' });
     expect(run.cli.calls.close).toBe(1);
     expect(run.windows).toHaveLength(1);
     expect(endReason(run.windows[0]!)).toBe('interrupted');
@@ -367,7 +375,7 @@ describe('a Stop pressed while the turn is winding down (DOR-1244)', () => {
     // ends the turn itself, and reports `aborted_streaming`; the turn has no
     // content, so without the stop-aware guard it also collected "The agent did
     // not respond" and settled `error` instead.
-    let stopOutcome: boolean | undefined;
+    let stopOutcome: InterruptReceipt | undefined;
     const run = await runTurn(
       (store) => [
         initMsg(),
@@ -380,7 +388,7 @@ describe('a Stop pressed while the turn is winding down (DOR-1244)', () => {
       { interrupt: 'acks', endsOnItsOwn: true }
     );
 
-    expect(stopOutcome).toBe(true);
+    expect(stopOutcome).toEqual({ outcome: 'acked', runtime: 'claude-code' });
     // Acked, so the process was never killed.
     expect(run.cli.calls.interrupt).toBe(1);
     expect(run.cli.calls.close).toBe(0);
@@ -401,7 +409,7 @@ describe('a Stop pressed while the turn is winding down (DOR-1244)', () => {
     // THEN does the Stop arrive — the ordinary race between a reply ending and
     // the button being pressed. Nothing here was interrupted, and the transcript
     // must not claim it was.
-    let stopOutcome: boolean | undefined;
+    let stopOutcome: InterruptReceipt | undefined;
     const run = await runTurn((store) => [
       initMsg(),
       textDeltaMsg('all done'),
@@ -411,7 +419,14 @@ describe('a Stop pressed while the turn is winding down (DOR-1244)', () => {
       },
     ]);
 
-    expect(stopOutcome).toBe(true);
+    // The CLI's own `result` ended this turn's stdin, so the Stop that raced it
+    // takes the no-graceful-attempt route and closes a process that has nothing
+    // left to say.
+    expect(stopOutcome).toEqual({
+      outcome: 'closed',
+      reason: 'stdin-ended',
+      runtime: 'claude-code',
+    });
     expect(run.windows).toHaveLength(1);
     expect(endReason(run.windows[0]!)).toBe('completed');
     expect(run.lifecycle).toBe('idle');

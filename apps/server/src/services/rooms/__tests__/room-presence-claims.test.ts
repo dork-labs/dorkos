@@ -45,6 +45,7 @@ import type {
 import type { SessionActivity } from '@dorkos/shared/session-stream';
 import { deriveSessionActivity } from '../../session/index.js';
 import type { AuthorRegistry } from '../author-registry.js';
+import { mockInterruptReceipt } from '@dorkos/test-utils';
 import type { RoomService } from '../room-service.js';
 import type { LateRoomReply, RoomTurnRequest, RoomTurnResult } from '../room-trigger.js';
 import {
@@ -150,7 +151,7 @@ function drivenRunner(opts: {
   return {
     turns,
     interrupted: [],
-    interrupt: () => Promise.resolve(false),
+    interrupt: () => Promise.resolve(mockInterruptReceipt('not-running')),
     land(authorId, reply) {
       takeHeld(authorId, 'land').land(reply);
     },

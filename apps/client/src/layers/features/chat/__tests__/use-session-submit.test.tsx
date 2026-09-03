@@ -674,7 +674,9 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
   });
 
   it('stop() interrupts the session', async () => {
-    const interruptSession = vi.fn().mockResolvedValue({ ok: true });
+    const interruptSession = vi
+      .fn()
+      .mockResolvedValue({ receipt: { outcome: 'acked', runtime: 'claude-code' } });
     const transport = createMockTransport({ interruptSession });
 
     const { result } = renderHook(() => useChatSession('s1'), {
@@ -695,7 +697,12 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
       { id: 'm1', content: 'one', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'me' },
       { id: 'm2', content: 'two', disposition: 'queue', enqueuedAt: 2, enqueuedBy: 'me' },
     ];
-    const interruptSession = vi.fn().mockResolvedValue({ ok: true, cancelledQueued });
+    const interruptSession = vi
+      .fn()
+      .mockResolvedValue({
+        receipt: { outcome: 'acked', runtime: 'claude-code' },
+        cancelledQueued,
+      });
     const transport = createMockTransport({ interruptSession });
 
     const { result } = renderHook(() => useChatSession('s1'), {
@@ -709,16 +716,23 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
       returned = await result.current.stop();
     });
 
-    expect(returned).toEqual({ ok: true, cancelled: cancelledQueued });
+    expect(returned).toEqual({
+      receipt: { outcome: 'acked', runtime: 'claude-code' },
+      cancelled: cancelledQueued,
+    });
   });
 
-  it("stop() carries the server's ok:false through rather than swallowing it (DOR-1300)", async () => {
-    // A caller (the composer) decides whether to re-offer Stop off THIS flag —
-    // if `stop()` silently turned `ok: false` into a same-shaped success, a
-    // genuinely failed interrupt on a still-streaming turn would never be
-    // told apart from one that actually worked, and nothing would ever
-    // re-enable the button.
-    const interruptSession = vi.fn().mockResolvedValue({ ok: false, cancelledQueued: [] });
+  it("stop() carries the runtime's receipt through rather than flattening it (DOR-1300)", async () => {
+    // A caller (the composer) decides whether to re-offer Stop off THIS receipt
+    // — if `stop()` reduced `unconfirmed` to a same-shaped success, a turn that
+    // is still running would never be told apart from one that actually
+    // stopped, and nothing would ever re-enable the button.
+    const receipt = {
+      outcome: 'unconfirmed',
+      reason: 'runtime-declined',
+      runtime: 'opencode',
+    };
+    const interruptSession = vi.fn().mockResolvedValue({ receipt, cancelledQueued: [] });
     const transport = createMockTransport({ interruptSession });
 
     const { result } = renderHook(() => useChatSession('s1'), {
@@ -732,10 +746,10 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
       returned = await result.current.stop();
     });
 
-    expect(returned).toEqual({ ok: false, cancelled: [] });
+    expect(returned).toEqual({ receipt, cancelled: [] });
   });
 
-  it('stop() reports ok:false when the request itself throws, and still resolves rather than rejecting', async () => {
+  it('stop() reports `failed` when the request itself throws, and still resolves rather than rejecting', async () => {
     const interruptSession = vi.fn().mockRejectedValue(new Error('network error'));
     const transport = createMockTransport({ interruptSession });
 
@@ -750,7 +764,12 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
       returned = await result.current.stop();
     });
 
-    expect(returned).toEqual({ ok: false, cancelled: [] });
+    // `failed`, not `not-running`: nothing ended the turn, so the person must be
+    // able to press Stop again.
+    expect(returned).toEqual({
+      receipt: { outcome: 'failed', reason: 'delivery-failed', runtime: 'unknown' },
+      cancelled: [],
+    });
   });
 
   it('holds status at streaming through the trigger round-trip (CLI-B7 double-submit window)', async () => {

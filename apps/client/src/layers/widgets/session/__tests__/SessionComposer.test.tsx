@@ -141,6 +141,7 @@ vi.mock('@/layers/entities/runtime', () => ({
 }));
 
 import { SessionComposerBench } from '@/test-helpers/session-composer';
+import type { StopOutcome } from '@/layers/features/chat';
 import { Composer } from '@/layers/features/composer';
 import { QueuePanel } from '@/layers/features/chat/ui/input/QueuePanel';
 import { useSessionStreamStore, useSessionChatStore } from '@/layers/entities/session';
@@ -677,7 +678,12 @@ describe('SessionComposer — Stop clears the queue (task 4.7)', () => {
 
   it('asks first and names the count when messages are queued, and does not stop yet', async () => {
     seedQueue('one', 'two', 'three');
-    const stop = vi.fn().mockResolvedValue({ ok: true, cancelled: [] });
+    const stop = vi
+      .fn()
+      .mockResolvedValue({
+        receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
+        cancelled: [],
+      });
     render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
 
     await act(async () => {
@@ -690,7 +696,12 @@ describe('SessionComposer — Stop clears the queue (task 4.7)', () => {
   });
 
   it('stops immediately with no dialog when nothing is queued', async () => {
-    const stop = vi.fn().mockResolvedValue({ ok: true, cancelled: [] });
+    const stop = vi
+      .fn()
+      .mockResolvedValue({
+        receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
+        cancelled: [],
+      });
     render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
 
     await act(async () => {
@@ -944,7 +955,12 @@ describe('SessionComposer — Stop trusts the local rewrite over the queue PATCH
     // early and what the composer ends up holding is the leave-queue handoff
     // alone. (Row `q0` is still queued below — it is this mock, not an empty
     // queue, that makes the restore step a no-op.)
-    const stop = vi.fn().mockResolvedValue({ ok: true, cancelled: [] });
+    const stop = vi
+      .fn()
+      .mockResolvedValue({
+        receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
+        cancelled: [],
+      });
     render(<ControlledStopComposer {...baseProps} stop={stop} status="streaming" />);
 
     editSecondRowAndRewrite('TWO REWRITTEN');
@@ -988,10 +1004,10 @@ describe('SessionComposer — Stop acknowledges instantly and cannot double-fire
   });
 
   it('goes pending the instant Stop is clicked, and calls interrupt exactly once even if pressed again mid-flight', async () => {
-    let resolveStop!: (v: { ok: boolean; cancelled: never[] }) => void;
+    let resolveStop!: (v: StopOutcome) => void;
     const stop = vi.fn(
       () =>
-        new Promise<{ ok: boolean; cancelled: never[] }>((resolve) => {
+        new Promise<StopOutcome>((resolve) => {
           resolveStop = resolve;
         })
     );
@@ -1013,15 +1029,18 @@ describe('SessionComposer — Stop acknowledges instantly and cannot double-fire
     expect(stop).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      resolveStop({ ok: true, cancelled: [] });
+      resolveStop({
+        receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
+        cancelled: [],
+      });
     });
   });
 
   it('clears pending once the turn actually settles (isStreaming flips), independent of when the interrupt response lands', async () => {
-    let resolveStop!: (v: { ok: boolean; cancelled: never[] }) => void;
+    let resolveStop!: (v: StopOutcome) => void;
     const stop = vi.fn(
       () =>
-        new Promise<{ ok: boolean; cancelled: never[] }>((resolve) => {
+        new Promise<StopOutcome>((resolve) => {
           resolveStop = resolve;
         })
     );
@@ -1041,7 +1060,10 @@ describe('SessionComposer — Stop acknowledges instantly and cannot double-fire
     expect(lastChatInputProps().stopPending).toBe(false);
 
     await act(async () => {
-      resolveStop({ ok: true, cancelled: [] });
+      resolveStop({
+        receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
+        cancelled: [],
+      });
     });
     expect(lastChatInputProps().stopPending).toBe(false);
   });
@@ -1050,7 +1072,12 @@ describe('SessionComposer — Stop acknowledges instantly and cannot double-fire
     // Case: the response lands BEFORE turn_end — a successful `stop()` alone
     // must not clear pending, or a person watches the button go live again
     // while the agent is still winding down.
-    const stop = vi.fn().mockResolvedValue({ ok: true, cancelled: [] });
+    const stop = vi
+      .fn()
+      .mockResolvedValue({
+        receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
+        cancelled: [],
+      });
     const { rerender } = render(
       <SessionComposerBench {...baseProps} stop={stop} status="streaming" />
     );
@@ -1080,23 +1107,29 @@ describe('SessionComposer — Stop acknowledges instantly and cannot double-fire
     expect(stop).toHaveBeenCalledTimes(2);
   });
 
-  it('re-enables Stop when the server answers ok:false while the turn is still running', async () => {
-    // The server 200s `{ ok: false }` on a race (turn already finished — the
-    // common case, already covered above by the settle path) AND on a thrown
-    // interrupt with the turn still alive. This test is the second case: the
-    // turn is STILL streaming, so nothing else would ever release a pending
-    // Stop — `performStop` has to read the failure itself and re-enable
-    // (DOR-1300 S4). Delete this test's `ok: false` and turn it into
-    // `ok: true` and it goes red: pending would then correctly stay latched
-    // until the (never-arriving, in this test) settle.
-    const stop = vi.fn().mockResolvedValue({ ok: false, cancelled: [] });
+  it('re-enables Stop when the runtime could not confirm it while the turn is still running', async () => {
+    // `unconfirmed` is the ending that leaves the turn open: the request went
+    // out and the runtime cannot say whether it landed. Nothing else would ever
+    // release a pending Stop here — the turn is STILL streaming — so
+    // `performStop` has to read the receipt itself and re-enable (DOR-1300 S4,
+    // spec `runtime-interrupt-receipts` §5.1). Swap this for `acked` and it goes
+    // red: pending would then correctly stay latched until the (never-arriving,
+    // in this test) settle.
+    const stop = vi.fn().mockResolvedValue({
+      receipt: {
+        outcome: 'unconfirmed' as const,
+        reason: 'runtime-declined' as const,
+        runtime: 'opencode',
+      },
+      cancelled: [],
+    });
     render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
 
     await act(async () => {
       lastChatInputProps().onStop!();
     });
 
-    // Still streaming (status never changed) — `ok: false` alone is what
+    // Still streaming (status never changed) — the receipt alone is what
     // re-enabled it, not a settle this test never provided.
     await waitFor(() => expect(lastChatInputProps().stopPending).toBe(false));
     await act(async () => {
@@ -1107,7 +1140,12 @@ describe('SessionComposer — Stop acknowledges instantly and cannot double-fire
 
   it('starts pending on CONFIRM, not on opening the confirm dialog', async () => {
     seedQueue('one');
-    const stop = vi.fn().mockResolvedValue({ ok: true, cancelled: [] });
+    const stop = vi
+      .fn()
+      .mockResolvedValue({
+        receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
+        cancelled: [],
+      });
     render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
 
     await act(async () => {
@@ -1141,10 +1179,10 @@ describe('SessionComposer — Stop acknowledges instantly and cannot double-fire
     // check at the top of `confirmStop` back to a `stopPending`-only check
     // and this goes red.
     seedQueue('one');
-    let resolveStop!: (v: { ok: boolean; cancelled: never[] }) => void;
+    let resolveStop!: (v: StopOutcome) => void;
     const stop = vi.fn(
       () =>
-        new Promise<{ ok: boolean; cancelled: never[] }>((resolve) => {
+        new Promise<StopOutcome>((resolve) => {
           resolveStop = resolve;
         })
     );
@@ -1163,7 +1201,10 @@ describe('SessionComposer — Stop acknowledges instantly and cannot double-fire
     expect(stop).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      resolveStop({ ok: true, cancelled: [] });
+      resolveStop({
+        receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
+        cancelled: [],
+      });
     });
   });
 });
@@ -1180,10 +1221,10 @@ describe('SessionComposer — a Stop pending on one session never leaks into ano
     // would survive the switch (it was never told which session it was for)
     // and read `true` on B, whose OWN Stop button never fired a single
     // request.
-    let resolveStop!: (v: { ok: boolean; cancelled: never[] }) => void;
+    let resolveStop!: (v: StopOutcome) => void;
     const stop = vi.fn(
       () =>
-        new Promise<{ ok: boolean; cancelled: never[] }>((resolve) => {
+        new Promise<StopOutcome>((resolve) => {
           resolveStop = resolve;
         })
     );
@@ -1211,7 +1252,10 @@ describe('SessionComposer — a Stop pending on one session never leaks into ano
     expect(stop).toHaveBeenCalledTimes(2);
 
     await act(async () => {
-      resolveStop({ ok: true, cancelled: [] });
+      resolveStop({
+        receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
+        cancelled: [],
+      });
     });
   });
 });
@@ -1247,7 +1291,12 @@ describe('SessionComposer — the Stop question goes away when its queue does (D
     // The live finding: the count decayed to 0 under the dialog's own nose and
     // the dialog stayed, reading "Stop, and put 0 queued messages back?" over a
     // composer it blocked until dismissed by hand.
-    const stop = vi.fn().mockResolvedValue({ ok: true, cancelled: [] });
+    const stop = vi
+      .fn()
+      .mockResolvedValue({
+        receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
+        cancelled: [],
+      });
     seedQueue('one', 'two');
     render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
 
@@ -1267,7 +1316,12 @@ describe('SessionComposer — the Stop question goes away when its queue does (D
   });
 
   it('leaves Stop working immediately afterwards — one click, no second question', async () => {
-    const stop = vi.fn().mockResolvedValue({ ok: true, cancelled: [] });
+    const stop = vi
+      .fn()
+      .mockResolvedValue({
+        receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
+        cancelled: [],
+      });
     seedQueue('one');
     render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
 
@@ -1290,7 +1344,12 @@ describe('SessionComposer — the Stop question goes away when its queue does (D
     // the count: a derived-only guard leaves the flag true, so the next
     // `queue_update` that puts a message back on the queue would re-open a
     // dialog nobody asked for.
-    const stop = vi.fn().mockResolvedValue({ ok: true, cancelled: [] });
+    const stop = vi
+      .fn()
+      .mockResolvedValue({
+        receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
+        cancelled: [],
+      });
     seedQueue('one');
     render(<SessionComposerBench {...baseProps} stop={stop} status="streaming" />);
 
@@ -1358,7 +1417,12 @@ describe('SessionComposer — the Stop question goes away when its queue does (D
     //
     // Session B has a queue of its OWN, so the auto-dismiss above cannot be
     // what hides it — only the session key can.
-    const stop = vi.fn().mockResolvedValue({ ok: true, cancelled: [] });
+    const stop = vi
+      .fn()
+      .mockResolvedValue({
+        receipt: { outcome: 'acked' as const, runtime: 'claude-code' },
+        cancelled: [],
+      });
     const { rerender } = render(
       <SessionComposerBench
         {...baseProps}

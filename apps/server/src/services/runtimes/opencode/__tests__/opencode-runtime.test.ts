@@ -590,9 +590,10 @@ describe('OpenCodeRuntime', () => {
         events,
         message,
         yieldedBeforeFailure: events.length,
-        // `interruptQuery` answers false only when no turn is on record, so it
-        // reads the teardown the `finally` block owes either way.
-        turnRecordCleared: (await harness.runtime.interruptQuery(sessionId)) === false,
+        // `interruptQuery` answers `not-running` only when no turn is on record,
+        // so it reads the teardown the `finally` block owes either way.
+        turnRecordCleared:
+          (await harness.runtime.interruptQuery(sessionId)).outcome === 'not-running',
       };
     }
 
@@ -1177,7 +1178,12 @@ describe('OpenCodeRuntime', () => {
       connection.push(globalEvent(DIRECTORY, partUpdated(textPart(OC_SESSION_A, 'prt_1', ''))));
       connection.push(globalEvent(DIRECTORY, partDelta(OC_SESSION_A, 'prt_1', 'partial')));
 
-      await expect(runtime.interruptQuery(sessionId)).resolves.toBe(true);
+      // `acked`: the sidecar answered `true`, which is OpenCode confirming the
+      // abort. It is the one non-claude runtime that can reach `acked` at all.
+      await expect(runtime.interruptQuery(sessionId)).resolves.toEqual({
+        outcome: 'acked',
+        runtime: 'opencode',
+      });
       expect(client.session.abort).toHaveBeenCalledWith({ path: { id: OC_SESSION_A } });
 
       // The wire then carries the abort shape — suppressed, quiet done.
@@ -1189,11 +1195,15 @@ describe('OpenCodeRuntime', () => {
       expect(events[events.length - 1]!.type).toBe('done');
     });
 
-    it('returns false when no turn is in flight', async () => {
+    it('returns not-running when no turn is in flight', async () => {
       const { runtime } = makeRuntime();
       const sessionId = nextSessionId();
       runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: DIRECTORY });
-      await expect(runtime.interruptQuery(sessionId)).resolves.toBe(false);
+      await expect(runtime.interruptQuery(sessionId)).resolves.toEqual({
+        outcome: 'not-running',
+        reason: 'no-open-turn',
+        runtime: 'opencode',
+      });
     });
   });
 

@@ -17,6 +17,9 @@ import type {
   EffortLevel,
   Session,
   PendingInteractionDTO,
+  InterruptOutcome,
+  InterruptReason,
+  InterruptReceipt,
 } from '@dorkos/shared/types';
 import type {
   SessionOpts,
@@ -41,6 +44,21 @@ import {
   STOP_ACK_TIMEOUT_MS,
   type ControlAck,
 } from './bounded-control.js';
+
+/**
+ * Build one of this store's stop receipts.
+ *
+ * `runtime` is hardcoded rather than threaded from the facade because this store
+ * IS the claude-code adapter's session state — it is reachable from no other
+ * runtime, and `ClaudeCodeRuntime.type` is a fixed `'claude-code' as const` that
+ * an injection would only be able to agree with.
+ *
+ * @param outcome - Which of the five endings the stop reached
+ * @param reason - Why, when the outcome alone does not say it
+ */
+function receipt(outcome: InterruptOutcome, reason?: InterruptReason): InterruptReceipt {
+  return { outcome, ...(reason ? { reason } : {}), runtime: 'claude-code' };
+}
 
 /**
  * Is this session holding a prompt somebody could still come back and answer?
@@ -793,16 +811,16 @@ export class SessionStore {
    * `close()`, because the button asked to end ONE background task and killing
    * the subprocess would take the whole turn with it.
    */
-  async stopTask(sessionId: string, taskId: string): Promise<boolean> {
+  async stopTask(sessionId: string, taskId: string): Promise<InterruptReceipt> {
     const session = this.findSession(sessionId);
     const query = session?.activeQuery;
-    if (!session || !query) return false;
+    if (!session || !query) return receipt('not-running', 'no-open-turn');
     // Like interruptQuery: an operator-driven cancellation may surface as the
     // CLI's interrupt sentinel on the task's pending calls — stamp it so the
     // phantom detector (DOR-1087) treats those as legitimate.
     session.interruptRequestedAt = Date.now();
     const ack = await awaitControlAck(() => query.stopTask(taskId), STOP_ACK_TIMEOUT_MS);
-    if (ack === 'acked') return true;
+    if (ack === 'acked') return receipt('acked');
     logger.warn('[stopTask] the CLI did not stop the task', { sessionId, taskId, ack });
     // Only a REFUSAL clears the stamp. A refusal is the CLI saying the stop did
     // not happen, so a sentinel arriving afterwards really is a phantom. An
@@ -815,7 +833,12 @@ export class SessionStore {
     // on its own after `INTERRUPT_SUPPRESSION_WINDOW_MS` and is cleared at the
     // next turn start, so leaving it costs nothing beyond that window.
     if (ack === 'refused') session.interruptRequestedAt = undefined;
-    return false;
+    // NOT `not-running`: the task exists and, because this path deliberately
+    // never escalates to `close()`, it is very likely still running. Saying
+    // "there was nothing to stop" about a live background task is the exact
+    // collapse the receipt vocabulary exists to undo, so an unanswered or
+    // refused stop is `unconfirmed` and the surface says "stop requested".
+    return receipt('unconfirmed', ack === 'refused' ? 'runtime-declined' : 'ack-timeout');
   }
 
   /**
@@ -824,9 +847,9 @@ export class SessionStore {
    * Tries `query.interrupt()` first (graceful), bounded; escalates to
    * `query.close()` when that is refused or goes unacknowledged.
    */
-  async interruptQuery(sessionId: string): Promise<boolean> {
+  async interruptQuery(sessionId: string): Promise<InterruptReceipt> {
     const session = this.findSession(sessionId);
-    if (!session?.activeQuery) return false;
+    if (!session?.activeQuery) return receipt('not-running', 'no-open-turn');
     return this.interruptGivenQuery(sessionId, session.activeQuery);
   }
 
@@ -857,12 +880,13 @@ export class SessionStore {
    *
    * @param sessionId - The session the query belongs to
    * @param query - The live query to interrupt
-   * @returns True when the turn was interrupted or the process was closed, false
-   *   when neither path took and the session is unknown
+   * @returns The receipt for this stop — `acked` when the CLI answered, `closed`
+   *   with the reason DorkOS escalated, `failed` when even the close threw, and
+   *   `not-running` when the session is unknown
    */
-  async interruptGivenQuery(sessionId: string, query: Query): Promise<boolean> {
+  async interruptGivenQuery(sessionId: string, query: Query): Promise<InterruptReceipt> {
     const session = this.findSession(sessionId);
-    if (!session) return false;
+    if (!session) return receipt('not-running', 'no-open-turn');
     // A deliberate stop is about to cancel every pending tool call; stamp it so
     // the phantom-cancellation detector (DOR-1087) treats the resulting CLI
     // interrupt sentinels as legitimate rather than phantoms. It SURVIVES the
@@ -882,7 +906,7 @@ export class SessionStore {
       logger.info('[interruptQuery] stdin already ended; closing without a graceful attempt', {
         sessionId,
       });
-      return this.closeStoppedQuery(session, query);
+      return this.closeStoppedQuery(session, query, 'stdin-ended');
     }
     // Measured, because the bound alone never said where a slow Stop went
     // (DOR-1319). A Stop seen at 7.6 s could have been a 3 s ack plus a 4.5 s
@@ -902,12 +926,15 @@ export class SessionStore {
     } else {
       logger.debug('[interruptQuery] stop acked', { sessionId, ack, ackMs });
     }
-    if (ack === 'acked') return true;
+    if (ack === 'acked') return receipt('acked');
     logger.warn('[interruptQuery] the graceful interrupt did not take; closing the process', {
       sessionId,
       ack,
     });
-    return this.closeStoppedQuery(session, query);
+    // `refused` and `unacked` both end at the same place — an escalated close —
+    // but they are not the same fact, and the receipt keeps them apart: a refusal
+    // is the CLI answering "no", an unacked stop is nothing answering at all.
+    return this.closeStoppedQuery(session, query, ack === 'refused' ? 'refused' : 'ack-timeout');
   }
 
   /**
@@ -922,16 +949,28 @@ export class SessionStore {
    *
    * @param session - The live session, for the phantom-cancellation stamp
    * @param query - The query to close
-   * @returns True when the process was closed, false when even that failed
+   * @param why - What sent the stop down the escalation path, carried onto the
+   *   `closed` receipt so a surface can say WHY the agent lost its wind-down
+   * @returns `closed` with that reason when the process was closed, `failed` /
+   *   `delivery-failed` when even the close threw
    */
-  private closeStoppedQuery(session: AgentSession, query: Query): boolean {
+  private closeStoppedQuery(
+    session: AgentSession,
+    query: Query,
+    why: Extract<InterruptReason, 'refused' | 'ack-timeout' | 'stdin-ended'>
+  ): InterruptReceipt {
     try {
       query.close();
-      return true;
+      // A success, not a failure: the turn is over and the person got what they
+      // asked for. What they lost is the CLI's own wind-down — its interrupt
+      // sentinel on each pending call, its terminal reason, its transcript
+      // marker, and a warm process. That is worth one sentence of UI and is not
+      // an error state.
+      return receipt('closed', why);
     } catch {
       // Neither path stopped the turn — do not blind the phantom detector.
       session.interruptRequestedAt = undefined;
-      return false;
+      return receipt('failed', 'delivery-failed');
     }
   }
 

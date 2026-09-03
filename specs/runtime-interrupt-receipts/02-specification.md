@@ -2,9 +2,22 @@
 slug: runtime-interrupt-receipts
 id: 260807-231651
 tracker: DOR-1303
+execute: DOR-1015
 created: 2026-08-07
 status: specified
 ---
+
+> **Execution note (2026-09-03).** `tracker: DOR-1303` is the SPECIFY ticket and
+> is Done; `execute: DOR-1015` carries the implementation, and the two are linked
+> as related in Linear. DOR-1015 landed the vocabulary, the whole migration
+> inventory of §2, the per-runtime mapping of §4, the client's §5.1 copy and
+> re-enable predicate, and conformance I1/I2/I5. Still open, and named here so a
+> later reader does not mistake a partial for the whole: the durable
+> `turn_stopped` event and its eight registration points (§2), the reload story
+> and its stop markers (§3), the codex/opencode terminal-reason mapper change
+> (§4.1), the room halt's mixed notice (§5.2), the run-history panel copy (§5.3),
+> conformance I3/I4/I6, and AC-3, AC-5, AC-7, AC-8, AC-10 and AC-11. `status`
+> stays `specified` until those land.
 
 # Interrupt receipts — tell "the CLI stopped" from "DorkOS killed it"
 

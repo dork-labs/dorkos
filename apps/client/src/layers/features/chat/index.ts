@@ -49,6 +49,8 @@ export { TerminalReasonChip, TurnFailedNotice } from './ui/status';
 
 export { useChatSession } from './model/use-chat-session';
 export type { StopOutcome } from './model/use-session-submit';
+export { stopNotice, shouldReofferStop } from './lib/stop-copy';
+export type { StopNotice } from './lib/stop-copy';
 export { useCelebrations } from './model/use-celebrations';
 export { useTaskState } from './model/use-task-state';
 export { useToolShortcuts } from './model/use-tool-shortcuts';

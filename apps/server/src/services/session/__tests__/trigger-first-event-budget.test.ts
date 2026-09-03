@@ -15,6 +15,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
+import { mockInterruptReceipt } from '@dorkos/test-utils';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 
@@ -79,7 +80,7 @@ const CANONICAL_ID_WAIT_MS = 5_000;
 
 describe('the trigger seams hand the stall guard a first-event window', () => {
   it('ends a turn that never yields at the first-event budget, visibly', async () => {
-    const interruptQuery = vi.fn(async () => true);
+    const interruptQuery = vi.fn(async () => mockInterruptReceipt('acked'));
     const deps: TriggerTurnDeps = {
       acquireLock: () => true,
       releaseLock: () => {},
@@ -131,7 +132,7 @@ describe('the trigger seams hand the stall guard a first-event window', () => {
   });
 
   it('does the same for a command intent that never yields', async () => {
-    const interruptQuery = vi.fn(async () => true);
+    const interruptQuery = vi.fn(async () => mockInterruptReceipt('acked'));
     const deps: TriggerCommandIntentDeps = {
       acquireLock: () => true,
       releaseLock: () => {},

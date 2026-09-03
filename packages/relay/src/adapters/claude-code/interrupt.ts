@@ -11,6 +11,7 @@
  */
 
 import type { Logger } from '@dorkos/shared/logger';
+import { worthRetrying } from '@dorkos/shared/schemas';
 import type { AgentRuntimeLike } from './types.js';
 import { describeError } from '../../lib/describe-error.js';
 
@@ -62,10 +63,17 @@ export async function interruptTurn(
         `[CCA] ${label}: interrupt did not settle within ${INTERRUPT_TIMEOUT_MS}ms; ` +
           'it is finalized anyway'
       );
-    } else if (!outcome) {
+    } else if (outcome.outcome === 'not-running') {
       // Also the honest answer for a turn that just finished, so this is not
       // evidence of a leak.
       logger?.debug(`[CCA] ${label}: runtime reported no in-flight turn to interrupt`);
+    } else if (worthRetrying(outcome)) {
+      // Nothing ended the turn: the caller finalizes over an agent that may
+      // still be working, and that is worth saying out loud.
+      logger?.warn(
+        `[CCA] ${label}: the turn was not confirmed stopped ` +
+          `(${outcome.outcome}${outcome.reason ? `/${outcome.reason}` : ''})`
+      );
     }
   } catch (err) {
     logger?.error(`[CCA] ${label}: interrupting the turn failed`, describeError(err));

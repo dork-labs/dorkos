@@ -607,6 +607,123 @@ export const MessageDeliveryOutcomeSchema = z
 /** What happened to an accepted message. See {@link MessageDeliveryOutcomeSchema}. */
 export type MessageDeliveryOutcome = z.infer<typeof MessageDeliveryOutcomeSchema>;
 
+/**
+ * Which of the five endings a stop request reached (spec
+ * `runtime-interrupt-receipts` §1).
+ *
+ * Every stop-shaped verb in DorkOS — the composer's Stop, a room's halt, a task
+ * run's stop, the stall watchdog — used to answer with a boolean, and that
+ * boolean was `true` for two endings that are not the same ending and `false`
+ * for three more that are not the same as each other. These five are the
+ * distinctions a person actually needs after pressing Stop:
+ *
+ * - `acked` — the agent itself confirmed the stop and wound down.
+ * - `closed` — DorkOS ended the process or the turn after the graceful path
+ *   failed. **This is a success, not a failure:** the turn is over and the
+ *   person got what they asked for. What they lost is the agent's own wind-down
+ *   — its transcript marker, its terminal reason, a warm process — which is
+ *   worth one sentence of UI and is not an error state.
+ * - `not-running` — there was no turn to stop. Nothing failed.
+ * - `unconfirmed` — the request went out; the runtime cannot say whether it
+ *   landed, and the turn may still be running. **Press it again.**
+ * - `failed` — the stop could not be delivered and nothing ended the turn.
+ *
+ * A sixth ending would be a new spec, not a free-form `detail` string.
+ */
+export const InterruptOutcomeSchema = z
+  .enum(['acked', 'closed', 'not-running', 'unconfirmed', 'failed'])
+  .openapi('InterruptOutcome');
+
+/** Which of the five endings a stop reached. See {@link InterruptOutcomeSchema}. */
+export type InterruptOutcome = z.infer<typeof InterruptOutcomeSchema>;
+
+/**
+ * Why a stop ended where it did, when the outcome alone does not say it.
+ *
+ * - `no-open-turn` — `not-running`: nothing was in flight.
+ * - `ack-timeout` — `closed` | `unconfirmed`: nothing answered inside the
+ *   runtime's own bound.
+ * - `refused` — `closed`: the runtime answered with a failure.
+ * - `stdin-ended` — `closed`: the graceful path was known-undeliverable, so it
+ *   was skipped rather than spending the bound proving it again.
+ * - `runtime-declined` — `unconfirmed`: the runtime answered "no" with the turn
+ *   still open.
+ * - `delivery-failed` — `failed`: the call threw.
+ */
+export const InterruptReasonSchema = z
+  .enum([
+    'no-open-turn',
+    'ack-timeout',
+    'refused',
+    'stdin-ended',
+    'runtime-declined',
+    'delivery-failed',
+  ])
+  .openapi('InterruptReason');
+
+/** Why a stop ended where it did. See {@link InterruptReasonSchema}. */
+export type InterruptReason = z.infer<typeof InterruptReasonSchema>;
+
+/**
+ * What a stop request concluded — the receipt every stop-shaped verb returns.
+ *
+ * One shape serves the composer's Stop, a room's halt, a task run's stop and the
+ * stall watchdog, and every runtime maps its own stop path onto it (spec
+ * `runtime-interrupt-receipts` §4, gated by `runtimeConformance`).
+ *
+ * Read it through {@link turnEnded} and {@link worthRetrying} rather than by
+ * string equality, so a caller never re-derives the vocabulary.
+ */
+export const InterruptReceiptSchema = z
+  .object({
+    /** Which of the five endings the stop reached. */
+    outcome: InterruptOutcomeSchema,
+    /** Present whenever it adds information the outcome does not carry. */
+    reason: InterruptReasonSchema.optional(),
+    /**
+     * Which runtime answered — the receipt travels across runtimes (ADR-0310),
+     * so the surface that reports it can name the one that did not confirm.
+     *
+     * The `AgentRuntime.type` of the adapter that produced it, verbatim.
+     */
+    runtime: z.string(),
+  })
+  .openapi('InterruptReceipt');
+
+/** What a stop request concluded. See {@link InterruptReceiptSchema}. */
+export type InterruptReceipt = z.infer<typeof InterruptReceiptSchema>;
+
+/**
+ * Whether DorkOS observed the turn end.
+ *
+ * True for the three endings where there is nothing left running: the agent
+ * acked, DorkOS closed it, or there was no turn in the first place. This is the
+ * predicate that decides whether a surface may say "stopped" — the
+ * **stop-requested rule**: "stopped" is only ever said about an ending DorkOS
+ * observed, and everything else says "stop requested".
+ *
+ * @param receipt - The receipt a stop-shaped verb answered with
+ */
+export function turnEnded(receipt: InterruptReceipt): boolean {
+  return (
+    receipt.outcome === 'acked' || receipt.outcome === 'closed' || receipt.outcome === 'not-running'
+  );
+}
+
+/**
+ * Whether pressing Stop again is the move.
+ *
+ * True for the two endings that leave the turn open: the runtime declined
+ * (`unconfirmed`) or the call never landed (`failed`). Exactly the complement of
+ * {@link turnEnded}, stated separately because the two read at opposite call
+ * sites and neither should be written as the negation of the other by hand.
+ *
+ * @param receipt - The receipt a stop-shaped verb answered with
+ */
+export function worthRetrying(receipt: InterruptReceipt): boolean {
+  return receipt.outcome === 'unconfirmed' || receipt.outcome === 'failed';
+}
+
 /** One message waiting to be dispatched to a session. */
 export const QueuedMessageSchema = z
   .object({

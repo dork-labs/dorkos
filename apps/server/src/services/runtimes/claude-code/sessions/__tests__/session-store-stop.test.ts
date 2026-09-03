@@ -91,7 +91,15 @@ describe('Stop is bounded (DOR-1244)', () => {
     const stopped = store.interruptQuery(SESSION_ID);
     await vi.advanceTimersByTimeAsync(STOP_ACK_TIMEOUT_MS);
 
-    await expect(stopped).resolves.toBe(true);
+    // `closed`, and the reason says WHICH escalation: nothing answered inside
+    // the bound. The boolean said `true` here and `true` for a graceful ack too,
+    // which is the exact collapse the receipt undoes — the person lost the CLI's
+    // wind-down on this path and not on that one.
+    await expect(stopped).resolves.toEqual({
+      outcome: 'closed',
+      reason: 'ack-timeout',
+      runtime: 'claude-code',
+    });
     expect(calls.interrupt).toBe(1);
     expect(calls.close).toBe(1);
     // The close cancels every pending tool call, and the CLI writes its
@@ -104,7 +112,10 @@ describe('Stop is bounded (DOR-1244)', () => {
     const { query, calls } = fakeQuery({ interrupt: 'acks' });
     const store = storeWithLiveTurn(query);
 
-    await expect(store.interruptQuery(SESSION_ID)).resolves.toBe(true);
+    await expect(store.interruptQuery(SESSION_ID)).resolves.toEqual({
+      outcome: 'acked',
+      runtime: 'claude-code',
+    });
 
     expect(calls.interrupt).toBe(1);
     expect(calls.close).toBe(0);
@@ -117,7 +128,11 @@ describe('Stop is bounded (DOR-1244)', () => {
     const { query, calls } = fakeQuery({ interrupt: 'rejects' });
     const store = storeWithLiveTurn(query);
 
-    await expect(store.interruptQuery(SESSION_ID)).resolves.toBe(true);
+    await expect(store.interruptQuery(SESSION_ID)).resolves.toEqual({
+      outcome: 'closed',
+      reason: 'refused',
+      runtime: 'claude-code',
+    });
 
     expect(calls.close).toBe(1);
     expect(stamp(store)).toBeDefined();
@@ -127,7 +142,11 @@ describe('Stop is bounded (DOR-1244)', () => {
     const { query, calls } = fakeQuery({ interrupt: 'rejects', closeThrows: true });
     const store = storeWithLiveTurn(query);
 
-    await expect(store.interruptQuery(SESSION_ID)).resolves.toBe(false);
+    await expect(store.interruptQuery(SESSION_ID)).resolves.toEqual({
+      outcome: 'failed',
+      reason: 'delivery-failed',
+      runtime: 'claude-code',
+    });
 
     expect(calls.close).toBe(1);
     // Nothing was stopped, so a sentinel arriving now really is a phantom.
@@ -140,7 +159,11 @@ describe('Stop is bounded (DOR-1244)', () => {
     store.findSession(SESSION_ID)!.stdinEndedQueries = new WeakSet([query]);
 
     // No clock is advanced: the whole point is that this does not wait.
-    await expect(store.interruptQuery(SESSION_ID)).resolves.toBe(true);
+    await expect(store.interruptQuery(SESSION_ID)).resolves.toEqual({
+      outcome: 'closed',
+      reason: 'stdin-ended',
+      runtime: 'claude-code',
+    });
 
     expect(calls.interrupt).toBe(0);
     expect(calls.close).toBe(1);
@@ -154,7 +177,10 @@ describe('Stop is bounded (DOR-1244)', () => {
     // An overlapping turn's close must not condemn its successor (DOR-1088).
     store.findSession(SESSION_ID)!.stdinEndedQueries = new WeakSet([retired]);
 
-    await expect(store.interruptQuery(SESSION_ID)).resolves.toBe(true);
+    await expect(store.interruptQuery(SESSION_ID)).resolves.toEqual({
+      outcome: 'acked',
+      runtime: 'claude-code',
+    });
 
     expect(calls.interrupt).toBe(1);
     expect(calls.close).toBe(0);
@@ -167,7 +193,15 @@ describe('Stop is bounded (DOR-1244)', () => {
     const stopped = store.stopTask(SESSION_ID, 'task-7');
     await vi.advanceTimersByTimeAsync(STOP_ACK_TIMEOUT_MS);
 
-    await expect(stopped).resolves.toBe(false);
+    // `unconfirmed`, NOT `not-running`: the task exists, this path deliberately
+    // never escalates, and telling the person "there was nothing to stop" about
+    // a task that is very likely still running would be the old boolean's lie in
+    // a new vocabulary.
+    await expect(stopped).resolves.toEqual({
+      outcome: 'unconfirmed',
+      reason: 'ack-timeout',
+      runtime: 'claude-code',
+    });
     expect(calls.stopTask).toEqual(['task-7']);
     // One task was asked to stop, not the whole session.
     expect(calls.close).toBe(0);
@@ -183,7 +217,11 @@ describe('Stop is bounded (DOR-1244)', () => {
     const { query, calls } = fakeQuery({ stopTask: 'rejects' });
     const store = storeWithLiveTurn(query);
 
-    await expect(store.stopTask(SESSION_ID, 'task-7')).resolves.toBe(false);
+    await expect(store.stopTask(SESSION_ID, 'task-7')).resolves.toEqual({
+      outcome: 'unconfirmed',
+      reason: 'runtime-declined',
+      runtime: 'claude-code',
+    });
 
     expect(calls.close).toBe(0);
     // A refusal IS an answer: nothing was stopped, so a sentinel now is a phantom.
@@ -194,7 +232,10 @@ describe('Stop is bounded (DOR-1244)', () => {
     const { query, calls } = fakeQuery({ stopTask: 'acks' });
     const store = storeWithLiveTurn(query);
 
-    await expect(store.stopTask(SESSION_ID, 'task-7')).resolves.toBe(true);
+    await expect(store.stopTask(SESSION_ID, 'task-7')).resolves.toEqual({
+      outcome: 'acked',
+      runtime: 'claude-code',
+    });
 
     expect(calls.stopTask).toEqual(['task-7']);
     expect(stamp(store)).toBeDefined();
@@ -229,7 +270,11 @@ describe('a slow Stop says how long it waited to be heard (DOR-1319)', () => {
 
     const stopped = store.interruptQuery(SESSION_ID);
     await vi.advanceTimersByTimeAsync(STOP_ACK_TIMEOUT_MS);
-    await expect(stopped).resolves.toBe(true);
+    await expect(stopped).resolves.toEqual({
+      outcome: 'closed',
+      reason: 'ack-timeout',
+      runtime: 'claude-code',
+    });
 
     const warnings = slowAckWarnings();
     expect(warnings).toHaveLength(1);
@@ -243,7 +288,10 @@ describe('a slow Stop says how long it waited to be heard (DOR-1319)', () => {
     const { query } = fakeQuery({ interrupt: 'acks' });
     const store = storeWithLiveTurn(query);
 
-    await expect(store.interruptQuery(SESSION_ID)).resolves.toBe(true);
+    await expect(store.interruptQuery(SESSION_ID)).resolves.toEqual({
+      outcome: 'acked',
+      runtime: 'claude-code',
+    });
 
     expect(slowAckWarnings()).toEqual([]);
   });

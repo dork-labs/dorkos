@@ -25,7 +25,7 @@
  * @module services/session/trigger-command-intent
  */
 import type { CommandIntentOpts, SseResponse } from '@dorkos/shared/agent-runtime';
-import type { StreamEvent } from '@dorkos/shared/types';
+import type { InterruptReceipt, StreamEvent } from '@dorkos/shared/types';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { COMMAND_INTENT_QUEUE_WAIT_MS } from '@dorkos/shared/command-intents';
 import type { SessionStateProjector } from './session-state-projector.js';
@@ -63,8 +63,11 @@ export interface TriggerCommandIntentDeps {
    * runtime that cannot strand a turn — which reads as "nothing to settle".
    */
   settleOpenTurn?(sessionId: string): Promise<boolean>;
-  /** Interrupt the runtime's in-flight work (stall watchdog). Resolves false when none found. */
-  interruptQuery(sessionId: string): Promise<boolean>;
+  /**
+   * Interrupt the runtime's in-flight work (stall watchdog). Answers the
+   * {@link InterruptReceipt} vocabulary — `not-running` when there was none.
+   */
+  interruptQuery(sessionId: string): Promise<InterruptReceipt>;
   /**
    * Resolve the backend-internal (canonical) id for this session, so the queue
    * slot and the lock are keyed the same way a turn keys them. A compact runs

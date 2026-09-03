@@ -175,7 +175,7 @@ vi.mock('../tooling/check-dependency.js', () => ({
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
-import type { HistoryMessage } from '@dorkos/shared/types';
+import type { HistoryMessage, InterruptReceipt } from '@dorkos/shared/types';
 import { ClaudeCodeRuntime } from '../claude-code-runtime.js';
 import {
   drivePresenceTurn,
@@ -659,10 +659,15 @@ runtimeConformance(
     // `bounded-control.ts` exists for. `process.received` growing past the warm
     // turn's count is the real signal the second turn's message reached the
     // process, i.e. `session.activeQuery` is armed with the query under test.
-    // The pinned settle is `true`: `bounded-control.ts` escalates an unacked
-    // interrupt to `query.close()` and reports the process WAS stopped, just
-    // not gracefully — unlike opencode, which has nothing to escalate to.
-    hangingInterrupt: async (runtime: AgentRuntime, sessionId: string): Promise<boolean> => {
+    // The pinned settle is `closed / ack-timeout`: `bounded-control.ts`
+    // escalates an unacked interrupt to `query.close()`, so the process WAS
+    // stopped, just not gracefully — unlike opencode, which has nothing to
+    // escalate to and answers `unconfirmed`. The boolean these two shared until
+    // DOR-1015 said `true` and `false`, which named neither ending.
+    hangingInterrupt: async (
+      runtime: AgentRuntime,
+      sessionId: string
+    ): Promise<InterruptReceipt> => {
       persistent.on = true;
       warmCli = new FakeCli();
       mockedQuery.mockImplementation(warmCli.query as unknown as typeof query);
@@ -686,7 +691,7 @@ runtimeConformance(
         { userMessage: 'this turn is never answered' }
       );
       await vi.waitFor(() => expect(process.received.length).toBe(warmReceived + 1));
-      return true;
+      return { outcome: 'closed', reason: 'ack-timeout', runtime: 'claude-code' };
     },
     // Claude-code CAN say when the person last wrote: it rides the transcript
     // tail read the session list already performs. Read back through

@@ -17,6 +17,8 @@
  *   nothing from where it is standing.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import type { InterruptReceipt } from '@dorkos/shared/types';
+import { mockInterruptReceipt } from '@dorkos/test-utils';
 import { existsSync } from 'fs';
 import { mkdtemp, readFile, rm } from 'fs/promises';
 import { tmpdir } from 'os';
@@ -52,7 +54,9 @@ const getCapabilities = vi.fn().mockReturnValue(DECLARED_CAPABILITIES);
  * recorded, so a test can say WHEN the room re-aimed a stop that landed on
  * nothing — which is the whole of that fix.
  */
-const interruptQuery = vi.fn<(sessionId: string) => Promise<boolean>>(() => Promise.resolve(false));
+const interruptQuery = vi.fn<(sessionId: string) => Promise<InterruptReceipt>>(() =>
+  Promise.resolve(mockInterruptReceipt('not-running'))
+);
 
 /**
  * What the runtime calls this session. `undefined` — no alias — is the honest
@@ -397,7 +401,7 @@ describe('createSessionRoomTurnRunner', () => {
   beforeEach(() => {
     persistSessionRuntime.mockClear();
     interruptQuery.mockClear();
-    interruptQuery.mockImplementation(() => Promise.resolve(false));
+    interruptQuery.mockImplementation(() => Promise.resolve(mockInterruptReceipt('not-running')));
     runtimeIsRegistered = true;
     internalSessionId = () => undefined;
     turnBehaviour = saysAndCloses('green');
@@ -1476,9 +1480,9 @@ describe('createSessionRoomTurnRunner', () => {
       const turn = bootingTurn(runner, 'sess-booting');
       await settle();
 
-      expect(await runner.interrupt({ sessionId: 'sess-booting', agentPath: '/repo/ana' })).toBe(
-        false
-      );
+      expect(
+        (await runner.interrupt({ sessionId: 'sess-booting', agentPath: '/repo/ana' })).outcome
+      ).toBe('not-running');
       expect(interruptQuery).toHaveBeenCalledTimes(1);
 
       // The process finishes booting and the turn starts producing — the first
@@ -1495,14 +1499,14 @@ describe('createSessionRoomTurnRunner', () => {
       // The counter-assertion: nothing is remembered when the stop landed. A
       // room that re-aimed every interrupt would send a second one into every
       // ordinary halt, and the second one would arrive after the claim moved on.
-      interruptQuery.mockImplementation(() => Promise.resolve(true));
+      interruptQuery.mockImplementation(() => Promise.resolve(mockInterruptReceipt('acked')));
       const runner = createSessionRoomTurnRunner({ waitMs: () => 200, ceilingMs: () => 200 });
       const turn = bootingTurn(runner, 'sess-prompt');
       await settle();
 
-      expect(await runner.interrupt({ sessionId: 'sess-prompt', agentPath: '/repo/ana' })).toBe(
-        true
-      );
+      expect(
+        (await runner.interrupt({ sessionId: 'sess-prompt', agentPath: '/repo/ana' })).outcome
+      ).toBe('acked');
       turn.produce();
       await settle();
 
@@ -1512,12 +1516,13 @@ describe('createSessionRoomTurnRunner', () => {
     });
 
     it('reports a stop it could not even find a runtime for', async () => {
-      // The narrowest `false` there is, and the one most easily reported as a
+      // The narrowest failure there is, and the one most easily reported as a
       // success: an agent whose runtime this process does not have registered —
       // the packaged desktop app ships only one SDK — has nothing behind it at
-      // all. Answering `true` there would tell an operator a turn was stopped by
+      // all. Answering `acked` there would tell an operator a turn was stopped by
       // a call that never happened, which is the exact confusion DOR-1425 exists
-      // to remove.
+      // to remove. `failed` and not `not-running`, because a missing runtime is a
+      // delivery problem rather than evidence that the turn was already over.
       runtimeIsRegistered = false;
 
       expect(
@@ -1525,7 +1530,7 @@ describe('createSessionRoomTurnRunner', () => {
           sessionId: 'sess-no-runtime',
           agentPath: '/repo/ana',
         })
-      ).toBe(false);
+      ).toEqual({ outcome: 'failed', reason: 'delivery-failed', runtime: 'claude-code' });
       // And nothing was reached: there was nothing to reach.
       expect(interruptQuery).not.toHaveBeenCalled();
     });

@@ -64,8 +64,19 @@ interface Transport {
   // `reason` is optional free text (max 1000 chars) handed to the agent with the
   // refusal, so it can adjust instead of retrying the same call.
   submitAnswers(sessionId, toolCallId, answers): Promise<{ ok: boolean }>;
-  stopTask(sessionId: string, taskId: string): Promise<{ success: boolean; taskId: string }>;
-  interruptSession(sessionId: string): Promise<{ ok: boolean }>;
+  // Both stop verbs answer an InterruptReceipt: `{ outcome, reason?, runtime }`,
+  // where `outcome` is one of `acked` (the agent confirmed the stop), `closed`
+  // (DorkOS ended it after the agent didn't answer), `not-running` (there was
+  // nothing to stop), `unconfirmed` (the request went out and the runtime cannot
+  // say whether it landed) or `failed` (the stop could not be delivered).
+  // Say "stopped" only about `acked` and `closed`.
+  stopTask(
+    sessionId: string,
+    taskId: string
+  ): Promise<{ receipt: InterruptReceipt; taskId: string }>;
+  interruptSession(
+    sessionId: string
+  ): Promise<{ receipt: InterruptReceipt; cancelledQueued: QueuedMessage[] }>;
   getTasks(sessionId: string, cwd?: string): Promise<{ tasks: TaskItem[] }>;
 
   // Filesystem & git

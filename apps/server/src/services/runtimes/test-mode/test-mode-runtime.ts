@@ -25,6 +25,7 @@ import type {
   CommandRegistry,
   PermissionMode,
   EffortLevel,
+  InterruptReceipt,
 } from '@dorkos/shared/types';
 import type {
   SessionSnapshot,
@@ -44,7 +45,7 @@ import { reconstructHistoryFromEvents } from '../../session/event-log-history.js
 import { readLogBackedHistory } from '../../session/log-backed-history.js';
 import { heldProcesses } from './held-process.js';
 import { ScenarioAborted, interactionGate } from './interaction-gate.js';
-import { scenarioStore } from './scenario-store.js';
+import { declaredInterruptOutcome, scenarioStore } from './scenario-store.js';
 import { TestModeSessionRegistry } from './session-registry.js';
 import { TEST_MODE_CAPABILITIES } from './runtime-constants.js';
 
@@ -494,8 +495,9 @@ export class TestModeRuntime implements AgentRuntime {
     return true;
   }
 
-  async stopTask(_sessionId: string, _taskId: string): Promise<boolean> {
-    return false;
+  /** Test-mode scripts no addressable background tasks — nothing to stop. */
+  async stopTask(_sessionId: string, _taskId: string): Promise<InterruptReceipt> {
+    return { outcome: 'not-running', reason: 'no-open-turn', runtime: this.type };
   }
 
   /**
@@ -651,17 +653,47 @@ export class TestModeRuntime implements AgentRuntime {
    * and answering only 409s. Resolved with NO outcome: nobody approved or denied
    * it, and claiming either would be a lie in the transcript.
    *
-   * Answers `false` when no turn is open, which is the honest report and what
-   * the interrupt route passes through as `ok: false` — a stop that arrives
-   * after a turn finished on its own is a race, not an error.
+   * Answers `not-running` when no turn is open, which is the honest report — a
+   * stop that arrives after a turn finished on its own is a race, not an error.
+   *
+   * **A stopped scripted turn is `closed`, not `acked`, by default** (spec
+   * `runtime-interrupt-receipts` D10). `interactionGate.abort` is DorkOS ending
+   * the scenario from the outside; nothing in the scripted turn acknowledges
+   * anything, so reporting `acked` would make the one runtime the browser tests
+   * trust the one runtime that lies.
+   *
+   * A test that needs a different ending **declares** it
+   * (`POST /api/test/interrupt-outcome`), which is how the browser leg reaches
+   * `acked`, `unconfirmed` and `failed` deterministically. A declared
+   * `unconfirmed` or `failed` leaves the turn running, exactly as it would on a
+   * runtime that genuinely could not confirm — the whole point is to stage the
+   * shape, not to narrate over an abort that happened anyway.
    */
-  async interruptQuery(sessionId: string): Promise<boolean> {
+  async interruptQuery(sessionId: string): Promise<InterruptReceipt> {
+    const notRunning: InterruptReceipt = {
+      outcome: 'not-running',
+      reason: 'no-open-turn',
+      runtime: this.type,
+    };
+    const declared = declaredInterruptOutcome();
+    // A declared `unconfirmed` or `failed` means the turn did NOT end, so the
+    // abort is deliberately not performed: the test is staging the ending a
+    // runtime that could not confirm would produce, and a turn that quietly
+    // stopped underneath that copy would prove nothing about it.
+    if (declared === 'unconfirmed' || declared === 'failed') {
+      if (!interactionGate.isOpen(sessionId)) return notRunning;
+      return {
+        outcome: declared,
+        reason: declared === 'failed' ? 'delivery-failed' : 'runtime-declined',
+        runtime: this.type,
+      };
+    }
     // Read before the abort, which clears them.
     const pending = interactionGate.pendingInteractionIds(sessionId);
-    if (!interactionGate.abort(sessionId)) return false;
+    if (!interactionGate.abort(sessionId)) return notRunning;
     const projector = peekProjector(sessionId);
     for (const interactionId of pending) projector?.resolveInteraction(interactionId);
-    return true;
+    return { outcome: declared ?? 'closed', runtime: this.type };
   }
 
   /**

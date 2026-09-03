@@ -8,7 +8,12 @@
  * @module relay/adapters/claude-code-types
  */
 
-import type { PermissionMode, SessionSettings, StreamEvent } from '@dorkos/shared/types';
+import type {
+  InterruptReceipt,
+  PermissionMode,
+  SessionSettings,
+  StreamEvent,
+} from '@dorkos/shared/types';
 import type { ApprovalAuthorizer } from './approval-handler.js';
 
 /**
@@ -148,9 +153,10 @@ export interface AgentRuntimeLike {
    * this when a run's TTL budget expires.
    *
    * @param sessionId - The session key used in ensureSession/sendMessage
-   * @returns false if the runtime found no in-flight turn to abort
+   * @returns The receipt naming which of the five endings the stop reached —
+   *   `not-running` when there was no in-flight turn to abort
    */
-  interruptQuery(sessionId: string): Promise<boolean>;
+  interruptQuery(sessionId: string): Promise<InterruptReceipt>;
 }
 
 /**

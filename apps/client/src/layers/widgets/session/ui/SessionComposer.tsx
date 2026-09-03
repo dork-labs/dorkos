@@ -12,9 +12,11 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence } from 'motion/react';
+import { toast } from 'sonner';
 import type { RefObject } from 'react';
 import type { SessionStatusEvent } from '@dorkos/shared/types';
 import type { QueuedMessage } from '@dorkos/shared/schemas';
+import { turnEnded } from '@dorkos/shared/schemas';
 import type { ComposerInputHandle } from '@/layers/features/composer';
 import { Conversation, useConversation } from '@/layers/features/conversation';
 import { SessionAsks } from './SessionAsks';
@@ -30,6 +32,8 @@ import {
   useBackgroundTasks,
   useChatQueue,
   useRotatingPlaceholder,
+  shouldReofferStop,
+  stopNotice,
   type NativeCommandResult,
   type InteractionProps,
   type StopOutcome,
@@ -409,14 +413,24 @@ export function SessionComposer({
     void stop()
       .then((outcome: StopOutcome) => {
         restoreToComposer(outcome.cancelled);
-        // `ok: false` mostly means the turn had already finished on its own
-        // (the server's own race note, `use-session-submit.ts`) — in which
-        // case `isStreaming` has already flipped and the effect above already
-        // cleared this. The case worth handling here is the other one: the
-        // request genuinely failed AND the turn is still running, where
-        // nothing else would ever release a pending Stop — re-enable so the
-        // person can press it again instead of watching "Stopping…" forever.
-        if (!outcome.ok && isStreamingRef.current) clearSettledStop();
+        // The re-enable predicate of spec `runtime-interrupt-receipts` §5.1,
+        // read from one place rather than re-derived here. It covers the two
+        // endings that leave the turn running (`unconfirmed`, `failed`) and the
+        // one where the runtime and the client disagree about whether anything
+        // is open (`not-running` while we still believe we are streaming) —
+        // otherwise nothing would ever release a pending Stop and the person
+        // would watch "Stopping…" forever.
+        if (shouldReofferStop(outcome.receipt, isStreamingRef.current)) clearSettledStop();
+        // Only the two endings DorkOS did NOT observe get said out loud here.
+        // `acked` and `closed` belong in the transcript's own stop marker (spec
+        // §3), not in a toast fired the instant the button was pressed — the
+        // streaming indicator vanishing already says it, and an operator who
+        // stops turns all day does not need a popup each time.
+        const notice = stopNotice(outcome.receipt);
+        if (notice.message !== null && !turnEnded(outcome.receipt)) {
+          if (notice.isFailure) toast.error(notice.message);
+          else toast.warning(notice.message);
+        }
       })
       .catch(() => {
         // The request itself never got an answer at all (network, timeout).

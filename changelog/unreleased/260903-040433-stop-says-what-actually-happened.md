@@ -1,0 +1,8 @@
+---
+covers:
+  - 'feat(shared,server,client): Stop says which of five endings it reached (DOR-1015)'
+---
+
+### Changed
+
+- Pressing Stop now tells you what actually happened. Before, every ending looked the same: the agent hearing you and winding down, DorkOS killing the process because it never answered, the reply having already finished, and the agent refusing to stop all came back as the same yes or no. Now each one is its own answer, and the app only says an agent "stopped" when it really saw it stop. If the agent did not confirm, you get "Stop requested" and the Stop button stays there so you can press it again — instead of being told it worked while the agent keeps going (DOR-1015)

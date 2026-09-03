@@ -10,6 +10,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
+import { mockInterruptReceipt } from '@dorkos/test-utils';
 import { withStallGuard } from '../stall-guard.js';
 import type { StallGuardOpts } from '../stall-guard.js';
 import { MAX_CANCELLED_WINDOWS, TurnWindowSignal } from '../turn-window-signal.js';
@@ -107,7 +108,7 @@ function makeOpts(overrides: Partial<StallGuardOpts> = {}): StallGuardOpts {
     sessionId: SESSION_ID,
     timeoutMs: TEN_MINUTES,
     isPaused: () => false,
-    onStall: vi.fn(async () => true),
+    onStall: vi.fn(async () => mockInterruptReceipt('acked')),
     ...overrides,
   };
 }
@@ -130,7 +131,7 @@ describe('withStallGuard, windowed', () => {
   it('never fires while no turn window is open, and arms no timer at all', async () => {
     const src = createControlledSource();
     const windows = new TurnWindowSignal();
-    const onStall = vi.fn(async () => true);
+    const onStall = vi.fn(async () => mockInterruptReceipt('acked'));
     const collector = collect(withStallGuard(src.source, makeOpts({ onStall, windows })));
     await flush();
 
@@ -148,7 +149,7 @@ describe('withStallGuard, windowed', () => {
   it('arms on window open and fires at the same bound when the turn goes dark', async () => {
     const src = createControlledSource();
     const windows = new TurnWindowSignal();
-    const onStall = vi.fn(async () => true);
+    const onStall = vi.fn(async () => mockInterruptReceipt('acked'));
     const collector = collect(withStallGuard(src.source, makeOpts({ onStall, windows })));
     await flush();
 
@@ -168,7 +169,7 @@ describe('withStallGuard, windowed', () => {
   it('still resets the clock on activity inside an open window', async () => {
     const src = createControlledSource();
     const windows = new TurnWindowSignal();
-    const onStall = vi.fn(async () => true);
+    const onStall = vi.fn(async () => mockInterruptReceipt('acked'));
     const collector = collect(withStallGuard(src.source, makeOpts({ onStall, windows })));
     await flush();
 
@@ -191,7 +192,7 @@ describe('withStallGuard, windowed', () => {
   it('disarms on window close, leaving no timer to fire on a warm session', async () => {
     const src = createControlledSource();
     const windows = new TurnWindowSignal();
-    const onStall = vi.fn(async () => true);
+    const onStall = vi.fn(async () => mockInterruptReceipt('acked'));
     const turn = window('turn-1');
     const collector = collect(withStallGuard(src.source, makeOpts({ onStall, windows })));
     await flush();
@@ -212,7 +213,7 @@ describe('withStallGuard, windowed', () => {
   it('gives the next window a full fresh bound rather than the last one leftover', async () => {
     const src = createControlledSource();
     const windows = new TurnWindowSignal();
-    const onStall = vi.fn(async () => true);
+    const onStall = vi.fn(async () => mockInterruptReceipt('acked'));
     const first = window('turn-1');
     collect(withStallGuard(src.source, makeOpts({ onStall, windows })));
     await flush();
@@ -236,7 +237,7 @@ describe('withStallGuard, windowed', () => {
   it('stays armed when a second window closes while the first is still open', async () => {
     const src = createControlledSource();
     const windows = new TurnWindowSignal();
-    const onStall = vi.fn(async () => true);
+    const onStall = vi.fn(async () => mockInterruptReceipt('acked'));
     const dispatched = window('dispatched');
     const runtime = window('runtime');
     collect(withStallGuard(src.source, makeOpts({ onStall, windows })));
@@ -259,7 +260,7 @@ describe('withStallGuard, windowed', () => {
   it('does not fire on a window parked on a person, for as long as they take', async () => {
     const src = createControlledSource();
     const windows = new TurnWindowSignal();
-    const onStall = vi.fn(async () => true);
+    const onStall = vi.fn(async () => mockInterruptReceipt('acked'));
     let paused = true;
     collect(withStallGuard(src.source, makeOpts({ onStall, windows, isPaused: () => paused })));
     await flush();
@@ -283,7 +284,7 @@ describe('withStallGuard, windowed', () => {
   it('leaves no timer and no subscription behind when the stream ends', async () => {
     const src = createControlledSource();
     const windows = new TurnWindowSignal();
-    const onStall = vi.fn(async () => true);
+    const onStall = vi.fn(async () => mockInterruptReceipt('acked'));
     const turn = window('turn-1');
     const collector = collect(withStallGuard(src.source, makeOpts({ onStall, windows })));
     await flush();
@@ -310,7 +311,7 @@ describe('withStallGuard, windowed', () => {
   it('reports a pause probe that throws and fires rather than hanging on it', async () => {
     const src = createControlledSource();
     const windows = new TurnWindowSignal();
-    const onStall = vi.fn(async () => true);
+    const onStall = vi.fn(async () => mockInterruptReceipt('acked'));
     const onError = vi.fn();
     const boom = new Error('the projector is gone');
     const collector = collect(

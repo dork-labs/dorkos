@@ -16,7 +16,7 @@
  *  - The runtime registry, both runtime classes, and the DB are real.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { collectDurableEvents } from '@dorkos/test-utils';
+import { collectDurableEvents, mockInterruptReceipt } from '@dorkos/test-utils';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { ControlRequestTimeoutError } from '../../services/runtimes/claude-code/sessions/bounded-control.js';
 
@@ -869,7 +869,12 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       expect(testModeSpy).toHaveBeenCalled();
       expect(claudeSpy).not.toHaveBeenCalled();
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ ok: false, cancelledQueued: [] });
+      // The receipt names the runtime that answered, which is half of what
+      // makes this test about ROUTING rather than about a 200.
+      expect(res.body).toEqual({
+        receipt: { outcome: 'not-running', reason: 'no-open-turn', runtime: 'test-mode' },
+        cancelledQueued: [],
+      });
     });
   });
 
@@ -898,7 +903,9 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
     });
 
     it('POST /:id/interrupt routes to claude runtime', async () => {
-      const claudeSpy = vi.spyOn(claude, 'interruptQuery').mockResolvedValue(false);
+      const claudeSpy = vi
+        .spyOn(claude, 'interruptQuery')
+        .mockResolvedValue(mockInterruptReceipt('not-running'));
       const testModeSpy = vi.spyOn(testMode, 'interruptQuery');
 
       await request(app).post(`/api/sessions/${CLAUDE_SESSION}/interrupt`);

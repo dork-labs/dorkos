@@ -1,5 +1,5 @@
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
-import type { StreamEvent } from '@dorkos/shared/types';
+import type { InterruptOutcome, StreamEvent } from '@dorkos/shared/types';
 import { DEMO_SCENARIOS } from './demo-scenarios.js';
 import { HELD_PROCESS_SCENARIOS } from './held-process-scenarios.js';
 import { interactionGate, type ScenarioContext } from './interaction-gate.js';
@@ -57,6 +57,54 @@ let finishRequested = false;
  */
 export function requestFinishTurn(): void {
   finishRequested = true;
+}
+
+/**
+ * Which of the five stop endings a scripted turn's Stop should answer with, when
+ * a test has declared one (spec `runtime-interrupt-receipts` D10).
+ *
+ * `undefined` means the honest default: test-mode's abort is DorkOS ending the
+ * scenario from the outside, so it reports `closed`.
+ */
+let declaredInterrupt: DeclarableInterruptOutcome | undefined;
+
+/**
+ * The endings a scenario may declare for its Stop.
+ *
+ * `not-running` is missing on purpose: it is what test-mode already answers when
+ * nothing is open, and declaring it over a live turn would ask the fixture to
+ * report "there was nothing to stop" about a turn the test can see running —
+ * a lie no browser test should be able to stage.
+ */
+export type DeclarableInterruptOutcome = Extract<
+  InterruptOutcome,
+  'acked' | 'closed' | 'unconfirmed' | 'failed'
+>;
+
+/**
+ * Declare the ending the next Stop on a scripted turn answers with.
+ *
+ * How the browser leg reaches `acked`, `unconfirmed` and `failed`
+ * deterministically — the endings a real runtime produces only under conditions
+ * a test cannot arrange. STICKY until {@link ScenarioStore.reset}, like
+ * {@link requestFinishTurn}, so a test that stops several turns gets the same
+ * ending each time rather than one and then the default.
+ *
+ * @param outcome - The ending to answer with, or `undefined` to restore the
+ *   honest `closed` default
+ */
+export function declareInterruptOutcome(outcome: DeclarableInterruptOutcome | undefined): void {
+  declaredInterrupt = outcome;
+}
+
+/**
+ * The ending a test declared for Stop, or `undefined` when none has been.
+ *
+ * Read by `TestModeRuntime.interruptQuery`, which owns what each value means for
+ * the turn — in particular that `unconfirmed` and `failed` leave it running.
+ */
+export function declaredInterruptOutcome(): DeclarableInterruptOutcome | undefined {
+  return declaredInterrupt;
 }
 
 /**
@@ -469,6 +517,9 @@ class ScenarioStore {
     // A finish raised by one test must not end the next test's first turn
     // before it has begun.
     finishRequested = false;
+    // Same argument: a staged `unconfirmed` left standing would make the next
+    // test's Stop refuse to stop anything, with nothing in that test saying so.
+    declaredInterrupt = undefined;
     // Same argument, one rung further in: a turn parked on an approval nobody is
     // going to give would otherwise survive the reset holding a projector open,
     // and its scenario would still be waiting when the next test's answer
