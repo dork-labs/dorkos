@@ -733,7 +733,7 @@ describe('buildTopologyElements', () => {
       const ghostNodes = result.rawNodes.filter((n) => n.id === 'ghost-adapter');
       expect(ghostNodes).toHaveLength(1);
       expect((ghostNodes[0].data as Record<string, unknown>).isGhost).toBe(true);
-      expect((ghostNodes[0].data as Record<string, unknown>).adapterName).toBe('Add Adapter');
+      expect((ghostNodes[0].data as Record<string, unknown>).adapterName).toBe('Add a platform');
     });
 
     it('creates ghost node when only CCA adapters exist', () => {

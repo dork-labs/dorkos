@@ -885,7 +885,7 @@ describe('TopologyGraph', () => {
       }>;
       const ghostNode = nodes.find((n) => n.id === 'ghost-adapter');
       expect(ghostNode?.data.isGhost).toBe(true);
-      expect(ghostNode?.data.adapterName).toBe('Add Adapter');
+      expect(ghostNode?.data.adapterName).toBe('Add a platform');
     });
   });
 

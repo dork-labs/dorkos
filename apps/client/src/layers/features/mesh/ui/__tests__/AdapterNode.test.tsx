@@ -215,7 +215,7 @@ describe('AdapterNode', () => {
         <AdapterNode
           {...makeMockProps({
             isGhost: true,
-            adapterName: 'Add Adapter',
+            adapterName: 'Add a platform',
             adapterType: 'ghost',
             adapterStatus: 'stopped',
             bindingCount: 0,
@@ -231,7 +231,7 @@ describe('AdapterNode', () => {
         <AdapterNode
           {...makeMockProps({
             isGhost: true,
-            adapterName: 'Add Adapter',
+            adapterName: 'Add a platform',
             adapterType: 'ghost',
             adapterStatus: 'stopped',
             bindingCount: 0,
@@ -247,7 +247,7 @@ describe('AdapterNode', () => {
         <AdapterNode
           {...makeMockProps({
             isGhost: true,
-            adapterName: 'Add Adapter',
+            adapterName: 'Add a platform',
             adapterType: 'ghost',
             adapterStatus: 'stopped',
             bindingCount: 0,
@@ -264,7 +264,7 @@ describe('AdapterNode', () => {
         <AdapterNode
           {...makeMockProps({
             isGhost: true,
-            adapterName: 'Add Adapter',
+            adapterName: 'Add a platform',
             adapterType: 'ghost',
             adapterStatus: 'stopped',
             bindingCount: 0,
