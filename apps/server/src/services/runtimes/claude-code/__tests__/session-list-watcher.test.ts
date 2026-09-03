@@ -319,6 +319,24 @@ describe('watchSessionList', () => {
     await it.return?.();
   });
 
+  // A discarded watcher must take its sweep with it. One of these exists per
+  // consumer of the session-list stream, so a sweep that outlives the consumer
+  // that armed it is a `readdir` of every projects root every five seconds,
+  // forever, on behalf of an SSE client that has already disconnected — and
+  // nothing else in this file would notice, because a leaked timer breaks no
+  // assertion about events.
+  it('stops the reconcile sweep when the consumer stops iterating', async () => {
+    const it = start();
+    await awaitInitialScan();
+    // Precondition: the sweep really is armed, or the assertion below passes
+    // for the wrong reason.
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+    await it.return?.();
+
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   // The guard admits only immediate children of the root: an addDir for the
   // root itself is not a slug dir and must not trigger a rescan.
   it('ignores addDir for the projects root itself', async () => {

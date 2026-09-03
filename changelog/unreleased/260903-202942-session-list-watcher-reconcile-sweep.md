@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): the session list re-reads the disk it stopped hearing from (DOR-577)'
+  - 'test(server): pin that a discarded session-list watcher stops its sweep (DOR-577)'
 ---
 
 ### Fixed
