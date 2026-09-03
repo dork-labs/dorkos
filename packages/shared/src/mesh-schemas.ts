@@ -10,6 +10,7 @@
 import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 import { AGENT_NAME_REGEX } from './validation.js';
+import { CAPABILITY_TIERS, type CapabilityTier } from './capabilities.js';
 import { EFFORT_LEVELS } from './constants.js';
 import { SOUL_MAX_CHARS, NOPE_MAX_CHARS, MEMORY_MAX_CHARS } from './convention-files.js';
 import { WorkspaceProviderTypeSchema } from './workspace.js';
@@ -539,6 +540,23 @@ export const AgentManifestSchema = z
       example: 'acme-corp',
     }),
     enabledToolGroups: EnabledToolGroupsSchema,
+    // The most this agent is ever allowed to do, carried onto every token minted
+    // for it and enforced at the capability gate (`tier-enforcement.ts`). Absent
+    // means `destructive` — no extra limit — which is what every manifest
+    // written before this field existed keeps meaning, so nothing already
+    // running loses capability (DOR-486).
+    //
+    // Deliberately NOT `.catch(undefined)`, unlike `model`/`effort`/`account`
+    // above and on the same reasoning as `mcpServers` below: this is a security
+    // control, and degrading an unreadable value to the schema default would
+    // silently RAISE the ceiling to unrestricted. A limit nobody can parse must
+    // be loud. It is also why the file — never the derived DB cache, which has
+    // no column for it — is the only place this answer is read from.
+    tierCeiling: z.enum(CAPABILITY_TIERS).optional().openapi({
+      description:
+        "The most this agent is ever allowed to do. 'observe' is read-only, 'act' can change things but never delete them, 'destructive' has no extra limit. Absent means no extra limit. Nobody can approve past it — an agent capped at 'act' is refused a destructive capability outright. An agent may lower its own ceiling; only a person can raise one.",
+      example: 'act',
+    }),
     // DorkOS-managed MCP servers for this agent. Deliberately NOT `.catch([])`
     // (unlike `model`/`effort` above): a malformed entry must fail the manifest
     // parse loudly rather than silently degrade a security-relevant list to
@@ -595,7 +613,7 @@ export type AgentManifest = z.infer<typeof AgentManifestSchema>;
 // (ADR 260803-233420, guarantee 2).
 export type AgentManifestUpdate = Omit<
   Partial<AgentManifest>,
-  'model' | 'effort' | 'account' | 'mcpServers'
+  'model' | 'effort' | 'account' | 'mcpServers' | 'tierCeiling'
 > & {
   model?: string | null;
   effort?: (typeof EFFORT_LEVELS)[number] | null;
@@ -605,6 +623,13 @@ export type AgentManifestUpdate = Omit<
    * Writable only from the operator surface — see {@link UpdateAgentRequestSchema}.
    */
   account?: string | null;
+  /**
+   * The most this agent is ever allowed to do; `null` clears the limit, on the
+   * same convention as `model`/`effort`. Clearing WIDENS the ceiling, so the
+   * agent-reachable path refuses it — see
+   * `services/core/operator/agent-updater.ts`.
+   */
+  tierCeiling?: CapabilityTier | null;
 };
 
 // === Lightweight Path Entry ===
@@ -800,6 +825,7 @@ export const UpdateAgentRequestSchema = AgentManifestSchema.pick({
   effort: true,
   account: true,
   enabledToolGroups: true,
+  tierCeiling: true,
 })
   .partial()
   .extend({
@@ -816,6 +842,12 @@ export const UpdateAgentRequestSchema = AgentManifestSchema.pick({
     // billing is operator-only, so the agent-reachable self-edit path refuses
     // this key outright — see `services/core/operator/agent-updater.ts`.
     account: z.string().min(1).nullable().optional(),
+    // `null` clears the limit, on the same convention again. Both surfaces
+    // accept the key; the asymmetry is on the VALUE, not on the schema — an
+    // agent may lower its own ceiling and may not raise one, and clearing is a
+    // raise. That comparison needs the ceiling already on disk, so it lives in
+    // `agent-updater.ts` rather than here (DOR-486).
+    tierCeiling: z.enum(CAPABILITY_TIERS).nullable().optional(),
   })
   .openapi('UpdateAgentRequest');
 

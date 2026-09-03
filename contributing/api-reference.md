@@ -552,14 +552,17 @@ Update agent fields by path. Merges the request body into the existing manifest.
 
 All fields are optional. The `enabledToolGroups` object controls per-agent tool domain toggles. Omitted fields inherit the global default from the `agentContext` section in `~/.dork/config.json`.
 
-**This route is agent-reachable, and two fields are refused here because of it.** It backs both the cockpit's self-edit and the `update_agent` MCP tool, and it performs no caller-identity check, so a field an agent must not decide for itself cannot be accepted on this path (DOR-1506):
+**This route is agent-reachable, and three fields are refused here because of it.** It backs both the cockpit's self-edit and the `update_agent` MCP tool, and it performs no caller-identity check, so a field an agent must not decide for itself cannot be accepted on this path (DOR-1506):
 
-| Field                           | Why it is refused                                                                            | Where it is set instead      |
-| ------------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------- |
-| `account`                       | Billing is the operator's call — an agent could repoint whose subscription its work bills to | `PATCH /api/mesh/agents/:id` |
-| `enabledToolGroups.roomsManage` | A grant the governed agent can set for itself is not a grant (ADR-260828-123331)             | `PATCH /api/mesh/agents/:id` |
+| Field                           | Why it is refused                                                                                      | Where it is set instead      |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------- |
+| `account`                       | Billing is the operator's call — an agent could repoint whose subscription its work bills to           | `PATCH /api/mesh/agents/:id` |
+| `enabledToolGroups.roomsManage` | A grant the governed agent can set for itself is not a grant (ADR-260828-123331)                       | `PATCH /api/mesh/agents/:id` |
+| `tierCeiling` (raising only)    | Widening the cap on what an agent may ever do hands privilege back, which is a person's call (DOR-486) | `PATCH /api/mesh/agents/:id` |
 
-Both are **refused, not stripped**: a partial write that silently dropped the field would let a caller report the change as done. Naming `roomsManage` at all — `true`, `false`, or `null` — refuses the whole patch, so a client that reads the stored `enabledToolGroups` object and spreads it into an unrelated toggle must use the operator route too. The other four keys stay writable here.
+The first two are **refused, not stripped**: a partial write that silently dropped the field would let a caller report the change as done. Naming `roomsManage` at all — `true`, `false`, or `null` — refuses the whole patch, so a client that reads the stored `enabledToolGroups` object and spreads it into an unrelated toggle must use the operator route too. The other four keys stay writable here.
+
+`tierCeiling` is the one refusal keyed on the VALUE rather than the field. An agent may LOWER its own ceiling — giving something up is a normal, safe thing to let it do — and any change that widens one, `null` (which means "no extra limit") included, is refused whole. Absent on the manifest reads as `destructive`, so every agent that predates the field keeps exactly the capability it had.
 
 **Two more fields are refused on the `update_agent` MCP tool ONLY, and are accepted here** (DOR-1698). The split is deliberate and the direction matters: this route is how the cockpit's own Safety Boundaries editor saves, and a person editing their agent's boundaries in the app is the case that must stay free.
 
@@ -574,7 +577,7 @@ Both are **refused, not stripped**: a partial write that silently dropped the fi
 
 - `200` - Updated `AgentManifest`
 - `400` - Validation error or missing `path`
-- `403` - Refused as operator-only: the patch named `account` or `enabledToolGroups.roomsManage`
+- `403` - Refused as operator-only: the patch named `account` or `enabledToolGroups.roomsManage`, or asked to widen `tierCeiling`
 - `403` - Path outside configured boundary
 - `404` - No agent registered at this path
 

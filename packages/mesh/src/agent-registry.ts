@@ -547,6 +547,14 @@ export class AgentRegistry {
       // grant a person had set. A future migration may add a JSON column; until
       // then the manifest file is the only place the answer exists.
       enabledToolGroups: {},
+      // `tierCeiling` is absent for the same reason and with the same rule
+      // attached (DOR-486): no DB column, so this cache cannot answer, and
+      // absent here would read as the WIDEST ceiling. Nothing may decide what an
+      // agent is allowed to do from this value — `resolveAgentTokenEnv` reads
+      // `.dork/agent.json` directly, which is the only place the answer exists.
+      // Listing it in a roster view needs a real column first, on the pattern
+      // `model`/`effort` set.
+      //
       // mcpServers is manifest-file-only by design (no DB column, no reconciler
       // diff — ADR 260803-233420). The derived cache carries the empty default;
       // the file remains the source of truth for managed servers.

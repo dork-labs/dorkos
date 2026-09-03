@@ -68,10 +68,11 @@ import { gatedToolRegistrar } from './mcp-tool-gate.js';
  * @param userId - The signed-in person behind the call, when the surface
  *   verified one. Its ABSENCE is a distinct fact from "the owner".
  * @param agentIdentityPresented - Whether an `X-DorkOS-Agent` header was there
- *   at all, resolved or not. Carried SEPARATELY from `identity` because a
- *   revoked or expired token leaves that empty while still meaning a machine is
- *   calling — see `CapabilityInvocationContext.agentIdentityPresented`
- *   (DOR-1361).
+ *   at all, resolved or not. Carried SEPARATELY from `identity` because a token
+ *   this machine has no record of leaves that empty while still meaning a
+ *   machine is calling — see `CapabilityInvocationContext.agentIdentityPresented`
+ *   (DOR-1361). A revoked or expired token is no longer such a case: it fills
+ *   `identity` with an `inactive` mark instead (DOR-486).
  */
 export function createExternalMcpServer(
   deps: McpToolDeps,

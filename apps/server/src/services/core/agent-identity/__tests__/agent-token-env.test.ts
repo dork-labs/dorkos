@@ -167,12 +167,19 @@ describe('createInSessionContextResolver', () => {
     expect(await createInSessionContextResolver('/projects/never-minted')()).toBeUndefined();
   });
 
-  it('resolves undefined after the agent is revoked', async () => {
+  it('resolves a REVOKED context after the agent is revoked, not an empty one', async () => {
+    // Changed on purpose (DOR-486). An empty context reads as "unidentified" at
+    // the capability gate, and an unidentified caller gets the widest tier
+    // ceiling — so answering `undefined` here meant revoking a capped agent
+    // mid-session WIDENED what its in-session tools could reach. The context now
+    // names the agent and its state, and the gate caps it at `observe`.
     const service = initAgentIdentityService(createTestDb());
     await resolveAgentTokenEnv(AGENT_PATH, 'Researcher');
     await service.revoke(AGENT_PATH);
 
-    expect(await createInSessionContextResolver(AGENT_PATH)()).toBeUndefined();
+    const context = await createInSessionContextResolver(AGENT_PATH)();
+
+    expect(context?.identity).toMatchObject({ agentPath: AGENT_PATH, inactive: 'revoked' });
   });
 
   it('resolves undefined when the service was never initialized', async () => {

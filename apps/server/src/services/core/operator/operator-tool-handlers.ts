@@ -17,6 +17,7 @@
 import path from 'node:path';
 import { z } from 'zod';
 import { ListActivityQuerySchema } from '@dorkos/shared/activity-schemas';
+import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../../../lib/boundary.js';
@@ -112,6 +113,11 @@ export interface UpdateAgentArgs {
   color?: string | null;
   icon?: string | null;
   soulContent?: string;
+  /**
+   * The most this agent may ever do. Lowering it is the agent's own call;
+   * raising or clearing it is refused by `agent-updater.ts` (DOR-486).
+   */
+  tierCeiling?: CapabilityTier | null;
   /** Present only so the handler can refuse it — see the guard in the handler. */
   nopeContent?: unknown;
 }

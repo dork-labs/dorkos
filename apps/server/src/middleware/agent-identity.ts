@@ -119,11 +119,16 @@ export async function resolveAgentIdentityFromHeaders(
     const trimmed = token.trim();
     const identity = await service.resolve(trimmed);
     if (identity) return identity;
-    // A token that goes nowhere is worth seeing: it is what a revoked or
-    // expired agent looks like from the operator's side, and without a line
-    // here that agent silently degrades to "unattributed" forever. The digest
-    // prefix makes repeat attempts by the SAME token recognizable; the token
-    // itself is never logged.
+    // A token that goes nowhere is worth seeing: something is presenting a
+    // credential this machine has no record of, and without a line here it
+    // silently degrades to "unattributed" forever. The digest prefix makes
+    // repeat attempts by the SAME token recognizable; the token itself is never
+    // logged.
+    //
+    // This is NO LONGER what a revoked or expired agent looks like (DOR-486) —
+    // those resolve to an identity marked `inactive`, and are refused loudly at
+    // the gates rather than quietly here. Reaching this line now means a token
+    // from no agent at all.
     logger.debug('[agent-identity] Presented token did not resolve', {
       tokenDigestPrefix: agentTokenDigestPrefix(trimmed),
       path: context,

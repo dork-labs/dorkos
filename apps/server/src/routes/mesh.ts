@@ -7,8 +7,7 @@
 import path from 'path';
 import { Router } from 'express';
 import { z } from 'zod';
-import { isManifestGitTracked } from '@dorkos/mesh';
-import type { MeshCore } from '@dorkos/mesh';
+import { isManifestGitTracked, ManifestUnreadableError, type MeshCore } from '@dorkos/mesh';
 import type { AgentManifest, AgentHealthStatus, TopologyView } from '@dorkos/shared/mesh-schemas';
 import {
   DiscoverRequestSchema,
@@ -530,8 +529,27 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
         .filter(([k]) => k in req.body)
         .map(([k, v]) => [k, v === null ? undefined : v])
     ) as Partial<AgentManifest>;
-    // ADR-0043: update() is async — writes to disk first, then DB
-    const updated = await meshCore.update(req.params.id, explicitFields);
+    // ADR-0043: update() is async — writes to disk first, then DB.
+    //
+    // It REFUSES when the manifest is present but unreadable, rather than
+    // rebuilding one from the DB row, because that row cannot carry
+    // `enabledToolGroups`, `mcpServers`, `workspace` or `tierCeiling` and the
+    // rebuild would erase all four (DOR-486 review). Answered as a 409 with the
+    // reason: the request is fine, the state on disk is not, and the operator
+    // can act on the sentence.
+    // Narrowed to the sentinel class on purpose. An unconditional catch here
+    // also swallowed `writeManifest`'s schema rejection and any I/O failure, and
+    // answered all of them `409 MANIFEST_UNREADABLE` with the raw message —
+    // a wrong status over a wrong story, and internals on the wire (DOR-486
+    // re-review). Anything else rethrows to the error middleware, which is where
+    // an unexpected failure belongs.
+    let updated;
+    try {
+      updated = await meshCore.update(req.params.id, explicitFields);
+    } catch (err) {
+      if (!(err instanceof ManifestUnreadableError)) throw err;
+      return res.status(409).json({ error: err.message, code: 'MANIFEST_UNREADABLE' });
+    }
     if (!updated) {
       return res.status(404).json({ error: 'Agent not found' });
     }

@@ -132,6 +132,12 @@ export function createCapabilityGateAuditObserver(
         capabilityId: action.id,
         tier: action.tier,
         ...(identity ? { tierCeiling: identity.tierCeiling } : {}),
+        // `tierCeiling` above is the RECORDED value, which for a shut-off token
+        // is not the one that refused the call — a revoked agent is capped at
+        // `observe` however its manifest reads. Recording the state beside it
+        // keeps the line answerable: without it a feed entry says "limited to
+        // anything" over a refusal citing a limit (DOR-486).
+        ...(identity?.inactive ? { identityState: identity.inactive } : {}),
         reason: decision.payload.reason,
         ...(pending ? { approvalId: pending.approvalId } : {}),
       },

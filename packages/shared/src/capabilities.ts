@@ -34,6 +34,57 @@ export const CAPABILITY_TIERS = ['observe', 'act', 'destructive'] as const;
 /** A capability's permission tier. One of {@link CAPABILITY_TIERS}. */
 export type CapabilityTier = (typeof CAPABILITY_TIERS)[number];
 
+/**
+ * How wide each tier's blast radius is, as a comparable number — the machine
+ * reading of {@link CAPABILITY_TIERS}'s stated order.
+ *
+ * Two places compare tiers and they must never disagree: the gate that refuses a
+ * capability above a caller's ceiling, and the guard that decides whether a
+ * change to a per-agent ceiling widens it (and so belongs to a person). Derived
+ * from the ordered list rather than written out, so a tier added there cannot be
+ * forgotten here.
+ */
+export const CAPABILITY_TIER_RANK: Record<CapabilityTier, number> = Object.fromEntries(
+  CAPABILITY_TIERS.map((tier, index) => [tier, index])
+) as Record<CapabilityTier, number>;
+
+/**
+ * The widest rung there is — the ceiling that restricts nothing.
+ *
+ * Named so the two "no extra limit" defaults below are one literal rather than
+ * two, while staying two POLICIES: they answer different questions and a future
+ * install may well want them to differ, which is exactly what
+ * `CapabilityTierGateOptions.anonymousTierCeiling` exists for.
+ */
+export const WIDEST_CAPABILITY_TIER: CapabilityTier =
+  CAPABILITY_TIERS[CAPABILITY_TIERS.length - 1]!;
+
+/**
+ * What an agent with no recorded ceiling is allowed to reach: everything.
+ *
+ * The migration guarantee for {@link CAPABILITY_TIERS} as a per-agent limit
+ * (DOR-486). Every agent that existed before ceilings were settable has no value
+ * on its manifest, and none of them may quietly lose capability — so absent
+ * reads as the widest rung, and a narrower one is only ever something somebody
+ * chose.
+ */
+export const DEFAULT_AGENT_TIER_CEILING: CapabilityTier = WIDEST_CAPABILITY_TIER;
+
+/**
+ * How each tier reads as a LIMIT on an agent, in the words a person sees.
+ *
+ * A ceiling's sentence is not its tier's sentence — "changes things" describes a
+ * capability, "changes that can be undone" describes the fence around an agent.
+ * Shared because three surfaces say it and must say it identically: the gate's
+ * refusal, the refusal an agent gets for trying to widen its own fence, and the
+ * control a person sets it with.
+ */
+export const CAPABILITY_CEILING_PHRASE: Record<CapabilityTier, string> = {
+  observe: 'reading only',
+  act: 'changes that can be undone',
+  destructive: 'anything',
+};
+
 /** The two MCP servers a capability's tool surface can be advertised on. */
 export type McpServerId = 'in-session' | 'external';
 

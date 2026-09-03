@@ -254,8 +254,44 @@ prove neither must declare `systemPromptAppendUnprovenReason` as a sentence rath
 ## Worktrees and the reap
 
 `RoomWorktreeManager.ensureWorktree` lazily creates `worktrees/<agentSlug>/` on branch
-`room/<agentSlug>` at the first room turn that resolves cwd for a project room, and runs harness
-projection there. The worktree is standing: it persists across turns, and uncommitted work survives.
+`room/<agentSlug>` at the first room turn that resolves cwd for a project room, seeds the agent's
+Operating DorkOS pack into it, and runs harness projection there. The worktree is standing: it
+persists across turns, and uncommitted work survives.
+
+**The pack is seeded into the WORKTREE, not just the agent's home** (DOR-1640). A turn's cwd is the
+worktree and every harness resolves project-scoped skills against the cwd, so a pack that lives only
+in `<agentDir>/` is unreachable from the one directory `working-in-room-repos` is about. Widening the
+setting-source chain instead is not available: `settingSources` is a closed three-value enum whose
+`user` slot is already spoken for by account pinning. Seeding runs before projection, which is what
+reaches all three runtimes — codex and opencode read `.agents/skills/` natively, claude-code reads
+the projected `.claude/skills/` links.
+
+Two rules follow, and both are pinned by test:
+
+- **The seeded paths are hidden in the repo's shared `info/exclude`, DERIVED from
+  `OPERATING_SKILLS_PACK`.** A clean `git status` gates both the reap below and the §3.6 merge, so a
+  hand-written list that falls one skill behind leaves every worktree in the install permanently
+  dirty. Each entry names the one `SKILL.md` the seeder writes, never `.agents/skills/` — that
+  directory is where the room authors skills of its own, and a room-authored skill sharing a pack
+  name is preserved, never overwritten. The cost, accepted and documented at the constant: those
+  seven names are reserved, so an UNCOMMITTED room-authored file at one of them is hidden from
+  `git status` and goes with the tree when the reap takes it.
+- **Seeding widened the projection, so the block covers its scaffolds too.** The projection used to
+  return early without an `.agents/skills/`; now it always runs, and it writes more than skill
+  symlinks — `planInstruction` scaffolds `.claude/CLAUDE.md` whenever the tree root has an
+  `AGENTS.md`. That entry is obtained by running the planner, never spelled. Completeness is pinned
+  by a test that runs the real planner over a created worktree and asks `git check-ignore` about
+  every target, so a new engine target reddens without anybody remembering this page. A room that
+  commits a manifest enabling other harnesses is outside the guarantee on purpose: `GEMINI.md` and
+  friends are paths a person may author, so they stay visible (dirty ⇒ spared, never deleted).
+  Narrow the room projection if that ever needs fixing; do not widen this block.
+- **`repo/` is never seeded.** No turn runs in the integration tree, and its contents are the room's
+  committed files.
+
+Seeding at create alone would freeze a standing worktree on the pack it was born with, so the first
+resolution after a restart re-seeds if `OPERATING_SKILLS_VERSION` moved — once per worktree per
+process, since only a new binary can raise that constant. It refreshes the exclude block _before_
+writing, or a worktree whose repo carries a pre-DOR-1640 block goes permanently dirty on upgrade.
 
 `reapRoom` removes one only when **four independent gates agree**:
 

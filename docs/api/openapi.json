@@ -5451,6 +5451,16 @@
           "enabledToolGroups": {
             "$ref": "#/components/schemas/EnabledToolGroups"
           },
+          "tierCeiling": {
+            "type": "string",
+            "enum": [
+              "observe",
+              "act",
+              "destructive"
+            ],
+            "description": "The most this agent is ever allowed to do. 'observe' is read-only, 'act' can change things but never delete them, 'destructive' has no extra limit. Absent means no extra limit. Nobody can approve past it — an agent capped at 'act' is refused a destructive capability outright. An agent may lower its own ceiling; only a person can raise one.",
+            "example": "act"
+          },
           "mcpServers": {
             "type": "array",
             "items": {
@@ -5847,6 +5857,16 @@
               "enabledToolGroups": {
                 "$ref": "#/components/schemas/EnabledToolGroups"
               },
+              "tierCeiling": {
+                "type": "string",
+                "enum": [
+                  "observe",
+                  "act",
+                  "destructive"
+                ],
+                "description": "The most this agent is ever allowed to do. 'observe' is read-only, 'act' can change things but never delete them, 'destructive' has no extra limit. Absent means no extra limit. Nobody can approve past it — an agent capped at 'act' is refused a destructive capability outright. An agent may lower its own ceiling; only a person can raise one.",
+                "example": "act"
+              },
               "mcpServers": {
                 "type": "array",
                 "items": {
@@ -5994,6 +6014,18 @@
           },
           "enabledToolGroups": {
             "$ref": "#/components/schemas/EnabledToolGroups"
+          },
+          "tierCeiling": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "observe",
+              "act",
+              "destructive",
+              null
+            ]
           }
         }
       },

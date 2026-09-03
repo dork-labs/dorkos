@@ -38,6 +38,7 @@ vi.mock('../../services/mesh/orphaned-installs.js', () => ({
   logOrphanedInstalls: vi.fn().mockResolvedValue(undefined),
 }));
 
+import { ManifestUnreadableError } from '@dorkos/mesh';
 import { createMeshRouter } from '../mesh.js';
 import type { MeshCore } from '@dorkos/mesh';
 import { validateBoundary, validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
@@ -574,6 +575,40 @@ describe('Mesh routes', () => {
       expect(res.status).toBe(200);
       expect(res.body.name).toBe('Updated Agent');
       expect(meshCore.update).toHaveBeenCalledWith('agent-1', { name: 'Updated Agent' });
+    });
+
+    // Both halves of the narrowed catch (DOR-486 re-review). It used to catch
+    // EVERYTHING `update` could throw and answer `409 MANIFEST_UNREADABLE` with
+    // the raw message, so a schema-invalid merge — a different bug entirely —
+    // was reported as a corrupt file, with internals on the wire.
+    it('answers 409 when the manifest is present but cannot be read', async () => {
+      meshCore.update.mockRejectedValue(
+        new ManifestUnreadableError('/agents/ana', 'Unexpected token }')
+      );
+
+      const res = await request(app).patch('/api/mesh/agents/agent-1').send({ tierCeiling: 'act' });
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('MANIFEST_UNREADABLE');
+      // The sentence is for a person who has to go fix the file.
+      expect(res.body.error).toContain('/agents/ana');
+      expect(res.body.error).toContain('Fix or remove the file');
+    });
+
+    it('does NOT dress any other failure up as an unreadable manifest', async () => {
+      // What `writeManifest` throws when the merge does not satisfy the schema.
+      meshCore.update.mockRejectedValue(new Error('Refusing to write invalid agent manifest'));
+
+      const res = await request(app).patch('/api/mesh/agents/agent-1').send({ tierCeiling: 'act' });
+
+      // It reaches the error middleware, which is where an unexpected failure
+      // belongs — this route no longer relabels it. What the handler chooses to
+      // say is its own decision (this suite mounts a bare echo; production
+      // mounts `middleware/error-handler.ts`), and the claim here is only that
+      // the route did not invent a 409 with a story about a corrupt file.
+      expect(res.status).not.toBe(409);
+      expect(res.body.code).not.toBe('MANIFEST_UNREADABLE');
+      expect(JSON.stringify(res.body)).not.toContain('Fix or remove the file');
     });
 
     it('is the ONE way the rooms-management grant is set (DOR-1611, spec §D6)', async () => {

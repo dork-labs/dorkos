@@ -10,7 +10,18 @@
  * - `agent create`         → `POST /api/agents/create` (full pipeline: mkdir +
  *   scaffold + optional template + register).
  * - `agent update`         → `PATCH /api/agents/current?path=` (self-edit
- *   fields; the server enforces the immutable-name + system-agent guards).
+ *   fields; the server enforces the immutable-name + system-agent guards), plus
+ *   `PATCH /api/mesh/agents/:id` for `--ceiling` alone (see below).
+ *
+ * ## Why `--ceiling` takes a different route
+ *
+ * A tier ceiling is the cap on what an agent may ever do, and raising one hands
+ * privilege back — the decision that belongs to a person, never to the agent
+ * being capped. So the self-edit route refuses any change that widens a ceiling,
+ * whoever sends it, and the operator's route is the only way to raise one
+ * (DOR-486). This CLI is the person's shell, so `--ceiling` goes through the
+ * operator's route and can set any rung. It costs one extra lookup: the operator
+ * route addresses an agent by Mesh id, and `--path` is what a person has.
  *
  * Every verb accepts `--json` for raw machine output. Handlers return an exit
  * code rather than calling `process.exit` so `cli.ts` stays the single source of
@@ -19,6 +30,12 @@
  * @module commands/agent
  */
 import { parseArgs } from 'node:util';
+import {
+  CAPABILITY_TIERS,
+  CAPABILITY_CEILING_PHRASE,
+  DEFAULT_AGENT_TIER_CEILING,
+  type CapabilityTier,
+} from '@dorkos/shared/capabilities';
 import { apiCall } from '../lib/api-client.js';
 import { printError, printJson, renderTable } from '../lib/operator-output.js';
 import { rethrowUnknownOption } from '../lib/parse-args-error.js';
@@ -49,6 +66,10 @@ update options (all optional; --path is required):
       --description <text>   Change the description
       --color <hex>          Set the accent color (pass '' to clear)
       --icon <emoji>         Set the icon (pass '' to clear)
+      --ceiling <limit>      The most this agent may ever do:
+                               observe      read only
+                               act          change things, never delete them
+                               destructive  no extra limit (the default)
 
 Examples:
   dorkos agent list
@@ -56,7 +77,8 @@ Examples:
   dorkos agent show dorkbot
   dorkos agent show ~/projects/app
   dorkos agent create --name my-bot --path ~/projects/my-bot
-  dorkos agent update --path ~/.dork/agents/dorkbot --display-name "Dork Bot"`;
+  dorkos agent update --path ~/.dork/agents/dorkbot --display-name "Dork Bot"
+  dorkos agent update --path ~/projects/my-bot --ceiling act`;
 
 /** A Mesh agent entry as returned by `GET /api/mesh/agents`. */
 interface MeshAgent {
@@ -85,6 +107,8 @@ export interface AgentUpdateArgs {
   description?: string;
   color?: string | null;
   icon?: string | null;
+  /** The most this agent may ever do — written through the operator's route. */
+  ceiling?: CapabilityTier;
   json: boolean;
 }
 
@@ -152,12 +176,15 @@ export function parseAgentCreateArgs(rawArgs: string[]): AgentCreateArgs {
  * `--color`/`--icon` accept an empty string to clear the field (the server
  * treats `null` as "clear"), so an explicitly-passed empty value maps to `null`.
  *
+ * `--ceiling` is validated here rather than left to the server, because the
+ * three rungs are a closed set and a typo deserves the list, not a 400.
+ *
  * @param rawArgs - Argv after `update`.
  * @returns Typed {@link AgentUpdateArgs}.
  */
 export function parseAgentUpdateArgs(rawArgs: string[]): AgentUpdateArgs {
   const usage =
-    'Usage: dorkos agent update --path <dir> [--display-name <name>] [--description <text>] [--color <hex>] [--icon <emoji>]';
+    'Usage: dorkos agent update --path <dir> [--display-name <name>] [--description <text>] [--color <hex>] [--icon <emoji>] [--ceiling <observe|act|destructive>]';
   let parsed: ReturnType<typeof parseArgs>;
   try {
     parsed = parseArgs({
@@ -168,6 +195,7 @@ export function parseAgentUpdateArgs(rawArgs: string[]): AgentUpdateArgs {
         description: { type: 'string' },
         color: { type: 'string' },
         icon: { type: 'string' },
+        ceiling: { type: 'string' },
         json: { type: 'boolean', default: false },
       },
       allowPositionals: false,
@@ -182,12 +210,22 @@ export function parseAgentUpdateArgs(rawArgs: string[]): AgentUpdateArgs {
   // Empty string clears the field (null); a non-empty string sets it.
   const clearable = (v: unknown): string | null | undefined =>
     typeof v === 'string' ? (v.length === 0 ? null : v) : undefined;
+  let ceiling: CapabilityTier | undefined;
+  if (typeof values.ceiling === 'string') {
+    if (!(CAPABILITY_TIERS as readonly string[]).includes(values.ceiling)) {
+      throw new Error(
+        `Unknown --ceiling '${values.ceiling}'. Use one of: ${CAPABILITY_TIERS.join(', ')}.`
+      );
+    }
+    ceiling = values.ceiling as CapabilityTier;
+  }
   return {
     path,
     displayName: typeof values['display-name'] === 'string' ? values['display-name'] : undefined,
     description: typeof values.description === 'string' ? values.description : undefined,
     color: clearable(values.color),
     icon: clearable(values.icon),
+    ceiling,
     json: jsonOf(values),
   };
 }
@@ -231,8 +269,9 @@ export async function runAgentList(json: boolean): Promise<number> {
  * @returns The intended process exit code.
  */
 export async function runAgentShow(ref: string, json: boolean): Promise<number> {
+  const fromManifest = looksLikePath(ref);
   try {
-    const agent = looksLikePath(ref)
+    const agent = fromManifest
       ? await apiCall<unknown>('GET', `/api/agents/current?path=${encodeURIComponent(ref)}`)
       : await apiCall<unknown>('GET', `/api/mesh/agents/${encodeURIComponent(ref)}`);
     if (agent === null) {
@@ -243,7 +282,11 @@ export async function runAgentShow(ref: string, json: boolean): Promise<number> 
       printJson(agent);
       return 0;
     }
-    const a = agent as MeshAgent & { description?: string; projectPath?: string };
+    const a = agent as MeshAgent & {
+      description?: string;
+      projectPath?: string;
+      tierCeiling?: CapabilityTier;
+    };
     const rows: Array<[string, string]> = [
       ['Name', a.displayName ?? a.name],
       ['Id', a.id],
@@ -252,6 +295,12 @@ export async function runAgentShow(ref: string, json: boolean): Promise<number> 
       ['Health', a.healthStatus ?? '-'],
       ['Description', a.description ?? '-'],
     ];
+    // Only on the manifest form. A tier ceiling lives in `.dork/agent.json` and
+    // has no column in the Mesh row, so the id form genuinely does not know it —
+    // and printing "anything" for an unanswered question is worse than silence.
+    if (fromManifest) {
+      rows.push(['Limit', CAPABILITY_CEILING_PHRASE[a.tierCeiling ?? DEFAULT_AGENT_TIER_CEILING]]);
+    }
     const width = Math.max(...rows.map((r) => r[0].length));
     console.log(rows.map(([k, v]) => `${k}${' '.repeat(width - k.length)}  ${v}`).join('\n'));
     return 0;
@@ -303,21 +352,40 @@ export async function runAgentUpdate(args: AgentUpdateArgs): Promise<number> {
   if (args.description !== undefined) body.description = args.description;
   if (args.color !== undefined) body.color = args.color;
   if (args.icon !== undefined) body.icon = args.icon;
-  if (Object.keys(body).length === 0) {
+  if (Object.keys(body).length === 0 && args.ceiling === undefined) {
     console.error('Error: nothing to update — pass at least one field to change.');
     return 1;
   }
+  const selfEditUrl = `/api/agents/current?path=${encodeURIComponent(args.path)}`;
   try {
-    const updated = await apiCall<{ id: string; name: string }>(
-      'PATCH',
-      `/api/agents/current?path=${encodeURIComponent(args.path)}`,
-      body
-    );
+    // A `--ceiling`-only run still has to learn the agent's Mesh id, so it reads
+    // where the other fields would have written.
+    let updated =
+      Object.keys(body).length > 0
+        ? await apiCall<{ id: string; name: string }>('PATCH', selfEditUrl, body)
+        : await apiCall<{ id: string; name: string }>('GET', selfEditUrl);
+
+    if (args.ceiling !== undefined) {
+      // Deliberately the OPERATOR route — the self-edit route refuses any change
+      // that widens a ceiling, whoever sends it (see the module TSDoc).
+      await apiCall('PATCH', `/api/mesh/agents/${encodeURIComponent(updated.id)}`, {
+        tierCeiling: args.ceiling,
+      });
+      // Read the manifest back rather than trusting that route's echo: its
+      // response is rebuilt from the derived Mesh row, which has no column for a
+      // tier ceiling, so `--json` would report the field missing on the very run
+      // that set it.
+      updated = await apiCall<{ id: string; name: string }>('GET', selfEditUrl);
+    }
+
     if (args.json) {
       printJson(updated);
       return 0;
     }
     console.log(`Updated agent ${updated.name}`);
+    if (args.ceiling !== undefined) {
+      console.log(`  Limited to ${CAPABILITY_CEILING_PHRASE[args.ceiling]}.`);
+    }
     return 0;
   } catch (err) {
     printError(err);

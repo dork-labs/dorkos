@@ -198,8 +198,14 @@ export const memoryDomain: CapabilityDomain = {
         // caller cannot name a file, a directory, or another agent. A session
         // with no identity has no memory file, which is the correct boundary
         // rather than a gap: the answer is a refusal, not a default location.
+        // `identity.inactive` keeps this jail closed through the DOR-486 change:
+        // a revoked or expired token used to leave `context.identity` empty and
+        // land on the refusal below, and it now arrives named. A session whose
+        // identity is switched off has no memory file to write, exactly as one
+        // with no identity does — the same boundary, stated against the same
+        // fact rather than against a side effect of how resolution failed.
         const identity = context.identity;
-        if (!identity) {
+        if (!identity || identity.inactive) {
           return { saved: false, error: MEMORY_NO_AGENT_MESSAGE, code: 'no-agent' as const };
         }
 

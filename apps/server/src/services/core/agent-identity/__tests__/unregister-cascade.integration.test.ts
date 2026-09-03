@@ -81,8 +81,11 @@ describe('agent identity revocation wired to a real MeshCore unregister (DOR-490
 
     // The cascade's own revoke() is fire-and-forget from the callback's
     // perspective; give its promise chain a turn before asserting.
+    // `inactive: 'revoked'` rather than `undefined` (DOR-486): a revoked token
+    // now NAMES its agent so the capability gate can cap it, instead of reading
+    // as an unidentified caller and getting the widest ceiling there is.
     await vi.waitFor(async () => {
-      expect(await identityService.resolve(token)).toBeUndefined();
+      expect(await identityService.resolve(token)).toMatchObject({ inactive: 'revoked' });
     });
   });
 
@@ -114,8 +117,8 @@ describe('agent identity revocation wired to a real MeshCore unregister (DOR-490
     await mesh.unregister(a.id);
 
     await vi.waitFor(async () => {
-      expect(await identityService.resolve(tokenA)).toBeUndefined();
+      expect(await identityService.resolve(tokenA)).toMatchObject({ inactive: 'revoked' });
     });
-    expect(await identityService.resolve(tokenB)).toBeDefined();
+    expect((await identityService.resolve(tokenB))?.inactive).toBeUndefined();
   });
 });

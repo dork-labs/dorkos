@@ -14,8 +14,11 @@
  *
  * @module services/core/agent-identity/agent-token-env
  */
+import { readManifest } from '@dorkos/shared/manifest';
+import type { CapabilityTier } from '@dorkos/shared/capabilities';
+
 import { logger } from '../../../lib/logger.js';
-import { getAgentIdentityService } from './agent-identity-service.js';
+import { getAgentIdentityService, type AgentIdentityService } from './agent-identity-service.js';
 import type { CapabilityInvocationContext } from '../capabilities/index.js';
 
 /** The env var a spawned agent reads its identity token from. */
@@ -29,6 +32,11 @@ export const AGENT_TOKEN_ENV_VAR = 'DORKOS_AGENT_TOKEN';
  * re-issue an existing secret; previously minted tokens stay valid, so
  * concurrent sessions for the same agent never invalidate each other (see
  * `agent-identity-service.ts`).
+ *
+ * The agent's tier ceiling rides along, read from `.dork/agent.json` (DOR-486).
+ * That file is the source of truth per ADR-0043 and the only place the answer
+ * exists — the derived Mesh row has no column for it, deliberately, so nothing
+ * can make this decision from a cache that cannot answer.
  *
  * Returns `{}` — leaving the session unattributed, exactly as today — when the
  * path hosts no registered agent, when the service was never initialized, or
@@ -52,6 +60,7 @@ export async function resolveAgentTokenEnv(
     const token = await service.mint({
       agentPath,
       displayName: displayName?.trim() || agentPath,
+      ...(await resolveTierCeiling(agentPath, service)),
     });
     return { [AGENT_TOKEN_ENV_VAR]: token };
   } catch (err) {
@@ -62,6 +71,53 @@ export async function resolveAgentTokenEnv(
     });
     return {};
   }
+}
+
+/**
+ * The tier ceiling to stamp on a freshly minted token, as a spreadable fragment
+ * so an agent with no ceiling passes nothing and takes `mint()`'s default.
+ *
+ * `.dork/agent.json` is the source of truth (ADR-0043). When it cannot be read —
+ * missing, malformed, or refused by the filesystem — the agent's LAST RECORDED
+ * ceiling is used instead, rather than nothing. That fallback is the whole
+ * reason this is not two lines inline: taking the default on an unreadable
+ * manifest would mean an agent limited to `observe` gets an unrestricted token
+ * the moment somebody fat-fingers its manifest, and a limit you can delete your
+ * way out of is not a limit. A directory that simply hosts no agent has no
+ * recorded ceiling either, so it still passes nothing.
+ *
+ * **The one gap that fallback cannot close, stated so nobody reads it as
+ * airtight:** it needs a PREVIOUS token to read a ceiling off. An agent whose
+ * manifest is unreadable on its very first spawn — one that has never minted —
+ * has no recorded ceiling anywhere, and takes `mint()`'s default. Closing that
+ * would mean a column on the derived Mesh row, which is the one thing this
+ * field deliberately does not have (an authorization answer must not come from a
+ * cache that can be stale); the honest alternative, refusing to spawn at all, is
+ * a worse failure for a file that is far more often absent than tampered with.
+ * The window is one spawn wide and only reachable by corrupting a manifest
+ * before the agent has ever run.
+ *
+ * @param agentPath - Absolute path to the agent's project directory.
+ * @param service - The identity service, for the last-recorded fallback.
+ * @returns `{ tierCeiling }`, or `{}` when no ceiling is recorded anywhere.
+ */
+async function resolveTierCeiling(
+  agentPath: string,
+  service: AgentIdentityService
+): Promise<{ tierCeiling?: CapabilityTier }> {
+  const manifest = await readManifest(agentPath, logger);
+  if (manifest) {
+    return manifest.tierCeiling ? { tierCeiling: manifest.tierCeiling } : {};
+  }
+
+  const recorded = await service.describeAgent(agentPath);
+  if (!recorded) return {};
+
+  logger.warn('[agent-identity] Manifest unreadable; keeping the recorded tier ceiling', {
+    agentPath,
+    tierCeiling: recorded.tierCeiling,
+  });
+  return { tierCeiling: recorded.tierCeiling };
 }
 
 /**

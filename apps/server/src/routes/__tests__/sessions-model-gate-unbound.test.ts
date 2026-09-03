@@ -1,7 +1,10 @@
 /**
  * @vitest-environment node
  *
- * The model gate, asked about a session NOBODY OWNS YET.
+ * The model gate, asked the two questions that decide whether it may refuse at
+ * all: WHO has the standing to judge (a session NOBODY OWNS YET has no runtime,
+ * only an inference) and WHETHER THE CATALOG IS EVIDENCE (a menu that marks
+ * itself unverified is a guess, not authority — DOR-1688).
  *
  * ## Why this file exists rather than another `describe` in `sessions.test.ts`
  *
@@ -58,7 +61,9 @@ vi.mock('../../services/core/config-manager.js', () => ({
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null) }));
 
 import request from 'supertest';
+import type { ModelOption } from '@dorkos/shared/types';
 import { createApp, finalizeApp } from '../../app.js';
+import { projectModelOptions } from '../../services/runtimes/opencode/providers/models.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { sessionMetadata, eq, type Db } from '@dorkos/db';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
@@ -222,5 +227,146 @@ describe('PATCH /api/sessions/:id — the model gate on an unbound session', () 
 
     expect(res.status).toBe(200);
     expect(rowFor(BOUND_CLAUDE)?.model).toBe(CLAUDE_MODEL);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DOR-1688. The other half of the same question: even a runtime with full
+// standing may only convict on evidence, and OpenCode's nothing-connected menu
+// is not evidence — it is the models.dev universe cut to 200 rows, every one of
+// them marked `unverified`. An operator whose credentials come from provider env
+// vars can run a model that sorted past the cut, and the gate used to answer
+// "the opencode runtime cannot run" it.
+// ---------------------------------------------------------------------------
+
+/**
+ * A `provider.list` payload with NOTHING connected and more models than the
+ * unverified menu's 200-row cap — the exact state a sidecar reports when it
+ * resolved no provider credentials.
+ *
+ * Structural, then cast: `@opencode-ai/sdk` may not be imported outside the
+ * OpenCode adapter directory (Hard Rule 2), and the projection reads only these
+ * fields.
+ *
+ * @param count - How many models the single unconnected provider lists.
+ */
+function unconnectedPayload(count: number): Parameters<typeof projectModelOptions>[0] {
+  const ids = Array.from({ length: count }, (_, i) => `vendor-${i}/model-${i}`);
+  return {
+    all: [
+      {
+        id: 'openrouter',
+        name: 'OpenRouter',
+        env: [],
+        models: Object.fromEntries(
+          ids.map((id, i) => [
+            id,
+            { id, name: `Model ${i}`, limit: { context: 128_000, output: 8_192 } },
+          ])
+        ),
+      },
+    ],
+    default: {},
+    connected: [],
+  } as unknown as Parameters<typeof projectModelOptions>[0];
+}
+
+const UNCONNECTED_PAYLOAD = unconnectedPayload(300);
+
+/**
+ * The real capped, all-`unverified` fallback menu — produced by the projection
+ * that ships, not hand-written, so the test cannot drift from what OpenCode
+ * actually offers in this state.
+ */
+const UNVERIFIED_CATALOG = projectModelOptions(UNCONNECTED_PAYLOAD);
+
+/**
+ * A model the operator can really run that the cap cut from the menu, derived
+ * from the projection rather than assumed: every id the provider listed, minus
+ * every id that survived.
+ */
+const CUT_MODEL = Array.from({ length: 300 }, (_, i) => `openrouter/vendor-${i}/model-${i}`).find(
+  (value) => !UNVERIFIED_CATALOG.some((option) => option.value === value)
+)!;
+
+/** The same rows with the guess-flag removed — a catalog that claims to be complete. */
+function asVerified(options: ModelOption[]): ModelOption[] {
+  return options.map((option) => {
+    const copy = { ...option };
+    delete copy.unverified;
+    return copy;
+  });
+}
+
+describe('PATCH /api/sessions/:id — the model gate on a catalog that admits it is a guess', () => {
+  beforeEach(() => {
+    db = createTestDb();
+    registerRuntimes();
+  });
+
+  it('builds the reproduction it claims: a capped, all-unverified menu that omits a real model', () => {
+    // The premise, proven rather than asserted in prose. Without these three
+    // facts the test below would pass for the wrong reason.
+    expect(UNVERIFIED_CATALOG).toHaveLength(200);
+    expect(UNVERIFIED_CATALOG.every((option) => option.unverified)).toBe(true);
+    expect(CUT_MODEL).toBeTruthy();
+  });
+
+  it('stores a model the unverified menu omits, instead of refusing on a guess', async () => {
+    bindSession(BOUND_OPENCODE, 'opencode');
+    opencode.getSupportedModels.mockResolvedValue(UNVERIFIED_CATALOG);
+
+    const res = await patch(BOUND_OPENCODE, { model: CUT_MODEL });
+
+    expect(res.status).toBe(200);
+    expect(rowFor(BOUND_OPENCODE)?.model).toBe(CUT_MODEL);
+  });
+
+  it('still refuses the same model when the catalog is trustworthy', async () => {
+    // The one test that keeps the gate a gate. Same rows, same missing model —
+    // the ONLY difference is that this catalog does not admit to being a guess,
+    // so absence from it is real evidence and the refusal must stand.
+    bindSession(BOUND_OPENCODE, 'opencode');
+    opencode.getSupportedModels.mockResolvedValue(asVerified(UNVERIFIED_CATALOG));
+
+    const res = await patch(BOUND_OPENCODE, { model: CUT_MODEL });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('UNSUPPORTED_MODEL');
+    expect(res.body.error).toContain('opencode');
+    expect(rowFor(BOUND_OPENCODE)?.model).toBeNull();
+  });
+
+  it('declines when only SOME rows admit they are guesses', async () => {
+    // Answering the ticket's open sub-question in code: the flag describes the
+    // MENU ("comes from a shortened, unconfirmed menu"), so one such row means a
+    // shortened menu fed this list and its absences prove nothing. It is also
+    // the exact test every client surface uses to show the unverified notice.
+    bindSession(BOUND_OPENCODE, 'opencode');
+    opencode.getSupportedModels.mockResolvedValue([
+      { value: 'openrouter/anthropic/claude-opus-4', displayName: 'Opus 4', description: '' },
+      { ...UNVERIFIED_CATALOG[0] },
+    ]);
+
+    const res = await patch(BOUND_OPENCODE, { model: CUT_MODEL });
+
+    expect(res.status).toBe(200);
+    expect(rowFor(BOUND_OPENCODE)?.model).toBe(CUT_MODEL);
+  });
+
+  it('accepts a model a TRUSTWORTHY catalog lists, reaching the membership check', async () => {
+    // The discriminating partner of the refusal above: same verified 200-row
+    // catalog, and the ONLY thing that changes is whether the model is in it.
+    // Asking this against the UNVERIFIED catalog would prove nothing — that
+    // answer comes back 200 from the guess short-circuit without the membership
+    // check ever running, so it would pass even if matching were deleted.
+    bindSession(BOUND_OPENCODE, 'opencode');
+    const verified = asVerified(UNVERIFIED_CATALOG);
+    opencode.getSupportedModels.mockResolvedValue(verified);
+
+    const res = await patch(BOUND_OPENCODE, { model: verified[0].value });
+
+    expect(res.status).toBe(200);
+    expect(rowFor(BOUND_OPENCODE)?.model).toBe(verified[0].value);
   });
 });

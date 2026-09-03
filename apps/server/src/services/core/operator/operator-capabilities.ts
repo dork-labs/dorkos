@@ -23,6 +23,7 @@ import { ListActivityQuerySchema } from '@dorkos/shared/activity-schemas';
 import { RecentSessionsQuerySchema } from '@dorkos/shared/schemas';
 import { TraitsSchema } from '@dorkos/shared/mesh-schemas';
 import { NOPE_MAX_CHARS, SOUL_MAX_CHARS } from '@dorkos/shared/convention-files';
+import { CAPABILITY_TIERS } from '@dorkos/shared/capabilities';
 
 import { defineCapability, type CapabilityDomain } from '../capabilities/index.js';
 import type { CapabilityDeps } from '../capabilities/index.js';
@@ -187,6 +188,8 @@ export const operatorDomain: CapabilityDomain = {
       description:
         "Edit an agent's manifest and personality: displayName, description, persona, personaEnabled, " +
         'traits, conventions, color, icon, and SOUL.md (soulContent) content. ' +
+        'It also carries tierCeiling, the most an agent may ever do — you can LOWER your own, ' +
+        'and only a person can raise one. ' +
         // The other tool is named as a searchable ENDING, never bare: this same
         // string is served to the external `/mcp` server, where a person's
         // harness chooses the prefix, so a bare name is uncallable on
@@ -245,6 +248,22 @@ export const operatorDomain: CapabilityDomain = {
         color: z.string().nullable().optional().describe('Accent color (null clears it)'),
         icon: z.string().nullable().optional().describe('Icon name (null clears it)'),
         soulContent: z.string().max(SOUL_MAX_CHARS).optional().describe('Full SOUL.md content'),
+        // Declared so an agent can TIGHTEN its own ceiling — and, just as much,
+        // so an attempt to widen one is answered instead of dropped. `z.object`
+        // strips what it does not declare, so leaving this out would let an
+        // agent report a limit change that never happened (the DOR-1253 shape).
+        // `.nullable()` for the same reason: clearing the limit is a real thing
+        // to try, and it deserves the guard's sentence rather than a type error.
+        // The direction guard lives in `agent-updater.ts` (DOR-486).
+        tierCeiling: z
+          .enum(CAPABILITY_TIERS)
+          .nullable()
+          .optional()
+          .describe(
+            "The most this agent may ever do: 'observe' reads only, 'act' changes things it can " +
+              "undo, 'destructive' has no extra limit. You may LOWER your own ceiling; raising " +
+              'one (or clearing it with null) is refused and has to be done by a person.'
+          ),
         // Declared only so it can be REFUSED, and the declaration is what makes
         // the refusal possible: `registry.invoke` parses the input before the
         // handler runs, and `z.object` strips what it does not declare — so a

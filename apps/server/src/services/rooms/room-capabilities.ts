@@ -304,12 +304,21 @@ function requireMergeDeps(deps: CapabilityDeps): RoomMergeService {
  * inference that was wrong, and a login-on install has no honest default.
  *
  * **Branch 2 is the same lesson, learned again on the other axis (DOR-1361).**
- * `context.identity` answers "WHICH agent", and an unverifiable token leaves it
- * empty — so a revoked agent reached branch 4 and, on the login-OFF default,
- * acted as the operator: `post_to_room` wrote under the person's name and
- * `read_room_history` handed back their rooms. `agentIdentityPresented` is the
- * wider fact the two HTTP surfaces now state, and it is what makes this function
- * agree with `resolveCaller` rather than merely resemble it.
+ * `context.identity` answers "WHICH agent", and an unverifiable token used to
+ * leave it empty — so a revoked agent reached branch 4 and, on the login-OFF
+ * default, acted as the operator: `post_to_room` wrote under the person's name
+ * and `read_room_history` handed back their rooms. `agentIdentityPresented` is
+ * the wider fact the two HTTP surfaces now state, and it is what makes this
+ * function agree with `resolveCaller` rather than merely resemble it.
+ *
+ * **Branch 2 now has TWO ways in, and the second is newer than this text
+ * (DOR-486).** A revoked or expired token no longer leaves `context.identity`
+ * empty — it fills it with an identity marked `inactive`, because the capability
+ * gate has to tell a shut-off agent from a stranger (an unidentified caller gets
+ * the widest tier ceiling, so erasing a revoked agent WIDENED it). Presence
+ * therefore stopped meaning "verified", and this branch tests the mark as well
+ * as the wider fact. Measured with real tokens before the test landed: a revoked
+ * token read room history `200`, and an expired one posted `200`.
  *
  * @param rooms - The rooms service, for its author registry.
  * @param context - What the registry resolved about this call.
@@ -320,10 +329,18 @@ function requireMergeDeps(deps: CapabilityDeps): RoomMergeService {
  */
 function callerAuthor(rooms: RoomService, context: CapabilityHandlerContext): AuthorRecord {
   const registry = rooms.authorRegistry;
-  if (context.identity) {
+  // `!context.identity.inactive` is what keeps branch 2 doing its job through a
+  // change one domain over (DOR-486). Resolution used to answer `undefined` for a
+  // revoked or expired token, so those callers fell into branch 2 by omission; it
+  // now NAMES them, because the capability gate has to tell a shut-off agent from
+  // a stranger to stop revocation widening a tier ceiling. Without this test that
+  // change would have undone DOR-1361 outright — a revoked token reading room
+  // history, an expired one posting — which is the whole defect this function was
+  // written to close, arriving through the front door.
+  if (context.identity && !context.identity.inactive) {
     return registry.resolveAgent(context.identity.agentPath, context.identity.displayName);
   }
-  if (context.agentIdentityPresented) {
+  if (context.identity?.inactive || context.agentIdentityPresented) {
     throw new RoomError(
       'AGENT_IDENTITY_UNVERIFIED',
       'That agent identity could not be verified. Its token may have been revoked, or it may have expired.'
