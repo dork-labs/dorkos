@@ -139,7 +139,7 @@ import type { AdditionalContext } from '@dorkos/shared/additional-context';
 import { renderContextEntry } from '../messaging/context-builder.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
-import type { AgentSession } from '../agent-types.js';
+import { stopWasAimedAt, type AgentSession } from '../agent-types.js';
 import { boundaryViolationEvent, validateDispatchBoundary } from '../dispatch-boundary.js';
 import { resolveEffectiveCwd, resolveLaunch } from '../messaging/launch-resolver.js';
 import type { MessageSenderOpts } from '../messaging/message-sender-shared.js';
@@ -185,6 +185,24 @@ interface SessionBundle {
    * idle process, which is never booting a turn and must never be interrupted.
    */
   booting: boolean;
+  /**
+   * True when the process this bundle last lost was closed by a DorkOS Stop
+   * rather than lost to a crash — the same answer that rides
+   * {@link PumpCrash.stopRequested}, kept here for the one reader that arrives
+   * AFTER the crash seam has already cleared everything it could be re-derived
+   * from (DOR-1302).
+   *
+   * That reader is {@link PersistentDispatch.explainRefusedDispatch}. A Stop
+   * during a turn's LAUNCH kills the process before `system/init`, so the
+   * dispatch that was waiting on it is refused rather than streamed — and by
+   * then {@link SessionBundle.live} is cleared, `session.activeQuery` was never
+   * armed (no `running` edge fired), and `session.lastQuery` names some earlier
+   * turn's query if it names anything. A flag is the only carrier left.
+   *
+   * Reset at the start of every dispatch, so it describes THIS launch and never
+   * a Stop two turns ago.
+   */
+  closedByStop: boolean;
 }
 
 /** What one dispatch needs beyond the session itself. */
@@ -336,6 +354,16 @@ export class PersistentDispatch {
     // stopped — and the error-frame suppression it gates would swallow a
     // genuine failure three turns later. Both slots, because the pump's
     // `running` edge moves the live query between them (see below).
+    //
+    // The blast radius of getting this wrong GREW with DOR-1681. The record no
+    // longer only suppresses an error frame: it now rides the wire as
+    // `stopWasRequested` and settles the turn's LIFECYCLE, so a stale `true`
+    // three turns later would report a genuinely failed turn as one the operator
+    // stopped, which is the exact confusion that work removed. This loop is what
+    // keeps it per-turn, and the session write-lock is what makes the clearing
+    // safe to do here: one dispatch drives a session at a time and holds the
+    // lock for the whole of its stream, so no other turn's `result` can be
+    // reading the record while this clears it.
     for (const spent of [session.activeQuery, session.lastQuery]) {
       if (spent !== undefined) session.stoppedQueries?.delete(spent);
     }
@@ -428,13 +456,18 @@ export class PersistentDispatch {
     // open (the `running` edge has armed `activeQuery`) or the dispatch is
     // refused, in both cases through the `finally`.
     bundle.booting = true;
+    // Whatever ended the LAST process is this turn's business only if it happens
+    // again to this one. Cleared here rather than at the top of `dispatch`
+    // because `bundle` is not resolved until `acquire` above, and a
+    // `replaceProcess` can hand back a different one.
+    bundle.closedByStop = false;
     try {
       window = await bundle.recovery.dispatch(
         [{ content: plan.enrichedContent, messageId: messageOpts?.messageId ?? randomUUID() }],
         effectiveCwd
       );
     } catch (err) {
-      yield* this.explainRefusedDispatch(sessionId, err);
+      yield* this.explainRefusedDispatch(sessionId, err, bundle.closedByStop);
       return;
     } finally {
       bundle.booting = false;
@@ -698,8 +731,47 @@ export class PersistentDispatch {
    * a row retires on correlated OUTPUT evidence — the `turn_start` a window
    * mints — and none of these produced one, so the person's message is still
    * theirs (`session-crash-recovery.ts`).
+   *
+   * @param sessionId - The session whose dispatch was refused
+   * @param err - What the dispatch threw
+   * @param closedByStop - Whether a DorkOS Stop is what killed the process this
+   *   dispatch was waiting on ({@link SessionBundle.closedByStop})
    */
-  private *explainRefusedDispatch(sessionId: string, err: unknown): Generator<StreamEvent> {
+  private *explainRefusedDispatch(
+    sessionId: string,
+    err: unknown,
+    closedByStop: boolean
+  ): Generator<StreamEvent> {
+    // A Stop pressed while the turn was still LAUNCHING (DOR-1302). The close
+    // kills the process before `system/init`, so the launch this dispatch was
+    // waiting on rejects and there is no window to stream — the settle the
+    // windower already wrote into that window reaches nobody. Left to fall
+    // through, this became a rethrow that `guardTurnErrors` renders as a turn
+    // error with a raw `process-gone` stack, which is the exact "your agent
+    // crashed" report for an operator action that this whole change removes.
+    //
+    // Answered as the resume path answers its own version of this: a status
+    // carrying the terminal reason the CLI never got to send, plus the terminal
+    // `done`. The projector settles that turn `interrupted`. No `error` frame,
+    // because there is no failure to report — and `stopWasRequested` is proven
+    // by the branch, not guessed (`messaging/message-sender.ts` says the same of
+    // its twin).
+    //
+    // Deliberately narrowed to `process-gone`: it is the only refusal a close
+    // produces, and a session whose LAST process a Stop killed can still meet
+    // the warm ceiling or a pending interaction on this launch, which are
+    // different facts and keep their own sentences below.
+    if (closedByStop && err instanceof PumpRefusedError && err.reason === 'process-gone') {
+      logger.debug('[persistent-dispatch] settling a stopped launch as interrupted', {
+        session: sessionId,
+      });
+      yield {
+        type: 'session_status',
+        data: { sessionId, terminalReason: 'interrupted', stopWasRequested: true },
+      };
+      yield { type: 'done', data: { sessionId } };
+      return;
+    }
     if (err instanceof SessionCrashLoopError) {
       // The raw error leads with the session id, which is a UUID nobody reads.
       // The operator gets the plain sentence; the id stays in `details` and in
@@ -785,6 +857,7 @@ export class PersistentDispatch {
       fingerprint: undefined,
       plan: undefined,
       booting: false,
+      closedByStop: false,
     } as unknown as SessionBundle;
 
     bundle.pump = this.registry.acquire(key, {
@@ -814,12 +887,29 @@ export class PersistentDispatch {
       ),
       onMessage: (message) => bundle.windows.onMessage(message),
       onCrash: (crash) => {
+        // Whether DorkOS itself killed this process, answered HERE because this
+        // is the only place that holds both halves: the session carrying the
+        // stop record, and the query that died (DOR-1302). The pump cannot ask —
+        // it knows nothing about sessions — and the windower and the crash
+        // budget both need the answer, so it rides the crash to them.
+        //
+        // Read BEFORE `bundle.live` is cleared below, and read off `bundle.live`
+        // rather than off the session: the record is keyed by QUERY, and this
+        // slot is the one that still names the process that just died. The
+        // session's own slots do not always: a Stop pressed on a turn still
+        // BOOTING reaches it through `bootingQuery`, and the `running` edge that
+        // would have armed `session.activeQuery` never fired.
+        const stopRequested = stopWasAimedAt(session, bundle.live);
+        // Kept for the reader that arrives after this seam has cleared its
+        // evidence: a Stop during a LAUNCH refuses the dispatch instead of
+        // streaming it, and the refusal is explained further down.
+        bundle.closedByStop = stopRequested;
         // The process is gone, so nothing may ride it. `session.activeQuery` is
         // already clear: `noteProcessGone` moves the pump to `crashed` before it
         // announces the crash, and that transition disarms it above.
         bundle.live = undefined;
         bundle.fingerprint = undefined;
-        bundle.recovery.handleCrash(crash);
+        bundle.recovery.handleCrash(stopRequested ? { ...crash, stopRequested } : crash);
       },
       onStateChange: (change) => {
         // `session.activeQuery` means "a turn is in flight", and on the resume

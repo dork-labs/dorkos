@@ -478,6 +478,19 @@ export default defineConfig({
       // them the root `.env` decides which port this client binds and which
       // server it proxies `/api` to, which on a developer machine is the dev
       // stack rather than the leg above.
+      //
+      // **NOTHING IN THIS SUITE SEES THE PRODUCTION CONTENT-SECURITY-POLICY.**
+      // The browser loads the app from Vite, which serves its own shell with no
+      // CSP header; the Express leg's policy (`SHELL_CSP` in
+      // `apps/server/src/app.ts`) only goes out with the BUILT shell it serves
+      // under `NODE_ENV=production`, which no leg here runs. So a directive
+      // that breaks a real browser surface stays green through this whole
+      // suite — `workbench/dev-server-preview.spec.ts` would have passed
+      // forever while the shipped app reported every dev server unreachable
+      // (DOR-560, caught in review by driving a production-mode server in
+      // Chromium by hand). Until a production-mode leg exists, the policy's
+      // only automated coverage is `app-spa-fallback.test.ts`, which asserts
+      // the whole header string.
       command: `DORKOS_PORT=${PORT} VITE_PORT=${VITE_PORT} dotenv -- turbo dev --filter=@dorkos/client`,
       url: `http://localhost:${VITE_PORT}`,
       name: 'Vite Client',

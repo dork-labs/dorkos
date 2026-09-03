@@ -38,6 +38,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
     sessionId,
     isStreaming,
     isLatestWidgetMessage,
+    isFinalMessage,
     activeToolCallId,
     onToolRef,
     focusedOptionIndex,
@@ -104,16 +105,32 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           category={part.category}
           details={part.details}
           // Retry inside the transcript re-sends the session's LAST user
-          // message, which is only a coherent offer when we know what failed.
-          // An UNCATEGORISED part is by definition one nothing could classify:
-          // the CLI's own limit and connection notices arrive that way
-          // (DOR-1649), and they sit mid-history, so the prompt that button
-          // would re-send is usually not the one that failed. Offering nothing
-          // is honest — the composer is right there. Categorised parts keep
-          // their category's own `retryable` answer, and the transport-error
-          // card ChatPanel renders directly is a different call site,
-          // unaffected.
-          onRetry={part.category !== undefined ? onRetry : undefined}
+          // message, so a card only earns the button by passing BOTH tests
+          // below. Neither is the other in disguise, and each was found the
+          // hard way.
+          //
+          // LAST (DOR-1677). The prompt Retry would send is the newest one, not
+          // the one this card is about — those are the same message only while
+          // nothing has come after it. A failure six turns back offering
+          // "Retry" re-sends whatever was typed since, without warning, and
+          // that includes the case where the person already moved on. Anything
+          // following the card takes the offer away: the next prompt, a steer
+          // that split the turn, even a quiet staged note, because every one of
+          // them changes what "the last user message" means.
+          //
+          // CLASSIFIABLE (DOR-1649). An UNCATEGORISED part is one nothing could
+          // classify — the CLI's own limit and connection notices arrive that
+          // way — so there is no `retryable` answer to trust and no way to tell
+          // whether re-sending would help or just spend the same limit again.
+          //
+          // Withholding the button is honest either way: the card still says
+          // what went wrong, and the composer is right there. Categorised parts
+          // on the final message keep their category's own `retryable` answer.
+          // Two other Retry buttons are deliberately NOT gated here, because
+          // both are panel-scoped and structurally about the turn that just
+          // failed: `TurnFailedNotice` and the transport-error card `ChatPanel`
+          // renders under the composer.
+          onRetry={isFinalMessage && part.category !== undefined ? onRetry : undefined}
           runtimeLabel={runtimeLabel}
           sessionId={sessionId}
         />

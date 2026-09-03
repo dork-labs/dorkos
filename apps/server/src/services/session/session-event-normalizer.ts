@@ -26,7 +26,7 @@
  *
  * @module services/session/session-event-normalizer
  */
-import { isNonFatalErrorCode } from '@dorkos/shared/run-outcome';
+import { isNonFatalErrorCode, readStopWasRequested } from '@dorkos/shared/run-outcome';
 import type { StreamEvent, TerminalReason } from '@dorkos/shared/types';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { RawSessionEvent, SessionStateProjector } from './session-state-projector.js';
@@ -837,6 +837,18 @@ export async function feedProjector(
   /** Whether a turn window is open right now — the thing `done` closes. */
   let turnOpen = true;
   let terminalReason: TerminalReason | undefined;
+  /**
+   * The stop record that arrived WITH {@link terminalReason} — DorkOS's own
+   * answer to "did anyone ask for this?", which the reason itself cannot give
+   * (an abort reason names shape, never intent).
+   *
+   * Latched as a pair with the reason and carried onto `turn_end` rather than
+   * consumed here: this hop decides nothing about what a turn's ending MEANS —
+   * that is `deriveTurnEndLifecycle`'s job, on both sides of the wire — and the
+   * projections that do decide need it on a durable event to still agree after
+   * a reconnect.
+   */
+  let stopWasRequested: boolean | undefined;
   // Error latch: a turn that carried a typed `error` but whose runtime never
   // attached an explicit terminalReason (OpenCode/Codex crash paths) must still
   // close as `turn_end{terminalReason:'error'}` so it settles to the error
@@ -864,12 +876,18 @@ export async function feedProjector(
     projector.ingest({
       type: 'turn_end',
       ...(reason !== undefined ? { terminalReason: reason } : {}),
+      // Rides only when the runtime actually said. A latch-supplied `'error'`
+      // reason never has one — the latch fires precisely when no reason came,
+      // and the stop record is only ever read beside a reason — so this cannot
+      // pair an intent with a terminal the runtime did not name.
+      ...(stopWasRequested !== undefined ? { stopWasRequested } : {}),
     });
   };
   /** Open a fresh window for runtime-initiated continuation work (DOR-1100). */
   const reopenTurn = (): void => {
     turnOpen = true;
     terminalReason = undefined;
+    stopWasRequested = undefined;
     sawError = false;
     // `origin: 'runtime'` and no `userMessage`: nobody asked for this one, the
     // agent woke itself up. Both projections read that field to keep a window
@@ -886,7 +904,15 @@ export async function feedProjector(
       // terminal reason nor an error, so this is belt-and-braces).
       if (!turnOpen && TURN_REOPENING_STREAM_EVENT_TYPES.has(event.type)) reopenTurn();
       const reason = readTerminalReason(event);
-      if (reason !== undefined) terminalReason = reason;
+      // Read as a PAIR: the stop record comes off the event that named the
+      // reason, never latched independently, so a turn cannot settle with one
+      // ending's shape and an earlier ending's intent. A reason arriving with no
+      // record clears the record, which is the safe direction — an unknown
+      // intent settles the way it always did.
+      if (reason !== undefined) {
+        terminalReason = reason;
+        stopWasRequested = readStopWasRequested(event);
+      }
       if (event.type === 'error' && !isNonFatalErrorCode(readErrorCode(event))) sawError = true;
       if (event.type === 'done') {
         closeTurn();

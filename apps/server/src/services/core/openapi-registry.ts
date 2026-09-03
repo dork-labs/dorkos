@@ -695,7 +695,14 @@ registry.registerPath({
     '`permissionModePendingUntilNextTurn: true` — saved, in force from the next ' +
     'reply, and NOT governing the reply already running. A loosening in the same ' +
     'position stays a plain `200`: it costs a few extra approval prompts for the ' +
-    'rest of one turn and corrects itself.',
+    'rest of one turn and corrects itself.\n\n' +
+    'A session with no recorded runtime is answered with the inference reads fall ' +
+    'back to, which can differ from the `runtime` hint you sent — so that answer ' +
+    'carries `runtimeUnbound: true` and you can tell a guess from a binding. This ' +
+    'is not only a brand-new session: the binding is written by an interactive ' +
+    "session's first turn and by nothing else, so a scheduled or room-driven " +
+    'session can have run many turns and still have no owner. The field is absent ' +
+    'once one is recorded, and it never appears as `false`.',
   request: {
     params: z.object({ id: z.string().uuid() }),
     body: {
@@ -705,7 +712,7 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Updated session',
-      content: { 'application/json': { schema: SessionSchema } },
+      content: { 'application/json': { schema: SessionUpdateResponseSchema } },
     },
     202: {
       description:
@@ -1863,6 +1870,13 @@ registry.registerPath({
   path: '/api/mesh/agents',
   tags: ['Mesh'],
   summary: 'Register a mesh agent',
+  description:
+    'A directory that already holds a `.dork/agent.json` is ADOPTED, never overwritten: the file ' +
+    'is left untouched and the agent it describes is what gets registered, so the returned id and ' +
+    'name can differ from the ones sent, and `overrides` may be omitted entirely. A manifest that ' +
+    'is there but cannot be read is refused with a 422 rather than replaced. `overrides.name` and ' +
+    '`overrides.runtime` are required only for a directory that has no manifest to adopt. ' +
+    'Registering also clears any denial recorded against the directory.',
   request: {
     body: {
       content: { 'application/json': { schema: RegisterAgentRequestSchema } },
@@ -1870,11 +1884,15 @@ registry.registerPath({
   },
   responses: {
     201: {
-      description: 'Registered agent',
+      description: 'Registered agent (adopted, when the directory already had one)',
       content: { 'application/json': { schema: AgentManifestSchema } },
     },
     400: {
       description: 'Validation error',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    422: {
+      description: 'Registration refused — an existing manifest there could not be read or adopted',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
@@ -1952,6 +1970,11 @@ registry.registerPath({
   path: '/api/mesh/agents/{id}',
   tags: ['Mesh'],
   summary: 'Unregister mesh agent',
+  description:
+    'Removes the agent and deletes its `.dork/agent.json`, so the next scan does not adopt it ' +
+    'back — unless git is tracking that file, which makes it part of a repository rather than ' +
+    "DorkOS's bookkeeping. Then the file is left alone and the directory is denied instead, and " +
+    '`blockedFromDiscovery` says so. Registering the directory again clears that denial.',
   request: {
     params: z.object({ id: z.string() }),
   },
@@ -1959,7 +1982,9 @@ registry.registerPath({
     200: {
       description: 'Agent removed',
       content: {
-        'application/json': { schema: z.object({ success: z.boolean() }) },
+        'application/json': {
+          schema: z.object({ success: z.boolean(), blockedFromDiscovery: z.boolean() }),
+        },
       },
     },
     400: {

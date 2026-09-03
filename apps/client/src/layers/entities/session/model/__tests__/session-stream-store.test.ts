@@ -722,15 +722,100 @@ describe('useSessionStreamStore', () => {
       expect(useSessionStreamStore.getState().getSession(SID).status?.lifecycle).toBe('idle');
     });
 
-    // A stop outranks the frame. The claude-code mapper deliberately KEEPS an
-    // error frame on an abort nobody asked for (DOR-1320), so the frame rule
-    // must not turn every such turn into a crash — cut short is its own answer.
+    // A stop outranks the frame, and with NO stop record on the turn_end that
+    // stays true whatever the frame said — the degradation pin for every runtime
+    // that keeps no such record (codex, opencode) and every turn recorded before
+    // the field existed.
     it('settles to interrupted, not error, when an aborted turn carried an error frame', () => {
       const store = useSessionStreamStore.getState();
       store.applySnapshot(SID, snapshot({ cursor: 0 }));
       store.applyEvent(SID, { type: 'turn_start', seq: 1 });
       store.applyEvent(SID, errorEvent);
       store.applyEvent(SID, { type: 'turn_end', seq: 3, terminalReason: 'aborted_streaming' });
+      expect(useSessionStreamStore.getState().getSession(SID).status?.lifecycle).toBe(
+        'interrupted'
+      );
+    });
+
+    // The refusal case, on the client half of the mirror. An API refusal aborts
+    // the main turn controller, so the turn ends `aborted_streaming` while
+    // DorkOS never asked for a stop — and the mapper KEEPS the error frame on
+    // purpose. Read on shape alone the composer said "you stopped this" about a
+    // turn the operator never touched, and the clear that follows the derivation
+    // took the refusal text with it.
+    it.each(['interrupted', 'aborted_streaming', 'aborted_tools'])(
+      'settles to error and keeps lastError when %s carried no stop request',
+      (terminalReason) => {
+        const store = useSessionStreamStore.getState();
+        store.applySnapshot(SID, snapshot({ cursor: 0 }));
+        store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+        store.applyEvent(SID, errorEvent);
+        store.applyEvent(SID, {
+          type: 'turn_end',
+          seq: 3,
+          terminalReason,
+          stopWasRequested: false,
+        });
+        const s = useSessionStreamStore.getState().getSession(SID);
+        expect(s.status?.lifecycle).toBe('error');
+        expect(s.status?.lastError?.message).toBe('Model overloaded');
+      }
+    );
+
+    it.each(['interrupted', 'aborted_streaming', 'aborted_tools'])(
+      'still settles to interrupted when %s WAS requested',
+      (terminalReason) => {
+        // Unchanged behavior for the turn a person actually stopped, which is
+        // the mistake that would cost most if this rule over-fired.
+        const store = useSessionStreamStore.getState();
+        store.applySnapshot(SID, snapshot({ cursor: 0 }));
+        store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+        store.applyEvent(SID, errorEvent);
+        store.applyEvent(SID, {
+          type: 'turn_end',
+          seq: 3,
+          terminalReason,
+          stopWasRequested: true,
+        });
+        const s = useSessionStreamStore.getState().getSession(SID);
+        expect(s.status?.lifecycle).toBe('interrupted');
+        expect(s.status?.lastError).toBeNull();
+      }
+    );
+
+    it('stays interrupted when an unrequested abort had nothing to report', () => {
+      // Both halves are required: an abort with no fatal frame is a turn cut
+      // short however it happened, and there is no failure to show.
+      const store = useSessionStreamStore.getState();
+      store.applySnapshot(SID, snapshot({ cursor: 0 }));
+      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+      store.applyEvent(SID, {
+        type: 'turn_end',
+        seq: 2,
+        terminalReason: 'aborted_streaming',
+        stopWasRequested: false,
+      });
+      expect(useSessionStreamStore.getState().getSession(SID).status?.lifecycle).toBe(
+        'interrupted'
+      );
+    });
+
+    it('stays interrupted when an unrequested abort carried only a SURVIVABLE frame', () => {
+      const store = useSessionStreamStore.getState();
+      store.applySnapshot(SID, snapshot({ cursor: 0 }));
+      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+      store.applyEvent(SID, {
+        type: 'error',
+        seq: 2,
+        message: 'Hook "notify" failed (Stop)',
+        code: 'hook_failure',
+      });
+      store.applyEvent(SID, {
+        type: 'turn_end',
+        seq: 3,
+        terminalReason: 'aborted_streaming',
+        stopWasRequested: false,
+      });
       expect(useSessionStreamStore.getState().getSession(SID).status?.lifecycle).toBe(
         'interrupted'
       );

@@ -8,12 +8,14 @@ import type {
 } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { wrapKickoff, filterKickoffHistory } from '@dorkos/shared/kickoff';
+import { createTestDb } from '@dorkos/test-utils/db';
 import { SESSIONS } from '../../../../config/constants.js';
 import { DEFAULT_CWD } from '../../../../lib/resolve-root.js';
 import {
   getOrCreateProjector,
   disposeProjector,
 } from '../../../session/session-state-projector.js';
+import { RuntimeRegistry } from '../../../core/runtime-registry.js';
 import { OpenCodeRuntime } from '../opencode-runtime.js';
 import { OPENCODE_CAPABILITIES } from '../runtime-constants.js';
 import {
@@ -1577,6 +1579,137 @@ describe('OpenCodeRuntime', () => {
           const sessions = await runtime.listSessions(DIRECTORY);
           expect(sessions.find((s) => s.id === sessionId)!.effort).toBeUndefined();
         });
+    });
+  });
+
+  describe('updateSession settings hydration (DOR-1152)', () => {
+    /**
+     * The runtime wired to the REAL durable settings store — `RuntimeRegistry`
+     * over an in-memory SQLite with the production migrations applied. A fake
+     * port could only replay this test's own hypothesis about how a partial
+     * settings write merges and reads back; `session_metadata` is where that
+     * question is actually answered.
+     */
+    function makeRuntimeWithRealStore() {
+      const { client, source } = createMockClient();
+      const provider = createProvider(client);
+      const store = new RuntimeRegistry();
+      store.setDb(createTestDb());
+      const runtime = new OpenCodeRuntime({ provider });
+      runtime.setSessionSettings(store);
+      return { runtime, client, source, store };
+    }
+
+    /**
+     * Run one full turn and answer with the model it was actually prompted
+     * with. The registration a PATCH leaves behind is only interesting because
+     * the NEXT turn runs on it, so that is what these tests read.
+     */
+    async function turnModel(
+      harness: ReturnType<typeof makeRuntimeWithRealStore>,
+      sessionId: string
+    ): Promise<{ providerID: string; modelID: string } | undefined> {
+      const { finished } = consume(
+        harness.runtime.sendMessage(sessionId, 'hi', { cwd: DIRECTORY })
+      );
+      const connection = await openTurn(harness);
+      for (const event of opencodeSimpleTurn(OC_SESSION_A, 'ok')) {
+        connection.push(globalEvent(DIRECTORY, event));
+      }
+      await finished;
+      const body = harness.client.session.promptAsync.mock.calls[0]![0]!.body as {
+        model?: { providerID: string; modelID: string };
+      };
+      return body.model;
+    }
+
+    it('a PATCH that sets only the model keeps the persisted permission mode', async () => {
+      const harness = makeRuntimeWithRealStore();
+      const { runtime, store } = harness;
+      const sessionId = nextSessionId();
+      await store.saveSessionSettings(sessionId, {
+        permissionMode: 'bypassPermissions',
+        model: 'ollama/llama3.3:70b',
+      });
+
+      // Nothing tracks this session in memory — the server restarted since the
+      // mode was chosen — so the PATCH lands on updateSession's auto-create.
+      expect(runtime.hasSession(sessionId)).toBe(false);
+      await runtime.updateSession(sessionId, { model: 'openrouter/glm-4' });
+
+      expect(await turnModel(harness, sessionId)).toEqual({
+        providerID: 'openrouter',
+        modelID: 'glm-4',
+      });
+      const sessions = await runtime.listSessions(DIRECTORY);
+      // Pre-fix this was 'default': the registration carried only the field the
+      // PATCH named, so enforcement diverged from the mode the row (and the
+      // app, reading it) kept showing.
+      expect(sessions.find((s) => s.id === sessionId)!.permissionMode).toBe('bypassPermissions');
+    });
+
+    it('a PATCH that sets only the permission mode keeps the persisted model and fastMode', async () => {
+      const harness = makeRuntimeWithRealStore();
+      const { runtime, store } = harness;
+      const sessionId = nextSessionId();
+      await store.saveSessionSettings(sessionId, {
+        model: 'ollama/llama3.3:70b',
+        fastMode: true,
+      });
+
+      await runtime.updateSession(sessionId, { permissionMode: 'acceptEdits' });
+
+      expect(await turnModel(harness, sessionId)).toEqual({
+        providerID: 'ollama',
+        modelID: 'llama3.3:70b',
+      });
+      const session = (await runtime.listSessions(DIRECTORY)).find((s) => s.id === sessionId)!;
+      expect(session.permissionMode).toBe('acceptEdits');
+      expect(session.fastMode).toBe(true);
+    });
+
+    it('an explicit PATCH value outranks the persisted one', async () => {
+      const harness = makeRuntimeWithRealStore();
+      const { runtime, store } = harness;
+      const sessionId = nextSessionId();
+      await store.saveSessionSettings(sessionId, { permissionMode: 'bypassPermissions' });
+
+      await runtime.updateSession(sessionId, { permissionMode: 'acceptEdits' });
+
+      await turnModel(harness, sessionId);
+      const sessions = await runtime.listSessions(DIRECTORY);
+      expect(sessions.find((s) => s.id === sessionId)!.permissionMode).toBe('acceptEdits');
+    });
+
+    it('falls back to the runtime default when the store holds nothing', async () => {
+      const harness = makeRuntimeWithRealStore();
+      const { runtime } = harness;
+      const sessionId = nextSessionId();
+
+      await runtime.updateSession(sessionId, { model: 'openrouter/glm-4' });
+
+      await turnModel(harness, sessionId);
+      const sessions = await runtime.listSessions(DIRECTORY);
+      expect(sessions.find((s) => s.id === sessionId)!.permissionMode).toBe('default');
+    });
+
+    it('hydrating on the PATCH path still never persists or tracks an effort', async () => {
+      const harness = makeRuntimeWithRealStore();
+      const { runtime, store } = harness;
+      const sessionId = nextSessionId();
+      await store.saveSessionSettings(sessionId, { permissionMode: 'acceptEdits' });
+
+      await runtime.updateSession(sessionId, { model: 'openrouter/glm-4', effort: 'high' });
+
+      // The row carries the mode it already had and the model just chosen —
+      // and no effort, because OpenCode's prompt API has nowhere to spend one.
+      await expect(store.getSessionSettings(sessionId)).resolves.toEqual({
+        permissionMode: 'acceptEdits',
+        model: 'openrouter/glm-4',
+      });
+      await turnModel(harness, sessionId);
+      const sessions = await runtime.listSessions(DIRECTORY);
+      expect(sessions.find((s) => s.id === sessionId)!.effort).toBeUndefined();
     });
   });
 

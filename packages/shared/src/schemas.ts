@@ -110,6 +110,15 @@ export type PermissionMode = z.infer<typeof PermissionModeSchema>;
  * `SessionListBroadcaster`, emptying the session list for that runtime's
  * sessions entirely. The two directions are the same contract — a runtime
  * names its own modes — so they share this one schema.
+ *
+ * ## And the shape of the STORED id (DOR-885)
+ *
+ * {@link SessionSettingsSchema} is the third face of the same value: what a
+ * PATCH asks for, what `session_metadata.permission_mode` holds, and what a
+ * runtime is handed back on the next turn. It kept the narrow enum until
+ * DOR-885 — a type lie about a text column that already held `always-allow` —
+ * and every `as PermissionMode` between the store and a display surface existed
+ * to paper over it. In, out and at rest are one contract.
  */
 export const PermissionModeIdSchema = z
   .string()
@@ -395,11 +404,11 @@ export type Session = z.infer<typeof SessionSchema>;
 
 /**
  * What `PATCH /api/sessions/:id` answers with: the session as it now stands,
- * plus — on a `202` — the one thing the session itself cannot say.
+ * plus the things the session itself cannot say.
  *
- * The extra field is deliberately NOT part of {@link SessionSchema}. It is a
+ * The extra fields are deliberately NOT part of {@link SessionSchema}. Each is a
  * fact about one write at one moment, not a property of the session, and a
- * session carrying it around would go stale the instant the next turn started.
+ * session carrying them around would go stale the instant the next turn started.
  */
 export const SessionUpdateResponseSchema = SessionSchema.extend({
   /**
@@ -408,6 +417,22 @@ export const SessionUpdateResponseSchema = SessionSchema.extend({
    * reply. Present only on a `202`, and only for a tightening.
    */
   permissionModePendingUntilNextTurn: z.literal(true).optional(),
+  /**
+   * The `runtime` above is an INFERENCE, not this session's owner: nothing has
+   * recorded one. So the server answered with the legacy default reads fall
+   * back to, which can contradict the `runtime` hint the caller just sent
+   * (DOR-1693).
+   *
+   * "No recorded owner" is NOT "brand new". A binding is written by an
+   * interactive session's first turn (ADR-0255) and by nothing else, so a
+   * scheduled run or a room turn can go many turns and still have no row. Read
+   * this as "unowned", never as "unused".
+   *
+   * Present only when the runtime is a guess; absent means the `runtime` field
+   * names the session's recorded owner. Never `false`: a client that does not
+   * know this field reads the same body it always did.
+   */
+  runtimeUnbound: z.literal(true).optional(),
 }).openapi('SessionUpdateResponse');
 
 /** Inferred type for {@link SessionUpdateResponseSchema}. */
@@ -420,7 +445,17 @@ export type SessionUpdateResponse = z.infer<typeof SessionUpdateResponseSchema>;
  * "no change" / "no explicit preference" (the runtime default applies).
  */
 export const SessionSettingsSchema = z.object({
-  permissionMode: PermissionModeSchema.optional(),
+  /**
+   * The mode to run under — any id the session's own runtime declares, not a
+   * member of {@link PermissionModeSchema} (DOR-885). This is the SAME kind of
+   * value in every direction: what a request asks for, what
+   * `session_metadata.permission_mode` (a plain text column) holds, and what a
+   * runtime reports back. `test-mode` persists `always-allow` there today, so a
+   * narrow enum here was a type lie about a row that already exists. See
+   * {@link PermissionModeIdSchema} for what still validates the id — the
+   * owning runtime, not this shape.
+   */
+  permissionMode: PermissionModeIdSchema.optional(),
   model: z.string().optional(),
   effort: EffortLevelSchema.optional(),
   fastMode: z.boolean().optional(),
@@ -429,12 +464,6 @@ export const SessionSettingsSchema = z.object({
 export type SessionSettings = z.infer<typeof SessionSettingsSchema>;
 
 export const UpdateSessionRequestSchema = SessionSettingsSchema.extend({
-  /**
-   * The mode to switch to — any id the session's runtime declares, checked
-   * against that runtime rather than against a fixed list of names. See
-   * {@link PermissionModeIdSchema}.
-   */
-  permissionMode: PermissionModeIdSchema.optional(),
   title: z.string().min(1).max(200).optional(),
   /**
    * "The person asked for this, and they were told what it means." Required —
@@ -1506,8 +1535,11 @@ export type TerminalReason = z.infer<typeof TerminalReasonSchema>;
  * The CLI collapses nine distinct abort causes — an operator interrupt, a
  * shutdown, an API refusal fallback, an unlabelled internal teardown — into
  * these same two strings, and the distinction never reaches the SDK surface. So
- * a caller that needs "a PERSON stopped this" must AND this with its own record
- * of having asked (see `claude-code/agent-types.ts`, `stoppedQueries`).
+ * a caller that needs "a PERSON stopped this" must AND this with a record of
+ * having asked (`claude-code/agent-types.ts`, `stoppedQueries`), which rides the
+ * wire as {@link SessionStatusEventSchema}'s `stopWasRequested` and reaches
+ * settlement through `turn_end`. `isUnrequestedAbortFailure` in `run-outcome` is
+ * the one place that ANDs the two.
  */
 export const INTERRUPTED_TERMINAL_REASONS: ReadonlySet<string> = new Set([
   'interrupted',
@@ -1606,6 +1638,29 @@ export const SessionStatusEventSchema = z
     cacheCreationTokens: z.number().int().optional(),
     /** Why the query loop terminated (SDK 0.2.91+ `result.terminal_reason`). */
     terminalReason: TerminalReasonSchema.optional(),
+    /**
+     * Whether DorkOS ASKED this turn to stop — the INTENT half of a settlement
+     * that `terminalReason` can only ever answer as shape.
+     *
+     * {@link INTERRUPTED_TERMINAL_REASONS} says a turn was aborted and never by
+     * whom, so the two turns a person cares most about telling apart — "I
+     * pressed Stop" and "it broke and gave up" — arrive wearing the same string.
+     * A runtime that keeps its own record of having asked puts it here, beside
+     * the reason it belongs to, and settlement reads the pair.
+     *
+     * **Carried beside a reason, not on every status.** A runtime attaches it
+     * only when the reason it accompanies is one of the abort reasons, because
+     * that is the only place it decides anything; on every other terminal the
+     * field would be a fact no reader consults, written into the durable event
+     * log of every turn forever.
+     *
+     * **Absent means unknown, and unknown settles as a stop.** A runtime with no
+     * stop record of its own (codex, opencode) and every transcript written
+     * before this field existed simply omit it, and settlement then behaves
+     * exactly as it did before — an abort is a stop. Only a positive `false`,
+     * paired with a fatal error frame, moves a turn to `error`.
+     */
+    stopWasRequested: z.boolean().optional(),
     /**
      * Runtime-neutral usage/cost descriptor. Folded onto the durable
      * `status_change` projection so the merged Usage & cost status item can

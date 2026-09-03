@@ -31,8 +31,14 @@ const SESSION_ID = 's-honesty';
  * report what the session ended up saying about the turn.
  *
  * @param result - The `result` message fields under test.
+ * @param wasStopped - DorkOS's own stop record for the query that produced this
+ *   result, as the runtime would supply it. Omitted for a caller that keeps no
+ *   record, which is the shape every non-stop case here wants.
  */
-async function settle(result: Record<string, unknown>): Promise<{
+async function settle(
+  result: Record<string, unknown>,
+  wasStopped?: () => boolean
+): Promise<{
   lifecycle: SessionLifecycle;
   lastErrorMessage: string | undefined;
   mapped: string[];
@@ -42,7 +48,8 @@ async function settle(result: Record<string, unknown>): Promise<{
   for await (const event of mapResultEvent(
     { type: 'result', ...result } as unknown as Parameters<typeof mapResultEvent>[0],
     session,
-    SESSION_ID
+    SESSION_ID,
+    wasStopped
   )) {
     mapped.push(event);
   }
@@ -136,31 +143,56 @@ describe('a failing claude-code turn, end to end (DOR-1676)', () => {
   // settles the turn as cut short — the distinct state that says "you did this",
   // not "it broke".
   it('settles a stop the operator asked for as interrupted, with no failure text', async () => {
-    const session = {} as unknown as Parameters<typeof mapResultEvent>[1];
-    const mapped: StreamEvent[] = [];
-    for await (const event of mapResultEvent(
+    const { lifecycle, lastErrorMessage, mapped } = await settle(
       {
-        type: 'result',
         subtype: 'error_during_execution',
         is_error: true,
         terminal_reason: 'aborted_streaming',
         errors: ['[ede_diagnostic] result_type=user'],
-      } as unknown as Parameters<typeof mapResultEvent>[0],
-      session,
-      SESSION_ID,
+      },
       () => true
-    )) {
-      mapped.push(event);
-    }
-    expect(mapped).not.toContain('error');
-
-    const projector = new SessionStateProjector(SESSION_ID);
-    await feedProjector(
-      projector,
-      (async function* () {
-        for (const event of mapped) yield event;
-      })()
     );
-    expect(projector.getStatus().lifecycle).toBe('interrupted');
+    expect(mapped).not.toContain('error');
+    expect(lifecycle).toBe('interrupted');
+    expect(lastErrorMessage).toBeUndefined();
+  });
+
+  // The other abort, and the one this file exists to tell apart from the one
+  // above. An API refusal aborts the main turn controller directly, so the CLI
+  // reports the SAME `aborted_streaming` while DorkOS never asked for anything.
+  // The mapper keeps the error frame (DOR-1320) — and settlement then read the
+  // reason on shape alone, called it `interrupted`, and cleared the frame on the
+  // way out. The operator was told they stopped a turn they never touched, and
+  // the refusal text was gone.
+  //
+  // Every layer in this path is the production one, which is the point: the bug
+  // lived in the JOIN both times, and mocking any single hop would encode the
+  // very assumption that hid it.
+  it('settles an abort NOBODY asked for as an error, keeping the failure text', async () => {
+    const { lifecycle, lastErrorMessage, mapped } = await settle(
+      {
+        subtype: 'error_during_execution',
+        is_error: true,
+        terminal_reason: 'aborted_streaming',
+        errors: ['Claude refused to continue with this request'],
+      },
+      () => false
+    );
+    expect(mapped).toContain('error');
+    expect(lifecycle).toBe('error');
+    expect(lastErrorMessage).toBe('Claude refused to continue with this request');
+  });
+
+  // The degradation pin, end to end: a runtime that supplies no stop record at
+  // all reports the same abort, and the turn settles exactly as it did before
+  // the signal existed. This is codex, opencode, and every turn already on disk.
+  it('settles an abort from a runtime that keeps no stop record as interrupted', async () => {
+    const { lifecycle } = await settle({
+      subtype: 'error_during_execution',
+      is_error: true,
+      terminal_reason: 'aborted_streaming',
+      errors: ['Claude refused to continue with this request'],
+    });
+    expect(lifecycle).toBe('interrupted');
   });
 });

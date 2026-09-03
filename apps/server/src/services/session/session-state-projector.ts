@@ -39,7 +39,11 @@ import type {
 } from '@dorkos/shared/types';
 import type { QueuedMessage } from '@dorkos/shared/schemas';
 import { isInterruptedTerminalReason } from '@dorkos/shared/schemas';
-import { isAbsolvingTerminalReason, isNonFatalErrorCode } from '@dorkos/shared/run-outcome';
+import {
+  isAbsolvingTerminalReason,
+  isNonFatalErrorCode,
+  isUnrequestedAbortFailure,
+} from '@dorkos/shared/run-outcome';
 import { listPendingInteractions } from './pending-interactions.js';
 import type { SessionDebugCounters } from './session-debug-counters.js';
 import { logger } from '../../lib/logger.js';
@@ -861,7 +865,10 @@ export class SessionStateProjector {
         // the ones that never send it, the silence clock starts HERE (DOR-1104),
         // which is what "after the session went idle" means.
         this.restartSubagentSilenceClocks();
-        this.status.lifecycle = this.deriveTurnEndLifecycle(event.terminalReason);
+        this.status.lifecycle = this.deriveTurnEndLifecycle(
+          event.terminalReason,
+          event.stopWasRequested
+        );
         // A turn that did not settle to error leaves no stale failure behind
         // (a mid-turn error the runtime recovered from must not linger).
         if (this.status.lifecycle !== 'error') this.status.lastError = null;
@@ -1497,10 +1504,12 @@ export class SessionStateProjector {
    *    `status_change` arrived first), or the reason is the codebase-wide
    *    `error` signal every runtime and every injected failure closes with.
    * 2. `interrupted` — the reason names an abort, and this deliberately outranks
-   *    the frame below. **What that check knows is SHAPE, never intent**: the
-   *    CLI collapses nine distinct abort causes into these two strings, so this
-   *    cannot tell a turn a person stopped from one an API refusal aborted. The
-   *    hole it leaves is named below.
+   *    the frame below. **The reason knows SHAPE, never intent**: the CLI
+   *    collapses nine distinct abort causes into these two strings, so the
+   *    `turn_end`'s `stopWasRequested` supplies the intent and
+   *    {@link isUnrequestedAbortFailure} ANDs the two — an abort NOBODY asked
+   *    for that carried a fatal frame settles `error` instead, keeping its
+   *    explanation. See "The abort nobody asked for" below.
    * 3. idle/blocked — the reason absolves ({@link isAbsolvingTerminalReason}).
    * 4. `error` — otherwise the FRAME decides: the window latched an error whose
    *    code does not mark it survivable. An unclassified reason absolves nothing
@@ -1523,45 +1532,65 @@ export class SessionStateProjector {
    * as survivable. The status surface shows that same last frame either way, so
    * the lifecycle and the error a person is shown stay consistent.
    *
-   * ## The known hole: an abort nobody asked for reads as a stop
+   * ## The abort nobody asked for
    *
-   * Step 2 outranks the frame on SHAPE alone, and shape cannot say who aborted.
-   * `sdk/sdk-error-mapping.ts` (see `isStoppedTurnResult`) documents the case
-   * this misses: an API refusal aborts the main turn controller, DorkOS never
-   * asked for a stop, and the result mapper therefore KEEPS the error frame on
-   * purpose. This rule then settles `interrupted` and the clear below erases
-   * `lastError` — so a turn the operator never touched is presented as one they
-   * stopped, with its explanation dropped.
+   * Step 2 outranks the frame, so for as long as it read SHAPE alone it could
+   * not tell a turn a person stopped from one that aborted itself.
+   * `sdk/sdk-error-mapping.ts` (see `isStoppedTurnResult`) names the provable
+   * case: an API refusal aborts the main turn controller, DorkOS never asked for
+   * a stop, and the result mapper therefore KEEPS the error frame on purpose.
+   * The rule then settled `interrupted` and the clear below erased `lastError`,
+   * so a turn the operator never touched was presented as one they stopped, with
+   * its explanation dropped — and "you stopped this" is the one thing an
+   * operator can check against their own memory, so being wrong about it costs
+   * more than the missing text.
    *
-   * Unchanged by DOR-1676 (the old rule did exactly the same thing) and left
-   * that way deliberately rather than silently: fixing it needs DorkOS's own
-   * stop record plumbed into settlement, which is the AND that
-   * `isStoppedTurnResult` already performs one layer down and this projector
-   * has no access to. Tracked as a follow-up; do not "fix" it here by dropping
-   * the abort check, which would make every operator Stop read as a crash.
+   * The intent now rides the wire. The result mapper attaches its own stop
+   * record to the `session_status` that names the reason, the normalizer latches
+   * the pair and carries it onto `turn_end`, and this step ANDs them through
+   * {@link isUnrequestedAbortFailure}: a positive `false` plus a fatal frame
+   * settles `error`, everything else still settles `interrupted`. It rides a
+   * durable event rather than a private flag because the client mirrors this
+   * derivation live and re-derives it from the snapshot on a cold hydrate; a
+   * flag would be right until the first reconnect.
+   *
+   * **What remains, and it is a floor rather than a hole.** An ABSENT signal
+   * still settles `interrupted`, which is every abort on a runtime that keeps no
+   * stop record of its own (codex, opencode) and every turn recorded before the
+   * field existed. That is the old behavior preserved on purpose: guessing
+   * "nobody asked" from silence would turn every operator Stop on those runtimes
+   * into a reported crash, which is the more expensive mistake and the one this
+   * check exists to prevent. Do not "fix" it by dropping the abort check or by
+   * defaulting the signal to `false`.
    *
    * Note: {@link markInterrupted} ingests NO `turn_end`, so the eviction-driven
    * interrupted lifecycle it sets is never routed through here — this only
    * affects turns that close with a `turn_end`.
    *
    * @param terminalReason - The `turn_end`'s terminal reason, if carried.
+   * @param stopWasRequested - The `turn_end`'s stop record: whether DorkOS ASKED
+   *   this turn to stop. Absent on every runtime that keeps none.
    */
-  private deriveTurnEndLifecycle(terminalReason: string | undefined): SessionLifecycle {
+  private deriveTurnEndLifecycle(
+    terminalReason: string | undefined,
+    stopWasRequested: boolean | undefined
+  ): SessionLifecycle {
     if (this.status.lifecycle === 'error' || terminalReason === TERMINAL_REASON_ERROR) {
       return 'error';
-    }
-    if (isInterruptedTerminalReason(terminalReason)) {
-      return 'interrupted';
-    }
-    if (isAbsolvingTerminalReason(terminalReason)) {
-      return this.deriveIdleLifecycle();
     }
     // Truthiness, not `!== null`: the schema defaults the field to `null`, but a
     // status merged from a partial `status_change` (or restored from a snapshot
     // written before the field existed) simply has no key there, and reading
     // `.code` off that throws inside the projection rather than settling a turn.
     const frame = this.status.lastError;
-    if (frame && !isNonFatalErrorCode(frame.code)) {
+    const fatalFrame = frame ? !isNonFatalErrorCode(frame.code) : false;
+    if (isInterruptedTerminalReason(terminalReason)) {
+      return isUnrequestedAbortFailure(stopWasRequested, fatalFrame) ? 'error' : 'interrupted';
+    }
+    if (isAbsolvingTerminalReason(terminalReason)) {
+      return this.deriveIdleLifecycle();
+    }
+    if (fatalFrame) {
       return 'error';
     }
     return this.deriveIdleLifecycle();

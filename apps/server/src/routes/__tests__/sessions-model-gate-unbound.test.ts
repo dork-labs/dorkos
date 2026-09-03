@@ -61,7 +61,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null) }));
 
 import request from 'supertest';
-import type { ModelOption } from '@dorkos/shared/types';
+import type { ModelOption, Session } from '@dorkos/shared/types';
 import { createApp, finalizeApp } from '../../app.js';
 import { projectModelOptions } from '../../services/runtimes/opencode/providers/models.js';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -227,6 +227,88 @@ describe('PATCH /api/sessions/:id — the model gate on an unbound session', () 
 
     expect(res.status).toBe(200);
     expect(rowFor(BOUND_CLAUDE)?.model).toBe(CLAUDE_MODEL);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DOR-1693. The write is right; the ANSWER was not. The same inference the gate
+// above learned not to convict on was still going out in the response's
+// `runtime`, in the shape of a settled fact — on the very request that named a
+// different runtime. This file is the only place the state exists (real
+// registry, real DB, a session with no row), so the response shape is pinned
+// here beside the gate that shares the condition.
+// ---------------------------------------------------------------------------
+
+describe('PATCH /api/sessions/:id — telling a guessed runtime from a bound one', () => {
+  beforeEach(() => {
+    db = createTestDb();
+    registerRuntimes();
+  });
+
+  it('marks the runtime as a guess when nothing owns the session', async () => {
+    const res = await patch(UNBOUND, { model: OPENCODE_MODEL, runtime: 'opencode' });
+
+    expect(res.status).toBe(200);
+    // Both halves matter. The inference still goes out — omitting it would
+    // change what every existing client reads — and it flatly contradicts the
+    // runtime this same request named, which is precisely why the answer has to
+    // say it is a guess.
+    expect(res.body.runtime).toBe('claude-code');
+    expect(res.body.runtimeUnbound).toBe(true);
+    expect(rowFor(UNBOUND)?.runtime).toBeNull();
+  });
+
+  it('says nothing when the session has an owner', async () => {
+    bindSession(BOUND_CLAUDE, 'claude-code');
+
+    const res = await patch(BOUND_CLAUDE, { model: CLAUDE_MODEL });
+
+    expect(res.status).toBe(200);
+    expect(res.body.runtime).toBe('claude-code');
+    // Absent, never `false` — a client that has never heard of this field reads
+    // exactly the body it always did.
+    expect(res.body).not.toHaveProperty('runtimeUnbound');
+  });
+
+  it('marks it on the session-shaped body too, not just the fallback', async () => {
+    // The two tests above run through the loose fallback, because a fake's
+    // `getSession` answers `null`. The branch that actually ships is the other
+    // one: a real session object, read back after the write.
+    const session: Session = {
+      id: UNBOUND,
+      title: 'Untitled',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      permissionMode: 'default',
+      runtime: 'claude-code',
+    };
+    claude.getSession.mockResolvedValue(session);
+
+    const res = await patch(UNBOUND, { model: OPENCODE_MODEL, runtime: 'opencode' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.title).toBe('Untitled');
+    expect(res.body.runtimeUnbound).toBe(true);
+  });
+
+  it('marks it on the 202 a pending mode tightening answers with', async () => {
+    // The other response site. A flag spread at only one of the two would leave
+    // the 202 saying the same thing the bug said.
+    //
+    // Not a contrived pairing, either: the 202 means a reply is already running,
+    // and only an interactive first turn records an owner, so a scheduled run or
+    // a room turn is mid-reply and unowned at the same time as a matter of
+    // course.
+    claude.updateSession.mockResolvedValue({
+      updated: true,
+      permissionModePendingUntilNextTurn: true,
+    });
+
+    const res = await patch(UNBOUND, { permissionMode: 'default' });
+
+    expect(res.status).toBe(202);
+    expect(res.body.permissionModePendingUntilNextTurn).toBe(true);
+    expect(res.body.runtimeUnbound).toBe(true);
   });
 });
 

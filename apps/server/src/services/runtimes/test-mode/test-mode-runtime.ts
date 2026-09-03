@@ -23,9 +23,9 @@ import type {
   TaskItem,
   ModelOption,
   CommandRegistry,
-  PermissionMode,
   EffortLevel,
   InterruptReceipt,
+  SessionSettings,
 } from '@dorkos/shared/types';
 import type {
   SessionSnapshot,
@@ -153,15 +153,7 @@ export class TestModeRuntime implements AgentRuntime {
     return null;
   }
 
-  updateSession(
-    sessionId: string,
-    opts: {
-      permissionMode?: PermissionMode;
-      model?: string;
-      effort?: EffortLevel;
-      fastMode?: boolean;
-    }
-  ): SessionUpdateResult {
+  updateSession(sessionId: string, opts: SessionSettings): SessionUpdateResult {
     return {
       updated: this.registry.applySettings(sessionId, {
         ...(opts.permissionMode !== undefined ? { permissionMode: opts.permissionMode } : {}),

@@ -11,8 +11,6 @@ import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import type {
   StreamEvent,
-  PermissionMode,
-  EffortLevel,
   ModelOption,
   SubagentInfo,
   Session,
@@ -21,6 +19,7 @@ import type {
   CommandRegistry,
   ReloadPluginsResult,
   SessionListWarning,
+  SessionSettings,
 } from '@dorkos/shared/types';
 import type {
   AgentRuntime,
@@ -47,7 +46,7 @@ import type {
   SessionListEvent,
 } from '@dorkos/shared/session-stream';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
-import { CLAUDE_CODE_CAPABILITIES } from './runtime-constants.js';
+import { CLAUDE_CODE_CAPABILITIES, narrowToClaudeCodeMode } from './runtime-constants.js';
 import { ControlRequestTimeoutError } from './sessions/bounded-control.js';
 import { SessionStore } from './sessions/session-store.js';
 import { RuntimeCache } from './messaging/runtime-cache.js';
@@ -321,7 +320,12 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   setSessionSettings(port: SessionSettingsPort): void {
     this.sessionStore.configureSettings(
       port,
-      (CLAUDE_CODE_CAPABILITIES.permissionModes.default ?? 'default') as PermissionMode
+      // A descriptor's `id` is a plain string — a runtime names its own modes —
+      // so the declared default is CHECKED into this adapter's narrower union
+      // rather than asserted into it (DOR-885). `'default'` is the same answer
+      // either way; the fallback exists because `permissionModes.default` is
+      // optional on the capability shape.
+      narrowToClaudeCodeMode(CLAUDE_CODE_CAPABILITIES.permissionModes.default, 'default')
     );
   }
 
@@ -382,15 +386,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   /** @inheritdoc */
-  async updateSession(
-    sessionId: string,
-    opts: {
-      permissionMode?: PermissionMode;
-      model?: string;
-      effort?: EffortLevel;
-      fastMode?: boolean;
-    }
-  ): Promise<SessionUpdateResult> {
+  async updateSession(sessionId: string, opts: SessionSettings): Promise<SessionUpdateResult> {
     return this.sessionStore.updateSession(sessionId, opts);
   }
 

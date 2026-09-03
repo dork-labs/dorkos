@@ -292,7 +292,14 @@ export function SessionTranscript({
       // SessionMessage so none of that chrome applies to it.
       if (message._stagedContext) return <StagedContextNote content={message.content} />;
 
-      const isLastAssistant = messageIndex === messages.length - 1 && message.role === 'assistant';
+      // The session's last message, whoever wrote it. An inline error card
+      // offers Retry from here and nowhere else (DOR-1677): Retry re-sends the
+      // last USER message, which is the prompt this card is about only while
+      // nothing has come after it. Anything following takes the offer away —
+      // the next prompt, a steer, or the staged note two branches up, which is
+      // a user-role message even though it draws no bubble.
+      const isFinalMessage = messageIndex === messages.length - 1;
+      const isLastAssistant = isFinalMessage && message.role === 'assistant';
       // Fence-based supersede (DOR-302): a widget in this message is stale only
       // when a NEWER fence-bearing message exists. Fence-less messages get
       // `true` vacuously (they render no widget).
@@ -311,6 +318,7 @@ export function SessionTranscript({
           isNew={history !== null && messageIndex >= history}
           isStreaming={isLastAssistant && isTextStreaming}
           isLatestWidgetMessage={isLatestWidgetMessage}
+          isFinalMessage={isFinalMessage}
           activeToolCallId={activeToolCallId}
           onToolRef={onToolRef}
           focusedOptionIndex={focusedOptionIndex}

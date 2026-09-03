@@ -123,7 +123,10 @@ export function createMeshRegisterHandler(deps: McpToolDeps) {
     }
 
     try {
-      // Prevent overwriting a system agent's manifest
+      // Registration adopts rather than overwrites (DOR-1019), so a system
+      // agent's manifest is safe from the write either way. This refuses the
+      // ADOPTION: `mesh_register` would otherwise hand an agent DorkBot's
+      // identity for the asking, and system agents are not re-registerable.
       const existing = await readManifest(resolvedPath);
       if (existing?.isSystem) {
         return jsonContent(
@@ -336,7 +339,12 @@ export function meshToolDefinitions(deps: McpToolDeps) {
     ),
     tool(
       'mesh_register',
-      'Register an agent from a filesystem path. Creates a .dork/agent.json manifest and adds the agent to the registry.',
+      'Register an agent from a filesystem path, and add it to the registry. A directory that ' +
+        'already has a .dork/agent.json is ADOPTED, not overwritten: that file is left untouched ' +
+        'and the agent it describes is what gets registered, so the returned agent — not the name ' +
+        'you passed — is authoritative, and its id may differ from anything you expected. Only a ' +
+        'directory with no manifest gets a new one written, and only that case needs name and ' +
+        'runtime.',
       {
         path: z.string().describe('Filesystem path to the agent directory'),
         name: z.string().optional().describe('Display name override'),

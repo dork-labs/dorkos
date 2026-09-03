@@ -66,15 +66,21 @@ adapter manager does not dispatch.
   namespace.
 - The Tasks scheduler is the one caller OUTSIDE the relay that needs to know
   what the map holds, and it asks rather than assumes. `AdapterManager` exposes
-  a single narrow predicate, `hasAgentRuntime(runtimeType)` — not the map, not
-  its keys — and `task-scheduler-service.ts` takes it as
+  a single narrow predicate — not the map, not its keys — and
+  `task-scheduler-service.ts` takes it as
   `SchedulerDeps.relayHoldsRuntime` to decide per run whether the bus is even an
   option; `relay-dispatch.ts` then writes the resolved runtime onto the envelope
   so the adapter routes by name instead of falling back to its default. That is
   the scheduler-side half of this decision: because routing settled in the
   adapter rather than the manager, "can the relay run this?" stopped being
   answerable by a runtime-type literal and became a question only the relay can
-  answer.
+  answer. **Amended 2026-09-02 (DOR-1636):** the predicate shipped as
+  `hasAgentRuntime(runtimeType)`, which answered from the constructor-built map
+  alone and so said yes for an adapter that had been disabled or had failed to
+  start. It is now `canRunTaskOnBus(runtimeType, subject)`, which reads the
+  registry — real liveness — and returns the reason when the answer is no. The
+  decision this bullet records is unchanged: one narrow question, asked of the
+  relay, per run.
 - `adapter-manager.ts`'s map stays runtime-type → runtime and is **passed
   through** to the adapter. Its unused dispatch seam — `registerAgentRuntime`,
   `resolveAgentRuntime`, `listRegisteredRuntimeTypes` — is deleted as part of

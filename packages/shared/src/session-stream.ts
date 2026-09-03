@@ -688,6 +688,22 @@ export const SessionEventSchema = z
       ...seqShape,
       type: z.literal('turn_end'),
       terminalReason: TerminalReasonSchema.optional(),
+      /**
+       * Whether DorkOS ASKED this turn to stop, carried up from the
+       * `session_status` that named `terminalReason` (see
+       * `SessionStatusEventSchema.stopWasRequested` for the full rule).
+       *
+       * It rides the durable `turn_end` rather than being kept in the
+       * normalizer, because settlement is read TWICE — live by the client's
+       * projection, and again from the snapshot or the replayed log on a cold
+       * hydrate — and the two readings may not disagree about whether a person
+       * stopped a turn. A private flag would be right until the first reconnect.
+       *
+       * Absent on every runtime that keeps no stop record of its own, and on
+       * every turn recorded before this field existed; settlement then reads an
+       * abort as a stop, exactly as it always did.
+       */
+      stopWasRequested: z.boolean().optional(),
     }),
     // A person's message delivered INTO a turn that is already running — a steer
     // (spec `persistent-session-runtime` §P4, task 4.3). It joins the open turn

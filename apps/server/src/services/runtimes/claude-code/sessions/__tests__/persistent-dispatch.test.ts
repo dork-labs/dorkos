@@ -9,6 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { SessionEvent, SessionStatus } from '@dorkos/shared/session-stream';
 import type { StreamEvent } from '@dorkos/shared/types';
 
 const optIn = vi.hoisted(() => ({ persistentSession: false }));
@@ -114,8 +115,11 @@ vi.mock('../../../../../config/constants.js', async (importOriginal) => {
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { validateBoundaryOrDorkHome } from '../../../../../lib/boundary.js';
+import { feedProjector } from '../../../../session/session-event-normalizer.js';
+import { SessionStateProjector } from '../../../../session/session-state-projector.js';
 import { ClaudeCodeRuntime } from '../../claude-code-runtime.js';
-import { FakeCli, resultMessage } from './fake-persistent-cli.js';
+import { STOP_ACK_TIMEOUT_MS } from '../bounded-control.js';
+import { FakeCli, resultMessage, type FakeCliProcess } from './fake-persistent-cli.js';
 
 const CWD = '/projects/pump';
 const mockedQuery = vi.mocked(query);
@@ -512,14 +516,17 @@ describe('Stop reaches a turn, never a process that is merely warm', () => {
     expect(process.interrupts).toBe(1);
     expect(process.closed).toBe(1);
 
-    // The close ends the booting process, so the turn settles as a failure
-    // rather than hanging. A first-turn launch rejection surfaces raw at the
-    // runtime layer — `guardTurnErrors` one layer up (`trigger-turn.ts`) turns
-    // it into the error+done pair a person sees, exactly as on any other
-    // first-turn launch failure — so at THIS seam it rejects.
-    await expect(booting).rejects.toMatchObject({ reason: 'process-gone' });
-    // And the pump reports the crash honestly, the same as a running Stop whose
-    // interrupt rejected and escalated to close.
+    // The close ends the booting process, so the turn settles rather than
+    // hanging — and it settles as the Stop it was. This seam used to REJECT with
+    // the raw `process-gone` launch failure, which `guardTurnErrors` one layer
+    // up rendered as a turn error with a stack on it: a crash report for
+    // something the operator did (DOR-1302; the settle is asserted in full,
+    // through the projector, in that describe below).
+    const events = await booting;
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+    // And the pump still reports the death honestly where warmth is read: the
+    // process really is gone, and the next message relaunches it.
     expect(runtime.getSessionWarmth(sessionId)).toBe('crashed');
   });
 
@@ -556,6 +563,249 @@ describe('Stop reaches a turn, never a process that is merely warm', () => {
       failedEvents.some((e) => e.type === 'error'),
       'a Stop two turns ago silenced this failure'
     ).toBe(true);
+  });
+});
+
+// DOR-1302. A Stop the CLI will not answer escalates to `query.close()`, and on
+// the pump that close is a PROCESS DEATH: the same `onCrash` seam a real crash
+// arrives on. Read as a crash it cost the operator twice — the turn they ended
+// settled as a failure with a red frame on it, and the close spent one of the
+// two lives in `SessionCrashRecovery`'s bound, so two Stops in a row made the
+// THIRD message refuse with "This chat's agent keeps stopping".
+//
+// The escalation is driven here through a REFUSED interrupt rather than an
+// unacked one. Both reach the same line (`interruptGivenQuery`: anything that is
+// not an ack escalates), and a refusal reaches it without a three-second wall
+// clock in a unit test — see the ack case at the bottom for why paying that bound
+// is the unacked path's own cost and not this behavior's.
+describe('a Stop that had to kill the process settles as the stop it was (DOR-1302)', () => {
+  beforeEach(() => {
+    optIn.persistentSession = true;
+  });
+
+  /**
+   * Warm a session and leave its process unable to answer — the state every
+   * case here needs, since a turn that answers itself is never stopped.
+   */
+  async function warmThenGoSilent(sessionId: string): Promise<FakeCliProcess> {
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.goSilent();
+    return process;
+  }
+
+  /**
+   * Press Stop on the running turn with the CLI refusing to hear it, so the
+   * Stop escalates to the forceful close.
+   *
+   * @param sessionId - The session whose live turn is being stopped
+   * @param process - The process running it
+   */
+  async function stopWithAnUnhearableCli(
+    sessionId: string,
+    process: FakeCliProcess
+  ): Promise<void> {
+    process.interruptRejectsWith = new Error('control write failed: the process is gone');
+    expect(await runtime.interruptQuery(sessionId), 'Stop did not reach the live turn').toBe(true);
+  }
+
+  /** Feed one turn's events through the real normalizer and projector. */
+  async function project(
+    sessionId: string,
+    events: StreamEvent[]
+  ): Promise<{ status: SessionStatus; stream: SessionEvent[] }> {
+    const projector = new SessionStateProjector(sessionId);
+    await feedProjector(
+      projector,
+      (async function* () {
+        yield* events;
+      })(),
+      { userMessage: 'stop this one' }
+    );
+    return { status: projector.getStatus(), stream: projector.replayFrom(0) };
+  }
+
+  it('closes the open turn as interrupted, with no crash notice', async () => {
+    const sessionId = nextSession();
+    const process = await warmThenGoSilent(sessionId);
+
+    const stopped = turn(sessionId, 'stop this one');
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+    await stopWithAnUnhearableCli(sessionId, process);
+
+    const events = await stopped;
+    // The escalation really happened: this is the close path, not an ack.
+    expect(process.interrupts).toBe(1);
+    expect(process.closed).toBe(1);
+
+    // The turn ends exactly once, and says it was cut short ON PURPOSE — the
+    // reason plus DorkOS's own record of having asked, which is what keeps an
+    // abort nobody requested settling as the failure it is.
+    const status = events.find(
+      (e) => e.type === 'session_status' && (e.data as { terminalReason?: string }).terminalReason
+    );
+    expect(status?.data).toMatchObject({ terminalReason: 'interrupted', stopWasRequested: true });
+    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+    expect(
+      events.some((e) => e.type === 'error'),
+      'the operator was shown a failure for a turn they ended themselves'
+    ).toBe(false);
+
+    // And that survives the wire: the same events through the real normalizer
+    // and projector settle `interrupted`, which is what a cold hydrate reads.
+    const projected = await project(sessionId, events);
+    expect(projected.stream.at(-1)).toMatchObject({
+      type: 'turn_end',
+      terminalReason: 'interrupted',
+    });
+    expect(projected.status.lifecycle).toBe('interrupted');
+    expect(projected.status.lastError).toBeNull();
+  });
+
+  // The STARTING phase, which the case above does not reach and which needed a
+  // second seam. A Stop pressed while the first turn is still launching kills the
+  // process before `system/init`, so the launch this dispatch is parked on
+  // rejects: the window the windower settled correctly is never streamed, and
+  // the refusal used to be rethrown for `guardTurnErrors` to render as a turn
+  // error with a raw `process-gone` stack. The person pressed Stop and was shown
+  // a crash. `explainRefusedDispatch` answers it as the resume path answers its
+  // own version instead.
+  //
+  // The deferred boot is NEVER released here — that is the whole point. Calling
+  // `reportReady()` first would let the pump reach `warm`, and the Stop would
+  // then take the running path the case above already covers.
+  it('settles a Stop pressed while the first turn is still launching', async () => {
+    const sessionId = nextSession();
+    cli.deferNextInit = true;
+
+    const booting = turn(sessionId, 'a mis-send, stopped before it lands');
+    const process = await vi.waitFor(() => {
+      expect(cli.launches).toBe(1);
+      return cli.processes[0]!;
+    });
+    // No `running` edge has fired, so the ordinary Stop path finds nothing and
+    // this reaches the process through `bootingQuery` (DOR-1191).
+    expect(runtime.getSessionWarmth(sessionId)).toBe('warming');
+    await stopWithAnUnhearableCli(sessionId, process);
+    expect(process.closed).toBe(1);
+
+    // It settles instead of rejecting, and it settles as a stop.
+    const events = await booting;
+    const status = events.find(
+      (e) => e.type === 'session_status' && (e.data as { terminalReason?: string }).terminalReason
+    );
+    expect(status?.data).toMatchObject({ terminalReason: 'interrupted', stopWasRequested: true });
+    expect(
+      events.some((e) => e.type === 'error'),
+      'a Stop during launch was reported as a failure'
+    ).toBe(false);
+    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+
+    const projected = await project(sessionId, events);
+    expect(projected.stream.at(-1)).toMatchObject({
+      type: 'turn_end',
+      terminalReason: 'interrupted',
+    });
+    expect(projected.status.lifecycle).toBe('interrupted');
+
+    // And the session is not spent: the next message relaunches and answers.
+    const next = await turn(sessionId, 'try again');
+    expect(spokenText(next)).toEqual(['ok']);
+    expect(cli.launches).toBe(2);
+  });
+
+  // The discriminating half. A rule that simply stopped calling deaths crashes
+  // would pass the case above and lose the failure this one has to keep.
+  it('still settles a death nobody asked for as the crash it is', async () => {
+    const sessionId = nextSession();
+    const process = await warmThenGoSilent(sessionId);
+
+    const dying = turn(sessionId, 'this one dies on its own');
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+    process.crash(new Error('killed mid-turn'));
+
+    const events = await dying;
+    expect(
+      events.some((e) => e.type === 'error'),
+      'a genuine crash lost its failure'
+    ).toBe(true);
+    const status = events.find(
+      (e) => e.type === 'session_status' && (e.data as { terminalReason?: string }).terminalReason
+    );
+    expect(status, 'a crash claimed a terminal reason it never had').toBeUndefined();
+
+    const projected = await project(sessionId, events);
+    expect(projected.stream.at(-1)).toMatchObject({ type: 'turn_end', terminalReason: 'error' });
+    expect(projected.status.lifecycle).toBe('error');
+    // The pump reports the death honestly where warmth is read, and the next
+    // message is a recovery relaunch.
+    expect(runtime.getSessionWarmth(sessionId)).toBe('crashed');
+  });
+
+  // The second half of the bug, and the one a person actually met. The crash
+  // bound allows ONE automatic relaunch, and only a COMPLETED turn resets it — a
+  // stopped turn never completes. So two escalated Stops spent both lives and
+  // the third message was refused, blaming the agent for the operator's own
+  // Stops.
+  it('does not spend the crash budget, so a third message after two Stops still runs', async () => {
+    const sessionId = nextSession();
+
+    for (const [index, attempt] of ['stop the first', 'stop the second'].entries()) {
+      // Held at `system/init` so the process can be silenced BEFORE it reads
+      // anything: a process left to itself answers the moment it reads, and the
+      // turn would finish rather than be stopped.
+      cli.deferNextInit = true;
+      const stopped = turn(sessionId, attempt);
+      const process = await vi.waitFor(() => {
+        expect(cli.launches).toBe(index + 1);
+        return cli.latest!;
+      });
+      process.goSilent();
+      process.reportReady();
+      await vi.waitFor(() => expect(process.received).toHaveLength(1));
+      await stopWithAnUnhearableCli(sessionId, process);
+      await stopped;
+    }
+
+    // Two Stops, two dead processes. The third message must be a relaunch, not
+    // a refusal.
+    const third = await turn(sessionId, 'still there?');
+    expect(
+      third.some(
+        (e) =>
+          e.type === 'error' &&
+          (e.data as { message?: string }).message?.includes('keeps stopping') === true
+      ),
+      'DorkOS blamed the agent for two Stops the operator pressed'
+    ).toBe(false);
+    expect(spokenText(third)).toEqual(['ok']);
+    // Three processes: the first two the Stops killed, and the one that answered.
+    expect(cli.launches).toBe(3);
+  });
+
+  // Validation criterion 4, answered structurally rather than with a clock. The
+  // bound is only ever PAID by an ack that never comes, and the one observable
+  // cost of paying it is the escalation — so an acked Stop that closes nothing
+  // is a Stop that did not wait. The elapsed check is the belt to that braces:
+  // three seconds is the bound, and a healthy ack lands in microtasks.
+  it('does not pay the ack bound when the CLI answers the Stop', async () => {
+    const sessionId = nextSession();
+    const process = await warmThenGoSilent(sessionId);
+
+    const stopped = turn(sessionId, 'stop this one politely');
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+
+    const askedAt = Date.now();
+    expect(await runtime.interruptQuery(sessionId)).toBe(true);
+    const ackMs = Date.now() - askedAt;
+
+    expect(process.interrupts).toBe(1);
+    expect(process.closed, 'an acked Stop escalated to a close it never needed').toBe(0);
+    expect(ackMs).toBeLessThan(STOP_ACK_TIMEOUT_MS);
+    // The process survived, so the CLI still gets to wind the turn down itself.
+    expect(process.ended).toBe(false);
+    process.emit(abortedResult(process.received[1]!));
+    await stopped;
   });
 });
 

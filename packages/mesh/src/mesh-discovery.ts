@@ -8,7 +8,7 @@
  */
 import path from 'path';
 import { monotonicFactory } from 'ulidx';
-import type { AgentManifest, AgentRuntime, DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
+import type { AgentManifest, DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
 import { seedAgentFace } from '@dorkos/shared/agent-face';
 import type { DiscoveryStrategy } from './types.js';
 import type { AgentRegistry, AgentRegistryEntry } from './agent-registry.js';
@@ -17,7 +17,14 @@ import { subjectForAgent, type RelayBridge } from './relay-bridge.js';
 import { resolveNamespace, normalizeNamespace } from './namespace-resolver.js';
 import { unifiedScan } from './discovery/unified-scanner.js';
 import type { ScanEvent, UnifiedScanOptions } from './discovery/types.js';
-import { writeManifest, removeManifest, probeManifest } from './manifest.js';
+import {
+  writeManifest,
+  removeManifest,
+  probeManifest,
+  readManifest,
+  MANIFEST_DIR,
+  MANIFEST_FILE,
+} from './manifest.js';
 
 /** Default registrar identifier when none is provided. */
 export const DEFAULT_REGISTRAR = 'mesh';
@@ -244,11 +251,119 @@ function announceAdoption(manifest: AgentManifest, projectPath: string, deps: Di
 }
 
 /**
+ * Take on the agent a directory ALREADY has, rather than writing over it.
+ *
+ * Registration used to mint a fresh ULID and write it straight through
+ * whatever `.dork/agent.json` was sitting there — so pointing it at a checkout
+ * silently rewrote that repo's committed manifest, and the agent it described
+ * lost its identity (DOR-1019). A directory that already carries a manifest is
+ * not a blank one: registering it is an IMPORT, which is exactly what the
+ * agent-creator means when it refuses such a directory with "use Import
+ * instead".
+ *
+ * So the manifest on disk wins whole. The caller's `name`, `runtime` and every
+ * other override are ignored rather than merged, because merging means writing,
+ * and writing is the thing that destroyed the file. Someone who wants those
+ * fields changed can update the agent afterwards, which goes through the
+ * read-merge-write path built for it.
+ *
+ * The registry side runs through {@link upsertAutoImported} — the same pipeline
+ * a scan uses for a manifest it finds on disk — so the DB row, the Relay
+ * endpoint and the duplicate-identity guard all behave exactly as they do for a
+ * scanned-in agent (ADR-0043).
+ *
+ * @param projectPath - Absolute path to the directory being registered.
+ * @param deps - Discovery dependencies.
+ * @param scanRoot - Root directory for namespace derivation, when the caller named one.
+ * @returns The adopted manifest, or `undefined` when the directory has none and
+ *   a fresh identity should be minted.
+ * @throws When a manifest is there and cannot be honoured — unreadable, or
+ *   naming an id another directory still holds. Both refuse rather than
+ *   overwrite: the file is the only copy of what it says.
+ */
+async function adoptExistingManifest(
+  projectPath: string,
+  deps: DiscoveryDeps,
+  scanRoot?: string
+): Promise<AgentManifest | undefined> {
+  const manifestPath = path.join(projectPath, MANIFEST_DIR, MANIFEST_FILE);
+  const probe = await probeManifest(projectPath);
+  if (probe.state === 'absent') return undefined;
+  if (probe.state === 'unreadable') {
+    throw new Error(
+      `Refusing to register ${projectPath}: ${manifestPath} is already there and could not be ` +
+        `read (${probe.detail}). Writing over it would erase the agent only that file describes. ` +
+        `Fix or remove the file, then try again.`
+    );
+  }
+
+  const manifest = await readManifest(projectPath, deps.logger);
+  if (!manifest) {
+    // Readable a moment ago, not now — a concurrent write. Refuse for the same
+    // reason: what is on disk is the only copy of it.
+    throw new Error(
+      `Refusing to register ${projectPath}: ${manifestPath} changed while it was being read.`
+    );
+  }
+
+  if ((await upsertAutoImported(manifest, projectPath, deps, scanRoot)) === 'duplicate-id') {
+    const incumbent = deps.registry.get(manifest.id);
+    throw new Error(
+      `Refusing to register ${projectPath}: ${manifestPath} names agent ${manifest.id}, which is ` +
+        `already registered at ${incumbent?.projectPath ?? 'another directory'}. ` +
+        `Two directories cannot hold one agent.`
+    );
+  }
+
+  clearDenial(projectPath, deps);
+  deps.logger.info('[mesh] adopted the agent a directory already had', {
+    event: 'mesh.identity.adopted_on_register',
+    agentId: manifest.id,
+    projectPath,
+  });
+  return manifest;
+}
+
+/**
+ * Forget any denial recorded against a directory that is now registered.
+ *
+ * Unregistering an agent whose manifest git tracks leaves the file and denies
+ * the path, so the next scan does not walk the agent straight back in
+ * (`mesh-agent-management.unregister`). Registering that directory again is the
+ * person changing their mind, and the denial has to go with it — otherwise the
+ * path is registered and denied at once, and the denied list says something
+ * untrue.
+ *
+ * Best-effort: a denial that could not be cleared is untidy, never a reason to
+ * fail a registration that already landed.
+ *
+ * @param projectPath - The directory that was just registered.
+ * @param deps - Discovery dependencies (denial list and logger).
+ */
+function clearDenial(projectPath: string, deps: DiscoveryDeps): void {
+  try {
+    deps.denialList.clear(projectPath);
+  } catch (err) {
+    deps.logger.warn('[mesh] could not clear the denial on a directory that was just registered', {
+      event: 'mesh.denial.clear_failed',
+      projectPath,
+      err,
+    });
+  }
+}
+
+/**
  * Register a discovered candidate as a full agent.
  *
  * Generates a ULID, merges candidate hints with optional overrides,
  * writes `.dork/agent.json`, inserts into the registry, and registers
  * a Relay endpoint if RelayCore is available.
+ *
+ * A candidate whose directory already carries a manifest is ADOPTED instead —
+ * see {@link adoptExistingManifest}. The scanner only ever yields
+ * manifest-less directories as candidates, so this is the belt to
+ * `registerByPath`'s braces: one seam, one answer, whichever door a caller came
+ * through.
  *
  * @param candidate - A DiscoveryCandidate yielded from discover()
  * @param deps - Discovery dependencies
@@ -267,6 +382,9 @@ export async function register(
   approver = DEFAULT_REGISTRAR,
   scanRoot?: string
 ): Promise<AgentManifest> {
+  const adopted = await adoptExistingManifest(candidate.path, deps, scanRoot);
+  if (adopted) return adopted;
+
   const id = deps.generateUlid();
   const now = new Date().toISOString();
   const effectiveScanRoot =
@@ -303,8 +421,20 @@ export async function register(
 /**
  * Register an agent directly by project path without prior discovery.
  *
+ * **A directory that already holds a `.dork/agent.json` is adopted, never
+ * overwritten** — see {@link adoptExistingManifest}. The returned manifest is
+ * then the one on disk, id and all, and `partial` is ignored; only a directory
+ * with no manifest gets the freshly minted identity built below.
+ *
+ * Which is why `name` and `runtime` are required only for THAT case, and are
+ * checked here rather than in the type: a caller adopting a directory has
+ * nothing to name (`POST /api/mesh/agents` with a bare `{ path }` is how a
+ * person re-registers a folder they unregistered), and demanding fields that
+ * are then ignored turned that recovery into a 400 (DOR-1019 review).
+ *
  * @param projectPath - Absolute path to the agent's project directory
- * @param partial - Manifest fields to set (name, runtime are required)
+ * @param partial - Manifest fields to set. `name` and `runtime` are required
+ *   when there is no manifest to adopt, and ignored when there is.
  * @param deps - Discovery dependencies
  * @param approver - Identifier of the entity approving registration (default: "mesh")
  * @param scanRoot - Root directory for namespace derivation. Ignored for an agent
@@ -312,14 +442,27 @@ export async function register(
  *   directory (see {@link managedScanRoot}); otherwise defaults to
  *   `deps.defaultScanRoot`.
  * @returns The created AgentManifest
+ * @throws When there is no manifest to adopt and `partial` names no `name` or
+ *   `runtime` — there is nothing to write without them.
  */
 export async function registerByPath(
   projectPath: string,
-  partial: Partial<AgentManifest> & { name: string; runtime: AgentRuntime },
+  partial: Partial<AgentManifest>,
   deps: DiscoveryDeps,
   approver = DEFAULT_REGISTRAR,
   scanRoot?: string
 ): Promise<AgentManifest> {
+  const adopted = await adoptExistingManifest(projectPath, deps, scanRoot);
+  if (adopted) return adopted;
+
+  const { name, runtime } = partial;
+  if (!name || !runtime) {
+    throw new Error(
+      `Refusing to register ${projectPath}: it holds no ${MANIFEST_DIR}/${MANIFEST_FILE} to ` +
+        `adopt, so a name and a runtime are needed to create one.`
+    );
+  }
+
   const id = deps.generateUlid();
   const now = new Date().toISOString();
   const effectiveScanRoot = managedScanRoot(projectPath, deps) ?? scanRoot ?? deps.defaultScanRoot;
@@ -327,9 +470,9 @@ export async function registerByPath(
 
   const manifest: AgentManifest = {
     id,
-    name: partial.name,
+    name,
     description: partial.description ?? '',
-    runtime: partial.runtime,
+    runtime,
     capabilities: partial.capabilities ?? [],
     behavior: partial.behavior ?? { responseMode: 'always' },
     namespace,
@@ -355,7 +498,9 @@ export async function registerByPath(
  *
  * Steps are ordered for safe rollback: if DB upsert fails the manifest file
  * is removed; if Relay registration fails both the DB entry and manifest are
- * removed (compensation pattern).
+ * removed (compensation pattern). Those removals are only ever safe because
+ * both callers adopt an existing manifest before reaching here — so the file
+ * this rolls back is always the one it just wrote.
  *
  * @param projectPath - Absolute path to the agent's project directory
  * @param manifest - The agent manifest to persist
@@ -402,6 +547,7 @@ async function registerInternal(
     throw err;
   }
 
+  clearDenial(projectPath, deps);
   return manifest;
 }
 

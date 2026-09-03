@@ -39,7 +39,11 @@ import type {
   SessionLifecycle,
 } from '@dorkos/shared/session-stream';
 import { isInterruptedTerminalReason } from '@dorkos/shared/schemas';
-import { isAbsolvingTerminalReason, isNonFatalErrorCode } from '@dorkos/shared/run-outcome';
+import {
+  isAbsolvingTerminalReason,
+  isNonFatalErrorCode,
+  isUnrequestedAbortFailure,
+} from '@dorkos/shared/run-outcome';
 import type { MessageDeliveryOutcome, QueuedMessage } from '@dorkos/shared/schemas';
 
 /** Maximum number of sessions retained before LRU eviction (mirrors the chat store). */
@@ -687,10 +691,15 @@ function touchAndGet(state: SessionStreamStoreState, sessionId: string): Session
  * a reason that absolves settles idle; otherwise a latched error frame that is
  * not survivable settles `error`.
  *
- * The abort check knows SHAPE, never intent — the CLI collapses nine abort
- * causes into two strings — so an abort nobody asked for (an API refusal) reads
- * here as a stop. Read the server docstring's "known hole" section before
- * changing that ordering.
+ * The abort REASON knows shape, never intent — the CLI collapses nine abort
+ * causes into two strings — so the intent arrives separately, as the
+ * `turn_end`'s `stopWasRequested`, and the two are ANDed by
+ * `isUnrequestedAbortFailure`: an abort nobody asked for that carried a fatal
+ * frame (an API refusal) settles `error` here and keeps its explanation, rather
+ * than telling the operator they stopped a turn they never touched. An ABSENT
+ * signal still settles `interrupted`, which is the pre-existing behavior kept
+ * for every runtime that reports no stop record. Read the server docstring's
+ * "The abort nobody asked for" section before changing that ordering.
  *
  * `lastError` is the frame latch because it is the one that survives hydration:
  * it is cleared by every `turn_start` and set by every `error`, and it rides the
@@ -700,6 +709,9 @@ function touchAndGet(state: SessionStreamStoreState, sessionId: string): Session
  * @param current - The currently-held lifecycle (an `error` already set by an
  *   earlier `status_change` wins, matching the detached-error path).
  * @param terminalReason - The `turn_end`'s terminal reason, if carried.
+ * @param stopWasRequested - The `turn_end`'s stop record: whether DorkOS ASKED
+ *   this turn to stop. Absent on every runtime that keeps none, and on every
+ *   turn recorded before the field existed.
  * @param lastError - The error frame this window latched, if any. Accepts
  *   `undefined` as well as `null`: the schema defaults it to `null`, but a
  *   status assembled from a partial `status_change` (or minted by a server that
@@ -710,14 +722,18 @@ function touchAndGet(state: SessionStreamStoreState, sessionId: string): Session
 function deriveTurnEndLifecycle(
   current: SessionLifecycle,
   terminalReason: string | undefined,
+  stopWasRequested: boolean | undefined,
   lastError: TurnErrorEvent | null | undefined,
   hasPendingInteractions: boolean
 ): SessionLifecycle {
   if (current === 'error' || terminalReason === 'error') return 'error';
-  if (isInterruptedTerminalReason(terminalReason)) return 'interrupted';
+  const fatalFrame = lastError ? !isNonFatalErrorCode(lastError.code) : false;
+  if (isInterruptedTerminalReason(terminalReason)) {
+    return isUnrequestedAbortFailure(stopWasRequested, fatalFrame) ? 'error' : 'interrupted';
+  }
   const settled = hasPendingInteractions ? 'blocked' : 'idle';
   if (isAbsolvingTerminalReason(terminalReason)) return settled;
-  if (lastError && !isNonFatalErrorCode(lastError.code)) return 'error';
+  if (fatalFrame) return 'error';
   return settled;
 }
 
@@ -830,6 +846,7 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
         session.status.lifecycle = deriveTurnEndLifecycle(
           session.status.lifecycle,
           event.terminalReason,
+          event.stopWasRequested,
           session.status.lastError,
           session.pendingInteractions.length > 0
         );

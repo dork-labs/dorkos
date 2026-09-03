@@ -41,8 +41,7 @@ type SettingsRow = {
  */
 function rowToSettings(row: SettingsRow): SessionSettings {
   const settings: SessionSettings = {};
-  if (row.permissionMode != null)
-    settings.permissionMode = row.permissionMode as SessionSettings['permissionMode'];
+  if (row.permissionMode != null) settings.permissionMode = row.permissionMode;
   if (row.model != null) settings.model = row.model;
   if (row.effort != null) {
     const effort = EffortLevelSchema.safeParse(row.effort);

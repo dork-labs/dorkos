@@ -25,7 +25,8 @@ import { MarketplacePackageManifestSchema, PackageNameSchema } from '@dorkos/mar
 import { hasSchedule, isInvalidSchedule, readScheduleField } from '@dorkos/skills/schedule-schema';
 import { readRawFrontmatter } from '@dorkos/skills/parser';
 import { scanSkillDirs, CLAUDE_PLUGIN_ROOT_TOKEN, type SkillEntry } from '../scan/scanner.js';
-import type { ClaudeHooksConfig } from '../generate/hooks.js';
+import { emptyHooksConfig } from '../generate/hooks.js';
+import type { ClaudeHooksConfig, HookCommand, HookMatcherGroup } from '../generate/hooks.js';
 
 /** Where an installed plugin lives — its install scope. */
 export type InstalledScope = 'global' | 'project';
@@ -164,13 +165,82 @@ function readCcPluginManifest(pluginDir: string): PluginIdentity | undefined {
 }
 
 /**
+ * Validate one matcher group's INTERIOR, keeping every hook command that names a
+ * real shell command and dropping the rest.
+ *
+ * Checking only that an event's value is an array left the group interior cast
+ * straight through, so a group that was `null`, carried no `hooks` array, or
+ * held a command whose `command` was not a string reached the projector and
+ * crashed it (`TypeError: group.hooks.map is not a function`) — one sloppy
+ * package took down `dorkos harness sync` for every other package (DOR-646).
+ *
+ * The keep rule is deliberately the one the marketplace permission preview
+ * already applies (`services/marketplace/permission-preview.ts`): a command
+ * counts when it is an object whose `command` is a non-empty string, and a
+ * `matcher` counts when it is a non-empty string. The preview's whole promise is
+ * that it describes what the projector will do, so the two must salvage exactly
+ * the same commands from the same bad file.
+ *
+ * Fields neither side interprets ride through untouched — `timeout` is a real
+ * Claude Code hook field, and dropping what this reader does not recognize would
+ * quietly change working hooks. A missing or non-string `type` becomes
+ * `'command'`, the only kind Claude Code has, so a salvaged command is written
+ * out as a valid hook rather than an invalid one.
+ *
+ * @returns the validated group, or `undefined` when nothing in it is usable.
+ */
+function readMatcherGroup(group: unknown): HookMatcherGroup | undefined {
+  if (!group || typeof group !== 'object') return undefined;
+  const {
+    matcher,
+    hooks: commands,
+    ...rest
+  } = group as { matcher?: unknown; hooks?: unknown } & Record<string, unknown>;
+  if (!Array.isArray(commands)) return undefined;
+
+  const validated: HookCommand[] = [];
+  for (const entry of commands) {
+    if (!entry || typeof entry !== 'object') continue;
+    const { command, type, ...commandRest } = entry as {
+      command?: unknown;
+      type?: unknown;
+    } & Record<string, unknown>;
+    if (typeof command !== 'string' || command.length === 0) continue;
+    validated.push({
+      ...commandRest,
+      type: typeof type === 'string' && type.length > 0 ? type : 'command',
+      command,
+    });
+  }
+  if (validated.length === 0) return undefined;
+
+  return {
+    ...rest,
+    ...(typeof matcher === 'string' && matcher.length > 0 ? { matcher } : {}),
+    hooks: validated,
+  };
+}
+
+/**
  * Read a plugin's Claude-plugin hooks (`hooks/hooks.json`), tolerating either
- * shape and validating each event value.
+ * shape and validating every event value and the matcher groups inside it.
  *
  * Only event keys whose value is an ARRAY of matcher groups are kept — a
  * malformed entry (e.g. `{"Stop": {…}}` instead of `{"Stop": [{…}]}`) would
  * otherwise survive the cast and crash the hook merge's `[...groups]` spread with
- * `TypeError: groups is not iterable`. Bad keys are dropped, not the whole file.
+ * `TypeError: groups is not iterable`. Each group is then validated by
+ * {@link readMatcherGroup}. Bad groups are dropped, not their readable siblings
+ * and not the whole file: `{"Stop": [{hooks: [{command: 'good.sh'}]}, {hooks: 'nope'}]}`
+ * still projects `good.sh`. An event left with no usable group is dropped
+ * entirely rather than kept as an empty array, so a package that declares only
+ * unreadable hooks contributes no hooks at all.
+ *
+ * The event names are PACKAGE-CHOSEN strings, so the result is built on a
+ * null-prototype object ({@link emptyHooksConfig}): assigning a key named
+ * `__proto__` to a `{}` literal hits `Object.prototype`'s inherited setter
+ * instead of creating a property, which would swallow that event's groups
+ * silently — the preview would disclose a command the projector then dropped,
+ * which is the exact disagreement this reader exists to end.
  */
 function readPluginHooks(pluginDir: string): ClaudeHooksConfig | undefined {
   const hooksPath = join(pluginDir, 'hooks', 'hooks.json');
@@ -186,9 +256,13 @@ function readPluginHooks(pluginDir: string): ClaudeHooksConfig | undefined {
     raw && typeof raw === 'object' && 'hooks' in raw ? (raw as { hooks: unknown }).hooks : raw;
   if (!hooksObj || typeof hooksObj !== 'object') return undefined;
 
-  const validated: ClaudeHooksConfig = {};
+  const validated = emptyHooksConfig();
   for (const [event, groups] of Object.entries(hooksObj as Record<string, unknown>)) {
-    if (Array.isArray(groups)) validated[event] = groups as ClaudeHooksConfig[string];
+    if (!Array.isArray(groups)) continue;
+    const usable = groups
+      .map(readMatcherGroup)
+      .filter((group): group is HookMatcherGroup => group !== undefined);
+    if (usable.length > 0) validated[event] = usable;
   }
   return Object.keys(validated).length > 0 ? validated : undefined;
 }

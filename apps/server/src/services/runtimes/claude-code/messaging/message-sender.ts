@@ -670,22 +670,32 @@ export async function* executeSdkQuery(
   // — which is also why the empty-stream guards above have to know about a Stop:
   // an error latched there would silently swallow this.
   //
-  // Scope: this is the RESUME path only. The persistent pump does not run this
-  // loop, and a `query.close()` there is a process death — the windower settles
-  // it as `turn_end{terminalReason:'error'}` and the session reports `crashed`
-  // (`sessions/session-turn-windows.ts`, `sessions/persistent-dispatch.ts`).
-  // `persistentSession` now ships ON (spec `full-power-defaults`, D1), so the
-  // pump is the path a default install takes and making its Stop settle
-  // honestly — DOR-1244's named follow-up — stopped being a minority case when
-  // that default flipped.
+  // Scope: this is the RESUME path only, but the PROPERTY is no longer. The
+  // persistent pump does not run this loop — a `query.close()` there is a
+  // process death, which used to settle `turn_end{terminalReason:'error'}` — so
+  // it supplies the same reason from its own seam instead: the windower reads
+  // the same `stoppedQueries` record before it closes a dead process's window
+  // and settles it `interrupted` (`sessions/session-turn-windows.ts`,
+  // DOR-1302). Two loops, one answer, because `persistentSession` ships ON
+  // (spec `full-power-defaults`, D1) and a default install is on the pump.
   //
   // Carried on a `session_status` because that is where the result mapper puts
   // `terminalReason` too, and the normalizer reads it off either. It projects no
-  // status of its own: with no status fields, `toStatusChange` yields null, so
-  // this event moves the terminal reason and touches nothing else.
+  // status of its own: neither field below is a status field, so `toStatusChange`
+  // still yields null and this event moves the terminal reason and touches
+  // nothing else.
+  //
+  // `stopWasRequested: true` is not decoration and not a guess — reaching this
+  // line REQUIRES `wasStopped()`, so the intent is proven by the branch itself.
+  // Stating it keeps settlement from having to infer intent from the reason:
+  // `'interrupted'` is an abort reason like any other, and a reader that has to
+  // guess who caused an abort is exactly the hole this field closes.
   if (turnWindowOpen && wasStopped() && !emittedError) {
     logger.debug('[sendMessage] settling a stopped turn as interrupted', { session: sessionId });
-    yield { type: 'session_status', data: { sessionId, terminalReason: 'interrupted' } };
+    yield {
+      type: 'session_status',
+      data: { sessionId, terminalReason: 'interrupted', stopWasRequested: true },
+    };
   }
 
   if (!emittedDone) {
