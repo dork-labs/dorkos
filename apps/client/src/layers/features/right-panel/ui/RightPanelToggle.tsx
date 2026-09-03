@@ -66,7 +66,12 @@ export function RightPanelToggle() {
           transition={{ type: 'spring', stiffness: 600, damping: 35 }}
         >
           <Icon className="size-4" />
-          {/* Hidden while the panel is open — the count is already on screen inside it. */}
+          {/* Hidden while the panel is open: an open panel is itself the
+              acknowledgement that the operator is looking, whether or not the
+              tab on screen right now happens to be the one carrying the count
+              (Pulse's own attention section says nothing on Home, where the
+              count lives in the pinned triage header beside the panel instead
+              — DOR-1759). */}
           {!rightPanelOpen && <AttentionCountBadge count={attentionCount} />}
         </motion.button>
       </TooltipTrigger>

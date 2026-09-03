@@ -1,7 +1,7 @@
 import { useNavigate } from '@tanstack/react-router';
 import { AnimatePresence, motion } from 'motion/react';
 import { getPlatform } from '@/layers/shared/lib';
-import { useSafePathname } from '@/layers/shared/model';
+import { useIsMobile, useSafePathname } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import { useAttentionRows, AttentionSignalRow } from '@/layers/features/dashboard-attention';
 import {
@@ -38,10 +38,15 @@ const staggerContainer = {
  * "View all →" opens the home surface where the full header and its detail
  * sheets live. Collapses to a calm all-clear line when nothing needs you.
  *
- * **Except on the home surface itself, where it draws nothing.** Home's pinned
- * triage header is this same list, from this same model, at full size — and a
- * teaser of what is already on screen beside it is a quarter of the panel spent
- * saying nothing (DOR-1759).
+ * **Except on the home surface itself with the panel docked beside it, where it
+ * draws nothing.** Home's pinned triage header is this same list, from this
+ * same model, at full size — and a teaser of what is already on screen beside
+ * it is a quarter of the panel spent saying nothing (DOR-1759). That condition
+ * is geometry, not just route: on a narrow viewport the panel is a slide-over
+ * Sheet that COVERS Home rather than sitting beside it (`RightPanelContainer`),
+ * so there the duplicate is not on screen and the section still draws — the
+ * mobile person closing the sheet would otherwise find nothing told them
+ * anything needed them.
  */
 export function PulseAttentionSection() {
   const navigate = useNavigate();
@@ -51,6 +56,11 @@ export function PulseAttentionSection() {
   // way to be a no-op.
   const pathname = useSafePathname();
   const showViewAll = !getPlatform().isEmbedded;
+  // The de-dup below only holds when the panel is actually DOCKED beside the
+  // page it is de-duping — on a narrow viewport it is a slide-over Sheet that
+  // covers Home instead (`RightPanelContainer`), so the duplicate condition
+  // never applies there.
+  const isMobile = useIsMobile();
   const { schedules, errors, activity, isLoading, total } = useAttentionRows();
   const openActivity = useOpenNotification();
 
@@ -60,9 +70,12 @@ export function PulseAttentionSection() {
   const settlingSchedules = useScheduleApprovalCards(schedules);
 
   // Beside home's own triage header, this section is that header again. Say
-  // nothing. (Hooks above run either way — the queries are shared with the
-  // header, so this costs no extra fetch.)
-  const duplicatesHomeHeader = pathname === '/';
+  // nothing — but only where the panel is genuinely BESIDE it: on mobile the
+  // panel is a Sheet that covers Home instead, so the header underneath is not
+  // on screen and there is no duplicate to avoid. (Hooks above run either
+  // way — the queries are shared with the header, so this costs no extra
+  // fetch.)
+  const duplicatesHomeHeader = pathname === '/' && !isMobile;
   // One cap across all three groups, spent in draw order.
   const shownSchedules = settlingSchedules.slice(0, PULSE_ATTENTION_CAP);
   const shownErrors = errors.slice(0, PULSE_ATTENTION_CAP - shownSchedules.length);
