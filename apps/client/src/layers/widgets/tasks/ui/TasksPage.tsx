@@ -107,12 +107,19 @@ export function TasksPage() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.15 }}
-          className="flex h-full flex-col items-center justify-center"
+          className="h-full min-h-0"
         >
-          <TasksEmptyState
-            onCreateWithPreset={handleCreateWithPreset}
-            onCreateBlank={handleCreateBlank}
-          />
+          {/* The empty state is a four-card gallery, not a one-line message: on a
+              phone it is taller than the region it sits in. Centring it there
+              pushed its heading up behind the sticky header and out of reach, so
+              it gets the page's own scroller (`PageContainer` with its default
+              `scroll`) and starts at the top. */}
+          <PageContainer width="full">
+            <TasksEmptyState
+              onCreateWithPreset={handleCreateWithPreset}
+              onCreateBlank={handleCreateBlank}
+            />
+          </PageContainer>
         </motion.div>
       ) : (
         <motion.div

@@ -134,10 +134,15 @@ export function TasksPanel() {
             </button>
           </div>
         ) : (
-          <TasksEmptyState
-            onCreateWithPreset={handleCreateWithPreset}
-            onCreateBlank={handleCreateBlank}
-          />
+          // Its own scroller and its own gutters: the gallery is taller than a
+          // dialog on a phone, and the empty state no longer carries side
+          // padding of its own.
+          <div className="min-h-0 flex-1 overflow-y-auto px-6">
+            <TasksEmptyState
+              onCreateWithPreset={handleCreateWithPreset}
+              onCreateBlank={handleCreateBlank}
+            />
+          </div>
         )}
         <CreateTaskDialog
           open={dialogOpen}
