@@ -9,6 +9,7 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from '@/layers/shared/ui';
+import { cn } from '@/layers/shared/lib/utils';
 import {
   revealInScroller,
   useAppStore,
@@ -227,7 +228,14 @@ function TabStrip({
   }, [revealActiveTab, selectedTab, tabIds]);
 
   return (
-    <Tabs asChild value={activeTab ?? undefined} onValueChange={onActivate}>
+    // `value={activeTab ?? ''}` rather than `?? undefined`: Radix treats
+    // `undefined` as "uncontrolled" and warns the moment `activeTab` first
+    // resolves to a real id (the auto-select effect in RightPanelContainer
+    // flips it from null to a contribution's id on the next tick). `''`
+    // never matches a contribution's id, so it keeps Tabs controlled for its
+    // whole lifetime and selects nothing during that window instead of
+    // handing selection to Radix's own uncontrolled state.
+    <Tabs asChild value={activeTab ?? ''} onValueChange={onActivate}>
       <div className="relative min-w-0 flex-1">
         <div
           ref={scrollerRef}
@@ -255,7 +263,19 @@ function TabStrip({
                       aria-label={contribution.title}
                       id={rightPanelTabDomId(contribution.id)}
                       aria-controls={isActive ? RIGHT_PANEL_PANEL_ID : undefined}
-                      className="text-muted-foreground hover:text-foreground text-3xs shrink-0 gap-1.5 rounded-md px-2.5 py-1 data-[state=active]:shadow-sm"
+                      // Driven off `isActive`, not `data-[state=active]`: the
+                      // `TooltipTrigger asChild` wrapping this element
+                      // composes its own `data-state` onto it (Radix's
+                      // Tooltip trigger tracks open/closed the same
+                      // attribute name Tabs uses for selected/unselected),
+                      // which wins the collision and leaves every tab
+                      // stamped `data-state="closed"` regardless of
+                      // selection. A prop the Tooltip cannot overwrite is
+                      // the only reliable signal here.
+                      className={cn(
+                        'text-muted-foreground hover:text-foreground text-3xs shrink-0 gap-1.5 rounded-md px-2.5 py-1',
+                        isActive && 'bg-background text-foreground shadow-sm'
+                      )}
                     >
                       <TabIcon raw={contribution.icon} className="size-3.5" />
                       <span>{contribution.title}</span>

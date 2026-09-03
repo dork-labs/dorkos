@@ -18,6 +18,11 @@ interface FilterBarSortProps {
    * the direction toggle act on that field rather than on nothing.
    */
   defaultField?: string;
+  /**
+   * Applied to the outer wrapper around both controls (the field trigger and
+   * the direction toggle as a group) — not to either control individually.
+   * For spacing/positioning the pair as a unit, not for styling one button.
+   */
   className?: string;
 }
 
@@ -37,7 +42,7 @@ function FilterBarSort({ options, defaultField, className }: FilterBarSortProps)
     <div data-slot="filter-bar-sort" className={cn('inline-flex items-center gap-1', className)}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="xs">
+          <Button variant="outline" size="sm">
             Sort: {currentLabel}
           </Button>
         </DropdownMenuTrigger>
@@ -55,7 +60,7 @@ function FilterBarSort({ options, defaultField, className }: FilterBarSortProps)
       </DropdownMenu>
       <Button
         variant="ghost"
-        size="icon-xs"
+        size="icon-sm"
         onClick={toggleDirection}
         aria-label={`Sort ${sortDirection === 'asc' ? 'descending' : 'ascending'}`}
       >
