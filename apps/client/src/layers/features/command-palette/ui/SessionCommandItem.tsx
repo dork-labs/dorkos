@@ -158,7 +158,7 @@ export function SessionCommandItem({
           </span>
         </span>
         {verb !== null && (
-          <span className="text-muted-foreground flex items-center gap-1.5 text-2xs font-normal">
+          <span className="text-muted-foreground text-2xs flex items-center gap-1.5 font-normal">
             {live !== undefined && (
               <span
                 aria-hidden
@@ -184,9 +184,9 @@ export function SessionCommandItem({
 function ShortcutHints({ canStartNewSession }: { canStartNewSession: boolean }) {
   return (
     <span aria-hidden className="text-muted-foreground flex items-center gap-1">
-      <kbd className="bg-accent rounded px-1 py-0.5 font-mono text-3xs">↵</kbd>
+      <kbd className="bg-accent text-3xs rounded px-1 py-0.5 font-mono">↵</kbd>
       {canStartNewSession && (
-        <kbd className="bg-accent rounded px-1 py-0.5 font-mono text-3xs">⌘↵</kbd>
+        <kbd className="bg-accent text-3xs rounded px-1 py-0.5 font-mono">⌘↵</kbd>
       )}
     </span>
   );

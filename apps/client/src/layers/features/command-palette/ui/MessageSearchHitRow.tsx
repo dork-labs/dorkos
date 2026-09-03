@@ -77,7 +77,7 @@ export function MessageSearchHitRow({
         // the ellipsis to the left edge; the `bdi` keeps the path itself
         // rendering left-to-right inside it, so separators and any trailing
         // punctuation stay where they were typed.
-        <span dir="rtl" className="text-muted-foreground/70 w-full truncate text-left text-3xs">
+        <span dir="rtl" className="text-muted-foreground/70 text-3xs w-full truncate text-left">
           <bdi dir="ltr">{hit.containerPath}</bdi>
         </span>
       )}

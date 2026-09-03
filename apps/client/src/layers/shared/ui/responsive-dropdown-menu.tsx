@@ -241,9 +241,7 @@ function ResponsiveDropdownMenuRadioItem({
             {Icon && <Icon className="size-(--size-icon-xs) shrink-0" />}
             <div className="text-left">
               <div>{children}</div>
-              {description && (
-                <div className="text-muted-foreground text-3xs">{description}</div>
-              )}
+              {description && <div className="text-muted-foreground text-3xs">{description}</div>}
             </div>
           </div>
         ) : (
@@ -289,9 +287,7 @@ function MobileRadioItem({
       {Icon && <Icon className="size-5 shrink-0" />}
       <div className="min-w-0 flex-1">
         <div className={MOBILE_ROW_LABEL}>{children}</div>
-        {description && (
-          <div className={MOBILE_ROW_DESCRIPTION}>{description}</div>
-        )}
+        {description && <div className={MOBILE_ROW_DESCRIPTION}>{description}</div>}
       </div>
       {isSelected && <Check className="text-primary size-5 shrink-0" />}
     </button>
@@ -331,9 +327,7 @@ function ResponsiveDropdownMenuItem({
             {Icon && <Icon className="size-(--size-icon-xs) shrink-0" />}
             <div className="text-left">
               <div>{children}</div>
-              {description && (
-                <div className="text-muted-foreground text-3xs">{description}</div>
-              )}
+              {description && <div className="text-muted-foreground text-3xs">{description}</div>}
             </div>
           </div>
         ) : (
@@ -359,9 +353,7 @@ function ResponsiveDropdownMenuItem({
       {Icon && <Icon className="size-5 shrink-0" />}
       <div className="min-w-0 flex-1">
         <div className={MOBILE_ROW_LABEL}>{children}</div>
-        {description && (
-          <div className={MOBILE_ROW_DESCRIPTION}>{description}</div>
-        )}
+        {description && <div className={MOBILE_ROW_DESCRIPTION}>{description}</div>}
       </div>
     </button>
   );

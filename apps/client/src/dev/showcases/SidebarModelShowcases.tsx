@@ -127,7 +127,7 @@ function ReasonChip({
       data-reason={reason}
       title={`reason: ${reason}`}
       className={cn(
-        'text-sidebar-foreground/70 bg-sidebar/80 rounded px-1 font-mono text-3xs leading-4',
+        'text-sidebar-foreground/70 bg-sidebar/80 text-3xs rounded px-1 font-mono leading-4',
         show ? 'inline-block' : 'sr-only',
         className
       )}
@@ -163,7 +163,7 @@ function RowGlyph({ row, state }: { row: SidebarRowModel; state: SidebarState })
         color={visual.color}
         emoji={visual.emoji}
         fallback={(state.displayNames[glyph.agentPath] ?? '?').slice(0, 1).toUpperCase()}
-        className="size-[18px] text-3xs"
+        className="text-3xs size-[18px]"
       />
     );
   }
@@ -193,7 +193,7 @@ function DirectedBadge({ count }: { count: number | undefined }) {
   return (
     <span
       data-slot="sidebar-model-directed-badge"
-      className="bg-brand/15 text-brand rounded-full px-1.5 py-0.5 text-3xs font-medium tabular-nums"
+      className="bg-brand/15 text-brand text-3xs rounded-full px-1.5 py-0.5 font-medium tabular-nums"
       aria-label={`${count ?? 0} unread`}
     >
       {count}

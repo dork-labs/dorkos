@@ -288,7 +288,7 @@ function AddressDisplay({ url, onActivate }: { url: string; onActivate: () => vo
     >
       {display.kind === 'local' && (
         <>
-          <span className="bg-muted-foreground/15 rounded px-1 py-0.5 text-3xs font-medium tracking-wide uppercase">
+          <span className="bg-muted-foreground/15 text-3xs rounded px-1 py-0.5 font-medium tracking-wide uppercase">
             local
           </span>
           <span className="text-foreground truncate">{display.path}</span>

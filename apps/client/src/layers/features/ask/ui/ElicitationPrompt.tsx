@@ -155,7 +155,7 @@ export function ElicitationPrompt({
     >
       {/* Header */}
       <div className="text-muted-foreground mb-2 flex items-center gap-2 text-xs">
-        <span className="bg-muted inline-flex items-center rounded-md px-2 py-0.5 font-mono text-3xs">
+        <span className="bg-muted text-3xs inline-flex items-center rounded-md px-2 py-0.5 font-mono">
           {serverName}
         </span>
         <span>requests input</span>

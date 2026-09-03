@@ -219,10 +219,7 @@ function StatusColorsSection() {
             <span className={cn('size-2.5 shrink-0 rounded-full', STATUS_TONE_DOT[tone])} />
             <span className={cn('text-xs font-medium', STATUS_TONE_TEXT[tone])}>Text</span>
             <span
-              className={cn(
-                'rounded-md px-2 py-1 text-xs font-medium',
-                STATUS_TONE_SURFACE[tone]
-              )}
+              className={cn('rounded-md px-2 py-1 text-xs font-medium', STATUS_TONE_SURFACE[tone])}
             >
               Surface
             </span>

@@ -388,7 +388,7 @@ export const RoomRow = memo(function RoomRow({
           <>
             {!isMember && (
               <span
-                className="text-muted-foreground bg-muted shrink-0 rounded-full px-1.5 py-0.5 text-3xs font-medium"
+                className="text-muted-foreground bg-muted text-3xs shrink-0 rounded-full px-1.5 py-0.5 font-medium"
                 // A hint, not a repeat of the mute icon's shape: the room is
                 // still visible (the owner sees every room whether or not
                 // they are on its roster), only unpostable — a fact the
@@ -429,7 +429,7 @@ export const RoomRow = memo(function RoomRow({
             )}
             {unread && !quiet && (
               <span
-                className="bg-brand/15 text-brand rounded-full px-1.5 py-0.5 text-3xs font-medium tabular-nums"
+                className="bg-brand/15 text-brand text-3xs rounded-full px-1.5 py-0.5 font-medium tabular-nums"
                 // The room is NOT named again here. This label joins the row's own
                 // name to make it, so repeating the room turned every unread row
                 // into "#general 3 unread in #general" — the same name twice, which

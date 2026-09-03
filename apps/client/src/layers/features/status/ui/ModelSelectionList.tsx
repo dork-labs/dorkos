@@ -236,7 +236,7 @@ function ModelCard({ model, isSelected }: { model: ModelOption; isSelected: bool
         <div className="text-foreground line-clamp-2 text-sm font-medium break-words">
           {model.displayName}
           {model.local && (
-            <span className="text-muted-foreground ml-1.5 text-3xs font-normal">
+            <span className="text-muted-foreground text-3xs ml-1.5 font-normal">
               {localDeviceNoun()} · private
             </span>
           )}
@@ -253,7 +253,7 @@ function ModelCard({ model, isSelected }: { model: ModelOption; isSelected: bool
           // card that exists to change a decision, and half a warning is worse
           // than none. It is a short sentence, so wrapping costs a row at most.
           <div
-            className="mt-0.5 text-2xs leading-tight text-amber-600 dark:text-amber-500"
+            className="text-2xs mt-0.5 leading-tight text-amber-600 dark:text-amber-500"
             data-testid={`model-limitation-${model.value}`}
           >
             {limitation}
@@ -262,7 +262,7 @@ function ModelCard({ model, isSelected }: { model: ModelOption; isSelected: bool
       </div>
 
       {model.contextWindow && (
-        <Badge variant="secondary" className="shrink-0 text-3xs">
+        <Badge variant="secondary" className="text-3xs shrink-0">
           {formatContextWindow(model.contextWindow)}
         </Badge>
       )}
@@ -293,7 +293,7 @@ function UnavailableSavedModel({ value }: { value: string }) {
             no per-line budget to get right. */}
         <div className="flex min-w-0 flex-1 items-baseline gap-1.5">
           <ModelIdLine text={value} className="text-foreground min-w-0 text-sm font-medium" />
-          <span className="text-muted-foreground shrink-0 text-2xs font-normal">
+          <span className="text-muted-foreground text-2xs shrink-0 font-normal">
             (not available)
           </span>
         </div>
@@ -309,7 +309,7 @@ function UnavailableSavedModel({ value }: { value: string }) {
 function TierGroupHeader({ slug, label }: { slug: TierGroupSlug; label: string }) {
   return (
     <div
-      className="text-muted-foreground mt-2 mb-1 text-2xs font-medium tracking-wide uppercase first:mt-0"
+      className="text-muted-foreground text-2xs mt-2 mb-1 font-medium tracking-wide uppercase first:mt-0"
       data-testid={`model-group-${slug}`}
     >
       {label}

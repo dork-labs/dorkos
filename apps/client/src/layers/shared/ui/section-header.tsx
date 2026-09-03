@@ -211,7 +211,7 @@ export function SectionHeader({
           // halfway through one reads as a second, unrelated event. `motion-safe`
           // and nothing else: under a reduced-motion preference the count is
           // simply there, which is the same rule the chevron beside it follows.
-          className="text-sidebar-foreground/70 motion-safe:animate-sidebar-rollup-in truncate text-2xs font-normal tabular-nums"
+          className="text-sidebar-foreground/70 motion-safe:animate-sidebar-rollup-in text-2xs truncate font-normal tabular-nums"
         >
           {trailing}
         </span>

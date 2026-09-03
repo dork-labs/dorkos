@@ -191,7 +191,7 @@ export function SidebarFooterMenu({ labelled = false }: SidebarFooterMenuProps) 
               >
                 <Icon className="size-(--size-icon-sm)" />
                 Theme
-                <span className="text-sidebar-foreground/50 ml-auto text-2xs">
+                <span className="text-sidebar-foreground/50 text-2xs ml-auto">
                   {THEME_LABELS[theme]}
                 </span>
               </DropdownMenuItem>

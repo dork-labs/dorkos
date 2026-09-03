@@ -370,7 +370,7 @@ export function DirectoryPicker({
                         </span>
                       </>
                     )}
-                    <span className="text-muted-foreground/50 ml-auto flex-shrink-0 text-2xs">
+                    <span className="text-muted-foreground/50 text-2xs ml-auto flex-shrink-0">
                       {formatRelativeTime(recent.accessedAt)}
                     </span>
                   </button>

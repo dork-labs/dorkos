@@ -217,9 +217,7 @@ function ExpandedCard({ d, selected }: { d: AgentNodeData; selected?: boolean })
       {/* Bottom row: last seen + behavior mode */}
       <div className="mt-1 flex items-center gap-2">
         {d.lastSeenAt && (
-          <span className="text-muted-foreground text-3xs">
-            {formatRelativeTime(d.lastSeenAt)}
-          </span>
+          <span className="text-muted-foreground text-3xs">{formatRelativeTime(d.lastSeenAt)}</span>
         )}
         {d.behavior && (
           <Badge variant="outline" className="text-3xs">

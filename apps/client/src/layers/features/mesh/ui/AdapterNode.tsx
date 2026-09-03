@@ -125,7 +125,7 @@ function AdapterDefaultCard({
             <span className="text-muted-foreground truncate text-xs">{d.adapterName}</span>
           )}
         </div>
-        <Badge variant="outline" className="text-muted-foreground ml-auto shrink-0 text-3xs">
+        <Badge variant="outline" className="text-muted-foreground text-3xs ml-auto shrink-0">
           Adapter
         </Badge>
       </div>

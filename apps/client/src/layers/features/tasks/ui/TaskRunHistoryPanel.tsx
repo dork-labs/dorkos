@@ -228,7 +228,7 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
               runtime={run.resolvedRuntime}
               model={run.resolvedModel}
               iconClassName="size-3"
-              className="text-muted-foreground/70 min-w-0 text-2xs"
+              className="text-muted-foreground/70 text-2xs min-w-0"
             />
           )}
         </span>

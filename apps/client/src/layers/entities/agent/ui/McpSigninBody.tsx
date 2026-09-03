@@ -215,9 +215,7 @@ export function McpSigninBody({
           {state.errorDetail && (
             <details className="text-muted-foreground text-xs">
               <summary className="cursor-pointer focus-visible:ring-2">Details</summary>
-              <code className="mt-1 block font-mono text-2xs break-all">
-                {state.errorDetail}
-              </code>
+              <code className="text-2xs mt-1 block font-mono break-all">{state.errorDetail}</code>
             </details>
           )}
           {showCredentialsForm ? (

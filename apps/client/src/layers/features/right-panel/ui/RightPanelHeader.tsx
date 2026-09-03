@@ -266,7 +266,7 @@ function TabStrip({
                     aria-controls={isActive ? RIGHT_PANEL_PANEL_ID : undefined}
                     {...getTabProps(contribution.id)}
                     className={cn(
-                      'flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-3xs font-medium whitespace-nowrap transition-colors',
+                      'text-3xs flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 font-medium whitespace-nowrap transition-colors',
                       isActive
                         ? 'bg-background text-foreground shadow-sm'
                         : 'text-muted-foreground hover:text-foreground'

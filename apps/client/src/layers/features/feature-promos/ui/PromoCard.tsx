@@ -87,7 +87,7 @@ export function PromoCard({ promo }: PromoCardProps) {
           <span className="text-sidebar-foreground/90 block truncate text-[13px] font-medium">
             {promo.content.title}
           </span>
-          <span className="block truncate text-2xs">{promo.content.shortDescription}</span>
+          <span className="text-2xs block truncate">{promo.content.shortDescription}</span>
         </span>
         <ArrowRight className="size-3.5 shrink-0 opacity-60" />
       </button>

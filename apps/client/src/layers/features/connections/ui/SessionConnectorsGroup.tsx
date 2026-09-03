@@ -60,7 +60,7 @@ export function SessionConnectorsGroup({ sessionId }: { sessionId: string }) {
           <button
             type="button"
             onClick={() => void navigate({ to: '/connections' })}
-            className="text-muted-foreground hover:text-foreground focus-visible:ring-ring inline-flex items-center gap-0.5 rounded text-3xs font-medium normal-case focus-visible:ring-2 focus-visible:outline-none"
+            className="text-muted-foreground hover:text-foreground focus-visible:ring-ring text-3xs inline-flex items-center gap-0.5 rounded font-medium normal-case focus-visible:ring-2 focus-visible:outline-none"
           >
             Manage
             <ArrowUpRight className="size-3" aria-hidden />

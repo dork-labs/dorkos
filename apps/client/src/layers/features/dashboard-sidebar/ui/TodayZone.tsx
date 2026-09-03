@@ -188,7 +188,7 @@ export function CatchUpButton({ count, onCatchUp }: CatchUpButtonProps) {
         Catch up
         <span
           data-slot="catch-up-count"
-          className="text-sidebar-foreground/70 ml-auto text-2xs tabular-nums"
+          className="text-sidebar-foreground/70 text-2xs ml-auto tabular-nums"
         >
           {count}
         </span>

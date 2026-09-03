@@ -62,7 +62,7 @@ export function RoomCommandItem({ room, onSelect }: RoomCommandItemProps) {
       {room.archived && <ArchivedMark />}
       {unread && (
         <span
-          className="bg-brand/15 text-brand shrink-0 rounded-full px-1.5 py-0.5 text-3xs font-medium tabular-nums"
+          className="bg-brand/15 text-brand text-3xs shrink-0 rounded-full px-1.5 py-0.5 font-medium tabular-nums"
           aria-label={`${room.unreadCount} unread`}
         >
           {room.unreadCount}

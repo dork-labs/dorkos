@@ -276,11 +276,11 @@ function SubagentRow({ subagent }: { subagent: ActiveSubagent }) {
       <div className="flex items-center gap-2 text-sm">
         <Users className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
         <span className="min-w-0 flex-1 truncate">{subagent.description ?? subagent.taskId}</span>
-        <Badge variant="secondary" className="shrink-0 text-3xs">
+        <Badge variant="secondary" className="text-3xs shrink-0">
           {subagent.status}
         </Badge>
       </div>
-      <p className="text-muted-foreground pl-5 text-3xs leading-tight">
+      <p className="text-muted-foreground text-3xs pl-5 leading-tight">
         {subagent.toolUses ?? 0} tool{subagent.toolUses === 1 ? '' : 's'}
         {subagent.lastToolName ? ` · last ${subagent.lastToolName}` : ''}
       </p>

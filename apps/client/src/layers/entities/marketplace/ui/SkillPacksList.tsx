@@ -45,7 +45,7 @@ export function SkillPacksList({ projectPath }: SkillPacksListProps) {
         <li key={pkg.name} className="flex items-center gap-2">
           <span className="min-w-0 flex-1 truncate font-mono text-xs">{pkg.name}</span>
           {pkg.version && (
-            <span className="text-muted-foreground shrink-0 text-3xs">v{pkg.version}</span>
+            <span className="text-muted-foreground text-3xs shrink-0">v{pkg.version}</span>
           )}
           <ScopeBadge scope={pkg.scope} />
         </li>

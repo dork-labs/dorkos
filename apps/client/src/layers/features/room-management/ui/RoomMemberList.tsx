@@ -43,7 +43,7 @@ const LANDING_OPACITY = 0.16;
 /** The heading over one group. Uppercase and small, the way a roster labels itself. */
 function GroupHeading({ label, count }: { label: string; count: number }) {
   return (
-    <h3 className="text-muted-foreground px-1 pt-1 text-3xs font-medium tracking-wider uppercase">
+    <h3 className="text-muted-foreground text-3xs px-1 pt-1 font-medium tracking-wider uppercase">
       {label} <span className="tabular-nums">{count}</span>
     </h3>
   );

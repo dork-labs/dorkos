@@ -265,7 +265,7 @@ function MessageSearchBox() {
               <p
                 key={warning.source}
                 role="status"
-                className="text-muted-foreground flex items-start gap-2 px-3 pt-2 text-2xs leading-relaxed"
+                className="text-muted-foreground text-2xs flex items-start gap-2 px-3 pt-2 leading-relaxed"
               >
                 <Info className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
                 <span>{warning.message}</span>

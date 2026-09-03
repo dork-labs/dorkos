@@ -188,7 +188,10 @@ describe('ExecutionExceptionsStrip — an injected fleet (showcase path)', () =>
     // picked one still reads as AN identity. This strip used to hand the disc a
     // literal `#888` for that case (DOR-1750) — the one production site that
     // skipped the resolver, for exactly the case it exists to answer.
-    const colourless = { ...exception('scout', false), agent: agent('scout', { color: undefined }) };
+    const colourless = {
+      ...exception('scout', false),
+      agent: agent('scout', { color: undefined }),
+    };
     renderInjected([colourless]);
 
     const disc = await screen.findByTestId('execution-exceptions-strip');

@@ -29,7 +29,7 @@ export function ScopeBadge({ scope = 'global', className }: ScopeBadgeProps) {
     <span
       data-slot="scope-badge"
       className={cn(
-        'inline-flex items-center rounded-full px-1.5 py-0.5 text-3xs font-semibold tracking-wide uppercase',
+        'text-3xs inline-flex items-center rounded-full px-1.5 py-0.5 font-semibold tracking-wide uppercase',
         SCOPE_CLASSES[scope],
         className
       )}

@@ -75,7 +75,7 @@ export function InlineKillButton({ taskType, onConfirm }: InlineKillButtonProps)
         'flex shrink-0 items-center justify-center rounded transition-all duration-150',
         'focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-1',
         confirming
-          ? 'bg-destructive/20 text-destructive hover:bg-destructive/30 px-1.5 py-0.5 text-3xs font-medium'
+          ? 'bg-destructive/20 text-destructive hover:bg-destructive/30 text-3xs px-1.5 py-0.5 font-medium'
           : 'text-muted-foreground/40 hover:text-destructive size-4'
       )}
       aria-label={confirming ? 'Confirm stop task' : 'Stop task'}

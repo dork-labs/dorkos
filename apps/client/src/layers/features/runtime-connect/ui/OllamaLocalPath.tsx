@@ -312,7 +312,7 @@ function VerdictLine({ verdict, explanation }: { verdict: OllamaFitVerdict; expl
 /** Small tier badge — omitted entirely when a model carries no tier. */
 function TierBadge({ tier }: { tier: ModelTier }) {
   return (
-    <Badge variant="outline" className="px-1.5 py-0 text-3xs font-normal">
+    <Badge variant="outline" className="text-3xs px-1.5 py-0 font-normal">
       {TIER_LABELS[tier]}
     </Badge>
   );

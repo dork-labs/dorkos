@@ -83,7 +83,7 @@ export function ProvenanceChip({
   const chip = (
     <span
       className={cn(
-        'inline-flex h-5 items-center gap-1 rounded-full px-2 text-3xs leading-none whitespace-nowrap',
+        'text-3xs inline-flex h-5 items-center gap-1 rounded-full px-2 leading-none whitespace-nowrap',
         warning ? STATUS_TONE_SURFACE.warning : STATUS_TONE_SURFACE.neutral,
         interactive && 'hover:bg-accent hover:text-accent-foreground transition-colors',
         className
@@ -124,9 +124,7 @@ export function ProvenanceChip({
       </ResponsivePopoverTrigger>
       <ResponsivePopoverContent className="w-64 p-2" align="start">
         <ResponsivePopoverTitle>Where this value comes from</ResponsivePopoverTitle>
-        {warning && (
-          <p className={cn('px-2 pt-1 text-xs', STATUS_TONE_TEXT.warning)}>{warning}</p>
-        )}
+        {warning && <p className={cn('px-2 pt-1 text-xs', STATUS_TONE_TEXT.warning)}>{warning}</p>}
         <button
           type="button"
           onClick={() => {

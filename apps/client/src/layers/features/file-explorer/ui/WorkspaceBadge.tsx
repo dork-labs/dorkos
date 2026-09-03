@@ -22,7 +22,7 @@ export function WorkspaceBadge({ cwd }: { cwd: string }) {
 
   return (
     <span
-      className="text-muted-foreground bg-muted/50 inline-flex min-w-0 items-center gap-1 rounded px-1.5 py-0.5 text-2xs"
+      className="text-muted-foreground bg-muted/50 text-2xs inline-flex min-w-0 items-center gap-1 rounded px-1.5 py-0.5"
       title={`Workspace ${data.key} on ${data.branch}`}
     >
       <GitBranch className="size-3 flex-shrink-0" />

@@ -43,7 +43,7 @@ function EffortSection({
 }) {
   return (
     <div>
-      <div className="text-muted-foreground mb-2 text-2xs font-medium tracking-wide uppercase">
+      <div className="text-muted-foreground text-2xs mb-2 font-medium tracking-wide uppercase">
         Effort
       </div>
       <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Effort level">
@@ -82,7 +82,7 @@ function ModeSection({
 
   return (
     <div>
-      <div className="text-muted-foreground mb-2 text-2xs font-medium tracking-wide uppercase">
+      <div className="text-muted-foreground text-2xs mb-2 font-medium tracking-wide uppercase">
         Mode
       </div>
       <div className="flex gap-1.5">
@@ -230,7 +230,7 @@ export function ModelConfigPopover({
       {effortLabel && (
         <>
           <span className="text-muted-foreground text-2xs">·</span>
-          <Badge variant="secondary" className="px-1.5 py-0 text-3xs">
+          <Badge variant="secondary" className="text-3xs px-1.5 py-0">
             {effortLabel}
           </Badge>
         </>
@@ -238,7 +238,7 @@ export function ModelConfigPopover({
       {showFastBadge && (
         <>
           <span className="text-muted-foreground text-2xs">·</span>
-          <Badge variant="secondary" className="px-1.5 py-0 text-3xs">
+          <Badge variant="secondary" className="text-3xs px-1.5 py-0">
             <Zap className="mr-0.5 inline size-2.5" />
             Fast
           </Badge>
@@ -318,7 +318,7 @@ export function ModelConfigPopover({
               transition={SECTION_TRANSITION}
             >
               <Separator className="my-3" />
-              <div className="text-muted-foreground mb-3 text-2xs font-medium tracking-wide uppercase">
+              <div className="text-muted-foreground text-2xs mb-3 font-medium tracking-wide uppercase">
                 Configuration
               </div>
               <div className="space-y-3">

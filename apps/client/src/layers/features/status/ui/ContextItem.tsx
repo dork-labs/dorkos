@@ -139,7 +139,7 @@ function ContextBreakdown({ usage, children }: { usage: ContextUsage; children: 
           {significantCategories.length > 0 && (
             <div className="space-y-0.5">
               {significantCategories.map((cat) => (
-                <div key={cat.name} className="flex items-center justify-between gap-3 text-3xs">
+                <div key={cat.name} className="text-3xs flex items-center justify-between gap-3">
                   <span className="flex items-center gap-1 truncate">
                     <span
                       className="inline-block size-1.5 shrink-0 rounded-full"

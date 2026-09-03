@@ -131,7 +131,7 @@ export function AdapterEventLog({ adapterId }: AdapterEventLogProps) {
               </span>
               <Badge
                 variant="secondary"
-                className={cn('shrink-0 text-3xs', EVENT_TYPE_COLORS[event.subject] ?? '')}
+                className={cn('text-3xs shrink-0', EVENT_TYPE_COLORS[event.subject] ?? '')}
               >
                 {EVENT_TYPE_LABELS[event.subject] ?? event.subject}
               </Badge>

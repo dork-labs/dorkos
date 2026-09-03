@@ -50,7 +50,7 @@ export function UsageDetail({ usage }: UsageStatusItemProps) {
     return (
       <div className="space-y-1">
         <div className="text-xs font-medium">Subscription Usage</div>
-        <div className="space-y-0.5 text-3xs">
+        <div className="text-3xs space-y-0.5">
           <DetailRow label="Utilization" value={`${pct}%`} />
           {usage.windowLabel && <DetailRow label="Window" value={usage.windowLabel} />}
           {resetsAtLabel && <DetailRow label="Resets at" value={resetsAtLabel} />}
@@ -67,7 +67,7 @@ export function UsageDetail({ usage }: UsageStatusItemProps) {
   return (
     <div className="space-y-1">
       <div className="text-xs font-medium">Session Cost</div>
-      <div className="space-y-0.5 text-3xs">
+      <div className="text-3xs space-y-0.5">
         {usage.costUsd != null && <DetailRow label="Cost" value={`$${usage.costUsd.toFixed(2)}`} />}
         {usage.detail && <div className="text-muted-foreground">{usage.detail}</div>}
       </div>

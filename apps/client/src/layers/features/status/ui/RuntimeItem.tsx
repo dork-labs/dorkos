@@ -240,7 +240,7 @@ export function RuntimeItem({
                   only sighted users receive is not a caveat. */}
               <p
                 id={accountNoteId}
-                className="text-muted-foreground px-2 pb-1 text-2xs leading-snug"
+                className="text-muted-foreground text-2xs px-2 pb-1 leading-snug"
                 data-testid="account-scope-note"
               >
                 This session only. Locked once the first message sends.

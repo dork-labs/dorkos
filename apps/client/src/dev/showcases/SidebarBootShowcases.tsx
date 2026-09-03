@@ -157,7 +157,7 @@ function BootCacheControl() {
         so a reload paints the finished sidebar in the first frame. Clearing it makes the next load
         cold again.
       </p>
-      <ul className="text-muted-foreground space-y-1 font-mono text-2xs">
+      <ul className="text-muted-foreground text-2xs space-y-1 font-mono">
         {reading.length === 0 && <li>Nothing remembered.</li>}
         {reading.map((entry) => (
           <li key={entry.key}>

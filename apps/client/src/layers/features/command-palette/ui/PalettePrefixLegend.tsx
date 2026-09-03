@@ -38,7 +38,7 @@ export function PalettePrefixLegend({ className }: PalettePrefixLegendProps) {
     >
       {PREFIXES.map(({ key, means }) => (
         <span key={key} className="inline-flex items-center gap-1">
-          <kbd className="bg-muted rounded px-1 py-0.5 font-mono text-3xs">{key}</kbd>
+          <kbd className="bg-muted text-3xs rounded px-1 py-0.5 font-mono">{key}</kbd>
           {means}
         </span>
       ))}

@@ -28,7 +28,7 @@ const LEGEND_HEALTH: readonly AgentHealthStatus[] = ['active', 'inactive', 'stal
 export function TopologyLegend({ namespaces }: TopologyLegendProps) {
   return (
     <Panel position="bottom-left">
-      <div className="bg-card/90 text-muted-foreground flex flex-col gap-1.5 rounded-md border px-3 py-2 text-2xs shadow-sm backdrop-blur-sm">
+      <div className="bg-card/90 text-muted-foreground text-2xs flex flex-col gap-1.5 rounded-md border px-3 py-2 shadow-sm backdrop-blur-sm">
         {/* Edge types */}
         <div className="flex items-center gap-2">
           <span className="relative flex h-2 w-6 items-center">

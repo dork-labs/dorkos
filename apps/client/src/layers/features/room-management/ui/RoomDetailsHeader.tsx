@@ -92,7 +92,7 @@ export function RoomDetailsHeader({
               className="min-w-0 flex-1 text-lg font-semibold tracking-tight"
             />
             {room.archived && (
-              <span className="text-muted-foreground bg-muted shrink-0 rounded-full px-2 py-0.5 text-3xs font-medium">
+              <span className="text-muted-foreground bg-muted text-3xs shrink-0 rounded-full px-2 py-0.5 font-medium">
                 Archived
               </span>
             )}

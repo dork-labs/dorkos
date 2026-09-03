@@ -279,13 +279,13 @@ export function AgentRunner({ agent, index }: AgentRunnerProps) {
           </div>
 
           {/* Meta: tool count + duration */}
-          <div className="text-muted-foreground font-mono text-3xs">
+          <div className="text-muted-foreground text-3xs font-mono">
             {agent.toolUses ?? 0} tool calls · {Math.round((agent.durationMs ?? 0) / 1000)}s
           </div>
 
           {/* Last tool name */}
           {agent.lastToolName && (
-            <div className="text-muted-foreground/60 mt-0.5 font-mono text-3xs">
+            <div className="text-muted-foreground/60 text-3xs mt-0.5 font-mono">
               Last: {agent.lastToolName}
             </div>
           )}

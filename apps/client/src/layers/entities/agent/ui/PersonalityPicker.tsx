@@ -178,7 +178,7 @@ export function PersonalityPicker({
                   className={cn(
                     'inline-flex shrink-0 items-center gap-1.5 rounded-full border border-dashed font-medium transition-all',
                     'text-muted-foreground hover:text-foreground hover:border-foreground/20 border-border',
-                    compact ? 'px-2.5 py-1 text-2xs' : 'px-3 py-1 text-xs'
+                    compact ? 'text-2xs px-2.5 py-1' : 'px-3 py-1 text-xs'
                   )}
                   data-testid="custom-toggle"
                 >
@@ -206,7 +206,7 @@ export function PersonalityPicker({
                     className={cn(
                       'inline-flex shrink-0 items-center gap-1.5 rounded-full border border-dashed font-medium transition-all',
                       'text-muted-foreground hover:text-foreground hover:border-foreground/20 border-border',
-                      compact ? 'px-2.5 py-1 text-2xs' : 'px-3 py-1 text-xs'
+                      compact ? 'text-2xs px-2.5 py-1' : 'px-3 py-1 text-xs'
                     )}
                     data-testid="presets-toggle"
                   >
@@ -217,7 +217,7 @@ export function PersonalityPicker({
                     className={cn(
                       'bg-accent text-foreground inline-flex shrink-0 items-center gap-1.5 rounded-full border font-medium',
                       'border-foreground/15',
-                      compact ? 'px-2.5 py-1 text-2xs' : 'px-3 py-1 text-xs'
+                      compact ? 'text-2xs px-2.5 py-1' : 'px-3 py-1 text-xs'
                     )}
                   >
                     <Settings className="size-3" />
@@ -248,7 +248,7 @@ export function PersonalityPicker({
       <div
         className={cn('w-full max-w-sm', stacked ? 'mt-4 flex flex-col items-center' : 'hidden')}
       >
-        <span className="text-muted-foreground self-start text-3xs font-medium tracking-wider uppercase">
+        <span className="text-muted-foreground text-3xs self-start font-medium tracking-wider uppercase">
           {sampleLabel}
         </span>
         <div className="border-primary/40 bg-accent/40 mt-1 w-full rounded-md border-l-2 py-2 pr-3 pl-3">

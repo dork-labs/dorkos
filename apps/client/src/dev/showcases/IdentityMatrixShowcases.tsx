@@ -143,7 +143,7 @@ export function IdentityShapeMatrixShowcase() {
         <div className="grid grid-cols-[8rem_repeat(3,4rem)] items-center gap-x-4 gap-y-3">
           <span />
           {FACES.map((face) => (
-            <span key={face} className="text-muted-foreground text-center text-3xs">
+            <span key={face} className="text-muted-foreground text-3xs text-center">
               {face}
             </span>
           ))}
@@ -187,7 +187,7 @@ export function IdentityShapeMatrixShowcase() {
         <div className="grid grid-cols-[8rem_repeat(4,5rem)] items-center gap-x-4 gap-y-3">
           <span />
           {IDENTITY_STATUSES.map(({ status, label }) => (
-            <span key={status} className="text-muted-foreground text-center text-3xs">
+            <span key={status} className="text-muted-foreground text-3xs text-center">
               {label}
             </span>
           ))}
@@ -230,7 +230,7 @@ export function IdentityShapeMatrixShowcase() {
                   origin={identity.origin}
                   resolved
                 />
-                <p className="text-muted-foreground truncate text-3xs">
+                <p className="text-muted-foreground text-3xs truncate">
                   {identity.handle ? `@${identity.handle}` : 'no handle'}
                   {isWorking(identity) ? ' · working' : ''}
                 </p>
@@ -253,7 +253,7 @@ export function IdentityShapeMatrixShowcase() {
             return (
               <div key={member.id} className="flex w-32 flex-col items-center gap-2 text-center">
                 <IdentityAvatar {...face} size="md" />
-                <span className="text-muted-foreground truncate text-3xs">
+                <span className="text-muted-foreground text-3xs truncate">
                   {member.handle ? `@${member.handle}` : `${member.displayName} · no handle`}
                 </span>
               </div>

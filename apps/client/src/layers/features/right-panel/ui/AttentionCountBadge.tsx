@@ -36,7 +36,7 @@ export function AttentionCountBadge({ count }: AttentionCountBadgeProps) {
       initial={{ scale: 0, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       transition={{ type: 'spring', stiffness: 600, damping: 30 }}
-      className="bg-primary text-primary-foreground pointer-events-none absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-3xs leading-none font-semibold tabular-nums"
+      className="bg-primary text-primary-foreground text-3xs pointer-events-none absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 leading-none font-semibold tabular-nums"
     >
       {display}
     </motion.span>

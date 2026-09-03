@@ -59,7 +59,7 @@ function TaskOverrideChip({ task }: { task: Task }) {
   return (
     <span
       data-testid="task-override-chip"
-      className="text-muted-foreground/70 inline-flex min-w-0 shrink-0 items-center gap-1 text-3xs"
+      className="text-muted-foreground/70 text-3xs inline-flex min-w-0 shrink-0 items-center gap-1"
     >
       {task.runtime && <RuntimeMark type={task.runtime} model={task.model} size={11} />}
       {modelLabel && (
@@ -193,7 +193,7 @@ export function TaskRow({
                   />
                   <span className="text-sm font-medium">{getAgentDisplayName(agent)}</span>
                   {isSystem && (
-                    <Badge variant="outline" className="px-1 py-0 text-3xs leading-tight">
+                    <Badge variant="outline" className="text-3xs px-1 py-0 leading-tight">
                       <Shield className="mr-0.5 size-2.5" />
                       System
                     </Badge>
@@ -348,7 +348,7 @@ export function TaskRow({
             >
               <div className="border-t px-3 pt-2 pb-3">
                 {task.filePath && (
-                  <p className="text-muted-foreground mb-2 truncate font-mono text-2xs">
+                  <p className="text-muted-foreground text-2xs mb-2 truncate font-mono">
                     {shortenHomePath(task.filePath)}
                   </p>
                 )}

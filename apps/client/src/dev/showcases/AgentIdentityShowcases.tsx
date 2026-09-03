@@ -148,7 +148,7 @@ export function AgentIdentityShowcases() {
           <div className="flex flex-col gap-4">
             {(['xs', 'sm', 'md', 'lg'] as const).map((size) => (
               <div key={size} className="flex items-center gap-4">
-                <span className="text-muted-foreground w-6 text-3xs">{size}</span>
+                <span className="text-muted-foreground text-3xs w-6">{size}</span>
                 <AgentIdentity {...WARDEN} size={size} />
               </div>
             ))}
@@ -160,7 +160,7 @@ export function AgentIdentityShowcases() {
           <div className="flex flex-col gap-4">
             {(['xs', 'sm', 'md', 'lg'] as const).map((size) => (
               <div key={size} className="flex items-center gap-4">
-                <span className="text-muted-foreground w-6 text-3xs">{size}</span>
+                <span className="text-muted-foreground text-3xs w-6">{size}</span>
                 <AgentIdentity
                   {...WARDEN}
                   size={size}

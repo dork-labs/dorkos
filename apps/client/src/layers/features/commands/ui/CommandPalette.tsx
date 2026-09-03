@@ -58,7 +58,7 @@ export function CommandPalette({ filteredCommands, selectedIndex, onSelect }: Co
           groups.map(({ namespace, items }, groupIdx) => (
             <div key={namespace}>
               {groupIdx > 0 && <div className="bg-border mx-2 my-1.5 h-px" />}
-              <div className="text-muted-foreground/70 px-2 pt-1.5 pb-1 text-2xs font-medium tracking-wide uppercase">
+              <div className="text-muted-foreground/70 text-2xs px-2 pt-1.5 pb-1 font-medium tracking-wide uppercase">
                 {namespace}
               </div>
               {items.map(({ cmd, index }) => {
@@ -99,12 +99,12 @@ export function CommandPalette({ filteredCommands, selectedIndex, onSelect }: Co
                         </span>
                       )}
                       {isDisabled && cmd.disabledReason ? (
-                        <span className="text-muted-foreground/70 ml-auto shrink-0 text-2xs">
+                        <span className="text-muted-foreground/70 text-2xs ml-auto shrink-0">
                           {cmd.disabledReason}
                         </span>
                       ) : (
                         cmd.matchedAlias && (
-                          <span className="text-muted-foreground/60 ml-auto shrink-0 font-mono text-2xs italic">
+                          <span className="text-muted-foreground/60 text-2xs ml-auto shrink-0 font-mono italic">
                             matched /{cmd.matchedAlias.replace(/^\//, '')}
                           </span>
                         )

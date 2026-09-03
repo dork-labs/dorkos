@@ -107,7 +107,7 @@ export function BackgroundTaskBar({ tasks, onStopTask }: BackgroundTaskBarProps)
             </span>
 
             {/* Stats — tools and max duration */}
-            <span className="text-muted-foreground/60 ml-auto font-mono text-2xs whitespace-nowrap">
+            <span className="text-muted-foreground/60 text-2xs ml-auto font-mono whitespace-nowrap">
               {totalTools > 0 && <>{totalTools} tools &middot; </>}
               {maxDurationSeconds}s
             </span>
@@ -211,7 +211,7 @@ function OverflowBadge({ count, overflowTasks }: OverflowBadgeProps) {
   return (
     <div className="group relative">
       <div
-        className="text-muted-foreground bg-muted flex size-6 shrink-0 items-center justify-center rounded-full text-3xs font-semibold"
+        className="text-muted-foreground bg-muted text-3xs flex size-6 shrink-0 items-center justify-center rounded-full font-semibold"
         aria-label={`${count} more subagent${count === 1 ? '' : 's'} running`}
       >
         +{count}

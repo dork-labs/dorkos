@@ -51,7 +51,7 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
           {health && (
             <Badge
               variant={health.status === 'active' ? 'default' : 'secondary'}
-              className="px-1.5 py-0 text-3xs"
+              className="text-3xs px-1.5 py-0"
             >
               {health.status}
             </Badge>

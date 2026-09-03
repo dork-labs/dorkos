@@ -182,7 +182,7 @@ function PowerSourceButton({
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">{source.title}</span>
           {source.recommended && (
-            <Badge variant="secondary" className="px-1.5 py-0 text-3xs">
+            <Badge variant="secondary" className="text-3xs px-1.5 py-0">
               Recommended
             </Badge>
           )}

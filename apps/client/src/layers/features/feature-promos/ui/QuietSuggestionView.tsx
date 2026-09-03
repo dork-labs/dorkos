@@ -44,7 +44,7 @@ export function QuietSuggestionView({
   onDismiss,
 }: QuietSuggestionViewProps) {
   return (
-    <p data-slot="quiet-suggestion" className="text-muted-foreground/70 mt-1 text-2xs">
+    <p data-slot="quiet-suggestion" className="text-muted-foreground/70 text-2xs mt-1">
       {suggestion.question}{' '}
       <button
         type="button"

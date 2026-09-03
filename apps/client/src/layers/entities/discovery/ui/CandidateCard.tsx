@@ -102,7 +102,7 @@ export function CandidateCard({
             hints.inferredCapabilities.map((cap) => (
               <Tooltip key={cap}>
                 <TooltipTrigger asChild>
-                  <Badge variant="outline" className="cursor-default text-3xs">
+                  <Badge variant="outline" className="text-3xs cursor-default">
                     {cap}
                   </Badge>
                 </TooltipTrigger>
