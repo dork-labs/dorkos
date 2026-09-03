@@ -51,6 +51,7 @@ describe('TunnelManager', () => {
     expect(manager.status).toEqual({
       enabled: false,
       connected: false,
+      isRunning: false,
       url: null,
       port: null,
       startedAt: null,
@@ -129,6 +130,38 @@ describe('TunnelManager', () => {
       expect(manager.status.connected).toBe(false);
       expect(manager.isRunning).toBe(true);
       await expect(manager.start({ port: 4242 })).rejects.toThrow('Tunnel is already running');
+    });
+
+    it('rides the status object, so a reader can tell reconnecting from off', async () => {
+      // Everything that reads the tunnel over HTTP or SSE reads `status`, not
+      // this class. Without the field there, a live-but-reconnecting tunnel and
+      // no tunnel at all are the same two booleans — which is how a reader ends
+      // up showing Remote Access off and then offering a start that is refused.
+      const notify = await captureStatusCallback();
+      await manager.start({ port: 4242 });
+
+      expect(manager.status).toMatchObject({ isRunning: true, connected: true });
+
+      notify('closed');
+      expect(manager.status).toMatchObject({ isRunning: true, connected: false });
+
+      await manager.stop();
+      expect(manager.status).toMatchObject({ isRunning: false, connected: false });
+    });
+
+    it('is emitted on the status_change event, not only on a fresh read', async () => {
+      // The SSE `tunnel_status` event carries whatever the emitter passed, so a
+      // field composed only into the getter would be missing from every push.
+      const notify = await captureStatusCallback();
+      const handler = vi.fn();
+      await manager.start({ port: 4242 });
+      manager.on('status_change', handler);
+
+      notify('closed');
+
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ isRunning: true, connected: false })
+      );
     });
   });
 

@@ -3349,6 +3349,17 @@ export const TunnelStatusSchema = z
   .object({
     enabled: z.boolean(),
     connected: z.boolean(),
+    /**
+     * Whether a tunnel is OPEN, which is not the same as reachable.
+     *
+     * `connected` follows ngrok's own status callback, so it goes false for as
+     * long as a live tunnel is dropped and reconnecting. Through `connected`
+     * alone, that is indistinguishable from no tunnel at all — a reader shows
+     * Remote Access as off, and a start it offers is refused with "already
+     * running" (DOR-1738). `isRunning` is the difference: true with `connected`
+     * false means reconnecting; both false means off.
+     */
+    isRunning: z.boolean(),
     url: z.string().nullable(),
     port: z.number().int().nullable(),
     startedAt: z.string().nullable(),

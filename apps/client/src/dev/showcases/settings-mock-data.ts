@@ -76,6 +76,7 @@ export const MOCK_SERVER_CONFIG: ServerConfig = {
   tunnel: {
     enabled: false,
     connected: false,
+    isRunning: false,
     url: null,
     port: null,
     startedAt: null,

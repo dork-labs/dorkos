@@ -709,6 +709,8 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
         tunnel: {
           enabled: false,
           connected: false,
+          // The embed has no tunnel of its own to run, let alone reconnect.
+          isRunning: false,
           url: null,
           port: null,
           startedAt: null,

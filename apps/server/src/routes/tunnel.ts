@@ -59,11 +59,18 @@ router.post('/start', async (req, res) => {
   // the same reasons (see `routes/config.ts` → `refuseOperatorOnly`): the cookie
   // bar first, so a caller failing both hears the more useful answer.
   //
-  // They go BEFORE the already-running and exposure checks so a caller who may
-  // not do this does not learn the tunnel's public URL on the way to being
-  // refused.
+  // They sit above the already-running and exposure checks to match that
+  // precedent — identity first, then the state of the world — and a test pins
+  // the order so it cannot drift. That is the entire claim for the placement.
   //
-  // `/stop` runs neither, and that asymmetry is deliberate — see the comment
+  // It is deliberately NOT sold as keeping the tunnel's public URL from a caller
+  // that fails a bar. It would look like it does, since the already-running 409
+  // carries the URL and this refusal does not. But `GET /api/tunnel/status`
+  // answers that same URL with no bars on it at all, so anything that can reach
+  // this route can already read it. Whether the READ surface should be gated is
+  // a separate question from who may open a tunnel, and is not decided here.
+  //
+  // `/stop` runs neither bar, and that asymmetry is deliberate — see the comment
   // there. Stopping only ever narrows exposure.
   const cookieRefusal = requireOperatorCookieUnderLogin(res, 'Remote Access');
   if (cookieRefusal) {

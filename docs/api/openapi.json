@@ -78,6 +78,9 @@
           "connected": {
             "type": "boolean"
           },
+          "isRunning": {
+            "type": "boolean"
+          },
           "url": {
             "type": [
               "string",
@@ -112,6 +115,7 @@
         "required": [
           "enabled",
           "connected",
+          "isRunning",
           "url",
           "port",
           "startedAt",

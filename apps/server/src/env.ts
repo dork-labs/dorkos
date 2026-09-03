@@ -287,7 +287,7 @@ const serverEnvSchema = z.object({
   // TUNNEL_ENABLED is tri-state on purpose: the boot-time autostart falls back to
   // the stored `tunnel.enabled` preference when nobody set the variable, so it
   // has to be able to tell that apart from an explicit `false`, which beats the
-  // stored value. See services/core/tunnel-boot-config.ts.
+  // stored value. See services/core/config/tunnel-settings.ts.
   TUNNEL_ENABLED: optionalBoolFlag,
   TUNNEL_PORT: z.coerce.number().int().min(1).max(65535).optional(),
   TUNNEL_AUTH: z.string().optional(),

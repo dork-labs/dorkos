@@ -1,4 +1,13 @@
-import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+  afterAll,
+  type MockInstance,
+} from 'vitest';
 
 vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: {
@@ -10,6 +19,7 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
     status: {
       enabled: false,
       connected: false,
+      isRunning: false,
       url: null,
       port: null,
       startedAt: null,
@@ -23,6 +33,7 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
 const defaultTunnelStatus = {
   enabled: false,
   connected: false,
+  isRunning: false,
   url: null,
   port: null,
   startedAt: null,
@@ -130,18 +141,15 @@ function setConfig(value: unknown): void {
 /** Typed helper to mock tunnelManager.start with arbitrary implementations. */
 const mockTunnelStart = vi.mocked(tunnelManager.start) as unknown as ReturnType<typeof vi.fn>;
 
-/** Every `logger.error` spy installed by a test, restored after it. */
-const loggerSpies: { mockRestore: () => void }[] = [];
-
 /**
- * Silence and record `logger.error` for the duration of one test. Restored in
- * `afterEach`, so a swallowed log line can never leak into another test's output.
+ * The `logger.error` spy, installed for EVERY test and restored after it.
+ *
+ * Every test, not only the two that assert on it: several drive the route's
+ * failure paths on purpose, and those now log a stack. Left unspied, a suite
+ * that passes prints several stack traces, which is how a real failure gets
+ * scrolled past.
  */
-function spyOnLoggerError() {
-  const spy = vi.spyOn(logger, 'error').mockImplementation(() => {});
-  loggerSpies.push(spy);
-  return spy;
-}
+let loggedErrors: MockInstance<typeof logger.error>;
 
 describe('Tunnel Route', () => {
   beforeEach(() => {
@@ -165,10 +173,12 @@ describe('Tunnel Route', () => {
     // Reset status to default, and close any listener a previous test opened.
     (tunnelManager as unknown as Record<string, unknown>).status = { ...defaultTunnelStatus };
     (tunnelManager as unknown as Record<string, unknown>).isRunning = false;
+
+    loggedErrors = vi.spyOn(logger, 'error').mockImplementation(() => {});
   });
 
   afterEach(() => {
-    while (loggerSpies.length) loggerSpies.pop()?.mockRestore();
+    loggedErrors.mockRestore();
   });
 
   afterAll(() => {
@@ -340,14 +350,13 @@ describe('Tunnel Route', () => {
       // and still found nothing: the route swallowed the error into a 500 body
       // and never told the log. The response line is one sentence; the log is
       // where the stack that says WHERE it broke can go.
-      const logged = spyOnLoggerError();
       mutableEnv.NGROK_AUTHTOKEN = 'test-token-123';
       setConfig(undefined);
       mockTunnelStart.mockRejectedValue(new Error('failed to bind: ERR_NGROK_108'));
 
       await request(app).post('/api/tunnel/start');
 
-      expect(logged).toHaveBeenCalledWith(
+      expect(loggedErrors).toHaveBeenCalledWith(
         expect.stringContaining('[Tunnel]'),
         expect.objectContaining({
           error: 'failed to bind: ERR_NGROK_108',
@@ -421,11 +430,19 @@ describe('Tunnel Route', () => {
         expect(configManager.set).not.toHaveBeenCalled();
       });
 
-      it('still allows a plain local caller while login is off', async () => {
-        // The residual DOR-505 could not close: with login off the cockpit
-        // presents nothing a local program cannot also present, so the agent bar
-        // is the only one left and a header-less caller clears it. Pinned so the
-        // posture is stated rather than assumed.
+      it('lets a header-less caller through BOTH bars — the exposure guard is what stops it', async () => {
+        // The negative control for the test above: without it, that one would
+        // pass just as well if the route refused everybody.
+        //
+        // Read the posture carefully, because the obvious reading is wrong. This
+        // is NOT the DOR-505 residual ("with login off, a local program can do
+        // what the cockpit can") reaching a live effect here. `canExpose()` is
+        // mocked true for the whole file, and on a real install it is false
+        // whenever login is off — so the login-off caller this exercises would
+        // meet a 409 AUTH_REQUIRED_FOR_EXPOSURE a few lines later and no tunnel
+        // would open. What is pinned is the BARS' own behaviour: a caller
+        // presenting no agent identity and no cookie clears them, which is what
+        // keeps the cockpit's own enable flow working once an owner exists.
         mutableEnv.NGROK_AUTHTOKEN = 'test-token-123';
         setConfig(undefined);
         mockTunnelStart.mockResolvedValue('https://test.ngrok.io');
@@ -434,6 +451,36 @@ describe('Tunnel Route', () => {
 
         expect(res.status).toBe(200);
         expect(tunnelManager.start).toHaveBeenCalled();
+      });
+
+      it('refuses an agent BEFORE answering "already running", and tells it no URL', async () => {
+        // Pins the order the bars sit in, which nothing else did: with them
+        // below the already-running check, a refused caller would still be
+        // handed the tunnel's public address in the 409 body.
+        //
+        // The order buys consistency with `refuseOperatorOnly` in
+        // `routes/config.ts`, and that is the whole claim. It is NOT a secrecy
+        // guarantee: `GET /api/tunnel/status` answers the same URL with no bars
+        // at all, so anything that can reach this route can read it anyway.
+        // Closing that is a separate decision about the read surface.
+        mutableEnv.NGROK_AUTHTOKEN = 'test-token-123';
+        setConfig(undefined);
+        (tunnelManager as unknown as Record<string, unknown>).isRunning = true;
+        (tunnelManager as unknown as Record<string, unknown>).status = {
+          ...defaultTunnelStatus,
+          enabled: true,
+          isRunning: true,
+          connected: true,
+          url: 'https://already-running.ngrok.io',
+        };
+
+        const res = await request(app)
+          .post('/api/tunnel/start')
+          .set('x-dorkos-agent', 'agent-token-abc');
+
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('operator_only_config');
+        expect(res.body.url).toBeUndefined();
       });
 
       it('refuses a caller holding an API key rather than a session cookie, under login', async () => {
@@ -510,6 +557,27 @@ describe('Tunnel Route', () => {
       expect(res.status).toBe(200);
       expect(res.body.enabled).toBe(false);
       expect(res.body.connected).toBe(false);
+      expect(res.body.isRunning).toBe(false);
+    });
+
+    it('carries isRunning, so a reader can tell reconnecting from off (DOR-1738)', async () => {
+      // The half-dead tunnel, as it looks over HTTP. Through `connected` alone
+      // this is indistinguishable from no tunnel at all, which is how a reader
+      // ends up showing Remote Access off and offering a start that is refused
+      // as already running.
+      (tunnelManager as unknown as Record<string, unknown>).status = {
+        ...defaultTunnelStatus,
+        enabled: true,
+        isRunning: true,
+        connected: false,
+        url: 'https://reconnecting.ngrok.io',
+      };
+
+      const res = await request(app).get('/api/tunnel/status');
+
+      expect(res.status).toBe(200);
+      expect(res.body.isRunning).toBe(true);
+      expect(res.body.connected).toBe(false);
     });
   });
 
@@ -558,13 +626,12 @@ describe('Tunnel Route', () => {
     });
 
     it('writes the failure to the log (DOR-1738)', async () => {
-      const logged = spyOnLoggerError();
       vi.mocked(tunnelManager.stop).mockRejectedValue(new Error('Disconnect failed'));
       setConfig(undefined);
 
       await request(app).post('/api/tunnel/stop');
 
-      expect(logged).toHaveBeenCalledWith(
+      expect(loggedErrors).toHaveBeenCalledWith(
         expect.stringContaining('[Tunnel]'),
         expect.objectContaining({ error: 'Disconnect failed' })
       );

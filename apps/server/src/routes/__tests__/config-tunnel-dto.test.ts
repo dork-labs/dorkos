@@ -61,6 +61,7 @@ const originalEnv = { TUNNEL_AUTH: env.TUNNEL_AUTH, NGROK_AUTHTOKEN: env.NGROK_A
 const NOT_RUNNING = {
   enabled: false,
   connected: false,
+  isRunning: false,
   url: null,
   port: null,
   startedAt: null,
@@ -136,6 +137,18 @@ describe('GET /api/config — the tunnel block', () => {
     const res = await request(app).get('/api/config').expect(200);
 
     expect(res.body.tunnel.authEnabled).toBe(false);
+  });
+
+  it('passes isRunning through, so this block can tell reconnecting from off', async () => {
+    // The config DTO spreads the live status, so the field the tunnel route
+    // gained has to arrive here too — this is the read the settings screen makes
+    // on load, before any SSE frame has landed.
+    Object.assign(tunnelStatus, { enabled: true, connected: false, isRunning: true });
+
+    const res = await request(app).get('/api/config').expect(200);
+
+    expect(res.body.tunnel.isRunning).toBe(true);
+    expect(res.body.tunnel.connected).toBe(false);
   });
 
   it('counts a stored token as configured, for a tunnel that is not running yet', async () => {

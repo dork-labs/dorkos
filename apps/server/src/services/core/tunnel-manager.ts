@@ -27,7 +27,14 @@ export interface TunnelConfig {
   domain?: string;
 }
 
-const DEFAULT_STATUS: TunnelStatus = {
+/**
+ * The stored half of the status — everything except `isRunning`, which is never
+ * stored because it is not a fact about the tunnel this object could get wrong:
+ * it is whether {@link TunnelManager.listener} exists, composed in on every read.
+ */
+type StoredStatus = Omit<TunnelStatus, 'isRunning'>;
+
+const DEFAULT_STATUS: StoredStatus = {
   enabled: false,
   connected: false,
   url: null,
@@ -41,10 +48,10 @@ const DEFAULT_STATUS: TunnelStatus = {
 /** Singleton manager for ngrok tunnel lifecycle (start, stop, status). */
 export class TunnelManager extends EventEmitter {
   private listener: { close(): Promise<void>; url(): string | null } | null = null;
-  private _status: TunnelStatus = { ...DEFAULT_STATUS };
+  private _status: StoredStatus = { ...DEFAULT_STATUS };
 
   get status(): TunnelStatus {
-    return { ...this._status };
+    return { ...this._status, isRunning: this.isRunning };
   }
 
   /**
@@ -57,12 +64,17 @@ export class TunnelManager extends EventEmitter {
    * stays open and `start()` still throws. A caller deciding whether it may open
    * a tunnel has to read this; reading `status.connected` instead turns a
    * momentary reconnect into a failure (DOR-1738).
+   *
+   * It rides {@link status} too, so anything reading the tunnel over HTTP or SSE
+   * can tell "reconnecting" from "off" — the two look identical through
+   * `connected` alone. Composed there rather than stored, so the field and the
+   * listener cannot drift apart.
    */
   get isRunning(): boolean {
     return this.listener !== null;
   }
 
-  private updateStatus(partial: Partial<TunnelStatus>): void {
+  private updateStatus(partial: Partial<StoredStatus>): void {
     this._status = { ...this._status, ...partial };
     this.emit('status_change', this.status);
   }
