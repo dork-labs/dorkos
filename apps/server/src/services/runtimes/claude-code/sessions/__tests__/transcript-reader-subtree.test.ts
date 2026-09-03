@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, chmod } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -186,6 +186,73 @@ describe('TranscriptReader lists a project’s subtree', () => {
     await seedSession(accountA, join(vaultRoot, 'packages', 'api'), false);
 
     await expect(listedIds()).resolves.toEqual([]);
+  });
+
+  it('loses only the unreadable folders’ sessions, whichever order readdir picks', async () => {
+    // The widened read opens directories that have nothing to do with each
+    // other, so one being unreadable must cost that directory and no more.
+    // With the walk inside the account-level `try` it cost every directory
+    // AFTER it — and `readdir` fixes no order, so WHICH sessions vanished
+    // varied run to run, the worst shape a data-loss bug can take.
+    //
+    // TWO broken directories, named to sort either side of the good one
+    // (`apps` < `packages-api` < `zzz`), which is what makes the claim in this
+    // test's name real rather than a hope about `readdir`: no ordering exists
+    // in which the survivor is not preceded OR followed by a failure, so both
+    // halves of the old truncation are exercised on every run. Every fixture
+    // here is a WIDENED directory — none is the project's own.
+    const survivor = await seedSession(accountA, join(vaultRoot, 'packages', 'api'));
+    const brokenDirs: string[] = [];
+    for (const name of ['apps', 'zzz']) {
+      const broken = join(vaultRoot, name);
+      await seedSession(accountA, broken);
+      // Slugged AFTER seeding, which is what creates the directory: the slug
+      // resolves through `realpath`, so asking before it exists names a
+      // directory nobody wrote (`/var/…` where the real one is `/private/var/…`).
+      brokenDirs.push(join(accountA, 'projects', reader.getProjectSlug(broken)));
+    }
+    for (const dir of brokenDirs) await chmod(dir, 0o000);
+
+    const { sessions, warnings } = await reader.listSessionsAcrossAccounts(vaultRoot);
+    // Restored before the assertions, not after: teardown cannot remove a
+    // directory it may not read, and a failing assertion would leave the temp
+    // tree behind for every later run.
+    for (const dir of brokenDirs) await chmod(dir, 0o700);
+
+    expect(sessions.map((s) => s.id)).toEqual([survivor]);
+    // The loss is REPORTED, not swallowed: an empty-looking list with no notice
+    // reads as "this project has no sessions", which is a different sentence.
+    // Still ONE notice for the account, however many of its folders failed —
+    // the sidebar keys its notices by account.
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({ runtime: 'claude-code', account: accountA });
+    expect(warnings[0]!.message).toContain('2 project folders could not be read');
+    expect(warnings[0]!.message).toContain('may be missing');
+  });
+
+  it('does not blame the whole account for one folder it could not open', async () => {
+    // The companion to the case above, and a DIFFERENT claim. The single broken
+    // folder here sorts LAST (`packages-api` < `zzz`), so the sessions come back
+    // correct even without per-folder containment — what the old code got wrong
+    // was the sentence: having aborted the walk, it reported that the ACCOUNT
+    // could not be read. It could; one of its folders could not, and the
+    // difference is the difference between "something is missing" and "nothing
+    // is here". This case fails on the message, not on the list, which is why
+    // it is worth having beside the other one.
+    const survivor = await seedSession(accountA, join(vaultRoot, 'packages', 'api'));
+    const broken = join(vaultRoot, 'zzz');
+    await seedSession(accountA, broken);
+    const brokenDir = join(accountA, 'projects', reader.getProjectSlug(broken));
+    await chmod(brokenDir, 0o000);
+
+    const { sessions, warnings } = await reader.listSessionsAcrossAccounts(vaultRoot);
+    await chmod(brokenDir, 0o700);
+
+    expect(sessions.map((s) => s.id)).toEqual([survivor]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]!.message).toContain('1 project folder could not be read');
+    // The old account-level wording, which must NOT be what a reader is told.
+    expect(warnings[0]!.message).not.toContain('could not be read: ');
   });
 
   it('says nothing about an account that has never run Claude Code', async () => {

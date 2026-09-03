@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server,client): a project lists the sessions started inside it (DOR-1550)'
+  - "fix(server): one unreadable project folder no longer truncates an account's listing (DOR-1550)"
 ---
 
 ### Fixed

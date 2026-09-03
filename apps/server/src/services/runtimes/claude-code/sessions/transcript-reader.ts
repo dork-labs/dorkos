@@ -246,6 +246,12 @@ export class TranscriptReader {
    * (permissions, I/O) contributes one warning and zero sessions, and never
    * fails the call, so the accounts that DO read still list.
    *
+   * And degrades per DIRECTORY inside an account, which matters once the read
+   * covers more than one of them: an unreadable directory costs its own
+   * sessions and no others, rather than ending the account's walk wherever
+   * `readdir` happened to put it. Either way the account contributes at most
+   * one warning, so a reader still sees one notice per account.
+   *
    * Covers the project's SUBTREE, not just its own folder (DOR-1550). Claude
    * Code files a session under the slug of the directory it was started in, so
    * a session started at `<project>/packages/api` lives in its own slug dir and
@@ -286,32 +292,15 @@ export class TranscriptReader {
     const seen = new Set<string>();
 
     for (const projectsRoot of this.getProjectsRootSet()) {
+      const account = path.dirname(projectsRoot);
+
+      // Enumerating the account is the only failure that costs the WHOLE
+      // account: without the directory names there is nothing to read.
+      let slugDirs: string[];
       try {
-        for (const slugDir of await this.slugDirsInScope(projectsRoot, inScope)) {
-          const ownSlugDir = slugDir === slug;
-          const found = await this.listSessionsInDir(path.join(projectsRoot, slugDir));
-          for (const session of found) {
-            // One row per id, first account (the active one) wins. Real machines
-            // never produce a collision — ids are UUIDs and each transcript exists
-            // under one account — but a duplicated id must not reach clients as two
-            // rows claiming to be the same session, and this is also the order every
-            // single-session read resolves in (SessionRootIndex, active first), so
-            // the row and the session it opens agree.
-            if (seen.has(session.id)) continue;
-            if (session.cwd === undefined) {
-              if (!ownSlugDir) continue;
-              seen.add(session.id);
-              sessions.push({ ...session, cwd: vaultRoot });
-              continue;
-            }
-            if (!ownSlugDir && !isWithinDirectory(session.cwd, vaultRoot)) continue;
-            seen.add(session.id);
-            sessions.push(session);
-          }
-        }
+        slugDirs = await this.slugDirsInScope(projectsRoot, inScope);
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
-        const account = path.dirname(projectsRoot);
         logger.warn('[TranscriptReader] account listing degraded', { projectsRoot, error: reason });
         warnings.push({
           runtime: 'claude-code',
@@ -323,6 +312,68 @@ export class TranscriptReader {
           // parsing a message.
           account,
           message: `Claude account ${account} could not be read: ${reason}`,
+        });
+        continue;
+      }
+
+      // Past here a failure is ONE directory's, and is contained to it. This
+      // loop used to sit inside the account-level `try`, where a single
+      // unreadable directory aborted every directory after it — and since
+      // `readdir` fixes no order, WHICH sessions vanished varied run to run.
+      // Before the read widened that could only ever be the project's own
+      // directory (lose it and there is nothing left to lose); now the scope
+      // holds directories that have nothing to do with each other, and one of
+      // them being unreadable is no reason to stop reading the rest.
+      const unreadable: string[] = [];
+      for (const slugDir of slugDirs) {
+        const ownSlugDir = slugDir === slug;
+        let found: Session[];
+        try {
+          found = await this.listSessionsInDir(path.join(projectsRoot, slugDir));
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          logger.warn('[TranscriptReader] project directory listing degraded', {
+            projectsRoot,
+            slugDir,
+            error: reason,
+          });
+          unreadable.push(slugDir);
+          continue;
+        }
+        for (const session of found) {
+          // One row per id, first account (the active one) wins. Real machines
+          // never produce a collision — ids are UUIDs and each transcript exists
+          // under one account — but a duplicated id must not reach clients as two
+          // rows claiming to be the same session, and this is also the order every
+          // single-session read resolves in (SessionRootIndex, active first), so
+          // the row and the session it opens agree.
+          if (seen.has(session.id)) continue;
+          if (session.cwd === undefined) {
+            if (!ownSlugDir) continue;
+            seen.add(session.id);
+            sessions.push({ ...session, cwd: vaultRoot });
+            continue;
+          }
+          if (!ownSlugDir && !isWithinDirectory(session.cwd, vaultRoot)) continue;
+          seen.add(session.id);
+          sessions.push(session);
+        }
+      }
+
+      // Still ONE warning per account, whatever went wrong inside it: the two
+      // paths are mutually exclusive (an account that could not be enumerated
+      // never reached this loop), and however many directories failed, they
+      // failed in this account. That keeps the sidebar's per-account keying
+      // intact while saying plainly that sessions are missing rather than that
+      // there are none.
+      if (unreadable.length > 0) {
+        warnings.push({
+          runtime: 'claude-code',
+          account,
+          message:
+            `Claude account ${account}: ${unreadable.length} project folder` +
+            `${unreadable.length === 1 ? '' : 's'} could not be read, so some of ` +
+            `this project's sessions may be missing`,
         });
       }
     }
