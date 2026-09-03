@@ -2,9 +2,15 @@ import { useState } from 'react';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
-import { BottomSlot, Button, SidebarContent } from '@/layers/shared/ui';
+import {
+  BottomSlot,
+  Button,
+  PromptSuggestionChips,
+  SidebarContent,
+} from '@/layers/shared/ui';
 import type { BottomSlotCandidate } from '@/layers/shared/ui';
 import { useAppStore } from '@/layers/shared/model';
+import { PermissionPrimer } from '@/layers/features/notifications';
 import { usePromoDismissals, useUpdateConfig } from '@/layers/entities/config';
 import { PROMO_REGISTRY, PromoCard, usePromoSlot } from '@/layers/features/feature-promos';
 import type { PromoPlacement } from '@/layers/features/feature-promos';
@@ -204,6 +210,81 @@ function BottomSlotInPanel() {
   );
 }
 
+/** The offers a session can make above its composer, in priority order. */
+const SESSION_OFFERS = ['prompt-suggestions', 'permission-primer', 'extension-chips'] as const;
+
+type SessionOffer = (typeof SESSION_OFFERS)[number] | 'empty';
+
+function BottomSlotAboveComposer() {
+  const [offer, setOffer] = useState<SessionOffer>('prompt-suggestions');
+
+  // The same shape `ChatPanel` builds, with each candidate's qualification
+  // hard-coded so it can be looked at on its own.
+  const candidates: BottomSlotCandidate[] = [
+    {
+      id: 'prompt-suggestions',
+      show: offer === 'prompt-suggestions',
+      render: () => (
+        <PromptSuggestionChips
+          suggestions={['Run the tests', 'Review the changes']}
+          onChipClick={() => {}}
+        />
+      ),
+    },
+    {
+      id: 'permission-primer',
+      show: offer === 'permission-primer',
+      render: () => <PermissionPrimer onAllow={() => {}} onNotNow={() => setOffer('empty')} />,
+    },
+    {
+      id: 'extension-chips',
+      show: offer === 'extension-chips',
+      render: () => (
+        <div className="bg-secondary/60 flex flex-col gap-2 rounded-lg border p-3">
+          <p className="text-sm">Want the two-minute tour?</p>
+          <div className="flex gap-2">
+            <Button size="sm">Show me</Button>
+            <Button size="sm" variant="ghost" onClick={() => setOffer('empty')}>
+              Later
+            </Button>
+          </div>
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-2">
+        {[...SESSION_OFFERS, 'empty' as const].map((option) => (
+          <Button
+            key={option}
+            size="sm"
+            variant={offer === option ? 'default' : 'outline'}
+            onClick={() => setOffer(option)}
+          >
+            {option}
+          </Button>
+        ))}
+      </div>
+
+      {/* The zone as a session draws it: transcript above, one offer, composer
+          below. Whichever offer is picked, exactly one row appears — and with
+          none of them the gap closes completely. */}
+      <div className="bg-background flex h-80 w-full max-w-md flex-col rounded-lg border">
+        <div className="text-muted-foreground min-h-0 flex-1 space-y-2 overflow-y-auto p-4 text-sm">
+          <p>Here is the answer you were reading.</p>
+          <p>And the rest of it, so the zone below has something to sit under.</p>
+        </div>
+        <BottomSlot candidates={candidates} ready name="session-bottom-slot" className="px-4 pb-2" />
+        <div className="text-muted-foreground m-4 mt-0 rounded-md border px-3 py-2 text-sm">
+          Send a message...
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Override controls — reset dismissals, toggle global setting
 // ---------------------------------------------------------------------------
@@ -346,6 +427,15 @@ export function PromoShowcases() {
       >
         <ShowcaseDemo>
           <BottomSlotInPanel />
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="Bottom slot above a composer — a session's offers"
+        description="The same arbiter, second surface. The gap between a session's transcript and its composer holds three offers — the model's follow-up chips, the notification question, an extension's chip — and at most one of them speaks, in that order. With none of them the gap closes to nothing."
+      >
+        <ShowcaseDemo>
+          <BottomSlotAboveComposer />
         </ShowcaseDemo>
       </PlaygroundSection>
 

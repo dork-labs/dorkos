@@ -50,6 +50,9 @@ vi.mock('@/layers/shared/model/media/use-is-mobile', () => ({
 // Mock useChatSession — status is controllable so the suggestion-chip idle gate
 // can be exercised.
 let mockChatStatus = 'idle';
+// The model's follow-up lines. Non-empty in the arbitration case, where they are
+// the higher-priority offer.
+let mockPromptSuggestions: string[] = [];
 vi.mock('@/layers/features/chat/model/use-chat-session', () => ({
   useChatSession: () => ({
     messages: [],
@@ -73,7 +76,7 @@ vi.mock('@/layers/features/chat/model/use-chat-session', () => ({
     pendingInteractions: [],
     markToolCallResponded: vi.fn(),
     systemStatus: null,
-    promptSuggestions: [],
+    promptSuggestions: mockPromptSuggestions,
     syncConnectionState: 'connected',
   }),
 }));
@@ -259,6 +262,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockUseIsMobile.mockReturnValue(true);
   mockChatStatus = 'idle';
+  mockPromptSuggestions = [];
   useExtensionRegistry.setState({ slots: createInitialSlots() });
   localStorage.clear();
 });
@@ -286,6 +290,26 @@ describe('ChatPanel suggestion-chip slot', () => {
       component: () => <div data-testid="suggestion-chip" />,
     });
   }
+
+  it('lets one offer speak at a time, the highest-priority one', async () => {
+    // Three offers used to gate themselves independently and co-occur, stacking
+    // over the box a person is typing in. They arbitrate now (DOR-1759): the
+    // model's follow-ups outrank the extensions' chips, so the chip waits.
+    registerChip();
+    mockPromptSuggestions = ['Try the next thing'];
+
+    render(<ChatPanel sessionId="test" />);
+
+    expect(await screen.findByRole('button', { name: 'Try the next thing' })).toBeTruthy();
+    expect(screen.queryByTestId('suggestion-chip')).toBeNull();
+
+    mockPromptSuggestions = [];
+    cleanup();
+    render(<ChatPanel sessionId="test" />);
+
+    // Nothing outranks it now, so the chip gets the slot.
+    expect(screen.getByTestId('suggestion-chip')).toBeTruthy();
+  });
 
   it('renders suggestion chips only while idle, never mid-stream', () => {
     registerChip();

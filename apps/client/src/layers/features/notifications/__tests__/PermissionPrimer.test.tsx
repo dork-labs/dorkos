@@ -14,6 +14,7 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider, refreshNotificationPermissionForTests } from '@/layers/shared/model';
 import { configKeys, resetLegacySoundImportForTests } from '@/layers/entities/config';
 import { PermissionPrimer } from '../ui/PermissionPrimer';
+import { usePermissionPrimer } from '../model/use-permission-primer';
 import {
   armPermissionPrimer,
   resetPermissionPrimerForTests,
@@ -21,6 +22,20 @@ import {
 } from '../model/primer-trigger';
 
 const CARD = 'Want a nudge when this needs you?';
+
+/**
+ * The card exactly as its host draws it: the hook decides, the view renders.
+ *
+ * The split is the point — the session's zone above the composer arbitrates its
+ * offers through a `BottomSlot`, which has to know whether this card qualifies
+ * before it renders anything (DOR-1759). Every case below asks the same question
+ * a host asks.
+ */
+function PrimerHost({ streaming }: { streaming: boolean }) {
+  const primer = usePermissionPrimer(streaming);
+  if (!primer.eligible) return null;
+  return <PermissionPrimer onAllow={primer.allow} onNotNow={primer.notNow} />;
+}
 
 class FakeNotification {
   static permission: NotificationPermission = 'default';
@@ -46,7 +61,7 @@ function renderPrimer(
       <TransportProvider transport={transport}>{children}</TransportProvider>
     </QueryClientProvider>
   );
-  const view = render(<PermissionPrimer streaming={streaming} />, { wrapper });
+  const view = render(<PrimerHost streaming={streaming} />, { wrapper });
   return { transport, view };
 }
 
