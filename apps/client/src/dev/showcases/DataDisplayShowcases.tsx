@@ -17,6 +17,12 @@ import {
   Switch,
   Label,
   Input,
+  Button,
+  MarkdownLink,
+  MarkdownErrorBoundary,
+  LinkSafetyModal,
+  ProvenanceChip,
+  TruncatedOutput,
 } from '@/layers/shared/ui';
 
 /** Identities the avatar showcase draws: one with an emoji, one without. */
@@ -97,7 +103,9 @@ const LINKIFIED_SAMPLES = {
 
 /**
  * Data display component showcases: PathBreadcrumb, ScanLine, MarkdownContent,
- * LinkifiedText, FeatureDisabledState, ScrollArea, and {@link IdentityAvatarShowcase}.
+ * LinkifiedText, FeatureDisabledState, ScrollArea, MarkdownLink,
+ * MarkdownErrorBoundary, TruncatedOutput, and {@link IdentityAvatarShowcase},
+ * {@link LinkSafetyModalShowcase}, {@link ProvenanceChipShowcase}.
  */
 export function DataDisplayShowcases() {
   const [isStreaming, setIsStreaming] = useState(true);
@@ -289,8 +297,130 @@ export function DataDisplayShowcases() {
         </ShowcaseDemo>
       </PlaygroundSection>
 
+      <PlaygroundSection
+        title="MarkdownLink"
+        description="The real anchor Streamdown renders for every markdown link — confirms before it navigates, always leaves through the app's one link seam."
+      >
+        <ShowcaseLabel>An https link — click it to see the confirmation</ShowcaseLabel>
+        <ShowcaseDemo>
+          <p className="text-sm">
+            See the deployment status at{' '}
+            <MarkdownLink href="https://dorkos.ai/docs">dorkos.ai/docs</MarkdownLink>.
+          </p>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>A scheme the seam refuses — confirms too, and offers only Copy link</ShowcaseLabel>
+        <ShowcaseDemo>
+          <p className="text-sm">
+            Reach the on-call agent over <MarkdownLink href="irc://irc.example.net/ops">IRC</MarkdownLink>.
+          </p>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <LinkSafetyModalShowcase />
+
+      <PlaygroundSection
+        title="MarkdownErrorBoundary"
+        description="Guards a Streamdown render — a lazy code-highlighter chunk that fails to load degrades to a quiet fallback instead of taking down the whole surface."
+      >
+        <ShowcaseLabel>Normal render — the boundary is invisible</ShowcaseLabel>
+        <ShowcaseDemo>
+          <MarkdownErrorBoundary>
+            <p className="text-sm">This content rendered fine.</p>
+          </MarkdownErrorBoundary>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Caught — the fallback in place of a crashed render</ShowcaseLabel>
+        <ShowcaseDemo>
+          <MarkdownErrorBoundary>
+            <ThrowingChild />
+          </MarkdownErrorBoundary>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <ProvenanceChipShowcase />
+
+      <PlaygroundSection
+        title="TruncatedOutput"
+        description="Verbatim tool output, newlines preserved, clamped and cut behind a one-way 'Show full output' toggle past a threshold."
+      >
+        <ShowcaseLabel>Short — fits with no toggle</ShowcaseLabel>
+        <ShowcaseDemo>
+          <TruncatedOutput content={'$ pnpm build\n✓ Build complete in 4.2s'} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Over threshold — cut with &quot;Show full output&quot;</ShowcaseLabel>
+        <ShowcaseDemo>
+          <TruncatedOutput
+            content={Array.from(
+              { length: 30 },
+              (_, i) => `line ${i + 1}: processing session ses-${1000 + i}…`
+            ).join('\n')}
+            threshold={200}
+          />
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
       <IdentityAvatarShowcase />
     </>
+  );
+}
+
+/** A child that throws on demand, for {@link MarkdownErrorBoundary}'s caught-state demo. */
+function ThrowingChild(): never {
+  throw new Error('Simulated render failure for the playground');
+}
+
+/** `LinkSafetyModal` open, controlled locally — it has no trigger of its own. */
+function LinkSafetyModalShowcase() {
+  const [open, setOpen] = useState(false);
+  return (
+    <PlaygroundSection
+      title="LinkSafetyModal"
+      description="The app's single external-link confirmation surface — portalled to the document body, callable from markdown links, gen-UI widgets, and MCP app iframes."
+    >
+      <ShowcaseDemo>
+        <Button variant="outline" onClick={() => setOpen(true)}>
+          Open the confirmation
+        </Button>
+        <LinkSafetyModal
+          url="https://openrouter.ai/settings/credits"
+          isOpen={open}
+          onClose={() => setOpen(false)}
+          onConfirm={() => setOpen(false)}
+        />
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
+/** The set-here / inherited / warning states {@link ProvenanceChip} carries. */
+function ProvenanceChipShowcase() {
+  return (
+    <PlaygroundSection
+      title="ProvenanceChip"
+      description="Says where a setting came from — and IS the reset. A value set here wears one chip and clicking it clears it; an inherited value wears another and does nothing."
+    >
+      <ShowcaseLabel>Set here — click it to reset</ShowcaseLabel>
+      <ShowcaseDemo>
+        <ProvenanceChip isSetHere serverDefault="Opus" onUseServerDefault={() => {}} />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Inherited — server default, nothing to click</ShowcaseLabel>
+      <ShowcaseDemo>
+        <ProvenanceChip isSetHere={false} serverDefault="Opus" />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Warning — the value cannot be honored as written</ShowcaseLabel>
+      <ShowcaseDemo>
+        <ProvenanceChip
+          isSetHere
+          serverDefault="Opus"
+          onUseServerDefault={() => {}}
+          warning="This model is no longer offered by the connected provider."
+        />
+      </ShowcaseDemo>
+    </PlaygroundSection>
   );
 }
 
