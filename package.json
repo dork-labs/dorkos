@@ -31,6 +31,7 @@
     "check:banned-words": "bash scripts/check-banned-words.sh",
     "check:dead-doc-paths": "bash scripts/check-dead-doc-paths.sh",
     "check:vocab-gate": "tsx scripts/check-vocab-gate.ts",
+    "check:copy-spec-drift": "tsx scripts/check-copy-spec-drift.ts",
     "search:bench": "DORKOS_SEARCH_BENCH=1 tsx scripts/search-corpus-bench.ts",
     "search:latency": "DORKOS_SEARCH_BENCH=1 tsx scripts/search-latency-bench.ts",
     "search:write-through": "DORKOS_SEARCH_BENCH=1 tsx scripts/search-write-through-bench.ts",

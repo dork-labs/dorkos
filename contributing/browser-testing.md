@@ -318,6 +318,26 @@ When a stale test is detected:
 
 Tests whose `relatedCode` files no longer exist are flagged as orphaned. The maintenance command asks for confirmation before removing them.
 
+### Copy Drift — the PR-time guard (DOR-1647)
+
+This suite quotes real product copy on purpose, and the copy moves. Because `browser-test` reports an instant pass-through on pull requests and only runs the shards in the merge queue (see the header of `.github/workflows/browser-test.yml`), a PR that rewrites a string used to be green everywhere until the queue ran it — and a failure there ejects the PR from the queue _and_ switches off auto-merge. It happened twice in one day on 2026-08-31.
+
+`scripts/check-copy-spec-drift.ts` is the cheap signal that closes most of that hole, running as the `copy-spec-drift` job on every pull request. It compares two things statically, without a browser:
+
+1. the runs of authored text your change deleted from `apps/client/src`, `apps/site/src`, `apps/server/src` and `packages/shared/src` — parsed with the TypeScript compiler, so strings, template pieces and JSX text all count and comments never do;
+2. every string, template piece and regular expression under `apps/e2e`.
+
+If a browser-suite string still spans copy your change deleted, and nothing in the app covers that string more specifically any more, the job goes red and names the spec file and line. The fix is nearly always to update the assertion in the same change.
+
+Run it yourself before pushing — it reads your working tree, so uncommitted edits count:
+
+```bash
+pnpm check:copy-spec-drift            # against origin/main
+pnpm check:copy-spec-drift <base-ref> # against something else
+```
+
+What it does **not** catch: assertions that count things rather than read them (`toHaveCount`), copy assembled from a lookup table, and specs that build their expected text the same dynamic way the component does. Those still only surface in the queue. The job is advisory — it is not a required check — so a red does not block the merge queue, but it does stop `merge-tail.yml` arming auto-merge until someone looks.
+
 ## Test-Mode Server (Mock Browser Tests)
 
 Browser tests that don't need real Claude API calls use `TestModeRuntime` — a server-side `AgentRuntime` that yields pre-defined `StreamEvent` sequences. No `vi.fn()` or Vitest imports — it runs in a live server process.
