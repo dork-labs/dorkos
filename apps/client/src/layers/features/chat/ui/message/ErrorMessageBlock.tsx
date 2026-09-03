@@ -107,10 +107,11 @@ interface ErrorMessageBlockProps {
    */
   sessionId?: string;
   /**
-   * Called once a sign-in started from this card completes. The seam DOR-1650
-   * (auto-resume the failed turn) consumes; nothing passes it today.
+   * Called once when a sign-in started from this card completes, so the
+   * conversation can re-send the turn that failed (DOR-1650). Returns whether
+   * it did — the card only claims to be sending when something is.
    */
-  onSigninComplete?: () => void;
+  onSigninComplete?: () => boolean;
 }
 
 /**

@@ -20,10 +20,12 @@ import { PermissionPrimer, useNotificationCues } from '@/layers/features/notific
 import { PromptSuggestionChips } from '@/layers/shared/ui';
 import { useCommands } from '@/layers/entities/command';
 import {
+  useSessionChatStore,
   useSessionId,
   useSessionQueue,
   useSessionStatus,
   useSessionStreamLifecycle,
+  useSessionStreamStatus,
   useSessionToolActivity,
   useDirectoryState,
   sessionKeys,
@@ -45,6 +47,7 @@ import {
   buildFileEntries,
   buildPaletteCommands,
   compactComposerGate,
+  resolveSigninResumeText,
   resolveTransportRetryText,
   selectWaitingQueue,
   shouldShowTurnFailedNotice,
@@ -55,6 +58,7 @@ import {
   useFileUpload,
   useInputAutocomplete,
   useLaunchPrompt,
+  useSigninResumeClaim,
   useTaskState,
   useToolShortcuts,
 } from '@/layers/features/chat';
@@ -457,6 +461,80 @@ export function ChatPanel({
     () => selectWaitingQueue(serverQueue, lifecycle),
     [serverQueue, lifecycle]
   );
+
+  // What the failed turn's typed error said, when it left one. The auth card
+  // renders on two paths and only one of them folds an inline error part into
+  // the turn; this is the other one's only evidence (see `TurnFailedNotice`).
+  const lastErrorCategory = useSessionStreamStatus(sessionId ?? '')?.lastError?.category;
+
+  // What the OTHER windows are doing about this session's failed turn. The
+  // once-only latch behind the resume is per-QueryClient, so it is per tab; a
+  // person who pressed Sign in in two windows gets both callbacks off the one
+  // attempt the server joined them onto. See the module for what this narrows
+  // and what it does not.
+  const resumeClaim = useSigninResumeClaim();
+
+  /**
+   * Put the failed message back on its way once a sign-in fixes what broke it —
+   * the whole point of signing in from the error card (DOR-1650). Someone who
+   * got signed out mid-task signs in once, and their message sends itself.
+   *
+   * Fires at most once per sign-in: the guarantee lives in
+   * `useDelegateRuntimeLogin`, keyed by mutation id in a per-QueryClient map, so
+   * a card that unmounts and remounts as the virtualized transcript scrolls
+   * rejoins the same settled attempt instead of announcing it again.
+   *
+   * `resolveSigninResumeText` owns the decision and every way it can be "no";
+   * this only carries it out, and reports back so the card claims to be sending
+   * only when it is. Deliberately no `clearInput` — the composer is untouched,
+   * and a draft in it is one of the reasons the rule declines in the first
+   * place. A re-send that fails is an ordinary failed turn from here: it draws
+   * its own error card with its own Retry, and nothing here tries again.
+   */
+  const handleSigninComplete = useCallback((): boolean => {
+    const sid = sessionId ?? '';
+    // Another window already said it is re-sending this turn. Standing down is
+    // free — its message is the same message this one would send.
+    if (resumeClaim.claimedElsewhere(sid)) return false;
+    const text = resolveSigninResumeText({
+      messages,
+      status,
+      lastErrorCategory,
+      // The RAW server queue, deliberately not `waiting`. `selectWaitingQueue`
+      // hides the head row in every lifecycle that is not an open turn — which
+      // is precisely the set the resume runs in — because a head with nothing
+      // running is "on its way" and should not draw a chip. That is right for a
+      // chip and wrong here: a message another client queued (a second tab, a
+      // room, MCP, Obsidian) would read as zero, the resume would fire, and the
+      // two would run in the order rule 3 exists to prevent. The rule asks
+      // "is anything pending at all", not "what would a chip draw".
+      queuedCount: serverQueue.length,
+      // Read from the store at the moment of the decision rather than closed
+      // over, and NOT for tidiness: this callback is threaded into the
+      // VIRTUALIZED transcript's row renderer, and the draft changes on every
+      // keystroke. Depending on it would mint a new identity per character,
+      // invalidate `renderRow`, and re-render every visible row while somebody
+      // types. Nothing else in that dependency list moves at typing speed. The
+      // live read is also the more correct one — the draft as it is when the
+      // sign-in lands is exactly the question the rule asks.
+      draft: useSessionChatStore.getState().getSession(sid).input,
+    });
+    if (text === null) return false;
+    // Announced above the send for readability, not for ordering: `submitContent`
+    // is async and yields at its first `await`, so both go out in this same
+    // synchronous block either way.
+    resumeClaim.claim(sid);
+    void submitContent(text);
+    return true;
+  }, [
+    messages,
+    status,
+    lastErrorCategory,
+    serverQueue.length,
+    sessionId,
+    submitContent,
+    resumeClaim,
+  ]);
   // What the empty box says. The agent registered at the working directory
   // names it; without one it is the generic invitation.
   const { data: composerAgent } = useCurrentAgent(cwd);
@@ -507,6 +585,7 @@ export function ChatPanel({
           focusedOptionIndex={focusedOptionIndex}
           onToolDecided={markToolCallResponded}
           onRetry={handleRetry}
+          onSigninComplete={handleSigninComplete}
           inputZoneToolCallId={activeInteraction?.toolCallId ?? null}
           runtimeLabel={runtimeAuthLabel}
           allowsDenyReason={allowsDenyReason}
@@ -554,6 +633,7 @@ export function ChatPanel({
           <TurnFailedNotice
             sessionId={sessionId!}
             onRetry={hasUserMessage ? handleRetry : undefined}
+            onSigninComplete={handleSigninComplete}
           />
         )}
 
