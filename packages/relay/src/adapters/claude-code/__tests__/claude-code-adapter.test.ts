@@ -1619,14 +1619,18 @@ describe('ClaudeCodeAdapter', () => {
       const deliverA = parallelAdapter.deliver('relay.agent.AGENT_A', envelopeA);
       const deliverB = parallelAdapter.deliver('relay.agent.AGENT_B', envelopeB);
 
-      // Flush microtasks so both calls can enter their independent queues
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
-
-      // Both agents should have started without waiting for each other
-      expect(startedAgents).toContain('AGENT_A');
-      expect(startedAgents).toContain('AGENT_B');
+      // Both agents start without waiting for each other — and waiting for that
+      // rather than flushing a fixed three microtasks, for the reason the
+      // serialization test above gives: how many awaits sit between `deliver()`
+      // and `sendMessage` is an implementation detail (resolving which runtime
+      // answers added one), and the property under test is that NEITHER turn is
+      // blocked by the other. Nothing has resolved `resolveA`/`resolveB`, so a
+      // queue that serialized them could never let the second one start and this
+      // wait would time out.
+      await vi.waitFor(() => {
+        expect(startedAgents).toContain('AGENT_A');
+        expect(startedAgents).toContain('AGENT_B');
+      });
 
       // Resolve both and await completion
       resolveA();

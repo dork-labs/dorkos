@@ -11,6 +11,7 @@ export type {
   AgentSessionStoreLike,
   TasksStoreLike,
   ExecutionSettingsResolver,
+  AgentRuntimeTypeResolver,
   TurnExecutionSettings,
 } from './types.js';
 export type { ApprovalAuthorizer } from './approval-handler.js';

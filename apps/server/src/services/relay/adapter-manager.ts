@@ -845,8 +845,10 @@ export class AdapterManager {
    * registry's default type. Resolving the real runtime for those would need an
    * async manifest or `runtimeRegistry` lookup that this synchronous,
    * best-effort context builder deliberately avoids — and nothing routes on this
-   * field: the adapter picks the runtime it drives from the subject itself
-   * (DOR-1614). This is context for the turn, not a routing decision.
+   * field. The adapter decides who answers for itself: from the subject
+   * (DOR-1614), and for a mesh agent subject from the manifest at
+   * `agent.directory`, which is the field of this context it actually reads
+   * (DOR-1627). This is context for the turn, not a routing decision.
    *
    * So this field CAN disagree with the runtime the turn actually runs on, for
    * exactly the subjects that carry no runtime segment. Read it as "the runtime
