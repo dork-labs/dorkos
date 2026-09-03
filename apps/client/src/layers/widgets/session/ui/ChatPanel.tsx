@@ -560,7 +560,11 @@ export function ChatPanel({
   // here, not inside the card, because the slot below has to know who qualifies
   // before it renders anybody — and because the timer that arms the question has
   // to keep running while another card holds the slot.
-  const permissionPrimer = usePermissionPrimer(status === 'streaming');
+  const {
+    eligible: primerEligible,
+    allow: allowNotifications,
+    notNow: declineNotifications,
+  } = usePermissionPrimer(status === 'streaming');
 
   /**
    * What may speak in the gap between the transcript and the composer, highest
@@ -599,12 +603,9 @@ export function ChatPanel({
       },
       {
         id: 'permission-primer',
-        show: permissionPrimer.eligible,
+        show: primerEligible,
         render: () => (
-          <PermissionPrimer
-            onAllow={permissionPrimer.allow}
-            onNotNow={permissionPrimer.notNow}
-          />
+          <PermissionPrimer onAllow={allowNotifications} onNotNow={declineNotifications} />
         ),
       },
       {
@@ -624,7 +625,9 @@ export function ChatPanel({
       showSuggestions,
       promptSuggestions,
       handleSuggestionClick,
-      permissionPrimer,
+      primerEligible,
+      allowNotifications,
+      declineNotifications,
       status,
       suggestionChips,
     ]
