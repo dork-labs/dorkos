@@ -19,9 +19,6 @@
  */
 export { NotificationCenter } from './ui/NotificationCenter';
 export { PermissionPrimer } from './ui/PermissionPrimer';
-export {
-  usePermissionPrimer,
-  type PermissionPrimerOffer,
-} from './model/use-permission-primer';
+export { usePermissionPrimer, type PermissionPrimerOffer } from './model/use-permission-primer';
 export { ReachMeSection } from './ui/ReachMeSection';
 export { useNotificationCues, type NotificationCues } from './model/use-notification-cues';

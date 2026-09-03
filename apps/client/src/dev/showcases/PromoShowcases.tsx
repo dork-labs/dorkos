@@ -2,12 +2,7 @@ import { useState } from 'react';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
-import {
-  BottomSlot,
-  Button,
-  PromptSuggestionChips,
-  SidebarContent,
-} from '@/layers/shared/ui';
+import { BottomSlot, Button, PromptSuggestionChips, SidebarContent } from '@/layers/shared/ui';
 import type { BottomSlotCandidate } from '@/layers/shared/ui';
 import { useAppStore } from '@/layers/shared/model';
 import { PermissionPrimer } from '@/layers/features/notifications';
@@ -276,7 +271,12 @@ function BottomSlotAboveComposer() {
           <p>Here is the answer you were reading.</p>
           <p>And the rest of it, so the zone below has something to sit under.</p>
         </div>
-        <BottomSlot candidates={candidates} ready name="session-bottom-slot" className="px-4 pb-2" />
+        <BottomSlot
+          candidates={candidates}
+          ready
+          name="session-bottom-slot"
+          className="px-4 pb-2"
+        />
         <div className="text-muted-foreground m-4 mt-0 rounded-md border px-3 py-2 text-sm">
           Send a message...
         </div>
