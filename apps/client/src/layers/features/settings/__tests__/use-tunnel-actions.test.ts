@@ -29,7 +29,7 @@ function fakeMachine(overrides: Partial<TunnelMachine> = {}): TunnelMachine {
     setShowSetup: vi.fn(),
     setTokenError: vi.fn(),
     setDomainError: vi.fn(),
-    markUserInitiated: vi.fn(),
+    setUserInitiated: vi.fn(),
     ...overrides,
   } as unknown as TunnelMachine;
 }
@@ -109,8 +109,8 @@ describe('useTunnelActions — start timeout is the request timeout (DOR-1739)',
       const toggled = actions.current.handleToggle(true);
 
       // Twenty seconds: past the 15s timer this hook used to arm, and still
-      // well inside the transport's own 30s `REQUEST_TIMEOUT_MS` window. The
-      // dialog must still be connecting, because nothing has answered yet.
+      // well inside the transport's own 30s request window. The dialog must
+      // still be connecting, because nothing has answered yet.
       await vi.advanceTimersByTimeAsync(20_000);
       expect(machine.setState).toHaveBeenCalledWith('starting');
       expect(machine.setState).not.toHaveBeenCalledWith('error');
@@ -127,6 +127,38 @@ describe('useTunnelActions — start timeout is the request timeout (DOR-1739)',
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('disarms the toast suppression when the start fails', async () => {
+    const { transport, machine, actions } = setup();
+    vi.mocked(transport.startTunnel).mockRejectedValue(new Error('ngrok exploded'));
+
+    await actions.current.handleToggle(true);
+
+    // Armed before acting so a status change the person caused is not announced
+    // back to them — but a start that failed causes none, and a flag left armed
+    // would swallow the next drop they DID need telling about.
+    expect(machine.setUserInitiated).toHaveBeenNthCalledWith(1, true);
+    expect(machine.setUserInitiated).toHaveBeenLastCalledWith(false);
+  });
+
+  it('disarms the toast suppression when the stop fails', async () => {
+    const { transport, machine, actions } = setup();
+    vi.mocked(transport.stopTunnel).mockRejectedValue(new Error('could not stop'));
+
+    await actions.current.handleToggle(false);
+
+    expect(machine.setUserInitiated).toHaveBeenNthCalledWith(1, true);
+    expect(machine.setUserInitiated).toHaveBeenLastCalledWith(false);
+  });
+
+  it('leaves the suppression armed when the toggle succeeds', async () => {
+    const { transport, machine, actions } = setup();
+    vi.mocked(transport.startTunnel).mockResolvedValue({ url: 'https://abc.ngrok.app' });
+
+    await actions.current.handleToggle(true);
+
+    expect(machine.setUserInitiated).toHaveBeenCalledExactlyOnceWith(true);
   });
 
   it('shows the transport its own timeout when the request really does run out', async () => {

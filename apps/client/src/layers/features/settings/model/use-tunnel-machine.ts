@@ -56,11 +56,14 @@ export interface TunnelMachine {
   domainError: string | null;
   setDomainError: (e: string | null) => void;
   /**
-   * Declare that the person is about to turn remote access on or off, so the
-   * status toasts stay quiet for the transition they asked for and speak only
-   * for one they did not.
+   * Arm or disarm the toast suppression around a change the person asked for.
+   *
+   * Armed before the toggle acts, so a status change it causes is not announced
+   * back to them as news; disarmed again if the toggle FAILED, because then no
+   * transition is coming and a flag left armed would silently eat the next
+   * genuine one.
    */
-  markUserInitiated: () => void;
+  setUserInitiated: (v: boolean) => void;
   latencyMs: number | null;
   // Derived
   tunnel: ServerConfig['tunnel'] | undefined;
@@ -244,8 +247,8 @@ export function useTunnelMachine({ open }: { open: boolean }): TunnelMachine {
     setDomain,
     domainError,
     setDomainError,
-    markUserInitiated: () => {
-      userInitiatedRef.current = true;
+    setUserInitiated: (v: boolean) => {
+      userInitiatedRef.current = v;
     },
     latencyMs,
     tunnel,

@@ -227,6 +227,28 @@ describe('status toasts speak only for changes the person did not make', () => {
     expect(String((options as { description?: string })?.description)).not.toMatch(/reconnect/i);
   });
 
+  it('still reports a real drop after a stop that failed', async () => {
+    const { result, transport, serverReports } = setup({
+      connected: true,
+      url: 'https://abc.ngrok.app',
+    });
+    await settled(result);
+    await waitFor(() => expect(result.current.machine.state).toBe('connected'));
+    vi.mocked(transport.stopTunnel).mockRejectedValue(new Error('could not stop'));
+
+    // The stop is asked for and refused, so nothing changes and no toast is
+    // owed. The suppression must not survive that: the drop below is a
+    // different event and the person has not been told about it.
+    await act(async () => {
+      await result.current.actions.handleToggle(false);
+    });
+    expect(toast.error).not.toHaveBeenCalled();
+
+    await serverReports({ connected: false, url: null });
+
+    expect(toast.error).toHaveBeenCalledTimes(1);
+  });
+
   it('stays quiet for the start the person just asked for', async () => {
     const { result, transport, serverReports } = setup();
     await settled(result);

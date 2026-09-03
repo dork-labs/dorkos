@@ -58,7 +58,7 @@ export function useTunnelActions({
   // connected when it succeeded at, say, 20s (DOR-1739). The transport's timeout
   // is the honest answer, so it is the only one the dialog hears.
   const startTunnel = useCallback(async () => {
-    machine.markUserInitiated();
+    machine.setUserInitiated(true);
     machine.setState('starting');
     machine.setError(null);
     try {
@@ -68,6 +68,9 @@ export function useTunnelActions({
       queryClient.invalidateQueries({ queryKey: configKeys.all });
       broadcastTunnelChange();
     } catch (err) {
+      // No status change is coming, so the suppression must not stay armed over
+      // whatever happens next.
+      machine.setUserInitiated(false);
       // Exposing an unprotected instance is blocked (task 1.3, 409). Route the
       // user into owner-account creation, then retry the start once login is on.
       if ((err as { code?: string }).code === 'AUTH_REQUIRED_FOR_EXPOSURE') {
@@ -94,7 +97,7 @@ export function useTunnelActions({
       if (checked) {
         await startTunnel();
       } else {
-        machine.markUserInitiated();
+        machine.setUserInitiated(true);
         machine.setState('stopping');
         machine.setError(null);
         try {
@@ -104,6 +107,7 @@ export function useTunnelActions({
           queryClient.invalidateQueries({ queryKey: configKeys.all });
           broadcastTunnelChange();
         } catch (err) {
+          machine.setUserInitiated(false);
           machine.setState('connected');
           machine.setError(err instanceof Error ? err.message : 'Failed to stop tunnel');
         }

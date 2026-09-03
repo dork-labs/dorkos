@@ -4,20 +4,7 @@
  * Pure types/functions — no React, no side effects. The actual state machine
  * lives in `model/use-tunnel-machine.ts`.
  *
- * @module features/settings/model/tunnel-view-state
- */
-
-/** Server-reported tunnel lifecycle state. */
-export type TunnelState = 'off' | 'starting' | 'connected' | 'stopping' | 'error';
-
-/** UI view selected by the dialog based on tunnel + setup state. */
-export type ViewState = 'landing' | 'setup' | 'ready' | 'connecting' | 'connected' | 'error';
-
-/**
- * Interval between latency probes when the tunnel is connected and dialog is
- * open.
- *
- * ## Both of this file's other timeouts are gone, deliberately (DOR-1739)
+ * ## Two timeouts used to live here, and both are gone (DOR-1739)
  *
  * `START_TIMEOUT_MS` (15s) and `STUCK_STATE_TIMEOUT_MS` (30s) each raced the
  * transport's own 30s request timeout, and a race between two clocks over one
@@ -32,7 +19,25 @@ export type ViewState = 'landing' | 'setup' | 'ready' | 'connecting' | 'connecte
  * `HttpTransport` guarantees the settlement, arming `AbortSignal.timeout` on
  * every request. A replacement net could only ever fire while the request it
  * was netting was still running, which is the defect, not the fix.
+ *
+ * @module features/settings/model/tunnel-view-state
  */
+
+/**
+ * Tunnel lifecycle state, as the dialog currently understands it.
+ *
+ * Not "server-reported", which is what this used to say and is the mistake the
+ * whole machine was built on: `starting`, `stopping` and `error` exist only
+ * locally and have no server counterpart at all. The server reports connected
+ * or not; everything else here is the dialog's own account of what the person
+ * just did (`use-tunnel-machine.ts`).
+ */
+export type TunnelState = 'off' | 'starting' | 'connected' | 'stopping' | 'error';
+
+/** UI view selected by the dialog based on tunnel + setup state. */
+export type ViewState = 'landing' | 'setup' | 'ready' | 'connecting' | 'connected' | 'error';
+
+/** Interval between latency probes when the tunnel is connected and dialog is open. */
 export const LATENCY_INTERVAL_MS = 30_000;
 
 /**
