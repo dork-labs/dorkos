@@ -142,7 +142,7 @@ export function AgentHealthDetail({ agentId, onClose }: AgentHealthDetailProps) 
         <button
           type="button"
           onClick={() => openProfile(agentId)}
-          className="hover:bg-muted inline-flex w-full items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium"
+          className="hover:bg-muted inline-flex w-full items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors duration-150"
         >
           <User className="size-3.5" />
           View profile

@@ -58,7 +58,7 @@ function JsonNode({ value, depth, keyName }: JsonNodeProps) {
     <div style={{ paddingLeft: depth > 0 ? 16 : 0 }}>
       <button
         type="button"
-        className="hover:bg-muted -ml-0.5 inline-flex items-center gap-0.5 rounded px-0.5"
+        className="hover:bg-muted -ml-0.5 inline-flex items-center gap-0.5 rounded px-0.5 transition-colors duration-150"
         onClick={toggle}
       >
         <ChevronRight className={cn('size-3 transition-transform', !collapsed && 'rotate-90')} />

@@ -129,7 +129,7 @@ function MemoryRecallRow({ memory }: { memory: MemoryEntry }) {
           onClick={handleCopy}
           aria-label={`Copy synthesized ${scopeWord} memory content`}
           data-scope={memory.scope}
-          className="focus-ring hover:bg-muted/50 flex min-h-[44px] w-full flex-col items-start gap-1 rounded-md px-2 py-1 text-left"
+          className="focus-ring hover:bg-muted/50 flex min-h-[44px] w-full flex-col items-start gap-1 rounded-md px-2 py-1 text-left transition-colors duration-150"
         >
           <span className="text-sm">{memory.content}</span>
           <span className="text-3xs text-muted-foreground flex items-center gap-1 font-mono">
@@ -148,7 +148,7 @@ function MemoryRecallRow({ memory }: { memory: MemoryEntry }) {
         onClick={handleCopy}
         aria-label={`Copy ${scopeWord} memory path ${memory.path}`}
         data-scope={memory.scope}
-        className="focus-ring hover:bg-muted/50 flex min-h-[44px] w-full items-center gap-2 rounded-md px-2 py-1 text-left"
+        className="focus-ring hover:bg-muted/50 flex min-h-[44px] w-full items-center gap-2 rounded-md px-2 py-1 text-left transition-colors duration-150"
       >
         <span className="flex-1 truncate font-mono text-sm">{truncateMiddle(memory.path, 40)}</span>
         <ScopeIcon aria-hidden="true" className="text-muted-foreground size-(--size-icon-xs)" />
