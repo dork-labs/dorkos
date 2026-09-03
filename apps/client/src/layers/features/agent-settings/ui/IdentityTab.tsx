@@ -58,7 +58,14 @@ export function IdentityTab({ agent, onUpdate }: IdentityTabProps) {
   const hasIconOverride = agent.icon != null;
   const hasAnyOverride = hasColorOverride || hasIconOverride;
 
-  // Debounced namespace (project group) input
+  // Debounced namespace (project group) input.
+  //
+  // **`onUpdate` has to reach the OPERATOR route for this field** (DOR-1506): a
+  // namespace decides which other agents this one can reach, so `PATCH
+  // /api/agents/current` refuses it and only `PATCH /api/mesh/agents/:id` writes
+  // it. No production surface renders this tab today; a caller that wires it up
+  // has to pass a mesh-route writer, the way `ToolsTab` uses `useUpdateAgent`
+  // from `entities/mesh`.
   const ns = useDebouncedInput(agent.namespace ?? '', agent.id, (v) => {
     onUpdate({ namespace: v || undefined });
   });

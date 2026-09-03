@@ -137,6 +137,13 @@ export type AgentBehavior = z.infer<typeof AgentBehaviorSchema>;
  * again here: the copies of it that used to live in three other files all drifted
  * (DOR-499). Call `toolNamesForDomain` for the current answer.
  *
+ * Steering an agent is still the PERSON's call, so all four are operator-only on
+ * the agent-reachable write path (`agent-write-policy.ts`): a per-agent value
+ * beats the global `agentContext.*` switch, so an agent that could write one
+ * could undo a narrowing the person had made to its own context (DOR-1506). The
+ * operator's `PATCH /api/mesh/agents/:id` is the one way in, for these and for
+ * the grant below.
+ *
  * ## The grant key — `roomsManage`
  *
  * A different mechanism wearing the same object. It is a per-agent grant the
@@ -148,9 +155,10 @@ export type AgentBehavior = z.infer<typeof AgentBehaviorSchema>;
  *
  * - `undefined` means OFF, never "inherit". There is no global twin, on purpose —
  *   a second, weaker path to the same grant would be a way around the first.
- * - Only a person may set it. The agent-reachable manifest write path
- *   (`updateAgentManifest`) refuses a patch that names this key at all; the
- *   operator's own `PATCH /api/mesh/agents/:id` is the one way in.
+ * - Writing it is refused for a HARDER reason than the four above: those protect
+ *   a person's narrowing, this one is the grant the choke point enforces, so an
+ *   agent that could set it could turn its own filter off and the filter would be
+ *   theatre.
  *
  * A new key here belongs with the four unless a capability declares it as a
  * `toolGroup`; see the server's `capability-definition.ts` before adding one.
@@ -177,8 +185,9 @@ export const EnabledToolGroupsSchema = z
       'documentation settings: undefined = inherit global default, and off means the agent ' +
       'is not told about the group, not that the tools are blocked. ' +
       'Binding tools follow adapter toggle. Trace tools follow relay toggle. ' +
-      'roomsManage is different: it is a per-agent grant the server enforces, absent ' +
-      'means off with no global default, and only a person may set it.',
+      'roomsManage is different: it is a per-agent grant the server enforces, and absent ' +
+      'means off with no global default. Only a person sets any of the five: the ' +
+      'agent-reachable write path refuses this object outright.',
   });
 
 export type EnabledToolGroups = z.infer<typeof EnabledToolGroupsSchema>;

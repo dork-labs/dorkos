@@ -209,6 +209,7 @@
  *
  * @module services/core/operator/config-write-policy
  */
+import { findGuardedPaths, prepareGuardedPaths } from './guarded-paths.js';
 
 /**
  * Whether an agent may write one config leaf through `config_patch`.
@@ -551,23 +552,22 @@ export const CONFIG_WRITE_POLICY = {
   // deliberate narrowing to protect, not a capability gate to defend, and
   // `OPERATOR_ONLY_STAKES` words the refusal accordingly.
   //
-  // ## THIS NARROWS THE HOLE AT THE CONFIG SEAM. IT DOES NOT CLOSE IT.
+  // ## THE PER-AGENT SEAM BESIDE THIS ONE, AND WHY IT HAD TO BE CLOSED TOO
   //
-  // Say it here rather than let a reader infer a guarantee that is not on offer.
   // `resolveToolConfig` reads `agent.<group> ?? globalConfig.<group>Tools`, so an
-  // explicit PER-AGENT value BEATS the global switch — and the per-agent seam has
-  // no bar of its own: `PATCH /api/agents/current` validates the boundary and
-  // delegates to `updateAgentManifest`, which refuses `account` and the one
-  // enforced tool group (`roomsManage`, DOR-1611) and nothing else, with no
-  // caller-identity check at all. **The four keys named below are not among the
-  // refusals**, so an agent can still restore its own context blocks through its
-  // manifest after a person turned the global switch off. Reproduced during review.
+  // explicit PER-AGENT value BEATS the global switch. While these four were
+  // refused here and their per-agent twins were writable, an agent could restore
+  // its own context blocks through its manifest after a person turned the global
+  // switch off — a refusal undone one route over. Reproduced during the DOR-1497
+  // review, closed by DOR-1506: `agent-write-policy.ts` classifies all five
+  // `enabledToolGroups` keys operator-only, and `updateAgentManifest` enforces
+  // that table for `PATCH /api/agents/current` and the `update_agent` MCP tool
+  // alike.
   //
-  // Two things bound it, neither of which makes it a non-issue: the `update_agent`
-  // MCP tool does not expose `enabledToolGroups` (see `UpdateAgentArgs`), so the
-  // capability surface is not a route to it, and the effect is which tools are
-  // DOCUMENTED, never which may run. Tracked as DOR-1506; do not describe the
-  // global switches as agent-proof until that seam is closed too.
+  // What remains is the residual every operator-only setting on this machine
+  // carries and no route guard can remove: with login off, a shell-capable agent
+  // can edit `~/.dork/config.json` and `.dork/agent.json` directly. The remedy is
+  // turning login on (`contributing/agent-operator-surface.md`).
   'agentContext.relayTools': 'operator-only',
   'agentContext.meshTools': 'operator-only',
   'agentContext.adapterTools': 'operator-only',
@@ -1137,148 +1137,11 @@ export const REQUIRES_LOGIN_CONFIG_PATHS: readonly string[] = [
 /** The `error` field every login-required refusal on a config write carries. */
 export const REQUIRES_LOGIN_CONFIG_ERROR = 'Standing permissions need Require login turned on';
 
-/**
- * Every dot-path a patch object touches, including a path that ends at an empty
- * object or an empty array, and including the fields inside a LIST it writes.
- *
- * Deliberately not `flattenConfigKeys` (which drops `{ auth: {} }` entirely): a
- * guard should see every branch the caller reached for, not only the ones that
- * carry a value.
- *
- * ## Why it descends into arrays (DOR-1113)
- *
- * The policy table classifies a list's fields one per element — the `[]`
- * convention `CONFIG_DISCLOSURE` uses — so `connectors.rawMcpServers[].url` is
- * the only key that exists for a raw-MCP server's URL. A walk that stopped at
- * the array reported `connectors.rawMcpServers`, which equals no policy key and
- * is a prefix of none either, because the `[]` sits between them.
- *
- * Removing that marker at match time ({@link withoutArrayMarkers}) is what closes
- * the hole; this descent is what makes the refusal HONEST. Without it the whole
- * list is one opaque path, so every element field is named whatever the caller
- * wrote — a patch touching only `url` would be refused in the name of `slug`,
- * `displayName` and `transport` too, and the refusal text lands in a model's
- * context as a claim about what it just tried to do (DOR-1044).
- *
- * So an array is a segment, not a leaf: its elements are walked under a `[]`
- * marker. An EMPTY array carries no element to descend into and stays a leaf —
- * caught as an ancestor of the element fields, the way `{ auth: {} }` is, because
- * emptying a list is a write to it.
- *
- * A top-level array is not a patch at all (`applyConfigPatch` rejects the shape),
- * and touching nothing is the honest answer for it.
- *
- * @param value - The patch node being walked.
- * @param prefix - Internal accumulator for the current path; omit at call sites.
- * @returns Dot-paths for every leaf and every empty branch, `[]` marking each
- *   descent through array elements.
- */
-function patchPaths(value: unknown, prefix = ''): string[] {
-  if (Array.isArray(value)) {
-    if (!prefix) return [];
-    if (value.length === 0) return [prefix];
-    return value.flatMap((element) => patchPaths(element, `${prefix}[]`));
-  }
-  if (value === null || typeof value !== 'object') {
-    return prefix ? [prefix] : [];
-  }
-  const entries = Object.entries(value as Record<string, unknown>);
-  if (entries.length === 0) return prefix ? [prefix] : [];
-  return entries.flatMap(([key, child]) => patchPaths(child, prefix ? `${prefix}.${key}` : key));
-}
-
-/**
- * Drop the `[]` array markers from a dot-path, leaving the plain segment chain
- * both sides of a match are compared on.
- *
- * Comparing without the marker is what lets one policy key cover both shapes a
- * caller can use: `{ rawMcpServers: [{ url }] }` reaches the field through an
- * element, `{ rawMcpServers: [] }` and `{ connectors: {} }` stop above it, and
- * all three have to hit `connectors.rawMcpServers[].url`. It cannot merge two
- * distinct policy keys into one, because a field is either an array of objects
- * or an object, never both — pinned by a test that strips the whole table and
- * asserts the result still has no duplicates.
- *
- * @param path - A dot-path, with or without `[]` segments.
- * @returns The same path with every `[]` removed.
- */
-function withoutArrayMarkers(path: string): string {
-  return path.replaceAll('[]', '');
-}
-
-/** One guarded policy path, paired with the marker-stripped form it matches on. */
-interface GuardedPath {
-  /** The policy key itself, `[]` markers intact — what a refusal names. */
-  readonly path: string;
-  /** The same key with its `[]` markers removed — what the comparison uses. */
-  readonly plain: string;
-}
-
-/**
- * Pair each guarded path with its marker-stripped form, once.
- *
- * Called at module scope for both tables rather than per request: they are
- * constants, `PATCH /api/config` runs the matcher twice on every call, and
- * re-deriving 60-odd strings each time buys nothing.
- *
- * @param paths - A guarded policy path list.
- * @returns The same paths, each carrying its plain form.
- */
-function prepareGuardedPaths(paths: readonly string[]): readonly GuardedPath[] {
-  return paths.map((path) => ({ path, plain: withoutArrayMarkers(path) }));
-}
-
 /** {@link OPERATOR_ONLY_CONFIG_PATHS}, prepared for matching. */
 const OPERATOR_ONLY_GUARDED = prepareGuardedPaths(OPERATOR_ONLY_CONFIG_PATHS);
 
 /** {@link REQUIRES_LOGIN_CONFIG_PATHS}, prepared for matching. */
 const REQUIRES_LOGIN_GUARDED = prepareGuardedPaths(REQUIRES_LOGIN_CONFIG_PATHS);
-
-/**
- * Find which of a guarded set of dot-paths a patch tries to write.
- *
- * Matching runs in both directions along the dot-path, so neither a deeper nor a
- * shallower patch slips past: `{ auth: { enabled: false } }` hits `auth.enabled`
- * exactly, `{ auth: true }` hits it as an ancestor, and
- * `{ providers: { anthropic: '…' } }` hits the `providers` record as a descendant.
- *
- * Both sides are compared with their `[]` markers removed, so a field inside a
- * list matches however the caller reached it (see {@link withoutArrayMarkers}).
- * The RETURNED paths are the policy keys themselves, markers intact, because
- * they are what the refusal names and what `OPERATOR_ONLY_STAKES` is keyed on.
- *
- * ## The touched paths are DEDUPED first, and that is not a micro-optimization
- *
- * Descending into arrays makes the walk's output scale with element COUNT, not
- * with the number of distinct settings: a 1MB patch holding one long list emits
- * hundreds of thousands of identical strings, and each one was matched against
- * every guarded path. That is over a SECOND of blocked event loop for a single
- * request (measured against this table at 2174ms on a flat list, 1160ms on a
- * nested one, both ~1MB) — and `PATCH /api/config` runs this BEFORE any
- * authority check, so in the login-off posture anything that can reach the port
- * can spend it. Deduping first took the same payloads to 201ms and 236ms.
- *
- * It cannot change a verdict: a repeated path can only re-add hits already in
- * the set.
- *
- * @param patch - The raw patch a caller supplied.
- * @param guarded - The prepared policy paths to match against.
- * @returns The offending policy paths, sorted, each named once.
- */
-function findGuardedPaths(patch: unknown, guarded: readonly GuardedPath[]): string[] {
-  const touched = new Set(patchPaths(patch).map(withoutArrayMarkers));
-  const hits = new Set<string>();
-
-  for (const path of touched) {
-    for (const { path: guardedPath, plain } of guarded) {
-      if (path === plain || path.startsWith(`${plain}.`) || plain.startsWith(`${path}.`)) {
-        hits.add(guardedPath);
-      }
-    }
-  }
-
-  return [...hits].sort();
-}
 
 /**
  * Find the operator-only settings a patch tries to write.

@@ -5289,6 +5289,26 @@
         "apps/server/src/services/core/external-mcp/mesh-tools.ts",
         "apps/client/src/layers/features/profile/ui/ProfileAgentActions.tsx"
       ]
+    },
+    {
+      "id": "260903-091445",
+      "slug": "every-manifest-field-an-agent-can-reach-carries-a-written-verdict",
+      "title": "Every manifest field an agent can reach carries a written verdict, enforced in one place",
+      "status": "accepted",
+      "created": "2026-09-03",
+      "extractedFrom": "implementation",
+      "specSlug": null,
+      "amends": null,
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/core/operator/agent-write-policy.ts",
+        "apps/server/src/services/core/operator/agent-updater.ts",
+        "apps/server/src/services/core/operator/guarded-paths.ts",
+        "apps/server/src/services/core/operator/config-write-policy.ts",
+        "apps/server/src/routes/agents.ts",
+        "apps/client/src/layers/features/agent-settings/ui/ToolsTab.tsx",
+        "packages/shared/src/mesh-schemas.ts"
+      ]
     }
   ]
 }

@@ -5,9 +5,10 @@
  * tool so neither re-implements (and drifts on) the identity guards.
  *
  * The caller resolves and boundary-validates the agent's project directory; this
- * module owns only the manifest-level rules: schema validation, the immutable
- * `name` guard, the system-agent identity protections, convention-file writes,
- * the null-clears-field merge, and the best-effort Mesh DB sync (ADR-0043).
+ * module owns only the manifest-level rules: the write policy that says which
+ * fields an agent may set on itself ({@link AGENT_WRITE_POLICY}), schema
+ * validation, the system-agent identity protections, convention-file writes, the
+ * null-clears-field merge, and the best-effort Mesh DB sync (ADR-0043).
  *
  * @module services/core/operator/agent-updater
  */
@@ -31,24 +32,26 @@ import {
   NOPE_MAX_CHARS,
   SOUL_MAX_CHARS,
 } from '@dorkos/shared/convention-files';
+import {
+  describeAgentOperatorOnlyRefusal,
+  findOperatorOnlyAgentPaths,
+} from './agent-write-policy.js';
 
 /**
  * Identity fields that cannot be changed on a system agent (`isSystem: true`).
- * A system agent's slug, display name, description, namespace, and system flag
- * are fixed at creation — DorkBot and friends must remain addressable and
- * un-spoofable. Mirrors the guard the agents route has always enforced.
+ * A system agent's display name, description and system flag are fixed at
+ * creation — DorkBot and friends must remain addressable and un-spoofable.
+ * Mirrors the guard the agents route has always enforced.
+ *
+ * `name` and `namespace` are not listed because they are operator-only for EVERY
+ * agent on this seam ({@link AGENT_WRITE_POLICY}), so the policy check refuses
+ * them before this one is reached; a row here would never fire.
  */
-const SYSTEM_PROTECTED_FIELDS = [
-  'name',
-  'displayName',
-  'description',
-  'namespace',
-  'isSystem',
-] as const;
+const SYSTEM_PROTECTED_FIELDS = ['displayName', 'description', 'isSystem'] as const;
 
 /** Discriminating code for {@link AgentUpdateError}, mapped to HTTP status by the route. */
 export type AgentUpdateErrorCode =
-  'VALIDATION' | 'NOT_FOUND' | 'IMMUTABLE_NAME' | 'SYSTEM_PROTECTED' | 'OPERATOR_ONLY';
+  'VALIDATION' | 'NOT_FOUND' | 'SYSTEM_PROTECTED' | 'OPERATOR_ONLY';
 
 /**
  * Typed failure from {@link updateAgentManifest}. Callers translate `code` into
@@ -114,11 +117,10 @@ interface MeshSyncLike {
 /**
  * Apply a self-edit patch to the agent manifest at `agentPath`.
  *
- * Enforces, in the same order as the route: schema validation, existence, the
- * operator-only guards (billing account, the rooms-management grant, and any
- * change that WIDENS the agent's tier ceiling), the immutable-`name` guard (slug
- * is fixed after creation — use `displayName`), and the system-agent identity
- * protections. `soulContent`/`nopeContent`/
+ * Enforces, in this order: the operator-only write policy
+ * ({@link AGENT_WRITE_POLICY}), schema validation, existence, the tier-ceiling
+ * direction check, and the system-agent identity protections.
+ * `soulContent`/`nopeContent`/
  * `memoryContent` are written to their convention files; remaining fields merge into `agent.json`
  * with `null` meaning "clear this field" (JSON can't carry `undefined`). After a
  * successful write it best-effort syncs the Mesh DB cache (never fatal).
@@ -127,7 +129,8 @@ interface MeshSyncLike {
  * @param opts.agentPath - The agent's project directory (already resolved and
  *   boundary-validated by the caller).
  * @param opts.body - The raw patch object as received (checked for forbidden
- *   keys before parsing, matching the route's `'name' in req.body` guard).
+ *   keys before parsing, so a refusal never depends on the rest of the patch
+ *   being well-formed).
  * @param opts.meshCore - Optional MeshCore for the post-write DB sync.
  * @returns The updated manifest as written to disk.
  * @throws {AgentUpdateError} On validation, missing agent, or a blocked field.
@@ -141,46 +144,35 @@ export async function updateAgentManifest(opts: {
 
   const rawBody = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
 
-  // Guard: a grant the governed agent can set for itself is not a grant
-  // (spec `rooms-management-tools` §D6, DOR-1611).
+  // Guard: the fields an agent may not set on itself (DOR-1506).
   //
-  // Same seam, same shape, same reason as the `account` guard below: this is the
-  // AGENT-REACHABLE write path — the `update_agent` MCP tool and the self-edit
-  // route both land here — and `enabledToolGroups` is on its wire
-  // (`UpdateAgentRequestSchema` picks it). Four of that object's five keys decide
-  // what an agent is TOLD about and stay writable here; `roomsManage` is the one
-  // the capability choke point enforces, so an agent that could write it could
-  // turn its own hard filter off and the filter would be theatre.
+  // One classification table for the whole seam
+  // (`agent-write-policy.ts` — read its module doc for the line and for what it
+  // deliberately does not close), replacing the three hand-written guards this
+  // used to carry. This is the AGENT-REACHABLE write path: `PATCH
+  // /api/agents/current` and the `operator.update_agent` MCP tool both land here.
   //
-  // **First, before the schema parse**, unlike every guard below it. The refusal
-  // is about WHO may write this field, and that answer cannot be contingent on the
-  // rest of the patch being well-formed: `{"roomsManage": null}` fails the boolean
-  // schema, and reporting that as a validation error would tell an agent to fix
-  // its types and try again at a field it may never write. Present at all —
-  // `true`, `false`, `null`, `undefined` — is refused, because a patch that names
-  // the field is a patch about the field.
+  // **First, before the schema parse and before the manifest read**, unlike the
+  // two value-shaped checks below. The refusal is about WHO may write a field,
+  // and that answer cannot be contingent on the rest of the patch being
+  // well-formed — `{"roomsManage": null}` fails the boolean schema, and reporting
+  // that as a validation error would tell an agent to fix its types and try again
+  // at a field it may never write. Naming the field at all (`true`, `false`,
+  // `null`, or any object above it — including one whose keys DorkOS does not
+  // recognise, because the merge below REPLACES the object) is refused, since a
+  // patch that names the field is a patch about the field.
   //
-  // Refused rather than stripped, for the reason the `account` guard gives: an
-  // agent told nothing would report the change as done. All-or-nothing, matching
+  // Refused rather than stripped: an agent told nothing would report the change
+  // as done (the DOR-1253 shape). All-or-nothing, matching
   // `operator.config_patch`.
   //
-  // The operator's own surface, `PATCH /api/mesh/agents/:id`, writes the field
-  // and does not come through here. **A cockpit that edits tool groups must use
-  // that route**: this path refuses the whole patch when the object carries the
-  // key, so a client that spreads the stored object into an unrelated toggle
-  // would be refused too.
-  //
-  // Scope, stated so it is not over-read: this closes the sanctioned agent
-  // surfaces for ONE field. The general caller-identity policy for the manifest
-  // remains DOR-1506, and the `local-trust` residual (a shell-capable agent
-  // curling the operator's route with login off) is unchanged — its remedy is
-  // turning login on (`contributing/agent-operator-surface.md`).
-  const toolGroups = rawBody.enabledToolGroups;
-  if (toolGroups && typeof toolGroups === 'object' && 'roomsManage' in toolGroups) {
-    throw new AgentUpdateError(
-      'OPERATOR_ONLY',
-      "Whether an agent may manage rooms is set by a person, in the agent's Tools settings."
-    );
+  // The operator's own surface, `PATCH /api/mesh/agents/:id`, writes every one of
+  // these and does not come through here. **A cockpit that edits an operator-only
+  // field must use that route** — the Tools tab does, for both the tool groups
+  // and the rooms-management grant.
+  const refusedPaths = findOperatorOnlyAgentPaths(rawBody);
+  if (refusedPaths.length > 0) {
+    throw new AgentUpdateError('OPERATOR_ONLY', describeAgentOperatorOnlyRefusal(refusedPaths));
   }
 
   const parsed = UpdateAgentRequestSchema.safeParse(body);
@@ -193,26 +185,9 @@ export async function updateAgentManifest(opts: {
     throw new AgentUpdateError('NOT_FOUND', 'No agent registered at this path');
   }
 
-  // Guard: billing is the operator's call, never an agent's (spec
-  // `billing-account-ladder` invariant 4).
-  //
-  // This service is the AGENT-REACHABLE write path — the `update_agent` MCP tool
-  // and the self-edit route both land here — so an agent that could set
-  // `account` on a manifest could repoint whose subscription its work bills to,
-  // which is the credential axis `config-write-policy.ts` already holds
-  // `defaultAccount` on. Refused rather than stripped: an agent told nothing
-  // would report the change as done. The operator's own surface, `PATCH
-  // /api/mesh/agents/:id`, accepts the field and does not come through here.
-  if ('account' in rawBody) {
-    throw new AgentUpdateError(
-      'OPERATOR_ONLY',
-      "An agent's billing account is set by a person, in the agent's Runs on settings."
-    );
-  }
-
   // Guard: an agent may TIGHTEN its own ceiling, never widen one (DOR-486).
   //
-  // The other two guards on this seam refuse a FIELD. This one refuses a
+  // The policy table above refuses a FIELD. This one refuses a
   // DIRECTION, and the difference is the point: `tierCeiling` is the cap on what
   // an agent may ever reach, so lowering it is an agent giving something up —
   // a normal, safe thing to let it do, and the honest way for an agent to say
@@ -221,10 +196,16 @@ export async function updateAgentManifest(opts: {
   // operator-only when changing it alone widens a security control). Clearing
   // the field counts as raising, because absent means `destructive`.
   //
-  // AFTER the manifest read, unlike the two guards above, because the answer is
+  // AFTER the manifest read, unlike the policy check above, because the answer is
   // a comparison against what is on disk rather than a property of the key. The
   // parse has already rejected a value that is not a tier, so this only ever
   // compares real rungs.
+  //
+  // The table records this verdict as `tighten-only` and derives
+  // `TIGHTEN_ONLY_AGENT_PATHS` from it, so a SECOND field classified that way
+  // fails `__tests__/agent-write-policy.test.ts` until somebody teaches this
+  // block what "tighter" means for it — the comparison is per field and cannot
+  // be generalized by the table alone.
   //
   // The operator's own surface, `PATCH /api/mesh/agents/:id`, does not come
   // through here and sets any ceiling. **A cockpit that edits the ceiling must
@@ -252,14 +233,6 @@ export async function updateAgentManifest(opts: {
           `Tools settings.`
       );
     }
-  }
-
-  // Guard: name (slug) is immutable after creation — use displayName instead.
-  if ('name' in rawBody) {
-    throw new AgentUpdateError(
-      'IMMUTABLE_NAME',
-      'Agent slug (name) cannot be changed after creation. Use displayName instead.'
-    );
   }
 
   // Guard: system agents cannot have identity fields changed.

@@ -10,8 +10,8 @@
  * - `agent create`         → `POST /api/agents/create` (full pipeline: mkdir +
  *   scaffold + optional template + register).
  * - `agent update`         → `PATCH /api/agents/current?path=` (self-edit
- *   fields; the server enforces the immutable-name + system-agent guards), plus
- *   `PATCH /api/mesh/agents/:id` for `--ceiling` alone (see below).
+ *   fields; the server enforces its agent-write policy and the system-agent
+ *   guards), plus `PATCH /api/mesh/agents/:id` for `--ceiling` alone (see below).
  *
  * ## Why `--ceiling` takes a different route
  *
