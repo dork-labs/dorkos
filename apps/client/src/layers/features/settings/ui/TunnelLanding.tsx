@@ -18,10 +18,9 @@ export function TunnelLanding({ onGetStarted }: TunnelLandingProps) {
         </p>
       </div>
 
-      <Button
-        onClick={onGetStarted}
-        className="w-full transition-transform duration-100 hover:scale-[1.01] active:scale-[0.98]"
-      >
+      {/* The press comes from the Button primitive now, and the 1% hover grow
+          is gone: nothing else in the app inflates under a pointer. */}
+      <Button onClick={onGetStarted} className="w-full">
         Get started
       </Button>
 
