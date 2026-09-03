@@ -120,6 +120,7 @@ export {
   statusDotClass,
 } from './status-dot';
 export type { IdentityStatus, StatusSignal } from './status-dot';
+export { PRESS_CARD, PRESS_MARK, PRESS_ROW } from './press';
 export { IdentityHoverCard } from './identity-hover-card';
 export type {
   IdentityHoverCardProps,

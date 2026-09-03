@@ -49,7 +49,17 @@ export function CollapsibleCard({
   return (
     <div
       className={cn(
-        'bg-muted/40 mt-px rounded-md border-l-2 text-sm transition-all duration-200 first:mt-1',
+        // Named properties rather than `transition-all`, so what moves stays
+        // auditable — the body's height is animated by Motion below, and a
+        // blanket transition here would fight it.
+        'bg-muted/40 mt-px rounded-md border-l-2 text-sm transition-[opacity,background-color,border-color,box-shadow] duration-200 first:mt-1',
+        // The hover the design system specifies for a tool card: the border
+        // darkens and a soft shadow appears. It used to answer a pointer with
+        // nothing unless the card was already dimmed (DOR-1751). The background
+        // steps too, because until the unlayered `*` border-color rule in
+        // `index.css` is layered (audit finding 4.1) no `border-*` utility in
+        // this app paints, and a hover that depends on one would be invisible.
+        'hover:bg-muted/60 hover:border-l-muted-foreground/60 hover:shadow-soft',
         variant === 'default' && 'border-l-muted-foreground/30',
         variant === 'thinking' && 'border-l-muted-foreground/20',
         variant === 'memory' && 'border-l-muted-foreground/20',
@@ -61,7 +71,13 @@ export function CollapsibleCard({
       <button
         onClick={() => !disabled && onToggle()}
         disabled={disabled}
-        className={cn('flex w-full items-center gap-2 px-3 py-1', disabled && 'cursor-default')}
+        // `focus-ring` is opt-in: `index.css` clears the native outline
+        // globally, so this control — drawn dozens of times in a transcript —
+        // had no keyboard answer at all until it asked for one.
+        className={cn(
+          'focus-ring flex w-full items-center gap-2 rounded-md px-3 py-1',
+          disabled && 'cursor-default'
+        )}
         aria-expanded={ariaExpanded}
         aria-label={ariaLabel}
       >

@@ -1,6 +1,12 @@
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/layers/shared/lib';
-import { identityMarkRing, IDENTITY_MARK_GROUP, type IdentityStatus } from '@/layers/shared/ui';
+import {
+  identityMarkRing,
+  IDENTITY_MARK_GROUP,
+  PRESS_MARK,
+  PRESS_ROW,
+  type IdentityStatus,
+} from '@/layers/shared/ui';
 import { AgentAvatar } from './AgentAvatar';
 
 // ---------------------------------------------------------------------------
@@ -183,7 +189,8 @@ export function AgentIdentity({
           // number cannot fit a 300px card and a 24px disc.
           className={cn(
             IDENTITY_MARK_GROUP,
-            'focus-ring shrink-0 cursor-pointer rounded-md transition-[scale] duration-(--identity-press) ease-(--identity-ease-out) active:scale-[0.94]'
+            'focus-ring shrink-0 cursor-pointer rounded-md',
+            PRESS_MARK
           )}
         >
           {avatar}
@@ -212,7 +219,8 @@ export function AgentIdentity({
           // response of any kind, so a keyboard user learned strictly less than
           // a mouse user. `rounded-md` gives that ring a shape to follow.
           IDENTITY_MARK_GROUP,
-          'focus-ring cursor-pointer rounded-md transition-[scale] duration-(--identity-press) ease-(--identity-ease-out) active:scale-[0.98]',
+          'focus-ring cursor-pointer rounded-md',
+          PRESS_ROW,
           className
         )}
       >

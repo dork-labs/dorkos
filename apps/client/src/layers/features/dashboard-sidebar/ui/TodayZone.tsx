@@ -20,7 +20,7 @@ import { useMemo, useRef } from 'react';
 import { CheckCheck } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { useIsMobile } from '@/layers/shared/model';
-import { TOUCH_TARGET_MIN_H } from '@/layers/shared/ui';
+import { PRESS_ROW, TOUCH_TARGET_MIN_H } from '@/layers/shared/ui';
 import type { SidebarRowModel, SidebarZoneModel } from '../model/build-sidebar-model';
 import type { SidebarZoneProps } from './SidebarZone';
 import { useMarkRoomsRead } from '../model/use-mark-rooms-read';
@@ -179,7 +179,8 @@ export function CatchUpButton({ count, onCatchUp }: CatchUpButtonProps) {
         className={cn(
           'text-sidebar-foreground/80 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground focus-ring',
           // A thumb's target, the same 44px the rows under it are (P4 AC-4).
-          'flex w-full items-center gap-2 rounded-md px-2 text-[13px] font-medium transition-colors duration-100 active:scale-[0.98]',
+          'flex w-full items-center gap-2 rounded-md px-2 text-[13px] font-medium',
+          PRESS_ROW,
           TOUCH_TARGET_MIN_H
         )}
       >

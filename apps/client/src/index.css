@@ -544,12 +544,29 @@
 }
 
 /* Hoverable card: lifts to the elevated shadow and firms up its border.
-   Pair with a base surface (bg-card), a border, and shadow-soft. */
+   Pair with a base surface (bg-card), a border, and shadow-soft.
+
+   **The focus-visible branch is a rule, not a nicety** (design-system.md, the
+   identity grammar): if an area has a hover state it has a focus-visible twin
+   saying the same thing, so a keyboard user never learns less than a mouse
+   user. `:has(:focus-visible)` covers the common shape where the card is a
+   plain box and the control inside it is what takes focus.
+
+   The transition names its properties. `transition: all` here animated border
+   width, padding and any layout property a consumer added later — and the
+   `-1px` lift below is exactly the kind of thing that would have dragged the
+   whole box with it. */
 @utility card-interactive {
-  transition: all 150ms ease-out;
-  &:hover {
+  transition:
+    box-shadow 150ms ease-out,
+    border-color 150ms ease-out,
+    translate 150ms ease-out;
+  &:hover,
+  &:focus-visible,
+  &:has(:focus-visible) {
     box-shadow: var(--elevation-elevated);
     border-color: hsl(var(--border) / 0.8);
+    translate: 0 -1px;
   }
 }
 
@@ -873,6 +890,13 @@ body {
   animation-timing-function: ease-in-out;
   animation-iteration-count: infinite;
 }
+
+/* Radix Collapsible opening and closing (DOR-1751): `animate-collapsible-down`
+   / `animate-collapsible-up`, worn by `shared/ui/collapsible.tsx`, come from
+   `tw-animate-css` (imported above) — it already ships both keyframes reading
+   Radix's own `--radix-collapsible-content-height`, 200ms ease-out. Nothing
+   to declare here; the global reduced-motion reset in this file flattens the
+   animation to 0.01ms, so the call site needs no `motion-safe:` gate. */
 
 /* The message action capsule's entrance: a 5px rise that overshoots a pixel and
    settles (design record §5.1). The overshoot is a KEYFRAME, not the curve —

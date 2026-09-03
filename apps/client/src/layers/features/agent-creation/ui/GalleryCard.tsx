@@ -54,8 +54,10 @@ export function GalleryCard({
       data-gallery-card=""
       data-testid={testId}
       className={cn(
+        // `card-interactive` owns the transition (and the focus-visible twin of
+        // the hover below); `transition-all` here would put layout properties
+        // back into it.
         'card-interactive group flex h-full flex-col gap-2 rounded-xl border p-4 text-left',
-        'transition-all duration-200',
         'focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
         variant === 'design'
           ? 'border-primary/40 bg-primary/5 hover:border-primary/60 border-dashed'

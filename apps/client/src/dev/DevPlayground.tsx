@@ -185,7 +185,8 @@ function DevPlaygroundShell() {
                     // main.tsx), so only a fresh load re-enters the routed app.
                     window.location.href = '/';
                   }}
-                  className="text-muted-foreground hover:bg-accent hover:text-foreground h-7! w-7! shrink-0 justify-center p-0 transition-all duration-100 active:scale-[0.98]"
+                  // The press and its timing come from SidebarMenuButton itself.
+                  className="text-muted-foreground hover:bg-accent hover:text-foreground h-7! w-7! shrink-0 justify-center p-0"
                 >
                   <ChevronLeft className="size-(--size-icon-sm)" />
                 </SidebarMenuButton>

@@ -67,23 +67,37 @@ export interface ActivityRowProps {
  *
  * Must be rendered inside a `<Table><TableBody>` context. Supports keyboard
  * navigation via `data-activity-row` and roving tabindex.
+ *
+ * **A row is only interactive when it has somewhere to go.** Two thirds of the
+ * rows on Home's Pulse panel carry no `linkPath`, and they used to highlight on
+ * hover, take a Tab stop and answer Enter with nothing — three promises of an
+ * action that does not exist (DOR-1751). Those rows now render as plain text,
+ * and they no longer carry `data-activity-row`, so arrow-key navigation walks
+ * only the rows it can actually put focus on.
  */
 export function ActivityRow({ item, className }: ActivityRowProps) {
   const navigate = useNavigate();
   const time = formatActivityTime(item.occurredAt);
+  const linkPath = item.linkPath;
 
   return (
     <TableRow
       data-slot="activity-row"
-      data-activity-row
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' && item.linkPath) {
-          navigate({ to: item.linkPath as '/', replace: false });
-        }
-      }}
+      data-activity-row={linkPath ? '' : undefined}
+      tabIndex={linkPath ? 0 : undefined}
+      onKeyDown={
+        linkPath
+          ? (e) => {
+              if (e.key === 'Enter') {
+                navigate({ to: linkPath as '/', replace: false });
+              }
+            }
+          : undefined
+      }
       className={cn(
-        'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
+        linkPath
+          ? 'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none'
+          : 'hover:bg-transparent',
         className
       )}
     >

@@ -66,6 +66,15 @@
 @source '../../../client/src/layers/entities/runtime/ui/RuntimeMark.tsx';
 /* The two shared primitives the whole point of DOR-1080 is adopting. */
 @source '../../../client/src/layers/shared/ui/sidebar-row.tsx';
+/*
+ * The press ladder `sidebar-row.tsx` reaches for (DOR-1751). Tailwind finds
+ * candidates in file TEXT, so extracting the `active:scale-[…]` strings into
+ * `press.ts` took them out of `sidebar-row.tsx`'s own text and this build
+ * stopped emitting them — the sidebar rows and their mark buttons lost their
+ * press feedback and hover colour transition, silently, because nothing here
+ * asserts these classes are emitted. Scanned rather than left to drift again.
+ */
+@source '../../../client/src/layers/shared/ui/press.ts';
 @source '../../../client/src/layers/shared/ui/section-header.tsx';
 @source '../../../client/src/layers/shared/ui/sidebar-menu-node.tsx';
 @source '../../../client/src/layers/shared/ui/scroll-area.tsx';

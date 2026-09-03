@@ -265,7 +265,7 @@ export function InputActionButton({
             exit={{ opacity: 0, scale: 0.8 }}
             transition={{ duration: 0.15 }}
             whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
+            whileTap={{ scale: 0.94 }}
             onClick={onStop}
             type="button"
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90 shrink-0 rounded-lg p-1.5 transition-colors max-md:p-2"
@@ -319,7 +319,7 @@ export function InputActionButton({
             initial={false}
             transition={{ duration: 0.15 }}
             whileHover={!sendBlocked ? { scale: 1.1 } : undefined}
-            whileTap={!sendBlocked ? { scale: 0.9 } : undefined}
+            whileTap={!sendBlocked ? { scale: 0.94 } : undefined}
             onClick={onClick}
             disabled={sendBlocked}
             type="button"

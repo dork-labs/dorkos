@@ -119,6 +119,33 @@ describe('CollapsibleCard', () => {
     expect(card.getAttribute('data-status')).toBe('running');
   });
 
+  it('answers a pointer — the card has a hover state of its own', () => {
+    render(
+      <CollapsibleCard
+        expanded={false}
+        onToggle={vi.fn()}
+        header={<span>Header</span>}
+        data-testid="hover-card"
+      >
+        Body
+      </CollapsibleCard>
+    );
+    // Not just the dimmed-only `hover:opacity-100` this card used to carry: a
+    // running or expanded card answered a pointer with nothing (DOR-1751).
+    const card = screen.getByTestId('hover-card');
+    expect(card.className).toContain('hover:bg-muted/60');
+    expect(card.className).toContain('hover:shadow-soft');
+  });
+
+  it('gives the toggle a focus ring — keyboard learns what a mouse learns', () => {
+    render(
+      <CollapsibleCard expanded={false} onToggle={vi.fn()} header={<span>Header</span>}>
+        Body
+      </CollapsibleCard>
+    );
+    expect(screen.getByRole('button').className).toContain('focus-ring');
+  });
+
   it('applies thinking variant classes', () => {
     render(
       <CollapsibleCard

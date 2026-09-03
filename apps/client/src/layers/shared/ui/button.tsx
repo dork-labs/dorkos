@@ -5,7 +5,19 @@ import { Slot } from 'radix-ui';
 import { cn } from '@/layers/shared/lib/utils';
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
+  // **The press lives here, not at the call site.** The design system asks every
+  // button for "scale to 0.97 on active, spring back", and for a long time the
+  // primitive answered a press with nothing — which is why fifteen hand-rolled
+  // controls grew their own press and no two picked the same number (DOR-1751).
+  // `motion-safe:` because a shrink that only ever reads as movement has no
+  // static half worth keeping for a reader who asked for less of it.
+  //
+  // **The transition names its properties.** `transition-all` also animated the
+  // `h-11 md:h-9` swap in `RESPONSIVE_SIZE_CLASSES`, so dragging a window
+  // across 768px animated the height of every button on screen. `scale` is
+  // named as itself: Tailwind v4's scale utilities write the standalone `scale`
+  // property, so a list saying `transform` would transition nothing.
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-[color,background-color,border-color,box-shadow,scale] duration-150 motion-safe:active:scale-[0.97] motion-safe:active:duration-100 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
   {
     variants: {
       variant: {
