@@ -30,6 +30,12 @@ interface MessageContextValue {
   focusedOptionIndex: number;
   onToolDecided: ((toolCallId: string, answers?: Record<string, string>) => void) | undefined;
   onRetry?: () => void;
+  /**
+   * Called once when a sign-in started from an inline auth-error card
+   * completes, so the failed message can send itself (DOR-1650). Returns
+   * whether it did, which is what lets the card say so.
+   */
+  onSigninComplete?: () => boolean;
   /** Tool call ID being handled in the input zone, or null. */
   inputZoneToolCallId: string | null;
   /** Text animation effect for streaming text. When undefined, StreamingText uses its default. */
@@ -78,6 +84,7 @@ export function MessageProvider({
       value.focusedOptionIndex,
       value.onToolDecided,
       value.onRetry,
+      value.onSigninComplete,
       value.inputZoneToolCallId,
       value.textEffect,
       value.runtimeLabel,

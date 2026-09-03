@@ -44,6 +44,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
     focusedOptionIndex,
     onToolDecided,
     onRetry,
+    onSigninComplete,
     inputZoneToolCallId,
     textEffect,
     runtimeLabel,
@@ -131,6 +132,23 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           // failed: `TurnFailedNotice` and the transport-error card `ChatPanel`
           // renders under the composer.
           onRetry={isFinalMessage && part.category !== undefined ? onRetry : undefined}
+          // Ungated here, unlike `onRetry` directly above — and not because the
+          // automatic send is the laxer offer. It is the stricter one; both of
+          // those tests are simply answered somewhere better (DOR-1650).
+          //
+          // CLASSIFIABLE: this only fires when someone pressed Sign in on THIS
+          // card, and an uncategorised part never draws one — the sign-in is an
+          // `auth_error` affordance.
+          //
+          // LAST: `resolveSigninResumeText` reads the conversation's TAIL
+          // rather than this card's position, so a mid-history sign-in declines
+          // on evidence — nothing since the failure — instead of on where the
+          // row happens to sit. That is the stronger test, and it has to be:
+          // Retry gates a button a person chooses to press, while this sends
+          // with nobody's hand on it. The card itself is deliberately NOT
+          // position-gated (see the sibling test in `ErrorMessageBlock`): a
+          // broken login is broken now, whenever it broke.
+          onSigninComplete={onSigninComplete}
           runtimeLabel={runtimeLabel}
           sessionId={sessionId}
         />

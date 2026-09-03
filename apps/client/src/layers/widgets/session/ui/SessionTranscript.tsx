@@ -105,6 +105,12 @@ interface SessionTranscriptProps {
   onToolDecided?: (toolCallId: string, answers?: Record<string, string>) => void;
   /** Retry the last user message. */
   onRetry?: () => void;
+  /**
+   * Called once when a sign-in started from an inline auth-error card
+   * completes, so the failed message can send itself (DOR-1650). Returns
+   * whether it did.
+   */
+  onSigninComplete?: () => boolean;
   /** Tool call ID rendered in the input zone (to skip in the transcript). */
   inputZoneToolCallId?: string | null;
   /** Text animation effect for streaming text. */
@@ -152,6 +158,7 @@ export function SessionTranscript({
   focusedOptionIndex = -1,
   onToolDecided,
   onRetry,
+  onSigninComplete,
   inputZoneToolCallId = null,
   textEffect,
   runtimeLabel,
@@ -324,6 +331,7 @@ export function SessionTranscript({
           focusedOptionIndex={focusedOptionIndex}
           onToolDecided={onToolDecided}
           onRetry={onRetry}
+          onSigninComplete={onSigninComplete}
           inputZoneToolCallId={inputZoneToolCallId}
           textEffect={textEffect}
           runtimeLabel={runtimeLabel}
@@ -348,6 +356,7 @@ export function SessionTranscript({
       focusedOptionIndex,
       onToolDecided,
       onRetry,
+      onSigninComplete,
       inputZoneToolCallId,
       textEffect,
       runtimeLabel,

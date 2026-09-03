@@ -14,6 +14,7 @@
  *
  * @module features/chat/ui/message/AuthErrorActions
  */
+import { useState } from 'react';
 import { Check, Loader2, LogIn, RotateCcw } from 'lucide-react';
 import { runtimeSupportsLogin } from '@dorkos/shared/agent-runtime';
 import { Button } from '@/layers/shared/ui';
@@ -66,14 +67,31 @@ function InlineSigninActions({
   runtime: string;
   sessionId: string;
   onRetry?: () => void;
-  onSigninComplete?: () => void;
+  onSigninComplete?: () => boolean;
 }) {
-  // The once-only guarantee is the hook's, not this component's, and it has to
-  // be: `isSuccess` is read from the shared MutationCache, which outlives this
-  // row. A latch held here would reset on the remount the virtualized
-  // transcript performs on every scroll and re-announce a sign-in that already
-  // finished — re-sending the failed turn once DOR-1650 consumes this.
-  const login = useDelegateRuntimeLogin(runtime, { sessionId, onCompleted: onSigninComplete });
+  // Whether the sign-in that just landed also put the failed message back on its
+  // way (DOR-1650). Component-local, and that is right: it acknowledges an
+  // action taken a moment ago, not a fact about the session. The once-only
+  // guarantee it depends on is the HOOK's — `isSuccess` reads from the shared
+  // MutationCache, which outlives this row, so a latch held here would reset on
+  // the remount the virtualized transcript performs on every scroll and re-send
+  // a message that already went. A remount does drop this line back to the
+  // settled "Signed in.", which is the honest reading by then: the resend is
+  // over, and the transcript above shows it.
+  //
+  // Virtualization cuts the other way too, and that lapse is deliberate as
+  // well: the hook that reports a landing lives HERE, so scrolling the row away
+  // while the login is still running means nothing is mounted to hear it settle
+  // and the resume waits until the row comes back. Deferred, never lost, never
+  // doubled — the shared cache holds the outcome and the latch holds the count.
+  // Hoisting the subscription up to the panel would fire it with nothing on
+  // screen, which sends a person's message while they are looking somewhere
+  // else and no card anywhere says so.
+  const [resending, setResending] = useState(false);
+  const login = useDelegateRuntimeLogin(runtime, {
+    sessionId,
+    onCompleted: () => setResending(onSigninComplete?.() ?? false),
+  });
   const copy = getLoginCopy(runtime);
 
   if (login.isSuccess) {
@@ -84,9 +102,11 @@ function InlineSigninActions({
           role="status"
         >
           <Check aria-hidden="true" className="size-3.5 shrink-0" />
-          Signed in.
+          {resending ? 'Signed in. Sending your message again…' : 'Signed in.'}
         </p>
-        {onRetry && (
+        {/* No Retry while the message is already going — a button offering to
+            send it again, at the moment it is being sent, is how you get two. */}
+        {!resending && onRetry && (
           <Button size="sm" onClick={onRetry} className="mt-2 gap-1.5">
             <RotateCcw className="size-3" />
             Retry
@@ -177,7 +197,7 @@ function SessionSigninActions({
 }: {
   sessionId: string;
   onRetry?: () => void;
-  onSigninComplete?: () => void;
+  onSigninComplete?: () => boolean;
 }) {
   const { sessions, isLoading } = useSessions();
   const runtime = sessions.find((s) => s.id === sessionId)?.runtime;
@@ -214,8 +234,15 @@ export function AuthErrorActions({
   sessionId?: string;
   /** Re-send the failed turn. Omitted when there is nothing to resend. */
   onRetry?: () => void;
-  /** Fires once a sign-in started here completes (the DOR-1650 seam). */
-  onSigninComplete?: () => void;
+  /**
+   * Fires once — and only once — when a sign-in started here completes, so the
+   * conversation can put the failed message back on its way (DOR-1650).
+   * Returns whether it actually did: the card says "Sending your message
+   * again…" only when something really is being sent, and settles on a plain
+   * "Signed in." with a Retry button when the conversation decided the person
+   * had moved on.
+   */
+  onSigninComplete?: () => boolean;
 }) {
   if (!sessionId) return <ProviderPickerActions onRetry={onRetry} />;
   return (
