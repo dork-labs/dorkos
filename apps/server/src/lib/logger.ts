@@ -46,6 +46,12 @@ let configuredLevel = 3; // info
  *
  * The context is passed through `normalizeLogContext` on the way in, because
  * spreading an Error yields `{}` — see `lib/serialize-error.ts` (DOR-802).
+ *
+ * Nothing here may throw back at the caller. Most of these call sites are inside
+ * a `catch` block, so a reporter that throws replaces the failure being reported
+ * with one of its own — and a context object can still defeat serialization
+ * (a cycle, a getter that throws). Those lines degrade to a line that names the
+ * serialization failure instead of disappearing.
  */
 function createFileReporter() {
   return {
@@ -54,27 +60,47 @@ function createFileReporter() {
       // Respect the configured log level — skip entries above the threshold
       if (logObj.level > configuredLevel) return;
 
-      // Separate structured context objects from string message parts
-      let context: Record<string, unknown> | undefined;
+      const time = logObj.date.toISOString();
+      // Declared out here so the fallback line below can still use whatever
+      // message text was assembled before something threw.
       const msgParts: string[] = [];
-      for (const arg of logObj.args) {
-        if (typeof arg === 'object' && arg !== null && !Array.isArray(arg)) {
-          context = arg as Record<string, unknown>;
-        } else {
-          msgParts.push(String(arg));
+      let entry: string;
+
+      try {
+        // Separate structured context objects from string message parts
+        let context: Record<string, unknown> | undefined;
+        for (const arg of logObj.args) {
+          if (typeof arg === 'object' && arg !== null && !Array.isArray(arg)) {
+            context = arg as Record<string, unknown>;
+          } else {
+            msgParts.push(String(arg));
+          }
         }
+
+        const dispatchId = currentDispatchId();
+        entry = JSON.stringify({
+          level: logObj.type,
+          time,
+          msg: msgParts.join(' '),
+          tag: logObj.tag || extractTag(msgParts[0]),
+          ...(dispatchId !== undefined ? { dispatchId } : {}),
+          ...(context !== undefined ? normalizeLogContext(context) : {}),
+        });
+      } catch (err) {
+        entry = JSON.stringify({
+          level: logObj.type,
+          time,
+          msg: msgParts.join(' '),
+          tag: logObj.tag || extractTag(msgParts[0]),
+          logSerializationError: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+        });
       }
 
-      const dispatchId = currentDispatchId();
-      const entry = JSON.stringify({
-        level: logObj.type,
-        time: logObj.date.toISOString(),
-        msg: msgParts.join(' '),
-        tag: logObj.tag || extractTag(msgParts[0]),
-        ...(dispatchId !== undefined ? { dispatchId } : {}),
-        ...(context !== undefined ? normalizeLogContext(context) : {}),
-      });
-      fs.appendFileSync(logFile, entry + '\n');
+      try {
+        fs.appendFileSync(logFile, entry + '\n');
+      } catch {
+        // A log that cannot be written is not worth taking the caller down for.
+      }
     },
   };
 }

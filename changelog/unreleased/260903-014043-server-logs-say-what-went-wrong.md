@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): the log line now says what went wrong (DOR-802)'
+  - 'fix(server): bound the log line, and never throw out of the logger (DOR-802 review folds)'
 ---
 
 ### Fixed

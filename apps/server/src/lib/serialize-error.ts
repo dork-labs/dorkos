@@ -26,6 +26,26 @@
  */
 const MAX_DEPTH = 5;
 
+/**
+ * Longest `message` and `stack` written before they are clipped.
+ *
+ * A log line is a whole line: the reporter appends it in one write, rotation is
+ * only checked at startup, and `log-excerpt.ts` reads whole files back for bug
+ * reports. So one error carrying a megabyte-long message — a subprocess dump, a
+ * stringified response body — would bloat the file and every reader of it. These
+ * caps are far above any real stack (a deep Node stack is a few KB) and far
+ * below the size where one line becomes a problem.
+ */
+const MAX_MESSAGE_LEN = 4 * 1024;
+/** See {@link MAX_MESSAGE_LEN}. Stacks are legitimately longer than messages. */
+const MAX_STACK_LEN = 16 * 1024;
+
+/** Clip an over-long string, saying how much was dropped rather than trailing off silently. */
+function clip(value: string, max: number): string {
+  if (value.length <= max) return value;
+  return `${value.slice(0, max)}… [truncated, ${value.length - max} more characters]`;
+}
+
 /** A plain `{}` object, as opposed to a class instance, array, or null. */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (typeof value !== 'object' || value === null) return false;
@@ -40,6 +60,12 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * live, and existing log readers already depend on them — and the authoritative
  * `name`/`message`/`stack` are written last so a stray own property of the same
  * name cannot displace them.
+ *
+ * `cause` and an `AggregateError`'s `errors` are pulled out by hand for the same
+ * reason `message` and `stack` are: both are own but NOT enumerable, so both
+ * vanish from a spread. An `AggregateError` that lost its `errors` is precisely
+ * the reason-less line this module exists to prevent — every sub-error is where
+ * the reason lives.
  */
 function serializeError(err: Error, depth: number): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -50,9 +76,13 @@ function serializeError(err: Error, depth: number): Record<string, unknown> {
   const cause: unknown = (err as { cause?: unknown }).cause;
   if (cause !== undefined) out.cause = normalizeValue(cause, depth + 1);
 
+  if (err instanceof AggregateError && Array.isArray(err.errors)) {
+    out.errors = (err.errors as unknown[]).map((sub) => normalizeValue(sub, depth + 1));
+  }
+
   out.name = err.name;
-  out.message = err.message;
-  if (err.stack !== undefined) out.stack = err.stack;
+  out.message = clip(err.message, MAX_MESSAGE_LEN);
+  if (err.stack !== undefined) out.stack = clip(err.stack, MAX_STACK_LEN);
   return out;
 }
 
@@ -65,7 +95,7 @@ function serializeError(err: Error, depth: number): Record<string, unknown> {
 function normalizeValue(value: unknown, depth: number): unknown {
   if (value instanceof Error) {
     // Out of budget: keep the reason, drop the structure.
-    if (depth >= MAX_DEPTH) return `${value.name}: ${value.message}`;
+    if (depth >= MAX_DEPTH) return `${value.name}: ${clip(value.message, MAX_MESSAGE_LEN)}`;
     return serializeError(value, depth);
   }
   if (depth >= MAX_DEPTH) return value;

@@ -128,13 +128,54 @@ describe('NDJSON error serialization', () => {
 
       loggerModule.logger.error('[relay] send failed', err);
 
-      const serialized = JSON.stringify(lines()[0]);
-      // The outermost links survive in full…
-      expect(serialized).toContain('depth-12');
-      expect(serialized).toContain('depth-8');
-      // …and the tail collapses to a one-line summary rather than recursing on.
-      expect(serialized).not.toContain('depth-0"');
-      expect(serialized).toContain('Error: depth-');
+      const entry = lines()[0];
+      expect(entry.error).toBe('depth-12');
+
+      // Five links serialize in full; the sixth is where the budget runs out.
+      const c1 = entry.cause as Record<string, unknown>;
+      const c2 = c1.cause as Record<string, unknown>;
+      const c3 = c2.cause as Record<string, unknown>;
+      const c4 = c3.cause as Record<string, unknown>;
+      expect([c1.message, c2.message, c3.message, c4.message]).toEqual([
+        'depth-11',
+        'depth-10',
+        'depth-9',
+        'depth-8',
+      ]);
+      // The tail collapses to one exact summary string rather than recursing on.
+      expect(c4.cause).toBe('Error: depth-7');
+      expect(JSON.stringify(entry)).not.toContain('depth-6');
+    });
+  });
+
+  describe('AggregateError', () => {
+    it('writes the sub-errors, which are non-enumerable exactly like `stack`', () => {
+      const aggregate = new AggregateError(
+        [new Error('endpoint A refused'), new Error('endpoint B timed out')],
+        'every endpoint failed'
+      );
+
+      loggerModule.logger.error('[mesh] discovery failed', aggregate);
+
+      const [entry] = lines();
+      expect(entry.error).toBe('every endpoint failed');
+      const subErrors = entry.errors as Array<Record<string, unknown>>;
+      expect(subErrors.map((e) => e.message)).toEqual([
+        'endpoint A refused',
+        'endpoint B timed out',
+      ]);
+      expect(String(subErrors[0].stack)).toContain('endpoint A refused');
+    });
+
+    it('writes the sub-errors of one nested in a context object', () => {
+      const aggregate = new AggregateError([new Error('inner')], 'all failed');
+
+      loggerModule.logger.warn('[relay] fan-out failed', { err: aggregate });
+
+      const [entry] = lines();
+      const err = entry.err as Record<string, unknown>;
+      const subErrors = err.errors as Array<Record<string, unknown>>;
+      expect(subErrors[0].message).toBe('inner');
     });
   });
 
@@ -143,13 +184,60 @@ describe('NDJSON error serialization', () => {
       loggerModule.logger.info('[Tasks] scheduled', { taskId: 'abc', attempts: 2, ok: true });
 
       const [entry] = lines();
-      expect(entry).toMatchObject({
+      // toEqual, not toMatchObject: a subset match would pass just as happily if
+      // the reporter started adding fields nobody asked for.
+      expect(entry).toEqual({
+        level: 'info',
+        time: expect.any(String) as unknown as string,
         msg: '[Tasks] scheduled',
         tag: 'Tasks',
         taskId: 'abc',
         attempts: 2,
         ok: true,
       });
+    });
+  });
+
+  describe('lines that would otherwise be unbounded', () => {
+    it('clips a huge message and stack instead of writing a megabyte-long line', () => {
+      const huge = new Error('x'.repeat(2_000_000));
+
+      loggerModule.logger.error('[Runtimes] subprocess died', huge);
+
+      const raw = fs.readFileSync(path.join(logDir, 'dorkos.log'), 'utf8');
+      expect(raw.length).toBeLessThan(64 * 1024);
+
+      const [entry] = lines();
+      expect(String(entry.error)).toContain('more characters]');
+      expect(String(entry.error).length).toBeLessThan(5 * 1024);
+      expect(String(entry.stack).length).toBeLessThan(17 * 1024);
+      // The head of the message — the part that identifies it — is still there.
+      expect(String(entry.error).startsWith('xxxx')).toBe(true);
+    });
+
+    it('still writes a line when the context cannot be serialized at all', () => {
+      const cyclic: Record<string, unknown> = { workspace: 'demo' };
+      cyclic.self = cyclic;
+
+      expect(() => loggerModule.logger.error('[workspaces] GET / failed', cyclic)).not.toThrow();
+
+      const [entry] = lines();
+      expect(entry.msg).toBe('[workspaces] GET / failed');
+      expect(String(entry.logSerializationError)).toContain('circular');
+    });
+
+    it('survives a context property whose getter throws', () => {
+      const hostile = {
+        get boom(): string {
+          throw new Error('getter exploded');
+        },
+      };
+
+      expect(() => loggerModule.logger.error('[relay] send failed', hostile)).not.toThrow();
+
+      const [entry] = lines();
+      expect(entry.msg).toBe('[relay] send failed');
+      expect(entry.logSerializationError).toBe('Error: getter exploded');
     });
   });
 });
