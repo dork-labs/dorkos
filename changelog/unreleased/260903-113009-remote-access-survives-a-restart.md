@@ -1,8 +1,8 @@
 ---
 covers:
-  - 'fix(server): a dropped tunnel is noticed, and a failed close no longer strands it (DOR-1738)'
+  - 'fix(server): notice a dropped tunnel, and let go of one that will not close (DOR-1738)'
   - 'fix(server): one answer for what the tunnel starts with, at boot and from the app (DOR-1738)'
-  - 'fix(server): only a person can publish this machine, and the settings say what is true (DOR-1738)'
+  - 'fix(server,shared): say what the tunnel really is, not only what is running (DOR-1738)'
 ---
 
 ### Fixed
