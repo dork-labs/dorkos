@@ -22,10 +22,10 @@
  * @module features/settings/ui/runtimes/RuntimeCardView
  */
 import { useId, useState, type CSSProperties, type ReactNode } from 'react';
-import { ChevronDown, CircleAlert } from 'lucide-react';
+import { CircleAlert } from 'lucide-react';
 import type { RuntimeSettingsSection } from '@dorkos/shared/agent-runtime';
 import { cn } from '@/layers/shared/lib';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/layers/shared/ui';
+import { CollapsibleFieldCard } from '@/layers/shared/ui';
 import { getRuntimeDescriptor, type ExpiringSignIn } from '@/layers/entities/runtime';
 import {
   RECONNECT_TRIGGERS,
@@ -376,15 +376,17 @@ export function RuntimeCardView({
             ))}
 
           {setupDetails && (
-            <Collapsible open={setupOpen} onOpenChange={setSetupOpen}>
-              <CollapsibleTrigger className="focus-ring text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded-sm text-xs transition-colors">
-                <ChevronDown
-                  className={cn('size-3.5 transition-transform', setupOpen && 'rotate-180')}
-                />
-                Setup details
-              </CollapsibleTrigger>
-              <CollapsibleContent className="mt-3 space-y-3">{setupDetails}</CollapsibleContent>
-            </Collapsible>
+            // The app's one disclosure card for a settings group
+            // (`design-system.md` §Disclosure) rather than a hand-rolled
+            // trigger, so this opens the way every other section does.
+            <CollapsibleFieldCard
+              open={setupOpen}
+              onOpenChange={setSetupOpen}
+              trigger="Setup details"
+              className="bg-transparent"
+            >
+              {setupDetails}
+            </CollapsibleFieldCard>
           )}
         </div>
       )}

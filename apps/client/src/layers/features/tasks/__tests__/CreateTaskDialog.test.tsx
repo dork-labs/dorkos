@@ -133,6 +133,28 @@ describe('CreateTaskDialog', () => {
     cleanup();
   });
 
+  /**
+   * Open the form's Schedule section.
+   *
+   * It is shut on a new task and open on one that already has a schedule. The
+   * shared disclosure card the form now uses unmounts what it hides (DOR-1759),
+   * so a case that types a cron opens it first, exactly as a person does.
+   */
+  function openSchedule() {
+    fireEvent.click(screen.getByRole('button', { name: /^Schedule/ }));
+  }
+
+  /**
+   * Open the form's Advanced settings section, always shut at rest.
+   *
+   * Awaits the trigger: leaving the template gallery is not synchronous, so a
+   * case that opens the section right after "Start from scratch" would reach for
+   * a form that has not arrived.
+   */
+  async function openAdvanced() {
+    fireEvent.click(await screen.findByRole('button', { name: /Advanced settings/ }));
+  }
+
   it('shows "New Schedule" title in create mode', () => {
     const transport = createMockTransport();
     const Wrapper = createWrapper(transport);
@@ -213,6 +235,7 @@ describe('CreateTaskDialog', () => {
     );
 
     // ScheduleBuilder starts empty. Switch to cron mode and type a cron expression.
+    openSchedule();
     fireEvent.click(screen.getByText('Use a cron expression'));
     fireEvent.change(screen.getByPlaceholderText('0 9 * * 1-5'), {
       target: { value: '0 0 * * *' },
@@ -252,12 +275,14 @@ describe('CreateTaskDialog', () => {
       screen.getByPlaceholderText('Review all pending PRs and summarize findings...'),
       { target: { value: 'Summarise what changed' } }
     );
+    openSchedule();
     fireEvent.click(screen.getByText('Use a cron expression'));
     fireEvent.change(screen.getByPlaceholderText('0 9 * * 1-5'), {
       target: { value: '0 9 * * *' },
     });
 
     // Flip the sticky toggle on, then create.
+    await openAdvanced();
     fireEvent.click(screen.getByRole('switch', { name: /remember the last run/i }));
     fireEvent.click(screen.getByText('Create'));
 
@@ -318,6 +343,7 @@ describe('CreateTaskDialog', () => {
         screen.getByPlaceholderText('Review all pending PRs and summarize findings...'),
         { target: { value: 'Run the nightly build' } }
       );
+      openSchedule();
       fireEvent.click(screen.getByText('Use a cron expression'));
       fireEvent.change(screen.getByPlaceholderText('0 9 * * 1-5'), { target: { value: cron } });
     }
@@ -361,8 +387,8 @@ describe('CreateTaskDialog', () => {
 
       const note = screen.getByTestId('cron-blocks-save');
       expect(note).toHaveTextContent(/Fix the timing under Schedule/);
-      // Outside the <details>, so collapsing the section cannot take it away.
-      expect(note.closest('details')).toBeNull();
+      // Outside the disclosure card, so closing the section cannot take it away.
+      expect(note.closest('[data-slot="collapsible-field-card"]')).toBeNull();
     });
 
     it('takes the reason away once the expression reads back', async () => {
@@ -553,6 +579,7 @@ describe('CreateTaskDialog', () => {
         </Wrapper>
       );
       fireEvent.click(screen.getByText('Start from scratch'));
+      await openAdvanced();
 
       const dial = await screen.findByRole('radiogroup', { name: /how much/i });
       expect(
@@ -573,6 +600,7 @@ describe('CreateTaskDialog', () => {
         </Wrapper>
       );
       fireEvent.click(screen.getByText('Start from scratch'));
+      await openAdvanced();
 
       // `acceptEdits` still asks before commands, and nobody is there to answer.
       // The runtime refuses it after ten minutes and the turn CARRIES ON — it
@@ -654,6 +682,7 @@ describe('CreateTaskDialog', () => {
         </Wrapper>
       );
       fireEvent.click(screen.getByText('Start from scratch'));
+      await openAdvanced();
 
       // Nothing overridden and no agent: the run lands on the registry default,
       // and the dial says what THAT runtime promises.
@@ -689,6 +718,7 @@ describe('CreateTaskDialog', () => {
           <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
         </Wrapper>
       );
+      await openAdvanced();
 
       await waitFor(() => expect(screen.getByRole('radio', { name: 'Ask first' })).toBeChecked());
       expect(screen.queryByRole('radio', { name: /plan/i })).toBeNull();
@@ -713,6 +743,7 @@ describe('CreateTaskDialog', () => {
           <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
         </Wrapper>
       );
+      await openAdvanced();
 
       const note = await screen.findByTestId('trust-dial-unavailable');
       expect(note).toHaveTextContent(/Bypass All/);
@@ -731,6 +762,7 @@ describe('CreateTaskDialog', () => {
         </Wrapper>
       );
       fireEvent.click(screen.getByText('Start from scratch'));
+      await openAdvanced();
 
       await screen.findByRole('radiogroup', { name: /how much/i });
       fireEvent.click(screen.getByRole('radio', { name: 'Full autonomy' }));
@@ -758,6 +790,7 @@ describe('CreateTaskDialog', () => {
         </Wrapper>
       );
       fireEvent.click(screen.getByText('Start from scratch'));
+      await openAdvanced();
 
       await screen.findByRole('radiogroup', { name: /how much/i });
       fireEvent.click(screen.getByRole('radio', { name: 'Full autonomy' }));
@@ -823,6 +856,7 @@ describe('CreateTaskDialog', () => {
           <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
         </Wrapper>
       );
+      await openAdvanced();
 
       await screen.findByRole('radiogroup', { name: /how much/i });
       fireEvent.click(screen.getByRole('radio', { name: 'Act' }));
@@ -859,6 +893,7 @@ describe('CreateTaskDialog', () => {
           <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
         </Wrapper>
       );
+      await openAdvanced();
 
       const note = await screen.findByTestId('trust-dial-stranded');
       // The runtime's own word ("Plan"), not the id table's ("Plan Mode").
@@ -885,6 +920,7 @@ describe('CreateTaskDialog', () => {
           <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
         </Wrapper>
       );
+      await openAdvanced();
 
       await waitFor(() => {
         expect(screen.getByDisplayValue('Old Name')).toBeTruthy();
@@ -916,6 +952,7 @@ describe('CreateTaskDialog', () => {
           <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
         </Wrapper>
       );
+      await openAdvanced();
 
       await waitFor(() => {
         expect(screen.getByDisplayValue('Old Name')).toBeTruthy();
@@ -947,6 +984,7 @@ describe('CreateTaskDialog', () => {
           <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
         </Wrapper>
       );
+      await openAdvanced();
 
       expect(await screen.findByTestId('trust-dial-stranded')).toHaveTextContent(/Auto/);
     });
@@ -961,6 +999,7 @@ describe('CreateTaskDialog', () => {
           <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
         </Wrapper>
       );
+      await openAdvanced();
 
       await waitFor(() => {
         expect(screen.getByRole('radio', { name: 'Act' })).toBeChecked();

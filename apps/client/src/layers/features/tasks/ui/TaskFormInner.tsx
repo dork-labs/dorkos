@@ -1,9 +1,12 @@
+import { useState } from 'react';
 import { useStore } from '@tanstack/react-form';
-import { ChevronRight, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { useCreateTask, useUpdateTask } from '@/layers/entities/tasks';
 import type { TaskTemplate } from '@/layers/entities/tasks';
 import {
   ResponsiveDialogFooter,
+  Badge,
+  CollapsibleFieldCard,
   Label,
   Button,
   PermissionModeScopeNote,
@@ -237,6 +240,24 @@ export function ScheduleForm({
   // has to know which mode it is about to hand to a different runtime.
   const permissionMode = useStore(form.store, (s) => s.values.permissionMode);
 
+  // The two disclosure sections. Schedule opens on a task that already has one;
+  // Advanced always starts shut, which is what makes it advanced.
+  const cronValue = useStore(form.store, (s) => s.values.cron);
+  const [scheduleOpen, setScheduleOpen] = useState(!!defaultValues.cron);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  // What a closed section is hiding, counted so the badge can say it. Only the
+  // things a person deliberately set: an empty override is "follow the agent",
+  // which is not a change (DOR-1759).
+  const maxRuntime = useStore(form.store, (s) => s.values.maxRuntime);
+  const sticky = useStore(form.store, (s) => s.values.sticky);
+  const advancedChanges = [
+    runtimeOverride !== '',
+    modelOverride !== '',
+    effortOverride !== '',
+    maxRuntime !== DEFAULT_MAX_RUNTIME,
+    sticky,
+  ].filter(Boolean).length;
+
   // Every picker agent's own runtime, off the manifest that owns it (ADR-0043).
   // The whole list rather than the selected one, because the agent picker below
   // has to know what a candidate agent would run on before it commits the pick.
@@ -360,13 +381,17 @@ export function ScheduleForm({
           </form.AppField>
 
           {/* ── Schedule (optional) ── */}
-          <details className="group" open={!!defaultValues.cron}>
-            <summary className="text-muted-foreground hover:text-foreground flex cursor-pointer list-none items-center gap-1.5 text-sm">
-              <ChevronRight className="size-4 transition-transform group-open:rotate-90" />
-              Schedule
-              <span className="text-muted-foreground/60 text-xs">(optional)</span>
-            </summary>
-            <div className="mt-3 space-y-4 pl-6">
+          <CollapsibleFieldCard
+            open={scheduleOpen}
+            onOpenChange={setScheduleOpen}
+            trigger="Schedule"
+            badge={
+              <Badge variant="secondary" className="text-xs">
+                {cronValue ? 'On a schedule' : 'Optional'}
+              </Badge>
+            }
+          >
+            <div className="space-y-4">
               <form.AppField name="cron">
                 {(field) => (
                   <div className="space-y-1.5">
@@ -390,15 +415,13 @@ export function ScheduleForm({
                 )}
               </form.AppField>
             </div>
-          </details>
+          </CollapsibleFieldCard>
 
           {/* The cron warning lives inside the Schedule section, which collapses
               — and a collapsed section plus a disabled Create button is a dead
-              end with its reason hidden. This sits OUTSIDE the <details>, so the
+              end with its reason hidden. This sits OUTSIDE that section, so the
               reason is on screen either way. Deliberately not forcing the
-              section open instead: React only writes `open` when the prop
-              changes, so a person who collapses it again would never see it
-              reopen. */}
+              section open instead: a person who closed it meant it. */}
           <form.Subscribe selector={(s) => !isCronValid(s.values.cron)}>
             {(cronIsBroken) =>
               cronIsBroken ? (
@@ -410,13 +433,19 @@ export function ScheduleForm({
           </form.Subscribe>
 
           {/* ── Advanced settings (collapsed by default) ── */}
-          <details className="group">
-            <summary className="text-muted-foreground hover:text-foreground flex cursor-pointer list-none items-center gap-1.5 text-sm">
-              <ChevronRight className="size-4 transition-transform group-open:rotate-90" />
-              Advanced settings
-            </summary>
-
-            <div className="mt-3 space-y-4 pl-6">
+          <CollapsibleFieldCard
+            open={advancedOpen}
+            onOpenChange={setAdvancedOpen}
+            trigger="Advanced settings"
+            badge={
+              advancedChanges > 0 ? (
+                <Badge variant="secondary" className="text-xs">
+                  {advancedChanges} changed
+                </Badge>
+              ) : undefined
+            }
+          >
+            <div className="space-y-4">
               {/* Above Permissions on purpose: the dial's whole vocabulary comes
                   from the runtime chosen here, so the runtime is the thing to
                   read first. */}
@@ -569,7 +598,7 @@ export function ScheduleForm({
                 )}
               </form.AppField>
             </div>
-          </details>
+          </CollapsibleFieldCard>
         </div>
       </form>
 
