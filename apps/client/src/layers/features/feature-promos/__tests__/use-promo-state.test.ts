@@ -87,14 +87,14 @@ describe('promo state in app store', () => {
     });
   });
 
-  describe('resetPreferences', () => {
+  describe('resetAllSettings', () => {
     it('resets promoEnabled to true', () => {
       const { result } = renderHook(() => useAppStore());
       act(() => {
         result.current.setPromoEnabled(false);
       });
       act(() => {
-        result.current.resetPreferences();
+        result.current.resetAllSettings();
       });
       expect(result.current.promoEnabled).toBe(true);
     });
@@ -106,7 +106,7 @@ describe('promo state in app store', () => {
       // config later — resurrecting dismissals the person had just cleared.
       const { result } = renderHook(() => useAppStore());
       act(() => {
-        result.current.resetPreferences();
+        result.current.resetAllSettings();
       });
       expect(localStorageMock.removeItem).toHaveBeenCalledWith('dorkos-dismissed-promo-ids');
     });

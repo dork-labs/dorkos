@@ -182,8 +182,29 @@ export interface CoreSlice {
   removeContextFile: (id: string) => void;
   clearContextFiles: () => void;
 
-  /** Reset all persisted preferences to defaults and sync state + localStorage. */
-  resetPreferences: () => void;
+  /**
+   * Put typography back to its shipped defaults — font size and font family,
+   * in state, in localStorage, and on the document.
+   *
+   * Deliberately narrow: this is what the Appearance panel's "Reset to
+   * defaults" means, so it touches nothing that panel does not show. The theme
+   * lives in its own store and is reset alongside it by the caller. For the
+   * clean slate, see {@link CoreSlice.resetAllSettings}.
+   */
+  resetAppearance: () => void;
+
+  /**
+   * Put every setting this browser holds back to its shipped default —
+   * typography, the Preferences toggles, the sidebar tab, and the canvas,
+   * right-panel and picture-in-picture layouts — clearing their localStorage
+   * keys as it goes.
+   *
+   * The clean slate, reachable only from Advanced's Danger Zone behind a
+   * confirm. It leaves alone what is not a setting (recent folders, the current
+   * session) and what is not local (config-backed preferences, which follow a
+   * person between devices). The theme is reset alongside it by the caller.
+   */
+  resetAllSettings: () => void;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useTransport, useAppStore } from '@/layers/shared/model';
 import { isSessionRequestReady } from '@/layers/shared/lib';
-import type { PermissionMode, Session } from '@dorkos/shared/types';
+import type { PermissionModeId, Session } from '@dorkos/shared/types';
 // Same-slice imports via sibling modules (not the entities/session barrel) to
 // avoid a self-referential barrel import within this slice.
 import { sessionKeys } from '../api/query-keys';
@@ -98,8 +98,8 @@ export function useSessionDetail<T = Session>(
  */
 export function useSessionPermissionMode(
   sessionId: string | null,
-  options?: { enabled?: boolean; fallback?: PermissionMode }
-): PermissionMode | null {
+  options?: { enabled?: boolean; fallback?: PermissionModeId }
+): PermissionModeId | null {
   // Selected down to the mode itself: this feeds the app-wide banner slot, so an
   // observer tracking the whole row would re-render the shell every time an
   // unrelated field (model, effort, fast-mode) was written to the same session.
@@ -110,13 +110,11 @@ export function useSessionPermissionMode(
   const overrides = useSessionSettingsOverride(sessionId ?? '');
 
   if (!sessionId) return null;
-  // `confirmed` reads off `Session.permissionMode`, which carries any id the
-  // session's own runtime reports (DOR-851; `test-mode`'s ids sit outside the
-  // enum on purpose). Safe to narrow back to `PermissionMode` here — this
-  // hook feeds display surfaces that read meaning off descriptors, never off
-  // the literal name.
-  return resolvePermissionMode(
-    overrides.permissionMode,
-    confirmed ?? options?.fallback
-  ) as PermissionMode;
+  // A {@link PermissionModeId}, not the narrower enum: `confirmed` reads off
+  // `Session.permissionMode`, which carries any id the session's own runtime
+  // reports (`test-mode`'s ids sit outside the enum on purpose). Every surface
+  // downstream reads meaning off the runtime's own descriptors or treats the id
+  // as an opaque display string, so none of them needed the narrowing this used
+  // to assert (DOR-851, DOR-885).
+  return resolvePermissionMode(overrides.permissionMode, confirmed ?? options?.fallback);
 }

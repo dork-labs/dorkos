@@ -14,8 +14,7 @@ import type {
   ModelOption,
   SubagentInfo,
   CommandRegistry,
-  PermissionMode,
-  EffortLevel,
+  PermissionModeId,
   ReloadPluginsResult,
   SessionSettings,
   SessionListWarning,
@@ -741,8 +740,13 @@ export interface SessionOpts extends SessionSettings {
   /**
    * Required here: callers resolve the effective mode
    * (per-send override → persisted → runtime default) before creating.
+   *
+   * Widened from the narrow enum, not just made required: every rung of that
+   * ladder carries a RUNTIME-declared id (`test-mode`'s default is
+   * `always-allow`), so the id is a {@link PermissionModeId} the same way it is
+   * everywhere else it travels (DOR-885).
    */
-  permissionMode: PermissionMode;
+  permissionMode: PermissionModeId;
   cwd?: string;
   hasStarted?: boolean;
   /**
@@ -986,15 +990,14 @@ export interface AgentRuntime {
    * applies on the next turn either way (ADR-0261). What the result carries is
    * whether it also reached the turn already running — see
    * {@link SessionUpdateResult}.
+   *
+   * The changed fields are {@link SessionSettings} itself — the same shape the
+   * update request carries and the settings store persists — rather than a
+   * fourth hand-written copy of those four keys that could drift from it.
    */
   updateSession(
     sessionId: string,
-    opts: {
-      permissionMode?: PermissionMode;
-      model?: string;
-      effort?: EffortLevel;
-      fastMode?: boolean;
-    }
+    opts: SessionSettings
   ): SessionUpdateResult | Promise<SessionUpdateResult>;
 
   /**

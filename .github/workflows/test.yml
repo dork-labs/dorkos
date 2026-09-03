@@ -250,7 +250,66 @@ jobs:
     needs: test-shard
     if: ${{ always() }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # MEASURED over a stamped sample, so a future tuner can reproduce it rather
+    # than trust it: every `pull_request` run of THIS job that started on or
+    # after the four-way shard split (2026-08-30) and completed by
+    # 2026-09-03T05:10:41Z — 139 runs, 131 green, 7 failed, 1 killed. Green
+    # wall clock: p50 29.0 min, p90 37.5, p95 38.1, SLOWEST 44.5, with three
+    # runs above 40. Recompute it and you will get different numbers; the shape
+    # is what matters, and the shape is that the slowest honest run sits a few
+    # minutes under whatever ceiling is written here.
+    #
+    # What is being measured is the AFFECTED sweep, which on any PR touching
+    # @dorkos/shared expands to 19-24 packages — effectively the whole
+    # monorepo, unsharded, at --concurrency=1.
+    #
+    # So the old 45 left the slowest honest run THIRTY SECONDS of margin, and
+    # the tests started losing races they had already won. Run 33711507309
+    # (PR #1486) printed "Tasks: 30 successful, 30 total / Cached: 0 cached /
+    # Time: 37m13.894s" — every suite green — and was killed at 46m26s, with
+    # "The operation was canceled" landing 12 MILLISECONDS after turbo's own
+    # summary line. The check read `test: fail` with the tests won, which keeps
+    # a PR out of the merge queue on a wall-clock budget rather than on a
+    # defect.
+    #
+    # Those three >40-minute greens are not drift, they are dated: greens topped
+    # out at 38.7 min through 2026-09-02, and 41.9 / 43.8 / 44.5 all started
+    # between 04:15 and 04:25 on 2026-09-03 — after #1482 landed a test that
+    # wrote a ~2.0 MB single line to STDERR, which a runner's log pipeline
+    # serialises on for ~10 minutes. That test is fixed alongside this change,
+    # which should pull the tail back down. The ceiling still moves, because 30
+    # seconds of margin is too thin to absorb ANY tail — not to make room for
+    # that particular one.
+    #
+    # 60, and not more, because this ceiling's real job is to kill a suite that
+    # HANGS — the `--run` passthrough failing puts vitest in watch mode, where
+    # it never exits. It leaves the slowest measured honest run 15.5 minutes of
+    # room and still stops nonsense firmly; the concurrency block above also
+    # cancels a PR's in-flight run on the next push, which bounds the waste.
+    #
+    # This `timeout-minutes` sits on the job that serves BOTH events, so it is
+    # not literally "the PR leg's ceiling" — but on merge_group this job is only
+    # the shard fan-in (gate, checkout, artifact download, union check: a
+    # minute or two), so the value is felt by the pull_request leg alone. It
+    # cannot stall the queue either way: the merge queue's own timeout is 120.
+    #
+    # NOT sharded, deliberately — re-read this before copying the queue leg's
+    # matrix down here. Every shard pays its own checkout, install and full
+    # `^build`, so sharding this leg multiplies per-PR runner minutes by ~4, on
+    # the Free-plan 20-job pool whose saturation (88 runs queued against 14
+    # running, 2026-08-23) is the whole reason this leg is affected-only. The PR
+    # leg exists at minimum honest cost to report the required `test` context so
+    # the PR can enqueue; thoroughness is the queue leg's job. `--shard` would
+    # also force `--passWithNoTests`, and the net that replaces is
+    # scripts/assert-shard-union.sh — which demands that every package declaring
+    # a `test` script contribute a file, something an affected-only subset
+    # cannot satisfy by construction. DOR-1363's "split the job rather than
+    # raising this again" was written about the FULL-MONOREPO sweep, and that
+    # split has already happened: it is the four-shard queue leg above.
+    #
+    # If a healthy run ever crosses ~48 minutes, cut what this leg RUNS or what
+    # it PRINTS. Do not raise this past an hour.
+    timeout-minutes: 60
     env:
       NODE_OPTIONS: --max-old-space-size=8192
     steps:

@@ -97,7 +97,7 @@ const ORPHANED_BOOL_KEYS = [
 
 /**
  * One-time purge of localStorage keys for preferences that no longer exist.
- * Mirrors the `try/catch` + `removeItem` pattern used by `resetPreferences`.
+ * Mirrors the `try/catch` + `removeItem` pattern used by `resetAllSettings`.
  * A no-op when the keys are absent; never throws.
  */
 export function purgeOrphanedPreferenceKeys(): void {
