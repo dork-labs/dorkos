@@ -395,11 +395,11 @@ export type Session = z.infer<typeof SessionSchema>;
 
 /**
  * What `PATCH /api/sessions/:id` answers with: the session as it now stands,
- * plus — on a `202` — the one thing the session itself cannot say.
+ * plus the things the session itself cannot say.
  *
- * The extra field is deliberately NOT part of {@link SessionSchema}. It is a
+ * The extra fields are deliberately NOT part of {@link SessionSchema}. Each is a
  * fact about one write at one moment, not a property of the session, and a
- * session carrying it around would go stale the instant the next turn started.
+ * session carrying them around would go stale the instant the next turn started.
  */
 export const SessionUpdateResponseSchema = SessionSchema.extend({
   /**
@@ -408,6 +408,22 @@ export const SessionUpdateResponseSchema = SessionSchema.extend({
    * reply. Present only on a `202`, and only for a tightening.
    */
   permissionModePendingUntilNextTurn: z.literal(true).optional(),
+  /**
+   * The `runtime` above is an INFERENCE, not this session's owner: nothing has
+   * recorded one. So the server answered with the legacy default reads fall
+   * back to, which can contradict the `runtime` hint the caller just sent
+   * (DOR-1693).
+   *
+   * "No recorded owner" is NOT "brand new". A binding is written by an
+   * interactive session's first turn (ADR-0255) and by nothing else, so a
+   * scheduled run or a room turn can go many turns and still have no row. Read
+   * this as "unowned", never as "unused".
+   *
+   * Present only when the runtime is a guess; absent means the `runtime` field
+   * names the session's recorded owner. Never `false`: a client that does not
+   * know this field reads the same body it always did.
+   */
+  runtimeUnbound: z.literal(true).optional(),
 }).openapi('SessionUpdateResponse');
 
 /** Inferred type for {@link SessionUpdateResponseSchema}. */

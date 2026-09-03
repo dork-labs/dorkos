@@ -381,6 +381,16 @@ router.get('/:id', async (req, res) => {
   if (!session) return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
   // Adapters tag `runtime` themselves (task 1.1); backstop sloppy ones so
   // the required field always reaches the wire.
+  //
+  // It stays a backstop, and this route does NOT get PATCH's `runtimeUnbound`
+  // bit (DOR-1693, decided with it). The runtime asked here is the one that
+  // just produced the session, so `runtime` names the store the transcript was
+  // actually read out of — a fact about this read, and the route makes no claim
+  // about who will own the session after its first turn. PATCH is different
+  // because its answer can contradict a `runtime` the same request just sent.
+  // And the field would have to live on `SessionSchema` to reach here, which
+  // would put a per-read provenance bit on the shape the list endpoint and the
+  // client's caches carry around, where it would go stale on binding.
   if (!session.runtime) session.runtime = runtime.type;
   // Overlay persisted settings (ADR-0260) so the toolbar reflects the operator's
   // chosen mode/model/etc., not just what the transcript recorded. Same shared
@@ -858,7 +868,27 @@ router.patch('/:id', async (req, res) => {
   }
   // The loose fallback is still Session-shaped on the wire, so it must carry
   // the required `runtime` field (task 1.1) — resolved from the owning runtime.
-  const body = session ?? { id: sessionId, permissionMode, model, effort, runtime: runtime.type };
+  const loose = session ?? { id: sessionId, permissionMode, model, effort, runtime: runtime.type };
+  // ## Say when the runtime is a guess (DOR-1693)
+  //
+  // On a session nobody owns, `runtime` is the legacy inference —
+  // `claude-code`, so that reads keep working before anything is recorded — and
+  // it goes out in the same field, with the same shape, as a real binding. A
+  // caller cannot tell them apart, and it can flatly contradict the `runtime`
+  // hint that same request just sent. `bound` is already in hand from the
+  // resolve above; throwing it away here is what made the answer an inference
+  // wearing the costume of a fact.
+  //
+  // Unowned is not the same as new. `persistSessionRuntime` is called from the
+  // interactive POST /messages path and nowhere else, so a scheduled run or a
+  // room turn can go many turns with no row at all — this flag says a runtime
+  // was guessed, never how much the session has done.
+  //
+  // A separate optional flag rather than omitting `runtime` or echoing the
+  // hint: both of those change what an existing client reads, and one of them
+  // would have this route report a binding the first turn has not written yet
+  // (ADR-0255). This adds a field and moves nothing.
+  const body = bound ? loose : { ...loose, runtimeUnbound: true as const };
   // ## A tightening the running turn never confirmed is not a 200 (DOR-1435)
   //
   // Everything above is true of what DorkOS has STORED. When the runtime could

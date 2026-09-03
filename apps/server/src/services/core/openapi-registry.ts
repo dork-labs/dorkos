@@ -695,7 +695,14 @@ registry.registerPath({
     '`permissionModePendingUntilNextTurn: true` — saved, in force from the next ' +
     'reply, and NOT governing the reply already running. A loosening in the same ' +
     'position stays a plain `200`: it costs a few extra approval prompts for the ' +
-    'rest of one turn and corrects itself.',
+    'rest of one turn and corrects itself.\n\n' +
+    'A session with no recorded runtime is answered with the inference reads fall ' +
+    'back to, which can differ from the `runtime` hint you sent — so that answer ' +
+    'carries `runtimeUnbound: true` and you can tell a guess from a binding. This ' +
+    'is not only a brand-new session: the binding is written by an interactive ' +
+    "session's first turn and by nothing else, so a scheduled or room-driven " +
+    'session can have run many turns and still have no owner. The field is absent ' +
+    'once one is recorded, and it never appears as `false`.',
   request: {
     params: z.object({ id: z.string().uuid() }),
     body: {
@@ -705,7 +712,7 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Updated session',
-      content: { 'application/json': { schema: SessionSchema } },
+      content: { 'application/json': { schema: SessionUpdateResponseSchema } },
     },
     202: {
       description:
