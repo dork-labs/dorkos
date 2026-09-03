@@ -159,8 +159,8 @@ describe('PackageCard', () => {
       const pkg = makePackage({ author: 'Test Author', marketplace: 'dorkos-community' });
       render(<PackageCard pkg={pkg} onClick={() => {}} />);
 
-      // The store and person icons are aria-hidden and the separator is a bare
-      // "·", so without this the two names read as one undifferentiated run.
+      // The store and person icons are aria-hidden, so without this the two
+      // names read as one undifferentiated run.
       const card = screen.getByTestId('package-card-@dorkos/code-reviewer');
       expect(card.textContent).toContain('from dorkos-community');
     });
@@ -187,10 +187,15 @@ describe('PackageCard', () => {
         expect(text).toHaveClass('truncate');
         // …with the full value on hover, since a long name can still outrun it.
         expect(text).toHaveAttribute('title', label);
-        // …and that share has a width it cannot be squeezed below.
-        expect(text.parentElement).toHaveClass('min-w-[6.5rem]');
-        // The row it sits in is the one that yields.
+        // …and that share has a width it cannot be squeezed below — capped at
+        // 100% so the floor itself can never ask for more than the card has
+        // (DOR-1747 review: a bare floor painted past the card at a width
+        // narrower than 6.5rem).
+        expect(text.parentElement).toHaveClass('min-w-[min(6.5rem,100%)]');
+        // The row it sits in is the one that yields, with its own overflow
+        // clipped as a backstop in case a floor here is ever widened again.
         expect(text.parentElement?.parentElement).toHaveClass('flex-wrap');
+        expect(text.parentElement?.parentElement).toHaveClass('overflow-hidden');
       }
     });
   });
