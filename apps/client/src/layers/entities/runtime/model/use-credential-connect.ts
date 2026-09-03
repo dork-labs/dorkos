@@ -18,12 +18,13 @@
  *
  * @module entities/runtime/model/use-credential-connect
  */
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import {
   useMutation,
   useMutationState,
   useQueryClient,
   type MutationState,
+  type QueryClient,
 } from '@tanstack/react-query';
 import type { DelegateLoginOptions, DelegatedLoginResult } from '@dorkos/shared/runtime-connect';
 import { MODELS_KEY } from '@/layers/shared/lib';
@@ -80,6 +81,46 @@ export function useStoreRuntimeCredential(type: string): UseStoreRuntimeCredenti
   };
 }
 
+/** Which account to sign in, and what to do once the sign-in lands. */
+export interface UseDelegateRuntimeLoginOptions extends DelegateLoginOptions {
+  /**
+   * Called when a sign-in completes — **exactly once per sign-in**, no matter
+   * how many cards are watching it or how often they unmount and remount.
+   *
+   * The guarantee is the point, not a courtesy. Its consumer re-sends the
+   * failed turn (DOR-1650), so a second call sends the person's message a
+   * second time. See {@link reportedSignins} for where the latch lives and why
+   * it cannot live in the component.
+   */
+  onCompleted?: () => void;
+}
+
+/**
+ * Which sign-ins have already been announced, per QueryClient.
+ *
+ * Keyed by `mutationId`, which is unique within a client and identifies the
+ * sign-in itself rather than any component watching it — and that is the whole
+ * point. A latch held in a `useRef` belongs to one component instance and
+ * resets on the remount a virtualized transcript performs routinely, so it
+ * re-announces a sign-in that finished minutes ago; with `onCompleted` wired to
+ * re-send the failed turn (DOR-1650), that is the person's message sent twice.
+ *
+ * A bare module-level `Set` fixes the remount and breaks something else:
+ * `mutationId` restarts at 1 for every new QueryClient, so ids collide between
+ * clients and between tests. Keying by client on a `WeakMap` gives each its own
+ * namespace and lets the whole entry be collected with the client.
+ */
+const reportedSignins = new WeakMap<QueryClient, Set<number>>();
+
+/** The set of announced sign-ins for this client, created on first use. */
+function reportedFor(client: QueryClient): Set<number> {
+  const existing = reportedSignins.get(client);
+  if (existing) return existing;
+  const created = new Set<number>();
+  reportedSignins.set(client, created);
+  return created;
+}
+
 /** The delegated vendor-login connect: run `claude auth login` / `codex login` terminal-free. */
 export interface UseDelegateRuntimeLogin {
   /** Trigger the delegated login. Re-callable after a failure (retry). */
@@ -124,17 +165,18 @@ export interface UseDelegateRuntimeLogin {
  * the matching latch, because a client-side one cannot see other tabs.
  *
  * @param type - Runtime type to sign in (`'claude-code'` | `'codex'`).
- * @param options - Which account to sign in. Prefer `sessionId` wherever a
- *   session exists — the server resolves the account it is bound to, including
- *   for a first turn that failed before writing a transcript (DOR-1651).
+ * @param options - Which account to sign in, plus an optional `onCompleted`.
+ *   Prefer `sessionId` wherever a session exists — the server resolves the
+ *   account it is bound to, including for a first turn that failed before
+ *   writing a transcript (DOR-1651).
  */
 export function useDelegateRuntimeLogin(
   type: string,
-  options?: DelegateLoginOptions
+  options?: UseDelegateRuntimeLoginOptions
 ): UseDelegateRuntimeLogin {
   const transport = useTransport();
   const queryClient = useQueryClient();
-  const { sessionId, accountRoot } = options ?? {};
+  const { sessionId, accountRoot, onCompleted } = options ?? {};
   // One key per sign-in TARGET: two cards for the same account share an
   // attempt, while a different account stays its own (the server refuses to run
   // those concurrently anyway, and its refusal must land on the card that asked).
@@ -165,17 +207,39 @@ export function useDelegateRuntimeLogin(
   // Read from the cache, not from `mutation`: this instance may have mounted
   // AFTER the login started (a re-rendered virtual row, a second tab), in which
   // case its own observer has never run and only the cache knows.
+  // `mutationId` rides along because it names the sign-in itself — the identity
+  // the once-only report latches on (see {@link reportedSignins}).
   const shared = useMutationState({
     filters: { mutationKey, exact: true },
-    select: (m) => m.state as MutationState<DelegatedLoginResult, Error>,
+    select: (m) => ({
+      id: m.mutationId,
+      state: m.state as MutationState<DelegatedLoginResult, Error>,
+    }),
   });
-  const pending = shared.some((s) => s.status === 'pending');
+  const pending = shared.some((s) => s.state.status === 'pending');
   const latest = shared[shared.length - 1];
-  const settled = pending ? undefined : latest;
+  const settled = pending ? undefined : latest?.state;
+  const settledId = pending ? undefined : latest?.id;
 
   const failed = !pending && (settled?.status === 'error' || settled?.data?.ok === false);
   const rawError =
     settled?.status === 'error' ? (settled.error?.message ?? null) : (settled?.data?.error ?? null);
+  const isSuccess = settled?.data?.ok === true;
+
+  // Held in a ref so a caller passing an inline arrow does not re-run the
+  // effect on every render. (That alone would not double-report — the mark
+  // below is what guarantees once — but re-running an effect per render to
+  // read a flag is noise.)
+  const onCompletedRef = useRef(onCompleted);
+  onCompletedRef.current = onCompleted;
+
+  useEffect(() => {
+    if (!isSuccess || settledId === undefined) return;
+    const reported = reportedFor(queryClient);
+    if (reported.has(settledId)) return;
+    reported.add(settledId);
+    onCompletedRef.current?.();
+  }, [isSuccess, settledId, queryClient]);
 
   return {
     // Never start a second attempt while one is running. The pending branch
@@ -184,7 +248,7 @@ export function useDelegateRuntimeLogin(
       if (!pending) mutation.mutate();
     },
     isPending: pending,
-    isSuccess: settled?.data?.ok === true,
+    isSuccess,
     isError: failed,
     errorMessage: failed ? (rawError ?? 'Sign-in failed. Please try again.') : null,
   };

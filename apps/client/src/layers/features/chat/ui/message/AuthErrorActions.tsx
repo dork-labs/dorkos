@@ -14,7 +14,6 @@
  *
  * @module features/chat/ui/message/AuthErrorActions
  */
-import { useEffect, useRef } from 'react';
 import { Check, Loader2, LogIn, RotateCcw } from 'lucide-react';
 import { runtimeSupportsLogin } from '@dorkos/shared/agent-runtime';
 import { Button } from '@/layers/shared/ui';
@@ -69,19 +68,13 @@ function InlineSigninActions({
   onRetry?: () => void;
   onSigninComplete?: () => void;
 }) {
-  const login = useDelegateRuntimeLogin(runtime, { sessionId });
+  // The once-only guarantee is the hook's, not this component's, and it has to
+  // be: `isSuccess` is read from the shared MutationCache, which outlives this
+  // row. A latch held here would reset on the remount the virtualized
+  // transcript performs on every scroll and re-announce a sign-in that already
+  // finished — re-sending the failed turn once DOR-1650 consumes this.
+  const login = useDelegateRuntimeLogin(runtime, { sessionId, onCompleted: onSigninComplete });
   const copy = getLoginCopy(runtime);
-  // Report the landing ONCE. `onSigninComplete` is the seam DOR-1650 uses to
-  // RE-SEND the failed turn, and callers pass inline arrows — a fresh identity
-  // every render would re-run this effect while `isSuccess` stays true and
-  // re-send the turn each time.
-  const reported = useRef(false);
-
-  useEffect(() => {
-    if (!login.isSuccess || reported.current) return;
-    reported.current = true;
-    onSigninComplete?.();
-  }, [login.isSuccess, onSigninComplete]);
 
   if (login.isSuccess) {
     return (

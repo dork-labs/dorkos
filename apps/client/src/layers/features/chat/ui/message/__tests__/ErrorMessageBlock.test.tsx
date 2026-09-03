@@ -500,6 +500,49 @@ describe('ErrorMessageBlock', () => {
       expect(delegateRuntimeLogin).toHaveBeenCalledTimes(1);
     });
 
+    it('reports a completed sign-in once, even if the row remounts afterwards', async () => {
+      // Purpose: `onSigninComplete` becomes a turn RE-SEND in DOR-1650, so
+      // firing it twice sends the person's message twice. The success state
+      // lives in the shared MutationCache and outlives the row, so a latch
+      // held per component instance resets on the remount the virtualized
+      // transcript performs routinely — and re-fires against a success that
+      // already happened. The latch has to key on the sign-in, not the row.
+      const user = userEvent.setup();
+      sessionRows.current = [sessionRow('claude-code')];
+      const onSigninComplete = vi.fn();
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+      });
+      const card = (
+        <ErrorMessageBlock
+          message="401"
+          category="auth_error"
+          sessionId={SESSION_ID}
+          onSigninComplete={onSigninComplete}
+        />
+      );
+      const wrap = (ui: React.ReactNode) => (
+        <QueryClientProvider client={queryClient}>
+          <TransportProvider transport={createMockTransport()}>{ui}</TransportProvider>
+        </QueryClientProvider>
+      );
+      const view = render(wrap(card));
+
+      await user.click(screen.getByRole('button', { name: 'Sign in' }));
+      await waitFor(() => {
+        expect(screen.getByTestId('auth-error-signin-success')).toBeInTheDocument();
+      });
+      expect(onSigninComplete).toHaveBeenCalledTimes(1);
+
+      // Scroll the settled card out of view and back.
+      view.rerender(wrap(null));
+      view.rerender(wrap(card));
+
+      // The remounted card still shows the landing — and does not re-announce it.
+      expect(await screen.findByTestId('auth-error-signin-success')).toBeInTheDocument();
+      expect(onSigninComplete).toHaveBeenCalledTimes(1);
+    });
+
     it('shows progress while the sign-in runs, then confirms it landed', async () => {
       // Purpose: the delegated login opens a browser and can take a while. The
       // card has to say so, then say when it is done, without the person

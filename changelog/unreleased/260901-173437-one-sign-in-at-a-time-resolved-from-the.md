@@ -1,6 +1,9 @@
 ---
 covers:
   - 'fix(client,server,shared): one sign-in at a time, resolved from the session (DOR-1651 review)'
+  # Same shipped behaviour, fixed before it ever released: the once-only
+  # reporting of a completed sign-in. Nothing separate for a reader here.
+  - 'fix(client): report a completed sign-in once per sign-in, not once per row (DOR-1651)'
 ---
 
 ### Fixed
