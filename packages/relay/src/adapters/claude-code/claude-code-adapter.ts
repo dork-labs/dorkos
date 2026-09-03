@@ -525,9 +525,8 @@ export class ClaudeCodeAdapter implements RelayAdapter {
    *
    * - **The subject is `agent-scoped`.** It names an agent, and which runtime an
    *   agent runs on is a property of the agent. A legacy three-token subject
-   *   names a SESSION, and a session's runtime is decided once and never
-   *   recomputed (ADR-0255) — re-reading a manifest for one would hand a running
-   *   conversation to a program holding none of its history.
+   *   names a SESSION id — an id the cockpit can bind through
+   *   `persistSessionRuntime` — so the manifest is not asked for one at all.
    * - **The context carries the agent's directory**, which is where its
    *   `.dork/agent.json` lives; the host's `AdapterManager.buildContext` fills
    *   it from the Mesh registry. A payload `cwd` is deliberately not consulted:
@@ -537,6 +536,24 @@ export class ClaudeCodeAdapter implements RelayAdapter {
    * The resolver is the host's — see {@link AgentRuntimeTypeResolver} — and a
    * host that wires none behaves exactly as it did before this existed. A
    * rejection is "no preference", never a dropped message.
+   *
+   * ## Known gap: this is asked EVERY turn, not once per conversation
+   *
+   * An agent-scoped subject resumes a conversation as surely as a session
+   * subject does — `agent-handler.ts` reuses the SDK session id it persisted
+   * under the same agent key — but nothing on the relay path ever calls
+   * `persistSessionRuntime`, so there is no binding to consult and the manifest
+   * is re-read on every turn. Change an agent's runtime mid-conversation and
+   * the remaining turns go to a program that is handed the session key its
+   * predecessor created and has no transcript for: the DOR-764 shape, which
+   * ADR-0255 closed for the cockpit and rooms and which this path does not yet
+   * honour. Named here rather than papered over, and pinned by a test so the
+   * behaviour cannot change unnoticed. Closing it means binding these sessions
+   * — a write, made only once a turn has actually started, or the orphan rows
+   * `room-turn-runner.ts` warns about arrive one per message — and then asking
+   * `resolveTurnRuntimeType` instead. Threading the session key alone would
+   * change nothing: with no row to find, that function falls straight through
+   * to this same manifest read.
    *
    * @param subject - The subject the message arrived on.
    * @param context - The delivery context, for the agent's directory.

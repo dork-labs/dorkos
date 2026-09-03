@@ -68,7 +68,13 @@ adapter manager does not dispatch.
   answers for an agent no longer depends on which door the message came
   through. Only that shape: a session subject keeps the runtime its
   conversation started on (ADR-0255), and a named runtime still wins over a
-  manifest.
+  manifest. **Known gap, deliberately left open and pinned by a test:** nothing
+  on the relay path calls `persistSessionRuntime`, so an agent-scoped subject
+  has no binding to consult and its manifest is re-read every turn — change an
+  agent's runtime mid-conversation and the remaining turns go to a program
+  handed a session key it has no transcript for (the DOR-764 shape). Closing it
+  needs a binding write made only after a turn has started, plus
+  `resolveTurnRuntimeType`; threading a session key alone would be inert.
 - The discriminator the subject parse uses is the union of the adapter's own
   registered keys and the built-in `RUNTIME_TYPES` list, so a runtime registered
   under a type outside that list still routes to itself, and a type the product
