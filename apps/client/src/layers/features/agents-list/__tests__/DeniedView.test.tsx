@@ -73,6 +73,24 @@ describe('DeniedView', () => {
     expect(screen.getByText('user')).toBeInTheDocument();
   });
 
+  it('truncates a long path instead of pushing the badge off the row', () => {
+    // A path is one unbroken string, so a text column sized from its own
+    // content grows past the card and takes the badge with it (DOR-1747).
+    const path = '/Users/me/Keep/dork-os/worktrees/a-very-long-worktree-name/agents/reviewer';
+    mockUseDeniedAgents.mockReturnValue({
+      data: { denied: [{ path, reason: 'Not authorized', deniedBy: 'admin' }] },
+      isLoading: false,
+    });
+    render(<DeniedView />, { wrapper: createWrapper() });
+
+    const line = screen.getByText(path);
+    expect(line).toHaveClass('truncate');
+    expect(line).toHaveAttribute('title', path);
+    // The column yields; the badge keeps its width.
+    expect(line.parentElement).toHaveClass('min-w-0');
+    expect(screen.getByText('admin')).toHaveClass('shrink-0');
+  });
+
   it('does not render reason when reason is null', () => {
     mockUseDeniedAgents.mockReturnValue({
       data: {

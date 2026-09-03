@@ -208,12 +208,16 @@ export function ErrorMessageBlock({
           <p className="text-sm font-medium">{heading}</p>
           {/* `whitespace-pre-wrap` because this is machine output, not prose:
               a multi-line provider message keeps its line breaks instead of
-              collapsing into one run-on sentence. */}
-          <p className="text-muted-foreground mt-0.5 text-sm whitespace-pre-wrap">
+              collapsing into one run-on sentence. `wrap-anywhere` because the
+              same machine output routinely carries a file path or a URL, and
+              one unbroken token has no space to wrap at — it would run out of
+              the message and off a phone screen (DOR-1747). Prose is unaffected:
+              the rule only applies where a word cannot otherwise fit. */}
+          <p className="text-muted-foreground mt-0.5 text-sm wrap-anywhere whitespace-pre-wrap">
             <LinkifiedText text={subtext} />
           </p>
           {runtimeMessage && (
-            <p className="text-muted-foreground mt-1 text-sm whitespace-pre-wrap">
+            <p className="text-muted-foreground mt-1 text-sm wrap-anywhere whitespace-pre-wrap">
               <LinkifiedText text={runtimeMessage} />
             </p>
           )}
