@@ -171,6 +171,28 @@ describe('PackageCard', () => {
 
       expect(screen.queryByText('claude-plugins-official')).not.toBeInTheDocument();
     });
+
+    it('gives the author and the source a floor each, and wraps rather than crushing both', () => {
+      // Sized from their own content, the two shared the row in proportion to
+      // how long each string happened to be, and on a card in the four-column
+      // grid both crushed together — `C… · d` (DOR-1747). A floor plus a
+      // wrapping row is what stops either string's length from deciding
+      // anything: when both cannot fit, the source takes the next line.
+      const pkg = makePackage({ author: 'Test Author', marketplace: 'dorkos-community' });
+      render(<PackageCard pkg={pkg} onClick={() => {}} />);
+
+      for (const label of ['Test Author', 'dorkos-community']) {
+        const text = screen.getByText(label, { selector: 'span.truncate' });
+        // The text truncates inside its own share…
+        expect(text).toHaveClass('truncate');
+        // …with the full value on hover, since a long name can still outrun it.
+        expect(text).toHaveAttribute('title', label);
+        // …and that share has a width it cannot be squeezed below.
+        expect(text.parentElement).toHaveClass('min-w-[6.5rem]');
+        // The row it sits in is the one that yields.
+        expect(text.parentElement?.parentElement).toHaveClass('flex-wrap');
+      }
+    });
   });
 
   // -------------------------------------------------------------------------

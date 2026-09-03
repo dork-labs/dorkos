@@ -154,30 +154,39 @@ export function PackageCard({
           borrowed one. It reads muted next to the author rather than as a
           badge: it is provenance, not a claim. */}
       {!isCompact && (authorLabel || pkg.marketplace) && (
-        <div className="text-muted-foreground text-2xs mb-3 flex items-center gap-1.5">
+        <div className="text-muted-foreground text-2xs mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+          {/* Each fact is a flex child with a floor, and the row wraps.
+              Sized from their own content, the two shared the squeeze in
+              proportion to how long each string happened to be, so on a card in
+              the four-column grid both crushed together — `C… · d` (DOR-1747).
+              A floor makes that impossible: when both cannot fit, the source
+              takes the next line and each one is read whole rather than two
+              halves of nothing. `flex-1` lets a lone fact take the full width.
+
+              The mid-dot between them is gone with the same change. It divided
+              two facts on one line, and a divider that can end up dangling at
+              the end of a wrapped line divides nothing — the icons already say
+              which fact is which, and the screen reader gets the word "from". */}
           {authorLabel && (
-            <>
+            <span className="flex min-w-[6.5rem] flex-1 items-center gap-1.5">
               <User className="size-3 shrink-0" aria-hidden />
-              <span className="min-w-0 truncate">{authorLabel}</span>
-            </>
-          )}
-          {authorLabel && pkg.marketplace && (
-            <span className="text-muted-foreground/50 shrink-0" aria-hidden>
-              ·
+              <span className="truncate" title={authorLabel}>
+                {authorLabel}
+              </span>
             </span>
           )}
           {pkg.marketplace && (
-            <>
+            <span className="flex min-w-[6.5rem] flex-1 items-center gap-1.5">
               <Store className="size-3 shrink-0" aria-hidden />
-              <span className="min-w-0 truncate">
-                {/* The icons and the "·" are aria-hidden, so sighted readers get
-                    the distinction from the glyphs and everyone else would hear
+              <span className="truncate" title={pkg.marketplace}>
+                {/* The icons are aria-hidden, so sighted readers get the
+                    distinction from the glyphs and everyone else would hear
                     "Dork Labs dorkos-community" as one name. This word is the
                     only thing separating them. */}
                 <span className="sr-only">from </span>
                 {pkg.marketplace}
               </span>
-            </>
+            </span>
           )}
         </div>
       )}
