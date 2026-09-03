@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server,client): the app can create your owner login from any address you allow (DOR-1744)'
+  - 'fix(server): the literal string "null" never reaches Better Auth''s allowlist (DOR-1744)'
 ---
 
 ### Fixed

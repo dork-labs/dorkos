@@ -287,7 +287,15 @@ export function parseConfiguredOrigins(value: string | undefined): string[] {
  * so dropping them costs an operator nothing and keeps this a list of origins
  * rather than a list of strings. It does NOT catch a wildcard pattern —
  * `https://*.example.com` parses and round-trips — which is why
- * {@link resolveAuthTrustedOrigins} checks for `*` and `?` separately.
+ * {@link resolveAuthTrustedOrigins} checks for `*` separately (a `?` never
+ * survives the round-trip, since `URL.origin` cannot contain one; the extra
+ * check there is belt-and-braces, not load-bearing).
+ *
+ * Only `http:`/`https:` origins qualify. A browser never sends any other
+ * scheme in an `Origin` header, and on a non-HTTP scheme Better Auth's
+ * matcher falls back to a PREFIX comparison — `ws://example.com` would match
+ * `ws://example.com.evil.com` — so the restriction closes that branch by
+ * construction rather than by trusting the caller never to hit it.
  *
  * @param entry - One trimmed entry from `DORKOS_CORS_ORIGIN`.
  */
@@ -298,13 +306,20 @@ function isCanonicalOrigin(entry: string): boolean {
   } catch {
     return false;
   }
-  return parsed.origin !== 'null' && parsed.origin === entry;
+  return (
+    (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+    parsed.origin !== 'null' &&
+    parsed.origin === entry
+  );
 }
 
 /**
- * The origins Better Auth accepts on its CSRF allowlist: everything
- * {@link resolveTrustedOrigins} trusts, plus the origins the operator listed in
- * `DORKOS_CORS_ORIGIN`.
+ * The origins Better Auth accepts on its CSRF and redirect allowlist:
+ * everything {@link resolveTrustedOrigins} trusts, plus the origins the
+ * operator listed in `DORKOS_CORS_ORIGIN`. "And redirect" is not a flourish —
+ * Better Auth also consults this list when validating `callbackURL`/
+ * `redirectTo` targets, so an entry here is a permitted redirect destination
+ * too (see the open-redirect reasoning in `services/core/auth/index.ts`).
  *
  * ## Why the auth surface needs its own resolver
  *

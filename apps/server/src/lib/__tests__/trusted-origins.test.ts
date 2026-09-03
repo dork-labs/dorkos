@@ -408,6 +408,15 @@ describe('resolveAuthTrustedOrigins', () => {
     expect(resolveAuthTrustedOrigins()).toEqual([...getStaticLocalOrigins(), 'https://ok.example']);
   });
 
+  it('drops non-HTTP schemes, where Better Auth falls back to a prefix match', () => {
+    // `ws://example.com` round-trips through URL.origin verbatim, but on a
+    // non-http(s) entry Better Auth compares by PREFIX, so it would match
+    // `ws://example.com.evil.com`. No browser sends such an Origin header —
+    // dropping the entry costs nothing and closes the branch by construction.
+    setCorsOrigin('ws://example.com,wss://example.com,ftp://example.com,https://ok.example');
+    expect(resolveAuthTrustedOrigins()).toEqual([...getStaticLocalOrigins(), 'https://ok.example']);
+  });
+
   /**
    * The literal string `"null"` is what a browser sends from a sandboxed
    * iframe, a `data:` document or a `file://` page: an OPAQUE origin, which is
