@@ -51,10 +51,28 @@
  * Detection only. What happens with a hit belongs to the callers: BOTH senders
  * (`message-sender.ts` on the resume path, `sessions/pump-turn-stream.ts` on the
  * persistent one) report every hit to `observability/phantom-cancellations.ts`,
- * which owns the counter and the single `[phantom-cancellation]` warning. That
- * counter is the tripwire spec `persistent-session-runtime` task 5.1 reads to
- * test whether persistence removes this class (DOR-1288). Only the resume path
- * steers a correction; the pump's reason for not doing so is in its module doc.
+ * which owns the counter and the single `[phantom-cancellation]` warning. Only
+ * the resume path steers a correction; the pump's reason for not doing so is in
+ * its module doc.
+ *
+ * **KEPT ON PURPOSE, on BOTH paths (DOR-1291).** This detector is not scaffolding
+ * left behind by a finished measurement, and the resume path it guards is not a
+ * legacy leg waiting to be deleted. Two live routes reach it every day: **Warm
+ * agents** in the Control Center is a switch a person can turn off
+ * (`runtimes.claudeCode.persistentSession`), which puts their every message back
+ * on `message-sender.ts`; and even with it on, the recovery route
+ * (ADR 260812-134510) — cold start, server restart, an idle reap — resumes
+ * through that same sender. Deleting either half would blind the product on the
+ * path most installs still touch.
+ *
+ * The class itself is currently quiet: zero firings since the tripwire went live
+ * on 2026-08-17 (PR #1066), across 30 log files, both account homes and both legs
+ * of the flag. That is NOT evidence persistence fixed it — the flag-off leg is
+ * equally clean, so the credit most plausibly belongs to DOR-1087/1149/1238, and
+ * DOR-1238 in particular (`turn-liveness.ts` holds stdin open, removing the one
+ * trigger anybody settled). The remaining triggers below stopped firing without
+ * ever being explained, which is precisely why the tripwire stays armed. The full
+ * reasoning is the 2026-09-02 note in ADR 260812-134510.
  *
  * @module services/runtimes/claude-code/messaging/phantom-cancellation
  */

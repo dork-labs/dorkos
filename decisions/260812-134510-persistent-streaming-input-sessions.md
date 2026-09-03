@@ -78,6 +78,22 @@ DOR-1309 was the third incident, and it happened on the pump's hot path rather t
 
 **The invariant this settles for every future per-session registry in this adapter**: any structure that holds process state keyed by session identity resolves that identity through `SessionStore.sessionKeyOf` before it ever touches its own map — never by whichever id a caller happened to pass. `PersistentDispatch` and `SessionPumpRegistry` both take that resolver at construction now (`services/runtimes/claude-code/sessions/persistent-dispatch.ts`, `session-pump-registry.ts`); the next per-session structure this adapter grows inherits the same obligation, and does not get to invent its own alias tracking to meet it — `SessionStore` is the one place that already has to know a session's whole rename chain, so it is the one place anything else may ask.
 
+## Note — 2026-09-02 (DOR-1291): the phantom-cancellation class is quiet, and persistence is NOT shown to be why
+
+Status stays **accepted**; this records a measurement outcome the programme was carrying, and changes nothing this ADR decided.
+
+The persistent-session programme carried an adjacent hypothesis: that holding one `query()` open across turns would remove the phantom tool-call cancellations of DOR-1087 outright, because DorkOS would stop racing the CLI's internal queue. Spec `persistent-session-runtime` task 5.1 was the measurement meant to settle it, and the tripwire it reads shipped in PR #1066 (`services/observability/phantom-cancellations.ts`, which splits its count by path: `turn` for resume-per-message, `pump` for the persistent path).
+
+**What the evidence says.** The class has gone quiet. Since the tripwire went live on 2026-08-17 there are **zero** firings — across 30 server log files, both Claude account homes on this machine, and both legs of the flag. The task 5.1 run (`research/20260817_persistent-session-flag-measurement.md`) found the same: zero on arm A and zero on arm B.
+
+**What the evidence does not say.** That persistence is the reason. **The flag-OFF leg is exactly as clean as the flag-on leg**, and that is the whole point: if a warm process were what removed this class, the resume-per-message path would still be producing phantoms while the pump produced none. It produces none either. A hypothesis whose control arm improved just as much is not confirmed by the result — the two arms simply do not distinguish it.
+
+The likelier cause is the set of fixes that landed independently of persistence and are live on both legs: **DOR-1087** (detection, plus the corrective note the resume path steers into a live turn), **DOR-1149** (the sentinel re-verified against the shipped CLI bundle, so detection kept matching), and above all **DOR-1238** — holding stdin open for as long as the turn is alive (`messaging/turn-liveness.ts`). DOR-1238 removed the one trigger anybody ever settled: DorkOS ending the CLI's stdin closed the SDK control stream, and every tool matched by the SDK-side PreToolUse hook was then cancelled at entry. That fix removes a cause rather than detecting it, and it applies whichever leg a session runs on.
+
+So the honest, weaker claim — the one this note records — is: **the phantom class is closed in practice, on both paths, and the credit most plausibly belongs to the DOR-1087/1149/1238 fixes rather than to persistence.** The remaining triggers named in `messaging/phantom-cancellation.ts` were never explained, only stopped firing, so "closed" here means _not observed_, not _understood_.
+
+**Consequence: the detector stays, and stays on both paths.** It is not scaffolding left over from a finished measurement. The resume path it also guards is live product — the recovery route this ADR deliberately kept (cold start, restart, a reap), reached on every install regardless of the flag, and reachable deliberately by anyone who turns **Warm agents** off in the Control Center. A class that is quiet for reasons nobody fully understands is exactly the kind that earns a tripwire; the cost of keeping one is a counter and a log line.
+
 ## Consequences
 
 ### Positive

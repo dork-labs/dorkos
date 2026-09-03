@@ -111,9 +111,21 @@ function InfoChip({ className, children }: { className?: string; children: React
  * {@link IdentityHoverCardProps.onViewProfile} it is a button that opens the
  * profile drawer; without one it stays the inert line marked **soon**, because
  * a surface that cannot name this identity to the roster has nothing to open.
- * It is also the MOUSE path only — Radix's hover card is not a keyboard or
- * touch surface, so the trigger itself (a mention pill, a Team card) carries
- * its own click, and that is what a keyboard and a tap reach.
+ *
+ * **The contract every consumer inherits: the footer is the POINTER path only.**
+ * Radix's hover-card content is not a keyboard surface — focusing a trigger opens
+ * the card, but everything inside it stays `tabindex="-1"`, so Tab leaves for the
+ * next trigger rather than entering the card. A finger gets there only by
+ * long-pressing (the third path below), never by tapping. So the keyboard door
+ * has to be the trigger's OWN click — which is exactly what a mention pill and a
+ * Team card make it.
+ *
+ * Which gives every surface that mounts this card one question to answer: **if
+ * your trigger's click is not the profile, your surface has no keyboard profile
+ * door — make sure another one exists.** Answering "another surface has one" is
+ * a legitimate answer, and it is the one the presence strip gives (its press
+ * follows the agent's work instead, and it says why in its own doc). Answering
+ * nothing is not: it ships a profile a mouse can open and a keyboard cannot.
  *
  * **Opens three ways, one card.** A pointer hovering the trigger opens it
  * after {@link OPEN_DELAY_MS}, and keyboard focus opens it too, both straight

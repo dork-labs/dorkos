@@ -115,17 +115,31 @@ export interface PresenceStripProps {
  * until now that footer said **soon** on a strip whose every row could name its
  * agent (spec `profile-unification` §3, bug 7).
  *
- * **A keyboard cannot reach that footer, and this is the known gap.** Radix's
- * hover-card content is deliberately not a keyboard surface — focusing a chip
- * opens the card, but everything inside it stays `tabindex="-1"`, so Tab moves
- * to the next chip rather than into the card. A pointer reaches the footer by
- * hovering and a touch screen reaches it by long-pressing the chip
- * (`IdentityHoverCard`'s own gesture); a keyboard reaches it from neither. The
- * fix is not to make the chip open the profile — that costs every reader the
- * follow — but to give the strip a second control, which is a design decision
- * this slice does not get to make alone. Until then a keyboard opens an agent's
- * profile from the sidebar face, `/team`, or a mention pill, all of which are
- * real buttons.
+ * **A keyboard cannot reach that footer, and the strip stays this way on
+ * purpose.** Radix's hover-card content is deliberately not a keyboard surface —
+ * focusing a chip opens the card, but everything inside it stays
+ * `tabindex="-1"`, so Tab moves to the next chip rather than into the card. A
+ * pointer reaches the footer by hovering and a touch screen reaches it by
+ * long-pressing the chip (`IdentityHoverCard`'s own gesture); a keyboard reaches
+ * it from neither.
+ *
+ * That was once written up here as an open question — add a second control to
+ * each row, or re-point the press? It is now decided, and the answer is neither:
+ * **the strip remains one control per row.** Re-pointing the press costs every
+ * reader the follow, which is the whole reason this line exists. A second
+ * control costs more than it buys: it doubles the Tab budget of a strip that can
+ * hold a dozen rows, and it re-introduces the menu-shaped clutter the row
+ * deliberately does not have (see above) — all to duplicate a door the same
+ * keyboard already has four of.
+ *
+ * Those four doors are the reason this is safe rather than a gap. A keyboard
+ * opens an agent's profile from a mention pill in a room
+ * (`MentionPillRenderer.tsx:112` — a real `role="button"` with Enter/Space), from
+ * a message's author disc (`MessageAuthorAvatar.tsx:127`, reached through the
+ * message action capsule's "View profile", which is how the feed keeps its
+ * one-Tab-per-message budget), from the sidebar face's row menu, and from
+ * `/team`. The profile is never more than one of those away; what the strip
+ * declines to do is be the fifth.
  */
 function PresenceRowButton({
   row,
