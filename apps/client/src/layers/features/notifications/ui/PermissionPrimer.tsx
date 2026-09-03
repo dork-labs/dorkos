@@ -40,7 +40,10 @@ export function PermissionPrimer({ onAllow, onNotNow }: PermissionPrimerProps) {
         Want a nudge when this needs you? DorkOS can show a notification while you are looking at
         something else.
       </p>
-      <div className="flex shrink-0 items-center gap-1.5">
+      {/* Its own line under the words on a phone, beside them from `sm` up. The
+          two buttons are ~210px together, which is most of a narrow zone's
+          width — squeezed in beside the text they clipped their own labels. */}
+      <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-1.5 sm:w-auto">
         <Button
           variant="ghost"
           size="sm"
