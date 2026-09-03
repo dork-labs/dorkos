@@ -9,16 +9,19 @@
  */
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
 import { withFileLock } from './atomic-write.js';
 import { assertValidExtensionId } from './extension-id.js';
+import { claimSecretBytes } from './secret-file.js';
 
 const ALGORITHM = 'aes-256-gcm';
 const KEY_LENGTH = 32;
 const IV_LENGTH = 16;
 const AUTH_TAG_LENGTH = 16;
 const SALT = 'dorkos-ext-secrets';
+/** Owner-only file mode for the host key (`rw-------`). */
+const HOST_KEY_MODE = 0o600;
 
 /** Per-process cache of the derived encryption key. */
 let cachedDerivedKey: Buffer | null = null;
@@ -142,10 +145,12 @@ export class ExtensionSecretStore {
     if (existsSync(keyPath)) {
       return readFileSync(keyPath);
     }
-    const key = randomBytes(KEY_LENGTH);
-    mkdirSync(dirname(keyPath), { recursive: true });
-    writeFileSync(keyPath, key, { mode: 0o600 });
-    return key;
+    // First boot. Two processes reaching a fresh data directory can both find
+    // no key here, and a plain write would leave the loser encrypting under a
+    // key that is no longer on disk — every secret it wrote would be
+    // permanently unreadable. The exclusive create makes whoever gets there
+    // first the winner, and everyone else adopts that key (DOR-712).
+    return claimSecretBytes(keyPath, randomBytes(KEY_LENGTH), HOST_KEY_MODE).value;
   }
 
   /**

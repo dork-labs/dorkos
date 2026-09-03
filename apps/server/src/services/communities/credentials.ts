@@ -8,7 +8,10 @@
  * first use, never logged, never surfaced in any UI, config file or API
  * response, and never passed across the `CommunityAdapter` port.
  *
- * Precedence: environment override → persisted file → generate-and-persist.
+ * Precedence: environment override → persisted file → generate-and-persist. The
+ * generated file is created exclusively (`@dorkos/shared/secret-file`), so two
+ * first uses at once settle on one credential rather than overwriting each
+ * other's.
  *
  * Lax permissions are **repaired and warned**, never rejected: locking the owner
  * out of their own instance is the worse failure.
@@ -19,6 +22,7 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
+import { claimSecretText } from '@dorkos/shared/secret-file';
 import { logger } from '../../lib/logger.js';
 
 /** Directory under the dork home that holds one subdirectory per community. */
@@ -99,18 +103,23 @@ export function resolveCommunityCredential(dorkHome: string, community: Communit
     }
   }
 
-  const generated = randomBytes(CREDENTIAL_BYTES).toString('hex');
   fs.mkdirSync(dir, { recursive: true, mode: DIR_MODE });
   fs.chmodSync(dir, DIR_MODE);
-  fs.writeFileSync(credentialPath, generated, { mode: FILE_MODE });
-  // Re-assert the mode: `writeFileSync`'s `mode` is ignored when the file
-  // already exists, and is subject to the process umask on create.
-  fs.chmodSync(credentialPath, FILE_MODE);
-  // The path, never the value.
-  logger.info('[Communities] Generated a machine-managed community credential', {
-    path: credentialPath,
-  });
-  return generated;
+  // Claimed, not just written: two processes reaching a fresh data directory
+  // together can both read nothing here and both generate, and the loser would
+  // keep authenticating with a credential that is no longer on disk (DOR-712).
+  const claimed = claimSecretText(
+    credentialPath,
+    randomBytes(CREDENTIAL_BYTES).toString('hex'),
+    FILE_MODE
+  );
+  if (claimed.minted) {
+    // The path, never the value.
+    logger.info('[Communities] Generated a machine-managed community credential', {
+      path: credentialPath,
+    });
+  }
+  return claimed.value;
 }
 
 /**

@@ -45,6 +45,10 @@
       "types": "./src/atomic-write.ts",
       "default": "./dist/atomic-write.js"
     },
+    "./secret-file": {
+      "types": "./src/secret-file.ts",
+      "default": "./dist/secret-file.js"
+    },
     "./feedback": {
       "types": "./src/feedback.ts",
       "default": "./dist/feedback.js"

@@ -19,7 +19,9 @@
  *      and neither reads nor writes the token file.
  *   2. **A persisted `<dorkHome>/mcp-local-token` file** — read (and permission-
  *      repaired) if present, so the token is stable across restarts.
- *   3. **A freshly generated `dork_mcp_local_<hex>`** — written `0600` and returned.
+ *   3. **A freshly generated `dork_mcp_local_<hex>`** — created exclusively
+ *      (`@dorkos/shared/secret-file`) and written `0600`, so two first boots at
+ *      once settle on one token instead of overwriting each other's.
  *
  * The token is inactive when login is on (ADR-0320): it is resolved at boot only
  * in login-off mode, and the middleware consults it only while login is off.
@@ -30,6 +32,7 @@
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { claimSecretText } from '@dorkos/shared/secret-file';
 import { env } from '../../../env.js';
 import { logger } from '../../../lib/logger.js';
 
@@ -109,17 +112,22 @@ export function resolveMcpLocalToken(dorkHome: string): string | null {
     }
   }
 
-  // 3. Generate + persist a fresh token.
-  const generated = TOKEN_PREFIX + randomBytes(TOKEN_BYTES).toString('hex');
-  fs.mkdirSync(dorkHome, { recursive: true });
-  fs.writeFileSync(tokenPath, generated, { mode: TOKEN_FILE_MODE });
-  // Re-assert the mode: `writeFileSync`'s `mode` is ignored when the file
-  // already exists, and is subject to the process umask on create.
-  fs.chmodSync(tokenPath, TOKEN_FILE_MODE);
-  logger.info('[MCP] Generated a per-instance local MCP token', { path: tokenPath });
-  cachedToken = generated;
+  // 3. Claim + persist a fresh token. The create is exclusive rather than a
+  //    plain write: two processes reaching a fresh data directory together can
+  //    both read nothing here and both mint, and the loser would go on handing
+  //    clients a bearer token that the file — and therefore the middleware —
+  //    no longer recognises (DOR-712).
+  const claimed = claimSecretText(
+    tokenPath,
+    TOKEN_PREFIX + randomBytes(TOKEN_BYTES).toString('hex'),
+    TOKEN_FILE_MODE
+  );
+  if (claimed.minted) {
+    logger.info('[MCP] Generated a per-instance local MCP token', { path: tokenPath });
+  }
+  cachedToken = claimed.value;
   cachedPath = tokenPath;
-  return generated;
+  return claimed.value;
 }
 
 /**
