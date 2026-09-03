@@ -1248,12 +1248,12 @@ export const UpdateRoomRequestSchema = z
       .describe(
         "The one per-bridge override for outbound notices (chats-as-channels spec §6.2, D-6 Q5): whether a turn_failed or halted notice reaches this room's bridged chat. Valid only on a bridged room; a room with no bridge refuses this field with NOT_A_BRIDGED_ROOM."
       ),
-    // Operator-only, enforced by `RoomService.updateRoom`: anyone but the person
-    // who owns the install is refused `OPERATOR_ONLY` before any of these is
-    // written, and no room capability tool exposes them at all. These are spend
-    // authority, so the gate is the same one the roster writes take rather than
-    // a person-kind check (DOR-1429; the same posture `config-write-policy.ts`
-    // takes on the install-wide fields).
+    // Spend authority, and named separately in the refusal for it (DOR-1429;
+    // the same posture `config-write-policy.ts` takes on the install-wide
+    // twins). Every field on this schema is operator-only since DOR-608 —
+    // `RoomService.updateRoom` refuses anyone but the person who owns the
+    // install with `OPERATOR_ONLY` before a byte is written — and no room
+    // capability tool exposes these four at all.
     ...roomLimitOverrideFields,
   })
   .openapi('UpdateRoomRequest');
