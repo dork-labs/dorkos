@@ -408,6 +408,56 @@ describe('resolveAuthTrustedOrigins', () => {
     expect(resolveAuthTrustedOrigins()).toEqual([...getStaticLocalOrigins(), 'https://ok.example']);
   });
 
+  /**
+   * The literal string `"null"` is what a browser sends from a sandboxed
+   * iframe, a `data:` document or a `file://` page: an OPAQUE origin, which is
+   * precisely one to trust with nothing. A trust branch built from operator
+   * config handed the socket guard that match once already, via
+   * `DORKOS_PUBLIC_URL=dorkos:4242` — a typo that parses with `dorkos:` as the
+   * SCHEME and serializes to `"null"`. The upgrade path refuses `"null"` before
+   * any branch runs; this list has no gate ahead of it, so it has its own.
+   * (Raised by the DOR-1738 review, which adds the same filter to the tunnel
+   * arm.)
+   */
+  it.each([
+    ['null', 'the literal string a browser sends for an opaque origin'],
+    ['NULL', 'the same, shouted'],
+    ['dorkos:4242', 'the documented typo: a scheme, not a host, serializing to "null"'],
+    ['file://', 'a file page'],
+    ['data:text/html,x', 'a data document'],
+    ['javascript:alert(1)', 'a javascript URL'],
+    ['not a url', 'something that does not parse at all'],
+  ])('never trusts %s (%s)', (value) => {
+    setCorsOrigin(`${value},https://ok.example`);
+    const origins = resolveAuthTrustedOrigins();
+    expect(origins).not.toContain(value);
+    expect(origins).not.toContain('null');
+    // The good entry beside it is unaffected, so one bad entry is not a lockout.
+    expect(origins).toContain('https://ok.example');
+  });
+
+  it.each([
+    ['https://example.com/', 'a trailing slash'],
+    ['http://example.com:80', 'an explicit default port'],
+    ['HTTPS://EXAMPLE.COM', 'upper case'],
+  ])('drops %s (%s), which no browser would ever send', (value) => {
+    // An `Origin` header is always canonical, so these match nothing as typed.
+    // Dropping them costs the operator nothing and keeps this a list of origins
+    // rather than a list of strings.
+    setCorsOrigin(value);
+    expect(resolveAuthTrustedOrigins()).toEqual(getStaticLocalOrigins());
+  });
+
+  it('keeps the origins a browser really does send', () => {
+    setCorsOrigin('http://localhost:5174,https://dorkos.example.com,http://192.168.1.50:4242');
+    expect(resolveAuthTrustedOrigins()).toEqual([
+      ...getStaticLocalOrigins(),
+      'http://localhost:5174',
+      'https://dorkos.example.com',
+      'http://192.168.1.50:4242',
+    ]);
+  });
+
   it('still includes the live tunnel origin', () => {
     tunnelManager.status.url = 'https://abc123.ngrok-free.app';
     expect(resolveAuthTrustedOrigins()).toContain('https://abc123.ngrok-free.app');

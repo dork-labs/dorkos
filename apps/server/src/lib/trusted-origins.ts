@@ -262,6 +262,46 @@ export function parseConfiguredOrigins(value: string | undefined): string[] {
 }
 
 /**
+ * Whether an entry is a real, canonical origin — the only shape allowed onto
+ * Better Auth's list.
+ *
+ * ## The literal `"null"`, and everything that becomes it
+ *
+ * `URL.origin` serializes an unparseable or OPAQUE URL to the STRING `"null"`,
+ * which is exactly what a browser sends from a sandboxed iframe, a `data:`
+ * document or a `file://` page — "an origin that should be trusted with
+ * nothing". A trust branch built from operator config handed the socket guard
+ * that match once already: `DORKOS_PUBLIC_URL=dorkos:4242`, a plausible typo,
+ * parses with `dorkos:` as the SCHEME, serializes to `"null"`, and gave any such
+ * page the embedded terminal (see {@link isTrustedUpgradeOrigin}, branch 3's
+ * note). The upgrade path refuses `"null"` before any branch runs; this list has
+ * no such gate ahead of it, so the gate is here. A bare `null`, `file://`,
+ * `data:…` and `javascript:…` all fail for the same reason.
+ *
+ * ## And anything a browser would never send
+ *
+ * An `Origin` header is always canonical: lower-cased, no path, no trailing
+ * slash, no default port. Requiring `URL.origin` to equal the entry VERBATIM is
+ * what makes that true of the list too. `https://example.com/`,
+ * `http://example.com:80` and `HTTPS://EXAMPLE.COM` all match nothing as typed,
+ * so dropping them costs an operator nothing and keeps this a list of origins
+ * rather than a list of strings. It does NOT catch a wildcard pattern —
+ * `https://*.example.com` parses and round-trips — which is why
+ * {@link resolveAuthTrustedOrigins} checks for `*` and `?` separately.
+ *
+ * @param entry - One trimmed entry from `DORKOS_CORS_ORIGIN`.
+ */
+function isCanonicalOrigin(entry: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(entry);
+  } catch {
+    return false;
+  }
+  return parsed.origin !== 'null' && parsed.origin === entry;
+}
+
+/**
  * The origins Better Auth accepts on its CSRF allowlist: everything
  * {@link resolveTrustedOrigins} trusts, plus the origins the operator listed in
  * `DORKOS_CORS_ORIGIN`.
@@ -290,13 +330,19 @@ export function parseConfiguredOrigins(value: string | undefined): string[] {
  *
  * ## What is dropped, and why
  *
+ * Two kinds of entry, and each is a hole this module has met before.
+ *
  * An entry Better Auth would read as a PATTERN rather than a literal origin.
  * Its `matchesOriginPattern` treats `*` and `?` as wildcards, so
  * `https://*.example.com` would trust every subdomain here while matching
  * nothing at all in CORS — the auth list would end up WIDER than the CORS list
- * it is meant to mirror. Blank entries go too: an origin nobody can send is
- * noise, and Better Auth falls back to a `startsWith` comparison for a
- * non-http(s) scheme, where an empty pattern matches everything.
+ * it is meant to mirror.
+ *
+ * And an entry that is not a real, canonical origin — see
+ * {@link isCanonicalOrigin}, which is what keeps the literal string `"null"`
+ * out. Because `parseConfiguredOrigins` stays byte-faithful to what CORS reads,
+ * this arm is where that filtering belongs, and it makes the auth list strictly
+ * narrower than the CORS one on exactly these shapes.
  *
  * Resolved at call time (Better Auth takes a callback), so a tunnel that
  * connects after boot is trusted without a restart, exactly as before.
@@ -306,7 +352,7 @@ export function resolveAuthTrustedOrigins(): string[] {
   // eslint-disable-next-line no-restricted-syntax -- DORKOS_CORS_ORIGIN is not in env.ts; read the same way app.ts reads it
   const configured = parseConfiguredOrigins(process.env.DORKOS_CORS_ORIGIN).filter(
     (origin) =>
-      origin.length > 0 &&
+      isCanonicalOrigin(origin) &&
       !origin.includes('*') &&
       !origin.includes('?') &&
       !trusted.includes(origin)
