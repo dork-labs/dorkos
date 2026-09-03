@@ -7,6 +7,24 @@
  * releases it however the turn ends — is driven through the real
  * ClaudeCodeAdapter, because a binding that exists only after the turn is over
  * is worth nothing to the tools that run inside it.
+ *
+ * ## Not one wall-clock reading anywhere (DOR-1729)
+ *
+ * Every budget below is dated from {@link EPOCH} and every handler is handed a
+ * {@link fixedClock}, because a TTL is the one thing here that a busy runner
+ * can decide instead of the code: this suite used to date a twenty-millisecond
+ * deadline from `Date.now()`, and the handler's own startup — a `ensureSession`,
+ * an awaited settings lookup — spent it before the turn began. `ttlRemaining`
+ * then landed at or below zero, the turn silently took the five-second default
+ * instead, ran to completion, and released the very binding the case is about.
+ * The two assertions that read `Date.now()` back had the same problem from the
+ * other end: the abort they waited on is fired by a MONOTONIC timer and read
+ * back off the WALL clock, two clocks that need only disagree by a millisecond
+ * at the boundary.
+ *
+ * So the deadline is spent in milliseconds the test owns, and the turns below
+ * end when their stop actually lands rather than after a sleep long enough to
+ * probably outlast it.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { InboundTurnBudgets } from '../inbound-turn-budgets.js';
@@ -21,12 +39,41 @@ import type { StreamEvent } from '@dorkos/shared/types';
 const AGENT_ID = 'agent-1';
 const SUBJECT = `relay.agent.demo.${AGENT_ID}`;
 
+/** The one instant every budget in this suite is dated from. */
+const EPOCH = Date.UTC(2026, 8, 3, 10, 0, 0);
+
+/**
+ * A clock the test moves by hand, so a deadline is spent in milliseconds it
+ * owns rather than in whatever the runner had left.
+ *
+ * @param start - The instant it reads at first. Defaults to {@link EPOCH}.
+ * @returns `now`, shaped to pass straight to a handler's `now` dependency, and
+ *   `advance`, which is how time passes here.
+ */
+function fixedClock(start: number = EPOCH): { now: () => number; advance: (ms: number) => void } {
+  let current = start;
+  return {
+    now: () => current,
+    advance: (ms: number) => {
+      current += ms;
+    },
+  };
+}
+
+/** Settle once the given signal aborts — or immediately, if it already has. */
+function onceAborted(signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) resolve();
+    else signal.addEventListener('abort', () => resolve(), { once: true });
+  });
+}
+
 function budget(overrides: Partial<RelayBudget> = {}): RelayBudget {
   return {
     hopCount: 1,
     maxHops: 5,
     ancestorChain: [SUBJECT],
-    ttl: Date.now() + 60_000,
+    ttl: EPOCH + 60_000,
     callBudgetRemaining: 9,
     ...overrides,
   };
@@ -38,7 +85,7 @@ function envelope(): RelayEnvelope {
     subject: SUBJECT,
     from: 'relay.agent.demo.agent-2',
     budget: budget(),
-    createdAt: new Date().toISOString(),
+    createdAt: new Date(EPOCH).toISOString(),
     payload: { text: 'keep me posted' },
   };
 }
@@ -112,18 +159,20 @@ describe('the dispatching adapter binds the turn (DOR-791)', () => {
   it('makes the inbound budget readable DURING the turn and gone after it', async () => {
     const budgets = new InboundTurnBudgets();
     const seen: (RelayBudget | undefined)[] = [];
+    const clock = fixedClock();
 
     await handleAgentMessage(
       SUBJECT,
       envelope(),
       undefined,
-      Date.now(),
+      clock.now(),
       { defaultTimeoutMs: 5_000 },
       {
         agentManager: runtimeThatObserves(budgets, seen),
         traceStore,
         inboundBudgets: budgets,
         turnController: new AbortController(),
+        now: clock.now,
       },
       null
     );
@@ -136,18 +185,20 @@ describe('the dispatching adapter binds the turn (DOR-791)', () => {
   it('releases the binding even when the turn dies partway through', async () => {
     const budgets = new InboundTurnBudgets();
     const seen: (RelayBudget | undefined)[] = [];
+    const clock = fixedClock();
 
     await handleAgentMessage(
       SUBJECT,
       envelope(),
       undefined,
-      Date.now(),
+      clock.now(),
       { defaultTimeoutMs: 5_000 },
       {
         agentManager: runtimeThatObserves(budgets, seen, true),
         traceStore,
         inboundBudgets: budgets,
         turnController: new AbortController(),
+        now: clock.now,
       },
       null
     );
@@ -162,14 +213,21 @@ describe('the dispatching adapter binds the turn (DOR-791)', () => {
     // exactly the deadline meant to end it. Inheriting a dead budget gets it
     // refused at the publish gate instead.
     const budgets = new InboundTurnBudgets();
-    const expiring = { ...envelope(), budget: budget({ ttl: Date.now() + 20 }) };
+    const clock = fixedClock();
+    const TTL_MS = 5;
+    const expiring = { ...envelope(), budget: budget({ ttl: clock.now() + TTL_MS }) };
+    const turnController = new AbortController();
 
     const runtime: AgentRuntimeLike = {
       ensureSession: vi.fn(),
       sendMessage: vi.fn().mockImplementation(() =>
         (async function* () {
-          // Outlives the TTL, so the handler aborts mid-iteration.
-          await new Promise((r) => setTimeout(r, 200));
+          // The turn is STILL ITERATING when its deadline lands: it waits for
+          // the stop itself rather than for a sleep chosen to probably outlast
+          // it. The clock moves to the deadline here, so what the assertion
+          // reads back is the exact boundary rather than a wall-clock race.
+          clock.advance(TTL_MS);
+          await onceAborted(turnController.signal);
           yield { type: 'done', data: {} } as StreamEvent;
         })()
       ),
@@ -182,36 +240,98 @@ describe('the dispatching adapter binds the turn (DOR-791)', () => {
       SUBJECT,
       expiring,
       undefined,
-      Date.now(),
+      clock.now(),
       { defaultTimeoutMs: 5_000 },
       {
         agentManager: runtime,
         traceStore,
         inboundBudgets: budgets,
-        turnController: new AbortController(),
+        turnController,
+        now: clock.now,
       },
       null
     );
 
     const held = budgets.get(AGENT_ID);
-    expect(held).toBeDefined();
-    expect(held!.ttl).toBeLessThanOrEqual(Date.now());
+    // The envelope's own budget, not a copy and not a fresh one.
+    expect(held).toBe(expiring.budget);
+    // And dead by the clock this turn was measured on, which is what gets a late
+    // send refused as `ttl_expired` at the publish gate.
+    expect(held!.ttl).toBeLessThanOrEqual(clock.now());
+  });
+
+  it('spends the TTL on the clock it was handed, not on how long the turn took to start', async () => {
+    // **The flake this closes (DOR-1729).** The deadline is
+    // `budget.ttl - now()`, computed after `ensureSession` and after an AWAITED
+    // settings lookup — so on a busy machine a millisecond-scale fixture TTL was
+    // already gone by the time it was read, `ttlRemaining` came out at or below
+    // zero, and the turn quietly took `defaultTimeoutMs` instead. It then ran to
+    // completion and released the binding this whole path exists to hold.
+    //
+    // Seeded defect: drop `now` from the deps below and this reds, because the
+    // resolver's delay is longer than the TTL. With the clock injected the
+    // delay is irrelevant — which is the property, at any load.
+    const budgets = new InboundTurnBudgets();
+    const clock = fixedClock();
+    const expiring = { ...envelope(), budget: budget({ ttl: clock.now() + 5 }) };
+    const turnController = new AbortController();
+
+    const runtime: AgentRuntimeLike = {
+      ensureSession: vi.fn(),
+      sendMessage: vi.fn().mockImplementation(() =>
+        (async function* () {
+          await onceAborted(turnController.signal);
+          yield { type: 'done', data: {} } as StreamEvent;
+        })()
+      ),
+      getSdkSessionId: vi.fn().mockReturnValue(undefined),
+      approveTool: vi.fn(),
+      interruptQuery: vi.fn().mockResolvedValue(true),
+    };
+
+    await handleAgentMessage(
+      SUBJECT,
+      expiring,
+      undefined,
+      clock.now(),
+      { defaultTimeoutMs: 60_000 },
+      {
+        agentManager: runtime,
+        traceStore,
+        inboundBudgets: budgets,
+        turnController,
+        // The real startup cost, in the place the real one is paid.
+        resolveExecutionSettings: async () => {
+          await new Promise((r) => setTimeout(r, 50));
+          return {};
+        },
+        now: clock.now,
+      },
+      null
+    );
+
+    // Stopped by its own deadline — so the binding is held, and the turn did not
+    // get a fresh sixty seconds out of a budget that had five milliseconds left.
+    expect(turnController.signal.aborted).toBe(true);
+    expect(budgets.get(AGENT_ID)).toBe(expiring.budget);
   });
 
   it('binds nothing when the host wired no registry — the pre-existing behaviour', async () => {
     const budgets = new InboundTurnBudgets();
     const seen: (RelayBudget | undefined)[] = [];
+    const clock = fixedClock();
 
     await handleAgentMessage(
       SUBJECT,
       envelope(),
       undefined,
-      Date.now(),
+      clock.now(),
       { defaultTimeoutMs: 5_000 },
       {
         agentManager: runtimeThatObserves(budgets, seen),
         traceStore,
         turnController: new AbortController(),
+        now: clock.now,
       },
       null
     );
@@ -230,7 +350,7 @@ describe('a scheduled task turn is bound too (DOR-791)', () => {
       subject: 'relay.system.tasks.nightly',
       from: 'relay.system.scheduler',
       budget: budget({ callBudgetRemaining: 7 }),
-      createdAt: new Date().toISOString(),
+      createdAt: new Date(EPOCH).toISOString(),
       payload: {
         type: 'task_dispatch',
         taskId: 'task-1',
@@ -250,18 +370,20 @@ describe('a scheduled task turn is bound too (DOR-791)', () => {
     // inside it. Without this it started every chain over.
     const budgets = new InboundTurnBudgets();
     const seen: (RelayBudget | undefined)[] = [];
+    const clock = fixedClock();
 
     await handleTasksMessage(
       'relay.system.tasks.nightly',
       taskEnvelope(),
       undefined,
-      Date.now(),
+      clock.now(),
       { defaultCwd: '/tmp' },
       {
         agentManager: runtimeThatObserves(budgets, seen, false, RUN_ID),
         traceStore,
         runningTasks: new AbortRegistry(),
         inboundBudgets: budgets,
+        now: clock.now,
       }
     );
 
@@ -278,9 +400,11 @@ describe('a scheduled task turn is bound too (DOR-791)', () => {
     // meant to end it.
     const budgets = new InboundTurnBudgets();
     const seen: (RelayBudget | undefined)[] = [];
+    const clock = fixedClock();
+    const TTL_MS = 5;
     const expiring: RelayEnvelope = {
       ...taskEnvelope(),
-      budget: budget({ callBudgetRemaining: 7, ttl: Date.now() + 20 }),
+      budget: budget({ callBudgetRemaining: 7, ttl: clock.now() + TTL_MS }),
     };
 
     const runtime: AgentRuntimeLike = {
@@ -288,8 +412,12 @@ describe('a scheduled task turn is bound too (DOR-791)', () => {
       sendMessage: vi.fn().mockImplementation(() =>
         (async function* () {
           seen.push(budgets.get(RUN_ID));
-          // Outlives the run's TTL, so the handler stops mid-stream.
-          await new Promise((r) => setTimeout(r, 200));
+          // Never settles: the run's own deadline is the only thing that can end
+          // it, and `consumeRunStream` abandons the stream when that lands. A
+          // sleep here would be a bet that the runner fires a timer before it
+          // finishes a sleep, which is the bet that flaked.
+          clock.advance(TTL_MS);
+          await new Promise(() => {});
           yield { type: 'done', data: {} } as StreamEvent;
         })()
       ),
@@ -302,21 +430,22 @@ describe('a scheduled task turn is bound too (DOR-791)', () => {
       'relay.system.tasks.nightly',
       expiring,
       undefined,
-      Date.now(),
+      clock.now(),
       { defaultCwd: '/tmp' },
       {
         agentManager: runtime,
         traceStore,
         runningTasks: new AbortRegistry(),
         inboundBudgets: budgets,
+        now: clock.now,
       }
     );
 
     // Still bound, and bound to a budget the publish gate will refuse — so a
     // late send inherits a dead chain instead of starting a fresh one.
     const held = budgets.get(RUN_ID);
-    expect(held).toBeDefined();
+    expect(held).toBe(expiring.budget);
     expect(held!.callBudgetRemaining).toBe(7);
-    expect(held!.ttl).toBeLessThanOrEqual(Date.now());
+    expect(held!.ttl).toBeLessThanOrEqual(clock.now());
   });
 });
