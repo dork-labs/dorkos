@@ -258,15 +258,21 @@ export function AgentRunner({ agent, index }: AgentRunnerProps) {
       {/* Particle burst overlay during celebration */}
       {phase === 'celebrating' && <AgentRunnerBurst color={agent.color} />}
 
-      {/* Tooltip — CSS-only, shown on hover (running phase only) */}
+      {/* Tooltip — CSS-only, shown on hover (running phase only).
+          Desktop-only (`hidden md:block`): it needs a `:hover` no touch
+          pointer has, and up to four of these can be on screen at once, so
+          "always visible" here would stack four overlapping boxes rather
+          than reveal one. The tap-to-expand task list (the chevron beside
+          the bar) is the touch path to the same facts, `lastToolName`
+          included — see `TaskDetailRow`. */}
       {phase === 'running' && (
         <div
           className={cn(
-            'pointer-events-none absolute bottom-[calc(100%+8px)] left-1/2',
+            'pointer-events-none absolute bottom-[calc(100%+8px)] left-1/2 hidden',
             '-translate-x-1/2 translate-y-1 opacity-0 transition-all duration-150',
             'group-hover:translate-y-0 group-hover:opacity-100',
             'border-border bg-popover z-10 rounded-lg border px-3 py-2 whitespace-nowrap',
-            'text-foreground text-2xs shadow-lg'
+            'text-foreground text-2xs shadow-lg md:block'
           )}
         >
           {/* Title with colored dot */}

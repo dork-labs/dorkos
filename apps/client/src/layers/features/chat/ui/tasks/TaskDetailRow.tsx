@@ -48,6 +48,15 @@ export function TaskDetailRow({ task, onStop }: TaskDetailRowProps) {
         </span>
       )}
 
+      {/* Last tool — agent tasks only. The desktop runner figure shows this in
+          a hover tooltip; this row is the touch path to the same fact, so it
+          repeats the same wording rather than inventing a second name for it. */}
+      {task.taskType === 'agent' && task.lastToolName && (
+        <span className="text-muted-foreground/60 text-3xs max-w-24 shrink-0 truncate font-mono">
+          Last: {task.lastToolName}
+        </span>
+      )}
+
       {/* Duration */}
       {durationSeconds > 0 && (
         <span className="text-muted-foreground/60 text-3xs shrink-0 font-mono">

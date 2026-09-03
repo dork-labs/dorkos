@@ -119,4 +119,23 @@ describe('TaskDetailPanel', () => {
     render(<TaskDetailPanel tasks={tasks} onStopTask={vi.fn()} />);
     expect(screen.getByText('45s')).toBeInTheDocument();
   });
+
+  // DOR-1753: the runner figure's hover tooltip is desktop-only, so this row
+  // is the only place a touch user ever sees the last tool an agent ran.
+  it('shows the last tool an agent ran, the touch path to the desktop hover tooltip', () => {
+    const tasks = [makeTask({ taskId: 'a-1', taskType: 'agent', lastToolName: 'Read' })];
+
+    render(<TaskDetailPanel tasks={tasks} onStopTask={vi.fn()} />);
+    expect(screen.getByText('Last: Read')).toBeInTheDocument();
+  });
+
+  it('says nothing about a last tool for a bash task or an agent that has not run one yet', () => {
+    const tasks = [
+      makeTask({ taskId: 'a-1', taskType: 'agent', lastToolName: undefined }),
+      makeTask({ taskId: 'b-1', taskType: 'bash', command: 'ls', lastToolName: 'Read' }),
+    ];
+
+    render(<TaskDetailPanel tasks={tasks} onStopTask={vi.fn()} />);
+    expect(screen.queryByText(/^Last:/)).not.toBeInTheDocument();
+  });
 });

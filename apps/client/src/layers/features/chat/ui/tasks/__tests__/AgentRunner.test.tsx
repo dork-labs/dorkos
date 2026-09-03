@@ -132,6 +132,20 @@ describe('AgentRunner', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  // DOR-1753: `:hover` never fires on touch, and the task-list chevron is the
+  // touch path to the same facts (TaskDetailRow), so the CSS-only tooltip
+  // stays desktop-only rather than trying to be "always visible" — up to
+  // four of these can render at once, and four always-open boxes over a
+  // 22px-wide figure would overlap into an unreadable stack.
+  it('keeps the hover tooltip desktop-only (hidden md:block)', () => {
+    const { container } = render(<AgentRunner agent={makeAgent('running')} index={0} />);
+
+    const tooltip = container.querySelector('svg[aria-label="Background agent"]')
+      ?.nextElementSibling;
+    expect(tooltip?.className).toContain('hidden');
+    expect(tooltip?.className).toContain('md:block');
+  });
+
   it('goes back to running if the task starts again before it settles', () => {
     const { container, rerender } = render(<AgentRunner agent={makeAgent('running')} index={0} />);
     rerender(<AgentRunner agent={makeAgent('complete')} index={0} />);

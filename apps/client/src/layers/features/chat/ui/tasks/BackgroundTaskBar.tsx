@@ -217,14 +217,18 @@ function OverflowBadge({ count, overflowTasks }: OverflowBadgeProps) {
         +{count}
       </div>
 
-      {/* Hover tooltip listing overflow agents */}
+      {/* Hover tooltip listing overflow agents. Desktop-only (`hidden
+          md:block`) — it needs a `:hover` no touch pointer has, and the
+          tap-to-expand task list (the chevron beside the bar) already lists
+          every task, overflow included, as the touch path to the same
+          names. */}
       <div
         className={cn(
-          'pointer-events-none absolute bottom-[calc(100%+8px)] left-1/2',
+          'pointer-events-none absolute bottom-[calc(100%+8px)] left-1/2 hidden',
           '-translate-x-1/2 translate-y-1 opacity-0 transition-all duration-150',
           'group-hover:translate-y-0 group-hover:opacity-100',
           'border-border bg-popover z-10 rounded-lg border px-3 py-2 whitespace-nowrap',
-          'text-foreground text-2xs shadow-lg'
+          'text-foreground text-2xs shadow-lg md:block'
         )}
       >
         {overflowTasks.map((task) => (
