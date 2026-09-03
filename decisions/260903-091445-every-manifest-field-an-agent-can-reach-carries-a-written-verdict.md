@@ -66,8 +66,22 @@ Four properties make it a policy rather than a longer list of guards:
    (`{"roomsManage": null}` fails a boolean schema, and answering with a type error sends
    a model back to the same door), nor on which agent lives at the path.
 3. **Refuse the whole patch, never strip the field.** A caller told nothing reports the
-   change as done — the DOR-1253 shape. Naming a refused field at any value, or an empty
+   change as done — the DOR-1253 shape. Naming a refused field at any value, or any
    object above it, refuses everything.
+
+   **Including an object whose keys DorkOS does not recognise**, which adversarial review
+   found this missing. The walk emits leaves and the matcher compares by
+   equality/ancestor/descendant, so `{enabledToolGroups:{}}` was caught and
+   `{enabledToolGroups:{zzz:1}}` was not — while the write replaces the object either
+   way. Measured before the fix: 200, `{}` on disk, a person's two disabled groups and
+   their `roomsManage` grant gone. `{behavior:{zzz:1}}` was sharper, because
+   `AgentBehaviorSchema` defaults `responseMode` and the replacement re-armed `always`.
+   So naming an object above a guarded leaf counts as naming every leaf under it unless
+   every key it carries is classified. Scoped to this seam rather than the shared walk:
+   `applyConfigPatch` deep-merges, so the same gap writes nothing there, and making the
+   walk emit ancestors for everybody would break the honesty rule it exists to keep
+   (DOR-1044).
+
 4. **The refusal is worded per stake**, and says where the setting actually lives. A
    refusal that overstates what a setting does is a lie a model then repeats (DOR-1044),
    so the tool-group sentence says these decide what the agent is TOLD about — the tools

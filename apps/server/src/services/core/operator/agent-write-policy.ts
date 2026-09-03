@@ -38,8 +38,13 @@
  *
  * Same rule as the three guards this replaces: a caller told nothing would report
  * the change as done (the DOR-1253 shape). Naming an operator-only field at all —
- * `true`, `false`, `null`, an empty object above it — refuses the whole patch,
+ * `true`, `false`, `null`, any object above it — refuses the whole patch,
  * because a patch that names the field is a patch about the field.
+ *
+ * "Any object above it" carries more weight than it reads, because a write here
+ * REPLACES an object rather than merging into it: an object holding only keys
+ * this table does not classify still overwrites every leaf under it. See
+ * {@link touchedAgentPaths}, which is where that is enforced.
  *
  * ## Where the check runs, and what that costs
  *
@@ -69,7 +74,12 @@
  *
  * @module services/core/operator/agent-write-policy
  */
-import { findGuardedPaths, prepareGuardedPaths } from './guarded-paths.js';
+import {
+  matchGuardedPaths,
+  patchPaths,
+  prepareGuardedPaths,
+  withoutArrayMarkers,
+} from './guarded-paths.js';
 
 /**
  * Whether an agent may write one leaf of its own manifest through the
@@ -244,6 +254,73 @@ export const TIGHTEN_ONLY_AGENT_PATHS: readonly string[] = pathsWithAccess('tigh
 /** {@link OPERATOR_ONLY_AGENT_PATHS}, prepared for matching. */
 const OPERATOR_ONLY_AGENT_GUARDED = prepareGuardedPaths(OPERATOR_ONLY_AGENT_PATHS);
 
+/** Every path {@link AGENT_WRITE_POLICY} carries a verdict for, as an own-key set. */
+const CLASSIFIED_AGENT_PATHS: ReadonlySet<string> = new Set(Object.keys(AGENT_WRITE_POLICY));
+
+/**
+ * The dot-paths a patch reaches at THIS seam, which is more than the paths it
+ * names — because writing here replaces an object rather than merging into it.
+ *
+ * ## The bypass this closes (adversarial review of DOR-1506)
+ *
+ * `patchPaths` emits LEAVES, and the matcher compares a touched path against a
+ * guarded one by equality, ancestor, or descendant. `{ enabledToolGroups: {} }`
+ * is therefore caught — it stops above the guarded leaves, so it matches all
+ * five as an ancestor. `{ enabledToolGroups: { zzz: 1 } }` was NOT: it emits
+ * `enabledToolGroups.zzz`, which equals no policy key, is under none, and is
+ * above none either.
+ *
+ * And that patch WRITES. Zod strips the unrecognised key, so `parsed.data`
+ * carries `enabledToolGroups: {}` — but `updateAgentManifest` intersects the
+ * parse result with the RAW body's own keys, and `enabledToolGroups` is one of
+ * them, so the empty object survives into a merge that REPLACES the stored one.
+ * Measured against a real manifest: `{"enabledToolGroups":{"zzz":1}}` answered
+ * 200 and left `{}` on disk, clearing two documentation keys a person had turned
+ * off AND `roomsManage: true`, which is a grant only a person may write — DOR-1506's
+ * own defect, reachable through a key nobody had to guess right.
+ * `{"behavior":{"zzz":1}}` was worse in kind: `AgentBehaviorSchema` defaults
+ * `responseMode`, so the write re-armed the MOST permissive setting (`always`)
+ * and dropped `escalationThreshold`. A nested `{"__proto__":{…}}` took the same
+ * road (it arrives as an own key over HTTP; as a literal it makes the object
+ * empty, which was already refused).
+ *
+ * ## The rule
+ *
+ * **Naming an object that sits above a guarded leaf counts as naming every leaf
+ * under it, unless every key it carries is one this table classifies.** So each
+ * unrecognised path contributes its ancestors, and an ancestor of a guarded leaf
+ * is already matched by the existing comparison.
+ *
+ * Deliberately HERE and not in the shared walk. `config-write-policy.ts` has the
+ * same gap and it is harmless there: `applyConfigPatch` deep-merges, so an
+ * unknown key writes nothing around it. Making the walk emit ancestors for
+ * everybody would also break the honesty rule the walk exists to keep — a
+ * refusal must name what the caller actually tried to do (DOR-1044) — and this
+ * seam is the one where naming the parent IS what the caller did.
+ *
+ * A top-level unrecognised key contributes no ancestor (there is nothing above
+ * it), which is right: Zod strips it, `parsed.data` has no such key, and the
+ * intersection drops it, so it writes nothing.
+ *
+ * @param body - The raw patch a caller supplied.
+ * @returns Every path the patch reaches, plus the ancestors an unrecognised key
+ *   makes it reach, `[]` markers removed.
+ */
+function touchedAgentPaths(body: unknown): string[] {
+  const touched = patchPaths(body).map(withoutArrayMarkers);
+  const reached = new Set(touched);
+
+  for (const path of touched) {
+    if (CLASSIFIED_AGENT_PATHS.has(path)) continue;
+    const segments = path.split('.');
+    for (let depth = segments.length - 1; depth > 0; depth--) {
+      reached.add(segments.slice(0, depth).join('.'));
+    }
+  }
+
+  return [...reached];
+}
+
 /**
  * The refusal sentence for each group of operator-only manifest fields.
  *
@@ -299,13 +376,17 @@ const AGENT_OPERATOR_ONLY_FALLBACK = 'These settings are a person’s to choose,
 /**
  * Find the operator-only manifest fields a patch tries to write.
  *
+ * Matches against {@link touchedAgentPaths} rather than the bare walk, so an
+ * object carrying only keys this table does not classify is refused for every
+ * leaf it would have replaced.
+ *
  * @param body - The raw patch a caller supplied (any shape; a non-object touches
  *   nothing).
  * @returns The offending policy paths, sorted, each named once. Empty when the
  *   patch is clean.
  */
 export function findOperatorOnlyAgentPaths(body: unknown): string[] {
-  return findGuardedPaths(body, OPERATOR_ONLY_AGENT_GUARDED);
+  return matchGuardedPaths(touchedAgentPaths(body), OPERATOR_ONLY_AGENT_GUARDED);
 }
 
 /**

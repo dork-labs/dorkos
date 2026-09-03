@@ -164,6 +164,65 @@ describe('findOperatorOnlyAgentPaths', () => {
     );
   });
 
+  /**
+   * The shape the first version of this matrix never tried, found by adversarial
+   * review and reproduced against a real manifest before the fix.
+   *
+   * The walk emits LEAVES, so `{ enabledToolGroups: {} }` was caught (it stops
+   * above the guarded leaves and matches them as an ancestor) while
+   * `{ enabledToolGroups: { zzz: 1 } }` was not — `enabledToolGroups.zzz` equals
+   * no policy key, sits under none, and sits above none. And that patch WRITES:
+   * Zod strips the unknown key, the raw body still names `enabledToolGroups`, and
+   * the merge REPLACES the stored object. Measured before the fix: 200, `{}` on
+   * disk, `roomsManage: true` gone.
+   */
+  describe('an object carrying only keys nobody classified', () => {
+    it('refuses every leaf it would have replaced', () => {
+      expect(findOperatorOnlyAgentPaths({ enabledToolGroups: { zzz: 1 } }).sort()).toEqual(
+        [
+          'enabledToolGroups.adapter',
+          'enabledToolGroups.mesh',
+          'enabledToolGroups.relay',
+          'enabledToolGroups.roomsManage',
+          'enabledToolGroups.tasks',
+        ].sort()
+      );
+    });
+
+    it('catches a nested __proto__ key, which arrives as an own key over HTTP', () => {
+      // `JSON.parse` makes it an own, enumerable property — the shape Express
+      // hands the route — where the object literal `{ __proto__: {…} }` instead
+      // sets the prototype and leaves an empty object, which was already caught.
+      const body: unknown = JSON.parse('{"enabledToolGroups":{"__proto__":{"relay":true}}}');
+
+      expect(findOperatorOnlyAgentPaths(body)).toContain('enabledToolGroups.relay');
+    });
+
+    it('catches it on `behavior`, where the schema default is the permissive one', () => {
+      // Worse in kind than the tool groups: `AgentBehaviorSchema` defaults
+      // `responseMode`, so the replacing write re-armed `always` — the most
+      // permissive setting there is — and dropped `escalationThreshold`.
+      expect(findOperatorOnlyAgentPaths({ behavior: { zzz: 1 } }).sort()).toEqual([
+        'behavior.escalationThreshold',
+        'behavior.responseMode',
+      ]);
+    });
+
+    it('still lets an unknown key through above fields nobody guards', () => {
+      // The rule is scoped by the TABLE, not by the shape: `traits` holds no
+      // operator-only leaf, so an unrecognised key under it is somebody else's
+      // problem (it replaces the object with schema defaults — the same
+      // whole-object write every `traits` patch does) and not a refusal here.
+      expect(findOperatorOnlyAgentPaths({ traits: { zzz: 1 } })).toEqual([]);
+    });
+
+    it('adds no ancestor for a top-level unknown key, because it writes nothing', () => {
+      // There is nothing above it, and `updateAgentManifest` intersects the parse
+      // result with the raw keys — an undeclared top-level key survives neither.
+      expect(findOperatorOnlyAgentPaths({ zzz: 1, displayName: 'Warden' })).toEqual([]);
+    });
+  });
+
   it('catches a field whatever its value, including null and undefined', () => {
     for (const value of [true, false, null, undefined]) {
       expect(findOperatorOnlyAgentPaths({ account: value })).toEqual(['account']);

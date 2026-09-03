@@ -158,8 +158,9 @@ export async function updateAgentManifest(opts: {
   // well-formed — `{"roomsManage": null}` fails the boolean schema, and reporting
   // that as a validation error would tell an agent to fix its types and try again
   // at a field it may never write. Naming the field at all (`true`, `false`,
-  // `null`, or an empty object above it) is refused, because a patch that names
-  // the field is a patch about the field.
+  // `null`, or any object above it — including one whose keys DorkOS does not
+  // recognise, because the merge below REPLACES the object) is refused, since a
+  // patch that names the field is a patch about the field.
   //
   // Refused rather than stripped: an agent told nothing would report the change
   // as done (the DOR-1253 shape). All-or-nothing, matching

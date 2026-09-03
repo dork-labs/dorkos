@@ -135,15 +135,18 @@ export function prepareGuardedPaths(paths: readonly string[]): readonly GuardedP
  * It cannot change a verdict: a repeated path can only re-add hits already in
  * the set.
  *
- * @param patch - The raw patch a caller supplied.
+ * @param touched - The dot-paths a patch reaches, `[]` markers already removed.
+ *   Deduped here, so a caller may hand over the walk's raw output.
  * @param guarded - The prepared policy paths to match against.
  * @returns The offending policy paths, sorted, each named once.
  */
-export function findGuardedPaths(patch: unknown, guarded: readonly GuardedPath[]): string[] {
-  const touched = new Set(patchPaths(patch).map(withoutArrayMarkers));
+export function matchGuardedPaths(
+  touched: Iterable<string>,
+  guarded: readonly GuardedPath[]
+): string[] {
   const hits = new Set<string>();
 
-  for (const path of touched) {
+  for (const path of new Set(touched)) {
     for (const { path: guardedPath, plain } of guarded) {
       if (path === plain || path.startsWith(`${plain}.`) || plain.startsWith(`${path}.`)) {
         hits.add(guardedPath);
@@ -152,4 +155,21 @@ export function findGuardedPaths(patch: unknown, guarded: readonly GuardedPath[]
   }
 
   return [...hits].sort();
+}
+
+/**
+ * Find which of a guarded set of dot-paths a patch tries to write.
+ *
+ * The walk and the match, together: {@link patchPaths} for what the caller
+ * reached, {@link matchGuardedPaths} for which policy keys that meets. A guard
+ * whose seam needs to ADD to the walk's output — because its write semantics
+ * touch more than the caller named — composes the two itself rather than
+ * changing what the walk emits for everybody (`agent-write-policy.ts` does).
+ *
+ * @param patch - The raw patch a caller supplied.
+ * @param guarded - The prepared policy paths to match against.
+ * @returns The offending policy paths, sorted, each named once.
+ */
+export function findGuardedPaths(patch: unknown, guarded: readonly GuardedPath[]): string[] {
+  return matchGuardedPaths(patchPaths(patch).map(withoutArrayMarkers), guarded);
 }

@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server,client,shared): every manifest field an agent can reach carries a written verdict (DOR-1506)'
+  - 'fix(server): naming an object above a guarded leaf names every leaf under it (DOR-1506)'
 ---
 
 ### Fixed

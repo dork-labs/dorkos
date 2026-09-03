@@ -250,6 +250,50 @@ describe('an agent cannot write its own tool groups', () => {
       updateAgentManifest({ agentPath, body: { enabledToolGroups: {} } })
     ).rejects.toMatchObject({ code: 'OPERATOR_ONLY' });
   });
+
+  it('refuses an object carrying only a key nobody recognises, and keeps the grant', async () => {
+    // Adversarial review of DOR-1506, executed against a real manifest. The
+    // matcher walks LEAVES, so `enabledToolGroups.zzz` matched nothing — while
+    // the WRITE replaces the whole object: Zod strips the unknown key, the raw
+    // body still names `enabledToolGroups`, and `{...existing, ...patch}` puts
+    // `{}` on disk. Before the fix this answered 200 and cleared a person's two
+    // disabled groups AND `roomsManage: true`, which is DOR-1506's own defect
+    // reached through a key nobody had to guess right.
+    await writeManifest(agentPath, {
+      ...SEED,
+      enabledToolGroups: { tasks: false, relay: false, roomsManage: true },
+    } as AgentManifest);
+
+    await expect(
+      updateAgentManifest({ agentPath, body: { enabledToolGroups: { zzz: 1 } } })
+    ).rejects.toMatchObject({ code: 'OPERATOR_ONLY' });
+
+    const onDisk = await readManifest(agentPath);
+    expect(onDisk?.enabledToolGroups).toEqual({ tasks: false, relay: false, roomsManage: true });
+  });
+});
+
+/**
+ * The same class on `behavior`, kept apart because the consequence is different
+ * in kind: `AgentBehaviorSchema` DEFAULTS `responseMode`, so the replacing write
+ * did not merely clear the field — it re-armed the most permissive setting there
+ * is and dropped `escalationThreshold` with it.
+ */
+describe('an unrecognised key cannot re-arm an agent’s room behaviour', () => {
+  it('refuses it, and leaves the stored behaviour exactly as it was', async () => {
+    await writeManifest(agentPath, {
+      ...SEED,
+      behavior: { responseMode: 'mention-only', escalationThreshold: 0.8 },
+    } as AgentManifest);
+
+    await expect(
+      updateAgentManifest({ agentPath, body: { behavior: { zzz: 1 } } })
+    ).rejects.toMatchObject({ code: 'OPERATOR_ONLY' });
+
+    const onDisk = await readManifest(agentPath);
+    // Before the fix: `{ responseMode: 'always' }`, with the threshold gone.
+    expect(onDisk?.behavior).toEqual({ responseMode: 'mention-only', escalationThreshold: 0.8 });
+  });
 });
 
 /**
