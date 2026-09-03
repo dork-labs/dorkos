@@ -18,6 +18,7 @@ import {
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { useComposerRichText, useUpdateComposerPrefs } from '@/layers/entities/config';
 import { ResetDialog } from './ResetDialog';
+import { ResetSettingsDialog } from './ResetSettingsDialog';
 import { RestartDialog } from './RestartDialog';
 import { configKeys } from '@/layers/entities/config';
 
@@ -26,6 +27,7 @@ const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace'] as const
 /** Settings danger zone with reset and restart actions. */
 export function AdvancedTab() {
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [resetSettingsDialogOpen, setResetSettingsDialogOpen] = useState(false);
   const [restartDialogOpen, setRestartDialogOpen] = useState(false);
   const enableMessagePolling = useAppStore((s) => s.enableMessagePolling);
   const setEnableMessagePolling = useAppStore((s) => s.setEnableMessagePolling);
@@ -180,13 +182,34 @@ export function AdvancedTab() {
         <FieldCardContent>
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
+              <p className="text-sm font-medium">Reset All Settings</p>
+              <p className="text-muted-foreground text-xs">
+                Put the theme, text, toggles, and panel layouts on this device back to how they
+                shipped. Your projects, agents, and chats stay.
+              </p>
+            </div>
+            {/* Both resets say what they reset: two adjacent buttons reading
+                just "Reset" would leave the destructive one indistinguishable
+                from the recoverable one, in the accessibility tree as much as
+                on screen. */}
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setResetSettingsDialogOpen(true)}
+            >
+              Reset Settings
+            </Button>
+          </div>
+
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
               <p className="text-sm font-medium">Reset All Data</p>
               <p className="text-muted-foreground text-xs">
                 Permanently delete all DorkOS data and restart the server.
               </p>
             </div>
             <Button variant="destructive" size="sm" onClick={() => setResetDialogOpen(true)}>
-              Reset
+              Reset Data
             </Button>
           </div>
 
@@ -204,6 +227,10 @@ export function AdvancedTab() {
         </FieldCardContent>
       </FieldCard>
 
+      <ResetSettingsDialog
+        open={resetSettingsDialogOpen}
+        onOpenChange={setResetSettingsDialogOpen}
+      />
       <ResetDialog
         open={resetDialogOpen}
         onOpenChange={setResetDialogOpen}

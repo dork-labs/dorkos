@@ -13,23 +13,20 @@ import { FONT_CONFIGS, type FontFamilyKey } from '@/layers/shared/lib';
 import { ResetToDefaultsButton } from '../ResetToDefaultsButton';
 
 /**
- * Header action for the Appearance panel. It calls the store's
- * `resetPreferences`, which puts back more than this panel shows: theme and
- * typography, but also the Preferences tab's toggles, dismissed promos, and
- * panel layout state. That breadth predates this button's relocation and is
- * tracked separately; the wiring here only moved.
+ * Header action for the Appearance panel — puts back the three things this
+ * panel shows (theme, font family, font size) and nothing else.
  *
  * A component rather than an element because the dialog declares its tabs
  * before any of them mount, and this needs the same stores the panel reads.
  */
 export function AppearanceResetAction() {
   const { setTheme } = useTheme();
-  const { resetPreferences } = useAppStore();
+  const resetAppearance = useAppStore((s) => s.resetAppearance);
 
   return (
     <ResetToDefaultsButton
       onClick={() => {
-        resetPreferences();
+        resetAppearance();
         setTheme('system');
       }}
     />

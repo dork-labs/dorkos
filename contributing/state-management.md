@@ -107,7 +107,7 @@ export const useAppStore = create<AppState>()(
 );
 ```
 
-**Agent pinning (server-persisted, DOR-329)**: pinned agents are NOT app-store state. Sidebar organization (pinned agents, user-defined groups, per-section sort/collapse) lives in the server config at `ui.sidebar` and is read/written through `useSidebarPrefs()` / `useUpdateSidebarPrefs()` from `@/layers/entities/config` — TanStack Query server state with optimistic writes, not Zustand. localStorage is no longer involved; the legacy `dorkos-pinned-agents` key is migrated into config once on `DashboardSidebar` mount and removed. Because it is config, `resetPreferences` does not touch it, and the organization syncs across every browser and the desktop app connected to the instance.
+**Agent pinning (server-persisted, DOR-329)**: pinned agents are NOT app-store state. Sidebar organization (pinned agents, user-defined groups, per-section sort/collapse) lives in the server config at `ui.sidebar` and is read/written through `useSidebarPrefs()` / `useUpdateSidebarPrefs()` from `@/layers/entities/config` — TanStack Query server state with optimistic writes, not Zustand. localStorage is no longer involved; the legacy `dorkos-pinned-agents` key is migrated into config once on `DashboardSidebar` mount and removed. Because it is config, `resetAllSettings` does not touch it, and the organization syncs across every browser and the desktop app connected to the instance.
 
 ### Using Selectors (Prevent Re-renders)
 
