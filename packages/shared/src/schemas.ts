@@ -4726,6 +4726,19 @@ export type ConfigPatchRequest = z.infer<typeof ConfigPatchRequestSchema>;
  * The `config` shape below documents the fields callers read most often, not
  * every field the snapshot carries; the authoritative list is
  * `CONFIG_DISCLOSURE` in the server's `config-disclosure.ts`.
+ *
+ * ## Why the tunnel flags are not spelled the way `GET /api/config` spells them
+ *
+ * That read answers `tunnel.tokenConfigured` and `tunnel.authEnabled`, and the
+ * difference is deliberate rather than drift — do not "fix" either into the
+ * other. `GET` reports what a tunnel START WOULD USE, so it ORs the stored value
+ * with the environment (`NGROK_AUTHTOKEN`, `TUNNEL_AUTH`) and answers the
+ * effective question a settings screen has to ask. These flags come off the
+ * disclosure projection, which only ever looks at the STORED config, so
+ * `authtokenConfigured` means "there is a token in `config.json`" and nothing
+ * more. Two different questions, so two different names: an install with the
+ * env variable set and nothing stored answers `true` on one and `false` on the
+ * other, and both are correct.
  */
 export const ConfigPatchResponseSchema = z
   .object({

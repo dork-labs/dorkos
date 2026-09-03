@@ -83,10 +83,12 @@ export function resetClaudeAccountApplier(): void {
  *
  * @param config - The config to project. Defaults to the stored one, which is
  *   what a plain read wants. A caller that has just WRITTEN passes the config its
- *   write returned instead: that value is already in hand, and re-reading the
- *   store would add a window in which something else moved — the same reason
- *   {@link ConfigPatchResult} hands `before` back rather than letting the caller
- *   go and fetch it.
+ *   write returned instead, because that value is already in hand — the same
+ *   reason {@link ConfigPatchResult} hands `before` back rather than letting the
+ *   caller go and fetch it. It is a convention, not a correctness fix: the two
+ *   agree today, since {@link applyConfigPatch} builds its `config` from a
+ *   `getAll()` taken after the write and nothing writes this store between that
+ *   read and the caller's answer.
  * @returns A fresh object safe to serialize to an untrusted caller.
  */
 export function sanitizedConfigSnapshot(

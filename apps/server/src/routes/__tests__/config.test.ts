@@ -1054,6 +1054,9 @@ describe('PATCH /api/config', () => {
       const planted = new Map(
         SENSITIVE_CONFIG_KEYS.map((key) => [key, `planted-${key.replace(/\./g, '-')}`])
       );
+      // A derived list that came back empty would make every assertion below
+      // vacuous, and this test would then pass while checking nothing.
+      expect(planted.size).toBeGreaterThan(0);
       for (const [key, value] of planted) configManager.setDot(key, value);
 
       // A patch about a theme. Nothing in it names a credential, which is exactly
@@ -1073,6 +1076,30 @@ describe('PATCH /api/config', () => {
 
       // And the leak was not "fixed" by refusing to store them.
       for (const [key, value] of planted) expect(configManager.getDot(key)).toBe(value);
+    });
+
+    it('matches the published wire contract, so the schema is not a decoration', async () => {
+      // `ConfigPatchResponseSchema` is the documented shape of this body and had
+      // no runtime reader at all, which is how it came to promise
+      // `tunnel.authtoken: string | null` — a leak, written down as a contract.
+      // Parsing a REAL answer through it is what stops the schema and the route
+      // from drifting apart again in either direction.
+      const { ConfigPatchResponseSchema } = await import('@dorkos/shared/schemas');
+
+      const response = await request(server)
+        .patch('/api/config')
+        .send({ server: { port: 8080 }, ui: { theme: 'dark' } })
+        .expect(200);
+
+      const parsed = ConfigPatchResponseSchema.safeParse(response.body);
+      expect(parsed.error?.issues ?? []).toEqual([]);
+      expect(parsed.success).toBe(true);
+      expect(parsed.data?.config.tunnel).toEqual({
+        enabled: false,
+        domain: null,
+        authtokenConfigured: false,
+        authConfigured: false,
+      });
     });
 
     it('withholds the credential REFERENCES too, which name where a secret lives', async () => {
