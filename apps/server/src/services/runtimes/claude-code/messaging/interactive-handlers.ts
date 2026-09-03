@@ -9,6 +9,8 @@ import { UI_COMMAND_REACH, UiCommandSchema } from '@dorkos/shared/schemas';
 import type { PermissionMode } from '@dorkos/shared/schemas';
 import { createInSessionContextResolver } from '../../../core/agent-identity/index.js';
 import { SESSIONS } from '../../../../config/constants.js';
+import { logger } from '../../../../lib/logger.js';
+import { alwaysAllowScopeOf, suggestionDestinations } from './always-allow-scope.js';
 import {
   armInteractionWait,
   approvalParkedNotice,
@@ -882,6 +884,19 @@ export function handleToolApproval(
   context: ToolApprovalContext
 ): Promise<PermissionResult> {
   const startedAt = Date.now();
+  // What "Always Allow" on this card would actually grant. Named on the card so
+  // the click is informed, and logged in raw SDK terms so a week of real cards
+  // can answer whether wide destinations turn up often enough to be worth
+  // stripping — the follow-up question DOR-1462 deliberately left open.
+  const alwaysAllowScope = alwaysAllowScopeOf(context.suggestions);
+  if (alwaysAllowScope !== undefined) {
+    logger.info('[handleToolApproval] always-allow suggestions offered', {
+      toolName,
+      toolUseID: toolUseId,
+      scope: alwaysAllowScope,
+      destinations: suggestionDestinations(context.suggestions),
+    });
+  }
 
   session.eventQueue.push({
     type: 'approval_required',
@@ -898,6 +913,7 @@ export function handleToolApproval(
       blockedPath: context.blockedPath,
       decisionReason: context.decisionReason,
       hasSuggestions: (context.suggestions?.length ?? 0) > 0,
+      ...(alwaysAllowScope !== undefined ? { alwaysAllowScope } : {}),
     },
   });
   session.eventQueueNotify?.();
@@ -944,6 +960,7 @@ export function handleToolApproval(
         blockedPath: context.blockedPath,
         decisionReason: context.decisionReason,
         hasSuggestions: (context.suggestions?.length ?? 0) > 0,
+        ...(alwaysAllowScope !== undefined ? { alwaysAllowScope } : {}),
       },
       resolve: (result, denyReason) => {
         clearInteractionTimer(session, toolUseId);

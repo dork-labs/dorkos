@@ -135,7 +135,10 @@ const demoRateLimiterExplainer: ScenarioFn = async function* () {
  * A turn that pauses on a permission prompt: a `tool_call_start` for a
  * write-scoped tool followed by `approval_required`, then it stops WITHOUT a
  * `done` so the turn stays blocked and the {@link ToolApproval} card holds on
- * screen for a still. `hasSuggestions` surfaces the "Always allow" affordance.
+ * screen for a still. `hasSuggestions` surfaces the "Always allow" affordance,
+ * and `alwaysAllowScope` is the word that button wears — a real card always
+ * carries one, so a still shot without it would show a button production does
+ * not draw.
  */
 const demoApproval: ScenarioFn = async function* () {
   yield {
@@ -159,6 +162,7 @@ const demoApproval: ScenarioFn = async function* () {
       startedAt: Date.now(),
       timeoutMs: APPROVAL_TIMEOUT_MS,
       hasSuggestions: true,
+      alwaysAllowScope: 'session',
       title: 'Approve file write?',
       displayName: 'Edit migrations/0007_auth_tokens.sql',
       description:

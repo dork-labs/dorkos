@@ -214,6 +214,29 @@ describe('projectInProgressTurn', () => {
     expect(projectInProgressTurn(events)[0]).toMatchObject({ timeoutMs: 600_000 });
   });
 
+  it('carries the always-allow scope onto the part, so the button can name it', () => {
+    // Purpose: the reach of an "Always Allow" is server-decided and travels on
+    // the approval event; a part folded without it draws a button that keeps
+    // quiet about moving the operator's global settings (DOR-1462).
+    const events: SessionEvent[] = [
+      {
+        seq: 1,
+        type: 'approval_required',
+        id: 'tc1',
+        toolName: 'Bash',
+        input: 'rm -rf /tmp/x',
+        startedAt: 1000,
+        remainingMs: 25000,
+        hasSuggestions: true,
+        alwaysAllowScope: 'user',
+      },
+    ];
+    expect(projectInProgressTurn(events)[0]).toMatchObject({
+      approvalHasSuggestions: true,
+      approvalAlwaysAllowScope: 'user',
+    });
+  });
+
   it('surfaces a question_prompt interaction as a pending question tool-call part', () => {
     // Purpose: a recovered AskUserQuestion must render as a pending question
     // tool-call part carrying its questions.

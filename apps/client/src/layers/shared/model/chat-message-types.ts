@@ -7,6 +7,7 @@
  * @module shared/model/chat-message-types
  */
 import type {
+  AlwaysAllowScope,
   QuestionItem,
   MessagePart,
   HookPart,
@@ -127,6 +128,13 @@ export interface ToolCallState {
   approvalDecisionReason?: string;
   /** Whether "Always Allow" permission updates are available */
   approvalHasSuggestions?: boolean;
+  /**
+   * How far an accepted "Always Allow" reaches — the word the button wears, so
+   * the click is informed (DOR-1462). Absent when the runtime offers no
+   * suggestions, or on a card recorded before the field existed; the button
+   * then reads exactly as it always did.
+   */
+  approvalAlwaysAllowScope?: AlwaysAllowScope;
   /** Hook executions attached to this tool call (pre-tool and post-tool hooks). */
   hooks?: HookState[];
   /** Timestamp (ms since epoch) when tool_call_start was received. */

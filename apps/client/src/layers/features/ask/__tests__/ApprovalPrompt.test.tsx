@@ -631,3 +631,63 @@ describe('ApprovalPrompt', () => {
     });
   });
 });
+
+describe('what "Always Allow" says it grants (DOR-1462)', () => {
+  it('names the operator’s global settings when the grant reaches them', async () => {
+    // The whole point of the ticket: this click forwards suggestions the CLI
+    // writes to ~/.claude/settings.json, so the button has to say so BEFORE it
+    // is pressed — and it still has to be the button that does it.
+    render(
+      <ApprovalPrompt {...baseProps} approvalHasSuggestions approvalAlwaysAllowScope="user" />
+    );
+
+    const button = screen.getByRole('button', { name: /always allow/i });
+    expect(button.textContent).toContain('all your Claude sessions');
+    // And in the ACCESSIBLE name, not only on screen: the reach is half of what
+    // this button does, so a screen-reader user must hear it before the press —
+    // as one deterministic sentence, not whatever the engine assembles from the
+    // children.
+    expect(screen.getByRole('button', { name: 'Always Allow, all your Claude sessions' })).toBe(
+      button
+    );
+
+    fireEvent.click(button);
+    await waitFor(() => {
+      expect(mockApproveTool).toHaveBeenCalledWith('session-1', 'tc-1', true);
+    });
+  });
+
+  it('names this project for a repo-scoped grant', () => {
+    render(
+      <ApprovalPrompt {...baseProps} approvalHasSuggestions approvalAlwaysAllowScope="project" />
+    );
+    expect(screen.getByRole('button', { name: /always allow/i }).textContent).toContain(
+      'this project'
+    );
+  });
+
+  it('names this session for a grant that dies with the conversation', () => {
+    render(
+      <ApprovalPrompt {...baseProps} approvalHasSuggestions approvalAlwaysAllowScope="session" />
+    );
+    expect(screen.getByRole('button', { name: /always allow/i }).textContent).toContain(
+      'this session'
+    );
+  });
+
+  it('claims no scope when the server named none', () => {
+    // A runtime with nothing to say leaves the button reading exactly as it
+    // always did, rather than guessing at a promise nobody made.
+    render(<ApprovalPrompt {...baseProps} approvalHasSuggestions />);
+    const button = screen.getByRole('button', { name: 'Always Allow' });
+    expect(button.textContent).not.toContain('this session');
+    expect(button.textContent).not.toContain('this project');
+    expect(button.textContent).not.toContain('all your Claude sessions');
+  });
+
+  it('draws no scope where there is no button', () => {
+    render(<ApprovalPrompt {...baseProps} approvalAlwaysAllowScope="user" />);
+    expect(screen.queryByRole('button', { name: /always allow/i })).toBeNull();
+    expect(screen.queryByText(/all your Claude sessions/)).toBeNull();
+  });
+});

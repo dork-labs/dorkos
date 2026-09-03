@@ -38,3 +38,4 @@ export { useAskTrayRequest } from './model/ask-tray-store';
 // Ask cards are still where the curve is felt.
 export { askExitTransition } from '@/layers/shared/lib';
 export { formatTimeLeft } from './lib/format-time-left';
+export { alwaysAllowScopeLabel } from './lib/always-allow-scope-label';

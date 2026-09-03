@@ -632,6 +632,63 @@ describe('toRawSessionEvent', () => {
       input: { type: 'devtools_capture_request', data: {} } as unknown as StreamEvent,
       expected: null,
     },
+    {
+      // The scope drives the sentence beside "Always Allow", so it has to
+      // survive the lossy hop the way the SDK's other card context does
+      // (DOR-1462).
+      name: 'approval_required carries the always-allow scope through',
+      input: {
+        type: 'approval_required',
+        data: {
+          toolCallId: 'a2',
+          toolName: 'Bash',
+          input: '{}',
+          startedAt: 1000,
+          timeoutMs: 600000,
+          hasSuggestions: true,
+          alwaysAllowScope: 'user',
+        },
+      } as unknown as StreamEvent,
+      expected: {
+        type: 'approval_required',
+        id: 'a2',
+        startedAt: 1000,
+        remainingMs: 600000,
+        timeoutMs: 600000,
+        toolName: 'Bash',
+        input: '{}',
+        hasSuggestions: true,
+        alwaysAllowScope: 'user',
+      },
+    },
+    {
+      // A word nobody wrote must not reach the button. Dropped rather than
+      // forwarded, which renders the plain "Always Allow" the card has always
+      // had instead of a promise the product does not define.
+      name: 'approval_required drops an always-allow scope it cannot read',
+      input: {
+        type: 'approval_required',
+        data: {
+          toolCallId: 'a3',
+          toolName: 'Bash',
+          input: '{}',
+          startedAt: 1000,
+          timeoutMs: 600000,
+          hasSuggestions: true,
+          alwaysAllowScope: 'everywhere-forever',
+        },
+      } as unknown as StreamEvent,
+      expected: {
+        type: 'approval_required',
+        id: 'a3',
+        startedAt: 1000,
+        remainingMs: 600000,
+        timeoutMs: 600000,
+        toolName: 'Bash',
+        input: '{}',
+        hasSuggestions: true,
+      },
+    },
   ];
 
   for (const { name, input, expected } of cases) {

@@ -21,6 +21,7 @@ import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 
 import { PendingApprovalSchema, CapabilityApprovalOutcomeSchema } from './approval-schemas.js';
 import {
+  AlwaysAllowScopeSchema,
   PermissionModeIdSchema,
   HistoryMessageSchema,
   PendingInteractionDTOSchema,
@@ -382,6 +383,7 @@ export const SessionEventSchema = z
       blockedPath: z.string().optional(),
       decisionReason: z.string().optional(),
       hasSuggestions: z.boolean(),
+      alwaysAllowScope: AlwaysAllowScopeSchema.optional(),
     }),
     // A structured question awaiting the operator (PendingInteractionDTO `question` shape).
     z.object({

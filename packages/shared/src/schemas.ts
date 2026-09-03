@@ -1197,6 +1197,29 @@ export const ToolProgressEventSchema = z
 
 export type ToolProgressEvent = z.infer<typeof ToolProgressEventSchema>;
 
+/**
+ * How far an accepted "Always Allow" actually reaches.
+ *
+ * The button forwards the runtime's own permission suggestions verbatim, and
+ * some of those write a settings FILE rather than a session row — so one click
+ * on one card can outlive the conversation it was answered in. This is the card
+ * saying which before the click, not a limit on the grant (DOR-1462):
+ *
+ * - `session` — only this conversation, gone when it ends.
+ * - `project` — this project's settings, so every future session here.
+ * - `user` — the operator's own global settings: every Claude session anywhere.
+ *
+ * Optional on the wire, and absent whenever a runtime has nothing to say: a
+ * runtime that never offers "Always Allow" (OpenCode answers "once" and ships
+ * `hasSuggestions: false`) omits it, and so does a card recorded before this
+ * field existed. A card with no scope reads exactly as it did before.
+ */
+export const AlwaysAllowScopeSchema = z
+  .enum(['session', 'project', 'user'])
+  .openapi('AlwaysAllowScope');
+
+export type AlwaysAllowScope = z.infer<typeof AlwaysAllowScopeSchema>;
+
 export const ApprovalEventSchema = z
   .object({
     toolCallId: z.string(),
@@ -1211,6 +1234,9 @@ export const ApprovalEventSchema = z
     blockedPath: z.string().optional().describe('File path that triggered the permission request'),
     decisionReason: z.string().optional().describe('Why this permission request was triggered'),
     hasSuggestions: z.boolean().describe('Whether "Always Allow" permission updates are available'),
+    alwaysAllowScope: AlwaysAllowScopeSchema.optional().describe(
+      'How far an accepted "Always Allow" reaches — named on the card so the click is informed'
+    ),
     remainingMs: z
       .number()
       .optional()
@@ -1281,6 +1307,8 @@ export const PendingInteractionDTOSchema = z
       blockedPath: z.string().optional(),
       decisionReason: z.string().optional(),
       hasSuggestions: z.boolean(),
+      /** See {@link AlwaysAllowScopeSchema} — carried so a recovered card names its scope too. */
+      alwaysAllowScope: AlwaysAllowScopeSchema.optional(),
     }),
     z.object({
       type: z.literal('question'),
@@ -2379,6 +2407,14 @@ export const ToolCallPartSchema = z
       .optional()
       .describe('Why this permission request was triggered'),
     approvalHasSuggestions: z.boolean().optional().describe('Whether "Always Allow" is available'),
+    /**
+     * How far this card's "Always Allow" reaches, carried through so the button
+     * can name it. See {@link AlwaysAllowScopeSchema}; absent when the runtime
+     * offers no suggestions or the card predates the field.
+     */
+    approvalAlwaysAllowScope: AlwaysAllowScopeSchema.optional().describe(
+      'Scope an accepted "Always Allow" grants — session, project, or the operator\'s global settings'
+    ),
     /**
      * How an approval interaction was ANSWERED, folded from the resolving
      * `interaction_resolved` event. This is what gives an answered approval an

@@ -20,7 +20,7 @@
  *
  * @module services/runtimes/test-mode/interactive-scenarios
  */
-import type { StreamEvent } from '@dorkos/shared/types';
+import type { AlwaysAllowScope, StreamEvent } from '@dorkos/shared/types';
 import type { ScenarioFn } from './scenario-store.js';
 
 /** Session id stamped on the synthetic status events, matching the demo family. */
@@ -66,12 +66,20 @@ function approvalRequired(opts: {
   blockedPath?: string;
   hasSuggestions?: boolean;
   /**
+   * How far this card's "Always Allow" reaches, named on the button
+   * (DOR-1462). Defaults to `session` whenever the card offers the button at
+   * all, because a real card always knows its own scope — a scenario that left
+   * it out would render an affordance production no longer draws.
+   */
+  alwaysAllowScope?: AlwaysAllowScope;
+  /**
    * Override the countdown. `0` raises a prompt that is ALREADY out of time, so
    * the projector's own selector derives `parked: true` on the very first read
    * — see {@link approvalParks}.
    */
   timeoutMs?: number;
 }): StreamEvent {
+  const hasSuggestions = opts.hasSuggestions ?? false;
   return {
     type: 'approval_required',
     data: {
@@ -80,7 +88,8 @@ function approvalRequired(opts: {
       input: opts.input,
       startedAt: Date.now(),
       timeoutMs: opts.timeoutMs ?? APPROVAL_TIMEOUT_MS,
-      hasSuggestions: opts.hasSuggestions ?? false,
+      hasSuggestions,
+      ...(hasSuggestions ? { alwaysAllowScope: opts.alwaysAllowScope ?? 'session' } : {}),
       title: opts.title,
       displayName: opts.displayName,
       description: opts.description,
