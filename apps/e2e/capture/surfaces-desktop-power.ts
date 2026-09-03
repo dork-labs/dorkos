@@ -1,7 +1,16 @@
 import type { Browser, Page } from '@playwright/test';
 import { DESKTOP_VIEWPORT, DEVICE_SCALE_FACTOR, type Theme } from './config.js';
 import type { RunRecorder } from './library.js';
-import { attempt, isShotSkipped, patch, seedThemeOnContext, shoot, url, WAIT_MS } from './lib.js';
+import {
+  attempt,
+  isShotSkipped,
+  patch,
+  seedThemeOnContext,
+  shoot,
+  url,
+  waitForAppShell,
+  WAIT_MS,
+} from './lib.js';
 
 /**
  * The power-surface drives: the Control Center flyout, the Settings → Rooms
@@ -52,7 +61,7 @@ export async function shootControlCenter(
   rec: RunRecorder
 ): Promise<void> {
   await page.goto(url('/'));
-  await page.waitForSelector('[data-testid="app-shell"]', { timeout: WAIT_MS });
+  await waitForAppShell(page);
   await page.getByTestId('control-center-trigger').click({ timeout: WAIT_MS });
   await page.getByTestId('control-center-body').waitFor({ timeout: WAIT_MS });
   // The ledger is the LAST thing in the panel to settle, and it holds a quiet

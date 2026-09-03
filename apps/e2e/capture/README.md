@@ -50,6 +50,25 @@ wiping first stays safe (overrides are re-applied every run). The wipe only
 touches top-level `*.png`/`*.webm`/`manifest.json` — `archive/` is never
 disturbed.
 
+**The publish is all-or-nothing.** The completeness backstop
+(`assertPublishedSetComplete`) runs after the stills and loops are already on
+disk, so an aborted publish used to leave the output dir half-rewritten with no
+manifest. It doesn't any more: the previous set is moved aside into
+`.publish-backup-<pid>/` rather than deleted, and moved back if anything in the
+publish throws (`publishWithRollback`). A failed process phase costs you the
+run, never the media you already had. This earns its keep on a real input — a
+shot whose drive times out exits its shard having recorded nothing, which is
+exactly what trips the backstop.
+
+Two things follow from "the parked copy may be the only copy". A parking
+directory is deleted **only** once its contents are back where they belong, so a
+restore that could not finish leaves one standing and the error says which files
+are in it — move them up a level by hand. And the directory is named per pid, so
+one run can never clear another's; a stray one from an earlier run is reported
+and left alone rather than deleted. **Run one process phase at a time against a
+given output dir**: concurrent runs still overwrite each other's published
+files, which no amount of parking can fix.
+
 The payoff: **editing changes are re-process-only.** A trim, seam, encode, or
 override tweak never requires re-booting the app or re-recording — re-run
 `capture:process` against the existing raws. The library itself is gitignored

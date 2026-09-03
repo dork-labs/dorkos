@@ -3,7 +3,15 @@ import { randomUUID } from 'crypto';
 import type { Page } from '@playwright/test';
 import { FLEET_ROOT, MULTI_SESSION_PROMPTS, type Theme } from './config.js';
 import type { RunRecorder } from './library.js';
-import { ensureDesktopSidebarExpanded, post, shoot, sleep, url, WAIT_MS } from './lib.js';
+import {
+  ensureDesktopSidebarExpanded,
+  post,
+  shoot,
+  sleep,
+  url,
+  waitForAppShell,
+  WAIT_MS,
+} from './lib.js';
 
 /**
  * The fleet drive behind the `multi-session` shot: four agents put to work at
@@ -96,7 +104,7 @@ async function startFleetTurn(turn: FleetTurn): Promise<void> {
 export async function driveMultiSession(page: Page): Promise<void> {
   const turns = planFleetTurns();
   await page.goto(url('/'));
-  await page.waitForSelector('[data-testid="app-shell"]', { timeout: WAIT_MS });
+  await waitForAppShell(page);
   await ensureDesktopSidebarExpanded(page);
 
   for (const turn of turns) {

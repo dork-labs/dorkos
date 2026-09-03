@@ -18,6 +18,7 @@ import {
   SETTLE_MS,
   sleep,
   url,
+  waitForAppShell,
   WAIT_MS,
 } from './lib.js';
 
@@ -92,7 +93,7 @@ async function openMobileTab(page: Page, tab: 'home' | 'library'): Promise<void>
  */
 async function driveMobileSessions(page: Page): Promise<void> {
   await page.goto(url('/'));
-  await page.waitForSelector('[data-testid="app-shell"]', { timeout: WAIT_MS });
+  await waitForAppShell(page);
   for (const entry of MOBILE_FLEET) {
     const id = randomUUID();
     const cwd = path.join(FLEET_ROOT, entry.agent);
