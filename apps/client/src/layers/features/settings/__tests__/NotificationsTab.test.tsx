@@ -148,14 +148,13 @@ describe('NotificationsTab', () => {
     // skipped. The turn-end row was the worst of them at 140 characters.
     renderTab();
 
-    const rows = [
-      'Knock when an agent needs you',
-      'Chime when everything is answered',
-      'Chime every time a turn finishes',
-      'Tell me when something finishes while I am away',
-    ];
-    for (const label of rows) {
-      const field = screen.getByRole('switch', { name: label }).closest('[data-slot="field"]');
+    // Every real switch on the tab, not a hand-copied list of their labels — a
+    // row added later is covered automatically instead of needing to be
+    // remembered here too.
+    const switches = screen.getAllByRole('switch');
+    expect(switches.length).toBeGreaterThan(0);
+    for (const control of switches) {
+      const field = control.closest('[data-slot="field"]');
       const description = field?.querySelector('[data-slot="field-description"]');
       expect(description?.textContent ?? '').not.toBe('');
       expect(description?.textContent?.length ?? 0).toBeLessThanOrEqual(60);

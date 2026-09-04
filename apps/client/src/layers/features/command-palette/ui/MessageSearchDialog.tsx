@@ -207,6 +207,19 @@ function MessageSearchBox() {
   const foundNothing =
     !hasResults && !tooShort && !isSearching && submitted.trim().length > 0 && error === null;
 
+  // The disclosure's own open/closed state, deliberately NOT gated on
+  // `isSearching` the way the sentence above it is. `submitted` and `results`
+  // are already answered-query-only (`use-message-search.ts:143-152`), so
+  // "no hits for the question now in the box" does not need to wait for the
+  // in-flight request to settle before it is true. Gating this on `isSearching`
+  // made every debounce round-trip an open/close cycle while someone was still
+  // typing a query that never matches — an animated accordion, with the input
+  // itself riding 44px up and down under the caret, on every keystroke. The
+  // sentence keeps its own gate (a "no messages match" claim should wait for
+  // the answer); the panel does not need to, because closing and reopening it
+  // says nothing an open panel does not already say.
+  const noAnswerYet = !hasResults && !tooShort && submitted.trim().length > 0 && error === null;
+
   return (
     <ResponsiveDialog open={open} onOpenChange={setOpen}>
       <ResponsiveDialogContent
@@ -322,7 +335,7 @@ function MessageSearchBox() {
                     No messages match “{submitted.trim()}”.
                   </p>
                 )}
-                <MessageSearchScope detailOpen={foundNothing} />
+                <MessageSearchScope detailOpen={noAnswerYet} />
               </div>
             )}
             <div className="text-muted-foreground flex flex-shrink-0 items-center gap-3 border-t px-3 py-1.5 text-xs">

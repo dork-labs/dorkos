@@ -165,13 +165,6 @@ interface SectionProps {
    * @default false
    */
   defaultOpen?: boolean;
-  /**
-   * Drop the row count from the heading. Set for the effects section, whose
-   * rows are summary sentences: "What this package will do (2)" alongside a row
-   * reading "135 files" invites the reader to think two files are involved.
-   * The verdict line above the sections carries that group's real numbers.
-   */
-  hideCount?: boolean;
 }
 
 /**
@@ -180,8 +173,12 @@ interface SectionProps {
  *
  * Uses the native `<details>/<summary>` element for accessible,
  * zero-JS progressive disclosure with CSS transitions.
+ *
+ * Every section carries its own count, effects included: a collapsed group
+ * with no count beside it is exactly the shape the charter forbids — a
+ * disclosure nobody can judge without opening it first (DOR-1757).
  */
-function PermissionSection({ title, items, tone, defaultOpen = false, hideCount }: SectionProps) {
+function PermissionSection({ title, items, tone, defaultOpen = false }: SectionProps) {
   if (items.length === 0) return null;
 
   return (
@@ -195,11 +192,9 @@ function PermissionSection({ title, items, tone, defaultOpen = false, hideCount 
       >
         <ChevronRight className="size-3 shrink-0 transition-transform duration-200 group-open/perm:rotate-90" />
         {title}
-        {!hideCount && (
-          <span className="text-muted-foreground font-normal tracking-normal normal-case">
-            ({items.length})
-          </span>
-        )}
+        <span className="text-muted-foreground font-normal tracking-normal normal-case">
+          ({items.length})
+        </span>
       </summary>
       <ul className="mt-2 space-y-1.5">
         {items.map((item, index) => (
@@ -246,9 +241,10 @@ interface PermissionPreviewSectionProps {
  * says what the install does — {@link summarizePermissionPreview} — and under
  * it three groups start expanded: the commands a package declares, the jobs it
  * will schedule, and any conflicts, which are what somebody has to see before
- * trusting a stranger's package. The other four open on a click, with their
- * counts in their headings, because nothing here may be hidden: DorkOS is
- * honest by design, and a collapsed section says "second", never "never".
+ * trusting a stranger's package. The other four — effects included — open on a
+ * click, with their counts in their headings, because nothing here may be
+ * hidden: DorkOS is honest by design, and a collapsed section says "second",
+ * never "never".
  *
  * The effects section names the folder the files land in, counts each action
  * separately, and puts every path behind a disclosure. A file count on its own
@@ -271,7 +267,7 @@ export function PermissionPreviewSection({ preview, installBase }: PermissionPre
   return (
     <div className="space-y-6">
       {hasAnything && <p className="text-sm">{summarizePermissionPreview(preview)}</p>}
-      <PermissionSection title="What this package will do" items={groups.effects} hideCount />
+      <PermissionSection title="What this package will do" items={groups.effects} />
       <PermissionSection
         title="Commands this package declares"
         items={groups.commands}

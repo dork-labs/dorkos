@@ -124,6 +124,11 @@ test.describe('Message search', () => {
 
     const scopeLine = dialog.getByRole('button', { name: /Searches what was said/ });
     await expect(scopeLine).toBeVisible();
+    // Radix `CollapsibleContent` unmounts its children when closed, so a
+    // `toBeHidden()` on the text itself would pass just as well if the whole
+    // block had been deleted. `aria-expanded` on the trigger is the assertion
+    // that can actually fail.
+    await expect(scopeLine).toHaveAttribute('aria-expanded', 'false');
     await expect(dialog.getByText(/Tool output is never searched/)).toBeHidden();
 
     await scopeLine.click();

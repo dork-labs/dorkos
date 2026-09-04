@@ -4,6 +4,7 @@ covers:
   - 'fix(client): message search says its limits in one line, not four (DOR-1757)'
   - 'fix(client): the Notifications tab is scannable by its labels (DOR-1757)'
   - 'fix(client): the install dialog says what it does before it says how (DOR-1757)'
+  - 'fix(client): address adversarial review — batch 11 no wall of text (DOR-1757)'
 ---
 
 ### Changed
