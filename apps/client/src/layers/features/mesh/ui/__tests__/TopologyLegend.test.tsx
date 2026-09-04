@@ -83,7 +83,7 @@ describe('TopologyLegend', () => {
 
     it('renders Relay and Tasks indicator entries', () => {
       render(<TopologyLegend namespaces={SINGLE_NAMESPACE} />);
-      expect(screen.getByText('Relay-enabled')).toBeInTheDocument();
+      expect(screen.getByText('Can message other agents')).toBeInTheDocument();
       expect(screen.getByText('Scheduled tasks')).toBeInTheDocument();
     });
 

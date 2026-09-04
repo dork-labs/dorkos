@@ -38,8 +38,10 @@ export function consentActionLabel(descriptor: PermissionModeDescriptor): string
  * everybody knows stops asking — or `null` when the sentence would be
  * redundant or untrue.
  *
- * Full autonomy announces itself: the title is the promise, so the sentence is
- * withheld there as redundant. A middle stop does not announce anything —
+ * Full autonomy announces itself: the title names the stop and the promise
+ * under it now says outright that nothing will stop to ask (DOR-1754 took the
+ * softening clause off every autonomy promise), so a third sentence saying it
+ * again is noise. A middle stop does not announce anything —
  * somebody choosing "Act" is choosing "ask me about the risky parts", and on a
  * runtime that cannot pause mid-turn that is not what they get. This is the
  * sentence that makes the difference impossible to miss.

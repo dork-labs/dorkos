@@ -74,7 +74,11 @@ export function useRemoveAdapter() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [...CATALOG_KEY] });
       queryClient.invalidateQueries({ queryKey: [...ADAPTERS_KEY] });
-      toast.success('Adapter removed');
+      // Deliberately not "Connection removed" — that toast reports deleting
+      // one binding (IntegrationsTab.tsx). This one deletes the whole
+      // Telegram/Slack/webhook source and every binding routed through it,
+      // so it needs its own words (DOR-1754).
+      toast.success('Removed — nothing routes through it anymore.');
     },
     onError: (error) => {
       toast.error(getErrorMessage(error));

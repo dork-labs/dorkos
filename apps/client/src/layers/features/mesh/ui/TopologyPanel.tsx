@@ -172,7 +172,7 @@ function AddRuleForm({ namespaces, onAdd, isPending, inert }: AddRuleFormProps) 
             className="w-full aria-disabled:pointer-events-none aria-disabled:opacity-50"
             {...inertProps}
           >
-            <SelectValue placeholder="Select namespace" />
+            <SelectValue placeholder="Pick a project" />
           </SelectTrigger>
           <SelectContent>
             {namespaces.map((ns) => (
@@ -193,7 +193,7 @@ function AddRuleForm({ namespaces, onAdd, isPending, inert }: AddRuleFormProps) 
             className="w-full aria-disabled:pointer-events-none aria-disabled:opacity-50"
             {...inertProps}
           >
-            <SelectValue placeholder="Select namespace" />
+            <SelectValue placeholder="Pick a project" />
           </SelectTrigger>
           <SelectContent>
             {namespaces.map((ns) => (
@@ -267,8 +267,8 @@ export function TopologyPanel({ onGoToDiscovery }: TopologyPanelProps = {}) {
         <OpenMeshSwitch />
         <MeshEmptyState
           icon={Shield}
-          headline="Cross-project access requires multiple namespaces"
-          description="Register agents from different directories to create namespaces, then configure cross-namespace access rules."
+          headline="You need agents in more than one project"
+          description="Add agents from a second folder. Then you can let the two projects talk."
           action={
             onGoToDiscovery ? { label: 'Go to Discovery', onClick: onGoToDiscovery } : undefined
           }
@@ -283,9 +283,9 @@ export function TopologyPanel({ onGoToDiscovery }: TopologyPanelProps = {}) {
           to each other", above the per-pair machinery it makes unnecessary. */}
       <OpenMeshSwitch />
 
-      {/* Namespace Groups */}
+      {/* Project groups */}
       <div className="space-y-2">
-        <h3 className="text-muted-foreground text-sm font-medium">Namespaces</h3>
+        <h3 className="text-muted-foreground text-sm font-medium">Projects</h3>
         {namespaces.map((ns) => (
           <NamespaceGroup
             key={ns.namespace}
@@ -301,7 +301,7 @@ export function TopologyPanel({ onGoToDiscovery }: TopologyPanelProps = {}) {
         <h3 className="text-muted-foreground text-sm font-medium">Cross-Project Access Rules</h3>
         {accessRules.length === 0 ? (
           <p className="text-muted-foreground text-xs">
-            No cross-project rules. Agents can only communicate within their own namespace.
+            No rules yet. Right now agents only talk to others in the same project.
           </p>
         ) : (
           <div className="space-y-1">

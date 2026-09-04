@@ -199,7 +199,7 @@ export function useAdapterWizard({
   /**
    * Undo a just-created connection whose binding could not be saved.
    *
-   * Deliberately not `useRemoveAdapter`: that hook toasts "Adapter removed" on
+   * Deliberately not `useRemoveAdapter`: that hook toasts "Connection removed" on
    * success, which narrates a deletion the person never asked for on top of the
    * failure they need to read. The coarse `['relay']` invalidation covers the
    * catalog and adapter lists without reaching into the entity's key internals.

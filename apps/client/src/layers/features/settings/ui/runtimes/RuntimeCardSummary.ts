@@ -101,8 +101,15 @@ export interface RuntimeCardSummaryInput {
   sectionValues?: Readonly<Record<string, string | null | undefined>> | undefined;
 }
 
-/** What a card says when nobody has pinned a model: the runtime picks. */
-const INHERIT_MODEL_LABEL = "Runtime's choice";
+/**
+ * What a card says when nobody has pinned a model: the runtime picks.
+ *
+ * The same word the rows' own inherit option carries, because the summary is
+ * read as the answer to what those rows are set to. It used to say "Runtime's
+ * choice", which spent the one word Settings never defines on a value that
+ * only means "we did not choose" (DOR-1754).
+ */
+const INHERIT_MODEL_LABEL = 'Automatic';
 
 /**
  * The stops in summary voice — what this runtime *does*, not what the control is
@@ -153,7 +160,7 @@ export function buildRuntimeCardSummary(input: RuntimeCardSummaryInput): Runtime
   if (configured) {
     // A configured model the catalog cannot name is reported as its raw id: that
     // is the honest interim truth both while the catalog loads and after a model
-    // is retired, and it is never "Runtime's choice", which would claim the person
+    // is retired, and it is never "Automatic", which would claim the person
     // set nothing.
     const known = input.models?.find((option) => option.value === configured);
     segments.push({ kind: 'model', label: known?.displayName ?? configured, inherited: false });

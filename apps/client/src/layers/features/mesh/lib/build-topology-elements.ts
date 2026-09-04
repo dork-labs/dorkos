@@ -108,7 +108,7 @@ export function buildTopologyElements(
       type: 'adapter',
       position: { x: 0, y: 0 },
       data: {
-        adapterName: 'Add Adapter',
+        adapterName: 'Add a platform',
         adapterType: 'ghost',
         adapterStatus: 'stopped',
         bindingCount: 0,

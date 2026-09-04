@@ -303,7 +303,7 @@ export const DEGRADED: StatusScenario = {
       asks: 'never',
       reach: 'everything',
       promise:
-        'Acts without approval prompts — including outside this project. Still asks when it needs your call.',
+        'Acts without approval prompts, including outside this project. It will not stop to ask you.',
     },
     plan: null,
     runtime: { isDefault: false, canSelect: false },

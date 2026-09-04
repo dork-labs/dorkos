@@ -100,6 +100,41 @@
       "path": "apps/site/src/layers/features/marketing/lib/comparisons.ts",
       "terms": ["mission control"],
       "reason": "The GitHub Agent HQ compare page's FAQ answers the question \"What is GitHub Mission Control?\" — GitHub's own blog named its agent-hub page that, and the FAQ says so exactly to note the docs don't use the name. AGENTS.md carves this out: GitHub ships a product literally named Mission Control. This is DorkOS's own carve-out, not the copy this wave retires."
+    },
+    {
+      "path": "apps/client/src/layers/features/relay/ui/SetupGuideSheet.tsx",
+      "terms": ["connection"],
+      "reason": "The setup guide for one Telegram/Slack/webhook connection (DOR-1754) — \"instructions for setting up this connection\" names the entity being set up, not whether a link is up."
+    },
+    {
+      "path": "apps/client/src/layers/features/relay/ui/ConversationRow.tsx",
+      "terms": ["connection"],
+      "reason": "\"N bindings already exist for this connection\" (DOR-1754) counts routes attached to one Telegram/Slack connection — the same entity AdapterNode and RelayHealthBar count elsewhere."
+    },
+    {
+      "path": "apps/client/src/layers/features/relay/ui/adapter/",
+      "terms": ["connection"],
+      "reason": "The connection card and its parts (DOR-1754): \"Connection actions\", \"Add connection\", and the \"Connection added\" toast all name one Telegram/Slack/webhook a person set up — the Connections-domain entity MessagingConnections lists. The card reports reachability separately, in its own words."
+    },
+    {
+      "path": "apps/client/src/layers/features/relay/ui/wizard/",
+      "terms": ["connection"],
+      "reason": "The add-a-connection wizard (DOR-1754). \"Connection ID\" and the name field's helper text describe the entity being created; the wizard's own test step reports reachability in the plain-language family DOR-855 moved to."
+    },
+    {
+      "path": "apps/client/src/layers/entities/relay/model/use-adapter-catalog.ts",
+      "terms": ["connection"],
+      "reason": "The \"Connection removed\" toast (DOR-1754) reports the deletion of one Telegram/Slack/webhook — the same entity, and the same wording, as the per-agent Connections tab's toasts in IntegrationsTab.tsx."
+    },
+    {
+      "path": "apps/client/src/layers/entities/binding/ui/BindingAdvancedSection.tsx",
+      "terms": ["connection"],
+      "reason": "\"This connection is set to X\" (DOR-1754) names the binding whose permission mode is on screen — the same entity BindingDialog's own copy names one layer up. Not a network-health reading."
+    },
+    {
+      "path": "apps/client/src/layers/features/agent-settings/ui/ToolsTab.tsx",
+      "terms": ["connection"],
+      "reason": "The per-agent \"Connection management\" tool group (DOR-1754) — the same group, under the same name, as tool-inventory.ts's, which is allowlisted for the same domain reason."
     }
   ]
 }

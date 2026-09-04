@@ -88,7 +88,7 @@ function defaultProps(overrides: Partial<Parameters<typeof AdapterCardHeader>[0]
 
 /** Opens the Radix DropdownMenu trigger using the full pointer sequence required in jsdom. */
 async function openKebabMenu() {
-  const trigger = screen.getByLabelText('Adapter actions');
+  const trigger = screen.getByLabelText('Connection actions');
   await act(async () => {
     fireEvent.pointerDown(trigger);
     fireEvent.mouseDown(trigger);
@@ -201,7 +201,7 @@ describe('AdapterCardHeader', () => {
       expect(screen.getByRole('menuitem', { name: /Configure/i })).toBeInTheDocument();
       expect(screen.getByRole('menuitem', { name: /Remove/i })).toBeInTheDocument();
       expect(screen.getByRole('menuitem', { name: /Events/i })).toBeInTheDocument();
-      expect(screen.getByRole('menuitem', { name: /Add integration/i })).toBeInTheDocument();
+      expect(screen.getByRole('menuitem', { name: /Add connection/i })).toBeInTheDocument();
     });
   });
 
@@ -250,16 +250,16 @@ describe('AdapterCardHeader', () => {
     expect(onShowEvents).toHaveBeenCalledTimes(1);
   });
 
-  it('calls onAddBinding when Add integration menu item is clicked', async () => {
+  it('calls onAddBinding when Add connection menu item is clicked', async () => {
     const onAddBinding = vi.fn();
     render(<AdapterCardHeader {...defaultProps({ onAddBinding })} />);
 
     await openKebabMenu();
     await waitFor(() => {
-      expect(screen.getByRole('menuitem', { name: /Add integration/i })).toBeInTheDocument();
+      expect(screen.getByRole('menuitem', { name: /Add connection/i })).toBeInTheDocument();
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole('menuitem', { name: /Add integration/i }));
+      fireEvent.click(screen.getByRole('menuitem', { name: /Add connection/i }));
     });
 
     expect(onAddBinding).toHaveBeenCalledTimes(1);

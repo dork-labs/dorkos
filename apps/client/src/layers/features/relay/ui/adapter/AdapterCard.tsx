@@ -95,7 +95,7 @@ export function AdapterCard({
         sessionStrategy: 'per-chat',
         label: '',
       });
-      toast.success('Integration added');
+      toast.success('Connection added');
     } catch {
       // Reported by the shared mutation toast (`useCreateBinding`'s
       // `meta.errorLabel`).

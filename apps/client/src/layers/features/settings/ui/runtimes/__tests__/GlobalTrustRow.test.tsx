@@ -40,7 +40,7 @@ describe('GlobalTrustRow', () => {
     // for a named fleet teammate, and this row governs new conversations.
     expect(screen.getByText('Where new conversations stop for you')).toBeInTheDocument();
     expect(
-      screen.getByText('Every runtime follows this unless its card says otherwise.')
+      screen.getByText('Every card above follows this unless it says otherwise.')
     ).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Asks before acting' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Pauses at big steps' })).toBeInTheDocument();

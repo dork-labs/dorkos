@@ -277,10 +277,15 @@ export function BindingDialog({
                     /* Create mode: adapter and agent pickers */
                     <>
                       <div className="space-y-1.5">
-                        <Label htmlFor="binding-adapter">Adapter</Label>
+                        {/* Names the source being picked, not the binding this
+                            dialog creates — "Connection" is reserved for that
+                            (title, preview sentence, submit button) so the
+                            word does not name two different things in one
+                            dialog (DOR-1754). */}
+                        <Label htmlFor="binding-adapter">Source</Label>
                         {adapterOptions.length === 0 ? (
                           <p className="text-muted-foreground border-input rounded-md border px-3 py-2 text-sm opacity-50">
-                            No adapters configured
+                            Nothing set up yet
                           </p>
                         ) : (
                           <form.AppField name="adapterId">
@@ -293,7 +298,7 @@ export function BindingDialog({
                                 }}
                               >
                                 <SelectTrigger id="binding-adapter" className="w-full">
-                                  <SelectValue placeholder="Select an adapter" />
+                                  <SelectValue placeholder="Pick a source" />
                                 </SelectTrigger>
                                 <SelectContent>
                                   {adapterOptions.map((opt) => (

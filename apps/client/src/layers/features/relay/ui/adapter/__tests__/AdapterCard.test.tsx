@@ -180,7 +180,7 @@ function makeBinding(overrides: Record<string, unknown> = {}) {
 
 /** Opens the Radix DropdownMenu trigger using the full pointer sequence required in jsdom. */
 async function openKebabMenu() {
-  const trigger = screen.getByLabelText('Adapter actions');
+  const trigger = screen.getByLabelText('Connection actions');
   await act(async () => {
     fireEvent.pointerDown(trigger);
     fireEvent.mouseDown(trigger);
@@ -416,15 +416,15 @@ describe('AdapterCard', () => {
   // No-bindings state
   // -------------------------------------------------------------------------
 
-  it('shows "add integration" CTA button when connected with no bindings', () => {
+  it('shows "add connection" CTA button when connected with no bindings', () => {
     render(<AdapterCard {...defaultProps()} />);
-    expect(screen.getByRole('button', { name: /add integration/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /add connection/i })).toBeTruthy();
   });
 
-  it('does not show "add integration" CTA when disconnected', () => {
+  it('does not show "add connection" CTA when disconnected', () => {
     render(<AdapterCard {...defaultProps({ instance: disabledInstance })} />);
     // No bindings and disconnected — CTA should not appear
-    expect(screen.queryByRole('button', { name: /^add integration$/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^add connection$/i })).toBeNull();
   });
 
   it('does not show "No agent bound" amber text (replaced by CTA button)', () => {
@@ -625,11 +625,11 @@ describe('AdapterCard', () => {
     await openKebabMenu();
 
     await waitFor(() => {
-      expect(screen.getByRole('menuitem', { name: /add integration/i })).toBeTruthy();
+      expect(screen.getByRole('menuitem', { name: /add connection/i })).toBeTruthy();
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('menuitem', { name: /add integration/i }));
+      fireEvent.click(screen.getByRole('menuitem', { name: /add connection/i }));
     });
 
     expect(onAddBinding).toHaveBeenCalledWith('tg-main', 'tg-main');

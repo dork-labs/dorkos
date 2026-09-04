@@ -116,8 +116,8 @@ describe('ToolsTab', () => {
       const view = renderTab(baseAgent);
       expect(view.getByText('Scheduling')).toBeInTheDocument();
       expect(view.getByText('Messaging')).toBeInTheDocument();
-      expect(view.getByText('Agent Discovery')).toBeInTheDocument();
-      expect(view.getByText('External Integrations')).toBeInTheDocument();
+      expect(view.getByText('Agent discovery')).toBeInTheDocument();
+      expect(view.getByText('Connection management')).toBeInTheDocument();
     });
 
     it('shows core tools footnote instead of row', () => {
@@ -233,8 +233,8 @@ describe('ToolsTab', () => {
       // None of the DorkOS tool-group toggles render...
       expect(view.queryByText('Scheduling')).not.toBeInTheDocument();
       expect(view.queryByText('Messaging')).not.toBeInTheDocument();
-      expect(view.queryByText('Agent Discovery')).not.toBeInTheDocument();
-      expect(view.queryByText('External Integrations')).not.toBeInTheDocument();
+      expect(view.queryByText('Agent discovery')).not.toBeInTheDocument();
+      expect(view.queryByText('Connection management')).not.toBeInTheDocument();
       // ...and an explanatory note takes their place.
       expect(view.getByText(/does not support DorkOS tool groups/i)).toBeInTheDocument();
       // The ONE switch still on screen is the rooms grant, which is deliberately

@@ -104,7 +104,7 @@ export function ConfigureStep({
           onChange={(e) => onLabelChange(e.target.value)}
         />
         <p className="text-muted-foreground text-xs">
-          A friendly name to identify this adapter instance.
+          A friendly name so you can tell this connection from the others.
         </p>
       </div>
 

@@ -77,7 +77,7 @@ export const RUNTIME_DESCRIPTORS: Record<string, RuntimeDescriptor> = {
     label: 'OpenCode',
     icon: OpenCodeLogo,
     accent: 'var(--color-violet-500)',
-    subtitle: 'Your own models, local or any provider',
+    subtitle: 'Your own models, local or any service',
     setup: {
       installCommand: 'npm i -g opencode-ai',
       infoUrl: 'https://opencode.ai/docs/server',

@@ -25,7 +25,7 @@ export type { ToolDomainKey };
  *
  * `core` is the set no toggle controls; the other four each list everything their
  * toggle covers, including the groups that implicitly follow it (trace follows
- * Messaging, chat routes follow External Integrations).
+ * Messaging, chat routes follow Connection management).
  */
 export const TOOL_INVENTORY: Readonly<Record<'core' | ToolDomainKey, readonly string[]>> = {
   core: SESSION_CORE_TOOL_NAMES,

@@ -364,7 +364,7 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
         })}
       </div>
 
-      {/* Add integration picker */}
+      {/* Add-a-connection picker */}
       <IntegrationPicker
         catalog={externalCatalog}
         boundAdapterIds={boundAdapterIds}

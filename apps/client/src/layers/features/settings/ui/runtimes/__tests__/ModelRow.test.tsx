@@ -63,9 +63,7 @@ describe('ModelRow', () => {
 
   it("shows the runtime's choice when nothing is pinned", () => {
     renderRow();
-    expect(screen.getByTestId('runtime-model-select-claude-code')).toHaveTextContent(
-      "Runtime's choice"
-    );
+    expect(screen.getByTestId('runtime-model-select-claude-code')).toHaveTextContent('Automatic');
   });
 
   it('reports a catalog pick by its model id', async () => {
@@ -80,7 +78,7 @@ describe('ModelRow', () => {
     // It must never reach a caller, or "no default" would be stored as a string.
     const { onChange } = renderRow({ value: 'claude-opus-4-6' });
     await userEvent.click(screen.getByTestId('runtime-model-select-claude-code'));
-    await userEvent.click(await screen.findByRole('option', { name: "Runtime's choice" }));
+    await userEvent.click(await screen.findByRole('option', { name: 'Automatic' }));
     expect(onChange).toHaveBeenCalledWith(null);
   });
 

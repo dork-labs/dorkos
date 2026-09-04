@@ -4,7 +4,7 @@ import { render, screen, cleanup, within, waitFor } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
-import { TrustDial } from '../trust-dial';
+import { CANONICAL_TRUST_STOPS, TrustDial } from '../trust-dial';
 
 afterEach(cleanup);
 
@@ -487,5 +487,28 @@ describe('TrustDial', () => {
       expect(screen.queryByRole('radio')).not.toBeInTheDocument();
       expect(screen.queryByTestId('trust-dial-stranded')).not.toBeInTheDocument();
     });
+  });
+});
+
+describe('CANONICAL_TRUST_STOPS', () => {
+  it('never promises that a stop asks when it declares that it never does', () => {
+    // The same invariant every runtime's own profile is held to
+    // (`runtimeConformance`), applied to the one dial that belongs to no
+    // runtime. The autonomy stop shipped "still asks when it matters" beside
+    // `asks: 'never'`, which read exactly like the Act stop underneath it —
+    // the one caption where understating the risk costs somebody something
+    // (DOR-1754).
+    for (const stop of CANONICAL_TRUST_STOPS) {
+      if (stop.asks !== 'never') continue;
+      expect(stop.promise, `${stop.id}.promise`).not.toMatch(/\basks\b/i);
+    }
+  });
+
+  it('says outright that the top stop will not stop to ask', () => {
+    const autonomy = CANONICAL_TRUST_STOPS.find((stop) => stop.stop === 'autonomy');
+
+    expect(autonomy?.promise).toBe(
+      'Acts on its own. It will not stop to ask you, even for risky steps.'
+    );
   });
 });

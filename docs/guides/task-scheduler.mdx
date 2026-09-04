@@ -171,9 +171,9 @@ Click a template card to pre-fill a scheduled task you can edit, or click "Start
 - **Agent**: which agent runs the job, and in which project. This also decides the job's working directory.
 - **Name** and **Description**: what to call this scheduled task.
 - **Prompt**: the instruction the agent gets each time it runs, e.g. "Check for outdated npm dependencies and summarize what needs updating."
-- **Cron Expression** and **Timezone** (under "Schedule"): when it runs. A cron expression is just a compact way to say "every Monday at 10am" or "every weekday at 9am." The visual builder in the form writes it for you, so you don't need to memorize the syntax (though [the reference below](#cron-syntax) has the full pattern if you're curious).
+- **When it runs** and **Timezone** (under "Schedule"): a cron expression is just a compact way to say "every Monday at 10am" or "every weekday at 9am." The visual builder in the form writes it for you, so you don't need to memorize the syntax (though [the reference below](#cron-syntax) has the full pattern if you're curious).
 - **Runs on** (under "Advanced settings"): which runtime, model and effort this job uses. All three start at "follow the agent", which is the right answer for most tasks. See [Pick where it runs](#pick-where-it-runs).
-- **Permission Mode** and **Max Runtime** (under "Advanced settings"): how much autonomy the agent gets and how long it's allowed to run before DorkOS stops it.
+- **Permissions** and **Stop after** (under "Advanced settings"): how much autonomy the agent gets and how long it's allowed to run before DorkOS stops it.
 
 </Step>
 <Step>

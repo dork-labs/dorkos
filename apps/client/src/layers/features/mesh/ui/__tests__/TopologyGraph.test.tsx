@@ -480,7 +480,7 @@ describe('TopologyGraph', () => {
       });
 
       expect(
-        screen.getByText('Add adapters from the Relay panel to connect them to agents')
+        screen.getByText('Add a platform in Messaging, then connect it to an agent')
       ).toBeInTheDocument();
     });
 
@@ -493,7 +493,7 @@ describe('TopologyGraph', () => {
       });
 
       expect(
-        screen.getByText('Drag from an adapter to an agent to create a connection')
+        screen.getByText('Drag from a platform to an agent to connect them')
       ).toBeInTheDocument();
     });
 
@@ -506,10 +506,10 @@ describe('TopologyGraph', () => {
       });
 
       expect(
-        screen.queryByText('Add adapters from the Relay panel to connect them to agents')
+        screen.queryByText('Add a platform in Messaging, then connect it to an agent')
       ).not.toBeInTheDocument();
       expect(
-        screen.queryByText('Drag from an adapter to an agent to create a connection')
+        screen.queryByText('Drag from a platform to an agent to connect them')
       ).not.toBeInTheDocument();
     });
   });
@@ -885,7 +885,7 @@ describe('TopologyGraph', () => {
       }>;
       const ghostNode = nodes.find((n) => n.id === 'ghost-adapter');
       expect(ghostNode?.data.isGhost).toBe(true);
-      expect(ghostNode?.data.adapterName).toBe('Add Adapter');
+      expect(ghostNode?.data.adapterName).toBe('Add a platform');
     });
   });
 

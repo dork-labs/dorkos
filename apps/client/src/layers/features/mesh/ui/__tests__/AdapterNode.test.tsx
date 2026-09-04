@@ -81,7 +81,7 @@ function makeMockProps(
 
 /** Finds the adapter card element by its aria-label. */
 function getCard(name = 'Telegram Bot', status = 'running') {
-  return screen.getByLabelText(`Adapter: ${name}, status ${status}`);
+  return screen.getByLabelText(`Platform: ${name}, status ${status}`);
 }
 
 beforeEach(() => {
@@ -210,20 +210,20 @@ describe('AdapterNode', () => {
   });
 
   describe('ghost node', () => {
-    it('renders ghost node with "Add Adapter" text', () => {
+    it('renders ghost node with "Add a platform" text', () => {
       render(
         <AdapterNode
           {...makeMockProps({
             isGhost: true,
-            adapterName: 'Add Adapter',
+            adapterName: 'Add a platform',
             adapterType: 'ghost',
             adapterStatus: 'stopped',
             bindingCount: 0,
           })}
         />
       );
-      expect(screen.getByText('Add Adapter')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /add adapter/i })).toBeInTheDocument();
+      expect(screen.getByText('Add a platform')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /add a platform/i })).toBeInTheDocument();
     });
 
     it('ghost node has no output handle', () => {
@@ -231,7 +231,7 @@ describe('AdapterNode', () => {
         <AdapterNode
           {...makeMockProps({
             isGhost: true,
-            adapterName: 'Add Adapter',
+            adapterName: 'Add a platform',
             adapterType: 'ghost',
             adapterStatus: 'stopped',
             bindingCount: 0,
@@ -247,7 +247,7 @@ describe('AdapterNode', () => {
         <AdapterNode
           {...makeMockProps({
             isGhost: true,
-            adapterName: 'Add Adapter',
+            adapterName: 'Add a platform',
             adapterType: 'ghost',
             adapterStatus: 'stopped',
             bindingCount: 0,
@@ -255,7 +255,7 @@ describe('AdapterNode', () => {
           })}
         />
       );
-      fireEvent.click(screen.getByRole('button', { name: /add adapter/i }));
+      fireEvent.click(screen.getByRole('button', { name: /add a platform/i }));
       expect(onGhostClick).toHaveBeenCalledTimes(1);
     });
 
@@ -264,7 +264,7 @@ describe('AdapterNode', () => {
         <AdapterNode
           {...makeMockProps({
             isGhost: true,
-            adapterName: 'Add Adapter',
+            adapterName: 'Add a platform',
             adapterType: 'ghost',
             adapterStatus: 'stopped',
             bindingCount: 0,

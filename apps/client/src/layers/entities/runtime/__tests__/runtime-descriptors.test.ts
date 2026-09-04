@@ -31,7 +31,7 @@ describe('RUNTIME_DESCRIPTORS', () => {
       'Anthropic · frontier models in the cloud'
     );
     expect(RUNTIME_DESCRIPTORS.codex?.subtitle).toBe('OpenAI · GPT models');
-    expect(RUNTIME_DESCRIPTORS.opencode?.subtitle).toBe('Your own models, local or any provider');
+    expect(RUNTIME_DESCRIPTORS.opencode?.subtitle).toBe('Your own models, local or any service');
   });
 
   it('leaves the subtitle off a runtime that is not one of those choices', () => {

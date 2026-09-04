@@ -197,7 +197,7 @@ export function SmartGroupRuleDialog({
 
           {namespaceOptions.length > 1 && (
             <div className="space-y-1.5">
-              <Label>Namespace</Label>
+              <Label>Project</Label>
               <div className="flex flex-wrap gap-x-4 gap-y-1.5">
                 {namespaceOptions.map((ns) => (
                   <label key={ns} className="flex items-center gap-1.5 text-sm">

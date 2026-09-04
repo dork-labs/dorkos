@@ -39,7 +39,7 @@ export function ConfirmStep({
       )}
       {!isEditMode && (
         <div className="flex justify-between text-sm">
-          <span className="text-muted-foreground">Adapter ID</span>
+          <span className="text-muted-foreground">Connection ID</span>
           <span className="font-mono">{adapterId}</span>
         </div>
       )}

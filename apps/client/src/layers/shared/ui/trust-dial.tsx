@@ -77,7 +77,10 @@ export function stopLabel(stop: PermissionStop): string {
  *
  * The `promise` sentences are the stops' canonical meaning — what a person is
  * entitled to expect from the position they picked, before any runtime speaks
- * ({@link stopExpectation} is the same claim in machine form). `reach` on the
+ * ({@link stopExpectation} is the same claim in machine form). The autonomy
+ * sentence carries no softening clause on purpose (DOR-1754): it used to end
+ * "still asks when it matters", which read exactly like the stop below it and
+ * understated the one choice a person cannot walk back. `reach` on the
  * autonomy stop is `'everything'` because that is what the stop canonically
  * means, not because any colour hangs off it: the caption's green comes from the
  * stop itself ({@link trustToneText}).
@@ -105,7 +108,7 @@ export const CANONICAL_TRUST_STOPS: readonly PermissionModeDescriptor[] = [
     stop: 'autonomy',
     asks: 'never',
     reach: 'everything',
-    promise: 'Acts without stopping for approval — still asks when it matters.',
+    promise: 'Acts on its own. It will not stop to ask you, even for risky steps.',
   },
 ];
 

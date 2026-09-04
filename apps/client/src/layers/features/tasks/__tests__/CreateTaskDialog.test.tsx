@@ -258,7 +258,7 @@ describe('CreateTaskDialog', () => {
     });
 
     // Flip the sticky toggle on, then create.
-    fireEvent.click(screen.getByRole('switch', { name: /sticky/i }));
+    fireEvent.click(screen.getByRole('switch', { name: /remember the last run/i }));
     fireEvent.click(screen.getByText('Create'));
 
     await waitFor(() => {
@@ -360,7 +360,7 @@ describe('CreateTaskDialog', () => {
       fillFormWithCron('invalid');
 
       const note = screen.getByTestId('cron-blocks-save');
-      expect(note).toHaveTextContent(/Fix the cron expression under Schedule/);
+      expect(note).toHaveTextContent(/Fix the timing under Schedule/);
       // Outside the <details>, so collapsing the section cannot take it away.
       expect(note.closest('details')).toBeNull();
     });
