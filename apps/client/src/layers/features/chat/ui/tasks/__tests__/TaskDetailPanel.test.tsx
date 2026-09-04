@@ -119,4 +119,27 @@ describe('TaskDetailPanel', () => {
     render(<TaskDetailPanel tasks={tasks} onStopTask={vi.fn()} />);
     expect(screen.getByText('45s')).toBeInTheDocument();
   });
+
+  // DOR-1753: shown from `md` up. Below `md` it is hidden rather than
+  // truncating the row's only flexible element, the description (adversarial
+  // review finding I5) — so it is a `md`-and-up companion to the desktop
+  // hover tooltip, not a touch replacement for it.
+  it('shows the last tool an agent ran, from `md` up', () => {
+    const tasks = [makeTask({ taskId: 'a-1', taskType: 'agent', lastToolName: 'Read' })];
+
+    render(<TaskDetailPanel tasks={tasks} onStopTask={vi.fn()} />);
+    const chip = screen.getByText('Last: Read');
+    expect(chip).toBeInTheDocument();
+    expect(chip).toHaveClass('hidden', 'md:inline');
+  });
+
+  it('says nothing about a last tool for a bash task or an agent that has not run one yet', () => {
+    const tasks = [
+      makeTask({ taskId: 'a-1', taskType: 'agent', lastToolName: undefined }),
+      makeTask({ taskId: 'b-1', taskType: 'bash', command: 'ls', lastToolName: 'Read' }),
+    ];
+
+    render(<TaskDetailPanel tasks={tasks} onStopTask={vi.fn()} />);
+    expect(screen.queryByText(/^Last:/)).not.toBeInTheDocument();
+  });
 });

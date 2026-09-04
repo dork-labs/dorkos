@@ -681,6 +681,71 @@ describe('RightPanelContainer', () => {
 
       expect(screen.getByTestId('sheet-content')).not.toHaveClass('sm:max-w-full');
     });
+
+    // The tablet is the second surface that reaches this Sheet without being a
+    // phone (the Obsidian embed is the other). CONTENT_SIZED_MOBILE_TABS is a
+    // 390×844 measurement — a tablet was never measured, so a short tab keeps
+    // the full-height sheet here rather than collapsing to a content-height box
+    // on a surface nobody checked (DOR-1753, finding 7.8 + adversarial I3).
+    it('leaves a measured-short tab at full height — 390×844 is not a tablet', () => {
+      mockIsMobile = false;
+      mockIsBelowDesktop = true;
+      mockRightPanelOpen = true;
+      mockActiveRightPanelTab = 'pulse';
+      mockContributions = [makeContribution('pulse')];
+
+      render(<RightPanelContainer pathname={mockPathname} />);
+
+      const className = screen.getByTestId('sheet-content').className;
+      expect(className).not.toContain('!h-auto');
+      expect(className).not.toContain('!bottom-auto');
+    });
+  });
+
+  // DOR-1753 (finding 7.8): Pulse and Files were the two tabs the audit
+  // actually measured as short at 390×844 — every other tab keeps the
+  // full-height sheet it has today.
+  describe('mobile sheet sizes to content on the two measured-short tabs only', () => {
+    it('caps the sheet to its content on the Pulse tab', () => {
+      mockIsMobile = true;
+      mockIsBelowDesktop = true;
+      mockRightPanelOpen = true;
+      mockActiveRightPanelTab = 'pulse';
+      mockContributions = [makeContribution('pulse')];
+
+      render(<RightPanelContainer pathname={mockPathname} />);
+
+      const className = screen.getByTestId('sheet-content').className;
+      expect(className).toContain('!bottom-auto');
+      expect(className).toContain('!h-auto');
+      expect(className).toContain('max-h-dvh');
+    });
+
+    it('caps the sheet to its content on the Files tab', () => {
+      mockIsMobile = true;
+      mockIsBelowDesktop = true;
+      mockRightPanelOpen = true;
+      mockActiveRightPanelTab = 'files';
+      mockContributions = [makeContribution('files')];
+
+      render(<RightPanelContainer pathname={mockPathname} />);
+
+      expect(screen.getByTestId('sheet-content').className).toContain('!h-auto');
+    });
+
+    it('leaves every other tab at full height, Terminal included', () => {
+      mockIsMobile = true;
+      mockIsBelowDesktop = true;
+      mockRightPanelOpen = true;
+      mockActiveRightPanelTab = 'terminal';
+      mockContributions = [makeContribution('terminal')];
+
+      render(<RightPanelContainer pathname={mockPathname} />);
+
+      const className = screen.getByTestId('sheet-content').className;
+      expect(className).not.toContain('!h-auto');
+      expect(className).not.toContain('!bottom-auto');
+    });
   });
 
   // variant='overlay' is the narrow Obsidian embed: always a slide-over Sheet,
@@ -714,6 +779,22 @@ describe('RightPanelContainer', () => {
         <RightPanelContainer pathname={mockPathname} variant="overlay" />
       );
       expect(container.innerHTML).toBe('');
+    });
+
+    // DOR-1753 adversarial review (finding I3): CONTENT_SIZED_MOBILE_TABS is a
+    // 390×844 measurement (see the constant's TSDoc) — it must not apply on the
+    // embed's desktop-width viewport, which nobody measured.
+    it('does not content-size Pulse on a wide (non-mobile) viewport', () => {
+      mockIsMobile = false;
+      mockRightPanelOpen = true;
+      mockActiveRightPanelTab = 'pulse';
+      mockContributions = [makeContribution('pulse', { title: 'Pulse', isGlobal: true })];
+
+      render(<RightPanelContainer pathname={mockPathname} variant="overlay" />);
+
+      const className = screen.getByTestId('sheet-content').className;
+      expect(className).not.toContain('!h-auto');
+      expect(className).not.toContain('!bottom-auto');
     });
 
     it('drops a transport-gated tab (the terminal) under the in-process transport', () => {

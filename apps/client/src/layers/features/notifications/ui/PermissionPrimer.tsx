@@ -107,10 +107,22 @@ export function PermissionPrimer({ streaming }: PermissionPrimerProps) {
         something else.
       </p>
       <div className="flex shrink-0 items-center gap-1.5">
-        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={notNow}>
+        <Button
+          variant="ghost"
+          size="sm"
+          responsive={false}
+          className="h-7 px-2 text-xs"
+          onClick={notNow}
+        >
           Not now
         </Button>
-        <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={allow}>
+        <Button
+          variant="outline"
+          size="sm"
+          responsive={false}
+          className="h-7 px-2 text-xs"
+          onClick={allow}
+        >
           Turn on notifications
         </Button>
       </div>

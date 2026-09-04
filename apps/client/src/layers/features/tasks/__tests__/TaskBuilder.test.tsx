@@ -397,6 +397,20 @@ describe('ScheduleBuilder', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  // DOR-1753: this form becomes a full-screen mobile Drawer, so its day
+  // toggles get a real touch target below `md` rather than staying at
+  // desktop density everywhere. `min-h-11` alone clears 44px (measured
+  // 53.4×44px) — no `after:` reach on top of it (adversarial review nit N2).
+  it('grows each day pill to a real touch target below md, desktop density unchanged', () => {
+    const onChange = vi.fn();
+    render(<ScheduleBuilder value="0 9 * * 1-5" onChange={onChange} />);
+
+    const monday = screen.getByRole('button', { name: 'Mon' });
+    expect(monday.className).toContain('min-h-11');
+    expect(monday.className).toContain('md:min-h-0');
+    expect(monday.className).not.toContain('after:absolute');
+  });
+
   it('shows day-of-month select for monthly frequency', () => {
     const onChange = vi.fn();
     render(<ScheduleBuilder value="0 9 1 * *" onChange={onChange} />);

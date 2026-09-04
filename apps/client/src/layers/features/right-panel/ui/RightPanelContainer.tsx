@@ -24,6 +24,21 @@ const PANEL_TRANSITION = 'flex-grow 300ms ease-in-out';
 /** CSS transition for the resize handle indicator during open/close. */
 const HANDLE_INDICATOR_TRANSITION = 'opacity 300ms ease-in-out';
 
+/**
+ * Right-panel tabs measured at 390×844 with content short enough that a
+ * full-height mobile sheet leaves the rest of the screen empty (DOR-1753,
+ * finding 7.8) — Pulse's content ends around y=250, Files' six rows around
+ * y=240. The sheet sizes to content for these two only.
+ *
+ * Every other tab keeps the full-height sheet on purpose, not by omission:
+ * Terminal and Canvas are built to fill whatever height they are given (an
+ * `h-auto` ancestor would hand a terminal emulator nothing to size against),
+ * and Room/Profile/Session were never measured, so capping them on a guess
+ * risks silently squashing a tab nobody checked. Widening this set needs the
+ * same measurement this comment cites, not an assumption.
+ */
+const CONTENT_SIZED_MOBILE_TABS = new Set(['pulse', 'files']);
+
 /** How the container presents itself within its host shell. */
 export interface RightPanelContainerProps {
   /**
@@ -226,7 +241,29 @@ export function RightPanelContainer({ pathname, variant = 'resizable' }: RightPa
           // reading width the primitive gives it.
           className={cn(
             'bg-sidebar text-sidebar-foreground flex w-full flex-col gap-0 p-0',
-            (variant === 'overlay' || isPhone) && 'sm:max-w-full'
+            (variant === 'overlay' || isPhone) && 'sm:max-w-full',
+            // `isPhone` is required, not redundant with the branch guard above:
+            // that guard is `variant === 'overlay' || overlayOnly`, so two
+            // surfaces reach this Sheet without being a phone — the overlay
+            // variant (the Obsidian embed, narrow-paned even on a desktop-width
+            // viewport) and a tablet. The 390×844 measurement this set is named
+            // for was taken on neither, so without this term their default
+            // Pulse/Files panel silently swaps from a full-height slide-over to
+            // a content-height box on a surface nobody measured (DOR-1753,
+            // adversarial review finding I3).
+            isPhone &&
+              activeTab &&
+              CONTENT_SIZED_MOBILE_TABS.has(activeTab) &&
+              // `!` because the base `side="right"` classes already claim
+              // `inset-y-0` (top AND bottom) and `h-full`. Without
+              // `!important` the winner between that `bottom: 0` and this
+              // `bottom: auto` depends on Tailwind's internal utility order,
+              // not on source order — a plain override here would be a coin
+              // flip in production even though it reads correctly in the
+              // diff. `max-h-dvh` is the safety net if a short tab's content
+              // ever grows past the viewport; it scrolls instead of
+              // overflowing off-screen.
+              '!bottom-auto !h-auto max-h-dvh overflow-y-auto'
           )}
         >
           <ResponsiveSheetHeader className="sr-only">

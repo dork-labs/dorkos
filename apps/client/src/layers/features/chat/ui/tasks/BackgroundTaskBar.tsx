@@ -31,6 +31,21 @@ function toRunnerStatus(status: BackgroundTaskStatus): AgentRunnerStatus {
   return status;
 }
 
+/**
+ * Invisible reach on the expand toggle, sized to what the collapsed bar's row
+ * actually has to give.
+ *
+ * The bar (`overflow-hidden`, `maxHeight: 44` collapsed) clips anything a
+ * descendant's `::after` pushes past the row's own rendered box — the row's
+ * real height today is the 24px `AgentRunner` SVG plus `py-1.5` (12px) =
+ * 36px, comfortably under the 44px cap, so `-inset-y-2.5` (10px each side)
+ * fits inside that headroom without being cut off or growing the bar.
+ * `-inset-x-1` mirrors the filter-bar's half-gap budget so the reach does not
+ * swallow taps meant for the "N tools · Ns" stats text beside it.
+ */
+const EXPAND_TOGGLE_TOUCH_REACH =
+  'relative after:absolute after:-inset-x-1 after:-inset-y-2.5 md:after:hidden';
+
 const barTransitionEase = [0.16, 1, 0.3, 1] as const;
 
 const agentEnterTransition = {
@@ -116,7 +131,10 @@ export function BackgroundTaskBar({ tasks, onStopTask }: BackgroundTaskBarProps)
             <button
               type="button"
               onClick={() => setIsExpanded((prev) => !prev)}
-              className="text-muted-foreground hover:text-foreground ml-1 flex shrink-0 items-center gap-1 transition-colors duration-150"
+              className={cn(
+                'text-muted-foreground hover:text-foreground ml-1 flex shrink-0 items-center gap-1 transition-colors duration-150',
+                EXPAND_TOGGLE_TOUCH_REACH
+              )}
               aria-label={isExpanded ? 'Collapse task details' : 'Expand task details'}
               aria-expanded={isExpanded}
             >
@@ -217,14 +235,19 @@ function OverflowBadge({ count, overflowTasks }: OverflowBadgeProps) {
         +{count}
       </div>
 
-      {/* Hover tooltip listing overflow agents */}
+      {/* Hover tooltip listing overflow agents. Desktop-only (`hidden
+          md:block`) — it needs a `:hover` no touch pointer has. The
+          tap-to-expand task list (the chevron beside the bar, grown by
+          {@link EXPAND_TOGGLE_TOUCH_REACH}) already lists every task,
+          overflow included, as the touch path to the same names. */}
       <div
+        data-testid="overflow-badge-tooltip"
         className={cn(
-          'pointer-events-none absolute bottom-[calc(100%+8px)] left-1/2',
+          'pointer-events-none absolute bottom-[calc(100%+8px)] left-1/2 hidden',
           '-translate-x-1/2 translate-y-1 opacity-0 transition-all duration-150',
           'group-hover:translate-y-0 group-hover:opacity-100',
           'border-border bg-popover z-10 rounded-lg border px-3 py-2 whitespace-nowrap',
-          'text-foreground text-2xs shadow-lg'
+          'text-foreground text-2xs shadow-lg md:block'
         )}
       >
         {overflowTasks.map((task) => (

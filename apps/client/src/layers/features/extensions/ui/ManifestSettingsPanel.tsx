@@ -354,12 +354,20 @@ function SecretRow({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder={secret.placeholder ?? secret.key}
-          className="h-8 w-48 text-sm"
+          // `md:h-8` keeps this row's desktop density (its own default is
+          // `md:h-9`); leaving `responsive` at its default lets the mobile
+          // `h-11` scale through instead of pinning `h-8` everywhere, which
+          // used to leave the Save button beside it 44px tall against a 32px
+          // input on a phone (DOR-1753, adversarial review nit N3).
+          className="w-48 text-sm md:h-8"
           onKeyDown={(e) => {
             if (e.key === 'Enter') void handleSave();
           }}
         />
-        <Button size="sm" onClick={handleSave} disabled={saving || !value.trim()} className="h-8">
+        {/* No custom height: `sm` already renders at this row's h-8 on
+            desktop, and a bare `h-8` here used to cancel its `h-11` mobile
+            growth instead of just repeating its own desktop value. */}
+        <Button size="sm" onClick={handleSave} disabled={saving || !value.trim()}>
           Save
         </Button>
       </div>

@@ -3,6 +3,28 @@ import { Plus, SquareTerminal, X } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { useRovingTabList, type TabActivationSource } from '@/layers/shared/ui';
 
+/**
+ * Invisible reach that grows the tab close button below `md`, vertically only.
+ *
+ * **`after:inset-x-0` is required, not decorative.** An absolutely positioned
+ * empty pseudo-element with only `top`/`bottom` set shrink-wraps to 0px wide —
+ * it catches nothing. Pinning `left`/`right` to the button's own edges (`0`,
+ * not a negative inset) gives the `::after` the button's 24px width without
+ * spending any of it: the box stays exactly as wide as the close button.
+ *
+ * **No horizontal GROWTH beyond that, on purpose.** The close button already
+ * sits inside `pr-7` — 28px the tab button reserves for it — and at `p-1.5`
+ * (below `md`) its 24px box fills that reservation edge to edge (`right-1`
+ * plus 24px of box is 28px). Reaching sideways from there would spend the
+ * tab's OWN clickable label area, so a tap meant to select the tab would
+ * close it instead — worse than the small target this replaces. The tab grew
+ * to `py-3` below `md` specifically to give the vertical reach somewhere safe
+ * to go: an 8px vertical slack opens on each side of the now-centered 24px
+ * box, bounded by the row itself, so `-inset-y-2` cannot spill onto anything
+ * outside this tab.
+ */
+const TAB_CLOSE_TOUCH_REACH = 'after:absolute after:inset-x-0 after:-inset-y-2 md:after:hidden';
+
 /** DOM id of the terminal content region the active tab controls. */
 export const TERMINAL_PANEL_ID = 'terminal-panel';
 
@@ -91,7 +113,7 @@ export function TerminalTabs({
                 aria-controls={isActive ? TERMINAL_PANEL_ID : undefined}
                 {...getTabProps(tab.key)}
                 className={cn(
-                  'focus-ring flex items-center gap-1.5 rounded-md py-1 pr-7 pl-2 text-xs transition-colors',
+                  'focus-ring flex items-center gap-1.5 rounded-md py-3 pr-7 pl-2 text-xs transition-colors md:py-1',
                   isActive
                     ? 'bg-muted text-foreground'
                     : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
@@ -105,7 +127,10 @@ export function TerminalTabs({
                 tabIndex={-1}
                 onClick={() => onClose(tab.key, 'pointer')}
                 aria-label={`Close ${tab.label}`}
-                className="focus-ring hover:bg-background/80 absolute top-1/2 right-1 -translate-y-1/2 rounded-sm p-0.5 opacity-60 transition-opacity group-hover:opacity-100"
+                className={cn(
+                  'focus-ring hover:bg-background/80 absolute top-1/2 right-1 -translate-y-1/2 rounded-sm p-1.5 opacity-60 transition-opacity group-hover:opacity-100 md:p-0.5',
+                  TAB_CLOSE_TOUCH_REACH
+                )}
               >
                 <X className="size-3" />
               </button>

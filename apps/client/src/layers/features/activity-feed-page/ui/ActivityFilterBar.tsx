@@ -11,6 +11,32 @@ import { useActivityFilters } from '../model/use-activity-filters';
 /** All category options in display order. */
 const CATEGORIES: ActivityCategory[] = ['tasks', 'relay', 'agent', 'config', 'system'];
 
+/**
+ * The chip's real, clickable box — invisible on its own, `group` so the
+ * visual pill inside it can react to its hover and focus.
+ *
+ * **Small visual, larger hit box**, the same split `SidebarGroupAction` uses:
+ * below `md` this is `min-h-11` (44px), a strip a thumb can actually land on;
+ * at `md` and up it collapses back to the pill's own content height, same as
+ * before this existed. Height only — the chips still sit shoulder to
+ * shoulder in a scrolling row, so growing width would just eat into the next
+ * chip's own box.
+ */
+const CHIP_HIT_AREA = 'group inline-flex min-h-11 shrink-0 items-center outline-none md:min-h-0';
+
+/**
+ * The chip's visible pill — the part a page actually looks like, unchanged
+ * from before {@link CHIP_HIT_AREA} existed to wrap it.
+ *
+ * The focus ring is `group-focus-visible:`, not the usual `focus-ring`
+ * utility: the browser can only put `:focus-visible` on the element that
+ * was actually focused (the button {@link CHIP_HIT_AREA} sits on), and a
+ * ring drawn there would trace the invisible 44px box instead of the pill a
+ * person can see.
+ */
+const CHIP_VISUAL =
+  'inline-flex h-6 items-center rounded-full px-2.5 text-xs font-medium transition-colors group-focus-visible:ring-ring group-focus-visible:ring-2 group-focus-visible:ring-offset-1';
+
 interface CategoryChipProps {
   category: ActivityCategory;
   isActive: boolean;
@@ -28,15 +54,18 @@ function CategoryChip({ category, isActive, onToggle }: CategoryChipProps) {
       onClick={onToggle}
       aria-pressed={isActive}
       transition={{ duration: 0.15 }}
-      className={cn(
-        'inline-flex h-6 items-center rounded-full px-2.5 text-xs font-medium transition-colors',
-        'focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:outline-none',
-        isActive
-          ? cn(config.bg, config.text)
-          : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-      )}
+      className={CHIP_HIT_AREA}
     >
-      {config.label}
+      <span
+        className={cn(
+          CHIP_VISUAL,
+          isActive
+            ? cn(config.bg, config.text)
+            : 'text-muted-foreground group-hover:bg-muted group-hover:text-foreground'
+        )}
+      >
+        {config.label}
+      </span>
     </motion.button>
   );
 }
@@ -55,15 +84,18 @@ function AllChip({ isActive, onClick }: AllChipProps) {
       onClick={onClick}
       aria-pressed={isActive}
       transition={{ duration: 0.15 }}
-      className={cn(
-        'inline-flex h-6 items-center rounded-full px-2.5 text-xs font-medium transition-colors',
-        'focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:outline-none',
-        isActive
-          ? 'bg-foreground text-background'
-          : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-      )}
+      className={CHIP_HIT_AREA}
     >
-      All
+      <span
+        className={cn(
+          CHIP_VISUAL,
+          isActive
+            ? 'bg-foreground text-background'
+            : 'text-muted-foreground group-hover:bg-muted group-hover:text-foreground'
+        )}
+      >
+        All
+      </span>
     </motion.button>
   );
 }

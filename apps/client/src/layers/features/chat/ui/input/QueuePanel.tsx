@@ -3,6 +3,28 @@ import { X, CornerDownLeft, ArrowUp, AppWindow } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import type { QueueItem } from '../../model/use-message-queue';
 
+/**
+ * Invisible reach that grows each 24px row action into a 32px touch target
+ * below `md`, without moving its neighbors.
+ *
+ * **Bounded by the row it sits in, both ways.** Move-up, send-next and
+ * remove sit shoulder to shoulder with an 8px gap between them below `md`
+ * (the row switches to `gap-2`, `md:gap-1` restores today's 4px) — half of
+ * that, 4px, is as far as one button can reach before it meets its
+ * neighbor's own reach coming the other way, so `-inset-1` is the most any
+ * side can safely claim horizontally.
+ *
+ * Vertically the ceiling is the row itself: the edit button beside these
+ * sets the row's height at a 32px floor (`py-1.5` plus one line of
+ * `text-sm`, present on every row since `item.content` is never empty), and
+ * a 24px button centered in a 32px row already has 4px of slack above and
+ * below before it would spill into the 2px `space-y-0.5` gap the next
+ * queued row sits behind. `-inset-1` spends exactly that slack and no more,
+ * so a mistap can never land on the wrong queued message's own controls —
+ * the exact failure this reach exists to prevent.
+ */
+const TOUCH_REACH = 'after:absolute after:-inset-1 md:after:hidden';
+
 interface QueuePanelProps {
   queue: QueueItem[];
   /**
@@ -94,7 +116,11 @@ export function QueuePanel({
                   // The left border is always here, transparent at rest: applying
                   // it only while editing shifted the whole row 2px sideways the
                   // moment you clicked into it.
-                  'group flex w-full items-center gap-1 rounded-md border-l-2 border-l-transparent pr-2 transition-colors',
+                  //
+                  // `gap-2` below `md` (not the desktop `gap-1`) is what the three
+                  // action buttons' invisible reach spends: half of it, 4px, on
+                  // each side of each button — see the buttons below.
+                  'group flex w-full items-center gap-2 rounded-md border-l-2 border-l-transparent pr-2 transition-colors md:gap-1',
                   editingId === item.id ? 'border-l-primary bg-muted' : 'hover:bg-muted/50'
                 )}
               >
@@ -134,7 +160,10 @@ export function QueuePanel({
                   <button
                     type="button"
                     onClick={() => onMoveUp(item.id)}
-                    className="focus-ring text-muted-foreground hover:text-foreground flex size-6 shrink-0 items-center justify-center rounded-sm opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+                    className={cn(
+                      'focus-ring text-muted-foreground hover:text-foreground relative flex size-6 shrink-0 items-center justify-center rounded-sm opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100',
+                      TOUCH_REACH
+                    )}
                     aria-label={`Move queued message ${i + 1} earlier`}
                   >
                     <ArrowUp className="size-3" />
@@ -148,7 +177,10 @@ export function QueuePanel({
                     // Always visible, unlike the tucked-away reorder and remove:
                     // this is the primary action on a queued row, so it must not
                     // need a hover to be found.
-                    className="focus-ring text-muted-foreground hover:text-foreground flex size-6 shrink-0 items-center justify-center rounded-sm transition-colors"
+                    className={cn(
+                      'focus-ring text-muted-foreground hover:text-foreground relative flex size-6 shrink-0 items-center justify-center rounded-sm transition-colors',
+                      TOUCH_REACH
+                    )}
                   >
                     <CornerDownLeft className="size-3" />
                   </button>
@@ -156,7 +188,10 @@ export function QueuePanel({
                 <button
                   type="button"
                   onClick={() => onRemove(item.id)}
-                  className="focus-ring text-muted-foreground hover:text-foreground flex size-6 shrink-0 items-center justify-center rounded-sm opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+                  className={cn(
+                    'focus-ring text-muted-foreground hover:text-foreground relative flex size-6 shrink-0 items-center justify-center rounded-sm opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100',
+                    TOUCH_REACH
+                  )}
                   aria-label={`Remove queued message ${i + 1}`}
                 >
                   <X className="size-3" />

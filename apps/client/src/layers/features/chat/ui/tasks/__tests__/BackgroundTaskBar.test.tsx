@@ -216,6 +216,26 @@ describe('BackgroundTaskBar', () => {
     expect(screen.getByLabelText('1 more subagent running')).toBeInTheDocument();
   });
 
+  // DOR-1753: `:hover` never fires on touch, so the overflow badge's tooltip
+  // is desktop-only; the tap-to-expand task list already names every task,
+  // overflow included, as the touch path to the same names.
+  it('keeps the overflow badge tooltip desktop-only (hidden md:block)', () => {
+    const tasks = Array.from({ length: 6 }, (_, i) =>
+      makeTask({ taskId: `hide-${i}`, taskType: 'agent', description: `Agent ${i}` })
+    );
+
+    const { container } = render(<BackgroundTaskBar tasks={tasks} onStopTask={vi.fn()} />);
+
+    // `data-testid`, not a positional sibling query (DOR-1753, adversarial
+    // review nit N5) — `badge.nextElementSibling` happened to work only
+    // because nothing else sits between the badge and the tooltip today.
+    const tooltip = screen.getByTestId('overflow-badge-tooltip');
+    expect(tooltip.className).toContain('hidden');
+    expect(tooltip.className).toContain('md:block');
+    // Sanity: this really is the overflow tooltip, not some other sibling.
+    expect(container.textContent).toContain('Agent 4');
+  });
+
   it('renders mixed agent + bash tasks with correct aria-label', () => {
     const agentTask = makeTask({ taskId: 'mx-a', taskType: 'agent' });
     const bashTask = makeTask({ taskId: 'mx-b', taskType: 'bash', command: 'make' });

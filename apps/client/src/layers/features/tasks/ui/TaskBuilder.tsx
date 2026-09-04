@@ -372,7 +372,7 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
     <div className="space-y-3">
       {/* Frequency Select */}
       <Select value={config.frequency} onValueChange={handleFrequencyChange}>
-        <SelectTrigger responsive={false} className="h-9" aria-label="Frequency">
+        <SelectTrigger aria-label="Frequency">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -398,7 +398,7 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground text-sm">at</span>
               <Select value={String(config.hour)} onValueChange={handleHourChange}>
-                <SelectTrigger responsive={false} className="h-9 w-32" aria-label="Time">
+                <SelectTrigger className="w-32" aria-label="Time">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -435,7 +435,10 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
                     aria-label={day.label}
                     aria-pressed={isActive}
                     className={cn(
-                      'rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
+                      // `min-h-11` alone already clears 44px (measured
+                      // 53.4×44px) — no `after:` reach needed on top of it
+                      // (DOR-1753, adversarial review nit N2).
+                      'inline-flex min-h-11 items-center justify-center rounded-md border px-2.5 py-1 text-xs font-medium transition-colors md:min-h-0',
                       isActive
                         ? 'border-primary bg-primary/10 text-primary'
                         : 'border-input text-muted-foreground hover:bg-accent hover:text-accent-foreground'
@@ -465,7 +468,7 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground text-sm">on day</span>
               <Select value={String(config.dayOfMonth)} onValueChange={handleDayOfMonthChange}>
-                <SelectTrigger responsive={false} className="h-9 w-20" aria-label="Day of month">
+                <SelectTrigger className="w-20" aria-label="Day of month">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

@@ -48,6 +48,21 @@ export function TaskDetailRow({ task, onStop }: TaskDetailRowProps) {
         </span>
       )}
 
+      {/* Last tool — agent tasks only, `md`-and-up only. The desktop runner
+          figure shows this in a hover tooltip; this row is the touch path to
+          the same fact, so it repeats the same wording rather than inventing
+          a second name for it. Hidden below `md`: this row's only flexible
+          element is the description, and a 96px chip ahead of the kill
+          button roughly halves it on a phone-width panel (181.5px → 83.5px,
+          measured) — the description is the row's primary fact, so it wins
+          the space when the two compete (DOR-1753, adversarial review
+          finding I5). */}
+      {task.taskType === 'agent' && task.lastToolName && (
+        <span className="text-muted-foreground/60 text-3xs hidden max-w-24 shrink-0 truncate font-mono md:inline">
+          Last: {task.lastToolName}
+        </span>
+      )}
+
       {/* Duration */}
       {durationSeconds > 0 && (
         <span className="text-muted-foreground/60 text-3xs shrink-0 font-mono">

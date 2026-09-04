@@ -8,6 +8,17 @@ import {
 } from '@/layers/shared/ui/dropdown-menu';
 import { useFilterBar } from './FilterBarContext';
 
+/**
+ * Invisible reach that grows this 28px pill to a 44px touch target below `md`.
+ *
+ * Vertical reach (`-inset-y-2`, 8px each side) lands exactly on 28+16=44px.
+ * Horizontal reach (`-inset-x-1`, 4px each side) stays inside half of the
+ * toolbar's `gap-2` (8px) so neighbouring pills' reach zones meet without
+ * overlapping — the same anisotropic budget `PresenceStrip` uses for its row
+ * of chips.
+ */
+const TOUCH_REACH = 'relative after:absolute after:-inset-x-1 after:-inset-y-2 md:after:hidden';
+
 interface FilterBarSortProps {
   /** Sort options from createSortOptions — keys map to field names. */
   options: Record<string, { label: string }>;
@@ -39,6 +50,7 @@ function FilterBarSort({ options, defaultField, className }: FilterBarSortProps)
         data-slot="filter-bar-sort"
         className={cn(
           'border-input hover:bg-accent hover:text-accent-foreground inline-flex h-7 items-center gap-1 rounded-md border px-2.5 text-xs',
+          TOUCH_REACH,
           className
         )}
       >

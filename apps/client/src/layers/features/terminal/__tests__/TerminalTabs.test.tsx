@@ -186,3 +186,19 @@ describe('TerminalTabs — keyboard accessibility (WAI-ARIA Tabs)', () => {
     expect(onCreate).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('TerminalTabs — touch targets below md (DOR-1753)', () => {
+  it('grows the tab itself and the close control on mobile, desktop density unchanged', () => {
+    render(<Harness />);
+
+    expect(tab('Terminal 1').className).toContain('py-3');
+    expect(tab('Terminal 1').className).toContain('md:py-1');
+
+    const close = screen.getByRole('button', { name: 'Close Terminal 1' });
+    expect(close.className).toContain('p-1.5');
+    expect(close.className).toContain('md:p-0.5');
+    expect(close.className).toContain('after:absolute');
+    expect(close.className).toContain('after:-inset-y-2');
+    expect(close.className).toContain('md:after:hidden');
+  });
+});

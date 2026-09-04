@@ -210,7 +210,7 @@ export function IntegrationBindingCard({
         {/* Always-visible kebab menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
+            <Button variant="ghost" size="icon" responsive={false} className="h-8 w-8 shrink-0">
               <MoreHorizontal className="size-4" />
               <span className="sr-only">Actions</span>
             </Button>

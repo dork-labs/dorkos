@@ -98,7 +98,7 @@ export function AdapterEventLog({ adapterId }: AdapterEventLogProps) {
           Events
         </h4>
         <Select value={filter} onValueChange={setFilter}>
-          <SelectTrigger className="h-7 w-[130px] text-xs">
+          <SelectTrigger responsive={false} className="h-7 w-[130px] text-xs">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
