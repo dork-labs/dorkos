@@ -118,7 +118,7 @@ test.describe('Control Center @smoke', () => {
     await controlCenter.remoteAccessSwitch.click();
 
     // The dialog is actually THERE, and it is the one it promised.
-    const dialog = page.getByRole('dialog').filter({ hasText: 'Remote Access' });
+    const dialog = page.getByRole('dialog').filter({ hasText: 'Remote access' });
     await expect(dialog).toBeVisible();
 
     // The flyout closed on the way. Both are modal popovers, so leaving the
@@ -130,7 +130,7 @@ test.describe('Control Center @smoke', () => {
 
     // Focus is inside the dialog, not stranded on the flyout that closed under
     // it — the DOR-953 focus race, one surface over.
-    await expect(dialog).toContainText('Remote Access');
+    await expect(dialog).toContainText('Remote access');
     const focusInDialog = await dialog.evaluate((node) => node.contains(document.activeElement));
     expect(focusInDialog).toBe(true);
   });
