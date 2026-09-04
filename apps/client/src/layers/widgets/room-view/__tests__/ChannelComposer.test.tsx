@@ -301,7 +301,7 @@ describe('ChannelComposer', () => {
     // its content is query-client.test.ts's subject, not this file's.
     expect(toastError).toHaveBeenCalledWith(
       "Couldn't send your message",
-      expect.objectContaining({ description: "This room is archived" })
+      expect.objectContaining({ description: 'This room is archived' })
     );
   });
 

@@ -199,7 +199,7 @@ describe('TaskRunHistoryPanel', () => {
       await waitFor(() => {
         expect(toast.error).toHaveBeenCalledWith(
           "Couldn't stop the run",
-          expect.objectContaining({ description: "Nothing picked up the stop request" })
+          expect.objectContaining({ description: 'Nothing picked up the stop request' })
         );
       });
       expect(toast).not.toHaveBeenCalled();

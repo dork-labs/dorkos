@@ -333,9 +333,7 @@ function FieldCardSection() {
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0">
                   <p className="text-sm font-medium">Restart DorkOS</p>
-                  <p className="text-muted-foreground text-xs">
-                    Anything running right now stops.
-                  </p>
+                  <p className="text-muted-foreground text-xs">Anything running right now stops.</p>
                 </div>
                 <button className="bg-destructive text-destructive-foreground rounded-md px-3 py-1.5 text-xs">
                   Restart

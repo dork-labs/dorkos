@@ -56,7 +56,7 @@ describe('room settings failures', () => {
       // raised with no options at all still fails here.
       expect(toast.error).toHaveBeenCalledWith(
         "Couldn't rename that room",
-        expect.objectContaining({ description: "A channel called #backend already exists" })
+        expect.objectContaining({ description: 'A channel called #backend already exists' })
       )
     );
     // Exactly one line. A per-call `onError` toast beside this one is what
@@ -82,7 +82,7 @@ describe('room settings failures', () => {
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
         "Couldn't bring that room back",
-        expect.objectContaining({ description: "A channel called #backend already exists" })
+        expect.objectContaining({ description: 'A channel called #backend already exists' })
       )
     );
   });

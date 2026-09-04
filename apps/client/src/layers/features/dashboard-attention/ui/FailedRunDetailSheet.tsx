@@ -78,7 +78,9 @@ export function FailedRunDetailSheet({ open, itemId, onClose }: FailedRunDetailS
           )}
 
           {isError && (
-            <p className="text-destructive py-8 text-center text-sm">Couldn&rsquo;t load this run.</p>
+            <p className="text-destructive py-8 text-center text-sm">
+              Couldn&rsquo;t load this run.
+            </p>
           )}
 
           {!isLoading && !isError && !run && (

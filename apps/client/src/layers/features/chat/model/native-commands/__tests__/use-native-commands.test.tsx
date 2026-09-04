@@ -123,9 +123,7 @@ describe('useNativeCommands', () => {
     });
     // The sonner mock above forwards only the headline. Since DOR-1755 the
     // server's own words are the toast's `description`, not part of the line.
-    await waitFor(() =>
-      expect(toastError).toHaveBeenCalledWith("Couldn't rename that session")
-    );
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith("Couldn't rename that session"));
     expect(toastSuccess).not.toHaveBeenCalled();
   });
 

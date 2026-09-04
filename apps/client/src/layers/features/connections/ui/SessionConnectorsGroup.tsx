@@ -194,8 +194,7 @@ function AttachPopover({
             </p>
             {attach.data?.warning && (
               <p role="alert" className="text-destructive text-xs">
-                Attached, but there is a problem.{' '}
-                {WARNING_COPY[attach.data.warning.reason]}
+                Attached, but there is a problem. {WARNING_COPY[attach.data.warning.reason]}
               </p>
             )}
             <div className="flex justify-end gap-2">

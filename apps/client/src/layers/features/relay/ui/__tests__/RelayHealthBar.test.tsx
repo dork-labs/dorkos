@@ -348,9 +348,7 @@ describe('RelayHealthBar', () => {
       enableRelayWithData({ metrics: mockMetricsNoFailures, catalog: catalogPartiallyConnected });
       const onFailedClick = vi.fn();
       render(<RelayHealthBar onFailedClick={onFailedClick} />);
-      fireEvent.click(
-        screen.getByRole('button', { name: /disconnected. Click to view failures/ })
-      );
+      fireEvent.click(screen.getByRole('button', { name: /disconnected. Click to view failures/ }));
       expect(onFailedClick).toHaveBeenCalledTimes(1);
     });
 

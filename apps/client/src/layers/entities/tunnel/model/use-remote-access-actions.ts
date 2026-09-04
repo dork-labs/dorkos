@@ -106,7 +106,9 @@ export function useRemoteAccessActions(): RemoteAccessActionHandlers {
       useRemoteAccessStore
         .getState()
         .failStop(
-          err instanceof Error ? err.message : "Couldn't close your link. Not sure if it's still on."
+          err instanceof Error
+            ? err.message
+            : "Couldn't close your link. Not sure if it's still on."
         );
     }
   }, [transport, queryClient]);

@@ -514,7 +514,9 @@ describe('ActivityFeed', () => {
       mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={true} />);
 
-      expect(screen.getByRole('button', { name: 'Show messages that never arrived' })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Show messages that never arrived' })
+      ).toBeInTheDocument();
     });
 
     it('shows DeadLetterSection when failures toggle is clicked', () => {

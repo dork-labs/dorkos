@@ -497,7 +497,7 @@ describe('CreateAgentDialog', () => {
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
         "Couldn't create that agent",
-        expect.objectContaining({ description: "Agent already exists" })
+        expect.objectContaining({ description: 'Agent already exists' })
       )
     );
   });

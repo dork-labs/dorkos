@@ -138,8 +138,7 @@ function ActionBoardCell({
   // "waiting", not silence. The dispatched cell itself needs no words: its
   // drawn mark IS the feedback.
   let tooltipText: string | null = null;
-  if (state.superseded)
-    tooltipText = 'This board is from an earlier turn. Play on the newest one.';
+  if (state.superseded) tooltipText = 'This board is from an earlier turn. Play on the newest one.';
   else if (state.unavailable) tooltipText = "Interactions aren't available here";
   else if (state.latched) tooltipText = "Move sent. Waiting for the agent's reply";
 
