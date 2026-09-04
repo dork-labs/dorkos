@@ -4,8 +4,34 @@
    those bundled utilities can't beat the app's own — otherwise blintz's `.hidden`
    forces the sidebar's `hidden md:block` to display:none app-wide — yet ABOVE
    `base` so the editor's `.milkdown` typography isn't flattened by the app's
-   preflight (layer order trumps specificity). See layers/features/canvas/ui/blintz.css. */
-@layer theme, base, components, blintz, utilities;
+   preflight (layer order trumps specificity). See layers/features/canvas/ui/blintz.css.
+
+   `border-defaults` holds exactly one thing: the neutral `border-color` every
+   element starts with (and its Obsidian twin). It is its own slot, between
+   `blintz` and `utilities`, and both neighbours are load-bearing (DOR-1024):
+
+   - BELOW `utilities`, so `border-destructive`, `border-transparent` and every
+     other `border-<colour>` class can actually change a border. This rule used
+     to be UNLAYERED, and an unlayered rule outranks every `@layer` — including
+     Tailwind's utilities — so ~290 border-colour classes in this codebase were
+     silently dead, and four shipped surfaces rendered wrong because of it.
+   - ABOVE `blintz`, because blintz.css bundles its own Tailwind preflight
+     (`*,:after,:before{border:0 solid}`), which resets border-colour to
+     `currentcolor`. That preflight is NOT scoped to the editor, so the moment
+     the canvas chunk loads it would repaint every border in the app. Sitting
+     above it keeps the app's own default winning there, which is what the
+     unlayered rule did by accident.
+
+   Being above `blintz` also inverts, for this one property, the thing the
+   `blintz` slot exists for — so the rule excludes `.milkdown` rather than
+   winning inside it. blintz declares a border colour on exactly five
+   selectors, and the three that matter are all under the editor root:
+   `.milkdown-theme-nord blockquote` (nord10) and `.milkdown-theme-nord.prose
+   tr` (gray-200/600). Without the exclusion all three flatten to the app's
+   neutral line — measured. The exclusion is the same shape the Obsidian
+   carve-out already uses, and it stays inside `:where()`, so the rule keeps
+   its zero specificity. */
+@layer theme, base, components, blintz, border-defaults, utilities;
 @import 'tailwindcss';
 /* Animation utilities for Radix/shadcn surfaces (data-[state]:animate-in,
    slide-in-from-*, fade-*, zoom-*). Defined via Tailwind v4 `@utility`, so they
@@ -692,17 +718,20 @@
    so a bare `border` class would paint the text colour. This restores the
    neutral default the design system expects.
 
-   It MUST stay inside `@layer base`. Unlayered, it outranked every
-   `border-<colour>` utility in the app — a layered declaration always loses to
-   an unlayered one, whatever the specificity — so `border-primary`,
-   `border-destructive` and even `border-transparent` all rendered as the same
-   neutral line on 69 files (DOR-1750). Inside `base` it sits below Tailwind's
-   `utilities` layer, so it is only the fallback it was meant to be.
+   It MUST stay inside a layer, and inside THIS one — see the `border-defaults`
+   note on the `@layer` pin at the top of this file. Short form: below
+   `utilities` so a `border-<colour>` class can beat it (unlayered, it beat all
+   of them — DOR-1750), and above `blintz` so the canvas editor's bundled
+   preflight cannot reset it back to `currentColor` (DOR-1024).
 
-   The `:where()` exclusion keeps Obsidian's own chrome untouched: inside the
-   plugin's `.copilot-view-content`, the host app owns border colour. */
-@layer base {
-  *:where(:not(.copilot-view-content *)) {
+   Two exclusions, both about somebody else owning border colour inside their
+   own container. `.copilot-view-content` is Obsidian's: inside the plugin, the
+   host app's theme owns it (see the twin rule further down). `.milkdown` is the
+   canvas editor's: this layer sits above `blintz`, so without the exclusion the
+   app's neutral line would flatten the editor's own blockquote and table
+   borders — the exact thing the `blintz` slot exists to prevent. */
+@layer border-defaults {
+  *:where(:not(.copilot-view-content *):not(.milkdown *)) {
     border-color: hsl(var(--border));
   }
 }
@@ -762,9 +791,18 @@ body {
   }
 }
 
-/* When embedded in Obsidian, scope base styles to the container */
-.copilot-view-content * {
-  border-color: var(--color-border);
+/* When embedded in Obsidian, the neutral border comes from the vault's theme
+   instead. Same layer as the `*` default above, and AFTER it in document order,
+   so this carve-out keeps winning inside the plugin's container — it also
+   out-specifies it, so neither half of that depends on the other.
+
+   It carries the `.milkdown` exclusion for the same reason the rule above does,
+   and it needs its own copy: this selector out-specifies that one, so the
+   exclusion up there does not reach the elements this one matches. */
+@layer border-defaults {
+  .copilot-view-content *:where(:not(.milkdown *)) {
+    border-color: var(--color-border);
+  }
 }
 
 @keyframes typing-dot {

@@ -73,6 +73,10 @@ describe('animation utilities wiring (index.css)', () => {
   it('leaves the blintz cascade-layer pin intact', () => {
     // tw-animate-css must not disturb the layer order that keeps blintz below
     // utilities (PR #311) — its utilities ride the `utilities` layer above blintz.
-    expect(indexCss).toMatch(/@layer\s+theme,\s*base,\s*components,\s*blintz,\s*utilities;/);
+    // `border-defaults` sits between the two (DOR-1024); the order of everything
+    // else, and blintz's position under `utilities`, is what this pins.
+    expect(indexCss).toMatch(
+      /@layer\s+theme,\s*base,\s*components,\s*blintz,\s*border-defaults,\s*utilities;/
+    );
   });
 });
