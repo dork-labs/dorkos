@@ -19,10 +19,22 @@ import { PanelErrorBoundary } from './PanelErrorBoundary';
 import { RightPanelHeader, RIGHT_PANEL_PANEL_ID, rightPanelTabDomId } from './RightPanelHeader';
 import { useRightPanelSizing } from '../model/use-right-panel-sizing';
 
-/** CSS transition for the Panel's flex-grow during programmatic open/close. */
-const PANEL_TRANSITION = 'flex-grow 300ms ease-in-out';
-/** CSS transition for the resize handle indicator during open/close. */
-const HANDLE_INDICATOR_TRANSITION = 'opacity 300ms ease-in-out';
+/** The design system's entrance curve — fast start, gentle stop. */
+const EASE_OUT = 'cubic-bezier(0, 0, 0.2, 1)';
+/** The design system's exit curve — gentle start, fast finish. */
+const EASE_IN = 'cubic-bezier(0.4, 0, 1, 1)';
+
+/**
+ * The CSS transition for one animated property, curved by direction.
+ *
+ * The panel arrives on `ease-out` and leaves on `ease-in`, per the easing
+ * table. Both used to be a single `ease-in-out`, which starts slowly in either
+ * direction — so the widest moving surface in the app looked like it hesitated
+ * before it moved.
+ */
+function panelTransition(property: 'flex-grow' | 'opacity', opening: boolean): string {
+  return `${property} 300ms ${opening ? EASE_OUT : EASE_IN}`;
+}
 
 /**
  * Right-panel tabs measured at 390×844 with content short enough that a
@@ -293,7 +305,7 @@ export function RightPanelContainer({ pathname, variant = 'resizable' }: RightPa
           style={{
             opacity: shouldShow ? 1 : 0,
             pointerEvents: shouldShow ? 'auto' : 'none',
-            ...(animate && { transition: HANDLE_INDICATOR_TRANSITION }),
+            ...(animate && { transition: panelTransition('opacity', shouldShow) }),
           }}
         >
           <div className="group-hover:bg-ring/50 h-full w-px transition-colors duration-500" />
@@ -318,7 +330,7 @@ export function RightPanelContainer({ pathname, variant = 'resizable' }: RightPa
         onExpand={() => {
           if (!rightPanelOpen) setRightPanelOpen(true);
         }}
-        style={animate ? { transition: PANEL_TRANSITION } : undefined}
+        style={animate ? { transition: panelTransition('flex-grow', shouldShow) } : undefined}
       >
         <div className="bg-sidebar text-sidebar-foreground flex h-full flex-col overflow-hidden border-l">
           {panelInner}
