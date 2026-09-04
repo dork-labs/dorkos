@@ -2,10 +2,12 @@
  * Marketplace package uninstall flow.
  *
  * Removes a previously installed package by name. Plugin/skill-pack/adapter
- * packages live under `${dorkHome}/plugins/<name>/`, agent packages under
- * `${dorkHome}/agents/<name>/`, Shapes under `${dorkHome}/shapes/<name>/`, and
- * project-local plugins under `${projectPath}/.dork/plugins/<name>/` — the same
- * per-type roots the install flows write to ({@link INSTALL_ROOTS_WITH_TYPE}).
+ * packages live under `plugins/<name>/`, agent packages under `agents/<name>/`,
+ * and Shapes under `shapes/<name>/` — the same per-type roots the install flows
+ * write to ({@link installRootsUnder}), under either scope: the global
+ * `dorkHome`, or a project's own `.dork/`. Probing the project scope for
+ * `plugins/` alone is what left every project-scoped agent installable but not
+ * removable (DOR-994).
  * The flow is rollback-safe: the package is moved to a temporary staging
  * directory first, side-effects (extension disable, adapter removal, active-
  * Shape deactivation) run against the live (now-empty) location, and only after
@@ -33,7 +35,7 @@ import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
 import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace';
 import type { MarketplacePackageManifest, PackageType } from '@dorkos/marketplace';
-import { INSTALL_ROOTS_WITH_TYPE } from '../lib/install-roots.js';
+import { installRootsUnder, projectScopeRoot } from '../lib/install-roots.js';
 import { assertPackageName } from '../lib/package-paths.js';
 import { readInstallMetadata } from '../installed-metadata.js';
 import { withInstallTargetLock } from '../transaction.js';
@@ -247,8 +249,9 @@ export class UninstallFlow {
    * and return the first match. Reads `dork-package.json` to determine the
    * package type when one is present, otherwise infers it from the layout.
    *
-   * First-match wins across the probe order (project-local, then the global
-   * roots `plugins` → `agents` → `shapes`): {@link UninstallRequest} carries no
+   * First-match wins across the probe order (the project scope's roots
+   * `plugins` → `agents` → `shapes`, then the global scope's):
+   * {@link UninstallRequest} carries no
    * package type, so when two different-type packages share a name (e.g. a
    * plugin *and* a Shape both called "linear-ops"), an uninstall by name always
    * resolves to the earlier root and the later one stays untouched. That
@@ -273,30 +276,33 @@ export class UninstallFlow {
   }
 
   /**
-   * Build the ordered list of paths to probe for an installed package.
+   * Build the ordered list of paths to probe for an installed package: every
+   * install root (`plugins`, `agents`, `shapes`) under the request's project
+   * scope when it has one, then every install root under the global
+   * `dorkHome`.
+   *
+   * Both halves come from {@link installRootsUnder}, so a package type can
+   * never install somewhere the probe does not look — the drift that first hid
+   * Shapes globally, and then hid project-scoped agents, which the project half
+   * used to miss by hardcoding `plugins` (DOR-994). A project's roots stay
+   * ahead of the global ones because a project install shadows a global package
+   * of the same name for that project, matching the installed scanner's merged
+   * view and the update flow's walk.
    *
    * @internal
    */
   private candidatePaths(
     req: UninstallRequest
   ): { installRoot: string; inferredType: PackageType }[] {
-    const candidates: { installRoot: string; inferredType: PackageType }[] = [];
-    if (req.projectPath) {
-      candidates.push({
-        installRoot: path.join(req.projectPath, '.dork', 'plugins', req.name),
-        inferredType: 'plugin',
-      });
-    }
-    // Global roots, in install-root order (`plugins`, `agents`, `shapes`) —
-    // derived from the shared mapping so a package type can never install
-    // somewhere the uninstall probe does not look (the drift that hid Shapes).
-    for (const { dir, representativeType } of INSTALL_ROOTS_WITH_TYPE) {
-      candidates.push({
-        installRoot: path.join(this.deps.dorkHome, dir, req.name),
+    const scopeRoots = req.projectPath
+      ? [projectScopeRoot(req.projectPath), this.deps.dorkHome]
+      : [this.deps.dorkHome];
+    return scopeRoots.flatMap((scopeRoot) =>
+      installRootsUnder(scopeRoot).map(({ dir, representativeType }) => ({
+        installRoot: path.join(dir, req.name),
         inferredType: representativeType,
-      });
-    }
-    return candidates;
+      }))
+    );
   }
 
   /**
