@@ -9,7 +9,7 @@ import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
 import type { AgentVisualSource } from '@/layers/entities/agent';
-import { InboxRow } from '../ui/InboxRow';
+import { InboxRow, INBOX_STAGGER_LIMIT, staggerItem, staggerVariantsFor } from '../ui/InboxRow';
 
 /** Build a notification, overriding only what a test cares about. */
 function build(overrides: Partial<NotificationDTO> = {}): NotificationDTO {
@@ -129,5 +129,21 @@ describe('InboxRow non-interactive rendering', () => {
     const row = document.querySelector('[data-slot="inbox-row"]');
     expect(row).not.toBeNull();
     expect(row?.tagName).toBe('DIV');
+  });
+});
+
+describe('staggerVariantsFor', () => {
+  it('gives the entrance to the first eight rows', () => {
+    expect(staggerVariantsFor(0)).toBe(staggerItem);
+    expect(staggerVariantsFor(INBOX_STAGGER_LIMIT - 1)).toBe(staggerItem);
+  });
+
+  it('drops the entrance past the cap, so a long Inbox does not read as latency', () => {
+    expect(staggerVariantsFor(INBOX_STAGGER_LIMIT)).toBeUndefined();
+    expect(staggerVariantsFor(59)).toBeUndefined();
+  });
+
+  it('keeps the entrance where there is no list position — a group member, a showcase', () => {
+    expect(staggerVariantsFor(undefined)).toBe(staggerItem);
   });
 });

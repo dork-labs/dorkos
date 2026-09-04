@@ -12,7 +12,7 @@ import { cn, formatCompactAge } from '@/layers/shared/lib';
 import { AgentAvatar, resolveAgentVisual, type AgentVisualSource } from '@/layers/entities/agent';
 import { NOTIFICATION_ICONS, notificationBurstVerb } from '@/layers/entities/notifications';
 import type { InboxGroupItem } from '../lib/group-activity-rows';
-import { GLYPH_SLOT_CLASS, InboxRow, staggerItem } from './InboxRow';
+import { GLYPH_SLOT_CLASS, InboxRow, staggerVariantsFor } from './InboxRow';
 
 export interface InboxGroupRowProps {
   /** The run this header summarises. */
@@ -50,6 +50,13 @@ export interface InboxGroupRowProps {
    * the header itself: opening the group is a look, not a read.
    */
   onOpenNotification: (notification: NotificationDTO) => void;
+  /**
+   * Where this row sits in its list, so the entrance can stop staggering.
+   *
+   * Same contract as `InboxRow`'s own `index` — omit it and the row keeps the
+   * entrance.
+   */
+  index?: number;
 }
 
 /**
@@ -95,6 +102,7 @@ export function InboxGroupRow({
   expanded,
   onToggleExpanded,
   onOpenNotification,
+  index,
 }: InboxGroupRowProps) {
   const membersId = useId();
   const Icon = NOTIFICATION_ICONS[group.kind];
@@ -107,7 +115,7 @@ export function InboxGroupRow({
   const Chevron = expanded ? ChevronDown : ChevronRight;
 
   return (
-    <motion.div variants={staggerItem} className="min-w-0">
+    <motion.div variants={staggerVariantsFor(index)} className="min-w-0">
       <button
         type="button"
         data-slot="inbox-row"
