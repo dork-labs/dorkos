@@ -208,11 +208,12 @@ import {
 } from './notices/notice-log.js';
 import { buildCascadeNotice, withLateAnswerNote, type BusyContext } from './notices/notice-copy.js';
 import { RoomError, type RoomAgentLookup } from './room-errors.js';
-import type {
-  LateRoomReply,
-  RoomReplyMode,
-  RoomTurnReply,
-  RoomTurnRunner,
+import {
+  RoomTurnRuntimeGoneError,
+  type LateRoomReply,
+  type RoomReplyMode,
+  type RoomTurnReply,
+  type RoomTurnRunner,
 } from './room-turn-port.js';
 import type { RoomStore } from './room-store.js';
 import type { RoomLimitsResolver } from './limits/room-limits.js';
@@ -2325,12 +2326,29 @@ export class RoomTriggerDispatcher {
         authorId: target.authorId,
         error: err instanceof Error ? err.message : String(err),
       });
+      // **One throw out of `run` is not a failure at all, and the room has to
+      // say so differently** (DOR-1720). A session bound to a runtime this
+      // server is not running refuses every turn by design, and as a
+      // `turn_failed` that read as a broken agent, pointed at a session no turn
+      // had ever opened, and named neither the program nor a way back. The
+      // runner's refusal carries the runtime, which is exactly what the
+      // `runtime_gone` line is written out of.
+      const runtimeGone = err instanceof RoomTurnRuntimeGoneError ? err.runtime : null;
       // A turn that threw because somebody stopped it did what it was told. The
       // `halted` notice is already on the log and is the whole story; an
       // apology under it would be the room reporting the person's own control
       // action back to them as a fault.
       if (this.wasHalted(target.dispatchId)) outcome = 'halted';
-      else this.notices.reportSilence(room, entry, target, 'failed', target.dispatchId);
+      else if (runtimeGone !== null) {
+        // Named on the claim as well as in the room: `DISPATCH_OUTCOMES` files
+        // this as `refused` rather than `failed`, so an operator counting
+        // crashes in the debug buffer does not find a missing runtime among
+        // them.
+        outcome = 'runtime-gone';
+        this.notices.reportSilence(room, entry, target, 'runtime-gone', target.dispatchId, {
+          runtime: runtimeGone,
+        });
+      } else this.notices.reportSilence(room, entry, target, 'failed', target.dispatchId);
     } finally {
       // `runner.run()` resolving is the end of the WAIT, which is only the end
       // of the TURN when the turn beat the deadline. A late turn is still

@@ -49,6 +49,10 @@ import { ROOMS } from '../../config/constants.js';
 import { projectRoomAttachments } from './attachments/attachment-projection.js';
 import { getRoomAttachmentStore, tryGetRoomRepoService } from './index.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
+// The one VALUE this module takes from the port, so it comes straight from the
+// port rather than through `room-trigger.js`'s type re-export below: a value
+// import there would load the dispatcher to raise a refusal it hands back to it.
+import { RoomTurnRuntimeGoneError } from './room-turn-port.js';
 import { resolveTurnRuntimeType } from '../runtimes/shared/resolve-agent-runtime-type.js';
 import { configManager } from '../core/config-manager.js';
 import {
@@ -333,19 +337,35 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // registry's own docs warn about exactly this ghost-row shape.
       //
       // **A session bound to a runtime this build does not have refuses, every
-      // turn, and the room says the turn failed.** `get` throws first, so the
-      // guard below is unreachable against the real registry and stands only for
-      // the stub in the tests. Refusing is the right answer — the alternative is
-      // resuming somebody's conversation on a program that holds none of it —
-      // but it is not self-healing, because nothing clears a `(room, agent)`
-      // binding except removing that agent from the room. The recovery is
-      // therefore one of two operator actions: re-enable the runtime the
-      // conversation started on, or remove and re-add the agent, which drops the
-      // binding and lets its next turn start a fresh session on whatever the
-      // manifest now says. That second one is also how a deliberate runtime
-      // change is applied to a room that is already running.
+      // turn.** Refusing is the right answer — the alternative is resuming
+      // somebody's conversation on a program that holds none of it — and it is
+      // not self-healing, because nothing clears a `(room, agent)` binding
+      // except removing that agent from the room. The recovery is one of two
+      // operator actions: re-enable the runtime the conversation started on, or
+      // remove and re-add the agent, which drops the binding and lets its next
+      // turn start a fresh session on whatever the manifest now says. That
+      // second one is also how a deliberate runtime change is applied to a room
+      // that is already running.
+      //
+      // **The refusal is NAMED, and that is DOR-1720.** Asking `get` first threw
+      // a bare `Error` that `room-trigger.ts` could only read as "the turn
+      // failed", so a room in this state apologised once per message forever,
+      // pointed the reader at a session no turn had ever opened, and named
+      // neither the program nor either recovery — a dead room with no way out of
+      // it from inside. Asked as `has` and raised as
+      // {@link RoomTurnRuntimeGoneError}, it reaches the dispatcher carrying the
+      // runtime, which is the fact the room's line is written out of.
+      //
+      // `request.sessionId`, which is what the binding was read off. It is
+      // non-null whenever this branch is reachable — an unbound session resolves
+      // through the agent's manifest, and `resolveAgentRuntimeType` never
+      // returns a type the registry does not have — so the null carries through
+      // to the message rather than being papered over with the id this call
+      // just invented, which nothing is bound to.
+      if (!runtimeRegistry.has(runtimeType)) {
+        throw new RoomTurnRuntimeGoneError(runtimeType, request.sessionId);
+      }
       const runtime = runtimeRegistry.get(runtimeType);
-      if (!runtime) throw new Error(`Runtime '${runtimeType}' is not registered`);
 
       // **How this turn's words reach the room, decided ONCE and carried.** The
       // runner is the only thing that holds both halves of the question — the
@@ -792,22 +812,26 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // the turn starts, so a halt arriving early would otherwise find nothing
       // to stop.
       //
-      // A session bound to a runtime this build does not have throws here rather
-      // than answering, the same refusal `run` gives it and with the same two
-      // recoveries (re-enable the runtime, or remove and re-add the agent) — see
-      // the note above the identical `get` in `run`. Nothing was running to stop
-      // in that state anyway, since no turn could have started.
+      // A session bound to a runtime this build does not have gets the same
+      // refusal `run` gives it, with the same two recoveries (re-enable the
+      // runtime, or remove and re-add the agent) — see the note above `run`'s
+      // registration check. Nothing was running to stop in that state anyway,
+      // since no turn could have started.
       const runtimeType = await resolveTurnRuntimeType({ sessionId, agentPath });
-      const runtime = runtimeRegistry.get(runtimeType);
       // No runtime is no stop: nothing was reached, and saying so is the whole
       // point of answering at all (DOR-1425). `failed` rather than
       // `not-running` — a runtime this build does not have is a delivery
-      // problem, not evidence that the turn was over. Unreachable against the
-      // real registry, whose `get` throws; the tests' stub is what returns
-      // nothing.
-      if (!runtime) {
+      // problem, not evidence that the turn was over. Asked as `has` rather
+      // than inferred from a falsy `get`, which throws against the real
+      // registry and left this branch reachable only from the tests' stub: a
+      // halt pressed in a room whose runtime went away used to reject where it
+      // is documented never to (DOR-1720). `run`'s refusal is the one that
+      // writes the room's line; a stop is a control action and answers its
+      // presser through the receipt.
+      if (!runtimeRegistry.has(runtimeType)) {
         return { outcome: 'failed', reason: 'delivery-failed', runtime: runtimeType };
       }
+      const runtime = runtimeRegistry.get(runtimeType);
       const receipt = await runtime.interruptQuery(sessionId);
       logger.info('[rooms] interrupted a turn', { sessionId, ...receipt });
       if (receipt.outcome === 'not-running') {

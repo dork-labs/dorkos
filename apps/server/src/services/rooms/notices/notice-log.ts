@@ -43,6 +43,7 @@ import {
   buildAgentLeftNotice,
   buildAgentHaltedNotice,
   buildAgentUnavailableNotice,
+  buildRuntimeGoneNotice,
   buildBudgetNotice,
   buildBusyNotice,
   buildHaltedNotice,
@@ -88,8 +89,14 @@ export interface CascadeStamp {
  *   target, so no turn was even attempted. Never produced by a runner, for the
  *   same reason `gone` is not: the dispatcher decides this in `claimTargets`,
  *   before anything is claimed (DOR-1206).
+ * - `runtime-gone` — the `(room, agent)` session is bound to a runtime this
+ *   server is not running, so the turn was refused before it started (DOR-1720).
+ *   The one reason that needs {@link SilenceContext.runtime}: its words name the
+ *   program, and a line that said only "something isn't running" would leave the
+ *   reader exactly where the `failed` line it replaces left them.
  */
-export type RoomTurnUnanswered = 'busy' | 'failed' | 'gone' | 'left' | 'unavailable';
+export type RoomTurnUnanswered =
+  'busy' | 'failed' | 'gone' | 'left' | 'unavailable' | 'runtime-gone';
 
 /** How a notice reaches the room's durable log. */
 export interface RoomNoticeWriter {
@@ -121,6 +128,16 @@ export interface SilenceContext {
    * every other reason, which has nothing to describe.
    */
   busyWith?: BusyContext;
+  /**
+   * The runtime type the refused session is bound to, for a `runtime-gone`
+   * reason. Ignored for every other reason.
+   *
+   * Carried rather than looked up here because the caller already holds it: the
+   * refusal reaches the dispatcher as a `RoomTurnRuntimeGoneError` naming the
+   * runtime, and re-reading `session_metadata` from the notice log to learn a
+   * fact that came in on the error would be two answers to one question.
+   */
+  runtime?: string;
   /**
    * This message named this agent, even though no stored mention says so.
    *
@@ -381,13 +398,17 @@ export class RoomNoticeLog {
         detail: {
           cascadeRoot: entry.cascadeRoot,
           ...(reason === 'busy' ? { busyWith } : {}),
+          // Named in the log as well as in the room, so `group_by(.reason)` over
+          // a `runtime_gone` run can say WHICH program an install is missing
+          // without reading the prose back out of the notice.
+          ...(context.runtime !== undefined ? { runtime: context.runtime } : {}),
         },
       });
     if (damped) {
       record('damped');
       return;
     }
-    const body = SILENCE_BODIES[reason](agent, busyWith);
+    const body = SILENCE_BODIES[reason](agent, { ...context, busyWith });
     // Reported AFTER the write, so `visibility` says what actually happened
     // rather than what was intended: a notice the room could not write (an
     // archive between the post and the notice) leaves the person as uninformed
@@ -969,6 +990,7 @@ const SILENCE_REASONS = Object.keys({
   gone: true,
   left: true,
   unavailable: true,
+  'runtime-gone': true,
 } satisfies Record<RoomTurnUnanswered, true>) as RoomTurnUnanswered[];
 
 /**
@@ -979,13 +1001,15 @@ const SILENCE_REASONS = Object.keys({
  */
 const SILENCE_BODIES: Record<
   RoomTurnUnanswered,
-  (agent: NoticeSubject, busyWith: BusyContext) => RoomEntryBody
+  (agent: NoticeSubject, context: SilenceContext & { busyWith: BusyContext }) => RoomEntryBody
 > = {
-  busy: (agent, busyWith) => buildBusyNotice(agent.displayName, agent.authorId, busyWith),
+  busy: (agent, { busyWith }) => buildBusyNotice(agent.displayName, agent.authorId, busyWith),
   failed: (agent) => buildTurnFailedNotice(agent.displayName, agent.authorId),
   gone: (agent) => buildAgentGoneNotice(agent.displayName, agent.authorId),
   left: (agent) => buildAgentLeftNotice(agent.displayName, agent.authorId),
   unavailable: (agent) => buildAgentUnavailableNotice(agent.displayName, agent.authorId),
+  'runtime-gone': (agent, { runtime }) =>
+    buildRuntimeGoneNotice(agent.displayName, agent.authorId, runtime),
 };
 
 /**
@@ -999,6 +1023,7 @@ const REFUSAL_FOR_SILENCE: Record<RoomTurnUnanswered, RefusalReason> = {
   gone: 'agent_gone',
   left: 'agent_left',
   unavailable: 'session_bind_failed',
+  'runtime-gone': 'runtime_gone',
 };
 
 /**

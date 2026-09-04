@@ -1272,6 +1272,18 @@ describe('Sessions Routes', () => {
       expect(res.status).toBe(503);
       expect(res.body.code).toBe('RUNTIME_NOT_AVAILABLE');
       expect(res.body.runtime).toBe('codex');
+      // **The same state, in the same words a room's `runtime_gone` notice uses**
+      // (DOR-1720). The two surfaces reach this from opposite ends and used to
+      // describe it differently — this one named a runtime slug and stopped
+      // there, the room apologised for a broken agent — so a person meeting it
+      // twice met two different problems. The program is named the way it is
+      // named everywhere else, and the sentence says what to do about it.
+      expect(res.body.error).toContain('Codex');
+      expect(res.body.error).not.toContain('codex');
+      expect(res.body.error).toContain('Turn Codex back on');
+      // The raw type still rides the body for a client routing on it, which is
+      // what keeps the prose free to be prose.
+      expect(res.body.error).not.toMatch(/Error:|undefined/);
     });
 
     it('maps an unexpected rejection on an interaction route to 500 INTERNAL_ERROR', async () => {

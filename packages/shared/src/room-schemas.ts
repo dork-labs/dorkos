@@ -108,6 +108,15 @@ export type RoomEntryKind = z.infer<typeof RoomEntryKindSchema>;
  *   reasoning that gives `agent_gone` its own code, and the same shape: damped
  *   per `(room, agent, reason)` rather than treated as one more distinct error
  *   (DOR-1206).
+ * - `runtime_gone` — the agent answers in this room through a program (Claude,
+ *   Codex, OpenCode) this server is not running any more, and the conversation
+ *   is pinned to it: a room keeps one session per `(room, agent)` and a session
+ *   never changes hands, so every turn is refused rather than resumed on a
+ *   program holding none of that history (ADR-0255, DOR-764). Its own code
+ *   rather than `turn_failed` for the reason `agent_gone` has one — no turn ran,
+ *   there is no session to go and read, and nothing changes until a person acts
+ *   — and the line names WHICH program and both recoveries, because until
+ *   DOR-1720 that was folklore rather than something the room ever said.
  * - `agent_left` — the message was gathered and a turn was owed for it, and by
  *   the time that batch came round the member was no longer in the room. Its own
  *   code rather than `agent_gone` because the agent is fine — it is still
@@ -172,6 +181,7 @@ export const RoomNoticeCodeSchema = z
     'agent_gone',
     'agent_unavailable',
     'agent_left',
+    'runtime_gone',
     'agent_declined',
     'awaiting_approval',
     'halted',

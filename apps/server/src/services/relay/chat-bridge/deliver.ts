@@ -125,6 +125,14 @@ const DELIVERABLE_NOTICES: ReadonlySet<RoomNoticeCode> = new Set<RoomNoticeCode>
   'halted',
   'awaiting_approval',
   'agent_busy',
+  // Deliverable because it already WAS: this state used to reach the room as
+  // `turn_failed`, so leaving `runtime_gone` off this set would answer a bridged
+  // chat with silence where it used to get a sentence — a regression dressed as
+  // a new code (DOR-1720). It forwards verbatim, unlike `turn_failed`, because
+  // its line carries no cockpit pointer to strip: both recoveries it names are
+  // things done to the install, and the DM a notice is delivered to by default
+  // is the operator's own (spec §6.2).
+  'runtime_gone',
 ]);
 
 /**

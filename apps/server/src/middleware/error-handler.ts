@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import { logger } from '../lib/logger.js';
 import { RuntimeNotRegisteredError } from '../services/core/runtime-registry.js';
 
@@ -25,9 +26,19 @@ export function errorHandler(err: Error, _req: Request, res: Response, next: Nex
   // it happens — the built-in adapter refuses the delivery by name and reports
   // it on the adapter status (DOR-1614) — because it belongs to a bus message,
   // not to an HTTP request there is a response to write.
+  //
+  // **The words say what a room's `runtime_gone` notice says** (DOR-1720). This
+  // is the same state reached from the other surface — a conversation pinned to
+  // a program that is not running — and the two used to describe it in different
+  // languages: one named a runtime slug and stopped there, the other apologised
+  // for a broken agent. Naming the program the way a person sees it elsewhere
+  // (`runtimeDisplayName`) and stating the recovery is what makes them one
+  // answer. `runtime` still rides the body as the raw type, for a client that
+  // wants to route on it rather than print it.
   if (err instanceof RuntimeNotRegisteredError) {
+    const program = runtimeDisplayName(err.runtime);
     res.status(503).json({
-      error: `Session's runtime is not available on this server (runtime: ${err.runtime})`,
+      error: `This session runs on ${program}, which isn't running on this machine. Turn ${program} back on to pick it up, or start a new session to use what's running now.`,
       code: 'RUNTIME_NOT_AVAILABLE',
       runtime: err.runtime,
     });

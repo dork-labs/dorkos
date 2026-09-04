@@ -75,16 +75,6 @@ let internalSessionId: (sessionId: string) => string | undefined = () => undefin
 let registeredRuntimes: string[] = ['claude-code', 'codex', 'opencode', 'test-mode'];
 
 /**
- * Whether the registry can hand back a runtime at all.
- *
- * The real `runtimeRegistry.get` throws for an unregistered type while the
- * runner guards with `if (!runtime)`, so "no runtime" is a state only this seam
- * can model — and it has an answer that matters: a stop nothing could even be
- * aimed at is not a stop (DOR-1425).
- */
-let runtimeIsRegistered = true;
-
-/**
  * Which directories the runtime was asked about its room tools, in order.
  *
  * Recorded rather than stubbed to a constant, because the CLAIM is about which
@@ -136,26 +126,32 @@ vi.mock('../../core/runtime-registry.js', () => ({
           ? { type: sessionOwners.get(sessionId), bound: true }
           : { type: 'claude-code', bound: false }
       ),
+    // Faithful to the real `get`, which THROWS for a type it does not hold
+    // rather than answering `undefined` (DOR-1720). The stub used to return
+    // nothing there, and the runner's `if (!runtime)` guards read as live code
+    // while being reachable from this file alone — so "the runtime is gone" was
+    // only ever exercised against a registry that does not exist. Both callers
+    // ask `has` first now, and `registeredRuntimes` is the single answer to
+    // which runtimes this server started.
     get: (type: string) => {
       runtimesAskedFor.push(type);
-      return runtimeIsRegistered
-        ? {
-            getCapabilities: () => getCapabilities(),
-            acquireLock: () => true,
-            releaseLock: () => undefined,
-            sendMessage: () => undefined,
-            interruptQuery: (sessionId: string) => interruptQuery(sessionId),
-            getInternalSessionId: (sessionId: string) => internalSessionId(sessionId),
-            ...(roomToolDirectories === null
-              ? {}
-              : {
-                  carriesRoomTools: ({ cwd }: { cwd: string }) => {
-                    roomToolsAskedFor.push(cwd);
-                    return Promise.resolve((roomToolDirectories ?? []).includes(cwd));
-                  },
-                }),
-          }
-        : undefined;
+      if (!registeredRuntimes.includes(type)) throw new Error(`Runtime '${type}' not registered`);
+      return {
+        getCapabilities: () => getCapabilities(),
+        acquireLock: () => true,
+        releaseLock: () => undefined,
+        sendMessage: () => undefined,
+        interruptQuery: (sessionId: string) => interruptQuery(sessionId),
+        getInternalSessionId: (sessionId: string) => internalSessionId(sessionId),
+        ...(roomToolDirectories === null
+          ? {}
+          : {
+              carriesRoomTools: ({ cwd }: { cwd: string }) => {
+                roomToolsAskedFor.push(cwd);
+                return Promise.resolve((roomToolDirectories ?? []).includes(cwd));
+              },
+            }),
+      };
     },
     has: (type: string) => registeredRuntimes.includes(type),
     getDefaultType: () => 'claude-code',
@@ -402,7 +398,6 @@ describe('createSessionRoomTurnRunner', () => {
     persistSessionRuntime.mockClear();
     interruptQuery.mockClear();
     interruptQuery.mockImplementation(() => Promise.resolve(mockInterruptReceipt('not-running')));
-    runtimeIsRegistered = true;
     internalSessionId = () => undefined;
     turnBehaviour = saysAndCloses('green');
     roomsConfig = undefined;
@@ -465,6 +460,44 @@ describe('createSessionRoomTurnRunner', () => {
       await createSessionRoomTurnRunner().run(request({ sessionId: 'room-placeholder' }));
 
       expect(runtimesAskedFor).toEqual(['codex']);
+    });
+
+    it('refuses a turn bound to a runtime this server did not start, by name', async () => {
+      // **DOR-1720.** The refusal itself is right and stays: resuming this
+      // conversation on a program holding none of it is the worse answer. What
+      // was wrong is that it left here as a bare `Error`, which the dispatcher
+      // can only read as "the turn failed" — so the room apologised for a broken
+      // agent, pointed at a session no turn had ever opened, and named neither
+      // the missing program nor either way out of it.
+      //
+      // Named, it carries the one fact the room's line is built out of. Nothing
+      // is written to `session_metadata` on the way past, either: a runtime that
+      // refuses every turn would otherwise leave one orphan row per message.
+      sessionOwners.set('room-session-on-codex', 'codex');
+      registeredRuntimes = ['claude-code'];
+
+      await expect(
+        createSessionRoomTurnRunner().run(request({ sessionId: 'room-session-on-codex' }))
+      ).rejects.toMatchObject({ name: 'RoomTurnRuntimeGoneError', runtime: 'codex' });
+
+      expect(persistSessionRuntime).not.toHaveBeenCalled();
+    });
+
+    it('never redirects that turn onto a runtime this server does have', async () => {
+      // The failure mode the refusal exists to prevent, asserted from the other
+      // side: falling back to the default would answer on claude-code, which
+      // holds none of this codex session's history, and would do it silently.
+      // `runtimesAskedFor` is empty because nothing was ever fetched — `has`
+      // answered first.
+      sessionOwners.set('room-session-on-codex', 'codex');
+      agentManifest = { runtime: 'claude-code' };
+      registeredRuntimes = ['claude-code'];
+
+      await expect(
+        createSessionRoomTurnRunner().run(request({ sessionId: 'room-session-on-codex' }))
+      ).rejects.toThrow(/codex/);
+
+      expect(runtimesAskedFor).toEqual([]);
     });
 
     it('aims a halt at the runtime the turn is actually running on', async () => {
@@ -1553,20 +1586,28 @@ describe('createSessionRoomTurnRunner', () => {
 
     it('reports a stop it could not even find a runtime for', async () => {
       // The narrowest failure there is, and the one most easily reported as a
-      // success: an agent whose runtime this process does not have registered —
-      // the packaged desktop app ships only one SDK — has nothing behind it at
-      // all. Answering `acked` there would tell an operator a turn was stopped by
-      // a call that never happened, which is the exact confusion DOR-1425 exists
+      // success: a session bound to a runtime this process did not start — the
+      // packaged desktop app ships only one SDK — has nothing behind it at all.
+      // Answering `acked` there would tell an operator a turn was stopped by a
+      // call that never happened, which is the exact confusion DOR-1425 exists
       // to remove. `failed` and not `not-running`, because a missing runtime is a
       // delivery problem rather than evidence that the turn was already over.
-      runtimeIsRegistered = false;
+      //
+      // Reached through the BINDING, which is the only way a real registry ever
+      // gets asked for a type it does not hold: an unbound session is resolved
+      // off the manifest, and that resolution never names a missing runtime.
+      // Until DOR-1720 this stood on a stub whose `get` answered `undefined`,
+      // where the real one throws — so the receipt this asserts was, against
+      // production, a rejection.
+      sessionOwners.set('sess-no-runtime', 'codex');
+      registeredRuntimes = ['claude-code'];
 
       expect(
         await createSessionRoomTurnRunner().interrupt({
           sessionId: 'sess-no-runtime',
           agentPath: '/repo/ana',
         })
-      ).toEqual({ outcome: 'failed', reason: 'delivery-failed', runtime: 'claude-code' });
+      ).toEqual({ outcome: 'failed', reason: 'delivery-failed', runtime: 'codex' });
       // And nothing was reached: there was nothing to reach.
       expect(interruptQuery).not.toHaveBeenCalled();
     });
