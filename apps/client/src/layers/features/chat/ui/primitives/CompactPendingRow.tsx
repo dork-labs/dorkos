@@ -24,7 +24,7 @@ export function CompactPendingRow({
 
   return (
     <div
-      className="bg-muted/50 rounded-msg-tool text-muted-foreground shadow-msg-tool border px-3 py-1 text-sm transition-all duration-150"
+      className="bg-muted/50 rounded-msg-tool text-muted-foreground shadow-msg-tool border px-3 py-1 text-sm transition-colors duration-150"
       {...dataProps}
     >
       <div className="flex items-center gap-2">

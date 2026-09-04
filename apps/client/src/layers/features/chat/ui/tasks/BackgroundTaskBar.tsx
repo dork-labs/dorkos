@@ -244,7 +244,7 @@ function OverflowBadge({ count, overflowTasks }: OverflowBadgeProps) {
         data-testid="overflow-badge-tooltip"
         className={cn(
           'pointer-events-none absolute bottom-[calc(100%+8px)] left-1/2 hidden',
-          '-translate-x-1/2 translate-y-1 opacity-0 transition-all duration-150',
+          '-translate-x-1/2 translate-y-1 opacity-0 transition-[opacity,translate] duration-150',
           'group-hover:translate-y-0 group-hover:opacity-100',
           'border-border bg-popover z-10 rounded-lg border px-3 py-2 whitespace-nowrap',
           'text-foreground text-2xs shadow-lg md:block'

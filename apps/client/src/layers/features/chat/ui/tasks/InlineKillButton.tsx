@@ -72,7 +72,7 @@ export function InlineKillButton({ taskType, onConfirm }: InlineKillButtonProps)
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       className={cn(
-        'flex shrink-0 items-center justify-center rounded transition-all duration-150',
+        'flex shrink-0 items-center justify-center rounded transition-colors duration-150',
         'focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-1',
         confirming
           ? 'bg-destructive/20 text-destructive hover:bg-destructive/30 text-3xs px-1.5 py-0.5 font-medium'

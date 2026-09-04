@@ -25,7 +25,7 @@ function Progress({ value = 0, className, ...props }: ProgressProps) {
     >
       <div
         data-slot="progress-indicator"
-        className="bg-primary h-full rounded-full transition-all"
+        className="bg-primary h-full rounded-full transition-[width]"
         style={{ width: `${pct}%` }}
       />
     </div>

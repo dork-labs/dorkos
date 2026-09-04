@@ -24,7 +24,7 @@ export function OptionRow({
   return (
     <div
       className={cn(
-        'flex items-center gap-2 rounded px-2 py-1 transition-all duration-150',
+        'flex items-center gap-2 rounded px-2 py-1 transition-[background-color,box-shadow] duration-150',
         isSelected ? 'bg-muted' : 'hover:bg-muted/80',
         isFocused && 'ring-status-info/50 ring-1'
       )}
