@@ -170,9 +170,7 @@ async function escapedText(page: Page): Promise<{ escapes: string[]; textLeaves:
 
       const classes = el.getAttribute('class')?.slice(0, 70) ?? '';
       const text = (el.textContent ?? '').trim().slice(0, 50);
-      escapes.push(
-        `+${overshoot}px <${el.tagName.toLowerCase()} class="${classes}"> "${text}"`
-      );
+      escapes.push(`+${overshoot}px <${el.tagName.toLowerCase()} class="${classes}"> "${text}"`);
       if (escapes.length === 5) break;
     }
 
