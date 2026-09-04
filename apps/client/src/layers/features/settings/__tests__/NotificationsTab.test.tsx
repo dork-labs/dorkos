@@ -137,8 +137,54 @@ describe('NotificationsTab', () => {
     window.electronAPI = { getServerPort: () => 4242 } as unknown as ElectronAPI;
     renderTab();
 
-    expect(screen.getByText(/The desktop app shows its own notifications/)).toBeInTheDocument();
+    expect(screen.getByText('The desktop app shows its own notifications.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Turn on' })).not.toBeInTheDocument();
+  });
+
+  it('keeps every switch row to one short line, so the labels are the scan layer', () => {
+    // DOR-1757. Six rows each carrying a full sentence — some two — is the
+    // wall-of-text pattern even when every individual sentence is good. The
+    // labels say which sound is which; the line under one is there to be
+    // skipped. The turn-end row was the worst of them at 140 characters.
+    renderTab();
+
+    const rows = [
+      'Knock when an agent needs you',
+      'Chime when everything is answered',
+      'Chime every time a turn finishes',
+      'Tell me when something finishes while I am away',
+    ];
+    for (const label of rows) {
+      const field = screen.getByRole('switch', { name: label }).closest('[data-slot="field"]');
+      const description = field?.querySelector('[data-slot="field-description"]');
+      expect(description?.textContent ?? '').not.toBe('');
+      expect(description?.textContent?.length ?? 0).toBeLessThanOrEqual(60);
+    }
+  });
+
+  it('opens straight onto the controls, with no paragraph of framing above them', () => {
+    renderTab();
+
+    expect(screen.queryByText(/Agents work while you do something else/)).not.toBeInTheDocument();
+  });
+
+  it('folds the phone how-to away until somebody wants it', () => {
+    // It is a job you do once. As a permanent paragraph it was the longest
+    // thing on the tab and the last thing anyone needed twice.
+    renderTab();
+
+    expect(screen.queryByText(/Add to Home Screen/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Get these on your phone/ })).toBeInTheDocument();
+  });
+
+  it('opens the phone how-to when asked, with the steps in order', async () => {
+    const user = userEvent.setup();
+    renderTab();
+
+    await user.click(screen.getByRole('button', { name: /Get these on your phone/ }));
+
+    expect(screen.getByText(/Open DorkOS on your phone/)).toBeInTheDocument();
+    expect(screen.getByText(/Add to Home Screen/)).toBeInTheDocument();
   });
 
   it('says so when the delay is set but nothing could carry it', async () => {
