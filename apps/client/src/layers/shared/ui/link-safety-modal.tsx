@@ -2,6 +2,7 @@ import { createPortal } from 'react-dom';
 import { ExternalLink, Copy, X, ShieldAlert } from 'lucide-react';
 import type { LinkSafetyModalProps } from 'streamdown';
 import { describeRefusal, linkRefusalHere, useCopyFeedback } from '@/layers/shared/lib';
+import { Button } from './button';
 
 /**
  * Portal-based external-link confirmation modal — the app's single link-safety
@@ -70,14 +71,15 @@ export function LinkSafetyModal({ url, isOpen, onClose, onConfirm }: LinkSafetyM
         aria-label={refused ? 'Link cannot be opened' : 'Open external link confirmation'}
         tabIndex={-1}
       >
-        <button
-          className="text-muted-foreground hover:bg-muted hover:text-foreground absolute top-4 right-4 rounded-md p-1 transition-colors"
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="text-muted-foreground absolute top-4 right-4"
           onClick={onClose}
-          title="Close"
-          type="button"
+          aria-label="Close"
         >
-          <X size={16} />
-        </button>
+          <X className="size-4" />
+        </Button>
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2 text-lg font-semibold">
             {refused ? <ShieldAlert size={20} /> : <ExternalLink size={20} />}
@@ -90,33 +92,25 @@ export function LinkSafetyModal({ url, isOpen, onClose, onConfirm }: LinkSafetyM
           {/* Copy leads for a refused link, because it is the only thing left
               that works — the address reaches the clipboard, and whatever the
               reader uses for this scheme can have it. */}
-          <button
-            className={
-              refused
-                ? 'bg-foreground text-background hover:bg-foreground/90 flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors'
-                : 'hover:bg-muted flex flex-1 items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors'
-            }
+          <Button
+            variant={refused ? 'default' : 'outline'}
+            className="flex-1"
             onClick={() => {
               void copy(url);
               onClose();
             }}
-            type="button"
           >
-            <Copy size={14} />
+            <Copy className="size-3.5" />
             Copy link
-          </button>
+          </Button>
           {/* No open button at all for a refused link, rather than a disabled
               one. A greyed-out control still says "this is what you came to
               do"; the sentence above already said why nothing is on offer. */}
           {!refused && (
-            <button
-              className="bg-foreground text-background hover:bg-foreground/90 flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors"
-              onClick={onConfirm}
-              type="button"
-            >
-              <ExternalLink size={14} />
+            <Button className="flex-1" onClick={onConfirm}>
+              <ExternalLink className="size-3.5" />
               Open link
-            </button>
+            </Button>
           )}
         </div>
       </div>

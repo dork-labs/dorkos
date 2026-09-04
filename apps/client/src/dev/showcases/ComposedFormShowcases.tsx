@@ -11,10 +11,11 @@ import {
   FieldCardContent,
   SettingRow,
   PasswordInput,
+  PathInput,
   Switch,
 } from '@/layers/shared/ui';
 
-/** Composed form component showcases: TimezoneCombobox, ScanRootInput, SettingRow, PasswordInput, FieldCard, CollapsibleFieldCard. */
+/** Composed form component showcases: TimezoneCombobox, ScanRootInput, SettingRow, PasswordInput, PathInput, FieldCard, CollapsibleFieldCard. */
 export function ComposedFormShowcases() {
   return (
     <>
@@ -22,6 +23,7 @@ export function ComposedFormShowcases() {
       <ScanRootInputSection />
       <SettingRowSection />
       <PasswordInputSection />
+      <PathInputSection />
       <FieldCardSection />
       <CollapsibleFieldCardSection />
     </>
@@ -190,6 +192,47 @@ function PasswordInputSection() {
       <ShowcaseDemo>
         <div className="w-full max-w-xs">
           <PasswordInput placeholder="Enter password" disabled />
+        </div>
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PathInput
+// ---------------------------------------------------------------------------
+
+function PathInputSection() {
+  const [path, setPath] = useState('~/Keep/dork-os/dorkos');
+
+  return (
+    <PlaygroundSection
+      title="PathInput"
+      description="A folder path plus a Browse action, in one framed field. The field inside is the app's Input with its frame switched off, so the focus ring is drawn once around both halves."
+    >
+      <ShowcaseLabel>With Browse</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full max-w-md">
+          <PathInput
+            aria-label="Project folder"
+            value={path}
+            onChange={setPath}
+            onBrowse={() => {}}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Field only</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full max-w-md">
+          <PathInput aria-label="Project folder" placeholder="/Users/you/projects" />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Disabled</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full max-w-md">
+          <PathInput aria-label="Project folder" value={path} onBrowse={() => {}} disabled />
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>

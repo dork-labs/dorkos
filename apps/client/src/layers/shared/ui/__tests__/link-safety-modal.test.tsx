@@ -14,8 +14,12 @@ import { LinkSafetyModal } from '../link-safety-modal';
 
 afterEach(() => cleanup());
 
-/** The class the design system uses for the one primary action in a dialog. */
-const PRIMARY_CLASS = 'bg-foreground';
+/**
+ * The fill `Button`'s default variant paints — how a dialog says which of its
+ * actions is the one you came for. It used to be `bg-foreground`, the modal's
+ * own hand-rolled recipe; the modal composes `Button` now.
+ */
+const PRIMARY_CLASS = 'bg-primary';
 
 describe('LinkSafetyModal — a link that can open', () => {
   it('offers to open it, with copy as the secondary action', () => {

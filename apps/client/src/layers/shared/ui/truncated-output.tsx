@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { cn } from '@/layers/shared/lib';
+import { Button } from './button';
 
 /** Maximum characters to render before truncation (5KB). */
 const TRUNCATE_THRESHOLD = 5120;
@@ -45,12 +46,14 @@ export function TruncatedOutput({
     <div className={cn(className)} {...dataProps}>
       <pre className="max-h-48 overflow-y-auto text-xs whitespace-pre-wrap">{displayContent}</pre>
       {isTruncated && !showFull && (
-        <button
+        <Button
+          variant="link"
+          size="xs"
           onClick={() => setShowFull(true)}
-          className="text-muted-foreground hover:text-foreground mt-1 text-xs underline"
+          className="text-muted-foreground hover:text-foreground mt-1 h-auto px-0 underline"
         >
           Show full output ({(content.length / 1024).toFixed(1)}KB)
-        </button>
+        </Button>
       )}
     </div>
   );

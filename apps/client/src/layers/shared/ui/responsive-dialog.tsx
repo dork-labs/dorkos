@@ -22,6 +22,7 @@ import {
   DrawerTrigger,
 } from './drawer';
 import { cn } from '../lib/utils';
+import { Button } from './button';
 
 interface ResponsiveDialogContextValue {
   isDesktop: boolean;
@@ -216,17 +217,17 @@ function ResponsiveDialogFullscreenToggle({ className }: { className?: string })
 
   const Icon = isFullscreen ? Minimize2 : Maximize2;
   return (
-    <button
-      type="button"
+    // `Button`, which brings the `focus-visible:` ring this control had as a
+    // bare `focus:` — a ring that fired on every mouse click as well.
+    <Button
+      variant="ghost"
+      size="icon-sm"
       onClick={toggleFullscreen}
-      className={cn(
-        'ring-offset-background focus:ring-ring absolute top-4 right-12 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none',
-        className
-      )}
+      className={cn('absolute top-4 right-12 opacity-70 hover:opacity-100', className)}
       aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
     >
       <Icon className="size-(--size-icon-md)" />
-    </button>
+    </Button>
   );
 }
 ResponsiveDialogFullscreenToggle.displayName = 'ResponsiveDialogFullscreenToggle';

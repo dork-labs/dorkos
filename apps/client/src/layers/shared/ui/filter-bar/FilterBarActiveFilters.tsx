@@ -146,14 +146,15 @@ function FilterBarActiveFilters({ className }: FilterBarActiveFiltersProps) {
           className="border-muted bg-muted/50 inline-flex h-6 items-center gap-1 rounded-full border px-2 text-xs"
         >
           {label}: {displayValue}
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon-xs"
             onClick={() => clear(name)}
-            className="hover:text-foreground text-muted-foreground -mr-0.5 rounded-full p-0.5"
+            className="text-muted-foreground hover:text-foreground -mr-1 size-4 rounded-full"
             aria-label={`Remove ${label} filter`}
           >
             <XIcon className="size-3" />
-          </button>
+          </Button>
         </span>
       ))}
     </div>

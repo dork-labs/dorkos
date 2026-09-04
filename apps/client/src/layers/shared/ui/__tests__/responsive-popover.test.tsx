@@ -261,7 +261,10 @@ describe('ResponsivePopoverContent', () => {
       </ResponsivePopover>
     );
     expect(screen.getByTestId('drawer-close')).toBeInTheDocument();
-    expect(screen.getByText('Close')).toBeInTheDocument();
+    // The accessible NAME, not a visually-hidden text node: the button is a
+    // `Button` with an `aria-label` now, and the name is what a screen reader
+    // actually reads either way.
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
   });
 
   it('leaves a content-height sheet without one — nothing is covered to reach around', () => {

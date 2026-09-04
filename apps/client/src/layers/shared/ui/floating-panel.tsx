@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import { X, PictureInPicture2 } from 'lucide-react';
 import { cn } from '../lib';
+import { Button } from './button';
 
 /** Viewport margin (px) kept clear on every edge when clamping. */
 const VIEWPORT_MARGIN = 16;
@@ -215,23 +216,25 @@ export function FloatingPanel(props: FloatingPanelProps): React.ReactNode {
       >
         <span className="min-w-0 flex-1 truncate text-sm font-medium">{title}</span>
         {onRestore ? (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon-sm"
             aria-label="Restore"
             onClick={onRestore}
-            className="text-muted-foreground hover:text-foreground hover:bg-accent focus-visible:ring-ring inline-flex items-center justify-center rounded-md p-1 transition-colors focus-visible:ring-2 focus-visible:outline-none"
+            className="text-muted-foreground hover:text-foreground"
           >
-            <PictureInPicture2 className="size-(--size-icon-sm)" />
-          </button>
+            <PictureInPicture2 />
+          </Button>
         ) : null}
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon-sm"
           aria-label="Close"
           onClick={onClose}
-          className="text-muted-foreground hover:text-foreground hover:bg-accent focus-visible:ring-ring inline-flex items-center justify-center rounded-md p-1 transition-colors focus-visible:ring-2 focus-visible:outline-none"
+          className="text-muted-foreground hover:text-foreground"
         >
-          <X className="size-(--size-icon-sm)" />
-        </button>
+          <X />
+        </Button>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">{children}</div>
