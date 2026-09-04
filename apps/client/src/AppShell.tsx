@@ -40,7 +40,8 @@ import { useRelayAdaptersSync } from '@/layers/entities/relay';
 import { useUnattendedAutonomySync } from '@/layers/entities/unattended-autonomy';
 import { useTasksSync } from '@/layers/entities/tasks';
 import { useTunnelSync, useRemoteAccessAnnouncer } from '@/layers/entities/tunnel';
-import { motion, AnimatePresence, MotionConfig } from 'motion/react';
+import { motion, AnimatePresence, MotionConfig, useReducedMotion } from 'motion/react';
+import { shouldFadeRoute } from './app/route-fade';
 import { DialogHost, FeedbackDialogHost } from '@/layers/widgets/app-layout';
 import { AppBannerSlot, useAppBanners } from '@/layers/widgets/app-banner';
 import { MomentHost } from '@/layers/widgets/moments';
@@ -241,6 +242,10 @@ export function AppShell() {
   // (it takes pathname as a prop) so the same component mounts in the
   // router-less Obsidian embed, which passes a constant.
   const rightPanelPathname = useRouterState({ select: (s) => s.location.pathname });
+  // See `route-fade.ts`: an inline opacity tween is invisible to both the
+  // global reduced-motion CSS reset and `MotionConfig reducedMotion="user"`,
+  // so the fade below needs its own gate.
+  const fadesRoute = shouldFadeRoute(useReducedMotion() ?? false);
   useDefaultCwd();
 
   const [selectedCwd] = useDirectoryState();
@@ -797,11 +802,21 @@ export function AppShell() {
                         autoSaveId={RIGHT_PANEL_GROUP_ID}
                       >
                         <Panel id="main-content" order={1} minSize={30} defaultSize={100}>
-                          {/* ── The page itself, cross-faded on route change ──
+                          {/* ── The page itself, faded in on route change ──
                               The sidebar body slides and the header cross-fades
                               already; the body they describe used to swap in a
                               single frame, so the chrome moved and the content
                               did not.
+
+                              **Enter only, no exit, and no `AnimatePresence`.**
+                              `<Outlet />` is not a snapshot — it reads live
+                              router state — so an exiting keyed wrapper here
+                              would re-render as the NEW route's content and
+                              animate it out, then `mode="wait"` would mount an
+                              identical tree back in: the page would paint,
+                              blank, and repaint on every navigation. Dropping
+                              the exit removes the coordination problem instead
+                              of solving it, the same call `TabsContent` makes.
 
                               **Opacity only, and that is the safe form.** A
                               transform on this wrapper would make it a
@@ -809,19 +824,25 @@ export function AppShell() {
                               it and would change what the panel group measures.
                               The key is the pathname, not the full location, so
                               switching sessions on `/session` keeps its own
-                              150ms crossfade instead of taking two. ── */}
-                          <AnimatePresence mode="wait" initial={false}>
-                            <motion.div
-                              key={rightPanelPathname}
-                              initial={{ opacity: 0 }}
-                              animate={{ opacity: 1 }}
-                              exit={{ opacity: 0 }}
-                              transition={{ duration: 0.12, ease: 'easeOut' }}
-                              className="h-full"
-                            >
-                              <Outlet />
-                            </motion.div>
-                          </AnimatePresence>
+                              150ms crossfade instead of taking two.
+
+                              **Gated by `fadesRoute`** (see `route-fade.ts`):
+                              an inline opacity tween is invisible to the global
+                              reduced-motion CSS reset and to `MotionConfig`
+                              alike, so a reader who asked for less motion gets
+                              `initial={false}` — the page just appears. ── */}
+                          <motion.div
+                            key={rightPanelPathname}
+                            initial={fadesRoute ? { opacity: 0 } : false}
+                            animate={{ opacity: 1 }}
+                            transition={
+                              fadesRoute ? { duration: 0.12, ease: 'easeOut' } : { duration: 0 }
+                            }
+                            data-route-fade={fadesRoute}
+                            className="h-full"
+                          >
+                            <Outlet />
+                          </motion.div>
                         </Panel>
                         <RightPanelContainer pathname={rightPanelPathname} />
                       </PanelGroup>

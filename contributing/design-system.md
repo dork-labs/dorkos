@@ -627,7 +627,7 @@ Four rules they establish, each of which cost something to learn:
 
 **One deliberate departure from the spec's reduced-motion table.** The badge wake is gated with `motion-safe:`, which drops the **end state** as well as the travel — the spec's §2.6 table would have kept the tilt. The rule that table serves is "keep the fact, drop the motion", and a 6° tilt carries no fact: nothing about a crooked badge tells you anything a still one does not. With no fact to keep, an instant snap to crooked is all cost. **Generalise from this:** a state that exists purely as personality should go entirely under reduced motion; only a state that _says something_ survives as a static end state.
 
-Full audit and rationale: `plans/identity-micro-interactions/design-spec.md`. **`/dev/identity#motion-and-interaction` is the home for all of it** — the three tiers, focus parity, and all four signature moments, each drivable. `/dev/components#identityavatar` still shows the disc's own states.
+Full audit and rationale: `plans/identity-micro-interactions/design-spec.md`. **`/dev/identity#motion-and-interaction` is the home for all of it** — the three tiers, focus parity, and all three signature moments, each drivable. `/dev/components#identityavatar` still shows the disc's own states.
 
 ---
 

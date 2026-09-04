@@ -37,19 +37,28 @@ const SELF = fileURLToPath(import.meta.url);
 /**
  * The class appears as a whole Tailwind utility in a class string.
  *
- * Bounded on both sides, so `transition-allowed` does not match. A backtick is
- * deliberately NOT a boundary: every mention in this codebase's prose is
- * written as markdown code — `` `transition-all` `` — and the several comments
- * explaining why not to use it must not read as uses of it.
+ * Bounded on both sides, and a backtick counts as a boundary — a template
+ * literal `className` is a shape this codebase uses (`TaskProgressHeader.tsx`),
+ * and `` `transition-all duration-150` `` or `` cn(`p-2 transition-all`) `` are
+ * real uses with the token first or last inside the backticks. That would also
+ * catch this codebase's own prose, which quotes the token the same way —
+ * `` `transition-all` `` — so the exact backtick-quoted mention is stripped
+ * first: the several comments explaining why not to use it must not read as
+ * uses of it.
  *
  * @param source - The file's text.
  */
 function saysTransitionAll(source: string): boolean {
-  return /(^|[\s'":[])transition-all($|[\s'"\]])/m.test(source);
+  const withoutProseMentions = source.replace(/`transition-all`/g, '');
+  return /(^|[\s'":[`])transition-all($|[\s'"\]`])/m.test(withoutProseMentions);
 }
 
 /**
- * Every shipped `.ts`/`.tsx` file under `dir`, as `[path, text]`.
+ * Every shipped `.ts`/`.tsx`/`.css` file under `dir`, as `[path, text]`.
+ *
+ * `.css` is in the walk because the rule this test enforces has a CSS-side
+ * offender too — finding 18.7 named `index.css:549` as one, and a Tailwind
+ * `@apply transition-all` is exactly as unaudited as the JSX form.
  *
  * Tests are skipped: the two that already pin this rule (`button.test.tsx`,
  * `TeamMemberCard.test.tsx`) assert `not.toContain('transition-all')`, which
@@ -66,7 +75,7 @@ function sourceFiles(dir: string): [string, string][] {
       out.push(...sourceFiles(full));
       continue;
     }
-    if (!/\.tsx?$/.test(entry) || /\.test\.tsx?$/.test(entry)) continue;
+    if (!/\.(tsx?|css)$/.test(entry) || /\.test\.tsx?$/.test(entry)) continue;
     if (full === SELF) continue;
     out.push([full, readFileSync(full, 'utf8')]);
   }
@@ -85,6 +94,19 @@ describe('the matcher can fail', () => {
 
   it('does not fire on a comment explaining why not to use it', () => {
     expect(saysTransitionAll('// Named properties rather than `transition-all`.')).toBe(false);
+  });
+
+  it('finds the class at either edge of a template literal', () => {
+    expect(saysTransitionAll('className={`transition-all duration-150`}')).toBe(true);
+    expect(saysTransitionAll('cn(`p-2 transition-all`)')).toBe(true);
+  });
+
+  it('still ignores a backtick-quoted mention sitting beside real code', () => {
+    expect(
+      saysTransitionAll(
+        '// twin of this hover). A `transition-all` here would put border width,\ntransition-[color]'
+      )
+    ).toBe(false);
   });
 });
 

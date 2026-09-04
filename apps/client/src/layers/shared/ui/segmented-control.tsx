@@ -128,9 +128,17 @@ function SegmentedControlItem({
         // ellipsis by two short ones. The stop words are the control.
         'text-muted-foreground relative flex min-w-0 flex-auto cursor-pointer items-center justify-center rounded-md px-2 py-1.5 text-xs',
         'focus-visible:ring-ring/50 outline-none focus-visible:ring-2',
-        // Colour only: the raised surface belongs to the thumb below now.
+        // The raised surface belongs to the thumb below now, which is why this
+        // only transitions colour. But `data-[state=checked]:bg-background` and
+        // its shadow stay as the FLOOR, not decoration: Radix owns `data-state`
+        // regardless of whether an item sits inside `SegmentedControlContext`,
+        // while the thumb below reads a context value that mirrors it. A
+        // `SegmentedControlItem` rendered outside a `SegmentedControl` — legal
+        // by the type system, exported from the barrel — would have no context
+        // and so no thumb, but Radix would still mark it checked; without this
+        // floor that segment would show no selection at all.
         'motion-safe:transition-[color] motion-safe:duration-150 motion-safe:ease-out',
-        'hover:text-foreground data-[state=checked]:text-foreground',
+        'hover:text-foreground data-[state=checked]:bg-background data-[state=checked]:text-foreground data-[state=checked]:shadow-soft',
         'disabled:pointer-events-none disabled:cursor-not-allowed',
         className
       )}
