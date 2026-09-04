@@ -4,6 +4,9 @@ covers:
   - 'refactor(client): three primitives state one axis once (DOR-1760)'
   - 'refactor(client): nine hand-rolled icon buttons become Buttons (DOR-1760)'
   - 'fix(client): the settings navigation stops nesting one widget inside another (DOR-1760)'
+  - 'test(client): match the collapsed limits label loosely (DOR-1760)'
+  - 'chore(changelog): fold batch 14 fragments into one entry (DOR-1760)'
+  - 'fix(client): the path field and its Browse button share one disabled state (DOR-1760)'
 ---
 
 ### Fixed
@@ -19,6 +22,10 @@ covers:
 - The settings sidebar reads correctly to a screen reader again. It described itself
   as two overlapping widgets at once, and the arrow keys now work from wherever your
   focus already is (DOR-1760)
+- A greyed-out folder field greys out its Browse button too, instead of offering to
+  change something you can't (DOR-1760)
+- A long dialog heading no longer runs underneath the expand button in the corner
+  (DOR-1760)
 
 ### Changed
 
