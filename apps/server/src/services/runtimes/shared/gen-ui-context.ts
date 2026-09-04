@@ -4,10 +4,15 @@
  * Widgets are delivered as fenced JSON in ordinary assistant text (ADR
  * 260708-111500), so — unlike `control_ui` — there is no tool to register: every
  * runtime just emits text. This one compact block teaches the fence syntax and
- * catalog, and is injected into the cacheable system-prompt prefix by the Claude
- * Code adapter and prepended to the codex/opencode prompt inputs. Defining it
- * once here (zod-free, SDK-free) keeps the three runtimes byte-for-byte in sync
- * and honors the DRY rule.
+ * catalog, and reaches each runtime through its own system channel: the Claude
+ * adapter's cacheable system-prompt prefix, OpenCode's per-request `body.system`,
+ * and the Codex prompt prefix. Defining it once here (zod-free, SDK-free) keeps
+ * the three runtimes byte-for-byte in sync and honors the DRY rule.
+ *
+ * On Codex it is the one prefix block deliberately left OUT of the context gate
+ * (DOR-477): it teaches output syntax the model needs on every turn, and Codex
+ * compacts its own long threads, so a gated copy could be summarized away and
+ * take generative UI with it. Being compact is what makes that affordable.
  *
  * @module services/runtimes/shared/gen-ui-context
  */

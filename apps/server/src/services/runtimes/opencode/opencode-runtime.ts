@@ -98,7 +98,7 @@ import {
 } from './approvals.js';
 import { OPENCODE_CAPABILITIES, STREAM_LIVE_TIMEOUT_MS } from './runtime-constants.js';
 import { awaitAbortAck, delay } from './bounded-abort.js';
-import { buildOpenCodeParts, parseModelSelection } from './turn-input.js';
+import { buildOpenCodeParts, buildOpenCodeSystem, parseModelSelection } from './turn-input.js';
 import { resolveCompactionModel } from './compaction-model.js';
 import { projectModelOptions, projectedProviderIds } from './providers/models.js';
 import { OpenCodeMcpManager } from './mcp-manager.js';
@@ -303,10 +303,11 @@ export class OpenCodeRuntime implements AgentRuntime {
     const mcpClient = await this.provider.getClient(cwd);
     const { dorkosApplied } = await this.mcp.ensureManaged(mcpClient, cwd);
 
-    // The synthetic context prefix: the runtime-neutral blocks plus, when this
-    // turn really carries them, the room verbs. It rides the `synthetic` part
-    // with the rest of the injected prefix, so it never renders as
-    // user-authored text.
+    // The system context: the runtime-neutral blocks plus, when this turn really
+    // carries them, the room verbs. It rides `body.system`, which the sidecar
+    // appends to the model's system prompt and never persists as a message — so
+    // it neither renders as user-authored text nor accumulates in history
+    // (DOR-477).
     const agentContext = await buildOpenCodeTurnContext(cwd, dorkosApplied);
 
     yield* this.runOpenCodeTurn(
@@ -315,10 +316,12 @@ export class OpenCodeRuntime implements AgentRuntime {
       opts?.title,
       async (client, ocSessionId) => {
         const model = parseModelSelection(settings.model);
+        const system = buildOpenCodeSystem(opts, agentContext);
         const prompted = await client.session.promptAsync({
           path: { id: ocSessionId },
           body: {
-            parts: buildOpenCodeParts(content, opts, agentContext),
+            parts: buildOpenCodeParts(content, opts),
+            ...(system !== undefined ? { system } : {}),
             ...(model !== undefined ? { model } : {}),
           },
         });

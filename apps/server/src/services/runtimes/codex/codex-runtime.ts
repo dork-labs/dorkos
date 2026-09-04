@@ -95,6 +95,7 @@ import {
 } from '../shared/room-tools-context.js';
 import { resolveManagedMcpServers, type CodexManagedMcpServers } from './mcp-server-config.js';
 import { buildCodexPrompt, projectThreadOptions } from './turn-input.js';
+import { CodexContextGate } from './context-gate.js';
 import { enumerateCodexMcpServers } from './enumerate-mcp-servers.js';
 import { scanSkillCommands } from './scan-skill-commands.js';
 
@@ -188,6 +189,11 @@ export class CodexRuntime implements AgentRuntime {
   private readonly locks = new SessionLockManager();
   /** One AbortController per in-flight turn (NOTES.md Verdict 3). */
   private readonly activeTurns = new Map<string, AbortController>();
+  /**
+   * What DorkOS context each session's thread already holds, so the identity
+   * blocks are not re-sent into a rollout that already carries them (DOR-477).
+   */
+  private readonly contextGate = new CodexContextGate();
   private settingsPort: SessionSettingsPort | undefined;
   /**
    * Last enumerated Codex MCP servers, or `null` until the first successful
@@ -579,37 +585,53 @@ export class CodexRuntime implements AgentRuntime {
       dorkosTools !== null
     );
 
+    const threadOptions = projectThreadOptions(settings, cwd);
+    const client = await this.clientForTurn(agentTokenEnv, managedMcpServers, dorkosTools);
+    // A fresh thread holds nothing this session's previous thread was ever sent,
+    // so the gate is cleared BEFORE it is consulted (DOR-477).
+    if (boundThreadId === undefined) this.contextGate.forget(sessionId);
+    const thread =
+      boundThreadId !== undefined
+        ? client.resumeThread(boundThreadId, threadOptions)
+        : client.startThread(threadOptions);
+
     // Runtime-neutral DorkOS context (identity, persona, safety boundaries,
     // <dorkos_context>, <env>): the same blocks the Claude adapter injects, so a
     // Codex agent knows who it is and how to reach its capabilities.
-    // `.text` — the whole append, memory block included. The `stable` half of
-    // this result exists only for claude-code's relaunch fingerprint; codex has
-    // no warm process to keep, so it sends everything, every turn (see
-    // `buildMemoryBlock` for what that costs).
-    const neutralContext = (await buildAgentContextAppend(cwd)).text;
+    //
+    // Codex's only input channel is the prompt, and a prompt lands in the
+    // thread's persisted rollout, so re-sending this every turn leaves one copy
+    // per turn IN the conversation. {@link CodexContextGate} decides which half
+    // this turn owes: the whole append when the thread has not been told (or the
+    // agent was edited since), the memory block alone otherwise — memory is
+    // outside the gate because it changes while the thread runs.
+    const neutralContextSelection = this.contextGate.select(
+      sessionId,
+      await buildAgentContextAppend(cwd)
+    );
 
     // The room verbs, and ONLY when this turn actually carries them — gated on
     // the resolved injection itself, not on a second guess at it, so the prose
     // and the wiring cannot disagree (spec `tool-only-room-replies` §D11).
     // Named under codex's own MCP prefix, never claude-code's: a bare or
-    // wrongly-prefixed name is uncallable, which is the DOR-1292 defect. With
-    // nothing injected this is byte-identical to what a codex turn carried
-    // before.
+    // wrongly-prefixed name is uncallable, which is the DOR-1292 defect.
+    //
+    // Outside the context gate, and deliberately: whether this session HAS the
+    // room tools is answered per turn, so a menu written in the wrong tense must
+    // never survive into a turn where it is false.
     const agentContext = dorkosTools
-      ? `${neutralContext}\n\n${buildRoomToolsBlock(
-          CODEX_DORKOS_TOOL_PREFIX,
-          // Per TURN here, unlike claude-code's cached prefix: codex builds this
-          // append on every turn anyway, so the mode is always current.
-          roomReplyModeForToolCapableSession()
-        )}`
-      : neutralContext;
-
-    const threadOptions = projectThreadOptions(settings, cwd);
-    const client = await this.clientForTurn(agentTokenEnv, managedMcpServers, dorkosTools);
-    const thread =
-      boundThreadId !== undefined
-        ? client.resumeThread(boundThreadId, threadOptions)
-        : client.startThread(threadOptions);
+      ? [
+          neutralContextSelection.text,
+          buildRoomToolsBlock(
+            CODEX_DORKOS_TOOL_PREFIX,
+            // Per TURN here, unlike claude-code's cached prefix: codex builds this
+            // block on every turn anyway, so the mode is always current.
+            roomReplyModeForToolCapableSession()
+          ),
+        ]
+          .filter(Boolean)
+          .join('\n\n')
+      : neutralContextSelection.text;
 
     const controller = new AbortController();
     this.activeTurns.set(sessionId, controller);
@@ -619,6 +641,10 @@ export class CodexRuntime implements AgentRuntime {
       const { events } = await thread.runStreamed(buildCodexPrompt(content, opts, agentContext), {
         signal: controller.signal,
       });
+      // The prompt is with Codex now, so the thread really does hold what this
+      // turn sent. Recorded here and not at selection time: a turn that threw on
+      // the way out must not convince the next one otherwise.
+      neutralContextSelection.commit();
       for await (const event of mapCodexThread(events, ctx)) {
         // Persist the binding the moment thread.started reveals the id —
         // before the terminal done — so even an interrupted or crashed first

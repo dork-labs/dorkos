@@ -355,9 +355,11 @@ export async function* mapOpenCodeTurn(
  * the turn's own prompt out of the turn's own output (DOR-1659).
  *
  * OpenCode publishes `message.part.updated` for the USER's parts too, and a part
- * carries no role of its own. DorkOS writes two user parts per turn
- * (`turn-input.ts#buildOpenCodeParts`): the injected DorkOS context as a
- * `synthetic` part, then the person's pristine text. Mapped, those became
+ * carries no role of its own. DorkOS writes up to two user parts per turn
+ * (`turn-input.ts#buildOpenCodeParts`): this turn's additional-context bag as a
+ * `synthetic` part when it carries one, then the person's pristine text. (The
+ * identity/`<gen_ui>` half moved to `body.system` in DOR-477 and no longer
+ * reaches this path at all.) Mapped, those became
  * `text_delta`s — so a room post opened with ~13 KB of `<gen_ui>`,
  * `<agent_identity>` and `<room_context>` (other people's words, an
  * `agent-etiquette.md` violation), a task summary was 500 characters of

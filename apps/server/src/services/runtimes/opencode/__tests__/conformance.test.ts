@@ -549,11 +549,14 @@ runtimeConformance(
             'a live OpenCode sidecar is a separate process this suite can only send to, so what its prompt carried is only observable in the mocked run',
         }
       : {
-          // The `project-rooms` §3.3 gate. OpenCode's caller append rides a
-          // SYNTHETIC part of `session.promptAsync` (`buildOpenCodeParts`) —
-          // composed per turn, never at session start — so the observation is
-          // exactly what that call was handed, read off the mocked client. Both
-          // turns run on ONE session; the second is the one that matters.
+          // The `project-rooms` §3.3 gate. OpenCode's caller append rides
+          // `body.system` on `session.promptAsync` (`buildOpenCodeSystem`,
+          // DOR-477) — composed per turn, never at session start — so the
+          // observation is exactly what that call was handed, read off the
+          // mocked client. Both turns run on ONE session; the second is the one
+          // that matters, and it is the turn the old `parts` delivery made
+          // expensive: a part is persisted into the conversation, a `system`
+          // string is not.
           systemPromptAppendTurns: async (runtime, sessionId, [first, second]) => {
             const client = lastClient;
             if (!client) {
@@ -578,10 +581,19 @@ runtimeConformance(
             // `{}` and ignores its input), so the recorded arguments have to be
             // named here rather than inferred.
             const calls = vi.mocked(client.session.promptAsync).mock.calls as unknown as Array<
-              [{ body?: { parts?: Array<{ text?: string }> } }]
+              [{ body?: { parts?: Array<{ text?: string }>; system?: string } }]
             >;
+            // BOTH channels, joined: the gate asks what the turn carried, and
+            // this adapter now splits that across `system` (identity + append)
+            // and `parts` (the per-turn bag + the person's text). Reading only
+            // one of the two would let a block move between them unnoticed.
             const sent = calls.map((call) =>
-              (call[0]?.body?.parts ?? []).map((part) => part.text ?? '').join('\n\n')
+              [
+                call[0]?.body?.system ?? '',
+                ...(call[0]?.body?.parts ?? []).map((part) => part.text ?? ''),
+              ]
+                .filter(Boolean)
+                .join('\n\n')
             );
             return [sent[0] ?? '', sent[1] ?? ''] as const;
           },
