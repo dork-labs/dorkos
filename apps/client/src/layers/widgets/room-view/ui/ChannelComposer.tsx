@@ -415,17 +415,23 @@ export function ChannelComposer({
       overlays={
         <>
           {/* Never up at the same time as the `@` picker above it: the recents panel
-              yields to `@`, and typing at all takes it down. */}
-          {jumpBackIn.isOpen && (
-            <JumpBackInPopover
-              rows={jumpBackIn.rows}
-              selectedIndex={jumpBackIn.selectedIndex}
-              agents={jumpBackIn.agents}
-              displayNames={jumpBackIn.displayNames}
-              visualOf={jumpBackIn.visualOf}
-              onSelect={jumpBackIn.selectRow}
-            />
-          )}
+              yields to `@`, and typing at all takes it down.
+
+              Wrapped in AnimatePresence for the same reason the `@` picker is:
+              a bare conditional unmounts the panel in one frame and its `exit`
+              never runs. */}
+          <AnimatePresence>
+            {jumpBackIn.isOpen && (
+              <JumpBackInPopover
+                rows={jumpBackIn.rows}
+                selectedIndex={jumpBackIn.selectedIndex}
+                agents={jumpBackIn.agents}
+                displayNames={jumpBackIn.displayNames}
+                visualOf={jumpBackIn.visualOf}
+                onSelect={jumpBackIn.selectRow}
+              />
+            )}
+          </AnimatePresence>
         </>
       }
       input={{

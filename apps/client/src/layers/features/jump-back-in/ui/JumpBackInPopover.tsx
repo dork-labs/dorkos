@@ -242,6 +242,7 @@ export function JumpBackInPopover({
     <motion.div
       initial={{ opacity: 0, scale: 0.98, y: 4 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.98, y: 4 }}
       transition={{ duration: 0.15, ease: [0, 0, 0.2, 1] }}
       className="bg-popover max-h-80 overflow-hidden rounded-lg border shadow-lg"
       // Keeps the composer focused through a click on a row. Without it the
