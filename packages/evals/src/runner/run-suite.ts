@@ -26,6 +26,11 @@ import {
 } from '../types.js';
 import { BudgetTracker, DEFAULT_RUN_BUDGET_USD } from './budget.js';
 import { runEval } from './run-eval.js';
+import {
+  canPinControlledClaudeConfig,
+  inheritedClaudeConfigNotice,
+  resolveHostClaudeConfigDir,
+} from './claude-config.js';
 import { DEFAULT_CHEAP_MODEL } from './harness-server.js';
 import { noOpenCodeBinaryMessage, resolveHostOpenCodeBinary } from './opencode-sandbox.js';
 import { runWithInfrastructureRetry, transcriptNameForAttempt } from './retry.js';
@@ -343,6 +348,14 @@ export async function runSuite(cases: EvalCase[], opts: RunSuiteOptions): Promis
   }
   if (credential) {
     notify(`Reaching the model through ${describeCredentialSource(credential.source)}.`);
+    // Say ONCE, up front, whether this run's turns are measured under an empty
+    // user-level Claude configuration or under the operator's own. A run whose
+    // absolute numbers are machine-relative has to announce it — that silence is
+    // the whole of DOR-1712. The per-eval provisioning re-derives this against
+    // each sandbox; here it is only a statement about the run.
+    if (!(await canPinControlledClaudeConfig({ credentialIsPortable: credential.portable }))) {
+      notify(inheritedClaudeConfigNotice(resolveHostClaudeConfigDir()));
+    }
   }
 
   const budgetUsd = opts.budgetUsd ?? defaultRunBudgetUsd(opts.tier, runtime, provider);

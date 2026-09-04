@@ -40,6 +40,18 @@ export interface ServerLaunchSpec {
   /** Pre-allocated TCP port the server binds. */
   port: number;
   /**
+   * The controlled `CLAUDE_CONFIG_DIR` the launched server's runtime must read
+   * its USER-level Claude configuration from — the sandbox's seeded config dir
+   * (`runner/claude-config.ts`). Absent when the run declined to pin one because
+   * the operator's real directory is also their sign-in.
+   *
+   * Only `child-process` acts on it, and that asymmetry is the containment story
+   * rather than an omission: the docker tier mounts nothing from the host home,
+   * so its container's `~/.claude` is already the image's empty one and there is
+   * no operator config to displace.
+   */
+  claudeConfigDir?: string;
+  /**
    * Extra environment the launched server boots with — the credentialed tier's
    * `ANTHROPIC_API_KEY`, a cheap `ANTHROPIC_MODEL`, and any per-eval overrides.
    *
