@@ -26,7 +26,7 @@ export interface RoomMessageNotifyInput {
   entryId: string;
   /** The entry's room-local `seq` — carried so a read cursor can mark it read. */
   entrySeq: number;
-  /** The mesh agent id, when the author is an agent. */
+  /** The mesh agent id, when the author is an agent. Absent for a human. */
   agentId?: string;
   /** The author's display name. */
   fromName: string;
@@ -34,7 +34,8 @@ export interface RoomMessageNotifyInput {
   text: string;
   /**
    * Whether `room-service.ts` decided this entry is a DM to the operator: a
-   * `kind: 'dm'` room where the author is the room's one and only agent member
+   * `kind: 'dm'` room that is genuinely a 1:1 with them, written by anyone but
+   * them — an agent, or a real person on the far side of a bridged private chat
    * (see the `dm.received` registry entry for the full reasoning).
    */
   isDirectMessage: boolean;

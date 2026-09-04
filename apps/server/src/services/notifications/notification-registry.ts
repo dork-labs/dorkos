@@ -570,15 +570,21 @@ const ENTRIES: NotificationRegistryMap = {
 
   'dm.received': {
     // Wired in `services/rooms/room-service.ts`'s `writePost` (spec task T11,
-    // DOR-1388): raised when an agent posts in a room that is a 1:1 DM with the
-    // operator (`kind: 'dm'`, exactly one agent on the roster, the operator
-    // among its human members) and it is the sole agent there — never for an
-    // agent-to-agent DM the owner was only seeded into (the three-way rule),
-    // and never for a human author, since only an agent can BE the DM's other
-    // party (a human posting in a `dm` room is either the operator's own
-    // cockpit voice or a bridged collaborator, and neither is "an agent
-    // messaged you"). Muting the room suppresses this kind
-    // (`RoomServiceDeps.isRoomMuted`); it never suppresses `mention.received`.
+    // DOR-1388): raised when somebody other than the operator posts in a room
+    // that is a 1:1 DM with them — `kind: 'dm'`, exactly one agent on the
+    // roster, the operator among its human members. Never for an agent-to-agent
+    // DM the owner was only seeded into (the three-way rule), and never for the
+    // operator's own words.
+    //
+    // The author may be an agent OR a real person (DOR-1392). A bridged private
+    // chat is a `dm` room whose other party is a human — a colleague writing
+    // from Telegram or Slack — and that is the message with the strongest claim
+    // on the operator's attention of anything DorkOS carries, so it raises the
+    // same row an agent's DM does. What decides is the room, not who typed.
+    //
+    // Muting the room suppresses this kind (`RoomServiceDeps.isRoomMuted`), and
+    // in a DM that is absolute: an `@` inside a 1:1 addresses nobody new, so it
+    // cannot pierce the mute the way it pierces one on a channel.
     //
     // Dedupes per ROOM, not per entry — deliberately coarser than every other
     // kind here. A burst of messages from the same agent in the same DM is

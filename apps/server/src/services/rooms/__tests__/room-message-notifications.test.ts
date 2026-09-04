@@ -69,7 +69,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('an agent DM to the operator', () => {
+describe('a DM to the operator', () => {
   it('raises dm.received, addressed and carrying the room', async () => {
     const harness = open();
     const room = harness.service.createRoom(
@@ -105,12 +105,11 @@ describe('an agent DM to the operator', () => {
     expect(stored()).toHaveLength(0);
   });
 
-  it('never fires dm.received for a human posting in a bridged DM, mention or not', async () => {
-    // dm.received is agent-only (`isDirectMessage` requires `author.kind ===
-    // 'agent'`), so a human posting in a `dm`-kind room never raises it —
-    // whether that human is the operator's own bridged phone leg or a real
-    // collaborator (see the paired test below for the mention half of that
-    // second case).
+  it('raises dm.received for a real person writing in a bridged DM (DOR-1392)', async () => {
+    // The bug: `isDirectMessage` used to also require `author.kind ===
+    // 'agent'`, so a colleague messaging the bot from Telegram — the message
+    // with the strongest claim on the operator's attention — was the one kind
+    // of DM that stayed silent. The room decides, not who typed.
     const harness = open();
     const bridged = harness.service.createBridgedRoom(bridgeDm(harness));
     expect(bridged.kind).toBe('dm');
@@ -119,14 +118,72 @@ describe('an agent DM to the operator', () => {
       identity: {
         platformType: 'telegram',
         instanceId: 'tg-main',
-        platformUserId: '900900',
-        displayName: 'Dorian',
+        platformUserId: '145223',
+        displayName: 'Miguel',
       },
       text: 'on my way, be there in 10',
     });
     await flush();
 
+    expect(announced('dm.received')).toHaveLength(1);
+    const [row] = stored();
+    expect(row).toMatchObject({
+      kind: 'dm.received',
+      title: 'Miguel messaged you',
+      body: 'on my way, be there in 10',
+      roomId: bridged.id,
+    });
+    expect(row.readAt).toBeUndefined();
+  });
+
+  it('respects mute for a real person too: a muted bridged DM raises no row', async () => {
+    // A MUTATION GUARD, not a red-before case: this passed before DOR-1392 too,
+    // because nothing notified at all. It earns its place by failing if the
+    // widened gate ever forgets `roomMuted` — the kind's own rules did not
+    // change, and a human author gets the same mute, the same per-room dedupe
+    // and the same read-clear an agent author has always had.
+    const muted = new Set<string>();
+    const harness = open({ isRoomMuted: (roomId) => muted.has(roomId) });
+    const bridged = harness.service.createBridgedRoom(bridgeDm(harness));
+    muted.add(bridged.id);
+
+    harness.service.postExternal(bridged.id, {
+      identity: {
+        platformType: 'telegram',
+        instanceId: 'tg-main',
+        platformUserId: '145223',
+        displayName: 'Miguel',
+      },
+      text: 'you around?',
+    });
+    await flush();
+
     expect(stored()).toHaveLength(0);
+  });
+
+  it("echoes the operator's own phone leg back at them — accepted until identity linking lands", async () => {
+    // The operator texting their own agent from their own phone arrives as a
+    // real external human author (`platform:` naturalKey), which `isOwnerAuthor`
+    // does not recognise, so their own message notifies them. Deliberately
+    // accepted: far cheaper than dropping every real collaborator's message.
+    // The platform-identity link ("this Telegram account is me") retires it for
+    // dm.received and mention.received together.
+    const harness = open();
+    const bridged = harness.service.createBridgedRoom(bridgeDm(harness));
+
+    harness.service.postExternal(bridged.id, {
+      identity: {
+        platformType: 'telegram',
+        instanceId: 'tg-main',
+        platformUserId: '900900',
+        displayName: 'Dorian',
+      },
+      text: 'ana, status?',
+    });
+    await flush();
+
+    expect(stored()).toHaveLength(1);
+    expect(stored()[0].kind).toBe('dm.received');
   });
 
   it('raises no row for an agent DMing itself with nobody else on the roster', async () => {
@@ -276,13 +333,42 @@ describe('a mention of the operator', () => {
     expect(stored()).toHaveLength(0);
   });
 
-  it('reaches the operator from a real collaborator in a bridged DM — the bug this fixes', async () => {
-    // The invariant this used to get wrong: "any human author in a `dm` room
-    // is the operator". A bridged private chat is minted from an unclaimed
-    // chat somebody ELSE started with the bot, so its human party can be a
-    // genuine collaborator — and their `@dorian` has to reach the operator
-    // like any other mention, not be silently swallowed because the room
-    // happens to be a DM.
+  it('reaches the operator from a real collaborator in a bridged group chat', async () => {
+    // The invariant this used to get wrong: "any human author in a bridged
+    // room is the operator". A bridge is minted from a chat somebody ELSE
+    // started with the bot, so its human party can be a genuine collaborator —
+    // and their `@dorian` has to reach the operator like any other mention.
+    const harness = open();
+    harness.authors.setHandle(harness.human, 'dorian');
+    const bridged = harness.service.createBridgedRoom({
+      ...bridgeDm(harness),
+      chatId: '556',
+      chatType: 'group',
+      channelType: 'group',
+      title: 'launch crew',
+    });
+    expect(bridged.kind).toBe('channel');
+
+    harness.service.postExternal(bridged.id, {
+      identity: {
+        platformType: 'telegram',
+        instanceId: 'tg-main',
+        platformUserId: '145223',
+        displayName: 'Miguel',
+      },
+      text: '@dorian look at this',
+    });
+    await flush();
+
+    expect(announced('mention.received')).toHaveLength(1);
+    const [row] = stored();
+    expect(row).toMatchObject({ kind: 'mention.received', roomId: bridged.id });
+  });
+
+  it('collapses into dm.received when the collaborator names the operator inside the DM', async () => {
+    // The DM collapse applies to a human author exactly as it does to an
+    // agent's: one message, one banner. The operator still hears it — as
+    // "Miguel messaged you" rather than "Miguel mentioned you in Ana".
     const harness = open();
     harness.authors.setHandle(harness.human, 'dorian');
     const bridged = harness.service.createBridgedRoom(bridgeDm(harness));
@@ -299,9 +385,9 @@ describe('a mention of the operator', () => {
     });
     await flush();
 
-    expect(announced('mention.received')).toHaveLength(1);
-    const [row] = stored();
-    expect(row).toMatchObject({ kind: 'mention.received', roomId: bridged.id });
+    expect(announced('dm.received')).toHaveLength(1);
+    expect(announced('mention.received')).toHaveLength(0);
+    expect(stored()).toHaveLength(1);
   });
 });
 
