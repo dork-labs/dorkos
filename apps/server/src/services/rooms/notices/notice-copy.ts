@@ -434,6 +434,12 @@ export function buildAgentGoneNotice(agentName: string, subjectAuthorId: string)
  *   reader through {@link runtimeDisplayName}. Undefined only if a caller ever
  *   reports this reason without one; the sentence stays grammatical and honest
  *   rather than printing an empty name, but it loses the fact worth having.
+ *   A runtime that HAS a type but is absent from `RUNTIME_DISPLAY_NAMES` prints
+ *   its raw type — a future runtime, or one this build knows only by slug. That
+ *   degradation is deliberate and is the display helper's own contract: the slug
+ *   is what the operator turns back on and what their settings screen calls it,
+ *   so a plain name is worse than the unpolished true one. It is the reason this
+ *   line is not gated on the type being one of the three known today.
  */
 export function buildRuntimeGoneNotice(
   agentName: string,
