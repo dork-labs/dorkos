@@ -9,12 +9,13 @@
  * load-bearing before there was an index to make this box possible. So this is
  * a sibling of the palette, sharing its keyboard model and none of its list.
  *
- * **The box says what it can and cannot see, in every state except the one
- * where results are on screen.** That is G4, and it is a product commitment
- * rather than a caption: coverage across the four runtimes is uneven, tool
- * output is never indexed, and a fragment that is not a word matches nothing.
- * A person has to be able to learn all three without reading a spec, and the
- * moment they are looking for that answer is the moment a list is empty.
+ * **The box says what it can and cannot see, in every state, on one line.**
+ * That is G4, and it is a product commitment rather than a caption: tool output
+ * is never indexed, transcripts lag a sweep behind, and a fragment that is not
+ * a word matches nothing. A person has to be able to LEARN all three without
+ * reading a spec — which is not the same as being made to read them before
+ * typing, so the detail sits behind the line's own disclosure and opens itself
+ * when a search comes back empty (DOR-1757).
  *
  * **Enter lands on the message in a channel, and opens the conversation for a
  * transcript** (DOR-687). The asymmetry is a coordinate one rather than a
@@ -46,7 +47,7 @@ import {
 } from '@/layers/shared/ui';
 import { useRooms } from '@/layers/entities/room';
 import { MessageSearchHitRow } from './MessageSearchHitRow';
-import { MessageSearchScope, MessageSearchScopeLine } from './MessageSearchScope';
+import { MessageSearchScope } from './MessageSearchScope';
 import { dialogVariants } from './palette-constants';
 import { SEARCH_PLACEHOLDER, SEARCH_TOO_SHORT } from '../model/message-search-scope';
 import { messageSearchContainerLabel, messageSearchTarget } from '../model/message-search-target';
@@ -199,6 +200,13 @@ function MessageSearchBox() {
 
   const hasResults = results.length > 0;
 
+  // A real question was asked and nothing came back. It is the one state where
+  // the fine print is the answer rather than a caption — "search matches whole
+  // words" explains an empty list, and nothing else on screen does — so the
+  // scope statement opens itself here and stays one line everywhere else.
+  const foundNothing =
+    !hasResults && !tooShort && !isSearching && submitted.trim().length > 0 && error === null;
+
   return (
     <ResponsiveDialog open={open} onOpenChange={setOpen}>
       <ResponsiveDialogContent
@@ -299,26 +307,23 @@ function MessageSearchBox() {
               </ScrollArea>
             </CommandList>
 
-            {hasResults ? (
-              <MessageSearchScopeLine />
-            ) : (
-              /* Nothing to show, for one of three different reasons — and they
-                 are three different sentences, because an empty list looks
-                 identical in all of them. Capped and scrollable so a short
-                 window still reaches the footer. */
-              error === null && (
-                <div className="max-h-[45vh] min-h-0 overflow-y-auto">
-                  {tooShort && (
-                    <p className="text-muted-foreground px-3 pt-3 text-xs">{SEARCH_TOO_SHORT}</p>
-                  )}
-                  {!tooShort && submitted.trim().length > 0 && !isSearching && (
-                    <p className="text-muted-foreground px-3 pt-3 text-xs">
-                      No messages match “{submitted.trim()}”.
-                    </p>
-                  )}
-                  <MessageSearchScope />
-                </div>
-              )
+            {/* One statement in every state, at one line unless somebody asks
+                for more. Nothing to show has two different reasons and they get
+                two different sentences, because an empty list looks identical
+                in both. Capped and scrollable so a short window still reaches
+                the footer. */}
+            {error === null && (
+              <div className="max-h-[45vh] min-h-0 shrink-0 overflow-y-auto">
+                {tooShort && (
+                  <p className="text-muted-foreground px-3 pt-3 text-xs">{SEARCH_TOO_SHORT}</p>
+                )}
+                {foundNothing && (
+                  <p className="text-muted-foreground px-3 pt-3 text-xs">
+                    No messages match “{submitted.trim()}”.
+                  </p>
+                )}
+                <MessageSearchScope detailOpen={foundNothing} />
+              </div>
             )}
             <div className="text-muted-foreground flex flex-shrink-0 items-center gap-3 border-t px-3 py-1.5 text-xs">
               <span className="inline-flex items-center gap-1">

@@ -36,6 +36,7 @@ import type { Session } from '@dorkos/shared/types';
 import { setPlatformAdapter } from '@/layers/shared/lib';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { useInteractionStore } from '@/layers/entities/interactions';
+import { SEARCH_SCOPE_SUMMARY } from '../model/message-search-scope';
 import { MessageSearchDialog } from '../ui/MessageSearchDialog';
 import { CommandPaletteDialog } from '../ui/CommandPaletteDialog';
 
@@ -150,7 +151,7 @@ describe('where the search box exists', () => {
     act(() => useAppStore.getState().setMessageSearchOpen(true));
 
     expect(screen.queryByTestId('message-search-dialog')).toBeNull();
-    expect(screen.queryByText('What search covers')).toBeNull();
+    expect(screen.queryByText(SEARCH_SCOPE_SUMMARY)).toBeNull();
     // And it never asked the transport, so nothing reached the rejecting stub.
     expect(mockTransport.search).not.toHaveBeenCalled();
   });
@@ -184,6 +185,9 @@ describe('where the search box exists', () => {
     render(<MessageSearchDialog />, { wrapper: Wrapper });
     act(() => useAppStore.getState().setMessageSearchOpen(true));
 
+    // It lives with the rest of the fine print, one click behind the summary
+    // line (DOR-1757) — reachable, which is what G4 asks for.
+    fireEvent.click(screen.getByRole('button', { name: SEARCH_SCOPE_SUMMARY }));
     expect(screen.getByText(/what DorkOS has already indexed/i)).toBeInTheDocument();
   });
 
@@ -191,6 +195,7 @@ describe('where the search box exists', () => {
     render(<MessageSearchDialog />, { wrapper: Wrapper });
     act(() => useAppStore.getState().setMessageSearchOpen(true));
 
+    fireEvent.click(screen.getByRole('button', { name: SEARCH_SCOPE_SUMMARY }));
     expect(screen.queryByText(/what DorkOS has already indexed/i)).toBeNull();
   });
 
