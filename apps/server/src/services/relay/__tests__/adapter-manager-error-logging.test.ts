@@ -144,8 +144,44 @@ const ADAPTERS_JSON = JSON.stringify({
   ],
 });
 
+/**
+ * Every module this file needs is loaded HERE, in the hook, and never inside
+ * the `it()` body — with an explicit hook timeout far above anything a busy
+ * machine can produce. That split is the whole point, and moving an
+ * `await import()` back into the test body reintroduces DOR-1695.
+ *
+ * Why: `vi.resetModules()` means each test re-evaluates the graph from
+ * scratch, and this file's graph is enormous — the mock factory's
+ * `vi.importActual('@dorkos/relay')` pulls in the entire relay package, and
+ * `../adapter-manager.js` drags its own transitive world behind it. Measured
+ * on the dev machine, quiet: `@dorkos/relay` 1365 ms, `adapter-manager.js`
+ * 828 ms, `lib/logger.js` 22 ms — against 3 ms for the behaviour actually
+ * under test (`initialize()` + `adaptersStarted()`). So when all of that sat
+ * inside the `it()`, vitest's DEFAULT 5 s per-test bound was measuring this
+ * host's esbuild throughput and nothing else.
+ *
+ * That bound was reached. Same file, same content, three runs on this machine:
+ * quiet 1.5 s, under 24 competing CPU spinners 4.1 s (82 % of the budget),
+ * under 56 spinners a hard `Test timed out in 5000ms`. No assertion ever
+ * disagreed and no network call is involved at all — `TelegramAdapter` is
+ * mocked above, so the earlier "this host resolves DNS differently" reading of
+ * the flake was wrong. It is a wall-clock bound on a loaded box, the same
+ * class as DOR-1689 and DOR-1675.
+ *
+ * 60 s, because the number has to be unreachable by slowness to be worth
+ * anything: ~27x the quiet cost, ~15x the cost under heavy contention. It is
+ * not zero only so that a genuine hang still reports inside a minute instead
+ * of wedging the run. The `it()` below keeps the default 5 s, which is now a
+ * real bound on 3 ms of deterministic work.
+ */
+const MODULE_LOAD_TIMEOUT_MS = 60_000;
+
 describe('AdapterManager start-failure logging never leaks a token into the real NDJSON log (DOR-1509)', () => {
   let fs: typeof import('fs');
+  let loggerModule: typeof import('../../../lib/logger.js');
+  let AdapterRegistry: (typeof import('@dorkos/relay'))['AdapterRegistry'];
+  let AdapterManager: (typeof import('../adapter-manager.js'))['AdapterManager'];
+  let readFile: (typeof import('node:fs/promises'))['readFile'];
 
   beforeEach(async () => {
     vi.resetModules();
@@ -154,16 +190,18 @@ describe('AdapterManager start-failure logging never leaks a token into the real
     vi.mocked(fs.statSync).mockImplementation(() => {
       throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
     });
-  });
+
+    loggerModule = await import('../../../lib/logger.js');
+    ({ readFile } = await import('node:fs/promises'));
+    ({ AdapterRegistry } = await import('@dorkos/relay'));
+    ({ AdapterManager } = await import('../adapter-manager.js'));
+  }, MODULE_LOAD_TIMEOUT_MS);
 
   it('keeps the bot token out of every NDJSON line the real reporter writes when start() rejects on a dead network', async () => {
-    const loggerModule = await import('../../../lib/logger.js');
     loggerModule.initLogger({ level: 5, logDir: '/test/logs' });
 
-    const { readFile } = await import('node:fs/promises');
     vi.mocked(readFile).mockResolvedValue(ADAPTERS_JSON);
 
-    const { AdapterRegistry } = await import('@dorkos/relay');
     const registry = new AdapterRegistry();
     registry.setRelay({
       publish: vi.fn().mockResolvedValue({ messageId: 'm1', deliveredTo: 0 }),
@@ -171,7 +209,6 @@ describe('AdapterManager start-failure logging never leaks a token into the real
       subscribe: vi.fn().mockReturnValue(() => {}),
     });
 
-    const { AdapterManager } = await import('../adapter-manager.js');
     const manager = new AdapterManager(registry, '/home/test/.dork/relay/adapters.json', {
       agentManager: { ensureSession: vi.fn(), sendMessage: vi.fn() } as never,
       traceStore: { insertSpan: vi.fn(), updateSpan: vi.fn() } as never,
