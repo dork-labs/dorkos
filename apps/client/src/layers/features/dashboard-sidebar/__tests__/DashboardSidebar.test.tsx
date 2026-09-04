@@ -466,7 +466,7 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   useAgentHottestStatus: () => ({ kind: 'idle', color: 'x', pulse: false, label: 'Idle' }),
   useAgentsAggregateStatus: () => false,
   useAgentAttentionMap: (paths: string[], broken?: string[]) => mockAttentionMap(paths, broken),
-  usePulseMotion: () => ({ animate: undefined, transition: undefined }),
+  usePulseMotion: () => ({ animate: undefined, transition: undefined, pulsing: false }),
   useRenameSession: () => ({ mutate: vi.fn() }),
   useRecentSessions: () => mockRecent(),
   // The real store: the lifecycle projection the assembly hook selects out of

@@ -57,6 +57,13 @@ export const FORMS_SECTIONS: PlaygroundSection[] = [
     keywords: ['radio', 'single-select', 'option', 'choice', 'form', 'group'],
   },
   {
+    id: 'segmentedcontrol',
+    title: 'SegmentedControl',
+    page: 'forms',
+    category: 'Primitives',
+    keywords: ['segmented', 'toggle', 'switch', 'radio', 'choice', 'trust', 'thumb', 'slide'],
+  },
+  {
     id: 'label',
     title: 'Label',
     page: 'forms',

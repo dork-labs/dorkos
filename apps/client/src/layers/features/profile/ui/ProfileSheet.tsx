@@ -52,17 +52,7 @@ export function ProfileSheet({ open, onOpenChange, ...view }: ProfileSheetProps)
       <ResponsiveSheetContent
         data-slot="profile-sheet"
         style={{ '--identity-color': face.color } as CSSProperties}
-        // 300ms in, not the Sheet primitive's 500. At 500 this was the slowest
-        // transition in the identity flow and the most noticeable — you watch a
-        // panel arrive rather than find it already there, every time you open
-        // one (identity-micro-interactions §3D1).
-        //
-        // Scoped HERE rather than in `Sheet` or `ResponsiveSheet`, deliberately:
-        // the primitive is shared with Settings' panels, and re-timing every
-        // sheet in the app is a decision about every sheet in the app. A
-        // caller's `className` is merged last, so this outranks the primitive's
-        // own duration for this one panel.
-        className="flex flex-col gap-0 overflow-hidden p-0 data-[state=open]:duration-300"
+        className="flex flex-col gap-0 overflow-hidden p-0"
         // Hand focus back to whatever opened this sheet, rather than Radix's
         // own default (DOR-1274). Radix restores to whatever had focus at MOUNT
         // time, which for several openers — a hover card's "View profile"

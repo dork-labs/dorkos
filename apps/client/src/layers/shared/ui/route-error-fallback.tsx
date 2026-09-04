@@ -65,7 +65,7 @@ export function RouteErrorFallback({ error }: ErrorComponentProps) {
             <button
               onClick={copyStack}
               title="Copy stack trace"
-              className="text-muted-foreground hover:text-foreground hover:bg-muted absolute top-0 right-0 flex items-center gap-1 rounded px-2 py-1 text-xs transition-all"
+              className="text-muted-foreground hover:text-foreground hover:bg-muted absolute top-0 right-0 flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors"
             >
               {stackCopyIcon()}
               <span className={cn(copied && 'text-green-500', failed && 'text-destructive')}>

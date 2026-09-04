@@ -1,5 +1,5 @@
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { useState, useCallback, useMemo, useEffect, useId, useRef } from 'react';
+import { motion, AnimatePresence, LayoutGroup } from 'motion/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore, useIsMobile, useNow } from '@/layers/shared/model';
 import { cachedSessionForCwd } from '@/layers/entities/session';
@@ -429,6 +429,11 @@ export function CommandPaletteDialog() {
   // the global Continue/Recent list would ignore the chip on screen.
   const isZeroQuery = !search && scope === null;
 
+  // Namespaces the selection pill's shared `layoutId` to THIS palette. Every
+  // row that draws it lives under `palette`, so one group covers them all —
+  // and a second palette on screen could never pull the pill across.
+  const selectionGroupId = useId();
+
   const palette = (
     <ResponsiveDialog open={globalPaletteOpen} onOpenChange={handleOpenChange}>
       <ResponsiveDialogContent
@@ -727,7 +732,7 @@ export function CommandPaletteDialog() {
   // layer rules allow.
   return (
     <>
-      {palette}
+      <LayoutGroup id={selectionGroupId}>{palette}</LayoutGroup>
       {switcherAgent !== null && (
         <SessionSwitcher
           agentPath={switcherAgent.projectPath}

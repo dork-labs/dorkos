@@ -176,7 +176,7 @@ export function PersonalityPicker({
                   type="button"
                   onClick={handleEnterCustom}
                   className={cn(
-                    'inline-flex shrink-0 items-center gap-1.5 rounded-full border border-dashed font-medium transition-all',
+                    'inline-flex shrink-0 items-center gap-1.5 rounded-full border border-dashed font-medium transition-[color,border-color]',
                     'text-muted-foreground hover:text-foreground hover:border-foreground/20 border-border',
                     compact ? 'text-2xs px-2.5 py-1' : 'px-3 py-1 text-xs'
                   )}
@@ -204,7 +204,7 @@ export function PersonalityPicker({
                     type="button"
                     onClick={handleBackToPresets}
                     className={cn(
-                      'inline-flex shrink-0 items-center gap-1.5 rounded-full border border-dashed font-medium transition-all',
+                      'inline-flex shrink-0 items-center gap-1.5 rounded-full border border-dashed font-medium transition-[color,border-color]',
                       'text-muted-foreground hover:text-foreground hover:border-foreground/20 border-border',
                       compact ? 'text-2xs px-2.5 py-1' : 'px-3 py-1 text-xs'
                     )}

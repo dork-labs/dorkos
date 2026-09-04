@@ -67,7 +67,7 @@ export function FileAttachmentList({ files }: FileAttachmentListProps) {
                   src={imgSrc}
                   alt={file.displayName}
                   loading="lazy"
-                  className="border-border/50 max-h-[120px] max-w-[200px] cursor-pointer rounded-lg border object-contain transition-all duration-150 hover:brightness-95"
+                  className="border-border/50 max-h-[120px] max-w-[200px] cursor-pointer rounded-lg border object-contain transition-[filter] duration-150 hover:brightness-95"
                 />
               </a>
             </motion.div>

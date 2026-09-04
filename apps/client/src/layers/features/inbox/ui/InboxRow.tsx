@@ -16,6 +16,27 @@ export const staggerItem = {
 } as const;
 
 /**
+ * How many rows stagger. Everything past this paints at once.
+ *
+ * 30ms per row is a pleasant ripple over eight rows and reads as latency over
+ * thirty — the last of sixty would wait 1.8 seconds to appear, on the one list
+ * in the app most likely to be that long. Same cap the tasks list uses.
+ */
+export const INBOX_STAGGER_LIMIT = 8;
+
+/**
+ * The entrance variants for the row at `index`, or nothing past the cap.
+ *
+ * A row with no variants inherits no delay from the stagger container and
+ * paints immediately, which is the point. `undefined` means the caller is not
+ * drawing a list position at all — a group's member rows, a showcase — and
+ * those keep the entrance.
+ */
+export function staggerVariantsFor(index: number | undefined): typeof staggerItem | undefined {
+  return index === undefined || index < INBOX_STAGGER_LIMIT ? staggerItem : undefined;
+}
+
+/**
  * The glyph slot's fixed footprint — 18px, matching the `xs` avatar disc.
  *
  * **Load-bearing, not decorative.** An `AgentAvatar` at `xs` is 18px and the
@@ -52,6 +73,14 @@ export interface InboxRowProps {
    * draws as text rather than as a button that does nothing.
    */
   onOpen?: () => void;
+  /**
+   * Where this row sits in its list, so the entrance can stop staggering.
+   *
+   * Omit it wherever there is no list position to report — a group's member
+   * rows, a showcase — and the row keeps the entrance. See
+   * {@link staggerVariantsFor}.
+   */
+  index?: number;
 }
 
 /**
@@ -83,7 +112,7 @@ export interface InboxRowProps {
  * @param props - The {@link InboxRowProps.notification}, its resolved
  *   {@link InboxRowProps.agent}, and what opening it does.
  */
-export function InboxRow({ notification, agent, onOpen }: InboxRowProps) {
+export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) {
   const Icon = NOTIFICATION_ICONS[notification.kind];
   const tone = notificationRowTone(notification);
   const unread = notification.readAt === undefined;
@@ -157,7 +186,7 @@ export function InboxRow({ notification, agent, onOpen }: InboxRowProps) {
   );
 
   return (
-    <motion.div variants={staggerItem} className="min-w-0">
+    <motion.div variants={staggerVariantsFor(index)} className="min-w-0">
       {onOpen ? (
         <button
           type="button"

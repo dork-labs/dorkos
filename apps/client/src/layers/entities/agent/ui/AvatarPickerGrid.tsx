@@ -198,7 +198,7 @@ function ColorSwatch({
       onMouseEnter={() => onHoverChange?.(color)}
       onMouseLeave={() => onHoverChange?.(null)}
       className={cn(
-        'group/swatch relative size-8 rounded-full transition-all duration-150',
+        'group/swatch relative size-8 rounded-full transition-[scale,box-shadow] duration-150',
         active ? activeRing : 'hover:scale-110'
       )}
       style={{ backgroundColor: color }}

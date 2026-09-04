@@ -95,7 +95,9 @@ export function SessionRowFull({
     [startRename]
   );
 
-  const { animate, transition, initial } = useEntryAndPulse({ isNew, borderState });
+  // `pulsing`, not `borderState.pulse`, decides whether the static border
+  // colour is painted below: the hook owns the reduced-motion gate now.
+  const { animate, transition, initial, pulsing } = useEntryAndPulse({ isNew, borderState });
 
   return (
     <Tooltip>
@@ -104,7 +106,10 @@ export function SessionRowFull({
         initial={initial}
         animate={animate}
         transition={transition}
-        style={borderState.pulse ? undefined : { borderLeftColor: borderState.color }}
+        // Reports what the hook decided. No motion prop is assertable in jsdom,
+        // so this attribute is the only observable half.
+        data-pulsing={pulsing ? 'true' : 'false'}
+        style={pulsing ? undefined : { borderLeftColor: borderState.color }}
         className={cn(
           'group relative rounded-lg border-l-2 transition-colors duration-150',
           isActive ? 'text-foreground' : 'hover:bg-secondary/60'
@@ -288,17 +293,19 @@ function useEntryAndPulse({
   initial: { opacity: number; y: number } | undefined;
   animate: TargetAndTransition | undefined;
   transition: Transition | undefined;
+  /** Whether the border pulse is actually running — see {@link usePulseMotion}. */
+  pulsing: boolean;
 } {
-  const { animate: pulseAnimate, transition: pulseTransition } = usePulseMotion(
-    borderState.pulse,
-    borderState.color,
-    borderState.dimColor
-  );
+  const {
+    animate: pulseAnimate,
+    transition: pulseTransition,
+    pulsing,
+  } = usePulseMotion(borderState.pulse, borderState.color, borderState.dimColor);
 
   return useMemo(() => {
-    const needsMotion = isNew || borderState.pulse;
+    const needsMotion = isNew || pulsing;
     if (!needsMotion) {
-      return { initial: undefined, animate: undefined, transition: undefined };
+      return { initial: undefined, animate: undefined, transition: undefined, pulsing };
     }
     const animate: TargetAndTransition = {
       ...(isNew ? { opacity: 1, y: 0 } : {}),
@@ -317,6 +324,7 @@ function useEntryAndPulse({
       initial: isNew ? { opacity: 0, y: -8 } : undefined,
       animate,
       transition,
+      pulsing,
     };
-  }, [isNew, borderState.pulse, pulseAnimate, pulseTransition]);
+  }, [isNew, pulsing, pulseAnimate, pulseTransition]);
 }

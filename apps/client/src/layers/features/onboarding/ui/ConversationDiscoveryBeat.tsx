@@ -11,6 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Search } from 'lucide-react';
+import { AnimatePresence } from 'motion/react';
 import { Button } from '@/layers/shared/ui';
 import { TypingDots } from '@/layers/features/chat';
 import {
@@ -159,14 +160,19 @@ export function ConversationDiscoveryBeat({
   return (
     <div className="flex w-full flex-col gap-3">
       <div className="flex flex-col gap-2">
-        {pending.map((candidate) => (
-          <CandidateCard
-            key={candidate.path}
-            candidate={candidate}
-            onApprove={handleApprove}
-            onSkip={(c) => markActed(c.path)}
-          />
-        ))}
+        {/* Same wrapper `DiscoveryView` uses. `CandidateCard` declares an exit,
+            and without AnimatePresence around the map an approved card vanishes
+            in one frame while the rows under it jump up. */}
+        <AnimatePresence mode="popLayout">
+          {pending.map((candidate) => (
+            <CandidateCard
+              key={candidate.path}
+              candidate={candidate}
+              onApprove={handleApprove}
+              onSkip={(c) => markActed(c.path)}
+            />
+          ))}
+        </AnimatePresence>
       </div>
       {pending.length > 0 && <BulkAddBar count={pending.length} onAddAll={handleAddAll} />}
       <div className="flex justify-start">

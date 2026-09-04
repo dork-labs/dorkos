@@ -30,7 +30,7 @@ const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      'ring-offset-background inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-all md:py-1',
+      'ring-offset-background inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-[color,background-color,box-shadow,opacity] md:py-1',
       'focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
       'disabled:pointer-events-none disabled:opacity-50',
       'data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow',
@@ -49,6 +49,10 @@ const TabsContent = React.forwardRef<
     ref={ref}
     className={cn(
       'ring-offset-background mt-2',
+      // Enter only, no exit: the panel it replaces is already unmounted, so
+      // there is never a moment with two panels on screen. 150ms, the in-page
+      // transition row of the duration table.
+      'data-[state=active]:animate-in data-[state=active]:fade-in-0 data-[state=active]:duration-150',
       'focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
       className
     )}

@@ -31,7 +31,7 @@ export function TaskProgressHeader({
       <div className="bg-muted h-0.5 flex-1 overflow-hidden rounded-full">
         <div
           data-slot="progress-fill"
-          className={`h-full rounded-full transition-all duration-300 ease-out ${allDone ? 'bg-green-500' : 'bg-blue-500'}`}
+          className={`h-full rounded-full transition-[width,background-color] duration-300 ease-out ${allDone ? 'bg-green-500' : 'bg-blue-500'}`}
           style={{ width: `${pct}%` }}
         />
       </div>

@@ -25,7 +25,12 @@ import { groupActivityRows } from '../lib/group-activity-rows';
 import { InboxRow } from './InboxRow';
 import { InboxGroupRow } from './InboxGroupRow';
 
-/** The stagger the rows inherit — each row declares the child half. */
+/**
+ * The stagger the rows inherit — each row declares the child half.
+ *
+ * Only the first `INBOX_STAGGER_LIMIT` rows take it: past that the delay stops
+ * reading as motion and starts reading as the list being slow to load.
+ */
 const staggerContainer = {
   animate: { transition: { staggerChildren: 0.03 } },
 } as const;
@@ -148,11 +153,12 @@ export function InboxList({ lens, emptyLabel = 'Nothing yet', onOpened }: InboxL
   return (
     <div className="min-w-0">
       <motion.div variants={staggerContainer} initial="initial" animate="animate">
-        {items.map((item) =>
+        {items.map((item, index) =>
           item.type === 'group' ? (
             <InboxGroupRow
               key={item.id}
               group={item}
+              index={index}
               agent={resolveAgent(item.agentId)}
               agentName={getAgentDisplayName(agentsById.get(item.agentId))}
               expanded={expandedGroups.has(item.stateKey)}
@@ -163,6 +169,7 @@ export function InboxList({ lens, emptyLabel = 'Nothing yet', onOpened }: InboxL
             <InboxRow
               key={item.notification.id}
               notification={item.notification}
+              index={index}
               agent={resolveAgent(item.notification.agentId)}
               // A row with nowhere to go is not a control — see the class doc.
               onOpen={

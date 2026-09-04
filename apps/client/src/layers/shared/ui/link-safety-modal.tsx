@@ -71,7 +71,7 @@ export function LinkSafetyModal({ url, isOpen, onClose, onConfirm }: LinkSafetyM
         tabIndex={-1}
       >
         <button
-          className="text-muted-foreground hover:bg-muted hover:text-foreground absolute top-4 right-4 rounded-md p-1 transition-all"
+          className="text-muted-foreground hover:bg-muted hover:text-foreground absolute top-4 right-4 rounded-md p-1 transition-colors"
           onClick={onClose}
           title="Close"
           type="button"

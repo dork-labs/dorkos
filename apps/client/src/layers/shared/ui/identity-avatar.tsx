@@ -105,7 +105,12 @@ const identityMarkRing = {
 const IDENTITY_MARK_GROUP = 'group/identity';
 
 const identityAvatarVariants = cva(
-  'relative inline-flex shrink-0 items-center justify-center transition-[background-color] duration-500 ease-in-out',
+  // The disc's own colour change rides the identity grammar's slowest speed and
+  // one of its two curves. It used to be 500ms `ease-in-out` — a fourth speed
+  // in a three-speed system, and more than double the slowest one — which every
+  // non-Mark disc in the app wore. A Mark-tier disc still merges
+  // `duration-(--identity-answer)` over this and wins, as it always did.
+  'relative inline-flex shrink-0 items-center justify-center transition-[background-color] duration-(--identity-settle) ease-(--identity-ease-standard)',
   {
     variants: {
       size: {

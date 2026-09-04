@@ -181,7 +181,7 @@ function AskCardRoot({
       {...motionProps}
       {...(answerable ? { tabIndex: -1, onKeyDown } : {})}
       className={cn(
-        'border-status-info bg-muted/50 rounded-msg-tool border-l-2 p-3 text-sm transition-all duration-200',
+        'border-status-info bg-muted/50 rounded-msg-tool border-l-2 p-3 text-sm transition-[color,background-color,border-color,box-shadow,opacity] duration-200',
         isActive && 'ring-ring/30 ring-2',
         !isActive && !isResolved && 'opacity-60',
         'focus-visible:ring-ring/50 focus-visible:ring-2 focus-visible:outline-none',

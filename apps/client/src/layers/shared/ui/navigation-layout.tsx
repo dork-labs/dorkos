@@ -59,6 +59,12 @@ interface NavigationLayoutProps {
  */
 function NavigationLayout({ children, value, onValueChange, className }: NavigationLayoutProps) {
   const isMobile = useIsMobile();
+  // Namespaces the active pill's `layoutId` to THIS layout. The group carried
+  // no id, and an id-less `LayoutGroup` shares measurement without namespacing
+  // anything — so two of these mounted at once would have shared one pill and
+  // teleported it between them. Nothing mounts two today; this makes that a
+  // fact about the construction rather than about the call sites.
+  const pillGroupId = React.useId();
   const [drilledIn, setIsDrilledIn] = React.useState(false);
   // Drill-in is a mobile idea, so a desktop viewport simply is not drilled in —
   // derived rather than reset from an effect, which used to leave one render
@@ -138,7 +144,7 @@ function NavigationLayout({ children, value, onValueChange, className }: Navigat
 
   return (
     <NavigationLayoutContext.Provider value={ctxValue}>
-      <LayoutGroup>
+      <LayoutGroup id={pillGroupId}>
         <div
           data-slot="navigation-layout"
           className={cn('flex flex-1 flex-col overflow-hidden', className)}
