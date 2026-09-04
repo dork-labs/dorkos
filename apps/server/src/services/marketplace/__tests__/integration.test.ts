@@ -49,6 +49,11 @@ import { PluginInstallFlow } from '../flows/install-plugin.js';
 import { SHAPE_PROJECT_PATH_IGNORED_WARNING, ShapeInstallFlow } from '../flows/install-shape.js';
 import { SkillPackInstallFlow } from '../flows/install-skill-pack.js';
 import { UninstallFlow } from '../flows/uninstall.js';
+import {
+  scanAgentLocalInstalls,
+  scanInstallationsAcrossScopes,
+  scanInstalledPackages,
+} from '../installed-scanner.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -600,5 +605,203 @@ describe('marketplace install pipeline — integration', () => {
     // marketplace — both stay absent rather than being fabricated.
     expect(metadata.sourceRef).toBeUndefined();
     expect(metadata.installedFrom).toBeUndefined();
+  });
+
+  // ---------------------------------------------------------------------------
+  // DOR-994: a project-scoped AGENT install lands in `<projectPath>/.dork/
+  // agents/<name>`, but the installed scanner and the uninstall probe used to
+  // look only in `<projectPath>/.dork/plugins/`. The package was therefore
+  // installable and then neither listable nor removable through the API. These
+  // cases drive the real install flow so the fixture is whatever the product
+  // actually writes, and assert on the DIRECTORY, not on a 200.
+  // ---------------------------------------------------------------------------
+  describe('project-scoped agent installs (DOR-994)', () => {
+    /** Install `valid-agent` into a fresh temp project and return both paths. */
+    async function installAgentIntoProject(
+      installer: MarketplaceInstaller
+    ): Promise<{ projectPath: string; installRoot: string }> {
+      const projectPath = await mkdtemp(path.join(tmpdir(), 'dorkos-scoped-agent-project-'));
+      const result = await installer.install({ name: fixturePath('valid-agent'), projectPath });
+      expect(result.ok).toBe(true);
+      // The premise the two blind spots hang off: agents really do nest under
+      // the project's `agents/` root, not its `plugins/` one.
+      expect(result.installPath).toBe(path.join(projectPath, '.dork', 'agents', 'valid-agent'));
+      return { projectPath, installRoot: result.installPath };
+    }
+
+    it('lists a project-scoped agent in every installed view', async () => {
+      const { installer } = buildInstallerForTests(dorkHome);
+      const { projectPath, installRoot } = await installAgentIntoProject(installer);
+
+      try {
+        // 1. The merged single-project view (`GET /installed?projectPath=…`).
+        const merged = await scanInstalledPackages(dorkHome, projectPath);
+        expect(merged).toContainEqual(
+          expect.objectContaining({
+            name: 'valid-agent',
+            type: 'agent',
+            installPath: installRoot,
+            scope: 'agent-local',
+            agentPath: projectPath,
+          })
+        );
+
+        // 2. The per-installation cross-scope view (`GET /installed`, and the
+        //    `marketplace_list_installed` MCP tool).
+        const across = await scanInstallationsAcrossScopes(dorkHome, [
+          { projectPath, id: 'agent-1', name: 'Scoped Agent' },
+        ]);
+        expect(across).toContainEqual(
+          expect.objectContaining({
+            name: 'valid-agent',
+            installPath: installRoot,
+            scope: 'agent-local',
+            agentId: 'agent-1',
+            agentName: 'Scoped Agent',
+          })
+        );
+
+        // 3. The orphaned-installs report shown when an agent is unregistered.
+        const orphans = await scanAgentLocalInstalls(projectPath);
+        expect(orphans.map((pkg) => pkg.installPath)).toContain(installRoot);
+      } finally {
+        await rm(projectPath, { recursive: true, force: true }).catch(() => undefined);
+      }
+    });
+
+    it('uninstalls a project-scoped agent off disk', async () => {
+      const { installer } = buildInstallerForTests(dorkHome);
+      const { projectPath, installRoot } = await installAgentIntoProject(installer);
+
+      try {
+        const result = await installer['deps'].uninstallFlow.uninstall({
+          name: 'valid-agent',
+          projectPath,
+          purge: true,
+        });
+
+        expect(result.ok).toBe(true);
+        // The directory is gone — a 200 that removed nothing is the failure
+        // this assertion exists to catch.
+        expect(await pathExists(installRoot)).toBe(false);
+        expect(await scanInstalledPackages(dorkHome, projectPath)).toEqual([]);
+      } finally {
+        await rm(projectPath, { recursive: true, force: true }).catch(() => undefined);
+      }
+    });
+
+    it('keeps a global install of the same package listed and removable on its own', async () => {
+      const { installer } = buildInstallerForTests(dorkHome);
+      const globalResult = await installer.install({ name: fixturePath('valid-agent') });
+      const globalRoot = path.join(dorkHome, 'agents', 'valid-agent');
+      expect(globalResult.installPath).toBe(globalRoot);
+
+      const { projectPath, installRoot } = await installAgentIntoProject(installer);
+
+      try {
+        // Both installations are visible, and the project one is tagged as
+        // shadowing the global one rather than replacing it in the listing.
+        const across = await scanInstallationsAcrossScopes(dorkHome, [{ projectPath }]);
+        const agentEntries = across.filter((pkg) => pkg.name === 'valid-agent');
+        expect(agentEntries.map((pkg) => [pkg.installPath, pkg.scope])).toEqual([
+          [globalRoot, 'global'],
+          [installRoot, 'override'],
+        ]);
+
+        // Removing the project copy leaves the global one untouched…
+        await installer['deps'].uninstallFlow.uninstall({
+          name: 'valid-agent',
+          projectPath,
+          purge: true,
+        });
+        expect(await pathExists(installRoot)).toBe(false);
+        expect(await pathExists(globalRoot)).toBe(true);
+
+        // …and the global one still uninstalls exactly as before.
+        await installer['deps'].uninstallFlow.uninstall({ name: 'valid-agent', purge: true });
+        expect(await pathExists(globalRoot)).toBe(false);
+      } finally {
+        await rm(projectPath, { recursive: true, force: true }).catch(() => undefined);
+      }
+    });
+
+    // The case `installKey` exists for, and the one a name-keyed merge gets
+    // wrong in the most damaging direction: a global `plugins/X` and a
+    // project `agents/X` are two DIFFERENT packages the conflict detector
+    // allows to coexist (it warns, it does not block). Merging on the name
+    // alone would drop one from the listing and point its uninstall at the
+    // other. Both fixtures are copied to a temp source root — with directory
+    // basenames matching their manifest names — so the shared name is real all
+    // the way through validation.
+    it('keeps a global plugin and a project agent of the SAME name apart', async () => {
+      const { installer } = buildInstallerForTests(dorkHome);
+      const sourceRoot = await mkdtemp(path.join(tmpdir(), 'dorkos-crossroot-src-'));
+      const projectPath = await mkdtemp(path.join(tmpdir(), 'dorkos-crossroot-project-'));
+
+      const globalSource = path.join(sourceRoot, 'global', 'valid-plugin');
+      const scopedSource = path.join(sourceRoot, 'scoped', 'valid-plugin');
+      await cp(fixturePath('valid-plugin'), globalSource, { recursive: true });
+      await cp(fixturePath('valid-agent'), scopedSource, { recursive: true });
+
+      // Give the agent package the plugin's name. Everything else about it —
+      // including `type: 'agent'`, which is what sends it to `agents/` — stays.
+      const scopedManifestPath = path.join(scopedSource, '.dork', 'manifest.json');
+      const scopedManifest: Record<string, unknown> = JSON.parse(
+        await readFile(scopedManifestPath, 'utf-8')
+      ) as Record<string, unknown>;
+      scopedManifest.name = 'valid-plugin';
+      await writeFile(scopedManifestPath, JSON.stringify(scopedManifest, null, 2), 'utf-8');
+
+      // Local-path installs are boundary-confined, and these two sources live
+      // outside FIXTURES_DIR.
+      await initBoundary(sourceRoot);
+
+      try {
+        const globalRoot = (await installer.install({ name: globalSource })).installPath;
+        const scopedRoot = (await installer.install({ name: scopedSource, projectPath }))
+          .installPath;
+        expect(globalRoot).toBe(path.join(dorkHome, 'plugins', 'valid-plugin'));
+        expect(scopedRoot).toBe(path.join(projectPath, '.dork', 'agents', 'valid-plugin'));
+
+        // Merged view: two entries sharing a name, each keyed to its own root.
+        const merged = await scanInstalledPackages(dorkHome, projectPath);
+        expect(
+          merged
+            .filter((pkg) => pkg.name === 'valid-plugin')
+            .map((pkg) => [pkg.installPath, pkg.type, pkg.scope])
+        ).toEqual([
+          [globalRoot, 'plugin', 'global'],
+          [scopedRoot, 'agent', 'agent-local'],
+        ]);
+
+        // Cross-scope view: the project copy is `agent-local`, NOT `override` —
+        // it shadows nothing, because no global `agents/valid-plugin` exists.
+        const across = await scanInstallationsAcrossScopes(dorkHome, [{ projectPath }]);
+        expect(
+          across
+            .filter((pkg) => pkg.name === 'valid-plugin')
+            .map((pkg) => [pkg.installPath, pkg.scope])
+        ).toEqual([
+          [globalRoot, 'global'],
+          [scopedRoot, 'agent-local'],
+        ]);
+
+        // A scoped uninstall reaches the project's agent and leaves the global
+        // plugin alone; the global uninstall then still works.
+        await installer['deps'].uninstallFlow.uninstall({
+          name: 'valid-plugin',
+          projectPath,
+          purge: true,
+        });
+        expect(await pathExists(scopedRoot)).toBe(false);
+        expect(await pathExists(globalRoot)).toBe(true);
+
+        await installer['deps'].uninstallFlow.uninstall({ name: 'valid-plugin', purge: true });
+        expect(await pathExists(globalRoot)).toBe(false);
+      } finally {
+        await rm(sourceRoot, { recursive: true, force: true }).catch(() => undefined);
+        await rm(projectPath, { recursive: true, force: true }).catch(() => undefined);
+      }
+    });
   });
 });
