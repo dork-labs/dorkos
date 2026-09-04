@@ -4,6 +4,7 @@ covers:
   - 'fix(client): errors say what happened and what to do next (DOR-1755)'
   - 'fix(client): no em dashes, no shell command with nowhere to type it (DOR-1755)'
   - 'fix(client): finish the adversarial review pass on the copy sweep (DOR-1755)'
+  - 'fix(client): remote access speaks the same honest voice as the rest of the sweep (DOR-1755)'
 ---
 
 ### Changed
@@ -21,3 +22,4 @@ covers:
 - A feature that is off now tells you where to type the command that turns it on, and offers to copy it (DOR-1755)
 - On a phone, the empty Channels screen points at the All tab at the bottom instead of a sidebar that phones do not have (DOR-1755)
 - A few error messages claimed something the app couldn't actually promise, like "Nothing was deleted" after a reset that failed partway through, or "Nothing you did was lost" on the screen for a crash so bad the app can't tell what happened. They now say what's actually true: it isn't sure (DOR-1755)
+- Remote access said "Failed to start tunnel" and "Failed to stop tunnel" when it couldn't tell you why. Those now match the rest of the app's voice (DOR-1755)
