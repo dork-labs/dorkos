@@ -210,6 +210,24 @@
   --color-status-pending: var(--status-pending);
   --color-status-pending-bg: var(--status-pending-bg);
   --color-status-pending-fg: var(--status-pending-fg);
+  --color-package-agent-bg: var(--package-agent-bg);
+  --color-package-agent-border: var(--package-agent-border);
+  --color-package-agent-fg: var(--package-agent-fg);
+  --color-package-plugin-bg: var(--package-plugin-bg);
+  --color-package-plugin-border: var(--package-plugin-border);
+  --color-package-plugin-fg: var(--package-plugin-fg);
+  --color-package-skill-bg: var(--package-skill-bg);
+  --color-package-skill-border: var(--package-skill-border);
+  --color-package-skill-fg: var(--package-skill-fg);
+  --color-package-adapter-bg: var(--package-adapter-bg);
+  --color-package-adapter-border: var(--package-adapter-border);
+  --color-package-adapter-fg: var(--package-adapter-fg);
+  --color-package-shape-bg: var(--package-shape-bg);
+  --color-package-shape-border: var(--package-shape-border);
+  --color-package-shape-fg: var(--package-shape-fg);
+  --color-package-connector-bg: var(--package-connector-bg);
+  --color-package-connector-border: var(--package-connector-border);
+  --color-package-connector-fg: var(--package-connector-fg);
   --color-brand: var(--brand);
   --color-brand-foreground: var(--brand-foreground);
   --color-surface: var(--surface);
@@ -449,6 +467,30 @@
    * darkening it would move it toward the background (`status-dot.ts`).
    */
   --status-warning-dot: hsl(38 92% 40%);
+
+  /*
+   * Marketplace package-kind hues, same literals as the client's Obsidian
+   * block (`index.css`, `.copilot-view-content`) — kept in sync by
+   * `plugin-styles.test.ts` the same way the status literals above are.
+   */
+  --package-agent-bg: rgba(59, 130, 246, 0.1);
+  --package-agent-border: rgba(59, 130, 246, 0.2);
+  --package-agent-fg: #3b82f6;
+  --package-plugin-bg: rgba(139, 92, 246, 0.1);
+  --package-plugin-border: rgba(139, 92, 246, 0.2);
+  --package-plugin-fg: #8b5cf6;
+  --package-skill-bg: rgba(5, 150, 105, 0.1);
+  --package-skill-border: rgba(5, 150, 105, 0.2);
+  --package-skill-fg: #059669;
+  --package-adapter-bg: rgba(245, 158, 11, 0.1);
+  --package-adapter-border: rgba(245, 158, 11, 0.2);
+  --package-adapter-fg: #f59e0b;
+  --package-shape-bg: rgba(244, 63, 94, 0.1);
+  --package-shape-border: rgba(244, 63, 94, 0.2);
+  --package-shape-fg: #f43f5e;
+  --package-connector-bg: rgba(6, 182, 212, 0.1);
+  --package-connector-border: rgba(6, 182, 212, 0.2);
+  --package-connector-fg: #06b6d4;
 
   /* DorkOS's own marks. Identity, so they do not become the vault's accent. */
   --brand: hsl(24 90% 44%);
