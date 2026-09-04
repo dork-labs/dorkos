@@ -19,9 +19,11 @@ export function CommandPaletteTrigger() {
       <TooltipTrigger asChild>
         <motion.button
           onClick={() => setGlobalPaletteOpen(true)}
-          className="text-muted-foreground hover:text-foreground flex h-7 w-7 items-center justify-center rounded-md transition-colors"
-          whileHover={{ scale: 1.1 }}
-          whileTap={{ scale: 0.94 }}
+          className="text-muted-foreground hover:bg-accent hover:text-foreground flex h-7 w-7 items-center justify-center rounded-md transition-colors"
+          // Hover is a tint, not a jump: this is always-on chrome, and the
+          // rest of the app's icon buttons answer the cursor the same way.
+          // The press stays — that is feedback, not decoration.
+          whileTap={{ scale: 0.97 }}
           transition={{ type: 'spring', stiffness: 600, damping: 35 }}
           aria-label="Open command palette"
         >

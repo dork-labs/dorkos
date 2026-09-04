@@ -264,8 +264,8 @@ export function InputActionButton({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.8 }}
             transition={{ duration: 0.15 }}
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.94 }}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.97 }}
             onClick={onStop}
             type="button"
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90 shrink-0 rounded-lg p-1.5 transition-colors max-md:p-2"
@@ -318,8 +318,8 @@ export function InputActionButton({
             // fades to dim over the transition, which reads as a flash.
             initial={false}
             transition={{ duration: 0.15 }}
-            whileHover={!sendBlocked ? { scale: 1.1 } : undefined}
-            whileTap={!sendBlocked ? { scale: 0.94 } : undefined}
+            whileHover={!sendBlocked ? { scale: 1.05 } : undefined}
+            whileTap={!sendBlocked ? { scale: 0.97 } : undefined}
             onClick={onClick}
             disabled={sendBlocked}
             type="button"
