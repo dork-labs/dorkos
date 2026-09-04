@@ -129,3 +129,9 @@ scripts/.flake-fixture-*/
 # from leaving a committable landmine behind. ESLint does not read .gitignore,
 # so the fixture is still linted.
 apps/client/src/layers/entities/__dag-fixture-*__/
+# Same arrangement, for the slice-encapsulation guard
+# (apps/client/__tests__/cross-slice-import-lint.test.ts). Its fixtures have to
+# live inside `src/layers/` because the rule derives a file's slice from that
+# file's own path; anywhere else the rule skips them and every assertion passes
+# vacuously.
+apps/client/src/layers/*/__slice-fixture-*__/

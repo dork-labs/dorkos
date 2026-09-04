@@ -5,6 +5,8 @@ import { createTypeScriptImportResolver } from 'eslint-import-resolver-typescrip
 import reactConfig from '@dorkos/eslint-config/react';
 import testConfig from '@dorkos/eslint-config/test';
 
+import fsd from './eslint-rules/fsd.js';
+
 // The TS preset's `extensions`/`parsers`/`external-module-folders` — the settings
 // that let import-x parse a `.ts` dependency — minus its `import-x/resolver` key,
 // which the DAG block below replaces with the `resolver-next` form. Deleting it
@@ -192,6 +194,31 @@ export default defineConfig([
         },
       ],
     },
+  },
+
+  // FSD Slice Encapsulation (DOR-1010): a relative path may not leave its slice.
+  //
+  // Every `no-restricted-imports` block above matches the SPECIFIER as a string,
+  // so it only ever sees the aliased spelling of a deep import. The identical
+  // violation written relatively — `../../composer/ui/ClearArmedHint` from
+  // `features/chat/ui/` — was reported by nobody, and two of them shipped in
+  // test files before the DOR-946 review caught them by eye.
+  //
+  // A string pattern cannot close that hole, because whether `../../x` leaves
+  // the slice depends on how deep the IMPORTING file sits, which the pattern
+  // never sees: from `chat/ui/Foo.tsx` it is a neighbour's internals, from
+  // `chat/ui/status/Foo.tsx` it is still `chat/`. That path arithmetic is the
+  // whole rule, and it is why this one is local code rather than another entry
+  // in the lists above.
+  //
+  // Unlike `import-x/no-cycle`, this rule resolves nothing and loads no plugin,
+  // so it has no way to fail open — but `__tests__/cross-slice-import-lint.test.ts`
+  // lints a real fixture through this config anyway, on the same reasoning: the
+  // evidence that a guard works is a violation it catches, never a green run.
+  {
+    files: ['src/layers/**/*.{ts,tsx}'],
+    plugins: { fsd },
+    rules: { 'fsd/no-cross-slice-relative-import': 'error' },
   },
 
   ...testConfig,

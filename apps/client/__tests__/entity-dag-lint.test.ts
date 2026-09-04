@@ -48,9 +48,17 @@ function writeSlice(slice: string, moduleName: string, moduleSource: string): vo
   writeFileSync(resolve(dir, 'model', `${moduleName}.ts`), moduleSource, 'utf-8');
 }
 
+/**
+ * Loading the app's flat config is a one-time ~6s cost per worker, and this
+ * suite is no longer the only one paying it — `cross-slice-import-lint.test.ts`
+ * instantiates ESLint too, and the two run in parallel workers. On a loaded
+ * machine that pushed the first assertion here past the default 5s budget, so
+ * the instance is shared and the cold start happens in `beforeAll`.
+ */
+const eslint = new ESLint({ cwd: CLIENT_ROOT });
+
 /** Lint one fixture file through the app's real flat config. */
 async function lintSliceEntry(slice: string): Promise<Linter.LintMessage[]> {
-  const eslint = new ESLint({ cwd: CLIENT_ROOT });
   const results = await eslint.lintFiles([resolve(ENTITIES, slice, 'index.ts')]);
   return results.flatMap((r) => r.messages);
 }
@@ -59,7 +67,7 @@ const cycleErrors = (messages: Linter.LintMessage[]): Linter.LintMessage[] =>
   messages.filter((m) => m.ruleId === 'import-x/no-cycle');
 
 describe('cross-entity DAG lint rule', () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     // x and y close a circle through each other's barrels, via the `@/` alias.
     writeSlice(
       '__dag-fixture-x__',
@@ -78,7 +86,10 @@ describe('cross-entity DAG lint rule', () => {
       'ok',
       "import { sessionKeys } from '@/layers/entities/session';\nexport const ok = () => sessionKeys;\n"
     );
-  });
+
+    // Pay ESLint's config cold start here, on this hook's own budget.
+    await lintSliceEntry('__dag-fixture-ok__');
+  }, 120_000);
 
   afterAll(() => {
     for (const slice of FIXTURE_SLICES) {

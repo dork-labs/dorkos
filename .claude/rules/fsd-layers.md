@@ -54,7 +54,9 @@ So the rule is direction, not isolation:
 
 1. **Import through the barrel.** `@/layers/entities/session`, never `@/layers/entities/session/model/...`. The barrel is the slice's contract; a deep import couples you to its file layout. ESLint enforces this one too.
 
-   The exception is `vi.mock()`, which needs the concrete module path — mocking a barrel replaces every export in it, not the one you meant to stub. So `vi.mock('@/layers/entities/session/model/use-recent-sessions')` is correct and stays. The lint rule does not see it, because `vi.mock()` is a call and not an import declaration; that is the carve-out, and it is the only one.
+   The exception is `vi.mock()`, which needs the concrete module path — mocking a barrel replaces every export in it, not the one you meant to stub. So `vi.mock('@/layers/entities/session/model/use-recent-sessions')` is correct and stays. The **barrel** rule does not see it, because it is a `no-restricted-imports` pattern and `vi.mock()` is a call rather than an import declaration; that is the carve-out, and it is the only one this rule has.
+
+   The carve-out covers the **aliased** deep path only. `vi.mock('../../session/model/use-recent-sessions')` is still an error — `fsd/no-cross-slice-relative-import` does read `vi.mock()`, deliberately, because the alias does the same job. There is nothing the relative spelling makes possible, so there is nothing to carve out.
 
 2. **Composites consume foundations.** A foundational slice answers one question about one thing (`runtime`, `config`, `mesh`, `relay`, `tasks`, `room`, `interactions`). A composite slice aggregates several into one normalized answer. That direction needs no defence — it is the pattern.
 3. **A foundational slice reaching for another entity is the smell.** It usually means the aggregation belongs one level up, in a composite. If it really doesn't, say why in the PR — this is the case a reviewer should stop on.
@@ -92,14 +94,37 @@ import { useAttentionSignals } from '@/layers/entities/attention'; // WRONG — 
 
 ### Always Use Path Alias
 
+A relative path may move around **inside** your own slice and nowhere else. The
+moment it leaves, it has to be the alias.
+
 ```typescript
-// CORRECT
+// CORRECT — inside your own slice, relative is the normal spelling
+// In features/chat/ui/ChatPanel.tsx
+import { laneState } from '../model/lane-state';
+import { ChatHeader } from './ChatHeader';
+
+// CORRECT — leaving the slice, always the alias and always the barrel
 import { Button } from '@/layers/shared/ui';
 import { useSession } from '@/layers/entities/session';
 
-// WRONG — relative imports across layers
+// WRONG — a relative path into a sibling slice's internals
+import { ClearArmedHint } from '../../composer/ui/ClearArmedHint';
+
+// WRONG — a relative path across layers
 import { Button } from '../../../shared/ui/button';
 ```
+
+Both wrong cases are lint errors (`fsd/no-cross-slice-relative-import`,
+DOR-1010). Until that rule landed only the aliased spelling of the mistake was
+caught, because every `no-restricted-imports` pattern matches the specifier as a
+string and `../../composer/ui/ClearArmedHint` matches none of them — two of them
+shipped in test files before a human noticed. Whether `../../x` has left the
+slice depends on how deep the importing file sits, so the rule resolves the path
+instead of matching it.
+
+`shared/` is the one layer with no slices: its top-level directories are
+segments, so `shared/ui/x.tsx -> '../lib/utils'` stays inside the unit and is
+fine.
 
 ### Always Import from index.ts
 
