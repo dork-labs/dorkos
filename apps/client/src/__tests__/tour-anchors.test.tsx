@@ -215,7 +215,7 @@ function transportWithTeamRoom() {
     getRoom: vi.fn().mockResolvedValue({
       ...team,
       // The operator, on their own team room's roster. The composer reads
-      // membership now (DOR-1233) and draws "You left this channel" instead of
+      // membership now (DOR-1233) and draws "You’re not in this channel" instead of
       // a field for a non-member, so an empty roster here would describe a
       // #team the operator had left — which the server refuses to let happen,
       // and which would leave the general tour's composer step with nothing to

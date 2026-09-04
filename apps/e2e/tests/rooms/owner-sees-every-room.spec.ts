@@ -12,7 +12,7 @@ test.describe.configure({ mode: 'default', timeout: 90_000 });
  * **Why this needs its own spec rather than riding `room-row-menu.spec.ts`.**
  * That file's "leaves a one-agent room" test reaches the identical roster
  * shape — the owner off a room's `room_members` — as a side effect of proving
- * Leave/Rejoin work. A regression in `useRooms`/`useRoomsByKind` silently
+ * Leave/Join work. A regression in `useRooms`/`useRoomsByKind` silently
  * filtering a non-member room, or a crash reading `unreadCount: null`, would
  * fail that test too, but for the wrong stated reason: its assertions and its
  * name are about the LEAVE gesture, not about the visibility guarantee. This
@@ -71,16 +71,18 @@ test.describe('Rooms — the owner sees every room, on or off its roster @smoke'
     // in either direction. An unread count folded into the name ("… 1 unread")
     // would mean `unreadCount: null` — the only signal a non-member has at all
     // — stopped being honoured (room-conduct.md: a non-member's count is
-    // `null`, drawn as no badge, never a repurposed zero). Losing "You left
-    // this channel" would mean the row can no longer be told apart from one
-    // this reader can actually post in.
+    // `null`, drawn as no badge, never a repurposed zero). Losing "You're not
+    // in this channel" would mean the row can no longer be told apart from one
+    // this reader can actually post in. The mark names the room's state and
+    // never a past action, because `unreadCount: null` is equally true of a
+    // room she left and one she was never added to (DOR-1620).
     //
     // Coupled to `RoomRow`'s full name, not just the membership half: it also
     // renders a "Muted" mark independently of `isMember` (`RoomRow.tsx`), so a
     // future default that mutes a freshly-seeded room would fail this exact
     // string for a reason that has nothing to do with membership. A red here
     // is worth checking against mute state before assuming this guarantee broke.
-    await expect(row).toHaveAccessibleName(`#${slug} You left this channel`);
+    await expect(row).toHaveAccessibleName(`#${slug} You're not in this channel`);
 
     await row.click();
     await expect(page).toHaveURL(new RegExp(`id=${room.id}`));
@@ -95,8 +97,8 @@ test.describe('Rooms — the owner sees every room, on or off its roster @smoke'
     // back onto the roster right where the composer would be.
     await expect(page.getByRole('combobox', { name: `Message #${slug}…` })).toHaveCount(0);
     await expect(
-      page.getByText('You left this channel. You can read it, but not add to it.')
+      page.getByText("You're not in this channel. You can read it, but not add to it.")
     ).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Rejoin' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Join' })).toBeVisible();
   });
 });

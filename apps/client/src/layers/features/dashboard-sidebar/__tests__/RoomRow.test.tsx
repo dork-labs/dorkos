@@ -474,7 +474,7 @@ describe('RoomRow leave', () => {
     renderRow(channel({ wellKnown: 'team' }), { selfKnownFromStart: true });
     const menu = openDropdown();
     expect(itemLabels(menu)).not.toContain('Leave channel');
-    expect(itemLabels(menu)).not.toContain('Rejoin channel');
+    expect(itemLabels(menu)).not.toContain('Join channel');
   });
 
   it('withholds Leave on a 1:1 whose agent the fleet no longer knows — still a 1:1', async () => {
@@ -490,7 +490,7 @@ describe('RoomRow leave', () => {
     // an absence asserted after mesh resolution lands, not before it.
     await within(menu).findByText('Members…');
     expect(itemLabels(menu)).not.toContain('Leave channel');
-    expect(itemLabels(menu)).not.toContain('Rejoin channel');
+    expect(itemLabels(menu)).not.toContain('Join channel');
   });
 
   it('leaves nothing until the confirmation is accepted', async () => {
@@ -505,7 +505,7 @@ describe('RoomRow leave', () => {
     expect(dialog).toHaveTextContent('Leave #general?');
     // The confirm copy no longer claims "someone" adds you back — on this
     // single-operator install there is nobody else who could.
-    expect(dialog).toHaveTextContent('You can rejoin from this menu');
+    expect(dialog).toHaveTextContent('You can join it again from this menu');
     expect(transport.removeRoomMember).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Leave' }));
@@ -551,7 +551,7 @@ describe('RoomRow leave', () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it('offers Undo on the leave toast, which rejoins by the same author id', async () => {
+  it('offers Undo on the leave toast, which joins back by the same author id', async () => {
     // Undo IS possible: the server never restricted `addMember` to agents,
     // only this hook's own input type used to (DOR-1233 follow-up) — so this
     // mirrors Archive's undo exactly rather than being absent.
@@ -583,7 +583,7 @@ describe('RoomRow leave', () => {
     );
   });
 
-  it('marks a left room with a dimmed row and a hint, and offers Rejoin in its place', async () => {
+  it('marks a room the reader is not in with a mark and a way in, not a dimming', async () => {
     // `unreadCount: null` is the server's own tell for "not a member" — the
     // same fact the unread badge already reads this way, not a signal
     // invented for this feature.
@@ -601,21 +601,47 @@ describe('RoomRow leave', () => {
     });
     renderRow(channel({ unreadCount: null }), { transport });
 
-    const hint = screen.getByLabelText('You left this channel');
-    expect(hint).toBeInTheDocument();
+    const hint = screen.getByLabelText("You're not in this channel");
+    expect(hint).toHaveTextContent('Read only');
     // The hint is what says so, NOT a dimming (DOR-1098): the room's name stays
-    // at full contrast, because a room you left is still one you read. Red the
-    // moment the old `opacity-60` comes back to the row's outer wrapper.
+    // at full contrast, because a room you cannot post in is still one you read.
+    // Red the moment the old `opacity-60` comes back to the row's outer wrapper.
     const wrapper = hint.closest('li')!.firstElementChild!;
     expect(wrapper.className).not.toContain('opacity-60');
 
     const menu = openDropdown();
     expect(itemLabels(menu)).not.toContain('Leave channel');
-    fireEvent.click(await within(menu).findByText('Rejoin channel'));
+    fireEvent.click(await within(menu).findByText('Join channel'));
 
     await waitFor(() =>
       expect(transport.addRoomMember).toHaveBeenCalledWith('room-1', { authorId: 'me' })
     );
+  });
+
+  it('never claims the reader LEFT a channel she was never on the roster of', async () => {
+    // The room an agent opened on its own (DOR-1611): legal under the three-way
+    // rule, and the owner sees it because she sees every room on the install
+    // (DOR-1233) — but her author id was never on its roster, so there is no
+    // leaving to report. The client cannot tell this room apart from one she
+    // did leave: `unreadCount: null` is the ONLY membership signal either has,
+    // and a read cursor's absence says "not a member now", never "was once".
+    // So the row is worded to be true of both (DOR-1620).
+    renderRow(channel({ unreadCount: null }), { selfKnownFromStart: true });
+
+    // Asserted on the row's accessible NAME, which is where the mark reaches a
+    // reader who cannot see the pill — and matched loosely on purpose: the
+    // point is which words are in it, not the spacing jsdom's own name
+    // computation happens to produce between the title and the mark.
+    const row = screen.getByRole('button', { name: /You're not in this channel/ });
+    expect(row).toHaveAccessibleName(/#general/);
+    expect(row).not.toHaveAccessibleName(/left/i);
+    expect(screen.queryByLabelText(/left this channel/i)).not.toBeInTheDocument();
+
+    // And the way back in is a verb that is true whether or not she was ever
+    // in it. "Rejoin" would be the same false claim in a second place.
+    const labels = itemLabels(openDropdown());
+    expect(labels).toContain('Join channel');
+    expect(labels.filter((label) => /rejoin|left/i.test(label))).toEqual([]);
   });
 });
 

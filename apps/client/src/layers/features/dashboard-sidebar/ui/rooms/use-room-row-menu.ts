@@ -2,7 +2,7 @@
  * Everything a room row can DO, mounted only once the reader reaches for it.
  *
  * A room row is mostly a picture: a mark, a name, a count. The acts behind it —
- * mark read, mute, move to a section, rename, archive, leave, rejoin — are six
+ * mark read, mute, move to a section, rename, archive, leave, join — are six
  * mutations and a preferences write, and every one of them used to be mounted by
  * every row on screen. On a 60-room sidebar that is ~420 mutation observers
  * standing idle, rebuilt on every render of the panel, for menus almost none of
@@ -45,7 +45,7 @@ export interface RoomRowMenuInput {
 /** The acts a room row's menu and confirmations perform. */
 export interface RoomRowActs {
   /**
-   * Whether Leave and Rejoin may be offered at all — the roster could name the
+   * Whether Leave and Join may be offered at all — the roster could name the
    * install owner, whose membership those two verbs move.
    */
   canLeave: boolean;
@@ -67,8 +67,8 @@ export interface RoomRowActs {
   archive: () => void;
   /** Leave it, offering the undo in the toast that reports it. */
   leave: () => void;
-  /** Rejoin a room you left. */
-  rejoin: () => void;
+  /** Get onto a room's roster — a room you left, or one you were never in. */
+  join: () => void;
 }
 
 /**
@@ -102,7 +102,7 @@ export function useRoomRowMenu({ room, isActive }: RoomRowMenuInput): RoomRowAct
   const { mutate: archiveRoom } = useArchiveRoom();
   const { mutate: unarchiveRoom } = useUnarchiveRoom();
   const { mutate: leaveRoom } = useRemoveRoomMember({ errorLabel: "Couldn't leave" });
-  const { mutate: rejoinRoom } = useAddRoomMember();
+  const { mutate: joinRoom } = useAddRoomMember();
   const { update: updateSidebarPrefs } = useUpdateSidebarPrefs();
 
   /**
@@ -155,18 +155,18 @@ export function useRoomRowMenu({ room, isActive }: RoomRowMenuInput): RoomRowAct
     const roomRef: SidebarItemRef = { kind: 'room', roomId: room.id };
 
     /**
-     * Rejoin a room you left — `AddRoomMemberRequestSchema` and
+     * Get onto this room's roster — `AddRoomMemberRequestSchema` and
      * `RoomService.addMember` take an existing author's id for any kind, agent
      * or person, so this is the same wire call "Add agents" makes, aimed at
      * yourself instead of an agent. No `responseMode`: the field decides when an
      * AGENT answers unprompted, and the server seeds a person's own inert
      * default.
      */
-    const rejoin = () => {
+    const join = () => {
       if (selfAuthorId === null) return;
-      rejoinRoom(
+      joinRoom(
         { roomId: room.id, authorId: selfAuthorId },
-        { onSuccess: () => toast.success(`You rejoined ${title}`) }
+        { onSuccess: () => toast.success(`You joined ${title}`) }
       );
     };
 
@@ -212,7 +212,7 @@ export function useRoomRowMenu({ room, isActive }: RoomRowMenuInput): RoomRowAct
           {
             onSuccess: () => {
               toast.success(`You left ${title}`, {
-                action: { label: 'Undo', onClick: rejoin },
+                action: { label: 'Undo', onClick: join },
               });
               // Only when this room is the one on screen: leaving from a row
               // that is not open changes nothing about where the reader is.
@@ -221,7 +221,7 @@ export function useRoomRowMenu({ room, isActive }: RoomRowMenuInput): RoomRowAct
           }
         );
       },
-      rejoin,
+      join,
     };
   }, [
     room.id,
@@ -234,7 +234,7 @@ export function useRoomRowMenu({ room, isActive }: RoomRowMenuInput): RoomRowAct
     archiveRoom,
     unarchiveRoom,
     leaveRoom,
-    rejoinRoom,
+    joinRoom,
     updateSidebarPrefs,
   ]);
 }

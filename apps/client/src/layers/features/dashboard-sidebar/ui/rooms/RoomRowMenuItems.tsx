@@ -16,6 +16,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { RoomKind } from '@dorkos/shared/room-schemas';
+import { JOIN_ROOM_VERB } from '@/layers/entities/room';
 import type { SidebarMenuActionNode, SidebarMenuNode } from '@/layers/shared/ui';
 
 /**
@@ -48,7 +49,7 @@ export type RoomMenuActionId =
   | 'rename'
   | 'topic'
   | 'leave'
-  | 'rejoin'
+  | 'join'
   | 'archive';
 
 /**
@@ -171,7 +172,7 @@ export interface RoomRowMenuModel {
    * as "you left" — the server's own tell, carried without a field of its
    * own: a non-member's `unreadCount` is `null` (a read cursor is a property
    * of membership), which is exactly the fact the sidebar badge already
-   * reads this same way. Decides which of Leave / Rejoin the slot below
+   * reads this same way. Decides which of Leave / Join the slot below
    * shows, not whether the slot exists at all — that gate is the three
    * conditions above.
    */
@@ -207,10 +208,10 @@ export interface RoomRowMenuModel {
    */
   onLeave: () => void;
   /**
-   * Rejoin a room you left. No confirm — joining is not destructive, the same
+   * Get onto a room's roster. No confirm — joining is not destructive, the same
    * reason "Add agents" below asks for nothing but who.
    */
-  onRejoin: () => void;
+  onJoin: () => void;
   /** Ask to archive, which confirms first. */
   onArchive: () => void;
 }
@@ -413,7 +414,7 @@ export function buildRoomRowMenuNodes(model: RoomRowMenuModel): RoomRowMenuNode[
   // which makes this any less the room shape Leave has to refuse.
   //
   // ONE slot, not two, once the gate above passes: `isMember` decides which
-  // verb it shows. Leaving offers Rejoin in its place rather than nothing,
+  // verb it shows. Leaving offers Join in its place rather than nothing,
   // and a room you already left never shows a Leave you would only get
   // refused for having no membership to take yourself off of.
   if (model.canLeave && !model.isSystemRoom && !model.isOneToOne) {
@@ -431,14 +432,14 @@ export function buildRoomRowMenuNodes(model: RoomRowMenuModel): RoomRowMenuNode[
     } else {
       nodes.push({
         kind: 'action',
-        id: 'rejoin',
-        label: `Rejoin ${noun}`,
+        id: 'join',
+        label: `${JOIN_ROOM_VERB} ${noun}`,
         icon: LogIn,
         opensInput: false,
-        // Getting back in is not destructive — the opposite of the verb it
-        // replaces, styled to match.
+        // Getting onto the roster is not destructive — the opposite of the
+        // verb it replaces, styled to match.
         destructive: false,
-        run: model.onRejoin,
+        run: model.onJoin,
       });
     }
   }

@@ -336,7 +336,7 @@ describe('a posted message reaches Today', () => {
     // The composer takes the room WITH its roster; the sidebar takes the
     // summary. Same room, two views of it, exactly as the app has them — and
     // the operator is on that roster, because the composer reads membership
-    // now (DOR-1233) and offers a Rejoin line rather than a field to anyone
+    // now (DOR-1233) and offers a Join line rather than a field to anyone
     // who is not. A poster is a member; an empty roster would describe a room
     // the server would refuse this post from.
     const withRoster = {
