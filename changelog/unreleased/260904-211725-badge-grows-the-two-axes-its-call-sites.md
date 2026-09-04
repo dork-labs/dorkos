@@ -7,12 +7,11 @@ covers:
   - 'test(client): match the collapsed limits label loosely (DOR-1760)'
   - 'chore(changelog): fold batch 14 fragments into one entry (DOR-1760)'
   - 'fix(client): the path field and its Browse button share one disabled state (DOR-1760)'
+  - 'fix(client): the active chip keeps its accent border in dark mode, and only toggle-bearing dialogs pay for its clearance (DOR-1760)'
 ---
 
 ### Fixed
 
-- When the app loses its link to the server, a screen reader now says so out loud.
-  Before, the warning was drawn on screen and announced to nobody (DOR-1760)
 - The little coloured tags in the Marketplace that say what kind of package you're
   looking at — agent, plugin, skill pack — now pick colours made for dark mode
   instead of reusing the light-mode ones (DOR-1760)
@@ -31,3 +30,6 @@ covers:
 
 - The small labels dotted around the app (counts, states, categories) are drawn from
   one recipe now, so the same kind of label is the same size everywhere (DOR-1760)
+- The connection-lost banner now announces itself to screen readers, so whenever it
+  does reach the screen it says so out loud instead of silently changing colour
+  (DOR-1760)
