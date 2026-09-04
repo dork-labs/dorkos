@@ -248,7 +248,7 @@ export { Separator } from './separator';
 export { Slider } from './slider';
 export { PermissionModeScopeNote } from './permission-mode-scope-note';
 export type { PermissionModeScopeNoteProps } from './permission-mode-scope-note';
-export { Switch } from './switch';
+export { Switch, switchVariants } from './switch';
 export type { SwitchSize, SwitchProps } from './switch';
 export { TrustDial, TrustModeIcon, stopLabel, CANONICAL_TRUST_STOPS } from './trust-dial';
 export type { TrustDialProps } from './trust-dial';

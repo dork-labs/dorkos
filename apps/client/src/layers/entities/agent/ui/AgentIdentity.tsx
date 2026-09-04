@@ -1,4 +1,4 @@
-import { cva, type VariantProps } from 'class-variance-authority';
+import { tv, type VariantProps } from 'tailwind-variants';
 import { cn } from '@/layers/shared/lib';
 import {
   identityMarkRing,
@@ -13,13 +13,54 @@ import { AgentAvatar } from './AgentAvatar';
 // Variants
 // ---------------------------------------------------------------------------
 
-const identityVariants = cva('inline-flex items-center min-w-0', {
+/**
+ * The identity lockup's four parts, sized by one axis.
+ *
+ * `tv` with slots rather than three `cva` calls: the gap, the name's type, the
+ * detail's type and whether the two stack are four consequences of ONE `size`,
+ * and they used to be written in four places — three variant tables that each
+ * re-declared the same axis, plus a ternary the type system could not see. An
+ * `xl` meant editing four things and remembering the fourth (ADR-0097).
+ *
+ * Slots: root, label, name, detail. Stacking lives with the sizes that stack.
+ */
+export const agentIdentityVariants = tv({
+  slots: {
+    root: 'inline-flex min-w-0 items-center',
+    label: 'flex min-w-0',
+    name: 'truncate',
+    detail: 'text-muted-foreground truncate',
+  },
   variants: {
     size: {
-      xs: 'gap-1.5',
-      sm: 'gap-2',
-      md: 'gap-2.5',
-      lg: 'gap-3',
+      xs: {
+        root: 'gap-1.5',
+        label: 'items-center gap-1.5',
+        // 13px, not 12: `xs` is the sidebar's size, and every other row in that
+        // panel writes its name at 13px. One point of difference on one row type
+        // is not a distinction anybody reads — it is just a list that looks
+        // slightly wrong (`specs/sidebar-simplification` D1).
+        name: 'text-[13px] font-medium',
+        detail: 'text-3xs',
+      },
+      sm: {
+        root: 'gap-2',
+        label: 'items-center gap-1.5',
+        name: 'text-sm font-medium',
+        detail: 'text-xs',
+      },
+      md: {
+        root: 'gap-2.5',
+        label: 'flex-col',
+        name: 'text-sm font-semibold',
+        detail: 'text-xs',
+      },
+      lg: {
+        root: 'gap-3',
+        label: 'flex-col',
+        name: 'text-base font-semibold',
+        detail: 'text-sm',
+      },
     },
   },
   defaultVariants: {
@@ -27,39 +68,9 @@ const identityVariants = cva('inline-flex items-center min-w-0', {
   },
 });
 
-const nameVariants = cva('truncate', {
-  variants: {
-    size: {
-      // 13px, not 12: `xs` is the sidebar's size, and every other row in that
-      // panel writes its name at 13px. One point of difference on one row type
-      // is not a distinction anybody reads — it is just a list that looks
-      // slightly wrong (`specs/sidebar-simplification` D1).
-      xs: 'text-[13px] font-medium',
-      sm: 'text-sm font-medium',
-      md: 'text-sm font-semibold',
-      lg: 'text-base font-semibold',
-    },
-  },
-  defaultVariants: { size: 'sm' },
-});
-
-const detailVariants = cva('text-muted-foreground truncate', {
-  variants: {
-    size: {
-      xs: 'text-3xs',
-      sm: 'text-xs',
-      md: 'text-xs',
-      lg: 'text-sm',
-    },
-  },
-  defaultVariants: { size: 'sm' },
-});
-
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
-
-type IdentitySize = 'xs' | 'sm' | 'md' | 'lg';
 
 /**
  * Whether the FACE alone is a control — and if it is, what it announces as.
@@ -89,7 +100,7 @@ type AgentFaceControl =
     }
   | { onAvatarClick?: never; avatarLabel?: never };
 
-interface AgentIdentityBaseProps extends VariantProps<typeof identityVariants> {
+interface AgentIdentityBaseProps extends VariantProps<typeof agentIdentityVariants> {
   /** CSS color string (HSL or hex override). */
   color: string;
   /** Single emoji character. */
@@ -144,13 +155,12 @@ export function AgentIdentity({
   onAvatarClick,
   avatarLabel,
 }: AgentIdentityProps) {
-  const resolvedSize: IdentitySize = size ?? 'sm';
-  const isStacked = resolvedSize === 'md' || resolvedSize === 'lg';
+  const slots = agentIdentityVariants({ size });
 
   const label = (
-    <span className={cn('flex min-w-0', isStacked ? 'flex-col' : 'items-center gap-1.5')}>
-      <span className={nameVariants({ size })}>{name}</span>
-      {detail && <span className={detailVariants({ size })}>{detail}</span>}
+    <span className={slots.label()}>
+      <span className={slots.name()}>{name}</span>
+      {detail && <span className={slots.detail()}>{detail}</span>}
     </span>
   );
 
@@ -209,7 +219,7 @@ export function AgentIdentity({
         data-slot="agent-identity"
         onClick={onClick}
         className={cn(
-          identityVariants({ size }),
+          slots.root(),
           // Chip tier. It used to dim to 80% on hover, which is the universal
           // idiom for DISABLED — the one thing a live control must not say. The
           // identity's own colour answers instead, on the disc, through the
@@ -230,10 +240,8 @@ export function AgentIdentity({
   }
 
   return (
-    <span data-slot="agent-identity" className={cn(identityVariants({ size }), className)}>
+    <span data-slot="agent-identity" className={slots.root({ className })}>
       {content}
     </span>
   );
 }
-
-export { identityVariants as agentIdentityVariants };
