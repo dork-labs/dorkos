@@ -1,10 +1,6 @@
 import type { ChatMessage, ToolCallState } from '@/layers/features/chat/model/chat-types';
 import type { QuestionItem } from '@dorkos/shared/types';
-import {
-  createAssistantMessage,
-  createUserMessage,
-  createToolCall,
-} from '../mock-factories';
+import { createAssistantMessage, createUserMessage, createToolCall } from '../mock-factories';
 import { TOOL_CALLS, TOOL_CALL_APPROVAL, TOOL_CALL_QUESTION } from '../mock-tool-calls';
 
 /**
