@@ -3,6 +3,7 @@ covers:
   - 'refactor(client): Badge grows the two axes its call sites kept correcting (DOR-1760)'
   - 'refactor(client): three primitives state one axis once (DOR-1760)'
   - 'refactor(client): nine hand-rolled icon buttons become Buttons (DOR-1760)'
+  - 'fix(client): the settings navigation stops nesting one widget inside another (DOR-1760)'
 ---
 
 ### Fixed
@@ -15,6 +16,9 @@ covers:
 - Small icon buttons — copy, close, fullscreen, Browse — are big enough to tap on a
   phone and show a focus outline when you reach them with the keyboard. Several were
   about half the size a thumb needs (DOR-1760)
+- The settings sidebar reads correctly to a screen reader again. It described itself
+  as two overlapping widgets at once, and the arrow keys now work from wherever your
+  focus already is (DOR-1760)
 
 ### Changed
 
