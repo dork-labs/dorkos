@@ -75,7 +75,7 @@ interface SessionComposerProps {
    * Still a prop rather than a port method, and deliberately: `ConversationTarget`
    * has two verbs, send and queue, because those are the two every surface could
    * have. Steering is a runtime capability of ONE surface, so it stays the
-   * session's own wiring — the same reason a room's rejoin button is not on the
+   * session's own wiring — the same reason a room's Join button is not on the
    * port either.
    */
   steerContent: (content: string) => Promise<boolean>;

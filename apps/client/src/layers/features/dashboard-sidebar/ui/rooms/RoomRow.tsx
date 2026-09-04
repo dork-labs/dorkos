@@ -29,6 +29,8 @@ import {
   AlertDialogTitle,
 } from '@/layers/shared/ui';
 import {
+  NOT_IN_ROOM_LABEL,
+  NOT_IN_ROOM_PILL,
   RoomAvatar,
   RoomTitle,
   hasUnread,
@@ -287,7 +289,7 @@ export const RoomRow = memo(function RoomRow({
    * never from mesh resolution. Deliberately a DIFFERENT question than
    * {@link RoomRowFacts.soleAgentPath}'s: that answer is also `null` while the
    * fleet has not loaded yet and once the agent has left the mesh, and the
-   * Leave/Rejoin gate below must not read either of those as "not a 1:1" — a DM
+   * Leave/Join gate below must not read either of those as "not a 1:1" — a DM
    * whose one agent left the mesh is still exactly the room shape leaving
    * strands.
    */
@@ -336,7 +338,7 @@ export const RoomRow = memo(function RoomRow({
         onRename: startRename,
         onEditTopic: () => openRoomDetails('topic'),
         onLeave: () => setLeaveOpen(true),
-        onRejoin: acts.rejoin,
+        onJoin: acts.join,
         onArchive: () => setArchiveOpen(true),
       })
     : SLEEPING_MENU;
@@ -392,10 +394,13 @@ export const RoomRow = memo(function RoomRow({
                 // A hint, not a repeat of the mute icon's shape: the room is
                 // still visible (the owner sees every room whether or not
                 // they are on its roster), only unpostable — a fact the
-                // dimmed row alone does not say.
-                aria-label="You left this channel"
+                // dimmed row alone does not say. It names the room's state
+                // and not a past action, because `unreadCount === null` is
+                // equally true of a room she left and one an agent opened
+                // without her (DOR-1620).
+                aria-label={NOT_IN_ROOM_LABEL}
               >
-                Left
+                {NOT_IN_ROOM_PILL}
               </span>
             )}
             {isMuted && (
@@ -465,7 +470,7 @@ export const RoomRow = memo(function RoomRow({
             <AlertDialogTitle>Leave {title}?</AlertDialogTitle>
             <AlertDialogDescription>
               You can still read what&rsquo;s here, but you won&rsquo;t be able to post again. You
-              can rejoin from this menu any time.
+              can join it again from this menu any time.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

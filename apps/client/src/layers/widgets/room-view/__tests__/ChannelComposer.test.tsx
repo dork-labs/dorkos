@@ -392,10 +392,11 @@ describe('ChannelComposer', () => {
   });
 });
 
-describe('ChannelComposer — a room you left (DOR-1233)', () => {
+describe('ChannelComposer — a room you are not in (DOR-1233)', () => {
   // A room the operator sees but is not a member of is real and reachable —
-  // they left it — and posting into one was a DEFINITE server refusal
-  // (`MEMBER_NOT_FOUND`) with no gate on it client-side at all, before this.
+  // she left it, or an agent opened it without her (DOR-1611) — and posting
+  // into one was a DEFINITE server refusal (`MEMBER_NOT_FOUND`) with no gate on
+  // it client-side at all, before this.
   function leftRoom(overrides: Partial<RoomWithRoster> = {}): RoomWithRoster {
     return roomWith({ members: [], ...overrides });
   }
@@ -411,11 +412,22 @@ describe('ChannelComposer — a room you left (DOR-1233)', () => {
     mountComposer(createMockTransport(), leftRoom());
 
     expect(
-      screen.getByText('You left this channel. You can read it, but not add to it.')
+      screen.getByText("You're not in this channel. You can read it, but not add to it.")
     ).toBeInTheDocument();
   });
 
-  it('offers Rejoin, which reaches the SAME wire route "Add agents" uses — named by the viewer', async () => {
+  it('never claims she left a channel her author id was never on the roster of', () => {
+    // An empty roster is the SAME payload whether she left or was never added,
+    // so the only honest sentence is one true of both (DOR-1620). Red the
+    // moment "You left this channel" comes back to a surface that cannot know.
+    const { container } = mountComposer(createMockTransport(), leftRoom());
+
+    expect(container.textContent).not.toMatch(/left this channel/i);
+    expect(screen.queryByRole('button', { name: 'Rejoin' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Join' })).toBeInTheDocument();
+  });
+
+  it('offers Join, which reaches the SAME wire route "Add agents" uses — named by the viewer', async () => {
     const transport = createMockTransport({
       addRoomMember: vi.fn().mockResolvedValue({
         roomId: 'room-1',
@@ -430,12 +442,12 @@ describe('ChannelComposer — a room you left (DOR-1233)', () => {
     });
     mountComposer(transport, leftRoom());
 
-    fireEvent.click(screen.getByRole('button', { name: 'Rejoin' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Join' }));
 
     await waitFor(() =>
       expect(transport.addRoomMember).toHaveBeenCalledWith('room-1', { authorId: 'author-you' })
     );
-    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('You rejoined #general'));
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('You joined #general'));
   });
 
   it('offers a live composer once membership resolves as present', () => {
@@ -446,11 +458,11 @@ describe('ChannelComposer — a room you left (DOR-1233)', () => {
 
     expect(screen.getByRole('combobox')).toBeInTheDocument();
     expect(
-      screen.queryByText('You left this channel. You can read it, but not add to it.')
+      screen.queryByText("You're not in this channel. You can read it, but not add to it.")
     ).not.toBeInTheDocument();
   });
 
-  it('brings the live composer back once the roster query actually refetches after Rejoin', async () => {
+  it('brings the live composer back once the roster query actually refetches after Join', async () => {
     // DIAGNOSTIC — routed through a real `useRoom()` rather than a static
     // `room` prop, which is what `RoomSurface` actually does and what every
     // other test in this file (including the ones above) does NOT: they hand
@@ -458,7 +470,7 @@ describe('ChannelComposer — a room you left (DOR-1233)', () => {
     // invalidating `roomKeys.detail` actually reaches this component through
     // the query cache. This is the one that can.
     const initial = leftRoom();
-    const rejoined: RoomWithRoster = {
+    const joined: RoomWithRoster = {
       ...initial,
       members: [
         {
@@ -477,9 +489,9 @@ describe('ChannelComposer — a room you left (DOR-1233)', () => {
     const transport = createMockTransport({
       getRoom: vi.fn().mockImplementation(() => {
         calls += 1;
-        return Promise.resolve(calls === 1 ? initial : rejoined);
+        return Promise.resolve(calls === 1 ? initial : joined);
       }),
-      addRoomMember: vi.fn().mockResolvedValue(rejoined.members[0]),
+      addRoomMember: vi.fn().mockResolvedValue(joined.members[0]),
     });
 
     const config = createQueryClientConfig();
@@ -504,9 +516,9 @@ describe('ChannelComposer — a room you left (DOR-1233)', () => {
     }
     render(<Harness />, { wrapper });
 
-    await screen.findByText('You left this channel. You can read it, but not add to it.');
+    await screen.findByText("You're not in this channel. You can read it, but not add to it.");
 
-    fireEvent.click(screen.getByRole('button', { name: 'Rejoin' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Join' }));
 
     await waitFor(() => expect(transport.addRoomMember).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(transport.getRoom).toHaveBeenCalledTimes(2));

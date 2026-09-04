@@ -307,7 +307,7 @@ describe('useRemoveRoomMember', () => {
 });
 
 describe('useAddRoomMember', () => {
-  it('rejoins a person by their own author id — the wire call Undo and Rejoin both make', async () => {
+  it('adds a person by their own author id — the wire call Undo and Join both make', async () => {
     // `AddRoomMemberRequestSchema` and `RoomService.addMember` never
     // restricted this to agents; only this hook's input type used to
     // (DOR-1233 follow-up).

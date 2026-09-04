@@ -27,6 +27,8 @@ import {
   type MentionRow,
 } from '@/layers/features/mentions';
 import {
+  JOIN_ROOM_VERB,
+  NOT_IN_ROOM_SENTENCE,
   isRoomMember,
   roomDisplayTitle,
   threadDraftKey,
@@ -149,18 +151,19 @@ export function ChannelComposer({
   // when a host forgot to publish one; here it is only read, so the send simply
   // has nothing to call.
   const { target } = useConversation();
-  const rejoin = useAddRoomMember();
+  const join = useAddRoomMember();
   const focusRequest = useComposerFocusRequest(draftKey);
   const inputRef = useRef<ComposerInputHandle>(null);
   /**
    * Whether the viewer is still on this room's roster.
    *
    * A room the operator sees but is not a member of is real and reachable —
-   * they left it (DOR-1233) — and posting into one is a definite server
-   * refusal (`MEMBER_NOT_FOUND`), never a maybe. `RoomWithRoster` already
-   * carries both halves of this answer for the CALLER actually looking at
-   * this screen (`viewerAuthorId` is resolved per request, unlike the team
-   * roster's `isSelf`), so there is nothing to fetch for it.
+   * she left it, or an agent opened it without her (DOR-1233, DOR-1611) — and
+   * posting into one is a definite server refusal (`MEMBER_NOT_FOUND`), never
+   * a maybe. `RoomWithRoster` already carries both halves of this answer for
+   * the CALLER actually looking at this screen (`viewerAuthorId` is resolved
+   * per request, unlike the team roster's `isSelf`), so there is nothing to
+   * fetch for it.
    */
   const isMember = isRoomMember(room.members, room.viewerAuthorId);
   /**
@@ -350,22 +353,20 @@ export function ChannelComposer({
   if (!isMember) {
     return (
       <div className="flex items-center justify-between gap-3 border-t px-4 py-3">
-        <p className="text-muted-foreground text-sm">
-          You left this channel. You can read it, but not add to it.
-        </p>
+        <p className="text-muted-foreground text-sm">{NOT_IN_ROOM_SENTENCE}</p>
         <Button
           type="button"
           size="sm"
           variant="outline"
-          disabled={rejoin.isPending}
+          disabled={join.isPending}
           onClick={() =>
-            rejoin.mutate(
+            join.mutate(
               { roomId: room.id, authorId: room.viewerAuthorId },
-              { onSuccess: () => toast.success(`You rejoined ${roomDisplayTitle(room)}`) }
+              { onSuccess: () => toast.success(`You joined ${roomDisplayTitle(room)}`) }
             )
           }
         >
-          Rejoin
+          {JOIN_ROOM_VERB}
         </Button>
       </div>
     );

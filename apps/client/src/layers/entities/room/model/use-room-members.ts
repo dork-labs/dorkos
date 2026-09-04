@@ -100,7 +100,7 @@ export type AddRoomMemberInput = AddRoomMemberCommon &
   );
 
 /**
- * Put an agent — or rejoin a person who left — into a room.
+ * Put an agent — or a person who is not on the roster — into a room.
  *
  * It joins **in place** and can read everything already said there. That is the
  * deliberate difference from Slack, which forks a new conversation instead: its
@@ -116,8 +116,8 @@ export type AddRoomMemberInput = AddRoomMemberCommon &
  * `always` is agent dominance by construction — so a new arrival answers when
  * it is spoken to and then decays back to quiet.
  *
- * **`authorId` is what a Leave's Undo, and a "Rejoin" action on a room you left,
- * call with** (DOR-1233 follow-up): `AddRoomMemberRequestSchema` and
+ * **`authorId` is what a Leave's Undo, and the "Join" action on a room you are
+ * not in, call with** (DOR-1233 follow-up): `AddRoomMemberRequestSchema` and
  * `RoomService.addMember` never restricted this to agents — only this hook's
  * input type used to.
  */

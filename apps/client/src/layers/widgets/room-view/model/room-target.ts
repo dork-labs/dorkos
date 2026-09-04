@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import {
+  NOT_IN_ROOM_SENTENCE,
   isRoomMember,
   newPendingId,
   roomDisplayTitle,
@@ -62,7 +63,7 @@ export interface RoomTarget {
  * **`canSend` is false for an archived room**, and says why. Membership is a
  * different refusal and the host answers it before the composer is built at all
  * — a field a definite `MEMBER_NOT_FOUND` is waiting behind should not look
- * live, so the host replaces it with the rejoin line (DOR-1233).
+ * live, so the host replaces it with the join line (DOR-1233).
  *
  * @param input - The room, and the thread when this is a panel's composer.
  * @returns The target, and the attachment state the host shares with it.
@@ -182,15 +183,15 @@ export function useRoomTarget(input: RoomTargetInput): RoomTarget {
             : 'Reply in this thread…',
       canSend: room !== undefined && !room.archived && isMember,
       // Three refusals, three sentences, and the FIRST one matters most: a room
-      // still being read is not a room you left, and answering "You left this
-      // channel" while it loads told people they had lost access to somewhere
-      // they were about to be standing in.
+      // still being read is not a room you cannot post in, and answering
+      // "You're not in this channel" while it loads told people they had lost
+      // access to somewhere they were about to be standing in.
       ...(room === undefined
         ? { canSendReason: 'Still opening this conversation…' }
         : room.archived
           ? { canSendReason: 'This conversation is archived. You can read it, but not add to it.' }
           : !isMember
-            ? { canSendReason: 'You left this channel. You can read it, but not add to it.' }
+            ? { canSendReason: NOT_IN_ROOM_SENTENCE }
             : {}),
       send,
       // No `queue`: a room has no queue, and the composer draws no queue chrome

@@ -176,12 +176,12 @@ function applyReadCursor(queryClient: QueryClient, event: ReadCursorMoved): void
   // ordering bump, a renamed room" — it DROPS them, along with anything else
   // that response was carrying, for as long as the room list is quiet.
   //
-  // The case that made this visible: a person rejoins a channel, the rejoin
+  // The case that made this visible: a person joins a channel back, the join
   // invalidates the list, and a cursor event lands while that GET is in flight
   // — from their phone, or from any other room, since a cursor in a room this
   // client has never opened reaches here too. The list is reverted to the copy
-  // where they are still not a member, and the sidebar row goes on saying "Left"
-  // in a channel they are back in.
+  // where they are still not a member, and the sidebar row goes on saying
+  // "Read only" in a channel they are back in.
   //
   // Only ever paid for by an interrupted fetch, and in the OPEN room that is
   // routine rather than rare: `useMarkRoomRead` invalidates the list on success

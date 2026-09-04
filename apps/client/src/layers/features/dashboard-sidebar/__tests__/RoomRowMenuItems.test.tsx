@@ -26,7 +26,7 @@ function model(overrides: Partial<RoomRowMenuModel> = {}): RoomRowMenuModel {
     onRename: vi.fn(),
     onEditTopic: vi.fn(),
     onLeave: vi.fn(),
-    onRejoin: vi.fn(),
+    onJoin: vi.fn(),
     onArchive: vi.fn(),
     ...overrides,
   };
@@ -115,50 +115,51 @@ describe('buildRoomRowMenuNodes', () => {
     // one agent seated, never two. The server refuses it outright
     // (`SYSTEM_ROOM`); the menu never offers the refusal in the first place.
     expect(ids({ isSystemRoom: true })).not.toContain('leave');
-    expect(ids({ isSystemRoom: true })).not.toContain('rejoin');
+    expect(ids({ isSystemRoom: true })).not.toContain('join');
   });
 
-  it('offers Rejoin instead of Leave once the viewer is off the roster', () => {
+  it('offers Join instead of Leave once the viewer is off the roster', () => {
     expect(ids({ isMember: false })).not.toContain('leave');
-    expect(ids({ isMember: false })).toContain('rejoin');
+    expect(ids({ isMember: false })).toContain('join');
   });
 
-  it('names the room in the rejoin label too, and marks it non-destructive', () => {
-    const channel = buildRoomRowMenuNodes(model({ isMember: false })).find(
-      (n) => n.id === 'rejoin'
-    );
+  it('names the room in the join label too, and marks it non-destructive', () => {
+    const channel = buildRoomRowMenuNodes(model({ isMember: false })).find((n) => n.id === 'join');
     const dm = buildRoomRowMenuNodes(model({ isMember: false, kind: 'dm' })).find(
-      (n) => n.id === 'rejoin'
+      (n) => n.id === 'join'
     );
+    // "Join", never "Rejoin": `isMember: false` is equally true of a room the
+    // viewer left and one she was never added to, so the verb has to be one
+    // that is honest about both (DOR-1620).
     expect(channel).toMatchObject({
-      label: 'Rejoin channel',
+      label: 'Join channel',
       destructive: false,
       opensInput: false,
     });
     expect(dm).toMatchObject({
-      label: 'Rejoin conversation',
+      label: 'Join conversation',
       destructive: false,
       opensInput: false,
     });
   });
 
-  it('runs the rejoin callback the caller supplied', () => {
-    const onRejoin = vi.fn();
-    const rejoin = buildRoomRowMenuNodes(model({ isMember: false, onRejoin })).find(
-      (n) => n.id === 'rejoin'
+  it('runs the join callback the caller supplied', () => {
+    const onJoin = vi.fn();
+    const join = buildRoomRowMenuNodes(model({ isMember: false, onJoin })).find(
+      (n) => n.id === 'join'
     );
-    if (rejoin?.kind !== 'action') throw new Error('expected an action node');
-    rejoin.run();
-    expect(onRejoin).toHaveBeenCalledTimes(1);
+    if (join?.kind !== 'action') throw new Error('expected an action node');
+    join.run();
+    expect(onJoin).toHaveBeenCalledTimes(1);
   });
 
-  it('offers neither Leave nor Rejoin on a 1:1 DM — leaving one strands the agent alone', () => {
+  it('offers neither Leave nor Join on a 1:1 DM — leaving one strands the agent alone', () => {
     expect(ids({ kind: 'dm', isOneToOne: true, onViewAgentProfile: vi.fn() })).not.toContain(
       'leave'
     );
     expect(
       ids({ kind: 'dm', isOneToOne: true, onViewAgentProfile: vi.fn(), isMember: false })
-    ).not.toContain('rejoin');
+    ).not.toContain('join');
   });
 
   it('still withholds Leave on a 1:1 whose sole agent has left the mesh', () => {
@@ -243,7 +244,7 @@ describe('buildRoomRowMenuNodes', () => {
     expect(destructive).toEqual(['leave', 'archive']);
   });
 
-  it('marks Rejoin non-destructive even though it sits where Leave would', () => {
+  it('marks Join non-destructive even though it sits where Leave would', () => {
     const destructive = buildRoomRowMenuNodes(model({ isMember: false }))
       .filter((node) => node.kind === 'action' && node.destructive)
       .map((node) => node.id);

@@ -119,6 +119,12 @@ export {
   isRoomMember,
   platformLabel,
 } from './lib/room-display';
+export {
+  JOIN_ROOM_VERB,
+  NOT_IN_ROOM_LABEL,
+  NOT_IN_ROOM_PILL,
+  NOT_IN_ROOM_SENTENCE,
+} from './lib/membership-copy';
 export { profileMemberIdOf } from './lib/profile-target';
 export { roomIdentityMark, identityMarkFaces } from './lib/identity-mark';
 export type { IdentityMark, RoomIdentityMarkInput } from './lib/identity-mark';
