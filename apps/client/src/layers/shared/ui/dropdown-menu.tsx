@@ -18,10 +18,17 @@ const DropdownMenuContent = React.forwardRef<
       sideOffset={sideOffset}
       className={cn(
         'bg-popover text-popover-foreground z-50 min-w-[8rem] overflow-hidden rounded-md border p-1 shadow-md',
+        // The menu grows out of the control you clicked, not out of its own
+        // middle — Radix publishes the trigger-relative origin, and every other
+        // overlay in the app already reads it.
+        'origin-(--radix-dropdown-menu-content-transform-origin)',
         'data-[state=open]:animate-in data-[state=closed]:animate-out',
         'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
         'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
+        // All four sides: Radix flips a menu near a viewport edge to `left` or
+        // `right`, and those two used to slide from nowhere.
         'data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2',
+        'data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2',
         className
       )}
       {...props}
@@ -131,6 +138,9 @@ const DropdownMenuSubContent = React.forwardRef<
       ref={ref}
       className={cn(
         'bg-popover text-popover-foreground z-50 min-w-[8rem] overflow-hidden rounded-md border p-1 shadow-md',
+        // Same trigger-relative origin as the top-level menu: a submenu grows
+        // out of the item that opened it.
+        'origin-(--radix-dropdown-menu-content-transform-origin)',
         'data-[state=open]:animate-in data-[state=closed]:animate-out',
         'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
         'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
