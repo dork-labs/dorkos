@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { nextRovingIndex } from '../lib/use-roving-focus';
+import { nextRovingIndex } from '../use-roving-grid';
 
 describe('nextRovingIndex', () => {
   // A 2-column, 5-item grid:  0 1 / 2 3 / 4

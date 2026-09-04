@@ -168,3 +168,4 @@ export {
   SIDEBAR_SECTION_TOGGLE_ATTRIBUTE,
   SIDEBAR_TRAILING_ACTION_ATTRIBUTE,
 } from './interaction/use-roving-focus';
+export { useRovingGrid } from './interaction/use-roving-grid';

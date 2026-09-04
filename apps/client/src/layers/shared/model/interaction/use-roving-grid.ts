@@ -1,9 +1,21 @@
+/**
+ * Roving tabindex for a WRAPPING GRID of cards.
+ *
+ * The sibling of `use-roving-focus`, which does the same job for a sidebar
+ * section: one Tab stop for the whole set, arrows to move inside it. They are
+ * two hooks rather than one because they are told about their set in two
+ * incompatible ways — a section discovers its rows from the DOM by their marks,
+ * a grid is handed a `count` and hands back per-index props — and because a
+ * grid's up/down stride is a COLUMN COUNT that only the laid-out page knows.
+ *
+ * @module shared/model/interaction/use-roving-grid
+ */
 import { useRef, useState } from 'react';
 
 /**
  * Compute the next roving-focus index for a grid keyboard event.
  *
- * Pure movement core behind {@link useRovingFocus}: arrows move by one
+ * Pure movement core behind {@link useRovingGrid}: arrows move by one
  * (left/right) or by a column stride (up/down), Home/End jump to the edges,
  * and every result clamps into `[0, count)`. Returns `null` for keys the
  * roving pattern does not handle so callers can let them through.
@@ -56,7 +68,7 @@ export function nextRovingIndex(
  *
  * @param count - Total number of focusable elements in the grid.
  */
-export function useRovingFocus(count: number) {
+export function useRovingGrid(count: number) {
   const [focusIndex, setFocusIndex] = useState(0);
   const refs = useRef<(HTMLElement | null)[]>([]);
 
