@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { PermissionPreview } from '@dorkos/shared/marketplace-schemas';
 
-import { formatPermissionPreview } from '../format-permissions';
+import { formatPermissionPreview, summarizePermissionPreview } from '../format-permissions';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -260,5 +260,74 @@ describe('formatPermissionPreview → effects → file changes', () => {
     const rows = formatPermissionPreview(preview, { installBase: DORK_HOME }).effects;
 
     expect(rows.map((r) => r.icon)).toEqual(['file', 'puzzle']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The one-line verdict
+// ---------------------------------------------------------------------------
+
+describe('summarizePermissionPreview', () => {
+  it('says what lands and whether anything runs, in that order', () => {
+    const preview = makePreview({
+      fileChanges: [
+        { path: `${FLOW_ROOT}/a.md`, action: 'create' },
+        { path: `${FLOW_ROOT}/b.md`, action: 'create' },
+      ],
+    });
+
+    expect(summarizePermissionPreview(preview)).toBe('Adds 2 files. Declares no commands.');
+  });
+
+  it('names the file once, on the first clause, whichever actions there are', () => {
+    // "Changes 3 and removes 1" reads as three of nothing. The noun rides the
+    // first clause that is present, so every combination is a sentence.
+    const changesAndRemoves = makePreview({
+      fileChanges: [
+        { path: `${FLOW_ROOT}/a.md`, action: 'modify' },
+        { path: `${FLOW_ROOT}/b.md`, action: 'modify' },
+        { path: `${FLOW_ROOT}/c.md`, action: 'delete' },
+      ],
+    });
+
+    expect(summarizePermissionPreview(changesAndRemoves)).toBe(
+      'Changes 2 files and removes 1. Declares no commands.'
+    );
+  });
+
+  it('lists all three actions with a comma and an "and"', () => {
+    const preview = makePreview({
+      fileChanges: [
+        { path: `${FLOW_ROOT}/a.md`, action: 'create' },
+        { path: `${FLOW_ROOT}/b.md`, action: 'modify' },
+        { path: `${FLOW_ROOT}/c.md`, action: 'delete' },
+      ],
+    });
+
+    expect(summarizePermissionPreview(preview)).toBe(
+      'Adds 1 file, changes 1 and removes 1. Declares no commands.'
+    );
+  });
+
+  it('counts a hook DorkOS could not read as a declared command', () => {
+    // "Declares no commands" would be the reassuring answer, and it would be
+    // false: the package declares one, we just could not read it.
+    const preview = makePreview({
+      fileChanges: [{ path: `${FLOW_ROOT}/a.md`, action: 'create' }],
+      unreadableHooks: [{ path: 'hooks/hooks.json' }],
+    });
+
+    expect(summarizePermissionPreview(preview)).toBe('Adds 1 file. Declares 1 command.');
+  });
+
+  it('pluralises the commands too', () => {
+    const preview = makePreview({
+      hooks: [
+        { event: 'PreToolUse', matcher: 'Bash', command: 'echo one' },
+        { event: 'PostToolUse', matcher: 'Bash', command: 'echo two' },
+      ],
+    });
+
+    expect(summarizePermissionPreview(preview)).toBe('Changes no files. Declares 2 commands.');
   });
 });

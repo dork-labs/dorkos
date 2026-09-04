@@ -49,8 +49,67 @@ describe('PermissionPreviewSection', () => {
     expect(screen.queryByText(/commands this package declares/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/jobs it will schedule/i)).not.toBeInTheDocument();
 
+    // And no verdict either: "Changes no files" under a package that has no
+    // preview to show would be a claim rather than a summary.
+    expect(screen.queryByText(/Declares no commands/)).not.toBeInTheDocument();
+
     // But the outer container still renders.
     expect(container.firstChild).not.toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // Reading order — one verdict, then three open groups and four closed ones
+  // -------------------------------------------------------------------------
+
+  it('leads with a one-line verdict, so the sections have an order to read in', () => {
+    const preview = makePreview({
+      fileChanges: [
+        { path: 'agents/a.json', action: 'create' },
+        { path: 'agents/b.json', action: 'create' },
+      ],
+    });
+
+    render(<PermissionPreviewSection preview={preview} />);
+
+    expect(screen.getByText('Adds 2 files. Declares no commands.')).toBeInTheDocument();
+  });
+
+  it('opens only the groups a person must see, and collapses the rest with their counts', () => {
+    // Seven sections each deciding for themselves how much to open (the old
+    // `items.length <= 3` rule) had no dialog-level budget: three rows in each
+    // of five optional groups opened all of them. Nothing is hidden — every
+    // count is in its heading and the verdict names the file totals — the
+    // reader is just told what to read second (DOR-1757).
+    const preview = makePreview({
+      fileChanges: [{ path: 'agents/x.json', action: 'create' }],
+      hooks: [{ event: 'PreToolUse', matcher: 'Bash', command: 'echo hi' }],
+      schedules: [
+        { name: 'nightly', cron: '0 3 * * *', permissionMode: 'default', startsEnabled: false },
+      ],
+      secrets: [{ key: 'API_KEY', required: true }],
+      externalHosts: ['api.example.com'],
+      requires: [{ type: 'plugin', name: '@dorkos/linter', satisfied: true }],
+      conflicts: [
+        { level: 'warning', type: 'slot', description: 'Slot dashboard.sections taken.' },
+      ],
+    });
+
+    render(<PermissionPreviewSection preview={preview} />);
+
+    const isOpen = (title: string) =>
+      (screen.getByText(title).closest('details') as HTMLDetailsElement).open;
+
+    expect(isOpen('Commands this package declares')).toBe(true);
+    expect(isOpen('Jobs it will schedule')).toBe(true);
+    expect(isOpen('Conflicts')).toBe(true);
+
+    expect(isOpen('What this package will do')).toBe(false);
+    expect(isOpen('Secrets required')).toBe(false);
+    expect(isOpen('External hosts')).toBe(false);
+    expect(isOpen('Dependencies')).toBe(false);
+
+    // A collapsed group still says how much it holds.
+    expect(screen.getByText('Secrets required').closest('summary')?.textContent).toContain('(1)');
   });
 
   it('names every npm library the install will download, with its version', () => {

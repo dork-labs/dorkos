@@ -1,9 +1,9 @@
 /**
  * Permission preview display for the install confirmation dialog and the
- * package detail sheet. Renders every permission group produced by
- * `formatPermissionPreview` — effects, shell commands, scheduled jobs, secrets,
- * external hosts, dependencies, and conflicts — collapsing any group that has
- * no items.
+ * package detail sheet. Renders a one-line verdict, then every permission group
+ * produced by `formatPermissionPreview` — effects, shell commands, scheduled
+ * jobs, secrets, external hosts, dependencies, and conflicts — dropping any
+ * group that has no items.
  *
  * @module features/marketplace/ui/PermissionPreviewSection
  */
@@ -24,6 +24,7 @@ import type { ComponentType } from 'react';
 import { cn } from '@/layers/shared/lib';
 import {
   formatPermissionPreview,
+  summarizePermissionPreview,
   type FormattedPermission,
   type PermissionDetailItem,
   type PermissionSeverity,
@@ -150,12 +151,25 @@ interface SectionProps {
   items: FormattedPermission[];
   /** When `'warning'`, the section heading uses amber/warning colour. */
   tone?: 'warning';
-  /** Start expanded. Defaults to true for sections with ≤3 items. */
+  /**
+   * Start expanded. Off by default, and set on exactly the three groups a
+   * person has to see before trusting a stranger's package (DOR-1757).
+   *
+   * It used to be `items.length <= 3`, decided per section with no budget
+   * across the dialog: a package with three rows in each of five optional
+   * groups opened all of them, which is roughly twenty rows under seven
+   * uppercase headings above a scope picker. Every count is still in its
+   * heading and the verdict line still names the file totals, so a collapsed
+   * section conceals nothing — it only says "read this one second".
+   *
+   * @default false
+   */
   defaultOpen?: boolean;
   /**
    * Drop the row count from the heading. Set for the effects section, whose
    * rows are summary sentences: "What this package will do (2)" alongside a row
    * reading "135 files" invites the reader to think two files are involved.
+   * The verdict line above the sections carries that group's real numbers.
    */
   hideCount?: boolean;
 }
@@ -167,13 +181,11 @@ interface SectionProps {
  * Uses the native `<details>/<summary>` element for accessible,
  * zero-JS progressive disclosure with CSS transitions.
  */
-function PermissionSection({ title, items, tone, defaultOpen, hideCount }: SectionProps) {
+function PermissionSection({ title, items, tone, defaultOpen = false, hideCount }: SectionProps) {
   if (items.length === 0) return null;
 
-  const open = defaultOpen ?? items.length <= 3;
-
   return (
-    <details open={open} className="group/perm">
+    <details open={defaultOpen} className="group/perm">
       <summary
         className={cn(
           'flex cursor-pointer list-none items-center gap-2 text-xs font-semibold tracking-wider uppercase',
@@ -228,14 +240,21 @@ interface PermissionPreviewSectionProps {
  *
  * Sections with no items render nothing (no orphaned headings), so a package
  * that declares no commands and schedules no jobs shows no empty promise of
- * either. The commands and conflicts sections start expanded and use
- * amber/warning tone where relevant, because they are what a person needs to
- * see before trusting a stranger's package.
+ * either.
+ *
+ * **The reader is given an order to read in** (DOR-1757). One line at the top
+ * says what the install does — {@link summarizePermissionPreview} — and under
+ * it three groups start expanded: the commands a package declares, the jobs it
+ * will schedule, and any conflicts, which are what somebody has to see before
+ * trusting a stranger's package. The other four open on a click, with their
+ * counts in their headings, because nothing here may be hidden: DorkOS is
+ * honest by design, and a collapsed section says "second", never "never".
  *
  * The effects section names the folder the files land in, counts each action
  * separately, and puts every path behind a disclosure. A file count on its own
  * is not consent: the thing a person most needs before approving an install is
- * which existing files disappear, and that is the first group in the list.
+ * which existing files disappear, and the verdict line says so before any
+ * section is opened at all.
  *
  * Used by both the package detail sheet and the install confirmation dialog.
  *
@@ -244,9 +263,14 @@ interface PermissionPreviewSectionProps {
  */
 export function PermissionPreviewSection({ preview, installBase }: PermissionPreviewSectionProps) {
   const groups = formatPermissionPreview(preview, { installBase });
+  // A preview with nothing in it draws nothing, verdict included: "Changes no
+  // files" under a package that simply has no preview to show would be a claim
+  // rather than a summary.
+  const hasAnything = Object.values(groups).some((rows) => rows.length > 0);
 
   return (
     <div className="space-y-6">
+      {hasAnything && <p className="text-sm">{summarizePermissionPreview(preview)}</p>}
       <PermissionSection title="What this package will do" items={groups.effects} hideCount />
       <PermissionSection
         title="Commands this package declares"
@@ -257,7 +281,7 @@ export function PermissionPreviewSection({ preview, installBase }: PermissionPre
       <PermissionSection title="Secrets required" items={groups.secrets} />
       <PermissionSection title="External hosts" items={groups.hosts} />
       <PermissionSection title="Dependencies" items={groups.dependencies} />
-      <PermissionSection title="Conflicts" items={groups.conflicts} tone="warning" />
+      <PermissionSection title="Conflicts" items={groups.conflicts} tone="warning" defaultOpen />
     </div>
   );
 }
