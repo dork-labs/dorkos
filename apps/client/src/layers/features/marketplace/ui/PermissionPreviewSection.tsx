@@ -208,7 +208,6 @@ function PermissionSection({ title, items, tone, defaultOpen = false }: SectionP
       }
     >
       <ul className="space-y-1.5">
-
         {items.map((item, index) => (
           <PermissionItem key={index} item={item} />
         ))}
