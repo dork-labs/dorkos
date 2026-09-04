@@ -30,7 +30,7 @@ export function DangerZoneTab() {
         <FieldCardContent>
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-sm font-medium">Reset All Settings</p>
+              <p className="text-sm font-medium">Reset all settings</p>
               <p className="text-muted-foreground text-xs">
                 Put the theme, text, toggles, and panel layouts on this device back to how they
                 shipped. Your projects, agents, and chats stay.
@@ -45,28 +45,26 @@ export function DangerZoneTab() {
               size="sm"
               onClick={() => setResetSettingsDialogOpen(true)}
             >
-              Reset Settings
+              Reset settings
             </Button>
           </div>
 
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-sm font-medium">Reset All Data</p>
+              <p className="text-sm font-medium">Reset all data</p>
               <p className="text-muted-foreground text-xs">
-                Permanently delete all DorkOS data and restart the server.
+                Delete everything DorkOS has saved and start it again. You cannot undo this.
               </p>
             </div>
             <Button variant="destructive" size="sm" onClick={() => setResetDialogOpen(true)}>
-              Reset Data
+              Reset data
             </Button>
           </div>
 
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-sm font-medium">Restart Server</p>
-              <p className="text-muted-foreground text-xs">
-                Restart the DorkOS server process. Active sessions will be interrupted.
-              </p>
+              <p className="text-sm font-medium">Restart DorkOS</p>
+              <p className="text-muted-foreground text-xs">Anything running right now stops.</p>
             </div>
             <Button variant="destructive" size="sm" onClick={() => setRestartDialogOpen(true)}>
               Restart

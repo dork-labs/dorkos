@@ -255,7 +255,7 @@ function LogLocationRow({ dorkHome }: { dorkHome: string }) {
   }
 
   return (
-    <SettingRow label="Log location" description="Where the server keeps its log files">
+    <SettingRow label="Log location" description="Where DorkOS keeps these files.">
       <button
         type="button"
         onClick={() => void copy(logPath)}

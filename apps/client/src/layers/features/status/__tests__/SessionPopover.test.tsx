@@ -245,7 +245,9 @@ describe('SessionPopover — controls', () => {
     expect(
       screen.queryByRole('switch', { name: 'Keep checking for updates in the background' })
     ).not.toBeInTheDocument();
-    expect(screen.queryByText('Background refresh')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Watch for agents you started somewhere else')
+    ).not.toBeInTheDocument();
   });
 
   it('no longer carries a sound switch — every sound is a Settings question now', () => {

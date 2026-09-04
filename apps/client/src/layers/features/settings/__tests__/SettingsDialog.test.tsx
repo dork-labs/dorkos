@@ -164,8 +164,8 @@ describe('SettingsDialog', () => {
     expect(screen.getByText('Expand tool calls')).toBeDefined();
     // The two rows that came back from the old Advanced tab (DOR-1758).
     expect(screen.getByText('Format text as you type')).toBeDefined();
-    expect(screen.getByText('Background refresh')).toBeDefined();
-    // The developer panel is a debugging aid; it went to Server → Diagnostics.
+    expect(screen.getByText('Watch for agents you started somewhere else')).toBeDefined();
+    // The developer panel is a debugging aid; it went to Experiments.
     expect(screen.queryByText('Show dev tools')).toBeNull();
   });
 
@@ -380,7 +380,7 @@ describe('SettingsDialog', () => {
       (el) => el.textContent
     );
     const celebrationsIdx = labels.indexOf('To-do celebrations');
-    const refreshIdx = labels.indexOf('Background refresh');
+    const refreshIdx = labels.indexOf('Watch for agents you started somewhere else');
     const promoIdx = labels.indexOf('Feature suggestions');
     expect(celebrationsIdx).toBeGreaterThanOrEqual(0);
     expect(refreshIdx).toBeGreaterThan(celebrationsIdx);

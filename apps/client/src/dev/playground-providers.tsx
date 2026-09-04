@@ -2,7 +2,6 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import { EventStreamProvider, TransportProvider } from '@/layers/shared/model';
-import { TunnelMachineProvider } from '@/layers/features/settings';
 
 interface PlaygroundProvidersProps {
   /** The query client showcases fetch through. */
@@ -32,12 +31,6 @@ interface PlaygroundProvidersProps {
  *
  * `EventStreamProvider` sits inside `TransportProvider` for the same reason it
  * does in `main.tsx`: it opens its stream through the transport.
- *
- * `TunnelMachineProvider` is here for the same reason: `RemoteAccessTab`
- * (`SettingsShowcases.tsx`) reads the app-wide tunnel machine `AppShell.tsx`
- * mounts in production, and a showcase without this provider would throw
- * instead of rendering the landing view the playground transport's empty
- * tunnel report produces.
  */
 export function PlaygroundProviders({
   queryClient,
@@ -47,9 +40,7 @@ export function PlaygroundProviders({
   return (
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
-        <EventStreamProvider>
-          <TunnelMachineProvider>{children}</TunnelMachineProvider>
-        </EventStreamProvider>
+        <EventStreamProvider>{children}</EventStreamProvider>
       </TransportProvider>
     </QueryClientProvider>
   );

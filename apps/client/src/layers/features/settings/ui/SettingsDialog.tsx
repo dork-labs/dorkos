@@ -113,7 +113,7 @@ const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
     // settings modal — with the phone's drill-in chevron, where the recovery
     // gesture is worst.
     id: 'remote-access',
-    label: 'Remote Access',
+    label: 'Remote access',
     icon: Globe,
     component: RemoteAccessTab,
     group: 'Access & privacy',

@@ -63,9 +63,9 @@ test.describe('Settings — Dialog @smoke', () => {
     //
     // Nine since DOR-1758 reshuffled the tab: five chat-display switches this
     // browser remembers, plus the two that came back from the retired Advanced
-    // tab (the message box, background refresh) and the one about being shown
-    // things (feature suggestions) — minus the dev-tools switch, which went to
-    // Server → Diagnostics — plus the two welcome-back switches, which the
+    // tab (the message box, watching for agents started elsewhere) and the one
+    // about being shown things (feature suggestions) — minus the dev-tools
+    // switch, which went to Experiments — plus the two welcome-back switches, which the
     // SERVER keeps. The second welcome-back switch (Next-step offers) renders
     // only while the first is on, which it is by default.
     await expect(settingsPage.switches).toHaveCount(9);
@@ -77,7 +77,9 @@ test.describe('Settings — Dialog @smoke', () => {
     await expect(panel.getByRole('switch', { name: 'Show timestamps' })).toBeVisible();
     await expect(panel.getByRole('switch', { name: 'To-do celebrations' })).toBeVisible();
     await expect(panel.getByRole('switch', { name: 'Format text as you type' })).toBeVisible();
-    await expect(panel.getByRole('switch', { name: 'Background refresh' })).toBeVisible();
+    await expect(
+      panel.getByRole('switch', { name: 'Watch for agents you started somewhere else' })
+    ).toBeVisible();
     await expect(panel.getByRole('switch', { name: 'Welcome-back notes' })).toBeVisible();
     await expect(panel.getByRole('switch', { name: 'Next-step offers' })).toBeVisible();
     // The developer panel is a debugging aid and left this tab with DOR-1758.

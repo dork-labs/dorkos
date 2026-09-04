@@ -20,9 +20,10 @@ import { configKeys } from '@/layers/entities/config';
  *
  * Two groups, not one flat stack (DOR-1758): **Chat** is everything about the
  * conversation in front of you, including the two switches that came back from
- * the old Advanced tab (the message box, and background refresh); **Discovery**
- * is the two rows about being shown something again. The developer-panel switch
- * left for Settings → Server → Diagnostics, where a debugging aid belongs.
+ * the old Advanced tab (the message box, and watching for agents started
+ * elsewhere); **Discovery** is the two rows about being shown something again.
+ * The developer-panel switch left for Settings → Experiments, where a debugging
+ * aid belongs.
  *
  * Reads its own state from `useAppStore` directly, mirroring the inline body
  * that previously lived in `SettingsDialog.tsx`. Rendered inside a
@@ -150,8 +151,8 @@ export function PreferencesTab() {
             />
 
             <SwitchSettingRow
-              label="Background refresh"
-              description="Poll for updates to sessions running outside DorkOS (e.g. the Claude Code CLI). Enable only if external activity isn't appearing promptly."
+              label="Watch for agents you started somewhere else"
+              description="Turn this on if work you started in a terminal takes a while to show up here."
               checked={enableMessagePolling}
               onCheckedChange={setEnableMessagePolling}
             />

@@ -14,7 +14,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { TunnelMachineProvider } from '../model/tunnel-machine-provider';
 import { RemoteAccessTab } from '../ui/RemoteAccessTab';
 
 vi.mock('@/layers/entities/session', () => ({
@@ -74,9 +73,7 @@ function createWrapper(tunnelOverrides?: Partial<typeof baseTunnel>) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
-      <TransportProvider transport={transport}>
-        <TunnelMachineProvider>{children}</TunnelMachineProvider>
-      </TransportProvider>
+      <TransportProvider transport={transport}>{children}</TransportProvider>
     </QueryClientProvider>
   );
 }

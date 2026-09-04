@@ -245,23 +245,26 @@ describe('PreferencesTab — the rows that came back from Advanced', () => {
     );
   });
 
-  // Background refresh is an opt-in external-session polling fallback (spec
-  // chat-stream-reconnection, ADR-0266): server-side discovery is primary, so
-  // the copy frames it as a fallback, not a correctness switch.
-  it('describes Background refresh as an opt-in external-session fallback', async () => {
+  // The external-session polling fallback (spec chat-stream-reconnection,
+  // ADR-0266): server-side discovery is primary, so the copy frames it as
+  // something you turn on when work is slow to appear, not a correctness switch.
+  it('describes the external-session watch as an opt-in fallback', async () => {
     const { Wrapper } = setup(DEFAULTS);
     render(<PreferencesTab />, { wrapper: Wrapper });
 
-    expect(await screen.findByText('Background refresh')).toBeInTheDocument();
-    expect(screen.getByText(/Claude Code CLI/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/Enable only if external activity isn't appearing promptly/i)
+      await screen.findByText('Watch for agents you started somewhere else')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Turn this on if work you started in a terminal takes a while to show up here.'
+      )
     ).toBeInTheDocument();
   });
 
-  // A developer panel is a debugging aid, and it now sits with the other ones in
-  // Settings → Server → Diagnostics rather than between "To-do celebrations" and
-  // a re-run of onboarding.
+  // A developer panel is a debugging aid, and it now sits on
+  // Settings → Experiments rather than between "To-do celebrations" and a
+  // re-run of onboarding.
   it('no longer carries the dev-tools switch', async () => {
     const { Wrapper } = setup(DEFAULTS);
     render(<PreferencesTab />, { wrapper: Wrapper });
