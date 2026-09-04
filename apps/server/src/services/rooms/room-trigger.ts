@@ -200,6 +200,7 @@ import {
   sessionCwdDeps,
   type ResolvedCwd,
 } from '../workspace/resolve-session-cwd.js';
+import { ensureRoomWorktreePath } from './repo/room-worktree-cwd.js';
 import {
   RoomNoticeLog,
   type CascadeStamp,
@@ -207,7 +208,7 @@ import {
   type RoomTurnUnanswered,
 } from './notices/notice-log.js';
 import { buildCascadeNotice, withLateAnswerNote, type BusyContext } from './notices/notice-copy.js';
-import { RoomError, type RoomAgentLookup } from './room-errors.js';
+import type { RoomAgentLookup } from './room-errors.js';
 import {
   RoomTurnRuntimeGoneError,
   type LateRoomReply,
@@ -4114,20 +4115,12 @@ export class RoomTriggerDispatcher {
     return resolveSessionCwd(
       { agentPath, room: { roomId, agentName: displayName } },
       sessionCwdDeps({
-        ensureRoomWorktree: async (id, dir, name) => {
-          const worktrees = this.deps.worktrees?.();
-          if (!worktrees) return null;
-          try {
-            return (await worktrees.ensureWorktree(id, dir, name)).path;
-          } catch (err) {
-            // "This room has no files of its own" is the ordinary case, and the
-            // manager says it by throwing. Translated to `null` HERE so the
-            // resolver never has to know what a `RoomError` is — and so it can
-            // tell that case from a real failure, which it degrades and reports.
-            if (err instanceof RoomError && err.code === 'NOT_A_PROJECT_ROOM') return null;
-            throw err;
-          }
-        },
+        // The seam is shared with the app-resume path rather than written twice
+        // (`room-worktree-cwd.ts`, DOR-1624): the two ways one room conversation
+        // can take a turn have to translate "this room has no files" the same
+        // way, or the same session resolves two different directories.
+        ensureRoomWorktree: (id, dir, name) =>
+          ensureRoomWorktreePath(this.deps.worktrees?.(), id, dir, name),
       })
     );
   }

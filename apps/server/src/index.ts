@@ -288,6 +288,7 @@ import {
   setRoomWorktreeManager,
   setRoomMergeService,
 } from './services/rooms/index.js';
+import { roomSessionPlace } from './services/rooms/repo/room-worktree-cwd.js';
 import {
   readRoomRepoConfig,
   RoomFileEditor,
@@ -2744,6 +2745,17 @@ async function start() {
   // the rooms half of a fleet-wide prompt is decided.
   app.locals.roomSessionBindings = roomStore.sessionLedger;
   sessionListBroadcaster.setRoomBindings(roomStore.sessionLedger);
+
+  // And where a room conversation RUNS, for the other surface that can start a
+  // turn in one: the app's `POST /api/sessions/:id/messages` (DOR-1624). Same
+  // port doctrine as the line above — the session route asks a room question
+  // without importing a room type — and the same three reads the room-turn path
+  // makes, so both answer the one worktree.
+  app.locals.roomSessionPlace = roomSessionPlace({
+    bindings: roomStore.sessionLedger,
+    authors: roomAuthors,
+    worktrees: () => roomWorktrees,
+  });
 
   // Wire global session-list discovery → unified SSE stream (ADR-0265/0266).
   // ALWAYS ON: fans every registered runtime's transition-only session-list

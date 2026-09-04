@@ -75,7 +75,10 @@ import { sessionMcpAppResourceHandler } from './session-mcp-app-resource-handler
 import path from 'node:path';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
 import { getWorkspaceManager } from '../services/workspace/index.js';
-import { resolveSessionCwd } from '../services/workspace/resolve-session-cwd.js';
+import {
+  resolveSessionCwdWithRoom,
+  type RoomSessionPlacePort,
+} from '../services/workspace/room-session-cwd.js';
 // A control request that outlived its bound is not a claude-code-only idea, but
 // claude-code is the only runtime with one today, so the class still lives with
 // its clock. A second runtime growing one is the signal to move it somewhere
@@ -1109,7 +1112,17 @@ router.post('/:id/messages', async (req, res) => {
     // either way — but `effectiveCwd` is also what stamps `projector.cwd`
     // below, overwriting whatever an `/events` subscribe put there. A turn that
     // has no opinion about its directory must not acquire one here.
-    const resolved = await resolveSessionCwd({ cwd, agentPath, sessionId });
+    //
+    // The room binding is offered to the chain rather than resolved here
+    // (DOR-1624). A conversation this machine also answers in a room runs its
+    // room turns in that room's worktree, so a resume from the app that took the
+    // ordinary rungs would put the operator in the agent's own folder and hide
+    // every uncommitted edit the agent has made in the room. The port answers
+    // `null` for every other session, which leaves the chain exactly as it was.
+    const resolved = await resolveSessionCwdWithRoom(
+      { cwd, agentPath, sessionId },
+      req.app.locals.roomSessionPlace as RoomSessionPlacePort | undefined
+    );
     if (resolved.rung !== 'default') effectiveCwd = resolved.cwd;
   }
 

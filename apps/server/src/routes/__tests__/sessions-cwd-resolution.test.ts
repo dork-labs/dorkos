@@ -145,6 +145,10 @@ import request from 'supertest';
 import { createApp, finalizeApp } from '../../app.js';
 import { disposeProjector } from '../../services/session/session-state-projector.js';
 import { logger } from '../../lib/logger.js';
+import type { AuthorRecord } from '../../services/rooms/author-registry.js';
+import type { RoomWorktreeManager } from '../../services/rooms/repo/room-worktree-manager.js';
+import { RoomError } from '../../services/rooms/room-errors.js';
+import { roomSessionPlace } from '../../services/rooms/repo/room-worktree-cwd.js';
 
 const app = createApp();
 finalizeApp(app);
@@ -154,6 +158,31 @@ const S1 = '00000000-0000-4000-8000-0000000000c1';
 const S2 = '00000000-0000-4000-8000-0000000000c2';
 const AGENT = '/mock/home/agents/api-bot';
 const CHECKOUT = '/mock/home/workspaces/dorkos/agent-api-bot';
+const WORKTREE = '/mock/home/rooms/room-1/worktrees/api-bot-1a2b3c4d';
+
+/** The `(room, agent)` binding the ledger answers with, or `undefined` for none. */
+let roomBinding: { roomId: string; authorId: string; sessionId: string } | undefined;
+/** The author row `authorId` resolves to — the room's own label for the agent. */
+let roomAuthor: AuthorRecord | null = null;
+/** What the worktree manager does when the room rung asks it for a working copy. */
+let ensureWorktree: (agentName: string) => Promise<{ path: string }> = () =>
+  Promise.resolve({ path: WORKTREE });
+
+/** An agent author row, minus the render fields nothing here reads. */
+function agentAuthor(displayName: string): AuthorRecord {
+  return {
+    id: 'author-1',
+    kind: 'agent',
+    naturalKey: AGENT,
+    displayName,
+    handle: null,
+    emoji: null,
+    color: null,
+    imageUrl: null,
+    mintedForManifestId: null,
+    retiredAt: null,
+  } as AuthorRecord;
+}
 
 beforeAll(async () => {
   server.listen(0);
@@ -205,6 +234,21 @@ beforeEach(() => {
     return { id: 'ws_1', path: ensuredWorkspacePath };
   });
   fakeRuntime.acquireLock.mockReturnValue(true);
+  roomBinding = undefined;
+  roomAuthor = agentAuthor('API Bot');
+  ensureWorktree = () => Promise.resolve({ path: WORKTREE });
+  // The REAL port, over fake reads — so the lookup, the author-kind guard and
+  // the `NOT_A_PROJECT_ROOM` translation are the shipped ones and only the
+  // database and git are stood in for.
+  app.locals.roomSessionPlace = roomSessionPlace({
+    bindings: { bindingForSession: () => roomBinding },
+    authors: { getById: () => roomAuthor },
+    worktrees: () =>
+      ({
+        ensureWorktree: (_roomId: string, _agentPath: string, agentName: string) =>
+          ensureWorktree(agentName),
+      }) as unknown as RoomWorktreeManager,
+  });
   disposeProjector(S1);
   disposeProjector(S2);
 });
@@ -330,6 +374,83 @@ describe('POST /:id/messages — a managed binding across turns', () => {
     const line = info.mock.calls.find(([msg]) => msg === '[cwd] resolved');
     expect(line?.[1]).toMatchObject({ rung: 'agent-home', cwd: AGENT, sessionId: S1 });
     info.mockRestore();
+  });
+});
+
+/**
+ * A room conversation picked up in the app (DOR-1624).
+ *
+ * The defect these rows close: the same conversation has two turn boundaries —
+ * the room's own dispatcher and this route — and only the first offered the
+ * chain a `room`. So an operator resuming a project-room conversation here ran
+ * in the agent's own folder while every room turn ran in the room's worktree,
+ * and the agent's uncommitted work was on disk and invisible.
+ *
+ * The rows below are the four cases that decide whether the two paths agree,
+ * and the second is the one most likely to break: a person who names a
+ * directory still outranks the room.
+ */
+describe('POST /:id/messages — a room-bound session', () => {
+  it('resumes in the room worktree, not the agent folder', async () => {
+    manifestBinding = { mode: 'home' };
+    sessionAgentPath = AGENT;
+    roomBinding = { roomId: 'room-1', authorId: 'author-1', sessionId: S1 };
+
+    const opts = await sendAndCapture();
+
+    expect(opts?.cwd).toBe(WORKTREE);
+  });
+
+  it('still yields to a caller that names a directory', async () => {
+    manifestBinding = { mode: 'home' };
+    sessionAgentPath = AGENT;
+    roomBinding = { roomId: 'room-1', authorId: 'author-1', sessionId: S1 };
+
+    const opts = await sendAndCapture({ cwd: '/work/thing' });
+
+    expect(opts?.cwd).toBe('/work/thing');
+  });
+
+  // A room with no files of its own is the ordinary case, and the manager says
+  // so by throwing. Nothing relocates: the turn runs where it ran before this
+  // rung existed.
+  it('runs in the agent folder when the room has no files of its own', async () => {
+    manifestBinding = { mode: 'home' };
+    sessionAgentPath = AGENT;
+    roomBinding = { roomId: 'room-1', authorId: 'author-1', sessionId: S1 };
+    ensureWorktree = () =>
+      Promise.reject(
+        new RoomError('NOT_A_PROJECT_ROOM', 'This room does not have files of its own.')
+      );
+
+    const opts = await sendAndCapture();
+
+    expect(opts?.cwd).toBe(AGENT);
+  });
+
+  // The label is the readable half of the worktree's directory name, so the two
+  // paths have to read it from the same place. This row is what would fail if
+  // this one started deriving it from the manifest instead of the author row.
+  it('asks for the working copy under the label the room shows', async () => {
+    const asked = vi.fn(() => Promise.resolve({ path: WORKTREE }));
+    manifestBinding = { mode: 'home' };
+    sessionAgentPath = AGENT;
+    roomAuthor = agentAuthor('Ana the Reviewer');
+    roomBinding = { roomId: 'room-1', authorId: 'author-1', sessionId: S1 };
+    ensureWorktree = asked;
+
+    await sendAndCapture();
+
+    expect(asked).toHaveBeenCalledWith('Ana the Reviewer');
+  });
+
+  it('leaves a session no room answers with exactly as it was', async () => {
+    manifestBinding = { mode: 'home' };
+    sessionAgentPath = AGENT;
+
+    const opts = await sendAndCapture();
+
+    expect(opts?.cwd).toBe(AGENT);
   });
 });
 
