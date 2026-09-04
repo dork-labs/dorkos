@@ -85,16 +85,52 @@ async function sourceFiles(dir: string): Promise<string[]> {
 }
 
 /**
- * The resolver's own module, the one file that may of course name itself.
+ * Every specifier that reaches the chain, and therefore every one this guard
+ * has to watch.
  *
- * Nothing else is exempt — not its sibling modules, and emphatically not the
+ * `room-session-cwd.js` is the second because it CALLS the resolver: it fills in
+ * the room a bare session id is bound to and hands the request straight on
+ * (DOR-1624). Watching only the resolver's own specifier would have made it a
+ * laundering path — anything inside a turn could reach the chain through it and
+ * read as an allowed importer, because the one allowed importer of the resolver
+ * would be the wrapper itself.
+ */
+const RESOLVER_SPECIFIERS = ['resolve-session-cwd.js', 'room-session-cwd.js'];
+
+/**
+ * The two modules that ARE the chain, and may of course name themselves.
+ *
+ * Nothing else is exempt — not their sibling modules, and emphatically not the
  * workspace barrel `index.ts`. Skipping the whole directory (as this test first
  * did) left a hole big enough to walk the invariant through: a `export * from
  * './resolve-session-cwd.js'` in the barrel would make the resolver reachable
  * as `services/workspace/index.js` from anywhere in the server, and every
  * importer would read as an allowed one.
  */
-const RESOLVER_ITSELF = 'services/workspace/resolve-session-cwd.ts';
+const CHAIN_ITSELF = new Set([
+  'services/workspace/resolve-session-cwd.ts',
+  'services/workspace/room-session-cwd.ts',
+]);
+
+/**
+ * The file with its type-only imports removed.
+ *
+ * A `import type { … }` line is erased at build and cannot call anything, so it
+ * is not a call site and this guard is about call sites. It is what lets the
+ * rooms domain declare that it implements the port
+ * (`services/rooms/repo/room-worktree-cwd.ts`) without that reading as a second place
+ * a turn's directory gets decided. The inline `{ type X }` form is deliberately
+ * NOT stripped: it sits on a line that also imports values, and the conservative
+ * answer there is to fail loudly and make the argument here.
+ *
+ * @param source - The file's text.
+ */
+function withoutTypeImports(source: string): string {
+  return source
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('import type '))
+    .join('\n');
+}
 
 describe('the subagent invariant — one resolution per turn', () => {
   it('the cwd resolver is imported only where a turn BEGINS', async () => {
@@ -110,9 +146,9 @@ describe('the subagent invariant — one resolution per turn', () => {
 
     const importers: string[] = [];
     for (const rel of files) {
-      if (rel === RESOLVER_ITSELF) continue;
-      const source = await readFile(path.join(SERVER_SRC, rel), 'utf-8');
-      if (source.includes('resolve-session-cwd.js')) importers.push(rel);
+      if (CHAIN_ITSELF.has(rel)) continue;
+      const source = withoutTypeImports(await readFile(path.join(SERVER_SRC, rel), 'utf-8'));
+      if (RESOLVER_SPECIFIERS.some((specifier) => source.includes(specifier))) importers.push(rel);
     }
 
     expect(new Set(importers)).toEqual(ALLOWED);

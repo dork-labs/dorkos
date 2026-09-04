@@ -85,6 +85,14 @@ export interface ResolveSessionCwdRequest {
    * other agent also writes in and therefore the DOR-500 interleaving this whole
    * chain exists to prevent. Wiring those two rungs for rooms is a separate
    * change with its own argument to make.
+   *
+   * **Two callers name it, and they are the same conversation.** The room
+   * dispatcher does, when a message in a room starts a turn; the session route
+   * does, when a person picks that conversation up in the app (DOR-1624,
+   * `room-session-cwd.ts` fills it in from the session's binding). They must
+   * agree, so everything above applies to both — including the ending: an agent
+   * resumed from the app in a repo-less room stays in its own folder rather than
+   * taking rungs 3 or 4, exactly as its room turns do.
    */
   room?: {
     /** The room being answered. */
