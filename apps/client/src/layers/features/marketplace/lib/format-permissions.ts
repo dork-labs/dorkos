@@ -395,6 +395,68 @@ function formatSchedules(preview: PermissionPreview): FormattedPermission[] {
 // ---------------------------------------------------------------------------
 
 /**
+ * Join clauses the way somebody would say them: `a`, `a and b`, `a, b and c`.
+ */
+function joinClauses(clauses: string[]): string {
+  if (clauses.length <= 1) return clauses[0] ?? '';
+  return `${clauses.slice(0, -1).join(', ')} and ${clauses[clauses.length - 1]}`;
+}
+
+/**
+ * The whole install in one line: what lands on disk, and whether anything in
+ * it runs.
+ *
+ * **It exists to give the sections underneath a reading order** (DOR-1757).
+ * Seven headings, each deciding for itself how much to open, is locally
+ * sensible and globally unbounded — a package with a few rows in each optional
+ * group opened all of them, and roughly twenty rows under seven uppercase
+ * headings is what makes a first security decision read as "this is
+ * complicated". Nothing is removed to make room for this; it is the summary a
+ * person can act on before deciding which section to expand.
+ *
+ * **The two clauses are the two questions, in the order they are asked.** What
+ * arrives, changes and disappears is the consent question; whether the package
+ * brings a command is the trust one, and "Declares no commands" is worth saying
+ * out loud because it is the reassuring answer and it is usually true.
+ *
+ * The numbers are the same ones the effects section counts, so the line can
+ * never disagree with the rows it sits above.
+ *
+ * @param preview - Raw `PermissionPreview` from the server.
+ * @returns One sentence per question, ready to render.
+ */
+export function summarizePermissionPreview(preview: PermissionPreview): string {
+  const counts = {
+    create: preview.fileChanges.filter((change) => change.action === 'create').length,
+    modify: preview.fileChanges.filter((change) => change.action === 'modify').length,
+    delete: preview.fileChanges.filter((change) => change.action === 'delete').length,
+  };
+
+  // The noun rides the FIRST clause that is present, so "Changes 3 files and
+  // removes 1" reads as English whichever actions a package happens to have.
+  const parts: { verb: string; count: number }[] = [
+    { verb: 'Adds', count: counts.create },
+    { verb: 'Changes', count: counts.modify },
+    { verb: 'Removes', count: counts.delete },
+  ].filter((part) => part.count > 0);
+
+  const clauses = parts.map((part, index) => {
+    const verb = index === 0 ? part.verb : part.verb.toLowerCase();
+    const noun = index === 0 ? ` ${part.count === 1 ? 'file' : 'files'}` : '';
+    return `${verb} ${part.count}${noun}`;
+  });
+  const files = clauses.length === 0 ? 'Changes no files' : joinClauses(clauses);
+
+  const commands = preview.hooks.length + preview.unreadableHooks.length;
+  const declares =
+    commands === 0
+      ? 'Declares no commands'
+      : `Declares ${commands} ${commands === 1 ? 'command' : 'commands'}`;
+
+  return `${files}. ${declares}.`;
+}
+
+/**
  * Normalise a `PermissionPreview` into icon/label/severity groups ready for
  * UI rendering.
  *

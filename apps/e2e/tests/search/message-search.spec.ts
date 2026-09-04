@@ -106,19 +106,35 @@ test.describe('Message search', () => {
     await expect(page.getByTestId('message-search-dialog')).toBeHidden();
   });
 
-  test('says what it cannot see before anything is typed', async ({ page, basePage }) => {
-    // G4 in the product rather than in the spec: a person must be able to learn
-    // what search does not cover without reading one. The literal wording is
-    // pinned by the client's own test; this asserts only that the statement is
-    // really on screen in a real browser, which a unit test cannot.
+  test('says what it cannot see, in one line, before anything is typed', async ({
+    page,
+    basePage,
+  }) => {
+    // G4 in the product rather than in the spec: a person must be able to LEARN
+    // what search does not cover without reading one. That is a reachability
+    // promise, not a reading assignment (DOR-1757) — so the gist is on screen
+    // and the rest is one click down. The literal wording is pinned by the
+    // client's own test; this asserts only that both halves are really there in
+    // a real browser, which a unit test cannot.
     await openCockpit(basePage);
 
     await page.keyboard.press('ControlOrMeta+Shift+F');
     const dialog = page.getByTestId('message-search-dialog');
     await expect(dialog).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
 
-    await expect(dialog.getByText('What search covers')).toBeVisible();
-    await expect(dialog.getByText(/Codex and OpenCode/)).toBeVisible();
+    const scopeLine = dialog.getByRole('button', { name: /Searches what was said/ });
+    await expect(scopeLine).toBeVisible();
+    // Radix `CollapsibleContent` unmounts its children when closed, so a
+    // `toBeHidden()` on the text itself would pass just as well if the whole
+    // block had been deleted. `aria-expanded` on the trigger is the assertion
+    // that can actually fail.
+    await expect(scopeLine).toHaveAttribute('aria-expanded', 'false');
+    await expect(dialog.getByText(/Tool output is never searched/)).toBeHidden();
+
+    await scopeLine.click();
+    // A fragment the one-line summary does not also carry, so this can only be
+    // the revealed detail.
+    await expect(dialog.getByText(/take up to five minutes/)).toBeVisible();
     await expect(dialog.getByText(/Tool output is never searched/)).toBeVisible();
   });
 });

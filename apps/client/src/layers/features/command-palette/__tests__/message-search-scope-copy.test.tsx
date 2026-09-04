@@ -17,6 +17,13 @@
  * three mechanisms per `registry.ts:268` — are covered as of DOR-1556, so the
  * runtime gap this file used to assert no longer exists.
  *
+ * **What G4 requires is that the limits are LEARNABLE, not that they are read
+ * before typing** (DOR-1757). The four bullets used to be on screen in every
+ * state but "there are results"; they are now one click behind the one-line
+ * summary, which is itself always on screen, and they open themselves the
+ * moment a search comes back empty. So the assertions come in two halves: the
+ * line is never absent, and the detail is always reachable.
+ *
  * The strings are asserted LITERALLY, and that is deliberate rather than
  * brittle. Coverage moves, and a claim that quietly goes out of date is worse
  * than no claim at all: it is the product telling somebody their Codex history
@@ -33,7 +40,11 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { SEARCH_DEBOUNCE_MS } from '@dorkos/shared/search-schemas';
 import type { SearchHit } from '@dorkos/shared/search-schemas';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
-import { SEARCH_SCOPE_COVERED, SEARCH_SCOPE_GAPS } from '../model/message-search-scope';
+import {
+  SEARCH_SCOPE_COVERED,
+  SEARCH_SCOPE_GAPS,
+  SEARCH_SCOPE_SUMMARY,
+} from '../model/message-search-scope';
 import { MessageSearchDialog } from '../ui/MessageSearchDialog';
 
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }));
@@ -65,6 +76,16 @@ function open() {
   const result = render(<MessageSearchDialog />, { wrapper: Wrapper });
   act(() => useAppStore.getState().setMessageSearchOpen(true));
   return result;
+}
+
+/** The one-line summary, which is also the control that reveals the rest. */
+function scopeLine() {
+  return screen.getByRole('button', { name: SEARCH_SCOPE_SUMMARY });
+}
+
+/** Ask for the detail the way a person does: by clicking the line. */
+function revealScopeDetail() {
+  fireEvent.click(scopeLine());
 }
 
 async function pastDebounce() {
@@ -101,8 +122,20 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('the box states its own scope, before anything is typed', () => {
-  it('names what it covers, and how current each one is', () => {
+  it('opens as ONE line, not as four sentences', () => {
+    // The no-wall-of-text rule (DOR-1757): the gist is on screen, the detail is
+    // behind it. Four multi-clause sentences before a single keystroke is the
+    // pattern that rule exists to stop.
     open();
+
+    expect(scopeLine()).toBeInTheDocument();
+    expect(screen.queryByText(SEARCH_SCOPE_COVERED[0]!)).toBeNull();
+    expect(screen.queryByText(SEARCH_SCOPE_GAPS[0]!)).toBeNull();
+  });
+
+  it('names what it covers, and how current each one is, once asked', () => {
+    open();
+    revealScopeDetail();
 
     expect(
       screen.getByText('Your DorkOS channels and direct messages, the moment they are posted.')
@@ -121,6 +154,7 @@ describe('the box states its own scope, before anything is typed', () => {
 
   it('says tool output is never searched, and lists what that means', () => {
     open();
+    revealScopeDetail();
 
     expect(
       screen.getByText(
@@ -132,8 +166,9 @@ describe('the box states its own scope, before anything is typed', () => {
   it('discloses the one query-syntax surprise, with the example', () => {
     // `porter unicode61` matches WORDS, so a fragment that is not a word finds
     // nothing. The spec names this as a product commitment rather than a
-    // footnote, which is why it is on screen and asserted here.
+    // footnote, which is why it is reachable and asserted here.
     open();
+    revealScopeDetail();
 
     expect(
       screen.getByText(
@@ -142,9 +177,14 @@ describe('the box states its own scope, before anything is typed', () => {
     ).toBeInTheDocument();
   });
 
-  it('heads the statement so it reads as an answer, not as an error', () => {
+  it('closes again when the line is clicked a second time', () => {
+    // A disclosure that only opens is a paragraph with extra steps.
     open();
-    expect(screen.getByText('What search covers')).toBeInTheDocument();
+    revealScopeDetail();
+    expect(screen.getByText(SEARCH_SCOPE_GAPS[0]!)).toBeInTheDocument();
+
+    revealScopeDetail();
+    expect(screen.queryByText(SEARCH_SCOPE_GAPS[0]!)).toBeNull();
   });
 
   it('pins the LENGTH of both lists, not only their literal text', () => {
@@ -165,44 +205,54 @@ describe('the box keeps stating its scope wherever a person is asking why', () =
     fireEvent.change(screen.getByTestId('message-search-input'), { target: { value: 'a' } });
     await pastDebounce();
 
-    expect(screen.getByText('What search covers')).toBeInTheDocument();
+    expect(scopeLine()).toBeInTheDocument();
   });
 
-  it('is still there when nothing matched — the moment the question is loudest', async () => {
+  it('OPENS ITSELF when nothing matched — the moment the question is loudest', async () => {
+    // The one state where the fine print is the answer rather than a caption:
+    // "search matches whole words" is what explains an empty list, and nothing
+    // else on screen does. No click needed here, and none anywhere else.
     open();
     fireEvent.change(screen.getByTestId('message-search-input'), { target: { value: 'ogs' } });
     await pastDebounce();
 
-    expect(screen.getByText('What search covers')).toBeInTheDocument();
+    // The search has to have come back before this is the empty-result state:
+    // while it is still on the wire the box is answering an older question.
+    expect(await screen.findByText('No messages match “ogs”.')).toBeInTheDocument();
+    expect(scopeLine()).toBeInTheDocument();
     expect(
       screen.getByText(
         'Your Claude Code, Codex and OpenCode conversations, including the ones you ran outside DorkOS. A new message can take up to five minutes to show up here.'
       )
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Search matches whole words. Typing "ogs" will not find "dogs". Type "dog*" to match the start of a word instead.'
+      )
+    ).toBeInTheDocument();
   });
 
   it('is back on a REOPEN, after a search that found something', async () => {
-    // **The state that actually pins G4.** The box only draws the full
-    // statement when there are no results, and TanStack keeps answering a
-    // disabled query from its cache — so before this was gated, every open
-    // after the first showed the last search's rows and no scope statement at
-    // all. A person who searched once never saw the commitment again.
+    // **The state that actually pins G4.** TanStack keeps answering a disabled
+    // query from its cache — so before this was gated, every open after the
+    // first showed the last search's rows and the "nothing matched" branch
+    // never came back. The line is drawn in every state now, but the reopen
+    // still has to land on an EMPTY box rather than on stale rows.
     vi.mocked(mockTransport.search).mockResolvedValue({ results: [portHit], warnings: [] });
 
     open();
     fireEvent.change(screen.getByTestId('message-search-input'), { target: { value: 'port' } });
     await pastDebounce();
     await screen.findByRole('option');
-    expect(screen.queryByText('What search covers')).toBeNull();
 
     act(() => useAppStore.getState().setMessageSearchOpen(false));
     act(() => useAppStore.getState().setMessageSearchOpen(true));
 
-    // Immediately, without waiting out a debounce: the box is empty, so it is
-    // in the state that has to say what it covers.
+    // Immediately, without waiting out a debounce: the box is empty, and its
+    // scope line is there to be asked.
     expect(screen.getByTestId('message-search-input')).toHaveValue('');
     expect(screen.queryAllByRole('option')).toHaveLength(0);
-    expect(screen.getByText('What search covers')).toBeInTheDocument();
+    revealScopeDetail();
     expect(
       screen.getByText(
         'Your Claude Code, Codex and OpenCode conversations, including the ones you ran outside DorkOS. A new message can take up to five minutes to show up here.'
@@ -222,9 +272,11 @@ describe('the box keeps stating its scope wherever a person is asking why', () =
     await pastDebounce();
 
     expect(screen.queryAllByRole('option')).toHaveLength(0);
-    expect(screen.getByText('What search covers')).toBeInTheDocument();
-    // And no "nothing matched" sentence: nothing was asked.
+    expect(scopeLine()).toBeInTheDocument();
+    // And no "nothing matched" sentence: nothing was asked. Which also means
+    // the detail stays shut — an empty box is not an unanswered question.
     expect(screen.queryByText(/No messages match/)).toBeNull();
+    expect(screen.queryByText(SEARCH_SCOPE_GAPS[0]!)).toBeNull();
   });
 
   it('is back when the query is deleted BACK below the floor', async () => {
@@ -243,13 +295,13 @@ describe('the box keeps stating its scope wherever a person is asking why', () =
 
     expect(screen.queryAllByRole('option')).toHaveLength(0);
     expect(screen.getByText(/Type at least 2 letters/)).toBeInTheDocument();
-    expect(screen.getByText('What search covers')).toBeInTheDocument();
+    expect(scopeLine()).toBeInTheDocument();
   });
 
-  it('shortens to one line once there are results to read', async () => {
-    // The one state where the full list is not drawn: somebody reading hits has
-    // what they came for. It never goes silent, though — the boundary is still
-    // stated, in one quiet sentence under the list.
+  it('stays one quiet line under a list of hits, and is still askable', async () => {
+    // Somebody reading hits has what they came for, so nothing opens itself
+    // here. It never goes silent either — the boundary is still stated, and
+    // the rest of it is still one click down.
     vi.mocked(mockTransport.search).mockResolvedValue({ results: [portHit], warnings: [] });
 
     open();
@@ -257,11 +309,14 @@ describe('the box keeps stating its scope wherever a person is asking why', () =
     await pastDebounce();
 
     await screen.findByRole('option');
-    expect(screen.queryByText('What search covers')).toBeNull();
+    expect(screen.queryByText(SEARCH_SCOPE_GAPS[0]!)).toBeNull();
     expect(
       screen.getByText(
         'Searches what was said in channels and direct messages, and in Claude Code, Codex and OpenCode conversations. Not tool output.'
       )
     ).toBeInTheDocument();
+
+    revealScopeDetail();
+    expect(screen.getByText(SEARCH_SCOPE_GAPS[0]!)).toBeInTheDocument();
   });
 });

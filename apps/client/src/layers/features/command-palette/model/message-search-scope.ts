@@ -23,9 +23,6 @@
  */
 import { SEARCH_MIN_QUERY_LENGTH } from '@dorkos/shared/search-schemas';
 
-/** The heading over the whole statement. */
-export const SEARCH_SCOPE_HEADING = 'What search covers';
-
 /**
  * What is searchable today, and how current each one is.
  *
@@ -58,12 +55,14 @@ export const SEARCH_SCOPE_GAPS: readonly string[] = [
 ];
 
 /**
- * The same statement in one line, for the state where results are on screen.
+ * The same statement in one line — the whole default view of the box's scope.
  *
- * A person reading results does not need the full list, but the box should
- * still never be silent about its edges — this is what sits under a list of
- * hits, quietly, so "why is that not here" has an answer without a second
- * click.
+ * **This is what is ON SCREEN; the lists above are what a click reveals**
+ * (DOR-1757). It used to be the results-only variant, with all four bullets
+ * showing in every other state, so a person met four multi-clause sentences
+ * before typing anything. One line answers "does this thing even look at what I
+ * mean" for the case that comes up, names the largest gap out loud, and doubles
+ * as the disclosure that opens the rest.
  */
 export const SEARCH_SCOPE_SUMMARY =
   'Searches what was said in channels and direct messages, and in Claude Code, Codex and OpenCode conversations. Not tool output.';

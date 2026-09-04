@@ -64,7 +64,12 @@ export function ReachMeSection() {
         <SettingRow
           orientation="vertical"
           label="Try to reach me somewhere else after"
-          description="After this long unanswered, DorkOS pings your subscribed devices and connected chat apps. Answer anywhere and everything else goes quiet. A new time applies to whatever waits on you next; picking Never stops anything that is already counting down."
+          // One line, on a tab whose whole point is that its bold labels are
+          // scannable (DOR-1757). What went: that a new time applies from the
+          // next thing onward, and that Never stops a countdown already
+          // running. Both are true, both are fine print about a knob somebody
+          // has already turned, and neither changes the choice being made.
+          description="DorkOS then pings your devices and chat apps. Answer anywhere to quiet the rest."
         >
           <SegmentedControl
             value={String(prefs.escalation.phoneAfterMinutes)}

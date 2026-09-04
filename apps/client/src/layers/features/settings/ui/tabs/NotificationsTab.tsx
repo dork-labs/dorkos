@@ -7,14 +7,24 @@
  * asking is a single one — how loud may this be? — and answering it should not
  * mean hunting.
  *
+ * **The bold labels are the scan layer, and every sentence under one is short
+ * enough to skip** (DOR-1757). This tab used to open onto three sentences of
+ * framing above six rows that each carried a full sentence of their own — the
+ * best copy in the app, stacked six deep until it read as a wall. The labels
+ * carry the model now ("knock" for what is waiting on you, "chime" for news),
+ * and the one genuinely long thing here — how to get DorkOS onto a phone at all
+ * — sits behind a disclosure, because it is a job you do once.
+ *
  * @module features/settings/ui/tabs/NotificationsTab
  */
+import { useState } from 'react';
 import { useNotificationPrefs } from '@/layers/entities/config';
 import { ReachMeSection } from '@/layers/features/notifications';
 import { isDesktopShell } from '@/layers/shared/lib';
 import { useBrowserNotificationPermission } from '@/layers/shared/model';
 import {
   Button,
+  CollapsibleFieldCard,
   FieldCard,
   FieldCardContent,
   SettingRow,
@@ -26,23 +36,17 @@ export function NotificationsTab() {
   const { prefs, setPrefs, isPending } = useNotificationPrefs();
   const { permission, request } = useBrowserNotificationPermission();
   const inDesktopShell = isDesktopShell();
+  const [phoneHelpOpen, setPhoneHelpOpen] = useState(false);
 
   return (
     <div className="space-y-6">
-      <div className="space-y-1">
-        {/* No heading: the Settings dialog draws the panel's own header. */}
-        <p className="text-muted-foreground text-xs">
-          Agents work while you do something else, so DorkOS has to be able to reach you — and to
-          stay quiet the rest of the time. A knock means something has stopped and is waiting on
-          you. Everything else is news.
-        </p>
-      </div>
-
+      {/* No intro and no heading: the Settings dialog draws the panel's own
+          header, and the labels below say which sound is which. */}
       <FieldCard>
         <FieldCardContent>
           <SwitchSettingRow
             label="Knock when an agent needs you"
-            description="A soft double-knock the moment something stops and waits for your answer."
+            description="A soft double-knock when something waits on you."
             checked={prefs.sounds.knock}
             onCheckedChange={(on) => setPrefs({ sounds: { knock: on } })}
             disabled={isPending}
@@ -50,7 +54,7 @@ export function NotificationsTab() {
 
           <SwitchSettingRow
             label="Chime when everything is answered"
-            description="A gentle sound when the last thing waiting on you is cleared."
+            description="A gentle sound when nothing is waiting any more."
             checked={prefs.sounds.allClear}
             onCheckedChange={(on) => setPrefs({ sounds: { allClear: on } })}
             disabled={isPending}
@@ -58,7 +62,7 @@ export function NotificationsTab() {
 
           <SwitchSettingRow
             label="Chime every time a turn finishes"
-            description="Plays whenever an agent finishes replying, in any session. Off to start with — with a few agents running it is a lot of sound."
+            description="Every reply, in every session. Noisy with several agents."
             checked={prefs.sounds.turnEnd}
             onCheckedChange={(on) => setPrefs({ sounds: { turnEnd: on } })}
             disabled={isPending}
@@ -81,7 +85,7 @@ export function NotificationsTab() {
 
           <SwitchSettingRow
             label="Tell me when something finishes while I am away"
-            description="Show a notification when a turn finishes or a message arrives and you are looking at something else. Things that are blocked on you always get through."
+            description="Anything waiting on you always gets through."
             checked={prefs.notifyOnTurnCompleteWhileAway}
             onCheckedChange={(on) => setPrefs({ notifyOnTurnCompleteWhileAway: on })}
             disabled={isPending}
@@ -96,23 +100,34 @@ export function NotificationsTab() {
 
       {/* Last, and deliberately after the device list: this is the how-to for
           getting a phone INTO that list, so it only makes sense once you have
-          seen the list it feeds. */}
-      <p className="text-muted-foreground text-xs">
-        On a phone, open DorkOS using your tunnel address (see Tunnel Setup), then choose &ldquo;Add
-        to Home Screen&rdquo; to install it like an app: full screen, with its own icon. On iPhone
-        that step is required before notifications work at all — once it is installed, open Settings
-        there and add it as a device above.
-      </p>
+          seen the list it feeds. Collapsed, because it is a job you do once and
+          then never read again — and as a permanent paragraph it was the
+          longest thing on the tab. */}
+      <CollapsibleFieldCard
+        open={phoneHelpOpen}
+        onOpenChange={setPhoneHelpOpen}
+        trigger="Get these on your phone"
+      >
+        <ol className="text-muted-foreground list-decimal space-y-1.5 pl-4 text-xs">
+          <li>Open DorkOS on your phone, at your Remote Access address.</li>
+          <li>
+            Choose &ldquo;Add to Home Screen&rdquo;. On iPhone this step is required before
+            notifications work at all.
+          </li>
+          <li>Open Settings there and add it as a device above.</li>
+        </ol>
+      </CollapsibleFieldCard>
     </div>
   );
 }
 
 /**
- * What to say about the browser's permission, in plain words and with a way out
- * of every state.
+ * What to say about the browser's permission — one short line per state, each
+ * with the way out of it.
  *
- * "Blocked" gets the longest sentence on purpose: it is the only state DorkOS
- * cannot fix, because a browser that has been told no does not ask again.
+ * "Blocked" is the only state DorkOS cannot fix on its own, because a browser
+ * that has been told no does not ask again, so it is the one line that has to
+ * name where to go instead.
  *
  * @param permission - What the browser says.
  * @param inDesktopShell - Whether this is the desktop app, which has its own.
@@ -122,16 +137,16 @@ function browserPermissionDescription(
   inDesktopShell: boolean
 ): string {
   if (inDesktopShell) {
-    return 'The desktop app shows its own notifications, so this setting does not apply here.';
+    return 'The desktop app shows its own notifications.';
   }
   if (permission === 'granted') {
-    return 'Allowed. DorkOS can show a notification while this tab is hidden.';
+    return 'Allowed, even while this tab is hidden.';
   }
   if (permission === 'denied') {
-    return 'Blocked. Your browser is set to refuse notifications from DorkOS, and it will not ask again — you can change that in your browser’s settings for this site.';
+    return 'Blocked. Change it in your browser’s settings for this site.';
   }
   if (permission === 'unsupported') {
     return 'This browser cannot show notifications.';
   }
-  return 'Not turned on yet. DorkOS asks the first time it would actually be useful, or you can turn it on here.';
+  return 'Not turned on yet.';
 }
