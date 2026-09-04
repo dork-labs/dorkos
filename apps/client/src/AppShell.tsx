@@ -216,8 +216,8 @@ function useRouteHeader() {
  *
  * The sidebar body directional-slides (200ms) and header content
  * cross-fades on route change via AnimatePresence, clipped inside the
- * sidebar. The sidebar footer and rail are static chrome — they never
- * animate.
+ * sidebar. The routed page cross-fades with them (120ms, opacity only).
+ * The sidebar footer and rail are static chrome — they never animate.
  */
 export function AppShell() {
   const { sidebarOpen, setSidebarOpen } = useAppStore();
@@ -797,7 +797,31 @@ export function AppShell() {
                         autoSaveId={RIGHT_PANEL_GROUP_ID}
                       >
                         <Panel id="main-content" order={1} minSize={30} defaultSize={100}>
-                          <Outlet />
+                          {/* ── The page itself, cross-faded on route change ──
+                              The sidebar body slides and the header cross-fades
+                              already; the body they describe used to swap in a
+                              single frame, so the chrome moved and the content
+                              did not.
+
+                              **Opacity only, and that is the safe form.** A
+                              transform on this wrapper would make it a
+                              containing block for the `fixed` PIP layer inside
+                              it and would change what the panel group measures.
+                              The key is the pathname, not the full location, so
+                              switching sessions on `/session` keeps its own
+                              150ms crossfade instead of taking two. ── */}
+                          <AnimatePresence mode="wait" initial={false}>
+                            <motion.div
+                              key={rightPanelPathname}
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              exit={{ opacity: 0 }}
+                              transition={{ duration: 0.12, ease: 'easeOut' }}
+                              className="h-full"
+                            >
+                              <Outlet />
+                            </motion.div>
+                          </AnimatePresence>
                         </Panel>
                         <RightPanelContainer pathname={rightPanelPathname} />
                       </PanelGroup>
