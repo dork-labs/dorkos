@@ -31,6 +31,50 @@ import type { WaitingKind } from './notices/notice-copy.js';
 // flag and the runtime's own answer.
 export type { RoomReplyMode };
 
+/**
+ * The runner's refusal when a room's session is bound to a runtime this server
+ * is not running (DOR-1720).
+ *
+ * **A room keeps one session per `(room, agent)` and a session never changes
+ * hands** (ADR-0255, DOR-764), so a runtime switched off after the conversation
+ * started refuses every turn from then on. That is correct — the alternative is
+ * resuming somebody's conversation on a program holding none of it — but until
+ * this error existed it arrived at the dispatcher as a bare `Error`, was read as
+ * "the turn failed", and left the room apologising once per message with no way
+ * out of it stated anywhere. Carrying the runtime is what lets the room name the
+ * program and both recoveries.
+ *
+ * **Thrown, not returned.** A refused turn must rewind the claim cursor — no
+ * model saw the backlog, so those messages are still owed to whichever turn runs
+ * next — and `unanswered` on a returned result deliberately keeps the advance.
+ *
+ * **A rooms-domain error rather than the registry's own
+ * `RuntimeNotRegisteredError`**, which the session routes raise for the same
+ * state and answer 503 for. The two speak the same language to a reader by
+ * design; they are separate types because more than twenty test files replace
+ * the whole runtime-registry module with a double, and a room's ability to tell
+ * this refusal from a crash must not depend on whether one of them re-exported a
+ * class. The registry is asked a data question (`has`) and the rooms domain
+ * raises its own refusal.
+ */
+export class RoomTurnRuntimeGoneError extends Error {
+  /**
+   * Build the refusal, naming what it was refused on.
+   *
+   * @param runtime - The runtime type the session is bound to.
+   * @param sessionId - The bound session, or `null` if there was none to read.
+   */
+  constructor(
+    readonly runtime: string,
+    readonly sessionId: string | null
+  ) {
+    super(
+      `Session '${sessionId ?? 'unbound'}' is bound to runtime '${runtime}', which is not registered on this server.`
+    );
+    this.name = 'RoomTurnRuntimeGoneError';
+  }
+}
+
 /** One agent turn, as the room asks for it. */
 export interface RoomTurnRequest {
   /** The room the answer will be posted into. */

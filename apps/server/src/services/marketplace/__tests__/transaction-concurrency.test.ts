@@ -430,6 +430,7 @@ describe('MarketplaceInstaller.update() vs a concurrent install (same package)',
   let dorkHome: string;
   let sourceDir: string;
   const stagingDirsObserved: string[] = [];
+  const projectPathsCreated: string[] = [];
 
   beforeEach(async () => {
     dorkHome = await mkdtemp(path.join(tmpdir(), 'update-concurrency-home-'));
@@ -448,9 +449,10 @@ describe('MarketplaceInstaller.update() vs a concurrent install (same package)',
     vi.restoreAllMocks();
     await rm(dorkHome, { recursive: true, force: true }).catch(() => undefined);
     await rm(sourceDir, { recursive: true, force: true }).catch(() => undefined);
-    for (const dir of stagingDirsObserved) {
+    for (const dir of [...stagingDirsObserved, ...projectPathsCreated]) {
       await rm(dir, { recursive: true, force: true }).catch(() => undefined);
     }
+    projectPathsCreated.length = 0;
   });
 
   /**
@@ -470,12 +472,39 @@ describe('MarketplaceInstaller.update() vs a concurrent install (same package)',
   async function raceInstallAgainstUpdate(opts: {
     /** Plant `.dork/data/`, which is what puts the update on its by-hand-removal path. */
     plantUserData: boolean;
+    /**
+     * Install into a temp project rather than the global `dorkHome`, and aim
+     * the concurrent install at that directory through a SYMLINKED spelling of
+     * the project. The update locks the root it located under the project
+     * scope, so the two only serialise if the lock key canonicalises a
+     * project-scoped path (DOR-994 widened `update()`'s reach to those roots).
+     */
+    projectScope?: boolean;
   }): Promise<UpdateRaceOutcome> {
     const { installer, spies } = buildInstallerForTests(dorkHome);
     const packagePath = path.join(sourceDir, 'valid-plugin');
 
-    const first = await installer.install({ name: packagePath });
+    let projectPath: string | undefined;
+    let competitorSpelling: (installRoot: string) => string = (root) => root;
+    if (opts.projectScope) {
+      projectPath = await mkdtemp(path.join(tmpdir(), 'update-concurrency-project-'));
+      projectPathsCreated.push(projectPath);
+      const linkedProject = path.join(dorkHome, 'linked-project');
+      await symlink(projectPath, linkedProject, 'dir');
+      // The competitor's spelling of the same directory, through the link.
+      competitorSpelling = (root) =>
+        path.join(linkedProject, path.relative(projectPath as string, root));
+    }
+
+    const first = await installer.install({ name: packagePath, projectPath });
     const installRoot = first.installPath;
+    if (opts.projectScope) {
+      // The premise: a project-scoped plugin really does land under the
+      // project's own `.dork/`, which is the root the update has to lock.
+      expect(installRoot).toBe(
+        path.join(projectPath as string, '.dork', 'plugins', 'valid-plugin')
+      );
+    }
     // Precondition: the marker that tells the two writers apart made the trip,
     // so the surviving-content assertions read what they think they read.
     expect(await readFile(path.join(installRoot, 'who.txt'), 'utf8')).toBe('update');
@@ -527,12 +556,13 @@ describe('MarketplaceInstaller.update() vs a concurrent install (same package)',
       return { extension: {}, reloadRequired: false };
     });
 
-    const update = installer.update({ name: packagePath });
+    const update = installer.update({ name: packagePath, projectPath });
     await updateInsideUninstall.promise;
 
+    const competitorTarget = competitorSpelling(installRoot);
     const competitor = runTransaction({
       name: 'concurrent-install',
-      target: installRoot,
+      target: competitorTarget,
       stage: async (staging) => {
         // Reaching `stage` means this transaction is inside the critical
         // section. Getting here before the update's reinstall has activated
@@ -542,8 +572,8 @@ describe('MarketplaceInstaller.update() vs a concurrent install (same package)',
         await writeFile(path.join(staging.path, 'who.txt'), 'competitor', 'utf8');
       },
       activate: async (staging) => {
-        await mkdir(path.dirname(installRoot), { recursive: true });
-        await atomicMove(staging.path, installRoot);
+        await mkdir(path.dirname(competitorTarget), { recursive: true });
+        await atomicMove(staging.path, competitorTarget);
         return { ok: true } as const;
       },
     });
@@ -590,6 +620,21 @@ describe('MarketplaceInstaller.update() vs a concurrent install (same package)',
     // already told it succeeded, and the update itself left crashing on the
     // data it no longer finds.
     const outcome = await raceInstallAgainstUpdate({ plantUserData: true });
+
+    expect(outcome.update.status).toBe('fulfilled');
+    expect(outcome.competitor.status).toBe('fulfilled');
+    expect(outcome.competitorEnteredTheGap).toBe(false);
+    expect(outcome.survivingMarker).toBe('competitor');
+  });
+
+  it('locks a PROJECT-scoped install root, under any spelling of the project', async () => {
+    // DOR-994 widened the roots `update()` can locate to every install root
+    // under a project's own `.dork/`, so the lock key now has to canonicalise a
+    // caller-supplied project path — the exact thing `path.resolve` does not do
+    // for symlinks. Here the update locks the root it located under the real
+    // project while the concurrent install aims at the same directory through a
+    // symlinked spelling: two keys and it serialises against nothing.
+    const outcome = await raceInstallAgainstUpdate({ plantUserData: true, projectScope: true });
 
     expect(outcome.update.status).toBe('fulfilled');
     expect(outcome.competitor.status).toBe('fulfilled');

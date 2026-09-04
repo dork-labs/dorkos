@@ -24,7 +24,7 @@ import { PACKAGE_MANIFEST_PATH, PackageNameSchema } from '@dorkos/marketplace';
 import type { MarketplaceJson, MarketplaceJsonEntry, PackageType } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
-import { INSTALL_ROOTS_WITH_TYPE } from '../lib/install-roots.js';
+import { installKey, installRootsUnder, projectScopeRoot } from '../lib/install-roots.js';
 import type { InstallRequest, InstallResult, MarketplaceSource } from '../types.js';
 import { readInstallMetadata } from '../installed-metadata.js';
 
@@ -191,7 +191,7 @@ export class UpdateFlow {
   }
 
   /**
-   * Walk every install root in scope ({@link INSTALL_ROOTS_WITH_TYPE}:
+   * Walk every install root in scope ({@link installRootsUnder}:
    * `plugins/`, `agents/`, `shapes/`), reading each `.dork/manifest.json` for
    * the canonical package fields and `.dork/install-metadata.json` for the
    * provenance fields. Unreadable manifests are silently skipped so a single
@@ -201,18 +201,15 @@ export class UpdateFlow {
    * When the caller supplied a `projectPath`, that project's own `.dork/` is
    * walked FIRST — a project install is where `PluginInstallFlow` and
    * `AgentInstallFlow` land a scoped install, and it shadows a global package
-   * of the same name for that project. That precedence matches the installed
-   * scanner's merged view, though the coverage does not: the scanner's merged
-   * view walks only a project's `plugins/`, while this walk covers every
-   * project install root. Without it the update flow could not see a
+   * of the same name for that project. That precedence — and, since DOR-994,
+   * that coverage — matches the installed scanner's merged view and the
+   * uninstall flow's probe. Without it the update flow could not see a
    * project-scoped package at all and reported it as not installed.
    *
-   * Results are deduplicated by install-root kind plus package name, first
-   * root wins — so a project's `plugins/foo` shadows the global `plugins/foo`,
-   * while a global `agents/foo` survives as its own entry. Deduping on the
-   * name alone would be wrong: two same-name packages in different roots are
-   * genuinely different packages that {@link ConflictDetector} allows to
-   * coexist, and {@link #checkOne} resolves each one's marketplace
+   * Results are deduplicated by {@link installKey} (install-root kind plus
+   * package name), first root wins — so a project's `plugins/foo` shadows the
+   * global `plugins/foo`, while a global `agents/foo` survives as its own
+   * entry, and {@link #checkOne} resolves each one's marketplace
    * independently.
    *
    * @param projectPath - Project directory to also scan, when the request
@@ -226,19 +223,9 @@ export class UpdateFlow {
     // (same derivation as `ConflictDetector.detect`). Shapes are global-only, so
     // a project's `shapes/` simply never exists and its walk yields nothing.
     const scopeRoots = projectPath
-      ? [path.join(projectPath, '.dork'), this.deps.dorkHome]
+      ? [projectScopeRoot(projectPath), this.deps.dorkHome]
       : [this.deps.dorkHome];
-    const roots = scopeRoots.flatMap((scopeRoot) =>
-      INSTALL_ROOTS_WITH_TYPE.map(({ dir, representativeType }) => ({
-        // `kind` is the root's scope-relative name (`plugins`/`agents`/
-        // `shapes`) and is what the dedupe keys on. The absolute `dir` must
-        // never be the key: project and global paths always differ, so a
-        // path-keyed dedupe would silently never dedupe anything.
-        kind: dir,
-        dir: path.join(scopeRoot, dir),
-        inferredType: representativeType,
-      }))
-    );
+    const roots = scopeRoots.flatMap(installRootsUnder);
 
     for (const root of roots) {
       const entries = await readDirSafe(root.dir);
@@ -261,12 +248,12 @@ export class UpdateFlow {
         const name = PackageNameSchema.safeParse(manifest.name).success
           ? (manifest.name as string)
           : entry.name;
-        const key = `${root.kind}:${name}`;
+        const key = installKey(root.kind, name);
         if (byRootAndName.has(key)) continue;
         byRootAndName.set(key, {
           name,
           version: typeof manifest.version === 'string' ? manifest.version : '0.0.0',
-          type: (manifest.type as PackageType | undefined) ?? root.inferredType,
+          type: (manifest.type as PackageType | undefined) ?? root.representativeType,
           installPath,
           installedFrom: installMetadata?.installedFrom,
         });

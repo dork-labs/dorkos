@@ -45,6 +45,11 @@ const NOTICES: ReadonlyArray<{ code: RoomNoticeCode; text: string; label: string
     text: "Kai is waiting for you to approve something before it can carry on. Open Kai's session to answer. It will wait, but not forever.",
   },
   {
+    code: 'runtime_gone',
+    label: 'runtime_gone — warm, because nothing happens until you turn something back on',
+    text: "Kai answers here through Codex, which isn't running on this machine, so it can't reply. Turn Codex back on to pick up where you left off, or remove Kai from this conversation and add it back to start fresh.",
+  },
+  {
     code: 'agent_busy',
     label: 'agent_busy — occupied, not broken',
     text: 'Kai was busy with something else and did not pick this up. Send it again when Kai is free.',
@@ -277,7 +282,7 @@ function NoticesSection() {
   return (
     <PlaygroundSection
       title="Room notices"
-      description="The room speaking in its own voice. Five different things, and until DOR-783 all five drew identically — one italic muted line, with the code read by nothing in the client. Each now carries its own mark, and exactly one carries a tone: turn_failed, the only one of the five where something has gone wrong. Read them together and check that (a) they are tellable apart at a glance, and (b) the other four stay quiet enough that a busy afternoon does not turn into a wall of alarm."
+      description="The room speaking in its own voice about several different things, which until DOR-783 all drew identically — one italic muted line, with the code read by nothing in the client. Each now carries its own mark, and warm is reserved for the ones that want you to DO something: turn_failed and runtime_gone, where no answer is coming, and awaiting_approval, where the agent is stopped until somebody answers it. Read them together and check that (a) they are tellable apart at a glance, and (b) the rest stay quiet enough that a busy afternoon does not turn into a wall of alarm."
     >
       {NOTICES.map(({ code, text, label }) => (
         <div key={code}>

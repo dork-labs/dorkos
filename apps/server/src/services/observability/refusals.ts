@@ -108,6 +108,17 @@ export const REFUSAL_REASONS = {
   agent_declined: 'the agent read the question and chose not to reply',
   /** The `(room, agent)` session row could not be written, so no turn started. */
   session_bind_failed: 'the room session could not be bound',
+  /**
+   * A session is bound to a runtime this server is not running, so its turn was
+   * refused rather than resumed on a different program (DOR-1720).
+   *
+   * Distinct from {@link delivery_failed}, which is a runtime that IS here and
+   * did not take the turn, and from {@link agent_missing}, which is about the
+   * agent rather than the program it runs on. A `group_by(.reason)` that folded
+   * this into either would hide the one refusal an operator fixes by turning
+   * something back on. `detail.runtime` names which.
+   */
+  runtime_gone: 'the runtime this conversation started on is not running here',
   /** A prompt only a person can answer expired, and was denied by the clock. */
   interaction_expired: 'nobody answered the prompt in time',
   /** An inbound chat message resolved to no binding at all. */

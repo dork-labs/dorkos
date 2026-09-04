@@ -532,11 +532,14 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   // GET /installed -- list installed packages.
   //
   // Without projectPath: one entry PER INSTALLATION across all scopes — the
-  // global roots plus every registered agent's .dork/plugins (a package
-  // installed globally and on two agents yields three entries). With
-  // projectPath: the merged view for that single project (global + its local
-  // installs, one entry per name), which the install dialog uses for
-  // scope-accurate reinstall detection.
+  // global roots plus every install root under each registered agent's .dork/
+  // (a package installed globally and on two agents yields three entries).
+  // With projectPath: the merged view for that single project (global + its
+  // local installs, one entry per install root AND name), which the install
+  // dialog uses for scope-accurate reinstall detection. Merging on the name
+  // alone would let a project's agents/foo swallow the global plugins/foo —
+  // two different packages the conflict detector allows to coexist — so the
+  // merged view can return two entries sharing a name (DOR-994).
   router.get('/installed', async (req, res) => {
     try {
       const projectPath =

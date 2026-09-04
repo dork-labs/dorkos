@@ -468,6 +468,12 @@ export const DISPATCH_OUTCOMES: Record<ClaimOutcome, DispatchOutcome> = {
   // Same shape as `gone`: refused before a claim was ever taken, because the
   // bind that would have preceded the claim failed first (DOR-1206).
   unavailable: 'refused',
+  // A claim WAS taken and then the turn was refused before it started, because
+  // the session is bound to a runtime this server is not running (DOR-1720). A
+  // `refused` rather than a `failed`, which is the whole point of separating it:
+  // nothing broke, no model ran, and an operator reading the dispatch buffer for
+  // crashes should not find this install's missing runtime in with them.
+  'runtime-gone': 'refused',
 };
 
 /**
@@ -499,6 +505,9 @@ export const PRESENCE_OUTCOMES: Record<ClaimOutcome, 'answered' | 'silent' | und
   gone: undefined,
   left: undefined,
   unavailable: undefined,
+  // The `runtime_gone` line is durable and says both recoveries; an ephemeral
+  // marker beside it would be the second, vaguer version of the same news.
+  'runtime-gone': undefined,
 };
 
 /**
