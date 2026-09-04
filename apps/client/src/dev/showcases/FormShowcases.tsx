@@ -19,6 +19,8 @@ import {
   Checkbox,
   RadioGroup,
   RadioGroupItem,
+  SegmentedControl,
+  SegmentedControlItem,
   Command,
   CommandInput,
   CommandList,
@@ -27,12 +29,14 @@ import {
   CommandItem,
 } from '@/layers/shared/ui';
 
-/** Form component showcases: Input, Textarea, Switch, Select, Tabs, Checkbox, RadioGroup, Label, Command. */
+/** Form component showcases: Input, Textarea, Switch, Select, Tabs, Checkbox, RadioGroup, SegmentedControl, Label, Command. */
 export function FormShowcases() {
   const [switchOn, setSwitchOn] = useState(true);
   const [checkA, setCheckA] = useState(true);
   const [checkB, setCheckB] = useState(false);
   const [radioValue, setRadioValue] = useState('claude-code');
+  const [segmentValue, setSegmentValue] = useState('ask');
+  const [segmentPair, setSegmentPair] = useState('grouped');
 
   return (
     <>
@@ -214,6 +218,48 @@ export function FormShowcases() {
               <Label htmlFor="demo-radio-other-dis">Unavailable</Label>
             </div>
           </RadioGroup>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="SegmentedControl"
+        description="A few short choices, side by side. The raised thumb slides between them."
+      >
+        <ShowcaseLabel>Three stops</ShowcaseLabel>
+        <ShowcaseDemo>
+          {/* Click along the row: the raised surface travels rather than
+              blinking off one stop and on at the next. */}
+          <SegmentedControl
+            value={segmentValue}
+            onValueChange={setSegmentValue}
+            aria-label="How much this agent may do on its own"
+          >
+            <SegmentedControlItem value="ask">Ask first</SegmentedControlItem>
+            <SegmentedControlItem value="edits">Edits</SegmentedControlItem>
+            <SegmentedControlItem value="full">Full autonomy</SegmentedControlItem>
+          </SegmentedControl>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Two stops</ShowcaseLabel>
+        <ShowcaseDemo>
+          <SegmentedControl
+            value={segmentPair}
+            onValueChange={setSegmentPair}
+            className="w-auto"
+            aria-label="Order the list"
+          >
+            <SegmentedControlItem value="grouped">Grouped</SegmentedControlItem>
+            <SegmentedControlItem value="chronological">Chronological</SegmentedControlItem>
+          </SegmentedControl>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Disabled</ShowcaseLabel>
+        <ShowcaseDemo>
+          <SegmentedControl defaultValue="edits" disabled aria-label="Locked">
+            <SegmentedControlItem value="ask">Ask first</SegmentedControlItem>
+            <SegmentedControlItem value="edits">Edits</SegmentedControlItem>
+            <SegmentedControlItem value="full">Full autonomy</SegmentedControlItem>
+          </SegmentedControl>
         </ShowcaseDemo>
       </PlaygroundSection>
 
