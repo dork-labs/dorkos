@@ -8,6 +8,7 @@ covers:
   - 'chore(changelog): fold batch 14 fragments into one entry (DOR-1760)'
   - 'fix(client): the path field and its Browse button share one disabled state (DOR-1760)'
   - 'fix(client): the active chip keeps its accent border in dark mode, and only toggle-bearing dialogs pay for its clearance (DOR-1760)'
+  - "fix(obsidian-plugin): bridge the six new --package-* hues into the plugin's own build (DOR-1760)"
 ---
 
 ### Fixed
