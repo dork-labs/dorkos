@@ -59,7 +59,7 @@ export function computeHealthState(
     const pct = Math.round(failureRate * 100);
     return {
       state: 'critical',
-      message: `${pct}% failure rate \u2014 ${metrics.failedCount} messages failed today`,
+      message: `${pct}% failure rate, ${metrics.failedCount} messages failed today`,
     };
   }
 

@@ -408,7 +408,7 @@ The rule above is not a sidebar rule, it is the house rule. **Every string a per
 
 The only exceptions are proper nouns: product names (DorkOS, Claude Code, Codex, OpenCode, Obsidian, Slack, Telegram, GitHub), named surfaces that are titles in their own right (Control Center, Dev Playground), and acronyms (ID, MCP, URL). "Reset all data", not "Reset All Data". "Open in a new tab", not "Open in New Tab". "Marketplace sources", not "Marketplace Sources".
 
-Title Case makes a small UI shout, and mixing the two registers in one menu — which this app did until DOR-1755 — reads as two products stitched together. When in doubt, write the words the way you would write them in a sentence.
+Title Case makes a small UI shout, and mixing the two registers in one menu reads as two products stitched together. DOR-1755 fixed the worst of these collisions and is the rule's origin, but the sweep is not finished everywhere — a survivor is a bug against this rule, not evidence the rule is aspirational. When in doubt, write the words the way you would write them in a sentence.
 
 #### The three geometry tokens
 

@@ -18,7 +18,8 @@ const mockUseDismissDeadLetterGroup = vi.fn().mockReturnValue({
 });
 const mockUseDeliveryMetrics = vi.fn().mockReturnValue({ data: undefined });
 
-vi.mock('@/layers/entities/relay', () => ({
+vi.mock('@/layers/entities/relay', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/relay')>()),
   useAggregatedDeadLetters: (...args: unknown[]) => mockUseAggregatedDeadLetters(...args),
   useDismissDeadLetterGroup: () => mockUseDismissDeadLetterGroup(),
   useDeliveryMetrics: () => mockUseDeliveryMetrics(),
@@ -126,31 +127,31 @@ describe('DeadLetterSection', () => {
   });
 
   describe('rejection reason badges', () => {
-    it('shows "Hop Limit" badge for hop_limit reason', () => {
+    it('shows "Hop limit" badge for hop_limit reason', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [hopLimitGroup], isLoading: false });
       render(<DeadLetterSection />);
-      expect(screen.getByText('Hop Limit')).toBeInTheDocument();
+      expect(screen.getByText('Hop limit')).toBeInTheDocument();
     });
 
-    it('shows "TTL Expired" badge for ttl_expired reason', () => {
+    it('shows "TTL expired" badge for ttl_expired reason', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [ttlGroup], isLoading: false });
       render(<DeadLetterSection />);
-      expect(screen.getByText('TTL Expired')).toBeInTheDocument();
+      expect(screen.getByText('TTL expired')).toBeInTheDocument();
     });
 
-    it('shows "Budget Exhausted" badge for budget_exhausted reason', () => {
+    it('shows "Budget exhausted" badge for budget_exhausted reason', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [budgetGroup], isLoading: false });
       render(<DeadLetterSection />);
-      expect(screen.getByText('Budget Exhausted')).toBeInTheDocument();
+      expect(screen.getByText('Budget exhausted')).toBeInTheDocument();
     });
 
-    it('shows "Unknown" badge for unrecognized reason codes', () => {
+    it('shows "Unknown reason" badge for unrecognized reason codes', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({
         data: [unknownReasonGroup],
         isLoading: false,
       });
       render(<DeadLetterSection />);
-      expect(screen.getByText('Unknown')).toBeInTheDocument();
+      expect(screen.getByText('Unknown reason')).toBeInTheDocument();
     });
   });
 
@@ -196,11 +197,11 @@ describe('DeadLetterSection', () => {
       // The description text is split across multiple DOM nodes due to JSX interpolation
       const _description = screen.getByRole('alertdialog').querySelector('[id^="radix-"]');
       const descText =
-        screen.getByText('Clear these messages?').closest('[role="alertdialog"]')
-          ?.textContent ?? '';
+        screen.getByText('Clear these messages?').closest('[role="alertdialog"]')?.textContent ??
+        '';
       expect(descText).toMatch(/15044/);
       expect(descText).toMatch(/slack-adapter/);
-      expect(descText).toMatch(/Hop Limit/);
+      expect(descText).toMatch(/Hop limit/);
     });
 
     it('uses singular "message" when count is 1', () => {
@@ -211,8 +212,8 @@ describe('DeadLetterSection', () => {
       render(<DeadLetterSection />);
       fireEvent.click(screen.getByText('Clear these'));
       const descText =
-        screen.getByText('Clear these messages?').closest('[role="alertdialog"]')
-          ?.textContent ?? '';
+        screen.getByText('Clear these messages?').closest('[role="alertdialog"]')?.textContent ??
+        '';
       // count=1 should not append 's'
       expect(descText).toMatch(/1 message[^s]/);
     });

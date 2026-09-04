@@ -176,7 +176,7 @@ export function DirectoryPicker({
         {/* Header */}
         <ResponsiveDialogHeader className="space-y-0 border-b px-4 py-3">
           <ResponsiveDialogTitle className="text-sm font-medium">
-            Select Working Directory
+            Select working folder
           </ResponsiveDialogTitle>
         </ResponsiveDialogHeader>
 

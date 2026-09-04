@@ -86,7 +86,8 @@ export function ResetDialog({ open, onOpenChange, onResetComplete }: ResetDialog
       onResetComplete();
     } catch (err) {
       toast.error("Couldn't reset your data.", {
-        description: err instanceof Error ? err.message : 'Nothing was deleted. Try again.',
+        description:
+          err instanceof Error ? err.message : "We're not sure what got through. Try again.",
       });
     } finally {
       setIsSubmitting(false);

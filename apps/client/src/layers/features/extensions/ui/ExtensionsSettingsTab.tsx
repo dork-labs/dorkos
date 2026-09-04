@@ -147,7 +147,7 @@ export function ExtensionsSettingsTab() {
           data-testid="reload-extensions-button"
         >
           <RefreshCw className={cn('mr-2 size-4', reloadMutation.isPending && 'animate-spin')} />
-          Reload Extensions
+          Reload extensions
         </Button>
       </div>
     </div>

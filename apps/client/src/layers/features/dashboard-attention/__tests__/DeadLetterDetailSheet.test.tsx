@@ -18,7 +18,8 @@ const mockUseDismissDeadLetterGroup = vi.fn(() => ({
   isPending: false,
 }));
 
-vi.mock('@/layers/entities/relay', () => ({
+vi.mock('@/layers/entities/relay', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/relay')>()),
   useAggregatedDeadLetters: () => mockUseAggregatedDeadLetters(),
   useDismissDeadLetterGroup: () => mockUseDismissDeadLetterGroup(),
 }));
@@ -168,15 +169,23 @@ describe('DeadLetterDetailSheet', () => {
 
   it('says what these are and what clearing does', () => {
     renderSheet({ deadLetters: [makeDeadLetterGroup()] });
-    expect(
-      screen.getByText(/meant for an agent and never got there/)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/meant for an agent and never got there/)).toBeInTheDocument();
     expect(screen.getByText(/Clearing them does not send them/)).toBeInTheDocument();
   });
 
-  it('renders the group reason as a badge', () => {
+  it('renders the group reason as a human-readable badge, not the raw wire code', () => {
     renderSheet({ deadLetters: [makeDeadLetterGroup({ reason: 'hop_limit' })] });
-    expect(screen.getByText('hop_limit')).toBeInTheDocument();
+    expect(screen.getByText('Hop limit')).toBeInTheDocument();
+    expect(screen.queryByText('hop_limit')).not.toBeInTheDocument();
+  });
+
+  it('falls back to a plain label for a reason code it does not recognize', () => {
+    renderSheet({
+      itemId: 'telegram-adapter::something_new',
+      deadLetters: [makeDeadLetterGroup({ reason: 'something_new' })],
+    });
+    expect(screen.getByText('Unknown reason')).toBeInTheDocument();
+    expect(screen.queryByText('something_new')).not.toBeInTheDocument();
   });
 
   it('renders firstSeen and lastSeen timestamps', () => {

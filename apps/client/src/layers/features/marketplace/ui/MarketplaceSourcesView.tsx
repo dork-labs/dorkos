@@ -128,7 +128,7 @@ function AddSourceDialog({ open, onOpenChange, isPending, onSubmit }: AddSourceD
             Cancel
           </Button>
           <Button onClick={handleSubmit} disabled={!isValid || isPending}>
-            {isPending ? 'Adding…' : 'Add Source'}
+            {isPending ? 'Adding…' : 'Add source'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -182,7 +182,7 @@ export function MarketplaceSourcesView() {
         </div>
         <Button onClick={() => setDialogOpen(true)} size="sm">
           <Plus className="mr-1.5 size-4" />
-          Add Source
+          Add source
         </Button>
       </div>
 
@@ -204,7 +204,7 @@ export function MarketplaceSourcesView() {
           </p>
           <Button className="mt-4" size="sm" onClick={() => setDialogOpen(true)}>
             <Plus className="mr-1.5 size-4" />
-            Add Source
+            Add source
           </Button>
         </div>
       )}

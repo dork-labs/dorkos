@@ -89,20 +89,24 @@ export function ErrorStateShowcases() {
         title="Error Toasts"
         description="Global error notification toasts powered by sonner."
       >
-        <ShowcaseLabel>Trigger Toasts</ShowcaseLabel>
+        <ShowcaseLabel>Trigger toasts</ShowcaseLabel>
         <ShowcaseDemo>
           <div className="flex flex-wrap gap-2">
             <button
               className="border-border hover:bg-muted rounded-md border px-3 py-1.5 text-sm"
-              onClick={() => toast.error('Action failed. Please try again.')}
+              onClick={() =>
+                toast.error("That didn't work. Try again.", {
+                  description: "ENOENT: no such file or directory, open '/tmp/example.txt'",
+                })
+              }
             >
-              Mutation Error Toast
+              Mutation error toast
             </button>
             <button
               className="border-border hover:bg-muted rounded-md border px-3 py-1.5 text-sm"
-              onClick={() => toast.error('Failed to load data')}
+              onClick={() => toast.error("Couldn't load that. Try again.")}
             >
-              Query Error Toast
+              Query error toast
             </button>
             <button
               className="border-border hover:bg-muted rounded-md border px-3 py-1.5 text-sm"
@@ -112,10 +116,15 @@ export function ErrorStateShowcases() {
                 })
               }
             >
-              Toast with Description
+              Toast with description
             </button>
           </div>
         </ShowcaseDemo>
+        <p className="text-muted-foreground mt-2 text-xs">
+          The mutation toast shows the app-wide shape (DOR-1755): an authored headline and the raw
+          error as its <code>description</code>, never joined onto one line. The query toast is the
+          plain single-line fallback a query without <code>meta.errorLabel</code> falls back to.
+        </p>
         <p className="text-muted-foreground mt-2 text-xs">
           Chat-specific error states (ErrorMessageBlock, including the transport-error variant) are
           showcased on the Chat page.

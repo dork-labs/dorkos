@@ -78,7 +78,7 @@ function renderDoor() {
 
 const ACCEPT = /unlock full power/i;
 const DECLINE = /keep asking me first/i;
-const CUSTOMIZE = /customize/i;
+const CUSTOMIZE = /pick the pieces yourself/i;
 
 describe('FullPowerDoor', () => {
   beforeEach(() => {
@@ -108,11 +108,11 @@ describe('FullPowerDoor', () => {
     // The scope note is reused, not rewritten — the same sentence every mode
     // picker shows about DorkOS-level approvals.
     expect(screen.getByText(/tools inside the session/i)).toBeInTheDocument();
-    // A host that provides `onCustomize` gets the Customize… link.
+    // A host that provides `onCustomize` gets the "Pick the pieces yourself" link.
     expect(screen.getByRole('button', { name: CUSTOMIZE })).toBeInTheDocument();
   });
 
-  it('omits the Customize… link when the host provides no onCustomize', () => {
+  it('omits the "Pick the pieces yourself" link when the host provides no onCustomize', () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     });
@@ -129,7 +129,7 @@ describe('FullPowerDoor', () => {
     // Both answers are always on offer...
     expect(screen.getByRole('button', { name: ACCEPT })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: DECLINE })).toBeInTheDocument();
-    // ...but Customize is not, because a host without `onCustomize` (the
+    // ...but "Pick the pieces yourself" is not, because a host without `onCustomize` (the
     // onboarding stage) has nowhere to send it — the Control Center is unmounted
     // during setup.
     expect(screen.queryByRole('button', { name: CUSTOMIZE })).not.toBeInTheDocument();

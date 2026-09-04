@@ -280,7 +280,7 @@ export function FullPowerDoor({ heading, onClose, onCustomize }: FullPowerDoorPr
             onClick={customize}
             disabled={busy}
           >
-            Customize the pieces yourself in Settings
+            Pick the pieces yourself in Settings
           </Button>
         </div>
       )}

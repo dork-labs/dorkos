@@ -58,11 +58,11 @@ test.describe('Team — the roster @smoke', () => {
     await page.getByTestId('nav-agents').click();
 
     await expect(page).toHaveURL(/\/team/);
-    // `exact` is load-bearing: the sidebar's Agents-section "+" is labelled
-    // "New agent" (P2.4), and role-name matching is case-insensitive by
-    // default — without it this resolves two buttons and strict mode throws.
-    // Case-sensitive matching pins the PAGE's own button, capital A.
-    await expect(page.getByRole('button', { name: 'New Agent', exact: true })).toBeVisible();
+    // Both the sidebar's Agents-section "+" and the page's own toolbar button
+    // are named "New agent" (P2.4, DOR-1755) — scoped to the page header
+    // rather than disambiguated by casing, so it pins the PAGE's own button
+    // without depending on the two staying differently cased.
+    await expect(page.locator('header').getByRole('button', { name: 'New agent' })).toBeVisible();
   });
 
   test('/agents redirects to /team, keeping the view', async ({ page, basePage }) => {
@@ -414,7 +414,7 @@ test.describe('Team — on a phone', () => {
     // The words are dropped below `md` to buy the view names their width, but
     // the bar's only write action keeps its accessible name and stays a target
     // the size of the tabs beside it.
-    const newAgent = page.locator('header').getByRole('button', { name: 'New Agent' });
+    const newAgent = page.locator('header').getByRole('button', { name: 'New agent' });
     await expect(newAgent).toBeVisible();
     await expect(newAgent).toHaveText('');
 

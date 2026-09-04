@@ -113,7 +113,7 @@ describe('DirectoryPicker', () => {
 
   it('renders dialog title', () => {
     renderPicker();
-    expect(screen.getByText('Select Working Directory')).toBeDefined();
+    expect(screen.getByText('Select working folder')).toBeDefined();
   });
 
   it('shows directory entries after switching to browse view', async () => {

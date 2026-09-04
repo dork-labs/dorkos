@@ -53,7 +53,7 @@ export function AppCrashFallback({ error }: FallbackProps) {
           marginBottom: '1rem',
         }}
       >
-        Reload to pick up where you left off. Nothing you did was lost.
+        Reload to pick up where you left off.
       </p>
       {/* The raw error still ships, because it is what a person pastes into a
           bug report — but it is labelled and it goes UNDER the sentence written
@@ -63,8 +63,6 @@ export function AppCrashFallback({ error }: FallbackProps) {
         style={{
           fontSize: '0.6875rem',
           opacity: 0.4,
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
           marginBottom: '0.25rem',
         }}
       >

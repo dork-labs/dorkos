@@ -13,7 +13,11 @@ import {
   CollapsibleTrigger,
   ScrollArea,
 } from '@/layers/shared/ui';
-import { useAggregatedDeadLetters, useDismissDeadLetterGroup } from '@/layers/entities/relay';
+import {
+  useAggregatedDeadLetters,
+  useDismissDeadLetterGroup,
+  deadLetterReasonLabel,
+} from '@/layers/entities/relay';
 import { formatCompactAge } from '@/layers/shared/lib';
 
 interface DeadLetterDetailSheetProps {
@@ -28,10 +32,13 @@ interface DeadLetterDetailSheetProps {
  * them.
  *
  * The copy deliberately says none of "dead letter", "undeliverable", "payload"
- * or "envelope" (DOR-1755). This sheet opens straight off Home, so it can be one
- * of the first things a person sees, and message-broker vocabulary left them
- * unable to tell whether anything was wrong, whose fault it was, or what
- * clearing would do.
+ * or "envelope" (DOR-1755), and that includes the reason itself: `group.reason`
+ * is a wire enum (`hop_limit`, `ttl_expired`, ...) and this sheet runs it
+ * through `deadLetterReasonLabel` before it renders, because the reason is the
+ * one thing on the sheet that says why the messages failed. This sheet opens
+ * straight off Home, so it can be one of the first things a person sees, and
+ * message-broker vocabulary left them unable to tell whether anything was
+ * wrong, whose fault it was, or what clearing would do.
  */
 export function DeadLetterDetailSheet({ open, itemId, onClose }: DeadLetterDetailSheetProps) {
   const { data: deadLetters } = useAggregatedDeadLetters();
@@ -55,9 +62,7 @@ export function DeadLetterDetailSheet({ open, itemId, onClose }: DeadLetterDetai
       <SheetContent side="right">
         <SheetHeader>
           <SheetTitle>Messages that never arrived</SheetTitle>
-          <SheetDescription>
-            {source ?? 'We don’t know where these came from'}
-          </SheetDescription>
+          <SheetDescription>{source ?? 'We don’t know where these came from'}</SheetDescription>
         </SheetHeader>
 
         <ScrollArea className="flex-1 px-4">
@@ -66,13 +71,13 @@ export function DeadLetterDetailSheet({ open, itemId, onClose }: DeadLetterDetai
               {/* Summary */}
               <div className="space-y-2">
                 <p className="text-muted-foreground text-sm">
-                  These messages were meant for an agent and never got there. Clearing them does
-                  not send them.
+                  These messages were meant for an agent and never got there. Clearing them does not
+                  send them.
                 </p>
                 <p className="text-foreground text-sm">
                   {group.count} message{group.count === 1 ? '' : 's'} couldn&rsquo;t be delivered
                 </p>
-                <Badge variant="secondary">{group.reason}</Badge>
+                <Badge variant="secondary">{deadLetterReasonLabel(group.reason)}</Badge>
               </div>
 
               {/* Timestamps */}

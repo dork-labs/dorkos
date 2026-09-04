@@ -502,7 +502,7 @@ export function BindingDialog({
                   </Button>
                   <Button size="sm" onClick={() => form.handleSubmit()} disabled={isSubmitDisabled}>
                     {isLoading && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
-                    {isLoading ? 'Saving...' : isEdit ? 'Save Changes' : 'Add connection'}
+                    {isLoading ? 'Saving...' : isEdit ? 'Save changes' : 'Add connection'}
                   </Button>
                 </ResponsiveDialogFooter>
               </>
