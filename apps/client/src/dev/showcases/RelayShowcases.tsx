@@ -1,7 +1,7 @@
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
-import { CatalogCard, ConnectionStatusBanner, RelayEmptyState } from '@/layers/features/relay';
+import { CatalogCard, ConnectionStatusBanner } from '@/layers/features/relay';
 import type { RelayConnectionState } from '@/layers/entities/relay';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 
@@ -35,7 +35,7 @@ const GITHUB_MANIFEST: AdapterManifest = {
 
 const CONNECTION_STATES: RelayConnectionState[] = ['disconnected', 'reconnecting'];
 
-/** Relay feature component showcases: CatalogCard, ConnectionStatusBanner, RelayEmptyState. */
+/** Relay feature component showcases: CatalogCard, ConnectionStatusBanner. */
 export function RelayShowcases() {
   return (
     <>
@@ -63,15 +63,6 @@ export function RelayShowcases() {
             </ShowcaseDemo>
           </div>
         ))}
-      </PlaygroundSection>
-
-      <PlaygroundSection
-        title="RelayEmptyState"
-        description="Empty state shown when no relay integrations are configured."
-      >
-        <ShowcaseDemo>
-          <RelayEmptyState onAddIntegration={() => {}} />
-        </ShowcaseDemo>
       </PlaygroundSection>
     </>
   );

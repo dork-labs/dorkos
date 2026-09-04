@@ -80,8 +80,8 @@ function makeMockProps(
 }
 
 /** Finds the adapter card element by its aria-label. */
-function getCard(name = 'Telegram Bot', type = 'telegram', status = 'running') {
-  return screen.getByLabelText(`${name}, ${type}, status ${status}`);
+function getCard(name = 'Telegram Bot', status = 'running') {
+  return screen.getByLabelText(`Platform: ${name}, status ${status}`);
 }
 
 beforeEach(() => {

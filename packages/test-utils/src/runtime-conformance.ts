@@ -717,6 +717,29 @@ const PERMISSION_REACHES = ['read', 'edit', 'workspace', 'everything'];
  */
 const PERMISSION_AXES = ['trust', 'working'];
 
+/** Negation cues that turn a nearby "ask" into a denial rather than a claim. */
+const ASK_NEGATION_CUES =
+  /\b(?:not|never|without|no|can'?t|cannot|won'?t|doesn'?t|don'?t|didn'?t|isn'?t|wasn'?t)\b/i;
+
+/**
+ * True when `promise` makes the positive, present-tense claim that the
+ * runtime still asks — the exact lie a `asks: 'never'` mode must not tell
+ * (DOR-1754). Matches any inflection of "ask" ("ask", "asks", "asked",
+ * "asking"), not just "asks", but skips one whose nearest few preceding
+ * words carry a negation cue ("can't pause to ask", "will not stop to ask
+ * you", "without asking") — those deny asking rather than claim it.
+ */
+function claimsItAsks(promise: string): boolean {
+  const words = promise.split(/\s+/);
+  const askWord = /\bask(?:s|ed|ing)?\b/i;
+  for (let i = 0; i < words.length; i++) {
+    if (!askWord.test(words[i])) continue;
+    const precedingWindow = words.slice(Math.max(0, i - 4), i).join(' ');
+    if (!ASK_NEGATION_CUES.test(precedingWindow)) return true;
+  }
+  return false;
+}
+
 /** The turn-terminating event type every sendMessage stream must end with. */
 const TERMINAL_EVENT_TYPE = 'done';
 
@@ -2765,7 +2788,7 @@ export function runtimeConformance(
             // the positive present-tense claim that is the lie.
             if (descriptor.asks === 'never') {
               expect(
-                /\basks\b/i.test(descriptor.promise),
+                claimsItAsks(descriptor.promise),
                 `${descriptor.id}.promise says it "asks" while declaring asks: 'never' — ` +
                   'a mode that never stops for approval must not promise that it does'
               ).toBe(false);

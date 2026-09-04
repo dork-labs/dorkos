@@ -428,7 +428,7 @@ export function ToolsTab({ agent, projectPath }: ToolsTabProps) {
     {
       key: 'mesh',
       configKey: 'meshTools',
-      label: 'Agent Discovery',
+      label: 'Agent discovery',
       description: 'Find and register agents on this machine',
       tools: toolNamesForDomain('mesh'),
     },
@@ -481,7 +481,7 @@ export function ToolsTab({ agent, projectPath }: ToolsTabProps) {
           <FieldCardContent>
             <p className="text-muted-foreground text-sm">
               This agent&rsquo;s runtime does not support DorkOS tool groups (Scheduling, Messaging,
-              Agent Discovery, Connection management). These are delivered over MCP, which this
+              Agent discovery, Connection management). These are delivered over MCP, which this
               runtime cannot consume.
             </p>
           </FieldCardContent>

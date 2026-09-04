@@ -80,7 +80,7 @@ function AdapterCompactPill({
         'bg-card flex w-[120px] items-center gap-1.5 rounded-full border px-2.5 py-1 shadow-sm',
         selected && 'ring-primary ring-2'
       )}
-      aria-label={`${d.adapterName}, ${d.adapterType}, status ${d.adapterStatus}`}
+      aria-label={`Platform: ${d.adapterName}, status ${d.adapterStatus}`}
     >
       <Handle type="source" position={Position.Right} isConnectable />
       <span className={cn('size-2 shrink-0 rounded-full', statusColor)} />
@@ -109,7 +109,7 @@ function AdapterDefaultCard({
         selected && 'ring-primary ring-2'
       )}
       style={{ width: ADAPTER_NODE_WIDTH, minHeight: ADAPTER_NODE_HEIGHT }}
-      aria-label={`${d.adapterName}, ${d.adapterType}, status ${d.adapterStatus}`}
+      aria-label={`Platform: ${d.adapterName}, status ${d.adapterStatus}`}
     >
       <Handle type="source" position={Position.Right} isConnectable />
 

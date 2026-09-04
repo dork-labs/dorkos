@@ -258,7 +258,7 @@ describe('CreateTaskDialog', () => {
     });
 
     // Flip the sticky toggle on, then create.
-    fireEvent.click(screen.getByRole('switch', { name: /sticky/i }));
+    fireEvent.click(screen.getByRole('switch', { name: /remember the last run/i }));
     fireEvent.click(screen.getByText('Create'));
 
     await waitFor(() => {

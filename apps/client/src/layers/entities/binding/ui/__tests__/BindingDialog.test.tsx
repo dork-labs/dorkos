@@ -176,7 +176,7 @@ describe('BindingDialog', () => {
 
     it('renders connection picker dropdown', () => {
       render(<BindingDialog {...defaultCreateProps} />, { wrapper: Wrapper });
-      expect(screen.getByLabelText('Connection')).toBeInTheDocument();
+      expect(screen.getByLabelText('Source')).toBeInTheDocument();
     });
 
     it('renders agent picker dropdown', () => {
@@ -270,7 +270,7 @@ describe('BindingDialog', () => {
 
     it('does not render adapter/agent picker dropdowns in edit mode', () => {
       render(<BindingDialog {...defaultEditProps} />, { wrapper: Wrapper });
-      expect(screen.queryByLabelText('Connection')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Source')).not.toBeInTheDocument();
       expect(screen.queryByLabelText('Agent')).not.toBeInTheDocument();
     });
 

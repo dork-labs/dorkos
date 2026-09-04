@@ -65,13 +65,6 @@ export const FEATURE_AGENT_SECTIONS: PlaygroundSection[] = [
     category: 'Relay',
     keywords: ['connection', 'status', 'banner', 'disconnected', 'reconnecting', 'relay'],
   },
-  {
-    id: 'relayemptystate',
-    title: 'RelayEmptyState',
-    page: 'features',
-    category: 'Relay',
-    keywords: ['relay', 'empty', 'state', 'adapter', 'onboarding'],
-  },
   // AdapterWizardShowcases
   {
     id: 'stepindicator',

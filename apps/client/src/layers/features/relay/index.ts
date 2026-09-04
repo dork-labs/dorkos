@@ -9,7 +9,6 @@ export { MessagingConnections } from './ui/MessagingConnections';
 export { BindingBridgeSection } from './ui/BindingBridgeSection';
 export type { BindingBridgeSectionProps } from './ui/BindingBridgeSection';
 export { ActivityFeed } from './ui/ActivityFeed';
-export { RelayEmptyState } from './ui/RelayEmptyState';
 export { ConnectionStatusBanner } from './ui/ConnectionStatusBanner';
 export { AdapterCard } from './ui/adapter/AdapterCard';
 export { AdapterCardHeader } from './ui/adapter/AdapterCardHeader';

@@ -102,11 +102,6 @@
       "reason": "The GitHub Agent HQ compare page's FAQ answers the question \"What is GitHub Mission Control?\" — GitHub's own blog named its agent-hub page that, and the FAQ says so exactly to note the docs don't use the name. AGENTS.md carves this out: GitHub ships a product literally named Mission Control. This is DorkOS's own carve-out, not the copy this wave retires."
     },
     {
-      "path": "apps/client/src/layers/features/relay/ui/RelayEmptyState.tsx",
-      "terms": ["connection"],
-      "reason": "The Messaging region's empty state (DOR-1754). \"Connections let people and platforms reach your agents\" and its \"Add a connection\" button name the Connections-domain entity a person is about to create, which is what this screen is for. Not the network-health sense DOR-855 retires."
-    },
-    {
       "path": "apps/client/src/layers/features/relay/ui/SetupGuideSheet.tsx",
       "terms": ["connection"],
       "reason": "The setup guide for one Telegram/Slack/webhook connection (DOR-1754) — \"instructions for setting up this connection\" names the entity being set up, not whether a link is up."
@@ -135,11 +130,6 @@
       "path": "apps/client/src/layers/entities/binding/ui/BindingAdvancedSection.tsx",
       "terms": ["connection"],
       "reason": "\"This connection is set to X\" (DOR-1754) names the binding whose permission mode is on screen — the same entity BindingDialog's own copy names one layer up. Not a network-health reading."
-    },
-    {
-      "path": "apps/client/src/layers/features/agent-settings/ui/ContextTab.tsx",
-      "terms": ["connection"],
-      "reason": "The \"Connection management\" context block (DOR-1754) is the per-agent twin of the Settings Tools tab group in tool-inventory.ts, allowlisted for the same reason: it names the tools that set up and route Telegram/Slack/webhook Connections."
     },
     {
       "path": "apps/client/src/layers/features/agent-settings/ui/ToolsTab.tsx",
