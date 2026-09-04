@@ -30,8 +30,9 @@ beforeEach(() => {
   mockUseIsMobile.mockReturnValue(false);
 });
 
-function renderDesktopNav(activeValue = 'one', onValueChange = vi.fn()) {
-  return render(
+/** One desktop nav, rendered as many times as a test needs. */
+function desktopNav(activeValue = 'one', onValueChange = vi.fn()) {
+  return (
     <NavigationLayout value={activeValue} onValueChange={onValueChange}>
       <NavigationLayoutSidebar>
         <NavigationLayoutItem value="one">One</NavigationLayoutItem>
@@ -45,6 +46,10 @@ function renderDesktopNav(activeValue = 'one', onValueChange = vi.fn()) {
       </NavigationLayoutContent>
     </NavigationLayout>
   );
+}
+
+function renderDesktopNav(activeValue = 'one', onValueChange = vi.fn()) {
+  return render(desktopNav(activeValue, onValueChange));
 }
 
 describe('NavigationLayout — desktop', () => {
@@ -79,10 +84,28 @@ describe('NavigationLayout — desktop', () => {
     expect(onChange).toHaveBeenCalledWith('two');
   });
 
-  it('renders active panel as tabpanel with aria-labelledby', () => {
+  // The relationship, not the literal id: ids are scoped per layout now, so two
+  // settings dialogs on one screen cannot both mint `nav-item-one` and leave an
+  // `aria-controls` naming two elements.
+  it('points the active panel at the tab that selected it, both ways', () => {
     renderDesktopNav('one');
     const panel = screen.getByRole('tabpanel');
-    expect(panel).toHaveAttribute('aria-labelledby', 'nav-item-one');
+    const tab = screen.getByRole('tab', { name: 'One' });
+    expect(panel).toHaveAttribute('aria-labelledby', tab.id);
+    expect(tab).toHaveAttribute('aria-controls', panel.id);
+  });
+
+  it('gives two layouts on one screen ids that do not collide', () => {
+    render(
+      <>
+        {desktopNav('one')}
+        {desktopNav('one')}
+      </>
+    );
+    const tabs = screen.getAllByRole('tab', { name: 'One' });
+    expect(tabs).toHaveLength(2);
+    expect(tabs[0].id).not.toBe(tabs[1].id);
+    expect(tabs[0].getAttribute('aria-controls')).not.toBe(tabs[1].getAttribute('aria-controls'));
   });
 });
 
@@ -90,17 +113,17 @@ describe('NavigationLayout — keyboard navigation', () => {
   it('ArrowDown moves to next item', () => {
     const onChange = vi.fn();
     renderDesktopNav('one', onChange);
-    const tab = screen.getByRole('tab', { name: 'One' });
-    fireEvent.keyDown(tab.closest('[role="tablist"]')!.parentElement!, {
-      key: 'ArrowDown',
-    });
+    // Pressed on the focused TAB, which is where a real key lands; it bubbles
+    // to the tablist that handles it. The handler used to live on a
+    // `role="toolbar"` wrapper one level further out.
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'One' }), { key: 'ArrowDown' });
     expect(onChange).toHaveBeenCalledWith('two');
   });
 
   it('ArrowUp moves to previous item', () => {
     const onChange = vi.fn();
     renderDesktopNav('two', onChange);
-    const tablist = screen.getByRole('tablist').parentElement!;
+    const tablist = screen.getByRole('tablist');
     fireEvent.keyDown(tablist, { key: 'ArrowUp' });
     expect(onChange).toHaveBeenCalledWith('one');
   });
@@ -108,7 +131,7 @@ describe('NavigationLayout — keyboard navigation', () => {
   it('Home jumps to first item', () => {
     const onChange = vi.fn();
     renderDesktopNav('three', onChange);
-    const tablist = screen.getByRole('tablist').parentElement!;
+    const tablist = screen.getByRole('tablist');
     fireEvent.keyDown(tablist, { key: 'Home' });
     expect(onChange).toHaveBeenCalledWith('one');
   });
@@ -116,7 +139,7 @@ describe('NavigationLayout — keyboard navigation', () => {
   it('End jumps to last item', () => {
     const onChange = vi.fn();
     renderDesktopNav('one', onChange);
-    const tablist = screen.getByRole('tablist').parentElement!;
+    const tablist = screen.getByRole('tablist');
     fireEvent.keyDown(tablist, { key: 'End' });
     expect(onChange).toHaveBeenCalledWith('three');
   });
@@ -124,7 +147,7 @@ describe('NavigationLayout — keyboard navigation', () => {
   it('ArrowDown wraps from last to first', () => {
     const onChange = vi.fn();
     renderDesktopNav('three', onChange);
-    const tablist = screen.getByRole('tablist').parentElement!;
+    const tablist = screen.getByRole('tablist');
     fireEvent.keyDown(tablist, { key: 'ArrowDown' });
     expect(onChange).toHaveBeenCalledWith('one');
   });

@@ -23,6 +23,12 @@ interface NavigationLayoutContextValue {
   activeLabel: string;
   registerItem: (reg: ItemRegistration) => void;
   unregisterItem: (value: string) => void;
+  /**
+   * Prefix for every id this layout mints, so two `NavigationLayout`s on one
+   * screen cannot collide. The ids used to be global (`nav-item-general`), and
+   * an `aria-controls` that names two elements names neither.
+   */
+  idScope: string;
   /** True when a NavigationLayoutDialogHeader is mounted. */
   hasDialogHeader: boolean;
   /** @internal Called by NavigationLayoutDialogHeader on mount. */
@@ -59,12 +65,7 @@ interface NavigationLayoutProps {
  */
 function NavigationLayout({ children, value, onValueChange, className }: NavigationLayoutProps) {
   const isMobile = useIsMobile();
-  // Namespaces the active pill's `layoutId` to THIS layout. The group carried
-  // no id, and an id-less `LayoutGroup` shares measurement without namespacing
-  // anything — so two of these mounted at once would have shared one pill and
-  // teleported it between them. Nothing mounts two today; this makes that a
-  // fact about the construction rather than about the call sites.
-  const pillGroupId = React.useId();
+  const idScope = React.useId();
   const [drilledIn, setIsDrilledIn] = React.useState(false);
   // Drill-in is a mobile idea, so a desktop viewport simply is not drilled in —
   // derived rather than reset from an effect, which used to leave one render
@@ -124,6 +125,7 @@ function NavigationLayout({ children, value, onValueChange, className }: Navigat
       activeLabel,
       registerItem,
       unregisterItem,
+      idScope,
       hasDialogHeader,
       registerDialogHeader,
     }),
@@ -137,6 +139,7 @@ function NavigationLayout({ children, value, onValueChange, className }: Navigat
       activeLabel,
       registerItem,
       unregisterItem,
+      idScope,
       hasDialogHeader,
       registerDialogHeader,
     ]
@@ -144,7 +147,9 @@ function NavigationLayout({ children, value, onValueChange, className }: Navigat
 
   return (
     <NavigationLayoutContext.Provider value={ctxValue}>
-      <LayoutGroup id={pillGroupId}>
+      {/* Scoped, so two layouts on one screen do not share the active pill's
+          `layoutId` and animate it between each other. */}
+      <LayoutGroup id={idScope}>
         <div
           data-slot="navigation-layout"
           className={cn('flex flex-1 flex-col overflow-hidden', className)}
@@ -169,8 +174,8 @@ interface NavigationLayoutSidebarProps {
 /** Vertical sidebar (desktop) or list view (mobile). */
 function NavigationLayoutSidebar({ children, className }: NavigationLayoutSidebarProps) {
   const { isMobile, isDrilledIn } = useNavigationLayout();
-  const id = React.useId();
   const tabListRef = React.useRef<HTMLDivElement>(null);
+  const handleKeyDown = useTabListKeys(tabListRef);
 
   if (isMobile) {
     if (isDrilledIn) return null;
@@ -185,37 +190,36 @@ function NavigationLayoutSidebar({ children, className }: NavigationLayoutSideba
     );
   }
 
+  // The arrow keys are handled ON the tablist, not on a wrapper around it. The
+  // wrapper was a `role="toolbar"` — a composite widget holding a composite
+  // widget, which assistive tech has no model for, and which the tablist did
+  // not need in order to hear a key.
   return (
-    <NavigationLayoutSidebarKeyboardHandler containerRef={tabListRef} id={id}>
-      <div
-        ref={tabListRef}
-        data-slot="navigation-layout-sidebar"
-        role="tablist"
-        aria-orientation="vertical"
-        aria-label="Navigation"
-        tabIndex={-1}
-        className={cn('h-full w-[180px] shrink-0 overflow-y-auto border-r py-2', className)}
-      >
-        {children}
-      </div>
-    </NavigationLayoutSidebarKeyboardHandler>
+    <div
+      ref={tabListRef}
+      data-slot="navigation-layout-sidebar"
+      role="tablist"
+      aria-orientation="vertical"
+      aria-label="Navigation"
+      tabIndex={-1}
+      onKeyDown={handleKeyDown}
+      className={cn('h-full w-[180px] shrink-0 overflow-y-auto border-r py-2', className)}
+    >
+      {children}
+    </div>
   );
 }
 NavigationLayoutSidebar.displayName = 'NavigationLayoutSidebar';
 
-/** Keyboard handler wrapper for desktop sidebar tablist. */
-function NavigationLayoutSidebarKeyboardHandler({
-  children,
-  containerRef,
-  id,
-}: {
-  children: React.ReactNode;
-  containerRef: React.RefObject<HTMLDivElement | null>;
-  id: string;
-}) {
+/**
+ * Arrow / Home / End across the sidebar's tabs, WAI-ARIA automatic activation.
+ *
+ * @param containerRef - The element holding the tabs.
+ */
+function useTabListKeys(containerRef: React.RefObject<HTMLDivElement | null>) {
   const { value, onValueChange } = useNavigationLayout();
 
-  const handleKeyDown = React.useCallback(
+  return React.useCallback(
     (e: React.KeyboardEvent) => {
       const tabs = containerRef.current?.querySelectorAll<HTMLElement>('[role="tab"]');
       if (!tabs?.length) return;
@@ -252,12 +256,6 @@ function NavigationLayoutSidebarKeyboardHandler({
       }
     },
     [containerRef, value, onValueChange]
-  );
-
-  return (
-    <div id={id} role="toolbar" onKeyDown={handleKeyDown} className="shrink-0">
-      {children}
-    </div>
   );
 }
 
@@ -314,7 +312,8 @@ function NavigationLayoutItem({
   icon: Icon,
   className,
 }: NavigationLayoutItemProps) {
-  const { value, onValueChange, isMobile, registerItem, unregisterItem } = useNavigationLayout();
+  const { value, onValueChange, isMobile, idScope, registerItem, unregisterItem } =
+    useNavigationLayout();
   const isActive = value === itemValue;
   const label = typeof children === 'string' ? children : '';
 
@@ -327,7 +326,6 @@ function NavigationLayoutItem({
   if (isMobile) {
     return (
       <motion.button
-        role="button"
         data-value={itemValue}
         onClick={() => onValueChange(itemValue)}
         whileTap={{ scale: 0.98 }}
@@ -348,10 +346,10 @@ function NavigationLayoutItem({
   return (
     <button
       role="tab"
-      id={`nav-item-${itemValue}`}
+      id={`${idScope}item-${itemValue}`}
       data-value={itemValue}
       aria-selected={isActive}
-      aria-controls={`nav-panel-${itemValue}`}
+      aria-controls={`${idScope}panel-${itemValue}`}
       tabIndex={isActive ? 0 : -1}
       onClick={() => onValueChange(itemValue)}
       className={cn(
@@ -604,7 +602,7 @@ function NavigationLayoutPanel({
   value: panelValue,
   className,
 }: NavigationLayoutPanelProps) {
-  const { value, isMobile, activeLabel } = useNavigationLayout();
+  const { value, isMobile, idScope, activeLabel } = useNavigationLayout();
   if (value !== panelValue) return null;
 
   if (isMobile) {
@@ -621,8 +619,8 @@ function NavigationLayoutPanel({
   return (
     <div
       role="tabpanel"
-      id={`nav-panel-${panelValue}`}
-      aria-labelledby={`nav-item-${panelValue}`}
+      id={`${idScope}panel-${panelValue}`}
+      aria-labelledby={`${idScope}item-${panelValue}`}
       data-slot="navigation-layout-panel"
       className={className}
     >

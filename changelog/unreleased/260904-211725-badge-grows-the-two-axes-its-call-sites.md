@@ -2,6 +2,7 @@
 covers:
   - 'refactor(client): Badge grows the two axes its call sites kept correcting (DOR-1760)'
   - 'refactor(client): three primitives state one axis once (DOR-1760)'
+  - 'refactor(client): nine hand-rolled icon buttons become Buttons (DOR-1760)'
 ---
 
 ### Fixed
@@ -11,6 +12,9 @@ covers:
 - The little coloured tags in the Marketplace that say what kind of package you're
   looking at — agent, plugin, skill pack — now pick colours made for dark mode
   instead of reusing the light-mode ones (DOR-1760)
+- Small icon buttons — copy, close, fullscreen, Browse — are big enough to tap on a
+  phone and show a focus outline when you reach them with the keyboard. Several were
+  about half the size a thumb needs (DOR-1760)
 
 ### Changed
 
