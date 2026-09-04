@@ -46,7 +46,7 @@ vi.mock('../../../core/config-manager.js', () => ({
 import { configManager } from '../../../core/config-manager.js';
 import { buildAgentContextAppend } from '../agent-context.js';
 import { buildCodexPrompt } from '../../codex/turn-input.js';
-import { buildOpenCodeParts } from '../../opencode/turn-input.js';
+import { buildOpenCodeParts, buildOpenCodeSystem } from '../../opencode/turn-input.js';
 import { resetMemoryProvider } from '../../../memory/index.js';
 import { DEFUSED_TAGS } from '../untrusted-fence.js';
 
@@ -417,19 +417,27 @@ describe('the same append reaches codex and opencode', () => {
     expect(prompt).not.toContain(TRANSCRIPT_SENTINEL);
   });
 
-  it('carries the exact block set onto the opencode synthetic part', async () => {
+  // Read off `body.system` rather than a prompt part since DOR-477 — the block
+  // set is the same, the channel is not.
+  it('carries the exact block set onto the opencode system channel', async () => {
     await stageAgent(NOTES);
     const { text } = await buildAgentContextAppend(agentDir);
 
-    const parts = buildOpenCodeParts('hello', undefined, text);
-    const synthetic = parts.find((part) => part.synthetic)?.text ?? '';
+    const system = buildOpenCodeSystem(undefined, text) ?? '';
 
-    const tags = tagsIn(synthetic);
+    const tags = tagsIn(system);
     const start = tags.indexOf('agent_identity');
     expect(tags.slice(start, start + EXPECTED_BLOCKS.length)).toEqual([...EXPECTED_BLOCKS]);
-    expect(synthetic).toContain('the operator ships on Fridays');
-    expect(synthetic).toMatch(/--- BEGIN AGENT MEMORY FILE [0-9a-f]{8} ---/);
-    expect(synthetic).not.toContain(SENTINEL);
-    expect(synthetic).not.toContain(TRANSCRIPT_SENTINEL);
+    expect(system).toContain('the operator ships on Fridays');
+    expect(system).toMatch(/--- BEGIN AGENT MEMORY FILE [0-9a-f]{8} ---/);
+    expect(system).not.toContain(SENTINEL);
+    expect(system).not.toContain(TRANSCRIPT_SENTINEL);
+    // The boundary the whole file exists to pin holds on the OTHER channel too:
+    // nothing from the agent's directory leaks into what opencode persists.
+    for (const part of buildOpenCodeParts('hello', undefined)) {
+      expect(part.text).not.toContain(SENTINEL);
+      expect(part.text).not.toContain(TRANSCRIPT_SENTINEL);
+      expect(part.text).not.toContain('the operator ships on Fridays');
+    }
   });
 });

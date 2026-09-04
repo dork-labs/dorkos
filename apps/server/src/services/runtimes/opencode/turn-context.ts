@@ -1,5 +1,6 @@
 /**
- * The DorkOS context prefix an OpenCode turn carries, assembled in one place.
+ * The DorkOS context an OpenCode turn carries on its system channel, assembled
+ * in one place.
  *
  * Two blocks, and the second one is conditional in a way that has to be got
  * right: the runtime-neutral identity/persona/env append every adapter injects,
@@ -21,15 +22,20 @@ import {
 import { OPENCODE_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
 
 /**
- * Build the synthetic context prefix for one OpenCode turn.
+ * Build the DorkOS context for one OpenCode turn.
  *
  * The neutral half is the same set of blocks the Claude adapter injects
  * (identity, persona, safety boundaries, `<dorkos_context>`, `<env>`), so an
  * OpenCode agent knows who it is and how to reach its capabilities. `.text` is
  * the whole append, memory block included: the `stable` half of that result
  * exists only for claude-code's relaunch fingerprint, and OpenCode has no warm
- * process to keep, so it sends everything every turn (see `buildMemoryBlock`
- * for what that costs).
+ * process to keep.
+ *
+ * Sending the whole thing every turn is CHEAP here and deliberately so: the
+ * result rides `body.system`, which the sidecar replaces per request rather
+ * than persisting into the conversation (DOR-477, `turn-input.ts`). So one copy
+ * reaches the model per turn instead of one per turn ever taken, and an edited
+ * SOUL.md or a freshly written memory note lands on the very next turn.
  *
  * The room half is named under OpenCode's OWN MCP prefix — one underscore and
  * no `mcp` marker, which is nothing like claude-code's — because a

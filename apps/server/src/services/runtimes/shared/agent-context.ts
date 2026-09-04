@@ -13,7 +13,9 @@
  * It lives in `runtimes/shared/` (above the adapters), so it imports no runtime
  * SDK (Hard Rule #2) and each adapter delivers the text through whichever channel
  * its backend actually has: Claude Code's cacheable `systemPrompt.append`,
- * Codex's prompt prefix, OpenCode's `synthetic` text part.
+ * OpenCode's per-request `body.system`, and — since Codex exec has no system
+ * channel at all — Codex's prompt prefix, sent once per thread and re-anchored
+ * on change (`codex/context-gate.ts`, DOR-477).
  *
  * Runtime-SPECIFIC tool documentation (`<relay_tools>`, `<mesh_tools>`,
  * `<ui_tools>`, …) deliberately stays in the Claude adapter: those blocks teach
@@ -116,9 +118,10 @@ Full docs: ${env.DORKOS_DOCS_BASE_URL}/docs
  *
  * **Static text, and that is load-bearing twice over.** It carries no session
  * id, no room name and no count of sibling sessions, so on claude-code it sits
- * in the cacheable system prompt and never invalidates it, and on codex and
- * opencode — where this append is re-sent verbatim every turn — it costs the
- * same handful of tokens each time rather than a growing one.
+ * in the cacheable system prompt and never invalidates it; on opencode it rides
+ * `body.system`, replaced per request rather than accumulated; and on codex it
+ * belongs to the `stable` half the context gate sends once per thread, where a
+ * per-turn-varying block would re-anchor the thread every turn instead.
  *
  * It renders inside {@link buildAgentBlock}, so it reaches all three runtimes
  * through `buildAgentContextAppend` and inherits the no-manifest guard: a
@@ -214,13 +217,15 @@ You are one session of this agent. Other sessions of you exist in other rooms, D
  * ## What this block costs, per runtime, measured
  *
  * On claude-code it rides the cacheable system prompt: at the cap it is about
- * +2K tokens once per cache lifetime. On codex and opencode there is no
- * cacheable system-prompt channel in use, so the whole agent-context append is
- * re-sent verbatim **every turn** — measured against the real DorkBot workspace
- * at roughly 2.2 KB (~550 tokens) per turn before this block existed, and a
- * full memory file raises that to about 10 KB per turn, uncached. That is the
- * price of runtime neutrality today; adopting opencode's unused system-prompt
- * channel is a named follow-up. **`MEMORY_MAX_CHARS` exists precisely so this
+ * +2K tokens once per cache lifetime. On opencode it rides `body.system`, which
+ * the sidecar replaces per request instead of persisting, so it is one uncached
+ * copy per turn and never accumulates. Codex is the expensive one, and this
+ * block is why: its only channel is the prompt, which lands in the thread's
+ * persisted rollout, and this block is the half that CANNOT be sent once —
+ * an agent that saved a note on turn 1 has to see it on turn 2, so it sits
+ * outside the context gate (`codex/context-gate.ts`) and rides every turn,
+ * measured at 1,997 B on the real DorkBot workspace against a 3,961 B stable
+ * half the gate now sends once. **`MEMORY_MAX_CHARS` exists precisely so this
  * worst case is bounded and known** — it is a prompt budget, not disk thrift.
  *
  * @param agentId - The agent whose memory this is, for the log line.
@@ -537,11 +542,12 @@ export async function buildAgentContextAppend(cwd: string): Promise<AgentContext
  *
  * **Measured HERE, at the shared builder, and not at the claude-code launch
  * resolver** (spec D8, review M5). This function is the one seam all three
- * runtimes pass through, and it is the runtimes that are NOT claude-code that
- * pay the larger price: they have no cacheable system-prompt channel in use, so
- * this whole append is re-sent verbatim on every turn. A measurement taken in
- * `claude-code/messaging/launch-resolver.ts` would report on the runtime where
- * the cost is amortised and stay silent about the two where it is not.
+ * runtimes pass through, and each amortises the cost differently: claude-code's
+ * cacheable append, opencode's per-request `body.system`, and codex's
+ * once-per-thread gate (DOR-477). A measurement taken in
+ * `claude-code/messaging/launch-resolver.ts` would report on one of the three
+ * and stay silent about the other two — and codex is still the expensive one,
+ * because what it does send lands in a persisted rollout that carries it forever.
  *
  * Debug level, so a normal run pays nothing for it. Per BLOCK and not one
  * aggregate, because the question it exists to answer is which block grew — and
