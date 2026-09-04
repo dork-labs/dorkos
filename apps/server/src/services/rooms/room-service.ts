@@ -4321,23 +4321,40 @@ export class RoomService {
    * bridged private chat is always the operator's own conversation. That is
    * false: a bridged `dm` room is minted from an unclaimed chat somebody ELSE
    * started with the bot (`postExternal`), so its human party can be a real
-   * collaborator, not the operator's own phone. Their `@dorian` in that room
-   * has to reach the operator like any other mention, which is why this gate
-   * is `isOwnerAuthor` and nothing wider.
+   * collaborator, not the operator's own phone. Their words in that room have
+   * to reach the operator like anyone else's, which is why this gate is
+   * `isOwnerAuthor` and nothing wider.
+   *
+   * **A real person's message in a 1:1 DM raises `dm.received` exactly as an
+   * agent's does** (DOR-1392). `dm.received` used to also require
+   * `author.kind === 'agent'`, which left the case with the strongest claim on
+   * the operator's attention — a human colleague writing to them in a private
+   * chat — as the one kind of DM that stayed silent. What makes an entry "a
+   * message to you" is the ROOM, not who typed it, so the gate is `kind:
+   * 'dm'` plus {@link RoomService.isOneOnOneDmWithOperator} and nothing about
+   * author kind. Every other property of the kind is untouched: still one row
+   * per room per five-minute window, still silent when the room is muted,
+   * still cleared when the read cursor passes it, still never relayed out of
+   * the app.
+   *
+   * DorkOS's own voice cannot arrive here at all — every system-authored write
+   * ({@link RoomService.postMoment}, {@link RoomService.postMergeEvent},
+   * {@link RoomService.postNotice}) goes straight to the store rather than
+   * through `writePost` — so widening the gate off `author.kind` cannot turn
+   * the room's own narration into "DorkOS messaged you".
    *
    * **A bridged echo of DorkOS's own outbound post never reaches this
-   * method at all.** `isBotSender` (`adapters/telegram/inbound.ts`) drops any
+   * method either.** `isBotSender` (`adapters/telegram/inbound.ts`) drops any
    * inbound update whose sender is itself a bot account — which the bot's
    * own delivery always is — before `postExternal` ever mints an author or
    * writes an entry, so that suppression is structural and upstream of this
    * seam. What this gate does NOT catch is the operator genuinely texting
    * their own agent from their own phone: that is a real external human
-   * author (`platform:` naturalKey, not `isOwnerAuthor`), and if their
-   * message happens to spell their own handle it raises one `mention.received`
-   * about a message they just sent themselves — accepted as the far cheaper
-   * failure next to silently dropping every real collaborator's mention.
-   * `dm.received` is unaffected either way: it is gated on `author.kind ===
-   * 'agent'` below, so no human author, phone or stranger, can ever raise it.
+   * author (`platform:` naturalKey, not `isOwnerAuthor`), so their own message
+   * comes back to them as one `dm.received`. Accepted deliberately, and far
+   * cheaper than silently dropping every real collaborator's message; the fix
+   * is the platform-identity link ("this Telegram account is me"), which
+   * retires the echo for `dm.received` and `mention.received` in one move.
    *
    * A ghost author (its row vanished, ADR 260801-003051) is skipped outright:
    * there is nobody's name to put in a title.
@@ -4345,7 +4362,12 @@ export class RoomService {
    * **A DM that also happens to name the operator raises `dm.received` only,
    * never both.** `isDirectMessage` already says the operator was reached;
    * a redundant `mention.received` for the same entry would be a second
-   * banner for one message the operator is about to open from the first.
+   * banner for one message the operator is about to open from the first. The
+   * collapse holds when the DM is muted, which is the only case where it costs
+   * anything: muting a 1:1 conversation silences it whole. That is the point —
+   * inside a DM an `@` addresses nobody new, since every word there already
+   * reaches the operator, so honouring one would let any writer reopen a
+   * conversation the operator deliberately closed.
    *
    * Never throws: called after the entry and its broadcast are already
    * durable, so a problem here must not be able to touch either.
@@ -4366,8 +4388,7 @@ export class RoomService {
       if (this.isOwnerAuthor(author.id)) return;
 
       const mentionsOperator = mentions.some((id) => this.isOwnerAuthor(id));
-      const isDirectMessage =
-        room.kind === 'dm' && author.kind === 'agent' && this.isOneOnOneDmWithOperator(room.id);
+      const isDirectMessage = room.kind === 'dm' && this.isOneOnOneDmWithOperator(room.id);
       if (!isDirectMessage && !mentionsOperator) return;
 
       emitRoomMessageNotification({
@@ -4397,6 +4418,10 @@ export class RoomService {
    * Whether a `dm`-kind room is genuinely a 1:1 between the operator and one
    * agent — exactly one agent on the roster, AND the operator among its human
    * members.
+   *
+   * This is the WHOLE of what makes an entry a DM to the operator, for any
+   * author (DOR-1392): the shape of the roster, never the kind of whoever
+   * happened to type.
    *
    * Holds whether the room is a plain two-member DM or a bridged one that has
    * also gained the operator's own external phone identity as a third, human
