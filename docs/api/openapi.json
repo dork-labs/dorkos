@@ -7808,6 +7808,7 @@
           "agent_gone",
           "agent_unavailable",
           "agent_left",
+          "runtime_gone",
           "agent_declined",
           "awaiting_approval",
           "halted",

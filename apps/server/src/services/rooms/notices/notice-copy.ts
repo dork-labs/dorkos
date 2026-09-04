@@ -20,6 +20,7 @@
  *
  * @module server/services/rooms/notices/notice-copy
  */
+import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import type { RoomEntryBody, RoomWaitingKind } from '@dorkos/shared/room-schemas';
 import { MENTION_PATTERN } from '../mentions.js';
 import type { BudgetRefusalScope } from '../limits/turn-budget.js';
@@ -400,6 +401,51 @@ export function buildAgentGoneNotice(agentName: string, subjectAuthorId: string)
   return {
     text: `${agentName} isn't set up on this machine any more, so it can't answer here. Register it again, then add it back to this conversation.`,
     notice: 'agent_gone',
+    subjectAuthorId,
+  };
+}
+
+/**
+ * The durable `notice` for a member whose conversation is pinned to a program
+ * this server is not running (DOR-1720).
+ *
+ * **The room said "ran into a problem" for this, forever, and that was three
+ * things wrong at once.** A room keeps one session per `(room, agent)` and a
+ * session never changes hands (ADR-0255, DOR-764), so a runtime switched off
+ * after the conversation started refuses every turn from then on — correctly,
+ * because the alternative is resuming somebody's conversation on a program that
+ * holds none of it. But as a `turn_failed` the reader was told an agent was
+ * broken, pointed at a session with nothing in it (no turn ever started), and
+ * told none of it again in words they could act on. The recovery was folklore.
+ *
+ * So this line names the program and both ways out. Re-enabling is the one that
+ * keeps the conversation; removing and re-adding the member is the one that
+ * drops the binding (`removeMember` is the only thing that does) and lets the
+ * next turn start fresh on whatever the agent's manifest says now — which is
+ * also how a deliberate runtime change is applied to a room already running.
+ *
+ * Deliberately not `agent_gone`: that agent is not installed at all, and it is
+ * silent everywhere. This one is fine, is answering in every room whose session
+ * runs on a program that IS up, and is stuck only here.
+ *
+ * @param agentName - Display name of the agent that cannot answer.
+ * @param subjectAuthorId - Author id of that member, for rendering.
+ * @param runtime - The runtime type the session is bound to, named for the
+ *   reader through {@link runtimeDisplayName}. Undefined only if a caller ever
+ *   reports this reason without one; the sentence stays grammatical and honest
+ *   rather than printing an empty name, but it loses the fact worth having.
+ */
+export function buildRuntimeGoneNotice(
+  agentName: string,
+  subjectAuthorId: string,
+  runtime: string | undefined
+): RoomEntryBody {
+  const program = runtime === undefined ? 'the app it runs on' : runtimeDisplayName(runtime);
+  return {
+    text:
+      `${agentName} answers here through ${program}, which isn't running on this machine, so it can't reply. ` +
+      `Turn ${program} back on to pick up where you left off, or remove ${agentName} from this conversation and add it back to start fresh.`,
+    notice: 'runtime_gone',
     subjectAuthorId,
   };
 }

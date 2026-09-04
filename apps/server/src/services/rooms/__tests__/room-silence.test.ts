@@ -24,6 +24,7 @@ import { logger } from '../../../lib/logger.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
 import type { RoomStore } from '../room-store.js';
+import { RoomTurnRuntimeGoneError } from '../room-turn-port.js';
 import {
   agentLookupFor,
   createRoomHarness,
@@ -433,6 +434,71 @@ describe('a room says why an agent did not answer', () => {
       expect(notices()[0].body.notice).toBe('turn_failed');
       expect(notices()[0].body.subjectAuthorId).toBe(ana);
       expect(notices()[0].body.text).not.toContain('runtime is down');
+    });
+  });
+
+  describe('when the program it runs on is not running here', () => {
+    // **DOR-1720.** A room keeps one session per `(room, agent)` and a session
+    // never changes hands (ADR-0255, DOR-764), so a runtime switched off after
+    // the conversation started refuses every turn from then on. The refusal is
+    // right; what was wrong is that it arrived as a bare `Error` and came out as
+    // `turn_failed` — the reader was told an agent was broken, sent to a session
+    // no turn had ever opened, and told nothing about either recovery. The
+    // recovery was folklore, and the room was dead with no way out from inside.
+
+    it('names the program and both ways back, instead of apologising for a broken agent', async () => {
+      open(
+        outcomeRunner(() => ({
+          throws: new RoomTurnRuntimeGoneError('codex', 'room-session-on-codex'),
+        }))
+      );
+      await seedAndSettle();
+
+      expect(notices()).toHaveLength(1);
+      const [notice] = notices();
+      expect(notice.body.notice).toBe('runtime_gone');
+      expect(notice.body.subjectAuthorId).toBe(ana);
+      // The program, named the way a person meets it everywhere else in the
+      // product — never the `codex` slug the binding is stored as.
+      expect(notice.body.text).toContain('Codex');
+      expect(notice.body.text).not.toContain('codex');
+      // Both recoveries, because they are not the same recovery: one keeps this
+      // conversation, the other starts a fresh one on what the agent runs now.
+      expect(notice.body.text).toContain('Turn Codex back on');
+      expect(notice.body.text).toContain('remove Ana from this conversation and add it back');
+      // And never the pointer that made the old line misleading: no turn ever
+      // started, so there is nothing on that session to go and read.
+      expect(notice.body.text).not.toContain('session');
+      expect(notice.body.text).not.toMatch(/Error:|stack|undefined/);
+    });
+
+    it('still says the turn failed for every other throw', async () => {
+      // The discrimination, from the other side. A runner that throws for any
+      // ordinary reason keeps `turn_failed` and its pointer at the session —
+      // that line is right for a turn that broke, and only wrong for the one
+      // refusal that never started a turn at all.
+      open(outcomeRunner(() => ({ throws: new Error('runtime is down') })));
+      await seedAndSettle();
+
+      expect(notices()[0].body.notice).toBe('turn_failed');
+    });
+
+    it('says it once while the state lasts, not once per message', async () => {
+      // Damped like `agent_gone`, and unlike `turn_failed`. A crash is an event
+      // and each one is news; this is a STATE that holds until somebody acts, so
+      // repeating it per message would be a fresh apology every time for a fact
+      // that has not changed — and the state's own line is already on the log,
+      // above, where the person can still read it.
+      open(
+        outcomeRunner(() => ({
+          throws: new RoomTurnRuntimeGoneError('codex', 'room-session-on-codex'),
+        }))
+      );
+      await seedAndSettle();
+      await seedAndSettle('and the migration?');
+
+      expect(runner.turns).toHaveLength(2);
+      expect(noticesAbout(ana).map((entry) => entry.body.notice)).toEqual(['runtime_gone']);
     });
   });
 

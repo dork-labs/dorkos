@@ -7,7 +7,10 @@
  * grid, the toolbar and the reactions a post builds are all dead weight here.
  * The host still decides WHICH kind of line an entry is; this module owns
  * everything that follows from the answer being "notice", including the table
- * that tells sixteen codes apart at a glance.
+ * that tells every notice code apart at a glance. Deliberately not a count of
+ * them: the table is a total `Record<RoomNoticeCode, …>`, so the compiler
+ * already refuses a missing code, and a number written here goes stale the
+ * first time one is added.
  *
  * @module features/conversation/ui/rows/NoticeRow
  */
@@ -22,6 +25,7 @@ import {
   Link2Off,
   Megaphone,
   MessageSquareOff,
+  PowerOff,
   RefreshCw,
   Repeat,
   Timer,
@@ -90,6 +94,11 @@ const NOTICE_STYLES: Record<RoomNoticeCode, { Icon: LucideIcon; tone?: string }>
   // from `agent_gone` because the remedy is different — that one is missing from
   // the machine, this one is only missing from the room.
   agent_left: { Icon: UserMinus, tone: 'text-status-warning' },
+  // The conversation is pinned to a program that is not running here, so no
+  // answer comes until somebody turns it back on or re-adds the agent. Warm,
+  // and a plug rather than `agent_gone`'s missing-person mark: the agent is
+  // there and answering elsewhere — what is missing is what it runs on.
+  runtime_gone: { Icon: PowerOff, tone: 'text-status-warning' },
   // Somebody asked, the agent read it, and it chose not to reply. Cool rather
   // than warm, deliberately: nothing is broken and nothing is waiting on the
   // reader — an agent exercising judgment is the room working as designed, and a
