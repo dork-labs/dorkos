@@ -318,10 +318,10 @@ describe('CreateTaskDialog', () => {
     );
 
     await openAdvanced();
-    fireEvent.click(screen.getByRole('switch', { name: /sticky/i }));
+    fireEvent.click(screen.getByRole('switch', { name: /remember the last run/i }));
     // Close it again — the switch leaves the page entirely.
     await openAdvanced();
-    expect(screen.queryByRole('switch', { name: /sticky/i })).toBeNull();
+    expect(screen.queryByRole('switch', { name: /remember the last run/i })).toBeNull();
 
     fireEvent.click(screen.getByText('Create'));
 
