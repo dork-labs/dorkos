@@ -43,7 +43,11 @@ export function SessionRowCompact({
     [session.updatedAt, now]
   );
 
-  const { animate, transition } = usePulseMotion(
+  // `pulsing`, not `borderState.pulse`, decides whether the static colour is
+  // painted below: the hook owns the reduced-motion gate now, so asking the
+  // state instead of the hook would leave an uncoloured dot for anyone whose
+  // pulse was gated away.
+  const { animate, transition, pulsing } = usePulseMotion(
     borderState.pulse,
     borderState.color,
     borderState.dimColor,
@@ -102,9 +106,12 @@ export function SessionRowCompact({
             {/* Dot indicator */}
             <motion.span
               aria-hidden
+              // Reports what the hook decided. No motion prop is assertable in
+              // jsdom, so this attribute is the only observable half.
+              data-pulsing={pulsing ? 'true' : 'false'}
               animate={animate}
               transition={transition}
-              style={borderState.pulse ? undefined : { backgroundColor: borderState.color }}
+              style={pulsing ? undefined : { backgroundColor: borderState.color }}
               className="size-1.5 shrink-0 rounded-full"
             />
             {isRenaming ? (

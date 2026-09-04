@@ -37,7 +37,7 @@ vi.mock('@/layers/entities/session', async (importOriginal) => {
   return {
     ...actual,
     useAgentHottestStatus: () => mockAgentStatus(),
-    usePulseMotion: () => ({ animate: undefined, transition: undefined }),
+    usePulseMotion: () => ({ animate: undefined, transition: undefined, pulsing: false }),
   };
 });
 

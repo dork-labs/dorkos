@@ -64,7 +64,7 @@ vi.mock('@/layers/entities/session', async (importOriginal) => {
     // it. The store is empty and the status is idle, so a chip here can only
     // have travelled down the wire under test.
     useAgentHottestStatus: () => ({ kind: 'idle' as const, label: 'Idle' }),
-    usePulseMotion: () => ({ animate: undefined, transition: undefined }),
+    usePulseMotion: () => ({ animate: undefined, transition: undefined, pulsing: false }),
   };
 });
 

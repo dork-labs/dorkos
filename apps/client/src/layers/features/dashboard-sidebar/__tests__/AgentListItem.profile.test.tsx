@@ -33,7 +33,7 @@ vi.mock('@/layers/entities/session', async (importOriginal) => {
       pulse: false,
       label: 'Idle',
     }),
-    usePulseMotion: () => ({ animate: undefined, transition: undefined }),
+    usePulseMotion: () => ({ animate: undefined, transition: undefined, pulsing: false }),
   };
 });
 
