@@ -513,6 +513,49 @@ describe('buildPlan hook gate (DOR-522)', () => {
       rmSync(repo, { recursive: true, force: true });
     }
   });
+
+  it('stays quiet about a disallowed package’s unreadable hooks (DOR-1724)', () => {
+    // The gate already means this package contributes no hooks to anything, so a
+    // "we dropped part of your hooks.json" line would send the operator after
+    // damage that changes nothing for them.
+    const repo = emptyRepo();
+    const rotted: InstalledPlugin = {
+      ...projectPlugin,
+      unreadableHooks: [
+        { path: '.dork/plugins/acme/hooks/hooks.json', event: 'Stop', total: true },
+      ],
+    };
+    try {
+      const gated = buildPlan({
+        repoRoot: repo,
+        manifest: MANIFEST,
+        agentsMdExists: false,
+        installedPlugins: [rotted],
+        allowPluginHooks: () => false,
+      });
+      expect(gated.warnings.filter((w) => w.artifact === 'hook')).toEqual([]);
+
+      // …and says it the moment that same package is allowed to contribute.
+      const allowed = buildPlan({
+        repoRoot: repo,
+        manifest: MANIFEST,
+        agentsMdExists: false,
+        installedPlugins: [rotted],
+        allowPluginHooks: () => true,
+      });
+      expect(allowed.warnings.filter((w) => w.artifact === 'hook')).toEqual([
+        {
+          artifact: 'hook',
+          harness: 'claude-code',
+          name: 'acme:Stop',
+          reason:
+            '.dork/plugins/acme/hooks/hooks.json declares "Stop" in a shape this reader cannot use, so the whole event was dropped and no "Stop" hook is projected',
+        },
+      ]);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('schedule-bearing plugin skills reach the watched skills root', () => {

@@ -299,9 +299,10 @@ function readManifestSchedules(manifest: MarketplacePackageManifest): PreviewSch
  * - `readPluginHooks` salvages exactly the same commands this reader does — the
  *   same keep rule at the event, group and command level (DOR-646) — so what the
  *   preview discloses from a partially-bad file is what the projector will
- *   actually install. The two differ only in what they do with the rest: this
- *   reader reports every discarded declaration in `unreadable`, while the
- *   projector simply has nothing to project for it.
+ *   actually install. Both sides also report what they discarded: this reader in
+ *   `unreadable`, the projector as a `ProjectionWarning` naming the file and the
+ *   event, printed by `dorkos harness sync` (DOR-1724). Both are needed, because
+ *   this preview runs BEFORE the install and cannot see a file that rots after it.
  */
 async function readPackageHooks(
   packagePath: string

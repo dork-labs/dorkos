@@ -27,6 +27,8 @@
  *   {@link mergeHookConfigs}), with `${CLAUDE_PLUGIN_ROOT}` rewritten to absolute
  *   first (see {@link rewritePluginRootInHooks}). OpenCode has no declarative
  *   hook config (only a code-based TS plugin API), so its hooks drop honestly.
+ *   What the scanner could not READ out of a plugin's `hooks/hooks.json` is
+ *   reported separately, by `plan/unreadable-hooks.ts`.
  *
  * One projection is NOT for a harness at all. A plugin skill that carries a
  * `schedule:` block is a scheduled task, and the DorkOS scheduler watches exactly

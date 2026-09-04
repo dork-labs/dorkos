@@ -299,6 +299,79 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     expect(existsSync(link)).toBe(false);
   });
 
+  it('warns, naming the file and the events, when a rotted hooks.json is salvaged (DOR-1724)', () => {
+    // The post-install rot the pre-install preview cannot see: the package
+    // installed fine, then its `hooks/hooks.json` was hand-edited into a shape the
+    // reader can only partly use. `Stop` keeps one group and loses another;
+    // `PostToolUse` loses everything; `Notification` is not even an array.
+    const built = buildRepoWithPluginHook();
+    repo = built.repoRoot;
+    dorkHome = built.home;
+    const hooksFile = join(repo, '.dork', 'plugins', 'flow', 'hooks', 'hooks.json');
+    writeFileSync(
+      hooksFile,
+      JSON.stringify({
+        Stop: [{ hooks: [{ command: 'good.sh' }] }, { hooks: 'nope' }],
+        PostToolUse: [{ hooks: [{ type: 'command' }] }],
+        Notification: { command: 'not-an-array.sh' },
+      })
+    );
+
+    const plan = project(repo, { dorkHome });
+
+    // The readable half still projects — the salvage is not undone by disclosing it.
+    expect(
+      JSON.parse(getActionContent(plan.actions.find((a) => a.name === 'plugin-hooks')!)!)
+    ).toHaveProperty('Stop');
+
+    const hookWarnings = plan.warnings.filter((w) => w.artifact === 'hook');
+    expect(hookWarnings.map((w) => w.name).sort()).toEqual([
+      'flow:Notification',
+      'flow:PostToolUse',
+      'flow:Stop',
+    ]);
+    // Every reason names the FILE and the EVENT, and says whether anything survived.
+    for (const warning of hookWarnings) {
+      expect(warning.reason).toContain('.dork/plugins/flow/hooks/hooks.json');
+    }
+    expect(hookWarnings.find((w) => w.name === 'flow:Stop')!.reason).toContain(
+      'only the readable ones are projected'
+    );
+    expect(hookWarnings.find((w) => w.name === 'flow:PostToolUse')!.reason).toContain(
+      'no "PostToolUse" hook is projected'
+    );
+    expect(hookWarnings.find((w) => w.name === 'flow:Notification')!.reason).toContain(
+      'no "Notification" hook is projected'
+    );
+  });
+
+  it('warns once, naming the whole file, when a hooks.json is not valid JSON at all (DOR-1724)', () => {
+    const built = buildRepoWithPluginHook();
+    repo = built.repoRoot;
+    dorkHome = built.home;
+    writeFileSync(join(repo, '.dork', 'plugins', 'flow', 'hooks', 'hooks.json'), '{ truncated');
+
+    const plan = project(repo, { dorkHome });
+
+    expect(plan.warnings.filter((w) => w.artifact === 'hook')).toEqual([
+      {
+        artifact: 'hook',
+        harness: 'claude-code',
+        name: 'flow:hooks',
+        reason:
+          '.dork/plugins/flow/hooks/hooks.json could not be read (invalid JSON, or a top level that is not an object), so every hook this package declares was dropped and none are projected',
+      },
+    ]);
+  });
+
+  it('warns nothing when every installed hooks.json is fully readable (DOR-1724)', () => {
+    const built = buildRepoWithPluginHook();
+    repo = built.repoRoot;
+    dorkHome = built.home;
+
+    expect(project(repo, { dorkHome }).warnings.filter((w) => w.artifact === 'hook')).toEqual([]);
+  });
+
   it('never sweeps a hand-authored `__` directory — only managed symlinks', () => {
     repo = mkdtempSync(join(tmpdir(), 'harness-inst-int-'));
     const skillsDir = join(repo, '.agents', 'skills');

@@ -56,10 +56,18 @@ export type ActionBase = Pick<
 >;
 
 /**
- * A projected-but-suspect artifact: it WAS projected (it is in `actions`), but it
- * may not work in the target harness. Surfaced so the operator is told, e.g. when
- * a projected hook command carries a Claude-only substitution token that the
- * target harness will not resolve. Distinct from a `drop` (which never projected).
+ * Something the operator has to be told about a projection that no `drop` line
+ * covers. Two kinds live here:
+ *
+ * - projected-but-suspect: the artifact IS in `actions` but may not work in the
+ *   target harness — e.g. a projected hook command carrying a Claude-only
+ *   substitution token the target harness will not resolve.
+ * - read-but-unusable: part of a source file the engine could not read, so it
+ *   reached no harness at all — e.g. a matcher group the `hooks/hooks.json`
+ *   salvage discarded (DOR-1724).
+ *
+ * Both are distinct from a `drop`, which reports a whole artifact that HAS no
+ * home in a target harness.
  */
 export interface ProjectionWarning {
   /** The kind of agent file the warning concerns. */
@@ -74,17 +82,17 @@ export interface ProjectionWarning {
 
 /**
  * The full result of planning a projection: the actionable projections, the
- * honest drop list, and any warnings about projections that may not work.
- * Nothing a harness cannot accept is ever silently omitted — it appears in
- * `drops` with a reason; a projection that landed but may be broken appears in
- * `warnings` with a reason.
+ * honest drop list, and any warnings. Nothing a harness cannot accept is ever
+ * silently omitted — it appears in `drops` with a reason; a projection that
+ * landed but may be broken, or a source declaration the engine could not read,
+ * appears in `warnings` with a reason.
  */
 export interface ProjectionPlan {
   /** Actionable projections (`native` | `symlink` | `scaffold` | `generate` | `merge`). */
   actions: ProjectionAction[];
   /** Artifacts with no home in a target harness, each with a reason. */
   drops: ProjectionAction[];
-  /** Projections that landed but may not work in the target harness, each with a reason. */
+  /** Projections that may not work, and declarations that could not be read, each with a reason. */
   warnings: ProjectionWarning[];
 }
 

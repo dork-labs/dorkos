@@ -66,6 +66,34 @@ export interface InstalledSkill extends SkillEntry {
   hasSchedule: boolean;
 }
 
+/**
+ * A hook declaration the reader could not use, and how much of it was lost.
+ *
+ * The salvage in {@link readPluginHooks} keeps whatever a malformed
+ * `hooks/hooks.json` still says clearly and discards the rest (DOR-646). What it
+ * discards is a shell command the package meant to run and now will not, so the
+ * evidence travels with the plugin instead of dying at the read: the projector
+ * turns each of these into a {@link ProjectionWarning} that `dorkos harness sync`
+ * prints (DOR-1724). Mirrors the marketplace preview's `unreadableHooks` shape,
+ * which discloses the same file before an install.
+ */
+export interface UnreadableHookDeclaration {
+  /** Repo-relative path of the declaring file, e.g. `.dork/plugins/<pkg>/hooks/hooks.json`. */
+  path: string;
+  /**
+   * The event key whose matcher groups were dropped. Absent when the whole file
+   * was unreadable (invalid JSON, or a top level that is not an object) — then
+   * every declaration in it is gone and there is no event left to name.
+   */
+  event?: string;
+  /**
+   * True when NOTHING from this declaration survived: the whole file, or an event
+   * left with no usable matcher group at all (so that event projects no hook).
+   * False when some groups salvaged and others were dropped alongside them.
+   */
+  total: boolean;
+}
+
 /** A portable slash command (`commands/<name>.md`) from an installed plugin. */
 export interface InstalledCommand {
   /** Command name: the file basename without `.md`, the `/<pkg>:<name>` leaf. */
@@ -104,6 +132,13 @@ export interface InstalledPlugin {
   commands: InstalledCommand[];
   /** Claude-plugin hooks (`hooks/hooks.json`), normalized. Project scope only. */
   hooks?: ClaudeHooksConfig;
+  /**
+   * Every hook declaration in `hooks/hooks.json` the salvage could not use, so
+   * the projector can say out loud what got dropped. Project scope only, and
+   * paired with {@link hooks}: absent means the file was never read (a global
+   * install), an empty array means it was read and nothing was lost.
+   */
+  unreadableHooks?: UnreadableHookDeclaration[];
   /** Declared content layers from the manifest (informational). */
   layers: string[];
 }
@@ -181,6 +216,13 @@ function readCcPluginManifest(pluginDir: string): PluginIdentity | undefined {
  * that it describes what the projector will do, so the two must salvage exactly
  * the same commands from the same bad file.
  *
+ * What this rule discards is never silent: the caller records it as an
+ * {@link UnreadableHookDeclaration}, which the projector turns into a
+ * {@link ProjectionWarning} naming the file and the event (DOR-1724). The
+ * pre-install preview cannot cover that on its own — it runs before the install,
+ * so a file that rots afterwards (a hand-edit, a partial write) reaches this
+ * reader with no preview in sight.
+ *
  * Fields neither side interprets ride through untouched — `timeout` is a real
  * Claude Code hook field, and dropping what this reader does not recognize would
  * quietly change working hooks. A missing or non-string `type` becomes
@@ -235,36 +277,63 @@ function readMatcherGroup(group: unknown): HookMatcherGroup | undefined {
  * entirely rather than kept as an empty array, so a package that declares only
  * unreadable hooks contributes no hooks at all.
  *
+ * Everything dropped comes back in `unreadable` rather than vanishing here, so
+ * the projector can warn about it by name (DOR-1724). An event that declares NO
+ * groups at all (`{"Stop": []}`) is an empty declaration, not a lost one, and is
+ * reported as neither.
+ *
  * The event names are PACKAGE-CHOSEN strings, so the result is built on a
  * null-prototype object ({@link emptyHooksConfig}): assigning a key named
  * `__proto__` to a `{}` literal hits `Object.prototype`'s inherited setter
  * instead of creating a property, which would swallow that event's groups
  * silently — the preview would disclose a command the projector then dropped,
  * which is the exact disagreement this reader exists to end.
+ *
+ * @param pluginDir - absolute path to the plugin's install directory.
+ * @param relDir - the same directory, repo-relative, used to name the file in
+ *   every {@link UnreadableHookDeclaration} an operator will read.
+ * @returns the salvaged hooks (absent when nothing survived) and every
+ *   declaration that did not.
  */
-function readPluginHooks(pluginDir: string): ClaudeHooksConfig | undefined {
+function readPluginHooks(
+  pluginDir: string,
+  relDir: string
+): { hooks?: ClaudeHooksConfig; unreadable: UnreadableHookDeclaration[] } {
   const hooksPath = join(pluginDir, 'hooks', 'hooks.json');
-  if (!existsSync(hooksPath)) return undefined;
+  if (!existsSync(hooksPath)) return { unreadable: [] };
+  const relPath = `${relDir}/hooks/hooks.json`;
   let raw: unknown;
   try {
     raw = JSON.parse(readFileSync(hooksPath, 'utf8'));
   } catch {
-    return undefined;
+    return { unreadable: [{ path: relPath, total: true }] };
   }
   // Accept both `{ hooks: {…} }` (settings-style) and a bare `{ Event: […] }` object.
   const hooksObj =
     raw && typeof raw === 'object' && 'hooks' in raw ? (raw as { hooks: unknown }).hooks : raw;
-  if (!hooksObj || typeof hooksObj !== 'object') return undefined;
+  if (!hooksObj || typeof hooksObj !== 'object') {
+    return { unreadable: [{ path: relPath, total: true }] };
+  }
 
   const validated = emptyHooksConfig();
+  const unreadable: UnreadableHookDeclaration[] = [];
   for (const [event, groups] of Object.entries(hooksObj as Record<string, unknown>)) {
-    if (!Array.isArray(groups)) continue;
+    if (!Array.isArray(groups)) {
+      unreadable.push({ path: relPath, event, total: true });
+      continue;
+    }
     const usable = groups
       .map(readMatcherGroup)
       .filter((group): group is HookMatcherGroup => group !== undefined);
     if (usable.length > 0) validated[event] = usable;
+    if (usable.length < groups.length) {
+      unreadable.push({ path: relPath, event, total: usable.length === 0 });
+    }
   }
-  return Object.keys(validated).length > 0 ? validated : undefined;
+  return {
+    ...(Object.keys(validated).length > 0 ? { hooks: validated } : {}),
+    unreadable,
+  };
 }
 
 /**
@@ -399,6 +468,7 @@ function scanPluginsRoot(pluginsRoot: string, scope: InstalledScope): InstalledP
     }
 
     const relDir = `.dork/plugins/${entry.name}`;
+    const { hooks, unreadable } = readPluginHooks(pluginDir, relDir);
     plugins.push({
       name: manifest.name,
       type: manifest.type,
@@ -406,7 +476,8 @@ function scanPluginsRoot(pluginsRoot: string, scope: InstalledScope): InstalledP
       relDir,
       skills: collectPortableSkills(pluginDir, relDir),
       commands: collectCommands(pluginDir, relDir),
-      hooks: readPluginHooks(pluginDir),
+      ...(hooks ? { hooks } : {}),
+      unreadableHooks: unreadable,
       layers: manifest.layers,
     });
   }
