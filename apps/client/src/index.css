@@ -2085,6 +2085,32 @@ body {
   --color-status-pending-bg: rgba(115, 115, 115, 0.1);
   --color-status-pending-fg: #737373;
 
+  /* Package hues get the same translucent-bg / solid-fg treatment as the
+     status tokens above, for the same reason: Obsidian's `.dark` never
+     matches here (it uses `.theme-dark`), so the `:root`/`.dark` package
+     tokens never reach this surface and the light values would otherwise
+     paint through as near-white chips on a dark Obsidian theme. A translucent
+     background survives either of Obsidian's themes; an opaque ~96%-lightness
+     fill does not. */
+  --color-package-agent-bg: rgba(59, 130, 246, 0.1);
+  --color-package-agent-border: rgba(59, 130, 246, 0.2);
+  --color-package-agent-fg: #3b82f6;
+  --color-package-plugin-bg: rgba(139, 92, 246, 0.1);
+  --color-package-plugin-border: rgba(139, 92, 246, 0.2);
+  --color-package-plugin-fg: #8b5cf6;
+  --color-package-skill-bg: rgba(5, 150, 105, 0.1);
+  --color-package-skill-border: rgba(5, 150, 105, 0.2);
+  --color-package-skill-fg: #059669;
+  --color-package-adapter-bg: rgba(245, 158, 11, 0.1);
+  --color-package-adapter-border: rgba(245, 158, 11, 0.2);
+  --color-package-adapter-fg: #f59e0b;
+  --color-package-shape-bg: rgba(244, 63, 94, 0.1);
+  --color-package-shape-border: rgba(244, 63, 94, 0.2);
+  --color-package-shape-fg: #f43f5e;
+  --color-package-connector-bg: rgba(6, 182, 212, 0.1);
+  --color-package-connector-border: rgba(6, 182, 212, 0.2);
+  --color-package-connector-fg: #06b6d4;
+
   color: var(--text-normal);
   background-color: var(--background-secondary);
   font-family: var(--font-interface);

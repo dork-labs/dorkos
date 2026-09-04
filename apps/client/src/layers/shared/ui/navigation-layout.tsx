@@ -3,6 +3,7 @@ import { motion, AnimatePresence, LayoutGroup } from 'motion/react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useIsMobile } from '../model';
 import { cn } from '../lib/utils';
+import { useResponsiveDialogOptional } from './responsive-dialog';
 
 // ---------------------------------------------------------------------------
 // Context
@@ -502,6 +503,10 @@ interface NavigationLayoutDialogHeaderProps {
 function NavigationLayoutDialogHeader({ children, className }: NavigationLayoutDialogHeaderProps) {
   const { isMobile, isDrilledIn, goBack, activeLabel, registerDialogHeader } =
     useNavigationLayout();
+  // Optional: TabbedDialog nests this inside a ResponsiveDialog, but the unit
+  // tests for this component render it standalone. Undefined here just means
+  // "no fullscreen toggle to clear" — the same as the outcome today.
+  const responsiveDialog = useResponsiveDialogOptional();
 
   // Register so NavigationLayoutContent knows to hide its built-in back button
   React.useLayoutEffect(() => {
@@ -530,10 +535,23 @@ function NavigationLayoutDialogHeader({ children, className }: NavigationLayoutD
     );
   }
 
+  // The dialog's own close button (and, when mounted, the
+  // ResponsiveDialogFullscreenToggle) share DialogContent's single grid
+  // column with this header, so a long title runs underneath either one
+  // without a matching reservation — the same overlap ResponsiveDialogHeader
+  // guards against. TabbedDialog is the only caller and it always mounts the
+  // toggle, so this reserves `pr-20` there in practice.
+  const isDesktop = responsiveDialog?.isDesktop ?? false;
+  const hasFullscreenToggle = responsiveDialog?.hasFullscreenToggle ?? false;
+
   return (
     <div
       data-slot="navigation-layout-dialog-header"
-      className={cn('space-y-0 border-b px-4 py-3', className)}
+      className={cn(
+        'space-y-0 border-b px-4 py-3',
+        isDesktop && (hasFullscreenToggle ? 'pr-20' : 'pr-14'),
+        className
+      )}
     >
       {children}
     </div>

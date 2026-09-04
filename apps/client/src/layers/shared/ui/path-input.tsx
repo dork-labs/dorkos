@@ -23,11 +23,18 @@ interface PathInputProps extends Omit<React.ComponentProps<'input'>, 'type' | 'o
  * the GitHub Desktop / Warp "integrated field" pattern (Tier 2).
  *
  * The field inside is the app's own {@link Input} with its frame switched off,
- * not a copy of its recipe. The copy was missing `aria-invalid` styling, the
- * `selection:` colours and the `text-base md:text-sm` guard that stops iOS
- * zooming on focus — so the path field quietly stopped matching every other
- * field in the app each time `Input` changed. The frame moved out here because
- * it has to wrap the Browse zone too; everything inside it stays in one file.
+ * not a copy of its recipe. The copy was missing the `selection:` colours and
+ * the `text-base md:text-sm` guard that stops iOS zooming on focus — so the
+ * path field quietly stopped matching every other field in the app each time
+ * `Input` changed. The frame moved out here because it has to wrap the Browse
+ * zone too; everything inside it stays in one file.
+ *
+ * `aria-invalid` styling is NOT one of the things this recipe restores: the
+ * frame gives the field `border-0` and `focus-visible:ring-0`, which also
+ * swallows `Input`'s `aria-invalid:border-destructive` and
+ * `aria-invalid:ring-destructive/20`. No caller passes `aria-invalid` today,
+ * so nothing is broken in practice — but the frame, not the field, is where
+ * that treatment would have to be added if one ever does.
  */
 function PathInput({
   className,

@@ -135,7 +135,7 @@ const SIDEBAR_ROW_TRAILING_ACTION_OFFSET = 'right-7';
  * class in the merge, after the caller's `className` too, and a variant cannot
  * promise that.
  */
-const sidebarRowVariants = cva(
+export const sidebarRowVariants = cva(
   cn(
     // 13px on a 28px line, the density §11 asks for: the height variant is the
     // line and `py-1` is what keeps a one-line row on it exactly. A row that

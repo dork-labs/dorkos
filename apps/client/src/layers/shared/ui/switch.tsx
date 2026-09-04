@@ -2,8 +2,6 @@ import * as React from 'react';
 import * as SwitchPrimitive from '@radix-ui/react-switch';
 import { tv, type VariantProps } from 'tailwind-variants';
 
-export type SwitchSize = 'sm' | 'default' | 'md' | 'lg';
-
 /**
  * The track and the thumb, sized together.
  *
@@ -59,6 +57,14 @@ export const switchVariants = tv({
     responsive: false,
   },
 });
+
+/**
+ * The switch's size steps, derived from {@link switchVariants} rather than
+ * stated a second time — the two used to drift silently the moment either
+ * changed, since nothing tied this literal union to the variant table's own
+ * `size` keys.
+ */
+export type SwitchSize = NonNullable<VariantProps<typeof switchVariants>['size']>;
 
 export interface SwitchProps
   extends

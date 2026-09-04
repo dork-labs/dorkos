@@ -112,8 +112,18 @@ export function ChipTray({
                   // Bordered whether or not it is on, so the row reads as a set
                   // of controls rather than as a line of text that turns out to
                   // be clickable. The active one takes the accent border.
+                  //
+                  // `outline`'s own string carries `dark:border-input`, which
+                  // has a different modifier set than a bare `border-primary`
+                  // — tailwind-merge keeps both, and Tailwind sorts `dark:`
+                  // utilities after unprefixed ones, so `dark:border-input`
+                  // would otherwise win in dark mode regardless of class
+                  // order. The `dark:border-primary` pair here is what makes
+                  // the active border survive dark mode too.
                   'rounded-full',
-                  active ? 'border-primary text-foreground' : 'text-muted-foreground'
+                  active
+                    ? 'border-primary dark:border-primary text-foreground'
+                    : 'text-muted-foreground'
                 )}
               >
                 <span aria-hidden="true">{VERB_ICON[group.verb]}</span>

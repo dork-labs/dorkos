@@ -370,7 +370,7 @@ export type {
   SidebarMenuSubmenu,
   SidebarMenuVariant,
 } from './sidebar-menu-node';
-export { SidebarRow, SIDEBAR_ROW_INSET } from './sidebar-row';
+export { SidebarRow, SIDEBAR_ROW_INSET, sidebarRowVariants } from './sidebar-row';
 export { TOUCH_TARGET_MIN_H } from './touch-target';
 export type {
   RowDragBindings,
