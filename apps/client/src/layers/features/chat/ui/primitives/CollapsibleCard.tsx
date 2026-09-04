@@ -56,9 +56,10 @@ export function CollapsibleCard({
         // The hover the design system specifies for a tool card: the border
         // darkens and a soft shadow appears. It used to answer a pointer with
         // nothing unless the card was already dimmed (DOR-1751). The background
-        // steps too, because until the unlayered `*` border-color rule in
-        // `index.css` is layered (audit finding 4.1) no `border-*` utility in
-        // this app paints, and a hover that depends on one would be invisible.
+        // steps too — it was added when the border step could not paint at all
+        // (the unlayered `*` border-color rule, DOR-1024) and it earns its keep
+        // now that it can: a 2px rule alone is a thin answer at transcript
+        // density, and the two together are what the spec asks for.
         'hover:bg-muted/60 hover:border-l-muted-foreground/60 hover:shadow-soft',
         variant === 'default' && 'border-l-muted-foreground/30',
         variant === 'thinking' && 'border-l-muted-foreground/20',

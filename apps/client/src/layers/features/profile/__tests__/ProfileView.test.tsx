@@ -428,9 +428,15 @@ describe('the rows', () => {
     // The panel's "whose this is" moment, and it does not move to say so
     // (identity-micro-interactions §3D4). On the body rather than under the
     // header, so it exists exactly when there is something to separate.
+    // The mix is a CLASS, not an inline declaration: it was inline only while
+    // the app's neutral `border-color` default outranked Tailwind's whole
+    // utilities layer (DOR-1024).
     await renderProfile(SELF);
     const rows = document.querySelector('[data-slot="profile-rows"]') as HTMLElement;
-    expect(rows.style.borderTopColor).toContain('var(--identity-color) 55%');
+    expect(rows.style.borderTopColor).toBe('');
+    expect(rows.className).toContain(
+      'border-t-[color-mix(in_oklch,var(--identity-color)_55%,transparent)]'
+    );
   });
 
   it('draws no body at all when this build has no row to put in it', async () => {

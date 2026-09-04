@@ -77,20 +77,22 @@ describe('TeamMemberCard', () => {
       container.querySelector('[data-slot="team-member-card"]') as HTMLElement;
 
     it('paints its border from the identity’s colour at a movable strength', () => {
-      // Two constraints meet here. An ancestor cannot inherit a property its
-      // child declares, so the card publishes the face colour itself. And the
-      // border is a `color-mix()` of that runtime colour with the neutral one
-      // at an animatable strength — no Tailwind class expresses that, so the
-      // mix is inline. Only its strength moves, through a property a class can
-      // still set.
+      // The face colour is inline because an ancestor cannot inherit a property
+      // its child declares — the card publishes it rather than reading it off
+      // the disc. Everything else is a class: the border used to be inline too,
+      // because `index.css` set `border-color` on `*` in an UNLAYERED rule that
+      // outranked Tailwind's whole utilities layer (DOR-1024). That rule is
+      // layered now, so the utility works and nothing needs the inline escape.
       const { container } = render(<TeamMemberCard member={SELF} onOpenProfile={() => {}} />);
       const card = cardOf(container);
 
       expect(card.style.getPropertyValue('--identity-color')).not.toBe('');
-      expect(card.style.borderColor).toContain('var(--identity-border-strength)');
-      // And the RESTING strength is a class, never inline: an inline value
-      // would be one the `hover:` step could never move, for the same reason
-      // the colour has to be inline to move at all.
+      expect(card.style.borderColor).toBe('');
+      expect(card.className).toContain(
+        'border-[color-mix(in_oklch,var(--identity-color)_var(--identity-border-strength),hsl(var(--border)))]'
+      );
+      // And the RESTING strength is a class too: an inline value would be one
+      // the `hover:` step could never move.
       expect(card.style.getPropertyValue('--identity-border-strength')).toBe('');
       expect(card.className).toContain('[--identity-border-strength:0%]');
     });

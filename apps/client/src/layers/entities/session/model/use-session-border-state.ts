@@ -22,11 +22,14 @@ import { useSessionStreamStore } from './session-stream-store';
 import { useSessionListStore } from './session-list-store';
 
 /*
- * Border color uses inline RGB values (not CSS custom properties) for states that
- * pulse. An unlayered browser-extension stylesheet
- * (`:where(:not(.copilot-view-content *))`) overrides all Tailwind border-color
- * utilities in `@layer utilities`, and Motion cannot interpolate CSS custom
- * properties — it needs concrete RGB values to tween `borderLeftColor`.
+ * Border color uses inline RGB values (not CSS custom properties) for states
+ * that pulse, because Motion cannot interpolate CSS custom properties — it
+ * needs concrete RGB values to tween `borderLeftColor`.
+ *
+ * (This note used to blame an "unlayered browser-extension stylesheet" as well.
+ * That rule was the app's own neutral `border-color` default in `index.css`,
+ * and it is layered as of DOR-1024, so it no longer outranks anything. The
+ * Motion constraint above is the whole reason these are literals.)
  *
  * Non-pulsing states (error, unseen) use CSS variables directly since
  * Motion never has to animate them.

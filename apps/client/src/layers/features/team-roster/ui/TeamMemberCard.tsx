@@ -193,28 +193,19 @@ export function TeamMemberCard({
       // which is the only drift jsdom can catch here, since `test-setup.ts`
       // strips every motion prop before it reaches the DOM.
       data-layout-animated={String(layoutAnimated)}
-      // The card wears this identity's own colour, and paints its border from
-      // it at a STRENGTH the stylesheet can move. Two things force this shape:
-      //
-      // - An ancestor cannot inherit a property its child declares, so the card
-      //   publishes the face colour itself rather than reading it off the disc.
-      // - The colour is a RUNTIME value mixed with the neutral border at a
-      //   strength that has to animate. Tailwind has no class for that, so the
-      //   `color-mix()` is declared inline and only its strength moves, through
-      //   a custom property a class CAN set.
-      style={
-        {
-          '--identity-color': face.color,
-          borderColor:
-            'color-mix(in oklch, var(--identity-color) var(--identity-border-strength), hsl(var(--border)))',
-        } as CSSProperties
-      }
+      // The card wears this identity's own colour and paints its border from it
+      // at a STRENGTH the stylesheet can move. Only the colour itself is inline,
+      // because an ancestor cannot inherit a property its child declares — the
+      // card publishes the face colour rather than reading it off the disc.
+      style={{ '--identity-color': face.color } as CSSProperties}
       className={cn(
         'bg-card shadow-soft relative flex items-start gap-3 rounded-lg border p-4',
-        // The resting strength is a CLASS, not part of the inline style above:
-        // an inline declaration outranks every stylesheet rule, so a resting
-        // value written inline would be one the `hover:` step could never move.
-        // Only the mix itself stays inline.
+        // Both halves of the border are classes. The mix is the same shape
+        // `identityMarkRing` uses for its ring, and the resting strength is
+        // separate so `hover:` can move it — an inline declaration outranks
+        // every stylesheet rule, so a resting value written inline would be one
+        // the hover step could never reach.
+        'border-[color-mix(in_oklch,var(--identity-color)_var(--identity-border-strength),hsl(var(--border)))]',
         '[--identity-border-strength:0%]',
         onOpenProfile && [
           // Surface tier: the whole area is one action, so the whole card

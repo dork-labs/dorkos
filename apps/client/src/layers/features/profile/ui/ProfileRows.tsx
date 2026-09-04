@@ -68,13 +68,11 @@ export function ProfileRows({ member, ctx, onPush }: ProfileRowsProps) {
       // The identity accent, drawn as a static 2px rule in this identity's own
       // colour (identity-micro-interactions §3D4). It lives on the body rather
       // than under the header so it exists exactly when there is something to
-      // separate. Inline because the colour is a runtime value mixed with
-      // transparency — there is no Tailwind class for a `color-mix()` of a
-      // custom property.
-      style={{
-        borderTopColor: 'color-mix(in oklch, var(--identity-color) 55%, transparent)',
-      }}
-      className="flex flex-col gap-2.5 border-t-2 px-2 pt-2 pb-4"
+      // separate. The mix is a CLASS, the same shape `identityMarkRing` uses for
+      // its ring: an arbitrary value expresses a `color-mix()` of a custom
+      // property perfectly well. It was inline until DOR-1024 only because the
+      // neutral `border-color` default outranked the whole utilities layer.
+      className="flex flex-col gap-2.5 border-t-2 border-t-[color-mix(in_oklch,var(--identity-color)_55%,transparent)] px-2 pt-2 pb-4"
     >
       {groups.map((group) => (
         <div key={group.id} className="divide-border/60 flex flex-col divide-y">
