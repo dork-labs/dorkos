@@ -37,7 +37,10 @@ afterEach(async () => {
  * @param specEnv - The `spec.env` a case/credential would contribute.
  * @returns The child's environment.
  */
-async function envSeenByChild(specEnv: Record<string, string>): Promise<Record<string, string>> {
+async function envSeenByChild(
+  specEnv: Record<string, string>,
+  opts: { claudeConfigDir?: string } = {}
+): Promise<Record<string, string>> {
   root = await mkdtemp(path.join(tmpdir(), 'evals-cpl-'));
   const sandboxRoot = path.join(root, 'sandbox');
   const dorkHome = path.join(sandboxRoot, '.dork');
@@ -57,6 +60,7 @@ async function envSeenByChild(specEnv: Record<string, string>): Promise<Record<s
 
   const launched = await launcher.launch({
     dorkHome,
+    ...(opts.claudeConfigDir !== undefined ? { claudeConfigDir: opts.claudeConfigDir } : {}),
     host: '127.0.0.1',
     port: 54321,
     env: specEnv,
@@ -111,5 +115,29 @@ describe('ChildProcessLauncher environment', () => {
     const env = await envSeenByChild({});
     // The whole local-credential path depends on this inheritance.
     expect(env.PATH).toBeTruthy();
+  });
+
+  it('pins CLAUDE_CONFIG_DIR to the sandbox, so a turn reads no user-level config of the operator`s', async () => {
+    const sandboxConfigDir = '/private/var/folders/xy/dorkos-evals-AbC123/.claude';
+    // Exactly the shape of the confound: the operator's own directory arrives on
+    // the inherited environment AND a case tries to name one of its own.
+    const env = await envSeenByChild(
+      { CLAUDE_CONFIG_DIR: '/Users/someone/.claude2' },
+      { claudeConfigDir: sandboxConfigDir }
+    );
+
+    expect(env.CLAUDE_CONFIG_DIR).toBe(sandboxConfigDir);
+    // `settingSources` includes `'user'`, which resolves under this directory —
+    // so this variable, not DORK_HOME, is what decides whether a measured turn
+    // read the operator's CLAUDE.md, settings and skills (DOR-1712).
+    expect(env.CLAUDE_CONFIG_DIR).not.toBe('/Users/someone/.claude2');
+  });
+
+  it('leaves an inherited CLAUDE_CONFIG_DIR alone when the run declined to pin one', async () => {
+    // Declining is what a keychain-authenticated local sign-in gets: that exact
+    // directory IS the credential, so erasing the variable here would sign the
+    // run out — the failure this fix must not cause while removing a confound.
+    const env = await envSeenByChild({ CLAUDE_CONFIG_DIR: '/Users/someone/.claude2' });
+    expect(env.CLAUDE_CONFIG_DIR).toBe('/Users/someone/.claude2');
   });
 });

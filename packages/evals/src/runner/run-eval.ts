@@ -34,6 +34,7 @@ import type {
 } from '../types.js';
 import { emptyApprovalLog } from '../types.js';
 import { ApprovalDriver } from './approval-driver.js';
+import { resolveClaudeConfigPin } from './claude-config.js';
 import { createSandbox, type Sandbox } from './sandbox.js';
 import { onInterrupt } from './interrupt.js';
 import {
@@ -230,13 +231,15 @@ async function resolveCredentialFor(
  *
  * @param tier - The runtime tier.
  * @param dorkHome - The sandbox `DORK_HOME`.
- * @param opts - The model, the credential env, and the case's own server env.
+ * @param opts - The controlled Claude config dir, the model, the credential env,
+ *   and the case's own server env.
  * @returns The running {@link HarnessServer}.
  */
 function bootServerForTier(
   tier: RuntimeTier,
   dorkHome: string,
   opts: {
+    claudeConfigDir?: string;
     model?: string;
     runtime?: EvalRuntime;
     provider?: string;
@@ -249,6 +252,7 @@ function bootServerForTier(
   if (tier === 'test-mode') return startInProcessServer({ dorkHome });
   return startChildProcessServer({
     dorkHome,
+    ...(opts.claudeConfigDir !== undefined ? { claudeConfigDir: opts.claudeConfigDir } : {}),
     model: opts.model,
     ...(opts.runtime ? { runtime: opts.runtime } : {}),
     ...(opts.provider ? { provider: opts.provider } : {}),
@@ -399,7 +403,20 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
     // eval rewrites the soul of) installs it here into the fresh sandbox.
     await evalCase.seed?.(sandbox);
 
+    // Decide the USER-level Claude configuration this turn is measured under,
+    // before the server that will read it boots. `test-mode` never spawns the
+    // `claude` binary, so it neither needs the pin nor should have a sign-in
+    // copied into its sandbox for nothing.
+    const configPin =
+      opts.tier === 'test-mode'
+        ? undefined
+        : await resolveClaudeConfigPin({
+            claudeConfigDir: sandbox.claudeConfigDir,
+            credentialIsPortable: credential?.portable ?? false,
+          });
+
     server = await bootServerForTier(opts.tier, sandbox.dorkHome, {
+      ...(configPin?.pinned ? { claudeConfigDir: configPin.configDir } : {}),
       // A case may pin its OWN model (the terminal-failure case needs an
       // unreachable one) without moving the rest of the run off the pin.
       model: evalCase.model ?? opts.model,

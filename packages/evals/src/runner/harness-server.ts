@@ -249,6 +249,13 @@ async function waitForHealth(
 export interface StartChildProcessServerOptions {
   /** Sandbox `DORK_HOME` the launched server (and its oracles) read/write. */
   dorkHome: string;
+  /**
+   * Controlled `CLAUDE_CONFIG_DIR` for the launched server's runtime, so a
+   * measured turn reads an empty user-level configuration instead of the
+   * operator's `settings.json`, `CLAUDE.md` and skills. Omitted when the run
+   * declined to pin one — see `runner/claude-config.ts`.
+   */
+  claudeConfigDir?: string;
   /** Host to bind. Defaults to `127.0.0.1` (loopback only). */
   host?: string;
   /**
@@ -374,7 +381,13 @@ export async function startChildProcessServer(
 
   if (runsOpenCode) await configureOpenCodeSandbox(opts);
 
-  const launched = await launcher.launch({ dorkHome: opts.dorkHome, host, port, env });
+  const launched = await launcher.launch({
+    dorkHome: opts.dorkHome,
+    ...(opts.claudeConfigDir !== undefined ? { claudeConfigDir: opts.claudeConfigDir } : {}),
+    host,
+    port,
+    env,
+  });
 
   try {
     await waitForHealth(launched.baseUrl, {

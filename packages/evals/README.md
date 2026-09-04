@@ -671,6 +671,56 @@ a paid path. A test pins this.
 CI has no sign-in of its own, so the credentialed workflow needs one of the two
 secrets. When neither is configured it skips with a notice instead of failing.
 
+## Whose Claude settings a measured turn reads
+
+A turn's behavior does not come only from the prompt. Claude Code also loads a
+user-level `settings.json`, `CLAUDE.md`, skills, agents, commands and plugins
+from `$CLAUDE_CONFIG_DIR` (or `~/.claude`). Until DOR-1712 every credentialed
+eval read whichever of those the developer running it happened to have, so the
+numbers measured that person's machine rather than the product. One case failed
+because the model spent its turn reasoning about a `SessionStart` hook from an
+unrelated plugin instead of answering.
+
+So the harness gives each eval a clean config directory inside its own sandbox
+and points the launched server at it. Three things go in and nothing else: an
+empty `settings.json`, an empty `projects/` folder for this run's transcripts,
+and a `.claude.json` that says the first-run setup and the folder-trust prompt
+are already answered — a brand-new folder would otherwise be asked about before
+the turn could start. None of your memory, settings, skills, agents, commands or
+plugins follows.
+
+There is one case where the harness can't do this, and it says so rather than
+quietly doing either wrong thing:
+
+| What you're running with             | Config a turn reads            |
+| ------------------------------------ | ------------------------------ |
+| `ANTHROPIC_API_KEY`                  | the clean sandbox one          |
+| `CLAUDE_CODE_OAUTH_TOKEN`            | the clean sandbox one          |
+| a sign-in stored as a file           | the clean sandbox one          |
+| a sign-in stored in your OS keychain | **yours**, and the run says so |
+
+The last row is the awkward one, and it is awkward for a real reason: a config
+directory is also an identity. Claude Code names its keychain entry after the
+directory, so a brand-new directory is one nobody has signed into. Pinning it
+would sign your run out — and the local sign-in is the whole reason
+`pnpm evals:local` needs no setup. Refusing to run would be worse still. So the
+run proceeds and prints what it is: comparisons made on your machine still hold,
+absolute pass rates will not reproduce anywhere else. Setting
+`CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) is the one-line fix, and it
+is what a number worth recording should be measured under.
+
+Nothing is copied into the sandbox except the sign-in file, and only when the run
+actually needs it — a run holding a key or a token never has a credential written
+into a directory a failed eval may deliberately keep. On the one row that does
+copy one, that copy survives a failed case on purpose, because that is what makes
+a red debuggable. `pnpm evals:sweep` is what removes it, which is worth
+remembering after an interrupted run: the sandbox it left behind still holds a
+working sign-in.
+
+The `docker` tier is already covered by something stronger: its container mounts
+nothing from your home directory, so there is no configuration of yours in there
+to displace.
+
 ## Where each tier can run
 
 `--isolation` decides how a credentialed eval's server is contained.

@@ -53,6 +53,16 @@
  * Measured shape: twelve cases at the $0.038–$0.057 per case this package has
  * measured on Haiku is **$0.45–$0.70 a run**.
  *
+ * **Those figures, and every pass rate below, were measured before DOR-1712** —
+ * that is, while each turn was still reading the operator's own user-level
+ * `~/.claude` (settings, `CLAUDE.md`, skills) on top of the room context these
+ * cases are about. The harness now pins a controlled `CLAUDE_CONFIG_DIR`
+ * whenever the run can authenticate without the real one
+ * (`runner/claude-config.ts`), and the numbers here have NOT yet been re-measured
+ * under it. Read them as this-machine numbers until they are: the drills, which
+ * change one variable on one machine, are unaffected either way; the absolute
+ * rates and the per-case dollars are what may move.
+ *
  * ## Every case here owes a drill, and the DM one is mandatory
  *
  * A green from a model is not evidence that a FEATURE works — it may be evidence

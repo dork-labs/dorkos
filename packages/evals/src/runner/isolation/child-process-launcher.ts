@@ -67,6 +67,14 @@ function delay(ms: number): Promise<void> {
  * credential, `ANTHROPIC_MODEL`, a case's own feature flags) stays overridable,
  * which is all a case legitimately needs.
  *
+ * A fifth pin, `CLAUDE_CONFIG_DIR`, rides the same rule and lands in the same
+ * place, for the same reason one layer up: it decides which user-level
+ * `settings.json`, `CLAUDE.md` and skills a measured turn reads. Without it the
+ * child inherits the operator's, and every absolute number the run reports is a
+ * fact about that developer's machine (DOR-1712). It is pinned only when the
+ * spec carries one — see `runner/claude-config.ts` for the one case where
+ * isolating it would sign the run out of its own credential.
+ *
  * ## Why `DORKOS_BOUNDARY` must be set at all
  *
  * Without it the server falls back to a boundary of the operator's HOME
@@ -97,6 +105,14 @@ function buildEnv(spec: ServerLaunchSpec): NodeJS.ProcessEnv {
     DORKOS_BOUNDARY: sandboxRoot,
     DORKOS_HOST: spec.host,
     DORKOS_PORT: String(spec.port),
+    // Spread rather than assigned, so declining to pin leaves an inherited
+    // `CLAUDE_CONFIG_DIR` exactly as it was. Writing `undefined` here would work
+    // for `spawn` (which skips undefined entries) but would silently ERASE an
+    // operator's own value on the one path that still depends on it — the local
+    // sign-in, whose identity is that directory.
+    ...(spec.claudeConfigDir !== undefined
+      ? { CLAUDE_CONFIG_DIR: spec.claudeConfigDir }
+      : undefined),
   };
   // A credentialed run uses the real claude-code runtime — never the harness's
   // in-process test-mode flags, which would otherwise leak from the parent.
