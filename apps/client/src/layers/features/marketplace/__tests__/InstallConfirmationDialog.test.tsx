@@ -268,7 +268,8 @@ describe('InstallConfirmationDialog', () => {
     expect(screen.queryByText('Secrets required')).not.toBeInTheDocument();
   });
 
-  it('renders the PermissionPreviewSection once the preview resolves', () => {
+  it('renders the PermissionPreviewSection once the preview resolves', async () => {
+    const user = userEvent.setup();
     useMarketplaceStore.getState().openInstallConfirm(makePackage());
     setPreviewState({
       data: makeDetail({
@@ -279,8 +280,12 @@ describe('InstallConfirmationDialog', () => {
     render(<InstallConfirmationDialog />);
 
     expect(screen.getByText('Secrets required')).toBeInTheDocument();
-    expect(screen.getByText('GITHUB_TOKEN')).toBeInTheDocument();
     expect(screen.queryByText(/loading preview/i)).not.toBeInTheDocument();
+
+    // Secrets is one of the groups that starts closed, and a closed group
+    // unmounts its rows, so the key is read after opening it.
+    await user.click(screen.getByText('Secrets required').closest('button')!);
+    expect(screen.getByText('GITHUB_TOKEN')).toBeInTheDocument();
   });
 
   it('clicking Install fires mutateAsync with the package name', async () => {
