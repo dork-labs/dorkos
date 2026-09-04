@@ -328,7 +328,7 @@ function SecretRow({
     return (
       <SettingRow label={secret.label} description={description}>
         <div className="flex items-center gap-2">
-          <Badge variant="outline" className="text-muted-foreground gap-1">
+          <Badge tone="neutral" variant="outline" className="gap-1">
             <Check className="size-3" />
             Configured
           </Badge>

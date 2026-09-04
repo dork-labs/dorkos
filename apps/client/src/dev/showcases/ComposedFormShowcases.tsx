@@ -353,11 +353,7 @@ function CollapsibleFieldCardSection() {
             open={withBadge}
             onOpenChange={setWithBadge}
             trigger="Advanced"
-            badge={
-              <Badge variant="secondary" className="text-xs">
-                Modified
-              </Badge>
-            }
+            badge={<Badge variant="secondary">Modified</Badge>}
           >
             <div className="px-4 py-3">
               <p className="text-muted-foreground text-sm">Advanced settings content here.</p>

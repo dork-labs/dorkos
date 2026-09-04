@@ -182,13 +182,10 @@ export function ExtensionCard({
 
           {/* Metadata row */}
           <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">
-            <Badge variant="outline" className="text-xs">
-              {scope}
-            </Badge>
+            <Badge variant="outline">{scope}</Badge>
             {healthLabel && (
               <Badge
                 variant={healthLabel === 'Error' ? 'destructive' : 'secondary'}
-                className="text-xs"
                 data-testid={`extension-health-${extension.id}`}
               >
                 {healthLabel}
@@ -210,7 +207,6 @@ export function ExtensionCard({
           ) : (
             <Badge
               variant="secondary"
-              className="text-xs"
               title="This extension is required and is always on"
               data-testid={`extension-required-${extension.id}`}
             >

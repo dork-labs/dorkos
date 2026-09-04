@@ -60,10 +60,7 @@ function ToolCountBadge({ tools }: { tools: readonly string[] }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Badge
-          variant="outline"
-          className="text-muted-foreground shrink-0 cursor-default text-xs font-normal"
-        >
+        <Badge tone="neutral" variant="outline" className="shrink-0 cursor-default font-normal">
           {tools.length}
         </Badge>
       </TooltipTrigger>
@@ -99,9 +96,7 @@ function ToolGroupRow({
         <Tooltip>
           <TooltipTrigger asChild>
             <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="text-xs">
-                Disabled
-              </Badge>
+              <Badge variant="secondary">Disabled</Badge>
               <ToolCountBadge tools={domain.tools} />
               <Switch checked={false} disabled aria-label={`Toggle ${domain.label} tools`} />
             </div>
@@ -118,7 +113,7 @@ function ToolGroupRow({
     <SettingRow label={domain.label} description={domain.description} className="py-1">
       <div className="flex items-center gap-2">
         {!isOverridden && (
-          <Badge variant="outline" className="text-muted-foreground text-xs font-normal">
+          <Badge tone="neutral" variant="outline" className="font-normal">
             default
           </Badge>
         )}

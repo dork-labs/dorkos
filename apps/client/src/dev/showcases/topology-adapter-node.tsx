@@ -42,7 +42,7 @@ export function AdapterDefaultCard({ d }: { d: AdapterDemoData }) {
       <div className="mt-2 flex items-center justify-between">
         <span className="text-muted-foreground text-xs capitalize">{d.type}</span>
         {d.bindingCount > 0 && (
-          <Badge variant="secondary" className="text-xs">
+          <Badge variant="secondary">
             {d.bindingCount} {d.bindingCount === 1 ? 'connection' : 'connections'}
           </Badge>
         )}

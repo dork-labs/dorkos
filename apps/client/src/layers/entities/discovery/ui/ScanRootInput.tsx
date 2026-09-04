@@ -57,7 +57,7 @@ export function ScanRootInput({ roots, onChange }: ScanRootInputProps) {
     <>
       <div className="focus-within:ring-ring flex min-h-[40px] flex-wrap items-center gap-1.5 rounded-md border bg-transparent px-3 py-1.5 focus-within:ring-2">
         {roots.map((root) => (
-          <Badge key={root} variant="secondary" className="gap-1 py-0.5 font-mono text-xs">
+          <Badge key={root} variant="secondary" className="gap-1 py-0.5 font-mono">
             {root}
             <button
               type="button"

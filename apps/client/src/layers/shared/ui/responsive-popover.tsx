@@ -100,14 +100,14 @@ function ResponsivePopoverContent({
   side,
   align,
   ...props
-}: React.ComponentPropsWithoutRef<typeof PopoverContent> & { side?: string; align?: string }) {
+}: React.ComponentPropsWithoutRef<typeof PopoverContent>) {
   const { isDesktop, fullHeight } = useResponsivePopover();
 
   if (isDesktop) {
     return (
       <PopoverContent
-        side={side as 'top' | 'bottom' | 'left' | 'right'}
-        align={align as 'start' | 'center' | 'end'}
+        side={side}
+        align={align}
         className={cn('max-h-[min(70vh,600px)] w-80 overflow-y-auto', className)}
         {...props}
       >

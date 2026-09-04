@@ -111,7 +111,7 @@ function AttachedAccountRow({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="truncate">{name}</span>
-          <Badge variant={row.exposed ? 'secondary' : 'outline'} className="text-3xs">
+          <Badge size="xs" variant={row.exposed ? 'secondary' : 'outline'}>
             {row.exposed ? 'tools on' : 'no tools'}
           </Badge>
         </div>

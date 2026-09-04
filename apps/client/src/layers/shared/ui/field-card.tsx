@@ -64,10 +64,10 @@ function CollapsibleFieldCard({
 }: CollapsibleFieldCardProps) {
   return (
     <Collapsible open={open} onOpenChange={onOpenChange}>
-      <div
-        data-slot="collapsible-field-card"
-        className={cn('bg-card overflow-hidden rounded-lg border', className)}
-      >
+      {/* The frame is `FieldCard` itself, not a copy of its class string — a
+          collapsible field card IS a field card, so the surface is stated once.
+          The distinct `data-slot` still names this one. */}
+      <FieldCard data-slot="collapsible-field-card" className={className}>
         <CollapsibleTrigger className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium">
           <span className="flex items-center gap-2">
             {trigger}
@@ -83,7 +83,7 @@ function CollapsibleFieldCard({
         <CollapsibleContent>
           <FieldCardContent className="border-t">{children}</FieldCardContent>
         </CollapsibleContent>
-      </div>
+      </FieldCard>
     </Collapsible>
   );
 }

@@ -35,7 +35,7 @@ function NamespaceGroup({ namespace, agentCount, agents }: NamespaceGroupProps) 
       >
         {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
         <span className="text-sm font-medium">{namespace}</span>
-        <Badge variant="secondary" className="ml-auto text-xs">
+        <Badge variant="secondary" className="ml-auto">
           {agentCount} agent{agentCount !== 1 ? 's' : ''}
         </Badge>
       </button>
@@ -45,9 +45,7 @@ function NamespaceGroup({ namespace, agentCount, agents }: NamespaceGroupProps) 
             <div key={agent.id} className="flex items-center justify-between py-1">
               <div className="flex items-center gap-2">
                 <span className="text-sm">{getAgentDisplayName(agent)}</span>
-                <Badge variant="outline" className="text-xs">
-                  {agent.runtime}
-                </Badge>
+                <Badge variant="outline">{agent.runtime}</Badge>
               </div>
             </div>
           ))}
@@ -89,11 +87,9 @@ function AccessRuleRow({
         <span className="font-mono">{sourceNamespace}</span>
         <span className="text-muted-foreground">&rarr;</span>
         <span className="font-mono">{targetNamespace}</span>
-        <Badge variant={action === 'allow' ? 'default' : 'destructive'} className="text-xs">
-          {action}
-        </Badge>
+        <Badge variant={action === 'allow' ? 'default' : 'destructive'}>{action}</Badge>
         {isDefault && (
-          <Badge variant="outline" className="text-muted-foreground text-xs">
+          <Badge tone="neutral" variant="outline">
             built-in
           </Badge>
         )}

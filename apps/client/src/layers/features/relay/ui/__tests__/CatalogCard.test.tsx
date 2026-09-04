@@ -78,7 +78,7 @@ describe('CatalogCard', () => {
     render(<CatalogCard manifest={baseManifest} onAdd={vi.fn()} />);
 
     // Badge is a <div> — select the element that directly contains the text
-    const badge = screen.getByText('messaging', { selector: 'div' });
+    const badge = screen.getByText('messaging', { selector: 'span' });
     expect(badge).toHaveClass('bg-blue-100');
     expect(badge).toHaveClass('text-blue-800');
   });
@@ -87,7 +87,7 @@ describe('CatalogCard', () => {
     const manifest: AdapterManifest = { ...baseManifest, category: 'automation' };
     render(<CatalogCard manifest={manifest} onAdd={vi.fn()} />);
 
-    const badge = screen.getByText('automation', { selector: 'div' });
+    const badge = screen.getByText('automation', { selector: 'span' });
     expect(badge).toHaveClass('bg-purple-100');
     expect(badge).toHaveClass('text-purple-800');
   });
@@ -96,7 +96,7 @@ describe('CatalogCard', () => {
     const manifest: AdapterManifest = { ...baseManifest, category: 'internal' };
     render(<CatalogCard manifest={manifest} onAdd={vi.fn()} />);
 
-    const badge = screen.getByText('internal', { selector: 'div' });
+    const badge = screen.getByText('internal', { selector: 'span' });
     expect(badge).toHaveClass('bg-gray-100');
     expect(badge).toHaveClass('text-gray-800');
   });
@@ -105,7 +105,7 @@ describe('CatalogCard', () => {
     const manifest: AdapterManifest = { ...baseManifest, category: 'custom' };
     render(<CatalogCard manifest={manifest} onAdd={vi.fn()} />);
 
-    const badge = screen.getByText('custom', { selector: 'div' });
+    const badge = screen.getByText('custom', { selector: 'span' });
     expect(badge).toHaveClass('bg-green-100');
     expect(badge).toHaveClass('text-green-800');
   });

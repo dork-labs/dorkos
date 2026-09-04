@@ -108,18 +108,16 @@ export function ExternalMcpCard({ mcp, authEnabled }: ExternalMcpCardProps) {
 
   const statusBadge = mcp.enabled ? (
     mcp.authConfigured ? (
-      <Badge variant="outline" className="border-green-500/50 text-xs text-green-600">
+      <Badge variant="outline" tone="success">
         Enabled
       </Badge>
     ) : (
-      <Badge variant="outline" className="border-amber-500/50 text-xs text-amber-600">
+      <Badge variant="outline" tone="warning">
         No auth
       </Badge>
     )
   ) : (
-    <Badge variant="secondary" className="text-xs">
-      Disabled
-    </Badge>
+    <Badge variant="secondary">Disabled</Badge>
   );
 
   return (
@@ -248,7 +246,7 @@ function McpAuthRow({
         label="Authentication"
         description="Couldn't generate a local token for this instance. External MCP clients won't be able to authenticate until you restart DorkOS or turn on login."
       >
-        <Badge variant="outline" className="border-amber-500/50 text-amber-600">
+        <Badge variant="outline" tone="warning">
           No token
         </Badge>
       </SettingRow>

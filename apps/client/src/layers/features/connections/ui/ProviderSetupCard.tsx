@@ -148,7 +148,7 @@ function savedKeyLine(keyKind: ConnectorProviderStatus['keyKind']): string {
 function ProviderStateBadge({ status }: { status: ConnectorProviderStatus }) {
   if (status.registered) {
     return (
-      <Badge variant="secondary" className="text-emerald-600 dark:text-emerald-400">
+      <Badge variant="secondary" tone="success">
         Ready
       </Badge>
     );

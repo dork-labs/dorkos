@@ -17,6 +17,7 @@ export {
   AlertDialogCancel,
 } from './alert-dialog';
 export { Badge, badgeVariants } from './badge';
+export type { BadgeProps } from './badge';
 export { BarTabStrip } from './bar-tab-strip';
 export type { BarTab } from './bar-tab-strip';
 export { Banner, bannerVariants } from './banner';
@@ -100,7 +101,7 @@ export { FieldCard, FieldCardContent, CollapsibleFieldCard } from './field-card'
 export type { CollapsibleFieldCardProps } from './field-card';
 export { FloatingPanel, clampGeometry } from './floating-panel';
 export type { FloatingPanelProps, FloatingPanelGeometry } from './floating-panel';
-export { HoverBorderGradient } from './hover-border-gradient';
+export { HoverBorderGradient, type HoverBorderGradientProps } from './hover-border-gradient';
 export { HoverCard, HoverCardTrigger, HoverCardContent } from './hover-card';
 export {
   IdentityAvatar,

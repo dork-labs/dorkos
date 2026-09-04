@@ -114,8 +114,9 @@ function IdentityCell({ row, onOpen }: { row: AgentTableRow; onOpen: () => void 
         // On a phone the star alone marks the default agent; spelling it out
         // there would squeeze the name it is meant to label.
         <Badge
+          size="xs"
           variant="outline"
-          className="text-3xs shrink-0 max-md:border-0 max-md:px-0 max-md:py-0"
+          className="shrink-0 max-md:border-0 max-md:px-0 max-md:py-0"
         >
           <Star className="size-2.5 fill-current md:mr-0.5" />
           <span className="sr-only md:not-sr-only">Default</span>
@@ -223,7 +224,7 @@ export function createAgentColumns(
         const count = row.original.taskCount;
         if (count === 0) return <span className="text-muted-foreground text-xs">—</span>;
         return (
-          <Badge variant="outline" className="text-xs whitespace-nowrap">
+          <Badge variant="outline" className="whitespace-nowrap">
             {count} {count === 1 ? 'schedule' : 'schedules'}
           </Badge>
         );

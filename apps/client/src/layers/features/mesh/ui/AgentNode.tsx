@@ -97,16 +97,16 @@ function CardHeader({ d }: { d: AgentNodeData }) {
 
       {/* Runtime + capability badges */}
       <div className="mt-1 flex flex-wrap gap-1">
-        <Badge variant="secondary" className="text-3xs">
+        <Badge size="xs" variant="secondary">
           {d.runtime}
         </Badge>
         {d.capabilities.slice(0, 3).map((cap) => (
-          <Badge key={cap} variant="outline" className="text-3xs">
+          <Badge size="xs" key={cap} variant="outline">
             {cap}
           </Badge>
         ))}
         {overflowCount > 0 && (
-          <Badge variant="outline" className="text-muted-foreground text-3xs">
+          <Badge size="xs" tone="neutral" variant="outline">
             +{overflowCount}
           </Badge>
         )}
@@ -220,7 +220,7 @@ function ExpandedCard({ d, selected }: { d: AgentNodeData; selected?: boolean })
           <span className="text-muted-foreground text-3xs">{formatRelativeTime(d.lastSeenAt)}</span>
         )}
         {d.behavior && (
-          <Badge variant="outline" className="text-3xs">
+          <Badge size="xs" variant="outline">
             {d.behavior.responseMode}
           </Badge>
         )}

@@ -262,7 +262,7 @@ function ModelCard({ model, isSelected }: { model: ModelOption; isSelected: bool
       </div>
 
       {model.contextWindow && (
-        <Badge variant="secondary" className="text-3xs shrink-0">
+        <Badge size="xs" variant="secondary" className="shrink-0">
           {formatContextWindow(model.contextWindow)}
         </Badge>
       )}

@@ -311,12 +311,12 @@ export function FilterBarShowcase() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="text-3xs">
+                      <Badge size="xs" variant="outline">
                         {agent.runtime}
                       </Badge>
                       <Badge
+                        size="xs"
                         variant={STATUS_BADGE_VARIANT[agent.healthStatus] ?? 'outline'}
-                        className="text-3xs"
                       >
                         {agent.healthStatus}
                       </Badge>

@@ -86,7 +86,7 @@ export function CandidateCard({
         <div className="flex flex-wrap items-center gap-1.5">
           <HoverCard openDelay={300}>
             <HoverCardTrigger asChild>
-              <Badge variant="secondary" className="hover:bg-secondary/80 cursor-default text-xs">
+              <Badge variant="secondary" className="hover:bg-secondary/80 cursor-default">
                 {hints.detectedRuntime}
               </Badge>
             </HoverCardTrigger>
@@ -102,7 +102,7 @@ export function CandidateCard({
             hints.inferredCapabilities.map((cap) => (
               <Tooltip key={cap}>
                 <TooltipTrigger asChild>
-                  <Badge variant="outline" className="text-3xs cursor-default">
+                  <Badge size="xs" variant="outline" className="cursor-default">
                     {cap}
                   </Badge>
                 </TooltipTrigger>

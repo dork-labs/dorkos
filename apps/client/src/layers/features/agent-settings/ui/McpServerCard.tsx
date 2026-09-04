@@ -116,10 +116,7 @@ function McpScopeBadge({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Badge
-          variant="secondary"
-          className="text-muted-foreground text-3xs shrink-0 px-1.5 py-0 font-normal"
-        >
+        <Badge size="xs" tone="neutral" variant="secondary" className="shrink-0 font-normal">
           {scope}
         </Badge>
       </TooltipTrigger>

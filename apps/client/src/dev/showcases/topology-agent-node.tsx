@@ -75,11 +75,11 @@ export function AgentDefaultCard({ d }: { d: AgentDemoData }) {
         <HealthDot status={d.healthStatus} />
       </div>
       <div className="mt-1 flex flex-wrap gap-1">
-        <Badge variant="secondary" className="text-3xs">
+        <Badge size="xs" variant="secondary">
           {d.runtime}
         </Badge>
         {d.capabilities.slice(0, 3).map((cap) => (
-          <Badge key={cap} variant="outline" className="text-3xs">
+          <Badge size="xs" key={cap} variant="outline">
             {cap}
           </Badge>
         ))}
@@ -115,11 +115,11 @@ export function AgentExpandedCard({ d }: { d: AgentDemoData }) {
         <HealthDot status={d.healthStatus} />
       </div>
       <div className="mt-1 flex flex-wrap gap-1">
-        <Badge variant="secondary" className="text-3xs">
+        <Badge size="xs" variant="secondary">
           {d.runtime}
         </Badge>
         {d.capabilities.slice(0, 3).map((cap) => (
-          <Badge key={cap} variant="outline" className="text-3xs">
+          <Badge size="xs" key={cap} variant="outline">
             {cap}
           </Badge>
         ))}
@@ -147,7 +147,7 @@ export function AgentExpandedCard({ d }: { d: AgentDemoData }) {
       <div className="mt-1 flex items-center gap-2">
         {d.lastSeenAt && <span className="text-muted-foreground text-3xs">{d.lastSeenAt}</span>}
         {d.behavior && (
-          <Badge variant="outline" className="text-3xs">
+          <Badge size="xs" variant="outline">
             {d.behavior.responseMode}
           </Badge>
         )}

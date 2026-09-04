@@ -188,6 +188,26 @@
   --color-status-pending-bg: hsl(var(--status-pending-bg));
   --color-status-pending-fg: hsl(var(--status-pending-fg));
 
+  /* Marketplace package identity hues */
+  --color-package-agent-bg: hsl(var(--package-agent-bg));
+  --color-package-agent-border: hsl(var(--package-agent-border));
+  --color-package-agent-fg: hsl(var(--package-agent-fg));
+  --color-package-plugin-bg: hsl(var(--package-plugin-bg));
+  --color-package-plugin-border: hsl(var(--package-plugin-border));
+  --color-package-plugin-fg: hsl(var(--package-plugin-fg));
+  --color-package-skill-bg: hsl(var(--package-skill-bg));
+  --color-package-skill-border: hsl(var(--package-skill-border));
+  --color-package-skill-fg: hsl(var(--package-skill-fg));
+  --color-package-adapter-bg: hsl(var(--package-adapter-bg));
+  --color-package-adapter-border: hsl(var(--package-adapter-border));
+  --color-package-adapter-fg: hsl(var(--package-adapter-fg));
+  --color-package-shape-bg: hsl(var(--package-shape-bg));
+  --color-package-shape-border: hsl(var(--package-shape-border));
+  --color-package-shape-fg: hsl(var(--package-shape-fg));
+  --color-package-connector-bg: hsl(var(--package-connector-bg));
+  --color-package-connector-border: hsl(var(--package-connector-border));
+  --color-package-connector-fg: hsl(var(--package-connector-fg));
+
   /* Message tokens */
   --color-msg-command-fg: hsl(var(--msg-command-fg));
   --color-msg-compaction-fg: hsl(var(--msg-compaction-fg));
@@ -275,6 +295,41 @@
   --status-pending: 0 0% 45%;
   --status-pending-bg: 0 0% 96%;
   --status-pending-fg: 0 0% 32%;
+
+  /* === Marketplace package identity hues ===
+     Six hues that mean "which KIND of thing is this", not "how is it doing" —
+     which is why they are their own family and not the status ladder. A browse
+     grid is scanned, not read, and the hue is what lets an agent, a plugin and
+     a skill pack be told apart before any of their labels are.
+
+     Same three roles and the same recipe as the status tokens (tinted surface,
+     quiet border, readable text), so a package chip and a status chip sit at the
+     same weight. Written down here rather than as `bg-blue-500/10` at the call
+     site because a 10%-alpha blue over a near-white page and over a near-black
+     one are two different colours, and only one of them was ever chosen. */
+  --package-agent-bg: 217 91% 96%;
+  --package-agent-border: 217 91% 80%;
+  --package-agent-fg: 217 91% 40%;
+
+  --package-plugin-bg: 271 81% 96%;
+  --package-plugin-border: 271 81% 82%;
+  --package-plugin-fg: 271 81% 45%;
+
+  --package-skill-bg: 160 84% 95%;
+  --package-skill-border: 160 84% 75%;
+  --package-skill-fg: 160 84% 24%;
+
+  --package-adapter-bg: 38 92% 96%;
+  --package-adapter-border: 38 92% 80%;
+  --package-adapter-fg: 38 92% 40%;
+
+  --package-shape-bg: 350 89% 96%;
+  --package-shape-border: 350 89% 82%;
+  --package-shape-fg: 350 89% 42%;
+
+  --package-connector-bg: 189 94% 94%;
+  --package-connector-border: 189 94% 72%;
+  --package-connector-fg: 189 94% 26%;
 
   /* === Message tokens === */
   --msg-assistant-bg: transparent;
@@ -484,6 +539,32 @@
   --status-pending: 0 0% 55%;
   --status-pending-bg: 0 0% 12%;
   --status-pending-fg: 0 0% 64%;
+
+  /* Package hues, re-tuned rather than re-used: the surface drops to a dark
+     tint and the text climbs, the same inversion every status token makes. */
+  --package-agent-bg: 217 91% 13%;
+  --package-agent-border: 217 91% 26%;
+  --package-agent-fg: 217 91% 68%;
+
+  --package-plugin-bg: 271 81% 14%;
+  --package-plugin-border: 271 81% 28%;
+  --package-plugin-fg: 271 81% 74%;
+
+  --package-skill-bg: 160 84% 10%;
+  --package-skill-border: 160 84% 22%;
+  --package-skill-fg: 160 84% 55%;
+
+  --package-adapter-bg: 38 92% 12%;
+  --package-adapter-border: 38 92% 25%;
+  --package-adapter-fg: 38 92% 60%;
+
+  --package-shape-bg: 350 89% 13%;
+  --package-shape-border: 350 89% 27%;
+  --package-shape-fg: 350 89% 70%;
+
+  --package-connector-bg: 189 94% 11%;
+  --package-connector-border: 189 94% 24%;
+  --package-connector-fg: 189 94% 60%;
 
   --msg-assistant-bg: transparent;
   --msg-system-bg: 0 0% 9%;

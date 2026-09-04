@@ -193,7 +193,7 @@ export function TaskRow({
                   />
                   <span className="text-sm font-medium">{getAgentDisplayName(agent)}</span>
                   {isSystem && (
-                    <Badge variant="outline" className="text-3xs px-1 py-0 leading-tight">
+                    <Badge size="xs" variant="outline" className="px-1 leading-tight">
                       <Shield className="mr-0.5 size-2.5" />
                       System
                     </Badge>

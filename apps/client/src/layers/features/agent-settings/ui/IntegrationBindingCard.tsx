@@ -175,11 +175,7 @@ export function IntegrationBindingCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="truncate text-sm font-medium">{primaryText}</span>
-            {isPaused && (
-              <Badge variant="secondary" className="text-xs">
-                Paused
-              </Badge>
-            )}
+            {isPaused && <Badge variant="secondary">Paused</Badge>}
           </div>
           {isPaused ? (
             <p className="text-muted-foreground mt-1 text-xs">{activityText}</p>
@@ -199,9 +195,7 @@ export function IntegrationBindingCard({
         {isRestricted && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Badge variant="outline" className="text-xs">
-                Restricted
-              </Badge>
+              <Badge variant="outline">Restricted</Badge>
             </TooltipTrigger>
             <TooltipContent>{restrictionDetail}</TooltipContent>
           </Tooltip>

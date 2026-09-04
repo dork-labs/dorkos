@@ -69,7 +69,7 @@ function PackageRow({
           <span className="text-sm font-semibold">{displayName}</span>
           <PackageTypeBadge type={type} adapterType={adapterType} />
           {isActiveShape && <Badge variant="secondary">Active</Badge>}
-          <Badge variant="outline" className="font-mono text-xs">
+          <Badge variant="outline" className="font-mono">
             v{version}
           </Badge>
           {scope === 'agent-local' && (
