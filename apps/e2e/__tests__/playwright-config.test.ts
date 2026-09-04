@@ -1,11 +1,11 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 
 /**
- * Guards the two invariants `playwright.config.ts` cannot state in code —
- * distinct readiness timeouts (DOR-1243), and a data directory no run may leak
- * out of (DOR-1223, DOR-1551).
+ * Guards the invariants `playwright.config.ts` cannot state in code — distinct
+ * readiness timeouts (DOR-1243), a client served with no hot module replacement
+ * (DOR-1412), and a data directory no run may leak out of (DOR-1223, DOR-1551).
  *
- * The second group exists because those lines fail NOTHING if they are deleted.
+ * The last two groups exist because those lines fail NOTHING if they are deleted.
  * A suite whose legs quietly stopped isolating themselves goes green while
  * copying somebody's history into `/tmp`, which is exactly how DOR-1551 lived
  * unnoticed through every browser-suite run for weeks.
@@ -40,6 +40,27 @@ describe('playwright.config.ts webServer legs', () => {
     // because E2E_SITE was set above before the config was imported.
     expect(timeouts.length).toBe(5);
     expect(new Set(timeouts).size).toBe(timeouts.length);
+  });
+
+  it('serves the client with hot module replacement off', () => {
+    // DOR-1412. Dropping the flag from either leg fails nothing on its own: the
+    // suite goes green while a `turbo run build` anywhere in the checkout
+    // hot-replaces a React context module under a live page, the app is
+    // replaced by its error boundary, and the spec reports "expected 1,
+    // received 0" about a feature nobody broke. Measured before the flag, one
+    // spec run 40 times under a loop rewriting `packages/shared/dist`: 8 of 40
+    // red, 7 of them showing that boundary. After: 0 of 40.
+    //
+    // Keyed off `turbo dev --filter=@dorkos/client` rather than off a leg's
+    // `name`, so a third client leg added later is covered on the day it lands
+    // rather than on the day somebody remembers this file.
+    const clientLegs = commands.filter((command) =>
+      command.includes('turbo dev --filter=@dorkos/client')
+    );
+    // Without this the assertion below passes vacuously the day the leg's
+    // command is spelled another way — `every` over an empty list is true.
+    expect(clientLegs).toHaveLength(2);
+    for (const command of clientLegs) expect(command).toContain('DORKOS_E2E_NO_HMR=true');
   });
 });
 

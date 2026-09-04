@@ -230,6 +230,46 @@ Worth knowing before you assume a behaviour is tested.
 - **Creating a session from the roster has no coverage.** The old spec drove a "New session" control that no longer exists; session creation is exercised only against `TestModeRuntime` in `chat-mock.spec.ts`.
 - **Discovery scanning has no coverage.** `tests/mesh/mesh-panel.spec.ts` had two tests for it — a scan-roots input and a Scan button that enabled once roots were typed — against a Mesh dialog that no longer exists. Its replacement, `tests/agents/agents-page.spec.ts`, covers the fleet page's four views and dropped those two (8 tests became 5). Scanning did not go away with the dialog: it is the **"Bring in existing projects"** quick action in the command palette, which nothing tests.
 
+## The error boundary that used to be "roughly 1 run in 10" (DOR-1412)
+
+`DorkOS encountered an unexpected error` over `useEventStream must be used
+within an EventStreamProvider`, on **any** spec. The failing assertion was
+whatever the test happened to be doing — usually "expected 1, received 0",
+because the whole app had been replaced by its boundary — so it read like a
+product bug in the surface under test. It never was one.
+
+**The mechanism.** The suite serves the client through `turbo dev`, so Vite's
+hot module replacement was live for the length of a run. Nothing in the suite
+edits source, but plenty rewrites files this dev server watches: every Express
+leg boots by running `turbo run build`, which rewrites `packages/*/dist` —
+modules the client imports — and this repo is routinely several agents deep in
+one checkout, any of whom may build at any moment. Vite hot-replaced the modules
+above the change; a re-evaluated context module mints a **new** React context
+object while already-mounted consumers still hold the old one, `useContext`
+answers `undefined`, and the provider's own guard throws.
+
+Measured on 2026-09-04. One 20-repeat run of `rooms/room-entry-actions.spec.ts`
+logged **323 `hmr update` lines**, in two bursts that line up exactly with a
+concurrent `turbo run build`, every one carrying `/src/index.css` and eighty of
+them carrying an `event-stream` module; the run's one crash landed inside a
+burst. A run with no concurrent build logged twenty updates, all before the
+first test, and went 19/19 green. Driven deliberately — one spec 40 times while
+a loop rewrote `packages/shared/dist` — it was **8 of 40 red, 7 showing that
+boundary**.
+
+**The fix** is that both Vite legs now pass `DORKOS_E2E_NO_HMR=true` and
+`apps/client/vite.config.ts` answers with `server.hmr: false`, so a file change
+during a run produces no update to push: Vite's watcher calls `handleHMRUpdate`
+behind `if (serverConfig.hmr !== false)`. The same 40 runs under the same churn
+then went 0 of 40 red. Tests do not edit source, so the suite loses nothing —
+and `pnpm dev` is untouched, because a person editing a file is asking for the
+update, and can still meet this crash there.
+
+If a page snapshot in `error-context.md` ever shows that sentence again, check
+the leg's command still carries the flag; `__tests__/playwright-config.test.ts`
+is supposed to go red first. Background on this provider's mount behaviour:
+`research/20260327_sse_singleton_strictmode_hmr.md`.
+
 ## Known flakes
 
 These are known, not mysteries. If you hit one, you have found the known thing —
@@ -249,25 +289,6 @@ cannot reach CI.
 - **DOR-698 — `rooms/mention-picker.spec.ts`, ~1 run in 16 even in isolation.**
   `getByRole('combobox', { name: 'Message #…' })` is not visible. Isolation rules
   out cross-test interference; it is the composer's own readiness.
-- **The cockpit crashes into its error boundary with `useEventStream must be
-used within an EventStreamProvider`, any spec, roughly 1 run in 10.** The
-  failing assertion is whatever the test was doing — usually "expected 2,
-  received 0", because the whole app has been replaced by the boundary — so it
-  reads like a product bug in the surface under test. **It is not.** Check
-  `error-context.md` before diagnosing anything: if the page snapshot is
-  `DorkOS encountered an unexpected error` over that sentence, you have found
-  this and not your feature.
-
-  The suite runs the client through `turbo dev`, so Vite HMR is live. A hot
-  update creates a **new** React Context object while already-mounted consumers
-  still hold the old one, `useContext` answers `undefined`, and the provider's
-  own guard throws. Dev-only by construction — a production build has no HMR —
-  and unrelated to whatever spec happened to be running. Background on this
-  provider's mount behaviour: `research/20260327_sse_singleton_strictmode_hmr.md`.
-
-  Re-run the spec in isolation (`--repeat-each=5`) before you touch anything. If
-  it passes, that is the answer.
-
 - **`home-surface/home-shell.spec.ts` › "the dashboard is gone, not hidden —
   Home is the #team room", locally only, on a busy machine.** It waits 5s for
   `home-composer`, which is the #team room's box, and loses that race when the

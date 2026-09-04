@@ -256,6 +256,10 @@ Audits all tests, categorizes them as healthy/stale/broken/orphaned, and auto-fi
 
 The manifest is automatically updated by the custom reporter after each test run. AI commands read it for health dashboards and stale test detection.
 
+**`failCount` is a lifetime tally, not a flake rate** — worth knowing before you file a ticket about one. The reporter counts a **run of the whole file**: `runCount` goes up once per invocation that touched the file, and `failCount` once for any invocation in which any test in it was red. Every red the file was in while somebody was writing it is in there, so a file that was built test-first, or rewritten under a big refactor, carries the whole TDD loop in its numbers forever.
+
+`room-entry-actions` was ticketed at "31 failures in 69 runs" on that reading (DOR-1412). Read back off the tracked manifest's own history — `git log --all -- apps/e2e/manifest.json`, then `git show <commit>:apps/e2e/manifest.json` for the trees where it was still tracked — 17 of the 31 landed on the one branch that added its thread tests and 5 more on a later branch editing the same file; `failCount` had not moved for the last twelve recorded runs, which were all green. **To ask whether a spec is flaky, repeat it and count** (`--repeat-each=N --workers=1`), and read the manifest for what it can actually answer: when a file last ran, and whether it passed.
+
 ## Adding New Tests
 
 ### Manual
