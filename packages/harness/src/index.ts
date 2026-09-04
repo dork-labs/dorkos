@@ -12,6 +12,7 @@ export * from './plan/types.js';
 export * from './plan/projector.js';
 export * from './plan/instructions.js';
 export * from './plan/installed-projector.js';
+export * from './plan/unreadable-hooks.js';
 export * from './scan/scanner.js';
 export * from './scaffold/instructions.js';
 export * from './scaffold/manifest.js';

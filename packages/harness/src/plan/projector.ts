@@ -41,6 +41,7 @@ import {
   rewritePluginRootInHooks,
   PROJECTABLE_PLUGIN_TYPES,
 } from './installed-projector.js';
+import { planUnreadableHookWarnings } from './unreadable-hooks.js';
 
 /** Project a single skill to one harness. */
 function planSkill(
@@ -310,8 +311,9 @@ function planCommands(harness: HarnessId): ProjectionAction {
  * @param input - the repo root, validated manifest, optional Claude hooks,
  *   whether a canonical `AGENTS.md` exists, any installed plugins, and an optional
  *   per-package gate on hook contribution.
- * @returns the actionable projections, the honest drop list, and any warnings
- *   about projections that landed but may not work in the target harness.
+ * @returns the actionable projections, the honest drop list, and any warnings —
+ *   about a projection that landed but may not work in the target harness, or a
+ *   source declaration the engine could not read at all.
  */
 export function buildPlan(input: {
   repoRoot: string;
@@ -356,6 +358,14 @@ export function buildPlan(input: {
       p.relDir ? rewritePluginRootInHooks(p.hooks, join(repoRoot, p.relDir)) : p.hooks
     ),
   ]);
+
+  // Say what the hooks salvage threw away. The scanner keeps whatever a malformed
+  // `hooks/hooks.json` still states clearly and discards the rest (DOR-646); this
+  // is the only place the discarded part is ever reported, because the
+  // pre-install preview that discloses the same file runs before the install and
+  // cannot see a file that rots afterwards (DOR-1724). Emitted once, not per
+  // harness: the loss happened at read time, ahead of every harness.
+  warnings.push(...planUnreadableHookWarnings(hookContributors));
 
   const all: ProjectionAction[] = [];
   for (const harness of manifest.harnesses) {

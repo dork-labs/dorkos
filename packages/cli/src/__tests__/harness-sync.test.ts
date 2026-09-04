@@ -362,6 +362,60 @@ describe('runHarnessSync', () => {
     expect(printed).toMatch(/flow__drain.*—.*scheduler/);
   });
 
+  it('prints what a rotted plugin hooks.json lost during salvage (DOR-1724)', async () => {
+    // The salvage keeps what the file still says clearly and drops the rest
+    // (DOR-646). The CLI path has no approval gate to re-ask through, so this
+    // report is the ONLY place the person is told a hook stopped being installed.
+    writeFixtureRepo(tmpDir);
+    writeInstalledPlugin(tmpDir, 'acme', 'greet');
+    const hooksDir = path.join(tmpDir, '.dork', 'plugins', 'acme', 'hooks');
+    fs.mkdirSync(hooksDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(hooksDir, 'hooks.json'),
+      JSON.stringify({
+        Stop: [{ hooks: [{ command: 'still-good.sh' }] }, { hooks: 'rotted' }],
+        PostToolUse: [{ hooks: [{ type: 'command' }] }],
+      })
+    );
+    process.chdir(tmpDir);
+
+    const fix = await runHarnessSync({ check: false, fix: true });
+    expect(fix.exitCode).toBe(0);
+
+    const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    // The file, both affected events, and the difference between "some of this
+    // event survived" and "this event is gone entirely".
+    expect(printed).toContain('.dork/plugins/acme/hooks/hooks.json');
+    expect(printed).toContain(
+      'hook "acme:Stop": .dork/plugins/acme/hooks/hooks.json declares one or more unusable matcher groups under "Stop", so those were dropped and only the readable ones are projected'
+    );
+    expect(printed).toContain(
+      'hook "acme:PostToolUse": .dork/plugins/acme/hooks/hooks.json declares "PostToolUse" in a shape this reader cannot use, so the whole event was dropped and no "PostToolUse" hook is projected'
+    );
+    // The salvaged half really did install.
+    expect(fs.readFileSync(path.join(tmpDir, '.claude', 'settings.local.json'), 'utf8')).toContain(
+      'still-good.sh'
+    );
+  });
+
+  it('prints no salvage warning when every plugin hooks.json is readable (DOR-1724)', async () => {
+    writeFixtureRepo(tmpDir);
+    writeInstalledPlugin(tmpDir, 'acme', 'greet');
+    const hooksDir = path.join(tmpDir, '.dork', 'plugins', 'acme', 'hooks');
+    fs.mkdirSync(hooksDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(hooksDir, 'hooks.json'),
+      JSON.stringify({ Stop: [{ hooks: [{ command: 'fine.sh' }] }] })
+    );
+    process.chdir(tmpDir);
+
+    await runHarnessSync({ check: false, fix: true });
+
+    const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(printed).not.toContain('hooks/hooks.json declares');
+    expect(printed).not.toContain('could not be read');
+  });
+
   it('narrows the plan with --harness and rejects an unknown harness', async () => {
     writeFixtureRepo(tmpDir);
     process.chdir(tmpDir);

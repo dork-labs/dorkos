@@ -38,9 +38,11 @@ export function formatDropList(plan: ProjectionPlan): string {
 }
 
 /**
- * Render `plan.warnings` as a readable block grouped by harness — projections
- * that DID land but may not work in the target harness (e.g. a hook command that
- * carries a Claude-only substitution token Codex cannot resolve). Returns an
+ * Render `plan.warnings` as a readable block grouped by harness. Two things land
+ * here: a projection that DID happen but may not work in the target harness (e.g.
+ * a hook command carrying a Claude-only substitution token Codex cannot resolve),
+ * and a source declaration the engine could not read, so it reached no harness at
+ * all (e.g. a matcher group the `hooks/hooks.json` salvage discarded). Returns an
  * empty string when there are no warnings, so callers can omit the block cleanly.
  *
  * @param plan - the projection plan whose warnings to format.
@@ -56,7 +58,7 @@ export function formatWarnings(plan: ProjectionPlan): string {
     byHarness.set(warning.harness, list);
   }
 
-  const lines: string[] = ['Warnings (projected, but may not work in the target harness):'];
+  const lines: string[] = ['Warnings (may not work in the target harness, or could not be read):'];
   for (const [harness, warnings] of [...byHarness.entries()].sort(([a], [b]) =>
     a.localeCompare(b)
   )) {

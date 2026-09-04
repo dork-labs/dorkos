@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { scanInstalledPlugins } from '../installed.js';
+import { scanInstalledPlugins, type UnreadableHookDeclaration } from '../installed.js';
 import type { ClaudeHooksConfig } from '../../generate/hooks.js';
 
 let projectRoot = '';
@@ -313,5 +313,80 @@ describe('scanInstalledPlugins — malformed hook matcher groups (DOR-646)', () 
   it('reports no hooks at all for an event whose every group is unusable', () => {
     writeHookyPlugin(JSON.stringify({ Stop: [], PostToolUse: [{ hooks: [] }] }));
     expect(scanHooks()).toBeUndefined();
+  });
+});
+
+describe('scanInstalledPlugins — salvaged-hooks evidence (DOR-1724)', () => {
+  /** Write a plugin whose only content is the given raw `hooks/hooks.json` text. */
+  function writeHookyPlugin(hooksJson: string): void {
+    projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
+    dorkHome = mkdtempSync(join(tmpdir(), 'harness-home-'));
+    const plugin = join(projectRoot, '.dork', 'plugins', 'hooky');
+    writeManifest(plugin, 'hooky', ['hooks']);
+    mkdirSync(join(plugin, 'hooks'), { recursive: true });
+    writeFileSync(join(plugin, 'hooks', 'hooks.json'), hooksJson);
+  }
+
+  /** Scan and return the `hooky` fixture plugin's unreadable-hook evidence. */
+  function scanUnreadable(): UnreadableHookDeclaration[] | undefined {
+    return scanInstalledPlugins({ dorkHome, projectRoot }).find((p) => p.name === 'hooky')
+      ?.unreadableHooks;
+  }
+
+  const HOOKS_FILE = '.dork/plugins/hooky/hooks/hooks.json';
+
+  it('records the whole file when the JSON does not parse', () => {
+    writeHookyPlugin('{ not json');
+    expect(scanUnreadable()).toEqual([{ path: HOOKS_FILE, total: true }]);
+  });
+
+  it('records the whole file when the top level is not an object', () => {
+    writeHookyPlugin(JSON.stringify('Stop'));
+    expect(scanUnreadable()).toEqual([{ path: HOOKS_FILE, total: true }]);
+  });
+
+  it('records a non-array event value as a total loss for that event', () => {
+    writeHookyPlugin(
+      JSON.stringify({
+        Stop: [{ hooks: [{ command: 'ok.sh' }] }],
+        Bad: { type: 'command', command: 'nope.sh' },
+      })
+    );
+    expect(scanUnreadable()).toEqual([{ path: HOOKS_FILE, event: 'Bad', total: true }]);
+  });
+
+  it('records a PARTIAL loss when a readable group survives beside a bad one', () => {
+    writeHookyPlugin(
+      JSON.stringify({ Stop: [{ hooks: [{ command: 'good.sh' }] }, { hooks: 'nope' }] })
+    );
+    expect(scanUnreadable()).toEqual([{ path: HOOKS_FILE, event: 'Stop', total: false }]);
+  });
+
+  it('records a total loss when every group under an event is unusable', () => {
+    writeHookyPlugin(JSON.stringify({ PostToolUse: [{ hooks: [] }] }));
+    expect(scanUnreadable()).toEqual([{ path: HOOKS_FILE, event: 'PostToolUse', total: true }]);
+  });
+
+  it('records nothing for an event that simply declares no groups', () => {
+    // `{"Stop": []}` is an EMPTY declaration, not a lost one — warning about it
+    // would send the operator to look for damage that is not there.
+    writeHookyPlugin(JSON.stringify({ Stop: [] }));
+    expect(scanUnreadable()).toEqual([]);
+  });
+
+  it('records nothing for a fully readable file', () => {
+    writeHookyPlugin(JSON.stringify({ Stop: [{ hooks: [{ command: 'fine.sh' }] }] }));
+    expect(scanUnreadable()).toEqual([]);
+  });
+
+  it('leaves the evidence absent on a global install, whose hooks are never read', () => {
+    projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
+    dorkHome = mkdtempSync(join(tmpdir(), 'harness-home-'));
+    const plugin = join(dorkHome, 'plugins', 'hooky');
+    writeManifest(plugin, 'hooky', ['hooks']);
+    mkdirSync(join(plugin, 'hooks'), { recursive: true });
+    writeFileSync(join(plugin, 'hooks', 'hooks.json'), '{ not json');
+
+    expect(scanUnreadable()).toBeUndefined();
   });
 });

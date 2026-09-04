@@ -286,6 +286,8 @@ The builder (`services/marketplace/permission-preview.ts`) walks the staged pack
 - `.dork/extensions/*/extension.json` for slot registrations and declared secrets.
 - `hooks/hooks.json` for the shell commands the package **declares**. Parsing mirrors `readPluginHooks` in `packages/harness/src/sources/installed.ts`, the reader that feeds Harness Sync, including its tolerance for both the `{ hooks: {…} }` wrapper and a bare `{ Event: […] }` object. Every declaration the preview fails to parse lands in `unreadableHooks`, because "declares hooks we could not read" is a worse signal than "declares no hooks" and the two must never render alike.
 
+  The preview cannot be the only disclosure, because it runs BEFORE the install: a `hooks/hooks.json` that rots afterwards — a hand-edit, a partial write — reaches only the Harness Sync reader, and the CLI path has no approval gate to re-ask through. So `readPluginHooks` records every declaration it salvages around on the plugin as `unreadableHooks`, and the projector turns each one into a `ProjectionWarning` naming the file and the event, printed by `dorkos harness sync` (DOR-1724). The two sides disclose the same losses at the two moments they can happen.
+
   **Declared is not the same as projected, and the UI copy says so.** A package's hooks only reach a harness settings file when three things hold:
   1. the install is **project-scoped** — `installed.ts` records global installs as identity-only and never reads their hooks;
   2. the package is a **`plugin` or `skill-pack`** — `projector.ts` filters to `PROJECTABLE_PLUGIN_TYPES`, and an `agent` or `shape` lands outside `plugins/` so it is never scanned at all;
