@@ -31,6 +31,7 @@ interface PathInputProps extends Omit<React.ComponentProps<'input'>, 'type' | 'o
  */
 function PathInput({
   className,
+  disabled,
   onChange,
   onBrowse,
   browseLabel = 'Browse',
@@ -52,6 +53,7 @@ function PathInput({
         // up the border, the background and its own focus ring, so the ring is
         // drawn once, around the field and the Browse button together.
         className="border-0 bg-transparent font-mono shadow-none focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent"
+        disabled={disabled}
         onChange={onChange ? (e) => onChange(e.target.value) : undefined}
         {...props}
       />
@@ -61,6 +63,9 @@ function PathInput({
           <Button
             variant="ghost"
             size="sm"
+            // Disabled with the field it belongs to: a dead path field beside a
+            // live folder picker offers a way to change something you cannot.
+            disabled={disabled}
             onClick={onBrowse}
             className="text-muted-foreground hover:text-foreground shrink-0 rounded-l-none text-xs"
             aria-label={browseLabel}

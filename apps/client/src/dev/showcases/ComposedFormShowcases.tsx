@@ -208,7 +208,7 @@ function PathInputSection() {
   return (
     <PlaygroundSection
       title="PathInput"
-      description="A folder path plus a Browse action, in one framed field. The field inside is the app's Input with its frame switched off, so the focus ring is drawn once around both halves."
+      description="A folder path plus a Browse action, in one framed field."
     >
       <ShowcaseLabel>With Browse</ShowcaseLabel>
       <ShowcaseDemo>

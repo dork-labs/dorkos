@@ -147,8 +147,12 @@ ResponsiveDialogContent.displayName = 'ResponsiveDialogContent';
 function ResponsiveDialogHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   const { isDesktop } = useResponsiveDialog();
   const Comp = isDesktop ? DialogHeader : DrawerHeader;
-  // Desktop dialogs have absolute close/fullscreen buttons at top-right; pad to avoid overlap
-  return <Comp className={cn(className, isDesktop && 'pr-14')} {...props} />;
+  // Desktop dialogs park two absolute controls in the top-right corner — the
+  // dialog's own close and, when a caller adds one, the fullscreen toggle. The
+  // reservation is measured from the far edge of the OUTER one: the toggle sits
+  // at `right-12` and is 32px wide, so it reaches 80px in. `pr-14` (56px) left
+  // the toggle standing on top of a long title.
+  return <Comp className={cn(className, isDesktop && 'pr-20')} {...props} />;
 }
 ResponsiveDialogHeader.displayName = 'ResponsiveDialogHeader';
 
