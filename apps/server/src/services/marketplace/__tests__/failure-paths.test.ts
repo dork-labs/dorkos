@@ -22,28 +22,9 @@ import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { noopLogger } from '@dorkos/shared/logger';
-import type { Logger } from '@dorkos/shared/logger';
-import type { AdapterManager } from '../../relay/adapter-manager.js';
 import { initBoundary } from '../../../lib/boundary.js';
-import { ConflictDetector } from '../conflict-detector.js';
-import { MarketplaceCache } from '../marketplace-cache.js';
-import {
-  ConflictError,
-  InvalidPackageError,
-  MarketplaceInstaller,
-} from '../marketplace-installer.js';
-import { MarketplaceSourceManager } from '../marketplace-source-manager.js';
-import { PackageFetcher } from '../package-fetcher.js';
-import { PackageResolver } from '../package-resolver.js';
-import { PermissionPreviewBuilder } from '../permission-preview.js';
-import type { TemplateDownloader } from '../../core/template-downloader.js';
-import { AdapterInstallFlow } from '../flows/install-adapter.js';
-import { AgentInstallFlow } from '../flows/install-agent.js';
-import { PluginInstallFlow } from '../flows/install-plugin.js';
-import { ShapeInstallFlow } from '../flows/install-shape.js';
-import { SkillPackInstallFlow } from '../flows/install-skill-pack.js';
-import { UninstallFlow } from '../flows/uninstall.js';
+import { ConflictError, InvalidPackageError } from '../marketplace-installer.js';
+import { buildInstallerForTests } from './installer-harness.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -53,140 +34,6 @@ const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures');
 
 /** Prefix applied to every staging directory by the transaction engine. */
 const STAGING_DIR_PREFIX = 'dorkos-install-';
-
-/** Spies exposed by {@link buildHarness}. */
-interface HarnessSpies {
-  extensionCompile: ReturnType<typeof vi.fn>;
-  extensionEnable: ReturnType<typeof vi.fn>;
-  createAgentWorkspace: ReturnType<typeof vi.fn>;
-  adapterAdd: ReturnType<typeof vi.fn>;
-  adapterRemove: ReturnType<typeof vi.fn>;
-  templateClone: ReturnType<typeof vi.fn>;
-}
-
-/** Result of {@link buildHarness}. */
-interface Harness {
-  installer: MarketplaceInstaller;
-  dorkHome: string;
-  spies: HarnessSpies;
-  logger: Logger;
-  /** Exposed so tests can spy on `fetchFromGit` without reaching into private fields. */
-  fetcher: PackageFetcher;
-  /** Exposed so tests can stub `resolve` to return a git-kind descriptor. */
-  resolver: PackageResolver;
-}
-
-/**
- * Wire a full {@link MarketplaceInstaller} with real collaborators rooted
- * at the supplied temp `dorkHome`. Only the four external side-effect
- * surfaces are stubbed: `templateDownloader.cloneRepository`,
- * `extensionCompiler.compile`, `extensionManager.enable`, and
- * `agentCreator.createAgentWorkspace`. `AdapterManager` is also faked —
- * the real class pulls in the whole relay subsystem which is out of
- * scope for an install-pipeline failure-path test.
- *
- * This helper intentionally mirrors `buildInstallerForTests` in
- * `integration.test.ts` (task #25) so the two files can be merged into a
- * shared `integration-helpers.ts` during cleanup.
- */
-function buildHarness(dorkHome: string): Harness {
-  const logger = noopLogger;
-
-  const sourceManager = new MarketplaceSourceManager(dorkHome);
-  const cache = new MarketplaceCache(dorkHome);
-
-  const templateClone = vi.fn(async () => {
-    throw new Error('templateDownloader.cloneRepository must not be called for local fixtures');
-  });
-  const templateDownloader = {
-    cloneRepository: templateClone,
-  } as unknown as TemplateDownloader;
-
-  const fetcher = new PackageFetcher(cache, templateDownloader, logger);
-  const resolver = new PackageResolver(sourceManager, cache);
-
-  const adapterAdd = vi.fn().mockResolvedValue(undefined);
-  const adapterRemove = vi.fn().mockResolvedValue(undefined);
-  const adapterList = vi.fn().mockReturnValue([]);
-  const adapterManager = {
-    addAdapter: adapterAdd,
-    removeAdapter: adapterRemove,
-    listAdapters: adapterList,
-  } as unknown as AdapterManager;
-
-  const conflictDetector = new ConflictDetector(dorkHome, adapterManager);
-  const previewBuilder = new PermissionPreviewBuilder(dorkHome, conflictDetector);
-
-  const extensionCompile = vi
-    .fn()
-    .mockResolvedValue({ code: 'compiled', sourceHash: 'failure-path-test' });
-  const extensionEnable = vi.fn().mockResolvedValue({ extension: {}, reloadRequired: false });
-  const extensionCompiler = { compile: extensionCompile };
-  const extensionManager = {
-    enable: extensionEnable,
-    disable: vi.fn().mockResolvedValue(undefined),
-    forgetRunApproval: vi.fn().mockResolvedValue(undefined),
-  };
-
-  const createAgentWorkspace = vi.fn(async (input: { directory: string; name: string }) => {
-    return {
-      manifest: { id: 'failure-test-id', name: input.name },
-      path: input.directory,
-    };
-  });
-  const agentCreator = { createAgentWorkspace };
-
-  const pluginFlow = new PluginInstallFlow({
-    dorkHome,
-    extensionCompiler,
-    extensionManager,
-    logger,
-  });
-  const agentFlow = new AgentInstallFlow({
-    dorkHome,
-    agentCreator,
-    logger,
-  });
-  const skillPackFlow = new SkillPackInstallFlow({ dorkHome, logger });
-  const adapterFlow = new AdapterInstallFlow({ dorkHome, adapterManager, logger });
-  const shapeFlow = new ShapeInstallFlow({ dorkHome, extensionCompiler, logger });
-  const uninstallFlow = new UninstallFlow({
-    dorkHome,
-    extensionManager,
-    adapterManager,
-    logger,
-  });
-
-  const installer = new MarketplaceInstaller({
-    dorkHome,
-    resolver,
-    fetcher,
-    previewBuilder,
-    pluginFlow,
-    agentFlow,
-    skillPackFlow,
-    adapterFlow,
-    shapeFlow,
-    uninstallFlow,
-    logger,
-  });
-
-  return {
-    installer,
-    dorkHome,
-    logger,
-    fetcher,
-    resolver,
-    spies: {
-      extensionCompile,
-      extensionEnable,
-      createAgentWorkspace,
-      adapterAdd,
-      adapterRemove,
-      templateClone,
-    },
-  };
-}
 
 /** Return every tmpdir entry whose basename starts with the staging prefix. */
 async function listStagingDirs(): Promise<string[]> {
@@ -284,7 +131,7 @@ describe('marketplace install pipeline — failure paths', () => {
     // Wire a harness whose fetcher is replaced with one whose clone
     // step throws immediately — simulates a network or auth failure
     // inside `templateDownloader.cloneRepository`.
-    const harness = buildHarness(dorkHome);
+    const harness = buildInstallerForTests(dorkHome);
 
     // Replace the resolver's output with a git-kind descriptor so the
     // installer routes through the fetcher (which in turn rejects to
@@ -333,7 +180,7 @@ describe('marketplace install pipeline — failure paths', () => {
     const brokenFixture = path.join(FIXTURES_DIR, 'broken', 'invalid-manifest');
     expect(await pathExists(path.join(brokenFixture, '.dork', 'manifest.json'))).toBe(true);
 
-    const harness = buildHarness(dorkHome);
+    const harness = buildInstallerForTests(dorkHome);
     const stagingBefore = await listStagingDirs();
 
     await expect(harness.installer.install({ name: brokenFixture })).rejects.toBeInstanceOf(
@@ -380,7 +227,7 @@ describe('marketplace install pipeline — failure paths', () => {
     const sentinelPath = path.join(dorkHome, 'sentinel.txt');
     await writeFile(sentinelPath, 'untouched-by-rollback', 'utf-8');
 
-    const harness = buildHarness(dorkHome);
+    const harness = buildInstallerForTests(dorkHome);
     harness.spies.extensionEnable.mockRejectedValueOnce(
       new Error('simulated activation failure: enable threw')
     );
@@ -421,7 +268,7 @@ describe('marketplace install pipeline — failure paths', () => {
     const prevMarker = path.join(collidingRoot, 'prior-install.txt');
     await writeFile(prevMarker, 'prior install', 'utf-8');
 
-    const harness = buildHarness(dorkHome);
+    const harness = buildInstallerForTests(dorkHome);
 
     // A same-name reinstall is now a non-blocking warning (not a ConflictError),
     // so the install completes and atomically replaces the prior installation
@@ -469,7 +316,7 @@ describe('marketplace install pipeline — failure paths', () => {
       'utf-8'
     );
 
-    const harness = buildHarness(dorkHome);
+    const harness = buildInstallerForTests(dorkHome);
 
     // Sanity: the same install without `force` must throw ConflictError
     // so we are actually testing a bypass, not a no-op.

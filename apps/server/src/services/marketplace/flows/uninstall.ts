@@ -35,7 +35,7 @@ import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
 import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace';
 import type { MarketplacePackageManifest, PackageType } from '@dorkos/marketplace';
-import { installRootsUnder, projectScopeRoot } from '../lib/install-roots.js';
+import { installRootCandidates, type InstallRootCandidate } from '../lib/locate-install.js';
 import { assertPackageName } from '../lib/package-paths.js';
 import { readInstallMetadata } from '../installed-metadata.js';
 import { withInstallTargetLock } from '../transaction.js';
@@ -289,20 +289,18 @@ export class UninstallFlow {
    * of the same name for that project, matching the installed scanner's merged
    * view and the update flow's walk.
    *
+   * Shared with `MarketplaceInstaller.update()`, which probes the same order to
+   * decide which target to lock across its whole uninstall-then-install round
+   * trip — two orders would mean it locked a directory this flow never touches.
+   *
    * @internal
    */
-  private candidatePaths(
-    req: UninstallRequest
-  ): { installRoot: string; inferredType: PackageType }[] {
-    const scopeRoots = req.projectPath
-      ? [projectScopeRoot(req.projectPath), this.deps.dorkHome]
-      : [this.deps.dorkHome];
-    return scopeRoots.flatMap((scopeRoot) =>
-      installRootsUnder(scopeRoot).map(({ dir, representativeType }) => ({
-        installRoot: path.join(dir, req.name),
-        inferredType: representativeType,
-      }))
-    );
+  private candidatePaths(req: UninstallRequest): InstallRootCandidate[] {
+    return installRootCandidates({
+      dorkHome: this.deps.dorkHome,
+      name: req.name,
+      projectPath: req.projectPath,
+    });
   }
 
   /**

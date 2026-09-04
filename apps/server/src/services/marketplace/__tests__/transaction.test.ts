@@ -9,10 +9,19 @@
  * no `_internal.isGitRepo` mock. See ADR-0304.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { runTransaction, _internal } from '../transaction.js';
+import { runTransaction, withInstallTargetLock, _internal } from '../transaction.js';
 
 /** Returns true when `target` exists on disk (file or directory). */
 async function pathExists(target: string): Promise<boolean> {
@@ -299,6 +308,102 @@ describe('runTransaction (file-scoped)', () => {
     expect(result.ok).toBe(true);
   });
 });
+
+describe('withInstallTargetLock (re-entrancy)', () => {
+  let scratch: string;
+
+  beforeEach(async () => {
+    scratch = await mkdtemp(path.join(tmpdir(), 'target-lock-reentrancy-'));
+  });
+
+  afterEach(async () => {
+    await rm(scratch, { recursive: true, force: true }).catch(() => undefined);
+  });
+
+  it('runs a nested take of a target this context already holds, inline', async () => {
+    // What `MarketplaceInstaller.update()` needs: it holds the install root
+    // across an uninstall and an install that each take the lock for
+    // themselves. `withFileLock` throws on re-entry — the right default for a
+    // file writer, and a hard stop for a composite operation — so this asks for
+    // the target twice and expects the inner one to simply run.
+    const target = path.join(scratch, 'plugins', 'nested-package');
+    const order: string[] = [];
+
+    const result = await withInstallTargetLock(target, async () => {
+      order.push('outer-enter');
+      const inner = await withInstallTargetLock(target, async () => {
+        order.push('inner');
+        return 'inner-result';
+      });
+      order.push('outer-exit');
+      return inner;
+    });
+
+    expect(result).toBe('inner-result');
+    expect(order).toEqual(['outer-enter', 'inner', 'outer-exit']);
+  });
+
+  it('re-enters on the canonical target, not on the spelling the nested call used', async () => {
+    // The outer hold is keyed on the realpath, so a nested call that spells the
+    // same directory through a symlink has to resolve to the same key — or it
+    // would queue behind its own caller and never return.
+    const realProject = path.join(scratch, 'real-project');
+    const target = path.join(realProject, '.dork', 'plugins', 'nested-package');
+    await mkdir(target, { recursive: true });
+    const linkedProject = path.join(scratch, 'linked-project');
+    await symlink(realProject, linkedProject, 'dir');
+    const linkedTarget = path.join(linkedProject, '.dork', 'plugins', 'nested-package');
+
+    await expect(
+      withInstallTargetLock(target, () =>
+        withInstallTargetLock(linkedTarget, async () => 'reached')
+      )
+    ).resolves.toBe('reached');
+  });
+
+  it('still makes a second holder wait, because re-entry is scoped to one context', async () => {
+    // Re-entrancy must not be a hole in the mutual exclusion: only the context
+    // that already holds the target skips the queue.
+    const target = path.join(scratch, 'plugins', 'contended-package');
+    const holderEntered = deferredVoid();
+    const releaseHolder = deferredVoid();
+    let secondEntered = false;
+
+    const holder = withInstallTargetLock(target, async () => {
+      holderEntered.resolve();
+      await releaseHolder.promise;
+      // A nested take from inside the hold runs inline even while another
+      // caller is queued on this same target.
+      return withInstallTargetLock(target, async () => 'holder');
+    });
+    await holderEntered.promise;
+
+    const second = withInstallTargetLock(target, async () => {
+      secondEntered = true;
+      return 'second';
+    });
+
+    // Three whole unrelated critical sections run while the holder is parked —
+    // strictly more work than the `second` call has left before it would enter,
+    // so this bounds the wait on real steps instead of on a timer.
+    for (const probe of ['probe-a', 'probe-b', 'probe-c']) {
+      await withInstallTargetLock(path.join(scratch, 'plugins', 'unrelated'), async () => probe);
+    }
+    expect(secondEntered).toBe(false);
+
+    releaseHolder.resolve();
+    await expect(Promise.all([holder, second])).resolves.toEqual(['holder', 'second']);
+  });
+});
+
+/** A promise plus the handle to settle it from elsewhere in the test. */
+function deferredVoid(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
 
 // Sanity check that mkdtemp/rm round-trip in the test environment works
 // (so a green test run definitively means runTransaction is correct).

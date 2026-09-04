@@ -39,7 +39,9 @@ import type { SkillPackInstallFlow } from './flows/install-skill-pack.js';
 import type { UninstallFlow } from './flows/uninstall.js';
 import { reportInstallEvent, type InstallEvent } from './telemetry-hook.js';
 import { writeInstallMetadata } from './installed-metadata.js';
+import { locateInstallRoot } from './lib/locate-install.js';
 import { materializePackageSchedules } from './lib/materialize-schedules.js';
+import { withInstallTargetLock } from './transaction.js';
 import { validatePackageSchedules } from './lib/validate-package-schedules.js';
 import {
   describeDisclosedEffects,
@@ -422,6 +424,17 @@ export class MarketplaceInstaller implements InstallerLike {
    * shortcuts, github shorthand, and local paths — without putting
    * format-parsing logic in two places.
    *
+   * The whole round trip runs inside one {@link withInstallTargetLock} on the
+   * install root (DOR-1722). Both halves take that lock for themselves — it is
+   * re-entrant within an async context, so they run inline under this hold —
+   * and holding it across them is what closes the gap between them: an install
+   * that landed there used to be deleted, without a backup and without an
+   * error, by the by-hand removal of the data-only install root in step 3.
+   * Locating the root is the one step outside the lock, because the path to
+   * lock is not known until it has run; the residue is the same narrow, loud
+   * one the uninstall flow documents (a package removed between the probe and
+   * the lock fails with `ENOENT` rather than destroying anything).
+   *
    * @param req - The install request to apply as an update.
    * @returns The {@link InstallResult} from the post-uninstall reinstall.
    */
@@ -430,6 +443,36 @@ export class MarketplaceInstaller implements InstallerLike {
     //    name, not whatever raw identifier the caller passed.
     const resolved = await this.deps.resolver.resolve(buildResolverInput(req));
 
+    const installRoot = await locateInstallRoot({
+      dorkHome: this.deps.dorkHome,
+      name: resolved.packageName,
+      projectPath: req.projectPath,
+    });
+    // Nothing of that name is installed: there is no target to serialise on,
+    // and the uninstall half below raises the canonical
+    // `PackageNotInstalledError` for the caller.
+    if (installRoot === null) return this.applyUpdate(req, resolved);
+    return withInstallTargetLock(installRoot, () => this.applyUpdate(req, resolved));
+  }
+
+  /**
+   * The uninstall → remove → reinstall round trip itself, with no
+   * serialisation of its own.
+   *
+   * Split out from {@link MarketplaceInstaller.update} so that entry point is
+   * one readable "find the target, then do it under that target's lock" pair.
+   * Never call it directly: holding the lock across every step is what keeps a
+   * concurrent install from landing in a gap between them.
+   *
+   * @param req - The install request being applied as an update.
+   * @param resolved - The already-resolved package source, so the round trip
+   *   and the lock above agree on the canonical package name.
+   * @internal
+   */
+  private async applyUpdate(
+    req: InstallRequest,
+    resolved: ResolvedPackageSource
+  ): Promise<InstallResult> {
     // Capture whether this package is the currently-applied Shape BEFORE the
     // uninstall half runs, so the post-install re-apply below knows to fire.
     const wasActiveShape =
