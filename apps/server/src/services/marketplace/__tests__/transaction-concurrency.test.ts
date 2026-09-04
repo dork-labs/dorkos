@@ -7,13 +7,23 @@
  * rollback steps, so a test that stubbed either of them would only encode the
  * hypothesis. Every assertion below is one a sequential test cannot make.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { initBoundary } from '../../../lib/boundary.js';
 import { atomicMove } from '../lib/atomic-move.js';
 import { UninstallFlow } from '../flows/uninstall.js';
 import { BACKUP_SUFFIX, runTransaction } from '../transaction.js';
+import type { InstallResult } from '../types.js';
+import { buildInstallerForTests } from './installer-harness.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+/** The shipped `valid-plugin` fixture — a plugin with one bundled extension. */
+const VALID_PLUGIN_FIXTURE = path.join(__dirname, '..', 'fixtures', 'valid-plugin');
 
 /**
  * How long the losing transaction sits inside `activate` waiting for the
@@ -397,5 +407,193 @@ describe('UninstallFlow vs runTransaction (same package)', () => {
     // The install that succeeded is what is on disk — not the copy the failed
     // uninstall restored.
     expect(await readFile(path.join(installRoot, 'version.txt'), 'utf8')).toBe('v-reinstalled');
+  });
+});
+
+/** What {@link raceInstallAgainstUpdate} observed. */
+interface UpdateRaceOutcome {
+  /** How the update settled — kept unthrown so every assertion still runs. */
+  update: PromiseSettledResult<InstallResult>;
+  /** How the concurrent install settled. */
+  competitor: PromiseSettledResult<unknown>;
+  /**
+   * Whether the concurrent install entered its critical section before the
+   * update's reinstall half had activated — i.e. whether it landed in the gap
+   * between the update's two halves.
+   */
+  competitorEnteredTheGap: boolean;
+  /** The `who.txt` marker left at the install root, or `null` if there is none. */
+  survivingMarker: string | null;
+}
+
+describe('MarketplaceInstaller.update() vs a concurrent install (same package)', () => {
+  let dorkHome: string;
+  let sourceDir: string;
+  const stagingDirsObserved: string[] = [];
+
+  beforeEach(async () => {
+    dorkHome = await mkdtemp(path.join(tmpdir(), 'update-concurrency-home-'));
+    await mkdir(path.join(dorkHome, 'plugins'), { recursive: true });
+    // The package the update applies, as a writable copy of the shipped
+    // fixture: a local-path install is boundary-confined, so the copy's parent
+    // is the boundary for these tests.
+    sourceDir = await mkdtemp(path.join(tmpdir(), 'update-concurrency-src-'));
+    await cp(VALID_PLUGIN_FIXTURE, path.join(sourceDir, 'valid-plugin'), { recursive: true });
+    await writeFile(path.join(sourceDir, 'valid-plugin', 'who.txt'), 'update', 'utf8');
+    await initBoundary(sourceDir);
+    stagingDirsObserved.length = 0;
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await rm(dorkHome, { recursive: true, force: true }).catch(() => undefined);
+    await rm(sourceDir, { recursive: true, force: true }).catch(() => undefined);
+    for (const dir of stagingDirsObserved) {
+      await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    }
+  });
+
+  /**
+   * Drive the DOR-1722 interleaving: a `MarketplaceInstaller.update()` — an
+   * uninstall, then (when the package has user data) a by-hand removal of the
+   * data-only install root, then a fresh install — with a second install of the
+   * same package aimed at the same directory from the moment the update enters
+   * its first half.
+   *
+   * Everything here is the real thing: the real installer, the real uninstall
+   * flow, the real install flow, the real transaction engine, real bytes on
+   * disk. The concurrent install is `runTransaction` itself — the call every
+   * install flow's mutating half runs through — because it has to be QUEUED at
+   * the lock at a known moment, and a whole install pipeline spends far too
+   * long resolving and validating first for that moment to be pinned.
+   */
+  async function raceInstallAgainstUpdate(opts: {
+    /** Plant `.dork/data/`, which is what puts the update on its by-hand-removal path. */
+    plantUserData: boolean;
+  }): Promise<UpdateRaceOutcome> {
+    const { installer, spies } = buildInstallerForTests(dorkHome);
+    const packagePath = path.join(sourceDir, 'valid-plugin');
+
+    const first = await installer.install({ name: packagePath });
+    const installRoot = first.installPath;
+    // Precondition: the marker that tells the two writers apart made the trip,
+    // so the surviving-content assertions read what they think they read.
+    expect(await readFile(path.join(installRoot, 'who.txt'), 'utf8')).toBe('update');
+
+    if (opts.plantUserData) {
+      await mkdir(path.join(installRoot, '.dork', 'data'), { recursive: true });
+      await writeFile(path.join(installRoot, '.dork', 'data', 'state.json'), '{"v":1}', 'utf8');
+    }
+
+    const updateInsideUninstall = deferred();
+    const competitorQueued = deferred();
+    const probeTarget = path.join(dorkHome, 'plugins', 'unrelated-probe');
+    let barrierFired = false;
+    let updateReinstallActivated = false;
+    let competitorEnteredTheGap = false;
+
+    // The barrier is a real product event: the uninstall half disables the
+    // package's bundled extension from inside its own critical section, so this
+    // callback runs with the install target locked.
+    spies.extensionDisable.mockImplementation(async () => {
+      if (barrierFired) return;
+      barrierFired = true;
+      updateInsideUninstall.resolve();
+      await competitorQueued.promise;
+      // Three unrelated transactions, start to finish, while this one holds the
+      // lock. Each does strictly more work than the realpath walk the competing
+      // transaction has left before it queues, so by the time they are done it
+      // is queued — bounded by the engine's own steps rather than by a timer
+      // (the DOR-1689 rule).
+      for (const probe of ['probe-a', 'probe-b', 'probe-c']) {
+        await runTransaction({
+          name: probe,
+          target: probeTarget,
+          stage: async (staging) => {
+            stagingDirsObserved.push(staging.path);
+            await writeFile(path.join(staging.path, 'who.txt'), probe, 'utf8');
+          },
+          activate: async (staging) => {
+            await atomicMove(staging.path, probeTarget);
+            return probe;
+          },
+        });
+      }
+    });
+
+    // Fires inside the update's REINSTALL half — the far side of the gap.
+    spies.extensionEnable.mockImplementation(async () => {
+      updateReinstallActivated = true;
+      return { extension: {}, reloadRequired: false };
+    });
+
+    const update = installer.update({ name: packagePath });
+    await updateInsideUninstall.promise;
+
+    const competitor = runTransaction({
+      name: 'concurrent-install',
+      target: installRoot,
+      stage: async (staging) => {
+        // Reaching `stage` means this transaction is inside the critical
+        // section. Getting here before the update's reinstall has activated
+        // means it got in between the update's two halves.
+        competitorEnteredTheGap = !updateReinstallActivated;
+        stagingDirsObserved.push(staging.path);
+        await writeFile(path.join(staging.path, 'who.txt'), 'competitor', 'utf8');
+      },
+      activate: async (staging) => {
+        await mkdir(path.dirname(installRoot), { recursive: true });
+        await atomicMove(staging.path, installRoot);
+        return { ok: true } as const;
+      },
+    });
+    competitorQueued.resolve();
+
+    const [updateSettled, competitorSettled] = await Promise.allSettled([update, competitor]);
+
+    return {
+      update: updateSettled,
+      competitor: competitorSettled,
+      competitorEnteredTheGap,
+      survivingMarker: await readFile(path.join(installRoot, 'who.txt'), 'utf8').catch(() => null),
+    };
+  }
+
+  it('holds the target across both halves, so an install cannot land between them', async () => {
+    // Each half takes the target lock for itself, and while that was ALL the
+    // serialisation there was, the gap between them was open: an install that
+    // landed in it was overwritten moments later by the update's own reinstall,
+    // having already told its caller it succeeded (DOR-1722).
+    const outcome = await raceInstallAgainstUpdate({ plantUserData: false });
+
+    // The update ran to completion under a lock that both of its halves re-take
+    // from inside it: re-entrancy that deadlocked, or threw the way
+    // `withFileLock` does, would fail right here.
+    expect(outcome.update.status).toBe('fulfilled');
+    expect(outcome.competitor.status).toBe('fulfilled');
+
+    // The property.
+    expect(outcome.competitorEnteredTheGap).toBe(false);
+
+    // And the consequence on disk. Serialised, the concurrent install runs
+    // strictly after the update and its content is what survives; unserialised,
+    // the update's reinstall lands last on top of it.
+    expect(outcome.survivingMarker).toBe('competitor');
+  });
+
+  it('does not let its by-hand removal of the data-only install root delete a concurrent install', async () => {
+    // The sharper half. When the package has user data, the update preserves it
+    // by copying it out and then removing the install root by hand — a delete
+    // with no backup and no transaction around it. Run outside the lock, that
+    // delete lands on whatever is at the path at that instant, which can be an
+    // install that arrived in the meantime: destroyed silently, its caller
+    // already told it succeeded, and the update itself left crashing on the
+    // data it no longer finds.
+    const outcome = await raceInstallAgainstUpdate({ plantUserData: true });
+
+    expect(outcome.update.status).toBe('fulfilled');
+    expect(outcome.competitor.status).toBe('fulfilled');
+    expect(outcome.competitorEnteredTheGap).toBe(false);
+    expect(outcome.survivingMarker).toBe('competitor');
   });
 });

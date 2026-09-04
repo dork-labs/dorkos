@@ -33,7 +33,7 @@ import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
 import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace';
 import type { MarketplacePackageManifest, PackageType } from '@dorkos/marketplace';
-import { INSTALL_ROOTS_WITH_TYPE } from '../lib/install-roots.js';
+import { installRootCandidates, type InstallRootCandidate } from '../lib/locate-install.js';
 import { assertPackageName } from '../lib/package-paths.js';
 import { readInstallMetadata } from '../installed-metadata.js';
 import { withInstallTargetLock } from '../transaction.js';
@@ -275,28 +275,18 @@ export class UninstallFlow {
   /**
    * Build the ordered list of paths to probe for an installed package.
    *
+   * Shared with `MarketplaceInstaller.update()`, which probes the same order to
+   * decide which target to lock across its whole uninstall-then-install round
+   * trip — two orders would mean it locked a directory this flow never touches.
+   *
    * @internal
    */
-  private candidatePaths(
-    req: UninstallRequest
-  ): { installRoot: string; inferredType: PackageType }[] {
-    const candidates: { installRoot: string; inferredType: PackageType }[] = [];
-    if (req.projectPath) {
-      candidates.push({
-        installRoot: path.join(req.projectPath, '.dork', 'plugins', req.name),
-        inferredType: 'plugin',
-      });
-    }
-    // Global roots, in install-root order (`plugins`, `agents`, `shapes`) —
-    // derived from the shared mapping so a package type can never install
-    // somewhere the uninstall probe does not look (the drift that hid Shapes).
-    for (const { dir, representativeType } of INSTALL_ROOTS_WITH_TYPE) {
-      candidates.push({
-        installRoot: path.join(this.deps.dorkHome, dir, req.name),
-        inferredType: representativeType,
-      });
-    }
-    return candidates;
+  private candidatePaths(req: UninstallRequest): InstallRootCandidate[] {
+    return installRootCandidates({
+      dorkHome: this.deps.dorkHome,
+      name: req.name,
+      projectPath: req.projectPath,
+    });
   }
 
   /**

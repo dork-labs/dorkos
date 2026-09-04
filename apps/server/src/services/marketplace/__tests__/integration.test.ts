@@ -4,19 +4,9 @@
  * Unlike the per-flow tests under `./flows/`, these exercise the
  * {@link MarketplaceInstaller} orchestrator with every real collaborator
  * wired in — resolver, cache, fetcher, validator, permission preview
- * builder, conflict detector, and all four type-specific install flows.
- * The only things stubbed are the external side-effect surfaces:
- *
- * - `templateDownloader.cloneRepository` — never called in practice
- *   because the fixtures resolve via `kind: 'local'`, but provided as a
- *   throwing stub so any accidental network attempt fails loudly.
- * - `extensionCompiler.compile` / `extensionManager.enable` — spy `vi.fn()`s.
- * - `agentCreator.createAgentWorkspace` — spy `vi.fn()` that mirrors the
- *   shape the real agent-creator returns. Stubbed because the real impl
- *   pulls in `configManager`, boundary validation, and mesh sync that
- *   are not appropriate for an install-pipeline integration test.
- * - `adapterManager.addAdapter` / `removeAdapter` / `listAdapters` — spy
- *   `vi.fn()`s. Stubbed to avoid loading the entire relay subsystem.
+ * builder, conflict detector, and all five type-specific install flows.
+ * The wiring, and the list of external side-effect surfaces it stubs, lives
+ * in `./installer-harness.ts`.
  *
  * Safety note: every test runs against a temp `dorkHome` created under
  * `os.tmpdir()` so no install writes to the live worktree. The file-scoped
@@ -31,24 +21,9 @@ import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { noopLogger } from '@dorkos/shared/logger';
-import type { Logger } from '@dorkos/shared/logger';
-import type { AdapterManager } from '../../relay/adapter-manager.js';
 import { initBoundary } from '../../../lib/boundary.js';
-import { ConflictDetector } from '../conflict-detector.js';
-import { MarketplaceCache } from '../marketplace-cache.js';
-import { MarketplaceInstaller } from '../marketplace-installer.js';
-import { MarketplaceSourceManager } from '../marketplace-source-manager.js';
-import { PackageFetcher } from '../package-fetcher.js';
-import { PackageResolver } from '../package-resolver.js';
-import { PermissionPreviewBuilder } from '../permission-preview.js';
-import type { TemplateDownloader } from '../../core/template-downloader.js';
-import { AdapterInstallFlow } from '../flows/install-adapter.js';
-import { AgentInstallFlow } from '../flows/install-agent.js';
-import { PluginInstallFlow } from '../flows/install-plugin.js';
-import { SHAPE_PROJECT_PATH_IGNORED_WARNING, ShapeInstallFlow } from '../flows/install-shape.js';
-import { SkillPackInstallFlow } from '../flows/install-skill-pack.js';
-import { UninstallFlow } from '../flows/uninstall.js';
+import { SHAPE_PROJECT_PATH_IGNORED_WARNING } from '../flows/install-shape.js';
+import { buildInstallerForTests } from './installer-harness.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -71,151 +46,6 @@ async function pathExists(target: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-/**
- * Spies exposed by {@link buildInstallerForTests} so individual test
- * cases can assert that the correct side-effects fired.
- */
-export interface InstallerTestSpies {
-  extensionCompile: ReturnType<typeof vi.fn>;
-  extensionEnable: ReturnType<typeof vi.fn>;
-  createAgentWorkspace: ReturnType<typeof vi.fn>;
-  adapterAdd: ReturnType<typeof vi.fn>;
-  adapterRemove: ReturnType<typeof vi.fn>;
-  templateClone: ReturnType<typeof vi.fn>;
-}
-
-/** Result of {@link buildInstallerForTests}. */
-export interface InstallerTestHarness {
-  installer: MarketplaceInstaller;
-  dorkHome: string;
-  spies: InstallerTestSpies;
-  logger: Logger;
-}
-
-/**
- * Wire a full {@link MarketplaceInstaller} with real collaborators
- * rooted at the supplied temp `dorkHome`. Only the four external
- * side-effect surfaces are stubbed (see file-level doc). Exported so
- * sibling failure-path tests (task #26) can reuse the same wiring.
- */
-export function buildInstallerForTests(dorkHome: string): InstallerTestHarness {
-  const logger = noopLogger;
-
-  // Marketplace cache + source manager — both just need a dorkHome. They
-  // are exercised lightly here because the fixtures resolve as `local`,
-  // bypassing marketplace lookup. Wired in anyway so the full graph runs.
-  const sourceManager = new MarketplaceSourceManager(dorkHome);
-  const cache = new MarketplaceCache(dorkHome);
-
-  // Template downloader stub — throws loudly if any code path attempts a
-  // real clone. Local-path fixtures must never reach the fetcher.
-  const templateClone = vi.fn(async () => {
-    throw new Error('templateDownloader.cloneRepository must not be called for local fixtures');
-  });
-  const templateDownloader = {
-    cloneRepository: templateClone,
-  } as unknown as TemplateDownloader;
-
-  const fetcher = new PackageFetcher(cache, templateDownloader, logger);
-  const resolver = new PackageResolver(sourceManager, cache);
-
-  // Adapter manager stub — just enough surface for ConflictDetector
-  // (`listAdapters`) and the adapter install flow (`addAdapter`,
-  // `removeAdapter`). The real AdapterManager pulls in the whole relay
-  // subsystem which is out of scope for the install pipeline.
-  const adapterAdd = vi.fn().mockResolvedValue(undefined);
-  const adapterRemove = vi.fn().mockResolvedValue(undefined);
-  const adapterList = vi.fn().mockReturnValue([]);
-  const adapterManager = {
-    addAdapter: adapterAdd,
-    removeAdapter: adapterRemove,
-    listAdapters: adapterList,
-  } as unknown as AdapterManager;
-
-  const conflictDetector = new ConflictDetector(dorkHome, adapterManager);
-  const previewBuilder = new PermissionPreviewBuilder(dorkHome, conflictDetector);
-
-  // Extension compiler / manager stubs — structural interfaces mirrored
-  // by `ExtensionCompilerLike` / `ExtensionManagerLike` in install-plugin.ts.
-  const extensionCompile = vi
-    .fn()
-    .mockResolvedValue({ code: 'compiled', sourceHash: 'integration-test' });
-  const extensionEnable = vi.fn().mockResolvedValue({ extension: {}, reloadRequired: false });
-  const extensionCompiler = { compile: extensionCompile };
-  const extensionManager = {
-    enable: extensionEnable,
-    disable: vi.fn().mockResolvedValue(undefined),
-    forgetRunApproval: vi.fn().mockResolvedValue(undefined),
-  };
-
-  // Agent creator stub — the real implementation pulls in configManager,
-  // boundary validation, ulid, and mesh sync. The marketplace install
-  // pipeline passes `skipTemplateDownload: true`, but the scaffold
-  // pipeline itself is not what we're integration-testing here. We only
-  // care that the flow calls the creator with the expected shape.
-  const createAgentWorkspace = vi.fn(async (input: { directory: string; name: string }) => {
-    return {
-      manifest: { id: 'integration-test-id', name: input.name },
-      path: input.directory,
-    };
-  });
-  const agentCreator = { createAgentWorkspace };
-
-  // Type-specific install flows — real implementations, stub collaborators.
-  const pluginFlow = new PluginInstallFlow({
-    dorkHome,
-    extensionCompiler,
-    extensionManager,
-    logger,
-  });
-  const agentFlow = new AgentInstallFlow({
-    dorkHome,
-    agentCreator,
-    logger,
-  });
-  const skillPackFlow = new SkillPackInstallFlow({ dorkHome, logger });
-  const adapterFlow = new AdapterInstallFlow({ dorkHome, adapterManager, logger });
-  const shapeFlow = new ShapeInstallFlow({
-    dorkHome,
-    extensionCompiler,
-    logger,
-  });
-  const uninstallFlow = new UninstallFlow({
-    dorkHome,
-    extensionManager,
-    adapterManager,
-    logger,
-  });
-
-  const installer = new MarketplaceInstaller({
-    dorkHome,
-    resolver,
-    fetcher,
-    previewBuilder,
-    pluginFlow,
-    agentFlow,
-    skillPackFlow,
-    adapterFlow,
-    shapeFlow,
-    uninstallFlow,
-    logger,
-  });
-
-  return {
-    installer,
-    dorkHome,
-    logger,
-    spies: {
-      extensionCompile,
-      extensionEnable,
-      createAgentWorkspace,
-      adapterAdd,
-      adapterRemove,
-      templateClone,
-    },
-  };
 }
 
 describe('marketplace install pipeline — integration', () => {

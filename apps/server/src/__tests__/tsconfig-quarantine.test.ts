@@ -78,7 +78,7 @@ const STRUCTURAL_EXCLUDES = ['node_modules', 'dist', 'src/core-extensions/**'];
  * **Only ever lower this.** Lowering it means a file was fixed and freed; raising
  * it means a test file was given up on, which needs a reason in review.
  */
-const QUARANTINE_BASELINE = 107;
+const QUARANTINE_BASELINE = 105;
 
 /**
  * The `exclude` array from the server tsconfig.

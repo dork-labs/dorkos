@@ -42,6 +42,14 @@
  * lock, so an install and an uninstall of one package cannot interleave
  * either.
  *
+ * An operation built OUT of those primitives holds the target across all of
+ * them, because the gap between two separately-locked halves is a window like
+ * any other. `MarketplaceInstaller.update()` is the one that exists — an
+ * uninstall, a by-hand removal of the data-only install root, then a fresh
+ * install — and it takes {@link withInstallTargetLock} once around the lot
+ * (DOR-1722). The lock is re-entrant within one async context so the halves
+ * can keep taking it for themselves; see the note on that function.
+ *
  * ## The key is canonical, not the caller's spelling
  *
  * {@link withFileLock} keys on `path.resolve`, which normalises `..` and
@@ -86,6 +94,7 @@
  *
  * @module services/marketplace/transaction
  */
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, realpath, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -172,6 +181,20 @@ async function canonicalTargetKey(target: string): Promise<string> {
 }
 
 /**
+ * Install targets the current async context already holds, by canonical key.
+ *
+ * What makes {@link withInstallTargetLock} re-entrant: an inner call for a key
+ * an OUTER call in the same context is already holding runs inline instead of
+ * queueing behind its own caller. `withFileLock` throws in that situation
+ * rather than deadlocking, which is the right default for a file writer but is
+ * not what a composite operation needs — see the re-entrancy note on
+ * {@link withInstallTargetLock}.
+ *
+ * @internal
+ */
+const heldInstallTargets = new AsyncLocalStorage<ReadonlySet<string>>();
+
+/**
  * Run `fn` with exclusive access to a marketplace install target, serialised
  * against every other holder of that same directory.
  *
@@ -182,8 +205,36 @@ async function canonicalTargetKey(target: string): Promise<string> {
  * cannot interleave against one package either.
  *
  * The key is realpath-resolved ({@link canonicalTargetKey}), so two spellings
- * of one directory are one lock. Non-reentrant: calling this for a target the
- * current async context already holds throws rather than deadlocking.
+ * of one directory are one lock.
+ *
+ * **Re-entrant for anything the holder's async context reaches (DOR-1722).** A
+ * composite operation needs to hold a target across several primitives that
+ * each take this lock for themselves: `MarketplaceInstaller.update()` is an
+ * uninstall followed by an install, and until it held both halves under one
+ * lock, an install landing between them was deleted by the by-hand removal
+ * that sits in that gap. So an inner call whose key an outer call in the same
+ * context already holds runs inline, and every nested taker of that target is
+ * covered by the outer hold. That is exclusion-preserving for nested work: the
+ * outer hold is what keeps other contexts out, and one async context cannot
+ * race itself.
+ *
+ * The grant is carried by `AsyncLocalStorage`, so read it as "every
+ * continuation the holder's context propagates to" and NOT as "the dynamic
+ * extent of the hold" — the two differ, and only in one direction. A
+ * continuation that escapes the critical section (a `setTimeout` scheduled
+ * inside it, an unawaited promise) still carries the store after the lock is
+ * released, and a take from there runs inline against a target this context no
+ * longer holds. Note the failure direction: `withFileLock` has the same
+ * property and an escape there THROWS its re-entry error, loudly; here the
+ * same escape is silent, so it fails open. No marketplace caller schedules
+ * work that outlives its critical section, and whoever writes one owns taking
+ * the lock from a context that does not already hold it.
+ *
+ * Locks on two DIFFERENT targets may nest (an install materialises a package's
+ * schedules through a transaction of its own, keyed on the skills directory
+ * rather than on the install root). Nothing acquires those two in the opposite
+ * order, so there is no cycle to deadlock on — but a new nesting is a new
+ * ordering, and whoever adds one owns checking that.
  *
  * **Exclusion, not fairness.** Two callers that start in the same tick reach
  * the lock through {@link canonicalTargetKey}'s `realpath` walk, and those
@@ -201,9 +252,15 @@ async function canonicalTargetKey(target: string): Promise<string> {
  */
 export async function withInstallTargetLock<T>(target: string, fn: () => Promise<T>): Promise<T> {
   const key = await canonicalTargetKey(target);
+  const held = heldInstallTargets.getStore();
+  // Already ours: run inline. Queueing here would wait on this context's own
+  // outer hold, which is the deadlock `withFileLock`'s re-entry guard exists to
+  // turn into a throw.
+  if (held?.has(key)) return fn();
+  const nowHeld = new Set(held ?? []).add(key);
   // The writer `withFileLock` hands its callback is deliberately unused: this
   // caller serialises a directory-level rename dance, not a file write.
-  return withFileLock(key, fn);
+  return withFileLock(key, () => heldInstallTargets.run(nowHeld, fn));
 }
 
 /**
@@ -224,10 +281,13 @@ export async function withInstallTargetLock<T>(target: string, fn: () => Promise
  * header for the interleaving this prevents). Transactions against different
  * targets are unaffected and still run concurrently.
  *
- * Do not call this from inside another transaction on the same `target`: the
- * lock is deliberately non-reentrant and throws instead of deadlocking. No
- * caller nests today — the installer materialises a package's schedules after
- * its flow's transaction has settled, not inside it.
+ * Calling this from inside a critical section that already holds `target` is
+ * allowed and runs inline ({@link withInstallTargetLock} is re-entrant within
+ * one async context) — that is how `MarketplaceInstaller.update()` holds one
+ * target across its uninstall and its install. It is not a way to nest two
+ * transactions against one directory: the inner one would run with the outer
+ * one's backup already taken, which is the interleaving the lock exists to
+ * prevent, and no caller does it.
  *
  * @param opts - Transaction options ({@link TransactionOptions})
  * @returns The result returned from `activate`.
