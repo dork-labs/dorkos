@@ -204,6 +204,28 @@ describe('WorkspacesPage', () => {
     expect(screen.getByText('DOR-84')).toBeInTheDocument();
   });
 
+  it('introduces the page with a gist, not a second explanation of worktrees', async () => {
+    renderWithScan({ root: '/home/me/.dork/workspaces', worktrees: [] });
+
+    await screen.findByText('No worktrees yet');
+    // The concept is explained once, in the empty-state card. The intro used to
+    // explain it again in three sentences directly above that card.
+    expect(screen.getByText('Copies of your code, per agent.')).toBeInTheDocument();
+    expect(screen.queryByText(/Agents work in these/)).not.toBeInTheDocument();
+  });
+
+  it('keeps the workspaces path out of running prose, so it cannot escape the card', async () => {
+    renderWithScan({ root: '/home/me/.dork/workspaces', worktrees: [] });
+
+    await screen.findByText('No worktrees yet');
+    // A path has no spaces to break at. Spliced into the sentence it ran off
+    // the card and off a 390px screen; on its own line, in a code element that
+    // breaks mid-token, it cannot.
+    const path = screen.getByText('~/.dork/workspaces');
+    expect(path.tagName).toBe('CODE');
+    expect(path.className).toMatch(/break-all/);
+  });
+
   it('shows an honest empty state naming where it looked', async () => {
     const { container } = renderWithScan({ root: '/home/me/.dork/workspaces', worktrees: [] });
 

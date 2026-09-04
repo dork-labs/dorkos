@@ -3,6 +3,7 @@ import { FolderGit2, GitBranch, TriangleAlert } from 'lucide-react';
 import { formatRelativeTime, shortenHomePath } from '@/layers/shared/lib';
 import {
   Badge,
+  InlineCode,
   PageContainer,
   Table,
   TableBody,
@@ -158,10 +159,11 @@ export function WorkspacesPage() {
           The bar's title is a `nav` landmark, not a heading, and cannot stand in
           for one. */}
       <h1 className="sr-only">Workspaces</h1>
-      <p className="text-muted-foreground mb-6 text-sm">
-        Every separate copy of your code found in your workspaces folder. Agents work in these so
-        they never edit the same files at once. This page only reads them.
-      </p>
+      {/* A gist, not an explanation. The empty state below says what a worktree
+          is and why one exists; saying it twice on one screen — once here in
+          the intro, once in the card underneath it — was the same idea in two
+          phrasings with nothing in between (DOR-1757). */}
+      <p className="text-muted-foreground mb-6 text-sm">Copies of your code, per agent.</p>
 
       {warnings.length > 0 && (
         <div className="mb-6 rounded-lg border border-amber-600/40 bg-amber-500/10 p-4">
@@ -199,9 +201,16 @@ export function WorkspacesPage() {
           <p className="mt-3 font-medium">No worktrees yet</p>
           <p className="text-muted-foreground mt-1 text-sm">
             A worktree is a second copy of your project, on its own branch, so one agent&rsquo;s
-            edits can&rsquo;t collide with another&rsquo;s. They show up here once they exist
-            {root ? ` in ${shortenHomePath(root)}` : ''}.
+            edits can&rsquo;t collide with another&rsquo;s. They show up here once they exist.
           </p>
+          {/* On its own line and styled as code, never spliced into the
+              sentence: a path has no spaces to wrap at, so inside running prose
+              it ran off the card and off a phone screen entirely. */}
+          {root && (
+            <p className="text-muted-foreground mt-3 text-xs">
+              Looking in <InlineCode>{shortenHomePath(root)}</InlineCode>
+            </p>
+          )}
         </div>
       ) : (
         <div className="flex flex-col gap-8">
