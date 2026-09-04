@@ -7,7 +7,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { TunnelMachineProvider } from '../model/tunnel-machine-provider';
 import { TunnelDialog } from '../ui/TunnelDialog';
 
 // Mock useIsMobile to always return false (desktop dialog)
@@ -93,9 +92,7 @@ function createWrapper(transport?: Transport) {
   const t = transport || createTunnelTransport();
   return ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
-      <TransportProvider transport={t}>
-        <TunnelMachineProvider>{children}</TunnelMachineProvider>
-      </TransportProvider>
+      <TransportProvider transport={t}>{children}</TransportProvider>
     </QueryClientProvider>
   );
 }

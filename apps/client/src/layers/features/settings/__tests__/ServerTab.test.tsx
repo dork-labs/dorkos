@@ -170,12 +170,12 @@ describe('ServerTab', () => {
     // without opening anything.
     const logging = await screen.findByRole('button', { name: /logging/i });
     expect(logging).toHaveTextContent('debug');
-    expect(screen.queryByText('Rotated files kept')).not.toBeInTheDocument();
+    expect(screen.queryByText('Old files kept')).not.toBeInTheDocument();
 
     await user.click(logging);
 
     expect(screen.getByText('Log level')).toBeInTheDocument();
-    expect(screen.getByText('Rotated files kept')).toBeInTheDocument();
+    expect(screen.getByText('Old files kept')).toBeInTheDocument();
     expect(screen.getByText('/Users/kai/.dork/logs')).toBeInTheDocument();
   });
 

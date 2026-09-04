@@ -20,7 +20,7 @@ import {
   NavigationLayoutPanelHeader,
   NavigationLayoutDialogHeader,
 } from '@/layers/shared/ui';
-import { SettingsDialog, TunnelMachineProvider } from '@/layers/features/settings';
+import { SettingsDialog } from '@/layers/features/settings';
 import {
   AppearanceResetAction,
   AppearanceTab,
@@ -323,19 +323,16 @@ function IndividualTabsSection() {
       </ShowcaseDemo>
 
       {/* A tab since DOR-1758, not a sidebar button that opened a second
-          dialog. `RemoteAccessTab` reads the app-wide machine
-          `TunnelMachineProvider` mounts (`AppShell.tsx` in production); nested
-          here inside this section's own `MockedQueryProvider` so it picks up
-          THIS showcase's seeded config — the mock's `tunnel.tokenConfigured:
-          false` — instead of the outer playground transport's `null`. */}
+          dialog. `RemoteAccessTab` reads the shared `entities/tunnel` store
+          (DOR-1743) — a module-scope Zustand store, not a React context — so
+          no extra provider is needed here; `useRemoteAccess` feeds it from
+          THIS showcase's own `MockedQueryProvider` config on mount. */}
       <ShowcaseLabel>Remote Access Tab</ShowcaseLabel>
       <ShowcaseDemo>
         <MockedQueryProvider>
-          <TunnelMachineProvider>
-            <TabShell value="remote-access" title="Remote Access">
-              <RemoteAccessTab />
-            </TabShell>
-          </TunnelMachineProvider>
+          <TabShell value="remote-access" title="Remote access">
+            <RemoteAccessTab />
+          </TabShell>
         </MockedQueryProvider>
       </ShowcaseDemo>
 

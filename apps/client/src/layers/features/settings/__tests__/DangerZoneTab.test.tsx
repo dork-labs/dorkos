@@ -47,26 +47,26 @@ describe('DangerZoneTab', () => {
     cleanup();
   });
 
-  it('renders Reset All Data and Restart Server rows', () => {
+  it('renders Reset all data and Restart DorkOS rows', () => {
     render(<DangerZoneTab />, { wrapper: createWrapper() });
-    expect(screen.getByText('Reset All Data')).toBeInTheDocument();
-    expect(screen.getByText('Restart Server')).toBeInTheDocument();
+    expect(screen.getByText('Reset all data')).toBeInTheDocument();
+    expect(screen.getByText('Restart DorkOS')).toBeInTheDocument();
   });
 
   // The clean slate for interface settings lives here and only here (DOR-923):
   // the Appearance panel's own reset stops at theme and typography.
-  it('renders the Reset All Settings row, and its button says which reset it is', () => {
+  it('renders the Reset all settings row, and its button says which reset it is', () => {
     render(<DangerZoneTab />, { wrapper: createWrapper() });
-    expect(screen.getByText('Reset All Settings')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Reset Settings' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Reset Data' })).toBeInTheDocument();
+    expect(screen.getByText('Reset all settings')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reset settings' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reset data' })).toBeInTheDocument();
   });
 
   it('asks for a confirm before resetting settings — the dialog opens, nothing resets on the click', () => {
     render(<DangerZoneTab />, { wrapper: createWrapper() });
     expect(screen.queryByTestId('reset-settings-dialog')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reset Settings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reset settings' }));
 
     expect(screen.getByTestId('reset-settings-dialog')).toBeInTheDocument();
   });
@@ -76,7 +76,9 @@ describe('DangerZoneTab', () => {
   // message box and background refresh to Preferences, logging to Server.
   it('holds nothing but the destructive actions', () => {
     render(<DangerZoneTab />, { wrapper: createWrapper() });
-    expect(screen.queryByText('Background refresh')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Watch for agents you started somewhere else')
+    ).not.toBeInTheDocument();
     expect(screen.queryByText('Format text as you type')).not.toBeInTheDocument();
     expect(screen.queryByText('Log level')).not.toBeInTheDocument();
     expect(screen.queryByText('Log location')).not.toBeInTheDocument();
@@ -89,9 +91,9 @@ describe('DangerZoneTab', () => {
     expect(screen.queryByRole('heading')).toBeNull();
   });
 
-  it('opens ResetDialog when the Reset Data button is clicked', () => {
+  it('opens ResetDialog when the Reset data button is clicked', () => {
     render(<DangerZoneTab />, { wrapper: createWrapper() });
-    fireEvent.click(screen.getByRole('button', { name: 'Reset Data' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reset data' }));
     expect(screen.getByTestId('reset-dialog')).toBeInTheDocument();
     // The settings reset is a different door — clicking data must not open it.
     expect(screen.queryByTestId('reset-settings-dialog')).not.toBeInTheDocument();

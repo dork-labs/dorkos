@@ -178,7 +178,7 @@ function LoggingSection({ config }: { config: ServerConfig }) {
       trigger="Logging"
       badge={<span className="text-muted-foreground text-xs">{logging.level}</span>}
     >
-      <SettingRow label="Log level" description="How much the server writes down">
+      <SettingRow label="Log level" description="How much detail DorkOS writes down.">
         <Select value={logging.level} onValueChange={(v) => updateLogging({ level: v })}>
           <SelectTrigger className="w-28">
             <SelectValue />
@@ -193,7 +193,10 @@ function LoggingSection({ config }: { config: ServerConfig }) {
         </Select>
       </SettingRow>
 
-      <SettingRow label="Max log file size" description="Size in KB before a log file is rotated">
+      <SettingRow
+        label="Biggest log file"
+        description="How big one log file gets before DorkOS starts a new one."
+      >
         <div className="flex items-center gap-1.5">
           <Input
             type="number"
@@ -210,7 +213,10 @@ function LoggingSection({ config }: { config: ServerConfig }) {
         </div>
       </SettingRow>
 
-      <SettingRow label="Rotated files kept" description="Number of old log files to retain (1-30)">
+      <SettingRow
+        label="Old files kept"
+        description="How many old log files to keep. Between 1 and 30."
+      >
         <Input
           type="number"
           min={1}
@@ -255,7 +261,7 @@ function LogLocationRow({ dorkHome }: { dorkHome: string }) {
   }
 
   return (
-    <SettingRow label="Log location" description="Where the server keeps its log files">
+    <SettingRow label="Log location" description="Where DorkOS keeps these files.">
       <button
         type="button"
         onClick={() => void copy(logPath)}

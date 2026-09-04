@@ -63,9 +63,9 @@ test.describe('Settings — Dialog @smoke', () => {
     //
     // Nine since DOR-1758 reshuffled the tab: five chat-display switches this
     // browser remembers, plus the two that came back from the retired Advanced
-    // tab (the message box, background refresh) and the one about being shown
-    // things (feature suggestions) — minus the dev-tools switch, which went to
-    // Server → Diagnostics — plus the two welcome-back switches, which the
+    // tab (the message box, watching for agents started elsewhere) and the one
+    // about being shown things (feature suggestions) — minus the dev-tools
+    // switch, which went to Experiments — plus the two welcome-back switches, which the
     // SERVER keeps. The second welcome-back switch (Next-step offers) renders
     // only while the first is on, which it is by default.
     await expect(settingsPage.switches).toHaveCount(9);
@@ -77,7 +77,9 @@ test.describe('Settings — Dialog @smoke', () => {
     await expect(panel.getByRole('switch', { name: 'Show timestamps' })).toBeVisible();
     await expect(panel.getByRole('switch', { name: 'To-do celebrations' })).toBeVisible();
     await expect(panel.getByRole('switch', { name: 'Format text as you type' })).toBeVisible();
-    await expect(panel.getByRole('switch', { name: 'Background refresh' })).toBeVisible();
+    await expect(
+      panel.getByRole('switch', { name: 'Watch for agents you started somewhere else' })
+    ).toBeVisible();
     await expect(panel.getByRole('switch', { name: 'Welcome-back notes' })).toBeVisible();
     await expect(panel.getByRole('switch', { name: 'Next-step offers' })).toBeVisible();
     // The developer panel is a debugging aid and left this tab with DOR-1758.
@@ -157,10 +159,21 @@ test.describe('Settings — Dialog @smoke', () => {
     // DOR-539. Asserting its shape keeps this a test of what is displayed rather
     // than of which port the run happened to pick.
     await expect(settingsPage.addressInfo).toHaveText(/^http:\/\/localhost:\d+$/);
-    await expect(settingsPage.nodeInfo).toBeVisible();
 
     const panel = settingsPage.activePanel;
     await expect(panel.getByRole('button', { name: /^uptime/i })).toBeVisible();
+
+    // The paths and the Node version fold away behind "Diagnostics" since
+    // DOR-1758 — they are why nobody opened this tab, and the address is what
+    // people come for. Asserting the shut state first makes this a test of the
+    // fold; asserting only the open state would pass on a tab that never folded.
+    await expect(settingsPage.nodeInfo).toHaveCount(0);
+
+    // `exact` because "Copy all diagnostics" sits beside the trigger and would
+    // otherwise match the same substring.
+    await panel.getByRole('button', { name: 'Diagnostics', exact: true }).click();
+
+    await expect(settingsPage.nodeInfo).toBeVisible();
     // "Working folder", not "Working Directory": this batch put the row into the
     // words a non-developer already uses (DOR-1755).
     await expect(panel.getByRole('button', { name: /^working folder/i })).toBeVisible();
