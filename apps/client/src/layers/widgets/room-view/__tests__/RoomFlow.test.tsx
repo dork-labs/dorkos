@@ -1021,6 +1021,23 @@ describe('RoomFlow — reading past the page the room opened on (DOR-1734)', () 
     expect(onLoadOlder).not.toHaveBeenCalled();
   });
 
+  it('offers nothing while the room’s own history is still arriving', () => {
+    // "Older messages" is older THAN something, and during the wait there is
+    // nothing for it to be older than. It is also the row that consumed the
+    // timeline's one-shot landing when it was the only one in the array —
+    // measured in Chromium, skeleton on screen, no scroller in the document —
+    // which is why the timeline now waits for the list as well.
+    renderTimeline({
+      entries: [],
+      isLoading: true,
+      canLoadOlder: true,
+      onLoadOlder: vi.fn(),
+    });
+
+    expect(screen.queryByTestId('room-load-older')).not.toBeInTheDocument();
+    expect(screen.getByTestId('room-timeline-loading')).toBeInTheDocument();
+  });
+
   it('draws no control on a host that cannot answer one', () => {
     // A room drawn somewhere that does not page — the Dev Playground, a
     // showcase — must not be given a button that does nothing.

@@ -123,7 +123,10 @@ interface RoomFlowProps {
    * should offer a way into it (DOR-1734).
    *
    * False before the first page has landed and false once the room has answered
-   * with nothing older — the row is drawn from this alone.
+   * a read short — which, on this route, is most rooms on their first read.
+   *
+   * Necessary but not sufficient: the row also waits for
+   * {@link RoomFlowProps.isLoading} to clear. See where it is pushed.
    */
   canLoadOlder?: boolean;
   /** True while an older page is on its way. */
@@ -294,7 +297,17 @@ export function RoomFlow({
     // only place a reader would look for more of it. Above the first day
     // divider too: that divider labels the oldest message this client HAS, and
     // pressing here is what moves it.
-    if (canLoadOlder) built.push({ kind: 'load-older', id: LOAD_OLDER_ROW_ID });
+    //
+    // Never over a room whose history has not arrived, and that is a claim about
+    // meaning rather than a workaround: "older messages" is older THAN
+    // something, and until the first page lands there is nothing for it to be
+    // older than. (`useRoomEntries` writes the paging boundary from inside its
+    // own `queryFn`, so this flag can be true for a commit or two while the
+    // query result is still settling.) `Conversation.Timeline` no longer lets a
+    // row drawn during that gap consume its landing either — see the
+    // `landingReady` note there — but a control that is not true yet should not
+    // be in the array to begin with.
+    if (canLoadOlder && !isLoading) built.push({ kind: 'load-older', id: LOAD_OLDER_ROW_ID });
     for (const row of laid) {
       if (row.kind === 'day-divider') {
         built.push({ kind: 'day-divider', id: row.key, label: row.label });
@@ -332,7 +345,7 @@ export function RoomFlow({
       }
     }
     return built;
-  }, [topLevel, repliesByRoot, byId, lastReadSeq, now, canLoadOlder]);
+  }, [topLevel, repliesByRoot, byId, lastReadSeq, now, canLoadOlder, isLoading]);
 
   const rows = useMemo<ConversationRow[]>(
     () =>

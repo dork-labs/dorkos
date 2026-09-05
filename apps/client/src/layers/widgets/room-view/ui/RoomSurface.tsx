@@ -250,10 +250,18 @@ export function RoomSurface({
    * anchoring is deliberately not there to catch it either.
    *
    * So the page is merged first and the timeline is then asked for the row that
-   * WAS the oldest one, which it scrolls into existence and lands the caret on.
-   * `flowRowForEntry` answers which row that is, because the oldest entry is not
+   * WAS the boundary, which it scrolls into existence and lands the caret on.
+   * `flowRowForEntry` answers which row that is, because that entry is not
    * always drawn as itself — a thread reply is reached through its thread's own
    * line (it is the same lookup a search hit's landing uses, deliberately).
+   *
+   * **The boundary is named by `seq`, from the paging cursor — never by the
+   * first element of the loaded history.** They are different entries far more
+   * often than they look: a thread root fetched from behind the page rides at
+   * index 0 (DOR-690), so `entries[0]` names a message from days before the
+   * boundary and the reader would be dropped somewhere they never were. It is
+   * the identical trap `olderCursor` exists to keep the READ out of, and it has
+   * to be kept out of the scroll for the same reason.
    *
    * Focus lands on that row rather than staying on the button, which is the
    * honest outcome for a keyboard reader too: the control they pressed is now
@@ -261,16 +269,20 @@ export function RoomSurface({
    * just moved.
    */
   const older = useLoadOlderRoomEntries(roomId);
-  const { loadOlder } = older;
+  const { loadOlder, cursor: olderCursorSeq } = older;
   const loadOlderAndHold = useCallback(() => {
-    const anchor = entries.length > 0 ? flowRowForEntry(entries, entries[0]!.id) : null;
+    // Resolved BEFORE the read, against the history as it stands: the boundary
+    // entry is in the page either way, and looking it up afterwards would mean
+    // searching an array the merge has already changed.
+    const boundary = entries.find((held) => held.seq === olderCursorSeq);
+    const anchor = boundary === undefined ? null : flowRowForEntry(entries, boundary.id);
     void loadOlder().then(() => {
       if (anchor === null) return;
       // A frame later: the merge has to be committed before the row it names
       // exists to be scrolled to.
       requestAnimationFrame(() => timelineRef.current?.scrollToRow(anchor.domId));
     });
-  }, [entries, loadOlder]);
+  }, [entries, olderCursorSeq, loadOlder]);
 
   // Where a search hit asks this room to open, answered as getters the two
   // timelines' own landings read — see `useEntryLanding` for why they are asked

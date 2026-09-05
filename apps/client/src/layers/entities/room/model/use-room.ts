@@ -6,10 +6,14 @@
 import { useEffect } from 'react';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
-import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import {
+  ROOM_ENTRY_PAGE_SIZE_DEFAULT,
+  type RoomEntry,
+  type RoomWithRoster,
+} from '@dorkos/shared/room-schemas';
 import { useTransport } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
-import { mergeRoomHistory, olderCursor } from '../lib/history';
+import { mergeRoomHistory, olderCursor, pageReachesTheBeginning } from '../lib/history';
 import { usePendingPostStore } from './pending-posts';
 import { useRoomHistoryPagingStore } from './room-history-paging';
 
@@ -57,14 +61,25 @@ function roomEntriesQuery(transport: Transport, roomId: string | null) {
   return {
     queryKey: roomKeys.entries(roomId ?? ''),
     queryFn: async () => {
-      const page = await transport.listRoomEntries(roomId!);
+      // The page size is NAMED rather than left to the route's default, because
+      // the boundary below is decided by comparing against it: a page shorter
+      // than what was asked for is the beginning of this room. Asking for a
+      // number the route chose and then measuring against a copy of that number
+      // is how that comparison would quietly start lying.
+      const page = await transport.listRoomEntries(roomId!, {
+        limit: ROOM_ENTRY_PAGE_SIZE_DEFAULT,
+      });
       // Where the trailing window stops, written down as it lands — the only
       // moment the page and the roots riding with it are still tellable apart.
       // `useLoadOlderRoomEntries` reads it back; `room-history-paging.ts` says
       // why it cannot live in the array this returns.
       useRoomHistoryPagingStore
         .getState()
-        .notePage(roomId!, olderCursor(page), page.entries.length === 0);
+        .notePage(
+          roomId!,
+          olderCursor(page),
+          pageReachesTheBeginning(page, ROOM_ENTRY_PAGE_SIZE_DEFAULT)
+        );
       return mergeRoomHistory(undefined, page);
     },
     staleTime: Infinity,

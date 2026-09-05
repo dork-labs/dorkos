@@ -1,6 +1,7 @@
 ---
 covers:
   - "feat(rooms): read a room's history past the first page (DOR-1734)"
+  - 'fix(rooms,client): a paged room still opens at its newest message (DOR-1734)'
 ---
 
 ### Added
@@ -12,5 +13,6 @@ covers:
 
 ### Fixed
 
-- A thread's "3 replies" line now counts every reply the room has on screen. It
-  could fall behind when a reply arrived while you were reading (DOR-1734)
+- A thread's "3 replies" line no longer says a smaller number than the replies
+  it is sitting above. It could fall behind when a reply arrived while you were
+  reading a long thread (DOR-1734)

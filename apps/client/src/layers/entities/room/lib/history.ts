@@ -68,3 +68,31 @@ export function mergeRoomHistory(
 export function olderCursor(page: RoomEntryListResponse): number | null {
   return page.entries[0]?.seq ?? null;
 }
+
+/**
+ * Whether this page reached the beginning of what the reader may see.
+ *
+ * **A short page is definitive on this route**, and that is a property of the
+ * route rather than an assumption about pages in general: `RoomStore.listEntries`
+ * is one `WHERE` with an `ORDER BY` and a `LIMIT`, with nothing filtered out
+ * afterwards. So the only way it answers fewer rows than it was asked for is
+ * that there were fewer rows to answer with — there is no "short for other
+ * reasons" case here, and treating one as possible costs every room in the
+ * product a control offering history it does not have.
+ *
+ * It is asked against the limit the CALLER sent, never against the route's own
+ * default, so this cannot quietly start lying the day that default changes.
+ *
+ * The exactly-full last page is the one case it gets wrong, and it self-corrects
+ * on the next press: the read that follows comes back empty, and an empty page
+ * is short by any measure.
+ *
+ * @param page - The envelope as the route answered it.
+ * @param requestedLimit - The `limit` this read asked for.
+ */
+export function pageReachesTheBeginning(
+  page: RoomEntryListResponse,
+  requestedLimit: number
+): boolean {
+  return page.entries.length < requestedLimit;
+}

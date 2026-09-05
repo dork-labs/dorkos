@@ -305,12 +305,28 @@ export function ConversationTimeline({
   // Where this conversation opens, and what it remembers — its own hook,
   // because the decision has traps (wait for geometry, answer in rows not
   // pixels) that have nothing to do with drawing a list.
+  //
+  // **`loading` is part of `landingReady`, and it has to be.** Every hook here
+  // runs before the `loading` early return below, so the landing can fire on a
+  // commit where this component is drawing a SKELETON — the scroller is not in
+  // the document, the virtualizer has no scroll element, and `useTimelineLanding`
+  // documents exactly what that costs: the scroll "lands at zero and the settle
+  // silently carries it there". It is a ONE-SHOT, so the room then never lands
+  // again and simply stays at its oldest loaded message.
+  //
+  // What used to hold it back was `rows.length === 0` — true by luck, because
+  // every row a conversation had came from history that had not arrived. The
+  // first row that does NOT (rooms' "Older messages" control, DOR-1734) made
+  // `rows.length` 1 during the wait and consumed the landing on the spot;
+  // measured in Chromium, one `notice` row, skeleton on screen, no scroller.
+  // Luck is not the guard, so this is: the landing waits for the list it is
+  // supposed to be scrolling.
   const { landed, landedOn, landedRow, reportTopRow } = useTimelineLanding({
     conversationId,
     rows,
     virtualizer,
     landOn,
-    landingReady,
+    landingReady: landingReady && loading == null,
     ...(resumeRow === undefined ? {} : { resumeRow }),
     ...(landOnRow === undefined ? {} : { landOnRow }),
     ...(onTopRow === undefined ? {} : { onTopRow }),

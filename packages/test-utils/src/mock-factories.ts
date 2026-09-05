@@ -11,6 +11,7 @@ import type {
   TaskRun,
 } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
+import type { RoomEntry, RoomEntryListResponse } from '@dorkos/shared/room-schemas';
 import type { WorktreeScanResult } from '@dorkos/shared/workspace';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { BUILTIN_MEMORY_PROVIDER_ID } from '@dorkos/shared/memory-provider';
@@ -187,10 +188,10 @@ function mockRoomHasNoRepoError(): Error & { code: string; status: number } {
  * @param entries - The page, oldest first. Empty by default.
  * @param threadRoots - Roots the page replies to but does not hold.
  */
-export function mockRoomEntryPage<T>(
-  entries: T[] = [],
-  threadRoots: T[] = []
-): { entries: T[]; threadRoots: T[] } {
+export function mockRoomEntryPage(
+  entries: RoomEntry[] = [],
+  threadRoots: RoomEntry[] = []
+): RoomEntryListResponse {
   return { entries, threadRoots };
 }
 

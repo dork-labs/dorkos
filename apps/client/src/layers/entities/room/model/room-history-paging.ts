@@ -30,12 +30,14 @@ export interface RoomHistoryPaging {
    */
   cursor: number | null;
   /**
-   * True once the room has answered a page with nothing new in it.
+   * True once a read has reached the beginning of what this reader may see.
    *
-   * Set from what came BACK rather than from the size of what was asked for.
-   * A page can be short for reasons that are not the beginning of the room, and
-   * it can be exactly full with nothing behind it; the one thing that always
-   * means "stop" is a read that moved the cursor nowhere.
+   * Decided by `pageReachesTheBeginning` — a page shorter than the limit it
+   * asked for, which on this route means there were no more rows rather than
+   * anything about filtering. This is the PRIMARY signal and it matters that it
+   * is: nearly every room in the product is smaller than one page, and a
+   * boundary derived only from "a read that found nothing new" would hang an
+   * "Older messages" control over every one of them until somebody pressed it.
    */
   exhausted: boolean;
 }
@@ -54,8 +56,7 @@ interface RoomHistoryPagingActions {
    * @param roomId - The room the page came from.
    * @param cursor - The page's own oldest `seq` (`olderCursor`), or `null` when
    *   the page was empty.
-   * @param exhausted - True when this read found nothing older than what was
-   *   already held.
+   * @param exhausted - See {@link RoomHistoryPaging.exhausted}.
    */
   notePage: (roomId: string, cursor: number | null, exhausted: boolean) => void;
 }

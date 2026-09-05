@@ -18,6 +18,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import {
   agentAuthorRef,
   REACTION_FREQUENTS_DEFAULT,
+  ROOM_ENTRY_PAGE_SIZE_DEFAULT,
   type PostToRoomResponse,
   type RoomEntry,
   type RoomEvent,
@@ -1173,10 +1174,21 @@ describe('ChannelsPage — reading older history', () => {
     useRoomHistoryPagingStore.setState({ paging: {} });
   });
 
+  /**
+   * A full page, because a short one IS the beginning of the room on this route
+   * — the control is not offered over a room that fitted in one read.
+   */
+  function firstPage(): RoomEntry[] {
+    const filler = Array.from({ length: ROOM_ENTRY_PAGE_SIZE_DEFAULT - 1 }, (_, i) =>
+      post(11 + i, `filler ${i}`)
+    );
+    return [post(10, 'what the room opened on'), ...filler];
+  }
+
   function renderRoom() {
     const listRoomEntries = vi
       .fn()
-      .mockResolvedValueOnce(mockRoomEntryPage([post(10, 'what the room opened on')]))
+      .mockResolvedValueOnce(mockRoomEntryPage(firstPage()))
       .mockResolvedValueOnce(mockRoomEntryPage([post(9, 'said the day before')]))
       // The beginning of the room. Nothing below seq 9, so the next read finds
       // nothing and the control has no more to offer.
@@ -1218,16 +1230,36 @@ describe('ChannelsPage — reading older history', () => {
     const drawn = screen.getAllByTestId('room-entry').map((row) => row.textContent);
     expect(drawn[0]).toContain('said the day before');
     expect(drawn[1]).toContain('what the room opened on');
+    // …and the control is gone, because that second read was short.
+    await waitFor(() => expect(screen.queryByTestId('room-load-older')).not.toBeInTheDocument());
   });
 
-  it('takes the control away once the room has nothing older left', async () => {
-    const user = userEvent.setup();
-    renderRoom();
+  it('offers nothing at all over a room that fitted in one read', async () => {
+    // The common room, through the whole stack: the first page comes back short
+    // and the control is never drawn, rather than drawn and then dead.
+    render(
+      <QueryClientProvider client={new QueryClient(createQueryClientConfig())}>
+        <EventStreamProvider>
+          <TransportProvider
+            transport={createMockTransport({
+              getRoom: vi.fn(() => Promise.resolve(roomWith('room-1', 'backend'))),
+              listRoomEntries: vi.fn(() =>
+                Promise.resolve(mockRoomEntryPage([post(1, 'the only thing said here')]))
+              ),
+              subscribeRoom: vi.fn((_id: string, _cursor: number, signal: AbortSignal) =>
+                staysOpen(signal)
+              ),
+            })}
+          >
+            <TooltipProvider>
+              <ChannelsPage />
+            </TooltipProvider>
+          </TransportProvider>
+        </EventStreamProvider>
+      </QueryClientProvider>
+    );
 
-    await user.click(await screen.findByTestId('room-load-older'));
-    await screen.findByText('said the day before');
-    await user.click(screen.getByTestId('room-load-older'));
-
-    await waitFor(() => expect(screen.queryByTestId('room-load-older')).not.toBeInTheDocument());
+    expect(await screen.findByText('the only thing said here')).toBeInTheDocument();
+    expect(screen.queryByTestId('room-load-older')).not.toBeInTheDocument();
   });
 });

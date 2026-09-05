@@ -115,14 +115,14 @@ export function useMarkRoomReadNow(): UseMutationResult<void, Error, string> {
 
   return useMutation({
     mutationFn: async (roomId: string) => {
-      // The PAGE's last entry, and neither of the two things it is easy to
-      // reach for instead. A page can ride with the thread roots it answers
-      // from outside itself (DOR-690), every one of them older than the page —
-      // so a merged array's `[0]` is a message from days ago whenever the
-      // room's newest line is a thread reply, and marking the room read would
-      // move the cursor BACKWARDS, leaving the badge the reader just pressed
-      // exactly where it was. Reading `entries` keeps the roots out of reach
-      // structurally rather than by taking the right end of a mixed list.
+      // `entries`, which is the PAGE — and the thread roots this read can also
+      // answer with are not in it. That separation is the whole protection
+      // (DOR-1734): a root fetched from behind the page is older than the page
+      // by an arbitrary distance (DOR-690), and a cursor that landed on one
+      // would move BACKWARDS, leaving the badge the reader just pressed exactly
+      // where it was. There is nowhere in this expression a root can appear, so
+      // the failure is unreachable rather than avoided — which is the version
+      // that survives somebody changing the `limit` below.
       const newest = (await transport.listRoomEntries(roomId, { limit: 1 })).entries.at(-1);
       if (!newest) return;
       await transport.setReadCursor('room', roomId, newest.seq);

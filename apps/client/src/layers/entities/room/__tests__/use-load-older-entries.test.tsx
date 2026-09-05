@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport, mockRoomEntryPage } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
-import type { RoomEntry } from '@dorkos/shared/room-schemas';
+import { ROOM_ENTRY_PAGE_SIZE_DEFAULT, type RoomEntry } from '@dorkos/shared/room-schemas';
 import { TransportProvider } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
 import { useRoomEntries } from '../model/use-room';
@@ -66,6 +66,21 @@ function useOpenRoom() {
   return { entries, older };
 }
 
+/**
+ * Exactly the page the client asks for — which is what makes a room look like it
+ * has more behind it.
+ *
+ * A page shorter than the limit is the beginning of the room on this route
+ * (`pageReachesTheBeginning`), so every fixture here that needs the control
+ * OFFERED has to answer with a full one. Two entries would be a room with two
+ * entries in it, and nothing to page back through.
+ *
+ * @param from - The `seq` the page starts at.
+ */
+function fullPage(from = 1): RoomEntry[] {
+  return Array.from({ length: ROOM_ENTRY_PAGE_SIZE_DEFAULT }, (_, i) => entry(from + i));
+}
+
 beforeEach(() => {
   useRoomHistoryPagingStore.setState({ paging: {} });
 });
@@ -73,24 +88,25 @@ beforeEach(() => {
 describe('useLoadOlderRoomEntries', () => {
   it('pages from the PAGE’s oldest entry, never the merged history’s', async () => {
     // The bug this exists to prevent, and the reason the wire keeps two arrays.
-    // The room opens on entries 10 and 11, and one of them answers entry 2 — so
-    // the merged history a reader sees starts at 2, sixty messages below the
-    // page floor. Paging from THAT seq asks for entries 1 and nothing else, and
-    // everything between 2 and 10 becomes unreachable for as long as the room
-    // exists. There is no error and no empty state; the history simply stops.
+    // The room opens on a page running from seq 10, and one entry in it answers
+    // entry 2 — so the merged history a reader sees starts at 2, eight messages
+    // below the page floor. Paging from THAT seq asks for entry 1 and nothing
+    // else, and everything between 2 and 10 becomes unreachable for as long as
+    // the room exists. There is no error and no empty state; the history simply
+    // stops.
+    const page = fullPage(10);
+    page[1] = entry(11, { threadRootEntryId: 'entry-2' });
     const transport = createMockTransport();
     transport.listRoomEntries = vi
       .fn()
-      .mockResolvedValueOnce(
-        mockRoomEntryPage([entry(10), entry(11, { threadRootEntryId: 'entry-2' })], [entry(2)])
-      )
+      .mockResolvedValueOnce(mockRoomEntryPage(page, [entry(2)]))
       .mockResolvedValueOnce(mockRoomEntryPage([entry(8), entry(9)]));
     const queryClient = makeQueryClient();
 
     const { result } = renderHook(() => useOpenRoom(), {
       wrapper: wrapperFor(transport, queryClient),
     });
-    await waitFor(() => expect(heldSeqs(queryClient)).toEqual([2, 10, 11]));
+    await waitFor(() => expect(heldSeqs(queryClient)?.[0]).toBe(2));
 
     await act(async () => {
       await result.current.older.loadOlder();
@@ -106,14 +122,14 @@ describe('useLoadOlderRoomEntries', () => {
     const transport = createMockTransport();
     transport.listRoomEntries = vi
       .fn()
-      .mockResolvedValueOnce(mockRoomEntryPage([entry(10), entry(11)]))
+      .mockResolvedValueOnce(mockRoomEntryPage(fullPage(10)))
       .mockResolvedValueOnce(mockRoomEntryPage([entry(8), entry(9)]));
     const queryClient = makeQueryClient();
 
     const { result } = renderHook(() => useOpenRoom(), {
       wrapper: wrapperFor(transport, queryClient),
     });
-    await waitFor(() => expect(heldSeqs(queryClient)).toEqual([10, 11]));
+    await waitFor(() => expect(heldSeqs(queryClient)?.[0]).toBe(10));
 
     await act(async () => {
       await result.current.older.loadOlder();
@@ -122,7 +138,9 @@ describe('useLoadOlderRoomEntries', () => {
     // One array, in `seq` order, with the older page in FRONT — a second cache
     // beside this one would leave every consumer joining two lists, and the two
     // cursors reading the last element of the wrong one.
-    expect(heldSeqs(queryClient)).toEqual([8, 9, 10, 11]);
+    const held = heldSeqs(queryClient)!;
+    expect(held.slice(0, 3)).toEqual([8, 9, 10]);
+    expect(held.at(-1)).toBe(10 + ROOM_ENTRY_PAGE_SIZE_DEFAULT - 1);
   });
 
   it('offers nothing over a room whose first page has not landed', () => {
@@ -150,15 +168,36 @@ describe('useLoadOlderRoomEntries', () => {
     expect(result.current.older.canLoadOlder).toBe(false);
   });
 
-  it('takes the offer away once a read comes back with nothing older', async () => {
-    // How a reader learns they have reached the beginning of a room. Measured
-    // on what came BACK rather than on how full the page was: a page can be
-    // short mid-room and exactly full with nothing behind it, and only "this
-    // read grew the history by nothing" is true in both.
+  it('offers nothing over a room that fitted in its first page', async () => {
+    // The overwhelmingly common room, and the reason a short page is the
+    // PRIMARY signal rather than a fallback: `GET /:id/entries` is one `WHERE`
+    // with an `ORDER BY` and a `LIMIT` and filters nothing afterwards, so two
+    // entries back from a read that asked for fifty means there were two. A
+    // boundary that waited to be proved by a press instead would hang a dead
+    // control over nearly every room in the product.
+    const transport = createMockTransport();
+    transport.listRoomEntries = vi.fn().mockResolvedValue(mockRoomEntryPage([entry(1), entry(2)]));
+    const queryClient = makeQueryClient();
+
+    const { result } = renderHook(() => useOpenRoom(), {
+      wrapper: wrapperFor(transport, queryClient),
+    });
+    await waitFor(() => expect(result.current.entries.isSuccess).toBe(true));
+
+    expect(result.current.older.canLoadOlder).toBe(false);
+    // And it cost nothing to know: no second read was needed to find out.
+    expect(transport.listRoomEntries).toHaveBeenCalledTimes(1);
+  });
+
+  it('takes the offer away when an exactly-full last page is followed by nothing', async () => {
+    // The one case page-fullness gets wrong, and how it corrects itself. A room
+    // holding exactly one page looks identical to a room holding more, so the
+    // control is offered once — and the read behind it comes back empty, which
+    // is short by any measure.
     const transport = createMockTransport();
     transport.listRoomEntries = vi
       .fn()
-      .mockResolvedValueOnce(mockRoomEntryPage([entry(1), entry(2)]))
+      .mockResolvedValueOnce(mockRoomEntryPage(fullPage()))
       .mockResolvedValueOnce(mockRoomEntryPage());
     const queryClient = makeQueryClient();
 
@@ -172,16 +211,61 @@ describe('useLoadOlderRoomEntries', () => {
     });
 
     await waitFor(() => expect(result.current.older.canLoadOlder).toBe(false));
-    expect(heldSeqs(queryClient)).toEqual([1, 2]);
+  });
+
+  it('does not let a second press in flight decide the room has ended', async () => {
+    // The re-entrancy guard, which is the GATE — the button's `disabled` is an
+    // affordance and this callback is reachable without it. Two presses at the
+    // same cursor would read the same page twice; the second merge changes
+    // nothing, and "this read grew the history by nothing" would then be
+    // recorded as the beginning of a room with plenty left.
+    const transport = createMockTransport();
+    let answerSecondPage!: (page: ReturnType<typeof mockRoomEntryPage>) => void;
+    transport.listRoomEntries = vi
+      .fn()
+      .mockResolvedValueOnce(mockRoomEntryPage(fullPage()))
+      .mockReturnValueOnce(
+        new Promise<ReturnType<typeof mockRoomEntryPage>>((resolve) => {
+          answerSecondPage = resolve;
+        })
+      );
+    const queryClient = makeQueryClient();
+
+    const { result } = renderHook(() => useOpenRoom(), {
+      wrapper: wrapperFor(transport, queryClient),
+    });
+    await waitFor(() => expect(result.current.older.canLoadOlder).toBe(true));
+
+    // Two presses, the second while the first read is still in the air.
+    let first!: Promise<void>;
+    await act(async () => {
+      first = result.current.older.loadOlder();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await result.current.older.loadOlder();
+    });
+
+    // The second press bought no second read.
+    expect(transport.listRoomEntries).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      answerSecondPage(mockRoomEntryPage(fullPage(51)));
+      await first;
+    });
+
+    // …and the room is still offering the history it still has.
+    expect(result.current.older.canLoadOlder).toBe(true);
   });
 
   it('keeps offering while there is more, so a reader can walk a room back', async () => {
+    // Three full pages, tiling a room 150 entries deep from the newest back.
     const transport = createMockTransport();
     transport.listRoomEntries = vi
       .fn()
-      .mockResolvedValueOnce(mockRoomEntryPage([entry(5), entry(6)]))
-      .mockResolvedValueOnce(mockRoomEntryPage([entry(3), entry(4)]))
-      .mockResolvedValueOnce(mockRoomEntryPage([entry(1), entry(2)]));
+      .mockResolvedValueOnce(mockRoomEntryPage(fullPage(101)))
+      .mockResolvedValueOnce(mockRoomEntryPage(fullPage(51)))
+      .mockResolvedValueOnce(mockRoomEntryPage(fullPage(1)));
     const queryClient = makeQueryClient();
 
     const { result } = renderHook(() => useOpenRoom(), {
@@ -196,11 +280,13 @@ describe('useLoadOlderRoomEntries', () => {
       await result.current.older.loadOlder();
     });
 
-    expect(heldSeqs(queryClient)).toEqual([1, 2, 3, 4, 5, 6]);
-    // The second read paged from the second page's floor, not from the first's.
+    // Every entry, once, in the room's own order.
+    expect(heldSeqs(queryClient)).toEqual(Array.from({ length: 150 }, (_, i) => i + 1));
+    // The second read paged from the SECOND page's floor, not the first's — a
+    // cursor that failed to move is a reader stuck reading one page forever.
     expect(transport.listRoomEntries).toHaveBeenLastCalledWith(
       ROOM,
-      expect.objectContaining({ before: 3 })
+      expect.objectContaining({ before: 51 })
     );
     expect(result.current.older.canLoadOlder).toBe(true);
   });
@@ -212,7 +298,7 @@ describe('useLoadOlderRoomEntries', () => {
     const transport = createMockTransport();
     transport.listRoomEntries = vi
       .fn()
-      .mockResolvedValueOnce(mockRoomEntryPage([entry(5), entry(6)]))
+      .mockResolvedValueOnce(mockRoomEntryPage(fullPage(5)))
       .mockRejectedValueOnce(new Error('offline'));
     const queryClient = makeQueryClient();
 
@@ -225,7 +311,7 @@ describe('useLoadOlderRoomEntries', () => {
       await expect(result.current.older.loadOlder()).resolves.toBeUndefined();
     });
 
-    expect(heldSeqs(queryClient)).toEqual([5, 6]);
+    expect(heldSeqs(queryClient)).toHaveLength(ROOM_ENTRY_PAGE_SIZE_DEFAULT);
     // Still offered: a read that failed is not a room that has ended.
     expect(result.current.older.canLoadOlder).toBe(true);
   });
