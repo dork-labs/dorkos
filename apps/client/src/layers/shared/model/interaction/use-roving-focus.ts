@@ -25,7 +25,7 @@
  *
  * @module shared/model/use-roving-focus
  */
-import { useCallback, useEffect, useRef, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useRef, type HTMLAttributes, type KeyboardEvent } from 'react';
 
 /** The mark {@link useRovingFocus} finds its rows by — stamped by `SidebarRow`. */
 export const SIDEBAR_ROW_ATTRIBUTE = 'data-sidebar-row';
@@ -52,6 +52,37 @@ export const SIDEBAR_GLYPH_ACTION_ATTRIBUTE = 'data-sidebar-glyph-action';
 
 /** The mark a control in the row's right gutter carries, between the row and its "⋮". */
 export const SIDEBAR_TRAILING_ACTION_ATTRIBUTE = 'data-sidebar-trailing-action';
+
+/**
+ * The mark a drag root carries while the thing inside it is off the ground.
+ *
+ * Stamped by the sidebar's drag layer, read here: a keyboard drag is steered
+ * with the same four arrow keys this hook traverses with, and both were
+ * answering them. The drag's answer is the one that matters — a row in the air
+ * has to keep the focus that is carrying it — so the traversal stands down for
+ * as long as the mark is up (DOR-1746).
+ */
+export const SIDEBAR_DRAGGING_ATTRIBUTE = 'data-sidebar-dragging';
+
+/**
+ * What the drag layer puts on a roving STOP so a keyboard drag can start from
+ * the element the arrows actually reach.
+ *
+ * **The contract this hook is one half of.** Every stop it manages is stamped
+ * `tabIndex={-1}` bar one, so any element the drag layer registers as its own
+ * activator — a wrapper, a handle, anything that is not a stop — is an element
+ * no key can reach, and its keyboard drag exists only for code that focuses it
+ * by hand. The other half is spelled here rather than in the drag layer because
+ * this is the module that decides which element a keyboard can land on.
+ *
+ * Declared as loose DOM props (`ref` plus dnd-kit's activators and its
+ * `aria-describedby` instructions) so `shared/ui` can accept it without reaching
+ * into `features/` for the drag layer's own binding types.
+ */
+export interface SidebarDragActivatorProps extends HTMLAttributes<HTMLElement> {
+  /** Registers the stop as the drag's activator node. */
+  ref: (element: HTMLElement | null) => void;
+}
 
 /**
  * Everything in a section that a browser would otherwise put in the tab order.
@@ -307,6 +338,15 @@ export function useRovingFocus(options?: {
       if (!container) return;
       const target = event.target as HTMLElement | null;
       if (!target) return;
+
+      // **A row in the air keeps the focus that is carrying it.** dnd-kit's
+      // keyboard sensor steers a lifted row with the same arrows this hook
+      // traverses with, and it listens on the document — below every React
+      // handler here — so without this both ran: the row moved AND focus left
+      // it for the row below, which then answered the next key on the wrong
+      // element's behalf. Nothing else in the section is reachable mid-drag
+      // anyway; Escape and Space are how a drag ends (DOR-1746).
+      if (target.closest(`[${SIDEBAR_DRAGGING_ATTRIBUTE}]`)) return;
 
       const stops = stopsIn(container);
       if (stops.length === 0) return;

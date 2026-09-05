@@ -10,7 +10,7 @@
  *
  * @module shared/ui/sidebar-row
  */
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { CSSProperties, HTMLAttributes, ReactNode, Ref, RefObject } from 'react';
 import { motion, type MotionProps } from 'motion/react';
 import { cva } from 'class-variance-authority';
@@ -20,6 +20,7 @@ import {
   SIDEBAR_GLYPH_ACTION_ATTRIBUTE,
   SIDEBAR_ROW_ATTRIBUTE,
   SIDEBAR_TRAILING_ACTION_ATTRIBUTE,
+  type SidebarDragActivatorProps,
 } from '@/layers/shared/model';
 import {
   ROW_TITLE_CLASS,
@@ -261,14 +262,35 @@ const ROW_SECOND_LINE_CLASS =
 export interface RowDragBindings {
   /** Ref for the measured/draggable node. */
   setNodeRef: (element: HTMLElement | null) => void;
-  /** Spread onto the drag root (pointer/keyboard activators + a11y). */
-  handleProps: HTMLAttributes<HTMLElement>;
+  /** Spread onto the drag root — the sortable ARIA, and no tab stop of its own. */
+  rootProps: HTMLAttributes<HTMLElement>;
+  /**
+   * Spread onto the row's own `<button>` — the element the sidebar's roving
+   * focus makes reachable, and therefore the only one a keyboard can start a
+   * drag from (DOR-1746). Carries the drag's pointer and keyboard activators.
+   */
+  activatorProps: SidebarDragActivatorProps;
   /** Live drag transform. */
   style: CSSProperties;
   /** Whether this row is the one being dragged. */
   isDragging: boolean;
   /** Whether a drag is currently hovering this row as a drop target. */
   isOver: boolean;
+}
+
+/**
+ * Point two refs at one element.
+ *
+ * The row's `<button>` is both the caller's handle (`buttonRef` — how a list
+ * scrolls a row into view or restores focus to it) and, when the row is a drag
+ * source, the drag's activator node. Neither can give way to the other.
+ *
+ * @param ref - A caller's ref, in either of React's two shapes.
+ * @param element - The node to publish, or `null` on unmount.
+ */
+function assignRef<T>(ref: Ref<T> | undefined, element: T | null): void {
+  if (typeof ref === 'function') ref(element);
+  else if (ref !== null && ref !== undefined) ref.current = element;
 }
 
 /**
@@ -590,6 +612,18 @@ export function SidebarRow({
   const reservationRef = useRef<HTMLSpanElement>(null);
   useReservationGuard(reservationRef, trailingAction?.label);
 
+  // The row's button answers to the caller AND to the drag layer — see
+  // {@link assignRef}. When the row is not a drag source the second half is
+  // simply absent.
+  const dragActivatorRef = drag?.activatorProps.ref;
+  const rowRef = useCallback(
+    (element: HTMLButtonElement | null) => {
+      assignRef(buttonRef, element);
+      dragActivatorRef?.(element);
+    },
+    [buttonRef, dragActivatorRef]
+  );
+
   const row =
     editor !== undefined ? (
       <div className={cn('flex w-full items-center gap-2 rounded-md py-1.5', SIDEBAR_ROW_INSET)}>
@@ -600,7 +634,11 @@ export function SidebarRow({
       </div>
     ) : (
       <button
-        ref={buttonRef}
+        // The drag activators FIRST, so the row's own `ref` and handlers below
+        // win any name they share: this row is the drag's handle, not a wrapper
+        // around one, and it is still a row before it is that.
+        {...(drag?.activatorProps ?? {})}
+        ref={rowRef}
         type="button"
         onClick={onSelect}
         title={composeRowLabel(who, plainTitle) || undefined}
@@ -696,10 +734,14 @@ export function SidebarRow({
       <div
         ref={drag?.setNodeRef}
         style={drag?.style}
-        {...drag?.handleProps}
+        {...(drag?.rootProps ?? {})}
         className={cn(
-          drag !== undefined &&
-            'focus-visible:ring-sidebar-ring rounded-md outline-hidden focus-visible:ring-2',
+          // Just the corner. The focus ring this used to carry was for a root
+          // that dnd-kit made focusable and the roving focus then took straight
+          // back out of the tab order — a ring on an element nothing could focus
+          // (DOR-1746). The row's own button rings itself; this box only has to
+          // agree with the shape of the drop ring below it.
+          drag !== undefined && 'rounded-md',
           drag?.isDragging && 'opacity-40',
           // **An inset ring, not an outer one** (D5): the drop target is inside
           // the section's own body, which is clipped while it folds, and a ring

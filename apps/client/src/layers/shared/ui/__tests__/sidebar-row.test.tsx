@@ -252,7 +252,8 @@ describe('SidebarRow — the trailing action slot (DOR-1111)', () => {
   /** Drag bindings shaped like dnd-kit's, carrying a transform we can look for. */
   const DRAGGED = {
     setNodeRef: () => {},
-    handleProps: {},
+    rootProps: {},
+    activatorProps: { ref: () => {} },
     style: { transform: 'translate3d(0px, 60px, 0px)' },
     isDragging: true,
     isOver: false,
