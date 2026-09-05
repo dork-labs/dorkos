@@ -340,8 +340,12 @@ export default defineConfig({
     // CI does not set this variable either, but it is no longer at zero
     // retries: the merge-queue leg passes `--retry=1` on the command line and
     // loads scripts/vitest-flake-reporter.ts, which NAMES every test the retry
-    // absorbed (DOR-1701). The flag rather than the variable, because the flag
-    // reaches all 18 packages while this variable is wired into two configs.
+    // absorbed (DOR-1701). The flag rather than the variable, because it states
+    // that leg's budget in the workflow beside the reporter that makes it
+    // visible — one decision in one place — and because the lefthook gate
+    // cannot use a flag at all (turbo hashes passthrough args into the cache
+    // key). Reach is NOT part of that argument: DOR-1772 wired this variable
+    // into all 21 vitest projects, so both spellings now cover every package.
     // See .github/workflows/test.yml for why a named retry is a different
     // bargain from a silent one.
     retry: process.env.VITEST_RETRY ? Number(process.env.VITEST_RETRY) : 0,

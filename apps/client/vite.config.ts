@@ -98,7 +98,8 @@ export default defineConfig({
     // the host shell has NODE_ENV=production.
     env: { NODE_ENV: 'test' },
     setupFiles: ['./src/test-setup.ts'],
-    // Honors the pre-push gate's VITEST_RETRY budget; 0 for dev and CI runs.
+    // Honors the pre-push gate's VITEST_RETRY budget; 0 when unset. CI sets its
+    // own budget on the command line instead (DOR-1701).
     // Rationale: apps/server/vitest.config.ts. Pinned for every project by
     // scripts/__tests__/vitest-projects.test.ts (DOR-1772).
     retry: process.env.VITEST_RETRY ? Number(process.env.VITEST_RETRY) : 0,

@@ -130,10 +130,17 @@ function configPathFor(project: string): string {
  * is wrong.
  *
  * Rather than by regex, because a regex cannot tell a `retry:` in a comment from
- * one in code, nor one nested under `coverage:` from the one Vitest reads. This
- * walks to the `defineConfig` call, into its object-literal argument, into the
- * `test` property, and reads `retry` from there — so only the assignment that
- * actually configures the runner can satisfy it.
+ * one in code, nor one nested under `coverage:` from the one Vitest reads.
+ *
+ * The walk starts at `export default`, NOT at "any `defineConfig` call in the
+ * file", because only the exported one is the config Vitest loads. Walking the
+ * whole file was satisfied by a dead decoy — an unexported `defineConfig({ test:
+ * { retry: … } })` sitting above the real export — which is a guard reporting on
+ * code that never runs. Every config in the repo is `export default
+ * defineConfig({ … })`, so anything else is a shape this function has not been
+ * taught to read and it throws rather than returning `undefined`: "no retry" and
+ * "I could not find where the retry would be" are different facts, and only the
+ * second one is fixed by editing this file.
  *
  * @param configPath - Absolute path of the project's vitest/vite config file.
  */
@@ -144,42 +151,47 @@ function retryExpression(configPath: string): string | undefined {
     ts.ScriptTarget.Latest,
     true
   );
+  const shown = path.relative(repoRoot, configPath);
+
+  const exported = source.statements.find(ts.isExportAssignment);
+  if (!exported || exported.isExportEquals) {
+    throw new Error(`${shown} has no \`export default\` for this guard to read.`);
+  }
+
+  const call = exported.expression;
+  if (
+    !ts.isCallExpression(call) ||
+    !ts.isIdentifier(call.expression) ||
+    call.expression.text !== 'defineConfig'
+  ) {
+    throw new Error(`${shown} does not \`export default defineConfig(…)\`.`);
+  }
+
+  const configArgument = call.arguments[0];
+  if (!configArgument || !ts.isObjectLiteralExpression(configArgument)) {
+    throw new Error(`${shown} passes something other than an object literal to defineConfig().`);
+  }
 
   let found: string | undefined;
-
-  const visit = (node: ts.Node): void => {
-    const configArgument =
-      ts.isCallExpression(node) &&
-      ts.isIdentifier(node.expression) &&
-      node.expression.text === 'defineConfig'
-        ? node.arguments[0]
-        : undefined;
-
-    if (configArgument && ts.isObjectLiteralExpression(configArgument)) {
-      for (const topLevel of configArgument.properties) {
-        if (
-          !ts.isPropertyAssignment(topLevel) ||
-          !ts.isIdentifier(topLevel.name) ||
-          topLevel.name.text !== 'test' ||
-          !ts.isObjectLiteralExpression(topLevel.initializer)
-        ) {
-          continue;
-        }
-        for (const testProp of topLevel.initializer.properties) {
-          if (
-            ts.isPropertyAssignment(testProp) &&
-            ts.isIdentifier(testProp.name) &&
-            testProp.name.text === 'retry'
-          ) {
-            found = testProp.initializer.getText(source).replace(/\s+/g, ' ');
-          }
-        }
+  for (const topLevel of configArgument.properties) {
+    if (
+      !ts.isPropertyAssignment(topLevel) ||
+      !ts.isIdentifier(topLevel.name) ||
+      topLevel.name.text !== 'test' ||
+      !ts.isObjectLiteralExpression(topLevel.initializer)
+    ) {
+      continue;
+    }
+    for (const testProp of topLevel.initializer.properties) {
+      if (
+        ts.isPropertyAssignment(testProp) &&
+        ts.isIdentifier(testProp.name) &&
+        testProp.name.text === 'retry'
+      ) {
+        found = testProp.initializer.getText(source).replace(/\s+/g, ' ');
       }
     }
-    ts.forEachChild(node, visit);
-  };
-
-  visit(source);
+  }
   return found;
 }
 
