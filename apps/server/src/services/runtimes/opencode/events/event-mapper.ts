@@ -21,7 +21,7 @@
  * The filter matches on the OPENCODE session id (`ses_*`), while emitted
  * StreamEvents are stamped with the DORKOS session id supplied to
  * {@link createOpenCodeEventContext} — the two ids are DIFFERENT namespaces,
- * bridged by `session-mapper.ts` at the subscription site (task 3.6).
+ * bridged by `sessions/session-mapper.ts` at the subscription site (task 3.6).
  *
  * TURN-END VERDICT (upstream evidence): `session.idle` is the authoritative
  * turn terminal. `SessionStatus.set(sessionID, {type:"idle"})` (`status.ts`)
@@ -365,7 +365,7 @@ export async function* mapOpenCodeTurn(
  * `agent-etiquette.md` violation), a task summary was 500 characters of
  * `<gen_ui>`, and both were written to the durable event log, where the
  * EventLog history fallback replays them forever. History never had the bug
- * (`session-mapper.ts` skips `role === 'user' && synthetic`); this restores the
+ * (`sessions/session-mapper.ts` skips `role === 'user' && synthetic`); this restores the
  * same rule to the live path, and covers the un-`synthetic` halves history
  * cannot see either — the pristine echo and the `<dork-kickoff>` birth turn.
  *

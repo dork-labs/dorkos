@@ -3,8 +3,8 @@ import {
   mapPermissionAsked,
   mapPermissionReplied,
   type OpenCodePermissionState,
-} from '../session-event-mapper.js';
-import { mapOpenCodeEvent, createOpenCodeEventContext } from '../event-mapper.js';
+} from '../events/session-event-mapper.js';
+import { mapOpenCodeEvent, createOpenCodeEventContext } from '../events/event-mapper.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import type { ApprovalEvent } from '@dorkos/shared/types';
 

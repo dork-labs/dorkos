@@ -17,7 +17,7 @@
  * filtered that array down to `block.type === 'text'`, so a tool that answered
  * with a screenshot answered with nothing.
  *
- * Same pure/async split as `runtimes/opencode/media-capture.ts`: `event-mapper`
+ * Same pure/async split as `runtimes/opencode/events/media-capture.ts`: `event-mapper`
  * is synchronous and records an INTENT on the per-turn context; this drains
  * those intents from the runtime's own async turn loop, writes the bytes through
  * the {@link SessionAttachmentStore}, and yields the `image_attachment` events.

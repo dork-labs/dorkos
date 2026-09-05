@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { describeAuthError } from '@dorkos/shared/runtime-error-classification';
-import { mapMessageError } from '../history-error-part.js';
+import { mapMessageError } from '../events/history-error-part.js';
 
 /**
  * Verbatim `error.data.message` strings from this machine's OpenCode store

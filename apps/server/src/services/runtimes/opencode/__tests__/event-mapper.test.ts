@@ -12,7 +12,7 @@ import {
   matchesOpenCodeSubagentSession,
   type OpenCodeEventContext,
   type OpenCodeWireEvent,
-} from '../event-mapper.js';
+} from '../events/event-mapper.js';
 import {
   COMPLETED_AT,
   CREATED_AT,

@@ -8,7 +8,7 @@ import type {
 } from '@opencode-ai/sdk';
 import { DIRECTORY_MEMBERSHIP_VECTORS } from '@dorkos/test-utils';
 import { describeAuthError } from '@dorkos/shared/runtime-error-classification';
-import { OpenCodeSessionMapper, type OpenCodeClientProvider } from '../session-mapper.js';
+import { OpenCodeSessionMapper, type OpenCodeClientProvider } from '../sessions/session-mapper.js';
 import { SESSION_LIST_LIMIT, SESSION_REBUILD_LIMIT } from '../runtime-constants.js';
 
 // SDK-only access guard (ADR-0308: OpenCode's store is opaque, runtime-owned).

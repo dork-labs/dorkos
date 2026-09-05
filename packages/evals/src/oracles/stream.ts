@@ -411,7 +411,7 @@ export function costReportedPositive(label?: string): Oracle {
  *
  * The pin this protects is spelling. DorkOS stores one model string per session
  * and OpenCode addresses models as `{providerID, modelID}`, so
- * `parseModelSelection` (`opencode/turn-input.ts`) splits on the FIRST `/` —
+ * `parseModelSelection` (`opencode/messaging/turn-input.ts`) splits on the FIRST `/` —
  * which makes `openrouter/qwen/qwen3.7-flash` right and both
  * `qwen/qwen3.7-flash` and `openrouter/qwen3.7-flash` wrong in ways that fail
  * far from the typo. Reading the model back off the stream is what turns the

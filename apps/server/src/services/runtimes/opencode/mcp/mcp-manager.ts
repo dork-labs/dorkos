@@ -19,12 +19,12 @@
 import type { OpencodeClient } from '@opencode-ai/sdk';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import type { AgentRegistryPort, ManagedMcpServerResolver } from '@dorkos/shared/agent-runtime';
-import { logger, logError } from '../../../lib/logger.js';
-import { resolveDorkosMcpInjection } from '../shared/dorkos-mcp-injection.js';
-import { DORKOS_MCP_SERVER_NAME } from '../shared/dorkos-tool-names.js';
+import { logger, logError } from '../../../../lib/logger.js';
+import { resolveDorkosMcpInjection } from '../../shared/dorkos-mcp-injection.js';
+import { DORKOS_MCP_SERVER_NAME } from '../../shared/dorkos-tool-names.js';
 import { enumerateOpenCodeMcpServers } from './mcp-status.js';
 import { toOpenCodeMcpServers, type OpenCodeMcpServerConfig } from './mcp-server-config.js';
-import type { OpenCodeClientProvider } from './session-mapper.js';
+import type { OpenCodeClientProvider } from '../sessions/session-mapper.js';
 
 /**
  * How long a warmed per-directory MCP-status cache stays fresh before

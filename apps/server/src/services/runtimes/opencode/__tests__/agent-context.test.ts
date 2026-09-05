@@ -25,7 +25,7 @@ import type { GlobalEvent, OpencodeClient } from '@opencode-ai/sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { AGENT_TOKEN_ENV_VAR } from '../../../core/agent-identity/index.js';
 import { OpenCodeRuntime } from '../opencode-runtime.js';
-import { TurnEventQueue } from '../global-event-hub.js';
+import { TurnEventQueue } from '../events/global-event-hub.js';
 import { globalEvent, serverConnected, sessionIdle, sessionInfo } from './opencode-sse-fixtures.js';
 
 vi.mock('../providers/check-dependencies.js', () => ({

@@ -15,7 +15,7 @@
  * input and output are arguments and file contents rather than speech.
  *
  * **It therefore keeps strictly less than the runtime's own history mapper**
- * (`runtimes/opencode/session-mapper.ts`), which the spec pointed at as reusable.
+ * (`runtimes/opencode/sessions/session-mapper.ts`), which the spec pointed at as reusable.
  * That mapper renders a conversation and so keeps reasoning blocks and tool
  * calls; this one answers "where did we talk about X". The two share their
  * authorship rules — `ignored` text never rendered, and `synthetic` user text is
@@ -69,7 +69,7 @@ export interface OpenCodeMessageRow {
    * Carried onto the indexed row as {@link ProjectedMessage.messageId}: it is
    * the same id the session view renders this message under — the mapper builds
    * `HistoryMessage.id` from the SDK's `info.id`, which is this row
-   * (`runtimes/opencode/session-mapper.ts`) — so it is what lets a search hit
+   * (`runtimes/opencode/sessions/session-mapper.ts`) — so it is what lets a search hit
    * land on the message (DOR-1579).
    */
   id: string;

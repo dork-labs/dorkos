@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { PendingApprovalStore } from '../approvals.js';
+import { PendingApprovalStore } from '../messaging/approvals.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 
@@ -79,7 +79,7 @@ describe('PendingApprovalStore expiry marking', () => {
   });
 
   it('writes the same durable log line claude-code writes when nobody answers (DOR-803)', () => {
-    // Before this, opencode/approvals.ts armed the same auto-deny timer as
+    // Before this, opencode/messaging/approvals.ts armed the same auto-deny timer as
     // claude-code's interactive-handlers.ts but logged nothing when it fired —
     // "DorkOS writes a line saying which agent gave up" held for only one
     // runtime. This pins the structured shape claude-code's own

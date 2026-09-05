@@ -10,7 +10,7 @@
  * sidecar simply reports a model it cannot reach, which reads like an outage.
  */
 import { describe, it, expect } from 'vitest';
-import { parseModelSelection } from '../turn-input.js';
+import { parseModelSelection } from '../messaging/turn-input.js';
 
 describe('parseModelSelection', () => {
   it('splits an OpenRouter pin on the FIRST slash, leaving the vendor path in the model id', () => {

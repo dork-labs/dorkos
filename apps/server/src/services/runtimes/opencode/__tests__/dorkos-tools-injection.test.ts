@@ -64,7 +64,7 @@ vi.mock('../../../core/auth/mcp-local-token.js', async (importOriginal) => {
   return { ...actual, getMcpLocalToken: () => 'dork_mcp_local_abc123' };
 });
 
-const { OpenCodeMcpManager } = await import('../mcp-manager.js');
+const { OpenCodeMcpManager } = await import('../mcp/mcp-manager.js');
 
 /** One recorded `client.mcp.add` call. */
 interface AddCall {

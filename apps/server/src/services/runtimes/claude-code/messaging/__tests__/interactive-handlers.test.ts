@@ -9,7 +9,7 @@ import {
   type ToolApprovalContext,
 } from '../interactive-handlers.js';
 import type { InteractiveSession, PendingInteraction } from '../interaction-wait.js';
-import { resolveApprovalDecision } from '../../../opencode/approvals.js';
+import { resolveApprovalDecision } from '../../../opencode/messaging/approvals.js';
 import { toRawSessionEvent } from '../../../../session/session-event-normalizer.js';
 import type { StreamEvent, QuestionItem } from '@dorkos/shared/types';
 import { PermissionModeSchema, type PermissionMode } from '@dorkos/shared/schemas';

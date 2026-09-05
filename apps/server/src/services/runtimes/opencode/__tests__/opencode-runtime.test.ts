@@ -23,7 +23,7 @@ import {
   getConnectedOpenCodeProvider,
 } from '../providers/check-dependencies.js';
 import { detectOllama } from '../providers/ollama.js';
-import { TurnEventQueue } from '../global-event-hub.js';
+import { TurnEventQueue } from '../events/global-event-hub.js';
 import {
   DIRECTORY,
   OTHER_DIRECTORY,

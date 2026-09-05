@@ -19,7 +19,7 @@
  * @module services/runtimes/opencode/session-map
  */
 import { opencodeSessions, eq, or, type Db } from '@dorkos/db';
-import { logger, logError } from '../../../lib/logger.js';
+import { logger, logError } from '../../../../lib/logger.js';
 
 /** One persisted DorkOS <-> OpenCode session binding. */
 export interface OpenCodeSessionBinding {

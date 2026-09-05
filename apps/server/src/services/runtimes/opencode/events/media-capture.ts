@@ -34,8 +34,8 @@ import {
   UnsupportedSessionMediaError,
   deriveSessionAttachmentId,
   type SessionAttachmentStore,
-} from '../../session/attachments/index.js';
-import { logger } from '../../../lib/logger.js';
+} from '../../../session/attachments/index.js';
+import { logger } from '../../../../lib/logger.js';
 
 /**
  * One image OpenCode handed over, recorded by the pure mapper and not yet

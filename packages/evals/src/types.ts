@@ -150,7 +150,7 @@ export const OPENROUTER_PROVIDER_ID = 'openrouter';
  * spelling.
  *
  * **The two-segment tail is load-bearing.** `parseModelSelection`
- * (`services/runtimes/opencode/turn-input.ts`) splits on the FIRST `/` only, so
+ * (`services/runtimes/opencode/messaging/turn-input.ts`) splits on the FIRST `/` only, so
  * this resolves to `{providerID: 'openrouter', modelID: 'qwen/qwen3.7-flash'}` —
  * the shape OpenCode's `session.promptAsync` body wants. Written any other way
  * (`qwen/qwen3.7-flash` alone, or `openrouter/qwen3.7-flash`) the sidecar is

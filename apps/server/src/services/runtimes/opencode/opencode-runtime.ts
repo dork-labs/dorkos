@@ -24,7 +24,7 @@
  * `POST /session/{id}/permissions/{permissionID}` with `once`/`reject` (never
  * `always` — NOTES.md §2), mode enforcement auto-answers under
  * `acceptEdits`/`bypassPermissions`, and every forwarded request carries a
- * server-side auto-deny timer (see `approvals.ts`).
+ * server-side auto-deny timer (see `messaging/approvals.ts`).
  *
  * @module services/runtimes/opencode/opencode-runtime
  */
@@ -66,7 +66,7 @@ import { readLogBackedHistory } from '../../session/log-backed-history.js';
 import { SessionLockManager } from '../../session/session-lock.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { logger, logError } from '../../../lib/logger.js';
-import { buildOpenCodeTurnContext } from './turn-context.js';
+import { buildOpenCodeTurnContext } from './messaging/turn-context.js';
 import {
   checkOpenCodeDependencies,
   getConnectedOpenCodeProvider,
@@ -79,30 +79,34 @@ import {
   matchesOpenCodeSession,
   matchesOpenCodeSubagentSession,
   type OpenCodeWireEvent,
-} from './event-mapper.js';
-import { mapOpenCodeTodos } from './session-event-mapper.js';
+} from './events/event-mapper.js';
+import { mapOpenCodeTodos } from './events/session-event-mapper.js';
 import {
   OpenCodeSessionMapper,
   unwrap,
   type OpenCodeClientProvider,
   type OpenCodeSessionMapStore,
-} from './session-mapper.js';
-import { OpenCodeGlobalEventHub, TurnEventQueue } from './global-event-hub.js';
-import { OpenCodeSessionRegistry, type OpenCodeSessionPatch } from './session-registry.js';
+} from './sessions/session-mapper.js';
+import { OpenCodeGlobalEventHub, TurnEventQueue } from './events/global-event-hub.js';
+import { OpenCodeSessionRegistry, type OpenCodeSessionPatch } from './sessions/session-registry.js';
 import {
   enforceApprovals,
   PendingApprovalStore,
   respondPermission,
   type ApprovalGateDeps,
   type ApprovalRouting,
-} from './approvals.js';
+} from './messaging/approvals.js';
 import { OPENCODE_CAPABILITIES, STREAM_LIVE_TIMEOUT_MS } from './runtime-constants.js';
-import { awaitAbortAck, delay } from './bounded-abort.js';
-import { buildOpenCodeParts, buildOpenCodeSystem, parseModelSelection } from './turn-input.js';
-import { resolveCompactionModel } from './compaction-model.js';
+import { awaitAbortAck, delay } from './messaging/bounded-abort.js';
+import {
+  buildOpenCodeParts,
+  buildOpenCodeSystem,
+  parseModelSelection,
+} from './messaging/turn-input.js';
+import { resolveCompactionModel } from './messaging/compaction-model.js';
 import { projectModelOptions, projectedProviderIds } from './providers/models.js';
-import { OpenCodeMcpManager } from './mcp-manager.js';
-import { captureOpenCodeMedia } from './media-capture.js';
+import { OpenCodeMcpManager } from './mcp/mcp-manager.js';
+import { captureOpenCodeMedia } from './events/media-capture.js';
 import type { SessionAttachmentStore } from '../../session/attachments/index.js';
 
 /** Constructor dependencies for {@link OpenCodeRuntime} (composition root). */
