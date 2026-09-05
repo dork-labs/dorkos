@@ -66,11 +66,68 @@ function rejectNonLoopback(req: Request, res: Response): boolean {
   return true;
 }
 
+/**
+ * Reject non-local requests to a HOST-MUTATING install with 403; returns `true`
+ * when the request was rejected.
+ *
+ * Separate from {@link rejectNonLoopback} only for its wording: an install
+ * refusal says "provisioning", a connect refusal says "connect actions". Same
+ * locality question underneath.
+ */
+function rejectNonLocalProvisioning(req: Request, res: Response): boolean {
+  if (isLocalCaller(req)) return false;
+  res.status(403).json({ error: 'Runtime provisioning is only available locally' });
+  return true;
+}
+
 /** Write one SSE frame, no-op once the response has ended. */
 function sendEvent(res: Response, event: string, data: unknown): void {
   if (res.writableEnded) return;
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+/**
+ * Run one long action and stream it over SSE: `progress` frames while it runs,
+ * then a single terminal `result` frame carrying the outcome. Every streaming
+ * endpoint in this router shares this scaffold, so the client renders one flow
+ * for all of them — its `postSseAction` (`shared/lib/transport/system-methods.ts`)
+ * is the mirror image on the other side of the wire.
+ *
+ * The locality check deliberately stays at the call site, ABOVE this call: a
+ * 403 is a JSON body, and it can only be written before the SSE headers go out.
+ *
+ * Every action here reports its own failures as a result rather than throwing,
+ * so the catch is a defensive guard: it answers with {@link fallback} so the
+ * client always gets its terminal frame instead of a stream that just stops.
+ *
+ * @param res - The response the SSE frames are written to.
+ * @param run - The action, handed the emitter for its `progress` frames.
+ * @param fallback - The terminal result to send if the action throws anyway.
+ * @param failureLabel - What to log when it does.
+ */
+async function streamSseAction<TProgress, TResult>(
+  res: Response,
+  run: (onProgress: (progress: TProgress) => void) => Promise<TResult>,
+  fallback: TResult,
+  failureLabel: string
+): Promise<void> {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+
+  try {
+    const result = await run((progress) => sendEvent(res, 'progress', progress));
+    sendEvent(res, 'result', result);
+  } catch (err) {
+    logger.error(failureLabel, err);
+    sendEvent(res, 'result', fallback);
+  } finally {
+    if (!res.writableEnded) res.end();
+  }
 }
 
 const SecretBodySchema = z.object({ secret: z.string().min(1) });
@@ -106,10 +163,9 @@ type ProvisionFn = (
 ) => Promise<RuntimeProvisionResult>;
 
 /**
- * Stream an on-demand runtime install over SSE: `progress` frames as the install
- * runs, then a terminal `result` frame carrying the outcome. Every provisioning
- * runtime shares this handler — the SSE frame contract is identical across
- * runtimes so the client renders one flow. Loopback-only (host-mutating).
+ * Stream an on-demand runtime install over SSE. Every provisioning runtime
+ * shares this handler — the SSE frame contract is identical across runtimes so
+ * the client renders one flow. Loopback-only (host-mutating).
  *
  * @param req - The incoming request (loopback-checked before any output).
  * @param res - The response the SSE frames are written to.
@@ -122,31 +178,14 @@ async function streamRuntimeProvision(
   provision: ProvisionFn,
   runtimeLabel: string
 ): Promise<void> {
-  if (!isLocalCaller(req)) {
-    res.status(403).json({ error: 'Runtime provisioning is only available locally' });
-    return;
-  }
+  if (rejectNonLocalProvisioning(req, res)) return;
 
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no',
-  });
-
-  try {
-    const result = await provision((progress) => sendEvent(res, 'progress', progress));
-    sendEvent(res, 'result', result);
-  } catch (err) {
-    // The provision functions return failures rather than throwing; guard defensively.
-    logger.error(`[Runtimes] ${runtimeLabel} provisioning failed unexpectedly`, err);
-    sendEvent(res, 'result', {
-      ok: false,
-      error: `Could not install ${runtimeLabel}. Please try again.`,
-    });
-  } finally {
-    if (!res.writableEnded) res.end();
-  }
+  await streamSseAction(
+    res,
+    provision,
+    { ok: false, error: `Could not install ${runtimeLabel}. Please try again.` },
+    `[Runtimes] ${runtimeLabel} provisioning failed unexpectedly`
+  );
 }
 
 /**
@@ -301,27 +340,12 @@ router.post('/opencode/ollama/pull', async (req, res) => {
   }
   const model = parsed.data.model ?? DEFAULT_OLLAMA_MODEL_ID;
 
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no',
-  });
-
-  try {
-    const result = await pullOllamaModel(model, (progress) => sendEvent(res, 'progress', progress));
-    sendEvent(res, 'result', result);
-  } catch (err) {
-    // pullOllamaModel returns failures rather than throwing; guard defensively.
-    logger.error('[Runtimes] Ollama pull failed unexpectedly', err);
-    sendEvent(res, 'result', {
-      ok: false,
-      model,
-      error: 'Could not pull the model. Please try again.',
-    });
-  } finally {
-    if (!res.writableEnded) res.end();
-  }
+  await streamSseAction(
+    res,
+    (onProgress) => pullOllamaModel(model, onProgress),
+    { ok: false, model, error: 'Could not pull the model. Please try again.' },
+    '[Runtimes] Ollama pull failed unexpectedly'
+  );
 });
 
 /**
@@ -333,32 +357,14 @@ router.post('/opencode/ollama/pull', async (req, res) => {
  * `ok: false` (the client shows the copyable command). Loopback-only, no sudo.
  */
 router.post('/opencode/ollama/provision', async (req, res) => {
-  if (!isLocalCaller(req)) {
-    res.status(403).json({ error: 'Runtime provisioning is only available locally' });
-    return;
-  }
+  if (rejectNonLocalProvisioning(req, res)) return;
 
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no',
-  });
-
-  try {
-    const result = await provisionOllama((progress) => sendEvent(res, 'progress', progress));
-    sendEvent(res, 'result', result);
-  } catch (err) {
-    // provisionOllama returns failures rather than throwing; guard defensively.
-    logger.error('[Runtimes] Ollama install failed unexpectedly', err);
-    sendEvent(res, 'result', {
-      ok: false,
-      installMethod: 'manual',
-      error: 'Could not install Ollama. Please try again.',
-    });
-  } finally {
-    if (!res.writableEnded) res.end();
-  }
+  await streamSseAction(
+    res,
+    provisionOllama,
+    { ok: false, installMethod: 'manual', error: 'Could not install Ollama. Please try again.' },
+    '[Runtimes] Ollama install failed unexpectedly'
+  );
 });
 
 /**
