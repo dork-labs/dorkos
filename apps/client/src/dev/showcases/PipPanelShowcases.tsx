@@ -46,7 +46,7 @@ export function PipPanelShowcases() {
               Open Demo A, then Open Demo B — the second call replaces the first, since only one
               panel shows at a time. Drag the panel by its header and resize it from the
               bottom-right corner to check that it clamps against the viewport edges. Reload the{' '}
-              <code className="bg-muted rounded px-1 py-0.5 text-xs">/dev/features</code> page
+              <code className="bg-muted rounded px-1 py-0.5 text-xs">/dev/home-inbox</code> page
               afterward to confirm the position survives: geometry persists to localStorage, the
               same way it does in the real app.
             </p>

@@ -8,10 +8,10 @@
  * `AskReceiptShowcases.tsx`) (DOR-1332, P5).
  *
  * The capability-approval card is a near relative rather than part of this
- * family — it answers "may this agent do X at all" — and **Subsystems** owns
- * its entry. `ConversationPage` borrows it by rendering it at page level, the
- * shape `IdentityPage` established for the skill's borrow pattern; it is not
- * nested inside this section.
+ * family — it answers "may this agent do X at all" — and **Home, Inbox &
+ * Approvals** owns its entry. `ConversationPage` borrows it by rendering it
+ * at page level, the shape `IdentityPage` established for the skill's borrow
+ * pattern; it is not nested inside this section.
  *
  * **These are the REAL components.** Every card below is `InteractionAsk`,
  * `AskStack`, `ApprovalPrompt` or `AskReceipt` over fixture data, so a
@@ -495,13 +495,13 @@ function TranscriptReceipt() {
 /**
  * The whole Ask card family, in one section — every kind, the countdown, a
  * burst, the endings, the tray, the inline transcript prompt and receipt, and
- * the capability-approval card borrowed from Subsystems.
+ * the capability-approval card borrowed from Home, Inbox & Approvals.
  */
 export function AsksShowcase() {
   return (
     <PlaygroundSection
       title="Asks"
-      description="Everything an agent parks the cockpit on, in one place. One prompt draws on five surfaces — the composer's takeover, the Live lane, the header tray, the home triage header, and the session transcript itself — so a regression here is a regression everywhere at once. The capability-approval card at the foot of this page answers a different question (may this agent do X at all) and is cross-listed from Subsystems rather than duplicated."
+      description="Everything an agent parks the cockpit on, in one place. One prompt draws on five surfaces — the composer's takeover, the Live lane, the header tray, the home triage header, and the session transcript itself — so a regression here is a regression everywhere at once. The capability-approval card at the foot of this page answers a different question (may this agent do X at all) and is cross-listed from Home, Inbox & Approvals rather than duplicated."
     >
       <AskKinds />
       <AskCountdown />

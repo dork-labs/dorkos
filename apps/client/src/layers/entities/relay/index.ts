@@ -22,6 +22,7 @@ export {
   useRemoveAdapter,
   useUpdateAdapterConfig,
   useTestAdapterConnection,
+  CATALOG_KEY,
 } from './model/use-adapter-catalog';
 export {
   useExternalAdapterCatalog,

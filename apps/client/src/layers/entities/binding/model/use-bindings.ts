@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
 
+/** Query key for the full binding list — exported so callers can seed it (dev playground showcases) or invalidate it directly. */
 export const BINDINGS_QUERY_KEY = ['relay', 'bindings'] as const;
 
 /**
