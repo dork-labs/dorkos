@@ -183,11 +183,11 @@ dorkos marketplace list
 dorkos marketplace remove my-team
 ```
 
-A source address is a git repository DorkOS clones from, so it has to be one git understands: an
-`https://`, `git://` or `ssh://` URL, or the short `git@host:owner/repo` form. A folder on this
-machine works too, written as `file:///path/to/folder`. Anything else is turned down when you add
-it, with a note saying so — git accepts some exotic addresses that run a command instead of
-fetching a repository, and DorkOS does not pass those along.
+A source address is either an `https://` link to a git repository, or a folder on this machine
+written as `file:///path/to/folder`. Nothing else works: DorkOS reads a marketplace's listing over
+the web, so SSH-style addresses like `git@github.com:org/repo` have no listing to read. Anything
+else is turned down when you add it, with a note saying so — which also keeps out the exotic
+addresses git accepts that run a command instead of fetching a repository.
 
 You can also manage sources in DorkOS, at `/marketplace/sources` on your own DorkOS address. On the default port that is [http://localhost:4242/marketplace/sources](http://localhost:4242/marketplace/sources); if you changed the port, or the [desktop app](/docs/getting-started/desktop-app#find-your-address) had to move off 4242, **Settings → Server** shows the address to use. Sources are merged into a single browse surface: packages from your team's marketplace appear alongside community packages, with the source clearly labeled on each card.
 

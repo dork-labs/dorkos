@@ -257,8 +257,8 @@ describe('MarketplaceSourcesView', () => {
       setSourcesState({ data: [] });
       setAddMutationState({
         error: new Error(
-          "That address isn't one DorkOS can fetch a marketplace from. Use an https:// or git@ " +
-            'address for a git repository, or a file:// path to a folder on this machine.'
+          "That address isn't one DorkOS can fetch a marketplace from. Use an https:// address " +
+            'for a git repository, or a file:// path to a folder on this machine.'
         ),
       });
 

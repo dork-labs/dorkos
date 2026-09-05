@@ -39,6 +39,7 @@ import {
   InvalidPackageError,
   type InstallerLike,
 } from '../../services/marketplace/marketplace-installer.js';
+import { UnsupportedSourceUrlError } from '../../services/marketplace/source-url-policy.js';
 import { SHAPE_PROJECT_PATH_IGNORED_WARNING } from '../../services/marketplace/flows/install-shape.js';
 import {
   PackageNotInstalledError,
@@ -910,6 +911,24 @@ describe('Marketplace Routes', () => {
       const res = await request(app).get('/api/marketplace/packages/broken');
       expect(res.status).toBe(400);
       expect(res.body.errors).toEqual(['bad manifest']);
+    });
+
+    it('returns 400 when the installer refuses the marketplace address (DOR-1710)', async () => {
+      // The refusal raised inside the install pipeline, not at the add route:
+      // a source that reached `marketplaces.json` some other way is only
+      // caught when the installer is about to hand it to `git`. This route is
+      // the ungated way in — a preview runs before any consent — so this is
+      // the branch of `mapErrorToStatus` that carries that refusal to a caller.
+      installer.preview.mockRejectedValue(
+        new UnsupportedSourceUrlError("ext::sh -c 'id > /tmp/pwned'")
+      );
+
+      const res = await request(app).get('/api/marketplace/packages/sample-plugin');
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/isn't one DorkOS can fetch a marketplace from/);
+      // The hostile address is never echoed back to the caller.
+      expect(JSON.stringify(res.body)).not.toContain('ext::');
     });
   });
 

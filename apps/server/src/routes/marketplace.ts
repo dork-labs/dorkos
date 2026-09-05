@@ -498,8 +498,14 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     } catch (err) {
       // An address DorkOS will not fetch from. Answered here rather than left
       // to the 500 below: this is the caller's input, and the message names the
-      // forms that do work.
+      // forms that do work. The address itself is logged rather than echoed —
+      // the operator knows what they typed, and the log is where a support
+      // question gets answered.
       if (err instanceof UnsupportedSourceUrlError) {
+        logger.warn('[Marketplace] Refused an unsupported source address', {
+          name: parsed.data.name,
+          url: err.url,
+        });
         return res.status(400).json({ error: err.message });
       }
       const message = err instanceof Error ? err.message : 'Failed to add marketplace source';
