@@ -17,6 +17,7 @@ export {
   AlertDialogCancel,
 } from './alert-dialog';
 export { Badge, badgeVariants } from './badge';
+export type { BadgeProps } from './badge';
 export { BarTabStrip } from './bar-tab-strip';
 export type { BarTab } from './bar-tab-strip';
 export { Banner, bannerVariants } from './banner';
@@ -100,7 +101,7 @@ export { FieldCard, FieldCardContent, CollapsibleFieldCard } from './field-card'
 export type { CollapsibleFieldCardProps } from './field-card';
 export { FloatingPanel, clampGeometry } from './floating-panel';
 export type { FloatingPanelProps, FloatingPanelGeometry } from './floating-panel';
-export { HoverBorderGradient } from './hover-border-gradient';
+export { HoverBorderGradient, type HoverBorderGradientProps } from './hover-border-gradient';
 export { HoverCard, HoverCardTrigger, HoverCardContent } from './hover-card';
 export {
   IdentityAvatar,
@@ -247,7 +248,7 @@ export { Separator } from './separator';
 export { Slider } from './slider';
 export { PermissionModeScopeNote } from './permission-mode-scope-note';
 export type { PermissionModeScopeNoteProps } from './permission-mode-scope-note';
-export { Switch } from './switch';
+export { Switch, switchVariants } from './switch';
 export type { SwitchSize, SwitchProps } from './switch';
 export { TrustDial, TrustModeIcon, stopLabel, CANONICAL_TRUST_STOPS } from './trust-dial';
 export type { TrustDialProps } from './trust-dial';
@@ -369,7 +370,7 @@ export type {
   SidebarMenuSubmenu,
   SidebarMenuVariant,
 } from './sidebar-menu-node';
-export { SidebarRow, SIDEBAR_ROW_INSET } from './sidebar-row';
+export { SidebarRow, SIDEBAR_ROW_INSET, sidebarRowVariants } from './sidebar-row';
 export { TOUCH_TARGET_MIN_H } from './touch-target';
 export type {
   RowDragBindings,

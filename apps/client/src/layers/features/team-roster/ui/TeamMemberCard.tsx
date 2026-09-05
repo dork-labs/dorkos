@@ -309,12 +309,12 @@ export function TeamMemberCard({
           </h3>
           {/* A flag on a row, never a branch: the card is the same card. */}
           {member.isSelf && (
-            <Badge variant="secondary" className="text-3xs px-1.5 py-0">
+            <Badge size="xs" variant="secondary">
               you
             </Badge>
           )}
           {member.agent?.isDefault && (
-            <Badge variant="outline" className="text-3xs px-1.5 py-0">
+            <Badge size="xs" variant="outline">
               default
             </Badge>
           )}

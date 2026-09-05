@@ -1,6 +1,7 @@
 import { Check, Copy, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { cn, useCopyFeedback } from '@/layers/shared/lib';
+import { Button } from './button';
 
 interface CopyButtonProps {
   /** Text copied to clipboard on click. */
@@ -63,13 +64,14 @@ export function CopyButton({
   const iconSize = size === 'md' ? 'size-4' : 'size-3.5';
   const state = copyButtonState(copied, failed);
   return (
-    <button
-      className={cn(
-        // `focus-ring` is opt-in: index.css clears the native outline globally,
-        // so a bare button is invisible to keyboard focus without it.
-        'text-muted-foreground hover:text-foreground focus-ring rounded-sm p-1 transition-colors',
-        className
-      )}
+    // `Button`, not a hand-rolled one: this used to be `p-1` around a 14px glyph
+    // — a ~22px target, half of the 44px a thumb needs — and it had to remember
+    // the focus ring, the press and the disabled treatment on its own.
+    // `icon-sm` is 32px under a mouse and 40px on a phone.
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      className={cn('text-muted-foreground hover:text-foreground', className)}
       onClick={() => void copy(value)}
       aria-label={failed ? "Couldn't copy — try again" : label}
     >
@@ -87,6 +89,6 @@ export function CopyButton({
           <CopyButtonIcon state={state} size={iconSize} />
         </motion.span>
       </AnimatePresence>
-    </button>
+    </Button>
   );
 }

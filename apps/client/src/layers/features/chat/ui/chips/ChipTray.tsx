@@ -5,7 +5,7 @@
  */
 import { useMemo } from 'react';
 import { cn } from '@/layers/shared/lib';
-import { SegmentedControl, SegmentedControlItem } from '@/layers/shared/ui';
+import { Button, SegmentedControl, SegmentedControlItem } from '@/layers/shared/ui';
 import type { TouchChip as TouchChipData, TouchChipVerb } from '../../lib/touch-chips';
 import type { ChipOrder } from '../../model/view/use-tray-expansion';
 import { TouchChip } from './TouchChip';
@@ -101,9 +101,10 @@ export function ChipTray({
           {groups.map((group) => {
             const active = verbFilter === group.verb;
             return (
-              <button
+              <Button
                 key={group.verb}
-                type="button"
+                variant="outline"
+                size="xs"
                 aria-pressed={active}
                 data-testid={`chip-filter-${group.verb}`}
                 onClick={() => onVerbFilterChange(active ? null : group.verb)}
@@ -111,17 +112,24 @@ export function ChipTray({
                   // Bordered whether or not it is on, so the row reads as a set
                   // of controls rather than as a line of text that turns out to
                   // be clickable. The active one takes the accent border.
-                  'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs',
-                  'focus-visible:ring-ring/50 outline-none focus-visible:ring-2',
+                  //
+                  // `outline`'s own string carries `dark:border-input`, which
+                  // has a different modifier set than a bare `border-primary`
+                  // — tailwind-merge keeps both, and Tailwind sorts `dark:`
+                  // utilities after unprefixed ones, so `dark:border-input`
+                  // would otherwise win in dark mode regardless of class
+                  // order. The `dark:border-primary` pair here is what makes
+                  // the active border survive dark mode too.
+                  'rounded-full',
                   active
-                    ? 'border-primary text-foreground'
-                    : 'border-border text-muted-foreground hover:text-foreground'
+                    ? 'border-primary dark:border-primary text-foreground'
+                    : 'text-muted-foreground'
                 )}
               >
                 <span aria-hidden="true">{VERB_ICON[group.verb]}</span>
                 <span className="sr-only">{VERB_LABEL[group.verb]}</span>
                 <span className="tabular-nums">{group.chips.length}</span>
-              </button>
+              </Button>
             );
           })}
         </div>

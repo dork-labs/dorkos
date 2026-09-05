@@ -77,7 +77,7 @@ function AggregatedCard({ group }: AggregatedCardProps) {
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="flex items-center gap-2">
             <span className="truncate text-sm font-medium">{group.source}</span>
-            <Badge className={cn('shrink-0 border-0 text-xs font-normal', reasonConfig.className)}>
+            <Badge className={cn('shrink-0 border-0 font-normal', reasonConfig.className)}>
               {reasonConfig.label}
             </Badge>
             <Badge variant="destructive" className="shrink-0 tabular-nums">

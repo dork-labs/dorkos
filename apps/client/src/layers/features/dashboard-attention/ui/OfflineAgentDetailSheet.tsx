@@ -38,14 +38,8 @@ function AgentRow({ agent }: AgentRowProps) {
       <div className="min-w-0 flex-1">
         <p className="text-foreground truncate text-sm font-medium">{getAgentDisplayName(agent)}</p>
         <div className="flex items-center gap-2">
-          <Badge variant="destructive" className="text-xs">
-            Unreachable
-          </Badge>
-          {agent.runtime && (
-            <Badge variant="secondary" className="text-xs">
-              {agent.runtime}
-            </Badge>
-          )}
+          <Badge variant="destructive">Unreachable</Badge>
+          {agent.runtime && <Badge variant="secondary">{agent.runtime}</Badge>}
         </div>
       </div>
       {agent.lastSeenAt && (

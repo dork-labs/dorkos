@@ -131,7 +131,7 @@ function AdapterDefaultCard({
       <div className="mt-2 flex items-center justify-between">
         <span className="text-muted-foreground text-xs capitalize">{d.adapterType}</span>
         {d.bindingCount > 0 && (
-          <Badge variant="secondary" className="text-xs">
+          <Badge variant="secondary">
             {d.bindingCount} {d.bindingCount === 1 ? 'connection' : 'connections'}
           </Badge>
         )}

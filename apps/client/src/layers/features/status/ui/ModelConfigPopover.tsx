@@ -230,7 +230,7 @@ export function ModelConfigPopover({
       {effortLabel && (
         <>
           <span className="text-muted-foreground text-2xs">·</span>
-          <Badge variant="secondary" className="text-3xs px-1.5 py-0">
+          <Badge size="xs" variant="secondary">
             {effortLabel}
           </Badge>
         </>
@@ -238,7 +238,7 @@ export function ModelConfigPopover({
       {showFastBadge && (
         <>
           <span className="text-muted-foreground text-2xs">·</span>
-          <Badge variant="secondary" className="text-3xs px-1.5 py-0">
+          <Badge size="xs" variant="secondary">
             <Zap className="mr-0.5 inline size-2.5" />
             Fast
           </Badge>

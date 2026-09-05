@@ -37,13 +37,13 @@ export function AdapterBindingRow({
 
       {/* Session strategy badge — hidden when default (per-chat) */}
       {sessionStrategy !== 'per-chat' && (
-        <Badge variant="secondary" className="shrink-0 text-xs">
+        <Badge variant="secondary" className="shrink-0">
           {sessionStrategyLabel(sessionStrategy)}
         </Badge>
       )}
 
       {chatId && (
-        <Badge variant="outline" className="shrink-0 truncate text-xs">
+        <Badge variant="outline" className="shrink-0 truncate">
           {channelType ? `#${chatId}` : chatId}
         </Badge>
       )}

@@ -434,7 +434,7 @@ export function PackageDetailSheet() {
               {/* Metadata chips */}
               <div className="flex flex-wrap gap-2">
                 {version && (
-                  <Badge variant="outline" className="text-3xs font-mono">
+                  <Badge size="xs" variant="outline" className="font-mono">
                     v{version}
                   </Badge>
                 )}

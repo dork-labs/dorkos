@@ -11,6 +11,7 @@ import {
   DrawerTitle,
 } from './drawer';
 import { cn } from '../lib/utils';
+import { Button } from './button';
 
 interface ResponsivePopoverContextValue {
   isDesktop: boolean;
@@ -100,14 +101,14 @@ function ResponsivePopoverContent({
   side,
   align,
   ...props
-}: React.ComponentPropsWithoutRef<typeof PopoverContent> & { side?: string; align?: string }) {
+}: React.ComponentPropsWithoutRef<typeof PopoverContent>) {
   const { isDesktop, fullHeight } = useResponsivePopover();
 
   if (isDesktop) {
     return (
       <PopoverContent
-        side={side as 'top' | 'bottom' | 'left' | 'right'}
-        align={align as 'start' | 'center' | 'end'}
+        side={side}
+        align={align}
         className={cn('max-h-[min(70vh,600px)] w-80 overflow-y-auto', className)}
         {...props}
       >
@@ -129,9 +130,15 @@ function ResponsivePopoverContent({
       {...props}
     >
       {fullHeight && (
-        <DrawerClose className="ring-offset-background focus-visible:ring-ring text-muted-foreground hover:text-foreground absolute top-2 right-2 flex size-11 items-center justify-center rounded-md transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden">
-          <XIcon className="size-5" />
-          <span className="sr-only">Close</span>
+        <DrawerClose asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Close"
+            className="text-muted-foreground hover:text-foreground absolute top-2 right-2"
+          >
+            <XIcon className="size-5" />
+          </Button>
         </DrawerClose>
       )}
       <div

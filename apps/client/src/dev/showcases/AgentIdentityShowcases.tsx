@@ -166,7 +166,7 @@ export function AgentIdentityShowcases() {
                   size={size}
                   detail={
                     <span className="flex items-center gap-1">
-                      <Badge variant="secondary" className="text-3xs">
+                      <Badge size="xs" variant="secondary">
                         claude-code
                       </Badge>
                       <span>3m ago</span>

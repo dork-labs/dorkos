@@ -15,8 +15,24 @@ const MOVING_MAP: Record<Direction, string> = {
 
 const HIGHLIGHT = 'radial-gradient(75% 181.2% at 50% 50%, hsl(var(--brand)) 0%, transparent 100%)';
 
+/** The onboarding CTA's props — a real `<button>`, plus the gradient's own dials. */
+export interface HoverBorderGradientProps extends React.ComponentProps<'button'> {
+  /** Chrome for the outer frame the gradient sweeps around. */
+  containerClassName?: string;
+  /** Seconds one edge of the sweep takes. @default 1 */
+  duration?: number;
+  /** Sweep direction. @default true */
+  clockwise?: boolean;
+}
+
 /**
  * Button with an animated gradient border that highlights on hover.
+ *
+ * A `<button>` and nothing else. It used to take an untyped `as` prop, which
+ * accepted any element and then dropped that element's whole prop contract —
+ * `as={Link}` type-checked and silently lost every router prop. No call site
+ * ever passed it, so the escape hatch went rather than growing a `asChild` this
+ * component's three stacked layers cannot cleanly host.
  *
  * @see https://ui.aceternity.com/components/hover-border-gradient
  */
@@ -24,19 +40,10 @@ export function HoverBorderGradient({
   children,
   containerClassName,
   className,
-  as: Tag = 'button',
   duration = 1,
   clockwise = true,
   ...props
-}: React.PropsWithChildren<
-  {
-    as?: React.ElementType;
-    containerClassName?: string;
-    className?: string;
-    duration?: number;
-    clockwise?: boolean;
-  } & React.HTMLAttributes<HTMLElement>
->) {
+}: HoverBorderGradientProps) {
   const reducedMotion = useReducedMotion();
   const [hovered, setHovered] = useState(false);
   const [direction, setDirection] = useState<Direction>('TOP');
@@ -56,7 +63,8 @@ export function HoverBorderGradient({
   }, [hovered, reducedMotion, duration, clockwise]);
 
   return (
-    <Tag
+    <button
+      type="button"
       data-slot="hover-border-gradient"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -84,6 +92,6 @@ export function HoverBorderGradient({
         transition={{ ease: 'linear', duration: reducedMotion ? 0 : (duration ?? 1) }}
       />
       <div className="bg-brand absolute inset-[2px] z-[1] flex-none rounded-[inherit]" />
-    </Tag>
+    </button>
   );
 }

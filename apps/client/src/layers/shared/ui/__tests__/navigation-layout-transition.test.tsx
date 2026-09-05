@@ -78,8 +78,12 @@ describe('NavigationLayout — tab switch exposes exactly one panel', () => {
     expect(duplicateIds(container)).toEqual([]);
     const panels = container.querySelectorAll('[role="tabpanel"]');
     expect(panels).toHaveLength(1);
-    expect(panels[0]).toHaveAttribute('id', 'nav-panel-two');
-    expect(panels[0]).toHaveAttribute('aria-labelledby', 'nav-item-two');
+    // Matched against the tab rather than a literal id: ids are scoped per
+    // layout now, so the pair is the thing worth asserting.
+    const selected = screen.getByRole('tab', { selected: true });
+    expect(selected).toHaveAccessibleName('Two');
+    expect(panels[0]).toHaveAttribute('id', selected.getAttribute('aria-controls'));
+    expect(panels[0]).toHaveAttribute('aria-labelledby', selected.id);
   });
 
   it('keeps the selected tab pointing at a panel that exists exactly once', () => {

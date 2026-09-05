@@ -66,7 +66,7 @@ export function BasicTableSection() {
                       Supported
                     </Badge>
                   ) : (
-                    <Badge variant="secondary" className="bg-muted text-muted-foreground">
+                    <Badge tone="neutral" variant="secondary" className="bg-muted">
                       Planned
                     </Badge>
                   )}

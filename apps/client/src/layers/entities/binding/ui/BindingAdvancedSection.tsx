@@ -165,13 +165,7 @@ export function BindingAdvancedSection({
         open={open}
         onOpenChange={onOpenChange}
         trigger="Advanced"
-        badge={
-          hasChanges ? (
-            <Badge variant="secondary" className="text-xs">
-              Modified
-            </Badge>
-          ) : undefined
-        }
+        badge={hasChanges ? <Badge variant="secondary">Modified</Badge> : undefined}
       >
         {/* Session strategy selector — replaced by a note once bridged (§7.2) */}
         {bridged ? (

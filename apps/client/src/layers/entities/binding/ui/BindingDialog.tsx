@@ -363,13 +363,7 @@ export function BindingDialog({
                     open={chatFilterOpen}
                     onOpenChange={setChatFilterOpen}
                     trigger="Chat Filter"
-                    badge={
-                      hasChatFilter ? (
-                        <Badge variant="secondary" className="text-xs">
-                          Active
-                        </Badge>
-                      ) : undefined
-                    }
+                    badge={hasChatFilter ? <Badge variant="secondary">Active</Badge> : undefined}
                   >
                     {/* ChatId picker */}
                     <form.AppField name="chatId">

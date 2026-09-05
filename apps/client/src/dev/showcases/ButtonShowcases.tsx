@@ -147,7 +147,11 @@ export function ButtonShowcases() {
 
       <PressLadderSection />
 
-      <PlaygroundSection title="Badge" description="Label variants for status and categorization.">
+      <PlaygroundSection
+        title="Badge"
+        description="Fill, size, and status tone — three axes that compose."
+      >
+        <ShowcaseLabel>Variants</ShowcaseLabel>
         <ShowcaseDemo>
           <div className="flex flex-wrap gap-2">
             <Badge variant="default">Default</Badge>
@@ -155,6 +159,42 @@ export function ButtonShowcases() {
             <Badge variant="destructive">Destructive</Badge>
             <Badge variant="outline">Outline</Badge>
           </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Sizes</ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge size="sm">Small (default)</Badge>
+            <Badge size="xs">Extra small</Badge>
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Tones</ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline" tone="success">
+              Success
+            </Badge>
+            <Badge variant="outline" tone="warning">
+              Warning
+            </Badge>
+            <Badge variant="outline" tone="error">
+              Error
+            </Badge>
+            <Badge variant="outline" tone="info">
+              Info
+            </Badge>
+            <Badge variant="outline" tone="neutral">
+              Neutral
+            </Badge>
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>asChild — the badge IS the link</ShowcaseLabel>
+        <ShowcaseDemo>
+          <Badge asChild variant="secondary">
+            <a href="#badge-aschild">Open the docs</a>
+          </Badge>
         </ShowcaseDemo>
       </PlaygroundSection>
 

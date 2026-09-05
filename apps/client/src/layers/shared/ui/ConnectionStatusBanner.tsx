@@ -1,6 +1,5 @@
 import { Wifi, WifiOff } from 'lucide-react';
-import { cn } from '@/layers/shared/lib';
-import { STATUS_TONE_SURFACE } from './status-dot';
+import { Banner } from './banner';
 import type { ConnectionState } from '@dorkos/shared/types';
 
 interface ConnectionStatusBannerProps {
@@ -11,7 +10,13 @@ interface ConnectionStatusBannerProps {
 }
 
 /**
- * Displays an inline status banner when an SSE connection is degraded or lost.
+ * Displays a banner when an SSE connection is degraded or lost.
+ *
+ * A thin mapping onto {@link Banner}, which owns the severity ladder, the
+ * colours and the announce role — a dropped link is `critical` and announces
+ * assertively, a retry is `warning` and announces politely. The class ternary
+ * this used to carry said the same thing a second time, in colours only this
+ * file knew about, and said nothing at all to a screen reader.
  *
  * Says "Server link", not "Live updates": this banner rides the relay panel's
  * unified `/events` SSE stream (browser ↔ DorkOS server), a different surface
@@ -32,21 +37,12 @@ export function ConnectionStatusBanner({
     failedAttempts && maxAttempts ? ` (attempt ${failedAttempts}/${maxAttempts})` : '';
 
   return (
-    <div
-      className={cn(
-        'flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium',
-        isDisconnected ? STATUS_TONE_SURFACE.error : STATUS_TONE_SURFACE.warning,
-        className
-      )}
+    <Banner
+      variant={isDisconnected ? 'critical' : 'warning'}
+      icon={isDisconnected ? WifiOff : Wifi}
+      className={className}
     >
-      {isDisconnected ? (
-        <WifiOff className="size-3.5" />
-      ) : (
-        <Wifi className="animate-tasks size-3.5" />
-      )}
-      <span>
-        {isDisconnected ? 'Server link lost. Check your network.' : `Reconnecting...${attemptText}`}
-      </span>
-    </div>
+      {isDisconnected ? 'Server link lost. Check your network.' : `Reconnecting...${attemptText}`}
+    </Banner>
   );
 }

@@ -51,11 +51,7 @@ export function ToolGroupRow({
           </TooltipContent>
         </Tooltip>
       )}
-      {!available && !initError && (
-        <Badge variant="secondary" className="text-xs">
-          Disabled
-        </Badge>
-      )}
+      {!available && !initError && <Badge variant="secondary">Disabled</Badge>}
       {overrideCount > 0 && (
         <Tooltip>
           <TooltipTrigger asChild>

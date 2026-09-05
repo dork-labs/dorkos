@@ -10,10 +10,7 @@ export function ToolCountBadge({ tools, implicitNote }: ToolCountBadgeProps) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Badge
-          variant="outline"
-          className="text-muted-foreground shrink-0 cursor-default text-xs font-normal"
-        >
+        <Badge tone="neutral" variant="outline" className="shrink-0 cursor-default font-normal">
           {tools.length}
         </Badge>
       </TooltipTrigger>

@@ -163,6 +163,14 @@ describe('SidebarRow — state and chrome', () => {
     expect(row().className).not.toContain('font-medium');
   });
 
+  // The top of the ladder: open beats unread. A row you are looking at has
+  // nothing left to ask for, so it wears the open treatment and not the bold.
+  it('leaves an open row on the open treatment even when it is also unread', () => {
+    render(<SidebarRow title="#general" isActive emphasized />);
+    expect(row().className).toContain('bg-sidebar-accent');
+    expect(row().className).not.toContain('font-medium');
+  });
+
   it('swaps itself for an inline editor and withdraws the ⋮ while it is up', () => {
     // The menu that opened the editor must not offer a second door back into
     // itself — and the row underneath is gone, so there is nothing to act on.

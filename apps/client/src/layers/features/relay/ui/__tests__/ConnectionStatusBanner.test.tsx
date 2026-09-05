@@ -38,4 +38,17 @@ describe('ConnectionStatusBanner', () => {
     const { container } = render(<ConnectionStatusBanner connectionState="disconnected" />);
     expect(container.firstChild).toHaveClass(...STATUS_TONE_SURFACE.error.split(' '));
   });
+
+  // The banner used to announce nothing at all, so a screen-reader user was
+  // never told the link had dropped. Riding `Banner` supplies the roles: a lost
+  // link interrupts (`alert`), a retry waits its turn (`status`).
+  it('announces a lost link assertively', () => {
+    render(<ConnectionStatusBanner connectionState="disconnected" />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Server link lost.');
+  });
+
+  it('announces a retry politely', () => {
+    render(<ConnectionStatusBanner connectionState="reconnecting" />);
+    expect(screen.getByRole('status')).toHaveTextContent('Reconnecting');
+  });
 });

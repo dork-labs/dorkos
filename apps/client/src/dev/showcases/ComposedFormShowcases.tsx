@@ -11,10 +11,11 @@ import {
   FieldCardContent,
   SettingRow,
   PasswordInput,
+  PathInput,
   Switch,
 } from '@/layers/shared/ui';
 
-/** Composed form component showcases: TimezoneCombobox, ScanRootInput, SettingRow, PasswordInput, FieldCard, CollapsibleFieldCard. */
+/** Composed form component showcases: TimezoneCombobox, ScanRootInput, SettingRow, PasswordInput, PathInput, FieldCard, CollapsibleFieldCard. */
 export function ComposedFormShowcases() {
   return (
     <>
@@ -22,6 +23,7 @@ export function ComposedFormShowcases() {
       <ScanRootInputSection />
       <SettingRowSection />
       <PasswordInputSection />
+      <PathInputSection />
       <FieldCardSection />
       <CollapsibleFieldCardSection />
     </>
@@ -197,6 +199,47 @@ function PasswordInputSection() {
 }
 
 // ---------------------------------------------------------------------------
+// PathInput
+// ---------------------------------------------------------------------------
+
+function PathInputSection() {
+  const [path, setPath] = useState('~/Keep/dork-os/dorkos');
+
+  return (
+    <PlaygroundSection
+      title="PathInput"
+      description="A folder path plus a Browse action, in one framed field."
+    >
+      <ShowcaseLabel>With Browse</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full max-w-md">
+          <PathInput
+            aria-label="Project folder"
+            value={path}
+            onChange={setPath}
+            onBrowse={() => {}}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Field only</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full max-w-md">
+          <PathInput aria-label="Project folder" placeholder="/Users/you/projects" />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Disabled</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full max-w-md">
+          <PathInput aria-label="Project folder" value={path} onBrowse={() => {}} disabled />
+        </div>
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // FieldCard
 // ---------------------------------------------------------------------------
 
@@ -353,11 +396,7 @@ function CollapsibleFieldCardSection() {
             open={withBadge}
             onOpenChange={setWithBadge}
             trigger="Advanced"
-            badge={
-              <Badge variant="secondary" className="text-xs">
-                Modified
-              </Badge>
-            }
+            badge={<Badge variant="secondary">Modified</Badge>}
           >
             <div className="px-4 py-3">
               <p className="text-muted-foreground text-sm">Advanced settings content here.</p>

@@ -34,9 +34,7 @@ export function DeniedView() {
             <p className="font-mono text-sm">{d.path}</p>
             {d.reason && <p className="text-muted-foreground text-xs">{d.reason}</p>}
           </div>
-          <Badge variant="outline" className="text-xs">
-            {d.deniedBy}
-          </Badge>
+          <Badge variant="outline">{d.deniedBy}</Badge>
         </div>
       ))}
     </div>

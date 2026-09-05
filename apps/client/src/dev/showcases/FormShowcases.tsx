@@ -78,6 +78,7 @@ export function FormShowcases() {
       </PlaygroundSection>
 
       <PlaygroundSection title="Switch" description="Toggle switch for binary settings.">
+        <ShowcaseLabel>States</ShowcaseLabel>
         <ShowcaseDemo>
           <div className="flex flex-col gap-4">
             <div className="flex items-center gap-3">
@@ -88,6 +89,21 @@ export function FormShowcases() {
               <Switch id="demo-switch-disabled" disabled />
               <Label htmlFor="demo-switch-disabled">Disabled</Label>
             </div>
+          </div>
+        </ShowcaseDemo>
+
+        {/* The thumb's travel has to match the track's width at every size, so
+            every size is drawn checked — that is the state where a mismatch
+            shows. The first switch takes no size and is therefore responsive:
+            resize the window past 640px and 768px to watch it step down. */}
+        <ShowcaseLabel>Sizes (first one is responsive — resize to see it step)</ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="flex flex-wrap items-center gap-4">
+            <Switch checked aria-label="Responsive" onCheckedChange={() => {}} />
+            <Switch size="sm" checked aria-label="Small" onCheckedChange={() => {}} />
+            <Switch size="default" checked aria-label="Default" onCheckedChange={() => {}} />
+            <Switch size="md" checked aria-label="Medium" onCheckedChange={() => {}} />
+            <Switch size="lg" checked aria-label="Large" onCheckedChange={() => {}} />
           </div>
         </ShowcaseDemo>
       </PlaygroundSection>

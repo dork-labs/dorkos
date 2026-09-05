@@ -116,9 +116,11 @@ describe('RoomLimitsSection', () => {
 
     expect(screen.getByRole('radio', { name: 'Not limited' })).toBeChecked();
     // The collapsed section says so too, so a closed panel still reports a room
-    // running without limits.
+    // running without limits. Matched loosely on purpose: the badge is an inline
+    // element, and whether a space joins it to the label is a detail of the
+    // name-computation rules rather than something this section decides.
     expect(
-      screen.getByRole('button', { name: 'Automatic replies Not limited' })
+      screen.getByRole('button', { name: /Automatic replies\s*Not limited/ })
     ).toBeInTheDocument();
   });
 

@@ -22,11 +22,16 @@ import {
   DrawerTrigger,
 } from './drawer';
 import { cn } from '../lib/utils';
+import { Button } from './button';
 
 interface ResponsiveDialogContextValue {
   isDesktop: boolean;
   isFullscreen: boolean;
   toggleFullscreen: () => void;
+  /** True when a ResponsiveDialogFullscreenToggle is mounted. */
+  hasFullscreenToggle: boolean;
+  /** @internal Called by ResponsiveDialogFullscreenToggle on mount. */
+  registerFullscreenToggle: () => () => void;
 }
 
 const ResponsiveDialogContext = React.createContext<ResponsiveDialogContextValue | undefined>(
@@ -40,6 +45,18 @@ function useResponsiveDialog(): ResponsiveDialogContextValue {
     throw new Error('useResponsiveDialog must be used within a <ResponsiveDialog>');
   }
   return ctx;
+}
+
+/**
+ * Read responsive dialog context without throwing outside a `ResponsiveDialog`.
+ *
+ * For headers that compose over more than one dialog shell — `NavigationLayoutDialogHeader`
+ * is tested standalone (no `ResponsiveDialog` ancestor) as well as mounted inside one by
+ * `TabbedDialog` — and needs to know whether a fullscreen toggle exists only in the latter
+ * case.
+ */
+function useResponsiveDialogOptional(): ResponsiveDialogContextValue | undefined {
+  return React.useContext(ResponsiveDialogContext);
 }
 
 interface ResponsiveDialogProps {
@@ -59,7 +76,13 @@ function ResponsiveDialog({
 }: ResponsiveDialogProps) {
   const isDesktop = !useIsMobile();
   const [isFullscreen, setIsFullscreen] = React.useState(defaultFullscreen);
+  const [hasFullscreenToggle, setHasFullscreenToggle] = React.useState(false);
   const Comp = isDesktop ? Dialog : Drawer;
+
+  const registerFullscreenToggle = React.useCallback(() => {
+    setHasFullscreenToggle(true);
+    return () => setHasFullscreenToggle(false);
+  }, []);
 
   // Reset fullscreen state when dialog closes
   const handleOpenChange = React.useCallback(
@@ -80,8 +103,10 @@ function ResponsiveDialog({
       // Fullscreen is always false on mobile (drawer is near-fullscreen already)
       isFullscreen: isDesktop ? isFullscreen : false,
       toggleFullscreen,
+      hasFullscreenToggle,
+      registerFullscreenToggle,
     }),
-    [isDesktop, isFullscreen, toggleFullscreen]
+    [isDesktop, isFullscreen, toggleFullscreen, hasFullscreenToggle, registerFullscreenToggle]
   );
 
   return (
@@ -144,10 +169,23 @@ ResponsiveDialogContent.displayName = 'ResponsiveDialogContent';
 
 /** Header layout for the responsive dialog, with padding to avoid close button overlap on desktop. */
 function ResponsiveDialogHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  const { isDesktop } = useResponsiveDialog();
+  const { isDesktop, hasFullscreenToggle } = useResponsiveDialog();
   const Comp = isDesktop ? DialogHeader : DrawerHeader;
-  // Desktop dialogs have absolute close/fullscreen buttons at top-right; pad to avoid overlap
-  return <Comp className={cn(className, isDesktop && 'pr-14')} {...props} />;
+  // Desktop dialogs always park the dialog's own close button in the top-right
+  // corner — `pr-14` clears that alone. When a caller also mounts a
+  // ResponsiveDialogFullscreenToggle, it registers itself here and the
+  // reservation grows to `pr-20`, measured from the far edge of the OUTER
+  // control: the toggle sits at `right-12` and is 32px wide, so it reaches
+  // 80px in. `pr-14` left the toggle standing on top of a long title. The 19
+  // no-toggle callers keep `pr-14` — widening every desktop dialog for a
+  // control most of them never mount would cost real title/description width
+  // for nothing.
+  return (
+    <Comp
+      className={cn(className, isDesktop && (hasFullscreenToggle ? 'pr-20' : 'pr-14'))}
+      {...props}
+    />
+  );
 }
 ResponsiveDialogHeader.displayName = 'ResponsiveDialogHeader';
 
@@ -211,22 +249,30 @@ ResponsiveDialogBody.displayName = 'ResponsiveDialogBody';
 
 /** Fullscreen toggle button for desktop dialogs. Absolutely positioned next to the close button. Returns null on mobile. */
 function ResponsiveDialogFullscreenToggle({ className }: { className?: string }) {
-  const { isDesktop, isFullscreen, toggleFullscreen } = useResponsiveDialog();
+  const { isDesktop, isFullscreen, toggleFullscreen, registerFullscreenToggle } =
+    useResponsiveDialog();
+
+  // Registered unconditionally, before the desktop check below: callers mount
+  // this element unconditionally (it decides for itself whether to render),
+  // and the headers that need to clear it care whether one exists at all, not
+  // whether the viewport happens to be desktop on this render.
+  React.useLayoutEffect(() => registerFullscreenToggle(), [registerFullscreenToggle]);
+
   if (!isDesktop) return null;
 
   const Icon = isFullscreen ? Minimize2 : Maximize2;
   return (
-    <button
-      type="button"
+    // `Button`, which brings the `focus-visible:` ring this control had as a
+    // bare `focus:` — a ring that fired on every mouse click as well.
+    <Button
+      variant="ghost"
+      size="icon-sm"
       onClick={toggleFullscreen}
-      className={cn(
-        'ring-offset-background focus:ring-ring absolute top-4 right-12 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none',
-        className
-      )}
+      className={cn('absolute top-4 right-12 opacity-70 hover:opacity-100', className)}
       aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
     >
       <Icon className="size-(--size-icon-md)" />
-    </button>
+    </Button>
   );
 }
 ResponsiveDialogFullscreenToggle.displayName = 'ResponsiveDialogFullscreenToggle';
@@ -243,4 +289,5 @@ export {
   ResponsiveDialogBody,
   ResponsiveDialogFullscreenToggle,
   useResponsiveDialog,
+  useResponsiveDialogOptional,
 };

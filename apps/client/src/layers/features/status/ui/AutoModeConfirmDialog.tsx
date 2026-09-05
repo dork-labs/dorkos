@@ -44,7 +44,7 @@ export function AutoModeConfirmDialog({
                 to stop reading it. */}
             <Sparkles className="text-muted-foreground size-4" />
             Turn on Auto mode
-            <Badge variant="secondary" className="text-3xs tracking-wide uppercase">
+            <Badge size="xs" variant="secondary" className="tracking-wide uppercase">
               Preview
             </Badge>
           </AlertDialogTitle>

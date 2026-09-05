@@ -116,6 +116,13 @@ export const FORMS_SECTIONS: PlaygroundSection[] = [
     keywords: ['password', 'input', 'visibility', 'toggle', 'eye', 'secret', 'field', 'auth'],
   },
   {
+    id: 'pathinput',
+    title: 'PathInput',
+    page: 'forms',
+    category: 'Composed',
+    keywords: ['path', 'folder', 'directory', 'browse', 'input', 'field', 'composed'],
+  },
+  {
     id: 'fieldcard',
     title: 'FieldCard',
     page: 'forms',

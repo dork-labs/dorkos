@@ -103,14 +103,11 @@ export function AdapterCardHeader({
       <div className="mt-1 flex items-center gap-2 pl-4">
         {secondaryName && <span className="text-muted-foreground text-xs">{secondaryName}</span>}
         {secondaryName && <span className="text-muted-foreground/50 text-xs">&middot;</span>}
-        <Badge
-          variant="secondary"
-          className={cn('text-xs', getCategoryColorClasses(manifest.category))}
-        >
+        <Badge variant="secondary" className={cn(getCategoryColorClasses(manifest.category))}>
           {manifest.category}
         </Badge>
         {manifest.deprecated && (
-          <Badge variant="outline" className="text-xs text-amber-600 dark:text-amber-500">
+          <Badge variant="outline" tone="warning">
             Deprecated
           </Badge>
         )}

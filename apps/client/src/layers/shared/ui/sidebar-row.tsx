@@ -13,6 +13,7 @@
 import { useEffect, useRef } from 'react';
 import type { CSSProperties, HTMLAttributes, ReactNode, Ref, RefObject } from 'react';
 import { motion, type MotionProps } from 'motion/react';
+import { cva } from 'class-variance-authority';
 import { cn } from '@/layers/shared/lib';
 import {
   useIsMobile,
@@ -113,16 +114,74 @@ const SIDEBAR_ROW_GUTTER = SIDEBAR_MENU_GUTTER;
 const SIDEBAR_ROW_TRAILING_ACTION_OFFSET = 'right-7';
 
 /**
- * How tall a row is, by pointer.
+ * Everything about a row's appearance that is not the gutter.
  *
- * 28px under a mouse — 13px type on a 28px line, the density §11 asks for. 44px
- * under a thumb: the top of the 40–44px band `design-system.md` states, and the
- * same number as the "⋮" that sits inside it. **The two have to be equal, not
- * merely both ≥40.** The kebab is absolutely positioned and vertically centred,
- * so a 44px control in a 40px row hangs 2px into the rows above and below it,
- * and a thumb landing near a row's edge opens its neighbour's menu.
+ * Three axes, none of them a boolean. `state` is the one that used to be
+ * spelled as conditions: `isActive ? … : …` followed by
+ * `emphasized && !isActive && !muted && …`, where that guard IS the precedence
+ * rule written as a negation — and a fourth state would have meant a fourth
+ * negation. Stated as an axis, the ladder is in one place and adding a rung
+ * costs a row in a table.
+ *
+ * `pointer` is height: 28px under a mouse — 13px type on a 28px line, the
+ * density §11 asks for — and 44px under a thumb, the top of the 40-44px band
+ * `design-system.md` states and the same number as the "⋮" that sits inside it.
+ * **The two have to be equal, not merely both ≥40.** The kebab is absolutely
+ * positioned and vertically centred, so a 44px control in a 40px row hangs 2px
+ * into the rows above and below it, and a thumb landing near a row's edge opens
+ * its neighbour's menu.
+ *
+ * {@link SIDEBAR_ROW_GUTTER} stays OUT of here on purpose: it has to be the last
+ * class in the merge, after the caller's `className` too, and a variant cannot
+ * promise that.
  */
-const SIDEBAR_ROW_HEIGHT = { fine: 'min-h-7', coarse: TOUCH_TARGET_MIN_H } as const;
+export const sidebarRowVariants = cva(
+  cn(
+    // 13px on a 28px line, the density §11 asks for: the height variant is the
+    // line and `py-1` is what keeps a one-line row on it exactly. A row that
+    // earned a second line grows past it, which is the point — height carries
+    // meaning here.
+    'focus-visible:ring-sidebar-ring flex w-full rounded-md py-1 text-left text-[13px] outline-hidden focus-visible:ring-2',
+    PRESS_ROW,
+    SIDEBAR_ROW_INSET
+  ),
+  {
+    variants: {
+      pointer: { fine: 'min-h-7', coarse: TOUCH_TARGET_MIN_H },
+      lines: { one: 'items-center', two: 'items-start py-1.5' },
+      state: {
+        /** The thing currently on screen. Top of the `--sidebar-accent` ramp. */
+        active: 'bg-sidebar-accent text-sidebar-accent-foreground',
+        /** Asking to be read — bold label, no badge (the two-tier unread sense). */
+        emphasized:
+          'text-sidebar-foreground hover:bg-sidebar-accent/70 hover:text-sidebar-foreground font-medium',
+        /** Not asking for anything. Full label contrast, one hover step. */
+        quiet:
+          'text-sidebar-foreground/70 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground',
+      },
+    },
+    defaultVariants: { pointer: 'fine', lines: 'one', state: 'quiet' },
+  }
+);
+
+/**
+ * Which rung of the ladder a row stands on, from the three props that decide it.
+ *
+ * Precedence, highest first: open beats muted, and muted beats unread. Muting is
+ * exactly "stop asking", so a muted row lands on `quiet` however loudly it would
+ * otherwise be asking — which is why there is no separate `muted` rung to draw.
+ *
+ * @param row - The row's `isActive`, `muted` and `emphasized` flags.
+ */
+function sidebarRowState(row: {
+  isActive: boolean;
+  muted: boolean;
+  emphasized: boolean;
+}): 'active' | 'emphasized' | 'quiet' {
+  if (row.isActive) return 'active';
+  if (row.muted) return 'quiet';
+  return row.emphasized ? 'emphasized' : 'quiet';
+}
 
 /**
  * What may never appear inside a trailing action's width reservation.
@@ -549,19 +608,11 @@ export function SidebarRow({
         data-slot={dataSlot}
         {...{ [SIDEBAR_ROW_ATTRIBUTE]: '' }}
         className={cn(
-          // 13px on a 28px line, the density §11 asks for: the height constant
-          // is the line and `py-1` is what keeps a one-line row on it exactly.
-          // A row that earned a second line grows past it, which is the point —
-          // height carries meaning here.
-          'focus-visible:ring-sidebar-ring flex w-full rounded-md py-1 text-left text-[13px] outline-hidden focus-visible:ring-2',
-          PRESS_ROW,
-          SIDEBAR_ROW_HEIGHT[pointer],
-          SIDEBAR_ROW_INSET,
-          showSecondLine ? 'items-start py-1.5' : 'items-center',
-          isActive
-            ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-            : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground',
-          emphasized && !isActive && !muted && 'text-sidebar-foreground font-medium',
+          sidebarRowVariants({
+            pointer,
+            lines: showSecondLine ? 'two' : 'one',
+            state: sidebarRowState({ isActive, muted, emphasized }),
+          }),
           className,
           // LAST, deliberately — after the caller's `className` too. This is the
           // one property a call site may not have: the gutter is what holds the

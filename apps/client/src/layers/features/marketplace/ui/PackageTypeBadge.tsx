@@ -7,12 +7,20 @@ import type { MarketplacePackageType } from '@dorkos/shared/marketplace-schemas'
 // Style and label maps
 // ---------------------------------------------------------------------------
 
+/**
+ * One hue per package kind, from the `--package-*` token family.
+ *
+ * Tokens rather than palette classes because each hue needs a value per theme:
+ * the old `bg-blue-500/10` was one colour written once and then shown over a
+ * near-white page and a near-black one, where a 10%-alpha tint reads completely
+ * differently. Each token is tuned for both.
+ */
 const TYPE_STYLES: Record<MarketplacePackageType, string> = {
-  agent: 'border-blue-500/20 bg-blue-500/10 text-blue-600 dark:text-blue-400',
-  plugin: 'border-purple-500/20 bg-purple-500/10 text-purple-600 dark:text-purple-400',
-  'skill-pack': 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-  adapter: 'border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400',
-  shape: 'border-rose-500/20 bg-rose-500/10 text-rose-600 dark:text-rose-400',
+  agent: 'border-package-agent-border bg-package-agent-bg text-package-agent-fg',
+  plugin: 'border-package-plugin-border bg-package-plugin-bg text-package-plugin-fg',
+  'skill-pack': 'border-package-skill-border bg-package-skill-bg text-package-skill-fg',
+  adapter: 'border-package-adapter-border bg-package-adapter-bg text-package-adapter-fg',
+  shape: 'border-package-shape-border bg-package-shape-bg text-package-shape-fg',
 };
 
 const TYPE_LABELS: Record<MarketplacePackageType, string> = {
@@ -24,7 +32,8 @@ const TYPE_LABELS: Record<MarketplacePackageType, string> = {
 };
 
 /** Distinct hue for connector adapters — cyan, unused by the five base types. */
-const CONNECTOR_STYLE = 'border-cyan-500/20 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400';
+const CONNECTOR_STYLE =
+  'border-package-connector-border bg-package-connector-bg text-package-connector-fg';
 
 const CONNECTOR_LABEL = 'CONNECTOR';
 
@@ -66,9 +75,10 @@ export function PackageTypeBadge({ type, adapterType, className }: PackageTypeBa
   const isConnector = type === 'adapter' && adapterType === CONNECTOR_ADAPTER_TYPE;
   return (
     <Badge
+      size="xs"
       variant="outline"
       className={cn(
-        'text-3xs font-mono tracking-wider',
+        'font-mono tracking-wider',
         isConnector ? CONNECTOR_STYLE : TYPE_STYLES[type],
         className
       )}

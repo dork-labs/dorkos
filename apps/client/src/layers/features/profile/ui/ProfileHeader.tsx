@@ -128,17 +128,17 @@ export function ProfileHeader({
         <h2 className="text-center text-base font-semibold">{member.displayName}</h2>
         {/* Flags on a row, never branches: the portrait is the same portrait. */}
         {member.isSelf && (
-          <Badge variant="secondary" className="text-3xs px-1.5 py-0">
+          <Badge size="xs" variant="secondary">
             you
           </Badge>
         )}
         {member.agent?.isSystem && (
-          <Badge variant="outline" className="text-3xs px-1.5 py-0">
+          <Badge size="xs" variant="outline">
             system
           </Badge>
         )}
         {member.agent?.isDefault && (
-          <Badge variant="outline" className="text-3xs px-1.5 py-0">
+          <Badge size="xs" variant="outline">
             default
           </Badge>
         )}

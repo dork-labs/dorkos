@@ -156,9 +156,10 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
               {approval.capabilityTitle}
             </span>
             <Badge
+              size="xs"
               variant="outline"
               className={cn(
-                'text-3xs shrink-0',
+                'shrink-0',
                 approval.tier === 'destructive' && 'border-destructive/30 text-destructive'
               )}
             >

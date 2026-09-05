@@ -49,10 +49,7 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
         {/* Health + session count inline */}
         <div className="flex items-center gap-3 text-xs">
           {health && (
-            <Badge
-              variant={health.status === 'active' ? 'default' : 'secondary'}
-              className="text-3xs px-1.5 py-0"
-            >
+            <Badge size="xs" variant={health.status === 'active' ? 'default' : 'secondary'}>
               {health.status}
             </Badge>
           )}

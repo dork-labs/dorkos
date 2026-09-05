@@ -64,7 +64,7 @@ export function MessageRow({ message }: MessageRowProps) {
           <span className="text-muted-foreground shrink-0 text-xs">
             {message.createdAt ? formatRelativeTime(message.createdAt as string) : ''}
           </span>
-          <Badge variant="outline" className="shrink-0 text-xs">
+          <Badge variant="outline" className="shrink-0">
             {config.label}
           </Badge>
         </div>
