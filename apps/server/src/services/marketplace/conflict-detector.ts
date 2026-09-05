@@ -1,7 +1,8 @@
 /**
  * Conflict detector for marketplace package installs.
  *
- * Scans the current installed state under `${dorkHome}/plugins/` and the
+ * Scans the current installed state under every install root of the active
+ * scope (`plugins/`, `agents/`, `shapes/` — see `lib/install-roots.ts`) and the
  * staged package directory for the six collision classes the install spec
  * defines. Severity errors block install (unless `--force`); warnings
  * surface in the permission preview but allow the user to proceed.
@@ -14,7 +15,12 @@ import matter from 'gray-matter';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
 import type { AdapterManager } from '../relay/adapter-manager.js';
-import { INSTALL_ROOT_DIRS, installRootDirForType } from './lib/install-roots.js';
+import {
+  INSTALL_ROOT_DIRS,
+  installRootDirForType,
+  installRootsUnder,
+  projectScopeRoot,
+} from './lib/install-roots.js';
 import type { ConflictReport } from './types.js';
 
 /**
@@ -101,11 +107,11 @@ export class ConflictDetector {
    */
   async detect(ctx: ConflictDetectionContext): Promise<ConflictReport[]> {
     const reports: ConflictReport[] = [];
-    // Agent-local packages live under `${projectPath}/.dork/plugins/<name>` (see
+    // Agent-local packages live under `${projectPath}/.dork/<root>/<name>` (see
     // installed-scanner `localRoot`), so the scope root for a project install is
     // `${projectPath}/.dork`, not `${projectPath}`. Global installs already resolve
     // against `dorkHome`, which IS the `.dork` directory — no `.dork` suffix there.
-    const scopeRoot = ctx.projectPath ? join(ctx.projectPath, '.dork') : this.#dorkHome;
+    const scopeRoot = ctx.projectPath ? projectScopeRoot(ctx.projectPath) : this.#dorkHome;
 
     const installedExtensions = await this.#readInstalledExtensions(scopeRoot);
     const installedSkills = await this.#readInstalledSkills(scopeRoot);
@@ -323,31 +329,35 @@ export class ConflictDetector {
   }
 
   /**
-   * Walk every installed plugin under `${scopeRoot}/plugins/*` and read
+   * Walk every installed package in every install root under `scopeRoot`
+   * (`plugins/`, `agents/`, `shapes/` — see {@link installRootsUnder}) and read
    * each `.dork/extensions/*\/extension.json`. Malformed JSON is silently
    * skipped — the detector is best-effort, not a validator.
+   *
+   * Reading only `plugins/` here was the last surviving instance of the
+   * hardcoded-root pattern DOR-994 removed elsewhere, and it hid real
+   * collisions: a Shape installs under `shapes/` and
+   * {@link ShapeInstallFlow} compiles every inline extension it bundles, so a
+   * plugins-only read could never see one (DOR-1776).
    */
   async #readInstalledExtensions(scopeRoot: string): Promise<ExtensionRecord[]> {
-    const pluginsRoot = join(scopeRoot, 'plugins');
-    const packageNames = await listInstalledPackageNames(pluginsRoot);
     const records: ExtensionRecord[] = [];
-    for (const packageName of packageNames) {
-      const packageRoot = join(pluginsRoot, packageName);
+    for (const { packageRoot, packageName } of await listInstalledPackages(scopeRoot)) {
       records.push(...(await this.#readPackageExtensions(packageRoot, packageName)));
     }
     return records;
   }
 
   /**
-   * Walk every installed plugin under `${scopeRoot}/plugins/*` and read
-   * `.dork/tasks/**\/SKILL.md` for each. Returns one record per SKILL.md.
+   * Walk every installed package in every install root under `scopeRoot`
+   * (`plugins/`, `agents/`, `shapes/`) and read `.dork/tasks/**\/SKILL.md` for
+   * each. Returns one record per SKILL.md. Widened from a plugins-only read for
+   * the same reason as {@link ConflictDetector.readInstalledExtensions}
+   * (DOR-1776).
    */
   async #readInstalledSkills(scopeRoot: string): Promise<SkillRecord[]> {
-    const pluginsRoot = join(scopeRoot, 'plugins');
-    const packageNames = await listInstalledPackageNames(pluginsRoot);
     const records: SkillRecord[] = [];
-    for (const packageName of packageNames) {
-      const packageRoot = join(pluginsRoot, packageName);
+    for (const { packageRoot, packageName } of await listInstalledPackages(scopeRoot)) {
       records.push(...(await this.#readPackageSkills(packageRoot, packageName)));
     }
     return records;
@@ -412,9 +422,36 @@ async function listSubdirectories(dir: string): Promise<string[]> {
  * phantom conflicts — including a blocking `skill-name` error against a
  * package's own crash-left backup on reinstall.
  */
-async function listInstalledPackageNames(pluginsRoot: string): Promise<string[]> {
-  const names = await listSubdirectories(pluginsRoot);
+async function listInstalledPackageNames(installRoot: string): Promise<string[]> {
+  const names = await listSubdirectories(installRoot);
   return names.filter((name) => !name.includes(MARKETPLACE_BACKUP_DIR_MARKER));
+}
+
+/** One installed package located on disk: its absolute root and its name. */
+interface InstalledPackageLocation {
+  /** Absolute directory of the installed package. */
+  packageRoot: string;
+  /** Package name — the directory's own name under its install root. */
+  packageName: string;
+}
+
+/**
+ * Enumerate every installed package under a scope root, across every install
+ * root {@link installRootsUnder} knows about. Roots that do not exist in this
+ * scope yield nothing (a `dorkHome` with no Shapes simply has no `shapes/`),
+ * which is what lets one walker serve both the global and project scopes.
+ *
+ * Two same-named packages in different roots are genuinely different packages
+ * (see {@link installKey}), so both are returned rather than deduplicated.
+ */
+async function listInstalledPackages(scopeRoot: string): Promise<InstalledPackageLocation[]> {
+  const locations: InstalledPackageLocation[] = [];
+  for (const { dir } of installRootsUnder(scopeRoot)) {
+    for (const packageName of await listInstalledPackageNames(dir)) {
+      locations.push({ packageRoot: join(dir, packageName), packageName });
+    }
+  }
+  return locations;
 }
 
 /** Best-effort `stat` to test for path existence without throwing. */

@@ -122,9 +122,21 @@ async function writeExtension(
 
 /** Lay down an installed plugin package skeleton under ${dorkHome}/plugins/{name}. */
 async function installPluginSkeleton(dorkHome: string, name: string): Promise<string> {
-  const pluginRoot = join(dorkHome, 'plugins', name);
-  await mkdir(pluginRoot, { recursive: true });
-  return pluginRoot;
+  return installSkeletonUnder(dorkHome, 'plugins', name);
+}
+
+/**
+ * Lay down an installed package skeleton under `${scopeRoot}/${root}/${name}`,
+ * for any install root (`plugins`, `agents`, `shapes`).
+ */
+async function installSkeletonUnder(
+  scopeRoot: string,
+  root: 'plugins' | 'agents' | 'shapes',
+  name: string
+): Promise<string> {
+  const packageRoot = join(scopeRoot, root, name);
+  await mkdir(packageRoot, { recursive: true });
+  return packageRoot;
 }
 
 describe('ConflictDetector', () => {
@@ -247,6 +259,126 @@ describe('ConflictDetector', () => {
     });
 
     expect(result.filter((r) => r.type === 'slot')).toEqual([]);
+  });
+
+  it('reports a slot conflict against an extension bundled by an installed agent package (DOR-1776)', async () => {
+    // Agent packages install under `agents/`, not `plugins/`. The installed-side
+    // readers used to hardcode `plugins/`, so an agent package's bundled
+    // extension was invisible to the slot check — the last instance of the
+    // hardcoded-root pattern DOR-994 eliminated everywhere else.
+    const installedRoot = await installSkeletonUnder(dorkHome, 'agents', 'installed-agent');
+    await writeExtension(installedRoot, 'agent-ext', [{ slot: 'sidebar.top', priority: 10 }]);
+
+    await writeExtension(stagedRoot, 'staged-ext', [{ slot: 'sidebar.top', priority: 10 }]);
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: pluginManifest('staged-plugin'),
+      dorkHome,
+    });
+
+    const slotConflicts = result.filter((r) => r.type === 'slot');
+    expect(slotConflicts).toHaveLength(1);
+    expect(slotConflicts[0]).toMatchObject({
+      level: 'warning',
+      type: 'slot',
+      conflictingPackage: 'installed-agent',
+    });
+  });
+
+  it('reports a slot conflict against an extension bundled by an installed Shape (DOR-1776)', async () => {
+    // Shapes install under `shapes/` and genuinely ship inline extensions —
+    // `ShapeInstallFlow` compiles every `.dork/extensions/<id>` it carries — so a
+    // plugins-only read misses a real, reachable collision.
+    const installedRoot = await installSkeletonUnder(dorkHome, 'shapes', 'installed-shape');
+    await writeExtension(installedRoot, 'shape-ext', [{ slot: 'sidebar.top', priority: 10 }]);
+
+    await writeExtension(stagedRoot, 'staged-ext', [{ slot: 'sidebar.top', priority: 10 }]);
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: pluginManifest('staged-plugin'),
+      dorkHome,
+    });
+
+    const slotConflicts = result.filter((r) => r.type === 'slot');
+    expect(slotConflicts).toHaveLength(1);
+    expect(slotConflicts[0]).toMatchObject({
+      level: 'warning',
+      type: 'slot',
+      conflictingPackage: 'installed-shape',
+    });
+  });
+
+  it('reports a skill-name error against a skill bundled by an installed agent package (DOR-1776)', async () => {
+    const installedRoot = await installSkeletonUnder(dorkHome, 'agents', 'installed-agent');
+    await writeSkill(installedRoot, 'shared-skill', { description: 'installed by an agent' });
+
+    await writeSkill(stagedRoot, 'shared-skill', { description: 'staged' });
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: pluginManifest('staged-plugin'),
+      dorkHome,
+    });
+
+    const skillConflicts = result.filter((r) => r.type === 'skill-name');
+    expect(skillConflicts).toHaveLength(1);
+    expect(skillConflicts[0]).toMatchObject({
+      level: 'error',
+      type: 'skill-name',
+      conflictingPackage: 'installed-agent',
+    });
+  });
+
+  it('walks every project-scope install root for bundled skills, not just plugins/ (DOR-1776)', async () => {
+    const projectPath = await mkdtemp(join(tmpdir(), 'conflict-detector-project-'));
+    try {
+      const installedRoot = await installSkeletonUnder(
+        join(projectPath, '.dork'),
+        'agents',
+        'local-agent'
+      );
+      await writeSkill(installedRoot, 'shared-skill', { description: 'project-local agent' });
+
+      await writeSkill(stagedRoot, 'shared-skill', { description: 'staged' });
+
+      const result = await detector.detect({
+        packagePath: stagedRoot,
+        manifest: pluginManifest('staged-plugin'),
+        dorkHome,
+        projectPath,
+      });
+
+      const skillConflicts = result.filter((r) => r.type === 'skill-name');
+      expect(skillConflicts).toHaveLength(1);
+      expect(skillConflicts[0]).toMatchObject({
+        level: 'error',
+        type: 'skill-name',
+        conflictingPackage: 'local-agent',
+      });
+    } finally {
+      await rm(projectPath, { recursive: true, force: true });
+    }
+  });
+
+  it('does not self-conflict with its own already-installed agent-root skills on reinstall (DOR-1776)', async () => {
+    // The widened read must not make a reinstall dead-end: an agent package's
+    // own skills are still on disk when the gate runs, and the self-comparison
+    // filter has to keep covering them now that they are visible at all.
+    const installedRoot = await installSkeletonUnder(dorkHome, 'agents', 'self-agent');
+    await writeSkill(installedRoot, 'own-skill', { cron: '15 * * * *' });
+
+    await writeSkill(stagedRoot, 'own-skill', { cron: '15 * * * *' });
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: pluginManifest('self-agent'),
+      dorkHome,
+    });
+
+    expect(result.filter((r) => r.type === 'skill-name')).toEqual([]);
+    expect(result.filter((r) => r.type === 'cron-collision')).toEqual([]);
   });
 
   it('reports an error when a skill with the same name is already installed', async () => {

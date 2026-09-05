@@ -23,6 +23,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { initBoundary } from '../../../lib/boundary.js';
 import type { MarketplaceInstaller } from '../marketplace-installer.js';
+import { ADAPTER_PROJECT_PATH_IGNORED_WARNING } from '../flows/install-adapter.js';
 import { SHAPE_PROJECT_PATH_IGNORED_WARNING } from '../flows/install-shape.js';
 import {
   scanAgentLocalInstalls,
@@ -267,6 +268,29 @@ describe('marketplace install pipeline — integration', () => {
     // A successful install must never call the compensating `removeAdapter`.
     expect(spies.adapterRemove).not.toHaveBeenCalled();
     expect(spies.templateClone).not.toHaveBeenCalled();
+  });
+
+  it('warns (but still installs globally) when an adapter install request carries a projectPath (DOR-1776)', async () => {
+    // Adapters are global-only (the relay's `relay-adapters.json` registry has
+    // no per-project dimension). A caller that requests a project-scoped install
+    // (MCP tool, HTTP route, CLI --project) must be told their scope choice was
+    // ignored — via `installer.dispatchFlow` → `AdapterInstallFlow.install` —
+    // rather than have it silently dropped. Mirrors DOR-386 for Shapes.
+    const { installer } = buildInstallerForTests(dorkHome);
+    const projectPath = await mkdtemp(path.join(tmpdir(), 'dorkos-adapter-scoped-project-'));
+
+    const result = await installer.install({ name: fixturePath('valid-adapter'), projectPath });
+
+    const expectedInstallRoot = path.join(dorkHome, 'plugins', 'valid-adapter');
+    expect(result.ok).toBe(true);
+    // Still lands globally — the projectPath never changes the install root.
+    expect(result.installPath).toBe(expectedInstallRoot);
+    expect(result.warnings).toEqual([
+      ADAPTER_PROJECT_PATH_IGNORED_WARNING,
+      'Configure secrets via dorkos relay-adapters set valid-adapter',
+    ]);
+
+    await rm(projectPath, { recursive: true, force: true }).catch(() => undefined);
   });
 
   // ---------------------------------------------------------------------------

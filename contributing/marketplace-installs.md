@@ -150,7 +150,7 @@ Passes `target: installRoot`. A reinstall over an existing pack restores the pri
 
 ### Adapter flow (`flows/install-adapter.ts`)
 
-Destination: `${dorkHome}/plugins/<name>/` (global only — adapters are never project-local in v1).
+Destination: `${dorkHome}/plugins/<name>/` (global only — adapters are never project-local in v1, because the relay's `relay-adapters.json` registry has no per-project dimension). A request that carries a `projectPath` still installs globally, but the result's `warnings` carries `ADAPTER_PROJECT_PATH_IGNORED_WARNING` so the caller's scope choice is not silently discarded (DOR-1776) — the same contract the Shape flow's `SHAPE_PROJECT_PATH_IGNORED_WARNING` has (DOR-386). A global-only flow must warn, never ignore in silence.
 
 1. **Stage** — Copy the package contents into the staging directory.
 2. **Activate** — `atomicMove(stagingDir, installPath)`. Call `adapterManager.addAdapter({...})` with the new entry. If registration throws, run a compensating `removeAdapter` call.
@@ -315,7 +315,9 @@ The CLI renders the preview to the terminal and prompts for confirmation unless 
 
 ## 7. Conflict detection
 
-The conflict detector (`services/marketplace/conflict-detector.ts`) compares a staged package against the active scope (`${dorkHome}/plugins/*`, optionally a project path) and returns a list of `ConflictReport`s. Errors block install unless `--force` is passed. Warnings surface in the preview but never block.
+The conflict detector (`services/marketplace/conflict-detector.ts`) compares a staged package against the active scope — the global `${dorkHome}`, or a project's `${projectPath}/.dork` — and returns a list of `ConflictReport`s. Errors block install unless `--force` is passed. Warnings surface in the preview but never block.
+
+Every installed-side read walks **all** of that scope's install roots via `installRootsUnder()`, never a hardcoded `plugins/`: the package-name check, the bundled-extension read, and the bundled-`SKILL.md` read alike. Reading only `plugins/` for extensions and skills was the last surviving instance of the pattern DOR-994 removed everywhere else, and it hid real collisions — a Shape installs under `shapes/` and `ShapeInstallFlow` compiles every inline extension it bundles, so a plugins-only read could never see one (DOR-1776).
 
 The six collision rules:
 
