@@ -86,11 +86,10 @@ describe('restartServer', () => {
 
 describe('prepareReset', () => {
   it('asks the server to arm a reset and hands back the one-time token', async () => {
-    const fetchMock = serve(200, { token: 'a-one-time-token', expiresInMs: 120_000 });
+    const fetchMock = serve(200, { token: 'a-one-time-token' });
 
     await expect(createSystemMethods(BASE).prepareReset()).resolves.toEqual({
       token: 'a-one-time-token',
-      expiresInMs: 120_000,
     });
     expect(fetchMock.mock.calls[0][0]).toBe(`${BASE}/admin/reset/prepare`);
     expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('POST');

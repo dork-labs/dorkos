@@ -590,8 +590,8 @@ export function createSystemMethods(baseUrl: string) {
     // explanation buried inside it. `fetchJSON` reads `error` off the body and
     // carries `code`/`status` on the thrown error besides (DOR-542).
 
-    prepareReset(): Promise<{ token: string; expiresInMs: number }> {
-      return fetchJSON<{ token: string; expiresInMs: number }>(baseUrl, '/admin/reset/prepare', {
+    prepareReset(): Promise<{ token: string }> {
+      return fetchJSON<{ token: string }>(baseUrl, '/admin/reset/prepare', {
         method: 'POST',
       });
     },

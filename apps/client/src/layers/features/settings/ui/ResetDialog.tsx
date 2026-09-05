@@ -84,8 +84,8 @@ export function ResetDialog({ open, onOpenChange, onResetComplete }: ResetDialog
         // what a person decides with, but it is a fixed string anything on the
         // machine could send, so it was never proof that anyone decided
         // anything — the token is. Arm it here, at the press, rather than when
-        // the dialog opens: it is good for two minutes, and a dialog someone
-        // left open should not leave a live reset lying around.
+        // the dialog opens: it is short-lived and single-use, and a dialog
+        // someone left open should not leave a live reset lying around.
         const { token } = await transport.prepareReset();
         await transport.resetAllData('reset', token);
         localStorage.clear();

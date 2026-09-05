@@ -76,7 +76,7 @@ describe('ResetDialog', () => {
       const order: string[] = [];
       vi.mocked(mockTransport.prepareReset).mockImplementation(() => {
         order.push('prepare');
-        return Promise.resolve({ token: 'fresh-token', expiresInMs: 120_000 });
+        return Promise.resolve({ token: 'fresh-token' });
       });
       vi.mocked(mockTransport.resetAllData).mockImplementation(() => {
         order.push('reset');

@@ -1913,10 +1913,14 @@ export interface Transport extends RoomTransport {
    *
    * Two round trips, because `confirm` is a fixed string anything can send: the
    * token is a value a caller can only hold if it asked for one and read the
-   * answer, so a single blind request can no longer delete someone's data. The
-   * token is good for about two minutes and works once.
+   * answer, so a single blind request can no longer delete someone's data.
+   *
+   * Short-lived and single-use, so arm it at the moment of the press and spend
+   * it immediately — the server states the deadline in its refusal rather than
+   * handing it out here, because a caller that arms and spends in one go has no
+   * decision to make about it.
    */
-  prepareReset(): Promise<{ token: string; expiresInMs: number }>;
+  prepareReset(): Promise<{ token: string }>;
 
   /**
    * Initiate a factory reset: delete all DorkOS data and restart the server.

@@ -25,9 +25,15 @@
  * started again, which is the correct outcome for a destructive action nobody
  * is watching.
  *
- * A wrong guess deliberately does NOT spend the armed token: spending it would
- * let anything able to POST disarm an operator's real reset over and over.
- * Guessing the right one is a 2^256 problem instead.
+ * A wrong guess deliberately does NOT spend the armed token — but be honest
+ * about what that buys, because there are TWO ways to take an operator's armed
+ * token away and this closes only one of them. The other is minting itself: a
+ * blind `POST /reset/prepare` replaces the slot just as effectively, and needs
+ * no guess at all. That door is bounded rather than shut — `/reset/prepare` has
+ * a rate limiter of its own, and the dialog arms and spends on a single press,
+ * so the window in which an operator can be disarmed is one round trip wide.
+ * Not spending on a wrong guess is still worth doing: it costs nothing and it
+ * keeps the cheaper door shut. Guessing the token itself is a 2^256 problem.
  *
  * @module services/core/auth/reset-token
  */
@@ -42,15 +48,29 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
  */
 export const RESET_TOKEN_TTL_MS = 2 * 60 * 1000;
 
+/**
+ * The lifetime above, in the words a person is told it in.
+ *
+ * Derived rather than written twice: the refusal copy tells someone how long
+ * they have, and a hand-typed "two minutes" beside a constant is a sentence that
+ * goes quietly wrong the day the constant moves.
+ */
+export const RESET_TOKEN_TTL_DESCRIPTION = `${Math.round(RESET_TOKEN_TTL_MS / 60_000)} minutes`;
+
 /** Token entropy, in bytes. 32 = 256 bits, the same width as the approval primitive's. */
 const TOKEN_BYTES = 32;
 
-/** What `POST /api/admin/reset/prepare` hands back. */
+/**
+ * What `POST /api/admin/reset/prepare` hands back.
+ *
+ * The token and nothing else. An expiry was here too, and no caller read it: the
+ * dialog arms and spends on one press, so there is no moment at which a client
+ * has a token and needs to know how long it has. The TTL is stated where it is
+ * acted on — in the refusal, through {@link RESET_TOKEN_TTL_DESCRIPTION}.
+ */
 interface MintedResetToken {
   /** The one-time value the reset request must carry. */
   token: string;
-  /** How long it stays usable, in milliseconds, so a client can say so. */
-  expiresInMs: number;
 }
 
 /** SHA-256 of a token, as a raw buffer for constant-time comparison. */
@@ -82,12 +102,12 @@ export class ResetTokenStore {
    * Mint a token, replacing any token already armed.
    *
    * @param now - Current epoch ms (injectable for tests).
-   * @returns The token to hand to the caller, and how long it lasts.
+   * @returns The token to hand to the caller.
    */
   mint(now: number = Date.now()): MintedResetToken {
     const token = randomBytes(TOKEN_BYTES).toString('base64url');
     this.#armed = { digest: digestOf(token), expiresAt: now + this.#ttlMs };
-    return { token, expiresInMs: this.#ttlMs };
+    return { token };
   }
 
   /**

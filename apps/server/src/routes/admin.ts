@@ -4,7 +4,7 @@ import fs from 'fs/promises';
 import rateLimit from 'express-rate-limit';
 import { rateLimitKey } from '../middleware/rate-limit-key.js';
 import { env } from '../env.js';
-import { ResetTokenStore } from '../services/core/auth/reset-token.js';
+import { ResetTokenStore, RESET_TOKEN_TTL_DESCRIPTION } from '../services/core/auth/reset-token.js';
 
 /**
  * Error code accompanying the 409 when the desktop app owns the server's
@@ -28,10 +28,14 @@ export const MANAGED_BY_DESKTOP_CODE = 'MANAGED_BY_DESKTOP';
  */
 export const RESET_TOKEN_REQUIRED_CODE = 'RESET_TOKEN_REQUIRED';
 
-/** What a reset without a live token is told. */
+/**
+ * What a reset without a live token is told. The deadline is read from the
+ * token's own TTL, so the sentence cannot outlive the number it describes.
+ */
 const RESET_TOKEN_REQUIRED_MESSAGE =
   'Nothing has been deleted. Resetting DorkOS takes two steps now: ask DorkOS to start the ' +
-  'reset, then confirm it within two minutes. Open Settings and start the reset again.';
+  `reset, then confirm it within ${RESET_TOKEN_TTL_DESCRIPTION}. Open Settings and start the ` +
+  'reset again.';
 
 /**
  * What both halves of a reset say when the desktop app owns the lifecycle.
@@ -208,11 +212,22 @@ export function createAdminRouter(deps: AdminDeps): Router {
   // request here cost different things. `adminLimiter` is ONE instance shared by
   // `/reset` and `/restart`, so the budget for ending this process is exactly
   // what it always was: three in five minutes, counted across both.
+  //
+  // A reset REFUSED for want of a token costs nothing, though. Counted, three
+  // blind POSTs would spend the whole budget and lock the operator out of
+  // Restart for five minutes — an attack that failed and denied service anyway.
+  // `skipFailedRequests` gives back the count when `requestWasSuccessful` says
+  // no, and that predicate is narrowed to this router's only 403, the
+  // missing/expired/spent-token refusal. Everything else — the 200s that really
+  // do end this process, the 400 on a bad `confirm`, the 429 itself — still
+  // counts, so the ceiling on acting is unchanged.
   const adminLimiter = rateLimit({
     windowMs: 5 * 60 * 1000, // 5 minutes
     max: 3,
     keyGenerator: rateLimitKey,
     message: { error: 'Too many admin requests. Try again later.' },
+    skipFailedRequests: true,
+    requestWasSuccessful: (_req, res) => res.statusCode !== 403,
   });
 
   // Arming a reset changes nothing and deletes nothing, so it is not spent from

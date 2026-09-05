@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { ResetTokenStore, RESET_TOKEN_TTL_MS } from '../reset-token.js';
+import {
+  ResetTokenStore,
+  RESET_TOKEN_TTL_MS,
+  RESET_TOKEN_TTL_DESCRIPTION,
+} from '../reset-token.js';
 
 describe('ResetTokenStore', () => {
   it('accepts the token it just minted', () => {
@@ -8,12 +12,17 @@ describe('ResetTokenStore', () => {
     expect(store.consume(token)).toBe(true);
   });
 
-  it('reports the lifetime it actually enforces', () => {
+  it('enforces the lifetime its copy promises', () => {
     const store = new ResetTokenStore();
-    const { token, expiresInMs } = store.mint(1_000);
+    const { token } = store.mint(1_000);
 
-    expect(expiresInMs).toBe(RESET_TOKEN_TTL_MS);
-    expect(store.consume(token, 1_000 + expiresInMs - 1)).toBe(true);
+    expect(store.consume(token, 1_000 + RESET_TOKEN_TTL_MS - 1)).toBe(true);
+  });
+
+  // The refusal tells a person how long they have. That sentence is built from
+  // the constant, so the two cannot drift apart.
+  it('describes its lifetime in the words the refusal uses', () => {
+    expect(RESET_TOKEN_TTL_DESCRIPTION).toBe(`${RESET_TOKEN_TTL_MS / 60_000} minutes`);
   });
 
   it('refuses when nothing was ever minted', () => {
