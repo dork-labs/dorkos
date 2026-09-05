@@ -7,6 +7,7 @@ import type {
 } from 'electron';
 import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { applyContextMenu } from './context-menu';
 import { forwardFullscreenState } from './fullscreen';
 import { applyPermissionPolicy } from './permissions';
 import { forwardFocusState } from './window-focus';
@@ -318,6 +319,11 @@ export function createWindow(options: CreateWindowOptions = {}): BrowserWindow {
   });
 
   applyLinkPolicy(win, options);
+  // Right-click. Electron shows no context menu unless the embedder builds one,
+  // and this window is where every other per-window policy is applied. It takes
+  // the same outbound-link rule the guards above use, so "Open Link in Browser"
+  // can never offer to leave for something they would refuse.
+  applyContextMenu(win, isWebLink);
   // What the page may ask the machine for. Same live origin accessor the link
   // guards use, so a permission and a link are judged by one answer to "is this
   // our own page?" — including after a crash restart moves the server's port.
