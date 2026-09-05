@@ -34,9 +34,13 @@ export default defineConfig({
     // dev runs get retry: 0 and surface flake loudly. CI does not set the
     // variable; its merge-queue leg passes `--retry=1` with a reporter that
     // names every absorbed retry instead (DOR-1701, .github/workflows/test.yml).
-    // watcher-manager.test.ts drives a real chokidar watcher against real tmpdir
-    // writes with a tight 5s timeout, which is exactly the kind of test this
-    // exists for — see apps/server/vitest.config.ts for the original wiring.
+    // It is a safety net, not a load-bearing part of any suite here.
+    // `watcher-manager.test.ts` and `access-control.test.ts` used to need it —
+    // they drove real chokidar watchers against real tmpdir writes on a 5s
+    // deadline and went red under multi-agent load — and no longer do: both now
+    // inject the watcher and keep exactly one real-filesystem smoke test with a
+    // deliberately generous bound (DOR-1777). See apps/server/vitest.config.ts
+    // for the original wiring.
     // eslint-disable-next-line no-restricted-syntax -- vitest.config.ts has no env.ts of its own; mirrors apps/server/vitest.config.ts
     retry: process.env.VITEST_RETRY ? Number(process.env.VITEST_RETRY) : 0,
   },
