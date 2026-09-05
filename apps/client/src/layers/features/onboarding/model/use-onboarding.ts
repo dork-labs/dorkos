@@ -1,7 +1,7 @@
 import { useRef } from 'react';
-import { useQuery, useMutation, useQueryClient, useIsRestoring } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { useTransport } from '@/layers/shared/model';
+import { usePendingRead, useTransport } from '@/layers/shared/model';
 import type { OnboardingState, OnboardingStep } from '@dorkos/shared/config-schema';
 import { configKeys, CONFIG_STALE_TIME_MS } from '@/layers/entities/config';
 
@@ -28,22 +28,14 @@ export function useOnboarding() {
 
   // **"We have not asked yet" is not "there is nothing there"** — and here that
   // distinction decides whether a returning user is shown the first-run wizard.
-  //
-  // `isLoading` is `isPending && isFetching`. While the persisted cache is being
-  // restored (`shared/lib/query-persister.ts`) TanStack PAUSES every query, so
-  // `isFetching` is false while `data` is still undefined — and `isLoading`
-  // reads FALSE with nothing in hand. `shouldShowOnboarding` below is computed
-  // from an empty config in that window, comes out true, and
-  // `useOnboardingOverlayVisible` latches it permanently. The result was a
-  // cockpit that showed "Welcome to DorkOS" to an install that had dismissed
-  // onboarding weeks ago, and wrote a fresh `startedAt` on its way past.
-  //
-  // Caught in a browser while adding the persisted cache: a warm reload wrote
-  // `startedAt` one second AFTER the `dismissedAt` it should have read.
-  // `useIsRestoring` is false everywhere there is no persister — the Obsidian
-  // embed included — so this costs those surfaces nothing.
-  const isRestoring = useIsRestoring();
-  const isLoading = isFetchingConfig || isRestoring;
+  // `shouldShowOnboarding` below is computed from an empty config in the restore
+  // window, comes out true, and `useOnboardingOverlayVisible` latches it
+  // permanently: a cockpit showing "Welcome to DorkOS" to an install that had
+  // dismissed onboarding weeks ago, writing a fresh `startedAt` on its way past.
+  // Caught in a browser while adding the persisted cache — a warm reload wrote
+  // `startedAt` one second AFTER the `dismissedAt` it should have read. Why
+  // `isLoading` cannot answer this on its own is in `usePendingRead`.
+  const isLoading = usePendingRead(isFetchingConfig);
 
   const DEFAULT_STATE: OnboardingState = {
     completedSteps: [],

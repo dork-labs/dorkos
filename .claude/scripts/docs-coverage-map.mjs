@@ -31,7 +31,7 @@
  * The JSON is generated from INDEX.md; when you change INDEX.md, regenerate it:
  *   node docs-coverage-map.mjs --regen
  */
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, realpathSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -54,7 +54,7 @@ const GENERATED_COMMENT =
  * `.split('|')` cannot tell an alternation pipe from a pattern separator;
  * paren depth is the signal that survives.
  */
-function splitPatterns(cell) {
+export function splitPatterns(cell) {
   const patterns = [];
   let current = '';
   let depth = 0;
@@ -181,13 +181,82 @@ function matchFiles(files, map) {
   return { guides: [...guides], docs: [...docs] };
 }
 
-/** Mirror `grep -qE "<pattern>"` semantics against a single path. */
+/**
+ * Mirror `grep -qE "<pattern>"` semantics against a single path.
+ *
+ * Swallowing a bad pattern is right HERE and nowhere else: `--match` runs inside
+ * a Stop hook, where throwing would take the turn's whole docs reminder down
+ * over one broken table cell. The cost is that a broken pattern silently covers
+ * nothing, which is exactly how DOR-558's bug survived — so the mode that WRITES
+ * the map refuses to emit one. See {@link invalidPatterns}.
+ */
 function safeMatch(file, pattern) {
   try {
     return new RegExp(pattern).test(file);
   } catch {
     return false;
   }
+}
+
+/**
+ * Every pattern in a map that could never match anything, with the row it came
+ * from.
+ *
+ * Two kinds, and they fail the same way: a pattern the regex engine refuses
+ * (`safeMatch` returns false for every path), and an empty one (`matchFiles`
+ * skips it). Either is a guide that has quietly stopped being suggested for the
+ * files it owns, and nothing about the output says so — a coverage map is
+ * exactly the sort of artifact whose silence reads as "nothing changed".
+ *
+ * `splitPatterns` is the likeliest source of both: it shreds a cell on
+ * paren-depth-0 pipes, so a table cell with unbalanced parens yields fragments
+ * like `commands/(agent` — a real `SyntaxError` — and a doubled `||` yields an
+ * empty string.
+ *
+ * @param {{internalGuides: Array<{guide: string, patterns: string[]}>, externalDocs: Array<{doc: string, patterns: string[]}>}} map
+ *   A parsed coverage map.
+ * @returns {Array<{owner: string, pattern: string, reason: string}>} One entry
+ *   per unusable pattern, empty when the map is sound.
+ */
+export function invalidPatterns(map) {
+  const bad = [];
+  const rows = [
+    ...map.internalGuides.map((r) => ({ owner: `contributing/${r.guide}`, patterns: r.patterns })),
+    ...map.externalDocs.map((r) => ({ owner: r.doc, patterns: r.patterns })),
+  ];
+  for (const { owner, patterns } of rows) {
+    for (const pattern of patterns) {
+      if (pattern === '' || pattern.trim() === '') {
+        bad.push({ owner, pattern, reason: 'empty pattern — it is skipped, so it covers nothing' });
+        continue;
+      }
+      try {
+        new RegExp(pattern);
+      } catch (error) {
+        bad.push({ owner, pattern, reason: error.message });
+      }
+    }
+  }
+  return bad;
+}
+
+/**
+ * Print every unusable pattern and return whether the map is sound.
+ *
+ * @param {object} map - A parsed coverage map.
+ * @returns {boolean} True when every pattern compiles.
+ */
+function reportPatterns(map) {
+  const bad = invalidPatterns(map);
+  if (bad.length === 0) return true;
+  console.error(
+    `contributing/INDEX.md has ${bad.length} pattern(s) that can never match. Fix the table cell — ` +
+      'a pattern that does not compile makes its row silently cover nothing:'
+  );
+  for (const { owner, pattern, reason } of bad) {
+    console.error(`  ${owner}: ${JSON.stringify(pattern)} — ${reason}`);
+  }
+  return false;
 }
 
 function readStdin() {
@@ -198,48 +267,78 @@ function readStdin() {
   }
 }
 
-const args = process.argv.slice(2);
-const mode = args[0] || '--match';
-
-if (mode === '--regen') {
-  const map = buildFromIndex();
-  writeFileSync(jsonPath, JSON.stringify(map, null, 2) + '\n');
-  console.log(
-    `Regenerated ${jsonPath} from INDEX.md ` +
-      `(${map.internalGuides.length} guides, ${map.externalDocs.length} docs, ${map.keywordTriggers.length} keyword triggers).`
-  );
-  process.exit(0);
+/**
+ * Whether this file was RUN rather than imported.
+ *
+ * The modes below call `process.exit`, so importing this module to unit-test its
+ * parsing would end the test run instead. Resolved through `realpathSync` on
+ * both sides because `.claude/` is a symlink in some checkouts, and a plain URL
+ * comparison would then read as "imported" and the Stop hook would print
+ * nothing at all — a silent failure of exactly the kind this file exists to
+ * stop. `main()` is called at the bottom, after every declaration it uses.
+ */
+function isRunDirectly() {
+  const invoked = process.argv[1];
+  if (!invoked) return false;
+  try {
+    return realpathSync(invoked) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
 }
 
-if (mode === '--check') {
-  const fromIndex = buildFromIndex();
-  const fromJson = loadJson();
-  if (!fromJson) {
-    console.error(
-      'docs-coverage-map.json is missing or unparseable. Run: node .claude/scripts/docs-coverage-map.mjs --regen'
+/** Run the mode named on the command line. Never returns. */
+function main() {
+  const args = process.argv.slice(2);
+  const mode = args[0] || '--match';
+
+  if (mode === '--regen') {
+    const map = buildFromIndex();
+    // Validated BEFORE the write, so a broken cell cannot be committed as a
+    // generated artifact. `--match` cannot report this: it swallows the
+    // failure by design (see safeMatch), which is how DOR-558 lived silently.
+    if (!reportPatterns(map)) process.exit(1);
+    writeFileSync(jsonPath, JSON.stringify(map, null, 2) + '\n');
+    console.log(
+      `Regenerated ${jsonPath} from INDEX.md ` +
+        `(${map.internalGuides.length} guides, ${map.externalDocs.length} docs, ${map.keywordTriggers.length} keyword triggers).`
     );
-    process.exit(1);
+    process.exit(0);
   }
-  const a = JSON.stringify({ ...fromIndex, _comment: undefined });
-  const b = JSON.stringify({ ...fromJson, _comment: undefined });
-  if (a === b) {
+
+  if (mode === '--check') {
+    const fromIndex = buildFromIndex();
+    const fromJson = loadJson();
+    if (!fromJson) {
+      console.error(
+        'docs-coverage-map.json is missing or unparseable. Run: node .claude/scripts/docs-coverage-map.mjs --regen'
+      );
+      process.exit(1);
+    }
+    // Both sides: INDEX.md is where a bad pattern is written, and the committed
+    // JSON is what actually gets matched against. In sync with a broken pattern
+    // in both is still broken.
+    const sound = reportPatterns(fromIndex) && reportPatterns(fromJson);
+    const a = JSON.stringify({ ...fromIndex, _comment: undefined });
+    const b = JSON.stringify({ ...fromJson, _comment: undefined });
+    if (a !== b) {
+      console.error(
+        'DRIFT: docs-coverage-map.json disagrees with contributing/INDEX.md. ' +
+          'Regenerate with: node .claude/scripts/docs-coverage-map.mjs --regen'
+      );
+      process.exit(1);
+    }
+    if (!sound) process.exit(1);
     console.log('docs-coverage-map.json is in sync with contributing/INDEX.md.');
     process.exit(0);
   }
-  console.error(
-    'DRIFT: docs-coverage-map.json disagrees with contributing/INDEX.md. ' +
-      'Regenerate with: node .claude/scripts/docs-coverage-map.mjs --regen'
-  );
-  process.exit(1);
-}
 
-if (mode === '--print') {
-  console.log(JSON.stringify(loadJson() || buildFromIndex(), null, 2));
-  process.exit(0);
-}
+  if (mode === '--print') {
+    console.log(JSON.stringify(loadJson() || buildFromIndex(), null, 2));
+    process.exit(0);
+  }
 
-// Default: --match
-{
+  // Default: --match
   const map = loadJson() || buildFromIndex();
   let files = args.slice(mode === '--match' ? 1 : 0);
   if (files.length === 0) {
@@ -253,3 +352,5 @@ if (mode === '--print') {
   for (const d of docs) console.log(`DOC:${d}`);
   process.exit(0);
 }
+
+if (isRunDirectly()) main();

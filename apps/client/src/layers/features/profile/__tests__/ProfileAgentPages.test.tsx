@@ -367,12 +367,40 @@ describe('the popovers', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: /The Sage/ }));
 
+    await waitFor(() => expect(transport.updateAgentByPath).toHaveBeenCalled());
     const [, updates] = vi.mocked(transport.updateAgentByPath).mock.calls[0];
     const patch = updates as { traits?: unknown; soulContent?: string };
     expect(patch.traits).toBeDefined();
     expect(patch.soulContent).toContain('TRAITS:END');
     // And the prose already in the file is still under it.
     expect(patch.soulContent).toContain('Be careful.');
+  });
+
+  it('saves a dragged slider once, when it stops moving', async () => {
+    // A Radix slider fires `onValueChange` on EVERY step, and this popover saves
+    // straight from it — so one drag across four steps was four PATCHes, each
+    // one sweeping `['team']`, every agent key and every open room's roster
+    // (DOR-1646). Worse, the picker is controlled from the server's copy, which
+    // only catches up a round trip later: every tick of one drag therefore sent
+    // the SAME value, because the thumb never moved off the stored one.
+    //
+    // Keyboard rather than pointer because a Radix drag needs a layout jsdom
+    // does not have, and the two paths meet at the same `onValueChange`.
+    const { transport } = await renderProfile(MANAGED);
+    await openRow('personality');
+    await userEvent.click(await screen.findByTestId('custom-toggle'));
+
+    const sliders = await screen.findAllByRole('slider');
+    sliders[0].focus();
+    await userEvent.keyboard('{ArrowRight}{ArrowRight}');
+
+    await waitFor(() => expect(transport.updateAgentByPath).toHaveBeenCalledTimes(1));
+    const [, updates] = vi.mocked(transport.updateAgentByPath).mock.calls[0];
+    // Both presses landed: the thumb tracked them locally while the save waited.
+    expect((updates as { traits: { verbosity: number } }).traits.verbosity).toBe(5);
+    // And nothing follows the settle — a fifth save would be the storm returning.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(transport.updateAgentByPath).toHaveBeenCalledTimes(1);
   });
 });
 

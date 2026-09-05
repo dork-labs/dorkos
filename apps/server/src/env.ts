@@ -86,7 +86,15 @@ function parseDocsBaseUrl(value: string): string | null {
 const DOCS_BASE_URL_MESSAGE =
   'must be an http:// or https:// URL with no query string, fragment, or embedded username/password';
 
-const serverEnvSchema = z.object({
+/**
+ * Every environment variable the server reads at boot.
+ *
+ * Exported for the enumeration guard in `__tests__/env-example-coverage.test.ts`,
+ * which walks this shape and fails when a variable declared here is neither
+ * written down in `.env.example` nor explicitly excused. Nothing else should
+ * parse with it — {@link env} below is the one parsed snapshot.
+ */
+export const serverEnvSchema = z.object({
   // System
   HOME: z.string().optional(),
   GITHUB_TOKEN: z.string().optional(),

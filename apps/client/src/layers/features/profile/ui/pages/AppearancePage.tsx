@@ -11,14 +11,12 @@
  * @module features/profile/ui/pages/AppearancePage
  */
 import { useState } from 'react';
-import type { Traits } from '@dorkos/shared/mesh-schemas';
-import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { seedAgentFace } from '@dorkos/shared/agent-face';
 import { IdentityAvatar, Skeleton } from '@/layers/shared/ui';
 import { AvatarPickerPanel, PersonalityPicker } from '@/layers/entities/agent';
 import { teamMemberFace } from '@/layers/entities/team';
-import { personalityUpdate } from '../../lib/soul-file';
 import { useProfileAgent } from '../../model/use-profile-agent';
+import { usePersonalityCommit } from '../../model/use-personality-commit';
 import type { ProfilePageContentProps } from './types';
 
 /** A section heading, in the quiet register the rest of the profile uses. */
@@ -42,6 +40,7 @@ function SectionLabel({ children }: { children: string }) {
  */
 export function AppearancePage({ member }: ProfilePageContentProps) {
   const { agent, isPending, update } = useProfileAgent(member);
+  const personality = usePersonalityCommit(agent, update);
   const [preview, setPreview] = useState<string | null>(null);
 
   if (isPending) return <Skeleton className="h-64 w-full" />;
@@ -76,10 +75,10 @@ export function AppearancePage({ member }: ProfilePageContentProps) {
       <div className="space-y-2 border-t pt-4">
         <SectionLabel>Personality</SectionLabel>
         <PersonalityPicker
-          traits={(agent.traits ?? DEFAULT_TRAITS) as Traits}
-          // Manifest AND SOUL.md, or the change never reaches a turn — see
-          // `personalityUpdate`.
-          onTraitsChange={(traits) => update(personalityUpdate(agent, traits))}
+          // Manifest AND SOUL.md, saved once the sliders settle rather than on
+          // every step they pass through — see `usePersonalityCommit`.
+          traits={personality.traits}
+          onTraitsChange={personality.onTraitsChange}
           compact
         />
       </div>
