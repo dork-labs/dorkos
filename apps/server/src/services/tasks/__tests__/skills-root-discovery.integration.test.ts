@@ -30,8 +30,8 @@ import { skillsRoot } from './task-root-fixtures.js';
 import {
   describeArmBlocker,
   isPackageOwned,
+  packageOwnershipContext,
   planTaskFileUpdate,
-  pluginRoots,
   touchesFile,
 } from '../task-file-update.js';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -387,7 +387,7 @@ describe('schedules discovered in skills roots', () => {
     });
 
     it('treats an installed package’s skill as not ours to write', async () => {
-      const roots = pluginRoots(dorkHome, projectPath);
+      const roots = packageOwnershipContext(dorkHome, projectPath);
       const pluginSkill = path.join(dorkHome, 'plugins', 'pack', 'skills', 'x', 'SKILL.md');
       await mkdir(path.dirname(pluginSkill), { recursive: true });
       await writeFile(pluginSkill, scheduledSkill('x', { cron: '0 9 * * *' }), 'utf-8');
@@ -419,6 +419,39 @@ describe('schedules discovered in skills roots', () => {
       expect(
         await isPackageOwned(path.join(projectPath, 'src', 'plugins', 'a', 'SKILL.md'), roots)
       ).toBe(false);
+    });
+
+    it('treats an installed Shape’s skill as not ours to write', async () => {
+      // `shapes/` is an install root like `plugins/`, and a Shape package ships
+      // skills the same way — a plugins-only check answered `false` here and let
+      // DorkOS edit a checkout the next update overwrites (DOR-1789).
+      const roots = packageOwnershipContext(dorkHome, projectPath);
+      const shapeSkill = path.join(dorkHome, 'shapes', 'studio', 'skills', 'z', 'SKILL.md');
+      await mkdir(path.dirname(shapeSkill), { recursive: true });
+      await writeFile(shapeSkill, scheduledSkill('z', { cron: '0 9 * * *' }), 'utf-8');
+
+      expect(await isPackageOwned(shapeSkill, roots)).toBe(true);
+    });
+
+    it('does not claim a skill just for sitting under an agents/ root', async () => {
+      // `agents/` holds every agent DorkOS creates, DorkBot included, so the
+      // limb that walks it is marker-gated: an unmarked directory there is the
+      // person's, and claiming it would be the DOR-1789 bug pointed the other
+      // way.
+      //
+      // Scope note: this file asserts the ROOTS limbs directly, on a context
+      // built by hand. It says nothing about what the routes pass — that is
+      // exactly the gap that let the first fix ship broken — so the route-shaped
+      // cases, including every one that depends on the agent-directory probe,
+      // live in `lifecycle/__tests__/package-owned-agent.test.ts`, which drives
+      // `applyTaskFileUpdate` and `createScheduledTask` with a real mesh seam.
+      const roots = packageOwnershipContext(dorkHome, projectPath);
+      const agentDir = path.join(dorkHome, 'agents', 'dorkbot');
+      const ownSkill = path.join(agentDir, '.agents', 'skills', 'mine', 'SKILL.md');
+      await mkdir(path.dirname(ownSkill), { recursive: true });
+      await writeFile(ownSkill, scheduledSkill('mine', { cron: '0 9 * * *' }), 'utf-8');
+
+      expect(await isPackageOwned(ownSkill, roots)).toBe(false);
     });
   });
 
