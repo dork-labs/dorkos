@@ -346,6 +346,42 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
       'spoof',
     ],
   },
+  // StateShowcases
+  {
+    id: 'emptystate',
+    title: 'EmptyState',
+    page: 'components',
+    category: 'Data Display',
+    keywords: ['empty', 'state', 'nothing', 'blank', 'placeholder', 'zero', 'cta'],
+  },
+  {
+    id: 'queryerrorstate',
+    title: 'QueryErrorState',
+    page: 'components',
+    category: 'Data Display',
+    keywords: ['error', 'failed', 'retry', 'query', 'offline', 'unreachable', 'state'],
+  },
+  {
+    id: 'detailrow',
+    title: 'DetailRow',
+    page: 'components',
+    category: 'Data Display',
+    keywords: ['detail', 'row', 'label', 'value', 'key', 'readout', 'panel', 'facts'],
+  },
+  {
+    id: 'removablechip',
+    title: 'RemovableChip',
+    page: 'components',
+    category: 'Data Display',
+    keywords: ['chip', 'pill', 'filter', 'remove', 'dismiss', 'tag', 'token'],
+  },
+  {
+    id: 'spinner',
+    title: 'Spinner',
+    page: 'components',
+    category: 'Data Display',
+    keywords: ['spinner', 'loading', 'loader', 'busy', 'progress', 'wait'],
+  },
   {
     id: 'featuredisabledstate',
     title: 'FeatureDisabledState',

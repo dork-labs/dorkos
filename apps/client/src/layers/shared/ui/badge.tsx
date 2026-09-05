@@ -5,9 +5,16 @@ import { cn } from '@/layers/shared/lib/utils';
 import { STATUS_TONE_TEXT } from './status-dot';
 
 const badgeVariants = cva(
-  'inline-flex items-center rounded-md border font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+  'inline-flex items-center border font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
   {
     variants: {
+      // The pill was the shape four components wanted and could not get, so
+      // each drew its own — four slightly different pill geometries, none of
+      // them this component (DOR-1763 finding 17.4).
+      shape: {
+        default: 'rounded-md',
+        pill: 'rounded-full',
+      },
       variant: {
         default: 'border-transparent bg-primary text-primary-foreground',
         secondary: 'border-transparent bg-secondary text-secondary-foreground',
@@ -26,6 +33,7 @@ const badgeVariants = cva(
       tone: STATUS_TONE_TEXT,
     },
     defaultVariants: {
+      shape: 'default',
       variant: 'default',
       size: 'sm',
     },
@@ -53,12 +61,14 @@ export interface BadgeProps
  * is the same amber as a warning banner in both themes.
  *
  * @param asChild - Render the child element instead of a `<span>`.
+ * @param shape - `default` (rounded rectangle) or `pill`. Defaults to `default`.
  * @param variant - Fill treatment. Defaults to `default`.
  * @param size - `sm` (12px) or `xs` (10px). Defaults to `sm`.
  * @param tone - Status colour override, from the shared tone vocabulary.
  */
 function Badge({
   className,
+  shape = 'default',
   variant = 'default',
   size = 'sm',
   tone,
@@ -71,7 +81,7 @@ function Badge({
     <Comp
       data-slot="badge"
       data-variant={variant}
-      className={cn(badgeVariants({ variant, size, tone }), className)}
+      className={cn(badgeVariants({ shape, variant, size, tone }), className)}
       {...props}
     />
   );

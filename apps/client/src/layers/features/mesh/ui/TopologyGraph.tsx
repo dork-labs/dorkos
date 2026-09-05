@@ -18,7 +18,7 @@ import {
   type NodeTypes,
   type EdgeTypes,
 } from '@xyflow/react';
-import { Loader2, RotateCcw } from 'lucide-react';
+import { Globe, RotateCcw } from 'lucide-react';
 import { AgentNode } from './AgentNode';
 import { AdapterNode } from './AdapterNode';
 import { BindingEdge } from './BindingEdge';
@@ -26,7 +26,6 @@ import { NamespaceGroupNode } from './NamespaceGroupNode';
 import { CrossNamespaceEdge } from './CrossNamespaceEdge';
 import { DenyEdge } from './DenyEdge';
 import { TopologyLegend } from './TopologyLegend';
-import { TopologyEmptyState } from './TopologyEmptyState';
 import { useTopologyHandlers } from './use-topology-handlers';
 import { applyElkLayout } from '../lib/elk-layout';
 import { buildTopologyElements } from '../lib/build-topology-elements';
@@ -51,6 +50,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   Button,
+  EmptyState,
+  QueryErrorState,
+  Spinner,
 } from '@/layers/shared/ui';
 import './topology-graph.css';
 
@@ -267,24 +269,36 @@ function TopologyGraphInner({
   if (isInitialLoad) {
     return (
       <div className="flex h-full items-center justify-center">
-        <Loader2 className="text-muted-foreground h-5 w-5 animate-spin" />
+        <Spinner size="md" className="text-muted-foreground" label="Loading the topology" />
       </div>
     );
   }
 
   if (isError) {
     return (
-      <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 text-sm">
-        <span>Failed to load topology</span>
-        <Button variant="outline" size="sm" onClick={() => refetch()}>
-          Retry
-        </Button>
-      </div>
+      <QueryErrorState
+        className="h-full"
+        title="Could not load the topology"
+        description="The mesh API is unreachable. Check that the server is running."
+        onRetry={() => void refetch()}
+      />
     );
   }
 
   if (!rawNodes.length) {
-    return <TopologyEmptyState onGoToDiscovery={onGoToDiscovery} />;
+    return (
+      <EmptyState
+        className="h-full"
+        icon={Globe}
+        headline="No agents discovered yet"
+        description="Discover agents from your workspace to see them on the topology graph."
+        action={
+          onGoToDiscovery
+            ? { label: 'Go to Discovery', onClick: onGoToDiscovery, variant: 'outline' }
+            : undefined
+        }
+      />
+    );
   }
 
   const agentCount = rawNodes.filter((n) => n.type === 'agent').length;
@@ -389,7 +403,7 @@ function TopologyGraphInner({
       {/* Subtle re-layout indicator — canvas stays mounted so the viewport is preserved. */}
       {isLayouting && (
         <div className="pointer-events-none absolute top-3 right-3 z-10">
-          <Loader2 className="text-muted-foreground/70 size-4 animate-spin" />
+          <Spinner className="text-muted-foreground/70" />
         </div>
       )}
       {/* Mounted per connection so the form pre-fills with the dragged pair. */}

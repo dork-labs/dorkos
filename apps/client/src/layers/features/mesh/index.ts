@@ -12,7 +12,7 @@ export { DiscoveryView } from './ui/DiscoveryView';
 export { ImportProjectsDialog } from './ui/ImportProjectsDialog';
 export { TopologyPanel } from './ui/TopologyPanel';
 export { AgentHealthDetail } from './ui/AgentHealthDetail';
-export { MeshEmptyState } from './ui/MeshEmptyState';
+export { TopologyPreview } from './ui/TopologyPreview';
 // The topology's own health vocabulary. Exported because the dev playground
 // mirrors these node cards, and a showcase that re-spelled the colours would be
 // exactly the second source of truth this map exists to remove.

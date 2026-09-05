@@ -269,11 +269,11 @@ export const FEATURE_AGENT_SECTIONS: PlaygroundSection[] = [
   },
   // MeshShowcases
   {
-    id: 'meshemptystate',
-    title: 'MeshEmptyState',
+    id: 'topologypreview',
+    title: 'TopologyPreview',
     page: 'features',
     category: 'Mesh',
-    keywords: ['mesh', 'empty', 'state', 'topology', 'preview', 'agent'],
+    keywords: ['mesh', 'empty', 'state', 'topology', 'preview', 'agent', 'sketch'],
   },
   {
     id: 'openmeshswitch',
