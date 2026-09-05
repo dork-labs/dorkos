@@ -67,6 +67,13 @@ run_case 'context7.json says "mission control"' 1 'context7.json' \
 run_case 'a blog post says "cockpit"' 1 'blog/dorkos-1-0-0.mdx' \
   'The cockpit got faster this release.'
 
+# AGENTS.md is scanned because it loads into every agent session as project
+# instructions, which makes it the likeliest place for a retired word to be
+# copied back out of and into user-facing copy. It also quotes both words to
+# state the rule, so its own marker could mask a real regression here.
+run_case 'AGENTS.md says "cockpit"' 1 'AGENTS.md' \
+  'The cockpit is where you land.'
+
 run_case 'a docs page says "mission control"' 1 'docs/guides/x.mdx' \
   'Open mission control to see every session.'
 

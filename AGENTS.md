@@ -2,7 +2,9 @@
 
 ## Vision
 
-DorkOS is the operating system for autonomous AI agents — the coordination layer (scheduling, communication, discovery, memory) that lets one person ship like a team. **Core thesis: intelligence doesn't scale; coordination does.** Market entry point (2026-07, language settled 2026-08 by DOR-1517): **one place for every AI agent you run** — running Claude Code, Codex, and OpenCode side by side in one window is the headline differentiator. **Never write "mission control" or "cockpit" in user-facing prose** (site, docs, READMEs, UI copy, error messages, release notes) — the operator retired both words, and the category phrase is "one place" ("All your agents. One place." / "one place for every AI agent you run"). Say "the DorkOS app", "the app", "one place" or "one window" instead. Two carve-outs: GitHub ships a product literally named "Mission Control", and the compiled changelog keeps its historical wording. Enforced by `scripts/check-banned-words.sh` in the `typecheck` workflow. Current strategy lives in [meta/positioning-202607/00-overview.md](meta/positioning-202607/00-overview.md). Full vision: [meta/dorkos-litepaper.md](meta/dorkos-litepaper.md); brand: [meta/brand-foundation.md](meta/brand-foundation.md); personas: `meta/personas/` (Kai — senior dev running 10 agents across 5 projects, dismisses chatbot wrappers; Priya — staff architect in Obsidian, reads source before adopting; Ikechi — non-developer founder shipping apps by directing agents; Lil — privacy-first non-technical professional, horizon-staged, not a launch target; the anti-persona is whoever won't operate their own system — operator mentality, not technical skill, is the line). Tagline (2026-07-09): **"You, Multiplied."** on hero surfaces; "Intelligence doesn't scale. Coordination does." is the manifesto line for essays and anti-positioning only.
+DorkOS is the operating system for autonomous AI agents — the coordination layer (scheduling, communication, discovery, memory) that lets one person ship like a team. **Core thesis: intelligence doesn't scale; coordination does.** Market entry point (2026-07, language settled 2026-08 by DOR-1517): **one place for every AI agent you run** — running Claude Code, Codex, and OpenCode side by side in one window is the headline differentiator. Current strategy lives in [meta/positioning-202607/00-overview.md](meta/positioning-202607/00-overview.md). Full vision: [meta/dorkos-litepaper.md](meta/dorkos-litepaper.md); brand: [meta/brand-foundation.md](meta/brand-foundation.md); personas: `meta/personas/` (Kai — senior dev running 10 agents across 5 projects, dismisses chatbot wrappers; Priya — staff architect in Obsidian, reads source before adopting; Ikechi — non-developer founder shipping apps by directing agents; Lil — privacy-first non-technical professional, horizon-staged, not a launch target; the anti-persona is whoever won't operate their own system — operator mentality, not technical skill, is the line). Tagline (2026-07-09): **"You, Multiplied."** on hero surfaces; "Intelligence doesn't scale. Coordination does." is the manifesto line for essays and anti-positioning only.
+
+**Never write "mission control" or "cockpit" in user-facing prose** (site, docs, READMEs, UI copy, error messages, release notes) — the operator retired both words, and the category phrase is "one place" ("All your agents. One place." / "one place for every AI agent you run"). Say "the DorkOS app", "the app", "one place" or "one window" instead. Two carve-outs: GitHub ships a product literally named "Mission Control", and the compiled changelog keeps its historical wording. Enforced by `scripts/check-banned-words.sh` in the `typecheck` workflow, which scans this file too. This paragraph is deliberately its own paragraph: the guard matches line by line, so the marker below exempts exactly the prose that has to name the two retired words and nothing else in the file. <!-- vocab-allow: states the prohibition, so it has to name both retired words -->
 
 **Product state (pre-launch alpha, 2026-08):** the web app via CLI install is the primary, launch-critical surface. The macOS desktop app is shipped and verified — signed, notarized, downloadable at `dorkos.ai/download/mac`, riding the unified `vX.Y.Z` releases (Apple Silicon), and matured by the desktop-resilience programme. The phone surface is an installable web app with push notifications, reached over the built-in tunnel. A **Windows x64 build rides the same release train** — unsigned NSIS installer, downloadable at `dorkos.ai/download/windows` — but it is an **early alpha: built and code-reviewed, not yet confirmed by a real end-user install on Windows**, so it stays behind the demo-claim gate (labeled "alpha" in site copy). There is no Linux desktop build yet. The Obsidian plugin remains a staged surface — built but under-tested (re-checked 2026-08); verify before claiming it works. Multi-agent Mesh+Relay coordination now carries end-to-end coverage (rooms e2e specs plus the shared conformance suites) and has come off the gate: Rooms ships GA, and the reply-limit dials that make agent-to-agent traffic safe to leave on landed with it. The marketplace's install path is covered end to end, but its **Claude-Code-superset compatibility** is still the unverified part of that pillar. In user-facing copy, docs, and release notes, never state that a still-unverified surface or pillar — the Obsidian plugin, the Windows desktop alpha, the marketplace's Claude-Code-superset compatibility — works (the demo-claim gate: `meta/positioning-202607/09-gtm-plan.md` §2.0).
 
@@ -34,18 +36,21 @@ dorkos/
 │   ├── relay/            # @dorkos/relay - Inter-agent message bus
 │   ├── mesh/             # @dorkos/mesh - Agent discovery & registry
 │   ├── harness/          # @dorkos/harness - Projects .agents/ + plugins to every agent harness
+│   ├── memory/           # @dorkos/memory - MEMORY.md store behind the MemoryProvider port
 │   ├── a2a-gateway/      # @dorkos/a2a-gateway - A2A protocol gateway
 │   ├── extension-api/    # @dorkos/extension-api - Extension author API
 │   ├── skills/           # @dorkos/skills - SKILL.md schemas, parser, writer, scanner
+│   ├── operating-skills/ # @dorkos/operating-skills - First-party skill pack + version-stamped seeder
 │   ├── marketplace/      # @dorkos/marketplace - Package schemas, parser, validator, scaffolder
 │   ├── icons/            # @dorkos/icons - SVG icon & logo registry
+│   ├── evals/            # @dorkos/evals - Headless outcome-oracle eval harness
 │   ├── test-utils/       # @dorkos/test-utils - Mock factories, test helpers
 │   └── eslint-config/, typescript-config/
 ├── meta/                 # Brand, personas, value architecture, litepaper
 ├── decisions/            # ADRs                          ├── plans/     # Implementation plans
-├── docs/                 # User-facing MDX (Fumadocs)    ├── research/  # 290+ research reports
+├── docs/                 # User-facing MDX (Fumadocs)    ├── research/  # 350+ research reports
 ├── specs/                # Feature specs with manifest.json
-└── contributing/         # 28 internal dev guides (see contributing/INDEX.md)
+└── contributing/         # 43 internal dev guides (see contributing/INDEX.md)
 ```
 
 ## Commands
@@ -99,7 +104,7 @@ Gotchas: under a running `pnpm dev`/`pnpm dev:dogfood`, `@dorkos/shared` rebuild
 
 Express **5** on `DORKOS_PORT` (default 4242, dev 6242) — mind Express 5 semantics (`req.body` undefined on empty POSTs; changed wildcard routing). The `AgentRuntime` interface (`packages/shared/src/agent-runtime.ts`) abstracts agent backends; production runtimes live under `services/runtimes/`: **claude-code** (default), **codex** (SDK threads, ADR-0309), **opencode** (managed sidecar, ADR-0308), plus `test-mode` for e2e and `connect/` for runtime credentials/delegated login. Routes resolve a session's runtime via `runtimeRegistry` (per-session binding, first-write-wins, ADR-0255); session listing aggregates across runtimes with per-runtime degradation (ADR-0310). Every runtime must pass the shared conformance suite (`runtimeConformance` in `@dorkos/test-utils`); authoring checklist: `contributing/adding-a-runtime.md`.
 
-**Service domains** under `services/`: activity, communities, core, core-extensions, extensions, harness, marketplace, marketplace-mcp, mesh, relay, runtimes, search, session, tasks, workspace. Filesystem scanning: `packages/mesh/src/discovery/unified-scanner.ts`. API docs at `/api/docs`.
+**Service domains** under `services/` — a complete census, not a highlights list, so adding or removing a domain means editing this line and `scripts/__tests__/agents-service-census.test.ts` fails until you do. The full set, alphabetical: activity, communities, connectors, core, core-extensions, diff, extensions, harness, identity, marketplace, marketplace-mcp, mcp-apps, memory, mesh, notifications, observability, relay, rooms, runtimes, search, session, shapes, tasks, terminal, workbench-serve, workspace (`__tests__` sits beside them and is the one directory that is not a domain). Filesystem scanning: `packages/mesh/src/discovery/unified-scanner.ts`. API docs at `/api/docs`.
 
 `CommunityAdapter` (`packages/shared/src/community-adapter.ts`) is the **fourth swappable seam** beside `AgentRuntime`, `Transport` and `ConnectorProvider` — one port for rooms in more than one place, gated by `communityConformance`. This machine's own SQLite rooms are the first backend behind it (`services/communities/local/`), registered as `LOCAL_COMMUNITY` at startup; it wraps `RoomService` rather than replacing it. `GET /api/rooms` is its production consumer (`services/communities/list-rooms-across-communities.ts`): it aggregates every OTHER configured community with per-community degradation, while this machine's own rooms stay off the port — it is single-identity and that list is per-caller. Telegram/Slack bridged rooms are **projections into local rooms, not community backends** (ADR `260814-024525`); the port is reserved for communities whose truth is remote.
 
@@ -126,11 +131,11 @@ One derived, rebuildable FTS5 index over everything that was said, read by `GET 
 
 ### Client (`apps/client/src/`)
 
-React 19 + Vite 6 + Tailwind 4 + shadcn/ui (new-york, neutral gray). **Feature-Sliced Design** with the inviolable layer rule `shared ← entities ← features ← widgets` (`.claude/rules/fsd-layers.md`); layers in `src/layers/`, app shell at `src/` root may import any layer. Always import from barrel `index.ts`, never internal paths. Routing: TanStack Router, code-based routes in `router.tsx` — `/`, `/activity`, `/team` (`/agents` redirects to it), `/session`, `/tasks`, `/channels`, `/workspaces`, `/connections`, `/marketplace`, `/marketplace/sources`, `/feedback-requests`, `/dev/*`. Embedded mode (Obsidian) bypasses the router. State: Zustand for UI, TanStack Query for server state (`contributing/state-management.md`). `motion` for animation, `streamdown` for markdown; design system in `contributing/design-system.md`.
+React 19 + Vite 6 + Tailwind 4 + shadcn/ui (new-york, neutral gray). **Feature-Sliced Design** with the inviolable layer rule `shared ← entities ← features ← widgets` (`.claude/rules/fsd-layers.md`); layers in `src/layers/`, app shell at `src/` root may import any layer. Always import from barrel `index.ts`, never internal paths. Routing: TanStack Router, code-based routes in `router.tsx` — `/`, `/activity`, `/team` (`/agents` redirects to it), `/session`, `/tasks`, `/channels`, `/workspaces`, `/connections`, `/marketplace`, `/marketplace/sources`, `/feedback-requests`. `/dev/*` is the one path the router never sees — `main.tsx` mounts the Dev Playground on it directly, and only under `import.meta.env.DEV`. Embedded mode (Obsidian) bypasses the router. State: Zustand for UI, TanStack Query for server state (`contributing/state-management.md`). `motion` for animation, `streamdown` for markdown; design system in `contributing/design-system.md`.
 
 ### Site, Shared, CLI
 
-`apps/site`: Next.js 16 + Fumadocs at dorkos.ai; public marketplace browse + install telemetry (Neon Postgres + Drizzle). `packages/shared`: import via `@dorkos/shared/*` subpaths — see the `exports` map in `packages/shared/package.json` (58 subpaths). `packages/cli`: published as `dorkos`; config precedence CLI flags > env vars > `~/.dork/config.json` > defaults.
+`apps/site`: Next.js 16 + Fumadocs at dorkos.ai; public marketplace browse + install telemetry (Neon Postgres + Drizzle). `packages/shared`: import via `@dorkos/shared/*` subpaths — see the `exports` map in `packages/shared/package.json` (71 subpaths, no root entry). `packages/cli`: published as `dorkos`; config precedence CLI flags > env vars > `~/.dork/config.json` > defaults.
 
 ## The `/flow` Workflow
 
@@ -182,7 +187,7 @@ Also on GitHub Actions: `fragment-present` (changelog), `scripts-test`, and CLI 
 
 ## Research
 
-290+ reports in `research/` (`YYYYMMDD_topic-slug.md`). **Always check `research/` before doing new research.**
+350+ reports in `research/` (`YYYYMMDD_topic-slug.md`). **Always check `research/` before doing new research.**
 
 ## Artifacts
 

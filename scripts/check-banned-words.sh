@@ -42,6 +42,13 @@
 #   - GitHub ships a product literally named "Mission Control", so a genuine
 #     reference to it is allowed. Mark such a line with `vocab-allow` in a
 #     comment or HTML comment on the same line, with a reason.
+#   - AGENTS.md states the prohibition, so it has to quote both words to say
+#     what they are. It is scanned anyway — it loads into every agent session as
+#     project instructions, which makes it the likeliest place for a retired
+#     word to be copied back out of and into user-facing copy. Because matching
+#     is line-scoped and AGENTS.md writes a paragraph per line, the rule lives
+#     in a paragraph of its own so its marker exempts that prose and nothing
+#     else in the file. Do not fold it back into a neighbouring paragraph.
 #
 #   bash scripts/check-banned-words.sh
 #   ROOT=/path/to/checkout bash scripts/check-banned-words.sh
@@ -61,6 +68,7 @@ BANNED_RE='mission control|cockpit'
 SCAN_TARGETS=(
   'README.md'
   'CONTRIBUTING.md'
+  'AGENTS.md'
   'context7.json'
   'packages/cli/README.md'
   'apps/client/public/manifest.webmanifest'
