@@ -1,4 +1,5 @@
 import { cn } from '@/layers/shared/lib';
+import { Badge } from '@/layers/shared/ui';
 import type { ActivityCategory } from '../model/activity-types';
 import { CATEGORY_CONFIG } from '../model/activity-types';
 
@@ -18,16 +19,12 @@ export function CategoryBadge({ category, className }: CategoryBadgeProps) {
   const config = CATEGORY_CONFIG[category];
 
   return (
-    <span
+    <Badge
       data-slot="category-badge"
-      className={cn(
-        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-        config.bg,
-        config.text,
-        className
-      )}
+      shape="pill"
+      className={cn('border-transparent', config.bg, config.text, className)}
     >
       {config.label}
-    </span>
+    </Badge>
   );
 }

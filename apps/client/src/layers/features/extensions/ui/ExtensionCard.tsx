@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AlertTriangle, XCircle, Puzzle, ChevronDown, ShieldCheck } from 'lucide-react';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
-import { Badge, Button, Switch } from '@/layers/shared/ui';
+import { Badge, Button, Card, Switch } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 
 interface ExtensionCardProps {
@@ -57,11 +57,12 @@ export function ExtensionCard({
         : null;
 
   return (
-    <div
+    <Card
       data-slot="extension-card"
       data-testid={`extension-card-${extension.id}`}
+      radius="lg"
+      gap="none"
       className={cn(
-        'bg-card rounded-xl border p-4',
         hasError && 'border-amber-500/50',
         (isIncompatible || isInvalid) && 'opacity-70'
       )}
@@ -215,6 +216,6 @@ export function ExtensionCard({
           )}
         </div>
       </div>
-    </div>
+    </Card>
   );
 }

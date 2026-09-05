@@ -9,6 +9,7 @@ import { SidebarShowcases } from '../showcases/SidebarShowcases';
 import { VerbLadderShowcases } from '../showcases/VerbLadderShowcases';
 import { OverlayShowcases } from '../showcases/OverlayShowcases';
 import { DataDisplayShowcases } from '../showcases/DataDisplayShowcases';
+import { StateShowcases } from '../showcases/StateShowcases';
 import { DrawerShowcases } from '../showcases/DrawerShowcases';
 import { ChatPrimitivesShowcases } from '../showcases/ChatPrimitivesShowcases';
 import { IdentityShowcases } from '../showcases/IdentityShowcases';
@@ -31,6 +32,7 @@ export function ComponentsPage() {
       <VerbLadderShowcases />
       <OverlayShowcases />
       <DrawerShowcases />
+      <StateShowcases />
       <DataDisplayShowcases />
       <ChatPrimitivesShowcases />
       <IdentityShowcases />

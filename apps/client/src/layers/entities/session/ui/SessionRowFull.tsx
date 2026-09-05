@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { motion, type TargetAndTransition, type Transition } from 'motion/react';
 import { ChevronDown, Pencil, Zap, Hand } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
@@ -6,6 +6,7 @@ import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import { Tooltip, TooltipContent, TooltipTrigger, TRUST_TONE_TEXT } from '@/layers/shared/ui';
 import { RuntimeMark } from '@/layers/entities/runtime';
 import { useSessionBorderState, type SessionBorderState } from '../model/use-session-border-state';
+import { useInlineRename } from '../model/use-inline-rename';
 import { useSessionPermissionSummary } from '../model/use-session-permission-summary';
 import { usePulseMotion } from '../model/use-pulse-motion';
 import { sessionDisplayTitle } from '../lib/session-display-title';
@@ -36,10 +37,18 @@ export function SessionRowFull({
   isNew = false,
 }: SessionRowFullProps) {
   const [expanded, setExpanded] = useState(false);
-  const [isRenaming, setIsRenaming] = useState(false);
-  const [renameValue, setRenameValue] = useState('');
-  const renameInputRef = useRef<HTMLInputElement>(null);
-  const committedRef = useRef(false);
+  const {
+    isRenaming,
+    renameValue,
+    setRenameValue,
+    inputRef: renameInputRef,
+    start: startRename,
+    commit: commitRename,
+    handleKeyDown: handleRenameKeyDown,
+  } = useInlineRename({
+    value: session.title,
+    onCommit: (next) => onRename?.(session.id, next),
+  });
 
   const { isFullPower } = useSessionPermissionSummary(session);
 
@@ -49,36 +58,6 @@ export function SessionRowFull({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [session.updatedAt, now]
   );
-
-  useEffect(() => {
-    if (isRenaming) {
-      committedRef.current = false;
-      // Delay focus so it wins over Radix's focus-restoration when the context menu closes.
-      requestAnimationFrame(() => {
-        renameInputRef.current?.focus();
-        renameInputRef.current?.select();
-      });
-    }
-  }, [isRenaming]);
-
-  const startRename = useCallback(() => {
-    setRenameValue(session.title);
-    setIsRenaming(true);
-  }, [session.title]);
-
-  const commitRename = useCallback(() => {
-    if (committedRef.current) return;
-    committedRef.current = true;
-    const trimmed = renameValue.trim();
-    setIsRenaming(false);
-    if (!trimmed || trimmed === session.title) return;
-    onRename?.(session.id, trimmed);
-  }, [renameValue, session.id, session.title, onRename]);
-
-  const cancelRename = useCallback(() => {
-    committedRef.current = true;
-    setIsRenaming(false);
-  }, []);
 
   const borderState = useSessionBorderState(session.id);
 
@@ -195,16 +174,7 @@ export function SessionRowFull({
                   value={renameValue}
                   onChange={(e) => setRenameValue(e.target.value)}
                   onBlur={commitRename}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      commitRename();
-                    }
-                    if (e.key === 'Escape') {
-                      e.preventDefault();
-                      cancelRename();
-                    }
-                  }}
+                  onKeyDown={handleRenameKeyDown}
                   onClick={(e) => e.stopPropagation()}
                   className="bg-background text-foreground mt-0.5 w-full rounded border px-1 text-xs outline-none"
                   aria-label="Session title"

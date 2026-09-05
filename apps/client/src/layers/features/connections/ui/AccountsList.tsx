@@ -12,8 +12,10 @@ import {
   AlertDialogTrigger,
   Badge,
   Button,
+  cardVariants,
   Skeleton,
 } from '@/layers/shared/ui';
+import { cn } from '@/layers/shared/lib';
 import { useConnectorAccounts, useDisconnectConnectorAccount } from '@/layers/entities/connectors';
 import { accountDisplayName, FALLBACK_SERVICE_ICON, SERVICE_ICONS } from '../lib/presentation';
 
@@ -103,7 +105,8 @@ export function AccountRow({
   return (
     <li
       data-testid={`account-row-${account.id}`}
-      className="bg-card flex items-start gap-3 rounded-lg border p-3"
+      // The card shell from the card's own recipe; the element stays an `<li>`.
+      className={cn(cardVariants({ gap: 'sm' }), 'flex-row items-start p-3')}
     >
       <Icon className="text-muted-foreground mt-0.5 size-4 shrink-0" aria-hidden />
       <div className="min-w-0 flex-1">

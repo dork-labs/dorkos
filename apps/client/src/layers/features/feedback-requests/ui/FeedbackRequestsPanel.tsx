@@ -1,7 +1,7 @@
-import { Bug, Lightbulb, MessageSquare, Paperclip, RefreshCw, TriangleAlert } from 'lucide-react';
+import { Bug, Lightbulb, MessageSquare, Paperclip } from 'lucide-react';
 import { useMyFeedback } from '@/layers/entities/feedback-requests';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
-import { Button, Skeleton } from '@/layers/shared/ui';
+import { QueryErrorState, Skeleton } from '@/layers/shared/ui';
 import type { FeedbackListItem } from '@dorkos/shared/telemetry-events';
 import { formatShippedVersionLabel } from '../lib/version-label';
 
@@ -139,24 +139,13 @@ export function FeedbackRequestsPanel() {
 
   if (isError) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-        <div className="bg-destructive/10 rounded-xl p-3">
-          <TriangleAlert className="text-destructive size-6" aria-hidden="true" />
-        </div>
-        <div className="space-y-1">
-          <p className="text-sm font-medium">Couldn&apos;t load your reports</p>
-          <p className="text-muted-foreground mt-1 text-xs">
-            The feedback service is unreachable. Check that you&apos;re online and try again.
-          </p>
-        </div>
-        <Button size="sm" onClick={() => void refetch()} disabled={isFetching} className="mt-1">
-          <RefreshCw
-            className={cn('mr-1.5 size-3.5', isFetching && 'animate-spin')}
-            aria-hidden="true"
-          />
-          Retry
-        </Button>
-      </div>
+      <QueryErrorState
+        className="h-full"
+        title="Couldn't load your reports"
+        description="The feedback service is unreachable. Check that you're online and try again."
+        onRetry={() => void refetch()}
+        isRetrying={isFetching}
+      />
     );
   }
 

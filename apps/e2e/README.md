@@ -17,19 +17,23 @@ environment (a worktree, or any machine whose default ports are busy).
   server: its `DORKOS_TEST_RUNTIME` gate is what makes the scripted
   `test-connector` provider exist, so these specs can walk the real save-key →
   connect → attach flow with no vendor anywhere.
+- `chromium-production` — `tests/production/`, and the only project whose
+  baseURL is an **Express** port rather than a Vite one. It is how a browser
+  here ever sees the shipped `Content-Security-Policy`; see below.
 
 ## webServer legs
 
 Playwright's `webServer` array is global: whatever legs are listed boot for
 every run, regardless of `--project`. The legs are:
 
-| Leg                     | Default port | Env override                           | Readiness timeout |
-| ----------------------- | ------------ | -------------------------------------- | ----------------- |
-| Express API             | 4245         | `DORKOS_COCKPIT_PORT`                  | 240s              |
-| Vite client             | 4244         | `DORKOS_COCKPIT_VITE_PORT`             | 120s              |
-| Express API (test-mode) | 4243         | `DORKOS_MOCK_PORT`                     | 241s              |
-| Vite client (test-mode) | 4248         | `DORKOS_MOCK_VITE_PORT`                | 121s              |
-| Marketing site          | 6244         | `DORKOS_SITE_PORT` (opt-in, see below) | 242s              |
+| Leg                      | Default port | Env override                           | Readiness timeout |
+| ------------------------ | ------------ | -------------------------------------- | ----------------- |
+| Express API              | 4245         | `DORKOS_COCKPIT_PORT`                  | 240s              |
+| Vite client              | 4244         | `DORKOS_COCKPIT_VITE_PORT`             | 120s              |
+| Express API (test-mode)  | 4243         | `DORKOS_MOCK_PORT`                     | 241s              |
+| Vite client (test-mode)  | 4248         | `DORKOS_MOCK_VITE_PORT`                | 121s              |
+| Marketing site           | 6244         | `DORKOS_SITE_PORT` (opt-in, see below) | 242s              |
+| Express API (production) | 4246         | `DORKOS_PROD_PORT` (opt-in, see below) | 243s              |
 
 Every timeout is a distinct value on purpose (DOR-1243): Playwright's own
 readiness-timeout error names only the millisecond number — `Timed out
@@ -47,7 +51,7 @@ this suite reads the `DORKOS_COCKPIT_*` names.
 
 ## Every leg keeps its own data, and throws it away
 
-Both Express legs boot with a `DORK_HOME` under `/tmp`, keyed by that leg's port,
+All three Express legs boot with a `DORK_HOME` under `/tmp`, keyed by that leg's port,
 deleted before every boot:
 
 | Leg                     | `DORK_HOME`                    |
@@ -102,6 +106,31 @@ E2E_SITE=1 WATCHPACK_POLLING=true CHOKIDAR_USEPOLLING=1 pnpm --filter @dorkos/e2
 
 `apps/site/next.config.ts` also pins `turbopack.root` to the monorepo root, so a
 nested-worktree checkout no longer watches the entire outer repo tree.
+
+## The production leg is opt-in (`E2E_PROD`)
+
+Every other leg serves the app from a Vite dev server, whose shell carries **no
+`Content-Security-Policy` header at all**. The shipped policy (`SHELL_CSP` in
+`apps/server/src/app.ts`) goes out only with the built shell an
+`NODE_ENV=production` server serves — so until this leg existed, a directive that
+broke a real browser surface was invisible to this whole suite. DOR-560 shipped
+exactly that: a `connect-src` without `http:` makes the canvas report every
+healthy dev server as unreachable, and `workbench/dev-server-preview.spec.ts`
+would have stayed green through it forever.
+
+The leg is one Express server under `NODE_ENV=production`, serving the built
+client itself — no Vite in front of it, which is the point. It has to build
+`@dorkos/client` before it can serve anything, so it boots only when `E2E_PROD=1`
+(and in CI, where the config defaults it on unless `E2E_PROD=0`;
+`.github/workflows/browser-test.yml` also sets it explicitly). `tests/production/`
+is ignored by the `chromium` project unconditionally — those specs prove nothing
+against a shell with no policy on it.
+
+Keep what runs there small. It is a smoke subset by design: the shell booting,
+and the canvas, whose reachability probe and preview frame both read a policy
+refusal as an ordinary failure. Ordinary feature coverage belongs on the cockpit
+leg, where it is cheap. And never drive a turn there — that leg registers the
+real Claude Code runtime.
 
 ## Tests that need real model credentials are off by default (`E2E_INTEGRATION`)
 
@@ -160,13 +189,15 @@ your machine.
 Isolation from your DATA is not a recipe any more — every leg has its own
 throwaway `DORK_HOME` (see above). What is left is port arithmetic: to run
 alongside another run, or on a machine whose e2e ports are busy, move every leg.
-`E2E_SITE` stays unset, so no site leg boots.
+`E2E_SITE` and `E2E_PROD` stay unset, so neither the site leg nor the production
+leg boots — move `DORKOS_PROD_PORT` too if you turn the latter on.
 
 ```bash
 # from apps/e2e
 env -u E2E_SITE \
   DORKOS_COCKPIT_PORT=4255 DORKOS_COCKPIT_VITE_PORT=4254 \
   DORKOS_MOCK_PORT=4253 DORKOS_MOCK_VITE_PORT=4258 \
+  DORKOS_PROD_PORT=4256 \
   pnpm exec playwright test tests/smoke/app-loads.spec.ts --project chromium
 ```
 
@@ -197,7 +228,7 @@ Notes:
 
 ## Why the API legs do not watch
 
-Both Express legs boot with `turbo run build` + a plain `tsx` — never
+Every Express leg boots with `turbo run build` + a plain `tsx` — never
 `turbo dev`, which is `tsx watch`.
 
 On boot the server compiles each core extension to
@@ -224,7 +255,7 @@ it three ways (`playwright test --shard=i/3`) and runs the thirds side by side.
 On a pull request you will see four checks, not one:
 
 - **`browser-shard (1/3)`, `(2/3)`, `(3/3)`** — a third of the tests each. Each
-  one boots all five webServer legs, because a shard does not know which projects
+  one boots all six webServer legs, because a shard does not know which projects
   it drew until after the config is loaded. A failing shard uploads its Playwright
   report as `playwright-report-shard-<n>` — traces, screenshots and videos.
 - **`browser-test`** — the one that matters. It fails unless every shard passed,

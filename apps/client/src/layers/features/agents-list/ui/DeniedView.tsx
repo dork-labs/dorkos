@@ -1,7 +1,6 @@
-import { Loader2, ShieldCheck } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 import { useDeniedAgents } from '@/layers/entities/mesh';
-import { MeshEmptyState } from '@/layers/features/mesh';
-import { Badge } from '@/layers/shared/ui';
+import { Badge, EmptyState, Spinner } from '@/layers/shared/ui';
 
 /** Denied agents view — shows blocked paths with denial metadata. */
 export function DeniedView() {
@@ -11,14 +10,14 @@ export function DeniedView() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center p-8">
-        <Loader2 className="text-muted-foreground size-5 animate-spin" />
+        <Spinner size="md" className="text-muted-foreground" label="Loading blocked paths" />
       </div>
     );
   }
 
   if (denied.length === 0) {
     return (
-      <MeshEmptyState
+      <EmptyState
         icon={ShieldCheck}
         headline="No blocked paths"
         description="When you deny agent paths during discovery, they appear here. This is a healthy state."

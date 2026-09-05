@@ -1,6 +1,6 @@
 import { Gauge, DollarSign } from 'lucide-react';
 import type { UsageStatus } from '@dorkos/shared/types';
-import { Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
+import { DetailRow, Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { formatCost } from '../lib/format-tokens';
 
@@ -22,16 +22,6 @@ export function hasRenderableUsage(usage: UsageStatus): boolean {
   return usage.costUsd != null;
 }
 
-/** One label/value row in the usage detail block. */
-function DetailRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between gap-3">
-      <span className="text-muted-foreground">{label}</span>
-      <span>{value}</span>
-    </div>
-  );
-}
-
 /**
  * The usage & cost detail body — utilization, window, resets, and cost for a
  * subscription; the cost figure for pay-as-you-go. Shared by the status-bar
@@ -51,11 +41,11 @@ export function UsageDetail({ usage }: UsageStatusItemProps) {
       <div className="space-y-1">
         <div className="text-xs font-medium">Subscription Usage</div>
         <div className="text-3xs space-y-0.5">
-          <DetailRow label="Utilization" value={`${pct}%`} />
-          {usage.windowLabel && <DetailRow label="Window" value={usage.windowLabel} />}
-          {resetsAtLabel && <DetailRow label="Resets at" value={resetsAtLabel} />}
+          <DetailRow label="Utilization">{`${pct}%`}</DetailRow>
+          {usage.windowLabel && <DetailRow label="Window">{usage.windowLabel}</DetailRow>}
+          {resetsAtLabel && <DetailRow label="Resets at">{resetsAtLabel}</DetailRow>}
           {usage.costUsd != null && (
-            <DetailRow label="Session cost" value={`$${usage.costUsd.toFixed(2)}`} />
+            <DetailRow label="Session cost">{`$${usage.costUsd.toFixed(2)}`}</DetailRow>
           )}
           {usage.detail && <div className="text-amber-500">{usage.detail}</div>}
           {isExhausted && <div className="text-red-500">Rate limit reached</div>}
@@ -68,7 +58,9 @@ export function UsageDetail({ usage }: UsageStatusItemProps) {
     <div className="space-y-1">
       <div className="text-xs font-medium">Session Cost</div>
       <div className="text-3xs space-y-0.5">
-        {usage.costUsd != null && <DetailRow label="Cost" value={`$${usage.costUsd.toFixed(2)}`} />}
+        {usage.costUsd != null && (
+          <DetailRow label="Cost">{`$${usage.costUsd.toFixed(2)}`}</DetailRow>
+        )}
         {usage.detail && <div className="text-muted-foreground">{usage.detail}</div>}
       </div>
     </div>

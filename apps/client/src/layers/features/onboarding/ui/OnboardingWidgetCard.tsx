@@ -8,6 +8,7 @@
  * @module features/onboarding/ui/OnboardingWidgetCard
  */
 import type { ReactNode } from 'react';
+import { Card } from '@/layers/shared/ui';
 
 /** Props for {@link OnboardingWidgetCard}. */
 export interface OnboardingWidgetCardProps {
@@ -21,5 +22,9 @@ export interface OnboardingWidgetCardProps {
  * @param props - The widget to render inside the card.
  */
 export function OnboardingWidgetCard({ children }: OnboardingWidgetCardProps) {
-  return <div className="bg-card/50 shadow-soft rounded-lg border p-4">{children}</div>;
+  return (
+    <Card gap="none" className="bg-card/50">
+      {children}
+    </Card>
+  );
 }

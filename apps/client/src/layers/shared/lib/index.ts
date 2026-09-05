@@ -126,6 +126,8 @@ export {
 export { playNotificationCue, type NotificationCue } from './notification-sound';
 export { playSliderTick, playCelebration } from './sound';
 export { formatCompactAge } from './format-compact-age';
+export { bucketElapsedMs, type ElapsedBucket } from './bucket-elapsed-ms';
+export { COLLAPSE_VARIANTS, COLLAPSE_TRANSITION } from './collapse-motion';
 export { listWaitingKinds } from './waiting-kinds';
 // Only the function: `RESOLVE_HOLD_S` and `MELT_S` are the curve's own numbers
 // and nothing outside the module reads them (its own test imports the file

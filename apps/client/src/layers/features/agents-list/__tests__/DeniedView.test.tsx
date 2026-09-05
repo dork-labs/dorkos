@@ -17,12 +17,6 @@ vi.mock('@/layers/entities/mesh', () => ({
   useDeniedAgents: () => mockUseDeniedAgents(),
 }));
 
-vi.mock('@/layers/features/mesh', () => ({
-  MeshEmptyState: ({ headline }: { headline: string }) => (
-    <div data-testid="mesh-empty-state">{headline}</div>
-  ),
-}));
-
 import { DeniedView } from '../ui/DeniedView';
 
 function createWrapper() {
@@ -44,14 +38,15 @@ describe('DeniedView', () => {
   it('renders loading state with spinner', () => {
     mockUseDeniedAgents.mockReturnValue({ data: undefined, isLoading: true });
     render(<DeniedView />, { wrapper: createWrapper() });
-    // Loader2 has animate-spin class
-    expect(document.querySelector('.animate-spin')).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="spinner"]')).toBeInTheDocument();
   });
 
   it('renders empty state when no denied paths', () => {
     mockUseDeniedAgents.mockReturnValue({ data: { denied: [] }, isLoading: false });
     render(<DeniedView />, { wrapper: createWrapper() });
-    expect(screen.getByTestId('mesh-empty-state')).toBeInTheDocument();
+    // The real shared primitive, not a stub: the point of the migration is
+    // that this view no longer owns an empty state of its own.
+    expect(document.querySelector('[data-slot="empty-state"]')).toBeInTheDocument();
     expect(screen.getByText('No blocked paths')).toBeInTheDocument();
   });
 

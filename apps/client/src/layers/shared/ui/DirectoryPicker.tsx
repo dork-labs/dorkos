@@ -10,23 +10,14 @@ import {
 } from '@/layers/shared/lib';
 import { IdentityAvatar } from './identity-avatar';
 import { PathBreadcrumb } from './path-breadcrumb';
+import { Spinner } from './spinner';
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
 } from './responsive-dialog';
-import {
-  Folder,
-  FolderOpen,
-  Eye,
-  EyeOff,
-  Clock,
-  Loader2,
-  FolderPlus,
-  Check,
-  X,
-} from 'lucide-react';
+import { Folder, FolderOpen, Eye, EyeOff, Clock, FolderPlus, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { validateAgentName } from '@dorkos/shared/validation';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
@@ -256,7 +247,7 @@ export function DirectoryPicker({
             <>
               {isLoading && !data ? (
                 <div className="flex h-20 items-center justify-center">
-                  <Loader2 className="text-muted-foreground size-(--size-icon-md) animate-spin" />
+                  <Spinner size="md" className="text-muted-foreground" label="Loading folders" />
                 </div>
               ) : data?.entries.length === 0 ? (
                 <div className="flex h-20 items-center justify-center">

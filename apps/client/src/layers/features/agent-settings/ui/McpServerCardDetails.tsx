@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import { ChevronRight, ShieldCheck } from 'lucide-react';
+import { DetailRow } from '@/layers/shared/ui';
 import type { ManagedMcpServerView, McpServerTransport } from '@dorkos/shared/mesh-schemas';
 import { signInRowCopy, sourceRowCopy } from '../lib/mcp-card-copy';
 import { scopeTooltip, type McpServerScope } from '../lib/mcp-scope';
@@ -7,22 +8,15 @@ import { scopeTooltip, type McpServerScope } from '../lib/mcp-scope';
 /** How many tools are listed before the rest hide behind "Show N more". */
 const TOOLS_SHOWN_BY_DEFAULT = 3;
 
+/** The label reads quieter than the value it names — a step down from the block's own tint. */
+const LABEL_CLASS = 'text-muted-foreground/70';
+
 /** One tool a server exposes, as Details lists it. */
 export interface McpToolSummary {
   /** The tool's name, as the agent would call it. */
   name: string;
   /** One line saying what it does, when the server described it. */
   description?: string;
-}
-
-/** One row of the definition grid. Renders nothing when it has no value. */
-function DetailRow({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="grid grid-cols-[5.5rem_1fr] gap-x-2 gap-y-0.5">
-      <span className="text-muted-foreground/70 text-xs">{label}</span>
-      <span className="text-muted-foreground text-xs leading-relaxed">{children}</span>
-    </div>
-  );
 }
 
 /** The tool list, first few rows plus a control for the rest. */
@@ -139,9 +133,9 @@ export function McpServerCardDetails({
   const source = describeSource({ scope, pluginName, connection });
 
   return (
-    <div className="border-border/60 mt-2 space-y-1 border-t pt-2">
+    <div className="border-border/60 text-muted-foreground mt-2 space-y-1 border-t pt-2 text-xs leading-relaxed">
       {connection && (
-        <DetailRow label="Sign-in">
+        <DetailRow label="Sign-in" align="start" wrap labelClassName={LABEL_CLASS}>
           <span className="inline-flex items-start gap-1.5">
             <ShieldCheck className="mt-0.5 size-3 shrink-0" aria-hidden />
             {signInRowCopy({ connection, authStatus, clientOrigin: authClientOrigin })}
@@ -149,24 +143,40 @@ export function McpServerCardDetails({
         </DetailRow>
       )}
 
-      {source && <DetailRow label="Source">{source}</DetailRow>}
+      {source && (
+        <DetailRow label="Source" align="start" wrap labelClassName={LABEL_CLASS}>
+          {source}
+        </DetailRow>
+      )}
 
       {rawName !== displayName && (
-        <DetailRow label="Raw id">
+        <DetailRow label="Raw id" align="start" wrap labelClassName={LABEL_CLASS}>
           <code className="text-2xs font-mono">{rawName}</code>
         </DetailRow>
       )}
 
-      {serverInfo && <DetailRow label="Server">{serverInfo}</DetailRow>}
+      {serverInfo && (
+        <DetailRow label="Server" align="start" wrap labelClassName={LABEL_CLASS}>
+          {serverInfo}
+        </DetailRow>
+      )}
 
-      {alsoUsedBy && <DetailRow label="Also used by">{alsoUsedBy}</DetailRow>}
+      {alsoUsedBy && (
+        <DetailRow label="Also used by" align="start" wrap labelClassName={LABEL_CLASS}>
+          {alsoUsedBy}
+        </DetailRow>
+      )}
 
-      {typeof toolCount === 'number' && <DetailRow label="Tools">{toolCount}</DetailRow>}
+      {typeof toolCount === 'number' && (
+        <DetailRow label="Tools" align="start" labelClassName={LABEL_CLASS}>
+          {toolCount}
+        </DetailRow>
+      )}
 
       {tools && tools.length > 0 && <ToolList tools={tools} />}
 
       {error && (
-        <DetailRow label="Error">
+        <DetailRow label="Error" align="start" wrap labelClassName={LABEL_CLASS}>
           <code className="text-2xs font-mono break-all">{error}</code>
         </DetailRow>
       )}

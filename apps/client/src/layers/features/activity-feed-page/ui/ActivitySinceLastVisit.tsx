@@ -1,5 +1,6 @@
 import { motion } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
+import { Badge } from '@/layers/shared/ui';
 import { CATEGORY_CONFIG } from '@/layers/entities/activity';
 import type { ActivityItem, ActivityCategory } from '@/layers/entities/activity';
 
@@ -120,16 +121,13 @@ export function ActivitySinceLastVisit({
           if (!count) return null;
           const config = CATEGORY_CONFIG[cat];
           return (
-            <span
+            <Badge
               key={cat}
-              className={cn(
-                'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-                config.bg,
-                config.text
-              )}
+              shape="pill"
+              className={cn('border-transparent', config.bg, config.text)}
             >
               {count} {config.label}
-            </span>
+            </Badge>
           );
         })}
       </div>

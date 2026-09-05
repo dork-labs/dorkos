@@ -15,7 +15,7 @@
  *
  * @module entities/session/ui/SessionRowSidebar
  */
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useRef, useState } from 'react';
 import { GitFork, Info, Pencil, Zap } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
@@ -33,6 +33,7 @@ import { RuntimeMark } from '@/layers/entities/runtime';
 import type { StatusSignal } from '@/layers/shared/ui';
 import { useSessionBorderState, type SessionBorderKind } from '../model/use-session-border-state';
 import { useSessionPermissionSummary } from '../model/use-session-permission-summary';
+import { useInlineRename } from '../model/use-inline-rename';
 import { sessionDisplayTitle } from '../lib/session-display-title';
 import { FULL_POWER_MARK_LABEL } from '../lib/permission-mode';
 import { AccountMark } from './AccountMark';
@@ -113,11 +114,23 @@ export function SessionRowSidebar({
   onRename,
 }: SessionRowSidebarProps) {
   const [expanded, setExpanded] = useState(false);
-  const [isRenaming, setIsRenaming] = useState(false);
-  const [renameValue, setRenameValue] = useState(session.title);
-  const renameRef = useRef<HTMLInputElement>(null);
   const rowRef = useRef<HTMLButtonElement>(null);
-  const committedRef = useRef(false);
+  const {
+    isRenaming,
+    renameValue,
+    setRenameValue,
+    inputRef: renameInputRef,
+    start: startRename,
+    commit: commitRename,
+    handleKeyDown: handleRenameKeyDown,
+  } = useInlineRename({
+    value: session.title,
+    onCommit: (next) => onRename?.(session.id, next),
+    // Put focus back on the row the input replaced — without this the editor
+    // unmounts and focus falls to `<body>`, dropping a keyboard reader out of
+    // the sidebar entirely.
+    onEnd: () => requestAnimationFrame(() => rowRef.current?.focus()),
+  });
 
   const border = useSessionBorderState(session.id);
   const signal = statusSignalForBorderKind(border.kind);
@@ -127,57 +140,6 @@ export function SessionRowSidebar({
   useNow(60_000);
   const relativeTime = formatRelativeTime(session.updatedAt);
   const title = sessionDisplayTitle(session.title);
-
-  useEffect(() => {
-    if (!isRenaming) return;
-    committedRef.current = false;
-    // After the menu that opened it has finished closing — Radix restores focus
-    // one commit later, and it would take it straight back off this field.
-    requestAnimationFrame(() => {
-      renameRef.current?.focus();
-      renameRef.current?.select();
-    });
-  }, [isRenaming]);
-
-  const startRename = () => {
-    setRenameValue(session.title);
-    setIsRenaming(true);
-  };
-
-  /**
-   * Leave the editor and put focus back on the row it replaced — without this
-   * the editor unmounts and focus falls to `<body>`, dropping a keyboard reader
-   * out of the sidebar entirely.
-   */
-  const endRename = () => {
-    setIsRenaming(false);
-    requestAnimationFrame(() => rowRef.current?.focus());
-  };
-
-  const commitRename = () => {
-    // First Enter/Escape decides; the blur that follows a commit is a no-op.
-    if (committedRef.current) return;
-    committedRef.current = true;
-    endRename();
-    const trimmed = renameValue.trim();
-    if (trimmed.length === 0 || trimmed === session.title) return;
-    onRename?.(session.id, trimmed);
-  };
-
-  const cancelRename = () => {
-    committedRef.current = true;
-    endRename();
-  };
-
-  const handleRenameKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      commitRename();
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      cancelRename();
-    }
-  };
 
   const menuNodes: SidebarMenuNode[] = [
     ...(onRename
@@ -265,7 +227,7 @@ export function SessionRowSidebar({
       editor={
         isRenaming ? (
           <input
-            ref={renameRef}
+            ref={renameInputRef}
             value={renameValue}
             aria-label="Session title"
             onChange={(e) => setRenameValue(e.target.value)}

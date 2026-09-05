@@ -1,6 +1,5 @@
 import { Activity } from 'lucide-react';
-import { Button } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
+import { EmptyState } from '@/layers/shared/ui';
 import { CATEGORY_CONFIG } from '@/layers/entities/activity';
 import type { ActivityCategory } from '@/layers/entities/activity';
 import { useActivityFilters } from '../model/use-activity-filters';
@@ -17,74 +16,32 @@ export interface ActivityEmptyStateProps {
 /**
  * Empty state for the activity feed page.
  *
- * Two variants:
- * - No events ever — icon + "No activity yet" message.
+ * Two variants, one shell — the shared `EmptyState`:
+ * - No events ever — "No activity yet".
  * - Filtered, no results — category-specific message + "Clear filters" action.
  */
 export function ActivityEmptyState({ isFiltered = false, className }: ActivityEmptyStateProps) {
   const { filters, clearAll } = useActivityFilters();
 
-  if (isFiltered) {
+  if (!isFiltered) {
     return (
-      <FilteredEmptyState
-        categories={filters.categories}
-        onClear={clearAll}
+      <EmptyState
         className={className}
+        icon={Activity}
+        headline="No activity yet"
+        description="Events will appear here as your agents work."
       />
     );
   }
 
-  return <NoEventsEmptyState className={className} />;
-}
-
-// ---------------------------------------------------------------------------
-// Internal sub-components
-// ---------------------------------------------------------------------------
-
-function NoEventsEmptyState({ className }: { className?: string }) {
   return (
-    <div
-      data-slot="activity-empty-state"
-      className={cn('flex flex-col items-center justify-center gap-3 py-16 text-center', className)}
-    >
-      <div className="bg-muted rounded-full p-4">
-        <Activity className="text-muted-foreground size-6" aria-hidden />
-      </div>
-      <div className="space-y-1">
-        <p className="text-foreground text-sm font-medium">No activity yet</p>
-        <p className="text-muted-foreground max-w-xs text-sm">
-          Events will appear here as your agents work.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-interface FilteredEmptyStateProps {
-  categories: string | undefined;
-  onClear: () => void;
-  className?: string;
-}
-
-function FilteredEmptyState({ categories, onClear, className }: FilteredEmptyStateProps) {
-  const label = buildCategoryLabel(categories);
-
-  return (
-    <div
-      data-slot="activity-empty-state"
-      className={cn('flex flex-col items-center justify-center gap-3 py-16 text-center', className)}
-    >
-      <div className="bg-muted rounded-full p-4">
-        <Activity className="text-muted-foreground size-6" aria-hidden />
-      </div>
-      <div className="space-y-1">
-        <p className="text-foreground text-sm font-medium">No {label} activity found</p>
-        <p className="text-muted-foreground text-sm">Try adjusting your filters.</p>
-      </div>
-      <Button variant="outline" size="sm" onClick={onClear}>
-        Clear filters
-      </Button>
-    </div>
+    <EmptyState
+      className={className}
+      icon={Activity}
+      headline={`No ${buildCategoryLabel(filters.categories)} activity found`}
+      description="Try adjusting your filters."
+      action={{ label: 'Clear filters', onClick: clearAll, variant: 'outline' }}
+    />
   );
 }
 

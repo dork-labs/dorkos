@@ -14,15 +14,10 @@
  *
  * @module shared/lib/format-compact-age
  */
+import { bucketElapsedMs } from './bucket-elapsed-ms';
 
-/** Milliseconds in a minute. */
-const MINUTE_MS = 60_000;
-
-/** Minutes in an hour. */
-const MINUTES_PER_HOUR = 60;
-
-/** Hours in a day. */
-const HOURS_PER_DAY = 24;
+/** The letter each unit is spelled with here. */
+const SUFFIX = { minute: 'm', hour: 'h', day: 'd' } as const;
 
 /**
  * Format an ISO timestamp as a compact age.
@@ -35,10 +30,6 @@ const HOURS_PER_DAY = 24;
  * @returns An age like `5m`, `2h`, or `3d`.
  */
 export function formatCompactAge(iso: string): string {
-  const diff = Math.max(0, Date.now() - new Date(iso).getTime());
-  const minutes = Math.floor(diff / MINUTE_MS);
-  if (minutes < MINUTES_PER_HOUR) return `${minutes}m`;
-  const hours = Math.floor(minutes / MINUTES_PER_HOUR);
-  if (hours < HOURS_PER_DAY) return `${hours}h`;
-  return `${Math.floor(hours / HOURS_PER_DAY)}d`;
+  const { value, unit } = bucketElapsedMs(Date.now() - new Date(iso).getTime());
+  return `${value}${SUFFIX[unit]}`;
 }

@@ -9,7 +9,7 @@ import { Bell } from 'lucide-react';
 import { useNotificationPrefs } from '@/layers/entities/config';
 import { getPlatform, isDesktopShell } from '@/layers/shared/lib';
 import { useBrowserNotificationPermission } from '@/layers/shared/model';
-import { Button } from '@/layers/shared/ui';
+import { Button, Card } from '@/layers/shared/ui';
 import {
   armPermissionPrimer,
   usePermissionPrimerArmed,
@@ -97,9 +97,10 @@ export function PermissionPrimer({ streaming }: PermissionPrimerProps) {
   if (prefs.browserPermissionPrimerDismissed) return null;
 
   return (
-    <div
+    <Card
       data-slot="notification-permission-primer"
-      className="bg-card shadow-soft mx-4 mb-2 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border px-3 py-2"
+      gap="none"
+      className="mx-4 mb-2 flex-row flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2"
     >
       <Bell className="text-muted-foreground size-4 shrink-0" aria-hidden />
       <p className="text-muted-foreground min-w-0 flex-1 text-xs">
@@ -126,6 +127,6 @@ export function PermissionPrimer({ streaming }: PermissionPrimerProps) {
           Turn on notifications
         </Button>
       </div>
-    </div>
+    </Card>
   );
 }

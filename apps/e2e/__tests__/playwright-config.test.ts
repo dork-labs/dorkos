@@ -10,35 +10,51 @@ import { beforeAll, describe, expect, it } from 'vitest';
  * copying somebody's history into `/tmp`, which is exactly how DOR-1551 lived
  * unnoticed through every browser-suite run for weeks.
  *
- * `E2E_SITE` is set before the config module is imported so the Marketing
- * Site leg — normally opt-in — is included: it is one of the five legs the
- * timeout invariant covers, and skipping it here would leave its timeout
- * unchecked.
+ * `E2E_SITE` and `E2E_PROD` are set before the config module is imported so the
+ * Marketing Site and production legs — both normally opt-in — are included: they
+ * are two of the six legs the timeout invariant covers, and skipping them here
+ * would leave their timeouts unchecked.
  *
  * @module __tests__/playwright-config
  */
+
+/**
+ * Load the config with every opt-in leg switched on.
+ *
+ * The flags are read at the config's MODULE scope and `import()` caches modules,
+ * so whichever block runs first decides what all of them see — setting them in
+ * one place is what keeps that from depending on describe order.
+ *
+ * @returns The `webServer` entries, as the config built them.
+ */
+async function allLegs(): Promise<{ timeout?: number; command: string }[]> {
+  // Deliberate direct process.env access: this package has no env.ts (see
+  // playwright.config.ts's own top-of-file disable), and this sets the flags
+  // the config module itself reads, not a config read of our own.
+  /* eslint-disable no-restricted-syntax */
+  process.env.E2E_SITE = '1';
+  process.env.E2E_PROD = '1';
+  /* eslint-enable no-restricted-syntax */
+  const { default: config } = await import('../playwright.config.js');
+  const webServer = config.webServer;
+  return Array.isArray(webServer) ? webServer : webServer ? [webServer] : [];
+}
+
 describe('playwright.config.ts webServer legs', () => {
   let timeouts: number[];
   let commands: string[];
 
   beforeAll(async () => {
-    // Deliberate direct process.env access: this package has no env.ts (see
-    // playwright.config.ts's own top-of-file disable), and this sets the flag
-    // the config module itself reads, not a config read of our own.
-    // eslint-disable-next-line no-restricted-syntax
-    process.env.E2E_SITE = '1';
-    const { default: config } = await import('../playwright.config.js');
-    const webServer = config.webServer;
-    const legs = Array.isArray(webServer) ? webServer : webServer ? [webServer] : [];
+    const legs = await allLegs();
     timeouts = legs.map((leg) => leg.timeout ?? 0);
     commands = legs.map((leg) => leg.command);
   });
 
   it('gives every leg a distinct readiness timeout', () => {
-    // Five legs expected: Express API, Vite Client, Express API (test-mode),
-    // Vite Client (test-mode), Marketing Site — the last only present
-    // because E2E_SITE was set above before the config was imported.
-    expect(timeouts.length).toBe(5);
+    // Six legs expected: Express API, Vite Client, Express API (test-mode),
+    // Vite Client (test-mode), Marketing Site, Express API (production) — the
+    // last two only present because their flags were set before the import.
+    expect(timeouts.length).toBe(6);
     expect(new Set(timeouts).size).toBe(timeouts.length);
   });
 
@@ -84,18 +100,13 @@ describe('every leg that stores data isolates it', () => {
   let legs: { command: string; dorkHome: string }[];
 
   beforeAll(async () => {
-    // eslint-disable-next-line no-restricted-syntax -- see the note above
-    process.env.E2E_SITE = '1';
-    const { default: config } = await import('../playwright.config.js');
-    const webServer = config.webServer;
-    const all = Array.isArray(webServer) ? webServer : webServer ? [webServer] : [];
-    legs = dataDirectories(all.map((leg) => leg.command));
+    legs = dataDirectories((await allLegs()).map((leg) => leg.command));
   });
 
-  it('finds the two Express legs, so the assertions below have something to check', () => {
+  it('finds the three Express legs, so the assertions below have something to check', () => {
     // Without this the whole group passes vacuously the day the `DORK_HOME=`
     // spelling changes — `flatMap` over no matches asserts nothing.
-    expect(legs).toHaveLength(2);
+    expect(legs).toHaveLength(3);
     for (const leg of legs) expect(leg.dorkHome).toMatch(/^\/tmp\/dorkos-/);
   });
 
@@ -117,5 +128,42 @@ describe('every leg that stores data isolates it', () => {
     for (const leg of legs) {
       expect(leg.command).toContain('DORKOS_SEARCH_NO_EXTERNAL_HISTORY=true');
     }
+  });
+});
+
+/**
+ * The production leg's two load-bearing words (DOR-1723).
+ *
+ * Same reason as every group above: neither would fail anything on its own.
+ * Drop `NODE_ENV=production` and the server never enters the branch that serves
+ * the built shell — it answers `/api/health`, so the leg boots green, and every
+ * spec in `tests/production/` then 404s or asserts against nothing. Drop the
+ * client build and there is no `dist/` to serve at all. Both turn the only
+ * coverage the shipped Content-Security-Policy has in a browser into a leg that
+ * looks healthy and proves nothing.
+ */
+describe('the production leg serves the app the way it ships', () => {
+  let command: string;
+
+  beforeAll(async () => {
+    const legs = await allLegs();
+    const production = legs.filter((leg) => leg.command.includes('NODE_ENV=production'));
+    // Exactly one, so a second production-mode leg (or a rename that loses this
+    // one) is a failure rather than a silently narrowed assertion.
+    expect(production).toHaveLength(1);
+    command = production[0]!.command;
+  });
+
+  it('builds the client it is going to serve', () => {
+    expect(command).toContain('--filter=@dorkos/client');
+  });
+
+  it('stands alone, with no Vite dev server in front of it', () => {
+    // `VITE_PORT` is how the other legs tell the server which cross-origin dev
+    // client to trust. In production the server IS the client's origin
+    // (`getStaticLocalOrigins`), so naming one here would either be inert or a
+    // sign this leg had quietly grown a proxy — and a proxied shell is the shell
+    // with no policy on it, which is the exact blindness this leg removes.
+    expect(command).not.toContain('VITE_PORT=');
   });
 });

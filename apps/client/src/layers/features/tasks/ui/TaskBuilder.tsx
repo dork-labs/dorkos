@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import cronstrue from 'cronstrue';
 import { AnimatePresence, motion } from 'motion/react';
-import { cn } from '@/layers/shared/lib';
+import { cn, COLLAPSE_TRANSITION, COLLAPSE_VARIANTS } from '@/layers/shared/lib';
 import {
   Select,
   SelectTrigger,
@@ -67,8 +67,6 @@ const DAY_LABELS: { value: number; label: string }[] = [
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const WEEKDAYS = [1, 2, 3, 4, 5];
 const WEEKEND = [0, 6];
-
-const ANIMATION_TRANSITION = { duration: 0.2, ease: [0.4, 0, 0.2, 1] as const };
 
 // ─── Helper Functions ────────────────────────────────────────────────
 
@@ -389,10 +387,11 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
         {needsTime && (
           <motion.div
             key="time"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={ANIMATION_TRANSITION}
+            variants={COLLAPSE_VARIANTS}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            transition={COLLAPSE_TRANSITION}
             className="overflow-hidden"
           >
             <div className="flex items-center gap-2">
@@ -419,10 +418,11 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
         {config.frequency === 'weekly' && (
           <motion.div
             key="days"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={ANIMATION_TRANSITION}
+            variants={COLLAPSE_VARIANTS}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            transition={COLLAPSE_TRANSITION}
             className="overflow-hidden"
           >
             <div className="flex flex-wrap gap-1.5">
@@ -459,10 +459,11 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
         {config.frequency === 'monthly' && (
           <motion.div
             key="dom"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={ANIMATION_TRANSITION}
+            variants={COLLAPSE_VARIANTS}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            transition={COLLAPSE_TRANSITION}
             className="overflow-hidden"
           >
             <div className="flex items-center gap-2">

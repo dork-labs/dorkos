@@ -1,15 +1,54 @@
 import * as React from 'react';
+import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '../lib/utils';
 
-/** Surface container with border, padding, and soft elevation. */
-function Card({ className, ...props }: React.ComponentProps<'div'>) {
+const cardVariants = cva('bg-card text-card-foreground shadow-soft flex flex-col border p-4', {
+  variants: {
+    // About ten files hand-wrote this shell rather than importing the component
+    // — some because they wanted `rounded-xl`, some because they wanted the
+    // hover lift, neither of which the primitive offered (DOR-1763 finding
+    // 17.5). Both are axes now, so wanting one is no longer a reason to leave.
+    variant: {
+      /** Sits there. */
+      static: '',
+      /** Lifts on hover and on keyboard focus — a card you can press. */
+      interactive: 'card-interactive',
+    },
+    radius: {
+      md: 'rounded-lg',
+      lg: 'rounded-xl',
+    },
+    /**
+     * Space between the card's own children.
+     *
+     * `none` emits no gap utility at all rather than `gap-0`, so a body that
+     * spaces itself — with its own margins, or a different gap on each axis —
+     * is not fighting a class the card put there first.
+     */
+    gap: {
+      none: '',
+      sm: 'gap-3',
+      md: 'gap-4',
+    },
+  },
+  defaultVariants: { variant: 'static', radius: 'md', gap: 'md' },
+});
+
+/** Everything a card draws — its shape, its spacing, and whether it responds. */
+export interface CardProps extends React.ComponentProps<'div'>, VariantProps<typeof cardVariants> {}
+
+/**
+ * Surface container with border, padding, and soft elevation.
+ *
+ * @param variant - `static` (default), or `interactive` for the hover lift.
+ * @param radius - `md` (default) or `lg` for the larger corner.
+ * @param gap - Space between children: `md` (default), `sm`, or `none` when the body sets its own.
+ */
+function Card({ className, variant, radius, gap, ...props }: CardProps) {
   return (
     <div
       data-slot="card"
-      className={cn(
-        'bg-card text-card-foreground shadow-soft flex flex-col gap-4 rounded-lg border p-4',
-        className
-      )}
+      className={cn(cardVariants({ variant, radius, gap }), className)}
       {...props}
     />
   );
@@ -62,4 +101,4 @@ function CardFooter({ className, ...props }: React.ComponentProps<'div'>) {
   );
 }
 
-export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter };
+export { Card, cardVariants, CardHeader, CardTitle, CardDescription, CardContent, CardFooter };

@@ -1,5 +1,6 @@
-import { Loader2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+import { COLLAPSE_TRANSITION, COLLAPSE_VARIANTS } from '@/layers/shared/lib';
+import { Spinner } from '@/layers/shared/ui';
 
 interface TaskActiveFormProps {
   activeForm: string | null;
@@ -12,12 +13,14 @@ export function TaskActiveForm({ activeForm, isCollapsed }: TaskActiveFormProps)
     <AnimatePresence>
       {activeForm && !isCollapsed && (
         <motion.div
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: 'auto' }}
-          exit={{ opacity: 0, height: 0 }}
+          variants={COLLAPSE_VARIANTS}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          transition={COLLAPSE_TRANSITION}
           className="mb-1 flex items-center gap-2 text-xs text-blue-400"
         >
-          <Loader2 className="size-(--size-icon-xs) shrink-0 animate-spin" />
+          <Spinner size="xs" className="shrink-0" />
           <span className="truncate">{activeForm}</span>
         </motion.div>
       )}

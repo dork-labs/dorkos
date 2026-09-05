@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Check, Copy, Link, QrCode, X, type LucideIcon } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Button } from '@/layers/shared/ui';
-import { cn, useCopyFeedback } from '@/layers/shared/lib';
+import { cn, COLLAPSE_TRANSITION, COLLAPSE_VARIANTS, useCopyFeedback } from '@/layers/shared/lib';
 import { TunnelQrCode, tunnelHost } from '@/layers/entities/tunnel';
 import { latencyColor } from '../lib/tunnel-utils';
 
@@ -30,16 +30,6 @@ const latencyVariants = {
 
 /** Delayed fade transition for latency display. */
 const latencyTransition = { duration: 0.3, delay: 0.5 } as const;
-
-/** QR expand animation for inline toggle. */
-const qrExpandVariants = {
-  initial: { height: 0, opacity: 0 },
-  animate: { height: 'auto', opacity: 1 },
-  exit: { height: 0, opacity: 0 },
-} as const;
-
-/** Transition for QR expand. */
-const qrExpandTransition = { duration: 0.2, ease: [0, 0, 0.2, 1] } as const;
 
 /**
  * One "Copy X" action button: an idle glyph and label, morphing to a check
@@ -158,11 +148,11 @@ export function TunnelConnected({ url, activeSessionId, latencyMs }: TunnelConne
         {showQr && (
           <motion.div
             key="qr-expand"
-            variants={qrExpandVariants}
+            variants={COLLAPSE_VARIANTS}
             initial="initial"
             animate="animate"
             exit="exit"
-            transition={qrExpandTransition}
+            transition={COLLAPSE_TRANSITION}
             className="overflow-hidden"
           >
             <TunnelQrCode url={url} />

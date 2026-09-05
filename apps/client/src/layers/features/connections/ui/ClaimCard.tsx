@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { UnclaimedChat } from '@dorkos/shared/relay-schemas';
 import {
   Button,
+  Card,
   Select,
   SelectContent,
   SelectItem,
@@ -109,10 +110,7 @@ export function ClaimCard({
   const isBroadcast = isBroadcastChannel(chat);
 
   return (
-    <div
-      data-testid={`claim-card-${chat.id}`}
-      className="bg-card shadow-soft space-y-3 rounded-lg border p-4"
-    >
+    <Card data-testid={`claim-card-${chat.id}`} gap="sm">
       <div className="space-y-1">
         <p className="text-sm font-medium">{claimHeadline(chat)}</p>
         <p className="text-muted-foreground text-xs">
@@ -199,6 +197,6 @@ export function ClaimCard({
           </>
         )}
       </p>
-    </div>
+    </Card>
   );
 }

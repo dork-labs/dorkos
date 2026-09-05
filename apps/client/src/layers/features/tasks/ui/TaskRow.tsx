@@ -23,7 +23,14 @@ import {
   STATUS_TONE_DOT,
   type StatusTone,
 } from '@/layers/shared/ui';
-import { cn, getAgentDisplayName, shortenHomePath, resolveAgentVisual } from '@/layers/shared/lib';
+import {
+  cn,
+  COLLAPSE_TRANSITION,
+  COLLAPSE_VARIANTS,
+  getAgentDisplayName,
+  shortenHomePath,
+  resolveAgentVisual,
+} from '@/layers/shared/lib';
 import type { Task } from '@dorkos/shared/types';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { TaskRunHistoryPanel } from './TaskRunHistoryPanel';
@@ -340,10 +347,11 @@ export function TaskRow({
         <AnimatePresence initial={false}>
           {expanded && shouldShowHistory && (
             <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+              variants={COLLAPSE_VARIANTS}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              transition={COLLAPSE_TRANSITION}
               className="overflow-hidden"
             >
               <div className="border-t px-3 pt-2 pb-3">

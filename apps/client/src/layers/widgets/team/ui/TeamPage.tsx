@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
-import { TriangleAlert } from 'lucide-react';
-import { Button, PageContainer } from '@/layers/shared/ui';
+import { PageContainer, QueryErrorState } from '@/layers/shared/ui';
 import {
   DEFAULT_TEAM_FILTERS,
   filterTeamMembers,
@@ -95,20 +94,12 @@ export function TeamPage({ filters, onFiltersChange }: TeamPageProps) {
 
   if (isError) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-        <div className="bg-destructive/10 rounded-xl p-3">
-          <TriangleAlert aria-hidden className="text-destructive size-6" />
-        </div>
-        <div className="space-y-1">
-          <p className="text-sm font-medium">Could not load your team</p>
-          <p className="text-muted-foreground text-xs">
-            The DorkOS server did not answer. Check that it is still running.
-          </p>
-        </div>
-        <Button size="sm" onClick={() => void refetch()} className="mt-1">
-          Retry
-        </Button>
-      </div>
+      <QueryErrorState
+        className="h-full"
+        title="Could not load your team"
+        description="The DorkOS server did not answer. Check that it is still running."
+        onRetry={() => void refetch()}
+      />
     );
   }
 

@@ -3,10 +3,11 @@ import { Search } from 'lucide-react';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
-import { MeshEmptyState, TopologyPreview } from '@/layers/features/mesh/ui/MeshEmptyState';
+import { EmptyState } from '@/layers/shared/ui';
+import { TopologyPreview } from '@/layers/features/mesh';
 import { OpenMeshSwitchRow, OpenMeshNoticeRow } from '@/layers/entities/mesh';
 
-/** Mesh feature component showcases: MeshEmptyState, the mesh-wide switch. */
+/** Mesh feature component showcases: the topology preview, the mesh-wide switch. */
 export function MeshShowcases() {
   const [switchOn, setSwitchOn] = useState(false);
   const [noticeOn, setNoticeOn] = useState(false);
@@ -14,28 +15,23 @@ export function MeshShowcases() {
   return (
     <>
       <PlaygroundSection
-        title="MeshEmptyState"
-        description="Empty state for the mesh panel with optional topology preview."
+        title="TopologyPreview"
+        description="The faded three-node sketch the Mesh panel shows above its empty state, so an empty panel still shows the shape of the thing it is missing. Rendered here inside the shared EmptyState that hosts it."
       >
-        <ShowcaseLabel>With action CTA</ShowcaseLabel>
+        <ShowcaseLabel>In the empty state that uses it</ShowcaseLabel>
         <ShowcaseDemo>
-          <MeshEmptyState
-            icon={Search}
-            headline="No agents discovered"
-            description="Register an agent to start building your mesh network."
-            action={{ label: 'Register Agent', onClick: () => {} }}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>With topology preview</ShowcaseLabel>
-        <ShowcaseDemo>
-          <MeshEmptyState
+          <EmptyState
             icon={Search}
             headline="No agents discovered"
             description="Register an agent to start building your mesh network."
             action={{ label: 'Register Agent', onClick: () => {} }}
             preview={<TopologyPreview />}
           />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>On its own</ShowcaseLabel>
+        <ShowcaseDemo>
+          <TopologyPreview />
         </ShowcaseDemo>
       </PlaygroundSection>
 

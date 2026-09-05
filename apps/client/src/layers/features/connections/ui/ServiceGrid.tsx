@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Cable } from 'lucide-react';
 import type { ConnectorToolkit } from '@dorkos/shared/connector-provider';
-import { Button, Skeleton } from '@/layers/shared/ui';
+import { Button, Card, Skeleton } from '@/layers/shared/ui';
 import { useConnectorToolkits } from '@/layers/entities/connectors';
 import { FALLBACK_SERVICE_ICON, SERVICE_ICONS } from '../lib/presentation';
 import { ConnectDialog } from './ConnectDialog';
@@ -40,14 +40,14 @@ export function ServiceGrid() {
   return (
     <div className="space-y-3">
       {toolkits.length === 0 ? (
-        <div className="bg-card rounded-lg border p-8 text-center">
+        <Card gap="none" className="p-8 text-center">
           <Cable className="text-muted-foreground/60 mx-auto size-8" aria-hidden />
           <p className="mt-3 text-sm font-medium">No services to connect yet</p>
           <p className="text-muted-foreground mx-auto mt-1 max-w-sm text-sm">
             Add a provider key under Providers below, and the services it can reach will show up
             here.
           </p>
-        </div>
+        </Card>
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {toolkits.map((toolkit) => (
@@ -88,9 +88,11 @@ export function ServiceTile({
 }) {
   const Icon = SERVICE_ICONS[toolkit.slug.toLowerCase()] ?? FALLBACK_SERVICE_ICON;
   return (
-    <div
+    <Card
       data-testid={`service-tile-${toolkit.slug}`}
-      className="bg-card card-interactive shadow-soft flex flex-col items-start gap-3 rounded-lg border p-4"
+      variant="interactive"
+      gap="sm"
+      className="items-start"
     >
       <div className="flex min-w-0 items-center gap-2">
         <Icon className="text-muted-foreground size-4 shrink-0" aria-hidden />
@@ -105,6 +107,6 @@ export function ServiceTile({
       >
         Connect
       </Button>
-    </div>
+    </Card>
   );
 }

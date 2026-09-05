@@ -11,12 +11,8 @@
  * @module features/profile/lib/profile-status
  */
 import type { TeamMember } from '@dorkos/shared/team-schemas';
+import { bucketElapsedMs } from '@/layers/shared/lib';
 import { platformLabel } from '@/layers/entities/room';
-
-/** A minute, an hour and a day in milliseconds. */
-const MINUTE_MS = 60_000;
-const HOUR_MS = 60 * MINUTE_MS;
-const DAY_MS = 24 * HOUR_MS;
 
 /**
  * How long something has been going on, in the fewest words that stay true.
@@ -27,11 +23,10 @@ const DAY_MS = 24 * HOUR_MS;
 function durationWords(fromIso: string, now: Date): string | null {
   const started = new Date(fromIso).getTime();
   if (Number.isNaN(started)) return null;
-  const elapsed = Math.max(0, now.getTime() - started);
-  if (elapsed < MINUTE_MS) return 'just started';
-  if (elapsed < HOUR_MS) return `${Math.floor(elapsed / MINUTE_MS)} min`;
-  if (elapsed < DAY_MS) return `${Math.floor(elapsed / HOUR_MS)} h`;
-  return `${Math.floor(elapsed / DAY_MS)} d`;
+  const { value, unit } = bucketElapsedMs(now.getTime() - started);
+  if (unit === 'minute') return value < 1 ? 'just started' : `${value} min`;
+  if (unit === 'hour') return `${value} h`;
+  return `${value} d`;
 }
 
 /**
@@ -47,12 +42,11 @@ function durationWords(fromIso: string, now: Date): string | null {
 function agoWords(iso: string, now: Date): string | null {
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return null;
-  const elapsed = Math.max(0, now.getTime() - then);
-  if (elapsed < MINUTE_MS) return 'just now';
-  if (elapsed < HOUR_MS) return `${Math.floor(elapsed / MINUTE_MS)} min ago`;
-  if (elapsed < DAY_MS) return `${Math.floor(elapsed / HOUR_MS)} h ago`;
-  if (elapsed < 2 * DAY_MS) return 'yesterday';
-  if (elapsed < 30 * DAY_MS) return `${Math.floor(elapsed / DAY_MS)} days ago`;
+  const { value, unit } = bucketElapsedMs(now.getTime() - then);
+  if (unit === 'minute') return value < 1 ? 'just now' : `${value} min ago`;
+  if (unit === 'hour') return `${value} h ago`;
+  if (value < 2) return 'yesterday';
+  if (value < 30) return `${value} days ago`;
   return `on ${new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
 }
 
