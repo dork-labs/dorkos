@@ -11,12 +11,22 @@
  * tag-based rule (DOR-1135). Its matrix stays here, because the pins are what
  * those two exist to serve and a regression in either shows up as a moved hash.
  *
+ * That walk crosses one import boundary, into `config-schema.ts` (DOR-1732), and
+ * this rule is the only one that follows it. The boundary's own cases are in
+ * their own block below; `migration-closure.ts` says why the tag rule stops
+ * short of it.
+ *
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest';
 
 import { checkAppendOnly, migrationClosure, migrationHash } from './migration-append-only.js';
-import { extractTopLevelDeclarations, normalizeForHash } from './migration-closure.js';
+import {
+  declarationPool,
+  extractTopLevelDeclarations,
+  normalizeForHash,
+} from './migration-closure.js';
+import type { ClosureSources } from './migration-closure.js';
 
 /** A helper shaped exactly like the real ones: inline object param, `}): void {`. */
 function helper(name: string, body: string, doc = 'documented'): string {
@@ -44,6 +54,19 @@ function sourceWith(entries: string[], declarations: string[] = []): string {
   ].join('\n');
 }
 
+/**
+ * The two-file input the rule takes, defaulting the second half to empty.
+ *
+ * Most cases here are about `config-manager.ts` alone and say so by leaving the
+ * schema out; the ones that exercise the import boundary (DOR-1732) pass both.
+ *
+ * @param configManager - A `config-manager.ts`-shaped source.
+ * @param configSchema - A `config-schema.ts`-shaped source, when one matters.
+ */
+function sources(configManager: string, configSchema = ''): ClosureSources {
+  return { configManager, configSchema };
+}
+
 const SEED = helper('backfillSeed', "store.set('seed', true);");
 const OTHER = helper('backfillOther', "store.set('other', 1);");
 
@@ -53,8 +76,8 @@ const SOURCE = sourceWith(
 );
 
 const PINS = {
-  '0.59.0': migrationHash('0.59.0', SOURCE),
-  '0.60.0': migrationHash('0.60.0', SOURCE),
+  '0.59.0': migrationHash('0.59.0', sources(SOURCE)),
+  '0.60.0': migrationHash('0.60.0', sources(SOURCE)),
 };
 
 describe('extractTopLevelDeclarations', () => {
@@ -106,7 +129,7 @@ describe('extractTopLevelDeclarations', () => {
       [helper('backfillSeed', 'void CONFIG_MIGRATIONS;'), OTHER]
     );
     expect(Object.keys(extractTopLevelDeclarations(source))).not.toContain('CONFIG_MIGRATIONS');
-    expect(migrationClosure('0.59.0', source)).not.toContain("store.set('other', 1);");
+    expect(migrationClosure('0.59.0', sources(source))).not.toContain("store.set('other', 1);");
   });
 
   it('sees an async declaration and a generator', () => {
@@ -230,14 +253,14 @@ describe('migrationClosure', () => {
   it('follows a bare helper reference into the helper it names', () => {
     // Half the real table is `'0.50.0': backfillSidebarDefaults` — a rule that
     // hashed the table slice alone would pin a function NAME and nothing else.
-    expect(migrationClosure('0.59.0', SOURCE)).toContain("store.set('seed', true);");
+    expect(migrationClosure('0.59.0', sources(SOURCE))).toContain("store.set('seed', true);");
   });
 
   it('follows a helper that calls another helper', () => {
     const inner = helper('backfillInner', "store.set('inner', 1);");
     const outer = helper('backfillOuter', 'backfillInner(store);');
     const source = sourceWith(["  '0.60.0': backfillOuter,"], [outer, inner]);
-    expect(migrationClosure('0.60.0', source)).toContain("store.set('inner', 1);");
+    expect(migrationClosure('0.60.0', sources(source))).toContain("store.set('inner', 1);");
   });
 
   it('follows a helper into the constant that decides what it does', () => {
@@ -251,11 +274,11 @@ describe('migrationClosure', () => {
         helper('backfillFromList', 'for (const k of RETIRED_KEYS) store.set(k, null);'),
       ]
     );
-    expect(migrationClosure('0.60.0', source)).toContain('ungroupedSortMode');
+    expect(migrationClosure('0.60.0', sources(source))).toContain('ungroupedSortMode');
   });
 
   it('does not pull in a helper the key never reaches', () => {
-    expect(migrationClosure('0.59.0', SOURCE)).not.toContain("store.set('other', 1);");
+    expect(migrationClosure('0.59.0', sources(SOURCE))).not.toContain("store.set('other', 1);");
   });
 
   it('is unchanged by moving a declaration within the file', () => {
@@ -263,17 +286,91 @@ describe('migrationClosure', () => {
       ["  '0.59.0': backfillSeed,", "  '0.60.0': backfillOther,"],
       [OTHER, SEED]
     );
-    expect(migrationHash('0.59.0', reordered)).toBe(migrationHash('0.59.0', SOURCE));
+    expect(migrationHash('0.59.0', sources(reordered))).toBe(
+      migrationHash('0.59.0', sources(SOURCE))
+    );
   });
 
   it('raises for a key that is not in the table', () => {
-    expect(() => migrationClosure('9.9.9', SOURCE)).toThrow(/not in CONFIG_MIGRATIONS/);
+    expect(() => migrationClosure('9.9.9', sources(SOURCE))).toThrow(/not in CONFIG_MIGRATIONS/);
+  });
+});
+
+describe('the import boundary (DOR-1732)', () => {
+  /** A `config-schema.ts`-shaped file: an exported helper and the whole schema. */
+  const SCHEMA = [
+    '/**',
+    ' * Convert a stored entry into a reference.',
+    ' */',
+    'export function toSidebarItemRef(entry: string): { kind: string; path: string } {',
+    "  return { kind: 'agent', path: entry };",
+    '}',
+    '',
+    'export const UserConfigSchema = z.object({',
+    "  everyFieldTheAppHas: z.string().default('x'),",
+    '});',
+    '',
+    'export const USER_CONFIG_DEFAULTS = UserConfigSchema.parse({});',
+  ].join('\n');
+
+  const CALLER = sourceWith(
+    ["  '0.57.0': migrateSidebarMembers,"],
+    [helper('migrateSidebarMembers', "store.set('pinned', toSidebarItemRef('a'));")]
+  );
+
+  it('follows a shipped key into a helper one module away', () => {
+    // The bypass this closure was widened to close. `'0.57.0'` decides what
+    // every upgrading install's sidebar members become, and the function that
+    // decides it lives in `@dorkos/shared` — so before this, rewriting it left
+    // every guard green (measured: all 382 of them).
+    expect(migrationClosure('0.57.0', sources(CALLER, SCHEMA))).toContain(
+      "return { kind: 'agent', path: entry };"
+    );
+  });
+
+  it('moves the hash for a body edit and holds it for a prose edit', () => {
+    // The two halves of the acceptance bar together: a guard that fired for
+    // reworded TSDoc would be repinned reflexively and stop meaning anything,
+    // and one that stayed quiet for a changed body is the bug itself.
+    const pinned = migrationHash('0.57.0', sources(CALLER, SCHEMA));
+    const reworded = SCHEMA.replace(
+      'Convert a stored entry into a reference.',
+      'Convert one STORED membership entry into a reference.'
+    );
+    const rewritten = SCHEMA.replace('path: entry }', 'path: entry.toLowerCase() }');
+
+    expect(migrationHash('0.57.0', sources(CALLER, reworded))).toBe(pinned);
+    expect(migrationHash('0.57.0', sources(CALLER, rewritten))).not.toBe(pinned);
+  });
+
+  it('never follows the whole config schema, but pins the line that derives from it', () => {
+    // `UserConfigSchema` reaches every declaration in that file, and five
+    // shipped keys reach it through `USER_CONFIG_DEFAULTS` — so following it
+    // would move five pins for every ordinary field addition, which is how a
+    // pin gets bumped without being read. The derivation itself is still
+    // pinned, so swapping it for a literal is seen.
+    const seeder = sourceWith(
+      ["  '0.69.0': seedFromDefaults,"],
+      [helper('seedFromDefaults', "store.set('memory', USER_CONFIG_DEFAULTS.memory);")]
+    );
+    const closure = migrationClosure('0.69.0', sources(seeder, SCHEMA));
+    expect(closure).toContain('USER_CONFIG_DEFAULTS = UserConfigSchema.parse({})');
+    expect(closure).not.toContain('everyFieldTheAppHas');
+  });
+
+  it('refuses a name both files declare rather than silently keeping one', () => {
+    // A dropped declaration is a hole the pins cannot show: the closure would
+    // hash whichever copy survived and stay stable while the other drifted.
+    const collides = SCHEMA.replace('toSidebarItemRef', 'migrateSidebarMembers');
+    expect(() => declarationPool(sources(CALLER, collides))).toThrow(
+      /both declare migrateSidebarMembers/
+    );
   });
 });
 
 describe('checkAppendOnly', () => {
   it('passes when every key matches its pin', () => {
-    expect(checkAppendOnly(SOURCE, PINS)).toMatchObject({ ok: true, problems: [] });
+    expect(checkAppendOnly(sources(SOURCE), PINS)).toMatchObject({ ok: true, problems: [] });
   });
 
   it('passes a comment-only edit inside a merged body', () => {
@@ -284,7 +381,7 @@ describe('checkAppendOnly', () => {
       ["  '0.59.0': backfillSeed,", "  '0.60.0': backfillOther,"],
       [helper('backfillSeed', "store.set('seed', true);", 'reworded'), OTHER]
     );
-    expect(checkAppendOnly(reworded, PINS).ok).toBe(true);
+    expect(checkAppendOnly(sources(reworded), PINS).ok).toBe(true);
   });
 
   it('fails when a merged body is edited in place', () => {
@@ -293,7 +390,7 @@ describe('checkAppendOnly', () => {
       [helper('backfillSeed', "store.set('seed', false);"), OTHER]
     );
 
-    const res = checkAppendOnly(edited, PINS);
+    const res = checkAppendOnly(sources(edited), PINS);
     expect(res.ok).toBe(false);
     const said = res.problems.join('\n');
     expect(said).toMatch(/"0\.59\.0" changed after it was pinned/);
@@ -312,7 +409,7 @@ describe('checkAppendOnly', () => {
       [SEED, helper('backfillOther', "store.set('other', 2);")]
     );
 
-    const res = checkAppendOnly(edited, PINS);
+    const res = checkAppendOnly(sources(edited), PINS);
     expect(res.ok).toBe(false);
     expect(res.problems.join('\n')).toMatch(/"0\.60\.0" changed after it was pinned/);
   });
@@ -323,7 +420,7 @@ describe('checkAppendOnly', () => {
       [SEED, OTHER, helper('backfillFresh', "store.set('fresh', 1);")]
     );
 
-    const res = checkAppendOnly(added, PINS);
+    const res = checkAppendOnly(sources(added), PINS);
     expect(res.ok).toBe(false);
     expect(res.problems.join('\n')).toContain(`'0.61.0': '${res.hashes['0.61.0']!}'`);
   });
@@ -340,15 +437,15 @@ describe('checkAppendOnly', () => {
       [shared]
     );
     const pins = {
-      '0.59.0': migrationHash('0.59.0', before),
-      '0.60.0': migrationHash('0.60.0', before),
+      '0.59.0': migrationHash('0.59.0', sources(before)),
+      '0.60.0': migrationHash('0.60.0', sources(before)),
     };
     const after = sourceWith(
       ["  '0.59.0': backfillShared,", "  '0.60.0': backfillShared,"],
       [helper('backfillShared', "store.set('shared', 2);")]
     );
 
-    const res = checkAppendOnly(after, pins);
+    const res = checkAppendOnly(sources(after), pins);
     expect(res.ok).toBe(false);
     expect(res.problems.join('\n')).toMatch(/2 keys moved together \(0\.59\.0, 0\.60\.0\)/);
     expect(res.problems.join('\n')).toMatch(/backfillRoomsDefaults pattern/);
@@ -357,7 +454,7 @@ describe('checkAppendOnly', () => {
   it('fails when a pinned key is removed from the table', () => {
     const dropped = sourceWith(["  '0.59.0': backfillSeed,"], [SEED, OTHER]);
 
-    const res = checkAppendOnly(dropped, PINS);
+    const res = checkAppendOnly(sources(dropped), PINS);
     expect(res.ok).toBe(false);
     expect(res.problems.join('\n')).toMatch(/"0\.60\.0" is pinned but is no longer/);
   });

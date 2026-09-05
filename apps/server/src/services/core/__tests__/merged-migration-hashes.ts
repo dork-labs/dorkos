@@ -3,10 +3,10 @@
  *
  * One line per key in `CONFIG_MIGRATIONS`, holding the hash of everything that
  * key reaches — its slice of the table plus the source of every top-level
- * function and constant in `config-manager.ts` it reaches, transitively. How the
- * hash is computed, and what it deliberately does not cover, is in
- * `migration-append-only.ts`. The check runs against the real file in
- * `config-manager.test.ts`.
+ * function and constant it reaches, transitively, across `config-manager.ts` and
+ * `packages/shared/src/config-schema.ts`. How the hash is computed, and what it
+ * deliberately does not cover, is in `migration-append-only.ts`. The check runs
+ * against the real files in `config-manager.test.ts`.
  *
  * ## The three things that happen to this file
  *
@@ -44,6 +44,27 @@
  * match `v0.59.0`, not that they never moved before it. `0.60.0` is absent from
  * that tag, so nothing compares it at all, and it is the first key this rule
  * protects that the tag-based one cannot.
+ *
+ * ## The one bulk repin, and why it is not the thing this file warns about
+ *
+ * On 2026-09-05 (DOR-1732) ten pins moved at once: `0.55.0`, `0.57.0`, `0.59.0`,
+ * `0.64.0`, `0.65.0` and `0.69.0` through `0.73.0`. **No migration body changed.**
+ * The closure was widened to follow those keys one module further, into
+ * `packages/shared/src/config-schema.ts`, so each of the ten now hashes strictly
+ * more source than it did — the same code it always ran, plus the code it always
+ * reached and nothing was watching.
+ *
+ * That is the one justification a bulk repin can have, and it is the opposite of
+ * the failure this file exists to catch: nobody's config changed, and the ten
+ * keys are exactly the ten the old walk could not see. What they gained is
+ * checkable rather than asserted — `0.57.0` picks up `toSidebarItemRef`,
+ * `0.65.0` picks up `claudeAccountId` and `slugifyAccountId`, and the five from
+ * `0.69.0` up pick up the one line of `USER_CONFIG_DEFAULTS` they seed from.
+ * Editing `toSidebarItemRef` used to leave all 382 guard tests green; that is
+ * what these ten lines buy.
+ *
+ * A repin that moves several pins for any OTHER reason is still what the drift
+ * message says it is.
  */
 
 /**
@@ -59,13 +80,13 @@ export const MERGED_MIGRATION_HASHES: Readonly<Record<string, string>> = {
   '0.48.0': '704ab3fe78619f5a',
   '0.50.0': '6a3bcd3c7a5b56c7',
   '0.52.0': '3e3196cd69d496ca',
-  '0.55.0': '5347a36ea943854b',
-  '0.57.0': 'e415a30a8bc51166',
-  '0.59.0': '126395e65f206262',
+  '0.55.0': 'fadb6b87a78fedf4',
+  '0.57.0': '5227f2654f34a354',
+  '0.59.0': '7539968961498e9c',
   '0.60.0': '45129eaa96cce263',
   '0.62.0': '622b3a68f4579a0c',
   '0.63.0': '3641c16254095166',
-  '0.64.0': '2ba829b016b59c8c',
+  '0.64.0': 'e662eb1019890468',
   // Repinned once, on the branch that introduced this key and before it merged
   // to `main` — so the population that could have run the earlier body is empty
   // by construction: no build carrying `0.65.0` has ever existed outside this
@@ -73,13 +94,13 @@ export const MERGED_MIGRATION_HASHES: Readonly<Record<string, string>> = {
   // preferring a `null` `defaultAccount` over the operator's stored
   // `activeAccount`, which destroyed a billing choice permanently. Once this
   // merges, the key is frozen and a further change of mind opens `'0.66.0'`.
-  '0.65.0': 'f3f900081b2149cc',
+  '0.65.0': 'e113dd9a0495980f',
   '0.66.0': '719826021e47d7bd',
   '0.67.0': '892aacc2b5582bae',
   '0.68.0': '8fa4a4507a93cf79',
-  '0.69.0': 'e1e76edc0f14de74',
-  '0.70.0': '0401b62ed2e77f03',
-  '0.71.0': 'b533d884350dc881',
-  '0.72.0': '85ea56550635b674',
-  '0.73.0': 'd8aaf798eb3214f9',
+  '0.69.0': 'c2b66c51497db12d',
+  '0.70.0': '18abfc95231af8cf',
+  '0.71.0': '1f1a8322960a6645',
+  '0.72.0': '006d72696c6ef26d',
+  '0.73.0': 'a8975be23d86d5d2',
 };

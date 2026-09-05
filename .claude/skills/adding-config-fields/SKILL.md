@@ -102,7 +102,9 @@ The operator's own config was stamped `0.59.0` on 2026-08-12 while `0.59.0` was 
 
 So: a merged body is frozen. A change of mind opens a NEW key above the newest tag, written so it can tell a value the earlier body seeded from one a person chose. If it cannot tell them apart, appending overwrites somebody's choice and is the more destructive option — which usually means living with the seed that shipped.
 
-Bumping an existing pin in `merged-migration-hashes.ts` is the only escape hatch. It shows up as one changed line in a file that exists for nothing else, and it needs a justification in the pull request naming the population that could have run the old body and why it is empty. On this repository, it never has been.
+Bumping an existing pin in `merged-migration-hashes.ts` is the only escape hatch. It shows up as one changed line in a file that exists for nothing else, and it needs a justification in the pull request naming the population that could have run the old body and why it is empty. On this repository it never has been — the one bulk repin on record (DOR-1732) changed no body at all; it widened what the pins cover.
+
+**The pins reach into `config-schema.ts` too** (DOR-1732), so editing a schema symbol a migration reads can red the guard even when you never opened `config-manager.ts`. Ten keys reach across that edge — `ONBOARDING_STEPS`, `ComposerPrefsSchema`, `toSidebarItemRef`, `claudeAccountId`, and `USER_CONFIG_DEFAULTS` for the five keys from `0.69.0` up. That is the guard doing its job: a shipped migration's behavior lives partly in that file. Fields you ADD to `UserConfigSchema` move nothing, because the schema itself is excluded by name — but changing an existing DEFAULT that one of those five keys seeds wholesale is invisible to the pins, so check them by hand.
 
 The shape to match:
 

@@ -46,6 +46,20 @@
  * hatch; the release tag is not editable at all, so for a key that has SHIPPED
  * there is no escape hatch, which is the correct number.
  *
+ * ## The one place the two locks cover different ground (DOR-1732)
+ *
+ * This rule's closure stops at `config-manager.ts`. The pins next door follow it
+ * one module further, into `packages/shared/src/config-schema.ts`, which ten
+ * keys reach into. Having no escape hatch is the right answer for the helpers in
+ * `config-manager.ts` — they exist for migrations and nothing else, so freezing
+ * them costs nobody anything. It is the wrong answer for a schema symbol the
+ * running app shares: `claudeAccountId` took a ReDoS fix at v0.73.0 while
+ * `'0.65.0'` had been shipped for eight releases, and a rule with no hatch would
+ * have made that fix unlandable rather than making it visible. So the import hop
+ * is pinned rather than frozen, and this rule stays inside the file whose
+ * contents only migrations depend on. `migration-closure.ts` holds the full
+ * reasoning and the measurement behind it.
+ *
  * Pure on purpose: everything that touches git or the filesystem is passed in,
  * so the whole matrix — including the cases that must FAIL — is fixture-testable
  * without staging tags in a scratch repo. `__tests__/migration-safety.test.ts`
