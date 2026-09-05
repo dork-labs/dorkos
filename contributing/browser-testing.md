@@ -75,6 +75,7 @@ apps/e2e/
     ├── dashboard-sidebar/     # Roster groups and drag-and-drop
     ├── pulse/                 # Pulse panel tests
     ├── relay/                 # Relay "Connections" dialog + adapter wizard
+    ├── production/            # The built app served by Express, real CSP
     ├── rooms/                 # Channels, DMs, mentions, palette
     ├── settings/
     └── tasks/                 # Tasks Scheduler dialog
@@ -195,7 +196,13 @@ test.describe('Feature — Description @smoke', () => { ... });
 | `cd apps/e2e && PWDEBUG=1 npx playwright test <file>` | Debug mode                      |
 | `cd apps/e2e && npx playwright show-report`           | View HTML report                |
 
-The `webServer` config in `playwright.config.ts` auto-starts both Express and Vite dev servers if they're not already running. Set `reuseExistingServer: true` (default in dev) to reuse running servers for faster feedback.
+The `webServer` config in `playwright.config.ts` auto-starts every leg the run needs — the Express and Vite servers, and (opt-in) the marketing site and production legs. No run adopts a server it did not start, so a busy port is a startup error naming that port rather than a silent attachment. `apps/e2e/README.md` has the port table and the isolated-run recipe.
+
+### The production leg (`E2E_PROD`)
+
+Almost every spec loads the app from Vite, which serves its own shell with **no `Content-Security-Policy` header**. The shipped policy goes out only with the built shell an `NODE_ENV=production` Express server serves, so a directive that breaks a real browser surface used to be invisible to this entire suite (DOR-560 shipped one). `E2E_PROD=1` boots that leg — the built client, served the way production serves it — and the `chromium-production` project runs `tests/production/` against it. It is on by default in CI and off by default locally, because it has to build the client first.
+
+Keep it a smoke subset: the shell booting, and the surfaces the policy can silently take away. Ordinary feature coverage belongs on the cockpit leg. Never drive a turn there — that leg registers the real Claude Code runtime.
 
 ## AI Commands
 
@@ -364,10 +371,11 @@ Every row names the env var that MOVES the leg — the name you set, not the
 | `DORKOS_COCKPIT_VITE_PORT` (4244) | Vite client proxying to the cockpit server                                |
 | `DORKOS_MOCK_PORT` (4243)         | Test-mode Express server                                                  |
 | `DORKOS_MOCK_VITE_PORT` (4248)    | Vite client proxying to mock server — 6244 is reserved for `@dorkos/site` |
+| `DORKOS_PROD_PORT` (4246)         | Production Express server, serving the built client (opt-in, `E2E_PROD`)  |
 
-Both Express legs run against a throwaway `DORK_HOME` under `/tmp`, keyed by that
-leg's port and deleted before every boot — `/tmp/dorkos-cockpit-<port>` and
-`/tmp/dorkos-test-mode-<port>`. No run reads or writes the dev data directory
+Every Express leg runs against a throwaway `DORK_HOME` under `/tmp`, keyed by that
+leg's port and deleted before every boot — `/tmp/dorkos-cockpit-<port>`,
+`/tmp/dorkos-test-mode-<port>` and `/tmp/dorkos-production-<port>`. No run reads or writes the dev data directory
 (`apps/server/.temp/.dork`) or a real `~/.dork` (DOR-1223). The cockpit leg reads
 `DORKOS_COCKPIT_PORT` rather than `DORKOS_PORT` for the same reason: `DORKOS_PORT`
 is the dev server's own variable, set in the root `.env` and passed through by

@@ -142,7 +142,7 @@ jobs:
     #   * the whole job took 41 to 45 minutes
     #
     # Of that ~41-minute suite step, about 2m24s is fixed cost that every shard
-    # re-pays: the five webServer legs boot SEQUENTIALLY (Playwright runs one
+    # re-pays: the webServer legs boot SEQUENTIALLY (Playwright runs one
     # plugin-setup task per leg, in order), then `global-setup.ts` runs. Measured
     # on run 32239903731, whose suite step started at 10:39:15 and whose
     # globalSetup blew a 180s `waitForSelector` at 10:44:39 — so the legs were up
@@ -234,6 +234,20 @@ jobs:
       # model credentials this runner does not have and spends real money, so
       # it stays out of CI; E2E_INTEGRATION is never set here).
       E2E_SITE: '1'
+      # Boot the production leg and run the specs that target it (DOR-1723).
+      # It is the ONLY place in this suite a browser sees the shipped
+      # Content-Security-Policy: every other leg loads the app from Vite, whose
+      # shell carries no header at all, so a directive that breaks a real surface
+      # was invisible here until this leg existed (DOR-560 shipped exactly that
+      # and no gate noticed). The config already defaults it on under CI; set
+      # explicitly for the same reason E2E_SITE is — the coverage must not ride a
+      # conditional a future edit could invert, and the assert step's invariant
+      # stays "every spec file runs except the two named exemptions".
+      #
+      # It costs a client build, paid once per shard in the build step below.
+      # The specs themselves are a smoke subset by design, not the suite; the
+      # spec's own header says which surfaces earn a place there and why.
+      E2E_PROD: '1'
       # How many ways the suite is being cut, so playwright.config.ts can size
       # its own `globalTimeout` to one shard instead of to the whole suite.
       # `strategy.job-total` is the matrix length, so the list above is the ONE
@@ -330,15 +344,20 @@ jobs:
           exit 1
 
       # Warm the turbo cache with everything the webServer legs need, OUTSIDE
-      # their readiness timeouts. The two Express legs each run
+      # their readiness timeouts. The three Express legs each run
       # `turbo run build --filter=@dorkos/server` before booting, the Vite legs'
       # `turbo dev` pulls `^build`, and the site leg imports @dorkos/icons and
       # @dorkos/marketplace dists — all inside webServer timeouts sized for a
       # warm tree. Building here turns the in-leg builds into cache replays, so
       # a slow cold build fails THIS step with a build error instead of failing
-      # five legs later as an opaque readiness timeout.
+      # six legs later as an opaque readiness timeout.
+      #
+      # `@dorkos/client` itself, not just its dependencies (DOR-1723): the
+      # production leg SERVES that package's `dist/`, so unlike the two Vite
+      # legs it cannot boot without a built client. Everything else here stayed
+      # `^...` because a dev server needs its dependencies and nothing more.
       - name: Build what the webServer legs boot from
-        run: pnpm exec turbo run build --filter=@dorkos/server --filter=@dorkos/client^... --filter=@dorkos/site^...
+        run: pnpm exec turbo run build --filter=@dorkos/server --filter=@dorkos/client --filter=@dorkos/site^...
 
       # No `--reporter` flag, deliberately: passing one REPLACES the config's
       # reporter list rather than adding to it, and the json reporter is what the
