@@ -94,7 +94,11 @@ function parseTable(lines, startMarker, stopMarkers) {
       .replace(/^\|/, '')
       .replace(/\|$/, '')
       .split('|')
-      .map((c) => c.replace(/\u0000/g, '|').trim());
+      // replaceAll with a plain string rather than a /…/g regex: same result,
+      // and it keeps the sentinel out of a regex literal, where no-control-regex
+      // flags it (rightly — a control character in a pattern is nearly always a
+      // typo rather than, as here, a deliberate placeholder).
+      .map((c) => c.replaceAll('\u0000', '|').trim());
     if (cells.length < 3) continue;
     const first = cells[0].replace(/`/g, '').trim();
     if (first === 'Guide' || first === 'MDX File') continue;

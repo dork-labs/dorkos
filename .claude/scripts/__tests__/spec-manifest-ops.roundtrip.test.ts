@@ -20,7 +20,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, cpSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, cpSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -62,6 +62,11 @@ test("adding one spec through the canonical script touches only that entry's lin
     // it would pass just as well against a manifest of pure ASCII titles.
     assert.match(
       before,
+      // The \x00-\x7F range IS the assertion — it is how "contains a character
+      // outside ASCII" is spelled. Narrowing it to printable ASCII to satisfy
+      // no-control-regex would make the test pass on any multi-line string,
+      // which is the vacuous version it exists to prevent.
+      // eslint-disable-next-line no-control-regex -- deliberate: see above
       /[^\x00-\x7F]/,
       'the real specs/manifest.json fixture has no non-ASCII character today, so this test cannot ' +
         'tell a fixed writer from a broken one — this assertion is supposed to fail loudly if that changes'

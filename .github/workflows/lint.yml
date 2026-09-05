@@ -150,3 +150,32 @@ jobs:
       - name: Lint every package
         if: ${{ !cancelled() }}
         run: pnpm exec turbo lint --continue
+
+      # ...and then everything turbo CANNOT reach (DOR-1696). `turbo lint` only
+      # runs tasks that belong to a workspace package, so `scripts/`, `.claude/`,
+      # `.agents/`, `templates/` and the root config files — none of which is a
+      # package — were invisible to it. Until this step the only ESLint over any
+      # of them anywhere was `pnpm exec eslint scripts/` in scripts-test.yml
+      # (path-filtered, advisory, and `scripts/` only). A repo-root `eslint .`
+      # reported 164 errors across `.claude/**` and `.agents/**` the day this
+      # was written, in the hooks and automation the repo actually executes —
+      # git-guard, process-guard, file-guard, the ADR and docs scripts. A
+      # syntax-level break in any of them shipped silently.
+      #
+      # HERE rather than beside scripts-test.yml, and it is the cheaper half of
+      # that choice as well as the stronger one. `lint` is a required
+      # merge-queue check (DOR-627) that already reports on `merge_group` and
+      # already has a node_modules installed; a new workflow would have needed
+      # its own checkout, its own install, and a branch-protection change before
+      # it gated anything. The step costs ~1.5s on top of a job budgeted in
+      # minutes. It also SUBSUMES the `scripts/` lint that used to live in
+      # scripts-test.yml — `eslint .` from the root covers scripts/ too — so
+      # that step was removed there in the same change rather than left to run
+      # twice.
+      #
+      # The root eslint.config.js ignores apps/** and packages/**, so this pass
+      # never re-lints what the step above just linted, and it is not a second
+      # opinion on any workspace file.
+      - name: Lint the root-level files turbo cannot reach (DOR-1696)
+        if: ${{ !cancelled() }}
+        run: pnpm lint:root
