@@ -1,15 +1,27 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import { SIDEBAR_DRAGGING_ATTRIBUTE } from '@/layers/shared/model';
 import { SidebarDnd } from '../ui/dnd/SidebarDnd';
-import { Sortable, sidebarDndData, sidebarRowDndId } from '../ui/dnd/SidebarDndPrimitives';
+import {
+  Sortable,
+  sidebarDndData,
+  sidebarRowDndId,
+  SIDEBAR_DRAG_ROOT_ATTRIBUTE,
+} from '../ui/dnd/SidebarDndPrimitives';
 
 let mockIsMobile = false;
 vi.mock('@/layers/shared/model', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/shared/model')>()),
   useIsMobile: () => mockIsMobile,
 }));
+
+/**
+ * Every write the drag layer asks for. Held out here rather than made fresh
+ * inside the mock factory: a `vi.fn()` created per call records into an object
+ * no test can read, which is how "did this drop persist anything?" went unasked.
+ */
+const mockUpdateSidebar = vi.fn();
 
 vi.mock('@/layers/entities/config', () => ({
   useSidebarPrefs: () => ({
@@ -21,7 +33,7 @@ vi.mock('@/layers/entities/config', () => ({
     digest: {},
   }),
   useUpdateSidebarPrefs: () => ({
-    update: vi.fn(),
+    update: mockUpdateSidebar,
     updateAsync: vi.fn(),
     isPending: false,
     isError: false,
@@ -84,13 +96,19 @@ describe('SidebarDnd', () => {
   });
   beforeEach(() => {
     mockIsMobile = false;
+    mockUpdateSidebar.mockClear();
   });
   afterEach(() => cleanup());
 
-  it('enables drag on desktop: the root announces itself as sortable', () => {
+  it('enables drag on desktop: the ROW announces itself as sortable', () => {
     render(<Row />);
-    const root = screen.getByTestId('drag-root');
-    expect(root.getAttribute('aria-roledescription')).toBe('sortable');
+    // On the row, not the root that wraps it. `aria-roledescription` is spoken
+    // when the element carrying it takes focus, and only the row ever does —
+    // so it goes where its other half, the keyboard instructions, went
+    // (DOR-1746). The root is named by a mark instead.
+    expect(screen.getByTestId('row').getAttribute('aria-roledescription')).toBe('sortable');
+    expect(screen.getByTestId('drag-root').getAttribute('aria-roledescription')).toBeNull();
+    expect(screen.getByTestId('drag-root').hasAttribute(SIDEBAR_DRAG_ROOT_ATTRIBUTE)).toBe(true);
   });
 
   it('keeps the drag root out of the tab order, where the panel keeps it (DOR-1746)', () => {
@@ -108,8 +126,9 @@ describe('SidebarDnd', () => {
     const root = screen.getByTestId('drag-root');
     // dnd-kit defaults a draggable to `role="button"`, which around a row that
     // CONTAINS a button is axe's `nested-interactive` — 21 of them on the
-    // sidebar. `group` is a container role, so it is allowed focusable content,
-    // and it still carries the sortable's ARIA.
+    // sidebar. `group` is a container role, so it is allowed focusable content.
+    // It has to be SPELLED: dnd-kit reads `role` with a `= defaultRole`
+    // fallback, so omitting it asks for `button` rather than for nothing.
     expect(root.getAttribute('role')).toBe('group');
     expect(root.querySelector('button')).not.toBeNull();
   });
@@ -127,9 +146,10 @@ describe('SidebarDnd', () => {
     mockIsMobile = true;
     render(<Row />);
     const root = screen.getByTestId('drag-root');
-    expect(root.getAttribute('aria-roledescription')).toBeNull();
     expect(root.getAttribute('tabindex')).toBeNull();
     expect(root.getAttribute('role')).toBeNull();
+    expect(root.hasAttribute(SIDEBAR_DRAG_ROOT_ATTRIBUTE)).toBe(false);
+    expect(screen.getByTestId('row').getAttribute('aria-roledescription')).toBeNull();
     expect(screen.getByTestId('row').getAttribute('aria-describedby')).toBeNull();
   });
 
@@ -162,6 +182,30 @@ describe('SidebarDnd', () => {
     fireEvent.keyDown(nested, { code: 'Enter' });
     fireEvent.keyDown(nested, { code: 'Space' });
     expect(isDragging()).toBe(false);
+  });
+
+  it('writes nothing when a lifted row is put straight back down (DOR-1746)', async () => {
+    // Every write here carries the WHOLE `ui.sidebar` section, so a drop that
+    // resolves to no change still PATCHed the server with what it already had.
+    // A mouse made that hard to do by accident; Space-then-Space is one reflex,
+    // and a keyboard reader who thinks better of a drag should not be billed a
+    // config write for changing their mind.
+    render(<Row />);
+    const row = screen.getByTestId('row');
+    fireEvent.keyDown(row, { code: 'Space' });
+    expect(isDragging()).toBe(true);
+
+    // dnd-kit arms the sensor's own document listener in a `setTimeout`, so the
+    // drop has to be fired on the next turn to be heard at all.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    fireEvent.keyDown(row, { code: 'Space' });
+
+    // The drag really did end — otherwise "no write" would be true for the
+    // uninteresting reason that nothing happened.
+    expect(isDragging()).toBe(false);
+    expect(mockUpdateSidebar).not.toHaveBeenCalled();
   });
 });
 

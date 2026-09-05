@@ -9,6 +9,7 @@
  *
  * @module features/dashboard-sidebar/ui/SidebarSection
  */
+import { memo, useMemo } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
 import { useRovingFocus, type SidebarDragActivatorProps } from '@/layers/shared/model';
@@ -33,6 +34,24 @@ import { useSectionChrome } from './useSectionChrome';
  * is the decoration this rule exists to keep out.
  */
 const ANNOUNCES_ARRIVALS: ReadonlySet<string> = new Set(['now', 'today']);
+
+/**
+ * The section header, memoized — because a draggable one is rebuilt on every
+ * tick of a drag.
+ *
+ * A user-made section's header is rendered inside `Sortable`'s render callback,
+ * and `useSortable` re-renders every sortable in its context on every transform
+ * frame — so a header that was a plain element re-rendered its label, its
+ * roll-up, its chevron and its whole menu surface once per pointer-move, for
+ * every section on screen, for the length of a drag. It is the same reason
+ * `RoomRow` is memoized (`specs/sidebar-simplification` D8), one level up.
+ *
+ * The memo only pays if the props hold still, which is why `trailing` is
+ * memoized where it is built and `dragActivator` is memoized in
+ * `SidebarDndPrimitives`: both are the kind of prop — a fresh element, a fresh
+ * object — that quietly defeats a `memo` from the outside.
+ */
+const MemoSectionHeader = memo(SectionHeader);
 
 /**
  * The ungrouped section a section id names, or `undefined` for one that is not
@@ -154,6 +173,17 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
     return ref === null ? [] : [sidebarRowDndId(prefix, ref)];
   });
 
+  // Built here rather than in the header below, because the header below is
+  // rebuilt on every frame of a drag and a fresh element per frame is exactly
+  // what stops {@link MemoSectionHeader} from bailing out.
+  const trailing = useMemo(
+    () =>
+      section.collapsed && section.rollup !== undefined ? (
+        <SectionRollup section={section} />
+      ) : undefined,
+    [section]
+  );
+
   /**
    * The header, drawn with or without the drag layer's activators.
    *
@@ -165,7 +195,7 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
    *   section (DOR-1746). Omitted for a section that cannot be reordered.
    */
   const renderHeader = (dragActivator?: SidebarDragActivatorProps) => (
-    <SectionHeader
+    <MemoSectionHeader
       {...(dragActivator === undefined ? {} : { dragActivator })}
       label={section.label ?? ''}
       collapsed={section.collapsed}
@@ -182,9 +212,7 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
       // bold label and nothing else (design-decisions §18), so the weight is
       // where it lives.
       emphasized={section.collapsed && (section.rollup?.unread.tier ?? 'none') !== 'none'}
-      {...(section.collapsed && section.rollup !== undefined
-        ? { trailing: <SectionRollup section={section} /> }
-        : {})}
+      {...(trailing === undefined ? {} : { trailing })}
     />
   );
 

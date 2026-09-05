@@ -17,11 +17,11 @@
 import type { ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/layers/shared/lib/utils';
-import { useIsMobile } from '@/layers/shared/model';
 import {
+  useIsMobile,
   SIDEBAR_SECTION_TOGGLE_ATTRIBUTE,
   type SidebarDragActivatorProps,
-} from '@/layers/shared/model/interaction/use-roving-focus';
+} from '@/layers/shared/model';
 import { SIDEBAR_MENU_GUTTER, SidebarMenuSurface, type SidebarMenuNode } from './sidebar-menu-node';
 
 /**
@@ -144,6 +144,25 @@ export interface SectionHeaderProps {
    * keyboard can reach (DOR-1746). A section that is not a drag source, and a
    * header that is showing its rename editor instead of its toggle, simply has
    * nowhere to put them and does not drag.
+   *
+   * **What it costs the toggle: Space stops folding it.** dnd-kit's keyboard
+   * sensor calls `preventDefault()` on the keydown it lifts from, and a button's
+   * activation is a DEFAULT ACTION of Space — so on a header that can be
+   * dragged, Space picks the section up and no longer folds it. Enter folds it,
+   * as it always did, and that is the whole panel's rule now: **Space picks up
+   * anything movable, Enter activates** — opens a row, folds a header. A
+   * built-in section cannot be reordered, so its Space still folds; the
+   * difference is draggability itself rather than an inconsistency laid on top
+   * of it. The alternative was a second Tab stop per header for a grip nobody
+   * would find, which is the tax the roving focus exists to refuse.
+   *
+   * **Say "built-in", and not the synonym meaning "held in place".** This module
+   * is one of the sources the Obsidian plugin's stylesheet is generated from,
+   * and Tailwind's scanner reads prose exactly as candidly as it reads code — so
+   * that synonym is also a `position` utility's name, and writing it in a
+   * sentence here emitted a viewport-anchored positioning rule into a build
+   * whose entire guard is that nothing in it can escape the leaf pane and paint
+   * over the reader's vault. `plugin-styles.test.ts` is what catches it.
    */
   dragActivator?: SidebarDragActivatorProps;
 }
