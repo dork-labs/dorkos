@@ -299,7 +299,7 @@ test.describe('session switcher @smoke', () => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(SHOWCASE_PATH);
 
-    const chip = page.getByRole('button', { name: /live sessions — open the session switcher/ });
+    const chip = page.getByRole('button', { name: /live sessions, open the session switcher/ });
     await expect(chip.first()).toBeVisible();
     await expect(chip.first()).toContainText('3 live');
 
@@ -346,7 +346,7 @@ test.describe('session switcher @smoke', () => {
     // the "⋮" in the keyboard lane.
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(SHOWCASE_PATH);
-    const chip = page.getByRole('button', { name: /live sessions — open the session switcher/ });
+    const chip = page.getByRole('button', { name: /live sessions, open the session switcher/ });
     await expect(chip.first()).toBeVisible();
 
     // 1. It rides the transform. Applied to the same node dnd-kit moves, so a

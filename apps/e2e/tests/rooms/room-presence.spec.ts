@@ -95,11 +95,11 @@ test.describe('Rooms — the room says who is working on it', () => {
       since: new Date(Date.now() - 12 * 60_000).toISOString(),
     });
     await expect(roomsPage.presenceLine).toHaveText(
-      `${ana.name} is still working — this is taking longer than usual · 12m`
+      `${ana.name} is still working, this is taking longer than usual · 12m`
     );
     // The wording changed, so this one IS worth saying again.
     await expect(roomsPage.presenceAnnouncer).toHaveText(
-      `${ana.name} is still working — this is taking longer than usual`
+      `${ana.name} is still working, this is taking longer than usual`
     );
 
     // A real post, over the real stream the tap is piping through — so the room
