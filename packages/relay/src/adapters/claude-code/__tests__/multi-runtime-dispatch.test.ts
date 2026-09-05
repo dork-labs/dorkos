@@ -12,7 +12,10 @@
  * Plus the one shape that names nothing to take: a mesh `relay.agent.<ns>.<id>`
  * subject addresses an AGENT, so the agent's own manifest answers for it
  * (DOR-1627). Without that, an agent-to-agent DM was the one door left where a
- * Codex agent got a Claude Code answer.
+ * Codex agent got a Claude Code answer. And once such a conversation has
+ * started, the adapter records who owns it and asks about the SESSION from then
+ * on (DOR-1774) — otherwise the manifest was re-read every turn and an edit
+ * mid-conversation moved it to a program holding none of its transcript.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RelayEnvelope, TaskDispatchPayload } from '@dorkos/shared/relay-schemas';
@@ -20,11 +23,12 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import { ClaudeCodeAdapter } from '../index.js';
 import type {
   AgentRuntimeLike,
-  AgentRuntimeTypeResolver,
   ClaudeCodeAdapterDeps,
   ExecutionSettingsResolver,
+  SessionRuntimeBinder,
   TasksStoreLike,
   TraceStoreLike,
+  TurnRuntimeTypeResolver,
 } from '../index.js';
 import type { AdapterContext, RelayPublisher } from '../../../types.js';
 
@@ -392,12 +396,12 @@ describe('the relay adapter picks the runtime a message names', () => {
       return { agent: { directory, runtime: 'claude-code' } };
     }
 
-    let resolveAgentRuntimeType: ReturnType<typeof vi.fn<AgentRuntimeTypeResolver>>;
+    let resolveTurnRuntimeType: ReturnType<typeof vi.fn<TurnRuntimeTypeResolver>>;
     let withManifest: ClaudeCodeAdapter;
 
     beforeEach(async () => {
-      resolveAgentRuntimeType = vi.fn<AgentRuntimeTypeResolver>().mockResolvedValue('codex');
-      withManifest = new ClaudeCodeAdapter('claude-code', {}, { ...deps, resolveAgentRuntimeType });
+      resolveTurnRuntimeType = vi.fn<TurnRuntimeTypeResolver>().mockResolvedValue('codex');
+      withManifest = new ClaudeCodeAdapter('claude-code', {}, { ...deps, resolveTurnRuntimeType });
       await withManifest.start(mockRelay());
     });
 
@@ -407,7 +411,12 @@ describe('the relay adapter picks the runtime a message names', () => {
       const result = await withManifest.deliver(envelope.subject, envelope, meshContext());
 
       expect(result.success).toBe(true);
-      expect(resolveAgentRuntimeType).toHaveBeenCalledWith(AGENT_DIR);
+      expect(resolveTurnRuntimeType).toHaveBeenCalledWith({
+        agentDirectory: AGENT_DIR,
+        // The key this turn will run under — asked with the SESSION, not just
+        // the agent, so a conversation's recorded owner can win (DOR-1774).
+        sessionId: AGENT_ID,
+      });
       expect(codex.sendMessage).toHaveBeenCalledOnce();
       expect(claude.sendMessage).not.toHaveBeenCalled();
     });
@@ -432,7 +441,7 @@ describe('the relay adapter picks the runtime a message names', () => {
 
       expect(claude.sendMessage).toHaveBeenCalledOnce();
       expect(codex.sendMessage).not.toHaveBeenCalled();
-      expect(resolveAgentRuntimeType).not.toHaveBeenCalled();
+      expect(resolveTurnRuntimeType).not.toHaveBeenCalled();
     });
 
     it('leaves a legacy three-token session subject on the default runtime', async () => {
@@ -443,7 +452,7 @@ describe('the relay adapter picks the runtime a message names', () => {
       await withManifest.deliver(envelope.subject, envelope, meshContext());
 
       expect(claude.sendMessage).toHaveBeenCalledOnce();
-      expect(resolveAgentRuntimeType).not.toHaveBeenCalled();
+      expect(resolveTurnRuntimeType).not.toHaveBeenCalled();
     });
 
     it('still refuses a subject naming a runtime this build did not register', async () => {
@@ -463,7 +472,7 @@ describe('the relay adapter picks the runtime a message names', () => {
       // A wiring mismatch — the composition root passes every registered runtime
       // — and answering it on another program is the failure this ladder exists
       // to prevent, so it refuses rather than substituting.
-      resolveAgentRuntimeType.mockResolvedValue('opencode');
+      resolveTurnRuntimeType.mockResolvedValue('opencode');
       const envelope = agentEnvelope(MESH_SUBJECT);
 
       const result = await withManifest.deliver(envelope.subject, envelope, meshContext());
@@ -477,7 +486,7 @@ describe('the relay adapter picks the runtime a message names', () => {
     it('answers on the default runtime when the manifest cannot be read', async () => {
       // Tolerant by contract: an unreadable manifest is not a reason to drop
       // somebody's message.
-      resolveAgentRuntimeType.mockRejectedValue(new Error('EACCES'));
+      resolveTurnRuntimeType.mockRejectedValue(new Error('EACCES'));
       const envelope = agentEnvelope(MESH_SUBJECT);
 
       const result = await withManifest.deliver(envelope.subject, envelope, meshContext());
@@ -491,58 +500,274 @@ describe('the relay adapter picks the runtime a message names', () => {
       // and there is no manifest to look for.
       await withManifest.deliver(MESH_SUBJECT, agentEnvelope(MESH_SUBJECT));
 
-      expect(resolveAgentRuntimeType).not.toHaveBeenCalled();
+      expect(resolveTurnRuntimeType).not.toHaveBeenCalled();
       expect(claude.sendMessage).toHaveBeenCalledOnce();
     });
 
-    it('re-reads the manifest every turn, so an edit mid-conversation moves it (known gap)', async () => {
-      // PINNING WHAT IS TRUE, not what should be. An agent-scoped subject
-      // resumes a conversation — the handler reuses the SDK session id it
-      // persisted under this agent's key — but nothing on THIS shape's path
-      // binds that session (a chat binding does bind, when it creates one; a
-      // mesh endpoint creates none), so there is no owner to consult and the
-      // manifest is asked again every turn. Flip it between turns and the
-      // second turn goes to a
-      // program that is handed the id its predecessor minted and holds no
-      // transcript for it: the DOR-764 shape, still open here. Closing it is a
-      // binding write plus `resolveTurnRuntimeType`, and this test is what will
-      // go red when that lands — deliberately, and with the fix in hand.
-      const store = new Map<string, string>();
-      const sticky = new ClaudeCodeAdapter(
-        'claude-code',
-        {},
-        {
-          ...deps,
-          resolveAgentRuntimeType,
-          agentRuntimes: new Map([
-            ['claude-code', claude],
-            // Only this runtime reports an SDK id, so the key the second turn
-            // resumes under is unambiguously the one codex created.
-            ['codex', { ...codex, getSdkSessionId: () => 'sdk-id-minted-by-codex' }],
-          ]),
-          agentSessionStore: {
-            get: (agentId: string) => store.get(agentId),
-            set: (agentId: string, sdkSessionId: string) => void store.set(agentId, sdkSessionId),
-          },
-        }
-      );
-      await sticky.start(mockRelay());
+    describe('a started conversation keeps the runtime it started on (DOR-1774)', () => {
+      // Until this, the host was asked about the AGENT and nothing recorded the
+      // answer, so the manifest was re-read every turn: flip it mid-conversation
+      // and turn two went to a program handed the id its predecessor minted,
+      // holding no transcript for it — the DOR-764 shape, on the one subject
+      // family nothing else binds (a chat binding writes an owner when it
+      // creates a session; a mesh endpoint creates none).
+      //
+      // The host ladder is faked here — bind writes a row, resolve prefers it —
+      // because what the ADAPTER owes is narrow and mechanical: ask with the key
+      // this turn runs under, and record the DURABLE key once the turn has run.
+      // That the write and the read are the same row is the host's half, and it
+      // is proven against real SQLite in
+      // `apps/server/src/services/relay/__tests__/agent-subject-target-runtime.integration.test.ts`.
+      const SDK_ID = 'sdk-id-minted-by-codex';
 
-      await sticky.deliver(MESH_SUBJECT, agentEnvelope(MESH_SUBJECT), meshContext());
-      expect(codex.sendMessage).toHaveBeenCalledWith(
-        AGENT_ID,
-        expect.anything(),
-        expect.anything()
-      );
+      /** Which runtime each session is recorded as running on. */
+      let bound: Map<string, string>;
+      let bindSessionRuntime: ReturnType<typeof vi.fn<SessionRuntimeBinder>>;
 
-      resolveAgentRuntimeType.mockResolvedValue('claude-code');
-      await sticky.deliver(MESH_SUBJECT, agentEnvelope(MESH_SUBJECT), meshContext());
+      /**
+       * An adapter whose codex renames its own sessions, so the key turn two
+       * resumes under is unambiguously the one codex created.
+       */
+      function stickyAdapter(codexRuntime: AgentRuntimeLike = codex): ClaudeCodeAdapter {
+        const store = new Map<string, string>();
+        return new ClaudeCodeAdapter(
+          'claude-code',
+          {},
+          {
+            ...deps,
+            resolveTurnRuntimeType,
+            bindSessionRuntime,
+            agentRuntimes: new Map([
+              ['claude-code', claude],
+              ['codex', { ...codexRuntime, getSdkSessionId: () => SDK_ID }],
+            ]),
+            agentSessionStore: {
+              get: (agentId: string) => store.get(agentId),
+              set: (agentId: string, sdkSessionId: string) => void store.set(agentId, sdkSessionId),
+            },
+          }
+        );
+      }
 
-      expect(claude.sendMessage).toHaveBeenCalledWith(
-        'sdk-id-minted-by-codex',
-        expect.anything(),
-        expect.anything()
-      );
+      beforeEach(() => {
+        // The file's shared double yields `done` and nothing else, which is an
+        // ENDING rather than content — and endings do not bind (see the gate in
+        // `agent-handler.ts`). Every test in this block is about a conversation
+        // that really happened, so its codex says something. The spy object is
+        // the same one, so the assertions below still read `codex.sendMessage`.
+        codex.sendMessage = vi.fn().mockImplementation(() =>
+          (async function* (): AsyncGenerator<StreamEvent> {
+            yield { type: 'text_delta', data: { text: 'here' } } as StreamEvent;
+            yield { type: 'done', data: {} } as StreamEvent;
+          })()
+        );
+        bound = new Map<string, string>();
+        // First-write-wins, exactly as `persistSessionRuntime` is.
+        bindSessionRuntime = vi
+          .fn<SessionRuntimeBinder>()
+          .mockImplementation(async ({ sessionId, runtimeType }) => {
+            if (!bound.has(sessionId)) bound.set(sessionId, runtimeType);
+          });
+        // The host ladder: the conversation's recorded owner, else the manifest.
+        resolveTurnRuntimeType.mockImplementation(async ({ sessionId }) =>
+          sessionId ? (bound.get(sessionId) ?? 'codex') : 'codex'
+        );
+      });
+
+      it('an edit made mid-conversation does not move it to another program', async () => {
+        const sticky = stickyAdapter();
+        await sticky.start(mockRelay());
+
+        await sticky.deliver(MESH_SUBJECT, agentEnvelope(MESH_SUBJECT), meshContext());
+        expect(codex.sendMessage).toHaveBeenCalledWith(
+          AGENT_ID,
+          expect.anything(),
+          expect.anything()
+        );
+
+        // The manifest now says claude-code — and turn two is on codex anyway,
+        // because turn one recorded who owns this conversation.
+        resolveTurnRuntimeType.mockImplementation(async ({ sessionId }) =>
+          sessionId ? (bound.get(sessionId) ?? 'claude-code') : 'claude-code'
+        );
+        await sticky.deliver(MESH_SUBJECT, agentEnvelope(MESH_SUBJECT), meshContext());
+
+        expect(codex.sendMessage).toHaveBeenCalledWith(
+          SDK_ID,
+          expect.anything(),
+          expect.anything()
+        );
+        expect(claude.sendMessage).not.toHaveBeenCalled();
+      });
+
+      it('records the id the NEXT turn resumes under, not the one this turn ran on', async () => {
+        // The whole reason the write waits for the end of the turn. Turn one
+        // runs under the agent key and the runtime renames the session
+        // mid-flight; binding the pre-rename key would bind an id nothing ever
+        // looks up again, and the manifest would decide every later turn.
+        const sticky = stickyAdapter();
+        await sticky.start(mockRelay());
+
+        await sticky.deliver(MESH_SUBJECT, agentEnvelope(MESH_SUBJECT), meshContext());
+
+        expect(bindSessionRuntime).toHaveBeenCalledWith({
+          sessionId: SDK_ID,
+          runtimeType: 'codex',
+          agentDirectory: AGENT_DIR,
+        });
+      });
+
+      it('records nothing for a first turn that reached no runtime at all', async () => {
+        // The orphan-row hazard `room-turn-runner.ts` documents: a write made on
+        // arrival mints one row per message that reached no runtime, and
+        // afterwards nothing can tell those from real bindings. `sendMessage`
+        // hands back a lazy generator, so a turn thrown out of on the first pull
+        // produced no transcript for anyone to be bound to.
+        const brokenCodex: AgentRuntimeLike = {
+          ...codex,
+          sendMessage: vi.fn().mockImplementation(() =>
+            (async function* (): AsyncGenerator<StreamEvent> {
+              throw new Error('the runtime fell over before it said anything');
+            })()
+          ),
+        };
+        const sticky = stickyAdapter(brokenCodex);
+        await sticky.start(mockRelay());
+
+        const result = await sticky.deliver(
+          MESH_SUBJECT,
+          agentEnvelope(MESH_SUBJECT),
+          meshContext()
+        );
+
+        expect(result.success).toBe(false);
+        expect(bindSessionRuntime).not.toHaveBeenCalled();
+        expect(bound.size).toBe(0);
+      });
+
+      it('records nothing for a first turn that only reported an error', async () => {
+        // The shape that makes this gate about CONTENT rather than about events.
+        // A claude-code turn that never reached the model still emits: a
+        // pre-stream credential failure arrives as an `error` event rather than
+        // a throw, and a terminal `done` is synthesized underneath it. Counting
+        // those as "the turn ran" binds a conversation on the strength of "not
+        // signed in" — and because this shape is keyed by the agent id alone and
+        // the write is first-write-wins, that binding is permanent: there is no
+        // next conversation to correct it on and no UI over the row.
+        const unauthenticatedCodex: AgentRuntimeLike = {
+          ...codex,
+          sendMessage: vi.fn().mockImplementation(() =>
+            (async function* (): AsyncGenerator<StreamEvent> {
+              yield {
+                type: 'error',
+                data: { message: 'Not signed in. Run `claude auth login`.' },
+              } as StreamEvent;
+              yield { type: 'done', data: {} } as StreamEvent;
+            })()
+          ),
+        };
+        const sticky = stickyAdapter(unauthenticatedCodex);
+        await sticky.start(mockRelay());
+
+        await sticky.deliver(MESH_SUBJECT, agentEnvelope(MESH_SUBJECT), meshContext());
+
+        expect(unauthenticatedCodex.sendMessage).toHaveBeenCalledOnce();
+        expect(bindSessionRuntime).not.toHaveBeenCalled();
+        expect(bound.size).toBe(0);
+      });
+
+      it('lets the corrected manifest decide the next turn after an error-only one', async () => {
+        // The consequence, and the input `main` recovered from: the operator
+        // reads "not signed in", fixes the agent to claude-code, and sends
+        // again. With a binding written from that first turn nothing could ever
+        // move it — so the absence of the row is what keeps the fix workable.
+        const unauthenticatedCodex: AgentRuntimeLike = {
+          ...codex,
+          sendMessage: vi.fn().mockImplementation(() =>
+            (async function* (): AsyncGenerator<StreamEvent> {
+              yield {
+                type: 'error',
+                data: { message: 'Not signed in. Run `claude auth login`.' },
+              } as StreamEvent;
+              yield { type: 'done', data: {} } as StreamEvent;
+            })()
+          ),
+        };
+        const sticky = stickyAdapter(unauthenticatedCodex);
+        await sticky.start(mockRelay());
+
+        await sticky.deliver(MESH_SUBJECT, agentEnvelope(MESH_SUBJECT), meshContext());
+
+        resolveTurnRuntimeType.mockImplementation(async ({ sessionId }) =>
+          sessionId ? (bound.get(sessionId) ?? 'claude-code') : 'claude-code'
+        );
+        await sticky.deliver(MESH_SUBJECT, agentEnvelope(MESH_SUBJECT), meshContext());
+
+        expect(claude.sendMessage).toHaveBeenCalledOnce();
+      });
+
+      it('records a turn that streamed and then failed, because its transcript is real', async () => {
+        // Not gated on the turn SUCCEEDING, deliberately. A turn that spoke and
+        // then crashed still wrote a transcript under this id, so who owns it is
+        // a fact — and leaving it unbound would expose the conversation most
+        // likely to be resumed to exactly the reroute this closes.
+        const crashingCodex: AgentRuntimeLike = {
+          ...codex,
+          sendMessage: vi.fn().mockImplementation(() =>
+            (async function* (): AsyncGenerator<StreamEvent> {
+              yield { type: 'text_delta', data: { text: 'on it' } } as StreamEvent;
+              throw new Error('and then it fell over');
+            })()
+          ),
+        };
+        const sticky = stickyAdapter(crashingCodex);
+        await sticky.start(mockRelay());
+
+        const result = await sticky.deliver(
+          MESH_SUBJECT,
+          agentEnvelope(MESH_SUBJECT),
+          meshContext()
+        );
+
+        expect(result.success).toBe(false);
+        expect(bound.get(SDK_ID)).toBe('codex');
+      });
+
+      it('leaves the turn standing when the binding write fails', async () => {
+        // Bookkeeping about a turn whose answer has already gone out. A
+        // `SQLITE_BUSY` on this row must not turn an answered turn into a failed
+        // delivery — what is lost is one attribution row, which the next turn on
+        // this conversation writes again.
+        bindSessionRuntime.mockRejectedValue(new Error('SQLITE_BUSY'));
+        const sticky = stickyAdapter();
+        await sticky.start(mockRelay());
+
+        const result = await sticky.deliver(
+          MESH_SUBJECT,
+          agentEnvelope(MESH_SUBJECT),
+          meshContext()
+        );
+
+        expect(result.success).toBe(true);
+        expect(codex.sendMessage).toHaveBeenCalledOnce();
+      });
+
+      it('records nothing for a subject that names its own runtime', async () => {
+        // That id is a session somebody else created and bound — the cockpit,
+        // or the chat binding that minted it. A second opinion written from here
+        // is a write about a conversation this shape does not own.
+        const sticky = stickyAdapter();
+        await sticky.start(mockRelay());
+
+        await sticky.deliver(
+          'relay.agent.codex.session-9',
+          agentEnvelope('relay.agent.codex.session-9'),
+          meshContext()
+        );
+
+        expect(codex.sendMessage).toHaveBeenCalledOnce();
+        expect(bindSessionRuntime).not.toHaveBeenCalled();
+      });
     });
 
     it('leaves a host that wires no resolver exactly as it was', async () => {

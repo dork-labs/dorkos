@@ -4,11 +4,12 @@
  * One rule, one copy. Rooms asked it first (`room-turn-runner.ts`), the relay
  * now asks the same question when a chat platform's first message needs a
  * session created for an agent (DOR-1614) and again when one agent messages
- * another directly (DOR-1627, through the adapter's `resolveAgentRuntimeType`
- * seam), and the shared room-binding transcript probe asks it a fourth time
- * (`rooms/session-bindings/room-binding-transcripts.ts`, DOR-805). A second copy of the
- * manifest-then-default ladder is a second copy that can disagree about which
- * program answers for an agent.
+ * another directly (DOR-1627, through the adapter's `resolveTurnRuntimeType`
+ * seam — which asks {@link resolveTurnRuntimeType} because that path binds its
+ * own sessions too, DOR-1774), and the shared room-binding transcript probe asks
+ * it a fourth time (`rooms/session-bindings/room-binding-transcripts.ts`,
+ * DOR-805). A second copy of the manifest-then-default ladder is a second copy
+ * that can disagree about which program answers for an agent.
  *
  * Two functions, and which one to call is decided by whether there is a SESSION:
  * {@link resolveAgentRuntimeType} answers for an agent that is about to get one,
@@ -76,7 +77,10 @@ export async function resolveAgentRuntimeType(agentPath: string): Promise<string
  * the cockpit routes on the binding (`resolveForSession`), a scheduled run pins
  * the runtime it resolved onto `pulse_runs.resolved_runtime` for that run, and
  * the relay keeps a chat subject on the session its first message created.
- * Rooms were the surface with no such memory at all.
+ * Rooms were the surface with no such memory at all, and an agent-to-agent DM
+ * was the second: a mesh subject creates no session, so nothing recorded an
+ * owner for it until the relay adapter started writing one at the first turn
+ * that actually ran (DOR-1774).
  *
  * The manifest rung is not a fallback from the binding — it is the answer for a
  * session that HAS no owner, which is every session's first turn. Asking the

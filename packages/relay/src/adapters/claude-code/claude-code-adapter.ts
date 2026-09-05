@@ -29,8 +29,12 @@
  * - `relay.system.tasks.<taskId>` — the dispatch payload's `runtime` field.
  * - `relay.agent.<namespace>.<agentId>` — a mesh endpoint, the shape one
  *   agent's `relay_send` to another arrives on. It names an AGENT and no
- *   runtime, so the addressed agent's own manifest answers, through the host's
- *   `resolveAgentRuntimeType` seam (DOR-1627).
+ *   runtime, so the host answers for it through the `resolveTurnRuntimeType`
+ *   seam: the conversation's recorded owner where it has one, and otherwise the
+ *   addressed agent's own manifest (DOR-1627). Nothing else records an owner for
+ *   this shape — a mesh endpoint creates no session — so a started turn writes
+ *   its own, through the `bindSessionRuntime` seam, and a manifest edited
+ *   mid-conversation no longer moves it (DOR-1774).
  * - anything that names none (a legacy three-token subject, a task dispatch
  *   from before the field existed) — the host's default runtime, which is the
  *   single runtime every host used to pass.
@@ -67,7 +71,7 @@ import type {
   AdapterContext,
   DeliveryResult,
 } from '../../types.js';
-import { handleAgentMessage } from './agent-handler.js';
+import { handleAgentMessage, resolveAgentTurnIdentity } from './agent-handler.js';
 import { handleTasksMessage } from './task-handler.js';
 import { ClaudeCodeRuntimeAdapter } from './claude-code-runtime-adapter.js';
 import { subscribeApprovalHandler } from './approval-handler.js';
@@ -515,8 +519,26 @@ export class ClaudeCodeAdapter implements RelayAdapter {
   }
 
   /**
-   * The runtime an agent's own manifest asks for, for a message addressed to an
-   * AGENT and naming no runtime — `undefined` for every other message.
+   * Whether a subject names an AGENT rather than a session — the mesh shape
+   * `relay.agent.<namespace>.<agentId>`, which is what one agent's `relay_send`
+   * to another arrives on.
+   *
+   * The one shape whose runtime is neither stated by the subject nor already
+   * recorded by whoever created the session, so it is the only shape that both
+   * {@link ClaudeCodeAdapter.agentTurnRuntimeType} asks about and
+   * {@link ClaudeCodeAdapterDeps.bindSessionRuntime} records. A legacy
+   * three-token subject names a SESSION the cockpit binds; a runtime-scoped one
+   * carries its owner in the subject.
+   *
+   * @param subject - The subject the message arrived on.
+   */
+  private isAgentScopedSubject(subject: string): boolean {
+    return parseAgentSubject(subject, this.addressableRuntimeTypes)?.format === 'agent-scoped';
+  }
+
+  /**
+   * The runtime a turn on an AGENT-addressed subject naming no runtime should
+   * run on — `undefined` for every other message.
    *
    * This is the agent-to-agent case (DOR-1627). A mesh subject
    * `relay.agent.<namespace>.<agentId>` carries no runtime segment, so before
@@ -530,54 +552,56 @@ export class ClaudeCodeAdapter implements RelayAdapter {
    * - **The subject is `agent-scoped`.** It names an agent, and which runtime an
    *   agent runs on is a property of the agent. A legacy three-token subject
    *   names a SESSION id — an id the cockpit can bind through
-   *   `persistSessionRuntime` — so the manifest is not asked for one at all.
+   *   `persistSessionRuntime` — so the host is not asked about one at all.
    * - **The context carries the agent's directory**, which is where its
    *   `.dork/agent.json` lives; the host's `AdapterManager.buildContext` fills
    *   it from the Mesh registry. A payload `cwd` is deliberately not consulted:
    *   that moves where a turn RUNS, a fact about one message, and it must not
    *   re-decide which program answers for the agent.
    *
-   * The resolver is the host's — see {@link AgentRuntimeTypeResolver} — and a
+   * The resolver is the host's — see {@link TurnRuntimeTypeResolver} — and a
    * host that wires none behaves exactly as it did before this existed. A
    * rejection is "no preference", never a dropped message.
    *
-   * ## Known gap: this is asked EVERY turn, not once per conversation
+   * **It is asked about this turn's SESSION, not only about the agent
+   * (DOR-1774).** An agent-scoped subject resumes a conversation as surely as a
+   * session subject does — `agent-handler.ts` reuses the SDK session id it
+   * persisted under the same agent key — and until DOR-1774 nothing on this
+   * shape's path recorded an owner for it, so the manifest was re-read every
+   * turn and an edit made mid-conversation handed the remaining turns to a
+   * program holding none of its transcript (the DOR-764 shape, which ADR-0255
+   * closed for the cockpit and rooms). So the key the turn will run under
+   * travels with the question, the recorded owner wins where there is one, and
+   * the handler writes that owner once the turn has actually started. The key is
+   * computed by `resolveAgentTurnIdentity`, the same function the handler runs
+   * under, because binding one id and resuming another would close nothing.
    *
-   * An agent-scoped subject resumes a conversation as surely as a session
-   * subject does — `agent-handler.ts` reuses the SDK session id it persisted
-   * under the same agent key — but nothing on THIS subject shape's path ever
-   * calls `persistSessionRuntime`, so there is no binding to consult and the
-   * manifest is re-read on every turn. (The relay does bind elsewhere: a chat
-   * binding writes an owner at the one moment it creates a session,
-   * `binding-subsystem.ts`, which is why a Telegram or Slack conversation is
-   * not exposed to this. A mesh endpoint creates no session for anyone to
-   * record.) Change an agent's runtime mid-conversation and
-   * the remaining turns go to a program that is handed the session key its
-   * predecessor created and has no transcript for: the DOR-764 shape, which
-   * ADR-0255 closed for the cockpit and rooms and which this path does not yet
-   * honour. Named here rather than papered over, and pinned by a test so the
-   * behaviour cannot change unnoticed. Closing it means binding these sessions
-   * — a write, made only once a turn has actually started, or the orphan rows
-   * `room-turn-runner.ts` warns about arrive one per message — and then asking
-   * `resolveTurnRuntimeType` instead. Threading the session key alone would
-   * change nothing: with no row to find, that function falls straight through
-   * to this same manifest read.
+   * One window is left, and it is the same one rooms have: two messages for one
+   * agent in flight at once both resolve here before either has bound anything,
+   * so a manifest edit landing exactly between them still moves the second. The
+   * turns themselves are serialized (`runtimeAdapter.enqueue`); only this
+   * question is asked ahead of the queue, because a message no runtime can run
+   * must be refused before it takes a concurrency slot.
    *
    * @param subject - The subject the message arrived on.
+   * @param envelope - The envelope, for the conversation its payload threads.
    * @param context - The delivery context, for the agent's directory.
    */
-  private async manifestRuntimeType(
+  private async agentTurnRuntimeType(
     subject: string,
+    envelope: RelayEnvelope,
     context: AdapterContext | undefined
   ): Promise<string | undefined> {
-    const resolve = this.deps.resolveAgentRuntimeType;
+    const resolve = this.deps.resolveTurnRuntimeType;
     const directory = context?.agent?.directory;
     if (!resolve || !directory) return undefined;
-    if (parseAgentSubject(subject, this.addressableRuntimeTypes)?.format !== 'agent-scoped') {
-      return undefined;
-    }
+    if (!this.isAgentScopedSubject(subject)) return undefined;
     try {
-      return await resolve(directory);
+      return await resolve({
+        agentDirectory: directory,
+        sessionId:
+          resolveAgentTurnIdentity(subject, envelope, this.deps.agentSessionStore)?.key ?? null,
+      });
     } catch (err) {
       (this.deps.logger ?? console).warn(
         `[CCA] could not read which runtime '${directory}' runs on (${
@@ -591,10 +615,11 @@ export class ClaudeCodeAdapter implements RelayAdapter {
   /**
    * The runtime that answers this message, or a refusal saying why not.
    *
-   * Three rungs, narrowing from what the message states to what the agent
-   * prefers to what the host runs: the runtime the message NAMES, then — for a
-   * mesh agent subject alone — the addressed agent's own manifest
-   * ({@link manifestRuntimeType}), then the host's default.
+   * Three rungs, narrowing from what the message states to what the
+   * conversation already runs on to what the host runs: the runtime the message
+   * NAMES, then — for a mesh agent subject alone — the answer the host gives for
+   * that turn ({@link agentTurnRuntimeType}: its session's recorded owner, else
+   * the agent's manifest), then the host's default.
    *
    * The refusal is the point: a session bound to a runtime this build did not
    * register must not be answered by a different one. Silently substituting the
@@ -616,7 +641,9 @@ export class ClaudeCodeAdapter implements RelayAdapter {
   ): Promise<{ runtime: AgentRuntimeLike; runtimeType: string } | { error: string }> {
     const named = this.namedRuntimeType(subject, envelope);
     const runtimeType =
-      named ?? (await this.manifestRuntimeType(subject, context)) ?? this.defaultRuntimeType;
+      named ??
+      (await this.agentTurnRuntimeType(subject, envelope, context)) ??
+      this.defaultRuntimeType;
     const runtime = this.agentRuntimes.get(runtimeType);
     if (!runtime) {
       return {
@@ -808,6 +835,15 @@ export class ClaudeCodeAdapter implements RelayAdapter {
             traceStore: this.deps.traceStore,
             agentSessionStore: this.deps.agentSessionStore,
             resolveExecutionSettings: this.deps.resolveExecutionSettings,
+            // Recorded for the one shape that has nobody else to record it: a
+            // mesh endpoint creates no session, so until the turn writes its own
+            // owner there is nothing for the next turn to resolve against
+            // (DOR-1774). Passed only for that shape, so no message whose
+            // runtime came from its subject can write a second opinion about a
+            // session somebody else already bound.
+            ...(this.isAgentScopedSubject(subject) && this.deps.bindSessionRuntime
+              ? { bindSessionRuntime: this.deps.bindSessionRuntime }
+              : {}),
             turnController,
             inboundBudgets: this.deps.inboundBudgets,
             logger: this.deps.logger,
