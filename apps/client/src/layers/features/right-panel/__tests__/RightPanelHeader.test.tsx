@@ -102,6 +102,37 @@ describe('RightPanelHeader', () => {
     expect(screen.getByRole('tab', { name: 'Canvas' })).toBeInTheDocument();
   });
 
+  it('visually distinguishes the selected tab from the rest, not just via aria-selected', () => {
+    // Each trigger sits inside `<TooltipTrigger asChild>`, which composes its
+    // own `data-state` (open/closed) onto the element — and wins the
+    // collision with `TabsPrimitive.Trigger`'s `data-state` (active/inactive)
+    // that `data-[state=active]:…` classes would key off. A regression here
+    // leaves every tab computing the identical (unselected) classes while
+    // `aria-selected` still reports correctly, which is why this asserts the
+    // actual class list rather than the ARIA state.
+    renderHeader([
+      makeContribution('agent', { title: 'Profile' }),
+      makeContribution('canvas', { title: 'Canvas' }),
+    ]);
+
+    // Exact token membership, not substring matching — the shared
+    // `TabsTrigger`'s own (inert here) base className carries the literal
+    // substring `data-[state=active]:bg-background`, which a plain
+    // `.toContain('bg-background')` would match on the UNSELECTED tab too.
+    const classes = (el: HTMLElement) => el.className.split(/\s+/);
+    const selected = screen.getByRole('tab', { name: 'Profile' });
+    const unselected = screen.getByRole('tab', { name: 'Canvas' });
+
+    expect(selected).toHaveAttribute('aria-selected', 'true');
+    expect(classes(selected)).toContain('bg-background');
+    expect(classes(selected)).toContain('text-foreground');
+    expect(classes(selected)).toContain('shadow-sm');
+
+    expect(unselected).toHaveAttribute('aria-selected', 'false');
+    expect(classes(unselected)).not.toContain('bg-background');
+    expect(classes(unselected)).not.toContain('shadow-sm');
+  });
+
   it('renders the fallback icon for an iconless contribution among 2+ visible tabs', () => {
     // Extension-contributed tabs register no icon. Before the ?? Puzzle fallback
     // this rendered a bare `undefined` component and crashed the whole panel the

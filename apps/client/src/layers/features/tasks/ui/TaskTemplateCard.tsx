@@ -62,9 +62,10 @@ export function TaskTemplateCard({
       onClick={handleClick}
       onMouseMove={onMouseMove}
       onMouseLeave={onMouseLeave}
+      aria-label={`${preset.name}: ${preset.description}`}
       className={cn(
         'relative flex w-full items-start gap-4 rounded-lg border p-4 text-left transition',
-        'hover:bg-accent/50',
+        'hover:bg-accent/50 focus-ring',
         'min-h-11',
         variant === 'toggle' && checked && 'border-primary/40 bg-accent/30',
         variant === 'selectable' && selected && 'border-primary ring-primary bg-accent/30 ring-1',
@@ -91,8 +92,12 @@ export function TaskTemplateCard({
       <div className="min-w-0 flex-1 space-y-1">
         <div className="font-medium">{preset.name}</div>
         <p className="text-muted-foreground text-sm">{preset.description}</p>
-        <p className="text-muted-foreground text-xs">{formatCron(preset.cron)}</p>
-        <p className="text-muted-foreground/80 line-clamp-2 text-sm">{preset.prompt}</p>
+        <p aria-hidden="true" className="text-muted-foreground text-xs">
+          {formatCron(preset.cron)}
+        </p>
+        <p aria-hidden="true" className="text-muted-foreground/80 line-clamp-2 text-sm">
+          {preset.prompt}
+        </p>
       </div>
     </button>
   );

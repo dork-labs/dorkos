@@ -2,8 +2,9 @@ import { Sparkles } from 'lucide-react';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import { useAppStore } from '@/layers/shared/model';
-import { permissionModeLabel, resolveTrustStops } from '@/layers/shared/lib';
+import { cn, permissionModeLabel, resolveTrustStops } from '@/layers/shared/lib';
 import { compactStatusValue } from '../lib/status-labels';
+import { STATUS_ITEM_TRIGGER_CLASS } from '../lib/status-item-classes';
 import { MakeDefaultStopLine, type MakeDefaultStopLineProps } from './MakeDefaultStopLine';
 import {
   ResponsivePopover,
@@ -159,7 +160,11 @@ export function PermissionModeItem({
       // The full label stays the accessible name: a bounded value is a smaller
       // drawing of the same state, never a different answer to "what mode is on?".
       aria-label={`Permissions: ${fullLabel}`}
-      className={`hover:text-foreground inline-flex min-w-0 items-center gap-1 transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40 ${toneAccent}`}
+      className={cn(
+        STATUS_ITEM_TRIGGER_CLASS,
+        'items-center gap-1 disabled:cursor-not-allowed disabled:opacity-40',
+        toneAccent
+      )}
     >
       <TrustModeIcon descriptor={currentDescriptor} className="size-(--size-icon-xs) shrink-0" />
       <span className="truncate">{currentLabel}</span>

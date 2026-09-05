@@ -7,8 +7,9 @@
  * seam BEFORE it offers to open anything, so a scheme `classifyLink` refuses
  * never gets a button whose only possible outcome is a refusal.
  */
+import { useState } from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { LinkSafetyModal } from '../link-safety-modal';
 
@@ -20,6 +21,72 @@ afterEach(() => cleanup());
  * own hand-rolled recipe; the modal composes `Button` now.
  */
 const PRIMARY_CLASS = 'bg-primary';
+
+describe('LinkSafetyModal — the dialog claims it keeps (3.3)', () => {
+  it('moves focus inside the dialog on open, instead of leaving it on the trigger behind it', () => {
+    render(
+      <LinkSafetyModal
+        url="https://dorkos.ai/docs"
+        isOpen
+        onClose={() => {}}
+        onConfirm={() => {}}
+      />
+    );
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  });
+
+  it('closes on Escape, reaching the handler instead of the page underneath', () => {
+    const onClose = vi.fn();
+    render(
+      <LinkSafetyModal url="https://dorkos.ai/docs" isOpen onClose={onClose} onConfirm={() => {}} />
+    );
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores focus to the link when it closes, instead of dropping it to the document body', async () => {
+    // There is no `DialogTrigger` here — `isOpen` is driven by a caller with
+    // no trigger element for Radix to remember, so its own trigger-focused
+    // close-restore is a no-op (`triggerRef.current` is always null). The
+    // real link that opened the modal has to be captured and restored by
+    // hand, or Escape/close strands a keyboard reader at `document.body`.
+    function Harness() {
+      const [isOpen, setIsOpen] = useState(false);
+      return (
+        <>
+          <button type="button" data-testid="the-link" onClick={() => setIsOpen(true)}>
+            docs
+          </button>
+          <LinkSafetyModal
+            url="https://dorkos.ai/docs"
+            isOpen={isOpen}
+            onClose={() => setIsOpen(false)}
+            onConfirm={() => {}}
+          />
+        </>
+      );
+    }
+
+    const { getByTestId } = render(<Harness />);
+    const link = getByTestId('the-link');
+    // The real sequence: the link has focus, Enter/click opens the modal —
+    // the same render pass that mounts the dialog and moves focus inside it.
+    link.focus();
+    fireEvent.click(link);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    // Radix's own `FocusScope` fires its unmount-focus restoration from a
+    // `setTimeout(0)` in its cleanup — a macrotask, not a microtask a bare
+    // `act()` flush would catch — so the assertion has to wait for it.
+    await waitFor(() => expect(document.activeElement).toBe(link));
+  });
+});
 
 describe('LinkSafetyModal — a link that can open', () => {
   it('offers to open it, with copy as the secondary action', () => {
@@ -70,7 +137,7 @@ describe('LinkSafetyModal — a link the seam refuses (DOR-547)', () => {
       />
     );
 
-    expect(screen.getByRole('dialog', { name: /cannot be opened/i })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: /doesn't open irc: links/i })).toBeInTheDocument();
     expect(screen.getByText("DorkOS doesn't open irc: links")).toBeInTheDocument();
     expect(
       screen.getByText("irc: links don't open from DorkOS, so nothing would happen.")

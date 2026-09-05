@@ -1,16 +1,19 @@
-import { createPortal } from 'react-dom';
-import { ExternalLink, Copy, X, ShieldAlert } from 'lucide-react';
+import { useLayoutEffect, useRef } from 'react';
+import { ExternalLink, Copy, ShieldAlert } from 'lucide-react';
 import type { LinkSafetyModalProps } from 'streamdown';
 import { describeRefusal, linkRefusalHere } from '@/layers/shared/lib/link-navigation';
 import { useCopyFeedback } from '@/layers/shared/lib/use-copy-feedback';
 import { Button } from './button';
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from './dialog';
 
 /**
- * Portal-based external-link confirmation modal — the app's single link-safety
- * surface. Streamdown-compatible (`LinkSafetyModalProps`), so it is callable
- * from any of its three call sites (`MarkdownLink`, gen-UI widget `url`
- * actions, MCP App iframes). Portalled to `document.body` to escape
- * transform-based containing blocks.
+ * External-link confirmation modal — the app's single link-safety surface.
+ * Streamdown-compatible (`LinkSafetyModalProps`), so it is callable from any
+ * of its three call sites (`MarkdownLink`, gen-UI widget `url` actions, MCP
+ * App iframes). Built on the shared `Dialog` primitive, which gives it a
+ * real focus trap, focus restore, scroll lock and Escape handling for free —
+ * a hand-rolled `createPortal` div used to claim `aria-modal` without any of
+ * those.
  *
  * **It asks the link seam before it offers to open anything** (DOR-547). A link
  * `linkRefusalHere` refuses cannot be opened by pressing the button, so offering
@@ -32,6 +35,29 @@ export function LinkSafetyModal({ url, isOpen, onClose, onConfirm }: LinkSafetyM
   // The modal closes the instant "Copy link" is pressed, so there is no
   // chrome left to morph — the toast fallback (`useCopyFeedback`'s TSDoc).
   const { copy } = useCopyFeedback({ toastOnSettle: true });
+
+  // Radix's own close-focus-restore only fires when `Dialog` has a
+  // `DialogTrigger` to remember — this one is driven by `isOpen` from a
+  // caller with no trigger element, so `context.triggerRef.current` is
+  // always null and `onCloseAutoFocus`'s default handler focuses nothing.
+  // Capture whatever was focused right before the dialog opened (the link
+  // itself, in every real call site) and restore it by hand on close.
+  //
+  // `useLayoutEffect`, not `useEffect`: a passive effect gated on `isOpen`
+  // would fire in the SAME commit that mounts `DialogContent`, and passive
+  // effects flush child-first — so it would run AFTER Radix's own
+  // `FocusScope` has already auto-focused something inside the dialog
+  // ("Copy link" — a passive effect itself), capturing that as the thing to
+  // "restore" instead of the real previous focus. Layout effects flush
+  // before ANY passive effect in the tree, so this always reads
+  // `document.activeElement` before that auto-focus has run.
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    if (isOpen) {
+      restoreFocusRef.current = document.activeElement as HTMLElement | null;
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   // Asked on every render rather than memoised: this is a pure string parse,
@@ -51,43 +77,25 @@ export function LinkSafetyModal({ url, isOpen, onClose, onConfirm }: LinkSafetyM
         detail: "You're about to visit an external website.",
       };
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      data-streamdown="link-safety-modal"
-    >
-      {/* Click-away backdrop. Kept as a separate aria-hidden sibling so the
-          dialog itself stays in the accessibility tree (an aria-hidden
-          ancestor would hide it from assistive tech). */}
-      <div className="absolute inset-0" onClick={onClose} aria-hidden="true" />
-      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- WAI-ARIA dialog pattern requires Escape key handling on the dialog container */}
-      <div
-        className="bg-background relative mx-4 flex w-full max-w-md flex-col gap-4 rounded-xl border p-6 shadow-lg"
-        onKeyDown={(e) => {
-          e.stopPropagation();
-          if (e.key === 'Escape') onClose();
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent
+        className="max-w-md rounded-xl sm:rounded-xl"
+        onCloseAutoFocus={(event) => {
+          // Radix's own default handler (composed after this one, and only
+          // if this leaves the event unprevented) would try
+          // `triggerRef.current?.focus()` — always null here since nothing
+          // rendered a `DialogTrigger`. Prevent it and restore focus to
+          // wherever it was before the dialog opened instead.
+          event.preventDefault();
+          restoreFocusRef.current?.focus();
         }}
-        role="dialog"
-        aria-modal="true"
-        aria-label={refused ? 'Link cannot be opened' : 'Open external link confirmation'}
-        tabIndex={-1}
       >
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="text-muted-foreground absolute top-4 right-4"
-          onClick={onClose}
-          aria-label="Close"
-        >
-          <X className="size-4" />
-        </Button>
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2 text-lg font-semibold">
-            {refused ? <ShieldAlert size={20} /> : <ExternalLink size={20} />}
-            <span>{title}</span>
-          </div>
-          <p className="text-muted-foreground text-sm">{detail}</p>
-        </div>
+        <DialogTitle className="flex items-center gap-2 text-lg">
+          {refused ? <ShieldAlert className="size-5" /> : <ExternalLink className="size-5" />}
+          {title}
+        </DialogTitle>
+        <DialogDescription>{detail}</DialogDescription>
         <div className="bg-muted rounded-md p-3 font-mono text-sm break-all">{url}</div>
         <div className="flex gap-3">
           {/* Copy leads for a refused link, because it is the only thing left
@@ -114,8 +122,7 @@ export function LinkSafetyModal({ url, isOpen, onClose, onConfirm }: LinkSafetyM
             </Button>
           )}
         </div>
-      </div>
-    </div>,
-    document.body
+      </DialogContent>
+    </Dialog>
   );
 }
