@@ -5417,10 +5417,21 @@ export type UiCommandReach = 'client-only' | 'reaches-the-machine';
  * auto-allows tools by NAME. So a single tool-level "safe" verdict had to cover
  * all 22 at once, and it did: the tool was auto-allowed under the comment "pure
  * client-side UI mutations, no system access". `apply_layout` is not that. The
- * cockpit answers it by POSTing `/api/shapes/:name/apply`, which creates the
- * Shape's schedules ENABLED, carrying the permission mode the Shape's manifest
- * chose — `bypassPermissions` included. An agent could arm a recurring unattended
- * run with every safety prompt off, in plain `default` mode, without a prompt.
+ * client answers it by POSTing `/api/shapes/:name/apply`, and what that touches is
+ * a person's disk and configuration, not just pixels: it writes a `SKILL.md` into
+ * their skills root for each schedule the Shape declares, records a receipt under
+ * the DorkOS home naming what it wrote, rewrites `ui.shapes.active` in
+ * `~/.dork/config.json`, creates, rebinds and DELETES the scheduled tasks its own
+ * receipt claims, and enables and disables extensions (which the client remounts
+ * live). None of that is a pixel, and in plain `default` mode nobody was asked.
+ *
+ * What it does NOT do, despite the claim this comment carried until DOR-1713:
+ * stand up an unattended job running with prompts off. `clampSchedulePermissionMode`
+ * downgrades a manifest's `bypassPermissions` to `acceptEdits` (DOR-607), a
+ * schedule is created enabled only if the manifest asked AND its agent already
+ * exists, and `resolveFileArmStatus` parks the row at `pending_approval` on first
+ * sighting, so nothing fires before a person approves it (DOR-1486). The reason to
+ * ask is the writing, rewiring and deleting — which is plenty.
  *
  * The table lives HERE, in the same file as the union, because the failure mode
  * is a twenty-third action added without anyone thinking about the gate. Being a

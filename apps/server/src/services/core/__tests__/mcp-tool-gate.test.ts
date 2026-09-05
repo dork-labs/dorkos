@@ -547,8 +547,10 @@ describe('hand-registered MCP tools carry a permission tier', () => {
      * 22 different effects chosen by an argument. Every check in this file above
      * this line reasons about tool NAMES, which is precisely the resolution at
      * which a multiplexer is invisible — `apply_layout` reaches
-     * `POST /api/shapes/:name/apply` and arms cron schedules, and it shared a
-     * verdict with `celebrate`.
+     * `POST /api/shapes/:name/apply`, which writes `SKILL.md` files into the
+     * operator's skills root, rewrites their active-Shape config and creates,
+     * rebinds and deletes scheduled tasks, and it shared a verdict with
+     * `celebrate`.
      *
      * ## What this pins, and what it cannot see
      *
