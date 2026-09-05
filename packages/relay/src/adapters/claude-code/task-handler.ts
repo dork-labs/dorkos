@@ -14,6 +14,9 @@ import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import { TaskDispatchPayloadSchema } from '@dorkos/shared/relay-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { createRunOutcomeTracker } from '@dorkos/shared/run-outcome';
+// The one sentence a run stopped by a clock is described with, written by this
+// path and by the direct-dispatch twin in `apps/server` (DOR-1786).
+import { runTimeLimitError } from '@dorkos/shared/run-time-limit';
 import type { AdapterContext, DeliveryResult, TraceStoreLike } from '../../types.js';
 import type { AgentRuntimeLike, TasksStoreLike } from './types.js';
 import { OPERATOR_CANCEL } from './task-cancel-handler.js';
@@ -308,7 +311,12 @@ export async function handleTasksMessage(
 
   try {
     if (controller.signal.aborted) {
-      throw new Error('Run timed out (TTL budget expired)');
+      // A run refused before it began, which is NOT what the shared time-limit
+      // sentence describes: nothing ran, so nothing was "stopped". The agent
+      // turn beside this one splits the same two cases for the same reason
+      // (`abortText` in `agent-handler.ts`) — a person reading a run row can act
+      // on "it sat too long before it started" and not on "it timed out".
+      throw new Error('Run expired before it could start');
     }
 
     deps.agentManager.ensureSession(sessionId, {
@@ -367,15 +375,16 @@ export async function handleTasksMessage(
     // Both stops record `cancelled` — the run-status vocabulary has no separate
     // timeout — so the error line is what tells a person which one happened.
     //
-    // The two dispatch paths already word that line DIFFERENTLY, whatever an
-    // earlier version of this comment claimed: the direct-dispatch twin
-    // (`task-scheduler-service.ts`) writes "Run stopped after passing its
-    // <duration> time limit", and "Run timed out" appears nowhere but this file
-    // and its tests. Only `Run cancelled` is genuinely shared. So this is not a
-    // string to keep in lockstep — it is a divergence nobody decided, and it
-    // reads as jargon next to the plain-language refusals the agent turn now
-    // publishes (DOR-1770). Aligning both paths is tracked as DOR-1786; until
-    // then, do not "restore" a parity that was never there.
+    // Both dispatch paths now word it the same way, and the parity is a shared
+    // function rather than a promise: `runTimeLimitError`
+    // (`@dorkos/shared/run-time-limit`) is what this path and the direct twin
+    // (`task-scheduler-service.ts`) each call. They differ only in the DURATION
+    // they can name — the twin passes the task's own `maxRuntime`, formatted,
+    // while this path is handed an absolute deadline on the envelope and never
+    // learns the span it was cut from, so it names no number. That is a
+    // deliberate hole, not a gap to fill by reconstructing one; the module note
+    // says why a made-up duration is worse than none. `Run cancelled` is shared
+    // as the plain literal it always was.
     const stoppedByOperator = stopped && controller.signal.reason === OPERATOR_CANCEL;
 
     if (deps.taskStore) {
@@ -385,7 +394,7 @@ export async function handleTasksMessage(
           finishedAt: new Date().toISOString(),
           durationMs,
           outputSummary: truncatedSummary,
-          error: stoppedByOperator ? 'Run cancelled' : 'Run timed out (TTL budget expired)',
+          error: stoppedByOperator ? 'Run cancelled' : runTimeLimitError(),
           sessionId: persistedSessionId(),
         });
       } else {
@@ -417,7 +426,10 @@ export async function handleTasksMessage(
       // delivery did its job, and the run's own record is where the stop is
       // written. Only the deadline is a delivery that did not work out.
       success: !stopped || stoppedByOperator,
-      error: stopped && !stoppedByOperator ? 'TTL budget expired' : undefined,
+      // The dead-letter reason for this delivery, and a person reads it in the
+      // relay's own surfaces — so it is the same sentence the run row above
+      // carries, not the jargon it used to abbreviate to.
+      error: stopped && !stoppedByOperator ? runTimeLimitError() : undefined,
       durationMs,
     };
   } catch (err) {

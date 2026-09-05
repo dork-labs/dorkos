@@ -315,7 +315,10 @@ describe('an expired envelope is refused at every seam (DOR-1770)', () => {
         RUN_ID,
         expect.objectContaining({
           status: 'failed',
-          error: 'Run timed out (TTL budget expired)',
+          // A run refused before it began says so, in words a person can act on
+          // — never "TTL budget expired", and never the time-limit sentence a
+          // run that actually ran is stopped with (DOR-1786).
+          error: 'Run expired before it could start',
         })
       );
     });
