@@ -1,13 +1,19 @@
 /**
- * An agent DM'd by another agent is answered by the program IT runs on (DOR-1627).
+ * An agent DM'd by another agent is answered by the program IT runs on
+ * (DOR-1627), and keeps that program for the whole conversation (DOR-1774).
  *
  * The end-to-end seam, with nothing stubbed between the manifest and the
- * runtime: a real `.dork/agent.json` on disk, the real
- * `resolveAgentRuntimeType` ladder, the real `runtimeRegistry`, and the real
- * built-in adapter built by the real `createAdapter` wiring. A test that
- * injected its own resolver here would only prove the adapter calls what it is
- * given — it could not catch the composition root forgetting to give it
- * anything, which is the half of this change that lives in `adapter-factory.ts`.
+ * runtime: a real `.dork/agent.json` on disk, the real `resolveTurnRuntimeType`
+ * ladder, the real `runtimeRegistry` over a real SQLite, and the real built-in
+ * adapter built by the real `createAdapter` wiring. A test that injected its own
+ * resolver here would only prove the adapter calls what it is given — it could
+ * not catch the composition root forgetting to give it anything, which is the
+ * half of this change that lives in `adapter-factory.ts`.
+ *
+ * The database is real for the same reason (DOR-1774): the property that closes
+ * the reroute is that the row the relay WRITES when a turn starts is the row the
+ * next turn READS. A stubbed registry answering `bound: true` would only encode
+ * the hypothesis that those two agree.
  *
  * The subject under test is `relay.agent.<namespace>.<agentId>`: a mesh
  * endpoint, the shape `relay_send` uses to reach another agent. It names no
@@ -19,6 +25,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
+import { createTestDb } from '@dorkos/test-utils/db';
 import type { AdapterConfig, RelayAdapter, RelayPublisher, TraceStoreLike } from '@dorkos/relay';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
@@ -28,13 +35,18 @@ import { createAdapter } from '../adapter-factory.js';
 const AGENT_ID = '01AGENTULIDDOR1627';
 const MESH_SUBJECT = `relay.agent.ana.${AGENT_ID}`;
 
-/** A runtime that finishes any turn it is handed immediately. */
+/**
+ * A runtime that finishes any turn it is handed immediately.
+ *
+ * Two scenarios, so the same runtime can answer both turns of a conversation —
+ * `FakeAgentRuntime` dequeues one per `sendMessage` and a spent queue yields
+ * nothing at all, which would read as a turn that never started.
+ */
 function fakeRuntime(type: string): FakeAgentRuntime {
-  return new FakeAgentRuntime(type).withScenarios([
-    async function* (): AsyncGenerator<StreamEvent> {
-      yield { type: 'done', data: {} } as StreamEvent;
-    },
-  ]);
+  const answer = async function* (): AsyncGenerator<StreamEvent> {
+    yield { type: 'done', data: {} } as StreamEvent;
+  };
+  return new FakeAgentRuntime(type).withScenarios([answer, answer]);
 }
 
 /**
@@ -91,8 +103,11 @@ describe('a mesh agent subject runs on the target agent’s own runtime', () => 
   beforeEach(async () => {
     claude = fakeRuntime('claude-code');
     codex = fakeRuntime('codex');
-    // The REAL registry: `resolveAgentRuntimeType` asks it whether the runtime a
-    // manifest names is one this build actually started.
+    // The REAL registry over a real database: the ladder asks it whether the
+    // runtime a manifest names is one this build actually started, and — since
+    // DOR-1774 — reads and writes the binding row that decides every turn after
+    // the first.
+    runtimeRegistry.setDb(createTestDb());
     runtimeRegistry.register(claude);
     runtimeRegistry.register(codex);
     runtimeRegistry.setDefault('claude-code');
@@ -182,5 +197,83 @@ describe('a mesh agent subject runs on the target agent’s own runtime', () => 
 
     expect(result.success).toBe(true);
     expect(claude.sendMessage).toHaveBeenCalledOnce();
+  });
+
+  describe('and keeps that program for the rest of the conversation (DOR-1774)', () => {
+    /** The delivery context `AdapterManager.buildContext` builds for this agent. */
+    function meshContext(): { agent: { directory: string; runtime: string } } {
+      return { agent: { directory: agentDir, runtime: 'claude-code' } };
+    }
+
+    it('a manifest edited mid-conversation does not move it to another program', async () => {
+      // The reroute this closes, end to end. The first turn binds this
+      // conversation to codex; the manifest then says claude-code — which is a
+      // preference about the agent's NEXT conversation, not a fact about the one
+      // whose transcript is sitting in codex. Handing turn two to claude-code
+      // would hand it the session key codex minted and no history to go with it
+      // (the DOR-764 shape).
+      await writeAgentManifest('codex', agentDir);
+      await adapter.deliver(MESH_SUBJECT, agentEnvelope(), meshContext());
+
+      await writeAgentManifest('claude-code', agentDir);
+      const second = await adapter.deliver(MESH_SUBJECT, agentEnvelope(), meshContext());
+
+      expect(second.success).toBe(true);
+      expect(codex.sendMessage).toHaveBeenCalledTimes(2);
+      expect(claude.sendMessage).not.toHaveBeenCalled();
+      // The write and the read are the same row — the thing no injected double
+      // could show.
+      expect(await runtimeRegistry.resolveSessionRuntime(AGENT_ID)).toEqual({
+        type: 'codex',
+        bound: true,
+      });
+    });
+
+    it('leaves no binding behind when the first turn never ran', async () => {
+      // The orphan-row hazard `room-turn-runner.ts` documents. A row written on
+      // arrival is indistinguishable afterwards from one a real turn wrote, so
+      // one failed message would pin a conversation that never existed to
+      // whichever program happened to be asked first.
+      await writeAgentManifest('codex', agentDir);
+      codex.withScenarios([
+        async function* (): AsyncGenerator<StreamEvent> {
+          throw new Error('the runtime fell over before it said anything');
+        },
+      ]);
+
+      const result = await adapter.deliver(MESH_SUBJECT, agentEnvelope(), meshContext());
+
+      expect(result.success).toBe(false);
+      expect(await runtimeRegistry.resolveSessionRuntime(AGENT_ID)).toEqual({
+        type: 'claude-code',
+        bound: false,
+      });
+    });
+
+    it('a failed first turn leaves the manifest in charge of the next one', async () => {
+      // The consequence of the row above being absent, and the reason "no row"
+      // is the right outcome rather than a tidy one: nothing was decided, so the
+      // agent's own manifest decides again — and still reaches codex.
+      await writeAgentManifest('codex', agentDir);
+      codex.withScenarios([
+        async function* (): AsyncGenerator<StreamEvent> {
+          throw new Error('the runtime fell over before it said anything');
+        },
+        async function* (): AsyncGenerator<StreamEvent> {
+          yield { type: 'done', data: {} } as StreamEvent;
+        },
+      ]);
+
+      await adapter.deliver(MESH_SUBJECT, agentEnvelope(), meshContext());
+      const second = await adapter.deliver(MESH_SUBJECT, agentEnvelope(), meshContext());
+
+      expect(second.success).toBe(true);
+      expect(codex.sendMessage).toHaveBeenCalledTimes(2);
+      expect(claude.sendMessage).not.toHaveBeenCalled();
+      expect(await runtimeRegistry.resolveSessionRuntime(AGENT_ID)).toEqual({
+        type: 'codex',
+        bound: true,
+      });
+    });
   });
 });

@@ -63,20 +63,27 @@ adapter manager does not dispatch.
   endpoint `relay.agent.<namespace>.<agentId>`, which is what one agent's
   `relay_send` to another arrives on. Taking the default for it meant a Codex
   agent DM'd by another agent was answered by Claude Code. The adapter now asks
-  the host, through a `resolveAgentRuntimeType` seam wired to the same
-  manifest-then-default ladder rooms and chat bindings already use, so who
+  the host, through a `resolveTurnRuntimeType` seam wired to the same
+  binding-then-manifest ladder rooms and chat bindings already use, so who
   answers for an agent no longer depends on which door the message came
   through. Only that shape: a session subject keeps the runtime its
   conversation started on (ADR-0255), and a named runtime still wins over a
-  manifest. **Known gap, deliberately left open and pinned by a test:** nothing
-  on an agent-scoped subject's path calls `persistSessionRuntime` — a chat
-  binding does, when it creates a session, but a mesh endpoint creates no
-  session — so that shape has no binding to consult and its manifest is re-read
-  every turn. Change an
-  agent's runtime mid-conversation and the remaining turns go to a program
-  handed a session key it has no transcript for (the DOR-764 shape). Closing it
-  needs a binding write made only after a turn has started, plus
-  `resolveTurnRuntimeType`; threading a session key alone would be inert.
+  manifest. **Amended again 2026-09-05 (DOR-1774), closing the gap DOR-1627
+  named:** that shape had no binding to consult — a chat binding writes an owner
+  when it creates a session, but a mesh endpoint creates none — so the manifest
+  was re-read every turn and an edit made mid-conversation handed the remaining
+  turns to a program with no transcript for the key it was given (the DOR-764
+  shape). So the relay now writes that owner itself, through a
+  `bindSessionRuntime` seam wired to `persistSessionRuntime`, and asks
+  `resolveTurnRuntimeType` with the key the turn will run under. Three things
+  fix the write's timing, each mirroring `room-turn-runner.ts`: it happens only
+  once the runtime has produced an event (a write on arrival mints one orphan
+  row per message that never ran, indistinguishable afterwards from a real
+  binding), it is not gated on the turn SUCCEEDING (a turn that spoke and then
+  crashed still wrote a transcript), and it records the DURABLE key — the SDK
+  session id the runtime minted, which is the id the next message resumes under.
+  A failed write is logged, never thrown: the answer has already gone out, and
+  what is lost is one attribution row the next turn writes again.
 - The discriminator the subject parse uses is the union of the adapter's own
   registered keys and the built-in `RUNTIME_TYPES` list, so a runtime registered
   under a type outside that list still routes to itself, and a type the product

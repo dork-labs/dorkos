@@ -30,6 +30,7 @@ import type {
   AgentRuntimeLike,
   AgentSessionStoreLike,
   ExecutionSettingsResolver,
+  SessionRuntimeBinder,
   TurnExecutionSettings,
 } from './types.js';
 import {
@@ -80,6 +81,17 @@ export interface AgentHandlerDeps {
    */
   turnController: AbortController;
   /**
+   * Where a STARTED turn records which runtime owns its conversation — see
+   * {@link SessionRuntimeBinder}.
+   *
+   * Passed by the adapter for an agent-scoped mesh subject and for nothing else,
+   * because that is the one shape whose runtime is resolved per turn and so the
+   * one shape that can be re-decided mid-conversation (DOR-1774). A session
+   * subject already carries its owner in the subject; a legacy subject names a
+   * session the cockpit binds.
+   */
+  bindSessionRuntime?: SessionRuntimeBinder;
+  /**
    * Where this turn records the envelope it is answering, so the agent's own
    * `relay_send*` calls continue that budget instead of minting a fresh one
    * (DOR-791). Absent means no threading — the pre-existing behaviour.
@@ -101,6 +113,76 @@ export interface AgentHandlerDeps {
    */
   now?: () => number;
   logger?: import('@dorkos/shared/logger').Logger;
+}
+
+/** Who an agent-addressed message is for, and the key its turn runs under. */
+export interface AgentTurnIdentity {
+  /** The agent the subject names. Aliases `sessionId` in the subject's slot. */
+  agentId: string;
+  /** The payload's `conversationId`, when it named one. */
+  conversationId?: string;
+  /**
+   * The stable key this conversation is remembered by: the agent alone, or the
+   * agent and its conversation. What {@link AgentSessionStoreLike} is keyed on.
+   */
+  scope: string;
+  /** The SDK session id a previous turn on this scope persisted, if any. */
+  persistedSdkSessionId?: string;
+  /**
+   * The key this turn actually runs under — the persisted SDK session id once
+   * one exists, and the scope until then.
+   */
+  key: string;
+}
+
+/**
+ * Who an agent-addressed message is for, and the key its turn will run under.
+ *
+ * **Exported because the adapter has to ask the same question before the handler
+ * runs.** Which runtime answers is a question about the SESSION now (DOR-1774),
+ * and the adapter resolves that before it takes a concurrency slot — so it needs
+ * the key this turn will run under, computed the one way, here. Two derivations
+ * of that key would bind one id and resume another.
+ *
+ * The scope is the agent alone unless the payload threads a conversation:
+ * `conversationId` lets one caller hold a distinct conversation with the same
+ * agent (an A2A `contextId` lands here). TRUST MODEL: it is caller-supplied, so
+ * it is a partition key and not a per-principal boundary — a caller who learns
+ * another's conversationId can deliberately join that session. Callers must
+ * treat it as a shared secret (unguessable values, e.g. UUIDs); per-principal
+ * isolation is future work. See contributing/api-reference.md § A2A Gateway →
+ * Deployment security. Platform sources that omit it keep the legacy agent-wide
+ * session, behavior-preserving.
+ *
+ * @param subject - The subject the message arrived on.
+ * @param envelope - The envelope, for a payload `conversationId`.
+ * @param store - The host's agent-key → SDK-session-id map, when it wired one.
+ * @returns `null` when the subject names no agent at all.
+ */
+export function resolveAgentTurnIdentity(
+  subject: string,
+  envelope: RelayEnvelope,
+  store: AgentSessionStoreLike | undefined
+): AgentTurnIdentity | null {
+  const agentId = extractAgentId(subject);
+  if (!agentId) return null;
+  const payload =
+    typeof envelope.payload === 'object' && envelope.payload !== null
+      ? (envelope.payload as Record<string, unknown>)
+      : null;
+  const conversationId =
+    typeof payload?.conversationId === 'string' && payload.conversationId.length > 0
+      ? payload.conversationId
+      : undefined;
+  const scope = conversationId ? `${agentId}:${conversationId}` : agentId;
+  const persistedSdkSessionId = store?.get(scope);
+  return {
+    agentId,
+    ...(conversationId ? { conversationId } : {}),
+    scope,
+    ...(persistedSdkSessionId ? { persistedSdkSessionId } : {}),
+    key: persistedSdkSessionId ?? scope,
+  };
 }
 
 /** Platform response context set by inbound chat adapters (Slack, Telegram, third-party). */
@@ -198,14 +280,15 @@ export async function handleAgentMessage(
   // timestamps from the wall clock would report a turn that ended before it
   // started. See {@link AgentHandlerDeps.now}.
   const now = deps.now ?? Date.now;
-  const agentId = extractAgentId(subject);
-  if (!agentId) {
+  const identity = resolveAgentTurnIdentity(subject, envelope, deps.agentSessionStore);
+  if (!identity) {
     return {
       success: false,
       error: `Could not extract agentId from subject: ${subject}`,
       durationMs: now() - startTime,
     };
   }
+  const { agentId, conversationId, scope: sessionScope, persistedSdkSessionId } = identity;
 
   const log = deps.logger ?? console;
 
@@ -221,26 +304,11 @@ export async function handleAgentMessage(
       ? (envelope.payload as Record<string, unknown>)
       : null;
 
-  // Session scope: an inbound payload may carry a conversationId to thread a
-  // distinct conversation with the same agent (e.g. an external caller's A2A
-  // contextId lands here as StandardPayload.conversationId). Callers using
-  // distinct conversationIds get distinct sessions instead of sharing one
-  // long-lived agent session. TRUST MODEL: conversationId is caller-supplied,
-  // so this is a partition key, not a per-principal boundary — a caller who
-  // learns another's conversationId can deliberately join that session.
-  // Callers must treat it as a shared secret (unguessable values, e.g. UUIDs);
-  // per-principal isolation is future work. See contributing/api-reference.md
-  // § A2A Gateway → Deployment security. Platform sources that omit it keep
-  // the legacy agent-wide session (scope === agentId), behavior-preserving.
-  const conversationId =
-    typeof payloadObj?.conversationId === 'string' && payloadObj.conversationId.length > 0
-      ? payloadObj.conversationId
-      : undefined;
-  const sessionScope = conversationId ? `${agentId}:${conversationId}` : agentId;
-
-  // Resolve canonical SDK session ID from persistent store
-  const persistedSdkSessionId = deps.agentSessionStore?.get(sessionScope);
-  const ccaSessionKey = persistedSdkSessionId ?? sessionScope;
+  // The session scope, the persisted SDK id and the key this turn runs under all
+  // come from `resolveAgentTurnIdentity` above — the same call the adapter makes
+  // to decide which runtime answers, so the key that gets bound and the key the
+  // next turn resumes under cannot disagree (DOR-1774).
+  const ccaSessionKey = identity.key;
   log.debug?.(
     `[CCA] session lookup: agentId=${agentId}, conversationId=${conversationId ?? '(none)'}, sessionScope=${sessionScope}, persistedSdkSessionId=${persistedSdkSessionId ?? '(none)'}, hasStarted=${!!persistedSdkSessionId}`
   );
@@ -602,15 +670,61 @@ export async function handleAgentMessage(
   // rename its own sessions (codex, opencode) declares no `getSdkSessionId`,
   // and there is nothing to persist: the key this turn ran under is already the
   // durable id, so the next message resolves the same session without a mapping.
+  //
+  // Whatever comes out of this is the id the NEXT message on this scope will
+  // resume under, which is the only id worth binding below.
+  let durableSessionKey = ccaSessionKey;
   if (deps.agentSessionStore && !persistedSdkSessionId) {
     const actualSdkId = deps.agentManager.getSdkSessionId?.(ccaSessionKey);
     if (actualSdkId && actualSdkId !== sessionScope) {
       deps.agentSessionStore.set(sessionScope, actualSdkId);
+      durableSessionKey = actualSdkId;
       log.info(`[CCA] persisted session mapping: ${sessionScope} → ${actualSdkId}`);
     } else {
       log.debug?.(
         `[CCA] no session mapping to persist: sessionScope=${sessionScope}, ` +
           `ccaSessionKey=${ccaSessionKey}, actualSdkId=${actualSdkId ?? '(none)'}`
+      );
+    }
+  }
+
+  // **Which runtime owns this conversation, recorded once the turn is known to
+  // have STARTED** (DOR-1774). Without it the manifest is re-read every turn and
+  // an edit made mid-conversation hands the remaining turns to a program that
+  // has no transcript for the key it is given — the DOR-764 shape, on the one
+  // subject family that had no memory of its own.
+  //
+  // Three things about the timing, all of them load-bearing, and each mirroring
+  // the same call in `room-turn-runner.ts`:
+  //
+  // - **Only for a turn that ran.** `eventCount > 0` is this handler's version
+  //   of the room's `result.accepted`: `sendMessage` hands back a lazy
+  //   generator, so nothing has reached the runtime until it yields, and a turn
+  //   refused, stopped before it started, or thrown out of on the first pull
+  //   produced no transcript for anyone to be bound to. Writing on arrival
+  //   instead would mint one row per message that never ran, and afterwards
+  //   nothing can tell those rows from real bindings.
+  // - **Not only for a turn that SUCCEEDED.** A turn that streamed and then
+  //   crashed or ran out of time still wrote a transcript under this id, so its
+  //   owner is a fact whatever the ending was. Gating on success would leave the
+  //   very conversation most likely to be resumed unbound.
+  // - **Below everything that publishes, and its failure is LOGGED rather than
+  //   thrown.** This is bookkeeping about a turn whose answer has already gone
+  //   out. A `SQLITE_BUSY` here must not turn an answered turn into a failed
+  //   delivery — what is lost is one attribution row, which the next turn on
+  //   this conversation writes again.
+  if (deps.bindSessionRuntime && eventCount > 0) {
+    try {
+      await deps.bindSessionRuntime({
+        sessionId: durableSessionKey,
+        runtimeType: deps.runtimeType ?? deps.agentManager.type ?? 'claude-code',
+        ...(agentManifestDir ? { agentDirectory: agentManifestDir } : {}),
+      });
+    } catch (err) {
+      log.warn(
+        `[CCA] could not record which runtime owns ${durableSessionKey}; the next turn on this ` +
+          `conversation will resolve it from the agent's manifest again`,
+        describeError(err)
       );
     }
   }

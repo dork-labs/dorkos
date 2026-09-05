@@ -63,15 +63,24 @@ export type ExecutionSettingsResolver = (opts: {
 }) => Promise<TurnExecutionSettings>;
 
 /**
- * Which runtime an AGENT runs on, asked of the host by agent directory.
+ * Which runtime one TURN on an agent-addressed conversation runs on, asked of
+ * the host.
  *
  * A seam, for the same reason {@link ExecutionSettingsResolver} is one: the
- * answer is the agent's `.dork/agent.json` filtered by which runtimes this
- * server actually registered, and both of those live host-side. The server
- * wires this to `services/runtimes/shared/resolve-agent-runtime-type.ts`, the
- * single copy of that ladder that rooms and the chat bindings already ask
- * (DOR-1614) — a second copy here is a second thing that can disagree about
- * which program answers for an agent.
+ * answer is the session's recorded owner, then the agent's `.dork/agent.json`
+ * filtered by which runtimes this server actually registered, and all of that
+ * lives host-side. The server wires this to `resolveTurnRuntimeType` in
+ * `services/runtimes/shared/resolve-agent-runtime-type.ts`, the single copy of
+ * that ladder that rooms and the chat bindings already ask (DOR-1614) — a
+ * second copy here is a second thing that can disagree about which program
+ * answers for an agent.
+ *
+ * **It is asked about a SESSION, not only about an agent (DOR-1774).** The
+ * manifest is a preference about the next conversation an agent starts, not a
+ * fact about one it is already in the middle of, so the key the turn will run
+ * under is handed over with it and the recorded owner wins where there is one.
+ * Which is only true because the adapter also WRITES that owner — see
+ * {@link SessionRuntimeBinder}.
  *
  * Asked only for a subject that names no runtime AND identifies an AGENT rather
  * than a session — a mesh `relay.agent.<namespace>.<agentId>` endpoint, which
@@ -83,10 +92,52 @@ export type ExecutionSettingsResolver = (opts: {
  * the host's default runtime. A manifest that cannot be read must never drop
  * somebody's message.
  *
- * @param agentDirectory - The addressed agent's project directory, the one
+ * @param turn.agentDirectory - The addressed agent's project directory, the one
  *   holding `.dork/agent.json`.
+ * @param turn.sessionId - The key this turn will run under, which is the
+ *   persisted SDK session id once the conversation has one. `null` only when the
+ *   subject names no agent to key by.
  */
-export type AgentRuntimeTypeResolver = (agentDirectory: string) => Promise<string>;
+export type TurnRuntimeTypeResolver = (turn: {
+  agentDirectory: string;
+  sessionId: string | null;
+}) => Promise<string>;
+
+/**
+ * Record which runtime owns an agent-addressed conversation, so the next turn
+ * on it cannot be re-decided.
+ *
+ * The write half of {@link TurnRuntimeTypeResolver}, and the reason that
+ * resolver has anything to find (DOR-1774). The server wires it to
+ * `runtimeRegistry.persistSessionRuntime`, which is first-write-wins: a
+ * conversation that already has an owner is left exactly as it stood, so this
+ * is safe to call on every turn and self-heals a turn whose write failed.
+ *
+ * **Called only once the turn is known to have STARTED** — the runtime has
+ * produced at least one event — for the reason `room-turn-runner.ts` gives at
+ * its own call: a write made when the message arrives mints one row per message
+ * nothing ever ran, and those rows are indistinguishable from real bindings
+ * afterwards.
+ *
+ * Tolerant by contract, exactly as the resolver is: a rejection is logged and
+ * the turn stands. This is bookkeeping about a turn that has already happened —
+ * its answer is published — and what a failure costs is one attribution row that
+ * the conversation's next turn writes again.
+ *
+ * @param binding.sessionId - The DURABLE key this conversation resumes under:
+ *   the SDK session id the runtime minted, where it renames its own sessions,
+ *   and otherwise the key the turn ran on. Binding the pre-rename key would bind
+ *   an id the next turn never looks up.
+ * @param binding.runtimeType - The runtime that just answered, which is the one
+ *   holding this conversation's transcript.
+ * @param binding.agentDirectory - The agent this conversation belongs to, when
+ *   one resolved.
+ */
+export type SessionRuntimeBinder = (binding: {
+  sessionId: string;
+  runtimeType: string;
+  agentDirectory?: string;
+}) => Promise<void>;
 
 /**
  * Minimal interface for agent session management.
@@ -263,12 +314,19 @@ export interface ClaudeCodeAdapterDeps {
    */
   resolveExecutionSettings?: ExecutionSettingsResolver;
   /**
-   * Which runtime the AGENT a mesh subject addresses runs on — see
-   * {@link AgentRuntimeTypeResolver}. Absent means the host's default runtime
+   * Which runtime a turn addressed to an AGENT by a mesh subject runs on — see
+   * {@link TurnRuntimeTypeResolver}. Absent means the host's default runtime
    * answers every agent-to-agent send, which is what every host did before
    * DOR-1627.
    */
-  resolveAgentRuntimeType?: AgentRuntimeTypeResolver;
+  resolveTurnRuntimeType?: TurnRuntimeTypeResolver;
+  /**
+   * Where a started agent-to-agent turn records which runtime owns its
+   * conversation — see {@link SessionRuntimeBinder}. Absent means nothing is
+   * recorded and {@link ClaudeCodeAdapterDeps.resolveTurnRuntimeType} finds
+   * nothing to consult, which is what every host did before DOR-1774.
+   */
+  bindSessionRuntime?: SessionRuntimeBinder;
   /**
    * Whether a click on a chat platform may authorize one session's tool call.
    *

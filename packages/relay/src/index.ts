@@ -168,7 +168,8 @@ export type {
   TraceStoreLike,
   TasksStoreLike,
   ExecutionSettingsResolver,
-  AgentRuntimeTypeResolver,
+  TurnRuntimeTypeResolver,
+  SessionRuntimeBinder,
   TurnExecutionSettings,
 } from './adapters/claude-code/index.js';
 

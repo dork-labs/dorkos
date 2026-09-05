@@ -33,7 +33,7 @@ import type {
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { logger, createTaggedLogger } from '../../lib/logger.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
-import { resolveAgentRuntimeType } from '../runtimes/shared/resolve-agent-runtime-type.js';
+import { resolveTurnRuntimeType } from '../runtimes/shared/resolve-agent-runtime-type.js';
 import { AdapterError } from './adapter-error.js';
 import { createTurnExecutionSettingsResolver } from './turn-execution-settings.js';
 
@@ -164,10 +164,20 @@ export async function createAdapter(
         resolveExecutionSettings: createTurnExecutionSettingsResolver(),
         // Who answers a message addressed to an AGENT rather than a session —
         // the shape an agent-to-agent `relay_send` arrives on. The same single
-        // copy of the manifest-then-default ladder rooms and the chat bindings
+        // copy of the binding-then-manifest ladder rooms and the chat bindings
         // ask, so one agent DM'ing another cannot get a different program than
-        // the same agent reached from Telegram would (DOR-1627).
-        resolveAgentRuntimeType,
+        // the same agent reached from Telegram would (DOR-1627), and a
+        // conversation that already has an owner keeps it (DOR-1774).
+        resolveTurnRuntimeType: ({ agentDirectory, sessionId }) =>
+          resolveTurnRuntimeType({ sessionId, agentPath: agentDirectory }),
+        // And where that owner gets written. The relay is the only thing that
+        // can record it for this shape: a mesh endpoint creates no session, so
+        // no session-creation path ever ran for it. First-write-wins inside the
+        // registry, so a turn on a conversation somebody already bound changes
+        // nothing (DOR-1774).
+        bindSessionRuntime: async ({ sessionId, runtimeType, agentDirectory }) => {
+          await runtimeRegistry.persistSessionRuntime(sessionId, runtimeType, agentDirectory);
+        },
         // Every approval that arrives on the relay bus is checked here too,
         // before the runtime is touched (spec `ask-entitlement` §5.3).
         approvalAuthorizer: deps.approvalAuthorizer,
