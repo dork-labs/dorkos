@@ -383,7 +383,10 @@ importers:
     dependencies:
       '@anthropic-ai/claude-agent-sdk':
         specifier: 0.3.224
-        version: 0.3.224(@anthropic-ai/sdk@0.122.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(zod@4.4.3)
+        version: 0.3.224(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(zod@4.4.3)
+      '@anthropic-ai/sdk':
+        specifier: 0.120.0
+        version: 0.120.0(zod@4.4.3)
       '@asteasolutions/zod-to-openapi':
         specifier: 9.1.0
         version: 9.1.0(zod@4.4.3)
@@ -1689,18 +1692,6 @@ packages:
     resolution:
       {
         integrity: sha512-ZlvmNFT/iIF6JD13rxbbMWD8nvGR0RaUp6yMQnoc+4Af0YjVVe/bIdW1XSQQsoxXAtg1NaT6Vak0LKFlJ4d37Q==,
-      }
-    hasBin: true
-    peerDependencies:
-      zod: ^3.25.0 || ^4.0.0
-    peerDependenciesMeta:
-      zod:
-        optional: true
-
-  '@anthropic-ai/sdk@0.122.0':
-    resolution:
-      {
-        integrity: sha512-GGPNftt0caaz9MDlmNQGHX8855Ojaduyy5pm9Sm1h7HalCn0cWNb5/bweadJF+4yzbal+QL6ztBa09WAAOzLmQ==,
       }
     hasBin: true
     peerDependencies:
@@ -16576,29 +16567,7 @@ snapshots:
       '@anthropic-ai/claude-agent-sdk-win32-arm64': 0.3.224
       '@anthropic-ai/claude-agent-sdk-win32-x64': 0.3.224
 
-  '@anthropic-ai/claude-agent-sdk@0.3.224(@anthropic-ai/sdk@0.122.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(zod@4.4.3)':
-    dependencies:
-      '@anthropic-ai/sdk': 0.122.0(zod@4.4.3)
-      '@modelcontextprotocol/sdk': 1.30.0(zod@4.4.3)
-      zod: 4.4.3
-    optionalDependencies:
-      '@anthropic-ai/claude-agent-sdk-darwin-arm64': 0.3.224
-      '@anthropic-ai/claude-agent-sdk-darwin-x64': 0.3.224
-      '@anthropic-ai/claude-agent-sdk-linux-arm64': 0.3.224
-      '@anthropic-ai/claude-agent-sdk-linux-arm64-musl': 0.3.224
-      '@anthropic-ai/claude-agent-sdk-linux-x64': 0.3.224
-      '@anthropic-ai/claude-agent-sdk-linux-x64-musl': 0.3.224
-      '@anthropic-ai/claude-agent-sdk-win32-arm64': 0.3.224
-      '@anthropic-ai/claude-agent-sdk-win32-x64': 0.3.224
-
   '@anthropic-ai/sdk@0.120.0(zod@4.4.3)':
-    dependencies:
-      json-schema-to-ts: 3.1.1
-      standardwebhooks: 1.0.0
-    optionalDependencies:
-      zod: 4.4.3
-
-  '@anthropic-ai/sdk@0.122.0(zod@4.4.3)':
     dependencies:
       json-schema-to-ts: 3.1.1
       standardwebhooks: 1.1.1

@@ -99,6 +99,16 @@ updates:
       # The trailing `*` is what makes each of these a family rather than a
       # member; see the block comment above.
       - dependency-name: '@anthropic-ai/claude-agent-sdk*'
+      # The agent SDK's peer companion, and a family of exactly one — no
+      # per-platform siblings, so no trailing `*` is needed or wanted. It is a
+      # SEPARATE entry rather than part of the pattern above because it rides a
+      # different version line (0.120.0, not the parent's 0.3.224), so the two
+      # cannot share a family in the guard test. It is pinned by the root pnpm
+      # override, which Dependabot cannot see: PR #1407 bumped its spec in
+      # apps/server and packages/cli to ^0.122.0, the override silently held the
+      # tree at 0.120.0, and the apps/desktop copy — an auto-installed peer with
+      # no spec to mask — went to 0.122.0 on its own. That is DOR-1784.
+      - dependency-name: '@anthropic-ai/sdk'
       - dependency-name: '@openai/codex*'
       - dependency-name: '@opencode-ai/*'
     # The queue merges it; nobody needs a review ping for a patch bump that

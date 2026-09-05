@@ -65,6 +65,19 @@ const FAMILIES: Record<string, readonly string[]> = {
     '@anthropic-ai/claude-agent-sdk-darwin-arm64',
     '@anthropic-ai/claude-agent-sdk-win32-x64',
   ],
+  // The agent SDK's peer companion (DOR-1784). A family of one, and separate
+  // from the family above even though it is held in lockstep with it: it rides
+  // its own version line (0.120.0 vs the parent's 0.3.224), so the two cannot
+  // share the version-parity assertion below. Its real pin is a root
+  // `pnpm.overrides` entry, invisible to Dependabot in exactly the way the
+  // parent's is — and the override does not reach apps/desktop, whose copy
+  // arrives as a peer of the agent SDK. PR #1407 split it: the spec in
+  // apps/server and packages/cli went to ^0.122.0 while the override held the
+  // tree at 0.120.0, and the desktop's auto-installed peer — with no spec for
+  // the override to mask — resolved to 0.122.0, putting two versions in the
+  // lockfile. Every importer now declares it, so this parity check is what
+  // keeps the next such bump from splitting it again.
+  '@anthropic-ai/sdk': ['@anthropic-ai/sdk'],
   // The CLI, its SDK companion, and two npm-aliased platform builds of the CLI.
   '@openai/codex': [
     '@openai/codex',
@@ -332,5 +345,51 @@ describe('dependabot lockstep families', () => {
           [...seen.entries()].map(([v, where]) => `${v} (${where.join(', ')})`).join(' vs ')
       ).toHaveLength(seen.size === 0 ? 0 : 1);
     }
+  });
+
+  it('declares the agent SDK peer in every manifest that depends on the agent SDK', () => {
+    // WHY THIS IS SEPARATE FROM THE PARITY TEST ABOVE (DOR-1784). That one
+    // compares versions ACROSS the manifests that declare a package, so it is
+    // blind to a manifest that declares none — which is the precise shape of
+    // the bug it is here to stop. `apps/desktop` depended on the agent SDK and
+    // simply never declared its `@anthropic-ai/sdk` peer; pnpm auto-installed
+    // it, and auto-installed peers resolve to LATEST and cannot be steered by
+    // any root override. Deleting the desktop declaration again passes every
+    // other assertion in this file.
+    //
+    // Both sides are enumerated from the manifests rather than a remembered
+    // list, so a new package that takes on the agent SDK inherits the rule.
+    const manifestOf = (label: string) => label.split(' ')[0] ?? '';
+    // The overrides map is not an importer — it installs nothing — so it is
+    // excluded from the left side and cannot be the thing that satisfies the
+    // right side either.
+    const importers = new Set(
+      declarations
+        .filter((d) => d.label !== 'package.json pnpm.overrides')
+        .filter((d) => d.name === '@anthropic-ai/claude-agent-sdk')
+        .map((d) => manifestOf(d.label))
+    );
+    const declaresPeer = new Set(
+      declarations
+        .filter((d) => d.label !== 'package.json pnpm.overrides')
+        .filter((d) => d.name === '@anthropic-ai/sdk')
+        .map((d) => manifestOf(d.label))
+    );
+    // Anti-vacuity: if the scanner stopped finding the agent SDK anywhere, the
+    // filter below would be empty and this test would pass while checking
+    // nothing.
+    expect(
+      [...importers].sort(),
+      'no manifest declares @anthropic-ai/claude-agent-sdk — the scanner is broken'
+    ).not.toEqual([]);
+    const missing = [...importers].filter((m) => !declaresPeer.has(m)).sort();
+    expect(
+      missing,
+      `these manifests depend on @anthropic-ai/claude-agent-sdk without declaring its ` +
+        `@anthropic-ai/sdk peer: [${missing.join(', ')}]. pnpm will auto-install that peer ` +
+        `and resolve it to LATEST, and no root pnpm.overrides entry can redirect an ` +
+        `auto-installed peer — that is exactly how two @anthropic-ai/sdk versions ended up ` +
+        `in the lockfile (DOR-1784). Declare it explicitly, at the same version as everywhere else.`
+    ).toEqual([]);
   });
 });

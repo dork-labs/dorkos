@@ -13,7 +13,7 @@ Every override belongs to exactly one of these, and the map is ordered so the tw
 | Override                               | Why                                                                                                                                                                                                                                                                                                                                  |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `@anthropic-ai/claude-agent-sdk`       | Runtime SDK. Upgrades go through `contributing/adding-a-runtime.md` and the `upgrading-runtime-dependencies` skill, never a routine bump                                                                                                                                                                                             |
-| `@anthropic-ai/sdk`                    | Held in lockstep with the agent SDK above, which peers on it                                                                                                                                                                                                                                                                         |
+| `@anthropic-ai/sdk`                    | Held in lockstep with the agent SDK above, which peers on it. Every importer must **also** declare it — see below (DOR-1784)                                                                                                                                                                                                         |
 | `@modelcontextprotocol/sdk`            | One MCP wire version across server, CLI and the agent SDK; two copies mean two protocol implementations                                                                                                                                                                                                                              |
 | `@types/node`                          | The Node line we target (24.x). Never 26.x                                                                                                                                                                                                                                                                                           |
 | `lucide-react`, `@vitejs/plugin-react` | Deduped on purpose — two copies of either is a bundle-size and behaviour hazard                                                                                                                                                                                                                                                      |
@@ -107,6 +107,31 @@ The fix is to declare the peer explicitly in the importer that needs it. Two in 
 
 - `packages/icons` declares `react` as a devDependency. Its React peer stranded on 19.2.7 while the apps moved to 19.2.8, loading two React copies.
 - `apps/desktop` declares `electron-builder-squirrel-windows`. `app-builder-lib` declares it as an exact, non-optional peer, and the auto-installed copy drifted out of lockstep with the rest of the electron-builder family.
+- `apps/desktop` declares `@anthropic-ai/sdk`. See below (DOR-1784).
+
+A scoped override does not rescue this. `a>b` selectors match a **subset** of the edges a bare `b` override already matches, so if the bare form did not reach a peer, no narrower spelling will. Declaring it in the importer is the only mechanism.
+
+### `@anthropic-ai/sdk` — why all three importers declare it (DOR-1784)
+
+`@anthropic-ai/claude-agent-sdk` peers on `@anthropic-ai/sdk` (`>=0.93.0`, unchanged since 0.3.168, when it stopped bundling it). The override exists for exactly one reason, in the words of the spec that added it: **"to keep one resolved version."** For a long time it did.
+
+`apps/server` and `packages/cli` were given direct declarations at that time; **`apps/desktop` was not**, so its copy stayed an auto-installed peer. That was invisible while the tree held one version — and then PR #1407, a Dependabot group bump, put a second one in:
+
+- It moved the `apps/server` and `packages/cli` specs to `^0.122.0`. The override **masked** both, exactly as rule 3 above warns — the tree stayed on 0.120.0 and the declared range meant nothing.
+- `apps/desktop` had no spec to mask. Its auto-installed peer resolved to 0.122.0 on its own, and the lockfile carried two `@anthropic-ai/sdk` entries until DOR-1784.
+
+The fix is the one this section already prescribes twice: `apps/desktop` declares it, all three declare it **exactly** at `0.120.0` (matching how they declare the agent SDK itself), and the specs now tell the truth.
+
+**Why 0.120.0 and not 0.122.0.** The peer range admits both, so nothing forces the choice — which is precisely why it is a deliberate pin rather than a floor. 0.120.0 is what every code path in this repo has actually run and been tested against since DOR-1526; 0.122.0 has never executed anywhere, only sat in the desktop's node_modules. Moving it is a runtime-SDK bump governed by the `upgrading-runtime-dependencies` skill, in lockstep with the agent SDK it companions — not something a dedup inherits from an unreviewed group PR.
+
+**Why the override stays, given rule 2.** Rule 2's warning is about an override that duplicates a declared spec and thereby **hides** it — which is precisely what happened here — and this one can no longer hide anything, because the parity test below now fails the moment the override and the three manifests disagree; it is kept for the one case the manifests cannot cover, a transitive arrival from a package we do not declare, which is the condition the `better-auth` section above names as the reason to have an override at all. (Dropping it was measured, not assumed: with the entry removed the tree still resolves a single 0.120.0 today, because the agent SDK's peer is the only edge — so this is a deliberate belt, not a load-bearing pin.)
+
+**The guard.** Two assertions in `scripts/__tests__/dependabot-lockstep-families.test.ts` cover this, because one is not enough:
+
+- `@anthropic-ai/sdk` is now its own single-member family, so the version-parity test fails if any manifest **or the override** drifts off the shared version. It is a separate family from `@anthropic-ai/claude-agent-sdk` — held in lockstep with it, but on its own version line, so the two cannot share a parity assertion.
+- Parity alone is blind to the shape that actually caused this: a manifest declaring **nothing**. Comparing versions across the manifests that declare a package says nothing about one that does not, so a separate assertion requires every manifest depending on `@anthropic-ai/claude-agent-sdk` to declare the `@anthropic-ai/sdk` peer as well. Deleting `apps/desktop`'s declaration — the exact pre-fix state — passes every other assertion in the file.
+
+`.github/dependabot.yml` now ignores it too; the old `@anthropic-ai/claude-agent-sdk*` pattern never matched it.
 
 ## Related
 
