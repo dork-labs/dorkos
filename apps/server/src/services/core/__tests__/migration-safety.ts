@@ -53,9 +53,9 @@
  * keys reach into. Having no escape hatch is the right answer for the helpers in
  * `config-manager.ts` — they exist for migrations and nothing else, so freezing
  * them costs nobody anything. It is the wrong answer for a schema symbol the
- * running app shares: `claudeAccountId` took a ReDoS fix at v0.73.0 while
- * `'0.65.0'` had been shipped for eight releases, and a rule with no hatch would
- * have made that fix unlandable rather than making it visible. So the import hop
+ * running app shares: `claudeAccountId` took a ReDoS fix at v0.73.0, two
+ * releases after `'0.65.0'` shipped, and a rule with no hatch would have made
+ * that fix unlandable rather than making it visible. So the import hop
  * is pinned rather than frozen, and this rule stays inside the file whose
  * contents only migrations depend on. `migration-closure.ts` holds the full
  * reasoning and the measurement behind it.

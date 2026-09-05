@@ -50,9 +50,11 @@
  * rewritten under a shipped key with every guard green. They are pinned HERE
  * rather than frozen against the tag because a schema symbol is shared with the
  * running app and does occasionally have to change: the ReDoS fix to
- * `claudeAccountId` at v0.73.0 is the worked example, and against a tag it would
- * have had no legal answer at all. `migration-closure.ts` carries that reasoning
- * in full.
+ * `claudeAccountId` at v0.73.0 is the worked example — `0.65.0` had shipped two
+ * releases earlier — and against a tag it would have had no legal answer at all.
+ * Four such changes have landed since the keys reaching them merged, so this is
+ * a recurring shape rather than one incident. `migration-closure.ts` carries
+ * that reasoning in full.
  *
  * A pin still moves for a code change and stays put for a prose one, so a stale
  * COMMENT inside a shipped body is correctable in place here — the byte-identity
@@ -152,9 +154,9 @@ const RULE =
  * The other answer, for the one drift that "open a new key" cannot fix.
  *
  * A closure reaches `config-schema.ts` too (DOR-1732), and a schema symbol is
- * shared with the running app: `claudeAccountId` took a ReDoS fix at v0.73.0
- * while `'0.65.0'` had been shipped for eight releases. No new migration key
- * answers that, so the pin moves — visibly, with the population it changed
+ * shared with the running app: `claudeAccountId` took a ReDoS fix at v0.73.0,
+ * two releases after `'0.65.0'` shipped. No new migration key answers that, so
+ * the pin moves — visibly, with the population it changed
  * written down. Saying so here is what stops a reader hunting for a new key that
  * cannot exist.
  */

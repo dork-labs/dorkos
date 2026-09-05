@@ -62,22 +62,26 @@
  * tag has none, so a shipped key measured against a tag can never be answered at
  * all once something it reaches has moved. In `config-manager.ts` that is the
  * correct answer, because those helpers exist for migrations and nothing else.
- * In `config-schema.ts` it would be a deadlock: the last twenty releases contain
- * two changes to reached schema symbols — `ONBOARDING_STEPS` at v0.64.0, and the
- * ReDoS fix to `claudeAccountId` and `slugifyAccountId` at v0.73.0 — and the
- * second is a correctness fix that had to land while `0.65.0` was long shipped.
- * A guard nobody can satisfy gets deleted, so this one moves a pin instead.
+ * In `config-schema.ts` it would be a deadlock. Four changes to reached schema
+ * symbols have landed after the key reaching them was merged: `ONBOARDING_STEPS`
+ * widened for v0.57.0 and again for v0.64.0, the `ComposerPrefsSchema.richText`
+ * default flipped for v0.59.0, and the ReDoS fix to `claudeAccountId` and
+ * `slugifyAccountId` landed for v0.73.0 — that last one a correctness fix, with
+ * `0.65.0` shipped two releases earlier (v0.66.0 is the only tag between them).
+ * Against a tag none of the four has any legal answer. A guard nobody can
+ * satisfy gets deleted, so this one moves a pin instead.
  *
  * There is a second, narrower blind spot in the same family. {@link maskNonCode}
  * blanks the inside of template literals wholesale, interpolations included, so
  * a call written as `` `${backfillSomething(store)}` `` is not a call this walk
- * can see. Neither file writes one that way today — checked, not assumed: the
- * two interpolations in `config-schema.ts` name locals (`` `${base}-${n}` ``,
- * and an account id inside an error message), and `config-manager.ts` has none
- * that reach a declaration. Nothing should, either; a migration body has no
- * reason to compute a string out of another helper. But a body that did would be
- * pinned with a hole in it. The mask is deliberately not a parser, and this is
- * what that costs (DOR-1733).
+ * can see. Latent here rather than live, checked rather than assumed: the two
+ * interpolations in `config-schema.ts` name locals (`` `${base}-${n}` ``, and an
+ * account id inside an error message), and the only interpolated call in
+ * `config-manager.ts`, `` `${describeLoadError(…)}` ``, is not reached by any
+ * migration key — though it IS a top-level declaration called ONLY from inside
+ * interpolations, so the shape exists in the file the guard reads. A body that
+ * computed a string out of another helper would be pinned with a hole in it. The
+ * mask is deliberately not a parser, and this is what that costs (DOR-1733).
  */
 
 /**
@@ -113,9 +117,12 @@ const TOP_LEVEL_BINDING = /^(?:export )?(?:const|let) ([A-Za-z_$][\w$]*)(?=\s*[:
  *   for every ordinary field addition — measured, not feared: with it followed,
  *   `0.69.0` through `0.73.0` each pull in 48 declarations and 84KB of text.
  *   `USER_CONFIG_DEFAULTS` itself IS pinned, so swapping its derivation for a
- *   literal is still seen; what is not seen is a new field changing the value a
- *   shipped key writes. That is this walk's remaining hole, and it is narrower
- *   than the module boundary it replaced.
+ *   literal is still seen. What is NOT seen is a changed default: flipping
+ *   `memory.provider` from `'builtin'` to something else rewrites what the
+ *   shipped `0.69.0` writes to every upgrading install, with every pin green
+ *   (probed). Adding a field is the harmless half; editing an existing one is
+ *   this walk's remaining hole, and it is narrower than the module boundary it
+ *   replaced.
  *
  * Excluded by name rather than by luck, in both files, because a name that must
  * not be followed must not be followed from anywhere.
