@@ -491,7 +491,17 @@ export default defineConfig({
       // Chromium by hand). Until a production-mode leg exists, the policy's
       // only automated coverage is `app-spa-fallback.test.ts`, which asserts
       // the whole header string.
-      command: `DORKOS_PORT=${PORT} VITE_PORT=${VITE_PORT} dotenv -- turbo dev --filter=@dorkos/client`,
+      //
+      // **AND NO HOT MODULE REPLACEMENT** (DOR-1412). No spec edits source, so
+      // the suite loses nothing — while a run leaves it on, anything that
+      // rewrites a watched file hot-replaces React context modules under a live
+      // page and the app is replaced by its error boundary mid-test. The
+      // rewriters are ordinary: the Express legs beside this one each boot by
+      // running `turbo run build`, and this checkout is routinely shared with
+      // other agents. `apps/client/vite.config.ts` carries the measurement and
+      // the mechanism; `__tests__/playwright-config.test.ts` fails if either
+      // Vite leg loses this.
+      command: `DORKOS_PORT=${PORT} VITE_PORT=${VITE_PORT} DORKOS_E2E_NO_HMR=true dotenv -- turbo dev --filter=@dorkos/client`,
       url: `http://localhost:${VITE_PORT}`,
       name: 'Vite Client',
       timeout: 120_000,
@@ -549,7 +559,7 @@ export default defineConfig({
     // Without this, the main Vite client (port 4241) would proxy to the real server,
     // and mock scenarios set on MOCK_PORT would never be used by the UI.
     {
-      command: `DORKOS_PORT=${MOCK_PORT} VITE_PORT=${MOCK_VITE_PORT} dotenv -- turbo dev --filter=@dorkos/client`,
+      command: `DORKOS_PORT=${MOCK_PORT} VITE_PORT=${MOCK_VITE_PORT} DORKOS_E2E_NO_HMR=true dotenv -- turbo dev --filter=@dorkos/client`,
       url: `http://localhost:${MOCK_VITE_PORT}`,
       name: 'Vite Client (test-mode)',
       // Same reasoning as the test-mode Express leg above: same budget as the

@@ -136,6 +136,33 @@ export default defineConfig({
     port: Number(process.env.VITE_PORT) || 4241,
     allowedHosts: ['.ngrok-free.app'],
     ...(process.env.TUNNEL_ENABLED === 'true' && { hmr: { clientPort: 443 } }),
+    // **The browser suite gets a dev server that never hot-replaces anything**
+    // (DOR-1412). Set by both Vite legs in `apps/e2e/playwright.config.ts`, and
+    // by nothing else — a person running `pnpm dev` is editing files on purpose
+    // and wants the update. Last of the `hmr` spreads so it wins outright.
+    //
+    // Nothing in that suite edits source, but plenty rewrites the files this
+    // server watches: every Express leg boots by running `turbo run build`,
+    // which rewrites `packages/*/dist` — modules this client imports — and this
+    // repo is routinely several agents deep in one checkout, any of whom may
+    // build at any moment. Vite then hot-replaces the modules above the change,
+    // a re-evaluated context module mints a NEW React context object while
+    // already-mounted consumers still hold the old one, `useContext` answers
+    // `undefined`, and the provider's own guard throws. The whole app is
+    // replaced by its error boundary mid-test, and the spec fails on whatever
+    // it was asserting — "expected 1, received 0" — which reads like the
+    // feature under test rendering nothing. It was the "roughly 1 run in 10,
+    // any spec" flake in `apps/e2e/GOTCHAS.md`.
+    //
+    // Measured 2026-09-04, one spec run 40 times while a loop rewrote
+    // `packages/shared/dist`: 10 262 hot updates and 8 of 40 attempts red, 7 of
+    // them showing that exact error boundary. The same run with this flag: 0.
+    //
+    // `hmr: false` is the whole stop, inside Vite: its watcher calls
+    // `handleHMRUpdate` behind `if (serverConfig.hmr !== false)`, so a file
+    // change during a run produces no update to push and no module to
+    // re-evaluate.
+    ...(process.env.DORKOS_E2E_NO_HMR === 'true' && { hmr: false }),
     watch: {
       ignored: ['**/state/**'],
     },

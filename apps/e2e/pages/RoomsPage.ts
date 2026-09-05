@@ -867,9 +867,9 @@ export class RoomsPage {
   }
 
   /**
-   * Whether the open room's thread reply row is drawn COMFORTABLY on screen —
-   * fully inside the scroller and clear of both its edges — so a reader can tap
-   * it without the tap scrolling anything.
+   * Where the open room's thread reply row sits against the TAP BAND — the
+   * middle of the scroller, clear of both edges, where a tap lands on the row
+   * instead of scrolling to reach it.
    *
    * The clearance is the whole point (DOR-1431/DOR-1364). A reply row flush
    * against an edge, or clipped by it, is one a tap scrolls into view first —
@@ -878,29 +878,97 @@ export class RoomsPage {
    * well inside the viewport is one the tap leaves exactly where it is, which is
    * what a reader tapping a thread they can already see actually experiences.
    *
-   * False when no reply row is rendered yet: the timeline is virtualized and
-   * only draws the rows near the viewport, so this is the honest answer while
-   * the thread is still scrolled away — a wheel loop polls it until the thread
-   * has come into view.
+   * A SIDE rather than a yes/no, because that is what a search needs
+   * (DOR-1412): a caller that only knows "not yet" can only ever scroll one
+   * way, and one-way scrolling cannot recover from passing the row. `above`
+   * means the row is drawn too near the top of the viewport, `below` too near
+   * the bottom.
    *
-   * @returns Whether the reply row is comfortably tappable right now.
+   * `absent` is the virtualizer's answer and not an error: the timeline draws
+   * only the rows near the viewport, so a thread scrolled well away has no row
+   * in the document at all, and therefore no side to be on.
    */
-  async replyRowComfortablyVisible(): Promise<boolean> {
+  private async replyRowAgainstTapBand(): Promise<'above' | 'below' | 'in-band' | 'absent'> {
     const row = this.replyRows.first();
-    if ((await row.count()) === 0) return false;
+    if ((await row.count()) === 0) return 'absent';
     return row.evaluate((el) => {
       const scroller = el.closest('.chat-scroll-area');
-      if (scroller === null) return false;
+      if (scroller === null) return 'absent' as const;
       const view = scroller.getBoundingClientRect();
       const box = el.getBoundingClientRect();
-      // A margin off each edge so "visible" means "a tap will not scroll it",
+      // A margin off each edge so "tappable" means "a tap will not scroll it",
       // not "one pixel is showing" — and enough to stay clear of the masthead
-      // and composer that frame the scroller. A sixth of the viewport is far
-      // wider than any wheel notch below, so the reader always comes to rest
-      // inside this band rather than skipping across it.
+      // and composer that frame the scroller. A sixth of the viewport leaves a
+      // band two thirds of it tall, far wider than the wheel notch below.
       const margin = view.height / 6;
-      return box.top >= view.top + margin && box.bottom <= view.bottom - margin;
+      if (box.top < view.top + margin) return 'above' as const;
+      if (box.bottom > view.bottom - margin) return 'below' as const;
+      return 'in-band' as const;
     });
+  }
+
+  /**
+   * Whether the history is scrolled to its oldest entry.
+   *
+   * The same 64px of slack {@link RoomsPage.isAtBottom} allows, and for a
+   * sharper reason at this end: this answer is what turns a search around, so a
+   * scroller that settles a few pixels short of zero — the virtualizer is still
+   * re-measuring rows while a reader crosses them — would leave a caller
+   * scrolling back against an end it can never reach.
+   */
+  private async isAtTop(): Promise<boolean> {
+    return this.scroller.evaluate((el) => el.scrollTop <= 64);
+  }
+
+  /**
+   * Wheel the room until its one thread's reply row is comfortably tappable.
+   *
+   * A genuine gesture rather than a scripted jump, and that is load-bearing: a
+   * wheel fires scroll events at SETTLED geometry, so the row the timeline
+   * remembers is the one truly under the reader. A synthetic
+   * `scrollTop = scrollHeight / 2` remembers a row against the virtualizer's
+   * pre-settle height estimate, which then shifts under it (DOR-1431).
+   *
+   * **A search, in both directions, because the list moves while it is being
+   * searched** (DOR-1412). The room opens at its newest message, so an older
+   * thread starts above the viewport and a reader scrolls back to reach it —
+   * but the virtualizer is lazily measuring the rows being scrolled into, and
+   * every row that comes in shorter than its 80px estimate pulls the content
+   * above it up. So the target can leap past the band between two notches, and
+   * a loop that only ever scrolls back then rides to the top of the history and
+   * polls a row that is now below the window until it times out. Measured on
+   * this exact test: 1 failure in 20 runs, reporting a 15s predicate timeout
+   * over a screenshot of the oldest message in the room.
+   *
+   * Reading the row's SIDE fixes that, and `absent` — the virtualizer having
+   * drawn no row at all — is resolved by the ends of the history: keep going
+   * back while there is history left to go back through, and come forward again
+   * once there is not. That cannot park at either end.
+   *
+   * @param timeout - How long to keep looking.
+   */
+  async wheelReplyRowIntoTapRange(timeout: number): Promise<void> {
+    const view = (await this.scroller.boundingBox())!;
+    // A third of the viewport per notch: far smaller than the band it is
+    // looking for, so the reader comes to rest inside it rather than stepping
+    // across it, and small enough that a correction is one notch.
+    const notch = Math.round(view.height / 3);
+    await this.page.mouse.move(view.x + view.width / 2, view.y + view.height / 2);
+    await expect
+      .poll(
+        async () => {
+          const side = await this.replyRowAgainstTapBand();
+          if (side === 'in-band') return true;
+          const back = side === 'above' || (side === 'absent' && !(await this.isAtTop()));
+          await this.page.mouse.wheel(0, back ? -notch : notch);
+          return false;
+        },
+        {
+          timeout,
+          message: "the room's thread reply row never came to rest where a tap would land on it",
+        }
+      )
+      .toBe(true);
   }
 
   /**

@@ -1027,30 +1027,16 @@ test.describe('Rooms — a thread on a phone', () => {
     // telemetry banner's ~150px used to paper over both; without it the test has
     // to earn its own honesty. The sibling test above dodges the same trap by
     // hanging its thread off the newest message, which is already on screen.
-    const scrollerBox = (await roomsPage.scroller.boundingBox())!;
-    await page.mouse.move(
-      scrollerBox.x + scrollerBox.width / 2,
-      scrollerBox.y + scrollerBox.height / 2
-    );
-    // Wheel back a notch at a time — a genuine gesture, which fires scroll
-    // events at SETTLED geometry so the row the timeline remembers is the one
-    // truly under the reader — until the room's thread is sitting comfortably on
-    // screen, clear of both edges and off the newest message. A third of the
-    // viewport per notch is far smaller than the band where the reply row is
-    // fully clear, so the reader always comes to rest somewhere they can tap it
-    // without the tap scrolling anything.
-    await expect
-      .poll(
-        async () => {
-          if (!(await roomsPage.isAtBottom()) && (await roomsPage.replyRowComfortablyVisible())) {
-            return true;
-          }
-          await page.mouse.wheel(0, -Math.round(scrollerBox.height / 3));
-          return false;
-        },
-        { timeout: 15_000 }
-      )
-      .toBe(true);
+    // Wheel a notch at a time until the room's thread is sitting where a tap
+    // lands on it — and in whichever direction that is, because the list is
+    // still measuring itself while the reader crosses it and the row can leap
+    // past the band between two notches (`wheelReplyRowIntoTapRange`, DOR-1412).
+    await roomsPage.wheelReplyRowIntoTapRange(15_000);
+    // And the reader really did leave the newest message, which is the state
+    // this test is about. Asserted here rather than folded into the search: a
+    // search that refuses to succeed at the bottom would report "never found
+    // the row" for a room that had put the thread on screen all along.
+    expect(await roomsPage.isAtBottom()).toBe(false);
 
     // Record where the reader is standing, once the list holds still — the row
     // coming back has to return them to. A null on both sides of the final
