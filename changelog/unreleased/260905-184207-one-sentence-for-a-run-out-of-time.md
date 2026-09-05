@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(relay,server): one plain sentence for a run that hit its time limit (DOR-1786)'
+  - 'fix(shared): pin the time-limit sentence, and count the new subpath (DOR-1786)'
 ---
 
 ### Fixed
