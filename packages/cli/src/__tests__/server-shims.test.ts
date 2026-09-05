@@ -118,4 +118,45 @@ describe('server declaration mirror', () => {
       .filter((file) => !expected.has(file));
     expect(orphans, 'Delete these — nothing in src/ imports them any more').toEqual([]);
   });
+
+  /**
+   * The seam these shims describe is not only a typing problem — it decides
+   * WHICH OBJECT the CLI is holding.
+   *
+   * `../server/index.js` is external: at runtime it is the separately-bundled
+   * server, so its exports are live state from the process the server runs in.
+   * Every other `../server/**` specifier is INLINED into `dist/bin/cli.js`
+   * instead, giving the CLI its own private copy of that module. For a module
+   * that only computes, or whose truth is a file on disk, a private copy is
+   * fine. For one that CONSTRUCTS a long-lived object at module scope, it is a
+   * silent bug: the CLI gets a second instance that nothing ever drives.
+   *
+   * That is exactly what happened to the tunnel printout (DOR-1745) — the CLI
+   * subscribed to a `TunnelManager` no tunnel was ever started on, so
+   * `dorkos --tunnel` never printed its address. The fix was to take the live
+   * manager off `../server/index.js`, and this test keeps the next module of
+   * that shape from being reached for the same way.
+   *
+   * WHAT THIS CANNOT SEE: state a module declares but leaves for an initializer
+   * to fill (`export let configManager`, which the CLI deliberately builds its
+   * own of, from the same file on disk). Those fail loudly and immediately when
+   * read uninitialized, rather than quietly answering about the wrong instance.
+   */
+  it.each([...expectedShims()].filter(([shim]) => shim !== 'index.d.ts'))(
+    '%s does not construct a singleton the CLI would get a dead copy of',
+    (_shim, target) => {
+      const source = readFileSync(path.join(ROOT, target.replace(/\.js$/, '.ts')), 'utf-8');
+      const singletons = [...source.matchAll(/^export const (\w+)(?::[^=]+)? = new \w/gm)].map(
+        ([, name]) => name
+      );
+      expect(
+        singletons,
+        `${target} constructs a module-scope singleton, and the CLI imports it through a ` +
+          `specifier that esbuild INLINES — so the CLI would hold its own dead copy, not the ` +
+          `one the running server drives (DOR-1745).\n` +
+          `Export what the CLI needs from apps/server/src/index.ts instead, and read it off ` +
+          `the module that \`await import('../server/index.js')\` returns.`
+      ).toEqual([]);
+    }
+  );
 });

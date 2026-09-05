@@ -370,6 +370,18 @@ import {
 import { aggregateSessionList } from './services/session/aggregate-session-list.js';
 import { env } from './env.js';
 
+// The live tunnel manager, re-exported for the CLI that started this server.
+//
+// This module is the ONLY one the CLI and the server share at runtime. The CLI
+// ships as two bundles — `dist/bin/cli.js` and `dist/server/index.js` — and
+// only `../server/index.js` is left external, so it is a real import of the
+// running server. Every other `apps/server/src` module the CLI reaches for is
+// INLINED into the CLI bundle instead, which is how the startup tunnel printout
+// came to listen to a second, never-started `TunnelManager` and never printed
+// the address (DOR-1745). Anything the CLI needs from the process the server is
+// actually running in has to come through here.
+export { tunnelManager };
+
 const PORT = env.DORKOS_PORT;
 
 // Global references for graceful shutdown

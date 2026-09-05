@@ -11,6 +11,7 @@ import { maybeShowNewsletterTip } from './newsletter-tip.js';
 import { link } from './terminal-link.js';
 import { DEFAULT_PORT } from '@dorkos/shared/constants';
 import { LOG_LEVEL_MAP } from '@dorkos/shared/config-schema';
+import { attachTunnelPrintout } from './tunnel-printout.js';
 import { env } from './env.js';
 import { checkNodeVersion, diagnoseStartupError, formatDiagnostic } from './startup-diagnostics.js';
 import { classifyBoundary } from './boundary-warning.js';
@@ -840,9 +841,13 @@ if (fs.existsSync(envPath)) {
 // process handlers once imported — avoids double-reporting on the cockpit path.
 uninstallCliErrorHandlers?.();
 
-// Start the server — wrap import to catch dependency and startup errors
+// Start the server — wrap import to catch dependency and startup errors.
+// The module itself is the handle on the running server: `../server/index.js`
+// is the one specifier the CLI bundle leaves external, so what it exports is
+// live state from the process the server is running in (see below).
+let server: typeof import('../server/index.js');
 try {
-  await import('../server/index.js');
+  server = await import('../server/index.js');
 } catch (err) {
   // The server never finished importing, so its reporter never initialized —
   // report the startup failure from the CLI side (no-op unless opted in). This
@@ -888,33 +893,16 @@ if (networkUrl) {
   console.log(`  Network: ${link(networkUrl, networkUrl)}`);
 }
 
-// Print tunnel URL if tunnel started during server init
-if (process.env.TUNNEL_ENABLED) {
-  const { tunnelManager } = await import('../server/services/core/tunnel-manager.js');
-  const status = tunnelManager.status;
-  if (status.connected && status.url) {
-    console.log(`  Tunnel:  ${link(status.url, status.url)}`);
-
-    // Print QR code for mobile access
-    try {
-      const qrcode = await import('qrcode-terminal');
-      const generate = qrcode.default?.generate ?? qrcode.generate;
-      console.log('');
-      console.log('  Scan to open on mobile:');
-      generate(status.url, { small: true }, (code: string) => {
-        // Indent each line of the QR code
-        const indented = code
-          .split('\n')
-          .map((line: string) => `  ${line}`)
-          .join('\n');
-        console.log(indented);
-      });
-    } catch {
-      // qrcode-terminal not available — skip QR code
-    }
-  }
-}
 console.log('');
+
+// Report the tunnel address, now and whenever it changes.
+//
+// The manager comes off the server module rather than being imported from
+// `../server/services/core/tunnel-manager.js`, and that is the whole of the
+// DOR-1745 fix: only `../server/index.js` survives bundling as a real import of
+// the running server, so the direct specifier gave the CLI a private,
+// never-started second `TunnelManager` and the address never printed.
+attachTunnelPrintout(server.tunnelManager);
 
 // Open browser automatically (skipped in non-TTY or when --no-open)
 if (shouldOpenBrowser && process.stdin.isTTY) {
@@ -922,33 +910,6 @@ if (shouldOpenBrowser && process.stdin.isTTY) {
   const openCmd =
     process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
   exec(`${openCmd} ${localUrl}`);
-}
-
-// Listen for runtime tunnel activation (toggled on via UI after startup)
-{
-  const { tunnelManager } = await import('../server/services/core/tunnel-manager.js');
-  tunnelManager.on('status_change', async (status: { connected: boolean; url: string | null }) => {
-    if (status.connected && status.url) {
-      console.log('');
-      console.log(`  Tunnel:  ${link(status.url, status.url)}`);
-      try {
-        const qrcode = await import('qrcode-terminal');
-        const generate = qrcode.default?.generate ?? qrcode.generate;
-        console.log('');
-        console.log('  Scan to open on mobile:');
-        generate(status.url, { small: true }, (code: string) => {
-          const indented = code
-            .split('\n')
-            .map((line: string) => `  ${line}`)
-            .join('\n');
-          console.log(indented);
-        });
-      } catch {
-        // qrcode-terminal not available — skip QR code
-      }
-      console.log('');
-    }
-  });
 }
 
 // Non-blocking update check (fire-and-forget)
