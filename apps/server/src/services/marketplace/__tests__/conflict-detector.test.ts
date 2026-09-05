@@ -51,6 +51,20 @@ function pluginManifest(name: string, overrides: Partial<Record<string, unknown>
   } as unknown as MarketplacePackageManifest;
 }
 
+/** Build a minimal agent package manifest for tests (installs under `agents/`). */
+function agentManifest(name: string) {
+  return {
+    schemaVersion: 1,
+    name,
+    version: '1.0.0',
+    type: 'agent',
+    description: 'A test agent package.',
+    tags: [],
+    layers: [],
+    requires: [],
+  } as unknown as MarketplacePackageManifest;
+}
+
 /** Build a minimal adapter package manifest for tests. */
 function adapterManifest(name: string, adapterType: string) {
   return {
@@ -365,7 +379,10 @@ describe('ConflictDetector', () => {
   it('does not self-conflict with its own already-installed agent-root skills on reinstall (DOR-1776)', async () => {
     // The widened read must not make a reinstall dead-end: an agent package's
     // own skills are still on disk when the gate runs, and the self-comparison
-    // filter has to keep covering them now that they are visible at all.
+    // filter has to keep covering them now that they are visible at all. The
+    // staged manifest is an AGENT, so it targets the same `agents/` root the
+    // installed copy occupies — that identity, not the bare name, is what makes
+    // this a reinstall.
     const installedRoot = await installSkeletonUnder(dorkHome, 'agents', 'self-agent');
     await writeSkill(installedRoot, 'own-skill', { cron: '15 * * * *' });
 
@@ -373,12 +390,56 @@ describe('ConflictDetector', () => {
 
     const result = await detector.detect({
       packagePath: stagedRoot,
-      manifest: pluginManifest('self-agent'),
+      manifest: agentManifest('self-agent'),
       dorkHome,
     });
 
     expect(result.filter((r) => r.type === 'skill-name')).toEqual([]);
     expect(result.filter((r) => r.type === 'cron-collision')).toEqual([]);
+  });
+
+  it('does not self-conflict on slot when reinstalling an extension-bearing agent package (DOR-1776)', async () => {
+    // The slot check was handed the UNFILTERED installed set while skills and
+    // cron got the self-filtered one, so reinstalling any package that binds a
+    // slot raised a warning against its own on-disk copy. Slot, skill and cron
+    // now share one filter.
+    const installedRoot = await installSkeletonUnder(dorkHome, 'agents', 'my-agent');
+    await writeExtension(installedRoot, 'my-ext', [{ slot: 'sidebar.top', priority: 10 }]);
+
+    await writeExtension(stagedRoot, 'my-ext', [{ slot: 'sidebar.top', priority: 10 }]);
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: agentManifest('my-agent'),
+      dorkHome,
+    });
+
+    expect(result.filter((r) => r.type === 'slot')).toEqual([]);
+  });
+
+  it('still reports a skill conflict between same-named packages in different roots (DOR-1776)', async () => {
+    // An installed `agents/flow` and a staged `plugins/flow` are two DIFFERENT
+    // packages that the detector deliberately lets coexist (see `installKey`).
+    // A name-only self-filter collapsed them into one and suppressed a real
+    // blocking conflict; the filter keys on install root + name instead.
+    const installedRoot = await installSkeletonUnder(dorkHome, 'agents', 'flow');
+    await writeSkill(installedRoot, 'shared-skill', { description: 'installed by the agent' });
+
+    await writeSkill(stagedRoot, 'shared-skill', { description: 'staged by the plugin' });
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: pluginManifest('flow'),
+      dorkHome,
+    });
+
+    const skillConflicts = result.filter((r) => r.type === 'skill-name');
+    expect(skillConflicts).toHaveLength(1);
+    expect(skillConflicts[0]).toMatchObject({
+      level: 'error',
+      type: 'skill-name',
+      conflictingPackage: 'flow',
+    });
   });
 
   it('reports an error when a skill with the same name is already installed', async () => {
@@ -485,13 +546,15 @@ describe('ConflictDetector', () => {
   });
 
   it('reports multiple conflicts in the same run', async () => {
-    // Installed: a same-name plugin (reinstall → package-name warning) that also
-    // ships a slot binding. A *separate* installed plugin owns a skill name that
-    // the staged package collides with (skill-name error — from a foreign package,
-    // so the self-comparison filter does not exclude it).
-    const reinstallRoot = await installPluginSkeleton(dorkHome, 'multi-plugin');
-    await writeExtension(reinstallRoot, 'installed-ext', [{ slot: 'header.right', priority: 5 }]);
+    // Installed: a same-name plugin (reinstall → package-name warning). A
+    // *separate* installed plugin owns both a slot binding and a skill name the
+    // staged package collides with. Both live on the foreign package on purpose:
+    // the self-comparison filter excludes the reinstalled package's own slot and
+    // skill from every comparison, so sourcing either from `multi-plugin` would
+    // assert the self-conflict bug rather than a real collision (DOR-1776).
+    await installPluginSkeleton(dorkHome, 'multi-plugin');
     const otherRoot = await installPluginSkeleton(dorkHome, 'other-plugin');
+    await writeExtension(otherRoot, 'installed-ext', [{ slot: 'header.right', priority: 5 }]);
     await writeSkill(otherRoot, 'shared-skill', { description: 'installed' });
 
     // Staged package collides on all three axes.

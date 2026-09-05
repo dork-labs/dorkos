@@ -17,9 +17,11 @@ import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schema
 import type { AdapterManager } from '../relay/adapter-manager.js';
 import {
   INSTALL_ROOT_DIRS,
+  installKey,
   installRootDirForType,
   installRootsUnder,
   projectScopeRoot,
+  type InstallRootDir,
 } from './lib/install-roots.js';
 import type { ConflictReport } from './types.js';
 
@@ -62,6 +64,14 @@ interface SkillRecord {
   skillName: string;
   cron: string | null;
 }
+
+/**
+ * A record read from an install root on disk, tagged with which root it came
+ * from. The staged package has no install root yet, so only the installed side
+ * carries this — and it has to, because {@link installKey} (root + name), not
+ * the bare name, is a package's identity.
+ */
+type Installed<T> = T & { kind: InstallRootDir };
 
 /**
  * Detect collisions between an incoming marketplace package and the
@@ -113,19 +123,21 @@ export class ConflictDetector {
     // against `dorkHome`, which IS the `.dork` directory — no `.dork` suffix there.
     const scopeRoot = ctx.projectPath ? projectScopeRoot(ctx.projectPath) : this.#dorkHome;
 
-    const installedExtensions = await this.#readInstalledExtensions(scopeRoot);
-    const installedSkills = await this.#readInstalledSkills(scopeRoot);
     const stagedExtensions = await this.#readPackageExtensions(ctx.packagePath, ctx.manifest.name);
     const stagedSkills = await this.#readPackageSkills(ctx.packagePath, ctx.manifest.name);
 
     // A package's own already-installed artifacts must not conflict with
-    // itself on reinstall — the gate runs before the transaction moves the
-    // old install aside, so its skills/adapters are still on disk. Filter
-    // them out of every self-comparison so reinstall never dead-ends.
-    const foreignSkills = installedSkills.filter((s) => s.packageName !== ctx.manifest.name);
+    // itself on reinstall — the gate runs before the transaction moves the old
+    // install aside, so its skills, extensions and adapters are still on disk.
+    // Filter them out of every self-comparison so reinstall never dead-ends.
+    const foreignExtensions = dropSelfInstall(
+      await this.#readInstalledExtensions(scopeRoot),
+      ctx.manifest
+    );
+    const foreignSkills = dropSelfInstall(await this.#readInstalledSkills(scopeRoot), ctx.manifest);
 
     reports.push(...(await this.#detectPackageNameConflict(ctx, scopeRoot)));
-    reports.push(...this.#detectSlotConflicts(stagedExtensions, installedExtensions));
+    reports.push(...this.#detectSlotConflicts(stagedExtensions, foreignExtensions));
     reports.push(...this.#detectSkillNameConflicts(stagedSkills, foreignSkills));
     reports.push(...this.#detectCronConflicts(stagedSkills, foreignSkills));
     reports.push(...this.#detectAdapterIdConflict(ctx));
@@ -334,16 +346,21 @@ export class ConflictDetector {
    * each `.dork/extensions/*\/extension.json`. Malformed JSON is silently
    * skipped — the detector is best-effort, not a validator.
    *
-   * Reading only `plugins/` here was the last surviving instance of the
-   * hardcoded-root pattern DOR-994 removed elsewhere, and it hid real
-   * collisions: a Shape installs under `shapes/` and
-   * {@link ShapeInstallFlow} compiles every inline extension it bundles, so a
-   * plugins-only read could never see one (DOR-1776).
+   * Reading only `plugins/` here was an instance of the hardcoded-root pattern
+   * DOR-994 removed elsewhere, and it hid real collisions: a Shape installs
+   * under `shapes/` and {@link ShapeInstallFlow} compiles every inline
+   * extension it bundles, so a plugins-only read could never see one
+   * (DOR-1776). It is not the last one — `services/tasks/task-file-update.ts`
+   * (`pluginRoots`) still hardcodes `plugins/`, so its `isPackageOwned` answers
+   * `false` for a schedule owned by an agent or Shape package. Tracked as
+   * DOR-1789; fixing it here would change task-edit permissions, which is a
+   * separate decision.
    */
-  async #readInstalledExtensions(scopeRoot: string): Promise<ExtensionRecord[]> {
-    const records: ExtensionRecord[] = [];
-    for (const { packageRoot, packageName } of await listInstalledPackages(scopeRoot)) {
-      records.push(...(await this.#readPackageExtensions(packageRoot, packageName)));
+  async #readInstalledExtensions(scopeRoot: string): Promise<Installed<ExtensionRecord>[]> {
+    const records: Installed<ExtensionRecord>[] = [];
+    for (const { packageRoot, packageName, kind } of await listInstalledPackages(scopeRoot)) {
+      const found = await this.#readPackageExtensions(packageRoot, packageName);
+      records.push(...found.map((record) => ({ ...record, kind })));
     }
     return records;
   }
@@ -355,10 +372,11 @@ export class ConflictDetector {
    * the same reason as {@link ConflictDetector.readInstalledExtensions}
    * (DOR-1776).
    */
-  async #readInstalledSkills(scopeRoot: string): Promise<SkillRecord[]> {
-    const records: SkillRecord[] = [];
-    for (const { packageRoot, packageName } of await listInstalledPackages(scopeRoot)) {
-      records.push(...(await this.#readPackageSkills(packageRoot, packageName)));
+  async #readInstalledSkills(scopeRoot: string): Promise<Installed<SkillRecord>[]> {
+    const records: Installed<SkillRecord>[] = [];
+    for (const { packageRoot, packageName, kind } of await listInstalledPackages(scopeRoot)) {
+      const found = await this.#readPackageSkills(packageRoot, packageName);
+      records.push(...found.map((record) => ({ ...record, kind })));
     }
     return records;
   }
@@ -427,12 +445,14 @@ async function listInstalledPackageNames(installRoot: string): Promise<string[]>
   return names.filter((name) => !name.includes(MARKETPLACE_BACKUP_DIR_MARKER));
 }
 
-/** One installed package located on disk: its absolute root and its name. */
+/** One installed package located on disk: its absolute root, name, and root kind. */
 interface InstalledPackageLocation {
   /** Absolute directory of the installed package. */
   packageRoot: string;
   /** Package name — the directory's own name under its install root. */
   packageName: string;
+  /** Which install root it was found in — half of its {@link installKey}. */
+  kind: InstallRootDir;
 }
 
 /**
@@ -442,16 +462,51 @@ interface InstalledPackageLocation {
  * which is what lets one walker serve both the global and project scopes.
  *
  * Two same-named packages in different roots are genuinely different packages
- * (see {@link installKey}), so both are returned rather than deduplicated.
+ * (see {@link installKey}), so both are returned rather than deduplicated, and
+ * each carries the `kind` that tells them apart.
+ *
+ * Note that these roots are **not** exclusively the marketplace's. `agents/`
+ * holds every agent DorkOS creates (`lib/agents-home.ts`), whether it came from
+ * a marketplace package or from the New Agent flow, and installed agent
+ * packages land among them. So a directory found here is an installed *thing*
+ * that may collide, not necessarily an installed *package* — which is exactly
+ * what the detector wants, since a hand-made agent's bundled skill collides
+ * with an incoming package's just as hard as a marketplace one's would.
  */
 async function listInstalledPackages(scopeRoot: string): Promise<InstalledPackageLocation[]> {
   const locations: InstalledPackageLocation[] = [];
-  for (const { dir } of installRootsUnder(scopeRoot)) {
+  for (const { kind, dir } of installRootsUnder(scopeRoot)) {
     for (const packageName of await listInstalledPackageNames(dir)) {
-      locations.push({ packageRoot: join(dir, packageName), packageName });
+      locations.push({ packageRoot: join(dir, packageName), packageName, kind });
     }
   }
   return locations;
+}
+
+/**
+ * Drop the staged package's own already-installed copy from a set of installed
+ * records, so a reinstall never conflicts with itself. The gate runs before the
+ * transaction moves the old install aside, so every artifact of the previous
+ * version is still on disk.
+ *
+ * Identity is {@link installKey} — install root **plus** name — never the name
+ * alone. An installed `agents/flow` and an incoming `plugins/flow` are two
+ * different packages the detector deliberately lets coexist, so a name-only
+ * filter would suppress a real collision between them; and the same package
+ * reinstalled always targets the root its type maps to, so root-plus-name still
+ * recognises every genuine reinstall.
+ *
+ * @param records - Installed records read from this scope's install roots.
+ * @param manifest - The staged package's manifest, whose type fixes the root it
+ *   will install into.
+ * @returns Every record that belongs to some other installation.
+ */
+function dropSelfInstall<T extends { kind: InstallRootDir; packageName: string }>(
+  records: T[],
+  manifest: MarketplacePackageManifest
+): T[] {
+  const selfKey = installKey(installRootDirForType(manifest.type), manifest.name);
+  return records.filter((record) => installKey(record.kind, record.packageName) !== selfKey);
 }
 
 /** Best-effort `stat` to test for path existence without throwing. */
