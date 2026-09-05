@@ -283,10 +283,22 @@ Pin the SDK version. Verify streaming behavior, turn-end signals, approval surfa
 A pinned SDK version is a verified claim, so a bump re-verifies it. Checklist for the `@openai/codex-sdk` 0.142.5 → 0.143.0 bump (motivation: 0.142.x has an unbounded `logs_2.sqlite` write, fixed upstream in 0.143.0) — reuse the same steps for any adapter SDK:
 
 1. Confirm the target is a stable release: `npm view @openai/codex-sdk dist-tags`.
-2. Diff the `.d.ts` of the `ThreadEvent` union and the 8 item types the event mapper imports against the pinned version.
-3. Recompile — the event mapper's exhaustiveness `never` checks must still compile, so a new union member fails the build instead of silently dropping events.
-4. Run the runtime conformance suites: `pnpm vitest run apps/server/src/services/runtimes/codex`.
-5. Run one live smoke turn against a real `codex` binary: `DORKOS_CODEX_LIVE=1 pnpm vitest run src/services/runtimes/codex/__tests__/conformance.test.ts` (from `apps/server`).
+2. **Move the WHOLE family in one commit** — see below. This is step 2 and not step 6 because it is the step that has actually been skipped.
+3. Diff the `.d.ts` of the `ThreadEvent` union and the 8 item types the event mapper imports against the pinned version.
+4. Recompile — the event mapper's exhaustiveness `never` checks must still compile, so a new union member fails the build instead of silently dropping events.
+5. Run the runtime conformance suites: `pnpm vitest run apps/server/src/services/runtimes/codex`.
+6. Run one live smoke turn against a real `codex` binary: `DORKOS_CODEX_LIVE=1 pnpm vitest run src/services/runtimes/codex/__tests__/conformance.test.ts` (from `apps/server`).
+
+**The family, in full.** A runtime SDK is never one entry in one manifest. Every version below has to land on the same number in the same commit, or the packaged desktop app ships a bundled binary that does not match the SDK talking to it:
+
+| Where                                                        | What lives there                                                                                                                                                                     |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `apps/server`, `apps/desktop`, `packages/cli` `dependencies` | the SDK, and for codex the `@openai/codex` CLI beside `@openai/codex-sdk`                                                                                                            |
+| `apps/desktop` `optionalDependencies`                        | the per-platform siblings (`-darwin-arm64`, `-win32-x64`) — for codex these are npm **aliases** (`npm:@openai/codex@<version>-darwin-arm64`), so the version is inside the specifier |
+| root `package.json` `pnpm.overrides`                         | `@anthropic-ai/claude-agent-sdk`'s real pin — the manifests' own numbers are decorative while an override exists                                                                     |
+| `services/runtimes/*/provision.ts`                           | `CODEX_PACKAGE_VERSION` / `OPENCODE_PACKAGE_VERSION`, the on-demand sidecar pins                                                                                                     |
+
+Dependabot ignores these families outright (`.github/dependabot.yml`) precisely because it moves them in pieces, so this checklist is the only path they have. `scripts/__tests__/dependabot-lockstep-families.test.ts` fails if any of the manifest versions above drift apart, and the `packaged-runtime` job in `desktop-smoke.yml` is the backstop for what a mismatched bundle actually does.
 
 A bump also inherits behavior changes no compiler catches. Record the decision on each one here, so the next bump does not re-derive it.
 

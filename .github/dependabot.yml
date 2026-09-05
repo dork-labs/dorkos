@@ -11,10 +11,20 @@
 #   * MAJOR versions — excluded below. Majors change behavior and need the
 #     strategic pass /app:upgrade exists for (changelog categorization, impact
 #     assessment, adoption decisions), not a blind bump.
-#   * The agent-runtime SDKs — excluded by name. Each sits behind an adapter
-#     boundary (Hard Rule 2 in AGENTS.md) and upgrades through the
+#   * The agent-runtime SDK FAMILIES — excluded by wildcard, parent and
+#     per-platform siblings together. Each sits behind an adapter boundary
+#     (Hard Rule 2 in AGENTS.md) and upgrades through the
 #     upgrading-runtime-dependencies skill, which reads the changelog and
-#     decides what to adopt. A bot bump would bypass exactly that judgment.
+#     decides what to adopt. A bot bump would bypass exactly that judgment —
+#     and a bot bump of half a family breaks the build outright (DOR-1644;
+#     see the long comment above `ignore:`).
+#
+# WHAT COMPENSATES FOR DEPENDABOT NOT UNDERSTANDING pnpm: its regenerated
+# lockfile drops the `overrides:` block this repo's root package.json declares,
+# so every job on the PR dies at `pnpm install --frozen-lockfile` with
+# ERR_PNPM_LOCKFILE_CONFIG_MISMATCH. That is repaired automatically on
+# Dependabot branches by .github/workflows/dependabot-lockfile-format.yml —
+# read its header before assuming a red Dependabot PR needs hand repair.
 #
 # Security-CVE updates are configured separately (repo setting, enabled
 # 2026-08-24) and are NOT rate-limited by this file — a CVE fix PR opens as
@@ -29,6 +39,19 @@ updates:
       time: '06:00'
       timezone: Etc/UTC
     # One PR for everything, or it's 30 PRs x one queue build each.
+    #
+    # This single catch-all group is also what keeps the OTHER two lockstep
+    # families whole — `esbuild` + `@esbuild/{darwin-arm64,win32-x64}` and
+    # `@ngrok/ngrok` + `@ngrok/ngrok-{darwin-arm64,win32-x64-msvc}` in
+    # apps/desktop's optionalDependencies. Those two publish every platform
+    # sibling at the parent's version, so "each member's own latest" is the same
+    # number for all of them and one PR carries the whole family. Do NOT add a
+    # narrower group for them: a dependency belongs to at most one group, so
+    # carving them out would SPLIT them off this PR rather than bind them
+    # together, which is the opposite of what a lockstep family needs. They are
+    # deliberately absent from `ignore` for the same reason — grouping already
+    # satisfies the DOR-1644 rule for them, and the version-parity test named
+    # below is the backstop if a release ever breaks that publishing habit.
     groups:
       npm-minor-and-patch:
         patterns:
@@ -36,14 +59,48 @@ updates:
         update-types:
           - minor
           - patch
+    # EVERY ENTRY BELOW NAMES A WHOLE FAMILY, NEVER ONE MEMBER OF ONE. That is
+    # the rule, and it is the entire lesson of DOR-1644 — do not "tidy" a
+    # trailing `*` off one of these, and do not add a bare package name whose
+    # siblings travel with it.
+    #
+    # WHY (PR #1407, 2026-08-31): this list used to name three SDKs one at a
+    # time, and naming half a family is worse than naming none of it. Ignoring
+    # `@anthropic-ai/claude-agent-sdk` while leaving its per-platform siblings
+    # visible let Dependabot bump `@anthropic-ai/claude-agent-sdk-darwin-arm64`
+    # and `-win32-x64` to 0.3.250 against a parent frozen at 0.3.224 (a packaged
+    # desktop app whose bundled runtime does not match its own SDK — caught by
+    # the `packaged-runtime` job in desktop-smoke.yml). Ignoring
+    # `@openai/codex-sdk` while leaving the `@openai/codex` CLI visible split
+    # that pair the other way, 0.147.0 against 0.150.1, which the DOR-1012
+    # lockstep guard caught in apps/server — and, because that guard only ever
+    # read apps/server/package.json, did NOT catch in packages/cli, where the
+    # half-bump then sat unnoticed until DOR-1644.
+    #
+    # Dependabot cannot work any of this out on its own. It does not read pnpm
+    # `overrides` (which is where `@anthropic-ai/claude-agent-sdk`'s real pin
+    # lives, in the root package.json), it does not know that a
+    # `-darwin-arm64`/`-win32-x64` package only ever ships at its parent's
+    # version, and it does not know that `@openai/codex-darwin-arm64` is an
+    # npm alias of `@openai/codex` rather than a package of its own.
+    #
+    # `scripts/__tests__/dependabot-lockstep-families.test.ts` pins this: it
+    # derives each family from the workspace manifests and fails if a family is
+    # partly ignored, if a new per-platform sibling appears that no family
+    # claims, or if a family's members drift apart in version.
     ignore:
       # Majors go through /app:upgrade, quarterly and deliberately.
       - dependency-name: '*'
         update-types: ['version-update:semver-major']
-      # Runtime SDKs go through the upgrading-runtime-dependencies skill.
-      - dependency-name: '@anthropic-ai/claude-agent-sdk'
-      - dependency-name: '@openai/codex-sdk'
-      - dependency-name: '@opencode-ai/sdk'
+      # Runtime SDKs go through the upgrading-runtime-dependencies skill, which
+      # reads the changelog and moves the whole family — parent, `-sdk`
+      # companion, per-platform siblings, root pnpm override and the sidecar
+      # version constants in services/runtimes/*/provision.ts — in one pass.
+      # The trailing `*` is what makes each of these a family rather than a
+      # member; see the block comment above.
+      - dependency-name: '@anthropic-ai/claude-agent-sdk*'
+      - dependency-name: '@openai/codex*'
+      - dependency-name: '@opencode-ai/*'
     # The queue merges it; nobody needs a review ping for a patch bump that
     # 13,000 tests are about to vet anyway.
     open-pull-requests-limit: 5
