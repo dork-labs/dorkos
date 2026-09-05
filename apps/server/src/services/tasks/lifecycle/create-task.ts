@@ -42,7 +42,7 @@ import {
   resolveScheduledRunPermissionMode,
 } from '../scheduled-run-power.js';
 import { readAgentExecutionDefaults } from '../../session/resolve-session-defaults.js';
-import { planTaskFileCreate } from '../task-file-update.js';
+import { isPackageOwnedAgent, planTaskFileCreate } from '../task-file-update.js';
 import { broadcastTasksChanged } from '../task-sse-events.js';
 import type { TaskStore } from '../task-store.js';
 import type { TaskRegistrar } from '../task-registrar.js';
@@ -296,6 +296,28 @@ export async function createScheduledTask(
 
   const home = resolveTaskHome(data.target, deps);
   if (!home.ok) return home;
+
+  // An agent that came from a marketplace package IS its own install directory,
+  // and `agentSkillsRoot` puts this file inside it — so the schedule would be
+  // written into a checkout the package's next update replaces wholesale, taking
+  // the person's new schedule with it and saying nothing.
+  //
+  // Refused here rather than only at UPDATE, which is where DOR-1789 first found
+  // it. Refusing one door and not the other is worse than either answer alone:
+  // the person writes a schedule DorkOS accepts, then gets told it belongs to a
+  // package the moment they try to change it — a sentence that reads as untrue
+  // about a file they just made (DOR-1789 review).
+  if (home.projectPath && (await isPackageOwnedAgent(home.projectPath))) {
+    return {
+      ok: false,
+      status: 409,
+      error:
+        `This agent's files belong to an installed package, so DorkOS did not make the ` +
+        `schedule — the package's next update would wipe it out. Make your own copy of the ` +
+        `agent and add the schedule there, or add it to the package itself.`,
+      code: 'schedule_package_owned',
+    };
+  }
 
   const existingPath = path.join(home.skillsDir, slug, SKILL_FILENAME);
   try {

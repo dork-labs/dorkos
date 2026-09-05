@@ -49,6 +49,8 @@ describe('tasks_update writes the SKILL.md, not just the row', () => {
   let root: string;
   let dorkHome: string;
   let skillsDir: string;
+  /** What mesh answers for a task's agent — the agent's own directory, or none. */
+  let agentDir: string | null;
 
   beforeEach(async () => {
     db = createTestDb();
@@ -62,11 +64,15 @@ describe('tasks_update writes the SKILL.md, not just the row', () => {
     skillsDir = path.join(dorkHome, 'skills');
     await fs.mkdir(skillsDir, { recursive: true });
 
+    agentDir = null;
     const deps = {
       taskStore: store,
       defaultCwd: '/tmp/test',
       dorkHome,
-      meshCore: { getProjectPath: () => null },
+      // Production's `getProjectPath` returns the agent's OWN directory, and the
+      // package-ownership check asks about exactly that — so a case about an
+      // agent has to move this, not hand-build roots around it (DOR-1789 review).
+      meshCore: { getProjectPath: () => agentDir },
     } as unknown as McpToolDeps;
     tools = Object.fromEntries(
       (getTasksTools(deps) as unknown as SessionTool[]).map((t) => [t.name, t])
@@ -276,32 +282,52 @@ describe('tasks_update writes the SKILL.md, not just the row', () => {
     expect(await fs.readFile(filePath, 'utf-8')).toContain('packaged prompt');
   });
 
-  it('refuses to rewrite a file an installed AGENT package owns', async () => {
-    // A `skillRef` schedule lands in the skill the package ships, wherever that
-    // package installed — `agents/` for an agent package, `shapes/` for a Shape.
-    // The ownership check read `plugins/` alone, so an edit here wrote straight
-    // into the checkout the next package update overwrites (DOR-1789).
-    const packageDir = path.join(dorkHome, 'agents', 'researcher');
-    await fs.mkdir(path.join(packageDir, '.dork'), { recursive: true });
-    await fs.writeFile(
-      path.join(packageDir, '.dork', 'manifest.json'),
-      JSON.stringify({ name: 'researcher', version: '1.0.0', type: 'agent' }),
-      'utf-8'
-    );
-    const filePath = path.join(packageDir, '.agents', 'skills', 'nightly-sweep', 'SKILL.md');
+  /**
+   * Stand up an agent directory holding one schedule, and point mesh at it the
+   * way the registry does.
+   *
+   * @param dir - The agent's own directory.
+   * @param installed - Whether it is a marketplace install rather than an agent
+   *   the person made.
+   * @returns The task whose file lives inside it.
+   */
+  async function agentWithSchedule(dir: string, installed: boolean): Promise<Task> {
+    await fs.mkdir(path.join(dir, '.dork'), { recursive: true });
+    await fs.writeFile(path.join(dir, '.dork', 'agent.json'), '{}', 'utf-8');
+    if (installed) {
+      await fs.writeFile(
+        path.join(dir, '.dork', 'manifest.json'),
+        JSON.stringify({ name: 'researcher', version: '1.0.0', type: 'agent' }),
+        'utf-8'
+      );
+    }
+    const filePath = path.join(dir, '.agents', 'skills', 'nightly-sweep', 'SKILL.md');
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(
       filePath,
       "---\nname: nightly-sweep\ndescription: packaged\nschedule:\n  cron: '0 3 * * *'\n---\npackaged prompt",
       'utf-8'
     );
-    const task = store.createTask({
+    agentDir = dir;
+    return store.createTask({
       name: 'nightly-sweep',
       description: 'packaged',
       prompt: 'packaged prompt',
       cron: '0 3 * * *',
       filePath,
+      agentId: 'agent-1',
     });
+  }
+
+  it('refuses to rewrite a file a PROJECT-scoped agent package owns', async () => {
+    // The shape the first DOR-1789 fix still got wrong. A project-scoped agent
+    // package lives at `<repo>/.dork/agents/<name>`, and all the route has is
+    // that directory — the `<repo>/.dork/agents` root above it was never
+    // derivable, so a root walk could not reach this case at all.
+    const task = await agentWithSchedule(
+      path.join(root, 'repo', '.dork', 'agents', 'helper'),
+      true
+    );
 
     const { isError, payload } = await call('tasks_update', {
       id: task.id,
@@ -311,35 +337,31 @@ describe('tasks_update writes the SKILL.md, not just the row', () => {
     expect(isError).toBe(true);
     expect(payload.code).toBe('schedule_package_owned');
     expect(store.getTask(task.id)!.prompt).toBe('packaged prompt');
-    expect(await fs.readFile(filePath, 'utf-8')).toContain('packaged prompt');
+    expect(await fs.readFile(task.filePath!, 'utf-8')).toContain('packaged prompt');
+  });
+
+  it('refuses to rewrite a file a GLOBAL agent package owns', async () => {
+    const task = await agentWithSchedule(path.join(dorkHome, 'agents', 'researcher'), true);
+
+    const { isError, payload } = await call('tasks_update', {
+      id: task.id,
+      prompt: 'a different job',
+    });
+
+    expect(isError).toBe(true);
+    expect(payload.code).toBe('schedule_package_owned');
   });
 
   it('still edits the schedule of an agent the person made', async () => {
-    // The other direction of the same rule: `agents/` also holds every agent
-    // DorkOS creates, and their schedules are the person's to edit. Only an
-    // install marker makes a directory there a package checkout.
-    const agentDir = path.join(dorkHome, 'agents', 'dorkbot');
-    const filePath = path.join(agentDir, '.agents', 'skills', 'nightly-sweep', 'SKILL.md');
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.mkdir(path.join(agentDir, '.dork'), { recursive: true });
-    await fs.writeFile(path.join(agentDir, '.dork', 'agent.json'), '{}', 'utf-8');
-    await fs.writeFile(
-      filePath,
-      "---\nname: nightly-sweep\ndescription: mine\nschedule:\n  cron: '0 3 * * *'\n---\nmy own prompt",
-      'utf-8'
-    );
-    const task = store.createTask({
-      name: 'nightly-sweep',
-      description: 'mine',
-      prompt: 'my own prompt',
-      cron: '0 3 * * *',
-      filePath,
-    });
+    // The other direction of the same rule: an agent a person made sits at the
+    // same depth as a package and must not be mistaken for one. Only the install
+    // marker tells them apart.
+    const task = await agentWithSchedule(path.join(root, 'repo', '.dork', 'agents', 'mine'), false);
 
     const { isError } = await call('tasks_update', { id: task.id, prompt: 'a different job' });
 
     expect(isError).toBe(false);
-    expect(await fs.readFile(filePath, 'utf-8')).toContain('a different job');
+    expect(await fs.readFile(task.filePath!, 'utf-8')).toContain('a different job');
   });
 
   it('still edits the row of a task whose file was deleted outside DorkOS', async () => {

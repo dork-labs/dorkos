@@ -80,13 +80,19 @@ export const INSTALL_ROOTS_WITH_TYPE: readonly {
 })();
 
 /**
- * Whether EVERYTHING in an install root got there by being installed.
+ * Whether a directory in an install root may be treated as a package checkout on
+ * the strength of its location alone.
  *
- * `plugins/` and `shapes/` exist only because the marketplace made them, so a
- * directory found in one is an installed package by its location alone.
- * `agents/` does not: it is also `lib/agents-home.ts`'s directory, holding every
- * agent DorkOS creates from the New Agent flow, with installed agent packages
- * living among them. So a directory found there needs a second question asked of
+ * True for `plugins/` and `shapes/`: everything there arrived as a package, so
+ * nothing more needs asking. `forkShape` is the one exception and does not
+ * change the answer — a person's fork lands in `shapes/` as a copy of an
+ * installed Shape, manifest and all, so it reads as a package either way, and
+ * treating it as one costs nothing today because a Shape's applied schedules are
+ * written into a skills root rather than into `shapes/`.
+ *
+ * False for `agents/`, which is also `lib/agents-home.ts`'s directory: it holds
+ * every agent DorkOS creates from the New Agent flow, with installed agent
+ * packages living among them. A directory there needs a second question asked of
  * it before anyone may call it a package checkout.
  *
  * That distinction is only ever load-bearing where the answer decides whether
@@ -94,7 +100,9 @@ export const INSTALL_ROOTS_WITH_TYPE: readonly {
  * a schedule an installed package owns. Reading a root the person also fills is
  * harmless (the conflict detector deliberately wants a hand-made agent's skills
  * in its collision set); writing into it is not, and refusing every edit to
- * every agent a person made would be the same bug pointed the other way.
+ * every agent a person made would be the same bug pointed the other way. That
+ * consumer does not search `agents/` at all — it asks the owning agent's own
+ * directory directly — so this flag is what tells it which roots to leave out.
  *
  * Declared as a total `Record<InstallRootDir, boolean>` for the same reason
  * {@link INSTALL_ROOT_DIR_BY_TYPE} is: a newly added root will not typecheck

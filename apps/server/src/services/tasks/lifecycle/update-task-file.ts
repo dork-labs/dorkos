@@ -32,7 +32,7 @@ import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import {
   describeArmBlocker,
   isPackageOwned,
-  packageInstallRoots,
+  packageOwnershipContext,
   planTaskFileUpdate,
   touchesFile,
 } from '../task-file-update.js';
@@ -151,22 +151,24 @@ async function rewriteTaskFile(
 
   // A skill an installed package owns is never ours to rewrite: the edit would
   // land inside the package's own checkout, be shared by every agent that
-  // installed it, and vanish at the next update. Every install root counts, not
-  // just `plugins/` — an agent package and a Shape ship schedules too (DOR-1789).
-  const owningProject = existing.agentId ? deps.meshCore?.getProjectPath(existing.agentId) : null;
+  // installed it, and vanish at the next update. Plugins are not the only ones —
+  // a Shape ships schedules, and an agent that came from a package owns every
+  // schedule filed under it (DOR-1789).
+  const agentDir = existing.agentId ? deps.meshCore?.getProjectPath(existing.agentId) : null;
   if (
     await isPackageOwned(
       existing.filePath,
-      packageInstallRoots(deps.dorkHome, owningProject ?? undefined)
+      packageOwnershipContext(deps.dorkHome, agentDir ?? undefined)
     )
   ) {
     return {
       ok: false,
       status: 409,
       error:
-        `This schedule belongs to an installed package, so DorkOS did not change its file. ` +
-        `You can switch it on or off here; to change what it does, edit the package or make ` +
-        `your own copy of the skill.`,
+        `This file lives inside an installed package's folder, so DorkOS did not change it — ` +
+        `the next update of that package would wipe the change out. You can switch this ` +
+        `schedule on or off here; to change what it does, edit the package or make your own ` +
+        `copy of the skill.`,
       code: 'schedule_package_owned',
     };
   }

@@ -30,7 +30,7 @@ import { skillsRoot } from './task-root-fixtures.js';
 import {
   describeArmBlocker,
   isPackageOwned,
-  packageInstallRoots,
+  packageOwnershipContext,
   planTaskFileUpdate,
   touchesFile,
 } from '../task-file-update.js';
@@ -387,7 +387,7 @@ describe('schedules discovered in skills roots', () => {
     });
 
     it('treats an installed package’s skill as not ours to write', async () => {
-      const roots = packageInstallRoots(dorkHome, projectPath);
+      const roots = packageOwnershipContext(dorkHome, projectPath);
       const pluginSkill = path.join(dorkHome, 'plugins', 'pack', 'skills', 'x', 'SKILL.md');
       await mkdir(path.dirname(pluginSkill), { recursive: true });
       await writeFile(pluginSkill, scheduledSkill('x', { cron: '0 9 * * *' }), 'utf-8');
@@ -421,36 +421,11 @@ describe('schedules discovered in skills roots', () => {
       ).toBe(false);
     });
 
-    it('treats an installed AGENT package’s schedule as not ours to write', async () => {
-      // A `skillRef` schedule is written into the skill the package ships, in
-      // the package's own install root — `agents/` for an agent package. A
-      // plugins-only ownership check answered `false` here and let DorkOS edit
-      // a checkout the next update overwrites (DOR-1789).
-      const roots = packageInstallRoots(dorkHome, projectPath);
-      const packageDir = path.join(dorkHome, 'agents', 'researcher');
-      await mkdir(path.join(packageDir, '.dork'), { recursive: true });
-      await writeFile(
-        path.join(packageDir, '.dork', 'manifest.json'),
-        JSON.stringify({ name: 'researcher', version: '1.0.0', type: 'agent' }),
-        'utf-8'
-      );
-      // The install flow scaffolds an agent workspace on top of the unpacked
-      // package, so a package agent has BOTH files. The manifest is what tells
-      // it apart from a hand-made one.
-      await writeFile(path.join(packageDir, '.dork', 'agent.json'), '{}', 'utf-8');
-      const shipped = path.join(packageDir, '.agents', 'skills', 'sweep', 'SKILL.md');
-      await mkdir(path.dirname(shipped), { recursive: true });
-      await writeFile(shipped, scheduledSkill('sweep', { cron: '0 9 * * *' }), 'utf-8');
-
-      expect(await isPackageOwned(shipped, roots)).toBe(true);
-      // And through the projection an install leaves behind, as with plugins.
-      const link = path.join(skillsDir, 'researcher__sweep');
-      await symlink(path.dirname(shipped), link);
-      expect(await isPackageOwned(path.join(link, 'SKILL.md'), roots)).toBe(true);
-    });
-
     it('treats an installed Shape’s skill as not ours to write', async () => {
-      const roots = packageInstallRoots(dorkHome, projectPath);
+      // `shapes/` is an install root like `plugins/`, and a Shape package ships
+      // skills the same way — a plugins-only check answered `false` here and let
+      // DorkOS edit a checkout the next update overwrites (DOR-1789).
+      const roots = packageOwnershipContext(dorkHome, projectPath);
       const shapeSkill = path.join(dorkHome, 'shapes', 'studio', 'skills', 'z', 'SKILL.md');
       await mkdir(path.dirname(shapeSkill), { recursive: true });
       await writeFile(shapeSkill, scheduledSkill('z', { cron: '0 9 * * *' }), 'utf-8');
@@ -458,38 +433,20 @@ describe('schedules discovered in skills roots', () => {
       expect(await isPackageOwned(shapeSkill, roots)).toBe(true);
     });
 
-    it('leaves an agent the person made editable, marker or no marker', async () => {
-      // `agents/` is not the marketplace's alone: it holds every agent DorkOS
-      // creates, DorkBot included. Refusing to edit their schedules would be the
-      // DOR-1789 bug pointed the other way — so a directory there is only a
-      // package checkout when it carries an install marker.
-      const roots = packageInstallRoots(dorkHome, projectPath);
+    it('does not claim a skill just for sitting under an agents/ root', async () => {
+      // `agents/` is deliberately NOT walked: it holds every agent DorkOS
+      // creates, DorkBot included, and claiming their schedules by location
+      // would be the DOR-1789 bug pointed the other way. Whether an agent is a
+      // package is asked of that agent's own directory instead — see
+      // `lifecycle/__tests__/package-owned-agent.test.ts`, which drives both
+      // doors the way the routes do.
+      const roots = packageOwnershipContext(dorkHome, projectPath);
       const agentDir = path.join(dorkHome, 'agents', 'dorkbot');
-      await mkdir(path.join(agentDir, '.dork'), { recursive: true });
-      await writeFile(path.join(agentDir, '.dork', 'agent.json'), '{}', 'utf-8');
       const ownSkill = path.join(agentDir, '.agents', 'skills', 'mine', 'SKILL.md');
       await mkdir(path.dirname(ownSkill), { recursive: true });
       await writeFile(ownSkill, scheduledSkill('mine', { cron: '0 9 * * *' }), 'utf-8');
 
       expect(await isPackageOwned(ownSkill, roots)).toBe(false);
-    });
-
-    it('accepts the install sidecar alone as proof, in a project scope too', async () => {
-      // The sidecar write is best-effort and the manifest can be absent on a
-      // Claude-Code-only package, so either marker settles it on its own.
-      const roots = packageInstallRoots(dorkHome, projectPath);
-      const packageDir = path.join(projectPath, '.dork', 'agents', 'helper');
-      await mkdir(path.join(packageDir, '.dork'), { recursive: true });
-      await writeFile(
-        path.join(packageDir, '.dork', 'install-metadata.json'),
-        JSON.stringify({ name: 'helper', version: '1.0.0', type: 'agent' }),
-        'utf-8'
-      );
-      const shipped = path.join(packageDir, '.agents', 'skills', 'tidy', 'SKILL.md');
-      await mkdir(path.dirname(shipped), { recursive: true });
-      await writeFile(shipped, scheduledSkill('tidy', { cron: '0 9 * * *' }), 'utf-8');
-
-      expect(await isPackageOwned(shipped, roots)).toBe(true);
     });
   });
 
