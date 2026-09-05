@@ -550,6 +550,17 @@ describe('the relay adapter picks the runtime a message names', () => {
       }
 
       beforeEach(() => {
+        // The file's shared double yields `done` and nothing else, which is an
+        // ENDING rather than content — and endings do not bind (see the gate in
+        // `agent-handler.ts`). Every test in this block is about a conversation
+        // that really happened, so its codex says something. The spy object is
+        // the same one, so the assertions below still read `codex.sendMessage`.
+        codex.sendMessage = vi.fn().mockImplementation(() =>
+          (async function* (): AsyncGenerator<StreamEvent> {
+            yield { type: 'text_delta', data: { text: 'here' } } as StreamEvent;
+            yield { type: 'done', data: {} } as StreamEvent;
+          })()
+        );
         bound = new Map<string, string>();
         // First-write-wins, exactly as `persistSessionRuntime` is.
         bindSessionRuntime = vi
@@ -606,7 +617,7 @@ describe('the relay adapter picks the runtime a message names', () => {
         });
       });
 
-      it('records nothing for a first turn that never ran', async () => {
+      it('records nothing for a first turn that reached no runtime at all', async () => {
         // The orphan-row hazard `room-turn-runner.ts` documents: a write made on
         // arrival mints one row per message that reached no runtime, and
         // afterwards nothing can tell those from real bindings. `sendMessage`
@@ -632,6 +643,67 @@ describe('the relay adapter picks the runtime a message names', () => {
         expect(result.success).toBe(false);
         expect(bindSessionRuntime).not.toHaveBeenCalled();
         expect(bound.size).toBe(0);
+      });
+
+      it('records nothing for a first turn that only reported an error', async () => {
+        // The shape that makes this gate about CONTENT rather than about events.
+        // A claude-code turn that never reached the model still emits: a
+        // pre-stream credential failure arrives as an `error` event rather than
+        // a throw, and a terminal `done` is synthesized underneath it. Counting
+        // those as "the turn ran" binds a conversation on the strength of "not
+        // signed in" — and because this shape is keyed by the agent id alone and
+        // the write is first-write-wins, that binding is permanent: there is no
+        // next conversation to correct it on and no UI over the row.
+        const unauthenticatedCodex: AgentRuntimeLike = {
+          ...codex,
+          sendMessage: vi.fn().mockImplementation(() =>
+            (async function* (): AsyncGenerator<StreamEvent> {
+              yield {
+                type: 'error',
+                data: { message: 'Not signed in. Run `claude auth login`.' },
+              } as StreamEvent;
+              yield { type: 'done', data: {} } as StreamEvent;
+            })()
+          ),
+        };
+        const sticky = stickyAdapter(unauthenticatedCodex);
+        await sticky.start(mockRelay());
+
+        await sticky.deliver(MESH_SUBJECT, agentEnvelope(MESH_SUBJECT), meshContext());
+
+        expect(unauthenticatedCodex.sendMessage).toHaveBeenCalledOnce();
+        expect(bindSessionRuntime).not.toHaveBeenCalled();
+        expect(bound.size).toBe(0);
+      });
+
+      it('lets the corrected manifest decide the next turn after an error-only one', async () => {
+        // The consequence, and the input `main` recovered from: the operator
+        // reads "not signed in", fixes the agent to claude-code, and sends
+        // again. With a binding written from that first turn nothing could ever
+        // move it — so the absence of the row is what keeps the fix workable.
+        const unauthenticatedCodex: AgentRuntimeLike = {
+          ...codex,
+          sendMessage: vi.fn().mockImplementation(() =>
+            (async function* (): AsyncGenerator<StreamEvent> {
+              yield {
+                type: 'error',
+                data: { message: 'Not signed in. Run `claude auth login`.' },
+              } as StreamEvent;
+              yield { type: 'done', data: {} } as StreamEvent;
+            })()
+          ),
+        };
+        const sticky = stickyAdapter(unauthenticatedCodex);
+        await sticky.start(mockRelay());
+
+        await sticky.deliver(MESH_SUBJECT, agentEnvelope(MESH_SUBJECT), meshContext());
+
+        resolveTurnRuntimeType.mockImplementation(async ({ sessionId }) =>
+          sessionId ? (bound.get(sessionId) ?? 'claude-code') : 'claude-code'
+        );
+        await sticky.deliver(MESH_SUBJECT, agentEnvelope(MESH_SUBJECT), meshContext());
+
+        expect(claude.sendMessage).toHaveBeenCalledOnce();
       });
 
       it('records a turn that streamed and then failed, because its transcript is real', async () => {

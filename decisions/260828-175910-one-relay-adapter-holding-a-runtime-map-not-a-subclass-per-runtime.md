@@ -77,13 +77,23 @@ adapter manager does not dispatch.
   `bindSessionRuntime` seam wired to `persistSessionRuntime`, and asks
   `resolveTurnRuntimeType` with the key the turn will run under. Three things
   fix the write's timing, each mirroring `room-turn-runner.ts`: it happens only
-  once the runtime has produced an event (a write on arrival mints one orphan
-  row per message that never ran, indistinguishable afterwards from a real
-  binding), it is not gated on the turn SUCCEEDING (a turn that spoke and then
-  crashed still wrote a transcript), and it records the DURABLE key — the SDK
-  session id the runtime minted, which is the id the next message resumes under.
-  A failed write is logged, never thrown: the answer has already gone out, and
-  what is lost is one attribution row the next turn writes again.
+  once the turn has produced CONTENT — words, thinking, a tool call, a result, a
+  picture — and never merely once it has emitted events, because a turn that
+  only failed emits those too (a synthesized terminal `done`, an `error` event
+  standing in for a throw), so an "events" gate would bind a conversation on the
+  strength of "not signed in"; it is not gated on the turn SUCCEEDING (a turn
+  that spoke and then crashed still wrote a transcript); and it records the
+  DURABLE key — the SDK session id the runtime minted, which is the id the next
+  message resumes under. A wrong row here is unrecoverable, which is what sets
+  the bar: this shape keys its conversation by the agent id alone, so
+  first-write-wins means there is no next conversation to correct it on and no
+  UI over the row. A failed write is logged, never thrown: the answer has
+  already gone out, and what is lost is one attribution row the next turn writes
+  again. The content predicate is a deliberate mirror of the claude-code
+  empty-stream guard's `isContentEvent` — `@dorkos/relay` sits below
+  `apps/server` and cannot import it — pinned against the original by
+  `services/relay/__tests__/relay-content-event-parity.test.ts`, which walks
+  every member of `StreamEventTypeSchema`.
 - The discriminator the subject parse uses is the union of the adapter's own
   registered keys and the built-in `RUNTIME_TYPES` list, so a runtime registered
   under a type outside that list still routes to itself, and a type the product

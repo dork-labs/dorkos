@@ -298,6 +298,34 @@ export default defineConfig({
         ),
       },
       {
+        // The relay package ROOT, and the one entry here whose subject is a
+        // whole package rather than a single module — so read the measurement
+        // before widening it further.
+        //
+        // It is here because a SERVER test's subject became relay source
+        // (DOR-1774): `agent-subject-target-runtime.integration.test.ts` drives
+        // the real `createAdapter`, whose `@dorkos/relay` import is the root, to
+        // prove that the binding row the adapter WRITES is the row the next turn
+        // READS. Measured against a stale `dist/`: a mutation in relay `src/`
+        // that should red that file left it green until the package was rebuilt
+        // by hand — the exact "guard becomes decoration" shape this list exists
+        // to prevent, and worse than usual here because nothing about the test
+        // hints that it is reading a build artifact.
+        // `relay-content-event-parity.test.ts` needs it for the same reason: the
+        // whole point of that pin is to compare the relay's mirrored predicate
+        // against the canonical one, and a dist copy pins yesterday's mirror.
+        //
+        // Cost, measured back to back in one session over the same 829 tests in
+        // `services/relay`, with `dist/` freshly built so both configs ran the
+        // same green workload: WITH it 5.58s total / 10.23s transform, WITHOUT
+        // it 5.56s total / 11.39s transform. The aliased run having the LOWER
+        // transform time is the point — that spread is machine noise, so read
+        // this as "no measurable cost", not as an improvement. Same reading the
+        // five DOR-541 entries got.
+        find: /^@dorkos\/relay$/,
+        replacement: fileURLToPath(new URL('../../packages/relay/src/index.ts', import.meta.url)),
+      },
+      {
         // The memory cap AND the four `<agent_memory>` framing strings, which
         // back two drift guards: the envelope bound in `agent-context.test.ts`
         // computes itself from the preamble's length, and `prompt-content`

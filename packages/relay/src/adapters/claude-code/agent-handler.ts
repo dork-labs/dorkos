@@ -47,6 +47,9 @@ import { describeError } from '../../lib/describe-error.js';
 // disagree. The policy — an expired envelope never runs — is written down there,
 // along with why the boundary takes a number rather than an envelope.
 import { isExpired, ttlRemainingMs } from '../../lib/envelope-ttl.js';
+// "Did this turn produce anything, or only end?" — mirrored from the server's
+// empty-stream guard and pinned against it by a parity test. See that module.
+import { isTurnContentEvent } from '../../lib/content-events.js';
 
 /** Dependencies required by the agent handler. */
 export interface AgentHandlerDeps {
@@ -498,6 +501,7 @@ export async function handleAgentMessage(
       });
 
   let eventCount = 0,
+    contentEventCount = 0,
     collectedText = '',
     stepCounter = 0,
     messageBuffer = '';
@@ -515,6 +519,10 @@ export async function handleAgentMessage(
     for await (const event of eventStream) {
       if (controller.signal.aborted) break;
       eventCount++;
+      // Counted apart from `eventCount`, which counts endings too — see the
+      // binding write below and `lib/content-events.ts` for why the difference
+      // decides whether a conversation may be bound.
+      if (isTurnContentEvent(event)) contentEventCount++;
       if (event.type === 'done') streamedDone = true;
 
       if (envelope.replyTo && relay) {
@@ -697,23 +705,29 @@ export async function handleAgentMessage(
   // Three things about the timing, all of them load-bearing, and each mirroring
   // the same call in `room-turn-runner.ts`:
   //
-  // - **Only for a turn that ran.** `eventCount > 0` is this handler's version
-  //   of the room's `result.accepted`: `sendMessage` hands back a lazy
-  //   generator, so nothing has reached the runtime until it yields, and a turn
-  //   refused, stopped before it started, or thrown out of on the first pull
-  //   produced no transcript for anyone to be bound to. Writing on arrival
-  //   instead would mint one row per message that never ran, and afterwards
-  //   nothing can tell those rows from real bindings.
-  // - **Not only for a turn that SUCCEEDED.** A turn that streamed and then
-  //   crashed or ran out of time still wrote a transcript under this id, so its
-  //   owner is a fact whatever the ending was. Gating on success would leave the
-  //   very conversation most likely to be resumed unbound.
+  // - **Only for a turn that produced CONTENT** — words, thinking, a tool call,
+  //   a result, a picture ({@link isTurnContentEvent}) — never merely one that
+  //   emitted events. That distinction is the whole guard, because "emitted
+  //   events" is nearly free: claude-code synthesizes a terminal `done` when the
+  //   model produced none, a pre-stream credential failure arrives as an `error`
+  //   event rather than a throw, and the empty-stream guard turns a zero-content
+  //   turn into a yielded error. A first turn that only said "not signed in"
+  //   would therefore bind — and since an agent-to-agent DM keys its
+  //   conversation by the agent id alone, and `persistSessionRuntime` is
+  //   first-write-wins, that binding is PERMANENT: there is no next conversation
+  //   to correct it on and no UI over the row. Fixing the manifest afterwards
+  //   would change nothing. Content is the honest evidence that a transcript now
+  //   exists for somebody to be bound to.
+  // - **Not only for a turn that SUCCEEDED.** A turn that spoke and then crashed
+  //   or ran out of time still wrote that transcript, so its owner is a fact
+  //   whatever the ending was. Gating on success would leave the very
+  //   conversation most likely to be resumed unbound.
   // - **Below everything that publishes, and its failure is LOGGED rather than
   //   thrown.** This is bookkeeping about a turn whose answer has already gone
   //   out. A `SQLITE_BUSY` here must not turn an answered turn into a failed
   //   delivery — what is lost is one attribution row, which the next turn on
   //   this conversation writes again.
-  if (deps.bindSessionRuntime && eventCount > 0) {
+  if (deps.bindSessionRuntime && contentEventCount > 0) {
     try {
       await deps.bindSessionRuntime({
         sessionId: durableSessionKey,
