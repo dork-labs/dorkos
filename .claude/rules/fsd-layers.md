@@ -123,9 +123,12 @@ slice depends on how deep the importing file sits, so the rule resolves the path
 instead of matching it.
 
 `shared/` is the one layer with no slices: its top-level directories are
-segments, so a relative hop between them stays inside the unit. Spell it with the
-alias anyway — `@/layers/shared/lib/utils`, not `../lib/utils` — so one helper has
-one spelling. `cn` had three before DOR-1761.
+segments, so a relative hop between them stays inside the unit. For `lib/`,
+spell it with the alias anyway — `@/layers/shared/lib/utils`, not `../lib/utils`
+— so one helper has one spelling. `cn` had three before DOR-1761. That rule is
+enforced (and, so far, only asked for) on `lib/`; `model/` and the other
+segments have no equivalent lint rule yet, so relative imports between them
+still appear inside `shared/`.
 
 ### Always Import from index.ts
 
@@ -182,7 +185,7 @@ Each module should organize code by purpose:
 
 Not all segments are required — only create what the module needs.
 
-**Note on `shared/` layer:** The `shared/` layer uses both `model/` and `lib/` segments at the top level. `shared/model/` contains hooks, stores, and React context (TransportContext, app-store, useTheme, useIsMobile, etc.). `shared/lib/` contains pure utilities, Transport implementations, and helpers (cn, font-config, favicon-utils, celebrations, etc.). Consumers outside `shared/` import hooks and stores from `@/layers/shared/model` and utilities from `@/layers/shared/lib`; code inside `shared/` names the leaf module instead (see the carve-out above).
+**Note on `shared/` layer:** The `shared/` layer uses both `model/` and `lib/` segments at the top level. `shared/model/` contains hooks, stores, and React context (TransportContext, app-store, useTheme, useIsMobile, etc.). `shared/lib/` contains pure utilities, Transport implementations, and helpers (cn, font-config, favicon-utils, celebrations, etc.). Consumers outside `shared/` import hooks and stores from `@/layers/shared/model` and utilities from `@/layers/shared/lib`. For `lib/`, code inside `shared/` names the leaf module instead of the barrel, and that is lint-enforced (see the carve-out above); `model/` has no such rule yet, so importing the `@/layers/shared/model` barrel from inside `shared/` is fine, aliased or relative.
 
 ## Server Size Monitoring
 

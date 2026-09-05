@@ -7,8 +7,9 @@
  * - **The `md:` form** ({@link TOUCH_TARGET_RESPONSIVE_H},
  *   {@link TOUCH_TARGET_RESPONSIVE_SIZE}) is for a primitive whose height is
  *   decided in CSS — `Button`, `Input`, `SelectTrigger`, `TabsList`. It needs no
- *   hook, works inside a variant table, and is the reason those primitives
- *   render identically on the server and the client.
+ *   hook and works inside a variant table, so those primitives paint at the
+ *   right size on first render instead of flashing the desktop size until a
+ *   `useIsMobile()` effect runs.
  * - **The `TOUCH_TARGET_MIN_H` form** is for a surface that has already measured
  *   itself — a row that computes its own height, or one that already holds
  *   `useIsMobile()` for another reason. It is a floor, not a swap.

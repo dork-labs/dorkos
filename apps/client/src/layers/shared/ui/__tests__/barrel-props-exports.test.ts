@@ -62,18 +62,34 @@ function barrelExports(): { values: Set<string>; types: Set<string> } {
 describe('shared/ui barrel', () => {
   it('publishes the props type of every component it publishes', () => {
     const { values, types } = barrelExports();
+    // If the barrel's export regex stops matching, or `UI_DIR` moves, `values`
+    // comes back empty and every candidate below is silently skipped — the
+    // test would report green having checked nothing. Pin that it actually
+    // parsed the barrel: 326 value exports and 112 type exports today, so a
+    // floor well under either catches the regex breaking without pinning the
+    // exact count.
+    expect(values.size).toBeGreaterThan(100);
+    expect(types.size).toBeGreaterThan(30);
+
     const missing: string[] = [];
+    let subjects = 0;
 
     for (const file of sourceFiles(UI_DIR)) {
       const src = readFileSync(file, 'utf8');
       for (const match of src.matchAll(/^(?:export\s+)?(?:interface|type)\s+(\w+)Props\b/gm)) {
         const component = match[1];
         if (!values.has(component)) continue;
+        subjects++;
         if (types.has(`${component}Props`)) continue;
         missing.push(`${component}Props (declared in ${file.slice(UI_DIR.length + 1)})`);
       }
     }
 
+    // Same guard, aimed at the loop itself rather than the barrel parse: a
+    // named `*Props` type is only a candidate this test can see at all — see
+    // the coverage gap noted below for components whose props type is an
+    // inline `React.ComponentProps<...>` instead.
+    expect(subjects).toBeGreaterThan(50);
     expect(missing).toEqual([]);
   });
 });

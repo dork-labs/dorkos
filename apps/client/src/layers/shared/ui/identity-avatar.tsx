@@ -165,6 +165,12 @@ const identityAvatarVariants = cva(
       { shape: 'square', size: 'lg', class: 'rounded-2xl' },
     ],
     defaultVariants: {
+      // `sm`, not `md` — deliberately off the app-wide "md is the default"
+      // rule (`.claude/rules/components.md`). Avatars sit inline in dense rows
+      // (message headers, member lists) far more often than they anchor a
+      // standalone control, so the smaller size is the one callers reach for
+      // without saying so; `md`/`lg` are opt-in for the surfaces that do
+      // anchor on their own (profile headers, empty states).
       size: 'sm',
       shape: 'circle',
       variant: 'tint',

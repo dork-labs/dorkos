@@ -11,4 +11,4 @@ covers:
 
 ### Changed
 
-- Every control in the app now measures size the same way — extra small, small, medium, large — so two controls side by side line up (DOR-1761)
+- Most controls in the app now measure size the same way — extra small, small, medium, large — so two controls side by side usually line up (DOR-1761)

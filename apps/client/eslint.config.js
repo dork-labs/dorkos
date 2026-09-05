@@ -21,8 +21,10 @@ export default defineConfig([
   { ignores: ['dist/**', '.turbo/**', '.yalc/**'] },
   ...reactConfig,
 
-  // `sidebar.tsx` is upstream shadcn's sidebar block, kept diff-able against it
-  // so an upstream fix can be replayed here. At 645 counted lines it is over the
+  // `sidebar.tsx` started as upstream shadcn's sidebar block, kept close to it
+  // so an upstream fix stays easy to compare and replay — though DOR-1761 gave
+  // it this repo's required TSDoc and edited two call sites, so "diff-able" is
+  // now approximate, not literal. At 645 counted lines it is over the
   // `max-lines` bar for a reason that is not this repo's to fix.
   //
   // It is the ONLY carve-out now (DOR-1761). This block used to switch

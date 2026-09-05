@@ -38,13 +38,27 @@ describe('OptionRow', () => {
     expect(row.className).toContain('ring-1');
   });
 
-  it('sets data-selected attribute', () => {
+  it('derives data-selected from isSelected', () => {
     const { container } = render(
-      <OptionRow isSelected={true} data-selected={true} control={<input type="radio" />}>
+      <OptionRow isSelected={false} control={<input type="radio" />}>
         <span>Option A</span>
       </OptionRow>
     );
     const row = container.firstElementChild!;
-    expect(row.getAttribute('data-selected')).toBe('true');
+    expect(row.getAttribute('data-selected')).toBe('false');
+  });
+
+  it('lets the derived data-selected win over a stale data-selected prop, since it is applied after the spread', () => {
+    // `data-selected` is no longer part of OptionRowProps, but JSX exempts
+    // hyphenated attributes from excess-property checking, so this compiles
+    // even though the prop no longer exists on the type — exactly the gap
+    // that let a stale call site through undetected.
+    const { container } = render(
+      <OptionRow isSelected={false} data-selected={true} control={<input type="radio" />}>
+        <span>Option A</span>
+      </OptionRow>
+    );
+    const row = container.firstElementChild!;
+    expect(row.getAttribute('data-selected')).toBe('false');
   });
 });
