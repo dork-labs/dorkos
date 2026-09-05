@@ -165,8 +165,7 @@ const demoApproval: ScenarioFn = async function* () {
       alwaysAllowScope: 'session',
       title: 'Approve file write?',
       displayName: 'Edit migrations/0007_auth_tokens.sql',
-      description:
-        'Atlas wants to write a new migration that renames the token column and backfills it.',
+      description: 'This writes a new migration that renames the token column and backfills it.',
       blockedPath: 'migrations/0007_auth_tokens.sql',
     },
   } as StreamEvent;
