@@ -85,6 +85,27 @@ describe('createSandbox', () => {
     expect(await exists(sandbox.claudeConfigDir)).toBe(false);
   });
 
+  it('puts the config dir at `<root>/.claude`, so a HOME on the root resolves ~/.claude onto it', async () => {
+    const sandbox = await createSandbox();
+    try {
+      // The launcher pins the child's HOME to the sandbox root when it pins the
+      // config dir (DOR-1779). That is only a TOTAL isolation of the server's
+      // Claude root set — which unions in `~/.claude` unconditionally — because
+      // the seed sits at exactly the path `~/.claude` then resolves to. Move the
+      // seed and the union quietly widens back onto the operator again, so this
+      // layout is load-bearing rather than incidental.
+      const sandboxRoot = path.dirname(sandbox.dorkHome);
+      expect(sandbox.claudeConfigDir).toBe(path.join(sandboxRoot, '.claude'));
+      // And it QUALIFIES as an account root (`isClaudeAccountRoot`: it holds a
+      // `projects/`), so the collapsed union is a real, empty root rather than a
+      // path the server skips — which would leave the union empty and the fix
+      // untestable from the outside.
+      expect(await exists(path.join(sandbox.claudeConfigDir, 'projects'))).toBe(true);
+    } finally {
+      await sandbox.cleanup();
+    }
+  });
+
   it('removes even a failed sandbox when retainOnFailure is off', async () => {
     const sandbox = await createSandbox({ retainOnFailure: false });
     await sandbox.cleanup({ failed: true });

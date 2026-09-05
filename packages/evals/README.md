@@ -721,6 +721,52 @@ The `docker` tier is already covered by something stronger: its container mounts
 nothing from your home directory, so there is no configuration of yours in there
 to displace.
 
+## Whose past conversations an eval server can see
+
+Pointing the eval's server at a clean config directory settles what the model
+reads. It does not settle what the SERVER reads, and those are different
+questions. DorkOS deliberately looks in more than one place for your Claude Code
+history — the account you have chosen, the one your shell names, `~/.claude`, and
+any account you have registered — because dropping one would hide real work from
+your own session list and search box.
+
+Inside an eval that generosity is a leak. The sandbox moved DorkOS's own data
+directory somewhere throwaway; it did not move your home, so `~/.claude` still
+meant yours. Measured before the fix, on a server booted exactly the way an eval
+boots one: a private message written into a stand-in home came straight back out
+of the sandbox's own search results. The same was true of Codex and OpenCode
+history, which are found the same way.
+
+So on every run that gets the clean config directory, the launched server's home
+is the sandbox too — and so is every variable that would otherwise point around
+it, because `CODEX_HOME`, `XDG_DATA_HOME` and `OPENCODE_DB` each get consulted
+_before_ your home does. Moving the home without them left two of the three
+runtimes leaking, which is not a guess: with `CODEX_HOME` exported the way a
+shell exports it, a stand-in Codex thread still came back out of an
+already-moved-home sandbox. With all of them pointed at the sandbox, the places
+DorkOS looks are one place — the empty directory this eval owns — and there is
+nothing of yours in it to find.
+
+OpenCode gets a bonus out of that. Its sidecar inherits the server's
+environment, so it also _writes_ where those variables say: before this, an
+eval's OpenCode sessions were being written into your real OpenCode store.
+
+The two travel together on purpose: the run that keeps your config directory is
+the keychain run above, and its sign-in is reached through your home, so that run
+keeps both. It is the run that already told you its numbers are machine-relative.
+That run cannot move its home, so it does the next thing instead — it indexes no
+conversation history at all, yours or its own. Nothing in the harness searches,
+so it gives up nothing it was using, and it stops the one thing an inherited home
+could still do: copy your transcripts into a throwaway directory.
+
+One honest consequence of moving the home, which is intended rather than a side
+effect: a turn measured on a pinned run also has no `~/.gitconfig`, no `~/.ssh`
+and no shell rc file. That is the same argument as the section above — a number
+that depends on your dotfiles is a number about your machine — but unlike the
+settings claim it has not yet been checked against a credentialed baseline. If a
+case ever needs one of those, give it to the case explicitly rather than letting
+it arrive by accident.
+
 ## Where each tier can run
 
 `--isolation` decides how a credentialed eval's server is contained.

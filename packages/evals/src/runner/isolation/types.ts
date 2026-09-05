@@ -45,6 +45,13 @@ export interface ServerLaunchSpec {
    * (`runner/claude-config.ts`). Absent when the run declined to pin one because
    * the operator's real directory is also their sign-in.
    *
+   * Present ALSO means the launcher moves the child's `HOME` onto the sandbox
+   * root. The two are one decision: this variable answers what the model reads,
+   * `HOME` answers what the server ENUMERATES (`resolveClaudeRootSet()` unions in
+   * `~/.claude` unconditionally, so a pinned config dir alone still left session
+   * listing and search reading the operator's real transcripts — DOR-1779), and
+   * moving `HOME` is safe on exactly the rows where this pin was safe.
+   *
    * Only `child-process` acts on it, and that asymmetry is the containment story
    * rather than an omission: the docker tier mounts nothing from the host home,
    * so its container's `~/.claude` is already the image's empty one and there is
