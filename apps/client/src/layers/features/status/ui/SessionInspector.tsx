@@ -122,7 +122,7 @@ function LiveGroup({ diagnostics: d, live }: { diagnostics: SessionDiagnostics; 
             className={cn(
               'inline-block size-1.5 rounded-full',
               connection.color,
-              connection.tasks && 'animate-tasks'
+              connection.tasks && 'animate-breath'
             )}
           />
           {/* shortLabel, not label: the row label already says "Live updates",

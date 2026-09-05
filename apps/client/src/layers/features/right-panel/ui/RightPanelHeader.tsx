@@ -121,7 +121,7 @@ export function RightPanelHeader({ contributions, actions }: RightPanelHeaderPro
         {/* Close button */}
         <Button
           variant="ghost"
-          size="icon"
+          size="icon-md"
           aria-label="Close panel"
           className="size-7 shrink-0"
           onClick={() => setRightPanelOpen(false)}

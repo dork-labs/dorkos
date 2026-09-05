@@ -27,6 +27,7 @@
 export function UnverifiedCatalogNotice({ id }: { id?: string }) {
   return (
     <p
+      data-slot="unverified-catalog-notice"
       id={id}
       className="text-muted-foreground border-border text-2xs rounded-lg border border-dashed p-2 leading-snug"
       data-testid="model-catalog-unverified"

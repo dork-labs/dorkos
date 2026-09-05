@@ -375,7 +375,7 @@ function SizesSection() {
           <p className="text-muted-foreground text-3xs font-mono">btn-sm</p>
         </div>
         <div className="space-y-1.5 text-center">
-          <Button size="default">Default</Button>
+          <Button size="md">Medium</Button>
           <p className="text-muted-foreground text-3xs font-mono">btn-md</p>
         </div>
         <div className="space-y-1.5 text-center">

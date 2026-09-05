@@ -99,13 +99,13 @@ export function RemoteAccessRow() {
     <SettingRow
       label="Remote access"
       description={
-        // The waiting breath the rest of the cockpit wears (`animate-tasks`):
+        // The waiting breath the rest of the cockpit wears (`animate-breath`):
         // opacity only, so the line does not move, and `motion-safe` so a
         // reader who asked for less motion gets a still row that still says
         // "Connecting…".
         <span
           data-testid="remote-access-row-description"
-          className={cn('block min-w-0', waiting && 'motion-safe:animate-tasks')}
+          className={cn('block min-w-0', waiting && 'motion-safe:animate-breath')}
         >
           {description}
         </span>

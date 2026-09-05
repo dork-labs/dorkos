@@ -1,7 +1,8 @@
 import { createPortal } from 'react-dom';
 import { ExternalLink, Copy, X, ShieldAlert } from 'lucide-react';
 import type { LinkSafetyModalProps } from 'streamdown';
-import { describeRefusal, linkRefusalHere, useCopyFeedback } from '@/layers/shared/lib';
+import { describeRefusal, linkRefusalHere } from '@/layers/shared/lib/link-navigation';
+import { useCopyFeedback } from '@/layers/shared/lib/use-copy-feedback';
 import { Button } from './button';
 
 /**

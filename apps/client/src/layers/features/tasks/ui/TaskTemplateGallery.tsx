@@ -28,7 +28,7 @@ export function TaskTemplateGallery({ onSelect, selectedId, className }: TaskTem
     return (
       <div className={cn('grid grid-cols-2 gap-3', className)}>
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="bg-muted animate-tasks h-28 rounded-lg border" />
+          <div key={i} className="bg-muted animate-breath h-28 rounded-lg border" />
         ))}
       </div>
     );

@@ -6,7 +6,12 @@ import { Separator as SeparatorPrimitive } from 'radix-ui';
 import { cn } from '@/layers/shared/lib/utils';
 
 /**
+ * A hairline between two groups of content, horizontal or vertical.
  *
+ * `decorative` defaults to true, which keeps the line out of the accessibility
+ * tree — the right answer when the rule is only reinforcing a gap a sighted
+ * reader can already see. Pass `decorative={false}` when the line is the only
+ * thing marking a real boundary, so a screen reader announces it too.
  */
 function Separator({
   className,

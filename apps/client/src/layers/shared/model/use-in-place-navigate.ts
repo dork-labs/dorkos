@@ -28,7 +28,7 @@
  */
 import { useCallback } from 'react';
 import { useNavigate, useRouter } from '@tanstack/react-router';
-import { getPlatform } from '@/layers/shared/lib';
+import { getPlatform } from '@/layers/shared/lib/platform';
 
 /**
  * The place an in-place rewrite hangs off — the location as it was before the

@@ -2,7 +2,7 @@ import * as React from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import { X, PictureInPicture2 } from 'lucide-react';
-import { cn } from '../lib';
+import { cn } from '@/layers/shared/lib/utils';
 import { Button } from './button';
 
 /** Viewport margin (px) kept clear on every edge when clamping. */

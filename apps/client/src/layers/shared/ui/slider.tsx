@@ -1,10 +1,15 @@
 import * as React from 'react';
 import { Slider as SliderPrimitive } from 'radix-ui';
 
-import { cn } from '@/layers/shared/lib';
+import { cn } from '@/layers/shared/lib/utils';
 
 /**
+ * A draggable track for picking a number in a range, or two for a span.
  *
+ * One thumb is drawn per value, so a `value`/`defaultValue` array of two makes
+ * it a range slider with no extra prop. With neither given it falls back to
+ * `[min, max]`, which is what keeps an uncontrolled slider from rendering zero
+ * thumbs and looking broken.
  */
 function Slider({
   className,

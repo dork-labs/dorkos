@@ -4,7 +4,7 @@ import {
   generateCircleFavicon,
   generateTasksFrames,
   setFavicon,
-} from '@/layers/shared/lib';
+} from '@/layers/shared/lib/favicon-utils';
 
 interface UseFaviconOptions {
   cwd: string | null;

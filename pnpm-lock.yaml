@@ -245,9 +245,6 @@ importers:
       immer:
         specifier: ^11.1.18
         version: 11.1.18
-      input-otp:
-        specifier: ^1.5.0
-        version: 1.5.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       lexical:
         specifier: ~0.49.0
         version: 0.49.0(typescript@5.9.3)

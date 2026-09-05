@@ -70,6 +70,61 @@ describe('animation utilities wiring (index.css)', () => {
     }
   });
 
+  it('resolves every animation/animation-name value in index.css to a declared @keyframes', () => {
+    // A rename that touches the `@keyframes` declaration but misses a
+    // consumer is invisible everywhere else: nothing errors, the browser
+    // just silently drops the animation (an unresolved animation-name is not
+    // a CSS error, per spec). That is exactly how the `tasks` → `breath`
+    // rename left the reduced-motion fallback pointed at a keyframe that no
+    // longer existed. This walks every `animation:`/`animation-name:` value
+    // in the file and asserts the name it references is declared somewhere
+    // — either here or in `tw-animate-css`.
+    const declared = new Set<string>();
+    for (const css of [indexCss, twAnimateCss]) {
+      for (const m of css.matchAll(/@keyframes\s+([\w-]+)/g)) {
+        declared.add(m[1]);
+      }
+    }
+    const nonNameKeywords = new Set(['none', 'initial', 'inherit', 'unset', 'revert']);
+    // Split on commas that separate multiple animations, not the commas
+    // inside a `cubic-bezier(...)` argument list.
+    const splitTopLevel = (value: string): string[] => {
+      const parts: string[] = [];
+      let depth = 0;
+      let current = '';
+      for (const char of value) {
+        if (char === '(') depth++;
+        if (char === ')') depth--;
+        if (char === ',' && depth === 0) {
+          parts.push(current);
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      parts.push(current);
+      return parts;
+    };
+    const referenced = new Set<string>();
+    for (const m of indexCss.matchAll(/animation-name:\s*([^;]+);/g)) {
+      for (const segment of splitTopLevel(m[1])) {
+        const name = segment.trim();
+        if (name && !nonNameKeywords.has(name)) referenced.add(name);
+      }
+    }
+    // The `animation` shorthand puts the keyframe name first in every rule
+    // this file writes; grab it (and skip `animation: none;`).
+    for (const m of indexCss.matchAll(/[^-\w]animation:\s*([^;]+);/g)) {
+      for (const segment of splitTopLevel(m[1])) {
+        const name = segment.trim().split(/\s+/)[0];
+        if (name && !nonNameKeywords.has(name)) referenced.add(name);
+      }
+    }
+    expect(referenced.size).toBeGreaterThan(10);
+    const unresolved = [...referenced].filter((name) => !declared.has(name));
+    expect(unresolved).toEqual([]);
+  });
+
   it('leaves the blintz cascade-layer pin intact', () => {
     // tw-animate-css must not disturb the layer order that keeps blintz below
     // utilities (PR #311) — its utilities ride the `utilities` layer above blintz.

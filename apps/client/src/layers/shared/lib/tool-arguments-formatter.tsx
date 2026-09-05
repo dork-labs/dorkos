@@ -86,7 +86,7 @@ export function ToolArgumentsDisplay({
     return (
       <pre className="text-muted-foreground overflow-x-auto text-xs whitespace-pre-wrap">
         {displayInput}
-        <span className="animate-tasks ml-0.5 inline-block size-1.5 rounded-full bg-current" />
+        <span className="animate-breath ml-0.5 inline-block size-1.5 rounded-full bg-current" />
       </pre>
     );
   }

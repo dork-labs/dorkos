@@ -1,6 +1,9 @@
 import { ChevronRight } from 'lucide-react';
 
-interface PathBreadcrumbProps {
+import { cn } from '@/layers/shared/lib/utils';
+
+/** Props for {@link PathBreadcrumb}. */
+export interface PathBreadcrumbProps extends React.ComponentProps<'div'> {
   /** Absolute path to display */
   path: string | null;
   /** Max segments to show; earlier segments are replaced with "..." */
@@ -17,6 +20,8 @@ export function PathBreadcrumb({
   maxSegments,
   onSegmentClick,
   size = 'md',
+  className,
+  ...props
 }: PathBreadcrumbProps) {
   if (!path) return null;
 
@@ -31,11 +36,15 @@ export function PathBreadcrumb({
   const maxWidth = size === 'sm' ? 'max-w-[80px]' : 'max-w-[120px]';
 
   return (
-    <div className="flex min-w-0 items-center gap-0.5 overflow-hidden">
+    <div
+      data-slot="path-breadcrumb"
+      className={cn('flex min-w-0 items-center gap-0.5 overflow-hidden', className)}
+      {...props}
+    >
       {truncated && (
         <>
-          <span className={`${textClass} text-muted-foreground/50 flex-shrink-0`}>...</span>
-          <ChevronRight className={`${chevronClass} text-muted-foreground/40 flex-shrink-0`} />
+          <span className={cn(textClass, 'text-muted-foreground/50 flex-shrink-0')}>...</span>
+          <ChevronRight className={cn(chevronClass, 'text-muted-foreground/40 flex-shrink-0')} />
         </>
       )}
       {visible.map((segment, i) => {
@@ -43,22 +52,25 @@ export function PathBreadcrumb({
         const segPath = '/' + allSegments.slice(0, globalIndex + 1).join('/');
         const isLast = globalIndex === allSegments.length - 1;
 
-        const labelClass = `${textClass} truncate ${maxWidth} ${
-          isLast ? 'font-medium text-foreground' : 'text-muted-foreground'
-        }`;
+        const labelClass = cn(
+          textClass,
+          'truncate',
+          maxWidth,
+          isLast ? 'text-foreground font-medium' : 'text-muted-foreground'
+        );
 
         return (
-          <span
-            key={segPath}
-            className={`flex items-center ${isLast ? 'flex-shrink-0' : 'min-w-0'}`}
-          >
+          <span key={segPath} className={cn('flex items-center', isLast ? 'shrink-0' : 'min-w-0')}>
             {i > 0 && (
-              <ChevronRight className={`${chevronClass} text-muted-foreground/40 flex-shrink-0`} />
+              <ChevronRight
+                className={cn(chevronClass, 'text-muted-foreground/40 flex-shrink-0')}
+              />
             )}
             {onSegmentClick ? (
               <button
+                type="button"
                 onClick={() => onSegmentClick(segPath)}
-                className={`hover:bg-accent rounded px-1 py-0.5 transition-colors ${labelClass}`}
+                className={cn('hover:bg-accent rounded px-1 py-0.5 transition-colors', labelClass)}
               >
                 {segment}
               </button>

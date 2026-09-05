@@ -13,15 +13,9 @@
  */
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import {
-  type FontFamilyKey,
-  DEFAULT_FONT,
-  getFontConfig,
-  loadGoogleFont,
-  applyFontCSS,
-  STORAGE_KEYS,
-  MAX_RECENT_CWDS,
-} from '@/layers/shared/lib';
+import { STORAGE_KEYS, MAX_RECENT_CWDS } from '@/layers/shared/lib/constants';
+import { type FontFamilyKey, DEFAULT_FONT, getFontConfig } from '@/layers/shared/lib/font-config';
+import { loadGoogleFont, applyFontCSS } from '@/layers/shared/lib/font-loader';
 import {
   readBool,
   writeBool,

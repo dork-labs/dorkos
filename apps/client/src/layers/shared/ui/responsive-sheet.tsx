@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { cva } from 'class-variance-authority';
 import { useIsMobile } from '../model';
-import { cn } from '../lib/utils';
+import { cn } from '@/layers/shared/lib/utils';
 import {
   Sheet,
   SheetClose,

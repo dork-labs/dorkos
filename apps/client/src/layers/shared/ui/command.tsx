@@ -2,7 +2,7 @@ import * as React from 'react';
 import { Command as CommandPrimitive } from 'cmdk';
 import { SearchIcon } from 'lucide-react';
 
-import { cn } from '../lib/utils';
+import { cn } from '@/layers/shared/lib/utils';
 
 /** Command palette root container with search and list support. */
 function Command({ className, ...props }: React.ComponentProps<typeof CommandPrimitive>) {

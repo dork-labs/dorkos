@@ -12,6 +12,7 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
+import '@testing-library/jest-dom/vitest';
 import { Button } from '../button';
 
 afterEach(cleanup);
@@ -30,10 +31,10 @@ describe('Button responsive touch-target height', () => {
     expect(getByRole('button').className).toContain('md:h-8');
   });
 
-  it('leaves size="default" at its existing 44px height below md', () => {
+  it('leaves size="md" at its existing 44px height below md', () => {
     // Not the ticket's bug, but the same ruler — a regression here would be
     // just as real a touch-target failure.
-    const { getByRole } = render(<Button size="default">Save</Button>);
+    const { getByRole } = render(<Button size="md">Save</Button>);
     expect(getByRole('button').className).toContain('h-11');
   });
 
@@ -73,5 +74,29 @@ describe('Button press and disabled feedback', () => {
   it('says "not allowed" when disabled, like Input and Checkbox do', () => {
     const { getByRole } = render(<Button disabled>Save</Button>);
     expect(getByRole('button').className).toContain('disabled:cursor-not-allowed');
+  });
+});
+
+// An HTML <button> with no type is a SUBMIT button. Every `<Button onClick>`
+// dropped inside a <form> therefore submitted it, and the bug presents as "the
+// dialog closes when I click Cancel" — nowhere near the button.
+describe('Button type', () => {
+  it('defaults to type="button" so it cannot submit a form by accident', () => {
+    const { getByRole } = render(<Button>Cancel</Button>);
+    expect(getByRole('button')).toHaveAttribute('type', 'button');
+  });
+
+  it('still lets a caller mean type="submit"', () => {
+    const { getByRole } = render(<Button type="submit">Save</Button>);
+    expect(getByRole('button')).toHaveAttribute('type', 'submit');
+  });
+
+  it('leaves the element alone under asChild — the slotted child owns it', () => {
+    const { getByRole } = render(
+      <Button asChild>
+        <a href="/team">Team</a>
+      </Button>
+    );
+    expect(getByRole('link')).not.toHaveAttribute('type');
   });
 });

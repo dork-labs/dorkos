@@ -94,16 +94,51 @@ export function FormShowcases() {
 
         {/* The thumb's travel has to match the track's width at every size, so
             every size is drawn checked — that is the state where a mismatch
-            shows. The first switch takes no size and is therefore responsive:
-            resize the window past 640px and 768px to watch it step down. */}
-        <ShowcaseLabel>Sizes (first one is responsive — resize to see it step)</ShowcaseLabel>
+            shows. These four opt out of `responsive` so each holds still at the
+            size it names; the row below shows what the ladder does to them. */}
+        <ShowcaseLabel>Sizes</ShowcaseLabel>
         <ShowcaseDemo>
           <div className="flex flex-wrap items-center gap-4">
-            <Switch checked aria-label="Responsive" onCheckedChange={() => {}} />
-            <Switch size="sm" checked aria-label="Small" onCheckedChange={() => {}} />
-            <Switch size="default" checked aria-label="Default" onCheckedChange={() => {}} />
-            <Switch size="md" checked aria-label="Medium" onCheckedChange={() => {}} />
-            <Switch size="lg" checked aria-label="Large" onCheckedChange={() => {}} />
+            <Switch
+              size="sm"
+              responsive={false}
+              checked
+              aria-label="Small"
+              onCheckedChange={() => {}}
+            />
+            <Switch
+              size="md"
+              responsive={false}
+              checked
+              aria-label="Medium"
+              onCheckedChange={() => {}}
+            />
+            <Switch
+              size="lg"
+              responsive={false}
+              checked
+              aria-label="Large"
+              onCheckedChange={() => {}}
+            />
+            <Switch
+              size="xl"
+              responsive={false}
+              checked
+              aria-label="Extra large"
+              onCheckedChange={() => {}}
+            />
+          </div>
+        </ShowcaseDemo>
+
+        {/* `responsive` composes with `size` — every one of these climbs two
+            steps on a phone and one on a tablet, then settles back. Resize the
+            window past 640px and 768px to watch the whole row step down. */}
+        <ShowcaseLabel>Responsive (on by default — resize to see them step)</ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="flex flex-wrap items-center gap-4">
+            <Switch size="sm" checked aria-label="Small, responsive" onCheckedChange={() => {}} />
+            <Switch checked aria-label="Medium, responsive" onCheckedChange={() => {}} />
+            <Switch size="lg" checked aria-label="Large, responsive" onCheckedChange={() => {}} />
           </div>
         </ShowcaseDemo>
       </PlaygroundSection>

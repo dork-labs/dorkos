@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Field, FieldContent, FieldDescription, FieldLabel } from './field';
-import { cn } from '@/layers/shared/lib';
+import { cn } from '@/layers/shared/lib/utils';
 import { Switch } from './switch';
 
 interface SettingRowProps {

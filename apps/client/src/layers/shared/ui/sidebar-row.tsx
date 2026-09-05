@@ -14,7 +14,7 @@ import { useEffect, useRef } from 'react';
 import type { CSSProperties, HTMLAttributes, ReactNode, Ref, RefObject } from 'react';
 import { motion, type MotionProps } from 'motion/react';
 import { cva } from 'class-variance-authority';
-import { cn } from '@/layers/shared/lib';
+import { cn } from '@/layers/shared/lib/utils';
 import {
   useIsMobile,
   SIDEBAR_GLYPH_ACTION_ATTRIBUTE,
@@ -314,7 +314,7 @@ export type SidebarRowMenu =
       menuWidth?: string;
       /**
        * The reader has reached for this row's menu — see
-       * {@link SidebarMenuSurfaceProps.onMenuIntent}. A row that passes this may
+       * {@link SidebarMenuSurface}'s own `onMenuIntent`. A row that passes this may
        * pass an empty `menuNodes` until it fires, and still keeps its "⋮" and
        * its right-click target.
        */

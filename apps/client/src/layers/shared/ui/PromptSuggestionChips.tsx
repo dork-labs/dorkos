@@ -1,6 +1,6 @@
 import { motion } from 'motion/react';
 import { Sparkles } from 'lucide-react';
-import { cn } from '@/layers/shared/lib';
+import { cn } from '@/layers/shared/lib/utils';
 
 /** How many chips fit on one line before the row starts wrapping past its welcome. */
 const MAX_VISIBLE = 4;
@@ -76,6 +76,7 @@ export function PromptSuggestionChips({
 
   return (
     <motion.div
+      data-slot="prompt-suggestion-chips"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}

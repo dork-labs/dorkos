@@ -101,7 +101,7 @@ export function CanvasImageDiffContent({ content }: CanvasImageDiffContentProps)
           <Button
             type="button"
             variant="ghost"
-            size="icon"
+            size="icon-md"
             className="text-muted-foreground hover:text-foreground size-7"
             aria-label="Refresh from disk"
             onClick={review.refresh}

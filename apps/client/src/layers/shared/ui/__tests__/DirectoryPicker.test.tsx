@@ -27,13 +27,18 @@ vi.mock('@/layers/shared/model/app-store', () => ({
   },
 }));
 
-// Mock shared/lib utilities
-vi.mock('@/layers/shared/lib', () => ({
+// The leaf modules, not the `shared/lib` barrel: inside `shared/` the barrel is
+// not the way in (DOR-1761), so `DirectoryPicker` imports each of these from the
+// module that holds it and a mock aimed at the barrel stands in for nothing.
+vi.mock('@/layers/shared/lib/session-utils', () => ({
   formatRelativeTime: () => '1h ago',
   shortenHomePath: (p: string) => p.replace('/home/user', '~'),
+}));
+vi.mock('@/layers/shared/lib/constants', () => ({
   STORAGE_KEYS: { PICKER_VIEW: 'dorkos-picker-view' },
+}));
+vi.mock('@/layers/shared/lib/resolve-agent-visual', () => ({
   resolveAgentVisual: () => ({ color: 'hsl(200, 60%, 50%)', emoji: '🤖' }),
-  getAgentDisplayName: (a: { displayName?: string; name: string }) => a.displayName ?? a.name,
 }));
 
 beforeAll(() => {

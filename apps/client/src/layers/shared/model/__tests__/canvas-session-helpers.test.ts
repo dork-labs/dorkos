@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { readCanvasSession, writeCanvasSession } from '../app-store/app-store-helpers';
-import { STORAGE_KEYS, MAX_CANVAS_SESSIONS } from '@/layers/shared/lib';
+import { STORAGE_KEYS, MAX_CANVAS_SESSIONS } from '@/layers/shared/lib/constants';
 import type { CanvasSessionEntry } from '../app-store/app-store-helpers';
 
 /** A multi-document canvas entry for a session. */

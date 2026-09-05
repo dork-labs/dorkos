@@ -21,7 +21,7 @@ import {
   DrawerTitle,
   DrawerTrigger,
 } from './drawer';
-import { cn } from '../lib/utils';
+import { cn } from '@/layers/shared/lib/utils';
 import { Button } from './button';
 
 interface ResponsiveDialogContextValue {
@@ -59,7 +59,7 @@ function useResponsiveDialogOptional(): ResponsiveDialogContextValue | undefined
   return React.useContext(ResponsiveDialogContext);
 }
 
-interface ResponsiveDialogProps {
+export interface ResponsiveDialogProps {
   children: React.ReactNode;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;

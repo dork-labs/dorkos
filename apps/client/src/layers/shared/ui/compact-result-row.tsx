@@ -1,4 +1,7 @@
-interface CompactResultRowProps {
+import { cn } from '@/layers/shared/lib/utils';
+
+/** Props for {@link CompactResultRow}. */
+export interface CompactResultRowProps extends React.ComponentProps<'div'> {
   /** Status icon (Check, X, etc.). */
   icon: React.ReactNode;
   /** Primary label text or element. */
@@ -7,8 +10,6 @@ interface CompactResultRowProps {
   trailing?: React.ReactNode;
   /** Optional content below the row (e.g. timeout message). */
   children?: React.ReactNode;
-  'data-testid'?: string;
-  [key: `data-${string}`]: string | undefined;
 }
 
 /** Compact single-row display for decided/submitted final states. */
@@ -17,12 +18,17 @@ export function CompactResultRow({
   label,
   trailing,
   children,
-  ...dataProps
+  className,
+  ...props
 }: CompactResultRowProps) {
   return (
     <div
-      className="bg-muted/50 rounded-msg-tool shadow-msg-tool border px-3 py-1 text-sm transition-colors duration-150"
-      {...dataProps}
+      data-slot="compact-result-row"
+      className={cn(
+        'bg-muted/50 rounded-msg-tool shadow-msg-tool border px-3 py-1 text-sm transition-colors duration-150',
+        className
+      )}
+      {...props}
     >
       <div className="flex items-center gap-2">
         {icon}

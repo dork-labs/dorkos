@@ -4,7 +4,7 @@ import type { FilterDefinition } from '@/layers/shared/lib/filter-engine';
 import { cn } from '@/layers/shared/lib/utils';
 import { FilterBarContext } from './FilterBarContext';
 
-interface FilterBarProps {
+export interface FilterBarProps {
   /** Filter state from useFilterState hook. */
   state: UseFilterStateReturn<Record<string, FilterDefinition<unknown, unknown>>>;
   children: ReactNode;

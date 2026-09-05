@@ -4,7 +4,11 @@
  * @module shared/model/app-store-helpers
  */
 import type { UiCanvasContent } from '@dorkos/shared/types';
-import { STORAGE_KEYS, MAX_CANVAS_SESSIONS, MAX_RIGHT_PANEL_LAYOUTS } from '@/layers/shared/lib';
+import {
+  STORAGE_KEYS,
+  MAX_CANVAS_SESSIONS,
+  MAX_RIGHT_PANEL_LAYOUTS,
+} from '@/layers/shared/lib/constants';
 import type { FloatingPanelGeometry } from '@/layers/shared/ui';
 
 /** Read a boolean from localStorage with try/catch safety. */

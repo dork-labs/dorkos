@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'motion/react';
 
-interface ScanLineProps {
+export interface ScanLineProps {
   /** Agent accent color (CSS color string). */
   color: string;
   /** Tokens actively flowing — accelerates beam, enables highlight layer. */
@@ -35,6 +35,11 @@ export function ScanLine({
       : 'pointer-events-none absolute right-0 bottom-0 left-0';
   const layerAnchor = edge === 'top' ? 'top' : 'bottom';
 
+  // No `data-slot` on this root, unlike its siblings: it is `aria-hidden`
+  // decoration inside chat's composer card, and `SessionComposer-dom-parity`
+  // pins that the migration moved no markup there. One inert attribute is not
+  // worth a third documented exemption in a file whose whole evidentiary weight
+  // is an empty diff, and nothing selects this node (DOR-1761).
   return (
     <motion.div
       aria-hidden

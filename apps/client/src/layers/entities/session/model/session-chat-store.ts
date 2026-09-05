@@ -366,8 +366,16 @@ export function useSessionMessages(sessionId: string): ChatMessage[] {
   );
 }
 
-/** Granular field selector: chat status for a specific session. */
-export function useSessionStatus(sessionId: string): ChatStatus {
+/**
+ * Granular field selector: chat status for a specific session.
+ *
+ * `Chat` is in the name to keep it apart from `use-session-status.ts`'s
+ * `useSessionStatus`, which answers a different question — that one is the
+ * session's settings and their in-flight changes, this one is only whether the
+ * chat is idle, streaming or waiting. Both used to be `useSessionStatus`, told
+ * apart on the barrel by an alias and nothing else (DOR-1761).
+ */
+export function useSessionChatStatus(sessionId: string): ChatStatus {
   return useSessionChatStore(
     useCallback((s) => s.sessions[sessionId]?.status ?? 'idle', [sessionId])
   );

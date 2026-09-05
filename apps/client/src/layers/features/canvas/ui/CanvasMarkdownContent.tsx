@@ -189,7 +189,7 @@ export function CanvasMarkdownContent({
           <Button
             type="button"
             variant="ghost"
-            size="icon"
+            size="icon-md"
             className="text-muted-foreground hover:text-foreground mt-2"
             onClick={isEditing ? exitEdit : enterEdit}
             aria-label={isEditing ? 'Finish editing' : 'Edit document'}

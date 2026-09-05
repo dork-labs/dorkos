@@ -20,11 +20,11 @@ import type { AllowedTags, Components } from 'streamdown';
 // static markdown was borrowing the styling of a component it does not use, and
 // would have lost it the day chat was code-split away from that surface.
 import 'streamdown/styles.css';
-import { cn } from '@/layers/shared/lib';
+import { cn } from '@/layers/shared/lib/utils';
 import { MarkdownErrorBoundary } from './markdown-error-boundary';
 import { MarkdownLink } from './markdown-link';
 
-interface MarkdownContentProps {
+export interface MarkdownContentProps {
   /** Markdown string to render. */
   content: string;
   /** Additional CSS classes merged onto the container. */

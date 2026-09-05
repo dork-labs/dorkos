@@ -214,7 +214,7 @@ export function AvatarPickerPanel({
             {onClose && (
               <Button
                 variant="ghost"
-                size="icon"
+                size="icon-md"
                 className="size-6"
                 onClick={onClose}
                 aria-label="Close appearance picker"

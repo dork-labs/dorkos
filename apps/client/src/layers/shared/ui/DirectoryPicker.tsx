@@ -1,13 +1,10 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTransport, useAppStore, type RecentCwd } from '@/layers/shared/model';
-import {
-  formatRelativeTime,
-  getAgentDisplayName,
-  shortenHomePath,
-  STORAGE_KEYS,
-  resolveAgentVisual,
-} from '@/layers/shared/lib';
+import { getAgentDisplayName } from '@dorkos/shared/validation';
+import { STORAGE_KEYS } from '@/layers/shared/lib/constants';
+import { resolveAgentVisual } from '@/layers/shared/lib/resolve-agent-visual';
+import { formatRelativeTime, shortenHomePath } from '@/layers/shared/lib/session-utils';
 import { IdentityAvatar } from './identity-avatar';
 import { PathBreadcrumb } from './path-breadcrumb';
 import { Spinner } from './spinner';
@@ -38,7 +35,7 @@ function getInitialView(recentCwds: RecentCwd[], selectedCwd: string | null): Pi
   return 'recent';
 }
 
-interface DirectoryPickerProps {
+export interface DirectoryPickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Callback invoked when a directory is selected. */
@@ -185,6 +182,7 @@ export function DirectoryPicker({
           <div className="flex flex-shrink-0 items-center rounded-md border">
             {recentCwds.length > 0 && (
               <button
+                type="button"
                 onClick={() => handleViewChange('recent')}
                 className={toggleBtn(view === 'recent', 'left')}
                 aria-label="Recent directories"
@@ -194,6 +192,7 @@ export function DirectoryPicker({
               </button>
             )}
             <button
+              type="button"
               onClick={() => {
                 handleViewChange('browse');
                 handleNavigate('');
@@ -216,6 +215,7 @@ export function DirectoryPicker({
               />
               <div className="flex-1" />
               <button
+                type="button"
                 onClick={startCreatingFolder}
                 className="hover:bg-accent flex-shrink-0 rounded p-1 transition-colors max-md:p-2"
                 aria-label="New Folder"
@@ -224,6 +224,7 @@ export function DirectoryPicker({
                 <FolderPlus className="text-muted-foreground size-(--size-icon-sm)" />
               </button>
               <button
+                type="button"
                 onClick={() => setShowHidden(!showHidden)}
                 className="hover:bg-accent flex-shrink-0 rounded p-1 transition-colors max-md:p-2"
                 aria-label={showHidden ? 'Hide hidden folders' : 'Show hidden folders'}
@@ -274,6 +275,7 @@ export function DirectoryPicker({
                         }`}
                       />
                       <button
+                        type="button"
                         onClick={() => void confirmCreateFolder()}
                         disabled={!newFolderName || !!newFolderError}
                         aria-label="Confirm new folder"
@@ -282,6 +284,7 @@ export function DirectoryPicker({
                         <Check className="size-(--size-icon-sm)" />
                       </button>
                       <button
+                        type="button"
                         onClick={cancelCreatingFolder}
                         aria-label="Cancel new folder"
                         className="hover:bg-accent flex-shrink-0 rounded p-0.5 transition-colors"
@@ -295,6 +298,7 @@ export function DirectoryPicker({
                   )}
                   {data?.parent && (
                     <button
+                      type="button"
                       onClick={() => handleNavigate(data.parent!)}
                       className="hover:bg-accent flex w-full items-center gap-2 px-4 py-1.5 text-left transition-colors"
                     >
@@ -304,6 +308,7 @@ export function DirectoryPicker({
                   )}
                   {data?.entries.map((entry) => (
                     <button
+                      type="button"
                       key={entry.path}
                       onClick={() => handleNavigate(entry.path)}
                       className="hover:bg-accent flex w-full items-center gap-2 px-4 py-1.5 text-left transition-colors"
@@ -327,6 +332,7 @@ export function DirectoryPicker({
 
                 return (
                   <button
+                    type="button"
                     key={recent.path}
                     onClick={() => handleRecentSelect(recent.path)}
                     className="hover:bg-accent flex w-full items-center gap-2 px-4 py-1.5 text-left transition-colors"
@@ -374,12 +380,14 @@ export function DirectoryPicker({
         {/* Footer */}
         <div className="bg-muted/20 flex items-center justify-end gap-2 border-t px-4 py-3">
           <button
+            type="button"
             onClick={onClose}
             className="hover:bg-accent rounded-md px-3 py-1.5 text-xs transition-colors"
           >
             Cancel
           </button>
           <button
+            type="button"
             onClick={handleSelect}
             disabled={!data?.path || view !== 'browse'}
             className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-md px-3 py-1.5 text-xs transition-colors disabled:opacity-50"

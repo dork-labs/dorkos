@@ -27,7 +27,7 @@
  * @module shared/ui/trust-tone
  */
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
-import { isAutonomyStop, isDivergent } from '@/layers/shared/lib';
+import { isAutonomyStop, isDivergent } from '@dorkos/shared/permission-semantics';
 
 /**
  * How a trust setting reads on screen.

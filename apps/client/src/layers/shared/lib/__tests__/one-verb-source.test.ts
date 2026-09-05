@@ -277,7 +277,7 @@ describe('the honesty ladder is the only verb source (BC-37)', () => {
     expect(
       ladderEscape(
         'features/conversation/model/lane-state.ts',
-        "import { activityClause } from '@/layers/shared/lib';"
+        "import { activityClause } from '@/layers/shared/lib/activity-verb';"
       )
     ).toBeNull();
   });

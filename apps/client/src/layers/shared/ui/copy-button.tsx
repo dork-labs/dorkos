@@ -1,18 +1,35 @@
 import { Check, Copy, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { cn, useCopyFeedback } from '@/layers/shared/lib';
+import { useCopyFeedback } from '@/layers/shared/lib/use-copy-feedback';
+import { cn } from '@/layers/shared/lib/utils';
 import { Button } from './button';
 
-interface CopyButtonProps {
+/** Props for {@link CopyButton}. */
+export interface CopyButtonProps {
   /** Text copied to clipboard on click. */
   value: string;
   /** Optional aria-label override. Default: "Copy to clipboard". */
   label?: string;
-  /** Override className for the button wrapper. */
+  /** Chrome for the wrapper — margins, colour. The caller owns it. */
   className?: string;
-  /** Icon size — defaults to size-3.5 to match current usage. */
-  size?: 'sm' | 'md';
+  /**
+   * How big the glyph is: 12px, 14px or 16px.
+   *
+   * The library's ordinal scale, and the same three steps `Button`'s icon sizes
+   * spend. The button's own box does not change — it is `icon-sm`, which is
+   * 32px under a mouse and 40px on a phone.
+   *
+   * @default 'sm'
+   */
+  size?: 'xs' | 'sm' | 'md';
 }
+
+/** The glyph size each step draws, in Tailwind's `size-` scale. */
+const ICON_SIZES: Record<NonNullable<CopyButtonProps['size']>, string> = {
+  xs: 'size-3',
+  sm: 'size-3.5',
+  md: 'size-4',
+};
 
 /** Which glyph the button is showing — also the swap's animation key. */
 type CopyButtonState = 'idle' | 'copied' | 'failed';
@@ -27,6 +44,7 @@ type CopyButtonState = 'idle' | 'copied' | 'failed';
  *
  * @param copied - The clipboard write succeeded, and the timer has not expired.
  * @param failed - The clipboard write threw.
+ * @returns The state name, which is also the animation key.
  */
 function copyButtonState(copied: boolean, failed: boolean): CopyButtonState {
   if (copied) return 'copied';
@@ -61,7 +79,7 @@ export function CopyButton({
   size = 'sm',
 }: CopyButtonProps) {
   const { copied, failed, copy } = useCopyFeedback();
-  const iconSize = size === 'md' ? 'size-4' : 'size-3.5';
+  const iconSize = ICON_SIZES[size];
   const state = copyButtonState(copied, failed);
   return (
     // `Button`, not a hand-rolled one: this used to be `p-1` around a 14px glyph

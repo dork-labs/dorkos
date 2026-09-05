@@ -3,6 +3,7 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { Slot } from 'radix-ui';
 
 import { cn } from '@/layers/shared/lib/utils';
+import { TOUCH_TARGET_RESPONSIVE_H, TOUCH_TARGET_RESPONSIVE_SIZE } from './touch-target';
 
 // `[&_svg:not([class*='size-'])]:size-(--size-icon-sm)` is the default size for
 // any `<svg>` a caller drops in without sizing it. The TOKEN, not a flat
@@ -40,54 +41,75 @@ const buttonVariants = cva(
         link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {
-        default: 'h-9 px-4 py-2 has-[>svg]:px-3',
         xs: "h-6 gap-1 rounded-md px-2 text-xs has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3",
         sm: 'h-8 rounded-md gap-1.5 px-3 has-[>svg]:px-2.5',
+        md: 'h-9 px-4 py-2 has-[>svg]:px-3',
         lg: 'h-10 rounded-md px-6 has-[>svg]:px-4',
-        icon: 'size-9',
         'icon-xs': "size-6 rounded-md [&_svg:not([class*='size-'])]:size-3",
         'icon-sm': 'size-8',
+        'icon-md': 'size-9',
         'icon-lg': 'size-10',
       },
     },
     defaultVariants: {
       variant: 'default',
-      size: 'default',
+      size: 'md',
     },
   }
 );
 
-export type ButtonSize =
-  'xs' | 'sm' | 'default' | 'lg' | 'icon' | 'icon-xs' | 'icon-sm' | 'icon-lg';
+/**
+ * The button's size steps: an ordinal scale, plus a square one for icon-only.
+ *
+ * `md` is the default, and the token literally named `default` is gone — it said
+ * nothing about how big the button was, and left `<Switch size="md">` next to
+ * `<Button size="default">` looking like two unrelated decisions (DOR-1761).
+ * `icon` went the same way, to `icon-md`. The pixels are unchanged.
+ */
+export type ButtonSize = 'xs' | 'sm' | 'md' | 'lg' | 'icon-xs' | 'icon-sm' | 'icon-md' | 'icon-lg';
 
 // xs and icon-xs are intentionally small UI chrome — excluded from responsive scaling
 const RESPONSIVE_SIZE_CLASSES: Partial<Record<ButtonSize, string>> = {
-  // 44px below the `md` breakpoint (Apple HIG / Material minimum), not 40px
-  // — DOR-771. This gate is VIEWPORT WIDTH (Tailwind's `md:`, 768px), not a
-  // touch-capability media query, so it is really "narrow screens get more
-  // headroom", not "touch screens do" — a resized desktop window under 768px
-  // gets the taller target too, and a touch device above it does not. Kept
-  // 32px past `md:` on purpose: the width is a proxy for finger-sized targets
-  // mattering more, not a claim about the actual input device.
+  // 44px below the `md` breakpoint, spelled once in `touch-target.ts` — read its
+  // module doc for why the gate is viewport width rather than touch capability,
+  // and why the two sizes that match it exactly compose from the constant while
+  // the rest state their own numbers.
   sm: 'h-11 md:h-8',
-  default: 'h-11 md:h-9',
+  md: TOUCH_TARGET_RESPONSIVE_H,
   lg: 'h-12 md:h-10',
-  icon: 'size-11 md:size-9',
   'icon-sm': 'size-10 md:size-8',
+  'icon-md': TOUCH_TARGET_RESPONSIVE_SIZE,
   'icon-lg': 'size-12 md:size-10',
 };
 
+/** Props for {@link Button}. */
 export interface ButtonProps
   extends React.ComponentProps<'button'>, VariantProps<typeof buttonVariants> {
+  /** Render the child element instead of a `<button>`, keeping the styling. */
   asChild?: boolean;
+  /**
+   * Grow to a 44px touch target below `md`, back to `size` past it.
+   *
+   * On by default. Turn it off for chrome that is not meant to be a thumb target
+   * — a filter bar, a toolbar — where the taller box would crowd its neighbours.
+   *
+   * @default true
+   */
   responsive?: boolean;
 }
 
-/** Styled button with variant, size, and responsive scaling support. */
+/**
+ * The button — every clickable control in the app that is not a link.
+ *
+ * `variant` says what kind of action it is, `size` how big. Both default to the
+ * middle of their scale, so `<Button>Save</Button>` is already right most of the
+ * time. `asChild` hands the styling to your own element, which is how a router
+ * link wears a button's clothes.
+ */
 function Button({
   className,
   variant = 'default',
-  size = 'default',
+  size = 'md',
   asChild = false,
   responsive = true,
   ...props
@@ -99,9 +121,17 @@ function Button({
       data-slot="button"
       data-variant={variant}
       data-size={size}
+      // A real `<button>` inside a `<form>` is a SUBMIT button unless it says
+      // otherwise, so `<Button onClick={…}>Cancel</Button>` in a form used to
+      // submit it — presenting as "the dialog closes when I click Cancel".
+      // Nothing was broken when this landed; it is the next one that would have
+      // been. `asChild` is left alone: the slotted child owns its own element,
+      // and forcing a `type` onto an `<a>` is meaningless. It sits before the
+      // spread, so the 15 call sites that mean `type="submit"` still win.
+      {...(asChild ? {} : { type: props.type ?? 'button' })}
       className={cn(
         buttonVariants({ variant, size }),
-        responsive ? RESPONSIVE_SIZE_CLASSES[size ?? 'default'] : undefined,
+        responsive ? RESPONSIVE_SIZE_CLASSES[size ?? 'md'] : undefined,
         className
       )}
       {...props}

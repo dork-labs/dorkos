@@ -3,7 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, act, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
-import { TIMING, LONG_PRESS_DRIFT_PX } from '@/layers/shared/lib';
+import { TIMING, LONG_PRESS_DRIFT_PX } from '@/layers/shared/lib/constants';
 import { IdentityHoverCard, type IdentityHoverCardDescriptor } from '../identity-hover-card';
 
 afterEach(cleanup);

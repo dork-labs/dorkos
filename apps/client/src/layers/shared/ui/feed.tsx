@@ -7,7 +7,7 @@ import type { ReactNode } from 'react';
 import { useFeedKeyboardNav } from '../model/feed/use-feed-keyboard-nav';
 import type { FeedBeyondRenderedHandler } from '../model/feed/use-feed-keyboard-nav';
 
-interface FeedProps {
+export interface FeedProps {
   /**
    * What this feed is a history OF, in the reader's words — "general", not
    * "messages". A page can hold two of these at once, so an unnamed one leaves
@@ -30,7 +30,8 @@ interface FeedProps {
   /**
    * What to do when the reader asks for an article the feed has not rendered.
    *
-   * Only a VIRTUALIZED feed needs this — see {@link FeedBeyondRenderedHandler}.
+   * Only a VIRTUALIZED feed needs this — see `FeedBeyondRenderedHandler` in
+   * `@/layers/shared/model`, which is where the type and its contract live.
    * Omitted, the feed stops at the last article in the DOM, which for a feed
    * that renders all of them is the end of its history.
    */
@@ -68,6 +69,7 @@ export function Feed({
     // "static element with a handler" rule is answered by the role.
     // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- see above
     <div
+      data-slot="feed"
       ref={containerRef}
       role="feed"
       aria-label={label}

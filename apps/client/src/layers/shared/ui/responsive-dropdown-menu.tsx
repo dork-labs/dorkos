@@ -12,7 +12,7 @@ import {
   DropdownMenuSeparator,
 } from './dropdown-menu';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from './drawer';
-import { cn } from '../lib/utils';
+import { cn } from '@/layers/shared/lib/utils';
 
 /**
  * The drawer row's label size, in literal pixels on purpose.
@@ -37,7 +37,7 @@ const ResponsiveDropdownMenuContext = React.createContext<{
 
 // --- Root ---
 
-interface ResponsiveDropdownMenuProps {
+export interface ResponsiveDropdownMenuProps {
   children: React.ReactNode;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -151,7 +151,7 @@ function ResponsiveDropdownMenuLabel({
 
 // --- RadioGroup ---
 
-interface ResponsiveDropdownMenuRadioGroupProps {
+export interface ResponsiveDropdownMenuRadioGroupProps {
   value?: string;
   onValueChange?: (value: string) => void;
   /** Close the drawer after selecting an item on mobile. Defaults to true. No-op on desktop. */
@@ -211,7 +211,7 @@ function ResponsiveDropdownMenuRadioGroup({
 
 // --- RadioItem ---
 
-interface ResponsiveDropdownMenuRadioItemProps {
+export interface ResponsiveDropdownMenuRadioItemProps {
   value: string;
   children: React.ReactNode;
   /**
@@ -271,6 +271,7 @@ function MobileRadioItem({
 
   return (
     <button
+      type="button"
       role="radio"
       aria-checked={isSelected}
       className={cn(
@@ -296,7 +297,7 @@ function MobileRadioItem({
 
 // --- Item ---
 
-interface ResponsiveDropdownMenuItemProps {
+export interface ResponsiveDropdownMenuItemProps {
   children: React.ReactNode;
   /**
    * Icon rendered before the label. Widened beyond `LucideIcon` so custom
@@ -339,6 +340,7 @@ function ResponsiveDropdownMenuItem({
 
   return (
     <button
+      type="button"
       className={cn(
         'border-border flex w-full items-center gap-3 border-b px-4 py-3 text-left transition-colors',
         'active:bg-accent/50 min-h-[44px]',

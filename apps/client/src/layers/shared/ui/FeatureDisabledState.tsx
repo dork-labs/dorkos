@@ -1,10 +1,17 @@
 import type { LucideIcon } from 'lucide-react';
+
+import { cn } from '@/layers/shared/lib/utils';
 import { InlineCode } from './inline-code';
 
-interface FeatureDisabledStateProps {
+/** Props for {@link FeatureDisabledState}. */
+export interface FeatureDisabledStateProps extends React.ComponentProps<'div'> {
+  /** Glyph for the subsystem, drawn above the message. */
   icon: LucideIcon;
+  /** What is switched off, in the words the reader would use. */
   name: string;
+  /** One short line on what turning it on gets them. */
   description: string;
+  /** The command that turns it on, shown verbatim. */
   command: string;
 }
 
@@ -14,9 +21,15 @@ export function FeatureDisabledState({
   name,
   description,
   command,
+  className,
+  ...props
 }: FeatureDisabledStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
+    <div
+      data-slot="feature-disabled-state"
+      className={cn('flex flex-col items-center justify-center gap-3 p-8 text-center', className)}
+      {...props}
+    >
       <Icon className="text-muted-foreground/50 size-8" />
       <div>
         <p className="font-medium">{name} is currently disabled</p>

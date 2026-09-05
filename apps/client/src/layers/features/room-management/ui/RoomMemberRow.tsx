@@ -426,7 +426,7 @@ export function RoomMemberRow({
             <DropdownMenuTrigger asChild>
               <Button
                 type="button"
-                size="icon"
+                size="icon-md"
                 variant="ghost"
                 aria-label={`${author.displayName} actions`}
                 className="text-muted-foreground size-7 shrink-0"

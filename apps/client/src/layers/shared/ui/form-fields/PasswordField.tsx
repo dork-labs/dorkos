@@ -2,7 +2,7 @@ import { PasswordInput } from '@/layers/shared/ui/password-input';
 import { Field, FieldLabel, FieldDescription, FieldError } from '@/layers/shared/ui/field';
 import { useFieldContext } from '@/layers/shared/lib/form-context';
 
-interface PasswordFieldProps {
+export interface PasswordFieldProps {
   label: string;
   placeholder?: string;
   description?: string;

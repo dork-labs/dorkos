@@ -2,7 +2,7 @@ import { Input } from '@/layers/shared/ui/input';
 import { Field, FieldLabel, FieldDescription, FieldError } from '@/layers/shared/ui/field';
 import { useFieldContext } from '@/layers/shared/lib/form-context';
 
-interface TextFieldProps {
+export interface TextFieldProps {
   label: string;
   placeholder?: string;
   type?: 'text' | 'email' | 'url' | 'number';

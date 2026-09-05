@@ -2,7 +2,7 @@ import { Wifi, WifiOff } from 'lucide-react';
 import { Banner } from './banner';
 import type { ConnectionState } from '@dorkos/shared/types';
 
-interface ConnectionStatusBannerProps {
+export interface ConnectionStatusBannerProps {
   connectionState: ConnectionState;
   failedAttempts?: number;
   maxAttempts?: number;

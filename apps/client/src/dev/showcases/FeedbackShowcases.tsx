@@ -58,6 +58,15 @@ function CopyButtonDemo() {
         </button>
         <span className="text-muted-foreground text-xs">Click to force a failure</span>
       </div>
+      {/* Three glyph sizes on the library's `xs · sm · md` scale. The button's
+          own box does not change — it is always `icon-sm`, so the target stays
+          the same however small the glyph gets. */}
+      <div className="flex items-center gap-2">
+        <CopyButton size="xs" value="dorkos.ai" label="Copy site URL (extra small)" />
+        <CopyButton size="sm" value="dorkos.ai" label="Copy site URL (small)" />
+        <CopyButton size="md" value="dorkos.ai" label="Copy site URL (medium)" />
+        <span className="text-muted-foreground text-xs">xs · sm · md</span>
+      </div>
     </div>
   );
 }

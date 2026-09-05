@@ -269,7 +269,7 @@ function DiffHeader({
           <Button
             type="button"
             variant="ghost"
-            size="icon"
+            size="icon-md"
             className="text-muted-foreground hover:text-foreground size-7"
             aria-pressed={sideBySide}
             aria-label={sideBySide ? 'Switch to inline diff' : 'Switch to side-by-side diff'}

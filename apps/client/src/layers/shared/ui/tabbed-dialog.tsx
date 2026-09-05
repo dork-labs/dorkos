@@ -18,7 +18,7 @@ import {
 } from '@/layers/shared/ui';
 import { useSlotContributions, type SlotId } from '@/layers/shared/model';
 import { useDialogTabState } from '@/layers/shared/model/use-dialog-tab-state';
-import { cn } from '@/layers/shared/lib';
+import { cn } from '@/layers/shared/lib/utils';
 
 /** A single tab definition for `TabbedDialog`. */
 export interface TabbedDialogTab<T extends string> {

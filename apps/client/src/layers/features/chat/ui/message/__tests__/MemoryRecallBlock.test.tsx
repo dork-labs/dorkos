@@ -47,12 +47,12 @@ describe('MemoryRecallBlock', () => {
 
   it('renders streaming label with breathing animation when isStreaming', () => {
     // Purpose: verifies the streaming visual state is distinct — label says "Consulting memory…"
-    // and the span carries the animate-tasks class for the breathing animation.
+    // and the span carries the animate-breath class for the breathing animation.
     render(<MemoryRecallBlock mode="select" memories={ONE_MEMORY} isStreaming={true} />);
 
     const label = screen.getByText('Consulting memory…');
     expect(label).toBeInTheDocument();
-    expect(label).toHaveClass('animate-tasks');
+    expect(label).toHaveClass('animate-breath');
   });
 
   it('renders completed chip with recalled count when not isStreaming', () => {

@@ -1,5 +1,7 @@
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
-import { cn, isBypassPermissionMode, needsConsentRitual } from '@/layers/shared/lib';
+import { needsConsentRitual } from '@dorkos/shared/permission-semantics';
+import { isBypassPermissionMode } from '@/layers/shared/lib/permission-mode';
+import { cn } from '@/layers/shared/lib/utils';
 
 export interface PermissionModeScopeNoteProps {
   /** The permission mode currently selected. Anything that still asks renders nothing. */

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { LONG_PRESS_DRIFT_PX, TIMING } from '@/layers/shared/lib';
+import { LONG_PRESS_DRIFT_PX, TIMING } from '@/layers/shared/lib/constants';
 
 /**
  * Where a press is in its life, for a surface that acknowledges being pressed.

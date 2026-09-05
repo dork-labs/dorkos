@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { cn } from '@/layers/shared/lib';
+import { cn } from '@/layers/shared/lib/utils';
 import { Button } from './button';
 
 /** Maximum characters to render before truncation (5KB). */
 const TRUNCATE_THRESHOLD = 5120;
 
-interface TruncatedOutputProps {
+export interface TruncatedOutputProps {
   /** Text content to display, truncated if over threshold. */
   content: string;
   /** Maximum characters before truncation. Defaults to {@link TRUNCATE_THRESHOLD}. */
@@ -43,7 +43,7 @@ export function TruncatedOutput({
   const displayContent = isTruncated && !showFull ? content.slice(0, threshold) : content;
 
   return (
-    <div className={cn(className)} {...dataProps}>
+    <div data-slot="truncated-output" className={cn(className)} {...dataProps}>
       <pre className="max-h-48 overflow-y-auto text-xs whitespace-pre-wrap">{displayContent}</pre>
       {isTruncated && !showFull && (
         <Button

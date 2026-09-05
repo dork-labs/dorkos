@@ -5,7 +5,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useFavicon } from '../use-favicon';
 
-vi.mock('@/layers/shared/lib', () => ({
+// The leaf module, not the `shared/lib` barrel: inside `shared/` the barrel is
+// not the way in (DOR-1761), so the hook imports `favicon-utils` directly and a
+// mock aimed at the barrel would stand in for nothing.
+vi.mock('@/layers/shared/lib/favicon-utils', () => ({
   hashToHslColor: vi.fn(() => 'hsl(180, 70%, 55%)'),
   generateCircleFavicon: vi.fn(() => 'data:image/png;base64,solid'),
   generateTasksFrames: vi.fn(() =>
@@ -14,7 +17,11 @@ vi.mock('@/layers/shared/lib', () => ({
   setFavicon: vi.fn(),
 }));
 
-import { generateCircleFavicon, generateTasksFrames, setFavicon } from '@/layers/shared/lib';
+import {
+  generateCircleFavicon,
+  generateTasksFrames,
+  setFavicon,
+} from '@/layers/shared/lib/favicon-utils';
 
 describe('useFavicon', () => {
   beforeEach(() => {

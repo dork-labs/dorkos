@@ -1,33 +1,71 @@
+/**
+ * The bottom sheet — a panel that slides up from the bottom edge of the screen.
+ *
+ * The phone half of `ResponsiveDialog`: the same content that is a centred box on
+ * a desktop becomes a sheet a thumb can reach and drag away. Built on `vaul`, so
+ * the drag-to-dismiss gesture and the grabber at the top come for free.
+ *
+ * @module shared/ui/drawer
+ */
 import * as React from 'react';
 import { Drawer as DrawerPrimitive } from 'vaul';
-import { cn } from '../lib/utils';
 
-const Drawer = ({
-  shouldScaleBackground = true,
-  ...props
-}: React.ComponentProps<typeof DrawerPrimitive.Root>) => (
-  <DrawerPrimitive.Root shouldScaleBackground={shouldScaleBackground} {...props} />
-);
-Drawer.displayName = 'Drawer';
-
-const DrawerTrigger = DrawerPrimitive.Trigger;
-const DrawerPortal = DrawerPrimitive.Portal;
-const DrawerClose = DrawerPrimitive.Close;
-
-const DrawerOverlay = React.forwardRef<
-  React.ComponentRef<typeof DrawerPrimitive.Overlay>,
-  React.ComponentPropsWithoutRef<typeof DrawerPrimitive.Overlay>
->(({ className, ...props }, ref) => (
-  <DrawerPrimitive.Overlay
-    ref={ref}
-    className={cn('fixed inset-0 z-50 bg-black/80', className)}
-    {...props}
-  />
-));
-DrawerOverlay.displayName = 'DrawerOverlay';
+import { cn } from '@/layers/shared/lib/utils';
 
 /**
- * The sheet itself.
+ * The sheet itself — wraps a trigger and its content, and owns open/closed.
+ *
+ * `shouldScaleBackground` pushes the page back a little as the sheet rises,
+ * which is what makes it read as a layer above rather than a panel beside.
+ */
+function Drawer({
+  shouldScaleBackground = true,
+  ...props
+}: React.ComponentProps<typeof DrawerPrimitive.Root>) {
+  return <DrawerPrimitive.Root shouldScaleBackground={shouldScaleBackground} {...props} />;
+}
+
+/** The control that raises the sheet. Pass `asChild` to use your own button. */
+function DrawerTrigger({ ...props }: React.ComponentProps<typeof DrawerPrimitive.Trigger>) {
+  return <DrawerPrimitive.Trigger data-slot="drawer-trigger" {...props} />;
+}
+
+/**
+ * Renders the sheet at the end of the document, clear of any clipping ancestor.
+ *
+ * {@link DrawerContent} already portals itself, so this is only needed when
+ * building a content surface by hand.
+ */
+function DrawerPortal({ ...props }: React.ComponentProps<typeof DrawerPrimitive.Portal>) {
+  return <DrawerPrimitive.Portal {...props} />;
+}
+
+/** A control that lowers the sheet. Pass `asChild` to use your own button. */
+function DrawerClose({ ...props }: React.ComponentProps<typeof DrawerPrimitive.Close>) {
+  return <DrawerPrimitive.Close data-slot="drawer-close" {...props} />;
+}
+
+/**
+ * The dimmed sheet behind the drawer that swallows clicks on the page.
+ *
+ * {@link DrawerContent} renders one for you — reach for this only when composing
+ * a content surface from the parts.
+ */
+function DrawerOverlay({
+  className,
+  ...props
+}: React.ComponentProps<typeof DrawerPrimitive.Overlay>) {
+  return (
+    <DrawerPrimitive.Overlay
+      data-slot="drawer-overlay"
+      className={cn('fixed inset-0 z-50 bg-black/80', className)}
+      {...props}
+    />
+  );
+}
+
+/**
+ * The panel that slides up, with the grabber already drawn at the top.
  *
  * **The home-indicator gap is already handled, and not from here.** vaul stamps
  * `data-vaul-drawer` on this element, and `index.css` pads that selector by
@@ -42,62 +80,85 @@ DrawerOverlay.displayName = 'DrawerOverlay';
  * `top` is `auto`. Every dialog in this app caps itself at `max-h-[85vh]` and
  * puts one scrolling region inside; a new one has to do the same.
  */
-const DrawerContent = React.forwardRef<
-  React.ComponentRef<typeof DrawerPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DrawerPrimitive.Content>
->(({ className, children, ...props }, ref) => (
-  <DrawerPortal>
-    <DrawerOverlay />
-    <DrawerPrimitive.Content
-      ref={ref}
-      className={cn(
-        'bg-background fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto flex-col rounded-t-[10px] border',
-        className
-      )}
+function DrawerContent({
+  className,
+  children,
+  ...props
+}: React.ComponentProps<typeof DrawerPrimitive.Content>) {
+  return (
+    <DrawerPortal>
+      <DrawerOverlay />
+      <DrawerPrimitive.Content
+        data-slot="drawer-content"
+        className={cn(
+          'bg-background fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto flex-col rounded-t-[10px] border',
+          className
+        )}
+        {...props}
+      >
+        <div className="bg-muted mx-auto mt-4 h-2 w-[100px] rounded-full" />
+        {children}
+      </DrawerPrimitive.Content>
+    </DrawerPortal>
+  );
+}
+
+/** Stacks the title and description at the top of the sheet. */
+function DrawerHeader({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="drawer-header"
+      className={cn('grid gap-1.5 p-4 text-center sm:text-left', className)}
       {...props}
-    >
-      <div className="bg-muted mx-auto mt-4 h-2 w-[100px] rounded-full" />
-      {children}
-    </DrawerPrimitive.Content>
-  </DrawerPortal>
-));
-DrawerContent.displayName = 'DrawerContent';
-
-/** Header layout container for drawer title and description. */
-function DrawerHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('grid gap-1.5 p-4 text-center sm:text-left', className)} {...props} />;
+    />
+  );
 }
-DrawerHeader.displayName = 'DrawerHeader';
 
-/** Footer layout container for drawer action buttons. */
-function DrawerFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('mt-auto flex flex-col gap-2 p-4', className)} {...props} />;
+/**
+ * Stacks the sheet's buttons at the bottom, pushed down to the edge.
+ *
+ * Always a column, unlike `DialogFooter` — a sheet is a phone surface, and two
+ * full-width buttons are easier to hit than two side by side.
+ */
+function DrawerFooter({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="drawer-footer"
+      className={cn('mt-auto flex flex-col gap-2 p-4', className)}
+      {...props}
+    />
+  );
 }
-DrawerFooter.displayName = 'DrawerFooter';
 
-const DrawerTitle = React.forwardRef<
-  React.ComponentRef<typeof DrawerPrimitive.Title>,
-  React.ComponentPropsWithoutRef<typeof DrawerPrimitive.Title>
->(({ className, ...props }, ref) => (
-  <DrawerPrimitive.Title
-    ref={ref}
-    className={cn('text-lg leading-none font-semibold tracking-tight', className)}
-    {...props}
-  />
-));
-DrawerTitle.displayName = 'DrawerTitle';
+/**
+ * The sheet's heading, and the name a screen reader announces on open.
+ *
+ * Every drawer needs one. When the design has no visible heading, keep the title
+ * and hide it with `sr-only` rather than dropping it.
+ */
+function DrawerTitle({ className, ...props }: React.ComponentProps<typeof DrawerPrimitive.Title>) {
+  return (
+    <DrawerPrimitive.Title
+      data-slot="drawer-title"
+      className={cn('text-lg leading-none font-semibold tracking-tight', className)}
+      {...props}
+    />
+  );
+}
 
-const DrawerDescription = React.forwardRef<
-  React.ComponentRef<typeof DrawerPrimitive.Description>,
-  React.ComponentPropsWithoutRef<typeof DrawerPrimitive.Description>
->(({ className, ...props }, ref) => (
-  <DrawerPrimitive.Description
-    ref={ref}
-    className={cn('text-muted-foreground text-sm', className)}
-    {...props}
-  />
-));
-DrawerDescription.displayName = 'DrawerDescription';
+/** One quiet line under the title saying what the sheet is for. */
+function DrawerDescription({
+  className,
+  ...props
+}: React.ComponentProps<typeof DrawerPrimitive.Description>) {
+  return (
+    <DrawerPrimitive.Description
+      data-slot="drawer-description"
+      className={cn('text-muted-foreground text-sm', className)}
+      {...props}
+    />
+  );
+}
 
 export {
   Drawer,

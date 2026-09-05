@@ -260,7 +260,6 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
         <OptionRow
           isSelected={isOtherSelected}
           isFocused={isActive && focusedOptionIndex === oIdx}
-          data-selected={isOtherSelected}
           control={
             q.multiSelect ? (
               <Checkbox
@@ -330,7 +329,6 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
                     key={oIdx}
                     isSelected={isSelected}
                     isFocused={isActive && focusedOptionIndex === oIdx}
-                    data-selected={isSelected}
                     control={
                       <RadioGroupItem value={opt.label} id={optionId} disabled={submitting} />
                     }
@@ -365,7 +363,6 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
                     key={oIdx}
                     isSelected={isSelected}
                     isFocused={isActive && focusedOptionIndex === oIdx}
-                    data-selected={isSelected}
                     control={
                       <Checkbox
                         checked={isSelected}

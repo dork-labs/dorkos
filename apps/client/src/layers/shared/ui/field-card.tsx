@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { ChevronDown } from 'lucide-react';
-import { cn } from '@/layers/shared/lib';
+import { cn } from '@/layers/shared/lib/utils';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from './collapsible';
 
 /**

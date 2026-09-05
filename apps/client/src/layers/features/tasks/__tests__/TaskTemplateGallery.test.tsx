@@ -70,8 +70,8 @@ describe('TaskTemplateGallery', () => {
   it('shows skeleton cards while loading', () => {
     mockUseTaskTemplates.mockReturnValue({ isLoading: true, isError: false, data: undefined });
     const { container } = render(<TaskTemplateGallery />, { wrapper: Wrapper });
-    // 4 skeleton divs with animate-tasks
-    const skeletons = container.querySelectorAll('.animate-tasks');
+    // 4 skeleton divs with animate-breath
+    const skeletons = container.querySelectorAll('.animate-breath');
     expect(skeletons.length).toBe(4);
   });
 

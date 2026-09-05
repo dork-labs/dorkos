@@ -2,7 +2,7 @@ import { Checkbox } from '@/layers/shared/ui/checkbox';
 import { Field, FieldLabel, FieldDescription, FieldError } from '@/layers/shared/ui/field';
 import { useFieldContext } from '@/layers/shared/lib/form-context';
 
-interface CheckboxFieldProps {
+export interface CheckboxFieldProps {
   label: string;
   description?: string;
 }

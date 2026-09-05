@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { UiCanvasContent } from '@dorkos/shared/types';
-import { MAX_CANVAS_DOCUMENTS } from '@/layers/shared/lib';
+import { MAX_CANVAS_DOCUMENTS } from '@/layers/shared/lib/constants';
 import { useAppStore } from '../app-store';
 
 /** Reset the canvas slice to an empty, session-bound state before each test. */

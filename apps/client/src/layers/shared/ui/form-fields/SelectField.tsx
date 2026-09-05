@@ -13,7 +13,7 @@ interface SelectOption {
   label: string;
 }
 
-interface SelectFieldProps {
+export interface SelectFieldProps {
   label: string;
   options: SelectOption[];
   placeholder?: string;

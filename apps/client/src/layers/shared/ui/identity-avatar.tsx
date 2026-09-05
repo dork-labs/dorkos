@@ -6,9 +6,12 @@
 import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import type { AuthorKind } from '@dorkos/shared/room-schemas';
-import { canComputeReadableForeground, readableForeground } from '../lib/readable-foreground';
-import { cn } from '../lib/utils';
-import type { IdentityOrigin } from '../lib/identity-origin';
+import {
+  canComputeReadableForeground,
+  readableForeground,
+} from '@/layers/shared/lib/readable-foreground';
+import { cn } from '@/layers/shared/lib/utils';
+import type { IdentityOrigin } from '@/layers/shared/lib/identity-origin';
 import { AGENT_GLYPH, platformGlyph } from './identity-glyphs';
 import {
   STATUS_DOT_COLOR,
@@ -162,6 +165,12 @@ const identityAvatarVariants = cva(
       { shape: 'square', size: 'lg', class: 'rounded-2xl' },
     ],
     defaultVariants: {
+      // `sm`, not `md` — deliberately off the app-wide "md is the default"
+      // rule (`.claude/rules/components.md`). Avatars sit inline in dense rows
+      // (message headers, member lists) far more often than they anchor a
+      // standalone control, so the smaller size is the one callers reach for
+      // without saying so; `md`/`lg` are opt-in for the surfaces that do
+      // anchor on their own (profile headers, empty states).
       size: 'sm',
       shape: 'circle',
       variant: 'tint',

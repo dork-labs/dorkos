@@ -35,6 +35,9 @@ export { sessionDisplayTitle, UNTITLED_SESSION_LABEL } from './lib/session-displ
 export { useSessionRuntime } from './model/use-session-runtime';
 export { useSessionId, useStartNewSession } from './model/use-session-id';
 export type { SetSessionIdOptions } from './model/use-session-id';
+// Two hooks, two questions. This one is the session's SETTINGS — its model,
+// permission mode, effort, and any change still in flight. `useSessionChatStatus`
+// below is whether the chat is idle, streaming or waiting.
 export { useSessionStatus } from './model/use-session-status';
 export type { SessionStatusData } from './model/use-session-status';
 // Query-key factory — the one place a session cache key is built, so a reader
@@ -66,7 +69,7 @@ export {
   useSessionChatStore,
   useSessionChatState,
   useSessionMessages,
-  useSessionStatus as useSessionChatStatus,
+  useSessionChatStatus,
   useHasConfirmedAuto,
   useHasConfirmedAutonomy,
   useHasDismissedDefaultStopOffer,

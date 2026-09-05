@@ -1,7 +1,7 @@
 import { Button } from '@/layers/shared/ui/button';
 import { useFormContext } from '@/layers/shared/lib/form-context';
 
-interface SubmitButtonProps {
+export interface SubmitButtonProps {
   label?: string;
   pendingLabel?: string;
 }

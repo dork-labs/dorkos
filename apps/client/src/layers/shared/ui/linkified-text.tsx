@@ -220,7 +220,7 @@ export function containsUrl(text: string): boolean {
   return splitOnUrls(text).some((segment) => segment.kind === 'link');
 }
 
-interface LinkifiedTextProps {
+export interface LinkifiedTextProps {
   /** The literal string to render. Untrusted — see this module's TSDoc. */
   text: string;
 }

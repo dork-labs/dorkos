@@ -34,3 +34,4 @@ const FilterBar = Object.assign(FilterBarRoot, {
 });
 
 export { FilterBar };
+export type { FilterBarProps } from './FilterBar';

@@ -8,6 +8,8 @@ export interface SettingsPanelProps {
   title: string;
   /** Optional header actions (e.g., a "Reset" button). */
   actions?: ReactNode;
+  /** Chrome for the panel — margins, height. The caller owns it. */
+  className?: string;
   children: ReactNode;
 }
 
@@ -19,9 +21,9 @@ export interface SettingsPanelProps {
  * `TabbedDialog` already renders this wrapper internally — you don't
  * need to use this when using `TabbedDialog`.
  */
-export function SettingsPanel({ value, title, actions, children }: SettingsPanelProps) {
+export function SettingsPanel({ value, title, actions, className, children }: SettingsPanelProps) {
   return (
-    <NavigationLayoutPanel value={value}>
+    <NavigationLayoutPanel value={value} className={className}>
       <div className="space-y-4">
         <NavigationLayoutPanelHeader actions={actions}>{title}</NavigationLayoutPanelHeader>
         {children}
