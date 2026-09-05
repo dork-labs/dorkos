@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Users } from 'lucide-react';
-import { Badge, Separator } from '@/layers/shared/ui';
+import { Badge, DetailRow, Separator } from '@/layers/shared/ui';
 import { cn, formatDuration } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { useSessionId } from '@/layers/entities/session';
@@ -115,7 +115,7 @@ function LiveGroup({ diagnostics: d, live }: { diagnostics: SessionDiagnostics; 
 
   return (
     <Group label="Live">
-      <Row label="Live updates">
+      <DetailRow label="Live updates">
         <span className="inline-flex items-center gap-1.5">
           <span
             aria-hidden
@@ -131,9 +131,11 @@ function LiveGroup({ diagnostics: d, live }: { diagnostics: SessionDiagnostics; 
               without repeating the row's own word. */}
           {connection.shortLabel}
         </span>
-      </Row>
-      <Row label="Turn">{turnLabel(d)}</Row>
-      <Row label="Last event">{d.lastEventSeq === 0 ? 'none yet' : `seq ${d.lastEventSeq}`}</Row>
+      </DetailRow>
+      <DetailRow label="Turn">{turnLabel(d)}</DetailRow>
+      <DetailRow label="Last event">
+        {d.lastEventSeq === 0 ? 'none yet' : `seq ${d.lastEventSeq}`}
+      </DetailRow>
       {/*
         The wire `Last-Event-ID` is `<sessionId>-<serverEpoch>-<seq>` and lives
         only inside the SSE connection (the in-process Obsidian pump has none at
@@ -141,14 +143,14 @@ function LiveGroup({ diagnostics: d, live }: { diagnostics: SessionDiagnostics; 
         of cursors this client actually holds: what it resumed from, and how far
         it has got since.
       */}
-      <Row label="Resumed from">
+      <DetailRow label="Resumed from">
         {d.snapshotCursor === null ? 'not hydrated' : `cursor ${d.snapshotCursor}`}
-      </Row>
+      </DetailRow>
       {/* "Last update", not "last event": the age is measured from the last frame
           this client APPLIED, and a cold snapshot is a frame. Labelling it as an
           event would read as a contradiction beside "Last event — none yet". */}
-      <Row label="Last update">{age === null ? '—' : `${formatDuration(age)} ago`}</Row>
-      <Row label="Queued messages">{String(d.queueDepth)}</Row>
+      <DetailRow label="Last update">{age === null ? '—' : `${formatDuration(age)} ago`}</DetailRow>
+      <DetailRow label="Queued messages">{String(d.queueDepth)}</DetailRow>
     </Group>
   );
 }
@@ -159,27 +161,27 @@ function ResolvedGroup({ diagnostics: d }: { diagnostics: SessionDiagnostics }) 
     <Group label="Resolved">
       {/* The full path, not the leaf the line shows — this is the surface where
           "which checkout is this?" gets answered. */}
-      <Row label="Directory" wrap>
+      <DetailRow label="Directory" wrap>
         {d.cwd ?? '—'}
-      </Row>
-      <Row label="Git">{gitLabel(d.git)}</Row>
-      <Row label="Runtime">{d.runtime ?? '—'}</Row>
-      <Row label="Model" wrap>
+      </DetailRow>
+      <DetailRow label="Git">{gitLabel(d.git)}</DetailRow>
+      <DetailRow label="Runtime">{d.runtime ?? '—'}</DetailRow>
+      <DetailRow label="Model" wrap>
         {d.model ?? '—'}
-      </Row>
+      </DetailRow>
       {/* Shown only when it differs from the resolved id: `default` resolving to
           `claude-opus-4-6` is not a mismatch, and repeating one value twice would
           make the readout noisier without saying anything. */}
       {d.selectedModel !== null && d.selectedModel !== d.model && (
-        <Row label="Model selected">{d.selectedModel}</Row>
+        <DetailRow label="Model selected">{d.selectedModel}</DetailRow>
       )}
-      <Row label="Effort">{d.effort ?? '—'}</Row>
-      <Row label="Fast mode">{d.fastMode ? 'on' : 'off'}</Row>
-      <Row label="Permissions">{d.permissionMode}</Row>
-      <Row label="Session id" wrap>
+      <DetailRow label="Effort">{d.effort ?? '—'}</DetailRow>
+      <DetailRow label="Fast mode">{d.fastMode ? 'on' : 'off'}</DetailRow>
+      <DetailRow label="Permissions">{d.permissionMode}</DetailRow>
+      <DetailRow label="Session id" wrap>
         {d.sessionId}
-      </Row>
-      <Row label="DorkOS version">{d.clientVersion ?? '—'}</Row>
+      </DetailRow>
+      <DetailRow label="DorkOS version">{d.clientVersion ?? '—'}</DetailRow>
     </Group>
   );
 }
@@ -192,14 +194,16 @@ function UsageGroup({ diagnostics: d }: { diagnostics: SessionDiagnostics }) {
 
   return (
     <Group label="Usage">
-      <Row label="Context">{d.contextPercent === null ? '—' : `${d.contextPercent}% full`}</Row>
+      <DetailRow label="Context">
+        {d.contextPercent === null ? '—' : `${d.contextPercent}% full`}
+      </DetailRow>
       {d.contextUsage && (
-        <Row label="Tokens">
+        <DetailRow label="Tokens">
           {formatTokens(d.contextUsage.totalTokens)} / {formatTokens(d.contextUsage.maxTokens)}
-        </Row>
+        </DetailRow>
       )}
       {categories.map((category) => (
-        <Row
+        <DetailRow
           key={category.name}
           label={category.name}
           indent
@@ -207,27 +211,27 @@ function UsageGroup({ diagnostics: d }: { diagnostics: SessionDiagnostics }) {
           data-testid={`context-category-${category.name}`}
         >
           {formatTokens(category.tokens)}
-        </Row>
+        </DetailRow>
       ))}
       {d.cache === null ? (
-        <Row label="Cache">nothing cached yet</Row>
+        <DetailRow label="Cache">nothing cached yet</DetailRow>
       ) : (
         <>
-          <Row label="Cache hit">{`${cacheHitPercent(d.cache)}%`}</Row>
-          <Row label="Cache read" indent>
+          <DetailRow label="Cache hit">{`${cacheHitPercent(d.cache)}%`}</DetailRow>
+          <DetailRow label="Cache read" indent>
             {formatTokens(d.cache.readTokens)}
-          </Row>
-          <Row label="Cache written" indent>
+          </DetailRow>
+          <DetailRow label="Cache written" indent>
             {formatTokens(d.cache.creationTokens)}
-          </Row>
+          </DetailRow>
         </>
       )}
       {d.usage !== null && hasRenderableUsage(d.usage) ? (
-        <div className="px-1 pt-1">
+        <div className="pt-1">
           <UsageDetail usage={d.usage} />
         </div>
       ) : (
-        <Row label="Usage & cost">no usage reported</Row>
+        <DetailRow label="Usage & cost">no usage reported</DetailRow>
       )}
     </Group>
   );
@@ -246,21 +250,21 @@ function SubagentsGroup({ diagnostics: d }: { diagnostics: SessionDiagnostics })
       {/* Counted, not just listed, so the running rows are unambiguously labelled
           once "Finished this turn" sits below them — and so the server's own count
           has somewhere honest to contradict this one. */}
-      <Row label="Running">{runningLabel(running.length, d.runningSubagentCount)}</Row>
+      <DetailRow label="Running">{runningLabel(running.length, d.runningSubagentCount)}</DetailRow>
       {running.map((subagent) => (
         <SubagentRow key={subagent.taskId} subagent={subagent} />
       ))}
       {finished.length > 0 && (
         <>
-          <Row label="Finished this turn">{String(finished.length)}</Row>
+          <DetailRow label="Finished this turn">{String(finished.length)}</DetailRow>
           {finished.map((subagent) => (
             <SubagentRow key={subagent.taskId} subagent={subagent} />
           ))}
         </>
       )}
-      <Row label="Available">
+      <DetailRow label="Available">
         {d.subagents.length === 0 ? 'none' : d.subagents.map((a) => a.name).join(', ')}
-      </Row>
+      </DetailRow>
     </Group>
   );
 }
@@ -271,7 +275,7 @@ function SubagentRow({ subagent }: { subagent: ActiveSubagent }) {
     <div
       data-testid={`active-subagent-${subagent.taskId}`}
       data-status={subagent.status}
-      className="space-y-0.5 px-1 py-1"
+      className="space-y-0.5 py-1"
     >
       <div className="flex items-center gap-2 text-sm">
         <Users className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
@@ -291,57 +295,14 @@ function SubagentRow({ subagent }: { subagent: ActiveSubagent }) {
 /** One titled section of the readout. */
 function Group({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <section className="min-w-0 space-y-0.5">
+    <section className="min-w-0">
       <h3 className="text-muted-foreground px-1 pb-1 text-xs font-medium tracking-wide uppercase">
         {label}
       </h3>
-      {children}
+      {/* The padding and the type size belong to the group, not to each row —
+          they used to be re-stated on every single one. */}
+      <div className="space-y-1 px-1 text-xs">{children}</div>
     </section>
-  );
-}
-
-/** One label/value line: label left, value right, both allowed to be long. */
-function Row({
-  label,
-  children,
-  wrap,
-  indent,
-  swatch,
-  ...rest
-}: {
-  label: string;
-  children: ReactNode;
-  /** Let the value break onto more lines instead of truncating (paths, ids). */
-  wrap?: boolean;
-  /** Nest under the row above it (a breakdown line). */
-  indent?: boolean;
-  /** Category colour dot, for context-breakdown rows. */
-  swatch?: string;
-  'data-testid'?: string;
-}) {
-  return (
-    <div
-      className={cn('flex items-baseline gap-2 px-1 py-0.5 text-sm', indent && 'pl-4')}
-      {...rest}
-    >
-      {swatch && (
-        <span
-          aria-hidden
-          className="mb-px inline-block size-1.5 shrink-0 self-center rounded-full"
-          style={{ backgroundColor: swatch }}
-        />
-      )}
-      <span className={cn('shrink-0', indent ? 'text-muted-foreground text-xs' : '')}>{label}</span>
-      <span className="min-w-0 flex-1" />
-      <span
-        className={cn(
-          'text-muted-foreground text-right text-xs',
-          wrap ? 'min-w-0 break-all' : 'truncate'
-        )}
-      >
-        {children}
-      </span>
-    </div>
   );
 }
 
