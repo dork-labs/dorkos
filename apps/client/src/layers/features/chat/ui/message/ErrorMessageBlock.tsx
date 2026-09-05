@@ -3,10 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { AlertTriangle, ChevronDown, RotateCcw } from 'lucide-react';
 import type { ErrorCategory } from '@dorkos/shared/types';
 import { Button, LinkifiedText, containsUrl } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
+import { cn, COLLAPSE_TRANSITION, COLLAPSE_VARIANTS } from '@/layers/shared/lib';
 import { AuthErrorActions } from './AuthErrorActions';
-
-const collapseTransition = { duration: 0.25, ease: [0.4, 0, 0.2, 1] } as const;
 
 /** Runtime name in the auth heading ("Sign in to X again") when unresolved. */
 const AUTH_HEADING_FALLBACK_NAME = 'your agent';
@@ -236,10 +234,11 @@ export function ErrorMessageBlock({
           <AnimatePresence initial={false}>
             {showDetails && detailsText && (
               <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={collapseTransition}
+                variants={COLLAPSE_VARIANTS}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={COLLAPSE_TRANSITION}
                 className="overflow-hidden"
               >
                 <pre className="bg-muted/50 mt-1 max-h-40 overflow-auto rounded p-2 text-xs whitespace-pre-wrap">

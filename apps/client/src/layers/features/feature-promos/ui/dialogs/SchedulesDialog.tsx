@@ -1,7 +1,7 @@
 import { Moon, Repeat, Clock } from 'lucide-react';
-import { Button } from '@/layers/shared/ui';
 import { useTasksDeepLink } from '@/layers/shared/model';
 import type { PromoDialogProps } from '../../model/promo-types';
+import { PromoDialogLayout } from './PromoDialogLayout';
 
 /** Dialog content for the Schedules promo. */
 export function SchedulesDialog({ onClose }: PromoDialogProps) {
@@ -13,46 +13,25 @@ export function SchedulesDialog({ onClose }: PromoDialogProps) {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="flex size-10 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500/10 to-indigo-600/10">
-          <Moon className="size-5 text-indigo-500" />
-        </div>
-        <div>
-          <h3 className="text-sm font-medium">Agents that work on a schedule</h3>
-          <p className="text-muted-foreground text-xs">Put any skill on a timer</p>
-        </div>
-      </div>
-
-      <div className="bg-muted/50 space-y-3 rounded-lg p-4">
-        <div className="flex items-start gap-3">
-          <Clock className="text-muted-foreground mt-0.5 size-4" />
-          <div>
-            <p className="text-xs font-medium">Cron-style schedules</p>
-            <p className="text-muted-foreground text-xs">
-              Run agents on any schedule &mdash; daily, hourly, or custom cron
-            </p>
-          </div>
-        </div>
-        <div className="flex items-start gap-3">
-          <Repeat className="text-muted-foreground mt-0.5 size-4" />
-          <div>
-            <p className="text-xs font-medium">Come back to results</p>
-            <p className="text-muted-foreground text-xs">
-              Review completed work instead of starting it
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex justify-end gap-2">
-        <Button variant="ghost" size="sm" onClick={onClose}>
-          Later
-        </Button>
-        <Button size="sm" onClick={handleSetUp}>
-          Create a schedule
-        </Button>
-      </div>
-    </div>
+    <PromoDialogLayout
+      icon={Moon}
+      tint="indigo"
+      title="Agents that work on a schedule"
+      subtitle="Put any skill on a timer"
+      highlights={[
+        {
+          icon: Clock,
+          title: 'Cron-style schedules',
+          description: 'Run agents on any schedule — daily, hourly, or custom cron',
+        },
+        {
+          icon: Repeat,
+          title: 'Come back to results',
+          description: 'Review completed work instead of starting it',
+        },
+      ]}
+      primaryAction={{ label: 'Create a schedule', onClick: handleSetUp }}
+      secondaryAction={{ label: 'Later', onClick: onClose }}
+    />
   );
 }

@@ -1,6 +1,7 @@
 import { motion } from 'motion/react';
 import { ScanSearch } from 'lucide-react';
 import { Button } from '@/layers/shared/ui/button';
+import { Skeleton } from '@/layers/shared/ui/skeleton';
 import { useImportProjectsStore } from '@/layers/shared/model';
 
 const ghostContainerVariants = {
@@ -20,15 +21,15 @@ function GhostRow() {
     <motion.div variants={ghostRowVariants} className="rounded-xl border border-dashed px-4 py-3">
       {/* Line 1: dot placeholder + name bar + badge bar + time bar */}
       <div className="mb-2 flex items-center gap-2">
-        <div className="bg-muted size-3 rounded-full" />
-        <div className="bg-muted h-3 w-32 rounded" />
-        <div className="bg-muted h-3 w-16 rounded" />
-        <div className="bg-muted ml-auto h-3 w-10 rounded" />
+        <Skeleton className="size-3 rounded-full" />
+        <Skeleton className="h-3 w-32" />
+        <Skeleton className="h-3 w-16" />
+        <Skeleton className="ml-auto h-3 w-10" />
       </div>
       {/* Line 2: path bar + session count bar */}
       <div className="flex items-center gap-2">
-        <div className="bg-muted h-2.5 w-48 rounded" />
-        <div className="bg-muted h-2.5 w-20 rounded" />
+        <Skeleton className="h-2.5 w-48" />
+        <Skeleton className="h-2.5 w-20" />
       </div>
     </motion.div>
   );

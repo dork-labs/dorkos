@@ -48,6 +48,21 @@ describe('Badge', () => {
     expect(screen.getByText('Tiny')).toHaveClass('text-3xs');
   });
 
+  // The pill is the shape four components wanted and could not get, so each
+  // drew its own. It has to come OUT of the primitive, not off the call site.
+  it('defaults to the rounded rectangle and takes the pill', () => {
+    render(
+      <>
+        <Badge>Boxy</Badge>
+        <Badge shape="pill">Round</Badge>
+      </>
+    );
+    expect(screen.getByText('Boxy')).toHaveClass('rounded-md');
+    const pill = screen.getByText('Round');
+    expect(pill).toHaveClass('rounded-full');
+    expect(pill).not.toHaveClass('rounded-md');
+  });
+
   // The tone comes from the app's shared status vocabulary, so a warning badge
   // is the same amber as a warning banner — in both themes.
   it('paints a tone from the shared status tokens', () => {

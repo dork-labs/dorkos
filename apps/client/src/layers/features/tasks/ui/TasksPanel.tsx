@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { X } from 'lucide-react';
-import { FeatureDisabledState } from '@/layers/shared/ui';
+import { FeatureDisabledState, RemovableChip } from '@/layers/shared/ui';
 import { useAppStore } from '@/layers/shared/model';
 import { icons } from '@dorkos/icons/registry';
 import { useTasksEnabled, useTasks, useTaskTemplateDialog } from '@/layers/entities/tasks';
@@ -218,16 +217,8 @@ export function TasksPanel() {
 /** Compact chip showing the active agent filter with a clear button. */
 function AgentFilterChip({ name, onClear }: { name: string | null; onClear: () => void }) {
   return (
-    <span className="text-muted-foreground inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs">
+    <RemovableChip onRemove={onClear} removeLabel="Clear agent filter">
       {name ?? 'Agent'}
-      <button
-        type="button"
-        onClick={onClear}
-        className="hover:text-foreground -mr-0.5 rounded-full p-0.5 transition-colors"
-        aria-label="Clear agent filter"
-      >
-        <X className="size-3" />
-      </button>
-    </span>
+    </RemovableChip>
   );
 }

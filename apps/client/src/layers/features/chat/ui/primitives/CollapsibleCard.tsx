@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronDown } from 'lucide-react';
-import { cn } from '@/layers/shared/lib';
+import { cn, COLLAPSE_TRANSITION, COLLAPSE_VARIANTS } from '@/layers/shared/lib';
 
 interface CollapsibleCardProps {
   /** Whether the accordion body is expanded. */
@@ -97,10 +97,11 @@ export function CollapsibleCard({
       <AnimatePresence initial={false}>
         {expanded && (
           <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+            variants={COLLAPSE_VARIANTS}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            transition={COLLAPSE_TRANSITION}
             className="overflow-hidden"
           >
             <div className="border-border/50 border-t px-3 pt-1 pb-3">{children}</div>

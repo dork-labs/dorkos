@@ -12,6 +12,7 @@ import {
   DialogTitle,
   Input,
   Label,
+  Skeleton,
 } from '@/layers/shared/ui';
 import {
   useAddMarketplaceSource,
@@ -189,7 +190,7 @@ export function MarketplaceSourcesView() {
       {isLoading && (
         <div className="space-y-3">
           {[1, 2].map((i) => (
-            <div key={i} className="bg-muted h-20 animate-pulse rounded-xl border" />
+            <Skeleton key={i} className="h-20 rounded-xl border" />
           ))}
         </div>
       )}

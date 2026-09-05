@@ -1,5 +1,6 @@
 import { motion } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
+import { Card } from '@/layers/shared/ui';
 import { useWidgetMotion } from '../lib/widget-motion';
 
 /** Seconds for one shimmer sweep to travel across the skeleton. */
@@ -20,8 +21,9 @@ function Bar({ className }: { className?: string }) {
 export function WidgetSkeleton() {
   const motionOn = useWidgetMotion();
   return (
-    <div
-      className="bg-card shadow-soft relative flex flex-col gap-3 overflow-hidden rounded-lg border p-4"
+    <Card
+      gap="sm"
+      className="relative overflow-hidden"
       aria-busy="true"
       aria-label="Loading widget"
     >
@@ -54,6 +56,6 @@ export function WidgetSkeleton() {
           }}
         />
       )}
-    </div>
+    </Card>
   );
 }

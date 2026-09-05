@@ -1,5 +1,6 @@
 import type { PackageScope } from '@dorkos/shared/marketplace-schemas';
 import { cn } from '@/layers/shared/lib';
+import { Badge } from '@/layers/shared/ui';
 
 interface ScopeBadgeProps {
   scope?: PackageScope;
@@ -26,15 +27,17 @@ const SCOPE_CLASSES: Record<PackageScope, string> = {
  */
 export function ScopeBadge({ scope = 'global', className }: ScopeBadgeProps) {
   return (
-    <span
+    <Badge
       data-slot="scope-badge"
+      shape="pill"
+      size="xs"
       className={cn(
-        'text-3xs inline-flex items-center rounded-full px-1.5 py-0.5 font-semibold tracking-wide uppercase',
+        'border-transparent font-semibold tracking-wide uppercase',
         SCOPE_CLASSES[scope],
         className
       )}
     >
       {SCOPE_LABELS[scope]}
-    </span>
+    </Badge>
   );
 }

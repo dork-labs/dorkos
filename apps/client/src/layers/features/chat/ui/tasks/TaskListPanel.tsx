@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { TaskItem } from '@dorkos/shared/types';
+import { COLLAPSE_TRANSITION, COLLAPSE_VARIANTS } from '@/layers/shared/lib';
 import { TaskProgressHeader } from './TaskProgressHeader';
 import { TaskActiveForm } from './TaskActiveForm';
 import { TaskRow } from './TaskRow';
@@ -73,9 +74,11 @@ export function TaskListPanel({
       <AnimatePresence>
         {!isCollapsed && (
           <motion.ul
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
+            variants={COLLAPSE_VARIANTS}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            transition={COLLAPSE_TRANSITION}
             className="mt-1 space-y-0.5"
           >
             {visibleTasks.map((task) => {

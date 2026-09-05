@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { X, CornerDownLeft, ArrowUp, AppWindow } from 'lucide-react';
-import { cn } from '@/layers/shared/lib';
+import { cn, COLLAPSE_TRANSITION, COLLAPSE_VARIANTS } from '@/layers/shared/lib';
 import type { QueueItem } from '../../model/use-message-queue';
 
 /**
@@ -85,10 +85,11 @@ export function QueuePanel({
 
   return (
     <motion.div
-      initial={{ opacity: 0, height: 0 }}
-      animate={{ opacity: 1, height: 'auto' }}
-      exit={{ opacity: 0, height: 0 }}
-      transition={{ duration: 0.2 }}
+      variants={COLLAPSE_VARIANTS}
+      initial="initial"
+      animate="animate"
+      exit="exit"
+      transition={COLLAPSE_TRANSITION}
       className="mb-1.5 overflow-hidden"
     >
       {/* The count alone never said the one thing a person waiting actually

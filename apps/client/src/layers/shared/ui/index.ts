@@ -26,8 +26,27 @@ export { BoundedNumberInput } from './bounded-number-input';
 export type { BoundedNumberInputProps } from './bounded-number-input';
 export { Button, buttonVariants } from './button';
 export type { ButtonSize, ButtonProps } from './button';
-export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './card';
+export {
+  Card,
+  cardVariants,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+} from './card';
+export type { CardProps } from './card';
 export { Checkbox } from './checkbox';
+export { DetailRow } from './detail-row';
+export type { DetailRowProps } from './detail-row';
+export { EmptyState, emptyStateIconVariants } from './empty-state';
+export type { EmptyStateProps, EmptyStateAction } from './empty-state';
+export { QueryErrorState } from './query-error-state';
+export type { QueryErrorStateProps } from './query-error-state';
+export { RemovableChip } from './removable-chip';
+export type { RemovableChipProps } from './removable-chip';
+export { Spinner, spinnerVariants } from './spinner';
+export type { SpinnerProps } from './spinner';
 export { Collapsible, CollapsibleTrigger, CollapsibleContent } from './collapsible';
 export { Progress } from './progress';
 export { PromptSuggestionChips } from './PromptSuggestionChips';

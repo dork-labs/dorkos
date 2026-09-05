@@ -43,3 +43,17 @@ naming and composition conventions live in
 | The raw control itself, outside a TanStack Form                     | `input.tsx` / `select.tsx` / `switch.tsx` / `checkbox.tsx` / `textarea.tsx`                                         | a `*Field`                           | there is no form context for a `*Field` to wire to                                     |
 | A labelled group whose state and errors you own and compose by hand | `Field` / `FieldLabel` / `FieldDescription` / `FieldError`                                                          | a `*Field`                           | the `*Field` family owns TanStack's state; this owns yours                             |
 | A toggle inside a settings panel                                    | `SettingRow` (see Rows, above)                                                                                      | `SwitchField`                        | a settings panel is not a TanStack Form                                                |
+
+## Panel states
+
+Every one of these replaced a pile of hand-written copies (DOR-1763). If you
+find yourself typing one of their shells, that is the signal to import instead.
+
+| Want                                                           | Use               | Not                                         | Because                                                                              |
+| -------------------------------------------------------------- | ----------------- | ------------------------------------------- | ------------------------------------------------------------------------------------ |
+| "Nothing here yet": glyph, headline, one line, optional button | `EmptyState`      | a hand-rolled centred stack                 | seven slices each built their own, at four different paddings                        |
+| "Couldn't load that, try again"                                | `QueryErrorState` | `EmptyState` with your own triangle         | it IS `EmptyState` in the destructive tone, plus the retry button and its busy state |
+| A read-only label and value on one line                        | `DetailRow`       | `Field` or `SettingRow`                     | those pair a label with a _control_; this pairs one with a _value_                   |
+| A dismissible pill: an active filter, a chosen option          | `RemovableChip`   | a hand-rolled pill with an X                | composes `Badge shape="pill"`, so every chip is the same geometry                    |
+| A spinning loader                                              | `Spinner`         | `Loader2` + `animate-spin` at the call site | one size scale, and `aria-hidden` unless you give it a label                         |
+| A surface with a border, padding and soft elevation            | `Card`            | `bg-card rounded-lg border p-4` on a div    | `variant="interactive"` for the hover lift, `radius`, and `gap` are all axes now     |

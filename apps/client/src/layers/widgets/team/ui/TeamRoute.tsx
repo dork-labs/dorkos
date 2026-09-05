@@ -1,9 +1,8 @@
 import { lazy, Suspense, useMemo } from 'react';
-import { Loader2, TriangleAlert } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useSearch, useNavigate } from '@tanstack/react-router';
-import { Button } from '@/layers/shared/ui/button';
-import { Drawer, DrawerContent } from '@/layers/shared/ui';
+import { Drawer, DrawerContent, QueryErrorState } from '@/layers/shared/ui';
 import { useIsMobile } from '@/layers/shared/model';
 import { useProfileStore } from '@/layers/features/profile';
 import { useOpenConnections } from '@/layers/shared/model';
@@ -93,20 +92,12 @@ export function TeamRoute() {
 
   if (isError && viewMode !== 'cards') {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-        <div className="bg-destructive/10 rounded-xl p-3">
-          <TriangleAlert className="text-destructive size-6" />
-        </div>
-        <div className="space-y-1">
-          <p className="text-sm font-medium">Could not load agents</p>
-          <p className="text-muted-foreground mt-1 text-xs">
-            The mesh API is unreachable. Check that the server is running correctly.
-          </p>
-        </div>
-        <Button size="sm" onClick={() => void refetch()} className="mt-1">
-          Retry
-        </Button>
-      </div>
+      <QueryErrorState
+        className="h-full"
+        title="Could not load agents"
+        description="The mesh API is unreachable. Check that the server is running correctly."
+        onRetry={() => void refetch()}
+      />
     );
   }
 

@@ -8,6 +8,7 @@ import {
 } from '@/layers/shared/lib/filter-engine';
 import { useIsMobile } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui/button';
+import { RemovableChip } from '@/layers/shared/ui/removable-chip';
 import {
   Sheet,
   SheetContent,
@@ -141,21 +142,13 @@ function FilterBarActiveFilters({ className }: FilterBarActiveFiltersProps) {
       className={cn('flex flex-wrap items-center gap-1', className)}
     >
       {activeEntries.map(({ name, label, displayValue }) => (
-        <span
+        <RemovableChip
           key={name}
-          className="border-muted bg-muted/50 inline-flex h-6 items-center gap-1 rounded-full border px-2 text-xs"
+          onRemove={() => clear(name)}
+          removeLabel={`Remove ${label} filter`}
         >
           {label}: {displayValue}
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            onClick={() => clear(name)}
-            className="text-muted-foreground hover:text-foreground -mr-1 size-4 rounded-full"
-            aria-label={`Remove ${label} filter`}
-          >
-            <XIcon className="size-3" />
-          </Button>
-        </span>
+        </RemovableChip>
       ))}
     </div>
   );

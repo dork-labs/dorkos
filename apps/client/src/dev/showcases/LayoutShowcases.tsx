@@ -1,4 +1,13 @@
-import { PageContainer } from '@/layers/shared/ui';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+  PageContainer,
+} from '@/layers/shared/ui';
+import { Button } from '@/layers/shared/ui';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -20,6 +29,84 @@ function SampleContent({ label }: { label: string }) {
  * which is the thing that used to differ page by page.
  */
 export function LayoutShowcases() {
+  return (
+    <>
+      <CardShowcase />
+      <PageContainerShowcase />
+    </>
+  );
+}
+
+/** The surface every panel sits on — its two shapes, its spacing, its hover. */
+function CardShowcase() {
+  return (
+    <PlaygroundSection
+      title="Card"
+      description="The one card shell. About ten files used to hand-write these classes because the corner they wanted, or the hover lift, was not reachable from the component — both are axes now."
+    >
+      <ShowcaseLabel>Header, body, footer</ShowcaseLabel>
+      <ShowcaseDemo>
+        <Card className="w-full max-w-sm">
+          <CardHeader>
+            <CardTitle>Telegram</CardTitle>
+            <CardDescription>Connected as @dorkbot</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground text-xs">
+              Messages from this chat reach your agents.
+            </p>
+          </CardContent>
+          <CardFooter>
+            <Button size="sm" variant="outline">
+              Disconnect
+            </Button>
+          </CardFooter>
+        </Card>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>radius — md (default) and lg</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="flex w-full max-w-lg gap-3">
+          <Card className="flex-1">rounded-lg</Card>
+          <Card radius="lg" className="flex-1">
+            rounded-xl
+          </Card>
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>variant=&quot;interactive&quot; — hover it, then tab to it</ShowcaseLabel>
+      <ShowcaseDemo>
+        <Card variant="interactive" className="w-full max-w-sm">
+          <CardTitle>A card you can press</CardTitle>
+          <Button size="sm" variant="outline" className="self-start">
+            Connect
+          </Button>
+        </Card>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>gap — md (default), sm, and none for a body that spaces itself</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="flex w-full max-w-2xl gap-3">
+          <Card className="flex-1 text-xs">
+            <span>gap=md</span>
+            <span>16px apart</span>
+          </Card>
+          <Card gap="sm" className="flex-1 text-xs">
+            <span>gap=sm</span>
+            <span>12px apart</span>
+          </Card>
+          <Card gap="none" className="flex-1 text-xs">
+            <span>gap=none</span>
+            <span className="mt-1">the body decides</span>
+          </Card>
+        </div>
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
+/** The page-width vocabulary, all three tiers side by side. */
+function PageContainerShowcase() {
   return (
     <PlaygroundSection
       title="PageContainer"

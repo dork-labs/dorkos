@@ -7,6 +7,7 @@
 import { useState } from 'react';
 import { cn } from '@/layers/shared/lib';
 import {
+  badgeVariants,
   ResponsivePopover,
   ResponsivePopoverContent,
   ResponsivePopoverTitle,
@@ -68,8 +69,12 @@ export function BridgeVisibilityBadge({ visibility, className }: BridgeVisibilit
           // exactly the claim §8 forbids the badge from making.
           aria-haspopup="dialog"
           aria-expanded={open}
+          // The badge's own shell, from the badge's own recipe — but still a
+          // `<button>`: §8 forbids this from claiming to be a control you flip,
+          // and `Badge` would make it a `<span>` with no popover to open.
           className={cn(
-            'text-muted-foreground hover:text-foreground focus-visible:ring-ring text-2xs inline-flex h-6 shrink-0 items-center rounded-full border px-2.5 font-medium outline-hidden transition-colors focus-visible:ring-2',
+            badgeVariants({ shape: 'pill', variant: 'outline' }),
+            'text-muted-foreground hover:text-foreground text-2xs h-6 shrink-0 px-2.5',
             className
           )}
         >

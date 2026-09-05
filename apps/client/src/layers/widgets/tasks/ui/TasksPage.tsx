@@ -1,8 +1,6 @@
 import { useMemo, useState } from 'react';
-import { TriangleAlert } from 'lucide-react';
 import { motion } from 'motion/react';
-import { Button } from '@/layers/shared/ui/button';
-import { FeatureDisabledState, PageContainer } from '@/layers/shared/ui';
+import { FeatureDisabledState, PageContainer, QueryErrorState } from '@/layers/shared/ui';
 import { icons } from '@dorkos/icons/registry';
 import { useTasksEnabled, useTasks, useTaskTemplateDialog } from '@/layers/entities/tasks';
 import type { TaskTemplate } from '@/layers/entities/tasks';
@@ -81,20 +79,12 @@ export function TasksPage() {
 
   if (isError) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-        <div className="bg-destructive/10 rounded-xl p-3">
-          <TriangleAlert className="text-destructive size-6" />
-        </div>
-        <div className="space-y-1">
-          <p className="text-sm font-medium">Could not load your scheduled tasks</p>
-          <p className="text-muted-foreground mt-1 text-xs">
-            The scheduler is unreachable. Check that the server is running correctly.
-          </p>
-        </div>
-        <Button size="sm" onClick={() => void refetch()} className="mt-1">
-          Retry
-        </Button>
-      </div>
+      <QueryErrorState
+        className="h-full"
+        title="Could not load your scheduled tasks"
+        description="The scheduler is unreachable. Check that the server is running correctly."
+        onRetry={() => void refetch()}
+      />
     );
   }
 

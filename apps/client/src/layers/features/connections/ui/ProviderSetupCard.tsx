@@ -13,6 +13,7 @@ import {
   AlertDialogTrigger,
   Badge,
   Button,
+  Card,
   Label,
   PasswordInput,
 } from '@/layers/shared/ui';
@@ -45,7 +46,7 @@ export function ProviderSetupCard({ status }: { status: ConnectorProviderStatus 
   };
 
   return (
-    <div data-testid={`provider-card-${status.type}`} className="bg-card rounded-lg border p-4">
+    <Card data-testid={`provider-card-${status.type}`} gap="none">
       <div className="flex items-center justify-between gap-2">
         <h3 className="flex items-center gap-2 text-sm font-medium">
           <KeyRound className="text-muted-foreground size-4" aria-hidden />
@@ -133,7 +134,7 @@ export function ProviderSetupCard({ status }: { status: ConnectorProviderStatus 
           composio CLI uses.
         </p>
       )}
-    </div>
+    </Card>
   );
 }
 

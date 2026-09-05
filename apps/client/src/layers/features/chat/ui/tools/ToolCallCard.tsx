@@ -1,16 +1,18 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Loader2, Check, X } from 'lucide-react';
+import { Check, X } from 'lucide-react';
 import type { ToolCallState, HookState } from '../../model/use-chat-session';
 import {
   getToolLabel,
   getMcpServerBadge,
   ToolArgumentsDisplay,
   cn,
+  COLLAPSE_TRANSITION,
+  COLLAPSE_VARIANTS,
   formatDuration,
 } from '@/layers/shared/lib';
 import { getToolStatusIcon, CollapsibleCard } from '../primitives';
-import { TruncatedOutput } from '@/layers/shared/ui';
+import { Spinner, TruncatedOutput } from '@/layers/shared/ui';
 import { OutputRenderer } from '../message/OutputRenderer';
 
 interface HookRowProps {
@@ -20,7 +22,7 @@ interface HookRowProps {
 
 /** Status icon map for hook execution states. */
 const hookStatusIcon = {
-  running: <Loader2 className="text-muted-foreground size-(--size-icon-xs) animate-spin" />,
+  running: <Spinner size="xs" className="text-muted-foreground" />,
   success: <Check className="text-muted-foreground size-(--size-icon-xs)" />,
   error: <X className="text-destructive size-(--size-icon-xs)" />,
   cancelled: <X className="text-muted-foreground size-(--size-icon-xs)" />,
@@ -60,10 +62,11 @@ function HookRow({ hook }: HookRowProps) {
       <AnimatePresence initial={false}>
         {expanded && hasOutput && output && (
           <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+            variants={COLLAPSE_VARIANTS}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            transition={COLLAPSE_TRANSITION}
             className="overflow-hidden"
           >
             <pre className="text-muted-foreground max-h-32 overflow-y-auto py-1 text-xs whitespace-pre-wrap">
@@ -139,7 +142,7 @@ export function ToolCallCard({ toolCall, defaultExpanded = false }: ToolCallCard
     >
       {toolCall.status === 'running' && !toolCall.input ? (
         <div className="text-muted-foreground flex items-center gap-1.5 py-1 text-xs">
-          <Loader2 className="size-3 animate-spin" />
+          <Spinner size="xs" />
           <span>Preparing...</span>
         </div>
       ) : toolCall.input !== undefined && toolCall.input !== '' ? (

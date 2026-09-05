@@ -1,5 +1,5 @@
 import { PackageSearch } from 'lucide-react';
-import { Button } from '@/layers/shared/ui';
+import { EmptyState } from '@/layers/shared/ui';
 
 interface PackageEmptyStateProps {
   /**
@@ -21,6 +21,10 @@ interface PackageEmptyStateProps {
 /**
  * Empty state displayed when the active filter combination returns zero packages.
  *
+ * The marketplace's copy over the shared `EmptyState` shell — the dashed border
+ * says "this grid could have things in it", the words say which filter emptied
+ * it.
+ *
  * Distinguishes a filter-induced empty state (provides an escape-hatch action)
  * from a true empty catalog (no action button). Pass `onResetFilters` when
  * filters are active so the user has a clear escape hatch; use `resetLabel` to
@@ -38,15 +42,17 @@ export function PackageEmptyState({
   description = 'Try adjusting your search or category filters.',
 }: PackageEmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
-      <PackageSearch className="text-muted-foreground mb-4 size-10" aria-hidden />
-      <h3 className="mb-2 text-base font-semibold">{title}</h3>
-      <p className="text-muted-foreground mb-4 max-w-sm text-sm">{description}</p>
-      {onResetFilters && (
-        <Button variant="outline" onClick={onResetFilters}>
-          {resetLabel}
-        </Button>
-      )}
-    </div>
+    <EmptyState
+      className="rounded-xl border border-dashed"
+      icon={PackageSearch}
+      headline={title}
+      headingLevel={3}
+      description={description}
+      action={
+        onResetFilters
+          ? { label: resetLabel, onClick: onResetFilters, variant: 'outline' }
+          : undefined
+      }
+    />
   );
 }

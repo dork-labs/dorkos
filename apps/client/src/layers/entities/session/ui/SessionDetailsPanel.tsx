@@ -16,8 +16,13 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { GitFork } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
-import { cn, permissionModeLabel } from '@/layers/shared/lib';
-import { CopyButton, TRUST_TONE_TEXT } from '@/layers/shared/ui';
+import {
+  cn,
+  COLLAPSE_TRANSITION,
+  COLLAPSE_VARIANTS,
+  permissionModeLabel,
+} from '@/layers/shared/lib';
+import { DetailRow, TRUST_TONE_TEXT } from '@/layers/shared/ui';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { useSessionPermissionSummary } from '../model/use-session-permission-summary';
 import { getOriginDescriptor } from '../config/origin-descriptors';
@@ -40,6 +45,12 @@ export interface SessionDetailsPanelProps {
    */
   className?: string;
 }
+
+/**
+ * Every value in this panel is a raw fact — an id, a timestamp, a mode name —
+ * so they all read in the mono face and select whole on a click.
+ */
+const FACT_VALUE = 'font-mono select-all';
 
 /** Format an ISO timestamp for display, falling back to the raw string. */
 function formatTimestamp(iso: string): string {
@@ -92,10 +103,11 @@ export function SessionDetailsPanel({
     <AnimatePresence initial={false}>
       {expanded && (
         <motion.div
-          initial={{ height: 0, opacity: 0 }}
-          animate={{ height: 'auto', opacity: 1 }}
-          exit={{ height: 0, opacity: 0 }}
-          transition={{ duration: 0.2, ease: [0, 0, 0.2, 1] }}
+          variants={COLLAPSE_VARIANTS}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          transition={COLLAPSE_TRANSITION}
           className="relative z-10 overflow-hidden"
           data-slot="session-details-panel"
         >
@@ -105,22 +117,36 @@ export function SessionDetailsPanel({
               className
             )}
           >
-            <DetailRow label="Session ID" value={session.id} copyable />
-            <DetailRow label="Created" value={formatTimestamp(session.createdAt)} />
-            <DetailRow label="Updated" value={formatTimestamp(session.updatedAt)} />
-            <DetailRow label="Runtime" value={getRuntimeDescriptor(session.runtime).label} />
             <DetailRow
-              label="Origin"
-              value={session.originLabel ?? getOriginDescriptor(session.origin)?.label ?? 'You'}
-            />
+              label="Session ID"
+              align="start"
+              copyValue={session.id}
+              valueClassName={FACT_VALUE}
+            >
+              {session.id}
+            </DetailRow>
+            <DetailRow label="Created" align="start" valueClassName={FACT_VALUE}>
+              {formatTimestamp(session.createdAt)}
+            </DetailRow>
+            <DetailRow label="Updated" align="start" valueClassName={FACT_VALUE}>
+              {formatTimestamp(session.updatedAt)}
+            </DetailRow>
+            <DetailRow label="Runtime" align="start" valueClassName={FACT_VALUE}>
+              {getRuntimeDescriptor(session.runtime).label}
+            </DetailRow>
+            <DetailRow label="Origin" align="start" valueClassName={FACT_VALUE}>
+              {session.originLabel ?? getOriginDescriptor(session.origin)?.label ?? 'You'}
+            </DetailRow>
             {/* Green, matching the row face one click above it and every other
                 full-power surface. This line and that glyph are the same fact,
                 so they cannot be two colours (spec `full-power-defaults`, D8). */}
             <DetailRow
               label="Permissions"
-              value={permissionsValue}
-              valueClassName={isFullPower ? TRUST_TONE_TEXT.power : undefined}
-            />
+              align="start"
+              valueClassName={cn(FACT_VALUE, isFullPower && TRUST_TONE_TEXT.power)}
+            >
+              {permissionsValue}
+            </DetailRow>
             {onFork && (
               <button
                 type="button"
@@ -139,29 +165,5 @@ export function SessionDetailsPanel({
         </motion.div>
       )}
     </AnimatePresence>
-  );
-}
-
-/** One labelled fact about the session. */
-function DetailRow({
-  label,
-  value,
-  copyable = false,
-  valueClassName,
-}: {
-  label: string;
-  value: string;
-  copyable?: boolean;
-  /** Extra classes for the value, e.g. a warning tint on a risky setting. */
-  valueClassName?: string;
-}) {
-  return (
-    <div className="flex items-start gap-2">
-      <span className="text-muted-foreground/60 w-16 flex-shrink-0">{label}</span>
-      <span className={cn('min-w-0 flex-1 truncate font-mono select-all', valueClassName)}>
-        {value}
-      </span>
-      {copyable && <CopyButton value={value} label={`Copy ${label}`} />}
-    </div>
   );
 }

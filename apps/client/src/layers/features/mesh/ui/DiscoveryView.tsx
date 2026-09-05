@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { AnimatePresence } from 'motion/react';
-import { ChevronDown, Loader2, Search, FolderSearch } from 'lucide-react';
+import { ChevronDown, Search, FolderSearch } from 'lucide-react';
 import {
   useMeshScanRoots,
   useRegisteredAgents,
@@ -19,7 +19,7 @@ import {
   ScanRootInput,
 } from '@/layers/entities/discovery';
 import type { DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
-import { Button } from '@/layers/shared/ui';
+import { Button, Spinner } from '@/layers/shared/ui';
 
 /**
  * Pick the scan root a candidate was found under so the server derives the
@@ -291,11 +291,7 @@ export function DiscoveryView({ fullBleed = false, onRegistered }: DiscoveryView
             {advancedSection}
 
             <Button onClick={handleScan} disabled={isPending || displayRoots.length === 0}>
-              {isPending ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Search className="size-4" />
-              )}
+              {isPending ? <Spinner /> : <Search className="size-4" />}
               Search for Projects
             </Button>
           </div>
@@ -304,7 +300,11 @@ export function DiscoveryView({ fullBleed = false, onRegistered }: DiscoveryView
           <div className={fullBleed ? 'mt-4 flex-1 overflow-y-auto' : ''}>
             {isPending && (
               <div className="flex flex-col items-center justify-center gap-2 p-8">
-                <Loader2 className="text-muted-foreground size-5 animate-spin" />
+                <Spinner
+                  size="md"
+                  className="text-muted-foreground"
+                  label="Searching for projects"
+                />
                 {progress && (
                   <div className="text-muted-foreground space-y-0.5 text-center text-xs">
                     <p>Scanned {progress.scannedDirs} directories</p>

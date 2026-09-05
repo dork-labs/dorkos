@@ -2,6 +2,7 @@ import { useState, useId, useImperativeHandle, useCallback, useRef, forwardRef }
 import { motion, AnimatePresence } from 'motion/react';
 import { Check } from 'lucide-react';
 import { useTransport } from '@/layers/shared/model';
+import { COLLAPSE_TRANSITION, COLLAPSE_VARIANTS } from '@/layers/shared/lib';
 import { Kbd, Button, RadioGroup, RadioGroupItem, Checkbox, OptionRow } from '@/layers/shared/ui';
 import { AskCard } from './AskCard';
 import { QuestionAnswerSummary, QuestionUnansweredRow } from './QuestionAnswerSummary';
@@ -9,7 +10,6 @@ import type { QuestionItem, QuestionOutcome } from '@dorkos/shared/types';
 
 // --- Animation constants (module-scope to avoid per-render allocation) ---
 
-const collapseTransition = { duration: 0.25, ease: [0.4, 0, 0.2, 1] } as const;
 const fadeTransition = { duration: 0.15, ease: 'easeOut' as const } as const;
 
 const questionSlideVariants = {
@@ -284,10 +284,11 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
             <AnimatePresence initial={false}>
               {isOtherSelected && (
                 <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={collapseTransition}
+                  variants={COLLAPSE_VARIANTS}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  transition={COLLAPSE_TRANSITION}
                   className="overflow-hidden"
                 >
                   <textarea

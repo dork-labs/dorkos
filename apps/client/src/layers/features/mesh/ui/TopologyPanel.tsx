@@ -1,19 +1,20 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Loader2, Lock, Plus, Trash2, Shield } from 'lucide-react';
+import { ChevronDown, ChevronRight, Lock, Plus, Trash2, Shield } from 'lucide-react';
 import {
   Badge,
   Button,
+  EmptyState,
   Label,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Spinner,
 } from '@/layers/shared/ui';
 import { useTopology, useUpdateAccessRule, OpenMeshSwitch } from '@/layers/entities/mesh';
 import { OPEN_MESH_NAMESPACE, type AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { getAgentDisplayName } from '@/layers/shared/lib';
-import { MeshEmptyState } from './MeshEmptyState';
 
 // -- Namespace Group --
 
@@ -206,7 +207,7 @@ function AddRuleForm({ namespaces, onAdd, isPending, inert }: AddRuleFormProps) 
         disabled={!inert && (isPending || !source || !target || source === target)}
         {...inertProps}
       >
-        {isPending ? <Loader2 className="animate-spin" /> : <Plus />}
+        {isPending ? <Spinner /> : <Plus />}
         Allow Access
       </Button>
     </form>
@@ -231,7 +232,7 @@ export function TopologyPanel({ onGoToDiscovery }: TopologyPanelProps = {}) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center p-8">
-        <Loader2 className="text-muted-foreground size-5 animate-spin" />
+        <Spinner size="md" className="text-muted-foreground" />
       </div>
     );
   }
@@ -261,7 +262,7 @@ export function TopologyPanel({ onGoToDiscovery }: TopologyPanelProps = {}) {
     return (
       <div className="space-y-6 p-4">
         <OpenMeshSwitch />
-        <MeshEmptyState
+        <EmptyState
           icon={Shield}
           headline="You need agents in more than one project"
           description="Add agents from a second folder. Then you can let the two projects talk."
