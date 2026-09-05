@@ -24,7 +24,8 @@ import { MockServerProcess, type SpawnOptions } from './server-child-mock';
  * (including `webContents` with `send`, a unique `id`, and an `on`/`emit`
  * event bus), `session`, `ipcMain` (`on`/`handle` as inspectable `vi.fn()`s — tests
  * invoke a registered handler directly from its mock call args), `screen`,
- * `dialog`, `Menu`, `Tray`, `nativeImage`, `nativeTheme`, `shell`, and
+ * `dialog`, `Menu` (whose built menus carry their own `popup` recorder),
+ * `Tray`, `nativeImage`, `nativeTheme`, `shell`, `clipboard`, and
  * `utilityProcess` (the production server-spawn path) to drive the
  * main-process code under test without a real Electron runtime.
  */
@@ -183,6 +184,8 @@ class MockBrowserWindowImpl {
     setWindowOpenHandler:
       vi.fn<(handler: (details: HandlerDetails) => WindowOpenHandlerResponse) => void>(),
     reload: vi.fn<() => void>(),
+    /** Swaps a misspelled word for the correction a spelling menu item was clicked on. */
+    replaceMisspelling: vi.fn<(text: string) => void>(),
     /**
      * The document this webContents is on. Modelled because the renderer
      * supervisor derives "is the recovery page showing?" from it rather than
@@ -345,6 +348,8 @@ interface MockSession {
   setPermissionRequestHandler: ReturnType<typeof vi.fn<(handler: unknown) => void>>;
   setPermissionCheckHandler: ReturnType<typeof vi.fn<(handler: unknown) => void>>;
   setDisplayMediaRequestHandler: ReturnType<typeof vi.fn<(handler: unknown) => void>>;
+  /** Where "Add to Dictionary" lands (see `context-menu.ts`). */
+  addWordToSpellCheckerDictionary: ReturnType<typeof vi.fn<(word: string) => boolean>>;
 }
 
 /** A fresh session double — the shape `session.defaultSession` and every `webContents.session` share. */
@@ -355,6 +360,7 @@ function makeMockSession(): MockSession {
     setPermissionRequestHandler: vi.fn<(handler: unknown) => void>(),
     setPermissionCheckHandler: vi.fn<(handler: unknown) => void>(),
     setDisplayMediaRequestHandler: vi.fn<(handler: unknown) => void>(),
+    addWordToSpellCheckerDictionary: vi.fn<(word: string) => boolean>(() => true),
   };
 }
 
@@ -494,15 +500,52 @@ export const dialog = {
   showErrorBox: vi.fn<(title: string, content: string) => void>(),
 };
 
+/**
+ * What `Menu.buildFromTemplate` hands back: the template it was given, and the
+ * `popup` a context menu is actually shown with — a per-menu `vi.fn()` so a
+ * test can prove that THIS menu was popped up, over the right window.
+ */
+export interface MockMenu {
+  template: unknown;
+  popup: ReturnType<typeof vi.fn<(options?: unknown) => void>>;
+}
+
+/** A menu double carrying its own `popup` recorder. */
+function makeMockMenu(template: unknown): MockMenu {
+  return { template, popup: vi.fn<(options?: unknown) => void>() };
+}
+
 export const Menu = {
-  buildFromTemplate: vi.fn((template: unknown) => ({ template })),
+  buildFromTemplate: vi.fn(makeMockMenu),
   setApplicationMenu: vi.fn<(menu: unknown) => void>(),
 };
+
+/** Test helper — the menu most recently built, for asserting on `popup`. */
+export function lastBuiltMenu(): MockMenu | undefined {
+  const results = Menu.buildFromTemplate.mock.results;
+  const last = results[results.length - 1];
+  return last?.type === 'return' ? last.value : undefined;
+}
 
 export const shell = {
   openExternal: vi.fn<(url: string) => Promise<void>>(),
   showItemInFolder: vi.fn<(fullPath: string) => void>(),
 };
+
+/**
+ * Test double for `clipboard`. `writeText` is a recorder backed by a real
+ * string, so a test can assert what a "Copy …" menu item put on the clipboard
+ * (see `context-menu.ts`) rather than merely that it was called.
+ */
+export const clipboard = {
+  writeText: vi.fn((text: string): void => {
+    clipboardText = text;
+  }),
+  readText: vi.fn((): string => clipboardText),
+};
+
+/** Backing store for the {@link clipboard} double. */
+let clipboardText = '';
 
 /**
  * Test double for `Notification`. `new Notification(options)` is captured in
@@ -610,9 +653,13 @@ export function resetElectronMock(): void {
   dialog.showMessageBoxSync = vi.fn(() => 0);
   dialog.showErrorBox = vi.fn();
 
-  Menu.buildFromTemplate = vi.fn((template: unknown) => ({ template }));
+  Menu.buildFromTemplate = vi.fn(makeMockMenu);
   Menu.setApplicationMenu = vi.fn();
 
   shell.openExternal = vi.fn();
   shell.showItemInFolder = vi.fn();
+
+  clipboardText = '';
+  clipboard.writeText.mockClear();
+  clipboard.readText.mockClear();
 }
