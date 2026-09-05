@@ -2,7 +2,7 @@
 
 Welcome! We're excited that you're interested in contributing to DorkOS. This guide will help you get started with development, testing, and submitting contributions.
 
-DorkOS is a web-based interface and REST/SSE API for Claude Code, built with the Claude Agent SDK. It provides a chat UI for interacting with Claude Code sessions, with tool approval flows and slash command discovery.
+DorkOS is one place for every AI agent you run — Claude Code, Codex, and OpenCode, side by side in one window. It's a local-first web app and a REST/SSE API: a chat UI with tool approval flows, plus scheduled tasks, rooms, and a message bus your agents use to talk to each other.
 
 ## Prerequisites
 
@@ -10,7 +10,7 @@ Before you begin, ensure you have:
 
 - **Node.js 22+**
 - **pnpm 10+**
-- **A Claude API key** (ANTHROPIC_API_KEY) — Get one from [console.anthropic.com](https://console.anthropic.com/)
+- **An authenticated Claude Code** — run `claude auth login` (see below before reaching for an API key)
 
 ## Getting Started
 
@@ -18,59 +18,81 @@ Before you begin, ensure you have:
 git clone https://github.com/dork-labs/dorkos.git
 cd dorkos
 pnpm install
-cp .env.example .env  # Add your ANTHROPIC_API_KEY
+cp .env.example .env  # Ports and paths
 pnpm dev
 ```
+
+### Authenticating your agent
+
+**Under `pnpm dev`, sign in with the `claude` CLI (`claude auth login`).** The sign-in is read off disk, so it reaches the server no matter how the server was started, and it is the path this repo's own dev and eval workflows use.
+
+Setting `ANTHROPIC_API_KEY` will _not_ work here, and it is worth knowing why before you lose an afternoon to it. `pnpm dev` runs through turbo, turbo runs strict, and a task only receives the variables it is declared to receive. `ANTHROPIC_API_KEY` is deliberately not one of them: it is passed to exactly one task, `e2e`, and that single carve-out is pinned by a test (`packages/evals/src/runner/__tests__/paid-provider.test.ts`) precisely so it cannot grow. This is a spending guard, not an oversight — **do not add the variable to `turbo.json` to make your key work.** The API-key route applies only to runs that turbo does not front: the built CLI, or running the server directly with node.
+
+`.env.example` covers ports, storage paths, and optional features. It carries no `ANTHROPIC_API_KEY` line, for the reason above.
 
 The client will be available at `http://localhost:6241` and the server at `http://localhost:6242`.
 
 ## Monorepo Structure
 
-This is a Turborepo monorepo with five apps and seven shared packages:
+This is a Turborepo monorepo with six apps and seventeen shared packages:
 
-| Directory                    | Package                     | Description                                  |
-| ---------------------------- | --------------------------- | -------------------------------------------- |
-| `apps/client`                | `@dorkos/client`            | React 19 SPA (Vite 6, Tailwind 4, shadcn/ui) |
-| `apps/server`                | `@dorkos/server`            | Express API server                           |
-| `apps/site`                  | `@dorkos/site`              | Marketing site & docs (Next.js 16, Fumadocs) |
-| `apps/obsidian-plugin`       | `@dorkos/obsidian-plugin`   | Obsidian sidebar plugin                      |
-| `apps/e2e`                   | `@dorkos/e2e`               | Playwright browser tests                     |
-| `packages/cli`               | `dorkos`                    | Publishable npm CLI                          |
-| `packages/shared`            | `@dorkos/shared`            | Zod schemas, shared types                    |
-| `packages/db`                | `@dorkos/db`                | Drizzle ORM schemas (SQLite)                 |
-| `packages/relay`             | `@dorkos/relay`             | Inter-agent message bus                      |
-| `packages/mesh`              | `@dorkos/mesh`              | Agent discovery & registry                   |
-| `packages/typescript-config` | `@dorkos/typescript-config` | Shared tsconfig presets                      |
-| `packages/test-utils`        | `@dorkos/test-utils`        | Mock factories, test helpers                 |
+| Directory                    | Package                     | Description                                          |
+| ---------------------------- | --------------------------- | ---------------------------------------------------- |
+| `apps/client`                | `@dorkos/client`            | React 19 SPA (Vite 6, Tailwind 4, shadcn/ui)         |
+| `apps/server`                | `@dorkos/server`            | Express 5 API server                                 |
+| `apps/site`                  | `@dorkos/site`              | Marketing site & docs (Next.js 16, Fumadocs)         |
+| `apps/desktop`               | `@dorkos/desktop`           | Electron shell (macOS, Windows alpha)                |
+| `apps/obsidian-plugin`       | `@dorkos/obsidian-plugin`   | Obsidian sidebar plugin                              |
+| `apps/e2e`                   | `@dorkos/e2e`               | Playwright browser tests                             |
+| `packages/cli`               | `dorkos`                    | Publishable npm CLI                                  |
+| `packages/shared`            | `@dorkos/shared`            | Zod schemas, shared types, port interfaces           |
+| `packages/db`                | `@dorkos/db`                | Drizzle ORM schemas (SQLite)                         |
+| `packages/relay`             | `@dorkos/relay`             | Inter-agent message bus                              |
+| `packages/mesh`              | `@dorkos/mesh`              | Agent discovery & registry                           |
+| `packages/harness`           | `@dorkos/harness`           | Projects skills, commands & hooks to every agent CLI |
+| `packages/memory`            | `@dorkos/memory`            | Agent memory engine behind the `MemoryProvider` port |
+| `packages/skills`            | `@dorkos/skills`            | `SKILL.md` schemas, parser, writer, scanner          |
+| `packages/operating-skills`  | `@dorkos/operating-skills`  | First-party skills that teach agents to run DorkOS   |
+| `packages/marketplace`       | `@dorkos/marketplace`       | Package schemas, parser, validator, scaffolder       |
+| `packages/a2a-gateway`       | `@dorkos/a2a-gateway`       | A2A protocol gateway                                 |
+| `packages/extension-api`     | `@dorkos/extension-api`     | Public API contract for extension authors            |
+| `packages/icons`             | `@dorkos/icons`             | SVG icon & logo registry                             |
+| `packages/evals`             | `@dorkos/evals`             | Headless outcome-oracle eval harness                 |
+| `packages/test-utils`        | `@dorkos/test-utils`        | Mock factories, test helpers, conformance suites     |
+| `packages/eslint-config`     | `@dorkos/eslint-config`     | Shared ESLint flat configs                           |
+| `packages/typescript-config` | `@dorkos/typescript-config` | Shared tsconfig presets                              |
 
 ## Development Commands
 
-| Command              | Description                       |
-| -------------------- | --------------------------------- |
-| `pnpm dev`           | Start server + client dev servers |
-| `pnpm test`          | Run all tests (Vitest)            |
-| `pnpm test -- --run` | Single test run (no watch mode)   |
-| `pnpm build`         | Build all packages                |
-| `pnpm typecheck`     | Type-check all packages           |
-| `pnpm lint`          | ESLint across all packages        |
-| `pnpm lint -- --fix` | Auto-fix ESLint issues            |
-| `pnpm format`        | Prettier format all files         |
-| `pnpm format:check`  | Check formatting without writing  |
+| Command              | Description                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `pnpm dev`           | Start server + client dev servers                                                                             |
+| `pnpm test`          | Run all tests (Vitest)                                                                                        |
+| `pnpm test -- --run` | Single test run (no watch mode)                                                                               |
+| `pnpm build`         | Build all packages                                                                                            |
+| `pnpm typecheck`     | Type-check all packages                                                                                       |
+| `pnpm lint`          | ESLint across all packages                                                                                    |
+| `pnpm lint -- --fix` | Auto-fix ESLint issues                                                                                        |
+| `pnpm format`        | Prettier format all files                                                                                     |
+| `pnpm format:check`  | Check formatting without writing                                                                              |
+| `pnpm verify`        | The pre-PR check: script tests and root lint always run, then typecheck, lint and test over affected packages |
 
 ### Filtering Commands
 
 To work on a single package:
 
 ```bash
-dotenv -- turbo dev --filter=@dorkos/server   # Server only
-dotenv -- turbo dev --filter=@dorkos/client   # Client only
-dotenv -- turbo build --filter=@dorkos/obsidian-plugin  # Build plugin only
+pnpm exec dotenv -- turbo dev --filter=@dorkos/server   # Server only
+pnpm exec dotenv -- turbo dev --filter=@dorkos/client   # Client only
+pnpm exec dotenv -- turbo build --filter=@dorkos/obsidian-plugin  # Build plugin only
 ```
+
+`dotenv` loads the root `.env` and lives in `node_modules/.bin`, so it needs the `pnpm exec` prefix.
 
 ### Running Specific Tests
 
 ```bash
-pnpm vitest run apps/server/src/services/__tests__/transcript-reader.test.ts
+pnpm vitest run apps/server/src/services/session/__tests__/aggregate-session-list.test.ts
 ```
 
 ## Architecture
@@ -84,31 +106,36 @@ Transport is injected via React Context (`TransportContext`). For deeper details
 
 ## Subsystems
 
-DorkOS includes three optional subsystems that extend agent capabilities beyond interactive chat:
+Three subsystems extend agents beyond a single interactive chat. All three are **on by default**:
 
-| Subsystem | Package                                            | Env Flag               | Description                                                                                                                  |
-| --------- | -------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| **Pulse** | `apps/server` (services/pulse/)                    | `DORKOS_PULSE_ENABLED` | Cron-based agent scheduler with SQLite run history, approval workflows, and configurable concurrency                         |
-| **Relay** | `packages/relay` + `apps/server` (services/relay/) | `DORKOS_RELAY_ENABLED` | Inter-agent message bus with NATS-style subject matching, Maildir persistence, delivery tracing, and external adapters       |
-| **Mesh**  | `packages/mesh` + `apps/server` (services/mesh/)   | `DORKOS_MESH_ENABLED`  | Agent discovery and registry with pluggable strategies (Claude Code, Cursor, Codex), network topology, and health monitoring |
+| Subsystem | Code                                                 | Switch                                                              | Description                                                                                                                  |
+| --------- | ---------------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| **Tasks** | `apps/server/src/services/tasks/`                    | `scheduler.enabled` in config, overridden by `DORKOS_TASKS_ENABLED` | Cron-based agent scheduler with SQLite run history, approval workflows, and configurable concurrency                         |
+| **Relay** | `packages/relay` + `apps/server/src/services/relay/` | `relay.enabled` in config, overridden by `DORKOS_RELAY_ENABLED`     | Inter-agent message bus with NATS-style subject matching, Maildir persistence, delivery tracing, and external adapters       |
+| **Mesh**  | `packages/mesh` + `apps/server/src/services/mesh/`   | none — always on (ADR-0062)                                         | Agent discovery and registry with pluggable strategies (Claude Code, Cursor, Codex), network topology, and health monitoring |
 
-All three are feature-flag guarded and disabled by default. When Relay is enabled, both Console (chat) and Pulse message flows route through the Relay bus for unified tracing. Mesh optionally bridges with Relay for lifecycle event broadcasting.
+Tasks and Relay read their stored setting from `~/.dork/config.json` (both default to `true`). The environment variable is an override, not the setting: when it is present in the environment its value wins, and when it is absent the stored setting decides. Mesh has no switch of either kind — it boots unconditionally, and when Relay is up it bridges to it for lifecycle event broadcasting.
+
+Tasks carries a second gate that catches people out: **being enabled is not the same as firing.** With `DORKOS_TASKS_ENABLED` unset, `resolveTasksFiring` only lets schedules fire when `NODE_ENV` is `production`, so in a dev checkout tasks are listed and editable but never run on their own. Set `DORKOS_TASKS_ENABLED=true` to override that and watch one fire.
+
+Older docs call the scheduler **Pulse** and name `DORKOS_PULSE_ENABLED` and `DORKOS_MESH_ENABLED`. Those names are gone: the scheduler is Tasks, and Mesh lost its flag in ADR-0062. Before writing any environment variable down, check it: `apps/server/src/env.ts` holds the schema the server parses at boot and is where a new variable belongs, and [contributing/environment-variables.md](contributing/environment-variables.md) is the reference guide — including the handful of variables that are read straight off `process.env` instead (`DORKOS_CORS_ORIGIN`, `BETTER_AUTH_SECRET`), which is why `env.ts` alone is not a complete list.
 
 ## Client Architecture
 
 The client uses **Feature-Sliced Design (FSD)** with strict unidirectional layer imports:
 
 ```
-shared ← entities ← features ← widgets ← app
+shared ← entities ← features ← widgets
 ```
 
 **FSD Layers** (`apps/client/src/layers/`):
 
 - **`shared/`** — Reusable UI primitives, hooks, utilities
-- **`entities/`** — Domain-specific hooks (sessions, commands)
-- **`features/`** — Feature modules (chat, session list, settings)
+- **`entities/`** — Domain-specific hooks (sessions, agents, commands)
+- **`features/`** — Feature modules (chat, agents list, approvals, settings)
 - **`widgets/`** — App-level layout components
-- **`app/`** — App entry point
+
+The app shell — `App.tsx`, `AppShell.tsx`, `router.tsx`, `main.tsx` and `app/` — sits at the `apps/client/src/` root, outside `layers/`, and may import from any layer.
 
 **Import rules**: Always import from barrel exports (e.g., `import { ChatPanel } from '@/layers/features/chat'`), never from internal paths.
 
@@ -171,7 +198,7 @@ pnpm smoke:integration   # Full integration test (starts server, validates API +
 pnpm smoke:npm           # Integration test against published npm package
 ```
 
-The CI workflow (`.github/workflows/cli-smoke-test.yml`) runs on every push to main with bare Ubuntu runners (Node 22/24 matrix), an isolated Docker smoke test, and a full integration test that starts the server and validates API endpoints and client SPA serving.
+The CI workflow (`.github/workflows/cli-smoke-test.yml`) runs on every push to `main`, and on pull requests that touch what the tarball bundles: `packages/cli`, `packages/shared`, `apps/server`, `apps/client`, `Dockerfile`, `.dockerignore`, `scripts/smoke-test.sh`, `pnpm-lock.yaml`, and the workflow file itself. It uses bare Ubuntu runners (Node 22/24 matrix), an isolated Docker smoke test, and a full integration test that starts the server and validates API endpoints and client SPA serving.
 
 For the full target/install-mode model and troubleshooting, see [contributing/docker-testing.md](contributing/docker-testing.md).
 
@@ -204,9 +231,12 @@ pnpm format
 
 ### ESLint Rules
 
-- **Warn-first approach**: Most rules are warnings to avoid blocking development
-- **FSD layer enforcement**: Cross-layer imports are hard errors
-- **TSDoc**: Enforced on exported functions/classes (warn-first)
+Severity is the gate here: `lint` passes no `--max-warnings 0`, so anything meant to fail CI sits at `error` and a `warn` rule fails nothing.
+
+- **FSD layer enforcement**: Cross-layer imports are `error`
+- **TSDoc**: `error` on exported functions and classes — a missing or empty description fails `pnpm lint` (DOR-627)
+- **SDK confinement and `os.homedir()`**: `error` — see the Hard Rules in [AGENTS.md](AGENTS.md)
+- **Everything else** (`max-lines`, `no-unused-vars`): `warn`, so it reports without blocking
 - **React Compiler rules**: Bundled with `eslint-plugin-react-hooks` v7 (warnings)
 
 ### File Size Limits
@@ -224,10 +254,11 @@ patterns and exceptions, and `packages/eslint-config/base.js` for the enforced r
 1. **Fork the repository**
 2. **Create a feature branch** (`git checkout -b feat/my-feature`)
 3. **Make your changes**
-4. **Ensure tests pass** (`pnpm test -- --run`)
-5. **Ensure linting is clean** (`pnpm lint`)
-6. **Ensure formatting is consistent** (`pnpm format`)
-7. **Open a pull request** with a clear description of your changes
+4. **Add a changelog fragment** in `changelog/unreleased/` — see [changelog/README.md](changelog/README.md). Docs-only changes skip this with the `skip-changelog` label
+5. **Run the checks** (`pnpm verify` covers typecheck, lint, and the affected tests; `pnpm format` fixes formatting)
+6. **Open a pull request** with a clear description of your changes
+
+Nothing is pushed straight to `main` — it is branch-protected, and every change lands through a pull request and the merge queue. The queue builds your branch on top of `main` plus whatever is ahead of it and runs the required checks against that combined tree, so a branch that has fallen behind `main` is fine and does not need updating.
 
 ## Commit Conventions
 
