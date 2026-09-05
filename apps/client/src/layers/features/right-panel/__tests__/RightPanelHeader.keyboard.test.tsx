@@ -74,8 +74,33 @@ describe('RightPanelHeader — keyboard accessibility (WAI-ARIA Tabs)', () => {
   });
   afterEach(cleanup);
 
-  it('exposes exactly one Tab stop: the active tab is tabIndex 0, the rest -1', () => {
+  it('exposes exactly one Tab stop before entry too: the tablist is the stop, every tab is -1', () => {
+    // The property the roving-focus group protects isn't just "the active tab
+    // ends up tabIndex 0 after Tab" (the case below) — it's "the strip never
+    // contributes more than one stop, at any point in its lifecycle". Radix
+    // puts the stop on the tablist container itself until real focus arrives,
+    // with every trigger at -1; assert that render-time shape directly rather
+    // than only the post-entry snapshot.
     renderStrip('canvas');
+
+    expect(screen.getByRole('tablist')).toHaveAttribute('tabindex', '0');
+    expect(tab('Agent')).toHaveAttribute('tabindex', '-1');
+    expect(tab('Canvas')).toHaveAttribute('tabindex', '-1');
+    expect(tab('Terminal')).toHaveAttribute('tabindex', '-1');
+  });
+
+  it('exposes exactly one Tab stop after entry: the active tab is tabIndex 0, the rest -1', async () => {
+    // The roving-focus group hands off its tab stop to the active item the
+    // first time real focus enters it (see the "Tab enters the strip" case
+    // below) rather than computing it eagerly on render — the tablist itself
+    // is the entry point until then. Check the invariant post-entry, the way
+    // a keyboard user actually reaches the strip.
+    const user = userEvent.setup();
+    renderStrip('canvas');
+
+    screen.getByRole('button', { name: 'before' }).focus();
+    await user.tab();
+
     expect(tab('Agent')).toHaveAttribute('tabindex', '-1');
     expect(tab('Canvas')).toHaveAttribute('tabindex', '0');
     expect(tab('Terminal')).toHaveAttribute('tabindex', '-1');
@@ -139,5 +164,39 @@ describe('RightPanelHeader — keyboard accessibility (WAI-ARIA Tabs)', () => {
     expect(tab('Agent')).not.toHaveAttribute('aria-keyshortcuts');
     expect(tab('Agent')).toHaveAttribute('aria-controls', RIGHT_PANEL_PANEL_ID);
     expect(tab('Canvas')).not.toHaveAttribute('aria-controls');
+  });
+
+  it('never fires the "uncontrolled to controlled" warning across the real null → id lifecycle', () => {
+    // The store starts every session at `activeRightPanelTab: null` and the
+    // container's auto-select effect then picks a default tab on the next
+    // render (RightPanelContainer.tsx) — the exact lifecycle every real
+    // mount goes through, and the one the other tests here skip by always
+    // calling `renderStrip('canvas')` with a value already set. `value={x ??
+    // undefined}` mounts Tabs uncontrolled at `null` and flips it controlled
+    // the moment a real id lands, which is what Radix's dev warning exists
+    // to catch — assert it stays silent through that exact transition.
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      useAppStore.setState({ activeRightPanelTab: null });
+      const { rerender } = render(
+        <TooltipProvider>
+          <RightPanelHeader contributions={CONTRIBUTIONS} />
+        </TooltipProvider>
+      );
+
+      useAppStore.setState({ activeRightPanelTab: 'canvas' });
+      rerender(
+        <TooltipProvider>
+          <RightPanelHeader contributions={CONTRIBUTIONS} />
+        </TooltipProvider>
+      );
+
+      const uncontrolledWarning = errorSpy.mock.calls.some((call) =>
+        String(call[0]).includes('uncontrolled to controlled')
+      );
+      expect(uncontrolledWarning).toBe(false);
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });
