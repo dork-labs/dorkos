@@ -22,7 +22,7 @@ Each app and package now exports a typed, validated `env` object from a local `e
 ## How to Add a New Env Var
 
 1. Add the var to the relevant app's `env.ts` schema with its type, default, and validation constraints.
-2. Add to `.env.example` with a comment explaining the var. Use `# VAR=value` format for optional vars, `VAR=value` for required ones.
+2. Add to `.env.example` with a comment explaining the var. Use `# VAR=value` format for optional vars, `VAR=value` for required ones. This step is enforced both ways by `apps/server/src/__tests__/env-example-coverage.test.ts`: it walks the server schema and fails on a variable the file does not mention, and on a variable the file mentions that nothing reads any more. A var a person running DorkOS would be no better off knowing about — a harness knob, something the packaging sets — goes in that test's `UNDOCUMENTED_ON_PURPOSE` map with the reason instead.
 3. Add to `turbo.json` `globalPassThroughEnv` if it is a runtime var that does not affect cache hash. Add to the task-level `env` array if it is a build-time var (e.g., `VITE_*`, `NEXT_PUBLIC_*`) that should invalidate the cache when changed.
 4. Update the env var reference table in this document.
 5. Access the var via `import { env } from './env'` in server files, or `import { env } from '@/env'` in client files.

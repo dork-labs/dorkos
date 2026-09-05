@@ -4,12 +4,10 @@
  *
  * @module features/profile/ui/popovers/PersonalityPopover
  */
-import type { Traits } from '@dorkos/shared/mesh-schemas';
-import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { Skeleton } from '@/layers/shared/ui';
 import { PersonalityPicker } from '@/layers/entities/agent';
-import { personalityUpdate } from '../../lib/soul-file';
 import { useProfileAgent } from '../../model/use-profile-agent';
+import { usePersonalityCommit } from '../../model/use-personality-commit';
 import type { ProfilePickContentProps } from './types';
 
 /**
@@ -20,13 +18,18 @@ import type { ProfilePickContentProps } from './types';
  * the whole screen rather than one row of a profile.
  *
  * The traits go to the manifest **and** to SOUL.md, through the same update the
- * panel this replaced always sent (`personalityUpdate`). Writing the manifest alone is
+ * panel this replaced always sent (`personalityUpdate`, inside
+ * `usePersonalityCommit`). Writing the manifest alone is
  * what a turn does not necessarily read: the trait block is regenerated in
  * place only where markers already exist, so an agent whose SOUL.md was
  * hand-written or absent kept its old voice while this panel showed the new one.
+ *
+ * The save waits for the sliders to settle, and is flushed if this popover is
+ * dismissed first — see `usePersonalityCommit`.
  */
 export function PersonalityPopover({ member }: ProfilePickContentProps) {
   const { agent, isPending, update } = useProfileAgent(member);
+  const personality = usePersonalityCommit(agent, update);
 
   if (isPending) return <Skeleton className="h-40 w-full" />;
   if (!agent) {
@@ -37,8 +40,8 @@ export function PersonalityPopover({ member }: ProfilePickContentProps) {
 
   return (
     <PersonalityPicker
-      traits={(agent.traits ?? DEFAULT_TRAITS) as Traits}
-      onTraitsChange={(traits) => update(personalityUpdate(agent, traits))}
+      traits={personality.traits}
+      onTraitsChange={personality.onTraitsChange}
       compact
       className="p-1"
     />

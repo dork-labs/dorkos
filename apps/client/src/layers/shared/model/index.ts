@@ -44,6 +44,10 @@ export { useClaudeAccounts } from './server-config/use-claude-accounts';
 // re-exports it, so nothing above changes its import.
 export { configKeys, CONFIG_STALE_TIME_MS } from './server-config/query-keys';
 export { useNow } from './use-now';
+// "Has the read answered?" — `isLoading` corrected for the persisted cache. Read
+// its doc before reaching for `isLoading` on any surface that renders an
+// empty state.
+export { usePendingRead } from './query/use-pending-read';
 // The WAI-ARIA feed pattern. `Feed` (in `shared/ui`) and `feedArticleProps`
 // are what a surface uses; `useFeedKeyboardNav` and `FEED_ARTICLE_ATTR` are the
 // parts a surface only needs if it builds its own container, which nothing does
