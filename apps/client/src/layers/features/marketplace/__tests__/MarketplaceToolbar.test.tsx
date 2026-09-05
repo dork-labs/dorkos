@@ -133,6 +133,21 @@ describe('MarketplaceToolbar', () => {
     expect(screen.getByTestId('marketplace-search')).toBe(searchInput);
   });
 
+  it('keeps the "/" hint, and the width it costs, off a phone', () => {
+    // A touch screen cannot press "/", so on a phone the badge charged the row
+    // for a shortcut nobody could use and the placeholder clipped to
+    // "Search packag" (DOR-1747).
+    render(<MarketplaceToolbar />);
+
+    const hint = screen.getByText('/');
+    expect(hint.className).toContain('hidden');
+    expect(hint.className).toContain('sm:block');
+    // The padding held for it goes with it.
+    expect(screen.getByTestId('marketplace-search').className).toContain('max-sm:pr-3');
+    // And the sort control gives back the rest, holding "Featured" whole.
+    expect(screen.getByRole('combobox', { name: /sort packages/i }).className).toContain('w-28');
+  });
+
   it('seeds the input from the committed URL search on mount', () => {
     mockParams.search = 'reviewer';
     render(<MarketplaceToolbar />);

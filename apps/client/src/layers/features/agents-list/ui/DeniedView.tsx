@@ -28,12 +28,30 @@ export function DeniedView() {
   return (
     <div className="space-y-2 p-4">
       {denied.map((d) => (
-        <div key={d.path} className="flex items-center justify-between rounded-xl border px-4 py-3">
-          <div>
-            <p className="font-mono text-sm">{d.path}</p>
-            {d.reason && <p className="text-muted-foreground text-xs">{d.reason}</p>}
+        <div
+          key={d.path}
+          className="flex items-center justify-between gap-3 rounded-xl border px-4 py-3"
+        >
+          {/* `min-w-0` on the text column, or the path — one unbroken string —
+              sizes the column from its own content and pushes the badge off
+              the card (DOR-1747). The full path is on hover; the tail is the
+              part that identifies it, but a folder name is not worth a second
+              line here. */}
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-mono text-sm" title={d.path}>
+              {d.path}
+            </p>
+            {d.reason && (
+              <p className="text-muted-foreground truncate text-xs" title={d.reason}>
+                {d.reason}
+              </p>
+            )}
           </div>
-          <Badge variant="outline">{d.deniedBy}</Badge>
+          {/* `shrink-0`, or the badge gives its width up to the path beside it
+              and wraps its own single word (DOR-1747). */}
+          <Badge variant="outline" className="shrink-0">
+            {d.deniedBy}
+          </Badge>
         </div>
       ))}
     </div>

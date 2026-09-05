@@ -276,7 +276,13 @@ export function FullPowerDoor({ heading, onClose, onCustomize }: FullPowerDoorPr
           <Button
             variant="link"
             size="sm"
-            className="text-muted-foreground h-auto p-0"
+            // `Button` is `whitespace-nowrap` for labels of one or two words,
+            // which this is not. A sentence that cannot wrap sets the dialog's
+            // minimum width, and on a phone that measured 424px inside a 390px
+            // window: the heading, the description and every bullet stretched
+            // with it and painted off the right of the screen (DOR-1747).
+            // `text-left` because a wrapped label reads as the sentence it is.
+            className="text-muted-foreground h-auto p-0 text-left whitespace-normal"
             onClick={customize}
             disabled={busy}
           >

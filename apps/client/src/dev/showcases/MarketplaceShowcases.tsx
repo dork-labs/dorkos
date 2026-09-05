@@ -44,6 +44,7 @@ import {
   MOCK_PKG_FEATURED_DEPLOY,
   MOCK_PKG_FEATURED_DOCS,
   MOCK_PKG_PLUGIN,
+  MOCK_PKG_LONG_PROVENANCE,
   MOCK_PKG_SKILL_PACK_NO_DESC,
   MOCK_PKG_ADAPTER_LONG_DESC,
   MOCK_PERMISSION_PREVIEW_MINIMAL,
@@ -94,12 +95,12 @@ function IsolatedQueryProvider({
 // PackageCard showcase
 // ---------------------------------------------------------------------------
 
-/** PackageCard in four states: default, featured, installed, long description. */
+/** PackageCard in six states: default, featured, installed, long description, no description, long provenance. */
 function PackageCardShowcase() {
   return (
     <PlaygroundSection
       title="PackageCard"
-      description="Grid card for a single marketplace package. Variants: default, featured, installed, long description."
+      description="Grid card for a single marketplace package. Variants: default, featured, installed, long description, no description, and a narrow card whose author and source wrap onto two lines."
     >
       <ShowcaseLabel>Default (plugin, no icon)</ShowcaseLabel>
       <ShowcaseDemo>
@@ -133,6 +134,13 @@ function PackageCardShowcase() {
       <ShowcaseDemo>
         <div className="max-w-xs">
           <PackageCard pkg={MOCK_PKG_SKILL_PACK_NO_DESC} onClick={() => {}} />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Long author and source, on a narrow card (the row wraps)</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-64">
+          <PackageCard pkg={MOCK_PKG_LONG_PROVENANCE} onClick={() => {}} />
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>
