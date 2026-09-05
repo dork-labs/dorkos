@@ -103,12 +103,87 @@ describe('ServerTab', () => {
     expect(screen.getAllByRole('button', { name: /open dorkos in your browser/i })).toHaveLength(1);
   });
 
-  it('still reports the rest of the environment', async () => {
+  it('leads with the two rows people come for and folds the diagnostics away', async () => {
+    // Four click-to-copy rows about directories and Node used to sit at the same
+    // weight as the address, which is what cost the address its prominence
+    // (DOR-1758). Uptime and the version stay out here; the paths do not.
     renderTab();
+
+    expect(await screen.findByText('1.2.3')).toBeInTheDocument();
+    expect(screen.getByText('1m 30s')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Diagnostics' })).toBeInTheDocument();
+    expect(screen.queryByText('/Users/kai/.dork')).not.toBeInTheDocument();
+    expect(screen.queryByText('v22.0.0')).not.toBeInTheDocument();
+  });
+
+  it('still reports the rest of the environment, one disclosure in', async () => {
+    const user = userEvent.setup();
+    renderTab();
+
+    await user.click(await screen.findByRole('button', { name: 'Diagnostics' }));
 
     expect(await screen.findByText('/Users/kai/.dork')).toBeInTheDocument();
     expect(screen.getByText('v22.0.0')).toBeInTheDocument();
-    expect(screen.getByText('1m 30s')).toBeInTheDocument();
+    expect(screen.getByText('/Users/kai/code')).toBeInTheDocument();
+    expect(screen.getByText('/Users/kai')).toBeInTheDocument();
+  });
+
+  it('copies every diagnostic at once, without opening the section to do it', async () => {
+    // The support path is one click and one paste, not four rows clicked in
+    // turn — and the copy control may not double as the disclosure.
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    renderTab();
+
+    await user.click(await screen.findByRole('button', { name: /copy all diagnostics/i }));
+
+    expect(writeText).toHaveBeenCalledWith(
+      [
+        'Working Directory: /Users/kai/code',
+        'Data Directory: /Users/kai/.dork',
+        'Boundary: /Users/kai',
+        'Node.js: v22.0.0',
+      ].join('\n')
+    );
+    // Still shut: the action is a sibling of the trigger, not inside it.
+    expect(screen.queryByText('v22.0.0')).not.toBeInTheDocument();
+  });
+
+  it('holds the logging settings the Advanced tab used to, level readable while shut', async () => {
+    const user = userEvent.setup();
+    renderWithConfig(
+      vi.fn().mockResolvedValue({
+        version: '1.2.3',
+        isDevMode: false,
+        port: PORT,
+        uptime: 90,
+        workingDirectory: '/Users/kai/code',
+        dorkHome: '/Users/kai/.dork',
+        boundary: '/Users/kai',
+        nodeVersion: 'v22.0.0',
+        logging: { level: 'debug', maxLogSizeKb: 500, maxLogFiles: 14 },
+      })
+    );
+
+    // The one field anybody changes rides in the header, so it can be read
+    // without opening anything.
+    const logging = await screen.findByRole('button', { name: /logging/i });
+    expect(logging).toHaveTextContent('debug');
+    expect(screen.queryByText('Rotated files kept')).not.toBeInTheDocument();
+
+    await user.click(logging);
+
+    expect(screen.getByText('Log level')).toBeInTheDocument();
+    expect(screen.getByText('Rotated files kept')).toBeInTheDocument();
+    expect(screen.getByText('/Users/kai/.dork/logs')).toBeInTheDocument();
+  });
+
+  it('says nothing about logging when the server reports none', async () => {
+    renderTab();
+    await screen.findByText(`http://localhost:${PORT}`);
+
+    expect(screen.queryByRole('button', { name: /logging/i })).not.toBeInTheDocument();
   });
 
   it('keeps a truncated path reading left-to-right inside its rtl span (DOR-1686)', async () => {
@@ -126,6 +201,7 @@ describe('ServerTab', () => {
     // pins is the structure the browser needs: the rtl span with its front
     // ellipsis is still there, and the whole value sits inside an explicitly
     // ltr `bdi`. Only a browser can show the glyph order.
+    const user = userEvent.setup();
     const path = '/Users/kai/code/agent (v2)';
     renderWithConfig(
       vi.fn().mockResolvedValue({
@@ -139,6 +215,8 @@ describe('ServerTab', () => {
         nodeVersion: 'v22.0.0',
       })
     );
+
+    await user.click(await screen.findByRole('button', { name: 'Diagnostics' }));
 
     const isolated = await screen.findByText(path);
     expect(isolated.tagName).toBe('BDI');

@@ -189,3 +189,87 @@ describe('PreferencesTab — welcome-back switch', () => {
     expect(screen.queryByLabelText('Welcome-back notes')).not.toBeInTheDocument();
   });
 });
+
+/**
+ * The two rows that came back from the old "Advanced" tab (DOR-1758).
+ *
+ * Both are about the conversation in front of you — the box you type into, and
+ * whether DorkOS keeps checking for messages from sessions started elsewhere —
+ * so both belong beside the other chat rows rather than in a drawer named after
+ * nothing.
+ */
+describe('PreferencesTab — the rows that came back from Advanced', () => {
+  it('renders the message-box formatting row in plain words', async () => {
+    const { Wrapper } = setup(DEFAULTS);
+    render(<PreferencesTab />, { wrapper: Wrapper });
+
+    // The exact copy is the deliverable: no "Lexical", no "WYSIWYG", no "rich
+    // text editor", no "experimental" in the label. A smart 9th grader who does
+    // not code has to understand what turning it on does.
+    expect(await screen.findByText('Format text as you type')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'See bold, headings, and lists take shape in the message box while you write.'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('the formatting row is on when nobody has turned it off', async () => {
+    // The shipped default since 2026-08-12. This config carries no `ui` block at
+    // all, so what the switch shows here is exactly what a person who never
+    // opened this tab gets.
+    const { Wrapper } = setup(DEFAULTS);
+    render(<PreferencesTab />, { wrapper: Wrapper });
+
+    expect(await screen.findByRole('switch', { name: /Format text as you type/i })).toBeChecked();
+  });
+
+  it('toggling the formatting row writes exactly the composer subtree', async () => {
+    const user = userEvent.setup();
+    const { transport, Wrapper } = setup(DEFAULTS);
+    vi.mocked(transport.getConfig).mockResolvedValue({
+      ui: { composer: { richText: false } },
+    } as never);
+    render(<PreferencesTab />, { wrapper: Wrapper });
+
+    // Wait for the stored `false` to arrive before clicking. Config resolves a
+    // tick late and the default is `true`, so a click on the first render would
+    // toggle a switch still showing the default and write the opposite.
+    await waitFor(() =>
+      expect(screen.getByRole('switch', { name: /Format text as you type/i })).not.toBeChecked()
+    );
+    await user.click(screen.getByRole('switch', { name: /Format text as you type/i }));
+
+    await waitFor(() =>
+      expect(transport.updateConfig).toHaveBeenCalledWith({ ui: { composer: { richText: true } } })
+    );
+  });
+
+  // The external-session polling fallback (spec chat-stream-reconnection,
+  // ADR-0266): server-side discovery is primary, so the copy frames it as
+  // something you turn on when work is slow to appear, not a correctness switch.
+  it('describes the external-session watch as an opt-in fallback', async () => {
+    const { Wrapper } = setup(DEFAULTS);
+    render(<PreferencesTab />, { wrapper: Wrapper });
+
+    expect(
+      await screen.findByText('Watch for agents you started somewhere else')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Turn this on if work you started in a terminal takes a while to show up here.'
+      )
+    ).toBeInTheDocument();
+  });
+
+  // A developer panel is a debugging aid, and it now sits on
+  // Settings → Experiments rather than between "To-do celebrations" and a
+  // re-run of onboarding.
+  it('no longer carries the dev-tools switch', async () => {
+    const { Wrapper } = setup(DEFAULTS);
+    render(<PreferencesTab />, { wrapper: Wrapper });
+
+    await screen.findByLabelText('Show timestamps');
+    expect(screen.queryByText('Show dev tools')).not.toBeInTheDocument();
+  });
+});

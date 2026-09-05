@@ -65,8 +65,26 @@ export interface SettingsRouteTarget {
   search?: Record<string, string | undefined>;
 }
 
+/**
+ * A resolved `?settings=` id that names a tab, optionally with the section
+ * inside it to scroll to.
+ *
+ * The section is what makes a MERGE survivable: two tabs folded into one leave
+ * two live links, and landing both at the top of the merged tab loses the half
+ * the link was about. A `?settingsSection=` in the URL always wins over this —
+ * an explicit anchor is the caller's, not the map's.
+ */
+export interface SettingsTabTarget {
+  /** Discriminant. */
+  kind: 'tab';
+  /** The tab to open. */
+  tab: SettingsTab;
+  /** Section anchor inside that tab, when the id named one half of it. */
+  section?: string;
+}
+
 /** Where a resolved `?settings=` id points: a dialog tab, or a route. */
-export type SettingsDeepLinkTarget = { kind: 'tab'; tab: SettingsTab } | SettingsRouteTarget;
+export type SettingsDeepLinkTarget = SettingsTabTarget | SettingsRouteTarget;
 
 /**
  * Maps a retired `?settings=` id to its current equivalent, so a bookmark or
@@ -80,10 +98,19 @@ export type SettingsDeepLinkTarget = { kind: 'tab'; tab: SettingsTab } | Setting
  * Settings and onto the page (DOR-857). The Settings tab still exists and is
  * still reachable from inside the dialog until it is deleted; what changes
  * here is where an old *link* lands.
+ *
+ * `security` and `account` were two tabs answering one question — who may get
+ * into this install, and as whom — so they became one Access tab with a section
+ * each, and each id keeps its own half (DOR-1758). `advanced` is that batch's
+ * rename: the tab holds only the destructive actions now and is named after
+ * them.
  */
-const LEGACY_SETTINGS_TAB_MAP: Record<string, SettingsTab | SettingsRouteTarget> = {
+const LEGACY_SETTINGS_TAB_MAP: Record<string, SettingsTab | SettingsDeepLinkTarget> = {
   channels: { kind: 'route', path: '/connections', search: { region: 'messaging' } },
   integrations: { kind: 'route', path: '/connections', search: { region: 'messaging' } },
+  security: { kind: 'tab', tab: 'access', section: 'security' },
+  account: { kind: 'tab', tab: 'access', section: 'account' },
+  advanced: 'danger',
 };
 
 /**
@@ -99,7 +126,7 @@ const LEGACY_SETTINGS_TAB_MAP: Record<string, SettingsTab | SettingsRouteTarget>
  */
 export function resolveDeepLinkTarget(
   raw: string | undefined,
-  legacyMap: Record<string, SettingsTab | SettingsRouteTarget>
+  legacyMap: Record<string, SettingsTab | SettingsDeepLinkTarget>
 ): SettingsDeepLinkTarget | null {
   if (!raw || raw === 'open') return null;
   // `legacyMap[raw]` alone would also return inherited prototype members —
@@ -166,7 +193,13 @@ export function useSettingsDeepLink(): DialogDeepLink<SettingsTab> {
   // below sends it on.
   const isOpen = navigate ? !!search.settings && !routeTarget : storeOpen;
   const activeTab = resolved?.kind === 'tab' ? resolved.tab : null;
-  const section = navigate ? (search.settingsSection ?? null) : null;
+  // An explicit `?settingsSection=` wins; a legacy id that named one half of a
+  // merged tab supplies its own when the URL carries none, so a bookmark to
+  // `?settings=account` still lands ON the account section rather than at the
+  // top of the tab that absorbed it.
+  const section = navigate
+    ? (search.settingsSection ?? (resolved?.kind === 'tab' ? (resolved.section ?? null) : null))
+    : null;
 
   // Send a retired id to the page that took its job. In an effect rather than
   // at render because navigating is exactly the kind of outside-React work an

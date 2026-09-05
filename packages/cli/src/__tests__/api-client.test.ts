@@ -205,7 +205,7 @@ describe('apiCall 401 guidance', () => {
     // Names the credential, both places it can live, and where to get one.
     expect(apiError.message).toContain('DORKOS_API_KEY');
     expect(apiError.message).toContain(path.join(dorkHome, 'api-key'));
-    expect(apiError.message).toContain('Settings → Security → API keys');
+    expect(apiError.message).toContain('Settings → Access → API keys');
     // The server's machine-readable code survives for callers that branch on it.
     expect(apiError.body.code).toBe('AUTH_REQUIRED');
   });

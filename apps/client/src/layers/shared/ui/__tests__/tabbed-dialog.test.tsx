@@ -154,7 +154,6 @@ interface RenderOptions {
   open?: boolean;
   initialTab?: TabId | null;
   defaultTab?: TabId;
-  sidebarExtras?: React.ReactNode;
   extensionSlot?: 'settings.tabs';
   maxWidth?: string;
   minHeight?: string;
@@ -171,7 +170,6 @@ function renderDialog(options: RenderOptions = {}) {
     open = true,
     initialTab,
     defaultTab = 'alpha',
-    sidebarExtras,
     extensionSlot,
     maxWidth,
     minHeight,
@@ -195,7 +193,6 @@ function renderDialog(options: RenderOptions = {}) {
       defaultTab={defaultTab}
       initialTab={initialTab}
       tabs={tabs}
-      sidebarExtras={sidebarExtras}
       extensionSlot={extensionSlot}
       maxWidth={maxWidth}
       minHeight={minHeight}
@@ -369,16 +366,6 @@ describe('TabbedDialog', () => {
 
     expect(screen.getByTestId('panel-ext')).toBeInTheDocument();
     expect(screen.queryByTestId('panel-alpha')).not.toBeInTheDocument();
-  });
-
-  it('renders sidebarExtras after the tab list', () => {
-    renderDialog({ sidebarExtras: <button>Extra Action</button> });
-    const sidebar = screen.getByRole('tablist');
-    // sidebarExtras button should be in the DOM
-    const extraBtn = screen.getByRole('button', { name: 'Extra Action' });
-    expect(extraBtn).toBeInTheDocument();
-    // sidebarExtras appears after the tabs in the sidebar — confirmed by sidebar containing it
-    expect(sidebar.parentElement).toContainElement(extraBtn);
   });
 
   it('merges extension contributions when extensionSlot is set', () => {

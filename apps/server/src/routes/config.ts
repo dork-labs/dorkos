@@ -371,7 +371,7 @@ router.get('/', async (req, res) => {
       statusBar: configManager.get('ui')?.statusBar ?? STATUS_BAR_PREFS_DEFAULTS,
       // Whether the message box shows formatting as you type (DOR-948). On the
       // wire because two surfaces read it: the chat composer picks its field
-      // from it, and Settings → Advanced shows it back as a switch.
+      // from it, and Settings → Preferences shows it back as a switch.
       composer: configManager.get('ui')?.composer ?? COMPOSER_PREFS_DEFAULTS,
       // The standing Full-autonomy acknowledgement (spec `trust-dial`,
       // decision 5). On the wire because the cockpit needs it on two surfaces:

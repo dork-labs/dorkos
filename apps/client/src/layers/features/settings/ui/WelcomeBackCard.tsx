@@ -61,23 +61,33 @@ export function WelcomeBackCard() {
   if (!isAvailable) return null;
 
   return (
-    <FieldCard>
-      <FieldCardContent>
-        <SwitchSettingRow
-          label="Welcome-back notes"
-          description={`Your agents may leave a short note in your team channel when you come back after ${humanizeMinutes(absenceThresholdMinutes)} away. Off means no note, and no work done deciding there was nothing to say. This one follows you to every device.`}
-          checked={enabled}
-          onCheckedChange={setEnabled}
-        />
-        {enabled && (
+    <section className="space-y-2">
+      {/* Its own labelled group, like Chat and Discovery beside it: an unlabelled
+          card between two named ones reads as a section that lost its heading.
+          The heading lives in here rather than in the tab because this whole
+          card is absent on a server that does not report the setting, and a
+          heading over nothing is worse than no heading. */}
+      <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+        Coming back
+      </h3>
+      <FieldCard>
+        <FieldCardContent>
           <SwitchSettingRow
-            label="Next-step offers"
-            description="A note can end with one thing your agent wants you to decide. There is no way to know it has one without asking, so each offer runs that agent for a turn — at most one turn per agent that left you a note."
-            checked={offersEnabled}
-            onCheckedChange={setOffersEnabled}
+            label="Welcome-back notes"
+            description={`Your agents may leave a short note in your team channel when you come back after ${humanizeMinutes(absenceThresholdMinutes)} away. Off means no note, and no work done deciding there was nothing to say. This one follows you to every device.`}
+            checked={enabled}
+            onCheckedChange={setEnabled}
           />
-        )}
-      </FieldCardContent>
-    </FieldCard>
+          {enabled && (
+            <SwitchSettingRow
+              label="Next-step offers"
+              description="A note can end with one thing your agent wants you to decide. There is no way to know it has one without asking, so each offer runs that agent for a turn — at most one turn per agent that left you a note."
+              checked={offersEnabled}
+              onCheckedChange={setOffersEnabled}
+            />
+          )}
+        </FieldCardContent>
+      </FieldCard>
+    </section>
   );
 }

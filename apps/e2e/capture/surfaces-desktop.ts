@@ -395,9 +395,11 @@ async function shootWorkbench(page: Page, theme: Theme, rec: RunRecorder): Promi
 
 /** Open Settings → DorkOS account, link, and shoot the pending then linked states. */
 async function shootCloudLink(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
+  // `?settings=account` is a legacy id since DOR-1758 — the map lands it on the
+  // Access tab, scrolled to its account section — so the PANEL is Access and the
+  // "DorkOS account" heading is that section's.
   await page.goto(url('/team?settings=account'));
-  // One heading per settings panel since DOR-918: the dialog's own panel title.
-  const panel = page.getByRole('tabpanel', { name: 'DorkOS account' });
+  const panel = page.getByRole('tabpanel', { name: 'Access' });
   await panel.getByRole('heading', { name: 'DorkOS account' }).waitFor({ timeout: WAIT_MS });
   await panel.getByRole('button', { name: 'Link this instance' }).click({ timeout: WAIT_MS });
 

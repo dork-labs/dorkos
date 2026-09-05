@@ -71,7 +71,7 @@ function CopyButtonDemo() {
   );
 }
 
-/** The inline text-morph shape `ServerTab`/`AdvancedTab` use around the same hook. */
+/** The inline text-morph shape `ServerTab`'s copy rows use around the same hook. */
 function CopyTextRowDemo() {
   const { copied, failed, copy } = useCopyFeedback();
   return (
@@ -278,7 +278,7 @@ export function FeedbackShowcases() {
           <CopyButtonDemo />
         </ShowcaseDemo>
 
-        <ShowcaseLabel>Text morph — ServerTab, AdvancedTab</ShowcaseLabel>
+        <ShowcaseLabel>Text morph — ServerTab copy rows</ShowcaseLabel>
         <ShowcaseDemo>
           <CopyTextRowDemo />
         </ShowcaseDemo>
