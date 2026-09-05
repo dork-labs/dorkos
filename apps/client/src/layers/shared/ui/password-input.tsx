@@ -40,7 +40,7 @@ function PasswordInput({
   };
 
   return (
-    <div className="relative">
+    <div data-slot="password-input" className="relative">
       <Input type={isVisible ? 'text' : 'password'} className={cn('pr-10', className)} {...props} />
       <Button
         type="button"

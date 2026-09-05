@@ -66,7 +66,7 @@ function BoundedNumberInput({
   };
 
   return (
-    <div className="flex flex-col items-start gap-1">
+    <div data-slot="bounded-number-input" className="flex flex-col items-start gap-1">
       <Input
         type="number"
         inputMode="numeric"

@@ -43,7 +43,7 @@ export function TruncatedOutput({
   const displayContent = isTruncated && !showFull ? content.slice(0, threshold) : content;
 
   return (
-    <div className={cn(className)} {...dataProps}>
+    <div data-slot="truncated-output" className={cn(className)} {...dataProps}>
       <pre className="max-h-48 overflow-y-auto text-xs whitespace-pre-wrap">{displayContent}</pre>
       {isTruncated && !showFull && (
         <Button

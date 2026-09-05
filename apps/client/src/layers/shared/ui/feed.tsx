@@ -69,6 +69,7 @@ export function Feed({
     // "static element with a handler" rule is answered by the role.
     // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- see above
     <div
+      data-slot="feed"
       ref={containerRef}
       role="feed"
       aria-label={label}
