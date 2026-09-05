@@ -198,7 +198,7 @@ class ManifestReporter implements Reporter {
   }
 
   onBegin(config: FullConfig) {
-    // eslint-disable-next-line no-restricted-syntax -- apps/e2e has no env.ts (see playwright.config.ts's own disable); this reads the opt-in the reporter's own docs and this repo's scripts/workflow set.
+    // eslint-disable-next-line no-restricted-syntax -- apps/e2e has no env.ts (the reason `**/*.config.ts` is carved out repo-wide in packages/eslint-config/base.js; a reporter is not a config file, so it states the exemption here); this reads the opt-in the reporter's own docs and this repo's scripts/workflow set.
     const optedIn = process.env[REFRESH_MANIFEST_ENV_VAR] === '1';
     this.canRefreshDescriptions = optedIn && isFullSuiteRun(config);
   }

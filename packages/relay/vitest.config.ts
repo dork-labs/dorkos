@@ -41,7 +41,6 @@ export default defineConfig({
     // inject the watcher and keep exactly one real-filesystem smoke test with a
     // deliberately generous bound (DOR-1777). See apps/server/vitest.config.ts
     // for the original wiring.
-    // eslint-disable-next-line no-restricted-syntax -- vitest.config.ts has no env.ts of its own; mirrors apps/server/vitest.config.ts
     retry: process.env.VITEST_RETRY ? Number(process.env.VITEST_RETRY) : 0,
   },
 });
