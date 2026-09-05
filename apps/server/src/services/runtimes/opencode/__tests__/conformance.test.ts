@@ -149,10 +149,10 @@ import {
   driveTerminalOnce,
   driveQueueDurability,
 } from '../../../session/__tests__/durable-turn-harness.js';
-import { TurnEventQueue } from '../global-event-hub.js';
+import { TurnEventQueue } from '../events/global-event-hub.js';
 import type { StreamEvent } from '@dorkos/shared/types';
-import type { OpenCodeWireEvent } from '../event-mapper.js';
-import type { OpenCodeClientProvider } from '../session-mapper.js';
+import type { OpenCodeWireEvent } from '../events/event-mapper.js';
+import type { OpenCodeClientProvider } from '../sessions/session-mapper.js';
 import {
   OC_SESSION_A,
   assistantMessage,

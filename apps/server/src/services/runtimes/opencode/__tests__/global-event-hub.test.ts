@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { OpencodeClient, GlobalEvent } from '@opencode-ai/sdk';
-import { OpenCodeGlobalEventHub, TurnEventQueue } from '../global-event-hub.js';
-import type { OpenCodeClientProvider } from '../session-mapper.js';
+import { OpenCodeGlobalEventHub, TurnEventQueue } from '../events/global-event-hub.js';
+import type { OpenCodeClientProvider } from '../sessions/session-mapper.js';
 import {
   DIRECTORY,
   OC_SESSION_A,

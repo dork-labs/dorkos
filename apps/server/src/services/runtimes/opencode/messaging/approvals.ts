@@ -42,12 +42,12 @@
  * @module services/runtimes/opencode/approvals
  */
 import type { ApprovalEvent, PermissionModeId, StreamEvent } from '@dorkos/shared/types';
-import { SESSIONS } from '../../../config/constants.js';
-import { logger, logError } from '../../../lib/logger.js';
-import { logRefusal } from '../../observability/refusals.js';
-import type { OpenCodePermissionState } from './session-event-mapper.js';
-import type { OpenCodeClientProvider } from './session-mapper.js';
-import type { OpenCodeSessionRegistry } from './session-registry.js';
+import { SESSIONS } from '../../../../config/constants.js';
+import { logger, logError } from '../../../../lib/logger.js';
+import { logRefusal } from '../../../observability/refusals.js';
+import type { OpenCodePermissionState } from '../events/session-event-mapper.js';
+import type { OpenCodeClientProvider } from '../sessions/session-mapper.js';
+import type { OpenCodeSessionRegistry } from '../sessions/session-registry.js';
 
 /** How a permission request should be resolved under a DorkOS mode. */
 export type ApprovalDecision = 'ask' | 'auto-approve';

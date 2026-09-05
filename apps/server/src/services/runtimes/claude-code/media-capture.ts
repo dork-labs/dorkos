@@ -3,7 +3,7 @@
  *
  * `tool-result-images.ts` is pure and both of its callers are synchronous
  * mappers, so it records an INTENT and this module writes the bytes. Same split,
- * and deliberately the same shape, as `runtimes/opencode/media-capture.ts`: the
+ * and deliberately the same shape, as `runtimes/opencode/events/media-capture.ts`: the
  * mapper stays testable with no filesystem, and **no base64 payload ever exists
  * as a StreamEvent** — the intent lives for microseconds inside one turn, and
  * the event that reaches the SSE stream, the ring buffer and the event log

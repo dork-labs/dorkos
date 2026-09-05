@@ -1147,7 +1147,7 @@ describe('the projection on its own', () => {
   it('carries the store’s own message id, which is what a hit lands on', () => {
     // The id chain OpenCode gets exact landing on (DOR-1579): this is the
     // `message.id` row the store keeps, and the session view renders the same
-    // message under it (`runtimes/opencode/session-mapper.ts` — `id: info.id`).
+    // message under it (`runtimes/opencode/sessions/session-mapper.ts` — `id: info.id`).
     // Red if it is dropped, or replaced by anything derived here.
     const projection = projectOpenCodeMessages('ses_a', [
       {

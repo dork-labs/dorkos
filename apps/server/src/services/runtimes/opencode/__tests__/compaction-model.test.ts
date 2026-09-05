@@ -12,7 +12,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { OpencodeClient } from '@opencode-ai/sdk';
-import { resolveCompactionModel } from '../compaction-model.js';
+import { resolveCompactionModel } from '../messaging/compaction-model.js';
 import { OC_SESSION_A, assistantMessage, userMessage } from './opencode-sse-fixtures.js';
 
 /** The session's working directory — what rung 3 must scope its config read to. */

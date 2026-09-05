@@ -10,7 +10,7 @@ import {
   matchesOpenCodeSubagentSession,
   type OpenCodeEventContext,
   type OpenCodeWireEvent,
-} from '../event-mapper.js';
+} from '../events/event-mapper.js';
 
 /**
  * Replays of RAW `/global/event` streams captured off a live OpenCode sidecar

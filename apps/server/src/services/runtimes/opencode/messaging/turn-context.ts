@@ -14,12 +14,12 @@
  *
  * @module services/runtimes/opencode/turn-context
  */
-import { buildAgentContextAppend } from '../shared/agent-context.js';
+import { buildAgentContextAppend } from '../../shared/agent-context.js';
 import {
   buildRoomToolsBlock,
   roomReplyModeForToolCapableSession,
-} from '../shared/room-tools-context.js';
-import { OPENCODE_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
+} from '../../shared/room-tools-context.js';
+import { OPENCODE_DORKOS_TOOL_PREFIX } from '../../shared/dorkos-tool-names.js';
 
 /**
  * Build the DorkOS context for one OpenCode turn.

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DIRECTORY_MEMBERSHIP_VECTORS } from '@dorkos/test-utils';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
-import { OpenCodeSessionRegistry } from '../session-registry.js';
+import { OpenCodeSessionRegistry } from '../sessions/session-registry.js';
 
 const SESSION_ID = '11111111-1111-4111-8111-111111111111';
 const OTHER_SESSION_ID = '22222222-2222-4222-8222-222222222222';

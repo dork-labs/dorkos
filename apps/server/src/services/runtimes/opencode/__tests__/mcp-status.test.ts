@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { OpencodeClient } from '@opencode-ai/sdk';
-import { enumerateOpenCodeMcpServers } from '../mcp-status.js';
+import { enumerateOpenCodeMcpServers } from '../mcp/mcp-status.js';
 
 const CWD = '/projects/demo';
 

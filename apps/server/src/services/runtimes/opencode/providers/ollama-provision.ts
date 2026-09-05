@@ -152,6 +152,14 @@ let inFlightProvision: Promise<OllamaProvisionResult> | null = null;
  * no one-click path exists (`manual`) it resolves to `ok: false` without touching
  * the system (the client shows the copyable command instead). Never rejects.
  *
+ * What the second caller sees is the non-obvious part: `onProgress` is wired
+ * into the FIRST call's run and only that one, so a caller who piggybacks gets
+ * the one `starting` frame below and then SILENCE until the shared promise
+ * settles — no download percentages, just the terminal result. That is
+ * deliberate (the install is already streaming to whoever asked first), but a
+ * second tab watching a progress bar will see it sit still, so do not read the
+ * quiet as a stall.
+ *
  * @param onProgress - Optional callback for streamed install progress frames.
  * @param deps - Test seams (platform, command probe, runner, detection).
  * @returns The terminal install result.

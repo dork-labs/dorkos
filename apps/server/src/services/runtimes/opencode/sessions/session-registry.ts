@@ -20,7 +20,7 @@
  */
 import type { Session, PermissionModeId } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
-import { deriveSessionTitle } from '../shared/derive-title.js';
+import { deriveSessionTitle } from '../../shared/derive-title.js';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
 
 /** Max characters of a first message used as the derived session title/preview. */

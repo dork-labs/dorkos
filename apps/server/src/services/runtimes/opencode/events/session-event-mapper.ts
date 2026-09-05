@@ -6,7 +6,7 @@
  * (`todo.updated`). `event-mapper.ts` routes wire events here and holds the
  * adapter-wide SOURCE OF TRUTH notes.
  *
- * Not to be confused with `session-mapper.ts`, which bridges DorkOS session ids
+ * Not to be confused with `sessions/session-mapper.ts`, which bridges DorkOS session ids
  * to OpenCode's `ses_*` ids; this module maps EVENTS, not identifiers.
  *
  * TOOL APPROVALS: OpenCode supportsToolApproval = TRUE, and the permission
@@ -47,8 +47,8 @@ import {
   describeRuntimeError,
   type RuntimeErrorCopy,
 } from '@dorkos/shared/runtime-error-classification';
-import { SESSIONS } from '../../../config/constants.js';
-import { logger } from '../../../lib/logger.js';
+import { SESSIONS } from '../../../../config/constants.js';
+import { logger } from '../../../../lib/logger.js';
 
 /** The error name OpenCode stamps on interrupts — suppressed, not surfaced. */
 const ABORT_ERROR_NAME = 'MessageAbortedError';

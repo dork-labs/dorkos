@@ -241,7 +241,7 @@ export const chatApprovalRefusesWriteCase: EvalCase = {
  *
  * OpenCode-only, because the property is about OpenCode's model addressing:
  * DorkOS stores one `provider/model` string and `parseModelSelection`
- * (`opencode/turn-input.ts`) splits it on the FIRST `/`, so
+ * (`opencode/messaging/turn-input.ts`) splits it on the FIRST `/`, so
  * `openrouter/qwen/qwen3.7-flash` means `{providerID: 'openrouter', modelID:
  * 'qwen/qwen3.7-flash'}` and the two obvious mis-spellings mean nothing at all.
  * Nothing in the repo pinned that convention before this case; reading the model

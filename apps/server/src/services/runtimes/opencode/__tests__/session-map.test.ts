@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import type { OpencodeClient } from '@opencode-ai/sdk';
-import { OpenCodeSessionMap } from '../session-map.js';
-import { OpenCodeSessionMapper, type OpenCodeClientProvider } from '../session-mapper.js';
+import { OpenCodeSessionMap } from '../sessions/session-map.js';
+import { OpenCodeSessionMapper, type OpenCodeClientProvider } from '../sessions/session-mapper.js';
 import { logger } from '../../../../lib/logger.js';
 
 const SESSION_ID = '11111111-1111-4111-8111-111111111111';

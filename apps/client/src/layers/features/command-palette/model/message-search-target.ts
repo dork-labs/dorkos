@@ -47,7 +47,7 @@ const ROOMS_SOURCE = 'rooms';
  * - **`opencode`** — proved. The index stores the store's own `message.id`
  *   (`services/search/opencode-store.ts` → `projections/opencode.ts`) and the
  *   session view builds its history from the SDK's message info under the same
- *   id (`services/runtimes/opencode/session-mapper.ts:282,285` — `id: info.id`,
+ *   id (`services/runtimes/opencode/sessions/session-mapper.ts:282,285` — `id: info.id`,
  *   reached through `OpenCodeRuntime.getMessageHistory`).
  * - **`codex` is deliberately OFF.** Its rollout files carry a `response_item`
  *   `item.id` and the index stores it, but the session view does not read those

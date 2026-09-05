@@ -180,7 +180,7 @@ export const INTERRUPT_ACK_TIMEOUT_MS = 3_000;
  * deliberately NOT encoded here: it belongs to the sidecar and can move
  * between builds, so the adapter proves `limit` is honoured by behaviour
  * instead of recognising any particular page size (`assertLimitHonoured` in
- * `session-mapper.ts`).
+ * `sessions/session-mapper.ts`).
  *
  * **Raised 1000 → 5000 for DOR-674**, because the budget stopped being a
  * per-project number. The read is now widened with `scope=project` so sessions
@@ -199,7 +199,7 @@ export const INTERRUPT_ACK_TIMEOUT_MS = 3_000;
  *
  * The adapter requests one MORE than this and treats only a genuine overflow
  * as truncation, so a machine holding exactly this many is served normally
- * rather than rejected — see `listSessions` in `session-mapper.ts`.
+ * rather than rejected — see `listSessions` in `sessions/session-mapper.ts`.
  */
 export const SESSION_LIST_LIMIT = 5000;
 

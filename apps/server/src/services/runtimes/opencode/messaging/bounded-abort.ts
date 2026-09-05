@@ -12,7 +12,7 @@
  *
  * @module services/runtimes/opencode/bounded-abort
  */
-import { INTERRUPT_ACK_TIMEOUT_MS } from './runtime-constants.js';
+import { INTERRUPT_ACK_TIMEOUT_MS } from '../runtime-constants.js';
 
 /** Sleep helper for the stream-liveness race. */
 export function delay(ms: number): Promise<void> {

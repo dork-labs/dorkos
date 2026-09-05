@@ -22,7 +22,7 @@
  */
 import type { McpStatus, McpLocalConfig, McpRemoteConfig, OpencodeClient } from '@opencode-ai/sdk';
 import type { McpServerEntry } from '@dorkos/shared/transport';
-import { logger, logError } from '../../../lib/logger.js';
+import { logger, logError } from '../../../../lib/logger.js';
 
 /** Map one OpenCode {@link McpStatus} discriminant to the neutral {@link McpServerEntry} status + error. */
 function mapStatus(status: McpStatus): { status: McpServerEntry['status']; error?: string } {

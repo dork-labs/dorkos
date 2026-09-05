@@ -36,19 +36,19 @@ import type {
   ToolCallPart,
 } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
-import { mapMessageError } from './history-error-part.js';
+import { mapMessageError } from '../events/history-error-part.js';
 // Direct module import, NOT the attachments barrel: the barrel re-exports the
 // local store, which imports `node:fs`, and this module's import graph is
 // filesystem-free by test guard (ADR-0308). `deriveSessionAttachmentId` needs
 // only `node:crypto`, which is already here.
-import { deriveSessionAttachmentId } from '../../session/attachments/session-attachment-id.js';
+import { deriveSessionAttachmentId } from '../../../session/attachments/session-attachment-id.js';
 import {
   MAX_SESSION_ATTACHMENT_BYTES,
   displayableMime,
   storableImageExtension,
-} from '../../session/attachments/session-media-types.js';
-import type { SessionAttachmentStore } from '../../session/attachments/session-attachment-store.js';
-import { SESSION_LIST_LIMIT, SESSION_REBUILD_LIMIT } from './runtime-constants.js';
+} from '../../../session/attachments/session-media-types.js';
+import type { SessionAttachmentStore } from '../../../session/attachments/session-attachment-store.js';
+import { SESSION_LIST_LIMIT, SESSION_REBUILD_LIMIT } from '../runtime-constants.js';
 
 /**
  * Narrow seam to the durable sessionId <-> OpenCode-session-id store
@@ -270,7 +270,7 @@ type HistoryMediaResolver = (
  * transcript with this part, and the raw bytes never ride along.
  *
  * A typed `error` part, not prose, for the live path's own reason
- * (`media-capture.ts`): prose in the transcript reads as something the model
+ * (`events/media-capture.ts`): prose in the transcript reads as something the model
  * said, ends up in the message `content`, and gets quoted back in excerpts as
  * the agent's words. An error part renders as the same chip the live stream
  * shows, so the two surfaces of one turn tell one story.
@@ -885,7 +885,7 @@ export class OpenCodeSessionMapper {
    * Only `data:` — a `file://` source would mean reading the disk, which this
    * module may not do (ADR-0308), and an `http(s)` one would mean an outbound
    * request to an address a model chose. Both are handled on the LIVE path in
-   * `media-capture.ts`, which is allowed to do I/O; a history read that meets
+   * `events/media-capture.ts`, which is allowed to do I/O; a history read that meets
    * one it cannot decode simply shows no picture rather than pretending.
    */
   private async storeHistoryImage(

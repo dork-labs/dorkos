@@ -22,11 +22,11 @@
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { AdditionalContextEntry } from '@dorkos/shared/additional-context';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
-import { GEN_UI_CONTEXT } from '../shared/gen-ui-context.js';
-import { OPENCODE_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
-import { formatRoomContext } from '../shared/room-context-block.js';
-import { formatSeedContext } from '../shared/seed-context-block.js';
-import { formatStagedContext } from '../shared/staged-context-block.js';
+import { GEN_UI_CONTEXT } from '../../shared/gen-ui-context.js';
+import { OPENCODE_DORKOS_TOOL_PREFIX } from '../../shared/dorkos-tool-names.js';
+import { formatRoomContext } from '../../shared/room-context-block.js';
+import { formatSeedContext } from '../../shared/seed-context-block.js';
+import { formatStagedContext } from '../../shared/staged-context-block.js';
 
 /** The `session.promptAsync` text-part input shape (SDK `TextPartInput`). */
 export interface OpenCodeTextPartInput {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
-import { toOpenCodeMcpServerConfig, toOpenCodeMcpServers } from '../mcp-server-config.js';
+import { toOpenCodeMcpServerConfig, toOpenCodeMcpServers } from '../mcp/mcp-server-config.js';
 
 describe('toOpenCodeMcpServerConfig', () => {
   it('maps a stdio connection to a local config with a single command array', () => {

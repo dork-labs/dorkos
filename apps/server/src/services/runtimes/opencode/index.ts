@@ -13,7 +13,7 @@ export {
   OpenCodeSessionMapper,
   type OpenCodeClientProvider,
   type OpenCodeSessionMapStore,
-} from './session-mapper.js';
-export { OpenCodeSessionMap } from './session-map.js';
+} from './sessions/session-mapper.js';
+export { OpenCodeSessionMap } from './sessions/session-map.js';
 export { checkOpenCodeDependencies } from './providers/check-dependencies.js';
 export { OPENCODE_CAPABILITIES } from './runtime-constants.js';

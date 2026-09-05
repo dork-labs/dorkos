@@ -46,7 +46,7 @@ vi.mock('../../../core/config-manager.js', () => ({
 import { configManager } from '../../../core/config-manager.js';
 import { buildAgentContextAppend } from '../agent-context.js';
 import { buildCodexPrompt } from '../../codex/turn-input.js';
-import { buildOpenCodeParts, buildOpenCodeSystem } from '../../opencode/turn-input.js';
+import { buildOpenCodeParts, buildOpenCodeSystem } from '../../opencode/messaging/turn-input.js';
 import { resetMemoryProvider } from '../../../memory/index.js';
 import { DEFUSED_TAGS } from '../untrusted-fence.js';
 

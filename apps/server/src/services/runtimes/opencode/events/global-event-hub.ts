@@ -19,8 +19,8 @@
  * @module services/runtimes/opencode/global-event-hub
  */
 import type { GlobalEvent } from '@opencode-ai/sdk';
-import { logger, logError } from '../../../lib/logger.js';
-import type { OpenCodeClientProvider } from './session-mapper.js';
+import { logger, logError } from '../../../../lib/logger.js';
+import type { OpenCodeClientProvider } from '../sessions/session-mapper.js';
 
 /**
  * Pause between reconnect attempts when the previous connection delivered no

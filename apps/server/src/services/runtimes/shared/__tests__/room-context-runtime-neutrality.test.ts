@@ -31,7 +31,7 @@ vi.mock('../../../tasks/task-state.js', () => ({ isTasksEnabled: vi.fn(() => tru
 import type { AdditionalContextEntry } from '@dorkos/shared/additional-context';
 import { renderContextEntry } from '../../claude-code/messaging/context-builder.js';
 import { buildCodexPrompt } from '../../codex/turn-input.js';
-import { buildOpenCodeParts } from '../../opencode/turn-input.js';
+import { buildOpenCodeParts } from '../../opencode/messaging/turn-input.js';
 
 const ENTRY: AdditionalContextEntry = {
   kind: 'room_context',

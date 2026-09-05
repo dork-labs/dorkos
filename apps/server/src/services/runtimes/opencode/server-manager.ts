@@ -26,7 +26,7 @@ import { configManager } from '../../core/config-manager.js';
 import { resolveOpenCodeProviderEnv } from '../../core/credential-env.js';
 import { logger, logError } from '../../../lib/logger.js';
 import { resolveOpenCodeBinaryPath } from './providers/check-dependencies.js';
-import type { OpenCodeClientProvider } from './session-mapper.js';
+import type { OpenCodeClientProvider } from './sessions/session-mapper.js';
 
 /** Loopback-only binding — the sidecar is never reachable off-machine (spec §Security). */
 const SIDECAR_HOSTNAME = '127.0.0.1';

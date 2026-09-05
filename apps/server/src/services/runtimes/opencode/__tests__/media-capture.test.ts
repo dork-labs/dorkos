@@ -17,9 +17,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { LocalSessionAttachmentStore } from '../../../session/attachments/local-session-attachment-store.js';
-import { createOpenCodeEventContext } from '../event-mapper.js';
-import { mapPartSnapshot } from '../part-event-mapper.js';
-import { captureOpenCodeMedia } from '../media-capture.js';
+import { createOpenCodeEventContext } from '../events/event-mapper.js';
+import { mapPartSnapshot } from '../events/part-event-mapper.js';
+import { captureOpenCodeMedia } from '../events/media-capture.js';
 import {
   OC_SESSION_A,
   TINY_PNG_DATA_URL,

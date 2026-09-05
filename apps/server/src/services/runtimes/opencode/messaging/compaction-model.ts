@@ -24,7 +24,7 @@
  * @module services/runtimes/opencode/compaction-model
  */
 import type { OpencodeClient, SessionMessagesResponse } from '@opencode-ai/sdk';
-import { unwrap } from './session-mapper.js';
+import { unwrap } from '../sessions/session-mapper.js';
 import { parseModelSelection } from './turn-input.js';
 
 /** The `{providerID, modelID}` pair `session.summarize` takes as its body. */
@@ -166,7 +166,7 @@ function findLastUserModel(entries: SessionMessagesResponse): OpenCodeModelSelec
  * for `directory` → the `x-opencode-directory` header → its own `process.cwd()`,
  * and the sidecar is spawned with no `cwd` of its own, so omitting it answers
  * with whatever project the DorkOS server process happens to be sitting in.
- * Same reason `mcp-status.ts` passes it.
+ * Same reason `mcp/mcp-status.ts` passes it.
  */
 async function readConfiguredDefaultModel(
   client: OpencodeClient,
