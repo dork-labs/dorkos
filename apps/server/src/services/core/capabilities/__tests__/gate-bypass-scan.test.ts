@@ -207,7 +207,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     },
   },
   {
-    what: "arms a Shape's schedules — created ENABLED, carrying the permission mode its manifest chose (bypassPermissions included) — and deletes the ones an earlier version of that Shape left behind",
+    what: "writes a Shape's schedules into the operator's own skills root, rewrites the active-Shape config, turns extensions on and off, and deletes the schedules an earlier version of that Shape left behind. NOT the permission mode: a manifest's bypassPermissions is clamped to acceptEdits (DOR-607) and the row parks at pending_approval on first sighting (DOR-1486)",
     call: 'applyShape(',
     allowed: {
       'routes/shapes.ts':
@@ -232,7 +232,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'routes/marketplace.ts': 'a person clicking Install or Uninstall in their own cockpit',
       'routes/config.ts': 'a person changing their own settings in their own cockpit',
       'routes/shapes.ts':
-        'a person clicking a Shape in their own cockpit — applying one arms scheduled work, so an agent is asked first (DOR-625)',
+        'a person clicking a Shape in their own cockpit — applying one writes files, rewrites config and creates and deletes scheduled work, so an agent is asked first (DOR-625)',
       'routes/extensions-approval.ts':
         'a person allowing an extension to run its code inside DorkOS, in their own cockpit (DOR-516). Gated: both bars from `PATCH /api/config` for an operator-only setting, in the same order — the cookie bar under login, then this one — because the field it writes (`extensions.approvedToRun`) IS operator-only, plus a trusted-`Origin` bar the config route does not need because these two routes are reachable by a plain cross-site POST. There is no MCP twin to walk around, by design',
       'routes/tunnel.ts':

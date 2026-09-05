@@ -104,10 +104,14 @@ const READ_ONLY_TOOLS = new Set([
  * A name here means "do not ask ABOUT THE TOOL". It does not mean every call to
  * that tool is auto-allowed, and for one member it must not: `control_ui` is a
  * multiplexer carrying 22 different effects behind one name, and one of them
- * (`apply_layout`) reaches a mutating DorkOS route. {@link isAutoAllowedCall}
- * makes the final decision per CALL, so a tool on this list can still be
- * per-argument gated. Read the two together — this set alone no longer answers
- * the question.
+ * (`apply_layout`) reaches a mutating DorkOS route — `POST /api/shapes/:name/apply`,
+ * which writes `SKILL.md` files into a person's own skills root, rewrites their
+ * active-Shape config, creates, rebinds and deletes scheduled tasks, and toggles
+ * extensions. Not, since DOR-607 and DOR-1486, a schedule running with the prompts
+ * off: a manifest's `bypassPermissions` is clamped and the row parks at
+ * `pending_approval` until a person approves it. {@link isAutoAllowedCall} makes
+ * the final decision per CALL, so a tool on this list can still be per-argument
+ * gated. Read the two together — this set alone no longer answers the question.
  */
 export const DORKOS_AGENT_TOOLS = new Set(
   [

@@ -308,12 +308,18 @@ describe('createCanUseTool — approval gate', () => {
  * "pure client-side UI mutations, no system access", and for 21 of its 22 actions
  * that is true.
  *
- * `apply_layout` is the twenty-second. The cockpit answers it by POSTing
- * `/api/shapes/:name/apply`, and applying a Shape creates that Shape's schedules
- * ENABLED, each carrying the permission mode the Shape's own manifest chose —
- * `bypassPermissions` is in `SCHEDULE_PERMISSION_MODES`. So one auto-allowed
- * tool call armed a recurring unattended run with every safety prompt off, in
- * plain `default` mode, with nobody asked.
+ * `apply_layout` is the twenty-second. The client answers it by POSTing
+ * `/api/shapes/:name/apply`, and applying a Shape writes a `SKILL.md` into the
+ * person's own skills root for every schedule the Shape declares, records a
+ * receipt naming what it wrote, rewrites `ui.shapes.active` in
+ * `~/.dork/config.json`, creates, rebinds and deletes scheduled tasks, and turns
+ * extensions on and off. So one auto-allowed tool call rewrote a person's files
+ * and configuration, in plain `default` mode, with nobody asked.
+ *
+ * It could not, and cannot, hand those schedules a mode nobody granted: a
+ * manifest's `bypassPermissions` is clamped to `acceptEdits` (DOR-607) and the
+ * row parks at `pending_approval` until a person approves it (DOR-1486). This
+ * comment claimed otherwise until DOR-1713; the card is warranted by the writing.
  *
  * `control_ui` is the only MULTIPLEXER on the auto-allow list: one tool name, 22
  * different effects, one blanket decision. These tests are per-ACTION for that

@@ -315,11 +315,16 @@ describe('shapes router', () => {
    * The tier gate on apply (DOR-625).
    *
    * `POST /api/shapes/:name/apply` had no gate of any kind — no `authorize`, no
-   * trusted-caller check, no confirmation provider — while applying a Shape
-   * creates that Shape's schedules ENABLED, carrying whatever permission mode its
-   * manifest declared, and deletes the schedules an earlier version of the same
-   * Shape left behind. That is the blast radius `destructive` names, and the route
-   * answered to nothing.
+   * trusted-caller check, no confirmation provider — while applying a Shape writes
+   * a `SKILL.md` into the operator's own skills root for every schedule it
+   * declares, rewrites the active-Shape config, turns extensions on and off, and
+   * deletes the schedules an earlier version of the same Shape left behind. That
+   * is the blast radius `destructive` names, and the route answered to nothing.
+   *
+   * Not the permission mode, which this comment used to lead with (DOR-1713): a
+   * manifest's `bypassPermissions` is clamped to `acceptEdits` before the row is
+   * written (DOR-607) and the row parks at `pending_approval` until a person
+   * approves it (DOR-1486). The writing alone is what the tier is for.
    *
    * The two cases below are the whole contract: a person clicking a Shape in their
    * own cockpit sends no agent header and is unaffected; a caller that names itself

@@ -737,8 +737,9 @@ describe('executeUiCommand — celebrate', () => {
  * "this only moves pixels, so do not ask". That verdict is a claim about code in
  * THIS package: the dispatcher below is what actually runs the command, and
  * `apply_layout` is `reaches-the-machine` because the case body calls
- * `ctx.applyShape`, which POSTs `/api/shapes/:name/apply` and arms cron
- * schedules.
+ * `ctx.applyShape`, which POSTs `/api/shapes/:name/apply` — writing `SKILL.md`
+ * files into the person's skills root, rewriting their active-Shape config, and
+ * creating, rebinding and deleting scheduled tasks.
  *
  * Nothing connected the claim to the code. `mcp-tool-gate.test.ts` pins that
  * every action HAS a verdict; it says in its own comment that it cannot check
@@ -813,9 +814,9 @@ describe('UI_COMMAND_REACH is true of the real dispatcher (DOR-625)', () => {
       expect(
         ctx.applyShape,
         `${action} is classified client-only, so an agent may issue it with nobody asked — ` +
-          `but the dispatcher answers it by applying a Shape, which arms cron schedules on ` +
-          `the operator's machine. Either the verdict in UI_COMMAND_REACH is wrong or this ` +
-          `case body is.`
+          `but the dispatcher answers it by applying a Shape, which writes files and ` +
+          `rewrites scheduled work on the operator's machine. Either the verdict in ` +
+          `UI_COMMAND_REACH is wrong or this case body is.`
       ).not.toHaveBeenCalled();
     }
   });

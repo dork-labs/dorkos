@@ -16,7 +16,8 @@
  * ## What is gated here, and what is not
  *
  * `apply` answers to the permission gate ({@link APPLY_SHAPE_ACTION}, DOR-625),
- * because it arms scheduled work. `fork` does not: it copies a manifest into
+ * because it writes files, rewrites config, and creates and deletes scheduled
+ * work. `fork` does not: it copies a manifest into
  * `{dorkHome}/shapes/<name>/` and nothing else — no schedule, no extension, no
  * permission mode, and the copy is inert until somebody applies it, which is the
  * gated step. `GET /` reads. Said explicitly so the asymmetry reads as a decision
@@ -91,14 +92,22 @@ function requireShapeSlug(name: string, res: Response): string | null {
  * "Restore my layout" is what the name suggests, and the chrome half really is
  * cosmetic. The rest is not.
  *
- * **The argument is CREATION, not deletion.** `applyShape` creates every schedule
- * the Shape's manifest declares, ENABLED, each carrying the `permissionMode` that
- * manifest chose — and `SCHEDULE_PERMISSION_MODES` includes
- * `bypassPermissions`. One call therefore arms recurring, unattended execution on
- * the operator's machine with every safety prompt off, at a time nobody is
- * watching. That is the same thing `gate-bypass-scan.test.ts` already protects
- * `createTask(` for, and on the same grounds: a schedule is a standing grant that
- * fires later, so the moment to look at it is the moment it is created.
+ * **The argument is CREATION, not deletion.** `applyShape` writes a `SKILL.md`
+ * into the operator's own skills root for every schedule the Shape declares,
+ * records a write receipt naming what it wrote, rewrites `ui.shapes.active` in
+ * `~/.dork/config.json`, and turns extensions on and off. Each of those is a
+ * standing change to somebody's machine that outlives the call, and the moment to
+ * look at it is the moment it is made — the same grounds on which
+ * `gate-bypass-scan.test.ts` already protects `createTask(`.
+ *
+ * **What the argument is NOT, since DOR-607 and DOR-1486.** It is not that one
+ * call arms unattended execution with the prompts off. It cannot:
+ * `clampSchedulePermissionMode` downgrades a manifest's `bypassPermissions` to
+ * `acceptEdits` before the row is written, a schedule is created enabled only when
+ * the manifest set `startEnabled` AND its agent already exists, and the row lands
+ * through `upsertFromFile({ source: 'discovery' })`, which
+ * `resolveFileArmStatus` parks at `pending_approval` on first sighting. The tier
+ * stands on the writing and rewiring, which is enough on its own.
  *
  * The deletion half — step 4b removes schedules carrying this Shape's provenance
  * that the current manifest no longer declares — is deliberately NOT the load-
