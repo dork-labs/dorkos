@@ -417,22 +417,23 @@ Key details:
 
 Reveal or hide a section by animating `height: 0 ↔ 'auto'` with `opacity`. Use this for collapsible rows, overflow sections, or expandable list tails — cases where the item count is unknown and `height: 'auto'` is required.
 
+**Import them; never retype them.** `COLLAPSE_VARIANTS` and `COLLAPSE_TRANSITION`
+live in `layers/shared/lib` (`collapse-motion.ts`). Fifteen call sites used to
+hand-roll this same object at 200ms, 250ms and 300ms under three local names,
+so expanding a tool card and then a task row was the same gesture at two speeds
+(DOR-1763 finding 17.8).
+
 ```typescript
-const collapseVariants = {
-  initial: { height: 0, opacity: 0 },
-  animate: { height: 'auto', opacity: 1 },
-  exit: { height: 0, opacity: 0 },
-} as const;
-const collapseTransition = { duration: 0.2, ease: [0, 0, 0.2, 1] } as const;
+import { COLLAPSE_TRANSITION, COLLAPSE_VARIANTS } from '@/layers/shared/lib';
 
 <AnimatePresence>
   {isExpanded && (
     <motion.div
-      variants={collapseVariants}
+      variants={COLLAPSE_VARIANTS}
       initial="initial"
       animate="animate"
       exit="exit"
-      transition={collapseTransition}
+      transition={COLLAPSE_TRANSITION}
       className="overflow-hidden"
     >
       {overflowItems}
@@ -446,7 +447,7 @@ Key details:
 - `overflow: hidden` is **required** — clips content while the height collapses to zero
 - Motion handles the `height: 'auto'` special case natively — no JS measurement needed
 - Use ease-out (e.g., cubic-bezier `[0, 0, 0.2, 1]`) rather than spring for height — spring physics on height produce overshooting artifacts
-- Define variants at **module scope** (not inline) to avoid object recreation on every render
+- Define variants at **module scope** (not inline) to avoid object recreation on every render — for this one, the module is `shared/lib`
 - This is an acceptable exception to the "don't animate height directly" anti-pattern: `height: 0 ↔ 'auto'` collapse is Motion's dedicated mechanism for variable-height reveals
 
 **Used in:** ConnectionsView overflow rows (agents list, MCP servers list)

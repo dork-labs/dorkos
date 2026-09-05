@@ -1,5 +1,5 @@
 import type { Session } from '@dorkos/shared/types';
-import { TIME_UNITS } from './constants';
+import { bucketElapsedMs } from './bucket-elapsed-ms';
 
 export type TimeGroup = 'Today' | 'Yesterday' | 'Previous 7 Days' | 'Previous 30 Days' | 'Older';
 
@@ -71,9 +71,7 @@ export function shortenHomePath(absolutePath: string): string {
 export function formatRelativeTime(isoString: string): string {
   const now = new Date();
   const date = new Date(isoString);
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / TIME_UNITS.MS_PER_MINUTE);
-  const diffHours = Math.floor(diffMs / TIME_UNITS.MS_PER_HOUR);
+  const elapsed = bucketElapsedMs(now.getTime() - date.getTime());
 
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const yesterdayStart = new Date(todayStart);
@@ -82,9 +80,10 @@ export function formatRelativeTime(isoString: string): string {
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
   if (date >= todayStart) {
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    return `${diffHours}h ago`;
+    if (elapsed.unit === 'minute') {
+      return elapsed.value < 1 ? 'Just now' : `${elapsed.value}m ago`;
+    }
+    return `${elapsed.value}h ago`;
   }
 
   const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', hour12: true }).toLowerCase();

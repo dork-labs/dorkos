@@ -2,17 +2,7 @@ import { useState, type KeyboardEvent } from 'react';
 import { Check, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Button, Field, FieldDescription, FieldError, FieldLabel, Input } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
-
-/** Animation variants for the settings panel height collapse. */
-const panelVariants = {
-  initial: { height: 0, opacity: 0 },
-  animate: { height: 'auto', opacity: 1 },
-  exit: { height: 0, opacity: 0 },
-} as const;
-
-/** Transition config for the panel expand/collapse. */
-const panelTransition = { duration: 0.2, ease: [0, 0, 0.2, 1] } as const;
+import { cn, COLLAPSE_TRANSITION, COLLAPSE_VARIANTS } from '@/layers/shared/lib';
 
 /** Chevron rotation variants. */
 const chevronVariants = {
@@ -115,11 +105,11 @@ export function TunnelSettings({
         {open && (
           <motion.div
             key="settings-panel"
-            variants={panelVariants}
+            variants={COLLAPSE_VARIANTS}
             initial="initial"
             animate="animate"
             exit="exit"
-            transition={panelTransition}
+            transition={COLLAPSE_TRANSITION}
             className="overflow-hidden"
           >
             <div className="space-y-4 pt-3">

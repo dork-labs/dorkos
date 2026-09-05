@@ -1,16 +1,7 @@
 import { ArrowUpRight } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Button, Field, FieldError, FieldLabel, Input } from '@/layers/shared/ui';
-
-/** Height-collapse variants for the token error message. */
-const tokenErrorVariants = {
-  initial: { height: 0, opacity: 0 },
-  animate: { height: 'auto', opacity: 1 },
-  exit: { height: 0, opacity: 0 },
-} as const;
-
-/** Transition for the token error collapse — ease-out avoids spring overshoot on height. */
-const tokenErrorTransition = { duration: 0.2, ease: [0, 0, 0.2, 1] } as const;
+import { COLLAPSE_TRANSITION, COLLAPSE_VARIANTS } from '@/layers/shared/lib';
 
 /** Props for the setup view shown when no auth token is configured. */
 export interface TunnelSetupProps {
@@ -55,11 +46,11 @@ export function TunnelSetup({
           {tokenError && (
             <motion.div
               key="token-error"
-              variants={tokenErrorVariants}
+              variants={COLLAPSE_VARIANTS}
               initial="initial"
               animate="animate"
               exit="exit"
-              transition={tokenErrorTransition}
+              transition={COLLAPSE_TRANSITION}
               className="overflow-hidden"
             >
               <FieldError>{tokenError}</FieldError>

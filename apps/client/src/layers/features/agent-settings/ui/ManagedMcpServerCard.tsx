@@ -1,4 +1,4 @@
-import { Loader2, LogIn, MoreHorizontal, RotateCw } from 'lucide-react';
+import { LogIn, MoreHorizontal, RotateCw } from 'lucide-react';
 import {
   Button,
   DropdownMenu,
@@ -6,6 +6,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  Spinner,
   Switch,
 } from '@/layers/shared/ui';
 import { useMcpSigninFlow } from '@/layers/entities/agent';
@@ -167,7 +168,7 @@ export function ManagedMcpServerCard({
               aria-label={`Try ${server.name} again`}
               className="gap-1.5 focus-visible:ring-2"
             >
-              {testing ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
+              {testing ? <Spinner size="xs" /> : null}
               Try again
             </Button>
           )}
@@ -179,7 +180,7 @@ export function ManagedMcpServerCard({
               disabled={testing || busy}
               className="focus-visible:ring-2"
             >
-              {testing ? <Loader2 className="size-3 animate-spin" aria-hidden /> : 'Test'}
+              {testing ? <Spinner size="xs" /> : 'Test'}
             </Button>
           )}
           <DropdownMenu>

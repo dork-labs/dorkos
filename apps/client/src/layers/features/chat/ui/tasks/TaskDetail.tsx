@@ -1,6 +1,7 @@
 import { motion } from 'motion/react';
 import type { TaskItem } from '@dorkos/shared/types';
 import { useElapsedTime } from '@/layers/shared/model';
+import { COLLAPSE_TRANSITION, COLLAPSE_VARIANTS } from '@/layers/shared/lib';
 
 interface TaskDetailProps {
   task: TaskItem;
@@ -88,9 +89,11 @@ export function TaskDetail({ task, taskMap, statusSince, onScrollToTask }: TaskD
 
   return (
     <motion.div
-      initial={{ opacity: 0, height: 0 }}
-      animate={{ opacity: 1, height: 'auto' }}
-      exit={{ opacity: 0, height: 0 }}
+      variants={COLLAPSE_VARIANTS}
+      initial="initial"
+      animate="animate"
+      exit="exit"
+      transition={COLLAPSE_TRANSITION}
       className="mt-0.5 ml-6 space-y-1"
     >
       {task.description && (

@@ -2,7 +2,6 @@ import {
   CheckCircle2,
   ChevronRight,
   Clock,
-  Loader2,
   MinusCircle,
   Play,
   SkipForward,
@@ -21,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
   Skeleton,
+  Spinner,
 } from '@/layers/shared/ui';
 import type { TaskRun, TaskRunStatus } from '@dorkos/shared/types';
 
@@ -65,7 +65,7 @@ function StatusIcon({ status }: { status: TaskRun['status'] }) {
     case 'running':
       return (
         <span title="Running" aria-label="Running">
-          <Loader2 className="size-3.5 animate-spin text-blue-500" />
+          <Spinner size="xs" className="text-blue-500" />
         </span>
       );
     case 'completed':

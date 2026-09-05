@@ -16,7 +16,12 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { GitFork } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
-import { cn, permissionModeLabel } from '@/layers/shared/lib';
+import {
+  cn,
+  COLLAPSE_TRANSITION,
+  COLLAPSE_VARIANTS,
+  permissionModeLabel,
+} from '@/layers/shared/lib';
 import { DetailRow, TRUST_TONE_TEXT } from '@/layers/shared/ui';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { useSessionPermissionSummary } from '../model/use-session-permission-summary';
@@ -98,10 +103,11 @@ export function SessionDetailsPanel({
     <AnimatePresence initial={false}>
       {expanded && (
         <motion.div
-          initial={{ height: 0, opacity: 0 }}
-          animate={{ height: 'auto', opacity: 1 }}
-          exit={{ height: 0, opacity: 0 }}
-          transition={{ duration: 0.2, ease: [0, 0, 0.2, 1] }}
+          variants={COLLAPSE_VARIANTS}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          transition={COLLAPSE_TRANSITION}
           className="relative z-10 overflow-hidden"
           data-slot="session-details-panel"
         >

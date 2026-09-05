@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowUp, CornerDownLeft, Square, Clock, Check, X, Loader2 } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
+import { Spinner } from '@/layers/shared/ui';
 import { DispositionMenu } from './DispositionMenu';
 
 type ButtonState =
@@ -302,7 +303,7 @@ export function InputActionButton({
             role="status"
             className={cn('rounded-lg p-1.5 max-md:p-2', BUTTON_CONFIG[buttonState].className)}
           >
-            <Loader2 className="size-(--size-icon-sm) animate-spin" aria-hidden="true" />
+            <Spinner />
             <span className="sr-only">{BUTTON_CONFIG[buttonState].label}</span>
           </div>
         ) : buttonState && ActionIcon ? (

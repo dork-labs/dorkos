@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { CheckCircle2, Loader2, XCircle, MinusCircle, SkipForward, Clock } from 'lucide-react';
+import { CheckCircle2, XCircle, MinusCircle, SkipForward, Clock } from 'lucide-react';
 import {
   useTasks,
   useActiveTaskRunCount,
@@ -16,6 +16,7 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
   ScrollArea,
+  Spinner,
 } from '@/layers/shared/ui';
 import { formatRelativeTime } from '@/layers/shared/lib';
 import type { ChipState } from '@/layers/entities/agent';
@@ -36,7 +37,7 @@ const MAX_RECENT_RUNS = 5;
 function RunStatusIcon({ status }: { status: TaskRun['status'] }) {
   switch (status) {
     case 'running':
-      return <Loader2 className="size-3 shrink-0 animate-spin text-blue-500" aria-hidden />;
+      return <Spinner size="xs" className="shrink-0 text-blue-500" />;
     case 'completed':
       return <CheckCircle2 className="size-3 shrink-0 text-green-500" aria-hidden />;
     case 'failed':
@@ -75,7 +76,7 @@ function RunningRunItem({ run, scheduleName }: RunningRunItemProps) {
   return (
     <SidebarMenuItem>
       <SidebarMenuButton className="text-sm">
-        <Loader2 className="size-3 shrink-0 animate-spin text-blue-500" aria-hidden />
+        <Spinner size="xs" className="shrink-0 text-blue-500" />
         <span className="truncate">{scheduleName}</span>
         {run.startedAt && (
           <span className="text-muted-foreground/50 ml-auto shrink-0 text-xs">
