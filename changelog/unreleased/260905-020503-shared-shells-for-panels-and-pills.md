@@ -5,6 +5,7 @@ covers:
   - 'feat(client): the pill comes out of Badge, and the chip out of shared/ui (DOR-1763)'
   - 'refactor(client): the Card shell comes from Card (DOR-1763)'
   - 'refactor(client): one collapse gesture, one rename machine, one promo layout (DOR-1763)'
+  - 'fix(client): the first-run Composio button stops stretching (DOR-1763)'
 ---
 
 ### Changed
