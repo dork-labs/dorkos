@@ -60,6 +60,7 @@ BANNED_RE='mission control|cockpit'
 # Prose and user-visible data only — never source files. See the header.
 SCAN_TARGETS=(
   'README.md'
+  'CONTRIBUTING.md'
   'context7.json'
   'packages/cli/README.md'
   'apps/client/public/manifest.webmanifest'
