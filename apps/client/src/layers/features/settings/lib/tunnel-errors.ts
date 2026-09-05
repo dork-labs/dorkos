@@ -81,11 +81,11 @@ export function describeTunnelWriteFailure(err: unknown, fallback: string): stri
   const failure = (err ?? {}) as TransportFailure;
 
   if (failure.code === OPERATOR_COOKIE_REQUIRED) {
-    return 'Sign in to DorkOS first — only a signed-in person can change Remote Access settings.';
+    return 'Sign in to DorkOS first. Only a signed-in person can change Remote access settings.';
   }
 
   if (failure.code === OPERATOR_ONLY_CONFIG) {
-    return 'Only you can change Remote Access settings — an agent cannot. Nothing changed.';
+    return 'Only you can change Remote access settings, not an agent. Nothing changed.';
   }
 
   const status = failure.status;

@@ -26,8 +26,8 @@ import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
  */
 const BRIDGE_WARNINGS = [
   'Bridging this chat lets people you may not know put text in front of your agent.',
-  'The permission mode is the real bound. A bridged chat asks before it acts by default — raising that is a decision you are making with a stranger on the other end.',
-  'The channel keeps the whole record. Every message that reached your agent is in it, kept for good and never trimmed — which the old private line never gave you.',
+  'The permission mode is the real bound. A bridged chat asks before it acts by default. Raising that is a decision you are making with a stranger on the other end.',
+  'The channel keeps the whole record. Every message that reached your agent is in it, kept for good and never trimmed, which the old private line never gave you.',
 ] as const;
 
 export interface BindingBridgeSectionProps {
@@ -60,7 +60,7 @@ export function BindingBridgeSection({ binding, onDone }: BindingBridgeSectionPr
   // become a channel. Shown as the reason, not a disabled control (§3.1).
   if (!binding.chatId) {
     return (
-      <BridgeRefusal reason="This reaches every chat here, not one in particular — so there is no single chat to turn into a channel. Point it at one chat first, then bridge it." />
+      <BridgeRefusal reason="This reaches every chat here, not one in particular, so there is no single chat to turn into a channel. Point it at one chat first, then bridge it." />
     );
   }
 

@@ -125,7 +125,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => ({
   useSlotContributions: () => [
     {
       id: 'new-session',
-      label: 'New Session',
+      label: 'New session',
       icon: 'Plus',
       action: 'newSession',
       category: 'quick-action',
@@ -133,7 +133,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => ({
     },
     {
       id: 'create-agent',
-      label: 'Create Agent',
+      label: 'Create agent',
       icon: 'Plus',
       action: 'createAgent',
       category: 'quick-action',
@@ -287,8 +287,8 @@ describe('the zero-query command center', () => {
     render();
     await screen.findByText('Dashboard overhaul');
 
-    expect(screen.getByText('New Session')).toBeInTheDocument();
-    expect(screen.getByText('Create Agent')).toBeInTheDocument();
+    expect(screen.getByText('New session')).toBeInTheDocument();
+    expect(screen.getByText('Create agent')).toBeInTheDocument();
   });
 });
 

@@ -96,7 +96,7 @@ export function TeamHeader({ indicatorLayoutId = 'team-view-tabs' }: TeamHeaderP
           // tabs and a title already want more than 390px, and `+` beside a
           // roster is not ambiguous. The label stays on the button either way,
           // so it is named the same for a screen reader at both widths.
-          aria-label={isMobile ? 'New Agent' : undefined}
+          aria-label={isMobile ? 'New agent' : undefined}
           // But it does not get to be the SMALLEST thing in the row. `size="xs"`
           // is 24px, which left the bar's only write action a shorter target
           // than the tabs beside it (35px) once it lost its label. Square it to
@@ -104,7 +104,7 @@ export function TeamHeader({ indicatorLayoutId = 'team-view-tabs' }: TeamHeaderP
           className={cn(isMobile && 'h-[35px] w-[35px] p-0')}
         >
           <Plus />
-          {!isMobile && 'New Agent'}
+          {!isMobile && 'New agent'}
         </Button>
       }
     />

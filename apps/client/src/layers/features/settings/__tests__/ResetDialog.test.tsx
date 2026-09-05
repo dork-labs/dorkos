@@ -169,8 +169,16 @@ describe('ResetDialog', () => {
 
       confirmReset();
 
+      // The shell's sentence is the DESCRIPTION now, under an authored headline
+      // (DOR-1755). It still reaches the person verbatim — that is what this
+      // test guards; only which argument carries it moved.
       await waitFor(() =>
-        expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('Nothing was deleted'))
+        expect(toast.error).toHaveBeenCalledWith(
+          "Couldn't reset your data.",
+          expect.objectContaining({
+            description: expect.stringContaining('Nothing was deleted'),
+          })
+        )
       );
       expect(defaultProps.onResetComplete).not.toHaveBeenCalled();
     });

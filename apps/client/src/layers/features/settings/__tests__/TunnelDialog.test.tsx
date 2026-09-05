@@ -108,11 +108,11 @@ describe('TunnelDialog', () => {
     });
   });
 
-  it('renders "Remote Access" title when open', () => {
+  it('renders "Remote access" title when open', () => {
     render(<TunnelDialog open={true} onOpenChange={vi.fn()} />, {
       wrapper: createWrapper(),
     });
-    expect(screen.getByText('Remote Access')).toBeDefined();
+    expect(screen.getByText('Remote access')).toBeDefined();
   });
 
   it('shows landing view when tokenConfigured is false', async () => {

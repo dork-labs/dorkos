@@ -107,7 +107,7 @@ export function ProvenanceChip({
 
   if (!interactive) {
     return warning ? (
-      <span title={warning} aria-label={`${label} — ${warning}`}>
+      <span title={warning} aria-label={`${label}: ${warning}`}>
         {chip}
       </span>
     ) : (
@@ -118,7 +118,7 @@ export function ProvenanceChip({
   return (
     <ResponsivePopover open={open} onOpenChange={setOpen}>
       <ResponsivePopoverTrigger asChild>
-        <button type="button" aria-label={`Set here${warning ? ` — ${warning}` : ''}`}>
+        <button type="button" aria-label={`Set here${warning ? `: ${warning}` : ''}`}>
           {chip}
         </button>
       </ResponsivePopoverTrigger>
@@ -139,7 +139,7 @@ export function ProvenanceChip({
             <span className="text-muted-foreground block text-xs">currently {serverDefault}</span>
           ) : (
             <span className="text-muted-foreground block text-xs">
-              the runtime picks — nothing is set
+              the runtime picks, nothing is set
             </span>
           )}
         </button>

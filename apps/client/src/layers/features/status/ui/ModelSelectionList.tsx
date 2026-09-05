@@ -64,7 +64,7 @@ export function ModelLoadError({ onRetry }: { onRetry: () => void }) {
       data-testid="model-load-error"
     >
       <AlertCircle className="text-muted-foreground size-5" />
-      <p className="text-muted-foreground text-xs">Failed to load models</p>
+      <p className="text-muted-foreground text-xs">Couldn&rsquo;t load the model list.</p>
       <button
         onClick={onRetry}
         className="text-foreground hover:bg-accent inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs transition-colors"

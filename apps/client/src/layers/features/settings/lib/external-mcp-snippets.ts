@@ -2,7 +2,7 @@
  * External MCP setup snippet builders.
  *
  * Pure helpers that produce the per-client configuration JSON shown in the
- * External MCP card's "Setup Instructions" block. Extracted from
+ * External MCP card's "Setup instructions" block. Extracted from
  * `ExternalMcpCard.tsx` so the snippet shapes can be unit-tested independently
  * and reused without pulling in React.
  *

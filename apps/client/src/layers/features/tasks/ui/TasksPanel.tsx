@@ -93,8 +93,8 @@ export function TasksPanel() {
     return (
       <FeatureDisabledState
         icon={icons.tasks}
-        name="Scheduled tasks"
-        description="Scheduled tasks run your agents on a timer. Start DorkOS with the --tasks flag to turn them on."
+        name="Scheduling"
+        description="Scheduled tasks let your agents work on a timer, even when you're not here."
         command="dorkos --tasks"
       />
     );

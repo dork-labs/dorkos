@@ -155,7 +155,7 @@ describe('initializeExtensions — right-panel contributions', () => {
 
 describe('initializeExtensions — command palette gating (Obsidian embed)', () => {
   // Built-ins that need AppShell chrome the embed never renders: a mounted
-  // dialog (Create Agent / Import), the right panel (Profile, Canvas), or
+  // dialog (Create agent / Import), the right panel (Profile, Canvas), or
   // the router (Dashboard, Agents — navigate() throws with no RouterProvider).
   const EMBED_DEAD_ENDS = [
     'createAgent',

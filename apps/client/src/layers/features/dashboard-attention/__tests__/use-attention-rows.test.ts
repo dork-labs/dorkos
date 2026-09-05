@@ -95,7 +95,7 @@ describe('useAttentionRows', () => {
 
   it('takes only the error kind from the engine', () => {
     // The dedupe rule, at its source: a permission prompt and a question each
-    // already have a card in "Waiting On You", and drawing them again as rows
+    // already have a card in "Waiting on you", and drawing them again as rows
     // is the same fact twice in one header.
     mockSignals.mockReturnValue([
       signal('permission-prompt', 'approval:apr-1'),

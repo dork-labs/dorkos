@@ -398,7 +398,7 @@ describe('ToolsTab', () => {
       const view = renderTab(baseAgent);
 
       expect(view.getByText(/This switch is a lock, not a hint/)).toBeInTheDocument();
-      expect(view.getByText(/the agent cannot turn it on for itself/)).toBeInTheDocument();
+      expect(view.getByText(/The agent cannot turn it on for itself/)).toBeInTheDocument();
       // And the four above it must not claim to block.
       expect(view.getByText(/an agent that asks for one anyway still gets it/)).toBeInTheDocument();
     });

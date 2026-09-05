@@ -135,7 +135,7 @@ export function EffortRow({
               className="focus-ring self-start rounded-sm text-xs text-amber-700 underline-offset-2 hover:underline disabled:pointer-events-none disabled:opacity-50 dark:text-amber-400"
               data-testid={`runtime-effort-clear-${runtimeType}`}
             >
-              {effortLabel(value)} is saved here and does nothing — clear it
+              {effortLabel(value)} is saved here and does nothing. Clear it
             </button>
           )}
         </div>

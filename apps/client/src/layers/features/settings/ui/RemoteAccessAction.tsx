@@ -19,7 +19,7 @@ export function RemoteAccessAction({ onClick }: { onClick: () => void }) {
         )}
       >
         <Globe className="text-muted-foreground size-(--size-icon-sm) shrink-0" />
-        <span className="flex-1">Remote Access</span>
+        <span className="flex-1">Remote access</span>
         <ChevronRight className="text-muted-foreground/40 size-(--size-icon-sm) shrink-0" />
       </motion.button>
     );
@@ -32,7 +32,7 @@ export function RemoteAccessAction({ onClick }: { onClick: () => void }) {
     >
       <span className="relative z-10 flex items-center gap-2">
         <Globe className="size-(--size-icon-sm) shrink-0" />
-        Remote Access
+        Remote access
       </span>
     </button>
   );

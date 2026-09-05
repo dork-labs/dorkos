@@ -149,7 +149,7 @@ function TextDiffReview({ content }: CanvasDiffContentProps) {
         {review.writeFailed && (
           <Banner key="write-failed" tone="error" reduceMotion={reduceMotion}>
             <span className="flex-1">
-              That change couldn&rsquo;t be written to disk. Nothing was lost — try again.
+              That change couldn&rsquo;t be written to disk. Nothing was lost. Try again.
             </span>
             <Button
               type="button"
@@ -241,8 +241,8 @@ function DiffHeader({
   const disclosure =
     mode === 'session' && degraded
       ? capturedFrom === 'head'
-        ? 'No session snapshot — comparing to your last commit. Rejecting also undoes any edits you made before this session.'
-        : 'No session snapshot or commit found — the whole file shows as new. Rejecting everything would empty it.'
+        ? 'No session snapshot. Comparing to your last commit. Rejecting also undoes any edits you made before this session.'
+        : 'No session snapshot or commit found. The whole file shows as new. Rejecting everything would empty it.'
       : null;
 
   return (

@@ -130,7 +130,7 @@ export function OllamaLocalPath({ active, onConnected, onConnectDirectly }: Olla
         data-testid="guided-pull-connected"
       >
         <Check className="size-3.5 shrink-0" />
-        <span>Connected —</span>
+        <span>Connected:</span>
         <RuntimeIdentity runtime="opencode" model={pull.result.model} className="text-xs" />
       </div>
     );

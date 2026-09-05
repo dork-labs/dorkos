@@ -720,7 +720,7 @@ describe('IntegrationsTab', () => {
       fireEvent.click(screen.getByText('Send test'));
 
       await waitFor(() => {
-        expect(mockToastSuccess).toHaveBeenCalledWith('Test OK \u2014 routed in 42ms');
+        expect(mockToastSuccess).toHaveBeenCalledWith('Test OK: routed in 42ms');
       });
     });
 

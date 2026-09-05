@@ -92,7 +92,7 @@ describe('PresenceStrip', () => {
 
     const buttons = screen.getAllByRole('button');
     expect(buttons).toHaveLength(1);
-    expect(buttons[0]).toHaveAccessibleName('Watch tangerines — replying in #release-train');
+    expect(buttons[0]).toHaveAccessibleName('Watch tangerines: replying in #release-train');
   });
 
   it('follows a room claim into its room', () => {

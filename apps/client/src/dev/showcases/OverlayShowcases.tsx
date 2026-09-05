@@ -67,7 +67,7 @@ export function OverlayShowcases() {
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Create Agent</DialogTitle>
+                <DialogTitle>Create agent</DialogTitle>
                 <DialogDescription>
                   Configure a new autonomous agent for your project.
                 </DialogDescription>

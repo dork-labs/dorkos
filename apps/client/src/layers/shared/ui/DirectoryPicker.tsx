@@ -142,7 +142,10 @@ export function DirectoryPicker({
       // Auto-navigate into the new folder
       handleNavigate(result.path);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create folder');
+      toast.error("Couldn't make that folder.", {
+        description:
+          err instanceof Error ? err.message : 'Check the name, or pick a different place.',
+      });
     }
   }, [
     data,
@@ -173,7 +176,7 @@ export function DirectoryPicker({
         {/* Header */}
         <ResponsiveDialogHeader className="space-y-0 border-b px-4 py-3">
           <ResponsiveDialogTitle className="text-sm font-medium">
-            Select Working Directory
+            Select working folder
           </ResponsiveDialogTitle>
         </ResponsiveDialogHeader>
 
@@ -218,8 +221,8 @@ export function DirectoryPicker({
                 type="button"
                 onClick={startCreatingFolder}
                 className="hover:bg-accent flex-shrink-0 rounded p-1 transition-colors max-md:p-2"
-                aria-label="New Folder"
-                title="New Folder"
+                aria-label="New folder"
+                title="New folder"
               >
                 <FolderPlus className="text-muted-foreground size-(--size-icon-sm)" />
               </button>

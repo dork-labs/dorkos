@@ -17,8 +17,8 @@ import { cn } from '@/layers/shared/lib';
  * prose and no page has to guess which one it received.
  */
 const SOURCE_COPY: Record<string, string> = {
-  agents: "Couldn't read your agents — showing who we could.",
-  authors: "Couldn't read the people on this install — showing who we could.",
+  agents: "Couldn't read your agents. Showing who we could.",
+  authors: "Couldn't read the people on this install. Showing who we could.",
   account: "Couldn't read your account, so your own name may be missing.",
   team: 'Your team lives on the DorkOS server, and there is no server here.',
   // The three activity sources. Each one says what is missing rather than

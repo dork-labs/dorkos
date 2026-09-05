@@ -37,7 +37,7 @@ export function TaskTemplateGallery({ onSelect, selectedId, className }: TaskTem
   if (isError) {
     return (
       <p className="text-destructive text-sm">
-        Failed to load presets. You can start from scratch.
+        Couldn&rsquo;t load the ready-made tasks. You can still start from scratch.
       </p>
     );
   }

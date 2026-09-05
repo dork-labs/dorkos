@@ -18,7 +18,8 @@ const mockUseDismissDeadLetterGroup = vi.fn().mockReturnValue({
 });
 const mockUseDeliveryMetrics = vi.fn().mockReturnValue({ data: undefined });
 
-vi.mock('@/layers/entities/relay', () => ({
+vi.mock('@/layers/entities/relay', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/relay')>()),
   useAggregatedDeadLetters: (...args: unknown[]) => mockUseAggregatedDeadLetters(...args),
   useDismissDeadLetterGroup: () => mockUseDismissDeadLetterGroup(),
   useDeliveryMetrics: () => mockUseDeliveryMetrics(),
@@ -126,103 +127,103 @@ describe('DeadLetterSection', () => {
   });
 
   describe('rejection reason badges', () => {
-    it('shows "Hop Limit" badge for hop_limit reason', () => {
+    it('shows "Hop limit" badge for hop_limit reason', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [hopLimitGroup], isLoading: false });
       render(<DeadLetterSection />);
-      expect(screen.getByText('Hop Limit')).toBeInTheDocument();
+      expect(screen.getByText('Hop limit')).toBeInTheDocument();
     });
 
-    it('shows "TTL Expired" badge for ttl_expired reason', () => {
+    it('shows "TTL expired" badge for ttl_expired reason', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [ttlGroup], isLoading: false });
       render(<DeadLetterSection />);
-      expect(screen.getByText('TTL Expired')).toBeInTheDocument();
+      expect(screen.getByText('TTL expired')).toBeInTheDocument();
     });
 
-    it('shows "Budget Exhausted" badge for budget_exhausted reason', () => {
+    it('shows "Budget exhausted" badge for budget_exhausted reason', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [budgetGroup], isLoading: false });
       render(<DeadLetterSection />);
-      expect(screen.getByText('Budget Exhausted')).toBeInTheDocument();
+      expect(screen.getByText('Budget exhausted')).toBeInTheDocument();
     });
 
-    it('shows "Unknown" badge for unrecognized reason codes', () => {
+    it('shows "Unknown reason" badge for unrecognized reason codes', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({
         data: [unknownReasonGroup],
         isLoading: false,
       });
       render(<DeadLetterSection />);
-      expect(screen.getByText('Unknown')).toBeInTheDocument();
+      expect(screen.getByText('Unknown reason')).toBeInTheDocument();
     });
   });
 
   describe('view sample action', () => {
-    it('shows "View Sample" button when sample is present', () => {
+    it('shows the "See one" button when a sample is present', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [hopLimitGroup], isLoading: false });
       render(<DeadLetterSection />);
-      expect(screen.getByText('View Sample')).toBeInTheDocument();
+      expect(screen.getByText('See one')).toBeInTheDocument();
     });
 
     it('does not show "View Sample" button when sample is absent', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [ttlGroup], isLoading: false });
       render(<DeadLetterSection />);
-      expect(screen.queryByText('View Sample')).not.toBeInTheDocument();
+      expect(screen.queryByText('See one')).not.toBeInTheDocument();
     });
 
     it('opens sample dialog when "View Sample" is clicked', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [hopLimitGroup], isLoading: false });
       render(<DeadLetterSection />);
-      fireEvent.click(screen.getByText('View Sample'));
-      expect(screen.getByText('Sample Envelope')).toBeInTheDocument();
+      fireEvent.click(screen.getByText('See one'));
+      expect(screen.getByText('What was sent')).toBeInTheDocument();
     });
   });
 
   describe('dismiss action', () => {
-    it('shows "Mark Resolved" button on each card', () => {
+    it('shows "Clear these" button on each card', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [hopLimitGroup], isLoading: false });
       render(<DeadLetterSection />);
-      expect(screen.getByText('Mark Resolved')).toBeInTheDocument();
+      expect(screen.getByText('Clear these')).toBeInTheDocument();
     });
 
-    it('opens confirmation dialog when "Mark Resolved" is clicked', () => {
+    it('opens confirmation dialog when "Clear these" is clicked', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [hopLimitGroup], isLoading: false });
       render(<DeadLetterSection />);
-      fireEvent.click(screen.getByText('Mark Resolved'));
-      expect(screen.getByText('Mark dead letters as resolved?')).toBeInTheDocument();
+      fireEvent.click(screen.getByText('Clear these'));
+      expect(screen.getByText('Clear these messages?')).toBeInTheDocument();
     });
 
     it('shows count, source, and reason in the confirmation dialog', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [hopLimitGroup], isLoading: false });
       render(<DeadLetterSection />);
-      fireEvent.click(screen.getByText('Mark Resolved'));
+      fireEvent.click(screen.getByText('Clear these'));
       // The description text is split across multiple DOM nodes due to JSX interpolation
       const _description = screen.getByRole('alertdialog').querySelector('[id^="radix-"]');
       const descText =
-        screen.getByText('Mark dead letters as resolved?').closest('[role="alertdialog"]')
-          ?.textContent ?? '';
+        screen.getByText('Clear these messages?').closest('[role="alertdialog"]')?.textContent ??
+        '';
       expect(descText).toMatch(/15044/);
       expect(descText).toMatch(/slack-adapter/);
-      expect(descText).toMatch(/Hop Limit/);
+      expect(descText).toMatch(/Hop limit/);
     });
 
-    it('uses singular "dead letter" when count is 1', () => {
+    it('uses singular "message" when count is 1', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({
         data: [unknownReasonGroup],
         isLoading: false,
       });
       render(<DeadLetterSection />);
-      fireEvent.click(screen.getByText('Mark Resolved'));
+      fireEvent.click(screen.getByText('Clear these'));
       const descText =
-        screen.getByText('Mark dead letters as resolved?').closest('[role="alertdialog"]')
-          ?.textContent ?? '';
+        screen.getByText('Clear these messages?').closest('[role="alertdialog"]')?.textContent ??
+        '';
       // count=1 should not append 's'
-      expect(descText).toMatch(/1 dead letter[^s]/);
+      expect(descText).toMatch(/1 message[^s]/);
     });
 
     it('calls dismiss mutation after confirming in the dialog', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [hopLimitGroup], isLoading: false });
       render(<DeadLetterSection />);
-      fireEvent.click(screen.getByText('Mark Resolved'));
-      // Click the "Mark Resolved" action button inside the dialog
-      const dialogActions = screen.getAllByText('Mark Resolved');
+      fireEvent.click(screen.getByText('Clear these'));
+      // Click the "Clear these" action button inside the dialog
+      const dialogActions = screen.getAllByText('Clear these');
       fireEvent.click(dialogActions[dialogActions.length - 1]);
       expect(mockDismissMutate).toHaveBeenCalledWith({
         source: 'slack-adapter',
@@ -233,19 +234,19 @@ describe('DeadLetterSection', () => {
     it('does not call dismiss mutation when Cancel is clicked', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [hopLimitGroup], isLoading: false });
       render(<DeadLetterSection />);
-      fireEvent.click(screen.getByText('Mark Resolved'));
+      fireEvent.click(screen.getByText('Clear these'));
       fireEvent.click(screen.getByText('Cancel'));
       expect(mockDismissMutate).not.toHaveBeenCalled();
     });
 
-    it('disables "Mark Resolved" trigger button while mutation is pending', () => {
+    it('disables "Clear these" trigger button while mutation is pending', () => {
       mockUseDismissDeadLetterGroup.mockReturnValue({
         mutate: mockDismissMutate,
         isPending: true,
       });
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [hopLimitGroup], isLoading: false });
       render(<DeadLetterSection />);
-      expect(screen.getByText('Mark Resolved').closest('button')).toBeDisabled();
+      expect(screen.getByText('Clear these').closest('button')).toBeDisabled();
     });
   });
 

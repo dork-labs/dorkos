@@ -12,7 +12,7 @@ import {
 /**
  * Imperative toolbar commands published by the mounted file tree.
  *
- * The Files toolbar (New File / New Folder / Refresh) renders in the
+ * The Files toolbar (New file / New folder / Refresh) renders in the
  * container-owned panel header — a separate React subtree from the tree it
  * drives. Rather than prop-drill across that boundary, the mounted
  * {@link FileExplorer} publishes stable handlers here and the toolbar invokes

@@ -59,7 +59,7 @@ export function computeHealthState(
     const pct = Math.round(failureRate * 100);
     return {
       state: 'critical',
-      message: `${pct}% failure rate \u2014 ${metrics.failedCount} messages failed today`,
+      message: `${pct}% failure rate, ${metrics.failedCount} messages failed today`,
     };
   }
 
@@ -155,7 +155,7 @@ export function RelayHealthBar({ enabled = true, onFailedClick }: RelayHealthBar
                 type="button"
                 onClick={onFailedClick}
                 className="truncate text-left hover:underline"
-                aria-label={`${message} — click to view failures`}
+                aria-label={`${message}. Click to view failures`}
               >
                 {message}
               </button>

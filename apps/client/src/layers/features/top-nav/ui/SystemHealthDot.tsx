@@ -19,7 +19,7 @@ const DOT_STYLES: Record<SystemHealthState, string> = {
 const TOOLTIP_MESSAGES: Record<SystemHealthState, string> = {
   healthy: 'All systems operational',
   degraded: 'Some adapters disconnected',
-  error: 'Issues detected — check Needs Attention',
+  error: 'Something needs you. Check Needs attention on Home.',
 } as const;
 
 interface SystemHealthDotProps {

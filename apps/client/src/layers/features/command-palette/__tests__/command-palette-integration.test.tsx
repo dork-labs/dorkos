@@ -78,7 +78,7 @@ let mockTheme = 'light';
 // identity for the app's lifetime, and a mock that mints a fresh `vi.fn()` per
 // selector call does not: it makes every consuming `useCallback` re-create on
 // every render, which quietly repairs stale-closure bugs that are real in
-// production. That is what hid the palette's New Session reading a
+// production. That is what hid the palette's New session reading a
 // boot-time `selectedCwd` (DOR-928).
 const mockToggleGlobalPalette = vi.fn();
 const mockSetSelectedCwd = vi.fn();
@@ -207,15 +207,15 @@ vi.mock('../model/use-palette-items', () => ({
     ];
     const commands = [{ name: '/deploy', description: 'Deploy service' }];
     const quickActions = [
-      { id: 'new-session', label: 'New Session', icon: 'Plus', action: 'newSession' },
+      { id: 'new-session', label: 'New session', icon: 'Plus', action: 'newSession' },
       {
         id: 'discover',
         label: 'Bring in existing projects',
         icon: 'Search',
         action: 'discoverAgents',
       },
-      { id: 'browse', label: 'Browse Filesystem', icon: 'FolderOpen', action: 'browseFilesystem' },
-      { id: 'theme', label: 'Toggle Theme', icon: 'Moon', action: 'toggleTheme' },
+      { id: 'browse', label: 'Browse filesystem', icon: 'FolderOpen', action: 'browseFilesystem' },
+      { id: 'theme', label: 'Toggle theme', icon: 'Moon', action: 'toggleTheme' },
     ];
     return {
       // No rooms — rooms in the palette have their own file
@@ -342,13 +342,13 @@ describe('Command Palette Integration', () => {
     mockPaletteAllAgents = mockAgents;
   });
 
-  // --- Full agent switching flow (two-step: click agent → sub-menu → Open Here) ---
+  // --- Full agent switching flow (two-step: click agent → sub-menu → Open here) ---
 
   it('starts the new conversation on the agent you are on NOW, not the one at boot', async () => {
     // The palette is mounted for the whole life of the app (`AppShell` renders
     // it unconditionally), so a handler whose dependency list is missing an
     // entry is created ONCE, at boot, and keeps whatever `selectedCwd` was then
-    // — usually none. Switch agents, hit New Session, and the conversation
+    // — usually none. Switch agents, hit New session, and the conversation
     // opens somewhere you are not (DOR-928).
     mockSelectedCwd = '/projects/first';
     // Wrapper-based so `rerender` re-applies the providers — the point of this
@@ -362,7 +362,7 @@ describe('Command Palette Integration', () => {
     mockSelectedCwd = '/projects/second'; // you switch agents
     rerender(<CommandPaletteDialog />);
 
-    const row = screen.getAllByText('New Session')[0].closest('[data-slot="command-item"]');
+    const row = screen.getAllByText('New session')[0].closest('[data-slot="command-item"]');
     fireEvent.click(row as Element);
 
     expect(mockNavigate).toHaveBeenCalledWith({
@@ -376,12 +376,12 @@ describe('Command Palette Integration', () => {
     });
   });
 
-  it('the New Session quick action actually starts one', async () => {
+  it('the New session quick action actually starts one', async () => {
     // Red when the contribution registers an action the dispatcher has no case
     // for: the row is offered, clicking it closes the palette, and nothing
     // whatsoever happens (DOR-928 review).
     render(<CommandPaletteDialog />);
-    const row = screen.getAllByText('New Session')[0].closest('[data-slot="command-item"]');
+    const row = screen.getAllByText('New session')[0].closest('[data-slot="command-item"]');
     expect(row).not.toBeNull();
     fireEvent.click(row as Element);
 
@@ -396,7 +396,7 @@ describe('Command Palette Integration', () => {
     });
   });
 
-  it('clicking an agent navigates to sub-menu; Open Here switches, records frecency, and closes', async () => {
+  it('clicking an agent navigates to sub-menu; Open here switches, records frecency, and closes', async () => {
     render(<CommandPaletteDialog />);
 
     // Click on "Auth Service" agent to open sub-menu
@@ -405,10 +405,10 @@ describe('Command Palette Integration', () => {
     fireEvent.click(item as Element);
 
     // Sub-menu should appear
-    expect(screen.getByText('Open Here')).toBeInTheDocument();
+    expect(screen.getByText('Open here')).toBeInTheDocument();
 
-    // Click Open Here to complete the switch
-    const openHereItem = screen.getByText('Open Here').closest('[data-slot="command-item"]');
+    // Click Open here to complete the switch
+    const openHereItem = screen.getByText('Open here').closest('[data-slot="command-item"]');
     fireEvent.click(openHereItem as Element);
 
     // Should set directory to the agent's project path
@@ -424,7 +424,7 @@ describe('Command Palette Integration', () => {
     expect(storedOpened()['agent:/projects/auth']).toBeDefined();
   });
 
-  it('records frecency correctly for the active agent via Open Here', async () => {
+  it('records frecency correctly for the active agent via Open here', async () => {
     render(<CommandPaletteDialog />);
 
     // Click the active agent (Frontend App, which matches selectedCwd) to open sub-menu
@@ -432,8 +432,8 @@ describe('Command Palette Integration', () => {
     expect(item).toBeTruthy();
     fireEvent.click(item as Element);
 
-    // Click Open Here
-    const openHereItem = screen.getByText('Open Here').closest('[data-slot="command-item"]');
+    // Click Open here
+    const openHereItem = screen.getByText('Open here').closest('[data-slot="command-item"]');
     fireEvent.click(openHereItem as Element);
 
     expect(mockSetDir).toHaveBeenCalledWith('/projects/current', expect.anything());
@@ -444,13 +444,13 @@ describe('Command Palette Integration', () => {
     await waitFor(() => expect(storedCounts()['agent:/projects/current']).toBe(1));
   });
 
-  it('increments frecency count on repeated agent selection via Open Here', async () => {
+  it('increments frecency count on repeated agent selection via Open here', async () => {
     const { unmount } = render(<CommandPaletteDialog />);
 
     // Select Auth Service via sub-menu twice
     const item1 = screen.getByText('Auth Service').closest('[data-slot="command-item"]');
     fireEvent.click(item1 as Element);
-    fireEvent.click(screen.getByText('Open Here').closest('[data-slot="command-item"]') as Element);
+    fireEvent.click(screen.getByText('Open here').closest('[data-slot="command-item"]') as Element);
     unmount();
 
     // Re-render and select again
@@ -458,7 +458,7 @@ describe('Command Palette Integration', () => {
     const { unmount: unmount2 } = render(<CommandPaletteDialog />);
     const item2 = screen.getByText('Auth Service').closest('[data-slot="command-item"]');
     fireEvent.click(item2 as Element);
-    fireEvent.click(screen.getByText('Open Here').closest('[data-slot="command-item"]') as Element);
+    fireEvent.click(screen.getByText('Open here').closest('[data-slot="command-item"]') as Element);
     unmount2();
 
     // Frecency lands only after the agent actually opens (DOR-928), so this
@@ -491,7 +491,7 @@ describe('Command Palette Integration', () => {
     expect(screen.queryByText('Actions')).not.toBeInTheDocument();
   });
 
-  it('selecting an agent from search mode opens sub-menu; Open Here records frecency and sets dir', async () => {
+  it('selecting an agent from search mode opens sub-menu; Open here records frecency and sets dir', async () => {
     render(<CommandPaletteDialog />);
     const input = screen.getByPlaceholderText('Search rooms, agents, commands...');
 
@@ -507,8 +507,8 @@ describe('Command Palette Integration', () => {
     const item = screen.getAllByText('API Gateway')[0].closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
-    // Sub-menu should appear; click Open Here to complete the switch
-    const openHereItem = screen.getByText('Open Here').closest('[data-slot="command-item"]');
+    // Sub-menu should appear; click Open here to complete the switch
+    const openHereItem = screen.getByText('Open here').closest('[data-slot="command-item"]');
     fireEvent.click(openHereItem as Element);
 
     expect(mockSetDir).toHaveBeenCalledWith('/projects/gateway', expect.anything());
@@ -583,18 +583,18 @@ describe('Command Palette Integration', () => {
     expect(mockImportOpen).toHaveBeenCalledTimes(1);
   });
 
-  it('Browse Filesystem opens directory picker', () => {
-    searchThen('Browse Filesystem');
-    const item = screen.getByText('Browse Filesystem').closest('[data-slot="command-item"]');
+  it('Browse filesystem opens directory picker', () => {
+    searchThen('Browse filesystem');
+    const item = screen.getByText('Browse filesystem').closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
     expect(mockSetPickerOpen).toHaveBeenCalledWith(true);
   });
 
-  it('Toggle Theme calls setTheme with opposite theme', () => {
+  it('Toggle theme calls setTheme with opposite theme', () => {
     mockTheme = 'dark';
-    searchThen('Toggle Theme');
-    const item = screen.getByText('Toggle Theme').closest('[data-slot="command-item"]');
+    searchThen('Toggle theme');
+    const item = screen.getByText('Toggle theme').closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
     expect(mockSetTheme).toHaveBeenCalledWith('light');
@@ -669,11 +669,11 @@ describe('Command Palette Integration', () => {
   // --- Frecency persists across re-renders ---
 
   it('frecency data persists in localStorage across palette close and reopen', async () => {
-    // First render: select an agent via sub-menu Open Here
+    // First render: select an agent via sub-menu Open here
     const { unmount } = render(<CommandPaletteDialog />);
     const item = screen.getByText('Auth Service').closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
-    fireEvent.click(screen.getByText('Open Here').closest('[data-slot="command-item"]') as Element);
+    fireEvent.click(screen.getByText('Open here').closest('[data-slot="command-item"]') as Element);
     unmount();
 
     // Verify localStorage has data

@@ -219,7 +219,7 @@ describe('PendingRow', () => {
     renderRow(post({ status: 'failed' }));
 
     expect(screen.getByTestId('room-pending')).toHaveTextContent(
-      'Not sent — or it went through and the confirmation got lost.'
+      'Not sent, or it went through and the confirmation got lost.'
     );
   });
 

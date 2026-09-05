@@ -183,7 +183,7 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
       // only place that reports it.
       const result = await testBinding.mutateAsync(bindingId);
       if (result.ok) {
-        toast.success(`Test OK \u2014 routed in ${result.latencyMs}ms`);
+        toast.success(`Test OK: routed in ${result.latencyMs}ms`);
       } else {
         toast.error(`Test failed: ${result.reason ?? 'unknown error'}`);
       }

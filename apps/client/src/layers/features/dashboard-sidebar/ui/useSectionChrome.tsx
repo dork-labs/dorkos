@@ -321,7 +321,7 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
       }),
       adornment: isSmart ? (
         <ListFilter
-          aria-label="Smart section — membership is rule-based"
+          aria-label="Smart section: membership is rule-based"
           className="size-3 shrink-0"
         />
       ) : undefined,

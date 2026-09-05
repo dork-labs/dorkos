@@ -455,8 +455,8 @@ describe('ChannelsPage — a refusal nobody is listening for', () => {
       // `expect.anything()` covers the shared "Report" action every
       // mutation-error toast carries; query-client.test.ts owns its content.
       expect(toastError).toHaveBeenCalledWith(
-        "Couldn't send your message — This room is archived",
-        expect.anything()
+        "Couldn't send your message",
+        expect.objectContaining({ description: 'This room is archived' })
       )
     );
     expect(toastError).toHaveBeenCalledTimes(1);
@@ -509,8 +509,8 @@ describe('ChannelsPage — a refusal nobody is listening for', () => {
     });
     expect(toastError).toHaveBeenCalledTimes(1);
     expect(toastError).toHaveBeenCalledWith(
-      "Couldn't send your message — Not a member of this room",
-      expect.anything()
+      "Couldn't send your message",
+      expect.objectContaining({ description: 'Not a member of this room' })
     );
   });
 

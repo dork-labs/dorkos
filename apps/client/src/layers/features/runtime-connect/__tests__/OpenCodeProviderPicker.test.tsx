@@ -69,13 +69,13 @@ describe('OpenCodeProviderPicker — power-source list (spec §5)', () => {
     expect(screen.getByText('Best models, zero setup')).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Claude, GPT, Gemini and 300+ more, running in the cloud — your hardware doesn't matter."
+        "Claude, GPT, Gemini and 300+ more, running in the cloud. Your hardware doesn't matter."
       )
     ).toBeInTheDocument();
     expect(screen.getByText('Private and free, on your computer')).toBeInTheDocument();
     // Platform-adaptive noun (jsdom navigator.platform is not Mac → "this computer").
     expect(
-      screen.getByText(/Models run on this computer — nothing you type ever leaves it\./)
+      screen.getByText(/Models run on this computer. Nothing you type ever leaves it\./)
     ).toBeInTheDocument();
     expect(screen.getByText('I have my own API key')).toBeInTheDocument();
     expect(
@@ -92,7 +92,7 @@ describe('OpenCodeProviderPicker — the list is short, the detail is at the ste
   const CLOUD_TRADE_OFF = "Your prompts and code are sent to the model's provider.";
   const LOCAL_SUB = 'Runs Quick helpers and Solid coders. Frontier models stay cloud-only.';
   const LOCAL_TRADE_OFF =
-    'Smaller models — great for edits and quick help, not frontier-level reasoning.';
+    'Smaller models: great for edits and quick help, not frontier-level reasoning.';
 
   it('keeps the sub-line and the trade-off off the choose list', () => {
     renderPicker();

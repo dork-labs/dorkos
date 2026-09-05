@@ -55,7 +55,7 @@ describe('BoardNode accessibility', () => {
       rows: [[{ glyph: 'X' }, { action: { kind: 'agent', id: 'm-0-1', payload: { glyph: 'O' } } }]],
     });
     expect(screen.getByLabelText('Row 1, column 1: X')).toBeInTheDocument();
-    expect(screen.getByLabelText('Row 1, column 2: empty — play here')).toBeInTheDocument();
+    expect(screen.getByLabelText('Row 1, column 2: empty, play here')).toBeInTheDocument();
   });
 });
 
@@ -73,7 +73,7 @@ describe('BoardNode interaction latch', () => {
       ],
     });
 
-    const firstCell = screen.getByLabelText('Row 1, column 1: empty — play here');
+    const firstCell = screen.getByLabelText('Row 1, column 1: empty, play here');
     await user.click(firstCell);
 
     // The payload's glyph lands on the clicked cell immediately.
@@ -83,7 +83,7 @@ describe('BoardNode interaction latch', () => {
     await waitFor(() => expect(secondCell).toHaveAttribute('aria-disabled', 'true'));
     secondCell.focus();
     expect(
-      (await screen.findAllByText("Move sent — waiting for the agent's reply")).length
+      (await screen.findAllByText("Move sent. Waiting for the agent's reply")).length
     ).toBeGreaterThan(0);
     // The move posts back with its payload.
     expect(mockTransport.sendUiAction).toHaveBeenCalledWith('sess-1', {
@@ -111,7 +111,7 @@ describe('BoardNode interaction latch', () => {
       ],
     });
 
-    await user.click(screen.getByLabelText('Row 1, column 1: empty — play here'));
+    await user.click(screen.getByLabelText('Row 1, column 1: empty, play here'));
 
     // The tapped cell shows its optimistic mark.
     expect(screen.getByLabelText('Row 1, column 1: X')).toBeInTheDocument();
@@ -137,10 +137,10 @@ describe('BoardNode interaction latch', () => {
       rows: [[{ action: { kind: 'agent', id: 'm-0-0', payload: { glyph: 'X' } } }]],
     });
 
-    await user.click(screen.getByLabelText('Row 1, column 1: empty — play here'));
+    await user.click(screen.getByLabelText('Row 1, column 1: empty, play here'));
     // After the failure settles, the cell is playable again and a toast fired.
     await waitFor(() =>
-      expect(screen.getByLabelText('Row 1, column 1: empty — play here')).toBeInTheDocument()
+      expect(screen.getByLabelText('Row 1, column 1: empty, play here')).toBeInTheDocument()
     );
     expect(toast.error).toHaveBeenCalledWith("Couldn't send the move", expect.anything());
   });
@@ -162,7 +162,7 @@ describe('BoardNode superseded state', () => {
     cell.focus();
     // Friendly, plain copy — never the word "superseded" in user-facing text.
     expect(
-      (await screen.findAllByText('This board is from an earlier turn — play on the newest one.'))
+      (await screen.findAllByText('This board is from an earlier turn. Play on the newest one.'))
         .length
     ).toBeGreaterThan(0);
   });
@@ -191,7 +191,7 @@ describe('BoardNode per-mark colors', () => {
       type: 'board',
       rows: [[{ action: { kind: 'agent', id: 'm-0-0', payload: { glyph: 'X' } } }]],
     });
-    await user.click(screen.getByLabelText('Row 1, column 1: empty — play here'));
+    await user.click(screen.getByLabelText('Row 1, column 1: empty, play here'));
     const cell = screen.getByLabelText('Row 1, column 1: X');
     expect(cell.querySelector('.text-status-info')).not.toBeNull();
   });
@@ -246,7 +246,7 @@ describe('BoardNode state reconciliation', () => {
     // And the healed diagonal completes a win line.
     expect(container.querySelector('svg line')).not.toBeNull();
     // Genuinely empty cells stay playable.
-    expect(screen.getByLabelText('Row 1, column 2: empty — play here')).toBeInTheDocument();
+    expect(screen.getByLabelText('Row 1, column 2: empty, play here')).toBeInTheDocument();
   });
 });
 

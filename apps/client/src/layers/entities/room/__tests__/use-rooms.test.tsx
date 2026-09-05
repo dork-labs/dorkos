@@ -347,10 +347,11 @@ describe('useStartDirectMessage', () => {
     unmount();
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
-    // One line, naming the action in the person's terms and then the server's
-    // own sentence — never two toasts in two voices.
-    expect(vi.mocked(toast.error).mock.calls[0]?.[0]).toBe(
-      "Couldn't start that conversation — That agent is not registered"
+    // One toast, naming the action in the person's terms, with the server's
+    // own sentence under it — never two toasts in two voices.
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+      "Couldn't start that conversation",
+      expect.objectContaining({ description: 'That agent is not registered' })
     );
   });
 });

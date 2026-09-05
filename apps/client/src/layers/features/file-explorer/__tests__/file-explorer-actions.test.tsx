@@ -131,7 +131,7 @@ describe('File explorer context-menu actions', () => {
   it('offers no reveal item at all on a transport that cannot open a file manager', async () => {
     await openRowMenu(transportOn('darwin-arm64', { supportsReveal: false }));
 
-    await screen.findByText('Add to Chat');
+    await screen.findByText('Add to chat');
     expect(screen.queryByText('Reveal in Finder')).not.toBeInTheDocument();
     expect(screen.queryByText('Show in File Manager')).not.toBeInTheDocument();
   });
@@ -160,7 +160,7 @@ describe('File explorer context-menu actions', () => {
   it('copies the absolute path, and says nothing when it works', async () => {
     await openRowMenu();
 
-    fireEvent.click(await screen.findByText('Copy Path'));
+    fireEvent.click(await screen.findByText('Copy path'));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('/Users/kai/repo/README.md'));
     expect(toastError).not.toHaveBeenCalled();
@@ -169,7 +169,7 @@ describe('File explorer context-menu actions', () => {
   it('copies the path relative to the working directory', async () => {
     await openRowMenu();
 
-    fireEvent.click(await screen.findByText('Copy Relative Path'));
+    fireEvent.click(await screen.findByText('Copy relative path'));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('README.md'));
   });
@@ -178,7 +178,7 @@ describe('File explorer context-menu actions', () => {
     writeText.mockRejectedValueOnce(new Error('denied'));
 
     await openRowMenu();
-    fireEvent.click(await screen.findByText('Copy Path'));
+    fireEvent.click(await screen.findByText('Copy path'));
 
     await waitFor(() => expect(toastError).toHaveBeenCalledWith("Couldn't copy to the clipboard"));
   });
@@ -188,7 +188,7 @@ describe('File explorer context-menu actions', () => {
     const unregister = registerComposerInsert(insert);
 
     await openRowMenu();
-    fireEvent.click(await screen.findByText('Add to Chat'));
+    fireEvent.click(await screen.findByText('Add to chat'));
 
     await waitFor(() => expect(insert).toHaveBeenCalledWith('@README.md '));
     unregister();
@@ -207,7 +207,7 @@ describe('File explorer context-menu actions', () => {
     });
 
     await openRowMenu();
-    fireEvent.click(await screen.findByText('Add to Chat'));
+    fireEvent.click(await screen.findByText('Add to chat'));
     await settleClose();
 
     // Read before tearing the box down — removing a focused element blurs it.
@@ -222,7 +222,7 @@ describe('File explorer context-menu actions', () => {
   it('says so when there is no composer to add the file to, and keeps the row focused', async () => {
     const { row } = await openRowMenu();
 
-    fireEvent.click(await screen.findByText('Add to Chat'));
+    fireEvent.click(await screen.findByText('Add to chat'));
 
     await waitFor(() =>
       expect(toastError).toHaveBeenCalledWith('Open a chat first to add a file to it')

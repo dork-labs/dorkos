@@ -168,7 +168,7 @@ export interface RightPanelContribution extends BaseContribution {
   component: ComponentType;
   /**
    * Optional actions rendered in the shared panel header (left of the close
-   * button) while this tab is active — e.g. the Files tab's New File / Refresh
+   * button) while this tab is active — e.g. the Files tab's New file / Refresh
    * toolbar. The container mounts it inside the header it owns, so a
    * contribution can surface header controls without ever rendering (or being
    * able to break) the tab strip itself. Omit for panels with no header

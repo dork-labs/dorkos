@@ -318,13 +318,13 @@ export function supportsNewTab(): boolean {
 
 /**
  * Whether this surface can put the cockpit in a **separate window** — a real
- * second window, not another tab. The gate for offering "Open in New Window".
+ * second window, not another tab. The gate for offering "Open in a new window".
  *
  * Desktop only, and deliberately so. In the shell a same-origin `window.open`
  * is recognised by `setWindowOpenHandler` and built as a proper second cockpit
  * window, so the promise is kept. In a browser it is not a distinct destination
  * at all: a plain `window.open` already yields a tab, which is exactly what
- * "Open in New Tab" offers, and forcing a real window would take a
+ * "Open in a new tab" offers, and forcing a real window would take a
  * features-string popup — no address bar, no reload, no bookmark, worse than
  * the tab a person can drag out themselves in one gesture. Two menu items that
  * do the same thing is a lie told in the UI, so the browser is offered one.

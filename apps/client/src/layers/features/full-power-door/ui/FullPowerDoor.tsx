@@ -51,7 +51,7 @@ function describeWriteFailure(err: unknown): string {
 const FULL_POWER_POINTS: ReadonlyArray<{ lead: string; rest: string }> = [
   {
     lead: 'No approval prompts.',
-    rest: "Agents carry out edits and commands without stopping for your OK each time. They still ask when something genuinely needs your call — and always follow anything you've told them to check with you first.",
+    rest: "Agents carry out edits and commands without stopping for your OK each time. They still ask when something genuinely needs your call, and always follow anything you've told them to check with you first.",
   },
   {
     lead: 'Agents reach across projects.',
@@ -229,7 +229,7 @@ export function FullPowerDoor({ heading, onClose, onCustomize }: FullPowerDoorPr
           </DialogDescription>
         </DialogHeader>
         <p role="alert" className="text-muted-foreground text-sm">
-          Your agents can&apos;t message each other across projects yet — that step didn&apos;t go
+          Your agents can&apos;t message each other across projects yet. That step didn&apos;t go
           through. Nothing was undone: full power stays on, and you can open this any time from
           Settings.
         </p>
@@ -280,7 +280,7 @@ export function FullPowerDoor({ heading, onClose, onCustomize }: FullPowerDoorPr
             onClick={customize}
             disabled={busy}
           >
-            Customize… — pick the pieces yourself in Settings
+            Pick the pieces yourself in Settings
           </Button>
         </div>
       )}

@@ -156,6 +156,8 @@ test.describe('Settings — Dialog @smoke', () => {
 
     const panel = settingsPage.activePanel;
     await expect(panel.getByRole('button', { name: /^uptime/i })).toBeVisible();
-    await expect(panel.getByRole('button', { name: /^working directory/i })).toBeVisible();
+    // "Working folder", not "Working Directory": this batch put the row into the
+    // words a non-developer already uses (DOR-1755).
+    await expect(panel.getByRole('button', { name: /^working folder/i })).toBeVisible();
   });
 });

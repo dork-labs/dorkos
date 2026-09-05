@@ -120,7 +120,7 @@ describe('explainRung', () => {
       const { sentence } = explainRung('engaged', roomKind, WINDOW);
 
       expect(sentence).toBe(
-        'Answers when you @mention it — then keeps answering for 3 more minutes or ' +
+        'Answers when you @mention it, then keeps answering for 3 more minutes or ' +
           '7 more messages, whichever runs out first.'
       );
     }

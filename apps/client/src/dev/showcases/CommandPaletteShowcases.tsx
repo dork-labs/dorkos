@@ -424,8 +424,8 @@ const RECENT_ROWS: PaletteRecentEntry[] = [
 ];
 
 const NEW_ACTIONS = [
-  { id: 'new-session', label: 'New Session', icon: 'Plus', action: 'newSession' },
-  { id: 'create-agent', label: 'Create Agent', icon: 'Plus', action: 'createAgent' },
+  { id: 'new-session', label: 'New session', icon: 'Plus', action: 'newSession' },
+  { id: 'create-agent', label: 'Create agent', icon: 'Plus', action: 'createAgent' },
 ];
 
 /**
@@ -565,7 +565,7 @@ export function CommandPaletteShowcases() {
 
       <PlaygroundSection
         title="AgentSubMenu"
-        description="Drill-down page shown when selecting an agent. Actions (Open Here, New Tab, New Window, New Session) and recent sessions."
+        description="Drill-down page shown when selecting an agent. Actions (Open here, New Tab, New Window, New session) and recent sessions."
       >
         <SubMenuStates />
       </PlaygroundSection>

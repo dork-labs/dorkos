@@ -32,7 +32,7 @@ const UPDATE_COMMAND = 'npm update -g dorkos';
  * "Squirrel", never a version number they cannot act on.
  */
 const INSTALL_FAILED_COPY =
-  "The update couldn't install itself. Download a fresh copy — your settings and agents stay put.";
+  "The update couldn't install itself. Download a fresh copy. Your settings and agents stay put.";
 
 /** Shared by both shapes of the pill, so the amber reads the same either way. */
 const PILL_CLASSES =
@@ -51,7 +51,7 @@ const PILL_CLASSES =
 function copyLabel(version: string, copied: boolean, failed: boolean): string {
   if (copied) return 'Command copied';
   if (failed) return "Couldn't copy";
-  return `Update ready — v${version}`;
+  return `Update ready: v${version}`;
 }
 
 /** Props for {@link UpdatePill}. */
@@ -92,7 +92,7 @@ export function UpdatePill({ update }: UpdatePillProps) {
           className={PILL_CLASSES}
         >
           <RotateCw className="size-3" />
-          Update ready — Restart
+          Restart to update
         </button>
       </div>
     );

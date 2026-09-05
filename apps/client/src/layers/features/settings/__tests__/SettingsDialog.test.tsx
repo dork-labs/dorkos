@@ -265,11 +265,14 @@ describe('SettingsDialog', () => {
     expect(headers).toEqual(['Agents & sessions', 'Access & privacy', 'System']);
   });
 
-  // Verifies font family selector appears in the Appearance tab
-  it('displays font family selector in Appearance tab', () => {
+  // Verifies font family selector appears in the Appearance tab. The three rows
+  // here carry no description on purpose (DOR-1755): a Theme select listing
+  // Light, Dark and System does not need a sentence saying it picks a theme.
+  it('displays font family selector in Appearance tab, with no filler description', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
     expect(screen.getByText('Font family')).toBeDefined();
-    expect(screen.getByText('Choose the typeface for the interface')).toBeDefined();
+    expect(screen.queryByText('Choose the typeface for the interface')).toBeNull();
+    expect(screen.queryByText('Choose your preferred color scheme')).toBeNull();
   });
 
   // Verifies Theme and Font size are in Appearance tab alongside Font family
@@ -384,7 +387,7 @@ describe('SettingsDialog', () => {
  * `TabbedDialog` draws a `NavigationLayoutPanelHeader` for every tab, so a tab
  * component that also draws its own title heading showed the same words twice,
  * a few pixels apart. The rule is one heading per panel: the dialog's. Section
- * headings inside a panel ("Background Updates", "Logging") are a different
+ * headings inside a panel ("Background updates", "Logging") are a different
  * string and are not what this counts.
  */
 describe('SettingsDialog — one heading per panel', () => {

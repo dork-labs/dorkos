@@ -58,7 +58,7 @@ describe('ResetSettingsDialog', () => {
     useThemeStore.getState().setTheme('dark');
 
     render(<ResetSettingsDialog open onOpenChange={onOpenChange} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Reset Settings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reset settings' }));
 
     const s = useAppStore.getState();
     expect(s.showTimestamps).toBe(false);

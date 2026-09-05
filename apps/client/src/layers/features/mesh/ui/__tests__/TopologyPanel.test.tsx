@@ -108,7 +108,7 @@ describe('TopologyPanel — default vs explicit access rule affordances (DOR-336
     ).not.toBeInTheDocument();
 
     // It renders as read-only instead, with a lock affordance explaining why.
-    expect(screen.getByTitle('Built-in rule, always enforced — not removable')).toBeInTheDocument();
+    expect(screen.getByTitle('Built-in rule, always enforced. Not removable')).toBeInTheDocument();
     expect(screen.getByText('built-in')).toBeInTheDocument();
   });
 

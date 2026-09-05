@@ -346,8 +346,8 @@ describe('SystemRequirementsStep — the default runtime (spec execution-default
 
     expect(
       await screen.findByText(
-        "Codex is connected. New chats will start with Claude Code once it's connected — " +
-          "until then they'll use Codex."
+        "Codex is connected. New chats will start with Claude Code once it's connected. " +
+          "Until then they'll use Codex."
       )
     ).toBeInTheDocument();
     // Give the effect every chance to misfire before asserting it did not.
@@ -480,8 +480,8 @@ describe('SystemRequirementsStep — the default runtime (spec execution-default
     await userEvent.click(option);
     expect(
       await screen.findByText(
-        "Claude Code is connected. New chats will start with OpenCode once it's connected — " +
-          "until then they'll use Claude Code."
+        "Claude Code is connected. New chats will start with OpenCode once it's connected. " +
+          "Until then they'll use Claude Code."
       )
     ).toBeInTheDocument();
   });

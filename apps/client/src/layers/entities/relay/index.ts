@@ -41,3 +41,8 @@ export { useAdapterEvents } from './model/use-adapter-events';
 export type { AdapterEventMetadata } from './model/use-adapter-events';
 export { useObservedChats } from './model/use-observed-chats';
 export { ADAPTER_STATE_DOT_CLASS, ADAPTER_STATE_LABEL } from './lib/adapter-state-colors';
+export {
+  DEAD_LETTER_REASON_LABEL,
+  DEAD_LETTER_REASON_FALLBACK,
+  deadLetterReasonLabel,
+} from './lib/dead-letter-reasons';

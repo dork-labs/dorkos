@@ -86,7 +86,7 @@ export function ContextItem({ percent, contextUsage, compact }: ContextItemProps
             aria-label={
               compact.pending
                 ? 'Compacting conversation…'
-                : `Context ${displayPercent}% full — compact now`
+                : `Context ${displayPercent}% full. Compact now`
             }
             aria-busy={compact.pending}
             data-testid="compaction-chip"

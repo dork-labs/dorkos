@@ -122,8 +122,10 @@ export function IntegrationBindingCard({
     return () => clearInterval(interval);
   }, [lastMessageAt, isPaused]);
 
-  // Concatenate integration name + chat display name with an em-dash when present.
-  const primaryText = chatDisplayName ? `${integrationName} — ${chatDisplayName}` : integrationName;
+  // Integration name, then the chat it is bound to. A middot rather than an em
+  // dash: the house rule bans the dash in copy, and this is a separator between
+  // two names, not a break between two ideas (DOR-1755).
+  const primaryText = chatDisplayName ? `${integrationName} · ${chatDisplayName}` : integrationName;
 
   const previewSentence = buildPreviewSentence({
     sessionStrategy: binding.sessionStrategy,

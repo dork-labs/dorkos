@@ -55,8 +55,8 @@ interface AgentSubMenuProps {
 /**
  * Sub-menu page for agent drill-down in the command palette.
  *
- * Displays action buttons (Open Here, Open in New Tab, Open in New Window,
- * New Session) and a list of recent sessions for the selected agent. The "where"
+ * Displays action buttons (Open here, Open in a new tab, Open in a new window,
+ * New session) and a list of recent sessions for the selected agent. The "where"
  * choices sit together on purpose: this is the one place a person picks where an
  * agent should land, so they belong in the same list rather than some here and
  * one hidden behind a gesture.
@@ -83,26 +83,26 @@ export function AgentSubMenu({
 
   return (
     <>
-      <CommandGroup heading={`${getAgentDisplayName(agent)} Actions`}>
+      <CommandGroup heading={`${getAgentDisplayName(agent)} actions`}>
         <CommandItem value="open-here" onSelect={onOpenHere}>
           <FolderOpen className="size-4" />
-          <span>Open Here</span>
+          <span>Open here</span>
           <CommandShortcut>Enter</CommandShortcut>
         </CommandItem>
         <CommandItem value="open-new-tab" onSelect={onOpenNewTab}>
           <AppWindow className="size-4" />
-          <span>Open in New Tab</span>
+          <span>Open in a new tab</span>
           <CommandShortcut>{modKey}Enter</CommandShortcut>
         </CommandItem>
         {onOpenNewWindow && (
           <CommandItem value="open-new-window" onSelect={onOpenNewWindow}>
             <SquareArrowOutUpRight className="size-4" />
-            <span>Open in New Window</span>
+            <span>Open in a new window</span>
           </CommandItem>
         )}
         <CommandItem value="new-session" onSelect={onNewSession}>
           <Plus className="size-4" />
-          <span>New Session</span>
+          <span>New session</span>
         </CommandItem>
         {onBrowseSessions && (
           <CommandItem value="browse-sessions" onSelect={onBrowseSessions}>
@@ -112,11 +112,11 @@ export function AgentSubMenu({
         )}
         <CommandItem value="edit-settings" onSelect={onEditSettings}>
           <Settings className="size-4" />
-          <span>Edit {getAgentDisplayName(agent)} Settings</span>
+          <span>Edit {getAgentDisplayName(agent)} settings</span>
         </CommandItem>
       </CommandGroup>
       {recentSessions.length > 0 && (
-        <CommandGroup heading="Recent Sessions">
+        <CommandGroup heading="Recent sessions">
           {recentSessions.map((session) => (
             <CommandItem
               key={session.id}

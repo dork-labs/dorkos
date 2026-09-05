@@ -535,6 +535,6 @@ function connectedSentence(types: string[], defaultRuntime: string | null): stri
   const meanwhile = chooseDefaultRuntime(types, defaultRuntime);
   const meanwhileLabel = meanwhile ? getRuntimeDescriptor(meanwhile).label : null;
   return meanwhileLabel
-    ? `${connected} New chats will start with ${label} once it's connected — until then they'll use ${meanwhileLabel}.`
+    ? `${connected} New chats will start with ${label} once it's connected. Until then they'll use ${meanwhileLabel}.`
     : `${connected} New chats will start with ${label} once it's connected.`;
 }

@@ -197,7 +197,7 @@ describe('usePresenceStrip', () => {
     useRoomPresenceStore.getState().observe(ROOM_ID, progress('working'));
 
     expect(
-      await screen.findByRole('button', { name: 'Watch tangerines — replying in #release-train' })
+      await screen.findByRole('button', { name: 'Watch tangerines: replying in #release-train' })
     ).toBeInTheDocument();
     expect(screen.getByTestId('occupied')).toHaveTextContent('true');
 
@@ -210,7 +210,7 @@ describe('usePresenceStrip', () => {
 
     expect(
       await screen.findByRole('button', {
-        name: 'Watch tangerines — replying in #release-train · taking longer than usual',
+        name: 'Watch tangerines: replying in #release-train · taking longer than usual',
       })
     ).toBeInTheDocument();
     // The signal carries the whole fact, so nothing goes back to the server for
@@ -264,7 +264,7 @@ describe('usePresenceStrip', () => {
     });
 
     await user.click(
-      await screen.findByRole('button', { name: 'Watch tangerines — working in a session' })
+      await screen.findByRole('button', { name: 'Watch tangerines: working in a session' })
     );
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/session'));
@@ -367,7 +367,7 @@ describe('usePresenceStrip', () => {
     });
 
     expect(
-      await screen.findByRole('button', { name: 'Watch tangerines — working in a session' })
+      await screen.findByRole('button', { name: 'Watch tangerines: working in a session' })
     ).toBeInTheDocument();
   });
 
@@ -381,7 +381,7 @@ describe('usePresenceStrip', () => {
     useRoomPresenceStore.getState().observe(ROOM_ID, progress('working'));
 
     expect(
-      await screen.findByRole('button', { name: 'Watch tangerines — replying in #release-train' })
+      await screen.findByRole('button', { name: 'Watch tangerines: replying in #release-train' })
     ).toBeInTheDocument();
     expect(screen.getByTestId('occupied')).toHaveTextContent('true');
   });

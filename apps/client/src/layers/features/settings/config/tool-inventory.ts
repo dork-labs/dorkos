@@ -66,26 +66,27 @@ export const TOOL_GROUPS: ToolGroupDef[] = [
   {
     key: 'tasks',
     label: 'Scheduling',
-    description: 'Create and manage scheduled runs',
+    description: 'Let agents create and manage scheduled runs.',
     tools: TOOL_INVENTORY.tasks,
   },
   {
     key: 'relay',
     label: 'Messaging',
-    description: 'Send messages and check the inbox',
+    description: 'Let agents send messages and check the inbox.',
     tools: TOOL_INVENTORY.relay,
     implicitNote: 'Includes trace tools',
   },
   {
     key: 'mesh',
     label: 'Agent discovery',
-    description: 'Find and register agents, and see who is available',
+    description: "Let agents find and register other agents, and see who's available.",
     tools: TOOL_INVENTORY.mesh,
   },
   {
     key: 'adapter',
     label: 'Connection management',
-    description: 'Set up Telegram, Slack, and webhooks, and route each chat to an agent',
+    description:
+      'Let agents set up Telegram, Slack, and webhooks, and route each chat to an agent.',
     tools: TOOL_INVENTORY.adapter,
     implicitNote: 'Includes routing tools',
   },

@@ -13,7 +13,7 @@ import type { PermissionModeId } from '@dorkos/shared/types';
  * green; what a person needs told is which stop this chat is at and what that
  * means (spec `full-power-defaults`, D8).
  */
-export const FULL_POWER_MARK_LABEL = 'Full power — acts without approval prompts';
+export const FULL_POWER_MARK_LABEL = 'Full power: acts without approval prompts';
 
 /**
  * A session's effective permission mode: a change the person just made and the

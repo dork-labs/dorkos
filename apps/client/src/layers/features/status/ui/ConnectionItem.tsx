@@ -151,7 +151,7 @@ function HoverDescription({ connectionState }: { connectionState: ConnectionStat
       <div className="space-y-1.5">
         <p className={base}>
           Live updates dropped and are reconnecting automatically. Incoming messages and updates are
-          paused — nothing is lost; anything missed replays when it reconnects.
+          paused. Nothing is lost; anything missed replays when it reconnects.
         </p>
         <p className={cn(base, 'text-muted-foreground/70')}>No action needed.</p>
       </div>

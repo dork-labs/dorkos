@@ -16,7 +16,7 @@ const STATUS_CONFIG: Record<string, { icon: React.ElementType; className: string
     new: { icon: Clock, className: 'text-muted-foreground', label: 'New' },
     cur: { icon: Check, className: 'text-muted-foreground', label: 'Delivered' },
     failed: { icon: AlertTriangle, className: 'text-destructive', label: 'Failed' },
-    dead_letter: { icon: MailX, className: 'text-amber-500', label: 'Dead Letter' },
+    dead_letter: { icon: MailX, className: 'text-amber-500', label: 'Never arrived' },
   };
 
 const PREVIEW_MAX_LENGTH = 80;

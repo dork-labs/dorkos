@@ -109,7 +109,7 @@ export function FileExplorer({ source: sourceProp, className }: FileExplorerProp
     commandHandlersRef.current = { startCreate, reload: explorer.reload };
   });
   // Only the writable pane publishes them: the toolbar they drive is the Files
-  // tab's header, whose New File and New Folder a read-only source could not
+  // tab's header, whose New file and New folder a read-only source could not
   // honour — and a second publisher would clear the first's on unmount.
   useEffect(() => {
     if (readOnly) return;

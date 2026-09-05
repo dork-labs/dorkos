@@ -470,7 +470,7 @@ export function RoomMemberRow({
         // announcement here would say the same thing twice to the one reader
         // who cannot glance at the pill to see it move.
         <p className="text-destructive mt-1 ml-11 text-xs md:ml-10">
-          That didn&apos;t save — {rungError}
+          That didn&apos;t save. {rungError}
         </p>
       )}
 

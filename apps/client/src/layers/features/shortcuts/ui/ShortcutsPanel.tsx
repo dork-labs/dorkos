@@ -25,7 +25,7 @@ export function ShortcutsPanel() {
     <ResponsiveDialog open={open} onOpenChange={setOpen}>
       <ResponsiveDialogContent className="sm:max-w-md">
         <ResponsiveDialogHeader>
-          <ResponsiveDialogTitle>Keyboard Shortcuts</ResponsiveDialogTitle>
+          <ResponsiveDialogTitle>Keyboard shortcuts</ResponsiveDialogTitle>
         </ResponsiveDialogHeader>
         <ResponsiveDialogBody className="space-y-6">
           {groups.map(({ group, label, shortcuts }) => (
