@@ -241,6 +241,41 @@ describe('Conversation.Timeline', () => {
       expect(landedOn()).toBe('end');
     });
 
+    it('does not land while a `loading` node is standing in for the list (DOR-1734)', () => {
+      // **Seeded defect:** drop `loading == null` from `landingReady` → red.
+      //
+      // Every hook in this component runs BEFORE the `loading` early return, so
+      // a conversation drawing its wait can still reach the landing — and the
+      // landing is a ONE-SHOT. Spent here it is spent for good: the scroller is
+      // not in the document, the virtualizer has no scroll element, and
+      // `useTimelineLanding` says what that costs ("it lands at zero and the
+      // settle silently carries it there"). The conversation then never lands
+      // again and simply stays at its oldest loaded row.
+      //
+      // What used to hold it back was `rows.length === 0`, which was true only
+      // by luck: every row a conversation had came from history that had not
+      // arrived. The first row that does not — rooms' "Older messages" control
+      // — ended the luck, and a paged room opened at the TOP of its history.
+      // Measured in Chromium: one `notice` row, skeleton on screen, no scroller.
+      const { rerender } = mount({
+        'data-testid': 'timeline',
+        loading: <div data-testid="waiting" />,
+      });
+
+      // Rows in hand, and deliberately so — this is the state the old guard
+      // could not see, and the list on screen is still the placeholder.
+      expect(screen.getByTestId('waiting')).toBeInTheDocument();
+      expect(screen.queryByTestId('timeline')).not.toBeInTheDocument();
+      expect(virtual.scrollToEnd).not.toHaveBeenCalled();
+      expect(virtual.scrollToIndex).not.toHaveBeenCalled();
+
+      // …and once the list is real, the landing it was saving happens, once.
+      rerender(tree({ 'data-testid': 'timeline' }));
+
+      expect(screen.getByTestId('timeline')).toHaveAttribute('data-landed-on', 'end');
+      expect(virtual.scrollToEnd).toHaveBeenCalledTimes(1);
+    });
+
     it('comes back to the row the reader was on', () => {
       // **Seeded defect:** ignore `resumeRow` in the landing → red. This is the
       // phone thread-return fix: the panel is a full-screen push that unmounts

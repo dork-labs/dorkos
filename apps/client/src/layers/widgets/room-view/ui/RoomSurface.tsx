@@ -15,7 +15,7 @@ import {
 import type { ConversationTimelineHandle } from '@/layers/features/conversation';
 import { openRoomPanel } from '@/layers/features/room-management';
 import { Conversation } from '@/layers/features/conversation';
-import { flowRowForEntry } from '../lib/room-timeline';
+import { olderPageAnchor } from '../lib/room-timeline';
 import { ROOM_CAPABILITIES } from '../model/room-capabilities';
 import { useRoomTarget } from '../model/room-target';
 import { useEntryLanding } from '../model/use-entry-landing';
@@ -251,17 +251,8 @@ export function RoomSurface({
    *
    * So the page is merged first and the timeline is then asked for the row that
    * WAS the boundary, which it scrolls into existence and lands the caret on.
-   * `flowRowForEntry` answers which row that is, because that entry is not
-   * always drawn as itself — a thread reply is reached through its thread's own
-   * line (it is the same lookup a search hit's landing uses, deliberately).
-   *
-   * **The boundary is named by `seq`, from the paging cursor — never by the
-   * first element of the loaded history.** They are different entries far more
-   * often than they look: a thread root fetched from behind the page rides at
-   * index 0 (DOR-690), so `entries[0]` names a message from days before the
-   * boundary and the reader would be dropped somewhere they never were. It is
-   * the identical trap `olderCursor` exists to keep the READ out of, and it has
-   * to be kept out of the scroll for the same reason.
+   * Which row that is — and why it is named by `seq` rather than taken off the
+   * front of the loaded history — is `olderPageAnchor`'s to say.
    *
    * Focus lands on that row rather than staying on the button, which is the
    * honest outcome for a keyboard reader too: the control they pressed is now
@@ -271,11 +262,10 @@ export function RoomSurface({
   const older = useLoadOlderRoomEntries(roomId);
   const { loadOlder, cursor: olderCursorSeq } = older;
   const loadOlderAndHold = useCallback(() => {
-    // Resolved BEFORE the read, against the history as it stands: the boundary
-    // entry is in the page either way, and looking it up afterwards would mean
-    // searching an array the merge has already changed.
-    const boundary = entries.find((held) => held.seq === olderCursorSeq);
-    const anchor = boundary === undefined ? null : flowRowForEntry(entries, boundary.id);
+    // Resolved BEFORE the read, against the history as it stands — see
+    // `olderPageAnchor`, which owns the rule and the reason it is a `seq` and
+    // not the array's first element.
+    const anchor = olderPageAnchor(entries, olderCursorSeq);
     void loadOlder().then(() => {
       if (anchor === null) return;
       // A frame later: the merge has to be committed before the row it names
