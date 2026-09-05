@@ -35,7 +35,9 @@ const KNOWN_SERVICES: { slug: string; name: string }[] = [
 export function AccountsFirstRun({ onSetUpCarrier }: { onSetUpCarrier: () => void }) {
   return (
     <div className="space-y-4">
-      <Card gap="sm" className="p-5">
+      {/* `items-start` because the card is a flex column: without it the button
+          at the bottom stretches to the card's full width. */}
+      <Card gap="sm" className="items-start p-5">
         <p className="text-sm font-medium">Nothing can be connected yet</p>
         <p className="text-muted-foreground max-w-prose text-sm leading-relaxed">
           Accounts reach DorkOS through Composio, an outside service that holds the sign-ins. It is
