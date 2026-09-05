@@ -168,6 +168,138 @@ test.describe('Dashboard Sidebar — Sections @smoke', () => {
     await expect(groupAfterReload).toContainText(agentName);
   });
 
+  test('files an agent into a section with the keyboard alone (DOR-1746)', async ({
+    request,
+    dashboardSidebar,
+  }) => {
+    // WCAG 2.2 §2.5.7: a drag has to have a non-pointer path, and the sidebar
+    // advertised one it did not have. Every drag root in the panel is a WRAPPER
+    // around the row, dnd-kit starts a keyboard drag only from the element it
+    // registered as the activator, and the sidebar's roving focus stamps that
+    // wrapper `tabIndex={-1}` — so the one element that could begin a drag was
+    // one no key could reach. A unit test could not see it: the isolated fixture
+    // put the drag root and the row on the same node, where the bug does not
+    // exist.
+    //
+    // **Nothing here focuses anything programmatically.** Tab walks in, the
+    // arrows walk down, Space lifts, an arrow moves, Space drops — the whole
+    // path a person has, driven as a person would drive it.
+    await dashboardSidebar.createGroup(groupName);
+    const group = dashboardSidebar.groupContainer(groupName);
+    await expect(group).toBeVisible();
+    await expect(group).toContainText(EMPTY_GROUP_PLACEHOLDER);
+
+    const row = dashboardSidebar.agentRow(agentName);
+    await expect(row).toBeVisible();
+
+    await dashboardSidebar.tabToSectionHeader('Agents');
+    await dashboardSidebar.arrowToRow(row);
+    await dashboardSidebar.keyboardDragRowIntoGroup(row, groupName);
+
+    // The row moved, and the panel says so out loud.
+    await expect(group).toContainText(agentName);
+    await expect(group).not.toContainText(EMPTY_GROUP_PLACEHOLDER);
+
+    // …and the move persisted, which is the same proof the pointer drag above
+    // takes: the config, not the DOM.
+    const configRes = await request.get('/api/config');
+    const config = await configRes.json();
+    const persistedGroup = config.ui.sidebar.groups.find(
+      (g: { name: string }) => g.name === groupName
+    );
+    expect(persistedGroup, 'the keyboard drop wrote no group').toBeDefined();
+    expect(persistedGroup.items).toEqual([{ kind: 'agent', path: agentProjectPath }]);
+  });
+
+  test('on a section you made, Space lifts the header and Enter folds it (DOR-1746)', async ({
+    page,
+    dashboardSidebar,
+  }) => {
+    // **The panel's keyboard rule, pinned where it is actually decided.** Space
+    // picks up anything movable; Enter activates — opens a row, folds a header.
+    // Putting the drag activators on a header's toggle costs that toggle its
+    // Space, because dnd-kit calls `preventDefault()` on the keydown it lifts
+    // from and a button's activation is a DEFAULT ACTION of Space.
+    //
+    // **This can only be asked in a browser.** jsdom performs no default action
+    // for Enter or Space on a button, and `user-event` synthesizes the Space
+    // click on keyup without consulting the keydown's `defaultPrevented` — so a
+    // unit test would report a fold that Chrome does not perform, in whichever
+    // direction happened to be convenient. The jsdom suite therefore pins only
+    // the lift; the fold semantics live here.
+    await dashboardSidebar.createGroup(groupName);
+    const header = dashboardSidebar.librarySectionToggle(groupName);
+    await expect(header).toBeVisible();
+    await expect(header).toHaveAttribute('aria-expanded', 'true');
+    // The positive control for the pair below: this header really is inside a
+    // drag root, so "Space lifted it" is a fact about a drag source.
+    expect(
+      await header.evaluate((node) => node.closest('[data-sidebar-drag-root]') !== null),
+      'a section you made is not a drag source, so nothing below is about one'
+    ).toBe(true);
+
+    await dashboardSidebar.tabToSectionHeader(groupName);
+
+    // Enter folds, exactly as it did before the header became a drag source.
+    await page.keyboard.press('Enter');
+    await expect(header, 'Enter no longer folds a section header').toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
+    await page.keyboard.press('Enter');
+    await expect(header).toHaveAttribute('aria-expanded', 'true');
+
+    // Space lifts it instead of folding it — both halves asserted, because
+    // "did not fold" alone would also be true of a key that did nothing at all.
+    await page.keyboard.press('Space');
+    await expect(
+      page.locator('[data-sidebar-dragging]'),
+      'Space on a movable section header picked nothing up'
+    ).toHaveCount(1);
+    await expect(header, 'Space folded the section as well as lifting it').toHaveAttribute(
+      'aria-expanded',
+      'true'
+    );
+
+    // Escape puts it back, unfolded and unmoved — the way out of a drag begun
+    // by accident.
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[data-sidebar-dragging]')).toHaveCount(0);
+    await expect(header).toHaveAttribute('aria-expanded', 'true');
+    await expect(header).toBeFocused();
+  });
+
+  test('leaves a fixed section header folding on Space, because it does not drag', async ({
+    page,
+    dashboardSidebar,
+  }) => {
+    // The other side of the trade. Agents cannot be reordered, so nothing takes
+    // its Space — the difference between the two headers is draggability itself,
+    // not an inconsistency laid on top of it. Agents rather than Channels
+    // because `beforeEach` guarantees this run put two agents in it.
+    const header = dashboardSidebar.librarySectionToggle('Agents');
+    await expect(header).toBeVisible();
+    await expect(header).toHaveAttribute('aria-expanded', 'true');
+    // No drag root ANYWHERE above it — `closest`, not a descendant query: a
+    // drag root wraps its header, so looking downwards would find nothing and
+    // pass for the wrong reason.
+    expect(await header.evaluate((node) => node.closest('[data-sidebar-drag-root]') !== null)).toBe(
+      false
+    );
+
+    await dashboardSidebar.tabToSectionHeader('Agents');
+    await page.keyboard.press('Space');
+
+    await expect(page.locator('[data-sidebar-dragging]')).toHaveCount(0);
+    await expect(header, 'Space stopped folding a section that cannot be dragged').toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
+    // Put it back for whatever runs next — the panel's fold state is shared.
+    await page.keyboard.press('Space');
+    await expect(header).toHaveAttribute('aria-expanded', 'true');
+  });
+
   test('takes a CHANNEL into a section, and files it there', async ({
     request,
     roomsApi,
@@ -447,7 +579,12 @@ test.describe('Dashboard Sidebar — Sections @smoke', () => {
     // a direct reading cannot go undecided, and it names the offending count in
     // its own failure message. axe below is then the independent second opinion
     // on the same panel: it, not this, is what says the nesting is really gone.
-    const dragRoots = page.locator(`${SIDEBAR_PANEL} [aria-roledescription="sortable"]`);
+    // Located by the drag layer's own mark. This read `[aria-roledescription]`
+    // until DOR-1746 moved that attribute onto the ROW — it is announced on
+    // focus, and the row is the element that takes focus — which would have
+    // turned this into a count of rows wearing `role="button"`, i.e. a red on
+    // the very thing that is correct.
+    const dragRoots = page.locator(`${SIDEBAR_PANEL} [data-sidebar-drag-root]`);
     const roles = await dragRoots.evaluateAll((nodes) =>
       nodes.map((node) => node.getAttribute('role'))
     );

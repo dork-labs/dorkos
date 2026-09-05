@@ -9,6 +9,7 @@ import {
   useSensors,
   type DragEndEvent,
   type DragStartEvent,
+  type KeyboardCodes,
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { toast } from 'sonner';
@@ -46,6 +47,24 @@ interface SidebarDndProps {
    */
   rooms: readonly RoomSummary[];
 }
+
+/**
+ * Which keys pick a row up, put it down, and abandon it.
+ *
+ * **Space lifts; Enter opens.** dnd-kit's default is that both start a drag,
+ * which was harmless while the activator was a wrapper nothing could focus and
+ * is not harmless now that it is the row's own button (DOR-1746): Enter on a row
+ * opens the conversation, and a keyboard reader would have found it picking the
+ * row up instead. Space is the ARIA drag-and-drop pattern's pick-up key and the
+ * one dnd-kit's own instructions name, so Space is the one that lifts — and
+ * since a lifted row's Space puts it down again, Enter and Tab stay on `end`
+ * where dnd-kit had them, as two more ways to commit a drop.
+ */
+const DRAG_KEYS: KeyboardCodes = {
+  start: ['Space'],
+  cancel: ['Escape'],
+  end: ['Space', 'Enter', 'Tab'],
+};
 
 /** The floating label shown under the cursor while dragging. */
 function DragOverlayContent({
@@ -99,7 +118,10 @@ export function SidebarDnd({ children, displayNames, rooms }: SidebarDndProps) {
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+      keyboardCodes: DRAG_KEYS,
+    })
   );
 
   if (isMobile) return <>{children}</>;
@@ -141,6 +163,15 @@ export function SidebarDnd({ children, displayNames, rooms }: SidebarDndProps) {
       toast.info(COMPUTED_ZONE_REJECTION, { description: itemName(op.ref) });
       return;
     }
+    // **A drop that changes nothing writes nothing** (DOR-1746). `none` is what
+    // classify returns for a drop on empty space, a drop back where the drag
+    // started, and every reorder whose `from === to`, and `resolveSidebarDrop`
+    // faithfully hands back the prefs it was given — but `update` does not
+    // compare, so it PATCHed the whole `ui.sidebar` section anyway. Cheap enough
+    // to have gone unnoticed with a mouse, where a no-op drop takes deliberate
+    // effort; from the keyboard it is one Space away, and the reflex of lifting
+    // a row and putting it straight back down should cost the server nothing.
+    if (op.kind === 'none') return;
     update((prev) => resolveSidebarDrop(prev, drag, drop));
   };
 

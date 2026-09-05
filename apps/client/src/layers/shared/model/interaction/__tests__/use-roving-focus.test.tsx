@@ -7,6 +7,7 @@ import '@testing-library/jest-dom/vitest';
 import {
   useRovingFocus,
   SIDEBAR_ACTIONS_ATTRIBUTE,
+  SIDEBAR_DRAGGING_ATTRIBUTE,
   SIDEBAR_GLYPH_ACTION_ATTRIBUTE,
   SIDEBAR_ROW_ATTRIBUTE,
   SIDEBAR_SECTION_ACTION_ATTRIBUTE,
@@ -34,6 +35,7 @@ function Section({
   withHeader = true,
   withSectionAction = false,
   withEditor = false,
+  dragging,
   extra,
 }: {
   rows: string[];
@@ -45,6 +47,11 @@ function Section({
   withSectionAction?: boolean;
   /** Mount an inline editor, the way a rename or a group-create field does. */
   withEditor?: boolean;
+  /**
+   * The row that is currently off the ground, marked the way the sidebar's drag
+   * layer marks the root it lifted.
+   */
+  dragging?: string;
   /** Anything else that re-renders with the section, to prove the stop survives it. */
   extra?: string;
 }) {
@@ -69,16 +76,18 @@ function Section({
       {withEditor && <input aria-label="Group name" />}
       {rows.map((label, index) => (
         <li key={label} data-slot="sidebar-menu-item" className="relative">
-          <button
-            type="button"
-            {...{ [SIDEBAR_ROW_ATTRIBUTE]: '' }}
-            aria-current={index === activeIndex ? 'page' : undefined}
-          >
-            {label}
-          </button>
-          <button type="button" {...{ [SIDEBAR_ACTIONS_ATTRIBUTE]: '' }}>
-            {label} actions
-          </button>
+          <div {...(label === dragging ? { [SIDEBAR_DRAGGING_ATTRIBUTE]: '' } : {})}>
+            <button
+              type="button"
+              {...{ [SIDEBAR_ROW_ATTRIBUTE]: '' }}
+              aria-current={index === activeIndex ? 'page' : undefined}
+            >
+              {label}
+            </button>
+            <button type="button" {...{ [SIDEBAR_ACTIONS_ATTRIBUTE]: '' }}>
+              {label} actions
+            </button>
+          </div>
         </li>
       ))}
       {extra !== undefined && <span>{extra}</span>}
@@ -403,5 +412,38 @@ describe('useRovingFocus — the stop survives', () => {
 
   it('survives a section with no rows at all', () => {
     expect(() => render(<Section rows={[]} />)).not.toThrow();
+  });
+
+  it('stands its arrows down while a row is off the ground (DOR-1746)', () => {
+    // A keyboard drag is steered with the same four keys this hook traverses
+    // with, and dnd-kit hears them on the document — below every React handler
+    // here. Without the stand-down both ran: the drag moved the row AND this
+    // moved focus off it, so the next key was answered on some other row's
+    // behalf. The drag layer marks the root it lifted; that mark is the signal.
+    render(<Section rows={ROWS} dragging="two" />);
+    const row = screen.getByText('two');
+    row.focus();
+
+    fireEvent.keyDown(row, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(row);
+    fireEvent.keyDown(row, { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(row);
+    // Sideways too: the "⋮" beside a row in the air is not somewhere to go.
+    fireEvent.keyDown(row, { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(row);
+  });
+
+  it('answers its arrows again the moment the row is put back down', () => {
+    // The pair. A stand-down that outlives the drag is a section whose arrows
+    // stopped working, which is the same defect wearing the other hat.
+    const { rerender } = render(<Section rows={ROWS} dragging="two" />);
+    const row = screen.getByText('two');
+    row.focus();
+    fireEvent.keyDown(row, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(row);
+
+    rerender(<Section rows={ROWS} />);
+    fireEvent.keyDown(screen.getByText('two'), { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(screen.getByText('three'));
   });
 });
