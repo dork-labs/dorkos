@@ -149,7 +149,7 @@ export function ButtonShowcases() {
 
       <PlaygroundSection
         title="Badge"
-        description="Fill, size, and status tone — three axes that compose."
+        description="Shape, fill, size, and status tone — four axes that compose."
       >
         <ShowcaseLabel>Variants</ShowcaseLabel>
         <ShowcaseDemo>
@@ -166,6 +166,20 @@ export function ButtonShowcases() {
           <div className="flex flex-wrap items-center gap-2">
             <Badge size="sm">Small (default)</Badge>
             <Badge size="xs">Extra small</Badge>
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Shapes — the pill four components used to redraw by hand</ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge shape="default">Default</Badge>
+            <Badge shape="pill">Pill</Badge>
+            <Badge shape="pill" variant="outline">
+              Pill outline
+            </Badge>
+            <Badge shape="pill" size="xs" variant="secondary">
+              Pill xs
+            </Badge>
           </div>
         </ShowcaseDemo>
 

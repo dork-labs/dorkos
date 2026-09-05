@@ -1,4 +1,5 @@
 import { cn } from '@/layers/shared/lib';
+import { Badge } from '@/layers/shared/ui';
 import type { ActorType } from '../model/activity-types';
 import { ACTOR_CONFIG } from '../model/activity-types';
 
@@ -29,16 +30,14 @@ export function ActorBadge({ actorType, actorLabel, agentColor, className }: Act
 
   if (actorType === 'user') {
     return (
-      <span
+      <Badge
         data-slot="actor-badge"
-        className={cn(
-          'inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium',
-          'border-border text-muted-foreground',
-          className
-        )}
+        shape="pill"
+        variant="outline"
+        className={cn('text-muted-foreground', className)}
       >
         {actorLabel}
-      </span>
+      </Badge>
     );
   }
 
