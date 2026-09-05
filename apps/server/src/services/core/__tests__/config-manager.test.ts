@@ -63,6 +63,7 @@ import {
 import { applyConfigPatch } from '../operator/config-patch.js';
 import { checkMigrationSafety, extractMigrationBodies } from './migration-safety.js';
 import { checkAppendOnly, migrationClosure } from './migration-append-only.js';
+import { declarationPool, reachedDeclarations } from './migration-closure.js';
 import type { ClosureSources } from './migration-closure.js';
 import { MERGED_MIGRATION_HASHES } from './merged-migration-hashes.js';
 import fs from 'fs';
@@ -3450,6 +3451,35 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
   it('every merged migration still hashes to what it was pinned at', () => {
     const result = checkAppendOnly(readSources(), MERGED_MIGRATION_HASHES);
     expect(result.ok, result.problems.join('\n\n')).toBe(true);
+  });
+
+  it('no key reaches the one helper called only from inside interpolations (DOR-1733)', () => {
+    // The walk now follows a call written as `` `${describeLoadError(cause)}` ``
+    // rather than blanking it away with the rest of the template. That widening
+    // moved nothing here, and this is the check that keeps saying so.
+    //
+    // `describeLoadError` is the shape the fix was for: a top-level declaration
+    // in config-manager.ts that NOTHING calls except from inside a template
+    // interpolation. It sits in the error path — `adviceFor`,
+    // `unreadableMessage`, `loadConfigStore` — which no migration key reaches
+    // today. The day one does, its pin moves and this goes red, which is the
+    // warning the guard could not give while the mask was blind.
+    const sources = readSources();
+    const pool = declarationPool(sources);
+    expect(Object.keys(pool)).toContain('describeLoadError');
+
+    const bodies = extractMigrationBodies(sources.configManager);
+    // The subject is asserted before the verdict is. "No key reaches it" is
+    // vacuously true of no keys at all, so an extractor that returned `{}` would
+    // pass this having scanned nothing. The count is the knowable bound; the
+    // table is append-only, so raising it is the deliberate act of adding a
+    // migration, which is exactly when this check should be re-read.
+    expect(Object.keys(bodies)).toHaveLength(23);
+
+    const reaching = Object.keys(bodies).filter((key) =>
+      reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')
+    );
+    expect(reaching).toEqual([]);
   });
 
   it('lists its keys in ascending semver order, after the legacy sentinel', () => {
