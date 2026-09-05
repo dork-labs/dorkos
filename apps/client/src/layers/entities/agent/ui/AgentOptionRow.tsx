@@ -56,8 +56,16 @@ export function AgentOptionRow({
        * 0 width, not merely truncated. `flex-auto` seeds this item's basis
        * from its own (usually short) content, so it takes its proportional
        * share of any squeeze instead of vanishing first (DOR-970 review).
+       *
+       * And a floor, because proportional is not enough on its own: a short
+       * name loses a large FRACTION of itself while the long path beside it
+       * loses a large absolute amount and still reads. "DorkBot" was cut to
+       * "Dork…" next to fifty-odd characters of path (DOR-1747). The floor
+       * inverts the yield order — the path is provenance, so it gives way
+       * first — and it is safe to cross the row's own width only in theory:
+       * `secondary` may shrink to nothing, so nothing here can overflow.
        */}
-      <span className="min-w-0 flex-auto truncate text-sm font-medium">
+      <span className="min-w-[8ch] flex-auto truncate text-sm font-medium">
         {name ?? getAgentDisplayName(agent)}
       </span>
       {secondary != null && (

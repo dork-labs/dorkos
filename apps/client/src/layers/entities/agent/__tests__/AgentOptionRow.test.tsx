@@ -62,4 +62,23 @@ describe('AgentOptionRow', () => {
     const { container } = render(<AgentOptionRow agent={AGENT} />);
     expect(container.querySelector('[data-slot="agent-avatar"]')).toBeInTheDocument();
   });
+
+  it('gives the name a floor the path beside it cannot push through', () => {
+    // Both items shrink in proportion to their own length, so a short name
+    // loses most of itself while a long path loses a slice and still reads —
+    // "DorkBot" came out as "Dork…" beside fifty characters of path
+    // (DOR-1747). The floor makes the path yield first.
+    const { container } = render(
+      <AgentOptionRow agent={AGENT} secondary="~/Keep/dork-os/dorkos/apps/desktop/.temp/.dork" />
+    );
+
+    const name = screen.getByText('Code Reviewer');
+    expect(name).toHaveClass('min-w-[8ch]');
+    expect(name).not.toHaveClass('min-w-0');
+
+    // The path may shrink to nothing, which is what keeps the row contained.
+    const secondary = container.querySelector('[data-slot="agent-option-row-secondary"]');
+    expect(secondary).toHaveClass('min-w-0');
+    expect(secondary).toHaveClass('truncate');
+  });
 });

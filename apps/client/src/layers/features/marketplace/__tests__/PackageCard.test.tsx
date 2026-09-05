@@ -159,8 +159,8 @@ describe('PackageCard', () => {
       const pkg = makePackage({ author: 'Test Author', marketplace: 'dorkos-community' });
       render(<PackageCard pkg={pkg} onClick={() => {}} />);
 
-      // The store and person icons are aria-hidden and the separator is a bare
-      // "·", so without this the two names read as one undifferentiated run.
+      // The store and person icons are aria-hidden, so without this the two
+      // names read as one undifferentiated run.
       const card = screen.getByTestId('package-card-@dorkos/code-reviewer');
       expect(card.textContent).toContain('from dorkos-community');
     });
@@ -170,6 +170,33 @@ describe('PackageCard', () => {
       render(<PackageCard pkg={pkg} onClick={() => {}} variant="compact" />);
 
       expect(screen.queryByText('claude-plugins-official')).not.toBeInTheDocument();
+    });
+
+    it('gives the author and the source a floor each, and wraps rather than crushing both', () => {
+      // Sized from their own content, the two shared the row in proportion to
+      // how long each string happened to be, and on a card in the four-column
+      // grid both crushed together — `C… · d` (DOR-1747). A floor plus a
+      // wrapping row is what stops either string's length from deciding
+      // anything: when both cannot fit, the source takes the next line.
+      const pkg = makePackage({ author: 'Test Author', marketplace: 'dorkos-community' });
+      render(<PackageCard pkg={pkg} onClick={() => {}} />);
+
+      for (const label of ['Test Author', 'dorkos-community']) {
+        const text = screen.getByText(label, { selector: 'span.truncate' });
+        // The text truncates inside its own share…
+        expect(text).toHaveClass('truncate');
+        // …with the full value on hover, since a long name can still outrun it.
+        expect(text).toHaveAttribute('title', label);
+        // …and that share has a width it cannot be squeezed below — capped at
+        // 100% so the floor itself can never ask for more than the card has
+        // (DOR-1747 review: a bare floor painted past the card at a width
+        // narrower than 6.5rem).
+        expect(text.parentElement).toHaveClass('min-w-[min(6.5rem,100%)]');
+        // The row it sits in is the one that yields, with its own overflow
+        // clipped as a backstop in case a floor here is ever widened again.
+        expect(text.parentElement?.parentElement).toHaveClass('flex-wrap');
+        expect(text.parentElement?.parentElement).toHaveClass('overflow-hidden');
+      }
     });
   });
 

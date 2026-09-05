@@ -112,6 +112,18 @@ describe('FullPowerDoor', () => {
     expect(screen.getByRole('button', { name: CUSTOMIZE })).toBeInTheDocument();
   });
 
+  it('lets the Customize… sentence wrap, so it cannot set the dialog’s width', () => {
+    renderDoor();
+
+    // `Button` is `whitespace-nowrap`, which is right for "Save" and wrong for
+    // a sentence: an unbreakable label sets the dialog's minimum width, and on
+    // a phone this one measured 424px inside a 390px window — the heading, the
+    // description and every bullet stretched with it and painted off the
+    // screen (DOR-1747).
+    const customize = screen.getByRole('button', { name: CUSTOMIZE });
+    expect(customize.className).toContain('whitespace-normal');
+  });
+
   it('omits the Customize… link when the host provides no onCustomize', () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },

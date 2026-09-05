@@ -63,9 +63,16 @@ export function AppearanceTab() {
               <SelectContent>
                 {FONT_CONFIGS.map((font) => (
                   <SelectItem key={font.key} value={font.key}>
-                    <div className="flex flex-col">
-                      <span>{font.displayName}</span>
-                      <span className="text-muted-foreground text-xs">{font.description}</span>
+                    {/* `min-w-0` + `truncate`: the trigger is narrower than the
+                        longest description, and without them the browser
+                        hard-clipped it mid-character — "Inter + JetBrains Mor"
+                        reads as a rendering fault, an ellipsis reads as a
+                        choice (DOR-1747). */}
+                    <div className="flex min-w-0 flex-col">
+                      <span className="truncate">{font.displayName}</span>
+                      <span className="text-muted-foreground truncate text-xs">
+                        {font.description}
+                      </span>
                     </div>
                   </SelectItem>
                 ))}
