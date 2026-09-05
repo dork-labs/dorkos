@@ -14,5 +14,9 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
+    // Honors the pre-push gate's VITEST_RETRY budget; 0 for dev and CI runs.
+    // Rationale: apps/server/vitest.config.ts. Pinned for every project by
+    // scripts/__tests__/vitest-projects.test.ts (DOR-1772).
+    retry: process.env.VITEST_RETRY ? Number(process.env.VITEST_RETRY) : 0,
   },
 });
