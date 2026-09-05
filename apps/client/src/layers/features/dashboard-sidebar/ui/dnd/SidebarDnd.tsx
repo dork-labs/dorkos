@@ -9,6 +9,7 @@ import {
   useSensors,
   type DragEndEvent,
   type DragStartEvent,
+  type KeyboardCodes,
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { toast } from 'sonner';
@@ -46,6 +47,24 @@ interface SidebarDndProps {
    */
   rooms: readonly RoomSummary[];
 }
+
+/**
+ * Which keys pick a row up, put it down, and abandon it.
+ *
+ * **Space lifts; Enter opens.** dnd-kit's default is that both start a drag,
+ * which was harmless while the activator was a wrapper nothing could focus and
+ * is not harmless now that it is the row's own button (DOR-1746): Enter on a row
+ * opens the conversation, and a keyboard reader would have found it picking the
+ * row up instead. Space is the ARIA drag-and-drop pattern's pick-up key and the
+ * one dnd-kit's own instructions name, so Space is the one that lifts — and
+ * since a lifted row's Space puts it down again, Enter and Tab stay on `end`
+ * where dnd-kit had them, as two more ways to commit a drop.
+ */
+const DRAG_KEYS: KeyboardCodes = {
+  start: ['Space'],
+  cancel: ['Escape'],
+  end: ['Space', 'Enter', 'Tab'],
+};
 
 /** The floating label shown under the cursor while dragging. */
 function DragOverlayContent({
@@ -99,7 +118,10 @@ export function SidebarDnd({ children, displayNames, rooms }: SidebarDndProps) {
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+      keyboardCodes: DRAG_KEYS,
+    })
   );
 
   if (isMobile) return <>{children}</>;

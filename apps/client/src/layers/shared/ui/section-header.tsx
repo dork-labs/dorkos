@@ -18,7 +18,10 @@ import type { ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/layers/shared/lib/utils';
 import { useIsMobile } from '@/layers/shared/model';
-import { SIDEBAR_SECTION_TOGGLE_ATTRIBUTE } from '@/layers/shared/model/interaction/use-roving-focus';
+import {
+  SIDEBAR_SECTION_TOGGLE_ATTRIBUTE,
+  type SidebarDragActivatorProps,
+} from '@/layers/shared/model/interaction/use-roving-focus';
 import { SIDEBAR_MENU_GUTTER, SidebarMenuSurface, type SidebarMenuNode } from './sidebar-menu-node';
 
 /**
@@ -133,6 +136,16 @@ export interface SectionHeaderProps {
   hasSectionAction?: boolean;
   /** Extra classes on the header row. */
   className?: string;
+  /**
+   * The drag layer's activators, for a section that can be reordered.
+   *
+   * They go on the toggle — the header's one focusable control and the section's
+   * single Tab stop — because a keyboard drag can only start from an element a
+   * keyboard can reach (DOR-1746). A section that is not a drag source, and a
+   * header that is showing its rename editor instead of its toggle, simply has
+   * nowhere to put them and does not drag.
+   */
+  dragActivator?: SidebarDragActivatorProps;
 }
 
 /**
@@ -175,6 +188,7 @@ export function SectionHeader({
   controlsId,
   hasSectionAction = false,
   className,
+  dragActivator,
 }: SectionHeaderProps) {
   const heading = level === 4 ? 'h4' : 'h3';
   const isMobile = useIsMobile();
@@ -240,6 +254,9 @@ export function SectionHeader({
       </span>
     ) : onToggle ? (
       <button
+        // First, so the header's own click, ARIA and classes below win any name
+        // they share — see the row's button, which does the same.
+        {...(dragActivator ?? {})}
         type="button"
         onClick={(event) => {
           if (event.altKey && onToggleAll) {

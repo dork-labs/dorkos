@@ -1041,6 +1041,60 @@ describe('DashboardSidebar', () => {
       expect(document.activeElement).toBe(screen.getByText('#general').closest('button'));
     });
 
+    it('picks a row up from the keyboard, on the row the arrows actually reach (DOR-1746)', async () => {
+      // The defect: every sortable drag root in the panel is a WRAPPER around
+      // the row, and dnd-kit's `KeyboardSensor` starts a drag only when the
+      // keydown target IS the registered activator node. The wrapper was that
+      // node, the roving focus stamps it `tabIndex={-1}` — so the only element
+      // that could begin a keyboard drag was one no key could ever reach, and
+      // the WCAG 2.2 §2.5.7 path the drag layer advertises was a pointer path
+      // with an ARIA description attached to it.
+      //
+      // Driven the way a person would: Tab into the section, arrow down to a
+      // row, press Space. Nothing here focuses anything programmatically except
+      // the header, which is the panel's own single Tab stop.
+      mockRooms.mockReturnValue([channel('r1', 'general')]);
+      renderWithProviders(<DashboardSidebar />);
+      await screen.findByText('#general');
+
+      // No drag root is in the tab order — the whole reason the activator has
+      // to be the row rather than the root that wraps it.
+      const dragRoots = document.querySelectorAll('[aria-roledescription="sortable"]');
+      expect(
+        dragRoots.length,
+        'the drag layer put no sortable root in the panel, so nothing below proves anything'
+      ).toBeGreaterThan(0);
+      expect([...dragRoots].map((root) => root.getAttribute('tabindex'))).toEqual(
+        [...dragRoots].map(() => '-1')
+      );
+
+      const toggle = sectionToggle('Channels');
+      toggle.focus();
+      fireEvent.keyDown(toggle, { key: 'ArrowDown' });
+      fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+      const row = screen.getByText('#general').closest('button');
+      expect(document.activeElement).toBe(row);
+
+      fireEvent.keyDown(document.activeElement!, { code: 'Space' });
+
+      // The row is off the ground: the drag layer marks the root it lifted, and
+      // the root it marked is the one wrapping the row the arrows reached.
+      const lifted = document.querySelectorAll('[data-sidebar-dragging]');
+      expect(lifted.length, 'Space on the focused row did not pick anything up').toBe(1);
+      expect(lifted[0]).toBe(row?.closest('[aria-roledescription="sortable"]'));
+      // …and a screen reader is told so, through dnd-kit's live region.
+      expect(document.querySelector('[role="status"]')?.textContent ?? '').not.toBe('');
+
+      // And Escape puts it back down. The tick is dnd-kit's: its keyboard sensor
+      // arms its own document listener in a `setTimeout`, so a cancel fired in
+      // the same turn as the pick-up is heard by nobody.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      fireEvent.keyDown(row!, { code: 'Escape' });
+      expect(document.querySelectorAll('[data-sidebar-dragging]')).toHaveLength(0);
+    });
+
     it('points the Agents section "+" at the one New menu instead of a handler', async () => {
       mockMeshPaths.mockReturnValue(['/a/1', '/a/2', '/a/3']);
       renderWithProviders(<DashboardSidebar />);
