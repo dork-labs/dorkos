@@ -19,8 +19,6 @@ import { BOOT_CACHE_DISABLED_KEY } from './boot-cache-flag';
  */
 const REPO_ROOT = join(import.meta.dirname, '..', '..');
 
-/* eslint-disable no-restricted-syntax -- Playwright config has no env.ts; direct process.env access is expected */
-
 /**
  * Read a port override, refusing anything that is not digits.
  *
@@ -218,7 +216,6 @@ const REUSE_EXISTING_SERVER = false;
 // they need the site leg, so they are excluded from the cockpit project unless
 // the leg is booted. Keep in sync by grepping tests/ for `6244`/`SITE_BASE_URL`.
 const SITE_SPECS = ['**/marketplace.spec.ts', '**/features.spec.ts'];
-/* eslint-enable no-restricted-syntax */
 
 /**
  * Recreate a leg's throwaway `DORK_HOME` empty and readable only by the person

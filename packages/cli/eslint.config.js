@@ -7,9 +7,11 @@ export default defineConfig([
   { ignores: ['dist/**', 'core-extensions/**', '.turbo/**'] },
   ...nodeConfig,
 
-  // process.env carve-outs (CLI-specific)
+  // process.env carve-outs (CLI-specific). `**/*.config.ts` was here until
+  // DOR-1785 — the shared preset now carves out every build/tool config file
+  // repo-wide, so only the CLI's own exemptions remain.
   {
-    files: ['src/cli.ts', 'src/config-commands.ts', '**/env.ts', '**/*.config.ts'],
+    files: ['src/cli.ts', 'src/config-commands.ts', '**/env.ts'],
     rules: { 'no-restricted-syntax': 'off' },
   },
 ]);

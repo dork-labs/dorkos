@@ -48,11 +48,15 @@ A `no-restricted-syntax` rule targeting `MemberExpression[object.name='process']
 
 The following files are carved out and do not receive the warning:
 
+- `**/*.config.ts` — vite/vitest/playwright/drizzle/next configs run in the tool's own process before any application module loads. This one is **repo-wide**, in `packages/eslint-config/base.js` itself (DOR-1785), so no package needs to restate it and no config file needs an inline disable.
+
+  It is spelled `'no-restricted-syntax': 'off'`, which is a blanket exemption, and that is deliberate: the tempting alternative — restating the rule minus the process.env restriction — does **nothing at all**. ESLint keeps a rule's previous options when it is reconfigured with a severity alone, so an empty option list (`['warn']`) inherits the very restriction it was meant to drop. What keeps `'off'` from over-granting is an invariant, recorded in a comment on the rule itself: `no-restricted-syntax` carries exactly one restriction here. **If you add a second one, this carve-out must be rewritten to restate the restrictions it keeps** — leaving it `'off'` would silently exempt every config file from your new rule too.
+
 - `**/env.ts` — env.ts files read process.env by design
-- `**/*.config.ts` — vite.config.ts, playwright.config.ts run in Node before bundling
-- `**/__tests__/**` — tests stub process.env for mocking
-- `**/*.test.ts` and `**/*.spec.ts` — test files
-- `packages/cli/src/cli.ts` — CLI bootstrap writes env vars for server subprocess
+- `**/__tests__/**` and `**/*.test.ts` — tests stub process.env for mocking
+- `packages/cli/src/cli.ts` and `src/config-commands.ts` — CLI bootstrap writes env vars for the server subprocess
+
+Everything after the first bullet is granted per package, in that package's own `eslint.config.js`; `apps/server`, `apps/desktop` and `apps/obsidian-plugin` name additional files there with a comment each explaining why.
 
 For any legitimate `process.env` access outside these carve-outs, add an inline disable comment explaining why:
 
