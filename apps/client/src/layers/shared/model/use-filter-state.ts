@@ -8,7 +8,11 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import type { FilterDefinition, FilterSchema, FilterValues } from '@/layers/shared/lib/filter-engine';
+import type {
+  FilterDefinition,
+  FilterSchema,
+  FilterValues,
+} from '@/layers/shared/lib/filter-engine';
 
 // Alias for the route-agnostic search updater type used internally.
 // We cast to this when calling navigate without a `to:` — the hook is

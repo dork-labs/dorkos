@@ -24,8 +24,7 @@ function RadioGroup({
 }
 
 /** Props for {@link RadioGroupItem}. */
-export interface RadioGroupItemProps
-  extends React.ComponentProps<typeof RadioGroupPrimitive.Item> {
+export interface RadioGroupItemProps extends React.ComponentProps<typeof RadioGroupPrimitive.Item> {
   /**
    * Grow the dot a step on smaller screens, back to 16px past `md`.
    *

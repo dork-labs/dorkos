@@ -62,7 +62,9 @@ export function PathBreadcrumb({
         return (
           <span key={segPath} className={cn('flex items-center', isLast ? 'shrink-0' : 'min-w-0')}>
             {i > 0 && (
-              <ChevronRight className={cn(chevronClass, 'text-muted-foreground/40 flex-shrink-0')} />
+              <ChevronRight
+                className={cn(chevronClass, 'text-muted-foreground/40 flex-shrink-0')}
+              />
             )}
             {onSegmentClick ? (
               <button

@@ -48,7 +48,11 @@ function barrelExports(): { values: Set<string>; types: Set<string> } {
       const entry = raw.trim();
       if (!entry) continue;
       const isType = blockIsType || entry.startsWith('type ');
-      const name = entry.replace(/^type\s+/, '').split(/\s+as\s+/).pop()!.trim();
+      const name = entry
+        .replace(/^type\s+/, '')
+        .split(/\s+as\s+/)
+        .pop()!
+        .trim();
       (isType ? types : values).add(name);
     }
   }

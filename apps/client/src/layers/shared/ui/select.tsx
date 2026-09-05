@@ -37,8 +37,7 @@ function SelectValue({ ...props }: React.ComponentProps<typeof SelectPrimitive.V
 }
 
 /** Props for {@link SelectTrigger}. */
-export interface SelectTriggerProps
-  extends React.ComponentProps<typeof SelectPrimitive.Trigger> {
+export interface SelectTriggerProps extends React.ComponentProps<typeof SelectPrimitive.Trigger> {
   /**
    * Grow to a 44px touch target below `md`, back to 36px past it.
    *

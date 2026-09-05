@@ -36,8 +36,8 @@ export function OptionRow({
         isFocused && 'ring-status-info/50 ring-1',
         className
       )}
-      data-selected={isSelected}
       {...props}
+      data-selected={isSelected}
     >
       {control}
       {children}

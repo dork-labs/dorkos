@@ -66,8 +66,7 @@ const buttonVariants = cva(
  * `<Button size="default">` looking like two unrelated decisions (DOR-1761).
  * `icon` went the same way, to `icon-md`. The pixels are unchanged.
  */
-export type ButtonSize =
-  'xs' | 'sm' | 'md' | 'lg' | 'icon-xs' | 'icon-sm' | 'icon-md' | 'icon-lg';
+export type ButtonSize = 'xs' | 'sm' | 'md' | 'lg' | 'icon-xs' | 'icon-sm' | 'icon-md' | 'icon-lg';
 
 // xs and icon-xs are intentionally small UI chrome — excluded from responsive scaling
 const RESPONSIVE_SIZE_CLASSES: Partial<Record<ButtonSize, string>> = {

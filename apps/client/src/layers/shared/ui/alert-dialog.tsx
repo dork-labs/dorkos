@@ -33,9 +33,7 @@ function AlertDialogTrigger({
  * {@link AlertDialogContent} already portals itself, so this is only needed when
  * building a content surface by hand.
  */
-function AlertDialogPortal({
-  ...props
-}: React.ComponentProps<typeof AlertDialogPrimitive.Portal>) {
+function AlertDialogPortal({ ...props }: React.ComponentProps<typeof AlertDialogPrimitive.Portal>) {
   return <AlertDialogPrimitive.Portal data-slot="alert-dialog-portal" {...props} />;
 }
 

@@ -7,8 +7,7 @@ import { Checkbox as CheckboxPrimitive } from 'radix-ui';
 import { cn } from '@/layers/shared/lib/utils';
 
 /** Props for {@link Checkbox}. */
-export interface CheckboxProps
-  extends React.ComponentProps<typeof CheckboxPrimitive.Root> {
+export interface CheckboxProps extends React.ComponentProps<typeof CheckboxPrimitive.Root> {
   /**
    * Grow the box a step on smaller screens, back to 16px past `md`.
    *

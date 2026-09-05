@@ -99,10 +99,34 @@ export function FormShowcases() {
         <ShowcaseLabel>Sizes</ShowcaseLabel>
         <ShowcaseDemo>
           <div className="flex flex-wrap items-center gap-4">
-            <Switch size="sm" responsive={false} checked aria-label="Small" onCheckedChange={() => {}} />
-            <Switch size="md" responsive={false} checked aria-label="Medium" onCheckedChange={() => {}} />
-            <Switch size="lg" responsive={false} checked aria-label="Large" onCheckedChange={() => {}} />
-            <Switch size="xl" responsive={false} checked aria-label="Extra large" onCheckedChange={() => {}} />
+            <Switch
+              size="sm"
+              responsive={false}
+              checked
+              aria-label="Small"
+              onCheckedChange={() => {}}
+            />
+            <Switch
+              size="md"
+              responsive={false}
+              checked
+              aria-label="Medium"
+              onCheckedChange={() => {}}
+            />
+            <Switch
+              size="lg"
+              responsive={false}
+              checked
+              aria-label="Large"
+              onCheckedChange={() => {}}
+            />
+            <Switch
+              size="xl"
+              responsive={false}
+              checked
+              aria-label="Extra large"
+              onCheckedChange={() => {}}
+            />
           </div>
         </ShowcaseDemo>
 

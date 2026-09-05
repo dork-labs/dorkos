@@ -111,7 +111,10 @@ export function RemoteAccessBeacon() {
               )}
             >
               <Globe
-                className={cn('size-4', remote.state === 'starting' && 'motion-safe:animate-breath')}
+                className={cn(
+                  'size-4',
+                  remote.state === 'starting' && 'motion-safe:animate-breath'
+                )}
                 aria-hidden
               />
               <span
