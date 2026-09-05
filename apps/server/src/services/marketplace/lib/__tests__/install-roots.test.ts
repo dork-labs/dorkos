@@ -11,8 +11,10 @@ import { PackageTypeSchema } from '@dorkos/marketplace/package-types';
 import {
   INSTALL_ROOT_DIR_BY_TYPE,
   INSTALL_ROOT_DIRS,
+  INSTALL_ROOT_HOLDS_PACKAGES_ONLY,
   INSTALL_ROOTS_WITH_TYPE,
   installRootDirForType,
+  installRootsUnder,
 } from '../install-roots.js';
 
 describe('install-roots', () => {
@@ -47,5 +49,28 @@ describe('install-roots', () => {
   it('keeps the distinct roots in lockstep with the type mapping', () => {
     const derived = new Set(Object.values(INSTALL_ROOT_DIR_BY_TYPE));
     expect(new Set(INSTALL_ROOT_DIRS)).toEqual(derived);
+  });
+
+  it('says which roots hold nothing but installs, and answers for every root', () => {
+    // `agents/` is shared with the agents a person makes, so being in it is not
+    // proof of being installed — the one root where a writer has to ask a second
+    // question (DOR-1789).
+    expect(INSTALL_ROOT_HOLDS_PACKAGES_ONLY).toEqual({
+      plugins: true,
+      agents: false,
+      shapes: true,
+    });
+    for (const dir of INSTALL_ROOT_DIRS) {
+      expect(typeof INSTALL_ROOT_HOLDS_PACKAGES_ONLY[dir]).toBe('boolean');
+    }
+  });
+
+  it('carries that answer onto every root it resolves under a scope', () => {
+    const roots = installRootsUnder('/scope');
+    expect(roots.map((r) => [r.kind, r.packagesOnly])).toEqual([
+      ['plugins', true],
+      ['agents', false],
+      ['shapes', true],
+    ]);
   });
 });

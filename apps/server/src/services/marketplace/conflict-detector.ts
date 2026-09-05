@@ -350,11 +350,15 @@ export class ConflictDetector {
    * DOR-994 removed elsewhere, and it hid real collisions: a Shape installs
    * under `shapes/` and {@link ShapeInstallFlow} compiles every inline
    * extension it bundles, so a plugins-only read could never see one
-   * (DOR-1776). It is not the last one — `services/tasks/task-file-update.ts`
-   * (`pluginRoots`) still hardcodes `plugins/`, so its `isPackageOwned` answers
-   * `false` for a schedule owned by an agent or Shape package. Tracked as
-   * DOR-1789; fixing it here would change task-edit permissions, which is a
-   * separate decision.
+   * (DOR-1776). `services/tasks/task-file-update.ts` was the last holdout and
+   * reads the same roots as of DOR-1789, but asks a different question of them,
+   * because it decides whether DorkOS may WRITE rather than what to warn about.
+   * It ORs three limbs: location alone under `plugins/` and `shapes/`; location
+   * under `agents/` PLUS an install marker on the directory the file sits in, so
+   * a hand-made agent's own skill is never claimed; and a direct marker probe of
+   * the owning agent's directory from `meshCore.getProjectPath`, which is the
+   * only limb that reaches a project-scoped agent package. See
+   * `contributing/marketplace-installs.md` §7.
    */
   async #readInstalledExtensions(scopeRoot: string): Promise<Installed<ExtensionRecord>[]> {
     const records: Installed<ExtensionRecord>[] = [];
