@@ -1,7 +1,7 @@
 ---
 covers:
   - 'fix(marketplace): source addresses are checked when you add them (DOR-1710)'
-  - "fix(marketplace): narrow source addresses to the forms that work, and log refusals (DOR-1710)"
+  - 'fix(marketplace): narrow source addresses to the forms that work, and log refusals (DOR-1710)'
 ---
 
 ### Fixed
