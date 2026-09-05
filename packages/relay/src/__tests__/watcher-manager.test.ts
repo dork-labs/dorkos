@@ -409,10 +409,26 @@ describe('WatcherManager', () => {
       );
     });
 
-    it('dispatches every pending message, in the FIFO order the listing gives', async () => {
+    // The backlog is drained one message at a time, matching
+    // `RelayCore.drainEndpointBacklog` — the other function that drains this
+    // same directory to these same subscribers. A parallel drain would turn N
+    // stranded messages into N concurrent handler invocations, and a handler
+    // here can be a whole agent turn.
+    //
+    // The probe is a gate rather than a delay, so it needs no clock: the first
+    // message's claim parks, and a drain that had moved on would already have
+    // claimed the other two by the time the gate is checked.
+    it('dispatches every pending message one at a time, in the FIFO order the listing gives', async () => {
       const seen: string[] = [];
       vi.mocked(subscriptionRegistry.getSubscribers).mockReturnValue([vi.fn()]);
       vi.mocked(maildirStore.listNew).mockResolvedValue(['msg-a', 'msg-b', 'msg-c']);
+
+      const gate = deferred();
+      const inner = vi.mocked(maildirStore.claim).getMockImplementation()!;
+      vi.mocked(maildirStore.claim).mockImplementation(async (endpointHash, messageId) => {
+        if (messageId === 'msg-a') await gate.promise;
+        return inner(endpointHash, messageId);
+      });
 
       const allDelivered = deferred();
       vi.mocked(sqliteIndex.updateStatus).mockImplementation((messageId) => {
@@ -422,6 +438,13 @@ describe('WatcherManager', () => {
       });
 
       await start(manager, createEndpoint('hash-fifo'));
+      await flushPendingDispatches();
+
+      // Everything the drain could do without the gate opening, it has done.
+      expect(vi.mocked(maildirStore.claim).mock.calls.map(([, id]) => id)).toEqual(['msg-a']);
+      expect(seen).toEqual([]);
+
+      gate.resolve();
       await allDelivered.promise;
 
       expect(seen).toEqual(['msg-a', 'msg-b', 'msg-c']);
@@ -718,28 +741,47 @@ describe('WatcherManager', () => {
 
   // -------------------------------------------------------------------------
   // The one test in this file that touches the real filesystem, a real
-  // chokidar watcher and the real `listNew` behind the sweep.
+  // chokidar watcher and a real MaildirStore.
   //
   // Everything above drives the dispatch contracts against doubles. This proves
-  // the wiring underneath them: that a file really written into
-  // `<maildir>/new` reaches the handler, and that the id the manager claims is
-  // the file's basename — the assumption every hermetic test encodes.
+  // the wiring underneath them, in two halves:
   //
-  // One write, no retry loop. It used to need one: delivery depended on
-  // catching a real `add` event, and chokidar reports `ready` a beat before
-  // libuv starts delivering, so an early write was dropped outright rather than
-  // delivered late — no amount of waiting recovered it, only a fresh filename
-  // (measured on macOS; see READY_DELIVERY_GRACE_MS in access-control.ts, and
-  // DOR-577). The sweep is what retired the loop: the message is written before
-  // the watcher exists, so it is found by a directory LISTING, and a listing
-  // cannot be dropped. The deadline below is generous and paid only on failure.
+  //  1. The sweep's own path — a real `ready`, the real `listNew` behind it,
+  //     and the real `claim`/`complete` that move a message out of the mailbox.
+  //     Its file is written BEFORE the watcher exists, so it arrives by
+  //     directory listing, which is why this half needs no retry loop: a
+  //     listing cannot be dropped. (It used to need one. Delivery depended on
+  //     catching a real `add`, and chokidar reports `ready` a beat before libuv
+  //     starts delivering, so an early write was dropped outright rather than
+  //     delivered late — no amount of waiting recovered it, only a fresh
+  //     filename. Measured on macOS; see READY_DELIVERY_GRACE_MS in
+  //     access-control.ts, and DOR-577.)
+  //
+  //  2. The `add` path, which half 1 no longer touches: that a real chokidar
+  //     event fires for a file written into a live `new/`, and that the path it
+  //     hands back has the message id as its basename — the assumption every
+  //     hermetic test encodes, and one a chokidar major could change silently.
+  //     Sever `watcher.on('add')` and only fake-watcher tests would notice.
+  //
+  // Half 2 is the only wall-clock bound left in this file, and it is bounded
+  // twice over: it writes well past the ready window rather than into it, and
+  // then waits on a barrier with a generous deadline.
   // -------------------------------------------------------------------------
 
   describe('real filesystem smoke', () => {
-    /** Ceiling on the one delivery — generous, and paid only on failure. */
+    /** Ceiling on each delivery — generous, and paid only on failure. */
     const SMOKE_BUDGET_MS = 20_000;
+    /**
+     * How long to let the platform's event stream warm up before the live write.
+     *
+     * Ten times the 25ms `READY_DELIVERY_GRACE_MS` that `access-control.ts`
+     * measured and found holds at a load average around 130. Writing INTO that
+     * window is what made the old retry loop necessary; this test steps over it
+     * instead, and the first delivery has already happened by then anyway.
+     */
+    const READY_SETTLE_MS = 250;
 
-    it('a file really sitting in new/ reaches the handler, keyed by its basename', async () => {
+    it('reaches the handler both from the listing and from a real add event, keyed by basename', async () => {
       chokidarSpy.restore();
       const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'watcher-mgr-smoke-'));
       // A real store, not the double: `listNew` and `claim` are the two calls
@@ -789,6 +831,25 @@ describe('WatcherManager', () => {
         // completed out of cur/.
         expect(await store.listNew('hash-real')).toEqual([]);
         expect(await store.listCurrent('hash-real')).toEqual([]);
+
+        // --- Half 2: the live `add` path, which the sweep did not exercise.
+        const liveDelivered = deferred();
+        vi.mocked(sqliteIndex.updateStatus).mockImplementation((messageId) => {
+          if (messageId === 'msg-live') liveDelivered.resolve();
+          return true;
+        });
+        await new Promise<void>((resolve) => setTimeout(resolve, READY_SETTLE_MS));
+        await fs.writeFile(path.join(newDir, 'msg-live.json'), JSON.stringify({ subject: 'live' }));
+
+        await withDeadline(
+          liveDelivered.promise,
+          SMOKE_BUDGET_MS,
+          `a real chokidar 'add' on ${newDir} delivered nothing`
+        );
+
+        expect(claimSpy).toHaveBeenCalledWith('hash-real', 'msg-live');
+        expect(handler).toHaveBeenCalledWith({ subject: 'live' });
+        expect(await store.listNew('hash-real')).toEqual([]);
       } finally {
         await smokeManager.closeAll();
         await fs.rm(tmpDir, { recursive: true, force: true });

@@ -237,8 +237,31 @@ export class WatcherManager {
     // would be delivering on behalf of a watcher that no longer exists.
     if (this.watchers.get(endpoint.hash) !== watcher) return;
 
+    // Kicked, not awaited: the boot path pays for the listing above and
+    // nothing more. `drain` is serial inside, so this is one chain, not one
+    // per message.
+    void this.drain(endpoint, messageIds);
+  }
+
+  /**
+   * Deliver a backlog one message at a time.
+   *
+   * Serial on purpose, matching `RelayCore.drainEndpointBacklog`, which drains
+   * the same directory to the same subscribers when a late subscriber attaches.
+   * Two functions with that much in common must not disagree about what a
+   * backlog costs: dispatching the listing in parallel would turn N stranded
+   * messages into N concurrent handler invocations — and a handler here can be
+   * a whole agent turn, so peak concurrency would be however much mail happened
+   * to be waiting. Serial also means completion order follows the listing,
+   * which `listNew` sorts by ULID, so a backlog is delivered in the order it
+   * was sent.
+   *
+   * @param endpoint - The endpoint being drained.
+   * @param messageIds - The pending message IDs, in listing (FIFO) order.
+   */
+  private async drain(endpoint: EndpointInfo, messageIds: readonly string[]): Promise<void> {
     for (const messageId of messageIds) {
-      this.dispatch(endpoint, messageId);
+      await this.deliver(endpoint, messageId);
     }
   }
 
@@ -257,18 +280,34 @@ export class WatcherManager {
   /**
    * Kick off delivery of one message, without waiting for it.
    *
-   * The single entry point both the watcher and {@link sweepPending} use, so
-   * the two cannot drift apart. Deliberately not awaited: a handler can run a
-   * whole agent turn, and neither an fs event nor the boot path may block on
-   * that. The `catch` is the price of not awaiting — without it an unexpected
-   * throw inside `handleNewMessage` (a `complete()` that is not ENOENT, say)
-   * would land on the process-wide unhandled-rejection path.
+   * What an fs event does: chokidar's callback may not block on a handler that
+   * can run a whole agent turn. {@link drain} calls {@link deliver} instead,
+   * because a backlog is delivered one message at a time.
    *
    * @param endpoint - The endpoint that received the message.
    * @param messageId - The message ID, i.e. its filename without `.json`.
    */
   private dispatch(endpoint: EndpointInfo, messageId: string): void {
-    void this.handleNewMessage(endpoint, messageId).catch((err: unknown) => {
+    void this.deliver(endpoint, messageId);
+  }
+
+  /**
+   * Deliver one message and report when it has settled, either way.
+   *
+   * The single entry point the watcher and the sweep share, so the two cannot
+   * drift apart. It never rejects: an unexpected throw inside
+   * `handleNewMessage` (a `complete()` that is not ENOENT, say) is logged here,
+   * because both callers are un-awaited chains where a rejection would land on
+   * the process-wide unhandled-rejection path instead — and, for
+   * {@link drain}, would abandon the rest of the backlog.
+   *
+   * @param endpoint - The endpoint that received the message.
+   * @param messageId - The message ID, i.e. its filename without `.json`.
+   */
+  private async deliver(endpoint: EndpointInfo, messageId: string): Promise<void> {
+    try {
+      await this.handleNewMessage(endpoint, messageId);
+    } catch (err) {
       this.logger.warn(
         `[watcher-dispatch] WatcherManager: delivery of ${messageId} to ${endpoint.subject} threw`,
         {
@@ -278,15 +317,17 @@ export class WatcherManager {
           stack: err instanceof Error ? err.stack : undefined,
         }
       );
-    });
+    }
   }
 
   /**
    * Handle a new message sitting in an endpoint's `new/` directory.
    *
-   * Reads the envelope, finds matching subscription handlers, invokes them,
-   * then claims and completes the message. On handler error, the message
-   * is moved to `failed/`.
+   * Finds the matching subscription handlers, claims the message — the atomic
+   * `new/` -> `cur/` rename, which is also what reads the envelope — then
+   * invokes the handlers and completes it. On handler error, the message is
+   * moved to `failed/`. Nothing is claimed when there are no handlers, so mail
+   * for an endpoint nobody subscribes to stays where a poll can find it.
    *
    * @param endpoint - The endpoint that received the message
    * @param messageId - The message ID (filename without the `.json` extension)
