@@ -32,8 +32,8 @@ import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import {
   describeArmBlocker,
   isPackageOwned,
+  packageInstallRoots,
   planTaskFileUpdate,
-  pluginRoots,
   touchesFile,
 } from '../task-file-update.js';
 import { logger } from '../../../lib/logger.js';
@@ -150,11 +150,15 @@ async function rewriteTaskFile(
   }
 
   // A skill an installed package owns is never ours to rewrite: the edit would
-  // land in `.dork/plugins/`, be shared by every agent that installed the
-  // package, and vanish at the next update.
+  // land inside the package's own checkout, be shared by every agent that
+  // installed it, and vanish at the next update. Every install root counts, not
+  // just `plugins/` — an agent package and a Shape ship schedules too (DOR-1789).
   const owningProject = existing.agentId ? deps.meshCore?.getProjectPath(existing.agentId) : null;
   if (
-    await isPackageOwned(existing.filePath, pluginRoots(deps.dorkHome, owningProject ?? undefined))
+    await isPackageOwned(
+      existing.filePath,
+      packageInstallRoots(deps.dorkHome, owningProject ?? undefined)
+    )
   ) {
     return {
       ok: false,

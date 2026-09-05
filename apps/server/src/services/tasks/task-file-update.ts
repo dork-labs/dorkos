@@ -45,6 +45,9 @@ import {
 } from '@dorkos/skills';
 import { parseSkillFile, readRawFrontmatter } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
+import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace/constants';
+import { installRootsUnder, projectScopeRoot } from '../marketplace/lib/install-roots.js';
+import { INSTALL_METADATA_PATH } from '../marketplace/installed-metadata.js';
 import { mergeTaskFrontmatter, type TaskFrontmatterWrite } from './task-frontmatter-merge.js';
 import { describeScheduleProblem } from './cron-validation.js';
 
@@ -130,30 +133,82 @@ export function touchesFile(data: Record<string, unknown>, existing?: FileBacked
 }
 
 /**
+ * One directory installed packages land in, and whether landing there is by
+ * itself proof of being one.
+ */
+export interface PackageInstallRoot {
+  /** Absolute directory holding one subdirectory per installed thing. */
+  dir: string;
+  /**
+   * True when the root exists only because the marketplace made it, so anything
+   * inside it is a package checkout. False for `agents/`, which also holds every
+   * agent a person made — see {@link isPackageOwned}.
+   */
+  packagesOnly: boolean;
+}
+
+/**
  * The directories installed packages live in, for a given scope.
  *
- * Mirrors the marketplace's own layout (`conflict-detector.ts`): the scope root
- * is `<projectPath>/.dork` for a project install and the data directory for a
- * global one, and packages sit under `plugins/` inside it.
+ * Mirrors the marketplace's own layout, and does so by USING it rather than by
+ * restating it: {@link installRootsUnder} is the single source of truth for
+ * which subdirectories a scope root holds, and this walks the same set the
+ * conflict detector and the installed scanner walk. The scope root is
+ * `<projectPath>/.dork` for a project install ({@link projectScopeRoot}) and the
+ * data directory for a global one.
+ *
+ * It used to hardcode `plugins/` while claiming to mirror the detector, and the
+ * claim went stale the day the detector learned the other two roots (DOR-1776).
+ * The cost was not cosmetic: a `skillRef` schedule inside an installed AGENT or
+ * SHAPE package is written into that package's own checkout
+ * (`materialize-schedules.ts`), and a plugins-only answer let DorkOS edit it —
+ * exactly the harm {@link isPackageOwned} exists to prevent (DOR-1789).
  *
  * @param dorkHome - The resolved data directory.
  * @param projectPath - The owning agent's project, when it has one.
+ * @returns Every install root of every scope in view.
  */
-export function pluginRoots(dorkHome: string, projectPath?: string): string[] {
-  const roots = [path.join(dorkHome, 'plugins')];
-  if (projectPath) roots.push(path.join(projectPath, '.dork', 'plugins'));
-  return roots;
+export function packageInstallRoots(dorkHome: string, projectPath?: string): PackageInstallRoot[] {
+  const scopeRoots = [dorkHome, ...(projectPath ? [projectScopeRoot(projectPath)] : [])];
+  return scopeRoots.flatMap((scopeRoot) =>
+    installRootsUnder(scopeRoot).map(({ dir, packagesOnly }) => ({ dir, packagesOnly }))
+  );
 }
+
+/**
+ * The files whose presence in a directory says an install put it there.
+ *
+ * `.dork/manifest.json` is the marketplace's own marker for a package on disk —
+ * what `scanPackageDirectory` looks for and what the installed scanner reads.
+ * `.dork/install-metadata.json` is the install's provenance sidecar. Either one
+ * alone is enough, because each has a case the other misses: a Claude-Code-only
+ * package installs from a synthesized manifest and may ship no
+ * `.dork/manifest.json` (`package-validator.ts`), and the sidecar write is
+ * best-effort, so an install whose last step failed still has its manifest.
+ * Existence is the test, not readability: a manifest DorkOS cannot parse still
+ * means an install lives here, and the conservative answer is to leave it alone.
+ */
+const PACKAGE_MARKERS = [PACKAGE_MANIFEST_PATH, INSTALL_METADATA_PATH];
 
 /**
  * Whether this file belongs to an installed marketplace package.
  *
- * A skill installed from a package lives under a `plugins/` root and is reachable
- * from an agent's `.agents/skills/` as a symlink. Editing it through that link
- * writes into the package's own checkout: the change is invisible in the
- * cockpit's provenance, it is shared by every agent that installed the package,
- * and the next package update overwrites it. So DorkOS does not do it. Approving
- * such a schedule is row state, which the caller reaches without a write at all.
+ * A skill installed from a package lives inside that package's checkout and is
+ * reachable from an agent's `.agents/skills/` as a symlink. Editing it through
+ * that link writes into the checkout: the change is invisible in the app's
+ * provenance, it is shared by every agent that installed the package, and the
+ * next package update overwrites it. So DorkOS does not do it. Approving such a
+ * schedule is row state, which the caller reaches without a write at all.
+ *
+ * **The `agents/` root needs a second question.** `plugins/` and `shapes/` hold
+ * nothing but installs, so being under one settles it. `agents/` is also where
+ * every agent a person makes lives (`lib/agents-home.ts`), DorkBot included, and
+ * those agents' own schedules are theirs to edit — refusing them would be this
+ * same bug pointed the other way. So a file under `agents/` is package-owned
+ * only when the agent directory holding it carries a {@link PACKAGE_MARKERS}
+ * file. A hand-made agent has `.dork/agent.json` and neither marker; an
+ * installed agent package has `.dork/agent.json` AND a marker, because the
+ * install flow scaffolds the workspace on top of the package it just unpacked.
  *
  * Both sides are resolved before comparing — the file because the link is the
  * whole point, and the roots because a data directory or a checkout under a
@@ -163,14 +218,36 @@ export function pluginRoots(dorkHome: string, projectPath?: string): string[] {
  * a person happened to name `plugins` (DOR-1485 review, residual 5).
  *
  * @param filePath - The file the route is about to edit.
- * @param roots - Candidate plugin roots, from {@link pluginRoots}.
+ * @param roots - Candidate install roots, from {@link packageInstallRoots}.
  * @returns True when the file is package-owned and must not be written.
  */
-export async function isPackageOwned(filePath: string, roots: string[]): Promise<boolean> {
+export async function isPackageOwned(
+  filePath: string,
+  roots: PackageInstallRoot[]
+): Promise<boolean> {
   const resolvedFile = await resolveOrSelf(filePath);
-  for (const root of roots) {
-    const resolvedRoot = await resolveOrSelf(root);
-    if (resolvedFile.startsWith(resolvedRoot + path.sep)) return true;
+  for (const { dir, packagesOnly } of roots) {
+    const resolvedRoot = await resolveOrSelf(dir);
+    if (!resolvedFile.startsWith(resolvedRoot + path.sep)) continue;
+    if (packagesOnly) return true;
+    // The install's own directory is the first segment below the root; anything
+    // deeper is that install's contents. `path.relative` cannot escape here —
+    // the prefix test above already proved containment.
+    const [installDir] = path.relative(resolvedRoot, resolvedFile).split(path.sep);
+    if (installDir && (await hasPackageMarker(path.join(resolvedRoot, installDir)))) return true;
+  }
+  return false;
+}
+
+/** Whether a directory carries one of the {@link PACKAGE_MARKERS}. */
+async function hasPackageMarker(dir: string): Promise<boolean> {
+  for (const marker of PACKAGE_MARKERS) {
+    try {
+      await fs.access(path.join(dir, marker));
+      return true;
+    } catch {
+      // Not this marker; the next one may still be there.
+    }
   }
   return false;
 }

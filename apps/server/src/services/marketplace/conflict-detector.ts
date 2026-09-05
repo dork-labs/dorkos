@@ -350,11 +350,10 @@ export class ConflictDetector {
    * DOR-994 removed elsewhere, and it hid real collisions: a Shape installs
    * under `shapes/` and {@link ShapeInstallFlow} compiles every inline
    * extension it bundles, so a plugins-only read could never see one
-   * (DOR-1776). It is not the last one — `services/tasks/task-file-update.ts`
-   * (`pluginRoots`) still hardcodes `plugins/`, so its `isPackageOwned` answers
-   * `false` for a schedule owned by an agent or Shape package. Tracked as
-   * DOR-1789; fixing it here would change task-edit permissions, which is a
-   * separate decision.
+   * (DOR-1776). `services/tasks/task-file-update.ts` was the last holdout and
+   * walks {@link installRootsUnder} too as of DOR-1789 — with one difference
+   * that matters only there: it refuses to WRITE, so it will not claim a
+   * hand-made agent's own skill just for sitting in `agents/`.
    */
   async #readInstalledExtensions(scopeRoot: string): Promise<Installed<ExtensionRecord>[]> {
     const records: Installed<ExtensionRecord>[] = [];

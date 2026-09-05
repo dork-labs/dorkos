@@ -276,6 +276,72 @@ describe('tasks_update writes the SKILL.md, not just the row', () => {
     expect(await fs.readFile(filePath, 'utf-8')).toContain('packaged prompt');
   });
 
+  it('refuses to rewrite a file an installed AGENT package owns', async () => {
+    // A `skillRef` schedule lands in the skill the package ships, wherever that
+    // package installed — `agents/` for an agent package, `shapes/` for a Shape.
+    // The ownership check read `plugins/` alone, so an edit here wrote straight
+    // into the checkout the next package update overwrites (DOR-1789).
+    const packageDir = path.join(dorkHome, 'agents', 'researcher');
+    await fs.mkdir(path.join(packageDir, '.dork'), { recursive: true });
+    await fs.writeFile(
+      path.join(packageDir, '.dork', 'manifest.json'),
+      JSON.stringify({ name: 'researcher', version: '1.0.0', type: 'agent' }),
+      'utf-8'
+    );
+    const filePath = path.join(packageDir, '.agents', 'skills', 'nightly-sweep', 'SKILL.md');
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(
+      filePath,
+      "---\nname: nightly-sweep\ndescription: packaged\nschedule:\n  cron: '0 3 * * *'\n---\npackaged prompt",
+      'utf-8'
+    );
+    const task = store.createTask({
+      name: 'nightly-sweep',
+      description: 'packaged',
+      prompt: 'packaged prompt',
+      cron: '0 3 * * *',
+      filePath,
+    });
+
+    const { isError, payload } = await call('tasks_update', {
+      id: task.id,
+      prompt: 'a different job',
+    });
+
+    expect(isError).toBe(true);
+    expect(payload.code).toBe('schedule_package_owned');
+    expect(store.getTask(task.id)!.prompt).toBe('packaged prompt');
+    expect(await fs.readFile(filePath, 'utf-8')).toContain('packaged prompt');
+  });
+
+  it('still edits the schedule of an agent the person made', async () => {
+    // The other direction of the same rule: `agents/` also holds every agent
+    // DorkOS creates, and their schedules are the person's to edit. Only an
+    // install marker makes a directory there a package checkout.
+    const agentDir = path.join(dorkHome, 'agents', 'dorkbot');
+    const filePath = path.join(agentDir, '.agents', 'skills', 'nightly-sweep', 'SKILL.md');
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.mkdir(path.join(agentDir, '.dork'), { recursive: true });
+    await fs.writeFile(path.join(agentDir, '.dork', 'agent.json'), '{}', 'utf-8');
+    await fs.writeFile(
+      filePath,
+      "---\nname: nightly-sweep\ndescription: mine\nschedule:\n  cron: '0 3 * * *'\n---\nmy own prompt",
+      'utf-8'
+    );
+    const task = store.createTask({
+      name: 'nightly-sweep',
+      description: 'mine',
+      prompt: 'my own prompt',
+      cron: '0 3 * * *',
+      filePath,
+    });
+
+    const { isError } = await call('tasks_update', { id: task.id, prompt: 'a different job' });
+
+    expect(isError).toBe(false);
+    expect(await fs.readFile(filePath, 'utf-8')).toContain('a different job');
+  });
+
   it('still edits the row of a task whose file was deleted outside DorkOS', async () => {
     // The one error that means "there is no file, edit the row alone". Every
     // other read failure is a real failure and is reported as one.

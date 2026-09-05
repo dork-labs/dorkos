@@ -80,6 +80,33 @@ export const INSTALL_ROOTS_WITH_TYPE: readonly {
 })();
 
 /**
+ * Whether EVERYTHING in an install root got there by being installed.
+ *
+ * `plugins/` and `shapes/` exist only because the marketplace made them, so a
+ * directory found in one is an installed package by its location alone.
+ * `agents/` does not: it is also `lib/agents-home.ts`'s directory, holding every
+ * agent DorkOS creates from the New Agent flow, with installed agent packages
+ * living among them. So a directory found there needs a second question asked of
+ * it before anyone may call it a package checkout.
+ *
+ * That distinction is only ever load-bearing where the answer decides whether
+ * DorkOS may WRITE — `services/tasks/task-file-update.ts`, which refuses to edit
+ * a schedule an installed package owns. Reading a root the person also fills is
+ * harmless (the conflict detector deliberately wants a hand-made agent's skills
+ * in its collision set); writing into it is not, and refusing every edit to
+ * every agent a person made would be the same bug pointed the other way.
+ *
+ * Declared as a total `Record<InstallRootDir, boolean>` for the same reason
+ * {@link INSTALL_ROOT_DIR_BY_TYPE} is: a newly added root will not typecheck
+ * until someone decides which kind it is.
+ */
+export const INSTALL_ROOT_HOLDS_PACKAGES_ONLY: Record<InstallRootDir, boolean> = {
+  plugins: true,
+  agents: false,
+  shapes: true,
+};
+
+/**
  * Resolve the `dorkHome` install subdirectory for a package type.
  *
  * @param type - The marketplace package type.
@@ -108,6 +135,12 @@ export interface ScopedInstallRoot {
    * missing or does not name one. A present manifest `type` always wins.
    */
   representativeType: PackageType;
+  /**
+   * Whether a directory here is an installed package by its location alone —
+   * {@link INSTALL_ROOT_HOLDS_PACKAGES_ONLY} for this root's kind. False for
+   * `agents/`, which DorkOS also fills with the agents a person makes.
+   */
+  packagesOnly: boolean;
 }
 
 /**
@@ -142,6 +175,7 @@ export function installRootsUnder(scopeRoot: string): ScopedInstallRoot[] {
     kind: dir,
     dir: path.join(scopeRoot, dir),
     representativeType,
+    packagesOnly: INSTALL_ROOT_HOLDS_PACKAGES_ONLY[dir],
   }));
 }
 
