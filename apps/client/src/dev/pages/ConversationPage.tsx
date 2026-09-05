@@ -45,9 +45,9 @@ export function ConversationPage() {
       <TrustDialShowcases />
       <SessionInspectorShowcases />
       <MiscShowcases />
-      {/* Borrowed, not registered: Subsystems owns this section's entry and its
-          canonical `/dev/features#approvalcard` anchor, and Conversation renders
-          it per CONVERSATION_CROSS_LISTED. At page level like IdentityPage's
+      {/* Borrowed, not registered: Home, Inbox & Approvals owns this section's
+          entry and its canonical `/dev/home-inbox#approvalcard` anchor, and
+          Conversation renders it per CONVERSATION_CROSS_LISTED. At page level like IdentityPage's
           borrows, and last, because that is where the page's own TOC lists it —
           nesting it inside Asks drew a section card inside a section card and
           buried its anchor mid-section. */}

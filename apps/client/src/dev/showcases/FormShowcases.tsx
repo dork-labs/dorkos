@@ -27,9 +27,10 @@ import {
   CommandEmpty,
   CommandGroup,
   CommandItem,
+  BoundedNumberInput,
 } from '@/layers/shared/ui';
 
-/** Form component showcases: Input, Textarea, Switch, Select, Tabs, Checkbox, RadioGroup, SegmentedControl, Label, Command. */
+/** Form component showcases: Input, Textarea, Switch, Select, Tabs, Checkbox, RadioGroup, SegmentedControl, Label, Command, BoundedNumberInput. */
 export function FormShowcases() {
   const [switchOn, setSwitchOn] = useState(true);
   const [checkA, setCheckA] = useState(true);
@@ -316,6 +317,42 @@ export function FormShowcases() {
           </Command>
         </ShowcaseDemo>
       </PlaygroundSection>
+
+      <BoundedNumberInputShowcase />
     </>
+  );
+}
+
+/** A number field that only reports numbers its bounds accept. */
+function BoundedNumberInputShowcase() {
+  const [value, setValue] = useState(5);
+  return (
+    <PlaygroundSection
+      title="BoundedNumberInput"
+      description="A number field that only reports numbers its bounds accept. Typing is not saving — it commits on blur or Enter, and Escape puts back the server's value. Out of range is refused, never clamped."
+    >
+      <ShowcaseLabel>Default (0–10) — try typing 500 and pressing Enter</ShowcaseLabel>
+      <ShowcaseDemo>
+        <BoundedNumberInput
+          value={value}
+          min={0}
+          max={10}
+          onCommit={setValue}
+          aria-label="Retry count"
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Disabled — on hold, still shows its value</ShowcaseLabel>
+      <ShowcaseDemo>
+        <BoundedNumberInput
+          value={3}
+          min={0}
+          max={10}
+          onCommit={() => {}}
+          disabled
+          aria-label="Retry count (disabled)"
+        />
+      </ShowcaseDemo>
+    </PlaygroundSection>
   );
 }

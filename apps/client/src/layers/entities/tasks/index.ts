@@ -10,6 +10,7 @@ export {
   useUpdateTask,
   useDeleteTask,
   useTriggerTask,
+  TASKS_KEY,
 } from './model/use-tasks';
 export { useTasksSync } from './model/use-tasks-sync';
 export {

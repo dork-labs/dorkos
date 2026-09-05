@@ -3,7 +3,8 @@ import { toast } from 'sonner';
 import { useTransport } from '@/layers/shared/model';
 import type { CatalogEntry } from '@dorkos/shared/relay-schemas';
 
-const CATALOG_KEY = ['relay', 'adapters', 'catalog'] as const;
+/** Query key for the adapter catalog — exported so callers can seed it (dev playground showcases). */
+export const CATALOG_KEY = ['relay', 'adapters', 'catalog'] as const;
 const ADAPTERS_KEY = ['relay', 'adapters'] as const;
 
 /** Extract a user-friendly message from an unknown error value. */

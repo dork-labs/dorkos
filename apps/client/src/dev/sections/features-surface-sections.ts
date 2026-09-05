@@ -1,13 +1,15 @@
 import type { PlaygroundSection } from '../playground-registry';
 
 /**
- * The second half of the Features page: the surfaces a person answers things on.
+ * Sections for the Home, Inbox & Approvals page: the surfaces a person
+ * answers things on.
  *
  * Sources: PipPanelShowcases, ApprovalsShowcases, ScheduleApprovalShowcases,
  * TriageHeaderShowcases, InboxShowcases, PresenceStripShowcases,
  * HomeStatesShowcases, ConnectionsShowcases, McpServerCardShowcases.
  *
- * See `features-agent-sections.ts` for why the registry is in two files.
+ * See `features-agent-sections.ts` for why this used to share a page — and a
+ * file — with `FEATURE_AGENT_SECTIONS`, and no longer does.
  *
  * @module dev/sections/features-surface-sections
  */
@@ -16,7 +18,7 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
   {
     id: 'floatingpanel',
     title: 'FloatingPanel',
-    page: 'features',
+    page: 'home-inbox',
     category: 'PIP Panel',
     keywords: ['pip', 'panel', 'floating', 'drag', 'resize', 'mini-player', 'pop out'],
   },
@@ -24,7 +26,7 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
   {
     id: 'approvalcard',
     title: 'ApprovalCard',
-    page: 'features',
+    page: 'home-inbox',
     category: 'Approvals',
     keywords: [
       'approval',
@@ -41,14 +43,14 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
   {
     id: 'approvallist',
     title: 'ApprovalList',
-    page: 'features',
+    page: 'home-inbox',
     category: 'Approvals',
     keywords: ['approval', 'queue', 'stack', 'cap', 'pending', 'waiting on you'],
   },
   {
     id: 'standingpermissionlist',
     title: 'StandingPermissionList',
-    page: 'features',
+    page: 'home-inbox',
     category: 'Approvals',
     keywords: [
       'approval',
@@ -62,7 +64,7 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
   {
     id: 'approvalsunavailable',
     title: 'ApprovalsUnavailable',
-    page: 'features',
+    page: 'home-inbox',
     category: 'Approvals',
     keywords: ['approval', 'error', 'offline', 'retry', 'unavailable', 'failed read'],
   },
@@ -70,7 +72,7 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
   {
     id: 'inbox-bell',
     title: 'Inbox bell',
-    page: 'features',
+    page: 'home-inbox',
     category: 'Inbox',
     keywords: [
       'inbox',
@@ -87,7 +89,7 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
   {
     id: 'inbox-rows',
     title: 'Inbox rows',
-    page: 'features',
+    page: 'home-inbox',
     category: 'Inbox',
     keywords: ['inbox', 'notification', 'row', 'unread', 'read', 'activity', 'history'],
   },
@@ -95,7 +97,7 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
   {
     id: 'schedule-approval-card',
     title: 'Schedule approval card',
-    page: 'features',
+    page: 'home-inbox',
     category: 'Home',
     keywords: [
       'schedule',
@@ -115,7 +117,7 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
   {
     id: 'pinned-triage-header',
     title: 'Pinned triage header',
-    page: 'features',
+    page: 'home-inbox',
     category: 'Home',
     keywords: [
       'triage',
@@ -133,7 +135,7 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
   {
     id: 'presence-strip',
     title: 'Presence strip',
-    page: 'features',
+    page: 'home-inbox',
     category: 'Home',
     keywords: [
       'presence',
@@ -152,7 +154,7 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
   {
     id: 'day-one-and-the-quiet-morning',
     title: 'Day one and the quiet morning',
-    page: 'features',
+    page: 'home-inbox',
     category: 'Home',
     keywords: [
       'day one',
@@ -176,14 +178,14 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
   {
     id: 'servicetile',
     title: 'ServiceTile',
-    page: 'features',
+    page: 'home-inbox',
     category: 'Connections',
     keywords: ['connector', 'connections', 'service', 'connect', 'gmail', 'slack', 'tile', 'grid'],
   },
   {
     id: 'accountrow',
     title: 'AccountRow',
-    page: 'features',
+    page: 'home-inbox',
     category: 'Connections',
     keywords: [
       'connector',
@@ -196,11 +198,25 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
       'multi-account',
     ],
   },
+  {
+    id: 'accountsregion',
+    title: 'AccountsRegion',
+    page: 'home-inbox',
+    category: 'Connections',
+    keywords: ['accounts', 'region', 'composed', 'first-run', 'composio', 'nango', 'setup'],
+  },
+  {
+    id: 'messagingregion',
+    title: 'MessagingRegion',
+    page: 'home-inbox',
+    category: 'Connections',
+    keywords: ['messaging', 'region', 'composed', 'health bar', 'policy', 'claim feed'],
+  },
   // McpServerCardShowcases
   {
     id: 'mcp-cards-what-needs-you',
     title: 'MCP cards: what needs you',
-    page: 'features',
+    page: 'home-inbox',
     category: 'MCP servers',
     keywords: [
       'mcp',
@@ -217,7 +233,7 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
   {
     id: 'mcp-cards-working',
     title: 'MCP cards: working',
-    page: 'features',
+    page: 'home-inbox',
     category: 'MCP servers',
     keywords: [
       'mcp',
@@ -235,7 +251,7 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
   {
     id: 'mcp-cards-from-somewhere-else',
     title: 'MCP cards: from somewhere else',
-    page: 'features',
+    page: 'home-inbox',
     category: 'MCP servers',
     keywords: [
       'mcp',
@@ -252,7 +268,7 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
   {
     id: 'mcp-cards-the-panel-when-it-opens',
     title: 'MCP cards: the panel when it opens',
-    page: 'features',
+    page: 'home-inbox',
     category: 'MCP servers',
     keywords: ['mcp', 'server', 'card', 'order', 'sort', 'freeze', 'panel', 'attention first'],
   },
