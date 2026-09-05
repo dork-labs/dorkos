@@ -721,6 +721,29 @@ The `docker` tier is already covered by something stronger: its container mounts
 nothing from your home directory, so there is no configuration of yours in there
 to displace.
 
+## Whose past conversations an eval server can see
+
+Pointing the eval's server at a clean config directory settles what the model
+reads. It does not settle what the SERVER reads, and those are different
+questions. DorkOS deliberately looks in more than one place for your Claude Code
+history — the account you have chosen, the one your shell names, `~/.claude`, and
+any account you have registered — because dropping one would hide real work from
+your own session list and search box.
+
+Inside an eval that generosity is a leak. The sandbox moved DorkOS's own data
+directory somewhere throwaway; it did not move your home, so `~/.claude` still
+meant yours. Measured before the fix, on a server booted exactly the way an eval
+boots one: a private message written into a stand-in home came straight back out
+of the sandbox's own search results. The same was true of Codex and OpenCode
+history, which are found the same way.
+
+So on every run that gets the clean config directory, the launched server's home
+is the sandbox too. Then all four of those places are one place — the empty
+directory this eval owns — and the server has nothing of yours to find. The two
+travel together on purpose: the run that keeps your config directory is the
+keychain run above, and its sign-in is reached through your home, so that run
+keeps both. It is the run that already told you its numbers are machine-relative.
+
 ## Where each tier can run
 
 `--isolation` decides how a credentialed eval's server is contained.

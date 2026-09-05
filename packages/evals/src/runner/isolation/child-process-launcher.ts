@@ -48,10 +48,10 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
- * Build the launched server's environment: inherit the parent (PATH, HOME so the
- * `claude` binary + its config resolve), layer the spec's credential + model env,
- * then PIN the four placement variables last, and STRIP the harness's own
- * test-mode flags so a credentialed boot never inherits `TestModeRuntime`.
+ * Build the launched server's environment: inherit the parent (PATH, so the
+ * `claude` binary resolves), layer the spec's credential + model env, then PIN
+ * the placement variables last, and STRIP the harness's own test-mode flags so a
+ * credentialed boot never inherits `TestModeRuntime`.
  *
  * ## The pins are applied LAST, and that ordering is the containment
  *
@@ -74,6 +74,45 @@ function delay(ms: number): Promise<void> {
  * fact about that developer's machine (DOR-1712). It is pinned only when the
  * spec carries one — see `runner/claude-config.ts` for the one case where
  * isolating it would sign the run out of its own credential.
+ *
+ * ## Why the HOME pin rides on the same `if`, and is not a second decision
+ *
+ * `CLAUDE_CONFIG_DIR` alone answers what the MODEL reads. It does not answer
+ * what the SERVER enumerates, because the server's root set is a UNION, not a
+ * single directory: `resolveClaudeRootSet()` (in
+ * `apps/server/.../claude-code/claude-config-dir.ts`) keeps `~/.claude` in
+ * unconditionally, on purpose — dropping it would hide history from an operator
+ * who has switched accounts. So a sandboxed server pinned to a controlled config
+ * dir still listed, searched and read the operator's real transcripts, because
+ * `~` was still the operator's (DOR-1779).
+ *
+ * `HOME` is the whole of that `~`: `os.homedir()` reads it on POSIX (and
+ * `USERPROFILE` on Windows), so pinning both collapses every candidate in that
+ * union onto ONE directory. The sandbox layout is what makes the collapse total
+ * rather than merely narrower: the seeded config dir is `<sandboxRoot>/.claude`
+ * (`runner/claude-config.ts`), so with `HOME` at the sandbox root the
+ * unconditional `~/.claude` candidate IS the controlled empty one. The sandbox
+ * `DORK_HOME` is `<sandboxRoot>/.dork` for the same reason, which also keeps the
+ * server's home inside its own filesystem boundary instead of pointing outside
+ * it.
+ *
+ * It is deliberately NOT its own condition. Moving `HOME` is safe exactly when
+ * `runner/claude-config.ts` has already established that this run can
+ * authenticate without the operator's real directory — a portable key/token, or
+ * a sign-in file carried into the sandbox. On the one row that pin declines (a
+ * macOS sign-in living in the Keychain, which belongs to that exact directory),
+ * `HOME` must stay inherited too, or the harness would take away the home the
+ * credential is reached through while claiming to have taken away nothing. One
+ * `if` makes pinning one without the other unspellable.
+ *
+ * The other two runtimes lose nothing to the move. The `claude` binary is
+ * resolved by absolute path before `PATH` is ever consulted (`sdk-utils.ts`:
+ * env override → the SDK's bundled binary → `<dorkHome>/runtimes/claude-code`),
+ * none of which reads a home. OpenCode's sidecar is spawned from the absolute
+ * `openCodeBinaryPath` the run resolved, and its provider key reaches it as an
+ * environment VALUE — a run that would spend on OpenRouter is refused before
+ * anything boots unless `OPENROUTER_API_KEY` is set (`runner/credentials.ts`),
+ * so the sidecar never depended on a sign-in file under the operator's home.
  *
  * ## Why `DORKOS_BOUNDARY` must be set at all
  *
@@ -106,12 +145,23 @@ function buildEnv(spec: ServerLaunchSpec): NodeJS.ProcessEnv {
     DORKOS_HOST: spec.host,
     DORKOS_PORT: String(spec.port),
     // Spread rather than assigned, so declining to pin leaves an inherited
-    // `CLAUDE_CONFIG_DIR` exactly as it was. Writing `undefined` here would work
-    // for `spawn` (which skips undefined entries) but would silently ERASE an
-    // operator's own value on the one path that still depends on it — the local
-    // sign-in, whose identity is that directory.
+    // `CLAUDE_CONFIG_DIR` — and the operator's own `HOME` — exactly as they
+    // were. Writing `undefined` here would work for `spawn` (which skips
+    // undefined entries) but would silently ERASE an operator's own value on the
+    // one path that still depends on it — the local sign-in, whose identity is
+    // that directory and whose Keychain entry is reached through that home.
+    //
+    // `HOME`/`USERPROFILE` are what `os.homedir()` answers from, and the server's
+    // root set (`resolveClaudeRootSet`) unions in `~/.claude` unconditionally. So
+    // this line, not `CLAUDE_CONFIG_DIR`, is what stops a sandboxed server from
+    // enumerating the operator's real transcripts. `<sandboxRoot>/.claude` is the
+    // seeded controlled dir, so the union collapses onto it (DOR-1779).
     ...(spec.claudeConfigDir !== undefined
-      ? { CLAUDE_CONFIG_DIR: spec.claudeConfigDir }
+      ? {
+          CLAUDE_CONFIG_DIR: spec.claudeConfigDir,
+          HOME: sandboxRoot,
+          USERPROFILE: sandboxRoot,
+        }
       : undefined),
   };
   // A credentialed run uses the real claude-code runtime — never the harness's
