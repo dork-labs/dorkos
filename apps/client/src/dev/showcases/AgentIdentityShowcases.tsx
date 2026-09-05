@@ -19,8 +19,8 @@ const JUST_SELECTED_MS = 600;
 
 /**
  * Demo state for one `AvatarColorGrid` + `AvatarEmojiGrid` pair — enough to
- * drive the grids without the real `IdentityTab` / `AvatarPickerPanel`
- * data context they normally sit inside. `justSelected` mirrors
+ * drive the grids without the real `AvatarPickerPanel` data context they
+ * normally sit inside. `justSelected` mirrors
  * `AvatarPickerPanel`'s own `showCheckmark`: a momentary key, not one
  * bound to the current selection, so the checkmark burst fires once and
  * clears rather than sitting lit forever on whatever is picked.
@@ -227,9 +227,9 @@ export function AgentIdentityShowcases() {
 
       <PlaygroundSection
         title="AvatarPickerGrid"
-        description="The color-swatch and emoji grids shared by every avatar picker (IdentityTab, AvatarPickerPanel) — collapsed to one implementation in DOR-970. The two containers around it stay different: a plain settings-form popover vs. a celebratory panel with hover preview and a selection burst."
+        description="The color-swatch and emoji grids shared by every avatar picker — collapsed to one implementation in DOR-970. Two containers were built on it: a plain settings-form popover and a celebratory panel with hover preview and a selection burst. Only the celebratory one still ships (DOR-1735 deleted the settings form), so this showcase is now the plain variant's only home."
       >
-        <ShowcaseLabel>Plain container (the IdentityTab popover)</ShowcaseLabel>
+        <ShowcaseLabel>Plain container (no celebratory chrome)</ShowcaseLabel>
         <ShowcaseDemo>
           <div className="flex flex-wrap items-start gap-4">
             <div className="w-auto rounded-md border p-3">

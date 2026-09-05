@@ -44,10 +44,6 @@ vi.mock('@tanstack/react-router', () => ({
   useRouter: () => ({ state: { location: { search: currentSearch } } }),
 }));
 
-vi.mock('@/layers/features/agent-settings', () => ({
-  AgentDialog: () => null,
-}));
-
 // Mock AgentEmptyFilterState to make it easily assertable. `AgentRosterFilterEmpty`
 // keeps its real copy: the words are the assertion, since that state's whole job
 // is telling you WHICH filters emptied the table.

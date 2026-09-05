@@ -1,11 +1,11 @@
 /**
- * Agent settings feature — dialog for configuring agent identity, persona, and capabilities.
+ * Agent settings feature — the connection, tool and convention-file surfaces the
+ * profile composes into its agent pages, plus the MCP server cards they render.
  *
  * @module features/agent-settings
  */
 // Tab components — exported for reuse in sibling feature UI: the profile
 // composes these as pages (Connections, Tools & MCP).
-export { IdentityTab } from './ui/IdentityTab';
 export { IntegrationsTab } from './ui/IntegrationsTab';
 export { ToolsTab } from './ui/ToolsTab';
 // The convention-file editor on its own: the profile gives SOUL.md and NOPE.md

@@ -802,9 +802,9 @@ describe('IntegrationsTab', () => {
   describe('inline wizard flow', () => {
     /**
      * Verifies that clicking an "Available to set up" item opens the
-     * AdapterSetupWizard without closing the AgentDialog.
+     * AdapterSetupWizard inline, without tearing down the tab around it.
      */
-    it('opens AdapterSetupWizard inline without closing the AgentDialog', async () => {
+    it('opens AdapterSetupWizard inline without tearing down the tab', async () => {
       // Provide a catalog with an unconfigured adapter type (no instances)
       mockUseExternalAdapterCatalog.mockReturnValue({
         data: [

@@ -82,8 +82,8 @@ export function usePersonalityCommit(
   const agentId = agent?.id ?? null;
   useEffect(() => {
     // A different agent's profile is a different personality; the local choice
-    // does not follow it across. Same reset-on-key contract `useDebouncedInput`
-    // uses for text.
+    // does not follow it across — the same reset-on-key contract the app's
+    // debounced text inputs use.
     //
     // **The scheduled save has to go with it, and forgetting that wrote one
     // agent's personality onto another.** The flush reads the CURRENT agent, so
