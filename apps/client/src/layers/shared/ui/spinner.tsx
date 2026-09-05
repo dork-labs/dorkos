@@ -17,12 +17,15 @@ import { cn } from '@/layers/shared/lib/utils';
 
 const spinnerVariants = cva('animate-spin', {
   variants: {
-    // The shared icon scale, not literal pixels: these tokens grow with the
-    // app's icon-size setting, so a spinner beside an icon stays its size.
     size: {
+      // The shared icon scale, not literal pixels: these three tokens grow
+      // with the app's icon-size setting, so a spinner beside an icon stays
+      // its size.
       xs: 'size-(--size-icon-xs)',
       sm: 'size-(--size-icon-sm)',
       md: 'size-(--size-icon-md)',
+      // A literal, not a scale token — there is no `--size-icon-lg`. For a
+      // spinner standing alone at a larger size, not beside a scaled icon.
       lg: 'size-8',
     },
   },
@@ -49,7 +52,8 @@ export interface SpinnerProps
  * `label` when the spinner stands alone and a reader would otherwise be told
  * nothing at all.
  *
- * @param size - `xs`, `sm` (default), `md`, or `lg` on the shared icon scale.
+ * @param size - `xs`, `sm` (default), or `md` on the shared icon scale, or the
+ * fixed literal `lg` for a spinner standing alone.
  * @param label - Announce this instead of hiding the spinner.
  */
 function Spinner({ className, size, label, ...props }: SpinnerProps) {

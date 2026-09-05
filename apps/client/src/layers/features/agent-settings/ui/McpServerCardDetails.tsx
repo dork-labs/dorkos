@@ -8,6 +8,9 @@ import { scopeTooltip, type McpServerScope } from '../lib/mcp-scope';
 /** How many tools are listed before the rest hide behind "Show N more". */
 const TOOLS_SHOWN_BY_DEFAULT = 3;
 
+/** The label reads quieter than the value it names — a step down from the block's own tint. */
+const LABEL_CLASS = 'text-muted-foreground/70';
+
 /** One tool a server exposes, as Details lists it. */
 export interface McpToolSummary {
   /** The tool's name, as the agent would call it. */
@@ -132,7 +135,7 @@ export function McpServerCardDetails({
   return (
     <div className="border-border/60 text-muted-foreground mt-2 space-y-1 border-t pt-2 text-xs leading-relaxed">
       {connection && (
-        <DetailRow label="Sign-in" align="start" wrap>
+        <DetailRow label="Sign-in" align="start" wrap labelClassName={LABEL_CLASS}>
           <span className="inline-flex items-start gap-1.5">
             <ShieldCheck className="mt-0.5 size-3 shrink-0" aria-hidden />
             {signInRowCopy({ connection, authStatus, clientOrigin: authClientOrigin })}
@@ -141,31 +144,31 @@ export function McpServerCardDetails({
       )}
 
       {source && (
-        <DetailRow label="Source" align="start" wrap>
+        <DetailRow label="Source" align="start" wrap labelClassName={LABEL_CLASS}>
           {source}
         </DetailRow>
       )}
 
       {rawName !== displayName && (
-        <DetailRow label="Raw id" align="start" wrap>
+        <DetailRow label="Raw id" align="start" wrap labelClassName={LABEL_CLASS}>
           <code className="text-2xs font-mono">{rawName}</code>
         </DetailRow>
       )}
 
       {serverInfo && (
-        <DetailRow label="Server" align="start" wrap>
+        <DetailRow label="Server" align="start" wrap labelClassName={LABEL_CLASS}>
           {serverInfo}
         </DetailRow>
       )}
 
       {alsoUsedBy && (
-        <DetailRow label="Also used by" align="start" wrap>
+        <DetailRow label="Also used by" align="start" wrap labelClassName={LABEL_CLASS}>
           {alsoUsedBy}
         </DetailRow>
       )}
 
       {typeof toolCount === 'number' && (
-        <DetailRow label="Tools" align="start">
+        <DetailRow label="Tools" align="start" labelClassName={LABEL_CLASS}>
           {toolCount}
         </DetailRow>
       )}
@@ -173,7 +176,7 @@ export function McpServerCardDetails({
       {tools && tools.length > 0 && <ToolList tools={tools} />}
 
       {error && (
-        <DetailRow label="Error" align="start" wrap>
+        <DetailRow label="Error" align="start" wrap labelClassName={LABEL_CLASS}>
           <code className="text-2xs font-mono break-all">{error}</code>
         </DetailRow>
       )}

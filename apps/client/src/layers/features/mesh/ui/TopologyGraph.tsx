@@ -291,6 +291,7 @@ function TopologyGraphInner({
         className="h-full"
         icon={Globe}
         headline="No agents discovered yet"
+        headingLevel={3}
         description="Discover agents from your workspace to see them on the topology graph."
         action={
           onGoToDiscovery

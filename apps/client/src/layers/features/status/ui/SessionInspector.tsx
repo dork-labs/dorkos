@@ -277,7 +277,7 @@ function SubagentRow({ subagent }: { subagent: ActiveSubagent }) {
       data-status={subagent.status}
       className="space-y-0.5 py-1"
     >
-      <div className="flex items-center gap-2 text-sm">
+      <div className="flex items-center gap-2">
         <Users className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
         <span className="min-w-0 flex-1 truncate">{subagent.description ?? subagent.taskId}</span>
         <Badge size="xs" variant="secondary" className="shrink-0">

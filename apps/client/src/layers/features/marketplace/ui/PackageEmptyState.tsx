@@ -46,6 +46,7 @@ export function PackageEmptyState({
       className="rounded-xl border border-dashed"
       icon={PackageSearch}
       headline={title}
+      headingLevel={3}
       description={description}
       action={
         onResetFilters

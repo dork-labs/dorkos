@@ -39,6 +39,8 @@ export interface DetailRowProps {
   swatch?: string;
   /** Show a copy button, and give it this text. */
   copyValue?: string;
+  /** Extra classes for the label — a lighter tint, to read quieter than the value. */
+  labelClassName?: string;
   /** Extra classes for the value — a mono face, a warning tint. */
   valueClassName?: string;
   className?: string;
@@ -55,6 +57,7 @@ export interface DetailRowProps {
  * @param indent - Nest the row under the one above it.
  * @param swatch - A colour dot before the label.
  * @param copyValue - Show a copy button carrying this text.
+ * @param labelClassName - Extra classes for the label.
  * @param valueClassName - Extra classes for the value.
  */
 function DetailRow({
@@ -65,6 +68,7 @@ function DetailRow({
   indent = false,
   swatch,
   copyValue,
+  labelClassName,
   valueClassName,
   className,
   ...rest
@@ -87,7 +91,13 @@ function DetailRow({
           style={{ backgroundColor: swatch }}
         />
       )}
-      <span className={cn('text-muted-foreground shrink-0', align === 'start' && 'w-20')}>
+      <span
+        className={cn(
+          'text-muted-foreground shrink-0',
+          align === 'start' && 'w-20',
+          labelClassName
+        )}
+      >
         {label}
       </span>
       <span

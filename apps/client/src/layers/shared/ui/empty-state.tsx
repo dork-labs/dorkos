@@ -54,6 +54,14 @@ export interface EmptyStateProps extends VariantProps<typeof emptyStateIconVaria
   action?: EmptyStateAction;
   /** A faded sketch of what this panel looks like with content in it. */
   preview?: ReactNode;
+  /**
+   * Render the headline as a real heading at this level instead of a plain
+   * paragraph — a navigable landmark for a panel that anchors a page or a
+   * grid (e.g. the marketplace catalog, the topology canvas). Leave it off
+   * — the default — for an empty state nested inside a section that already
+   * has its own heading.
+   */
+  headingLevel?: 2 | 3 | 4;
   className?: string;
 }
 
@@ -69,6 +77,7 @@ export interface EmptyStateProps extends VariantProps<typeof emptyStateIconVaria
  * @param action - The way out, when there is one.
  * @param preview - A faded sketch of the filled state, rendered above the icon.
  * @param tone - `muted` (default) for an empty panel, `destructive` for a failed one.
+ * @param headingLevel - Render the headline as an `h2`/`h3`/`h4` landmark instead of a paragraph.
  */
 function EmptyState({
   icon: Icon,
@@ -77,8 +86,10 @@ function EmptyState({
   action,
   preview,
   tone,
+  headingLevel,
   className,
 }: EmptyStateProps) {
+  const Headline = headingLevel ? (`h${headingLevel}` as const) : 'p';
   return (
     <div
       data-slot="empty-state"
@@ -93,7 +104,7 @@ function EmptyState({
         <Icon className="size-6" aria-hidden />
       </div>
       <div className="space-y-1">
-        <p className="text-sm font-medium">{headline}</p>
+        <Headline className="text-sm font-medium">{headline}</Headline>
         <p className="text-muted-foreground max-w-[280px] text-xs">{description}</p>
       </div>
       {action && (
@@ -101,7 +112,7 @@ function EmptyState({
           size="sm"
           variant={action.variant}
           onClick={action.onClick}
-          disabled={action.disabled ?? action.busy}
+          disabled={action.disabled || action.busy}
           className="mt-1"
         >
           {action.busy && <Spinner size="xs" />}
