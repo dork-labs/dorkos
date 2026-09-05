@@ -1,10 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
-import {
-  hashToHslColor,
-  generateCircleFavicon,
-  generateTasksFrames,
-  setFavicon,
-} from '@/layers/shared/lib';
+import { hashToHslColor, generateCircleFavicon, generateTasksFrames, setFavicon } from '@/layers/shared/lib/favicon-utils';
 
 interface UseFaviconOptions {
   cwd: string | null;

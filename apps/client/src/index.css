@@ -960,9 +960,15 @@ body {
 }
 
 /* The "work is happening" breath, worn by ~20 call sites (ThinkingBlock,
-   MemoryRecallBlock, loading skeletons, connection dots) that referenced
-   `animate-tasks` for a long time while no keyframe existed — the pulse was
-   silently dead CSS.
+   MemoryRecallBlock, loading skeletons, connection dots) that referenced it for
+   a long time while no keyframe existed — the pulse was silently dead CSS.
+
+   It was called `animate-tasks` until DOR-1761. A class name is API, and that
+   one misled twice: it says nothing about a breath, and `tasks` is already the
+   name of a product surface (`/tasks`, `entities/tasks`, Pulse schedules), so a
+   reader of `skeleton.tsx` — the client's second most-used primitive — could
+   reasonably conclude the skeleton was task-related. `breath` is what it does,
+   and it reads as the faster, quieter cousin of `breathe` that it is.
 
    A 1.6s cycle, so it reads as attentive rather than sleepy.
 
@@ -976,7 +982,7 @@ body {
    reduced-motion fallback below): it changes only how present the thing is, not
    where it is. Opacity is compositor-friendly, so a page full of skeletons
    stays cheap. */
-@keyframes tasks {
+@keyframes breath {
   0%,
   100% {
     opacity: 0.6;
@@ -986,8 +992,8 @@ body {
   }
 }
 
-@utility animate-tasks {
-  animation-name: tasks;
+@utility animate-breath {
+  animation-name: breath;
   animation-duration: 1.6s;
   animation-timing-function: ease-in-out;
   animation-iteration-count: infinite;
@@ -1005,7 +1011,7 @@ body {
    leaves nothing behind for the next paint to composite. It is drawn by a
    decorative `aria-hidden` span inside the button, absolutely positioned and
    pointer-events-none, so the button's own box never moves — the actionability
-   trap `animate-tasks` documents above. Call sites gate it with `motion-safe:`
+   trap `animate-breath` documents above. Call sites gate it with `motion-safe:`
    and skip it entirely under `useReducedMotion()`. */
 @keyframes beacon-ripple {
   from {

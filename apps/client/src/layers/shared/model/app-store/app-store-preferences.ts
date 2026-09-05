@@ -10,18 +10,10 @@
  * @module shared/model/app-store-preferences
  */
 import type { StateCreator } from 'zustand';
-import type { FontFamilyKey } from '@/layers/shared/lib';
-import {
-  DEFAULT_FONT,
-  getFontConfig,
-  isValidFontKey,
-  loadGoogleFont,
-  removeGoogleFont,
-  applyFontCSS,
-  removeFontCSS,
-  STORAGE_KEYS,
-  FONT_SCALE_MAP,
-} from '@/layers/shared/lib';
+import type { FontFamilyKey } from '@/layers/shared/lib/font-config';
+import { STORAGE_KEYS, FONT_SCALE_MAP } from '@/layers/shared/lib/constants';
+import { DEFAULT_FONT, getFontConfig, isValidFontKey } from '@/layers/shared/lib/font-config';
+import { loadGoogleFont, removeGoogleFont, applyFontCSS, removeFontCSS } from '@/layers/shared/lib/font-loader';
 import { readBool, writeBool, BOOL_KEYS, BOOL_DEFAULTS } from './app-store-helpers';
 import type { AppState } from './app-store-types';
 

@@ -4,7 +4,7 @@
  * @module shared/model/interaction/use-drag-vs-tap-guard
  */
 import { useCallback, useRef } from 'react';
-import { LONG_PRESS_DRIFT_PX } from '@/layers/shared/lib';
+import { LONG_PRESS_DRIFT_PX } from '@/layers/shared/lib/constants';
 
 /** The fields a guard needs off a pointer or click event. */
 export interface DragVsTapPoint {

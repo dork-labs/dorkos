@@ -10,7 +10,7 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from './drawer';
-import { cn } from '../lib/utils';
+import { cn } from '@/layers/shared/lib/utils';
 import { Button } from './button';
 
 interface ResponsivePopoverContextValue {
@@ -31,7 +31,7 @@ function useResponsivePopover(): ResponsivePopoverContextValue {
   return ctx;
 }
 
-interface ResponsivePopoverProps {
+export interface ResponsivePopoverProps {
   children: React.ReactNode;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -133,7 +133,7 @@ function ResponsivePopoverContent({
         <DrawerClose asChild>
           <Button
             variant="ghost"
-            size="icon"
+            size="icon-md"
             aria-label="Close"
             className="text-muted-foreground hover:text-foreground absolute top-2 right-2"
           >

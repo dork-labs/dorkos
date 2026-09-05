@@ -103,7 +103,7 @@ export function ConnectionItem({ connectionState, compact }: ConnectionItemProps
             className={cn(
               'size-1.5 shrink-0 rounded-full',
               config.color,
-              config.tasks && 'animate-tasks'
+              config.tasks && 'animate-breath'
             )}
           />
           <span className="text-muted-foreground truncate">

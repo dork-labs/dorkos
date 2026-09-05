@@ -23,12 +23,12 @@ import { ClipboardList, Lock, Shield, Sparkles, Zap } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { PermissionModeDescriptor, PermissionStop } from '@dorkos/shared/agent-runtime';
 import {
-  cn,
   isWorkingMode,
-  permissionModeLabel,
   resolveTrustStops,
   type TrustStop,
-} from '@/layers/shared/lib';
+} from '@dorkos/shared/permission-semantics';
+import { permissionModeLabel } from '@/layers/shared/lib/permission-mode';
+import { cn } from '@/layers/shared/lib/utils';
 import { SegmentedControl, SegmentedControlItem } from './segmented-control';
 import { Switch } from './switch';
 import { trustToneText } from './trust-tone';
@@ -245,6 +245,8 @@ export interface TrustDialProps {
    * Anything not supplied keeps the default word.
    */
   stopLabels?: Partial<Record<PermissionStop, string>>;
+  /** Chrome for the wrapper — margins, width. The caller owns it. */
+  className?: string;
 }
 
 /**
@@ -281,6 +283,7 @@ export function TrustDial({
   strandsWorkingMode,
   stopLabels,
   onUnlock,
+  className,
 }: TrustDialProps) {
   const captionId = useId();
   /** This dial's word for each stop: the caller's where it has one, ours otherwise. */
@@ -310,7 +313,7 @@ export function TrustDial({
   const stranded = unplaceable && stops.length > 0;
 
   return (
-    <div className="flex flex-col gap-2">
+    <div data-slot="trust-dial" className={cn('flex flex-col gap-2', className)}>
       {stops.length > 0 && (
         <SegmentedControl
           aria-label="How much this agent may do before it checks with you"

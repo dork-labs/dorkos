@@ -2,7 +2,7 @@ import { Textarea } from '@/layers/shared/ui/textarea';
 import { Field, FieldLabel, FieldDescription, FieldError } from '@/layers/shared/ui/field';
 import { useFieldContext } from '@/layers/shared/lib/form-context';
 
-interface TextareaFieldProps {
+export interface TextareaFieldProps {
   label: string;
   placeholder?: string;
   description?: string;

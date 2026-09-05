@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useAppStore } from '../app-store';
-import { DEFAULT_FONT } from '@/layers/shared/lib';
+import { DEFAULT_FONT } from '@/layers/shared/lib/font-config';
 
 /**
  * The two resets, side by side. What keeps them honest is that each assertion

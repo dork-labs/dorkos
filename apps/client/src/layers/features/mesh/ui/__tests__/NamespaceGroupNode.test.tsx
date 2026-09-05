@@ -135,18 +135,18 @@ describe('NamespaceGroupNode', () => {
       expect(dots.length).toBe(0);
     });
 
-    it('applies animate-tasks class when reduced motion is not preferred', () => {
+    it('applies animate-breath class when reduced motion is not preferred', () => {
       mockUsePrefersReducedMotion.mockReturnValue(false);
       const { container } = render(<NamespaceGroupNode {...makeMockProps({ activeCount: 1 })} />);
       const dot = container.querySelector('.h-1\\.5.w-1\\.5.rounded-full');
-      expect(dot?.className).toContain('animate-tasks');
+      expect(dot?.className).toContain('animate-breath');
     });
 
-    it('does not apply animate-tasks class when reduced motion is preferred', () => {
+    it('does not apply animate-breath class when reduced motion is preferred', () => {
       mockUsePrefersReducedMotion.mockReturnValue(true);
       const { container } = render(<NamespaceGroupNode {...makeMockProps({ activeCount: 1 })} />);
       const dot = container.querySelector('.h-1\\.5.w-1\\.5.rounded-full');
-      expect(dot?.className).not.toContain('animate-tasks');
+      expect(dot?.className).not.toContain('animate-breath');
     });
 
     it('uses namespace color for the tasks dot background', () => {

@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import type { FallbackProps } from 'react-error-boundary';
-import { stashPendingFeedback } from '@/layers/shared/lib';
+import { stashPendingFeedback } from '@/layers/shared/lib/pending-feedback';
 
 /**
  * Last-resort crash fallback for catastrophic errors.
@@ -85,6 +85,7 @@ export function AppCrashFallback({ error }: FallbackProps) {
 
       <div style={{ marginTop: '1.5rem', display: 'flex', gap: '0.75rem' }}>
         <button
+          type="button"
           onClick={reportCrash}
           style={{ ...CRASH_BUTTON_STYLE, borderColor: '#52525b' }}
           onMouseOver={(e) => {
@@ -103,6 +104,7 @@ export function AppCrashFallback({ error }: FallbackProps) {
           Report this crash
         </button>
         <button
+          type="button"
           onClick={() => window.location.reload()}
           style={CRASH_BUTTON_STYLE}
           onMouseOver={(e) => {

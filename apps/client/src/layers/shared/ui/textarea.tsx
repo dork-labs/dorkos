@@ -2,7 +2,15 @@ import * as React from 'react';
 
 import { cn } from '@/layers/shared/lib/utils';
 
-/** Styled multi-line text input with focus ring and validation states. */
+/**
+ * A multi-line text box.
+ *
+ * No `responsive` prop, unlike its siblings, and that is a decision rather than
+ * an omission: `min-h-[60px]` already clears the 44px touch target at every
+ * width, so there is nothing to grow into. The text still steps from 16px to
+ * 14px past `md` for the same reason `Input` does — iOS zooms the page in on any
+ * smaller input that takes focus.
+ */
 function Textarea({ className, ...props }: React.ComponentProps<'textarea'>) {
   return (
     <textarea

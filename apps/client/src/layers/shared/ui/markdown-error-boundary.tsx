@@ -1,6 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 
-interface MarkdownErrorBoundaryProps {
+export interface MarkdownErrorBoundaryProps {
   /** The markdown subtree to guard (a `Streamdown` render). */
   children: ReactNode;
   /**

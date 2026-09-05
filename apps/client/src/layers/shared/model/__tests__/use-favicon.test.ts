@@ -14,7 +14,7 @@ vi.mock('@/layers/shared/lib', () => ({
   setFavicon: vi.fn(),
 }));
 
-import { generateCircleFavicon, generateTasksFrames, setFavicon } from '@/layers/shared/lib';
+import { generateCircleFavicon, generateTasksFrames, setFavicon } from '@/layers/shared/lib/favicon-utils';
 
 describe('useFavicon', () => {
   beforeEach(() => {

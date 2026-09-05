@@ -82,7 +82,7 @@ describe('ActivityFeed', () => {
       render(<ActivityFeed enabled={true} />);
 
       // The loading skeleton renders 3 animated placeholder divs
-      const skeletons = document.querySelectorAll('.animate-tasks');
+      const skeletons = document.querySelectorAll('.animate-breath');
       expect(skeletons.length).toBeGreaterThan(0);
     });
 

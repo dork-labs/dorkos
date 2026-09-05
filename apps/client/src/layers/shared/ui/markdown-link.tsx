@@ -43,10 +43,11 @@
  * app's link-dispatch policy.
  */
 import { memo, useCallback, useState, type ComponentProps, type MouseEvent } from 'react';
-import { cn, isWebUrl, openExternalLink } from '@/layers/shared/lib';
+import { isWebUrl, openExternalLink } from '@/layers/shared/lib/link-navigation';
+import { cn } from '@/layers/shared/lib/utils';
 import { LinkSafetyModal } from './link-safety-modal';
 
-type MarkdownLinkProps = Omit<ComponentProps<'a'>, 'onClick'> & {
+export type MarkdownLinkProps = Omit<ComponentProps<'a'>, 'onClick'> & {
   /** Streamdown's hast node for this element — unused; declared only so the
    * prop shape matches what Streamdown's `Components['a']` slot passes. */
   node?: unknown;

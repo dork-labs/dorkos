@@ -32,8 +32,8 @@ export function ServerTab() {
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="flex items-center justify-between py-1">
-              <div className="bg-muted animate-tasks h-4 w-24 rounded" />
-              <div className="bg-muted animate-tasks h-4 w-16 rounded" />
+              <div className="bg-muted animate-breath h-4 w-24 rounded" />
+              <div className="bg-muted animate-breath h-4 w-16 rounded" />
             </div>
           ))}
         </div>

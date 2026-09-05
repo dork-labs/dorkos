@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { TriangleAlert } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn } from '@/layers/shared/lib/utils';
 import { STATUS_TONE_SURFACE, STATUS_TONE_TEXT } from './status-dot';
 import {
   ResponsivePopover,

@@ -6,6 +6,25 @@ import { Checkbox as CheckboxPrimitive } from 'radix-ui';
 
 import { cn } from '@/layers/shared/lib/utils';
 
+/** Props for {@link Checkbox}. */
+export interface CheckboxProps
+  extends React.ComponentProps<typeof CheckboxPrimitive.Root> {
+  /**
+   * Grow the box a step on smaller screens, back to 16px past `md`.
+   *
+   * On by default, matching `Switch`, `Input` and `Button` — a form whose text
+   * fields grow on a phone while its checkboxes hold at 16px reads as unfinished.
+   *
+   * A checkbox never reaches the full 44px touch target; at that size it would
+   * dwarf the line of text beside it. The label is the thumb-sized target, and
+   * clicking it ticks the box — which is why every checkbox here is paired with
+   * a `FieldLabel` rather than left on its own.
+   *
+   * @default true
+   */
+  responsive?: boolean;
+}
+
 /**
  * A checkbox that answers a click the way its siblings do.
  *
@@ -17,12 +36,13 @@ import { cn } from '@/layers/shared/lib/utils';
  * (DOR-1751). The tick still reads statically under reduced motion: the global
  * reset flattens the duration and leaves the end state alone.
  */
-function Checkbox({ className, ...props }: React.ComponentProps<typeof CheckboxPrimitive.Root>) {
+function Checkbox({ className, responsive = true, ...props }: CheckboxProps) {
   return (
     <CheckboxPrimitive.Root
       data-slot="checkbox"
       className={cn(
-        'peer border-input focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground dark:bg-input/30 dark:aria-invalid:ring-destructive/40 dark:data-[state=checked]:bg-primary size-4 shrink-0 rounded-[4px] border shadow-xs transition-[color,background-color,border-color,box-shadow] duration-100 outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50',
+        'peer border-input focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground dark:bg-input/30 dark:aria-invalid:ring-destructive/40 dark:data-[state=checked]:bg-primary shrink-0 rounded-[4px] border shadow-xs transition-[color,background-color,border-color,box-shadow] duration-100 outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50',
+        responsive ? 'size-5 md:size-4' : 'size-4',
         className
       )}
       {...props}

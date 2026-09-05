@@ -4,34 +4,65 @@ import { ContextMenu as ContextMenuPrimitive } from 'radix-ui';
 
 import { cn } from '@/layers/shared/lib/utils';
 
+/**
+ * The right-click menu, wrapping the area that owns it.
+ *
+ * One trigger, one content. It opens where the pointer is rather than under an
+ * anchor, which is the whole difference from `DropdownMenu` — reach for that one
+ * when there is a button to hang the menu off.
+ */
 function ContextMenu({ ...props }: React.ComponentProps<typeof ContextMenuPrimitive.Root>) {
   return <ContextMenuPrimitive.Root data-slot="context-menu" {...props} />;
 }
 
+/**
+ * The region a right-click (or long-press) opens the menu over.
+ */
 function ContextMenuTrigger({
   ...props
 }: React.ComponentProps<typeof ContextMenuPrimitive.Trigger>) {
   return <ContextMenuPrimitive.Trigger data-slot="context-menu-trigger" {...props} />;
 }
 
+/**
+ * A run of related items, so keyboard navigation and labels stay together.
+ */
 function ContextMenuGroup({ ...props }: React.ComponentProps<typeof ContextMenuPrimitive.Group>) {
   return <ContextMenuPrimitive.Group data-slot="context-menu-group" {...props} />;
 }
 
+/**
+ * Renders the menu at the end of the document, clear of any clipping ancestor.
+ *
+ * {@link ContextMenuContent} already portals itself, so this is only needed when
+ * building a content surface by hand.
+ */
 function ContextMenuPortal({ ...props }: React.ComponentProps<typeof ContextMenuPrimitive.Portal>) {
   return <ContextMenuPrimitive.Portal data-slot="context-menu-portal" {...props} />;
 }
 
+/**
+ * A nested menu — pair a {@link ContextMenuSubTrigger} with a
+ * {@link ContextMenuSubContent} inside it.
+ */
 function ContextMenuSub({ ...props }: React.ComponentProps<typeof ContextMenuPrimitive.Sub>) {
   return <ContextMenuPrimitive.Sub data-slot="context-menu-sub" {...props} />;
 }
 
+/**
+ * A set of {@link ContextMenuRadioItem}s where exactly one is chosen.
+ */
 function ContextMenuRadioGroup({
   ...props
 }: React.ComponentProps<typeof ContextMenuPrimitive.RadioGroup>) {
   return <ContextMenuPrimitive.RadioGroup data-slot="context-menu-radio-group" {...props} />;
 }
 
+/**
+ * The item that opens a nested menu, with the chevron drawn for you.
+ *
+ * `inset` indents it to line up with items that carry a check or a radio dot.
+ */
 function ContextMenuSubTrigger({
   className,
   inset,
@@ -56,6 +87,9 @@ function ContextMenuSubTrigger({
   );
 }
 
+/**
+ * The panel a nested menu opens into.
+ */
 function ContextMenuSubContent({
   className,
   ...props
@@ -72,6 +106,12 @@ function ContextMenuSubContent({
   );
 }
 
+/**
+ * The menu panel itself, portalled out so no `overflow: hidden` can clip it.
+ *
+ * Scrolls inside its own height rather than pushing the page, so a long menu
+ * never runs off the bottom of the window.
+ */
 function ContextMenuContent({
   className,
   ...props
@@ -90,6 +130,12 @@ function ContextMenuContent({
   );
 }
 
+/**
+ * One action in the menu.
+ *
+ * `variant="destructive"` turns it red — for deletes and anything else that
+ * cannot be taken back. `inset` indents it to line up with checkable items.
+ */
 function ContextMenuItem({
   className,
   inset,
@@ -113,6 +159,9 @@ function ContextMenuItem({
   );
 }
 
+/**
+ * An item that carries an on/off state, shown as a tick in the left gutter.
+ */
 function ContextMenuCheckboxItem({
   className,
   children,
@@ -139,6 +188,9 @@ function ContextMenuCheckboxItem({
   );
 }
 
+/**
+ * One option inside a {@link ContextMenuRadioGroup}, shown as a dot when chosen.
+ */
 function ContextMenuRadioItem({
   className,
   children,
@@ -163,6 +215,9 @@ function ContextMenuRadioItem({
   );
 }
 
+/**
+ * A non-clickable heading over a group of items.
+ */
 function ContextMenuLabel({
   className,
   inset,
@@ -180,6 +235,9 @@ function ContextMenuLabel({
   );
 }
 
+/**
+ * A hairline between two groups of items.
+ */
 function ContextMenuSeparator({
   className,
   ...props
@@ -193,6 +251,11 @@ function ContextMenuSeparator({
   );
 }
 
+/**
+ * The keyboard shortcut for an item, pushed to the right edge.
+ *
+ * A hint only — it does not bind the key. Register that where the command lives.
+ */
 function ContextMenuShortcut({ className, ...props }: React.ComponentProps<'span'>) {
   return (
     <span

@@ -43,7 +43,7 @@ describe('animation utilities wiring (index.css)', () => {
 
   it('defines the collapsible keyframes the Collapsible primitive wears', () => {
     // This repo has shipped a class name whose keyframe did not exist twice
-    // (`animate-tasks` for months, and `animations.md` pointed at accordion
+    // (`animate-breath` for months, and `animations.md` pointed at accordion
     // keyframes that were never written) — a dead animation looks exactly like
     // a working one in a diff. `shared/ui/collapsible.tsx` wears both of these.
     // The keyframes live in `tw-animate-css`, not `index.css` (DOR-1751): a

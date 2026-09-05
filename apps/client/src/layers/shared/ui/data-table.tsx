@@ -8,7 +8,7 @@ import {
   type TableOptions,
 } from '@tanstack/react-table';
 import { useIsMobile } from '@/layers/shared/model';
-import { cn } from '@/layers/shared/lib';
+import { cn } from '@/layers/shared/lib/utils';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './table';
 
 // ---------------------------------------------------------------------------
@@ -219,4 +219,4 @@ function DataTable<TData, TValue>({
 }
 
 export { DataTable };
-export type { DataTableProps };
+export type { DataTableProps, DataTableGrouping };

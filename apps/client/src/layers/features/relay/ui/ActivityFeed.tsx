@@ -136,9 +136,9 @@ export function ActivityFeed({
         {[1, 2, 3].map((i) => (
           <div key={i} className="rounded-lg border p-3">
             <div className="flex items-center gap-2">
-              <div className="bg-muted animate-tasks size-4 rounded" />
-              <div className="bg-muted animate-tasks h-4 w-40 rounded" />
-              <div className="bg-muted animate-tasks ml-auto h-3 w-16 rounded" />
+              <div className="bg-muted animate-breath size-4 rounded" />
+              <div className="bg-muted animate-breath h-4 w-40 rounded" />
+              <div className="bg-muted animate-breath ml-auto h-3 w-16 rounded" />
             </div>
           </div>
         ))}

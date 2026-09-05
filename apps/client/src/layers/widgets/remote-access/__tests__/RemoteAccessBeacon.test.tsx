@@ -198,10 +198,10 @@ describe('how much it moves', () => {
     await waitFor(() => expect(useRemoteAccessStore.getState().tokenConfigured).toBe(true));
 
     act(() => useRemoteAccessStore.getState().beginStart());
-    expect(beacon()?.innerHTML).toContain('motion-safe:animate-tasks');
+    expect(beacon()?.innerHTML).toContain('motion-safe:animate-breath');
 
     act(() => useRemoteAccessStore.getState().settleStart('https://calm-otter.ngrok.app'));
-    expect(beacon()?.innerHTML).not.toContain('animate-tasks');
+    expect(beacon()?.innerHTML).not.toContain('animate-breath');
   });
 
   it('collapses every part of that under prefers-reduced-motion', async () => {

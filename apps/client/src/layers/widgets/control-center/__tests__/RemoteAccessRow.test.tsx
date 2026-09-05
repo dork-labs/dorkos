@@ -131,7 +131,7 @@ describe('connecting', () => {
     expect(description()).toHaveTextContent('Connecting…');
     // Opacity-only, and `motion-safe` so a reader who asked for less motion
     // still gets the word.
-    expect(description().className).toContain('motion-safe:animate-tasks');
+    expect(description().className).toContain('motion-safe:animate-breath');
     expect(screen.getByRole('switch', { name: 'Remote access' })).toBeDisabled();
   });
 });

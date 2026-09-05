@@ -1,7 +1,9 @@
 import { useRouter } from '@tanstack/react-router';
 import type { ErrorComponentProps } from '@tanstack/react-router';
 import { AlertTriangle, Check, Copy, X } from 'lucide-react';
-import { cn, isDynamicImportError, useCopyFeedback } from '@/layers/shared/lib';
+import { isDynamicImportError } from '@/layers/shared/lib/dynamic-import-error';
+import { useCopyFeedback } from '@/layers/shared/lib/use-copy-feedback';
+import { cn } from '@/layers/shared/lib/utils';
 import { Button } from './button';
 import { LinkifiedText } from './linkified-text';
 
@@ -63,6 +65,7 @@ export function RouteErrorFallback({ error }: ErrorComponentProps) {
           </summary>
           <div className="relative mt-2">
             <button
+              type="button"
               onClick={copyStack}
               title="Copy stack trace"
               className="text-muted-foreground hover:text-foreground hover:bg-muted absolute top-0 right-0 flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors"

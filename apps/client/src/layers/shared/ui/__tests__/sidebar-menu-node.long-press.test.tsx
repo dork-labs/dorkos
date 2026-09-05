@@ -18,7 +18,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vite
 import { act, render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { Pin, FolderInput, Trash2, ListFilter } from 'lucide-react';
-import { LONG_PRESS_DRIFT_PX, TIMING } from '@/layers/shared/lib';
+import { LONG_PRESS_DRIFT_PX, TIMING } from '@/layers/shared/lib/constants';
 import { SidebarMenuSurface, type SidebarMenuNode } from '../sidebar-menu-node';
 
 // ── The viewport, which is the one thing jsdom cannot answer ────────────────

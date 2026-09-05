@@ -2,7 +2,7 @@ import * as React from 'react';
 import { motion, AnimatePresence, LayoutGroup } from 'motion/react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useIsMobile } from '../model';
-import { cn } from '../lib/utils';
+import { cn } from '@/layers/shared/lib/utils';
 import { useResponsiveDialogOptional } from './responsive-dialog';
 
 // ---------------------------------------------------------------------------
@@ -53,7 +53,7 @@ function useNavigationLayout(): NavigationLayoutContextValue {
 // Root
 // ---------------------------------------------------------------------------
 
-interface NavigationLayoutProps {
+export interface NavigationLayoutProps {
   children: React.ReactNode;
   value: string;
   onValueChange: (value: string) => void;
@@ -167,7 +167,7 @@ NavigationLayout.displayName = 'NavigationLayout';
 // Sidebar
 // ---------------------------------------------------------------------------
 
-interface NavigationLayoutSidebarProps {
+export interface NavigationLayoutSidebarProps {
   children: React.ReactNode;
   className?: string;
 }
@@ -264,7 +264,7 @@ function useTabListKeys(containerRef: React.RefObject<HTMLDivElement | null>) {
 // Section header
 // ---------------------------------------------------------------------------
 
-interface NavigationLayoutSectionHeaderProps {
+export interface NavigationLayoutSectionHeaderProps {
   children: React.ReactNode;
   className?: string;
 }
@@ -299,7 +299,7 @@ NavigationLayoutSectionHeader.displayName = 'NavigationLayoutSectionHeader';
 // Item
 // ---------------------------------------------------------------------------
 
-interface NavigationLayoutItemProps {
+export interface NavigationLayoutItemProps {
   children: React.ReactNode;
   value: string;
   icon?: React.ComponentType<{ className?: string }>;
@@ -346,6 +346,7 @@ function NavigationLayoutItem({
 
   return (
     <button
+      type="button"
       role="tab"
       id={`${idScope}item-${itemValue}`}
       data-value={itemValue}
@@ -381,7 +382,7 @@ NavigationLayoutItem.displayName = 'NavigationLayoutItem';
 // Content
 // ---------------------------------------------------------------------------
 
-interface NavigationLayoutContentProps {
+export interface NavigationLayoutContentProps {
   children: React.ReactNode;
   className?: string;
 }
@@ -467,7 +468,7 @@ NavigationLayoutContent.displayName = 'NavigationLayoutContent';
 // Body
 // ---------------------------------------------------------------------------
 
-interface NavigationLayoutBodyProps {
+export interface NavigationLayoutBodyProps {
   children: React.ReactNode;
   className?: string;
 }
@@ -489,7 +490,7 @@ NavigationLayoutBody.displayName = 'NavigationLayoutBody';
 // Dialog Header
 // ---------------------------------------------------------------------------
 
-interface NavigationLayoutDialogHeaderProps {
+export interface NavigationLayoutDialogHeaderProps {
   children: React.ReactNode;
   className?: string;
 }
@@ -563,7 +564,7 @@ NavigationLayoutDialogHeader.displayName = 'NavigationLayoutDialogHeader';
 // Panel Header
 // ---------------------------------------------------------------------------
 
-interface NavigationLayoutPanelHeaderProps {
+export interface NavigationLayoutPanelHeaderProps {
   children: React.ReactNode;
   actions?: React.ReactNode;
   description?: React.ReactNode;
@@ -608,7 +609,7 @@ NavigationLayoutPanelHeader.displayName = 'NavigationLayoutPanelHeader';
 // Panel
 // ---------------------------------------------------------------------------
 
-interface NavigationLayoutPanelProps {
+export interface NavigationLayoutPanelProps {
   children: React.ReactNode;
   value: string;
   className?: string;

@@ -94,7 +94,7 @@ describe('ToolArgumentsDisplay streaming mode', () => {
     expect(pre).not.toBeNull();
     expect(pre!.textContent).toContain(partialJson);
     // Tasks dot is rendered as a sibling span inside the pre
-    const tasks = pre!.querySelector('.animate-tasks');
+    const tasks = pre!.querySelector('.animate-breath');
     expect(tasks).not.toBeNull();
   });
 

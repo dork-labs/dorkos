@@ -108,7 +108,7 @@ export function ButtonShowcases() {
           <div className="flex flex-wrap items-center gap-2">
             <Button size="xs">Extra Small</Button>
             <Button size="sm">Small</Button>
-            <Button size="default">Default</Button>
+            <Button size="md">Default</Button>
             <Button size="lg">Large</Button>
           </div>
         </ShowcaseDemo>
@@ -122,7 +122,7 @@ export function ButtonShowcases() {
             <Button size="icon-sm" aria-label="Settings">
               <Settings />
             </Button>
-            <Button size="icon" aria-label="Settings">
+            <Button size="icon-md" aria-label="Settings">
               <Settings />
             </Button>
             <Button size="icon-lg" aria-label="Settings">

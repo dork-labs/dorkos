@@ -123,8 +123,9 @@ slice depends on how deep the importing file sits, so the rule resolves the path
 instead of matching it.
 
 `shared/` is the one layer with no slices: its top-level directories are
-segments, so `shared/ui/x.tsx -> '../lib/utils'` stays inside the unit and is
-fine.
+segments, so a relative hop between them stays inside the unit. Spell it with the
+alias anyway — `@/layers/shared/lib/utils`, not `../lib/utils` — so one helper has
+one spelling. `cn` had three before DOR-1761.
 
 ### Always Import from index.ts
 
@@ -135,6 +136,26 @@ import { SessionBadge, useSession } from '@/layers/entities/session';
 // WRONG — from internal path
 import { SessionBadge } from '@/layers/entities/session/ui/SessionBadge';
 ```
+
+**One carve-out, inside `shared/` (DOR-1761).** A barrel is a contract for
+consumers in `entities/`, `features/` and `widgets/`. Within `shared/` itself,
+import the leaf module:
+
+```typescript
+// CORRECT — inside shared/, name the module that actually holds it
+import { cn } from '@/layers/shared/lib/utils';
+
+// WRONG — inside shared/, the barrel drags ~60 modules in behind one helper
+import { cn } from '@/layers/shared/lib';
+```
+
+`shared/lib/index.ts` re-exports ~150 symbols from ~60 modules, `HttpTransport`,
+`playCelebration` and `queryClient` among them. Asking for `cn` through it puts
+the transport and the sound player in a 20-line leaf primitive's module graph —
+a cost the barrel already documents itself, at the line explaining why
+`overnightBoundary` is deliberately left off it. `no-restricted-imports` scoped
+to `src/layers/shared/**` holds this; tests are exempt, because a spec may name
+the barrel as a string fixture.
 
 ### Cross-Package Imports Are Fine
 
@@ -161,7 +182,7 @@ Each module should organize code by purpose:
 
 Not all segments are required — only create what the module needs.
 
-**Note on `shared/` layer:** The `shared/` layer uses both `model/` and `lib/` segments at the top level. `shared/model/` contains hooks, stores, and React context (TransportContext, app-store, useTheme, useIsMobile, etc.). `shared/lib/` contains pure utilities, Transport implementations, and helpers (cn, font-config, favicon-utils, celebrations, etc.). Import hooks and stores from `@/layers/shared/model`, utilities from `@/layers/shared/lib`.
+**Note on `shared/` layer:** The `shared/` layer uses both `model/` and `lib/` segments at the top level. `shared/model/` contains hooks, stores, and React context (TransportContext, app-store, useTheme, useIsMobile, etc.). `shared/lib/` contains pure utilities, Transport implementations, and helpers (cn, font-config, favicon-utils, celebrations, etc.). Consumers outside `shared/` import hooks and stores from `@/layers/shared/model` and utilities from `@/layers/shared/lib`; code inside `shared/` names the leaf module instead (see the carve-out above).
 
 ## Server Size Monitoring
 

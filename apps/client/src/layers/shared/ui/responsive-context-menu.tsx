@@ -9,7 +9,7 @@ import {
   ContextMenuSeparator,
 } from './context-menu';
 import { Drawer, DrawerContent } from './drawer';
-import { cn } from '../lib/utils';
+import { cn } from '@/layers/shared/lib/utils';
 
 // ── Context ──
 
@@ -35,7 +35,7 @@ const ResponsiveContextMenuContext = React.createContext<{
 
 // ── Root ──
 
-interface ResponsiveContextMenuProps {
+export interface ResponsiveContextMenuProps {
   children: React.ReactNode;
 }
 
@@ -82,7 +82,7 @@ function ResponsiveContextMenu({ children }: ResponsiveContextMenuProps) {
 
 // ── Trigger ──
 
-interface ResponsiveContextMenuTriggerProps {
+export interface ResponsiveContextMenuTriggerProps {
   asChild?: boolean;
   children: React.ReactNode;
   className?: string;
@@ -207,7 +207,7 @@ function ResponsiveContextMenuContent({
 
 // ── Item ──
 
-interface ResponsiveContextMenuItemProps extends React.ComponentPropsWithoutRef<
+export interface ResponsiveContextMenuItemProps extends React.ComponentPropsWithoutRef<
   typeof ContextMenuItem
 > {
   /**

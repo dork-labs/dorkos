@@ -151,8 +151,8 @@ describe('TasksPanel', () => {
 
     // Wait for config to resolve (enabling tasks), then confirm skeleton is shown
     await waitFor(() => {
-      // Skeleton rows have animate-tasks elements; check for the skeleton container
-      const skeletonDots = document.querySelectorAll('.animate-tasks');
+      // Skeleton rows have animate-breath elements; check for the skeleton container
+      const skeletonDots = document.querySelectorAll('.animate-breath');
       expect(skeletonDots.length).toBeGreaterThan(0);
     });
   });

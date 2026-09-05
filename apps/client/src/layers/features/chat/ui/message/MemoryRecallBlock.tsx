@@ -74,13 +74,13 @@ export function MemoryRecallBlock({ mode, memories, isStreaming }: MemoryRecallB
             data-icon={headerIconName}
             className={cn(
               'text-muted-foreground size-(--size-icon-xs)',
-              isStreaming && 'animate-tasks'
+              isStreaming && 'animate-breath'
             )}
           />
           <span
             className={cn(
               'text-3xs text-muted-foreground font-mono',
-              isStreaming && 'animate-tasks'
+              isStreaming && 'animate-breath'
             )}
           >
             {headerLabel}

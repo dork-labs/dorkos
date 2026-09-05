@@ -1,4 +1,4 @@
-import { cn } from '../lib/utils';
+import { cn } from '@/layers/shared/lib/utils';
 
 /**
  * Inline monospace code snippet — the one styling for a command, path, or field

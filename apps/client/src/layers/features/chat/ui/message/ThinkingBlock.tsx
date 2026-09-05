@@ -65,13 +65,13 @@ export function ThinkingBlock({ text, isStreaming, elapsedMs }: ThinkingBlockPro
           <Brain
             className={cn(
               'text-muted-foreground size-(--size-icon-xs)',
-              isStreaming && 'animate-tasks'
+              isStreaming && 'animate-breath'
             )}
           />
           <span
             className={cn(
               'text-3xs text-muted-foreground font-mono',
-              isStreaming && 'animate-tasks'
+              isStreaming && 'animate-breath'
             )}
           >
             {durationLabel}

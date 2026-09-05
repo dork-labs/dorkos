@@ -1,31 +1,34 @@
 import * as React from 'react';
 import { HoverCard as HoverCardPrimitive } from 'radix-ui';
 
-import { cn } from '../lib/utils';
+import { cn } from '@/layers/shared/lib/utils';
 
-/** Accessible card that appears on hover over a trigger element. */
+/**
+ * A card that appears when the pointer rests on something.
+ *
+ * For extra detail a reader may want and can ignore — never for anything they
+ * have to act on, since a hover has no touch equivalent. `opts` on the root set
+ * how long the pointer must rest before it opens.
+ */
 function HoverCard({ ...props }: React.ComponentProps<typeof HoverCardPrimitive.Root>) {
   return <HoverCardPrimitive.Root data-slot="hover-card" {...props} />;
 }
 
 /**
- * Element that activates the hover card on pointer hover.
+ * The thing being hovered. Pass `asChild` to use your own element.
  *
- * Forwards its ref — unlike this file's other wrappers — so a caller can
- * reach the trigger's own DOM node directly. `IdentityHoverCard` needs it to
- * restore focus to the TRIGGER (a mention pill, an avatar) rather than to its
- * footer's transient "View profile" button, which is gone by the time
- * anything downstream could ask for it back (DOR-1274 adversarial review).
+ * A caller can take a `ref` to reach the trigger's own DOM node:
+ * `IdentityHoverCard` needs it to restore focus to the TRIGGER (a mention pill,
+ * an avatar) rather than to its footer's transient "View profile" button, which
+ * is gone by the time anything downstream could ask for it back (DOR-1274
+ * adversarial review). React 19 passes `ref` through props, so the spread below
+ * is all that takes.
  */
-const HoverCardTrigger = React.forwardRef<
-  React.ElementRef<typeof HoverCardPrimitive.Trigger>,
-  React.ComponentPropsWithoutRef<typeof HoverCardPrimitive.Trigger>
->(({ ...props }, ref) => (
-  <HoverCardPrimitive.Trigger ref={ref} data-slot="hover-card-trigger" {...props} />
-));
-HoverCardTrigger.displayName = HoverCardPrimitive.Trigger.displayName;
+function HoverCardTrigger({ ...props }: React.ComponentProps<typeof HoverCardPrimitive.Trigger>) {
+  return <HoverCardPrimitive.Trigger data-slot="hover-card-trigger" {...props} />;
+}
 
-/** Animated popover content displayed when the hover card trigger is hovered. */
+/** The card itself, portalled out so no `overflow: hidden` can clip it. */
 function HoverCardContent({
   className,
   align = 'center',

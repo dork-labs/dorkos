@@ -15,7 +15,7 @@
  * @module shared/ui/consent-ritual-copy
  */
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
-import { isAutonomyStop, needsConsentRitual } from '@/layers/shared/lib';
+import { isAutonomyStop, needsConsentRitual } from '@dorkos/shared/permission-semantics';
 import { stopLabel } from './trust-dial';
 
 /**

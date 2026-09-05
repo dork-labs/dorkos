@@ -19,7 +19,7 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { cn } from '@/layers/shared/lib';
+import { cn } from '@/layers/shared/lib/utils';
 import { useIsMobile } from '@/layers/shared/model';
 import { TOUCH_TARGET_MIN_H } from './touch-target';
 

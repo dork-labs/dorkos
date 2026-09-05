@@ -21,14 +21,21 @@ export default defineConfig([
   { ignores: ['dist/**', '.turbo/**', '.yalc/**'] },
   ...reactConfig,
 
-  // Shadcn vendored components — exempt from max-lines and JSDoc rules
+  // `sidebar.tsx` is upstream shadcn's sidebar block, kept diff-able against it
+  // so an upstream fix can be replayed here. At 645 counted lines it is over the
+  // `max-lines` bar for a reason that is not this repo's to fix.
+  //
+  // It is the ONLY carve-out now (DOR-1761). This block used to switch
+  // `max-lines` AND both TSDoc rules off across `src/layers/shared/ui/**` on the
+  // premise that the whole directory was vendored shadcn — true of maybe a third
+  // of it. The rest is the client's most-imported public API, authored here:
+  // `SidebarRow`, `IdentityAvatar`, `TrustDial`, `NavigationLayout`, `DataTable`,
+  // the five `Responsive*` wrappers and ~60 more. Hard Rule 4 was off over
+  // exactly the code that needed it most, and the bill came due as 63
+  // undocumented exports and sixteen empty doc blocks.
   {
-    files: ['src/layers/shared/ui/**/*.{ts,tsx}'],
-    rules: {
-      'max-lines': 'off',
-      'jsdoc/require-jsdoc': 'off',
-      'jsdoc/require-description': 'off',
-    },
+    files: ['src/layers/shared/ui/sidebar.tsx'],
+    rules: { 'max-lines': 'off' },
   },
 
   // process.env carve-outs (client-specific)
@@ -72,13 +79,36 @@ export default defineConfig([
     },
   },
 
-  // FSD Layer Enforcement: shared/ cannot import higher layers
+  // FSD Layer Enforcement: shared/ cannot import higher layers, and inside
+  // shared/ the lib barrel is not the way in (DOR-1761).
+  //
+  // `shared/lib/index.ts` re-exports ~150 symbols from ~60 modules, including
+  // `HttpTransport`, `playCelebration`, `CelebrationEngine` and `queryClient`.
+  // So `import { cn } from '@/layers/shared/lib'` inside a 20-line `OptionRow`
+  // pulls a module graph that has nothing to do with merging class names — and
+  // the barrel already documents that cost itself, at the line explaining why
+  // `overnightBoundary` is deliberately left off it. The barrel is the contract
+  // for consumers in `entities/`, `features/` and `widgets/`; within `shared/`,
+  // import the leaf module. `cn` had three spellings before this and the one the
+  // written rule endorsed was the expensive one.
+  //
+  // Tests are exempt: a spec may name the barrel as a string fixture, and one
+  // (`lib/__tests__/one-verb-source.test.ts`) does.
   {
     files: ['src/layers/shared/**/*.{ts,tsx}'],
+    ignores: ['src/layers/shared/**/__tests__/**'],
     rules: {
       'no-restricted-imports': [
         'error',
         {
+          // `paths`, not `patterns`: a pattern group matches the barrel's
+          // SUBPATHS too, which would ban the leaf modules this rule exists to
+          // send people to. These are exact specifiers.
+          paths: ['@/layers/shared/lib', './lib', '../lib', '../../lib'].map((name) => ({
+            name,
+            message:
+              'Inside shared/, import the leaf module — `@/layers/shared/lib/utils` for cn. The lib barrel pulls the transport, the sound player and ~60 other modules in with it.',
+          })),
           patterns: [
             {
               group: ['@/layers/entities/*', '@/layers/entities'],

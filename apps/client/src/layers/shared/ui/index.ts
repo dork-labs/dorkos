@@ -20,6 +20,7 @@ export { Badge, badgeVariants } from './badge';
 export type { BadgeProps } from './badge';
 export { BarTabStrip } from './bar-tab-strip';
 export type { BarTab } from './bar-tab-strip';
+export type { BarTabStripProps } from './bar-tab-strip';
 export { Banner, bannerVariants } from './banner';
 export type { BannerVariant, BannerProps } from './banner';
 export { BoundedNumberInput } from './bounded-number-input';
@@ -37,6 +38,7 @@ export {
 } from './card';
 export type { CardProps } from './card';
 export { Checkbox } from './checkbox';
+export type { CheckboxProps } from './checkbox';
 export { DetailRow } from './detail-row';
 export type { DetailRowProps } from './detail-row';
 export { EmptyState, emptyStateIconVariants } from './empty-state';
@@ -49,6 +51,7 @@ export { Spinner, spinnerVariants } from './spinner';
 export type { SpinnerProps } from './spinner';
 export { Collapsible, CollapsibleTrigger, CollapsibleContent } from './collapsible';
 export { Progress } from './progress';
+export type { ProgressProps } from './progress';
 export { PromptSuggestionChips } from './PromptSuggestionChips';
 export type { PromptSuggestionChipsProps, PromptSuggestionChipSize } from './PromptSuggestionChips';
 export { Input } from './input';
@@ -64,6 +67,7 @@ export {
   CommandSeparator,
 } from './command';
 export { CopyButton } from './copy-button';
+export type { CopyButtonProps } from './copy-button';
 export {
   Dialog,
   DialogPortal,
@@ -104,6 +108,7 @@ export {
   DropdownMenuSubContent,
 } from './dropdown-menu';
 export { Feed } from './feed';
+export type { FeedProps } from './feed';
 export {
   Field,
   FieldContent,
@@ -165,6 +170,7 @@ export type { SettingsPanelProps } from './settings-panel';
 export { TabbedDialog } from './tabbed-dialog';
 export type { TabbedDialogProps, TabbedDialogTab } from './tabbed-dialog';
 export { PathBreadcrumb } from './path-breadcrumb';
+export type { PathBreadcrumbProps } from './path-breadcrumb';
 export {
   Popover,
   PopoverTrigger,
@@ -175,6 +181,7 @@ export {
   PopoverDescription,
 } from './popover';
 export { RadioGroup, RadioGroupItem } from './radio-group';
+export type { RadioGroupItemProps } from './radio-group';
 export { SegmentedControl, SegmentedControlItem } from './segmented-control';
 export {
   NavigationLayout,
@@ -188,6 +195,7 @@ export {
   NavigationLayoutDialogHeader,
   useNavigationLayout,
 } from './navigation-layout';
+export type { NavigationLayoutBodyProps, NavigationLayoutContentProps, NavigationLayoutDialogHeaderProps, NavigationLayoutItemProps, NavigationLayoutPanelHeaderProps, NavigationLayoutPanelProps, NavigationLayoutProps, NavigationLayoutSectionHeaderProps, NavigationLayoutSidebarProps } from './navigation-layout';
 export {
   ContextMenu,
   ContextMenuTrigger,
@@ -216,6 +224,7 @@ export {
   ResponsiveDialogFullscreenToggle,
   useResponsiveDialog,
 } from './responsive-dialog';
+export type { ResponsiveDialogProps } from './responsive-dialog';
 export {
   ResponsivePopover,
   ResponsivePopoverTrigger,
@@ -223,6 +232,7 @@ export {
   ResponsivePopoverTitle,
   useResponsivePopover,
 } from './responsive-popover';
+export type { ResponsivePopoverProps } from './responsive-popover';
 export {
   ResponsiveSheet,
   ResponsiveSheetTrigger,
@@ -235,6 +245,7 @@ export {
   responsiveSheetContentVariants,
 } from './responsive-sheet';
 export { ScanLine } from './ScanLine';
+export type { ScanLineProps } from './ScanLine';
 export { ScrollArea, ScrollBar } from './scroll-area';
 export {
   ResponsiveDropdownMenu,
@@ -246,6 +257,7 @@ export {
   ResponsiveDropdownMenuRadioItem,
   ResponsiveDropdownMenuSeparator,
 } from './responsive-dropdown-menu';
+export type { ResponsiveDropdownMenuItemProps, ResponsiveDropdownMenuProps, ResponsiveDropdownMenuRadioGroupProps, ResponsiveDropdownMenuRadioItemProps } from './responsive-dropdown-menu';
 export {
   useResponsiveContextMenu,
   ResponsiveContextMenu,
@@ -254,6 +266,7 @@ export {
   ResponsiveContextMenuItem,
   ResponsiveContextMenuSeparator,
 } from './responsive-context-menu';
+export type { ResponsiveContextMenuItemProps, ResponsiveContextMenuProps, ResponsiveContextMenuTriggerProps } from './responsive-context-menu';
 export {
   Select,
   SelectGroup,
@@ -287,7 +300,7 @@ export {
   TableCaption,
 } from './table';
 export { DataTable } from './data-table';
-export type { DataTableProps } from './data-table';
+export type { DataTableProps, DataTableGrouping } from './data-table';
 export { Tabs, TabsList, TabsTrigger, TabsContent } from './tabs';
 export { useRovingTabList } from './use-roving-tab-list';
 export type {
@@ -298,6 +311,7 @@ export type {
 } from './use-roving-tab-list';
 export type { TabsListProps } from './tabs';
 export { DirectoryPicker } from './DirectoryPicker';
+export type { DirectoryPickerProps } from './DirectoryPicker';
 export { PageContainer } from './page-container';
 export type { PageContainerProps } from './page-container';
 export { PathInput } from './path-input';
@@ -307,12 +321,18 @@ export { Textarea } from './textarea';
 export { Toaster } from './sonner';
 export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from './tooltip';
 export { ConnectionStatusBanner } from './ConnectionStatusBanner';
+export type { ConnectionStatusBannerProps } from './ConnectionStatusBanner';
 export { FeatureDisabledState } from './FeatureDisabledState';
+export type { FeatureDisabledStateProps } from './FeatureDisabledState';
 export { LinkifiedText, containsUrl } from './linkified-text';
+export type { LinkifiedTextProps } from './linkified-text';
 export { LinkSafetyModal } from './link-safety-modal';
 export { MarkdownContent } from './markdown-content';
+export type { MarkdownContentProps } from './markdown-content';
 export { MarkdownErrorBoundary } from './markdown-error-boundary';
+export type { MarkdownErrorBoundaryProps } from './markdown-error-boundary';
 export { MarkdownLink } from './markdown-link';
+export type { MarkdownLinkProps } from './markdown-link';
 export { MentionPill, mentionPillVariants } from './mention-pill';
 export type { MentionPillProps } from './mention-pill';
 export {
@@ -333,6 +353,15 @@ export {
   CheckboxField,
   PasswordField,
   SubmitButton,
+} from './form-fields';
+export type {
+  TextFieldProps,
+  TextareaFieldProps,
+  SelectFieldProps,
+  SwitchFieldProps,
+  CheckboxFieldProps,
+  PasswordFieldProps,
+  SubmitButtonProps,
 } from './form-fields';
 export {
   Sidebar,
@@ -360,8 +389,11 @@ export {
   SidebarTrigger,
   useSidebar,
   SidebarContext,
+  SIDEBAR_MENU_ITEM_ATTRS,
 } from './sidebar';
+export type { SidebarContextProps } from './sidebar';
 export { FilterBar } from './filter-bar';
+export type { FilterBarProps } from './filter-bar';
 export { RouteErrorFallback } from './route-error-fallback';
 export { NotFoundFallback } from './not-found-fallback';
 export { AppCrashFallback } from './app-crash-fallback';
@@ -379,7 +411,12 @@ export {
 } from './tour-spotlight';
 
 // ── The sidebar's two shared primitives, and the menu-as-data they both render ──
-export { SidebarMenuNodes, SidebarMenuSurface, useGuardedMenuNodes } from './sidebar-menu-node';
+export {
+  SidebarMenuNodes,
+  SidebarMenuSurface,
+  useGuardedMenuNodes,
+  SIDEBAR_MENU_GUTTER,
+} from './sidebar-menu-node';
 export type {
   SidebarMenuActionNode,
   SidebarMenuChoice,
@@ -389,8 +426,13 @@ export type {
   SidebarMenuSubmenu,
   SidebarMenuVariant,
 } from './sidebar-menu-node';
+export type { SidebarMenuNodesProps, SidebarMenuSurfaceProps } from './sidebar-menu-node';
 export { SidebarRow, SIDEBAR_ROW_INSET, sidebarRowVariants } from './sidebar-row';
-export { TOUCH_TARGET_MIN_H } from './touch-target';
+export {
+  TOUCH_TARGET_MIN_H,
+  TOUCH_TARGET_RESPONSIVE_H,
+  TOUCH_TARGET_RESPONSIVE_SIZE,
+} from './touch-target';
 export type {
   RowDragBindings,
   SidebarRowMenu,
@@ -408,7 +450,10 @@ export type { BottomSlotCandidate, BottomSlotProps } from './bottom-slot';
 // feature reaching into another feature's internals is the cycle P1 already
 // refused once, so they moved DOWN rather than sideways.
 export { OptionRow } from './option-row';
+export type { OptionRowProps } from './option-row';
 export { CompactResultRow } from './compact-result-row';
+export type { CompactResultRowProps } from './compact-result-row';
 export { UnverifiedCatalogNotice } from './unverified-catalog-notice';
 export { TruncatedOutput } from './truncated-output';
+export type { TruncatedOutputProps } from './truncated-output';
 export type { SectionHeaderProps } from './section-header';

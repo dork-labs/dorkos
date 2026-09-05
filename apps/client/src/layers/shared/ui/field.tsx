@@ -1,3 +1,33 @@
+/**
+ * One labelled control in a form, and the parts that surround it.
+ *
+ * The substrate `SettingRow` and every settings surface is built on, so the ten
+ * parts are worth learning once. Nesting, outermost first:
+ *
+ * ```tsx
+ * <FieldSet>                    // a titled set of related fields
+ *   <FieldLegend>Alerts</FieldLegend>
+ *   <FieldGroup>                // the stack that spaces fields apart
+ *     <Field orientation="horizontal">   // ONE control and its words
+ *       <FieldContent>          // the text column, when a control sits beside it
+ *         <FieldLabel>Ping me</FieldLabel>
+ *         <FieldDescription>When a turn finishes.</FieldDescription>
+ *       </FieldContent>
+ *       <Switch />
+ *     </Field>
+ *     <FieldSeparator />        // a rule between two groups of fields
+ *     <FieldError errors={…} /> // the problem, announced
+ *   </FieldGroup>
+ * </FieldSet>
+ * ```
+ *
+ * The parts find each other through `data-slot`, not through context: `Field`'s
+ * horizontal layout keys off `[data-slot=field-content]`, `FieldSet` tightens
+ * its gap when it holds a checkbox or radio group. A part that loses its
+ * `data-slot` stops participating in that layout silently, so keep them.
+ *
+ * @module shared/ui/field
+ */
 import { useMemo } from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 
@@ -6,7 +36,10 @@ import { Label } from '@/layers/shared/ui/label';
 import { Separator } from '@/layers/shared/ui/separator';
 
 /**
+ * A titled set of related fields — the `<fieldset>` a screen reader groups by.
  *
+ * Tightens its own spacing when it holds a checkbox or radio group, since those
+ * read as one list rather than as separate questions.
  */
 function FieldSet({ className, ...props }: React.ComponentProps<'fieldset'>) {
   return (
@@ -23,7 +56,10 @@ function FieldSet({ className, ...props }: React.ComponentProps<'fieldset'>) {
 }
 
 /**
+ * The heading on a {@link FieldSet}.
  *
+ * `variant="label"` drops it to the size of a field label, for a set nested
+ * inside another one where a full heading would out-shout its parent.
  */
 function FieldLegend({
   className,
@@ -46,7 +82,11 @@ function FieldLegend({
 }
 
 /**
+ * The stack that spaces a run of {@link Field}s apart.
  *
+ * Also the container query `Field`'s `orientation="responsive"` measures, so a
+ * field only goes side-by-side when this group is genuinely wide — which is the
+ * group's width, not the window's.
  */
 function FieldGroup({ className, ...props }: React.ComponentProps<'div'>) {
   return (
@@ -83,7 +123,12 @@ const fieldVariants = cva('group/field flex w-full gap-3 data-[invalid=true]:tex
 });
 
 /**
+ * One question and its answer — the unit everything else in this file surrounds.
  *
+ * `orientation` decides where the control sits: `vertical` stacks it under the
+ * label, `horizontal` puts it beside, `responsive` starts stacked and goes
+ * side-by-side once the enclosing {@link FieldGroup} is wide enough. Marking it
+ * `data-invalid` turns the whole field, label included, destructive.
  */
 function Field({
   className,
@@ -102,7 +147,12 @@ function Field({
 }
 
 /**
+ * The text column beside a control in a horizontal {@link Field}.
  *
+ * Holds the label and its description so they stay one block while the switch
+ * or checkbox floats to the other edge. Its presence is what tells `Field` to
+ * top-align the control instead of centring it, so leave it out when the field
+ * is a plain stacked input.
  */
 function FieldContent({ className, ...props }: React.ComponentProps<'div'>) {
   return (
@@ -115,7 +165,12 @@ function FieldContent({ className, ...props }: React.ComponentProps<'div'>) {
 }
 
 /**
+ * The words naming a control, wired to it so clicking them focuses it.
  *
+ * A real `<label>` — use it whenever there is an input to point at, and reach
+ * for {@link FieldTitle} only when there isn't. Wrapping a whole {@link Field}
+ * inside it turns the field into a selectable card that highlights when the
+ * control it contains is checked.
  */
 function FieldLabel({ className, ...props }: React.ComponentProps<typeof Label>) {
   return (
@@ -133,7 +188,11 @@ function FieldLabel({ className, ...props }: React.ComponentProps<typeof Label>)
 }
 
 /**
+ * A field's heading when there is no single control to label.
  *
+ * Looks exactly like {@link FieldLabel} but renders a `<div>`, so it never
+ * claims to point at an input it cannot focus — the right choice above a group
+ * of checkboxes or a block of read-only detail.
  */
 function FieldTitle({ className, ...props }: React.ComponentProps<'div'>) {
   return (
@@ -149,7 +208,11 @@ function FieldTitle({ className, ...props }: React.ComponentProps<'div'>) {
 }
 
 /**
+ * The quiet sentence under a label saying what the setting does.
  *
+ * One short line, not a paragraph: if it needs more, the detail belongs behind
+ * a link or a disclosure rather than in the row. Links inside it are underlined
+ * and pick up the primary colour on hover.
  */
 function FieldDescription({ className, ...props }: React.ComponentProps<'p'>) {
   return (
@@ -167,7 +230,10 @@ function FieldDescription({ className, ...props }: React.ComponentProps<'p'>) {
 }
 
 /**
+ * A rule between two runs of fields, optionally with a word sitting on it.
  *
+ * Pass children for the word — "or", usually — and it is drawn centred on the
+ * line with the page colour behind it. With no children it is a plain hairline.
  */
 function FieldSeparator({
   children,
@@ -200,7 +266,12 @@ function FieldSeparator({
 }
 
 /**
+ * What went wrong, announced to a screen reader the moment it appears.
  *
+ * Give it `children` for one hand-written message, or `errors` to render a
+ * validator's list — duplicates are collapsed, one message renders as a line and
+ * several as a bulleted list. Renders nothing at all when there is no problem,
+ * so it can stay mounted in the field.
  */
 function FieldError({
   className,

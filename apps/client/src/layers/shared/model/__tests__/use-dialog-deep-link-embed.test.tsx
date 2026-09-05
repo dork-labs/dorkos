@@ -13,7 +13,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
-import { setPlatformAdapter } from '@/layers/shared/lib';
+import { setPlatformAdapter } from '@/layers/shared/lib/platform';
 import { useAppStore } from '../app-store';
 import {
   useSettingsDeepLink,

@@ -12,7 +12,7 @@
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
-import { setPlatformAdapter } from '@/layers/shared/lib';
+import { setPlatformAdapter } from '@/layers/shared/lib/platform';
 
 /**
  * Model the real module: `useRouter` reads context and answers `undefined` when

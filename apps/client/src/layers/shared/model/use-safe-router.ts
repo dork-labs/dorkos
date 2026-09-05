@@ -37,7 +37,7 @@
  * @module shared/model/use-safe-router
  */
 import { useSearch, useRouterState, useNavigate, useRouter } from '@tanstack/react-router';
-import { getPlatform } from '@/layers/shared/lib';
+import { getPlatform } from '@/layers/shared/lib/platform';
 
 /** Frozen empty search for the embed — one identity so callers can memoize on it. */
 const EMPTY_SEARCH: Record<string, unknown> = Object.freeze({});

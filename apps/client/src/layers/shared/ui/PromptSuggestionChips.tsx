@@ -1,6 +1,6 @@
 import { motion } from 'motion/react';
 import { Sparkles } from 'lucide-react';
-import { cn } from '@/layers/shared/lib';
+import { cn } from '@/layers/shared/lib/utils';
 
 /** How many chips fit on one line before the row starts wrapping past its welcome. */
 const MAX_VISIBLE = 4;

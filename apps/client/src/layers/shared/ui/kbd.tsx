@@ -1,4 +1,4 @@
-import { cn } from '../lib/utils';
+import { cn } from '@/layers/shared/lib/utils';
 
 /** Styled keyboard shortcut indicator, hidden on mobile. */
 function Kbd({ className, children, ...props }: React.ComponentProps<'kbd'>) {

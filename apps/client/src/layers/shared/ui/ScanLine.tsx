@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'motion/react';
 
-interface ScanLineProps {
+export interface ScanLineProps {
   /** Agent accent color (CSS color string). */
   color: string;
   /** Tokens actively flowing — accelerates beam, enables highlight layer. */

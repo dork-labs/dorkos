@@ -14,7 +14,7 @@
  */
 import type { StateCreator } from 'zustand';
 import type { UiCanvasContent } from '@dorkos/shared/types';
-import { MAX_CANVAS_DOCUMENTS } from '@/layers/shared/lib';
+import { MAX_CANVAS_DOCUMENTS } from '@/layers/shared/lib/constants';
 import { readCanvasSession, writeCanvasSession } from './app-store-helpers';
 import type { PersistedCanvasDocument } from './app-store-helpers';
 import type { AppState } from './app-store-types';

@@ -49,7 +49,7 @@ export function NamespaceGroupDemo({
         </span>
         {activeCount > 0 && (
           <span
-            className="animate-tasks h-1.5 w-1.5 rounded-full"
+            className="animate-breath h-1.5 w-1.5 rounded-full"
             style={{ backgroundColor: color }}
           />
         )}

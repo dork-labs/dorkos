@@ -106,10 +106,10 @@ export function TasksPanel() {
         {[1, 2, 3].map((i) => (
           <div key={i} className="rounded-lg border p-3">
             <div className="flex items-center gap-3">
-              <div className="bg-muted animate-tasks size-2 rounded-full" />
+              <div className="bg-muted animate-breath size-2 rounded-full" />
               <div className="flex-1 space-y-1.5">
-                <div className="bg-muted animate-tasks h-4 w-32 rounded" />
-                <div className="bg-muted animate-tasks h-3 w-48 rounded" />
+                <div className="bg-muted animate-breath h-4 w-32 rounded" />
+                <div className="bg-muted animate-breath h-3 w-48 rounded" />
               </div>
             </div>
           </div>

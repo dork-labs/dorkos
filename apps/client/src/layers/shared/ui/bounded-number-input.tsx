@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { cn } from '@/layers/shared/lib';
+import { cn } from '@/layers/shared/lib/utils';
 import { Input } from './input';
 
 interface BoundedNumberInputProps {

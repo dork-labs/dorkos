@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { Input, type InputProps } from './input';
 import { Button } from './button';
-import { cn } from '@/layers/shared/lib';
+import { cn } from '@/layers/shared/lib/utils';
 
 interface PasswordInputProps extends Omit<InputProps, 'type'> {
   /** Controlled visibility state. When provided, component is controlled. */
@@ -45,7 +45,7 @@ function PasswordInput({
       <Button
         type="button"
         variant="ghost"
-        size="icon"
+        size="icon-md"
         className="text-muted-foreground hover:text-foreground absolute top-0 right-0 h-full px-3 hover:bg-transparent"
         onClick={toggleVisibility}
         aria-label={isVisible ? 'Hide password' : 'Show password'}

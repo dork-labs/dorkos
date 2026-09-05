@@ -6,9 +6,9 @@
 import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import type { AuthorKind } from '@dorkos/shared/room-schemas';
-import { canComputeReadableForeground, readableForeground } from '../lib/readable-foreground';
-import { cn } from '../lib/utils';
-import type { IdentityOrigin } from '../lib/identity-origin';
+import { canComputeReadableForeground, readableForeground } from '@/layers/shared/lib/readable-foreground';
+import { cn } from '@/layers/shared/lib/utils';
+import type { IdentityOrigin } from '@/layers/shared/lib/identity-origin';
 import { AGENT_GLYPH, platformGlyph } from './identity-glyphs';
 import {
   STATUS_DOT_COLOR,

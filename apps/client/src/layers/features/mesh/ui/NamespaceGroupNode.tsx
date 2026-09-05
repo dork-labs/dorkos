@@ -37,7 +37,7 @@ function NamespaceGroupNodeComponent({ data }: NodeProps) {
         </span>
         {d.activeCount > 0 && (
           <span
-            className={`h-1.5 w-1.5 rounded-full ${prefersReducedMotion ? '' : 'animate-tasks'}`}
+            className={`h-1.5 w-1.5 rounded-full ${prefersReducedMotion ? '' : 'animate-breath'}`}
             style={{ backgroundColor: d.color }}
           />
         )}

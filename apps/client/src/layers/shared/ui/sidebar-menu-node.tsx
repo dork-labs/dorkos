@@ -27,7 +27,7 @@ import {
   type ReactNode,
 } from 'react';
 import { Check, MoreVertical, type LucideIcon } from 'lucide-react';
-import { cn } from '@/layers/shared/lib';
+import { cn } from '@/layers/shared/lib/utils';
 import {
   SIDEBAR_ACTIONS_ATTRIBUTE,
   useIsMobile,
@@ -537,7 +537,7 @@ function renderNodes(nodes: SidebarMenuNode[], slots: SidebarMenuSlots): ReactNo
   });
 }
 
-interface SidebarMenuNodesProps {
+export interface SidebarMenuNodesProps {
   /** The list to render, from a builder. */
   nodes: SidebarMenuNode[];
   /** Which Radix menu family to render into. */
@@ -555,7 +555,7 @@ export function SidebarMenuNodes({ nodes, variant }: SidebarMenuNodesProps) {
   return <>{renderNodes(nodes, VARIANT_SLOTS[variant])}</>;
 }
 
-interface SidebarMenuSurfaceProps {
+export interface SidebarMenuSurfaceProps {
   /**
    * The element the surface renders as. A section header passes its heading
    * tag, so the heading IS the row rather than wrapping a div inside one — an

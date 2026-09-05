@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { MAX_RIGHT_PANEL_LAYOUTS } from '@/layers/shared/lib';
+import { MAX_RIGHT_PANEL_LAYOUTS } from '@/layers/shared/lib/constants';
 import { useAppStore } from '../app-store';
 
 /** Read the per-agent layout map from localStorage. */

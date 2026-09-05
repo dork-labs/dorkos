@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useRef } from 'react';
 import { Link, type LinkProps } from '@tanstack/react-router';
 import { motion } from 'motion/react';
-import { cn } from '@/layers/shared/lib';
+import { cn } from '@/layers/shared/lib/utils';
 import { revealInScroller, useScrollOverflow } from '@/layers/shared/model';
 
 const INDICATOR_SPRING = { type: 'spring', stiffness: 500, damping: 32 } as const;
@@ -26,7 +26,7 @@ export interface BarTab {
   dividerBefore?: boolean;
 }
 
-interface BarTabStripProps {
+export interface BarTabStripProps {
   /** The tabs, in strip order. */
   tabs: readonly BarTab[];
   /** Which tab reads active, or `null` when none does. */

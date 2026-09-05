@@ -12,7 +12,7 @@
  */
 import type { ChatStatus } from '@/layers/shared/model';
 import { renderedStatusFrom } from '../lib/select-rendered-status';
-import { useSessionStatus as useSessionChatStatus } from './session-chat-store';
+import { useSessionChatStatus } from './session-chat-store';
 import { useSessionStreamLifecycle, useSessionTriggerPending } from './session-stream-store';
 
 /**
