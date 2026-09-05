@@ -340,19 +340,33 @@ export function createWindow(options: CreateWindowOptions = {}): BrowserWindow {
 }
 
 /**
- * The app's own origin right now, or `undefined` when the renderer is not being
- * served from one (dev, or before the server has a port).
+ * The app's own origin right now, or `undefined` when the renderer was never
+ * served from one (dev, or before the server has ever had a port).
  *
  * Shared by `index.ts` and passed into every window as
  * {@link CreateWindowOptions.getRendererUrl}.
+ *
+ * **It remembers the last origin it served, and that is the point.** The live
+ * port is `null` for the whole of every gap — a crash, a restart in flight, a
+ * restart that failed — and during those gaps a window is still sitting on the
+ * origin it last loaded, holding a page that is very much ours. Answering
+ * `undefined` there tells every caller that the app's own cockpit is a foreign
+ * document: links out of it would be handed to the system browser, permissions
+ * denied, and Settings → Advanced's Restart refused with "DorkOS only takes this
+ * from its own window" — the dead button DOR-542 exists to remove, at the one
+ * moment somebody needs it. The remembered value can only ever be the port we
+ * really did serve on, because a live port always wins over it.
  *
  * @param getServerPort - Point-in-time accessor for the server's port.
  */
 export function makeRendererUrlAccessor(
   getServerPort: () => number | null
 ): () => string | undefined {
+  let lastServed: string | undefined;
   return () => {
+    if (!app.isPackaged) return undefined;
     const port = getServerPort();
-    return app.isPackaged && port ? `http://localhost:${port}` : undefined;
+    if (port) lastServed = `http://localhost:${port}`;
+    return lastServed;
   };
 }

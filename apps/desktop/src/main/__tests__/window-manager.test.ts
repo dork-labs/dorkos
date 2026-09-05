@@ -392,4 +392,35 @@ describe('makeRendererUrlAccessor', () => {
     port = 5555;
     expect(accessor()).toBe('http://localhost:5555');
   });
+
+  it('keeps answering with the last origin it served while the port is gone (DOR-542)', () => {
+    // The window is still sitting on that origin through every gap — a crash, a
+    // restart in flight, a restart that failed. Answering `undefined` there tells
+    // the link guards, the permission policy and the admin channels that our own
+    // cockpit is a foreign document, which is how Restart came back with "DorkOS
+    // only takes this from its own window" at the one moment somebody needs it.
+    app.isPackaged = true;
+    let port: number | null = 4242;
+    const accessor = makeRendererUrlAccessor(() => port);
+    expect(accessor()).toBe('http://localhost:4242');
+
+    port = null;
+
+    expect(accessor()).toBe('http://localhost:4242');
+  });
+
+  it('prefers a live port over the one it remembered', () => {
+    app.isPackaged = true;
+    let port: number | null = 4242;
+    const accessor = makeRendererUrlAccessor(() => port);
+    accessor();
+
+    port = null;
+    expect(accessor()).toBe('http://localhost:4242');
+    port = 4243;
+
+    // A restart that moved the port must move the guards with it; the memory is
+    // only ever a stand-in for a port that is missing.
+    expect(accessor()).toBe('http://localhost:4243');
+  });
 });

@@ -40,9 +40,9 @@ pid, and operating systems recycle pids onto unrelated processes — a pid-only 
 would refuse every future start forever while telling the operator to kill something
 that has nothing to do with DorkOS. So the holder is corroborated: it must have
 _started_ no later than the moment it wrote the lock, with a 120-second tolerance for
-wall-clock skew (`assessHolder`, `instance-lock.ts:194`; `PID_REUSE_TOLERANCE_MS`,
-`:105`). A pid that started afterwards is a recycled pid and reads `gone`, so the
-next boot simply takes the lock. Where the start time cannot be read the state is
+wall-clock skew (`assessInstanceLockHolder` and `DEFAULT_PID_REUSE_TOLERANCE_MS`;
+see the amendment below for where those live now). A pid that started afterwards is
+a recycled pid and reads `gone`, so the next boot simply takes the lock. Where the start time cannot be read the state is
 `live-unconfirmed`, which refuses the boot but withholds the `kill <pid>` hint,
 because naming a pid we could not confirm is an instruction to damage an innocent
 process (`:221`).
@@ -119,3 +119,30 @@ for anyone who knows better than the check (`isInstanceLockEnabled`,
 - **Refuse on any existing lock file, and make the operator delete it.** Rejected: an
   OOM kill or forced logout would then require manual cleanup before DorkOS starts
   again, which is a worse default than taking over a claim that is provably stale.
+
+## Amendment — 2026-09-04 (DOR-542): the reading half moved to `@dorkos/shared`
+
+The desktop shell's "Reset All Data" deletes the whole data directory, so it has
+to answer the same question this ADR's lock answers — is anyone holding this? —
+from a process that must never take the lock. Reading it needs the file's name,
+its schema, and the recycled-pid corroboration; taking it must stay with the
+process that opens the directory.
+
+So those three moved to `packages/shared/src/instance-lock.ts`
+(`INSTANCE_LOCK_FILENAME`, `readInstanceLock`, `assessInstanceLockHolder`, plus
+`liveInstanceLockHolder` for callers that only want a yes or no). The tolerance
+constant is now `DEFAULT_PID_REUSE_TOLERANCE_MS` from
+`@dorkos/shared/process-liveness`, which already held the same 120 seconds for
+the same reason. `acquireInstanceLock` and `releaseInstanceLock` — the only two
+that write — stay in `apps/server/src/lib/instance-lock.ts`, unchanged in
+behaviour. Nothing in the decision above changed; the line numbers cited in it
+did.
+
+**The desktop's check is a read, not a claim, and is advisory in one more way
+than this ADR's.** It runs between the supervisor's stop and its start, so a
+foreign instance could still take the directory in the moment between the check
+and the delete. Claiming `instance.lock` with `wx` first would close that, but
+the record carries a `port` and the shell is not a server — an invented one
+would put a lie in the file an operator reads to decide what to stop. The gap is
+documented at `wipeDataDirectory` in `apps/desktop/src/main/admin/index.ts`
+rather than closed.

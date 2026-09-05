@@ -37,6 +37,20 @@ declare global {
      */
     | { state: 'install-failed'; version: string; attempts: number };
 
+  /**
+   * How the desktop shell answers "Restart Server" and "Reset All Data",
+   * mirrored from the main process's `AdminActionResult` (`main/admin/index.ts`,
+   * where this union is the source of truth). Kept in sync by hand, like
+   * {@link DesktopUpdateStatus}.
+   *
+   * A result rather than a rejection because Electron wraps whatever an IPC
+   * handler throws — `Error invoking remote method '…': Error: …` — and the
+   * whole point of moving these two actions onto the bridge is that neither can
+   * put a machine's account of a failure in front of a person again. `message`
+   * is written to be read out loud.
+   */
+  type DesktopAdminResult = { ok: true } | { ok: false; message: string };
+
   /** API exposed by the Electron preload script via contextBridge. */
   interface ElectronAPI {
     /**
@@ -47,6 +61,27 @@ declare global {
      * with it.
      */
     getServerPort(): number | null;
+    /**
+     * Restart the DorkOS server through the desktop shell's own supervisor
+     * (DOR-542), instead of `POST /api/admin/restart` — which the server refuses
+     * whenever a supervisor owns its lifecycle, because it restarts by
+     * re-execing itself and there is nothing here to re-exec into.
+     *
+     * A success usually ends with this window being reloaded onto the restarted
+     * server, so the resolved value is mostly read on the way to a failure.
+     *
+     * **Optional on purpose.** Absent in the browser cockpit, in the Obsidian
+     * embed, and in any desktop build predating this — see
+     * `shared/lib/desktop-admin.ts`, which is where the choice between this and
+     * the HTTP route is made.
+     */
+    restartServer?(): Promise<DesktopAdminResult>;
+    /**
+     * Delete everything DorkOS has stored and restart the server on an empty
+     * data directory — the desktop half of "Reset All Data". Same optionality
+     * and the same reason as {@link restartServer}.
+     */
+    resetAllData?(): Promise<DesktopAdminResult>;
     /** The current platform (darwin, win32, linux). */
     platform: NodeJS.Platform;
     /**

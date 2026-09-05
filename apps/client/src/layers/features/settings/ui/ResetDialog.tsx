@@ -11,12 +11,44 @@ import {
   Input,
 } from '@/layers/shared/ui';
 import { useTransport } from '@/layers/shared/model';
+import { getDesktopAdmin, unwrapDesktopAdminResult } from '@/layers/shared/lib';
 import { toast } from 'sonner';
 
 interface ResetDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onResetComplete: () => void;
+}
+
+/**
+ * Empty this device's stored preferences for the duration of `act`, and put them
+ * back if it fails.
+ *
+ * The desktop reset has to clear first — the shell reloads this window as soon
+ * as its server is back, and a `localStorage.clear()` queued behind that may
+ * never run. Clearing first means a refused reset would otherwise take the
+ * theme, the panel layouts and every toggle with it while deleting nothing at
+ * all, so the clear is undone on the way out.
+ *
+ * @param act - The reset to attempt.
+ * @returns Whatever `act` resolved with.
+ * @throws Whatever `act` threw, after the preferences are restored.
+ */
+async function clearingPreferences<T>(act: () => Promise<T>): Promise<T> {
+  const remembered = new Map<string, string>();
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key === null) continue;
+    const value = localStorage.getItem(key);
+    if (value !== null) remembered.set(key, value);
+  }
+  localStorage.clear();
+  try {
+    return await act();
+  } catch (err) {
+    for (const [key, value] of remembered) localStorage.setItem(key, value);
+    throw err;
+  }
 }
 
 /** Confirmation dialog for resetting all DorkOS data. */
@@ -30,8 +62,26 @@ export function ResetDialog({ open, onOpenChange, onResetComplete }: ResetDialog
   async function handleReset() {
     setIsSubmitting(true);
     try {
-      await transport.resetAllData('reset');
-      localStorage.clear();
+      // In the desktop app the server cannot delete its own data directory and
+      // come back — the shell's supervisor owns its process. The shell does it
+      // between stopping the old server and starting the new one, which is the
+      // only moment nothing holds the directory (DOR-542).
+      const desktop = getDesktopAdmin();
+      if (desktop) {
+        // Cleared BEFORE the call, and put back if it fails: the shell reloads
+        // this window onto the restarted server the moment it is up, so anything
+        // this page has to forget must already be forgotten by then — but a
+        // reset the shell refused deleted nothing, and it must not be the reason
+        // someone's theme and panel layouts went with it.
+        // The unwrap happens INSIDE, so a refusal — which arrives as a resolved
+        // `{ ok: false }`, not a rejection — is what triggers the restore.
+        await clearingPreferences(async () => {
+          unwrapDesktopAdminResult(await desktop.resetAllData());
+        });
+      } else {
+        await transport.resetAllData('reset');
+        localStorage.clear();
+      }
       onOpenChange(false);
       onResetComplete();
     } catch (err) {

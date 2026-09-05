@@ -78,6 +78,10 @@ const PACKAGED_ESBUILD_BINARY_SUBPATH = path.join(
  * here — the desktop shell owns the process lifecycle, and inside an Electron
  * UtilityProcess there is nothing to re-exec into. Ungated, the server exits 0
  * and leaves the app pointing at a dead port.
+ *
+ * The refusal is not the end of the story for a person clicking those buttons:
+ * `main/admin/` does both jobs properly, by asking the supervisor rather than
+ * the server. This variable is what keeps the two from both trying.
  */
 const MANAGED_BY = 'desktop';
 

@@ -1160,6 +1160,168 @@ describe('stopServer', () => {
   });
 });
 
+describe('restartServer — the supervisor restarting its own child (DOR-542)', () => {
+  /**
+   * Drive a restart to completion: shut the current child down, then let the
+   * replacement report ready.
+   *
+   * The whole cycle has to be driven from the test, because both halves are
+   * events the supervisor is waiting on — a shutdown the child obeys, and a
+   * readiness handshake from the child that takes its place.
+   *
+   * @param current - The child the supervisor is about to stop.
+   * @param replacementIndex - Which fork the replacement will be.
+   */
+  async function letTheRestartHappen(
+    current: MockServerProcess,
+    replacementIndex: number
+  ): Promise<MockServerProcess> {
+    await until('the shutdown message', () => current.sent.length > 0);
+    current.emitExit(0);
+    const replacement = await devChildAt(replacementIndex);
+    replacement.emitReady();
+    return replacement;
+  }
+
+  it('stops the running server and starts a replacement that serves', async () => {
+    const { startServer, restartServer, getServerPort } = await import('../server-process');
+
+    const { child } = await startReadyServer(startServer);
+    const restarting = restartServer();
+    const replacement = await letTheRestartHappen(child, 1);
+    const outcome = await restarting;
+
+    expect(child.sent).toEqual([{ type: 'shutdown' }]);
+    expect(outcome.port).toBe(Number(replacement.env.DORKOS_PORT));
+    expect(outcome.interrupted).toBeNull();
+    expect(getServerPort()).toBe(outcome.port);
+  });
+
+  it('does not report the old server as crashed on the way through', async () => {
+    // The exit is one the supervisor asked for. Counting it as a crash would
+    // put the "server stopped unexpectedly" dialog in front of somebody who
+    // just clicked Restart.
+    const { dialog } = await getElectronMock();
+    const { startServer, restartServer } = await import('../server-process');
+
+    const { child } = await startReadyServer(startServer);
+    const restarting = restartServer();
+    await letTheRestartHappen(child, 1);
+    await restarting;
+
+    expect(dialog.showMessageBox).not.toHaveBeenCalled();
+  });
+
+  it('runs the between-stop-and-start work while nothing holds the data directory', async () => {
+    const { startServer, restartServer } = await import('../server-process');
+
+    const { child } = await startReadyServer(startServer);
+    /** What had happened by the time the callback ran. */
+    let sawWhileStopped: { forks: number; oldChildExited: boolean } | null = null;
+    let oldChildExited = false;
+    child.on('exit', () => {
+      oldChildExited = true;
+    });
+
+    const restarting = restartServer(async () => {
+      sawWhileStopped = { forks: forkCount(), oldChildExited };
+    });
+    await letTheRestartHappen(child, 1);
+    await restarting;
+
+    // One fork so far — the old one. The replacement had not been spawned yet,
+    // and the old child was already gone: the only moment a reset may delete
+    // the directory both servers would otherwise have open.
+    expect(sawWhileStopped).toEqual({ forks: 1, oldChildExited: true });
+  });
+
+  it('starts the server anyway when that work throws, and reports what it threw', async () => {
+    // The invariant that keeps "Reset All Data" from bricking the app: a
+    // callback that fails between the stop and the start must not be able to
+    // leave the shell with no server, which is exactly the state DOR-532 gated
+    // the HTTP route to prevent.
+    const { startServer, restartServer, getServerPort } = await import('../server-process');
+
+    const { child } = await startReadyServer(startServer);
+    const restarting = restartServer(() => Promise.reject(new Error('someone else has it')));
+    const replacement = await letTheRestartHappen(child, 1);
+    const outcome = await restarting;
+
+    expect(outcome.interrupted?.message).toBe('someone else has it');
+    expect(outcome.port).toBe(Number(replacement.env.DORKOS_PORT));
+    expect(getServerPort()).toBe(outcome.port);
+  });
+
+  it('carries what the between-work threw when the start ALSO failed', async () => {
+    // Two independent failures, and only one of them is "did a server come
+    // back". Dropping the other is how "was my data deleted?" goes unanswered.
+    const { startServer, restartServer, RestartFailedError } = await import('../server-process');
+
+    const { child } = await startReadyServer(startServer);
+    const restarting = restartServer(() => Promise.reject(new Error('someone else has it')));
+    await until('the shutdown message', () => child.sent.length > 0);
+    child.emitExit(0);
+    const doomed = await devChildAt(1);
+    doomed.emitExit(1);
+
+    const err = await restarting.catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(RestartFailedError);
+    expect((err as InstanceType<typeof RestartFailedError>).interrupted?.message).toBe(
+      'someone else has it'
+    );
+    // The start's own account survives as the message, and the original rides
+    // along as `cause`.
+    expect((err as Error).message).toMatch(/exited/i);
+    expect((err as Error).cause).toBeInstanceOf(Error);
+  });
+
+  it('refuses a second restart while one is still running', async () => {
+    const { startServer, restartServer } = await import('../server-process');
+
+    const { child } = await startReadyServer(startServer);
+    const restarting = restartServer();
+    // Two interleaved cycles would have one's startServer race the other's
+    // stopServer over the same port and the same SQLite store.
+    await expect(restartServer()).rejects.toThrow(/already restarting/i);
+
+    await letTheRestartHappen(child, 1);
+    await restarting;
+  });
+
+  it('is how a server that is not running gets started again', async () => {
+    // The way back from a restart whose replacement failed to boot: this path
+    // is IPC, not HTTP, so the button still works with no server alive.
+    const { restartServer, getServerPort } = await import('../server-process');
+
+    const restarting = restartServer();
+    const child = await devChildAt(0);
+    child.emitReady();
+    const outcome = await restarting;
+
+    expect(getServerPort()).toBe(outcome.port);
+  });
+
+  it('lets the caller retry after a replacement failed to start', async () => {
+    const { startServer, restartServer, getServerPort } = await import('../server-process');
+
+    const { child } = await startReadyServer(startServer);
+    const failing = restartServer();
+    await until('the shutdown message', () => child.sent.length > 0);
+    child.emitExit(0);
+    const doomed = await devChildAt(1);
+    doomed.emitExit(1);
+    await expect(failing).rejects.toThrow();
+    expect(getServerPort()).toBeNull();
+
+    // The guard released, so the next attempt is allowed to run.
+    const retrying = restartServer();
+    const replacement = await devChildAt(2);
+    replacement.emitReady();
+
+    expect((await retrying).port).toBe(Number(replacement.env.DORKOS_PORT));
+  });
+});
+
 describe('the main process safety net', () => {
   it('logs an unhandled rejection instead of letting it vanish (H1)', async () => {
     const { default: log } = await getLogMock();
