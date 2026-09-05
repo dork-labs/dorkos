@@ -313,13 +313,17 @@ describe('Admin routes', () => {
     // denial of service the attacker could not get any other way.
     it('does not spend the acting budget on a reset it refused', async () => {
       for (let i = 0; i < 3; i++) {
-        const refused = await request(app).post('/api/admin/reset').send({ confirm: 'reset' });
+        const refused = await request(fixtureServer)
+          .post('/api/admin/reset')
+          .send({ confirm: 'reset' });
         expect(refused.status).toBe(403);
       }
 
       const token = await armReset();
-      const reset = await request(app).post('/api/admin/reset').send({ confirm: 'reset', token });
-      const restart = await request(app).post('/api/admin/restart');
+      const reset = await request(fixtureServer)
+        .post('/api/admin/reset')
+        .send({ confirm: 'reset', token });
+      const restart = await request(fixtureServer).post('/api/admin/restart');
 
       expect(reset.status).toBe(200);
       expect(restart.status).toBe(200);
@@ -327,11 +331,13 @@ describe('Admin routes', () => {
 
     // …and the budget is still a budget: what actually ends this process counts.
     it('still stops a fourth acting request', async () => {
-      await request(app).post('/api/admin/restart');
-      await request(app).post('/api/admin/restart');
+      await request(fixtureServer).post('/api/admin/restart');
+      await request(fixtureServer).post('/api/admin/restart');
       const token = await armReset();
-      const reset = await request(app).post('/api/admin/reset').send({ confirm: 'reset', token });
-      const fourth = await request(app).post('/api/admin/restart');
+      const reset = await request(fixtureServer)
+        .post('/api/admin/reset')
+        .send({ confirm: 'reset', token });
+      const fourth = await request(fixtureServer).post('/api/admin/restart');
 
       expect(reset.status).toBe(200);
       expect(fourth.status).toBe(429);

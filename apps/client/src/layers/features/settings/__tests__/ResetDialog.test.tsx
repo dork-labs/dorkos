@@ -101,7 +101,16 @@ describe('ResetDialog', () => {
       fireEvent.change(screen.getByTestId('reset-confirm-input'), { target: { value: 'reset' } });
       fireEvent.click(screen.getByRole('button', { name: /reset all data/i }));
 
-      await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Too many admin requests.'));
+      // Authored headline, server's own sentence as the description (DOR-1755),
+      // with the typographic apostrophe batch 10 gave it (DOR-1756).
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(
+          'Couldn’t reset your data.',
+          expect.objectContaining({ description: 'Too many admin requests.' })
+        )
+      );
+      // The refusal has to reach the person AND stop the reset: an arm that
+      // failed must never be followed by a spend.
       expect(mockTransport.resetAllData).not.toHaveBeenCalled();
       expect(defaultProps.onResetComplete).not.toHaveBeenCalled();
     });
