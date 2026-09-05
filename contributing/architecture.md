@@ -1030,7 +1030,7 @@ This replaced the previous pattern where each route computed its own fallback pa
 
 The server reads `DORKOS_CORS_ORIGIN` from the environment to configure CORS allowed origins — a comma-separated list. When unset, defaults to the Vite dev server origin. This allows production deployments to restrict cross-origin access without code changes. A `*` is not an allowlist and is ignored with a warning, on the HTTP path and the WebSocket path alike.
 
-Three surfaces honour the variable and all three read one parser (`parseConfiguredOrigins`): the CORS middleware, the WebSocket upgrade check (`isTrustedUpgradeOrigin`), and Better Auth's CSRF allowlist (`resolveAuthTrustedOrigins`, DOR-1744). The auth list drops wildcard-pattern and empty entries so it can never be wider than the CORS one. `resolveTrustedOrigins()` itself is deliberately unchanged: `routes/extensions-approval.ts` reads it and must not consult the operator's CORS list.
+Three surfaces honour the variable and all three read one parser (`parseConfiguredOrigins`): the CORS middleware, the WebSocket upgrade check (`isTrustedUpgradeOrigin`), and Better Auth's CSRF allowlist (`resolveAuthTrustedOrigins`, DOR-1744). The auth list drops wildcard-pattern and empty entries so it can never be wider than the CORS one. `resolveTrustedOrigins()` itself is deliberately unchanged: `routes/extensions-person-bar.ts` reads it and must not consult the operator's CORS list.
 
 ### Dynamic Model List (`GET /api/models`)
 

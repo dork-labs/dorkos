@@ -364,7 +364,7 @@ function isCanonicalOrigin(entry: string): boolean {
  *
  * ## Why NOT fold it into `resolveTrustedOrigins` itself
  *
- * Because `routes/extensions-approval.ts` reads that function and documents, at
+ * Because `routes/extensions-person-bar.ts` reads that function and documents, at
  * length, that it does not consult `DORKOS_CORS_ORIGIN` on purpose: "which sites
  * may read my responses" is a different question from "which page may record a
  * person's security decision". Widening the shared function would answer the

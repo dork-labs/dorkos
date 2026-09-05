@@ -240,32 +240,61 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     // the module TSDoc's point about what a list of effects can and cannot buy.
     //
     // This is the ONE agent-reachable write to `extensions.enabled` that
-    // survives DOR-1507, and it survives on purpose. State the reasoning here
-    // rather than in a ticket, because the next reader will ask:
+    // survives DOR-1507, and it survives on a single load-bearing mechanism.
+    // Name that mechanism exactly, because the first version of this entry named
+    // the wrong one and the entry was false as written.
     //
-    // - `create_extension` is tier `act`, so no approval card stands in front of
-    //   it, and scaffolding an extension is squarely the sort of work an agent
-    //   is asked to do. Its documented contract is one step — write the files,
-    //   compile, turn it on.
-    // - The write it makes is inert. The id it enables is BRAND NEW:
-    //   `scaffoldExtension` refuses a name that already exists on disk, so this
-    //   can never re-arm an extension a person approved and then switched off,
-    //   and it can never replace approved code under its own name (the trap
-    //   `forgetRunApproval` exists for on the uninstall path). A new id is by
-    //   construction absent from `extensions.approvedToRun`, so neither its
-    //   server half nor its browser bundle will load — `mayRunExtensionCode`
-    //   re-asks on every start, and `readBundle` refuses to serve it.
-    // - What the agent gets, then, is a row in the person's extension list
-    //   saying "on", waiting for the approval only they can give.
+    // **The mechanism: `scaffoldExtension` refuses an id that is taken in EITHER
+    // scope.** Not "an id that already exists" — that was the false claim. The
+    // check used to run against the one root the caller's `scope` selected, and
+    // `scope` is an argument of this very tool, so the caller picked which root
+    // got checked. Both consequences were reproduced:
     //
-    // If that ever stops being true — if scaffolding learns to overwrite, or if
-    // enabling starts implying anything about running — this entry is where the
-    // argument has to be redone, and the tool has to earn a bar.
+    //  - **Re-arm.** Person approves `foo`, then turns it off. The agent
+    //    scaffolds `foo` in the OTHER scope and `createExtension` enables that
+    //    id — restarting the person's own approved server half. The planted copy
+    //    never had to win discovery; the config write was the whole effect.
+    //  - **Squat.** `extension-discovery.ts` ignores a project copy whose id is
+    //    core or currently approved — but that guard is conditional on the very
+    //    approval it protects. After a REVOKE the planted copy wins the id, so a
+    //    person re-approving the name they recognise approves the agent's code.
+    //    Exactly the "different code under a familiar name" trap that
+    //    `forgetRunApproval` closes on the uninstall path, reached by another
+    //    road.
+    //
+    // With the either-scope refusal in place the id really is new, and only then
+    // does the rest of the argument hold: a new id is absent from
+    // `extensions.approvedToRun`, so `mayRunExtensionCode` refuses its server
+    // half and `readBundle` refuses to serve its browser half. What the agent
+    // gets is a row in the person's list saying "on", waiting for the approval
+    // only they can give. The tool stays tier `act` because the dev loop is edit
+    // → test → reload and a card per compile error is the routine-card harm this
+    // repo refused on DOR-504/506.
+    //
+    // **Invalidation conditions — redo this argument if any of these changes:**
+    //  1. `scaffoldExtension` stops refusing an id taken in the other scope, or
+    //     grows a third root that is not checked (a new scope, a plugin dir).
+    //  2. `createExtension` stops calling `scaffoldExtension` first, or starts
+    //     enabling an id it did not itself create.
+    //  3. Enabling starts implying anything about RUNNING — i.e. ANY
+    //     `mayRunExtensionCode` call site stops gating. Enumerate them from the
+    //     source rather than from this list, which is a snapshot: today there are
+    //     three, one per place code could execute — `extension-server-lifecycle.ts`
+    //     (the server half), `extension-manager.ts` `readBundle` (the browser
+    //     half, withheld so agent-authored JavaScript never runs on the page and
+    //     spends the session it finds there) and `extension-test-harness.ts` (the
+    //     `test_extension` tool, refused ahead of the compile). A fourth use in
+    //     `extension-manager-types.ts` is the `toPublic` projection, which
+    //     reports the verdict rather than enforcing it.
+    //  4. The discovery merge starts letting a project copy win an id that is
+    //     core or approved.
+    // Pinned by `extension-scaffolder.test.ts` → "an id already taken in the
+    // other scope", which fails on condition 1 directly.
     what: 'scaffolds an extension and turns it on in one step, which is the one path to `extensions.enabled` an agent can reach unaided',
     call: 'createExtension(',
     allowed: {
       'services/runtimes/claude-code/mcp-tools/extension-tools.ts':
-        'the `create_extension` MCP tool, tier `act`. Ungated on purpose: the id it enables cannot already exist, so it is never in `extensions.approvedToRun` and no code of it runs until a person approves it — see the reasoning above this entry before adding a second caller',
+        'the `create_extension` MCP tool, tier `act`. Ungated, and safe ONLY because `scaffoldExtension` refuses an id taken in either scope (DOR-1507) — so the id it enables is genuinely new, therefore never in `extensions.approvedToRun`, therefore unable to run. Read the invalidation conditions above this entry before adding a second caller or a third scope',
       'services/extensions/extension-manager.ts': 'the definition itself',
     },
   },

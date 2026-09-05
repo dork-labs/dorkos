@@ -176,6 +176,89 @@ describe('ExtensionsSettingsTab', () => {
     });
   });
 
+  /**
+   * The server's person bar (DOR-1507) answers a refused toggle with a 403 whose
+   * `message` says what DorkOS did not do and who can do it. Two things have to
+   * hold for the person to actually read that sentence, and each fails silently
+   * on its own: the hook must PARSE it off the body instead of throwing the
+   * status code, and the toast must show it BARE instead of prefixing its own
+   * "Failed to enable extension:" in front of "DorkOS changed nothing".
+   */
+  describe('a refusal from the server', () => {
+    /** Answer the toggle with a refusal body, and the list normally. */
+    function mockRefusedToggle(body: unknown, status = 403) {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((url: string) => {
+          if (url.includes('/enable') || url.includes('/disable')) {
+            return Promise.resolve({ ok: false, status, json: () => Promise.resolve(body) });
+          }
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve([makeExtension({ id: 'my-ext', status: 'disabled' })]),
+          });
+        })
+      );
+    }
+
+    async function toggleAndCatchToast() {
+      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+      await waitFor(() => {
+        expect(screen.getByTestId('extension-card-my-ext')).toBeInTheDocument();
+      });
+      fireEvent.click(screen.getByRole('switch', { name: /enable test extension/i }));
+      await waitFor(() => {
+        expect(vi.mocked(toast.error)).toHaveBeenCalled();
+      });
+      return vi.mocked(toast.error).mock.calls[0]?.[0];
+    }
+
+    it("shows the server's own sentence, with nothing prefixed to it", async () => {
+      const refusal =
+        'DorkOS changed nothing. Turning an extension on or off decides which code runs ' +
+        'inside DorkOS, so it is a decision only a person makes.';
+      mockRefusedToggle({
+        error: 'Only a person can change this',
+        code: 'operator_only_config',
+        message: refusal,
+      });
+
+      // Byte-for-byte. `toContain` would pass with the old double-wrapped
+      // "Failed to enable extension: DorkOS changed nothing…" still in place,
+      // which is the exact defect this pins.
+      expect(await toggleAndCatchToast()).toBe(refusal);
+    });
+
+    it('falls back to `error` when the body carries no message', async () => {
+      mockRefusedToggle({ error: 'Only a person can change this' });
+
+      expect(await toggleAndCatchToast()).toBe('Only a person can change this');
+    });
+
+    it('falls back to the status code when the body is not JSON at all', async () => {
+      // A proxy or a crash can answer a non-JSON body; the chain must not throw
+      // trying to read it, and the person must still be told something.
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((url: string) => {
+          if (url.includes('/enable')) {
+            return Promise.resolve({
+              ok: false,
+              status: 502,
+              json: () => Promise.reject(new Error('not json')),
+            });
+          }
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve([makeExtension({ id: 'my-ext', status: 'disabled' })]),
+          });
+        })
+      );
+
+      expect(await toggleAndCatchToast()).toBe("Failed to enable extension 'my-ext': 502");
+    });
+  });
+
   it('calls POST /api/extensions/:id/disable when toggling an active extension off', async () => {
     const ext = makeExtension({ id: 'my-ext', status: 'active' });
     mockFetch({

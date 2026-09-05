@@ -1,8 +1,13 @@
 /**
- * The bar every WRITE on the extensions router runs: is a person asking?
+ * The bar every write to the extensions CONFIG SECTION runs: is a person asking?
  *
- * Four routes reach it, and they all move a leaf of `extensions` — a section
- * whose every leaf is `operator-only` in `config-write-policy.ts`:
+ * The scope is worth stating precisely, because the obvious wider reading is
+ * wrong. This is NOT "every write on the extensions router" — that router also
+ * writes extension secrets and settings, which are per-extension data rather
+ * than a leaf of `extensions` in `~/.dork/config.json`, and they are not covered
+ * here. What this bar governs is the four routes that move a leaf of that
+ * section — a section whose every leaf is `operator-only` in
+ * `config-write-policy.ts`:
  *
  * | Route                                | Writes                                |
  * | ------------------------------------ | ------------------------------------- |
