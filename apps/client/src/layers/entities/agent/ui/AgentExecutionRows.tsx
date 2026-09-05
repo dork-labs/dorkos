@@ -1,5 +1,4 @@
 import { useCallback, useId, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { ChevronDown } from 'lucide-react';
 import type { AgentManifest, AgentManifestUpdate } from '@dorkos/shared/mesh-schemas';
 import type { EffortLevel } from '@dorkos/shared/types';
@@ -30,7 +29,6 @@ import {
   useRuntimeCapabilities,
 } from '@/layers/entities/runtime';
 import { useModels } from '@/layers/entities/session';
-import { agentKeys } from '../api/queries';
 
 /** The field-label style every cell in the Runs on picker's metadata grid uses. */
 const LABEL_CLASS = 'text-muted-foreground text-3xs font-medium tracking-wider uppercase';
@@ -314,32 +312,28 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
   // that draw it (more than one registered account) every pick failed. Model and
   // effort beside it stay on `onUpdate`, because that route still accepts them.
   //
-  // No optimistic write, and `onSettled` rather than `onSuccess`: the row is
-  // drawn entirely from the stored manifest, so a re-read is the only thing that
-  // ever moves it — and after a REFUSED write it is the only thing that proves
-  // it did not. The refusal itself is reported by the app-wide mutation handler
-  // (`shared/lib/query-client`), which runs even if this popover has closed.
+  // No optimistic write: the row is drawn entirely from the stored manifest, so
+  // the re-read `useUpdateAgent` runs on settle is the only thing that ever moves
+  // it — and after a REFUSED write it is the only thing that proves it did not.
   //
-  // The invalidation is the one `ToolsTab` explains: `useUpdateAgent` clears
-  // `['mesh','agents']` and stops, while this row renders whatever manifest its
-  // caller holds — `agentKeys.byPath` in the profile popover, `agentKeys.resolved`
-  // behind the Settings exceptions strip. The `agentKeys.all` prefix covers both.
-  // The team roster is deliberately NOT swept: `TeamAgentFacts` carries `runtime`
-  // and `model` and no account, so there is nothing there this write changes.
-  const updateAgent = useUpdateMeshAgent();
-  const queryClient = useQueryClient();
+  // **No `onSettled` here either, deliberately.** The manifest sweep this row
+  // needs (`agentKeys.byPath` in this popover, `agentKeys.resolved` behind the
+  // Settings exceptions strip) lives at MUTATION level inside the hook, because
+  // a callback passed to `mutate` dies with the observer — and a person picks an
+  // account and closes the popover in the same breath. The hook's own doc has
+  // the full reasoning. The team roster is swept by nobody on purpose:
+  // `TeamAgentFacts` carries `runtime` and `model` and no account, so a refetch
+  // there could not change anything on screen.
+  //
+  // The label is what the app-wide mutation handler composes the server's own
+  // sentence onto, so a refusal here reads like the ones Model and Effort get
+  // rather than the generic "Action failed".
+  const updateAgent = useUpdateMeshAgent({ errorLabel: 'Couldn’t change this agent’s account' });
   const writeAccount = useCallback(
     (account: string | null) => {
-      updateAgent.mutate(
-        { id: agent.id, updates: { account } },
-        {
-          onSettled: () => {
-            void queryClient.invalidateQueries({ queryKey: agentKeys.all });
-          },
-        }
-      );
+      updateAgent.mutate({ id: agent.id, updates: { account } });
     },
-    [agent.id, queryClient, updateAgent]
+    [agent.id, updateAgent]
   );
 
   // One report, the same rules the exceptions strip and the sidebar read, so a
