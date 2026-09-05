@@ -14,7 +14,10 @@ import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
 import type { AdapterPackageManifest } from '@dorkos/marketplace';
 import type { AdapterManager } from '../../../relay/adapter-manager.js';
-import { AdapterInstallFlow } from '../../flows/install-adapter.js';
+import {
+  ADAPTER_PROJECT_PATH_IGNORED_WARNING,
+  AdapterInstallFlow,
+} from '../../flows/install-adapter.js';
 
 /** Build a no-op logger that records calls for assertion. */
 function buildLogger(): Logger {
@@ -103,7 +106,7 @@ describe('AdapterInstallFlow', () => {
     const adapterManager = buildAdapterManagerMock();
     const flow = new AdapterInstallFlow({ dorkHome, adapterManager, logger: buildLogger() });
 
-    const result = await flow.install(packagePath, manifest, { name: manifest.name });
+    const result = await flow.install(packagePath, manifest, {});
 
     const expectedInstallPath = path.join(dorkHome, 'plugins', manifest.name);
     expect(result.ok).toBe(true);
@@ -141,9 +144,7 @@ describe('AdapterInstallFlow', () => {
     const adapterManager = buildAdapterManagerMock({ addAdapter, removeAdapter });
     const flow = new AdapterInstallFlow({ dorkHome, adapterManager, logger: buildLogger() });
 
-    await expect(flow.install(packagePath, manifest, { name: manifest.name })).rejects.toThrow(
-      'addAdapter exploded'
-    );
+    await expect(flow.install(packagePath, manifest, {})).rejects.toThrow('addAdapter exploded');
 
     // Compensating removeAdapter must have been called for the failed instance
     expect(removeAdapter).toHaveBeenCalledTimes(1);
@@ -156,10 +157,36 @@ describe('AdapterInstallFlow', () => {
     const adapterManager = buildAdapterManagerMock();
     const flow = new AdapterInstallFlow({ dorkHome, adapterManager, logger: buildLogger() });
 
-    const result = await flow.install(packagePath, manifest, { name: manifest.name });
+    const result = await flow.install(packagePath, manifest, {});
 
     expect(result.warnings).toEqual([
       'Configure secrets via dorkos relay-adapters set ' + manifest.name,
     ]);
+    // No projectPath was requested, so there is nothing to warn about.
+    expect(result.warnings).not.toContain(ADAPTER_PROJECT_PATH_IGNORED_WARNING);
+  });
+
+  it('warns that the project choice was ignored when the request carries a projectPath (DOR-1776)', async () => {
+    // Adapters are global-only — the relay's adapter registry
+    // (`relay-adapters.json`) has no per-project dimension. A caller (MCP tool,
+    // HTTP route, CLI) that requests a project-scoped install must be told their
+    // scope choice was ignored rather than have it silently dropped. Mirrors the
+    // Shape flow's SHAPE_PROJECT_PATH_IGNORED_WARNING (DOR-386).
+    const manifest = buildManifest('scoped-adapter');
+    const packagePath = await writeAdapterPackage(sourceRoot, manifest);
+    const adapterManager = buildAdapterManagerMock();
+    const flow = new AdapterInstallFlow({ dorkHome, adapterManager, logger: buildLogger() });
+
+    const result = await flow.install(packagePath, manifest, { projectPath: '/some/project' });
+
+    expect(result.ok).toBe(true);
+    expect(result.warnings).toEqual([
+      ADAPTER_PROJECT_PATH_IGNORED_WARNING,
+      'Configure secrets via dorkos relay-adapters set ' + manifest.name,
+    ]);
+    // The install root is unaffected — still global, never under projectPath.
+    const installPath = path.join(dorkHome, 'plugins', 'scoped-adapter');
+    expect(result.installPath).toBe(installPath);
+    await access(path.join(installPath, '.dork', 'manifest.json'));
   });
 });

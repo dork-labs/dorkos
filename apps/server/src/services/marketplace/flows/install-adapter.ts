@@ -23,6 +23,16 @@ import { stagePackageContents } from '../lib/stage-package.js';
 import { runTransaction } from '../transaction.js';
 import type { InstallRequest, InstallResult } from '../types.js';
 
+/**
+ * Warning surfaced in {@link InstallResult.warnings} when an install request
+ * for an adapter carries a `projectPath`. Adapters are global-only (see
+ * {@link AdapterInstallFlow.install}), so the request still succeeds — this
+ * only tells the caller their scope choice was not honored, instead of
+ * silently discarding it (DOR-1776, mirroring DOR-386 for Shapes).
+ */
+export const ADAPTER_PROJECT_PATH_IGNORED_WARNING =
+  'Adapters always install for every project, not just the one you specified. Your project choice was ignored.';
+
 /** Dependencies for {@link AdapterInstallFlow}. */
 export interface AdapterFlowDeps {
   /** Resolved DorkOS data directory (`~/.dork` in production). */
@@ -46,15 +56,25 @@ export class AdapterInstallFlow {
   /**
    * Install an adapter package.
    *
+   * Adapters are global-only — the relay's adapter registry
+   * (`relay-adapters.json`) has no per-project dimension, and
+   * {@link AdapterManager} is a single process-wide instance — so
+   * `opts.projectPath` never changes the install root. If the caller supplied
+   * one anyway, the install still succeeds globally, but the returned
+   * {@link InstallResult.warnings} carries
+   * {@link ADAPTER_PROJECT_PATH_IGNORED_WARNING} so the caller knows their
+   * scope choice was ignored rather than silently dropped (DOR-1776).
+   *
    * @param packagePath - Validated package source directory on disk
    * @param manifest - Parsed and validated adapter manifest
-   * @param _opts - Original install request (reserved for future use)
+   * @param opts - Install request options; only `projectPath` is read, and only
+   *   to decide whether to warn
    * @returns The full {@link InstallResult} on success
    */
   async install(
     packagePath: string,
     manifest: AdapterPackageManifest,
-    _opts: InstallRequest
+    opts: Pick<InstallRequest, 'projectPath'>
   ): Promise<InstallResult> {
     const { dorkHome, adapterManager, logger } = this.deps;
     const installPath = path.join(dorkHome, installRootDirForType(manifest.type), manifest.name);
@@ -65,6 +85,7 @@ export class AdapterInstallFlow {
       installPath,
     });
 
+    const scopeWarnings = opts.projectPath ? [ADAPTER_PROJECT_PATH_IGNORED_WARNING] : [];
     // Filled during `stage` by the npm dependency step; read after the
     // transaction commits, so a rolled-back install reports nothing.
     const dependencyWarnings: string[] = [];
@@ -99,6 +120,7 @@ export class AdapterInstallFlow {
       installPath: transactionResult.installPath,
       manifest,
       warnings: [
+        ...scopeWarnings,
         `Configure secrets via dorkos relay-adapters set ${manifest.name}`,
         ...dependencyWarnings,
       ],
