@@ -86,7 +86,7 @@ const SHARD_TOTAL = shardTotal();
 // The full argument — what was measured, on which runs, and why the deadline is
 // computed instead of typed in — is on `globalTimeout` below.
 const UNSHARDED_SUITE_MINUTES = 41;
-const LEG_BOOT_MINUTES = 3;
+const LEG_BOOT_MINUTES = 4;
 const GLOBAL_TIMEOUT_HEADROOM = 1.75;
 
 /** A healthy shard's derived wall time: fixed boot cost plus its share of the tests. */
@@ -140,6 +140,17 @@ const MOCK_DORK_HOME = `/tmp/dorkos-test-mode-${MOCK_PORT}`;
 // `tests/marketplace.spec.ts`. Port matches `apps/site/package.json` `dev` script.
 const SITE_PORT = port('DORKOS_SITE_PORT', '6244');
 
+// THE PRODUCTION LEG'S PORT — the app as it actually ships (DOR-1723). One
+// Express server under `NODE_ENV=production`, serving the BUILT client off this
+// port with no Vite in front of it, which is the only arrangement that carries
+// the shipped `Content-Security-Policy`. Its own env name for the same reason
+// the cockpit leg has one: nothing else in the repo reads `DORKOS_PROD_PORT`, so
+// an ambient dev environment cannot move it.
+const PROD_PORT = port('DORKOS_PROD_PORT', '4246');
+// Throwaway data directory for the production server, keyed by its port and
+// wiped before every boot — same treatment as the two legs above.
+const PROD_DORK_HOME = `/tmp/dorkos-production-${PROD_PORT}`;
+
 // The marketing-site leg is heavy (Next.js + Turbopack + a fumadocs file
 // watcher) and only the site specs (see SITE_SPECS) need it. Booting it for
 // cockpit-only runs wastes minutes and, under file-descriptor pressure (many
@@ -150,6 +161,23 @@ const SITE_PORT = port('DORKOS_SITE_PORT', '6244');
 // (.github/workflows/browser-test.yml) also sets E2E_SITE=1 explicitly so its
 // coverage does not ride this conditional.
 const INCLUDE_SITE = process.env.E2E_SITE === '1' || (CI && process.env.E2E_SITE !== '0');
+
+// The production leg has to BUILD the client before it can serve anything
+// (`turbo run build --filter=@dorkos/client`), which is a cost no developer
+// running one cockpit spec should pay — every other leg boots off a dev server.
+// So it is opt-in exactly the way the site leg is: `E2E_PROD=1` includes it, CI
+// defaults it ON unless `E2E_PROD=0` forces it off, and
+// .github/workflows/browser-test.yml sets it explicitly so the coverage it
+// carries does not ride this conditional.
+//
+// What opting out saves is the BUILD, not the boot. `webServer` is per-RUN, not
+// per-project, so `--project chromium` still starts every leg in this array —
+// leaving this one off means a local run boots five legs instead of six and
+// skips a client build, never that a targeted run boots only what it asked for.
+// The site leg's opt-out has always meant the same thing (README's isolated-run
+// recipe says so about the mock leg); stated here because a flag named for a leg
+// reads like it gates that leg alone.
+const INCLUDE_PRODUCTION = process.env.E2E_PROD === '1' || (CI && process.env.E2E_PROD !== '0');
 
 // `@integration`-tagged specs drive a REAL agent runtime — they start a turn and
 // wait for a model to answer. That needs model credentials, which a PR runner
@@ -240,12 +268,21 @@ function resetThrowawayHome(dorkHome: string): string {
  * @param env - Leg-specific environment, prefixed onto the command.
  * @param preBoot - Shell run before the build, for a leg that must start from a
  *   known-empty state.
+ * @param alsoBuild - Extra workspace packages to build alongside the server. The
+ *   production leg needs `@dorkos/client`, because under `NODE_ENV=production`
+ *   the server serves that package's `dist/` rather than proxying a dev server —
+ *   with no dist there is no shell to serve and no policy to test.
  */
-function apiLegCommand(env: Record<string, string> = {}, preBoot?: string): string {
+function apiLegCommand(
+  env: Record<string, string> = {},
+  preBoot?: string,
+  alsoBuild: string[] = []
+): string {
   const prefix = Object.entries(env)
     .map(([key, value]) => `${key}=${value}`)
     .join(' ');
-  const boot = `turbo run build --filter=@dorkos/server && pnpm --filter @dorkos/server exec tsx src/index.ts`;
+  const filters = ['@dorkos/server', ...alsoBuild].map((pkg) => `--filter=${pkg}`).join(' ');
+  const boot = `turbo run build ${filters} && pnpm --filter @dorkos/server exec tsx src/index.ts`;
   const script = preBoot ? `${preBoot} && ${boot}` : boot;
   return `${prefix ? `${prefix} ` : ''}dotenv -- sh -c '${script}'`;
 }
@@ -341,13 +378,18 @@ export default defineConfig({
   //   * a full unsharded suite takes ~41 minutes in the `playwright test` step
   //     (40m33s / 41m45s / 42m43s / 43m11s on runs 32281755292, 32272418644,
   //     32251346554, 32259784745)
-  //   * ~2m24s of that is the five webServer legs booting SEQUENTIALLY plus
+  //   * ~2m24s of that is the webServer legs booting SEQUENTIALLY plus
   //     `global-setup.ts` — fixed cost every shard re-pays, and the only part
   //     that does NOT divide. (Run 32239903731: its suite step began 10:39:15
   //     and its globalSetup blew a 180s `waitForSelector` at 10:44:39, so the
-  //     legs were up by 10:41:39. Rounded up to 3 in LEG_BOOT_MINUTES above.)
+  //     legs were up by 10:41:39. Rounded up to 4 in LEG_BOOT_MINUTES above —
+  //     3 when it was measured against five legs, one more since DOR-1723 added
+  //     a sixth. That leg's cost is a warm-cache build replay plus one server
+  //     boot, and the extra minute is rounding rather than a new measurement;
+  //     the derived deadline lands on the same 30 minutes either way, so
+  //     nothing about the ladder moved.)
   //
-  // So a healthy shard is `boot + (suite − boot) / shards` — about 15m40s at
+  // So a healthy shard is `boot + (suite − boot) / shards` — about 16m20s at
   // three shards — and the deadline is 1.75× that, rounded up to the next five
   // minutes: 30 minutes. The 1.75 is deliberately looser than the 1.5 the flat
   // number was originally set at, because `--shard` divides by TEST COUNT and
@@ -400,13 +442,15 @@ export default defineConfig({
     // `storageState` applies to every context in every project however `test`
     // was imported, which is the property this needs.
     //
-    // One entry per leg, because `localStorage` is per-origin.
+    // One entry per leg, because `localStorage` is per-origin — the two Vite
+    // clients, and the production leg, whose origin is the Express port itself
+    // because that server serves the built shell directly.
     // `dashboard-sidebar/boot-stability.spec.ts` removes the key to opt back in —
     // warm boot is the thing it tests.
     storageState: {
       cookies: [],
-      origins: [VITE_PORT, MOCK_VITE_PORT].map((vitePort) => ({
-        origin: `http://localhost:${vitePort}`,
+      origins: [VITE_PORT, MOCK_VITE_PORT, PROD_PORT].map((originPort) => ({
+        origin: `http://localhost:${originPort}`,
         localStorage: [{ name: BOOT_CACHE_DISABLED_KEY, value: '1' }],
       })),
     },
@@ -479,18 +523,16 @@ export default defineConfig({
       // server it proxies `/api` to, which on a developer machine is the dev
       // stack rather than the leg above.
       //
-      // **NOTHING IN THIS SUITE SEES THE PRODUCTION CONTENT-SECURITY-POLICY.**
-      // The browser loads the app from Vite, which serves its own shell with no
-      // CSP header; the Express leg's policy (`SHELL_CSP` in
-      // `apps/server/src/app.ts`) only goes out with the BUILT shell it serves
-      // under `NODE_ENV=production`, which no leg here runs. So a directive
-      // that breaks a real browser surface stays green through this whole
-      // suite — `workbench/dev-server-preview.spec.ts` would have passed
-      // forever while the shipped app reported every dev server unreachable
-      // (DOR-560, caught in review by driving a production-mode server in
-      // Chromium by hand). Until a production-mode leg exists, the policy's
-      // only automated coverage is `app-spa-fallback.test.ts`, which asserts
-      // the whole header string.
+      // **NO CONTENT-SECURITY-POLICY REACHES THIS LEG.** Vite serves its own
+      // shell with no CSP header, so nothing a spec does here exercises the
+      // shipped policy (`SHELL_CSP` in `apps/server/src/app.ts`), which only
+      // goes out with the BUILT shell an `NODE_ENV=production` server serves.
+      // That used to be the whole story: a directive that broke a real browser
+      // surface stayed green through this entire suite, and
+      // `workbench/dev-server-preview.spec.ts` would have passed forever while
+      // the shipped app reported every dev server unreachable (DOR-560). The
+      // production leg below is what closes it — see
+      // `tests/production/shipped-shell.spec.ts` (DOR-1723).
       //
       // **AND NO HOT MODULE REPLACEMENT** (DOR-1412). No spec edits source, so
       // the suite loses nothing — while a run leaves it on, anything that
@@ -622,6 +664,60 @@ export default defineConfig({
           },
         ]
       : []),
+    // THE APP AS IT SHIPS (DOR-1723) — one Express server under
+    // `NODE_ENV=production`, serving the built client itself. No Vite anywhere:
+    // that is the point, because the shell Vite serves carries no
+    // `Content-Security-Policy` and the shell this one serves carries the real
+    // policy at both of its doors (`SHELL_CSP` in `apps/server/src/app.ts`).
+    // `tests/production/shipped-shell.spec.ts` is the whole of what runs here,
+    // and its header says why it is a smoke subset rather than the suite.
+    //
+    // `NODE_ENV` is what switches the server onto that path, so it is set here
+    // rather than inherited — and it is also what makes the throwaway
+    // `DORK_HOME` below load-bearing rather than tidy: `resolveDorkHome()` falls
+    // back to the real `~/.dork` under `NODE_ENV=production`, so a leg that
+    // forgot it would boot against somebody's installed cockpit. `global-setup.ts`
+    // refuses to run against a home outside `/tmp/dorkos-`, which is what makes
+    // deleting that line fail something.
+    //
+    // No `VITE_PORT`, deliberately: in production the server trusts its OWN
+    // origin and not a dev server's (`getStaticLocalOrigins`), and naming a Vite
+    // port here would suggest this leg has a client in front of it.
+    ...(INCLUDE_PRODUCTION
+      ? [
+          {
+            command: apiLegCommand(
+              {
+                NODE_ENV: 'production',
+                DORKOS_PORT: PROD_PORT,
+                DORK_HOME: PROD_DORK_HOME,
+                // Keeps the fixtures' scratch dir in bounds wherever the
+                // checkout is — see REPO_ROOT.
+                DORKOS_BOUNDARY: REPO_ROOT,
+                // Same lock as the two legs above, for the same reason: without
+                // it the message-search sweep full-text-copies the operator's
+                // real transcripts into the directory below (DOR-1551).
+                DORKOS_SEARCH_NO_EXTERNAL_HISTORY: 'true',
+              },
+              // Wiped and recreated `0700` before every boot — see resetThrowawayHome.
+              resetThrowawayHome(PROD_DORK_HOME),
+              // The built client IS what this leg serves; see apiLegCommand.
+              ['@dorkos/client']
+            ),
+            url: `http://localhost:${PROD_PORT}/api/health`,
+            name: 'Express API (production)',
+            // The same ≈240s family as every other Express leg, +3s so this
+            // array's timeout VALUES stay distinct (see the cockpit Express
+            // leg's comment for why that matters). It builds the client on top
+            // of the server, which is a cache replay whenever the workflow's
+            // build step ran first.
+            timeout: 243_000,
+            reuseExistingServer: REUSE_EXISTING_SERVER,
+            stdout: 'pipe' as const,
+            stderr: 'pipe' as const,
+          },
+        ]
+      : []),
   ],
 
   projects: [
@@ -679,6 +775,13 @@ export default defineConfig({
         // and a `/compact` per run, so reaching this leg would bill the
         // machine's own `claude` sign-in for every one of them.
         '**/chat/compaction*',
+        // Runs against the production leg in `chromium-production` below, and
+        // only there. On this leg its every assertion would be vacuous: Vite's
+        // shell carries no Content-Security-Policy, so a spec written to prove
+        // the shipped policy works would prove nothing while passing.
+        // Unconditional rather than tied to INCLUDE_PRODUCTION — the wrong leg
+        // is the wrong leg whether or not the right one was booted.
+        '**/production/**',
         ...(INCLUDE_SITE ? [] : SITE_SPECS),
       ],
       // Skips the specs that need real model credentials — see INCLUDE_INTEGRATION.
@@ -816,5 +919,26 @@ export default defineConfig({
       },
       testMatch: ['**/relay/bridged-channel.spec.ts'],
     },
+    // The only project whose `baseURL` is an EXPRESS port rather than a Vite
+    // one, because the production leg serves the built shell itself — which is
+    // the only way a browser here ever sees the shipped Content-Security-Policy
+    // (DOR-1723). Deliberately a smoke subset, not the suite: the leg costs a
+    // client build, and the specs that belong here are the ones whose surface
+    // the policy can silently break. See `tests/production/shipped-shell.spec.ts`.
+    //
+    // Opt-in with the leg it needs — without the server on PROD_PORT these specs
+    // would hang on an unreachable origin, exactly as the site specs would.
+    ...(INCLUDE_PRODUCTION
+      ? [
+          {
+            name: 'chromium-production',
+            use: {
+              ...devices['Desktop Chrome'],
+              baseURL: `http://localhost:${PROD_PORT}`,
+            },
+            testMatch: ['**/production/*.spec.ts'],
+          },
+        ]
+      : []),
   ],
 });
