@@ -1214,12 +1214,20 @@ describe('ChannelsPage — reading older history', () => {
     return transport;
   }
 
+  // A wider budget than the file's default, and the reason is in `firstPage`:
+  // the control only exists over a room whose first read was FULL, so this test
+  // renders the whole page-sized room through the whole stack — the query, the
+  // stream, the grouping and the timeline. On an idle machine it is a quarter of
+  // a second; measured at load average 211 (several worktrees of agents, which
+  // AGENTS.md says is this repo's normal), the transform alone took ninety.
+  // Same reasoning `room-conversation.spec.ts` sizes its own budget by.
   it('puts what was said before the loaded page into the room, in order', async () => {
-    const user = userEvent.setup();
     const transport = renderRoom();
 
     expect(await screen.findByText('what the room opened on')).toBeInTheDocument();
-    await user.click(await screen.findByTestId('room-load-older'));
+    // `fireEvent`, not `userEvent`: this is one press on one button, and
+    // userEvent's pointer simulation is the expensive half of it.
+    fireEvent.click(await screen.findByTestId('room-load-older'));
 
     expect(await screen.findByText('said the day before')).toBeInTheDocument();
     expect(transport.listRoomEntries).toHaveBeenLastCalledWith(
@@ -1232,7 +1240,7 @@ describe('ChannelsPage — reading older history', () => {
     expect(drawn[1]).toContain('what the room opened on');
     // …and the control is gone, because that second read was short.
     await waitFor(() => expect(screen.queryByTestId('room-load-older')).not.toBeInTheDocument());
-  });
+  }, 30_000);
 
   it('offers nothing at all over a room that fitted in one read', async () => {
     // The common room, through the whole stack: the first page comes back short
