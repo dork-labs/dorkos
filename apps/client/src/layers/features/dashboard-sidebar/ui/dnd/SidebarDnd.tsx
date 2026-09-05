@@ -163,6 +163,15 @@ export function SidebarDnd({ children, displayNames, rooms }: SidebarDndProps) {
       toast.info(COMPUTED_ZONE_REJECTION, { description: itemName(op.ref) });
       return;
     }
+    // **A drop that changes nothing writes nothing** (DOR-1746). `none` is what
+    // classify returns for a drop on empty space, a drop back where the drag
+    // started, and every reorder whose `from === to`, and `resolveSidebarDrop`
+    // faithfully hands back the prefs it was given — but `update` does not
+    // compare, so it PATCHed the whole `ui.sidebar` section anyway. Cheap enough
+    // to have gone unnoticed with a mouse, where a no-op drop takes deliberate
+    // effort; from the keyboard it is one Space away, and the reflex of lifting
+    // a row and putting it straight back down should cost the server nothing.
+    if (op.kind === 'none') return;
     update((prev) => resolveSidebarDrop(prev, drag, drop));
   };
 

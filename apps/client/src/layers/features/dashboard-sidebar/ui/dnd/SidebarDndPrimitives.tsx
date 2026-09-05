@@ -38,12 +38,18 @@ export const SidebarDndEnabledProvider = SidebarDndEnabledContext.Provider;
  * hiding the row it wrapped.
  *
  * `group` is the honest answer and it is not a widget role, so it may contain
- * focusable content: the wrapper really is a container of related controls, it
- * still takes `tabIndex`, `aria-disabled` and `aria-roledescription="sortable"`
- * — which needs an explicit role to be valid at all, so simply deleting the role
- * would have traded one violation for another. (dnd-kit's keyboard instructions
- * were on this wrapper too until DOR-1746 moved them to the row, which is the
- * element that can actually take focus and hear them read out.)
+ * focusable content: the wrapper really is a container of related controls, and
+ * it still takes `tabIndex` and `aria-disabled`.
+ *
+ * **It has to be spelled, not deleted.** dnd-kit reads `role` with a
+ * `= defaultRole` fallback, so omitting it is how you ask for `button` — the
+ * violation — rather than how you ask for no role at all.
+ *
+ * The sortable ARIA it used to carry beside the role — `aria-roledescription`
+ * and dnd-kit's keyboard instructions — moved to the row in DOR-1746. Both are
+ * announced on focus, and this wrapper is never focused; they belong on the
+ * element a reader actually lands on. {@link SIDEBAR_DRAG_ROOT_ATTRIBUTE} is
+ * what names this node now.
  *
  * It costs `aria-pressed`, which dnd-kit emits only while the role is its
  * `button` default, and that is a real trade rather than a free one: the grabbed
@@ -69,6 +75,17 @@ const SORTABLE_ROOT_ROLE = 'group';
  * the keyboard actually lands: see {@link SortableBindings.activatorProps}.
  */
 const SORTABLE_ROOT_TAB_INDEX = -1;
+
+/**
+ * The mark every drag root carries — what names the wrapper dnd-kit measures.
+ *
+ * Its predecessor was `aria-roledescription="sortable"`, which page objects and
+ * the `nested-interactive` sweep both located the wrapper by. That attribute
+ * moved to the row in DOR-1746 (it is announced on focus, and the row is what
+ * takes focus), so the wrapper needed a name of its own rather than borrowing a
+ * screen-reader attribute to be findable — which is what it had been doing.
+ */
+export const SIDEBAR_DRAG_ROOT_ATTRIBUTE = 'data-sidebar-drag-root';
 
 /** Read whether the sidebar drag layer is active in the current subtree. */
 function useSidebarDndEnabled(): boolean {
@@ -169,13 +186,22 @@ function SortableInner({
     [transform, transition]
   );
   const rootProps = useMemo(() => {
-    // `aria-describedby` is dnd-kit's keyboard instructions ("To pick up a
-    // sortable item, press space…"), and they are read out when the element
-    // carrying them takes focus. The root never does, so they travel with the
-    // activator instead — see below.
-    const { 'aria-describedby': _describedBy, ...root } = attributes;
+    // **The two halves of one spoken message go to the activator together.**
+    // `aria-roledescription="sortable"` and `aria-describedby` (dnd-kit's "To
+    // pick up a sortable item, press space…") are both read out when the element
+    // carrying them takes focus, and the root never does — so a root keeping
+    // either of them is telling a reader something they will never hear, in the
+    // half of a sentence whose other half moved (DOR-1746).
+    const {
+      'aria-describedby': _describedBy,
+      'aria-roledescription': _roleDescription,
+      ...root
+    } = attributes;
     return {
       ...root,
+      // What names a drag root, now that the sortable roledescription no longer
+      // does. Page objects and the axe sweep locate the wrapper by this.
+      [SIDEBAR_DRAG_ROOT_ATTRIBUTE]: '',
       // Read by `useRovingFocus`, which stands its arrow traversal down while a
       // row is off the ground. Stamped here rather than by each call site: a
       // section that forgot it would fight the drag it is hosting.
@@ -191,6 +217,7 @@ function SortableInner({
   const activatorProps = useMemo<SidebarDragActivatorProps>(
     () => ({
       ref: setActivatorNodeRef,
+      'aria-roledescription': attributes['aria-roledescription'],
       'aria-describedby': attributes['aria-describedby'],
       ...(listeners ?? {}),
     }),
