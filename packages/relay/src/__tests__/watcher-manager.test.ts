@@ -1,23 +1,33 @@
+/**
+ * Tests for {@link WatcherManager}.
+ *
+ * Every behavioural test here drives an INJECTED watcher (see `./fake-watcher.ts`)
+ * rather than a real chokidar one, and waits on a barrier the production code
+ * itself trips rather than on a clock. That is deliberate: this file used to
+ * write real files into a real tmpdir and poll a hand-rolled 5s deadline for the
+ * `add` event, which made it a measurement of the machine's fs-event latency and
+ * red it under multi-agent load (DOR-1777). One smoke test at the bottom keeps
+ * the real wiring honest, and it is the only wall-clock bound left in the file.
+ *
+ * @module __tests__/watcher-manager
+ */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
-import * as fsSync from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import type { EventEmitter } from 'node:events';
 import { WatcherManager } from '../watcher-manager.js';
 import type { SubscriptionRegistry } from '../subscription-registry.js';
 import type { MaildirStore } from '../maildir-store.js';
 import type { SqliteIndex } from '../sqlite-index.js';
 import type { CircuitBreakerManager } from '../circuit-breaker.js';
 import type { EndpointInfo, RelayLogger } from '../types.js';
-
-/** Reach into the private watcher map to simulate an EMFILE-style failure. */
-function getWatcher(manager: WatcherManager, hash: string): EventEmitter {
-  const watchers = (manager as unknown as { watchers: Map<string, EventEmitter> }).watchers;
-  const watcher = watchers.get(hash);
-  if (!watcher) throw new Error(`no watcher registered for hash ${hash}`);
-  return watcher;
-}
+import {
+  interceptChokidar,
+  deferred,
+  type ChokidarInterceptor,
+  type Deferred,
+  type FakeWatcher,
+} from './fake-watcher.js';
 
 /** A spy logger satisfying the full {@link RelayLogger} surface. */
 function createSpyLogger(): RelayLogger {
@@ -27,8 +37,6 @@ function createSpyLogger(): RelayLogger {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-let tmpDir: string;
 
 function createMockMaildirStore(): MaildirStore {
   return {
@@ -56,40 +64,41 @@ function createMockCircuitBreaker(): CircuitBreakerManager {
   } as unknown as CircuitBreakerManager;
 }
 
-function createEndpoint(maildirPath: string): EndpointInfo {
-  return {
-    subject: 'relay.agent.test',
-    hash: 'hash-test',
-    maildirPath,
-    registeredAt: '2026-02-24T00:00:00.000Z',
-  };
-}
-
-/** Wait for a specified number of milliseconds. */
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+/**
+ * Arm `sqliteIndex.updateStatus` as a delivery barrier.
+ *
+ * Flipping the index status is the last thing `handleNewMessage` does on the
+ * success path, so a test awaiting the returned promise resumes exactly when the
+ * dispatch finished — no polling and no clock. The `true` matches the real
+ * index, which reports whether it updated a row.
+ *
+ * @param index - The mock index to arm.
+ * @returns The barrier to await after emitting the `add` event.
+ */
+function armDeliveryBarrier(index: SqliteIndex): Deferred<void> {
+  const barrier = deferred();
+  vi.mocked(index.updateStatus).mockImplementation(() => {
+    barrier.resolve();
+    return true;
+  });
+  return barrier;
 }
 
 /**
- * Poll until a mock function has been called, with a timeout.
- * More reliable than fixed waits for chokidar-based tests.
+ * An endpoint over a path nothing on disk needs to exist at.
+ *
+ * The store, registry, index and breaker are all doubles, and the watcher is
+ * injected, so no test below this line touches the filesystem at all — the
+ * exception is the real-filesystem smoke test, which builds its own tmpdir.
  */
-async function waitForCall(
-  mockFn: ReturnType<typeof vi.fn>,
-  timeoutMs = 5000,
-  intervalMs = 50
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (mockFn.mock.calls.length > 0) return;
-    await wait(intervalMs);
-  }
-  throw new Error(`waitForCall timed out after ${timeoutMs}ms — mock was never called`);
+function createEndpoint(hash = 'hash-test', subject = 'relay.agent.test'): EndpointInfo {
+  return {
+    subject,
+    hash,
+    maildirPath: path.join('/virtual/relay/endpoints', hash),
+    registeredAt: '2026-02-24T00:00:00.000Z',
+  };
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 describe('WatcherManager', () => {
   let maildirStore: MaildirStore;
@@ -97,9 +106,28 @@ describe('WatcherManager', () => {
   let sqliteIndex: SqliteIndex;
   let circuitBreaker: CircuitBreakerManager;
   let manager: WatcherManager;
+  let chokidarSpy: ChokidarInterceptor;
 
-  beforeEach(async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'watcher-mgr-test-'));
+  /**
+   * Start a watcher and take it live, without waiting on anything real.
+   *
+   * `startWatcher` attaches its `ready` listener synchronously inside the
+   * promise it returns, so the event can be fired the moment the call is made.
+   */
+  async function start(
+    target: WatcherManager,
+    endpoint: EndpointInfo,
+    intercept: ChokidarInterceptor = chokidarSpy
+  ): Promise<FakeWatcher> {
+    const started = target.startWatcher(endpoint);
+    const watcher = intercept.latest();
+    watcher.emit('ready');
+    await started;
+    return watcher;
+  }
+
+  beforeEach(() => {
+    chokidarSpy = interceptChokidar();
     maildirStore = createMockMaildirStore();
     subscriptionRegistry = createMockSubscriptionRegistry();
     sqliteIndex = createMockSqliteIndex();
@@ -109,68 +137,54 @@ describe('WatcherManager', () => {
 
   afterEach(async () => {
     await manager.closeAll();
-    await fs.rm(tmpDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
   });
 
   describe('startWatcher', () => {
-    it('starts watching an endpoint new/ directory', async () => {
-      const maildirPath = path.join(tmpDir, 'hash-test');
-      fsSync.mkdirSync(path.join(maildirPath, 'new'), { recursive: true });
-      const endpoint = createEndpoint(maildirPath);
+    it('watches the endpoint new/ directory, ignoring what is already there', async () => {
+      const endpoint = createEndpoint();
 
-      await manager.startWatcher(endpoint);
+      const watcher = await start(manager, endpoint);
 
-      // Watcher is running — no errors thrown
+      expect(watcher.watchedPath).toBe(path.join(endpoint.maildirPath, 'new'));
+      // `ignoreInitial` is load-bearing: without it, every message already
+      // sitting in new/ would be re-dispatched on every restart.
+      expect(watcher.options).toMatchObject({ persistent: true, ignoreInitial: true });
     });
 
-    it('is idempotent — starting the same endpoint twice is a no-op', async () => {
-      const maildirPath = path.join(tmpDir, 'hash-test');
-      fsSync.mkdirSync(path.join(maildirPath, 'new'), { recursive: true });
-      const endpoint = createEndpoint(maildirPath);
+    it('is idempotent — starting the same endpoint twice creates one watcher', async () => {
+      const endpoint = createEndpoint();
 
-      await manager.startWatcher(endpoint);
+      await start(manager, endpoint);
       await manager.startWatcher(endpoint);
 
-      // Second call returns immediately without error
+      expect(chokidarSpy.created).toHaveLength(1);
     });
   });
 
   describe('stopWatcher', () => {
-    it('stops the watcher for an endpoint', async () => {
-      const maildirPath = path.join(tmpDir, 'hash-test');
-      fsSync.mkdirSync(path.join(maildirPath, 'new'), { recursive: true });
-      const endpoint = createEndpoint(maildirPath);
+    it('closes the watcher for an endpoint', async () => {
+      const watcher = await start(manager, createEndpoint());
 
-      await manager.startWatcher(endpoint);
-      manager.stopWatcher('hash-test');
+      await manager.stopWatcher('hash-test');
 
-      // Watcher is stopped — no errors thrown
+      expect(watcher.closed).toBe(true);
     });
 
-    it('is safe to call with an unknown hash', () => {
-      manager.stopWatcher('nonexistent');
-      // No error thrown
+    it('is safe to call with an unknown hash', async () => {
+      await expect(manager.stopWatcher('nonexistent')).resolves.toBeUndefined();
     });
   });
 
   describe('closeAll', () => {
     it('closes all active watchers', async () => {
-      const path1 = path.join(tmpDir, 'hash-1');
-      const path2 = path.join(tmpDir, 'hash-2');
-      fsSync.mkdirSync(path.join(path1, 'new'), { recursive: true });
-      fsSync.mkdirSync(path.join(path2, 'new'), { recursive: true });
-
-      await manager.startWatcher(createEndpoint(path1));
-      await manager.startWatcher({
-        subject: 'relay.agent.other',
-        hash: 'hash-2',
-        maildirPath: path2,
-        registeredAt: '2026-02-24T00:00:00.000Z',
-      });
+      const first = await start(manager, createEndpoint('hash-1'));
+      const second = await start(manager, createEndpoint('hash-2', 'relay.agent.other'));
 
       await manager.closeAll();
 
-      // No errors thrown, watchers cleaned up
+      expect(first.closed).toBe(true);
+      expect(second.closed).toBe(true);
     });
   });
 
@@ -178,65 +192,39 @@ describe('WatcherManager', () => {
     it('skips dispatch when wasDispatched returns true for the message ID', async () => {
       const handler = vi.fn();
       vi.mocked(subscriptionRegistry.getSubscribers).mockReturnValue([handler]);
-
-      // Register a dedup guard that always reports "already dispatched"
-      manager.setWasDispatched(() => true);
-
-      const maildirPath = path.join(tmpDir, 'hash-test');
-      fsSync.mkdirSync(path.join(maildirPath, 'new'), { recursive: true });
-      const endpoint = createEndpoint(maildirPath);
-
-      await manager.startWatcher(endpoint);
-
-      // Write a JSON file — the dedup guard should prevent claim
-      fsSync.writeFileSync(
-        path.join(maildirPath, 'new', 'msg-dup-001.json'),
-        JSON.stringify({ subject: 'test' })
-      );
-
-      // Let chokidar detect and process the first file before changing the guard
-      await wait(300);
-
-      // Write a second file WITHOUT dedup to confirm the watcher is still active
       manager.setWasDispatched((id) => id === 'msg-dup-001');
-      const sentinelPath = path.join(maildirPath, 'new', 'sentinel.json');
-      fsSync.writeFileSync(sentinelPath, JSON.stringify({ subject: 'test' }));
 
-      await waitForCall(vi.mocked(maildirStore.claim));
+      const endpoint = createEndpoint();
+      const watcher = await start(manager, endpoint);
+      const newDir = path.join(endpoint.maildirPath, 'new');
 
-      // Only sentinel was claimed — the deduped message was skipped
-      const calls = vi.mocked(maildirStore.claim).mock.calls;
-      expect(calls.every(([, id]) => id !== 'msg-dup-001')).toBe(true);
-      expect(calls.some(([, id]) => id === 'sentinel')).toBe(true);
+      // The guard is consulted before the first `await` in handleNewMessage, so
+      // this event is fully decided by the time `emit` returns — there is
+      // nothing to wait for and nothing to race.
+      watcher.emit('add', path.join(newDir, 'msg-dup-001.json'));
+
+      // A second, undeduped message proves the watcher is still dispatching, so
+      // "not claimed" above means "skipped", not "wired to nothing".
+      const delivered = armDeliveryBarrier(sqliteIndex);
+      watcher.emit('add', path.join(newDir, 'sentinel.json'));
+      await delivered.promise;
+
+      const claimed = vi.mocked(maildirStore.claim).mock.calls;
+      expect(claimed.every(([, id]) => id !== 'msg-dup-001')).toBe(true);
+      expect(claimed.some(([, id]) => id === 'sentinel')).toBe(true);
     });
 
     it('dispatches normally when wasDispatched returns false', async () => {
       const handler = vi.fn();
       vi.mocked(subscriptionRegistry.getSubscribers).mockReturnValue([handler]);
-
-      // Guard that never blocks
       manager.setWasDispatched(() => false);
 
-      const maildirPath = path.join(tmpDir, 'hash-dispatch');
-      fsSync.mkdirSync(path.join(maildirPath, 'new'), { recursive: true });
-      const endpoint: EndpointInfo = {
-        subject: 'relay.agent.test',
-        hash: 'hash-dispatch',
-        maildirPath,
-        registeredAt: '2026-02-24T00:00:00.000Z',
-      };
+      const endpoint = createEndpoint('hash-dispatch');
+      const watcher = await start(manager, endpoint);
 
-      await manager.startWatcher(endpoint);
-
-      // Small delay to let chokidar stabilise before writing
-      await wait(200);
-
-      fsSync.writeFileSync(
-        path.join(maildirPath, 'new', 'msg-new-001.json'),
-        JSON.stringify({ subject: 'test' })
-      );
-
-      await waitForCall(vi.mocked(maildirStore.claim));
+      const delivered = armDeliveryBarrier(sqliteIndex);
+      watcher.emit('add', path.join(endpoint.maildirPath, 'new', 'msg-new-001.json'));
+      await delivered.promise;
 
       expect(maildirStore.claim).toHaveBeenCalledWith('hash-dispatch', 'msg-new-001');
       expect(handler).toHaveBeenCalled();
@@ -248,26 +236,12 @@ describe('WatcherManager', () => {
       const handler = vi.fn();
       vi.mocked(subscriptionRegistry.getSubscribers).mockReturnValue([handler]);
 
-      const maildirPath = path.join(tmpDir, 'hash-handle');
-      fsSync.mkdirSync(path.join(maildirPath, 'new'), { recursive: true });
-      const endpoint: EndpointInfo = {
-        subject: 'relay.agent.test',
-        hash: 'hash-handle',
-        maildirPath,
-        registeredAt: '2026-02-24T00:00:00.000Z',
-      };
+      const endpoint = createEndpoint('hash-handle');
+      const watcher = await start(manager, endpoint);
 
-      await manager.startWatcher(endpoint);
-
-      // Small delay to let chokidar stabilise before writing
-      await wait(200);
-
-      // Write a .json file to trigger the watcher
-      const msgPath = path.join(maildirPath, 'new', 'msg-001.json');
-      fsSync.writeFileSync(msgPath, JSON.stringify({ subject: 'test' }));
-
-      // Poll until chokidar detects the file and handler is invoked
-      await waitForCall(vi.mocked(maildirStore.claim));
+      const delivered = armDeliveryBarrier(sqliteIndex);
+      watcher.emit('add', path.join(endpoint.maildirPath, 'new', 'msg-001.json'));
+      await delivered.promise;
 
       expect(maildirStore.claim).toHaveBeenCalledWith('hash-handle', 'msg-001');
       expect(handler).toHaveBeenCalled();
@@ -279,29 +253,17 @@ describe('WatcherManager', () => {
       const handler = vi.fn();
       vi.mocked(subscriptionRegistry.getSubscribers).mockReturnValue([handler]);
 
-      const maildirPath = path.join(tmpDir, 'hash-nonjson');
-      fsSync.mkdirSync(path.join(maildirPath, 'new'), { recursive: true });
-      const endpoint: EndpointInfo = {
-        subject: 'relay.agent.test',
-        hash: 'hash-nonjson',
-        maildirPath,
-        registeredAt: '2026-02-24T00:00:00.000Z',
-      };
+      const endpoint = createEndpoint('hash-nonjson');
+      const watcher = await start(manager, endpoint);
+      const newDir = path.join(endpoint.maildirPath, 'new');
 
-      await manager.startWatcher(endpoint);
-      await wait(200);
+      const delivered = armDeliveryBarrier(sqliteIndex);
+      // The extension check is the first statement in the handler, so the .txt
+      // event is settled before the .json event is even emitted.
+      watcher.emit('add', path.join(newDir, 'readme.txt'));
+      watcher.emit('add', path.join(newDir, 'sentinel.json'));
+      await delivered.promise;
 
-      // Write a non-json file, then a json file to confirm watcher is active
-      fsSync.writeFileSync(path.join(maildirPath, 'new', 'readme.txt'), 'hi');
-
-      // Write a json file to know when the watcher has processed
-      fsSync.writeFileSync(
-        path.join(maildirPath, 'new', 'sentinel.json'),
-        JSON.stringify({ subject: 'test' })
-      );
-      await waitForCall(vi.mocked(maildirStore.claim));
-
-      // The claim should only have been called for the .json file
       expect(vi.mocked(maildirStore.claim).mock.calls).toHaveLength(1);
       expect(vi.mocked(maildirStore.claim).mock.calls[0][1]).toBe('sentinel');
     });
@@ -310,25 +272,13 @@ describe('WatcherManager', () => {
       const handler = vi.fn().mockRejectedValue(new Error('handler error'));
       vi.mocked(subscriptionRegistry.getSubscribers).mockReturnValue([handler]);
 
-      const maildirPath = path.join(tmpDir, 'hash-fail');
-      fsSync.mkdirSync(path.join(maildirPath, 'new'), { recursive: true });
-      const endpoint: EndpointInfo = {
-        subject: 'relay.agent.test',
-        hash: 'hash-fail',
-        maildirPath,
-        registeredAt: '2026-02-24T00:00:00.000Z',
-      };
+      const endpoint = createEndpoint('hash-fail');
+      const watcher = await start(manager, endpoint);
 
-      await manager.startWatcher(endpoint);
-      await wait(200);
-
-      fsSync.writeFileSync(
-        path.join(maildirPath, 'new', 'msg-002.json'),
-        JSON.stringify({ subject: 'test' })
-      );
-
-      // Poll until the fail mock is called (handler rejection settles)
-      await waitForCall(vi.mocked(maildirStore.fail));
+      const failed = deferred();
+      vi.mocked(circuitBreaker.recordFailure).mockImplementation(() => failed.resolve());
+      watcher.emit('add', path.join(endpoint.maildirPath, 'new', 'msg-002.json'));
+      await failed.promise;
 
       expect(maildirStore.fail).toHaveBeenCalledWith('hash-fail', 'msg-002', 'handler error');
       expect(sqliteIndex.updateStatus).toHaveBeenCalledWith('msg-002', 'hash-fail', 'failed');
@@ -337,7 +287,7 @@ describe('WatcherManager', () => {
   });
 
   describe('watcher error handling', () => {
-    /** Build a manager with a spy logger plus a ready-to-watch endpoint. */
+    /** Build a manager with a spy logger over an endpoint that needs no disk. */
     function setup(hash: string, subject: string) {
       const logger = createSpyLogger();
       const loggedManager = new WatcherManager(
@@ -347,15 +297,7 @@ describe('WatcherManager', () => {
         circuitBreaker,
         logger
       );
-      const maildirPath = path.join(tmpDir, hash);
-      fsSync.mkdirSync(path.join(maildirPath, 'new'), { recursive: true });
-      const endpoint: EndpointInfo = {
-        subject,
-        hash,
-        maildirPath,
-        registeredAt: '2026-02-24T00:00:00.000Z',
-      };
-      return { logger, loggedManager, endpoint };
+      return { logger, loggedManager, endpoint: createEndpoint(hash, subject) };
     }
 
     it('logs a watcher error through the injected logger, naming the endpoint', async () => {
@@ -363,10 +305,10 @@ describe('WatcherManager', () => {
       // try/finally: closeAll() must run even if an assertion below throws, or a
       // failing test leaks this watcher into the rest of the run.
       try {
-        await loggedManager.startWatcher(endpoint);
+        const watcher = await start(loggedManager, endpoint);
 
         const err = Object.assign(new Error('EMFILE: too many open files'), { code: 'EMFILE' });
-        getWatcher(loggedManager, 'hash-error').emit('error', err);
+        watcher.emit('error', err);
 
         expect(logger.warn).toHaveBeenCalledWith(
           expect.stringMatching(/^\[watcher-error\] WatcherManager: /),
@@ -388,17 +330,9 @@ describe('WatcherManager', () => {
     });
 
     it('does not throw when no logger was injected (defaults to a silent logger)', async () => {
-      const maildirPath = path.join(tmpDir, 'hash-error-silent');
-      fsSync.mkdirSync(path.join(maildirPath, 'new'), { recursive: true });
-      const endpoint: EndpointInfo = {
-        ...createEndpoint(maildirPath),
-        hash: 'hash-error-silent',
-      };
-      await manager.startWatcher(endpoint);
+      const watcher = await start(manager, createEndpoint('hash-error-silent'));
 
-      expect(() =>
-        getWatcher(manager, 'hash-error-silent').emit('error', new Error('EMFILE'))
-      ).not.toThrow();
+      expect(() => watcher.emit('error', new Error('EMFILE'))).not.toThrow();
     });
 
     // A single fd-exhaustion episode can make chokidar fire 'error' many times
@@ -410,8 +344,7 @@ describe('WatcherManager', () => {
         'relay.agent.latch-test'
       );
       try {
-        await loggedManager.startWatcher(endpoint);
-        const watcher = getWatcher(loggedManager, 'hash-error-latch');
+        const watcher = await start(loggedManager, endpoint);
 
         watcher.emit('error', Object.assign(new Error('EMFILE 1'), { code: 'EMFILE' }));
         watcher.emit('error', Object.assign(new Error('EMFILE 2'), { code: 'EMFILE' }));
@@ -436,8 +369,7 @@ describe('WatcherManager', () => {
         'relay.agent.codes-test'
       );
       try {
-        await loggedManager.startWatcher(endpoint);
-        const watcher = getWatcher(loggedManager, 'hash-error-codes');
+        const watcher = await start(loggedManager, endpoint);
 
         watcher.emit('error', Object.assign(new Error('permission denied'), { code: 'EACCES' }));
         watcher.emit('error', Object.assign(new Error('too many open files'), { code: 'EMFILE' }));
@@ -462,11 +394,8 @@ describe('WatcherManager', () => {
         'relay.agent.notice-test'
       );
       try {
-        await loggedManager.startWatcher(endpoint);
-        getWatcher(loggedManager, 'hash-error-notice').emit(
-          'error',
-          Object.assign(new Error('EMFILE'), { code: 'EMFILE' })
-        );
+        const watcher = await start(loggedManager, endpoint);
+        watcher.emit('error', Object.assign(new Error('EMFILE'), { code: 'EMFILE' }));
 
         expect(logger.warn).toHaveBeenCalledWith(
           expect.stringContaining('further EMFILE errors from this watcher are suppressed'),
@@ -489,17 +418,12 @@ describe('WatcherManager', () => {
         circuitBreaker,
         logger
       );
-      const makeEndpoint = (hash: string, subject: string): EndpointInfo => {
-        const maildirPath = path.join(tmpDir, hash);
-        fsSync.mkdirSync(path.join(maildirPath, 'new'), { recursive: true });
-        return { subject, hash, maildirPath, registeredAt: '2026-02-24T00:00:00.000Z' };
-      };
       try {
-        await loggedManager.startWatcher(makeEndpoint('hash-scope-a', 'relay.agent.scope-a'));
-        await loggedManager.startWatcher(makeEndpoint('hash-scope-b', 'relay.agent.scope-b'));
+        const watcherA = await start(loggedManager, createEndpoint('hash-scope-a', 'scope.a'));
+        const watcherB = await start(loggedManager, createEndpoint('hash-scope-b', 'scope.b'));
 
-        getWatcher(loggedManager, 'hash-scope-a').emit('error', new Error('EMFILE A'));
-        getWatcher(loggedManager, 'hash-scope-b').emit('error', new Error('EMFILE B'));
+        watcherA.emit('error', new Error('EMFILE A'));
+        watcherB.emit('error', new Error('EMFILE B'));
 
         expect(logger.warn).toHaveBeenCalledTimes(2);
       } finally {
@@ -518,30 +442,94 @@ describe('WatcherManager', () => {
 
   describe('startWatcher settles on error', () => {
     it('resolves (does not hang) when the watcher errors before ever going ready', async () => {
-      const maildirPath = path.join(tmpDir, 'hash-error-before-ready');
-      fsSync.mkdirSync(path.join(maildirPath, 'new'), { recursive: true });
-      const endpoint: EndpointInfo = {
-        subject: 'relay.agent.hang-test',
-        hash: 'hash-error-before-ready',
-        maildirPath,
-        registeredAt: '2026-02-24T00:00:00.000Z',
-      };
-
-      const startPromise = manager.startWatcher(endpoint);
-      // This watches a real, healthy directory, so a real 'ready' would
-      // otherwise arrive a few ms later and resolve the promise on its own —
-      // making the test pass even without settle() in the error handler. Record
-      // whether 'ready' fired and assert it did NOT: that names the mechanism
-      // (the ERROR path settled it) rather than the outcome.
-      const watcher = getWatcher(manager, 'hash-error-before-ready');
-      let readyFired = false;
-      watcher.on('ready', () => {
-        readyFired = true;
-      });
-      watcher.emit('error', new Error('EMFILE'));
+      // The injected watcher emits nothing on its own, so 'ready' is not coming
+      // and cannot mask the mechanism under test. Lose `settle()` from the error
+      // handler and this test hangs to its timeout rather than passing anyway —
+      // which is precisely why the previous version of it, against a real
+      // watcher over a healthy directory, needed a `readyFired` guard.
+      const startPromise = manager.startWatcher(createEndpoint('hash-error-before-ready'));
+      chokidarSpy.latest().emit('error', new Error('EMFILE'));
 
       await expect(startPromise).resolves.toBeUndefined();
-      expect(readyFired).toBe(false);
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // The one test in this file that touches the real filesystem and a real
+  // chokidar watcher.
+  //
+  // Everything above proves what the manager does with an `add` event. This
+  // proves an `add` event happens at all: that `chokidar.watch(<maildir>/new)`
+  // sees a file really written there, and that the path it hands back has the
+  // message id as its basename — the assumption every hermetic test encodes.
+  // A chokidar major that changed either would sail past the tests above.
+  //
+  // Its bound is wall-clock and deliberate. Retrying under a FRESH filename is
+  // the part that matters: chokidar reports `ready` a beat before libuv starts
+  // delivering, so an early write is dropped outright, not delivered late, and
+  // no amount of extra waiting on that path recovers it (measured on macOS —
+  // see READY_DELIVERY_GRACE_MS in access-control.ts, and DOR-577).
+  // -------------------------------------------------------------------------
+
+  describe('real filesystem smoke', () => {
+    /** Ceiling for the whole retry loop — generous, and paid only on failure. */
+    const SMOKE_BUDGET_MS = 20_000;
+    /** How long each attempt gives the platform before writing a fresh file. */
+    const SMOKE_ATTEMPT_MS = 500;
+
+    it('a file really written into new/ reaches the handler, keyed by its basename', async () => {
+      chokidarSpy.restore();
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'watcher-mgr-smoke-'));
+      const maildirPath = path.join(tmpDir, 'hash-real');
+      const newDir = path.join(maildirPath, 'new');
+      await fs.mkdir(newDir, { recursive: true });
+
+      const handler = vi.fn();
+      vi.mocked(subscriptionRegistry.getSubscribers).mockReturnValue([handler]);
+      const delivered = armDeliveryBarrier(sqliteIndex);
+
+      try {
+        await manager.startWatcher({
+          subject: 'relay.agent.smoke',
+          hash: 'hash-real',
+          maildirPath,
+          registeredAt: '2026-02-24T00:00:00.000Z',
+        });
+
+        const deadline = Date.now() + SMOKE_BUDGET_MS;
+        for (let attempt = 0; !delivered.settled && Date.now() < deadline; attempt += 1) {
+          await fs.writeFile(
+            path.join(newDir, `msg-real-${attempt}.json`),
+            JSON.stringify({ subject: 'test' })
+          );
+          // The timer id is held so the loser of the race can be cancelled: a
+          // race does not stop the branch it did not pick, so an uncancelled
+          // timer per attempt would keep the event loop busy past the test.
+          let attemptTimer: ReturnType<typeof setTimeout> | undefined;
+          await Promise.race([
+            delivered.promise,
+            new Promise((resolve) => {
+              attemptTimer = setTimeout(resolve, SMOKE_ATTEMPT_MS);
+            }),
+          ]);
+          clearTimeout(attemptTimer);
+        }
+        if (!delivered.settled) {
+          throw new Error(
+            `a real chokidar watcher on ${newDir} delivered nothing within ${SMOKE_BUDGET_MS}ms`
+          );
+        }
+
+        const claimed = vi.mocked(maildirStore.claim).mock.calls;
+        const [claimedHash, messageId] = claimed[0]!;
+        expect(claimedHash).toBe('hash-real');
+        expect(messageId).toMatch(/^msg-real-\d+$/);
+        expect(handler).toHaveBeenCalled();
+        expect(sqliteIndex.updateStatus).toHaveBeenCalledWith(messageId, 'hash-real', 'delivered');
+      } finally {
+        await manager.closeAll();
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
+    }, 30_000);
   });
 });
