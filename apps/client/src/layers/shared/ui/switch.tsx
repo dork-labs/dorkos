@@ -5,11 +5,10 @@ import { tv, type VariantProps } from 'tailwind-variants';
 /**
  * The four steps, each stating a track width and the travel that crosses it.
  *
- * One table, read twice — by {@link switchVariants} as its `size` variants, and
- * by the `responsive` ladder below as "one step up from here". Written out
- * separately so those two can never disagree about what `lg` is.
- *
- * Travel = track width − thumb width − 2×border, at every size.
+ * Travel = track width − thumb width − 2×border, at every size. The two numbers
+ * used to live in separate lookup tables — a `w-14` track beside a
+ * `translate-x-7` thumb, four pairs kept equal by hand, and nothing that would
+ * notice if one moved.
  *
  * The names are the library-wide ordinal scale with `md` as the default, so
  * `<Switch size="md">` and `<Button size="md">` are the same claim. They used to
@@ -35,17 +34,51 @@ const SWITCH_TRACKS = {
   },
 } as const;
 
-/** The size steps in order, smallest first — the ladder `responsive` climbs. */
-const SWITCH_SIZE_ORDER = ['sm', 'md', 'lg', 'xl'] as const;
+/**
+ * The same four steps, climbing on smaller screens: two rungs up on a phone, one
+ * on a tablet, the chosen size again from `md` on. `xl` is the top, so a size
+ * near it simply stops climbing.
+ *
+ * **Written out rather than built.** Tailwind only ever sees class names that
+ * appear literally in a source file, so a string this module assembles at
+ * runtime — `'md:' + track` — is a class the generated CSS does not contain, and
+ * the switch would silently keep its phone size on a desktop. The cost is a
+ * second table, and `__tests__/switch.test.tsx` derives this one from
+ * {@link SWITCH_TRACKS} and fails if the two ever disagree.
+ */
+const SWITCH_RESPONSIVE_TRACKS = {
+  sm: {
+    root: 'h-6 w-11 sm:h-5 sm:w-9 md:h-4 md:w-7',
+    thumb:
+      'h-5 w-5 data-[state=checked]:translate-x-5 data-[state=unchecked]:translate-x-0 sm:h-4 sm:w-4 sm:data-[state=checked]:translate-x-4 sm:data-[state=unchecked]:translate-x-0 md:h-3 md:w-3 md:data-[state=checked]:translate-x-3 md:data-[state=unchecked]:translate-x-0',
+  },
+  md: {
+    root: 'h-8 w-14 sm:h-6 sm:w-11 md:h-5 md:w-9',
+    thumb:
+      'h-6 w-6 data-[state=checked]:translate-x-7 data-[state=unchecked]:translate-x-0 sm:h-5 sm:w-5 sm:data-[state=checked]:translate-x-5 sm:data-[state=unchecked]:translate-x-0 md:h-4 md:w-4 md:data-[state=checked]:translate-x-4 md:data-[state=unchecked]:translate-x-0',
+  },
+  lg: {
+    root: 'h-8 w-14 sm:h-8 sm:w-14 md:h-6 md:w-11',
+    thumb:
+      'h-6 w-6 data-[state=checked]:translate-x-7 data-[state=unchecked]:translate-x-0 sm:h-6 sm:w-6 sm:data-[state=checked]:translate-x-7 sm:data-[state=unchecked]:translate-x-0 md:h-5 md:w-5 md:data-[state=checked]:translate-x-5 md:data-[state=unchecked]:translate-x-0',
+  },
+  xl: {
+    root: 'h-8 w-14 sm:h-8 sm:w-14 md:h-8 md:w-14',
+    thumb:
+      'h-6 w-6 data-[state=checked]:translate-x-7 data-[state=unchecked]:translate-x-0 sm:h-6 sm:w-6 sm:data-[state=checked]:translate-x-7 sm:data-[state=unchecked]:translate-x-0 md:h-6 md:w-6 md:data-[state=checked]:translate-x-7 md:data-[state=unchecked]:translate-x-0',
+  },
+} as const;
 
 /**
  * The track and the thumb, sized together.
  *
  * `tv` with slots rather than `cva` because this is the shape ADR-0097 adopted
  * it for: two DOM elements answering ONE axis, where the thumb's travel has to
- * stay in lockstep with the track's width. Those two numbers used to live in
- * separate lookup tables — a `w-14` track beside a `translate-x-7` thumb, four
- * pairs kept equal by hand, and nothing that would notice if one moved.
+ * stay in lockstep with the track's width.
+ *
+ * `responsive` is a second axis, not a branch, and it lands after `size` on
+ * purpose: tailwind-merge lets its breakpoint heights replace the fixed ones
+ * while everything else passes through untouched.
  */
 export const switchVariants = tv({
   slots: {
@@ -65,51 +98,12 @@ export const switchVariants = tv({
  */
 export type SwitchSize = NonNullable<VariantProps<typeof switchVariants>['size']>;
 
-/**
- * The size `steps` rungs above this one, stopping at the top of the ladder.
- *
- * @param size - Where the caller put the switch.
- * @param steps - How many rungs to climb.
- */
-function stepUp(size: SwitchSize, steps: number): SwitchSize {
-  const index = SWITCH_SIZE_ORDER.indexOf(size);
-  return SWITCH_SIZE_ORDER[Math.min(index + steps, SWITCH_SIZE_ORDER.length - 1)];
-}
-
-/**
- * The same classes, each behind a breakpoint prefix.
- *
- * @param prefix - A Tailwind breakpoint, `sm` or `md`.
- * @param classes - A space-separated class string from {@link SWITCH_TRACKS}.
- */
-function at(prefix: 'sm' | 'md', classes: string): string {
-  return classes
-    .split(' ')
-    .map((className) => `${prefix}:${className}`)
-    .join(' ');
-}
-
-/**
- * The mobile-first ladder for one slot: two steps up on a phone, one on a
- * tablet, the chosen size from `md` on.
- *
- * @param size - The size the caller asked for.
- * @param slot - Which half of the switch to build the ladder for.
- */
-function responsiveLadder(size: SwitchSize, slot: 'root' | 'thumb'): string {
-  return [
-    SWITCH_TRACKS[stepUp(size, 2)][slot],
-    at('sm', SWITCH_TRACKS[stepUp(size, 1)][slot]),
-    at('md', SWITCH_TRACKS[size][slot]),
-  ].join(' ');
-}
-
 /** Props for {@link Switch}. */
 export interface SwitchProps
   extends React.ComponentProps<typeof SwitchPrimitive.Root>, VariantProps<typeof switchVariants> {
   /**
-   * Grow the switch on smaller screens — iOS-sized on a phone, one step down on
-   * a tablet, the chosen `size` from `md` on.
+   * Grow the switch on smaller screens — two size steps up on a phone, one on a
+   * tablet, the chosen `size` from `md` on.
    *
    * On by default, and it composes with `size` rather than replacing it, which
    * is what the prop means on `Button`, `Input`, `SelectTrigger` and `TabsList`
@@ -134,23 +128,20 @@ export interface SwitchProps
 function Switch({ className, size = 'md', responsive = true, ...props }: SwitchProps) {
   const resolved = size ?? 'md';
   const { root, thumb } = switchVariants({ size: resolved });
+  const ladder = responsive ? SWITCH_RESPONSIVE_TRACKS[resolved] : undefined;
 
-  // The ladder lands after the fixed size on purpose: tailwind-merge lets the
-  // breakpoint classes replace the base ones rather than fight them.
   return (
     <SwitchPrimitive.Root
       data-slot="switch"
-      className={root({
-        className: [responsive && responsiveLadder(resolved, 'root'), className],
-      })}
+      className={root({ className: [ladder?.root, className] })}
       {...props}
     >
       <SwitchPrimitive.Thumb
         data-slot="switch-thumb"
-        className={thumb({ className: responsive && responsiveLadder(resolved, 'thumb') })}
+        className={thumb({ className: ladder?.thumb })}
       />
     </SwitchPrimitive.Root>
   );
 }
 
-export { Switch };
+export { Switch, SWITCH_TRACKS, SWITCH_RESPONSIVE_TRACKS };

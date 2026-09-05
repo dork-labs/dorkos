@@ -31,12 +31,13 @@ The client uses **Radix UI** primitives with `asChild` composition (the standard
 
 ## Required Patterns
 
-- **Shadcn primitives** (`layers/shared/ui/`): follow the existing files — `cva` variants, `data-slot="component-name"` attribute on the root element, `cn()` for class merging, export both the component and its `componentVariants`.
-- **`cn()` from `@/layers/shared/lib`** for all conditional/merged classes; caller `className` goes last so it can override.
+- **Shadcn primitives** (`layers/shared/ui/`): follow the existing files — `cva` variants, `data-slot="component-name"` attribute on the root element AND on every sub-part, `cn()` for class merging, export both the component and its `componentVariants`, plus its `*Props` type on the barrel (a test pins that last one). `data-slot` is a styling and testing seam, not decoration: `field.tsx` selects on `[data-slot=field-label]`, the sidebar's browser tests address `[data-slot="sidebar-row-title"]`, and `index.css` hides a scrollbar by `data-slot` because a utility class could not beat an unlayered global.
+- **`cn()` from `@/layers/shared/lib/utils`** for all conditional/merged classes; caller `className` goes last so it can override. Inside `shared/` that leaf path is the ONLY spelling — see `.claude/rules/fsd-layers.md`; from `entities/`, `features/` and `widgets/` the `@/layers/shared/lib` barrel is fine.
 - **Focus styles**: `focus-visible:` (keyboard only), never bare `focus:`.
 - **Deterministic values**: never `Math.random()` in components — derive stable pseudo-random values from `React.useId()`.
-- **React 19 refs**: `ref` is a regular prop — new components take `ref` in props, no `forwardRef`. Existing `forwardRef` in `ui/` is fine; don't add more.
+- **React 19 refs**: `ref` is a regular prop — components take `ref` in props, never `forwardRef`. `shared/ui/` has none left, so the grandfather clause is gone (DOR-1761): a `forwardRef` in a diff is a mistake, not a leftover. A named `function` needs no `displayName` either; the ones still in `ui/` are leftovers, not a pattern to copy.
 - **Compound components use flat sibling exports** (`CardHeader`, `DialogContent`, `FieldLabel`) — the shadcn convention every other multi-part primitive follows (`card.tsx`, `dialog.tsx`, `field.tsx`, `navigation-layout.tsx`, `sidebar.tsx`, `table.tsx`). Don't reach for an `Object.assign` namespace (`FilterBar.Search`); `filter-bar/` predates this rule and stays as it is.
+- **Sizes are one ordinal scale** — `xs · sm · md · lg`, with `md` the default and `icon-*` its square twin. No token named `default`: it says nothing about how big the thing is, and `<Button size="default">` beside `<Switch size="md">` used to be two controls that did not line up (DOR-1761). When the axis genuinely is not "how big", name the pair for what it is (`compact | comfortable`) and say why in its TSDoc.
 
 ## Accessibility
 

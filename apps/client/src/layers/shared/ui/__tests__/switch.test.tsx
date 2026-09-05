@@ -4,7 +4,13 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { Switch, switchVariants } from '../switch';
+import {
+  Switch,
+  switchVariants,
+  SWITCH_TRACKS,
+  SWITCH_RESPONSIVE_TRACKS,
+  type SwitchSize,
+} from '../switch';
 
 afterEach(cleanup);
 
@@ -70,5 +76,38 @@ describe('Switch', () => {
 
   it('exports its variants for callers that need the recipe', () => {
     expect(switchVariants({ size: 'xl' }).root()).toContain('w-14');
+  });
+});
+
+// `SWITCH_RESPONSIVE_TRACKS` is written out rather than built, because Tailwind
+// only sees class names that appear literally in a source file — a `'md:' + x`
+// assembled at runtime is a class the CSS never contains, and the switch would
+// keep its phone size on a desktop with nothing red anywhere. The cost of that
+// literal table is drift, and this is what stops it.
+describe('the responsive ladder matches the size table it climbs', () => {
+  const ORDER = ['sm', 'md', 'lg', 'xl'] as const;
+
+  /** The size `steps` rungs above this one, stopping at the top of the ladder. */
+  function stepUp(size: SwitchSize, steps: number): SwitchSize {
+    return ORDER[Math.min(ORDER.indexOf(size) + steps, ORDER.length - 1)];
+  }
+
+  /** The same classes, each behind a breakpoint prefix. */
+  function at(prefix: 'sm' | 'md', classes: string): string {
+    return classes
+      .split(' ')
+      .map((className) => `${prefix}:${className}`)
+      .join(' ');
+  }
+
+  it.each(ORDER)('derives %s from SWITCH_TRACKS', (size) => {
+    for (const slot of ['root', 'thumb'] as const) {
+      const expected = [
+        SWITCH_TRACKS[stepUp(size, 2)][slot],
+        at('sm', SWITCH_TRACKS[stepUp(size, 1)][slot]),
+        at('md', SWITCH_TRACKS[size][slot]),
+      ].join(' ');
+      expect(SWITCH_RESPONSIVE_TRACKS[size][slot]).toBe(expected);
+    }
   });
 });
