@@ -658,7 +658,7 @@ describe('ClaudeCodeAdapter', () => {
 
     expect(agentManager.sendMessage).not.toHaveBeenCalled();
     expect(result.success).toBe(false);
-    expect(result.error).toBe('TTL budget expired');
+    expect(result.error).toBe('The message expired before the agent could start');
   });
 
   it('publishes response events to envelope.replyTo', async () => {
@@ -1439,7 +1439,9 @@ describe('ClaudeCodeAdapter', () => {
       const calls = vi.mocked(relay.publish).mock.calls;
       const final = calls[calls.length - 1];
       expect(final[1]).toMatchObject({ type: 'agent_result', done: true });
-      expect((final[1] as { error?: string }).error).toMatch(/TTL budget expired/);
+      expect((final[1] as { error?: string }).error).toMatch(
+        /ran out of time before the agent finished/
+      );
       // The turn genuinely started and streamed before its deadline landed.
       expect(agentManager.sendMessage).toHaveBeenCalledTimes(1);
     });
@@ -1804,7 +1806,7 @@ describe('ClaudeCodeAdapter', () => {
       expect(errorIdx).toBeGreaterThanOrEqual(0);
       expect(doneIdx).toBeGreaterThan(errorIdx);
       const errorPayload = publishCalls[errorIdx]![1] as { data: { message: string } };
-      expect(errorPayload.data.message).toMatch(/TTL budget expired/);
+      expect(errorPayload.data.message).toMatch(/ran out of time before the agent finished/);
       // The turn genuinely started and streamed before its deadline landed.
       expect(agentManager.sendMessage).toHaveBeenCalledTimes(1);
     });

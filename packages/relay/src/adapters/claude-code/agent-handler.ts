@@ -41,10 +41,11 @@ import { isCallerCancel } from './agent-cancel-handler.js';
 import { interruptTurn } from './interrupt.js';
 import type { InboundTurnBudgets } from '../../inbound-turn-budgets.js';
 import { describeError } from '../../lib/describe-error.js';
-// One answer to "has this message run out of time?", shared with the scheduled-run
-// handler and the capacity line so the three cannot disagree. The policy — an
-// expired envelope never runs — is written down there.
-import { isEnvelopeExpired, ttlRemainingMs } from '../../lib/envelope-ttl.js';
+// One answer to "has this message run out of time?", shared with the publish
+// gate, the scheduled-run handler and the capacity line so the four cannot
+// disagree. The policy — an expired envelope never runs — is written down there,
+// along with why the boundary takes a number rather than an envelope.
+import { isExpired, ttlRemainingMs } from '../../lib/envelope-ttl.js';
 
 /** Dependencies required by the agent handler. */
 export interface AgentHandlerDeps {
@@ -124,21 +125,32 @@ const NO_EVENTS: readonly StreamEvent[] = [];
  * How a stopped turn is described to everything downstream of it.
  *
  * A turn ends early for two different reasons and they are not interchangeable:
- * the message ran out of TTL, or whoever started it stopped waiting. Both used
+ * the message ran out of time, or whoever started it stopped waiting. Both used
  * to read as "TTL budget expired", which sent anyone reading a trace row or a
  * chat error looking for a budget problem that never happened.
  *
+ * The out-of-time wording is deliberately plain, and it splits again by whether
+ * the turn ever began. This string is read by PEOPLE — it lands in a chat where
+ * somebody was waiting for an answer — and "TTL budget expired" tells them
+ * nothing they can act on. Since DOR-1770 refuses messages that were already
+ * stale on arrival, that is a sentence a person can now see, so it says what
+ * actually happened: their message sat too long before the agent got to it.
+ *
  * @param signal - The turn's abort signal.
+ * @param started - Whether the turn reached the runtime at all. False for one
+ *   refused before it began.
  * @returns The reason, or `undefined` for a turn that was not stopped at all.
  */
-function abortText(signal: AbortSignal): string | undefined {
+function abortText(signal: AbortSignal, started: boolean): string | undefined {
   if (!signal.aborted) return undefined;
   if (isCallerCancel(signal.reason)) {
     return signal.reason.reason === 'caller_timeout'
       ? 'Stopped: the caller stopped waiting for this turn'
       : 'Stopped: the caller cancelled this turn';
   }
-  return 'TTL budget expired';
+  return started
+    ? 'The message ran out of time before the agent finished'
+    : 'The message expired before the agent could start';
 }
 
 /**
@@ -291,19 +303,31 @@ export async function handleAgentMessage(
 
   const controller = deps.turnController;
 
+  // **One reading of the clock decides both halves of this turn's deadline** —
+  // whether the message may run at all, and, if it may, how long it has. The two
+  // are the same question and must come from the same number: an envelope live
+  // by three milliseconds when the first question is asked is dead by the time a
+  // second reading answers the second, and then NEITHER bounds it — no refusal,
+  // and no deadline either, because there is no positive remainder left to
+  // schedule. The turn runs with no deadline at all, holding a capacity slot and
+  // its session's queue entry until the model stops on its own.
+  //
+  // So `ttlRemaining` is read here, once, and everything below derives from it.
+  const ttlRemaining = ttlRemainingMs(envelope, now);
+  const expired = isExpired(ttlRemaining);
+
   // An expired envelope never runs (`lib/envelope-ttl.ts`). This handler used to
   // be the one seam that disagreed: a message with no time left fell through to
-  // a fresh `defaultTimeoutMs` deadline below and answered as if it had just
-  // arrived, while the scheduled-run path beside it refused the same envelope
-  // (DOR-1770).
+  // a fresh `defaultTimeoutMs` deadline and answered as if it had just arrived,
+  // while the scheduled-run path beside it refused the same envelope (DOR-1770).
   //
   // The refusal is an abort of this turn's own handle, taken BEFORE anything
   // starts, because that is the door the turn already has: everything downstream
   // treats it exactly as it treats a turn stopped while it queued — no session,
-  // no `sendMessage`, no bill — and still publishes the terminal `error`
-  // ("TTL budget expired") and `done` that a reply reader settles on. Refusing
-  // by returning early here would be silence, and silence is what hangs callers.
-  if (isEnvelopeExpired(envelope, now)) {
+  // no `sendMessage`, no bill — and still publishes the terminal error and
+  // `done` that a reply reader settles on. Refusing by returning early here
+  // would be silence, and silence is what hangs callers.
+  if (expired) {
     log.debug?.(
       `[CCA] refusing ${envelope.id} for ${agentId}: the message expired before this turn could start`
     );
@@ -356,13 +380,13 @@ export async function handleAgentMessage(
   );
   const formatBlock = buildResponseFormatBlock(responseContext);
 
-  // Set up timeout from TTL budget. Whatever the envelope has left is the whole
-  // deadline — there is no floor and no fallback, because a turn granted more
-  // than its message has left is the bug above wearing a different hat. Nothing
-  // to schedule for an envelope already refused, and none of the lines between
-  // the check above and here can await, so this is belt-and-braces.
-  const ttlRemaining = ttlRemainingMs(envelope, now);
-  const timeout = ttlRemaining > 0 ? setTimeout(() => controller.abort(), ttlRemaining) : undefined;
+  // The deadline, from the SAME reading the refusal above was decided on.
+  // Whatever the envelope had left is the whole of it: no floor, no fallback,
+  // because a turn granted more time than its message has left is the bug above
+  // wearing a different hat. `expired` is the only branch that skips the timer,
+  // and it is the branch where the turn was already refused — so a turn that
+  // started always has a deadline, by construction rather than by luck.
+  const timeout = expired ? undefined : setTimeout(() => controller.abort(), ttlRemaining);
   // Stopping has to reach the RUNTIME, not just the loop below: `sendMessage`
   // takes no signal, so breaking out of the stream leaves the model running and
   // billing until it finishes on its own. That was true of the TTL deadline too
@@ -520,7 +544,7 @@ export async function handleAgentMessage(
       // bare done as a successful completion and surface the partial streamed
       // text as a finished answer. The `{ type: 'error', data: { message } }`
       // event matches ErrorEventSchema, so those consumers fail the turn.
-      const failureMessage = streamError ?? abortText(controller.signal);
+      const failureMessage = streamError ?? abortText(controller.signal, !stoppedBeforeStart);
       if (failureMessage) {
         try {
           await publishResponseWithCorrelation(
@@ -569,7 +593,8 @@ export async function handleAgentMessage(
     // waiter (it settles on the first non-progress payload) but not for a poller:
     // that one reads a list, is told `done:true` ends it, and would otherwise see
     // an error event next to a clean-looking result and have to guess which won.
-    const failure = inStreamError ?? streamError ?? abortText(controller.signal);
+    const failure =
+      inStreamError ?? streamError ?? abortText(controller.signal, !stoppedBeforeStart);
     await publishAgentResult(envelope, collectedText, ccaSessionKey, relay, failure);
   }
 
@@ -600,13 +625,13 @@ export async function handleAgentMessage(
     deps.traceStore.updateSpan(envelope.id, {
       status: aborted ? 'failed' : 'processed',
       processedAt: now(),
-      ...(aborted && { error: abortText(controller.signal) }),
+      ...(aborted && { error: abortText(controller.signal, !stoppedBeforeStart) }),
     });
   }
 
   return {
     success: !failed,
-    error: streamError ?? abortText(controller.signal),
+    error: streamError ?? abortText(controller.signal, !stoppedBeforeStart),
     deadLettered: aborted,
     durationMs: now() - startTime,
   };

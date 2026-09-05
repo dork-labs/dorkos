@@ -114,18 +114,22 @@ describe('enforceBudget', () => {
       expect(result.allowed).toBe(true);
     });
 
-    it('rejects when TTL is exactly at current time (expired)', () => {
-      // Date.now() > ttl is the check, so exactly-equal should ALLOW
-      // because we need strictly greater-than to reject
+    it('rejects when TTL is exactly at current time — no time left is no time', () => {
+      // The boundary is inclusive and shared: `isExpired` in `lib/envelope-ttl.ts`
+      // answers it for this gate and for both delivery handlers, so a message
+      // accepted here is a message one of them can still run. This gate used to
+      // ask `Date.now() > ttl` on its own and admitted the exact millisecond the
+      // handlers refuse — an envelope let through for a delivery that could not
+      // happen (DOR-1770). The old test asserted that behaviour under a name
+      // saying the opposite.
       const now = 1_700_000_000_000;
       vi.setSystemTime(now);
 
-      // TTL exactly equals now — Date.now() > ttl is false, so allowed
       const envelope = makeEnvelope({ ttl: now });
       const result = enforceBudget(envelope, 'relay.endpoint.a');
 
-      // TTL == now means Date.now() is NOT > ttl, so it passes
-      expect(result.allowed).toBe(true);
+      expect(result.allowed).toBe(false);
+      expect(result.code).toBe('ttl_expired');
     });
 
     it('rejects when TTL is 1ms before current time', () => {

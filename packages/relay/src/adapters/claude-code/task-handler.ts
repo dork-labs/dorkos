@@ -19,10 +19,10 @@ import type { AgentRuntimeLike, TasksStoreLike } from './types.js';
 import { OPERATOR_CANCEL } from './task-cancel-handler.js';
 import type { AbortRegistry } from '../../lib/abort-registry.js';
 import { interruptTurn } from './interrupt.js';
-// One answer to "has this message run out of time?", shared with the agent-turn
-// handler and the capacity line so the three cannot disagree. The policy — an
-// expired envelope never runs — is written down there.
-import { ttlRemainingMs } from '../../lib/envelope-ttl.js';
+// One answer to "has this message run out of time?", shared with the publish
+// gate, the agent-turn handler and the capacity line so the four cannot
+// disagree. The policy — an expired envelope never runs — is written down there.
+import { isExpired, ttlRemainingMs } from '../../lib/envelope-ttl.js';
 
 /** Maximum characters to collect for run output summary. */
 const OUTPUT_SUMMARY_MAX_CHARS = 1000;
@@ -279,10 +279,15 @@ export async function handleTasksMessage(
   // (`lib/envelope-ttl.ts`): the controller starts aborted, the throw below is
   // the refusal, and the run row it writes is how a person sees that this run
   // was refused rather than left pinned to `running`.
+  //
+  // ONE reading of the clock decides both halves — whether the run may start,
+  // and how long it gets if it may — and the boundary between them is asked
+  // through the shared predicate, so this seam and the agent turn beside it
+  // cannot end up on different sides of the same millisecond.
   const ttlRemaining = ttlRemainingMs(envelope, clock);
   const controller = new AbortController();
   let timeout: ReturnType<typeof setTimeout> | undefined;
-  if (ttlRemaining <= 0) {
+  if (isExpired(ttlRemaining)) {
     controller.abort();
   } else {
     timeout = setTimeout(() => controller.abort(), ttlRemaining);
@@ -360,8 +365,17 @@ export async function handleTasksMessage(
     const durationMs = clock() - startTime;
     const truncatedSummary = outputSummary.slice(0, OUTPUT_SUMMARY_MAX_CHARS);
     // Both stops record `cancelled` — the run-status vocabulary has no separate
-    // timeout — so the error line is what tells a person which one happened,
-    // and it matches the direct-dispatch path word for word.
+    // timeout — so the error line is what tells a person which one happened.
+    //
+    // The two dispatch paths already word that line DIFFERENTLY, whatever an
+    // earlier version of this comment claimed: the direct-dispatch twin
+    // (`task-scheduler-service.ts`) writes "Run stopped after passing its
+    // <duration> time limit", and "Run timed out" appears nowhere but this file
+    // and its tests. Only `Run cancelled` is genuinely shared. So this is not a
+    // string to keep in lockstep — it is a divergence nobody decided, and it
+    // reads as jargon next to the plain-language refusals the agent turn now
+    // publishes (DOR-1770). Aligning both paths is tracked as DOR-1786; until
+    // then, do not "restore" a parity that was never there.
     const stoppedByOperator = stopped && controller.signal.reason === OPERATOR_CANCEL;
 
     if (deps.taskStore) {

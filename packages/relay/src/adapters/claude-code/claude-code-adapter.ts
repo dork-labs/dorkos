@@ -74,10 +74,10 @@ import { subscribeApprovalHandler } from './approval-handler.js';
 import { subscribeTaskCancelHandler } from './task-cancel-handler.js';
 import { subscribeAgentCancelHandler } from './agent-cancel-handler.js';
 import { AbortRegistry } from '../../lib/abort-registry.js';
-// One answer to "how long has this message got left?", shared with both
-// handlers so the three seams cannot disagree. The policy — an expired envelope
-// never runs — is written down there.
-import { ttlRemainingMs } from '../../lib/envelope-ttl.js';
+// One answer to "how long has this message got left?", shared with the publish
+// gate and both handlers so the four seams cannot disagree. The policy — an
+// expired envelope never runs — is written down there.
+import { isExpired, ttlRemainingMs } from '../../lib/envelope-ttl.js';
 import {
   AGENT_SUBJECT_PREFIX,
   RUNTIME_TYPES,
@@ -757,7 +757,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
       // {@link AdapterContext.onHeld}). Deciding this from the subject here
       // instead would put the same rule in two modules — and an awaited caller
       // parked in this line loses its reply rather than waiting for it.
-      mayWait: context?.onHeld !== undefined && remainingMs > 0,
+      mayWait: context?.onHeld !== undefined && !isExpired(remainingMs),
       ceilingMs: remainingMs,
       ...(context?.onHeld ? { onHeld: context.onHeld } : {}),
     });
