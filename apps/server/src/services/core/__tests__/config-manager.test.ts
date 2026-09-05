@@ -63,6 +63,7 @@ import {
 import { applyConfigPatch } from '../operator/config-patch.js';
 import { checkMigrationSafety, extractMigrationBodies } from './migration-safety.js';
 import { checkAppendOnly, migrationClosure } from './migration-append-only.js';
+import type { ClosureSources } from './migration-closure.js';
 import { MERGED_MIGRATION_HASHES } from './merged-migration-hashes.js';
 import fs from 'fs';
 import path from 'path';
@@ -3400,26 +3401,54 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
   // shallow clone, and — the point — inside the window where no tag exists yet to
   // compare with. The rule and its failure matrix are in
   // `migration-append-only.ts` / `migration-append-only.test.ts`.
-  const readConfigManager = (): string =>
-    fs.readFileSync(
-      path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../config-manager.ts'),
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const readSources = (): ClosureSources => ({
+    configManager: fs.readFileSync(path.resolve(here, '../config-manager.ts'), 'utf-8'),
+    configSchema: fs.readFileSync(
+      path.resolve(here, '../../../../../../packages/shared/src/config-schema.ts'),
       'utf-8'
-    );
+    ),
+  });
 
   it('reaches into the helper a bare table entry names, not just its name', () => {
     // Guard the guard, and the thing this rule exists to cover that the tag rule
     // does not: `'0.60.0': backfillRoomsDefaults` is one identifier in the table,
     // so a pin that hashed the table slice alone would freeze a NAME while the
     // body it points at stayed editable. That is the shape of DOR-1121.
-    const closure = migrationClosure('0.60.0', readConfigManager());
+    const closure = migrationClosure('0.60.0', readSources());
     expect(closure).toContain('maxAutomaticTurnsPerRoomPerHour');
     // And it stops at what the key actually reaches: `offersEnabled` lives in
     // `backfillWelcomeBackDefaults`, which only `'0.59.0'` calls.
     expect(closure).not.toContain('offersEnabled');
   });
 
+  it('reaches across the import boundary into config-schema.ts (DOR-1732)', () => {
+    // The one-hop bypass this closure was widened to close. `'0.57.0'` calls
+    // `toSidebarItemRef`, which lives one module away in `@dorkos/shared`, and
+    // it decides what every upgrading install's sidebar members are rewritten
+    // to. Rewriting its body used to leave every guard green.
+    const sources = readSources();
+    const sidebar = migrationClosure('0.57.0', sources);
+    expect(sidebar).toContain('export function toSidebarItemRef');
+
+    // The other behavior-bearing one: `'0.65.0'` mints account ids with
+    // `claudeAccountId`, and reaches the private helper it calls in turn.
+    const accounts = migrationClosure('0.65.0', sources);
+    expect(accounts).toContain('export function claudeAccountId');
+    expect(accounts).toContain('export function slugifyAccountId');
+
+    // And it still stops somewhere. `UserConfigSchema` is the whole config
+    // schema, so following it would move five shipped pins for every ordinary
+    // field addition; `migration-closure.ts` states that boundary. The line that
+    // derives the defaults FROM it is pinned, so the derivation cannot be
+    // swapped for a literal unseen.
+    const memory = migrationClosure('0.69.0', sources);
+    expect(memory).toContain('USER_CONFIG_DEFAULTS: UserConfig = UserConfigSchema.parse');
+    expect(memory).not.toContain('export const UserConfigSchema');
+  });
+
   it('every merged migration still hashes to what it was pinned at', () => {
-    const result = checkAppendOnly(readConfigManager(), MERGED_MIGRATION_HASHES);
+    const result = checkAppendOnly(readSources(), MERGED_MIGRATION_HASHES);
     expect(result.ok, result.problems.join('\n\n')).toBe(true);
   });
 

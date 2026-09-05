@@ -34,13 +34,27 @@
  * which is exactly the hole `contributing/configuration.md` recorded: DOR-1121
  * edited `backfillWelcomeBackDefaults`, a helper the table merely calls, and no
  * guard could see it. So the closure is the table slice plus the source of every
- * top-level declaration in `config-manager.ts` it reaches, transitively, sorted
- * by name so moving a declaration within the file is not a change.
+ * top-level declaration it reaches, transitively, sorted by name so moving a
+ * declaration within its file is not a change.
  *
  * The walk, the normalization and the boundary they stop at all live in
  * `migration-closure.ts`, because the tag-based rule needs the same three for
  * the same reason (DOR-1135). Read that module's header before trusting a pin;
  * this one only decides what a moved hash means.
+ *
+ * The one place the two rules read a different amount of code is the import
+ * boundary. This rule walks into `packages/shared/src/config-schema.ts` as well;
+ * the tag rule stops at `config-manager.ts` (DOR-1732). Ten keys reach across
+ * that edge and two of them reach behavior — `0.57.0` calls `toSidebarItemRef`,
+ * `0.65.0` calls `claudeAccountId` — so before DOR-1732 either could be
+ * rewritten under a shipped key with every guard green. They are pinned HERE
+ * rather than frozen against the tag because a schema symbol is shared with the
+ * running app and does occasionally have to change: the ReDoS fix to
+ * `claudeAccountId` at v0.73.0 is the worked example — `0.65.0` had shipped two
+ * releases earlier — and against a tag it would have had no legal answer at all.
+ * Four such changes have landed since the keys reaching them merged, so this is
+ * a recurring shape rather than one incident. `migration-closure.ts` carries
+ * that reasoning in full.
  *
  * A pin still moves for a code change and stays put for a prose one, so a stale
  * COMMENT inside a shipped body is correctable in place here — the byte-identity
@@ -55,33 +69,32 @@
 import { createHash } from 'crypto';
 
 import { extractMigrationBodies } from './migration-safety.js';
-import {
-  extractTopLevelDeclarations,
-  normalizeForHash,
-  reachedDeclarations,
-} from './migration-closure.js';
+import { declarationPool, normalizeForHash, reachedDeclarations } from './migration-closure.js';
+import type { ClosureSources } from './migration-closure.js';
 
 /** How many hex characters of the SHA-256 a pin carries. */
 const HASH_LENGTH = 16;
 
 /**
  * The full reachable source of one migration key: its table slice plus every
- * top-level function it calls, transitively, in name order.
+ * top-level declaration it reaches across the allowlisted files, in name order.
  *
  * @param key - The migration key, as written in `CONFIG_MIGRATIONS`.
- * @param source - The full `config-manager.ts` source text.
+ * @param sources - `config-manager.ts` and `config-schema.ts`, as text.
  * @returns The concatenated closure text.
  * @throws When the key is not in the table.
  */
-export function migrationClosure(key: string, source: string): string {
-  const bodies = extractMigrationBodies(source);
+export function migrationClosure(key: string, sources: ClosureSources): string {
+  const bodies = extractMigrationBodies(sources.configManager);
   const slice = bodies[key];
   if (slice === undefined) {
     throw new Error(`migration key "${key}" is not in CONFIG_MIGRATIONS`);
   }
-  const declarations = extractTopLevelDeclarations(source);
+  const declarations = declarationPool(sources);
 
-  // Name order, so moving a declaration within the file is not a change.
+  // Name order, so moving a declaration within its file is not a change. Names
+  // are unique across the pool — `declarationPool` refuses a collision — so this
+  // stays stable no matter which file a declaration lives in.
   return [
     slice,
     ...reachedDeclarations(slice, declarations).map((name) => declarations[name]!),
@@ -92,14 +105,14 @@ export function migrationClosure(key: string, source: string): string {
  * The pinned hash of one migration key's closure.
  *
  * @param key - The migration key, as written in `CONFIG_MIGRATIONS`.
- * @param source - The full `config-manager.ts` source text.
+ * @param sources - `config-manager.ts` and `config-schema.ts`, as text.
  * @returns A truncated SHA-256 of the normalized closure. Truncated because a
  *   pin is read by people in a diff and this is an accident guard, not a
  *   security boundary.
  */
-export function migrationHash(key: string, source: string): string {
+export function migrationHash(key: string, sources: ClosureSources): string {
   return createHash('sha256')
-    .update(normalizeForHash(migrationClosure(key, source)))
+    .update(normalizeForHash(migrationClosure(key, sources)))
     .digest('hex')
     .slice(0, HASH_LENGTH);
 }
@@ -107,13 +120,13 @@ export function migrationHash(key: string, source: string): string {
 /**
  * Every migration key in the table, mapped to its closure hash.
  *
- * @param source - The full `config-manager.ts` source text.
+ * @param sources - `config-manager.ts` and `config-schema.ts`, as text.
  * @returns Each migration key mapped to the hash of its reachable closure.
  */
-function migrationHashes(source: string): Record<string, string> {
+function migrationHashes(sources: ClosureSources): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const key of Object.keys(extractMigrationBodies(source))) {
-    out[key] = migrationHash(key, source);
+  for (const key of Object.keys(extractMigrationBodies(sources.configManager))) {
+    out[key] = migrationHash(key, sources);
   }
   return out;
 }
@@ -138,17 +151,33 @@ const RULE =
   'that nobody ran it (DOR-1222).';
 
 /**
+ * The other answer, for the one drift that "open a new key" cannot fix.
+ *
+ * A closure reaches `config-schema.ts` too (DOR-1732), and a schema symbol is
+ * shared with the running app: `claudeAccountId` took a ReDoS fix at v0.73.0,
+ * two releases after `'0.65.0'` shipped. No new migration key answers that, so
+ * the pin moves — visibly, with the population it changed
+ * written down. Saying so here is what stops a reader hunting for a new key that
+ * cannot exist.
+ */
+const SHARED_SYMBOL =
+  'One drift has no new key available: a declaration in packages/shared/src/config-schema.ts, ' +
+  'which the running app shares. If that is what moved, repin and record WHO ran the old ' +
+  'behavior and what they get instead — the honest answer there is a visible pin, not a pretence ' +
+  'that nobody was affected.';
+
+/**
  * Decide whether every migration key still matches the hash it was pinned at.
  *
- * @param source - The working tree's `config-manager.ts` source.
+ * @param sources - The working tree's `config-manager.ts` and `config-schema.ts`.
  * @param pinned - The recorded hash per merged migration key.
  * @returns The verdict, naming every drift and how to answer it.
  */
 export function checkAppendOnly(
-  source: string,
+  sources: ClosureSources,
   pinned: Readonly<Record<string, string>>
 ): AppendOnlyResult {
-  const hashes = migrationHashes(source);
+  const hashes = migrationHashes(sources);
   const problems: string[] = [];
   const drifted: string[] = [];
 
@@ -171,7 +200,7 @@ export function checkAppendOnly(
           `needs a recorded justification that NO install can have run the old body. For any key ` +
           `at or below the version this repository currently carries, that has never been true — ` +
           `and a key above it stops being safe the moment the release bump lands, which is not a ` +
-          `moment anybody is notified of.`
+          `moment anybody is notified of. ${SHARED_SYMBOL}`
       );
     }
   }
@@ -185,7 +214,8 @@ export function checkAppendOnly(
         'by the new one (the backfillRoomsDefaults pattern). If that is what this is, repin the ' +
         'older keys and say in the pull request which new key covers them. If there is no new ' +
         'key, this is an edit to what those migrations did, and it reaches nobody who has run ' +
-        'them.'
+        'them. Five keys at once (0.69.0 through 0.73.0) means USER_CONFIG_DEFAULTS moved, which ' +
+        'is the shared-schema case above.'
     );
   }
 

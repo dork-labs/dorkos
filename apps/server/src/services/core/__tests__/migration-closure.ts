@@ -40,25 +40,48 @@
  * that table — eleven pins moving at once is how a guard gets bulk-bumped and
  * stops meaning anything.
  *
- * **The boundary, stated so nobody over-trusts it.** The walk never leaves
- * `config-manager.ts`, and three keys already reach past that edge into
- * `@dorkos/shared/config-schema`: `0.55.0` reads `ONBOARDING_STEPS`, `0.59.0`
- * reads `ComposerPrefsSchema`, and `0.57.0` calls `toSidebarItemRef` and
- * `normalizeSidebarPrefs`. Narrowing that enum makes a shipped migration delete
- * more; editing those functions rewrites what a shipped rename produces. Neither
- * guard sees either. Following imports was considered and left out on purpose —
- * it would reach the whole config schema, so every ordinary field addition would
- * break every pin and the pins would be bumped reflexively, which is worse than
- * a boundary written down. The migration table itself is also never followed
- * into (see {@link MIGRATION_TABLE}).
+ * **The boundary, stated so nobody over-trusts it.** The walk spans exactly two
+ * files — `config-manager.ts` and `packages/shared/src/config-schema.ts` (see
+ * {@link declarationPool}) — and stops at the edge of the second. It used to
+ * stop at the first, which left ten of the table's keys reaching code no guard
+ * could see, two of them behavior-bearing: `0.57.0` calls `toSidebarItemRef`,
+ * and `0.65.0` calls `claudeAccountId`. Editing either rewrites what a SHIPPED
+ * migration produces on every upgrading install, and the executed proof of the
+ * hole was that changing `toSidebarItemRef` to lowercase every stored path left
+ * all 382 guard tests green (DOR-1732).
+ *
+ * Following imports further is still deliberately not done. The two aggregates
+ * that would make it worthless are excluded by name instead (see
+ * {@link NEVER_FOLLOWED}), and the second file is an allowlist rather than "every
+ * import", because the value of a pin is that it only ever moves for a reason.
+ *
+ * **Only one of the two rules walks that far, and the asymmetry is measured.**
+ * `migration-append-only.ts` uses the wider pool; the tag comparison in
+ * `migration-safety.ts` stays inside `config-manager.ts`. A pin has a documented
+ * escape hatch — one changed line, with a recorded justification — and a release
+ * tag has none, so a shipped key measured against a tag can never be answered at
+ * all once something it reaches has moved. In `config-manager.ts` that is the
+ * correct answer, because those helpers exist for migrations and nothing else.
+ * In `config-schema.ts` it would be a deadlock. Four changes to reached schema
+ * symbols have landed after the key reaching them was merged: `ONBOARDING_STEPS`
+ * widened for v0.57.0 and again for v0.64.0, the `ComposerPrefsSchema.richText`
+ * default flipped for v0.59.0, and the ReDoS fix to `claudeAccountId` and
+ * `slugifyAccountId` landed for v0.73.0 — that last one a correctness fix, with
+ * `0.65.0` shipped two releases earlier (v0.66.0 is the only tag between them).
+ * Against a tag none of the four has any legal answer. A guard nobody can
+ * satisfy gets deleted, so this one moves a pin instead.
  *
  * There is a second, narrower blind spot in the same family. {@link maskNonCode}
  * blanks the inside of template literals wholesale, interpolations included, so
  * a call written as `` `${backfillSomething(store)}` `` is not a call this walk
- * can see. Nothing in `config-manager.ts` is written that way today and nothing
- * should be — a migration body has no reason to compute a string out of another
- * migration helper — but a body that did would be pinned with a hole in it. The
- * mask is deliberately not a parser, and this is what that costs.
+ * can see. Latent here rather than live, checked rather than assumed: the two
+ * interpolations in `config-schema.ts` name locals (`` `${base}-${n}` ``, and an
+ * account id inside an error message), and the only interpolated call in
+ * `config-manager.ts`, `` `${describeLoadError(…)}` ``, is not reached by any
+ * migration key — though it IS a top-level declaration called ONLY from inside
+ * interpolations, so the shape exists in the file the guard reads. A body that
+ * computed a string out of another helper would be pinned with a hole in it. The
+ * mask is deliberately not a parser, and this is what that costs (DOR-1733).
  */
 
 /**
@@ -78,14 +101,33 @@ const TOP_LEVEL_FUNCTION = /^(?:export )?(?:async )?function\s*\*?\s*([A-Za-z_$]
 const TOP_LEVEL_BINDING = /^(?:export )?(?:const|let) ([A-Za-z_$][\w$]*)(?=\s*[:=])/gm;
 
 /**
- * The migration table itself, which is never followed into a closure.
+ * The two aggregates a closure never follows into, and why each one is here.
  *
- * It is a top-level binding like any other, so a stray mention of its name
- * inside a body would pull the WHOLE table into that key's closure — and then
- * every key's verdict would depend on every other key, so adding one migration
- * would break every pin at once. Excluded by name rather than by luck.
+ * Both are top-level bindings like any other, so a single mention of either name
+ * would pull the whole thing into that key's closure — and then adding one
+ * unrelated entry would move every pin that reaches it at once. A pin bumped
+ * reflexively, in a batch, is a pin nobody reads.
+ *
+ * - `CONFIG_MIGRATIONS` is the migration table. Following it would make every
+ *   key's verdict depend on every other key, so adding one migration would break
+ *   every pin. Its slices are compared individually instead.
+ * - `UserConfigSchema` is the entire user config schema, ~1,250 lines reaching
+ *   45 further declarations. Five shipped keys reach it, through the one line of
+ *   `USER_CONFIG_DEFAULTS` that parses it, so following it would move five pins
+ *   for every ordinary field addition — measured, not feared: with it followed,
+ *   `0.69.0` through `0.73.0` each pull in 48 declarations and 84KB of text.
+ *   `USER_CONFIG_DEFAULTS` itself IS pinned, so swapping its derivation for a
+ *   literal is still seen. What is NOT seen is a changed default: flipping
+ *   `memory.provider` from `'builtin'` to something else rewrites what the
+ *   shipped `0.69.0` writes to every upgrading install, with every pin green
+ *   (probed). Adding a field is the harmless half; editing an existing one is
+ *   this walk's remaining hole, and it is narrower than the module boundary it
+ *   replaced.
+ *
+ * Excluded by name rather than by luck, in both files, because a name that must
+ * not be followed must not be followed from anywhere.
  */
-const MIGRATION_TABLE = 'CONFIG_MIGRATIONS';
+const NEVER_FOLLOWED: ReadonlySet<string> = new Set(['CONFIG_MIGRATIONS', 'UserConfigSchema']);
 
 /** Any identifier-shaped token, used to find the calls a body makes. */
 const IDENTIFIER = /[A-Za-z_$][\w$]*/g;
@@ -226,8 +268,9 @@ function countMatches(pattern: RegExp, text: string): number {
  * `RETIRED_SIDEBAR_KEYS`, so a walk that followed only function calls would
  * leave that list editable underneath a shipped migration.
  *
- * @param source - The full `config-manager.ts` source text.
- * @returns Each declared name mapped to its declaration text.
+ * @param source - The full source text of one file the walk may reach into.
+ * @returns Each declared name mapped to its declaration text, minus the names in
+ *   {@link NEVER_FOLLOWED}.
  * @throws When a declaration has no terminator, which means this reader has
  *   drifted from the file rather than that the file is safe.
  */
@@ -273,6 +316,7 @@ export function extractTopLevelDeclarations(source: string): Record<string, stri
   TOP_LEVEL_FUNCTION.lastIndex = 0;
   for (let m = TOP_LEVEL_FUNCTION.exec(masked); m !== null; m = TOP_LEVEL_FUNCTION.exec(masked)) {
     const name = m[1]!;
+    if (NEVER_FOLLOWED.has(name)) continue;
     const close = masked.slice(m.index).search(CLOSING_LINE);
     if (close === -1) {
       throw new Error(
@@ -286,7 +330,7 @@ export function extractTopLevelDeclarations(source: string): Record<string, stri
   TOP_LEVEL_BINDING.lastIndex = 0;
   for (let m = TOP_LEVEL_BINDING.exec(masked); m !== null; m = TOP_LEVEL_BINDING.exec(masked)) {
     const name = m[1]!;
-    if (name === MIGRATION_TABLE) continue;
+    if (NEVER_FOLLOWED.has(name)) continue;
     const end = endOfStatement(masked, m.index);
     if (end === -1) {
       throw new Error(
@@ -318,11 +362,52 @@ function endOfStatement(masked: string, from: number): number {
 }
 
 /**
+ * The source text of every file a migration closure is allowed to reach into.
+ *
+ * An allowlist of two, not "whatever `config-manager.ts` imports". The reason is
+ * in the module header: a walk that followed every import would reach the whole
+ * shared package, and a pin that moves for unrelated work stops being read.
+ */
+export interface ClosureSources {
+  /** The full `apps/server/src/services/core/config-manager.ts` source text. */
+  configManager: string;
+  /** The full `packages/shared/src/config-schema.ts` source text. */
+  configSchema: string;
+}
+
+/**
+ * Every declaration both files offer the walk, in one map.
+ *
+ * `config-manager.ts` wins a name collision, because a local declaration shadows
+ * an import — but a collision is also a compile error in the real files, so it
+ * is reported rather than resolved quietly. If it ever happens, one file's
+ * declaration is silently absent from every closure that names it, which is a
+ * hole the pins cannot show.
+ *
+ * @param sources - The allowlisted files' source text.
+ * @returns Each declared name mapped to its declaration text.
+ * @throws When the two files declare the same top-level name.
+ */
+export function declarationPool(sources: ClosureSources): Record<string, string> {
+  const schema = extractTopLevelDeclarations(sources.configSchema);
+  const manager = extractTopLevelDeclarations(sources.configManager);
+  const shadowed = Object.keys(manager).filter((name) => schema[name] !== undefined);
+  if (shadowed.length > 0) {
+    throw new Error(
+      `config-manager.ts and config-schema.ts both declare ${shadowed.join(', ')}. The migration ` +
+        'closure would keep one and drop the other, so a shipped key reaching the dropped one ' +
+        'would be pinned with a hole in it. Rename one of them.'
+    );
+  }
+  return { ...schema, ...manager };
+}
+
+/**
  * Every top-level declaration a slice of code reaches, transitively, by name.
  *
  * @param slice - The starting text — a migration's line in the table, usually.
- * @param declarations - The file's declarations, from
- *   {@link extractTopLevelDeclarations}.
+ * @param declarations - The declarations the walk may reach, from
+ *   {@link declarationPool} or {@link extractTopLevelDeclarations}.
  * @returns The reached names, sorted, so moving a declaration within the file is
  *   not a change.
  */
