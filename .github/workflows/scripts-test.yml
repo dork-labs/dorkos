@@ -116,6 +116,18 @@ name: scripts-test
 ### `turbo test` cannot reach that guard from test.yml's own full-monorepo sweep;
 ### THIS job is the only place in CI it runs at all.
 ###
+### .github/dependabot.yml is in the filter because
+### `scripts/__tests__/dependabot-lockstep-families.test.ts` asserts against it
+### (DOR-1644): a Dependabot `ignore` entry must name a WHOLE lockstep family —
+### parent, `-sdk` companion and per-platform siblings — never one member of
+### one, because an ignore that covers a parent but not its siblings does not
+### stop a bump, it splits one. Nothing else in CI executes that config at all,
+### so tidying a trailing `*` off an entry is invisible until Dependabot next
+### opens a group PR (that is exactly how PR #1407 shipped platform binaries at
+### 0.3.250 against an SDK pinned to 0.3.224). Without this entry, the one PR
+### shape that regression takes — an edit to dependabot.yml alone — would never
+### trigger the job that catches it.
+###
 ### operating-skills-version-check.yml is in the filter for the same reason:
 ### test-seeded-pack-changed.sh asserts that seeded-pack-changed.sh's default
 ### PACK_FILE and SKILLS_DIR match that workflow's job `env:`, which is where
@@ -143,6 +155,7 @@ on:
       - '.github/workflows/merge-tail.yml'
       - '.github/workflows/operating-skills-version-check.yml'
       - '.github/workflows/test.yml'
+      - '.github/dependabot.yml'
   push:
     branches: [main]
     paths:
@@ -163,6 +176,7 @@ on:
       - '.github/workflows/merge-tail.yml'
       - '.github/workflows/operating-skills-version-check.yml'
       - '.github/workflows/test.yml'
+      - '.github/dependabot.yml'
 
 # Opt into Node 24 for JavaScript-based actions (checkout) ahead of GitHub's
 # Sept 2026 cutoff for the Node 20 runtime.

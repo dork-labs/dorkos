@@ -158,6 +158,15 @@ describe('provisionCodex', () => {
     // place both pins are declared, so a future SDK-only bump fails this test red.
     // `@openai/codex` is an exact pin; `@openai/codex-sdk` carries a leading `~` —
     // strip range operators before comparing the version numbers themselves.
+    //
+    // THIS TEST READS ONE MANIFEST, ON PURPOSE — it is a guard on the runtime
+    // adapter beside it, and it names the exact version so a bump has to come
+    // through here deliberately. It is NOT the repo-wide check: apps/desktop and
+    // packages/cli declare the same pair, and packages/cli sat at 0.150.1 against
+    // a 0.147.0 SDK for days after PR #1407 because nothing looked there.
+    // `scripts/__tests__/dependabot-lockstep-families.test.ts` (DOR-1644) is what
+    // covers every manifest, plus the per-platform siblings and the dependabot
+    // ignore rules that let the split happen. Bump both together.
     const { readFile } =
       await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
     const pkg = JSON.parse(
