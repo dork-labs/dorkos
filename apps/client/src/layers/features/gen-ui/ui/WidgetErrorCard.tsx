@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AlertTriangle, ChevronRight } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
+import { Card } from '@/layers/shared/ui';
 
 interface WidgetErrorCardProps {
   /** Short, human-readable reason the widget failed to render. */
@@ -21,7 +22,7 @@ export function WidgetErrorCard({ error, raw }: WidgetErrorCardProps) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="bg-card text-card-foreground rounded-lg border p-3 text-sm">
+    <Card gap="none" className="p-3 text-sm">
       <div className="flex items-start gap-2">
         <AlertTriangle className="text-muted-foreground mt-0.5 size-4 shrink-0" aria-hidden />
         <div className="min-w-0 flex-1">
@@ -43,6 +44,6 @@ export function WidgetErrorCard({ error, raw }: WidgetErrorCardProps) {
           )}
         </div>
       </div>
-    </div>
+    </Card>
   );
 }

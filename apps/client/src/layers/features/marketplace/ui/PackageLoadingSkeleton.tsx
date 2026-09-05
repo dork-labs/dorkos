@@ -1,4 +1,4 @@
-import { Skeleton } from '@/layers/shared/ui';
+import { Card, Skeleton } from '@/layers/shared/ui';
 import { PACKAGE_GRID_COLUMNS, PACKAGE_GRID_CONTAINER } from '../lib/package-grid-layout';
 
 /**
@@ -21,7 +21,7 @@ export function PackageLoadingSkeleton({ count = 8 }: { count?: number }) {
         aria-label="Loading packages"
       >
         {Array.from({ length: count }).map((_, i) => (
-          <div key={i} className="bg-card rounded-xl border p-6">
+          <Card key={i} radius="lg" gap="none" className="p-6">
             {/* Icon row */}
             <div className="mb-3 flex items-start justify-between gap-2">
               <Skeleton className="size-6 rounded-full" />
@@ -37,7 +37,7 @@ export function PackageLoadingSkeleton({ count = 8 }: { count?: number }) {
             <div className="flex items-center justify-end">
               <Skeleton className="h-7 w-16" />
             </div>
-          </div>
+          </Card>
         ))}
       </div>
     </div>

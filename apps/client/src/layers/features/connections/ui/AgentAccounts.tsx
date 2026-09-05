@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import {
+  cardVariants,
   Select,
   SelectContent,
   SelectItem,
@@ -9,7 +10,7 @@ import {
   Skeleton,
   Switch,
 } from '@/layers/shared/ui';
-import { getAgentDisplayName } from '@/layers/shared/lib';
+import { cn, getAgentDisplayName } from '@/layers/shared/lib';
 import {
   useAgentConnectors,
   useAttachAgentConnector,
@@ -83,7 +84,9 @@ export function AgentAccounts() {
               return (
                 <li
                   key={account.id}
-                  className="bg-card shadow-soft flex items-start justify-between gap-4 rounded-lg border p-4"
+                  // The card shell from the card's own recipe; the element stays
+                  // an `<li>` because it is one item of a list.
+                  className={cn(cardVariants(), 'flex-row items-start justify-between')}
                 >
                   <div className="min-w-0 space-y-1">
                     <p className="text-sm font-medium">{name}</p>

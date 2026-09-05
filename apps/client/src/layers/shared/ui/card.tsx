@@ -18,9 +18,15 @@ const cardVariants = cva('bg-card text-card-foreground shadow-soft flex flex-col
       md: 'rounded-lg',
       lg: 'rounded-xl',
     },
-    /** Space between the card's own children, for cards that don't set their own. */
+    /**
+     * Space between the card's own children.
+     *
+     * `none` emits no gap utility at all rather than `gap-0`, so a body that
+     * spaces itself — with its own margins, or a different gap on each axis —
+     * is not fighting a class the card put there first.
+     */
     gap: {
-      none: 'gap-0',
+      none: '',
       sm: 'gap-3',
       md: 'gap-4',
     },

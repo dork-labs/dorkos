@@ -1,4 +1,4 @@
-import { Button } from '@/layers/shared/ui';
+import { Button, Card } from '@/layers/shared/ui';
 import { FALLBACK_SERVICE_ICON, SERVICE_ICONS } from '../lib/presentation';
 
 /**
@@ -35,7 +35,7 @@ const KNOWN_SERVICES: { slug: string; name: string }[] = [
 export function AccountsFirstRun({ onSetUpCarrier }: { onSetUpCarrier: () => void }) {
   return (
     <div className="space-y-4">
-      <div className="bg-card shadow-soft space-y-3 rounded-lg border p-5">
+      <Card gap="sm" className="p-5">
         <p className="text-sm font-medium">Nothing can be connected yet</p>
         <p className="text-muted-foreground max-w-prose text-sm leading-relaxed">
           Accounts reach DorkOS through Composio, an outside service that holds the sign-ins. It is
@@ -45,16 +45,17 @@ export function AccountsFirstRun({ onSetUpCarrier }: { onSetUpCarrier: () => voi
         <Button size="sm" onClick={onSetUpCarrier}>
           Set up Composio
         </Button>
-      </div>
+      </Card>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {KNOWN_SERVICES.map((service) => {
           const Icon = SERVICE_ICONS[service.slug] ?? FALLBACK_SERVICE_ICON;
           return (
-            <div
+            <Card
               key={service.slug}
               data-testid={`service-preview-${service.slug}`}
-              className="bg-card/50 flex flex-col items-start gap-2 rounded-lg border border-dashed p-4"
+              gap="sm"
+              className="bg-card/50 items-start border-dashed"
             >
               <div className="flex min-w-0 items-center gap-2">
                 <Icon className="text-muted-foreground/60 size-4 shrink-0" aria-hidden />
@@ -63,7 +64,7 @@ export function AccountsFirstRun({ onSetUpCarrier }: { onSetUpCarrier: () => voi
                 </span>
               </div>
               <span className="text-muted-foreground/70 text-xs">Connects through Composio</span>
-            </div>
+            </Card>
           );
         })}
       </div>

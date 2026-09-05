@@ -27,6 +27,13 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
       'centered',
     ],
   },
+  {
+    id: 'card',
+    title: 'Card',
+    page: 'components',
+    category: 'Layout',
+    keywords: ['card', 'surface', 'panel', 'tile', 'border', 'shadow', 'radius', 'interactive'],
+  },
   // ButtonShowcases
   {
     id: 'button',
