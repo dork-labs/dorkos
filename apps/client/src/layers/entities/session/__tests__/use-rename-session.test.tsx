@@ -18,7 +18,7 @@ import { TransportProvider, useClaudeAccounts } from '@/layers/shared/model';
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 import { toast } from 'sonner';
-import { useRenameSession } from '../model/use-rename-session';
+import { useRenameSession } from '../model/rename/use-rename-session';
 import { sessionKeys } from '../api/query-keys';
 
 const CWD = '/projects/api';

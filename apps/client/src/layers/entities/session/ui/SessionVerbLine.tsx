@@ -23,7 +23,7 @@
 import type { ReactNode } from 'react';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
 import { activityVerb } from '@/layers/shared/lib';
-import { useSessionToolActivity } from '../model/session-list-store';
+import { useSessionToolActivity } from '../model/stream/session-list-store';
 
 /** Props for {@link SessionVerbLine}. */
 export interface SessionVerbLineProps {

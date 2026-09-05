@@ -71,7 +71,7 @@ vi.mock('@/layers/entities/agent', async (importOriginal) => ({
   useResolvedAgents: () => MANIFESTS_RESULT,
 }));
 
-vi.mock('@/layers/entities/session/model/use-recent-sessions', () => ({
+vi.mock('@/layers/entities/session/model/query/use-recent-sessions', () => ({
   useRecentSessions: () => ({ data: RECENT, isLoading: false, isSuccess: true }),
 }));
 

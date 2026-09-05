@@ -3,8 +3,12 @@
  *
  * @module entities/session
  */
-export { useSessions, useSessionListWarnings, insertOptimisticSession } from './model/use-sessions';
-export { useAgentSessions } from './model/use-agent-sessions';
+export {
+  useSessions,
+  useSessionListWarnings,
+  insertOptimisticSession,
+} from './model/query/use-sessions';
+export { useAgentSessions } from './model/query/use-agent-sessions';
 export { selectAgentSessions } from './lib/select-agent-sessions';
 export { switchAgentCwd } from './lib/switch-agent-cwd';
 export {
@@ -30,16 +34,16 @@ export {
 export type { ContextSeverity } from './lib/context-health';
 export { deriveStatusBarValues } from './lib/derive-status-bar';
 export { selectRenderedStatus } from './lib/select-rendered-status';
-export { useSessionRenderedStatus } from './model/use-session-rendered-status';
+export { useSessionRenderedStatus } from './model/status/use-session-rendered-status';
 export { sessionDisplayTitle, UNTITLED_SESSION_LABEL } from './lib/session-display-title';
-export { useSessionRuntime } from './model/use-session-runtime';
-export { useSessionId, useStartNewSession } from './model/use-session-id';
-export type { SetSessionIdOptions } from './model/use-session-id';
+export { useSessionRuntime } from './model/query/use-session-runtime';
+export { useSessionId, useStartNewSession } from './model/navigation/use-session-id';
+export type { SetSessionIdOptions } from './model/navigation/use-session-id';
 // Two hooks, two questions. This one is the session's SETTINGS — its model,
 // permission mode, effort, and any change still in flight. `useSessionChatStatus`
 // below is whether the chat is idle, streaming or waiting.
-export { useSessionStatus } from './model/use-session-status';
-export type { SessionStatusData } from './model/use-session-status';
+export { useSessionStatus } from './model/settings/use-session-status';
+export type { SessionStatusData } from './model/settings/use-session-status';
 // Query-key factory — the one place a session cache key is built, so a reader
 // can never look in an entry no writer fills (DOR-482).
 export { sessionKeys } from './api/query-keys';
@@ -51,20 +55,23 @@ export { sessionKeys } from './api/query-keys';
 // `FULL_POWER_MARK_LABEL` is published so the row tests assert the exact shipped
 // string instead of re-hardcoding it — one source of truth for the mark's copy.
 export { FULL_POWER_MARK_LABEL } from './lib/permission-mode';
-export { useSessionDetail } from './model/use-session-detail';
+export { useSessionDetail } from './model/query/use-session-detail';
 // The store itself is published (tests reset it between cases); the per-session
 // selector and its types stay slice-private — `useSessionStatus` is the only
 // legitimate reader of a pending change.
-export { useSessionSettingsOverridesStore } from './model/session-settings-overrides';
-export { useDefaultCwd } from './model/use-default-cwd';
-export { useDirectoryState } from './model/use-directory-state';
+export { useSessionSettingsOverridesStore } from './model/settings/session-settings-overrides';
+export { useDefaultCwd } from './model/navigation/use-default-cwd';
+export { useDirectoryState } from './model/navigation/use-directory-state';
 
-export type { SetDirOptions } from './model/use-directory-state';
-export { useModels, modelsQueryOptions } from './model/use-models';
-export { useSubagents } from './model/use-subagents';
-export { useSessionSearch } from './model/use-session-search';
-export { useSessionScopedCwd, isSessionScopeReady } from './model/use-session-scoped-cwd';
-export type { SessionScopedCwd } from './model/use-session-scoped-cwd';
+export type { SetDirOptions } from './model/navigation/use-directory-state';
+export { useModels, modelsQueryOptions } from './model/query/use-models';
+export { useSubagents } from './model/query/use-subagents';
+export { useSessionSearch } from './model/navigation/use-session-search';
+export {
+  useSessionScopedCwd,
+  isSessionScopeReady,
+} from './model/navigation/use-session-scoped-cwd';
+export type { SessionScopedCwd } from './model/navigation/use-session-scoped-cwd';
 export {
   useSessionChatStore,
   useSessionChatState,
@@ -75,8 +82,8 @@ export {
   useHasDismissedDefaultStopOffer,
   useModeBeforePlan,
   DEFAULT_SESSION_STATE,
-} from './model/session-chat-store';
-export type { SessionState } from './model/session-chat-store';
+} from './model/stream/session-chat-store';
+export type { SessionState } from './model/stream/session-chat-store';
 // Session-stream infrastructure (spec chat-stream-reconnection, Phase 3).
 export {
   useSessionStreamStore,
@@ -94,8 +101,8 @@ export {
   useSessionQueue,
   useSessionQueueOutcomes,
   DEFAULT_SESSION_STREAM_STATE,
-} from './model/session-stream-store';
-export type { SessionStreamState } from './model/session-stream-store';
+} from './model/stream/session-stream-store';
+export type { SessionStreamState } from './model/stream/session-stream-store';
 export {
   useSessionListStore,
   useSessionListSessions,
@@ -104,40 +111,43 @@ export {
   selectSessionActivity,
   useSessionContextReading,
   useSessionRekeyTarget,
-} from './model/session-list-store';
-export type { SessionContextReading } from './model/session-list-store';
+} from './model/stream/session-list-store';
+export type { SessionContextReading } from './model/stream/session-list-store';
 export {
   initSessionStreamBinding,
   resetSessionStreamBinding,
-} from './model/session-stream-binding';
-export { useGlobalSessionStream } from './model/use-global-session-stream';
-export { RECENT_SESSIONS_WINDOW, useRecentSessions } from './model/use-recent-sessions';
+} from './model/stream/session-stream-binding';
+export { useGlobalSessionStream } from './model/stream/use-global-session-stream';
+export { RECENT_SESSIONS_WINDOW, useRecentSessions } from './model/query/use-recent-sessions';
 
-export { useSessionBorderState } from './model/use-session-border-state';
-export type { SessionBorderKind, SessionBorderState } from './model/use-session-border-state';
-export { useAgentHottestStatus } from './model/use-agent-hottest-status';
+export { useSessionBorderState } from './model/status/use-session-border-state';
+export type {
+  SessionBorderKind,
+  SessionBorderState,
+} from './model/status/use-session-border-state';
+export { useAgentHottestStatus } from './model/status/use-agent-hottest-status';
 // Context-health merge resolver (list vs live, live wins) + its pure core.
 export {
   useSessionContextHealth,
   resolveSessionContextHealth,
-} from './model/use-session-context-health';
-export type { SessionContextHealth } from './model/use-session-context-health';
+} from './model/context/use-session-context-health';
+export type { SessionContextHealth } from './model/context/use-session-context-health';
 // Fleet-level context rollup — runtime-neutral counts for the summary surfaces.
-export { useFleetContextRollup } from './model/use-fleet-context-rollup';
-export type { FleetContextRollup } from './model/use-fleet-context-rollup';
-export { useAgentsAggregateStatus } from './model/use-agents-aggregate-status';
-export type { UseAgentsAggregateStatusOptions } from './model/use-agents-aggregate-status';
-export { usePulseMotion, shouldPulse } from './model/use-pulse-motion';
-export type { PulseMotion } from './model/use-pulse-motion';
+export { useFleetContextRollup } from './model/context/use-fleet-context-rollup';
+export type { FleetContextRollup } from './model/context/use-fleet-context-rollup';
+export { useAgentsAggregateStatus } from './model/status/use-agents-aggregate-status';
+export type { UseAgentsAggregateStatusOptions } from './model/status/use-agents-aggregate-status';
+export { usePulseMotion, shouldPulse } from './model/status/use-pulse-motion';
+export type { PulseMotion } from './model/status/use-pulse-motion';
 // Attention-signal model (DOR-339) — single source of per-agent "does this
 // need my eyes?" truth for filters, reveal rows, rollup dots, and mute.
 export {
   deriveAttention,
   useAgentAttentionMap,
   ATTENTION_THRESHOLDS,
-} from './model/agent-attention';
-export type { AttentionState, LiveBorderKind } from './model/agent-attention';
-export { useRenameSession } from './model/use-rename-session';
+} from './model/status/agent-attention';
+export type { AttentionState, LiveBorderKind } from './model/status/agent-attention';
+export { useRenameSession } from './model/rename/use-rename-session';
 
 // UI — session row display primitive
 export { SessionRow } from './ui/SessionRow';
@@ -161,5 +171,5 @@ export {
   partitionSessionsByOrigin,
 } from './lib/partition-sessions-by-origin';
 export type { SessionOriginPartition } from './lib/partition-sessions-by-origin';
-export { useSessionOrigin } from './model/use-sessions';
-export type { SessionOriginData } from './model/use-sessions';
+export { useSessionOrigin } from './model/query/use-sessions';
+export type { SessionOriginData } from './model/query/use-sessions';

@@ -3,7 +3,7 @@ import type { Session } from '@dorkos/shared/types';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import { STATUS_TONE_TEXT, Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
 // Same-slice imports via sibling modules (not the entities/session barrel).
-import { useSessionContextHealth } from '../model/use-session-context-health';
+import { useSessionContextHealth } from '../model/context/use-session-context-health';
 import type { ContextSeverity } from '../lib/context-health';
 
 /** Severity → text color, matching `ContextItem`'s amber/red vocabulary. */

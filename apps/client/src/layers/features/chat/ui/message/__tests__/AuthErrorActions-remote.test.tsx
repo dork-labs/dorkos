@@ -35,8 +35,8 @@ vi.mock('@/layers/shared/model', async (importOriginal) => ({
 }));
 
 const { sessionRows } = vi.hoisted(() => ({ sessionRows: { current: [] as Session[] } }));
-vi.mock('@/layers/entities/session/model/use-sessions', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/layers/entities/session/model/use-sessions')>()),
+vi.mock('@/layers/entities/session/model/query/use-sessions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/session/model/query/use-sessions')>()),
   useSessions: () => ({ sessions: sessionRows.current, isLoading: false }),
 }));
 

@@ -731,7 +731,7 @@
       "description": "Sidebar display filters, sections (incl. smart), sorting, and mute guide",
       "patterns": [
         "features/dashboard-sidebar/",
-        "entities/session/model/agent-attention",
+        "entities/session/model/status/agent-attention",
         "config-schema"
       ]
     },

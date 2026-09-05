@@ -24,7 +24,7 @@ import {
 } from '@/layers/shared/lib';
 import { DetailRow, TRUST_TONE_TEXT } from '@/layers/shared/ui';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
-import { useSessionPermissionSummary } from '../model/use-session-permission-summary';
+import { useSessionPermissionSummary } from '../model/settings/use-session-permission-summary';
 import { getOriginDescriptor } from '../config/origin-descriptors';
 
 /** Props for {@link SessionDetailsPanel}. */

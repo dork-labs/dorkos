@@ -67,8 +67,8 @@ vi.mock('@/layers/shared/model', async () => {
 
 // The card resolves the failing runtime off the session list. Mocking the LIST
 // rather than a lookup keeps the card's own resolution running for real.
-vi.mock('@/layers/entities/session/model/use-sessions', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/layers/entities/session/model/use-sessions')>()),
+vi.mock('@/layers/entities/session/model/query/use-sessions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/session/model/query/use-sessions')>()),
   useSessions: () => ({
     sessions: [{ id: 's1', runtime: 'claude-code' } as Session],
     isLoading: false,

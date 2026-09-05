@@ -6,11 +6,11 @@ import type { Transport } from '@dorkos/shared/transport';
 import type { Session } from '@dorkos/shared/types';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { useAgentSessions } from '../model/use-agent-sessions';
+import { useAgentSessions } from '../model/query/use-agent-sessions';
 import { sessionDisplayTitle, UNTITLED_SESSION_LABEL } from '../lib/session-display-title';
 
 // Mock useSessionId (TanStack Router search params)
-vi.mock('@/layers/entities/session/model/use-session-id', () => ({
+vi.mock('@/layers/entities/session/model/navigation/use-session-id', () => ({
   useSessionId: () => [null, vi.fn()] as const,
 }));
 

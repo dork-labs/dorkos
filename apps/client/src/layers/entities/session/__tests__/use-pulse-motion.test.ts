@@ -11,7 +11,7 @@
  * @module entities/session/__tests__/use-pulse-motion
  */
 import { describe, it, expect } from 'vitest';
-import { shouldPulse } from '../model/use-pulse-motion';
+import { shouldPulse } from '../model/status/use-pulse-motion';
 
 describe('shouldPulse', () => {
   it('pulses when the state asks for it and there is a colour to fade to', () => {

@@ -13,7 +13,7 @@ import { SessionTranscript } from '../ui/SessionTranscript';
 vi.mock('@/layers/entities/agent/model/use-current-agent', () => ({
   useCurrentAgent: () => ({ data: null }),
 }));
-vi.mock('@/layers/entities/session/model/use-session-runtime', () => ({
+vi.mock('@/layers/entities/session/model/query/use-session-runtime', () => ({
   useSessionRuntime: () => 'claude-code',
 }));
 

@@ -22,7 +22,7 @@ vi.mock('@/layers/shared/model', () => ({
   useSafeSearch: () => mockSearch,
 }));
 
-import { useSessionSearch } from '../model/use-session-search';
+import { useSessionSearch } from '../model/navigation/use-session-search';
 import { sessionSearchSchema } from '@/router';
 
 /**

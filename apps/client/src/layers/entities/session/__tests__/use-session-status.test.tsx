@@ -10,8 +10,8 @@ import type { SessionStatusEvent } from '@dorkos/shared/types';
 import { TransportProvider } from '@/layers/shared/model';
 import { createMockTransport } from '@dorkos/test-utils';
 import { toast } from 'sonner';
-import { useSessionStatus } from '../model/use-session-status';
-import { useSessionSettingsOverridesStore } from '../model/session-settings-overrides';
+import { useSessionStatus } from '../model/settings/use-session-status';
+import { useSessionSettingsOverridesStore } from '../model/settings/session-settings-overrides';
 
 vi.mock('sonner', () => ({ toast: { warning: vi.fn() } }));
 

@@ -123,8 +123,8 @@ vi.mock('@/layers/entities/runtime', async (importOriginal) => ({
   useRuntimeCapabilities: () => ({ data: undefined }),
 }));
 
-vi.mock('@/layers/entities/session/model/use-sessions', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/layers/entities/session/model/use-sessions')>()),
+vi.mock('@/layers/entities/session/model/query/use-sessions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/session/model/query/use-sessions')>()),
   useSessions: () => ({ sessions: [], isLoading: false }) as never,
 }));
 
@@ -138,7 +138,7 @@ const updateSession = vi.fn((_opts: unknown, handlers?: { onError?: (err: unknow
   if (nextRefusal.current) handlers?.onError?.(nextRefusal.current);
   return Promise.resolve(undefined);
 });
-vi.mock('@/layers/entities/session/model/use-session-status', () => ({
+vi.mock('@/layers/entities/session/model/settings/use-session-status', () => ({
   useSessionStatus: () => ({
     permissionMode: 'default',
     cwd: '/test/dir',
@@ -149,13 +149,13 @@ vi.mock('@/layers/entities/session/model/use-session-status', () => ({
   }),
 }));
 
-vi.mock('@/layers/entities/session/model/use-models', () => ({
+vi.mock('@/layers/entities/session/model/query/use-models', () => ({
   useModels: () => ({
     data: [{ value: 'claude-opus-4-8', displayName: 'Opus 4.8', supportsAutoMode: false }],
   }),
 }));
 
-vi.mock('@/layers/entities/session/model/use-subagents', () => ({
+vi.mock('@/layers/entities/session/model/query/use-subagents', () => ({
   useSubagents: () => ({ data: undefined }),
 }));
 

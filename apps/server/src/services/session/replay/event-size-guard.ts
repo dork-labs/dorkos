@@ -36,10 +36,10 @@
  *
  * The gate is fixture-tested (`scripts/test-check-dir-size.sh`), and its second
  * "census" tier reports every tracked directory over the cap on every commit
- * without blocking: `services/tasks` (36), `services/session` (34, this one),
- * `entities/session/model` (29) and `services/core` (26) all sit above it
- * today, so a growing directory here is debt the repo already carries rather
- * than something this change invented.
+ * without blocking: `services/tasks` (36), `services/session` (33, this one)
+ * and `services/core` (26) are among the directories sitting above it today, so
+ * a growing directory here is debt the repo already carries rather than
+ * something this change invented.
  *
  * Named this precisely on purpose. The threshold lives ONLY in that script: it
  * is not in `AGENTS.md`, `.claude/rules/` or `contributing/`, and the script's

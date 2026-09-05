@@ -1384,7 +1384,7 @@
       "lastVerified": "2026-08-16",
       "affects": [
         "apps/client/src/layers/features/chat/model/use-session-submit.ts",
-        "apps/client/src/layers/entities/session/model/session-stream-store.ts",
+        "apps/client/src/layers/entities/session/model/stream/session-stream-store.ts",
         "apps/server/src/services/session/session-state-projector.ts"
       ]
     },
@@ -2006,7 +2006,7 @@
       "extractedFrom": "session-state-manager",
       "specSlug": "session-state-manager",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/entities/session/model/session-chat-store.ts"]
+      "affects": ["apps/client/src/layers/entities/session/model/stream/session-chat-store.ts"]
     },
     {
       "number": 207,
@@ -2779,8 +2779,8 @@
       "specSlug": "fix-chat-streaming-and-model-selector-bugs",
       "lastVerified": "2026-08-06",
       "affects": [
-        "apps/client/src/layers/entities/session/model/use-session-status.ts",
-        "apps/client/src/layers/entities/session/model/session-settings-overrides.ts"
+        "apps/client/src/layers/entities/session/model/settings/use-session-status.ts",
+        "apps/client/src/layers/entities/session/model/settings/session-settings-overrides.ts"
       ]
     },
     {

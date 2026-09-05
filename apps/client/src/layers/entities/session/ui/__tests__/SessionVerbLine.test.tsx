@@ -19,7 +19,7 @@ import { render, screen, cleanup, act } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { SessionActivity, SessionStatus } from '@dorkos/shared/session-stream';
 import { SidebarRow } from '@/layers/shared/ui';
-import { useSessionListStore } from '../../model/session-list-store';
+import { useSessionListStore } from '../../model/stream/session-list-store';
 import { SessionVerbLine } from '../SessionVerbLine';
 
 /** How many times each ROW has rendered, keyed by the id in its `dataSlot`. */

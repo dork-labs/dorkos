@@ -43,7 +43,7 @@ This guide covers data fetching patterns in DorkOS. The client uses TanStack Que
 Entity hooks in `apps/client/src/layers/entities/` wrap TanStack Query with Transport calls:
 
 ```typescript
-// apps/client/src/layers/entities/session/model/use-sessions.ts
+// apps/client/src/layers/entities/session/model/query/use-sessions.ts
 import { useQuery } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
 
@@ -527,7 +527,7 @@ export function useResolvedAgents(paths: string[]) {
 Available models are fetched via `useModels()` in `entities/session/`. Models rarely change so the query uses a long `staleTime` (30 minutes):
 
 ```typescript
-// apps/client/src/layers/entities/session/model/use-models.ts
+// apps/client/src/layers/entities/session/model/query/use-models.ts
 export function useModels() {
   const transport = useTransport();
   return useQuery<ModelOption[]>({
@@ -545,7 +545,7 @@ The server delegates to `runtimeRegistry.getDefault().getSupportedModels()` via 
 Available subagents are fetched via `useSubagents()` in `entities/session/`. Same non-blocking pattern as `useModels()` — long `staleTime` (30 minutes) since subagent sets rarely change between sessions:
 
 ```typescript
-// apps/client/src/layers/entities/session/model/use-subagents.ts
+// apps/client/src/layers/entities/session/model/query/use-subagents.ts
 export function useSubagents() {
   const transport = useTransport();
   return useQuery<SubagentInfo[]>({
@@ -562,7 +562,7 @@ The server delegates to `runtimeRegistry.getDefault().getSupportedSubagents()` v
 
 Per-session chat state is stored in a global Zustand store (`useSessionChatStore`) rather than in component state. This decouples chat state from the React component lifecycle so sessions can stream concurrently, resume instantly on switch, and expose background activity indicators in the sidebar.
 
-**File:** `apps/client/src/layers/entities/session/model/session-chat-store.ts`
+**File:** `apps/client/src/layers/entities/session/model/stream/session-chat-store.ts`
 
 ### Why Zustand here instead of TanStack Query
 

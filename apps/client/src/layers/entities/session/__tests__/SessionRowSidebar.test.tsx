@@ -10,9 +10,9 @@ import { SidebarMenu, TooltipProvider } from '@/layers/shared/ui';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { createMockTransport } from '@dorkos/test-utils';
 import { SessionRowSidebar, statusSignalForBorderKind } from '../ui/SessionRowSidebar';
-import { useSessionChatStore } from '../model/session-chat-store';
-import { useSessionListStore } from '../model/session-list-store';
-import { useSessionSettingsOverridesStore } from '../model/session-settings-overrides';
+import { useSessionChatStore } from '../model/stream/session-chat-store';
+import { useSessionListStore } from '../model/stream/session-list-store';
+import { useSessionSettingsOverridesStore } from '../model/settings/session-settings-overrides';
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {

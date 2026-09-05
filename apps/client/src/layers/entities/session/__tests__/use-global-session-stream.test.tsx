@@ -26,21 +26,21 @@ vi.mock('@/layers/shared/lib/transport', () => ({
     }),
   },
 }));
-vi.mock('../model/session-stream-binding', () => ({
+vi.mock('../model/stream/session-stream-binding', () => ({
   initSessionStreamBinding: vi.fn(),
   resetSessionStreamBinding: vi.fn(),
 }));
 // `useSessions` reads the active session id from the router search params; there
 // is no router here (the same stub `use-sessions.test.tsx` uses).
-vi.mock('../model/use-session-id', () => ({
+vi.mock('../model/navigation/use-session-id', () => ({
   useSessionId: () => [null, vi.fn()] as const,
 }));
 
 import { useAppStore } from '@/layers/shared/model';
-import { useGlobalSessionStream } from '../model/use-global-session-stream';
-import { useRecentSessions } from '../model/use-recent-sessions';
-import { useSessions } from '../model/use-sessions';
-import { useSessionListStore } from '../model/session-list-store';
+import { useGlobalSessionStream } from '../model/stream/use-global-session-stream';
+import { useRecentSessions } from '../model/query/use-recent-sessions';
+import { useSessions } from '../model/query/use-sessions';
+import { useSessionListStore } from '../model/stream/session-list-store';
 import { sessionKeys } from '../api/query-keys';
 
 function makeSession(id: string): Session {

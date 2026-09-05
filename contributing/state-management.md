@@ -6,25 +6,25 @@ This guide covers state management patterns in DorkOS. Zustand manages complex c
 
 ## Key Files
 
-| Concept                | Location                                                            |
-| ---------------------- | ------------------------------------------------------------------- |
-| App store (Zustand)    | `apps/client/src/layers/shared/model/app-store/app-store.ts`        |
-| App store types        | `apps/client/src/layers/shared/model/app-store/app-store-types.ts`  |
-| App store panels slice | `apps/client/src/layers/shared/model/app-store/app-store-panels.ts` |
-| Agent creation store   | `apps/client/src/layers/shared/model/agent-creation-store.ts`       |
-| Dialog search schema   | `apps/client/src/layers/shared/model/dialog-search-schema.ts`       |
-| Dialog deep-link hooks | `apps/client/src/layers/shared/model/use-dialog-deep-link.ts`       |
-| TransportContext       | `apps/client/src/layers/shared/model/TransportContext.tsx`          |
-| Session entity hooks   | `apps/client/src/layers/entities/session/`                          |
-| Command entity hooks   | `apps/client/src/layers/entities/command/`                          |
-| Chat feature hooks     | `apps/client/src/layers/features/chat/model/use-chat-session.ts`    |
-| URL state (router)     | `apps/client/src/layers/entities/session/model/use-session-id.ts`   |
-| Theme hook             | `apps/client/src/layers/shared/model/use-theme.ts`                  |
-| Extension registry     | `apps/client/src/layers/shared/model/extension-registry.ts`         |
-| Extension init         | `apps/client/src/app/init-extensions.ts`                            |
-| Filter engine          | `apps/client/src/layers/shared/lib/filter-engine.ts`                |
-| Filter state hook      | `apps/client/src/layers/shared/model/use-filter-state.ts`           |
-| EventStreamProvider    | `apps/client/src/layers/shared/model/event-stream-context.tsx`      |
+| Concept                | Location                                                                     |
+| ---------------------- | ---------------------------------------------------------------------------- |
+| App store (Zustand)    | `apps/client/src/layers/shared/model/app-store/app-store.ts`                 |
+| App store types        | `apps/client/src/layers/shared/model/app-store/app-store-types.ts`           |
+| App store panels slice | `apps/client/src/layers/shared/model/app-store/app-store-panels.ts`          |
+| Agent creation store   | `apps/client/src/layers/shared/model/agent-creation-store.ts`                |
+| Dialog search schema   | `apps/client/src/layers/shared/model/dialog-search-schema.ts`                |
+| Dialog deep-link hooks | `apps/client/src/layers/shared/model/use-dialog-deep-link.ts`                |
+| TransportContext       | `apps/client/src/layers/shared/model/TransportContext.tsx`                   |
+| Session entity hooks   | `apps/client/src/layers/entities/session/`                                   |
+| Command entity hooks   | `apps/client/src/layers/entities/command/`                                   |
+| Chat feature hooks     | `apps/client/src/layers/features/chat/model/use-chat-session.ts`             |
+| URL state (router)     | `apps/client/src/layers/entities/session/model/navigation/use-session-id.ts` |
+| Theme hook             | `apps/client/src/layers/shared/model/use-theme.ts`                           |
+| Extension registry     | `apps/client/src/layers/shared/model/extension-registry.ts`                  |
+| Extension init         | `apps/client/src/app/init-extensions.ts`                                     |
+| Filter engine          | `apps/client/src/layers/shared/lib/filter-engine.ts`                         |
+| Filter state hook      | `apps/client/src/layers/shared/model/use-filter-state.ts`                    |
+| EventStreamProvider    | `apps/client/src/layers/shared/model/event-stream-context.tsx`               |
 
 ## When to Use What
 
@@ -135,7 +135,7 @@ export function Sidebar() {
 Server state is managed through entity hooks in the `entities/` FSD layer:
 
 ```typescript
-// apps/client/src/layers/entities/session/model/use-sessions.ts
+// apps/client/src/layers/entities/session/model/query/use-sessions.ts
 import { useQuery } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
 
@@ -155,7 +155,7 @@ export function useSessions(cwd?: string) {
 In standalone web mode, `?session=` and `?dir=` persist in the URL via TanStack Router's `validateSearch` and `Route.useSearch()`:
 
 ```typescript
-// apps/client/src/layers/entities/session/model/use-session-id.ts
+// apps/client/src/layers/entities/session/model/navigation/use-session-id.ts
 import { useSessionSearch } from './use-session-search';
 import { useNavigate } from '@tanstack/react-router';
 

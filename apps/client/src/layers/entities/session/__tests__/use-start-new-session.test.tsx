@@ -23,7 +23,7 @@ vi.mock('@/layers/shared/model/app-store', () => ({
 }));
 
 const mockSetSessionId = vi.fn();
-vi.mock('@/layers/entities/session/model/use-session-search', () => ({
+vi.mock('@/layers/entities/session/model/navigation/use-session-search', () => ({
   useSessionSearch: () => ({}),
 }));
 
@@ -37,7 +37,7 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
 }));
 
-import { useStartNewSession } from '../model/use-session-id';
+import { useStartNewSession } from '../model/navigation/use-session-id';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 

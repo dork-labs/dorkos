@@ -4,7 +4,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { createMockSession } from '@dorkos/test-utils';
-import type { SessionContextHealth } from '../../model/use-session-context-health';
+import type { SessionContextHealth } from '../../model/context/use-session-context-health';
 import { STATUS_TONE_TEXT } from '@/layers/shared/ui';
 import { SessionContextGauge } from '../SessionContextGauge';
 
@@ -12,7 +12,7 @@ import { SessionContextGauge } from '../SessionContextGauge';
 // honest render states from the store/catalog resolution (covered by the hook's
 // own tests).
 const mockHealth = vi.fn<() => SessionContextHealth>();
-vi.mock('../../model/use-session-context-health', () => ({
+vi.mock('../../model/context/use-session-context-health', () => ({
   useSessionContextHealth: () => mockHealth(),
 }));
 

@@ -110,12 +110,12 @@ vi.mock('@/layers/features/chat/model/use-file-upload', () => ({
 }));
 
 // Mock useSessionId
-vi.mock('@/layers/entities/session/model/use-session-id', () => ({
+vi.mock('@/layers/entities/session/model/navigation/use-session-id', () => ({
   useSessionId: () => ['test-session', vi.fn()],
 }));
 
 // Mock useSessionStatus
-vi.mock('@/layers/entities/session/model/use-session-status', () => ({
+vi.mock('@/layers/entities/session/model/settings/use-session-status', () => ({
   useSessionStatus: () => ({
     permissionMode: 'default',
     cwd: null,
@@ -149,7 +149,7 @@ vi.mock('@/layers/shared/model/TransportContext', () => ({
 }));
 
 // Mock useDirectoryState
-vi.mock('@/layers/entities/session/model/use-directory-state', () => ({
+vi.mock('@/layers/entities/session/model/navigation/use-directory-state', () => ({
   useDirectoryState: () => ['/test/dir', vi.fn()],
 }));
 

@@ -358,7 +358,7 @@ export const USER_PROFILE_DEFAULTS: UserProfile = UserProfileSchema.parse({});
  * shows every member (inactive ones collapse behind a reveal row), `active`
  * keeps only agents that need attention or are active, `attention` narrows to
  * agents that need attention. Mirrors {@link AttentionState} in
- * `entities/session/model/agent-attention.ts` minus `idle`/`inactive`, which
+ * `entities/session/model/status/agent-attention.ts` minus `idle`/`inactive`, which
  * never have their own filter value — they are what filtering hides.
  */
 export const SidebarDisplayFilterSchema = z.enum(['all', 'active', 'attention']);

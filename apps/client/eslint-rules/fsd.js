@@ -10,7 +10,7 @@ import { dirname, resolve, sep } from 'node:path';
  * This is NOT the `vi.mock()` carve-out written down in
  * `.claude/rules/fsd-layers.md`. That one exists because mocking a specific
  * module requires its concrete path, so an ALIASED deep path
- * (`@/layers/entities/session/model/use-recent-sessions`) has no barrel-shaped
+ * (`@/layers/entities/session/model/query/use-recent-sessions`) has no barrel-shaped
  * alternative and stays legal. A RELATIVE path into another slice has one — the
  * same alias — so there is nothing to carve out.
  */

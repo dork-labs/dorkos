@@ -45,15 +45,15 @@ vi.mock('@/layers/entities/runtime', async (importOriginal) => ({
 
 // The runtime chip reads the session list for its "started" signal; the real
 // useSessions needs router search params, absent in this suite.
-vi.mock('@/layers/entities/session/model/use-sessions', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/layers/entities/session/model/use-sessions')>()),
+vi.mock('@/layers/entities/session/model/query/use-sessions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/session/model/query/use-sessions')>()),
   useSessions: () => ({ sessions: [], isLoading: false }) as never,
 }));
 
 // A DELIBERATELY DIVERGENT coarse estimate (99) vs the SDK breakdown's 88.4:
 // both the badge and the inline action must prefer the SDK percentage, so any edit
 // that changes one derivation and not the other makes the two numbers differ.
-vi.mock('@/layers/entities/session/model/use-session-status', () => ({
+vi.mock('@/layers/entities/session/model/settings/use-session-status', () => ({
   useSessionStatus: () => ({
     permissionMode: 'default',
     cwd: '/test/dir',
