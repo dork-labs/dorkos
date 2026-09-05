@@ -13,28 +13,23 @@
  * @module services/observability/deep-health/checks
  */
 import type { CheckResult } from '@dorkos/shared/health-schemas';
-
-/** One row of the `room_sessions` table: which session a room member speaks through. */
-export interface RoomSessionBinding {
-  roomId: string;
-  authorId: string;
-  sessionId: string;
-}
+import type { RoomSessionBinding } from '../../rooms/session-bindings/room-session-ledger.js';
 
 /** Facts needed to judge whether room members still have a conversation to continue. */
 export interface RoomSessionTranscriptInput {
-  /** Bindings this check could actually judge (Claude Code sessions). */
-  bindings: readonly RoomSessionBinding[];
-  /** Ids of every session that has a transcript file on disk. */
-  transcriptSessionIds: ReadonlySet<string>;
+  /** How many bindings the transcript probe reached a verdict on. */
+  judgedCount: number;
+  /** The judged bindings whose conversation is not where a resume would look for it. */
+  orphaned: readonly RoomSessionBinding[];
   /**
-   * Bindings dropped because their owning runtime could not be read.
+   * Bindings nothing could be learned about — the transcript or the runtime
+   * could not be read.
    *
-   * Counted rather than ignored: a broken lookup that silently emptied the
-   * list would report a confident "0 room members checked — all good", which
-   * is the shape of a check that cannot fail.
+   * Counted rather than ignored: a broken probe that silently judged nothing
+   * would report a confident "0 room members checked — all good", which is the
+   * shape of a check that cannot fail.
    */
-  unknownRuntimeCount?: number;
+  unreadableCount?: number;
 }
 
 /**
@@ -44,28 +39,28 @@ export interface RoomSessionTranscriptInput {
  * session an agent speaks through, but that session's transcript is gone, so
  * every reply starts from nothing while the room looks perfectly normal.
  *
- * @param input - Judgeable bindings, the ids that have a transcript, and how
- *   many bindings could not be judged at all.
+ * @param input - How many bindings were judged, which of them have lost their
+ *   conversation, and how many could not be judged at all.
  * @returns A `pass` when every binding has a transcript, a `warn` carrying how
  *   many do not, and `info` when nothing could be judged.
  */
 export function checkRoomSessionTranscripts(input: RoomSessionTranscriptInput): CheckResult {
-  const unknown = input.unknownRuntimeCount ?? 0;
-  if (input.bindings.length === 0 && unknown > 0) {
+  const unreadable = input.unreadableCount ?? 0;
+  if (input.judgedCount === 0 && unreadable > 0) {
     return {
       label: 'Could not check whether rooms remember their conversations',
       status: 'info',
-      detail: `DorkOS could not work out which runtime owns ${unknown} room ${plural(unknown, 'member', 'members')}, so none could be checked.`,
+      detail: `DorkOS could not read the saved conversation for ${unreadable} room ${plural(unreadable, 'member', 'members')}, so none could be checked.`,
     };
   }
-  const orphaned = input.bindings.filter((b) => !input.transcriptSessionIds.has(b.sessionId));
+  const orphaned = input.orphaned;
   if (orphaned.length === 0) {
     return {
       label: 'Rooms remember their conversations',
       status: 'pass',
       detail:
-        `${input.bindings.length} ${plural(input.bindings.length, 'room member', 'room members')} checked` +
-        (unknown > 0 ? `; ${unknown} could not be identified and were left out` : ''),
+        `${input.judgedCount} ${plural(input.judgedCount, 'room member', 'room members')} checked` +
+        (unreadable > 0 ? `; ${unreadable} could not be read and were left out` : ''),
     };
   }
   const roomCount = new Set(orphaned.map((b) => b.roomId)).size;

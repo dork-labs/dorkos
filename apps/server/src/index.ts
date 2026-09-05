@@ -305,7 +305,8 @@ import { ReadCursorService, setReadCursorService } from './services/core/read-cu
 import {
   followSessionRekeys,
   repairRoomSessionBindings,
-} from './services/rooms/room-session-convergence.js';
+} from './services/rooms/session-bindings/room-session-convergence.js';
+import type { RoomBindingTranscriptDeps } from './services/rooms/session-bindings/room-binding-transcripts.js';
 import {
   ensureTeamRoom,
   joinTeamRoom,
@@ -1351,17 +1352,22 @@ async function start() {
   // its transcript reader, so without one there is no claude-code binding
   // anybody could judge, and a sweep that ran anyway would have to invent an
   // answer for every row.
+  //
+  // The same object is handed to the deep health check further down, so
+  // `dorkos doctor --deep` and this sweep ask one probe and cannot answer
+  // differently about one binding (DOR-805).
+  let roomBindingTranscripts: RoomBindingTranscriptDeps | undefined;
   if (claudeRuntime) {
     const transcripts = claudeRuntime.getTranscriptReader();
-    void repairRoomSessionBindings({
-      store: roomStore,
+    roomBindingTranscripts = {
       agentPathFor: (authorId) => {
         const record = roomAuthors.getById(authorId);
         return record?.kind === 'agent' ? record.naturalKey : null;
       },
       hasTranscript: async (agentPath, sessionId) =>
         (await transcripts.hasTranscript(agentPath, sessionId)).exists,
-    }).then(
+    };
+    void repairRoomSessionBindings({ store: roomStore, ...roomBindingTranscripts }).then(
       (report) => {
         // Every non-clean outcome, including the two that mean a repair did not
         // land (`refused`, `failed`) — a boot that quietly dropped those would
@@ -2791,8 +2797,10 @@ async function start() {
   app.locals.deepHealthDeps = {
     dorkHome,
     roomSessions: roomStore,
-    transcriptProjectRoots: () => claudeRuntime?.getTranscriptReader().getProjectsRootSet() ?? [],
-    runtimeForSession: (sessionId: string) => runtimeRegistry.getSessionRuntimeType(sessionId),
+    // The boot sweep's own probe, so the two cannot disagree (DOR-805).
+    // Undefined without the claude-code runtime, and the check then says it was
+    // skipped rather than judging every binding with nothing to judge it by.
+    roomBindingTranscripts,
     relay: relayCore,
     adapters: adapterManager,
     mesh: meshCore,

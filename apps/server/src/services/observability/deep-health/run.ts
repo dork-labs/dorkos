@@ -16,22 +16,19 @@
  */
 import type { CheckResult } from '@dorkos/shared/health-schemas';
 import {
+  surveyRoomBindingTranscripts,
+  type RoomBindingTranscriptDeps,
+} from '../../rooms/session-bindings/room-binding-transcripts.js';
+import type { RoomSessionBinding } from '../../rooms/session-bindings/room-session-ledger.js';
+import {
   checkAdapterEntries,
   checkDuplicateAgentIds,
   checkRelayAccessRules,
   checkRelayBindingGhosts,
   checkRoomSessionTranscripts,
   type RelayBinding,
-  type RoomSessionBinding,
 } from './checks.js';
-import {
-  collectAgentManifests,
-  collectTranscriptSessionIds,
-  listAgentHomeDirectories,
-} from './collect.js';
-
-/** The runtime that owns Claude Code transcripts; only its sessions have a `.jsonl`. */
-const CLAUDE_CODE_RUNTIME = 'claude-code';
+import { collectAgentManifests, listAgentHomeDirectories } from './collect.js';
 
 /** The room store, narrowed to the one read the transcript check needs. */
 export interface RoomSessionSource {
@@ -61,10 +58,13 @@ export interface DeepHealthDeps {
   /** The resolved DorkOS data directory. */
   dorkHome: string;
   roomSessions?: RoomSessionSource | undefined;
-  /** Absolute paths of the `projects` folders holding Claude Code transcripts. */
-  transcriptProjectRoots?: (() => string[]) | undefined;
-  /** Which runtime owns a session; used to skip runtimes that keep no transcript. */
-  runtimeForSession?: ((sessionId: string) => Promise<string>) | undefined;
+  /**
+   * The shared "does this binding still have its conversation" probe
+   * (`services/rooms/session-bindings/room-binding-transcripts.ts`), which the boot-time
+   * convergence sweep asks too — absent on an install with no claude-code
+   * runtime, where nothing could answer it.
+   */
+  roomBindingTranscripts?: RoomBindingTranscriptDeps | undefined;
   relay?: RelayAccessSource | undefined;
   adapters?: AdapterSource | undefined;
   mesh?: MeshAgentSource | undefined;
@@ -130,50 +130,27 @@ async function contain(
   }
 }
 
-/** Room bindings whose transcript is gone (Claude Code sessions only). */
+/**
+ * Room bindings whose transcript is gone.
+ *
+ * The probe is the shared one, so this answer and the boot-time convergence
+ * sweep's cannot disagree about a binding (DOR-805). It decides for itself which
+ * bindings are its business — a session on a runtime that keeps no transcript is
+ * not — and reports what it could not read apart from what it judged.
+ */
 async function roomTranscriptCheck(deps: DeepHealthDeps): Promise<CheckResult> {
-  if (!deps.roomSessions || !deps.transcriptProjectRoots) {
+  if (!deps.roomSessions || !deps.roomBindingTranscripts) {
     return skipped('Rooms remember their conversations', 'the room store is not available');
   }
-  const all = deps.roomSessions.listRoomSessions();
-  // Only Claude Code writes a transcript file. A Codex or OpenCode session has
-  // no `.jsonl` by design, so counting it as missing would be a false alarm.
-  const { bindings, unknownRuntimeCount } = deps.runtimeForSession
-    ? await filterClaudeCodeSessions(all, deps.runtimeForSession)
-    : { bindings: all, unknownRuntimeCount: 0 };
-  const transcriptSessionIds = collectTranscriptSessionIds(deps.transcriptProjectRoots());
-  return checkRoomSessionTranscripts({ bindings, transcriptSessionIds, unknownRuntimeCount });
-}
-
-/** The outcome of sorting bindings by which runtime owns them. */
-interface RuntimeFilterResult {
-  /** Bindings whose session belongs to the runtime that writes transcripts. */
-  bindings: RoomSessionBinding[];
-  /** Bindings whose owning runtime could not be read at all. */
-  unknownRuntimeCount: number;
-}
-
-/**
- * Keep only bindings whose session belongs to the runtime that writes transcripts.
- *
- * A lookup that throws is counted, not silently dropped. Dropping it would let
- * a broken session-metadata read turn into a confident "0 room members checked
- * — all good", which is a check that cannot fail.
- */
-async function filterClaudeCodeSessions(
-  bindings: readonly RoomSessionBinding[],
-  runtimeForSession: (sessionId: string) => Promise<string>
-): Promise<RuntimeFilterResult> {
-  const kept: RoomSessionBinding[] = [];
-  let unknownRuntimeCount = 0;
-  for (const binding of bindings) {
-    try {
-      if ((await runtimeForSession(binding.sessionId)) === CLAUDE_CODE_RUNTIME) kept.push(binding);
-    } catch {
-      unknownRuntimeCount += 1;
-    }
-  }
-  return { bindings: kept, unknownRuntimeCount };
+  const survey = await surveyRoomBindingTranscripts(
+    deps.roomSessions.listRoomSessions(),
+    deps.roomBindingTranscripts
+  );
+  return checkRoomSessionTranscripts({
+    judgedCount: survey.judged,
+    orphaned: survey.missing,
+    unreadableCount: survey.unreadable,
+  });
 }
 
 /** Whether the relay's access rules loaded. */

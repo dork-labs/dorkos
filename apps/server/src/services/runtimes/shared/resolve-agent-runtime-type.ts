@@ -5,9 +5,10 @@
  * now asks the same question when a chat platform's first message needs a
  * session created for an agent (DOR-1614) and again when one agent messages
  * another directly (DOR-1627, through the adapter's `resolveAgentRuntimeType`
- * seam), and the room binding repair sweep asks it a fourth time. A second copy
- * of the manifest-then-default ladder is a second copy that can disagree about
- * which program answers for an agent.
+ * seam), and the shared room-binding transcript probe asks it a fourth time
+ * (`rooms/session-bindings/room-binding-transcripts.ts`, DOR-805). A second copy of the
+ * manifest-then-default ladder is a second copy that can disagree about which
+ * program answers for an agent.
  *
  * Two functions, and which one to call is decided by whether there is a SESSION:
  * {@link resolveAgentRuntimeType} answers for an agent that is about to get one,

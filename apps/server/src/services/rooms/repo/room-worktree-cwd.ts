@@ -28,7 +28,7 @@ import type { RoomSessionPlacePort } from '../../workspace/room-session-cwd.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomWorktreeManager } from './room-worktree-manager.js';
 import { RoomError } from '../room-errors.js';
-import type { RoomSessionLedger } from '../room-session-ledger.js';
+import type { RoomSessionLedger } from '../session-bindings/room-session-ledger.js';
 
 /**
  * An agent's standing working copy of a room's repo, or `null` when that room

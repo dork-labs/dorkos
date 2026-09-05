@@ -23,10 +23,10 @@
  * a dead id — and the boot repair sweep, whose whole job is bindings that broke
  * before this process started, had by construction nothing to repair from.
  *
- * @module server/services/rooms/room-session-ledger
+ * @module server/services/rooms/session-bindings/room-session-ledger
  */
 import { roomSessions, roomSessionRetirements, eq, lt, type Db } from '@dorkos/db';
-import { logger } from '../../lib/logger.js';
+import { logger } from '../../../lib/logger.js';
 
 /** One `(room, agent) → session` binding, as the convergence paths read it. */
 export interface RoomSessionBinding {

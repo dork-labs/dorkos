@@ -22,15 +22,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { eq, roomSessions } from '@dorkos/db';
-import { RoomStore } from '../room-store.js';
+import { RoomStore } from '../../room-store.js';
 import { RoomSessionLedger } from '../room-session-ledger.js';
 import {
   followSessionRekeys,
   repairRoomSessionBindings,
   type RoomBindingRepairDeps,
 } from '../room-session-convergence.js';
-import { getOrCreateProjector, disposeProjector, rekeyProjector } from '../../session/index.js';
-import { logger } from '../../../lib/logger.js';
+import { getOrCreateProjector, disposeProjector, rekeyProjector } from '../../../session/index.js';
+import { runtimeRegistry } from '../../../core/runtime-registry.js';
+import { logger } from '../../../../lib/logger.js';
 
 /** The placeholder `room-trigger.ts` mints before the first turn. */
 const PLACEHOLDER = '00dfdce7-1111-4222-8333-444444444444';
@@ -44,6 +45,11 @@ const ANA_PATH = '/agents/ana';
 /** A store with Ana bound to the placeholder, the way turn 1 leaves it. */
 function storeBoundToPlaceholder(): { store: RoomStore; db: ReturnType<typeof createTestDb> } {
   const db = createTestDb();
+  // The shared binding probe asks the registry which runtime owns a session
+  // before it probes for a transcript (DOR-805), and that read needs a database.
+  // Empty `session_metadata` is the shape a room placeholder really has: nothing
+  // has bound it, so the answer comes from the agent's manifest.
+  runtimeRegistry.setDb(db);
   const store = new RoomStore(db);
   store.bindRoomSession(ROOM, ANA, PLACEHOLDER, new Date().toISOString());
   return { store, db };
@@ -260,9 +266,10 @@ describe('the repair sweep', () => {
   }
 
   beforeEach(() => {
-    // `resolveAgentRuntimeType` reads the agent's manifest and the process
-    // registry; with neither present it answers with the registry default, which
-    // is claude-code. That is exactly the shape a real install has.
+    // A room placeholder is unbound, so `resolveTurnRuntimeType` falls to the
+    // agent's manifest and the process registry; with neither present it answers
+    // with the registry default, which is claude-code. That is exactly the shape
+    // a real install has.
     vi.restoreAllMocks();
   });
 

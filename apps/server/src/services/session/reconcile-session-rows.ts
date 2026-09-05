@@ -13,7 +13,7 @@
  * nobody, so its rows sit in SQLite for the life of the install with no reader
  * and no reaper. Boot is the one moment that can ask the question the watcher
  * missed, and it is the same moment the room-binding repair
- * (`rooms/room-session-convergence.ts`, DOR-1205) exists for.
+ * (`rooms/session-bindings/room-session-convergence.ts`, DOR-1205) exists for.
  *
  * ## Why it deletes so little
  *

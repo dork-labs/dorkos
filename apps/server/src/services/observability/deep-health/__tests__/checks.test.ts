@@ -9,33 +9,23 @@ import {
 
 describe('checkRoomSessionTranscripts', () => {
   it('passes when every binding has a transcript', () => {
-    const result = checkRoomSessionTranscripts({
-      bindings: [
-        { roomId: 'r1', authorId: 'a1', sessionId: 's1' },
-        { roomId: 'r1', authorId: 'a2', sessionId: 's2' },
-      ],
-      transcriptSessionIds: new Set(['s1', 's2', 's3']),
-    });
+    const result = checkRoomSessionTranscripts({ judgedCount: 2, orphaned: [] });
     expect(result.status).toBe('pass');
     expect(result.detail).toContain('2 room members');
   });
 
   it('passes vacuously with no bindings', () => {
-    const result = checkRoomSessionTranscripts({
-      bindings: [],
-      transcriptSessionIds: new Set(),
-    });
+    const result = checkRoomSessionTranscripts({ judgedCount: 0, orphaned: [] });
     expect(result.status).toBe('pass');
   });
 
   it('warns and counts the bindings whose transcript is gone', () => {
     const result = checkRoomSessionTranscripts({
-      bindings: [
+      judgedCount: 3,
+      orphaned: [
         { roomId: 'r1', authorId: 'a1', sessionId: 'gone-1' },
         { roomId: 'r2', authorId: 'a2', sessionId: 'gone-2' },
-        { roomId: 'r2', authorId: 'a3', sessionId: 'here' },
       ],
-      transcriptSessionIds: new Set(['here']),
     });
     expect(result.status).toBe('warn');
     expect(result.label).toContain('2 room members');
@@ -43,11 +33,11 @@ describe('checkRoomSessionTranscripts', () => {
     expect(result.fix).toBeTruthy();
   });
 
-  it('says it could not check when every binding had an unreadable runtime', () => {
+  it('says it could not check when nothing could be read', () => {
     const result = checkRoomSessionTranscripts({
-      bindings: [],
-      transcriptSessionIds: new Set(),
-      unknownRuntimeCount: 4,
+      judgedCount: 0,
+      orphaned: [],
+      unreadableCount: 4,
     });
     expect(result.status).toBe('info');
     expect(result.label).toContain('Could not check');
@@ -56,27 +46,27 @@ describe('checkRoomSessionTranscripts', () => {
 
   it('still passes on zero bindings when nothing was unreadable', () => {
     const result = checkRoomSessionTranscripts({
-      bindings: [],
-      transcriptSessionIds: new Set(),
-      unknownRuntimeCount: 0,
+      judgedCount: 0,
+      orphaned: [],
+      unreadableCount: 0,
     });
     expect(result.status).toBe('pass');
   });
 
   it('admits on a pass how many bindings it had to leave out', () => {
     const result = checkRoomSessionTranscripts({
-      bindings: [{ roomId: 'r1', authorId: 'a1', sessionId: 's1' }],
-      transcriptSessionIds: new Set(['s1']),
-      unknownRuntimeCount: 2,
+      judgedCount: 1,
+      orphaned: [],
+      unreadableCount: 2,
     });
     expect(result.status).toBe('pass');
-    expect(result.detail).toContain('2 could not be identified');
+    expect(result.detail).toContain('2 could not be read');
   });
 
   it('carries no session id, room id, or path', () => {
     const result = checkRoomSessionTranscripts({
-      bindings: [{ roomId: 'secret-room', authorId: 'agent', sessionId: 'secret-session' }],
-      transcriptSessionIds: new Set(),
+      judgedCount: 1,
+      orphaned: [{ roomId: 'secret-room', authorId: 'agent', sessionId: 'secret-session' }],
     });
     const rendered = JSON.stringify(result);
     expect(rendered).not.toContain('secret-room');

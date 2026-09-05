@@ -15,39 +15,6 @@ import type { AgentManifestLocation } from './checks.js';
 /** The per-agent settings file, relative to the agent's project folder. */
 const AGENT_MANIFEST_RELATIVE_PATH = path.join('.dork', 'agent.json');
 
-/** File extension of a Claude Code transcript. */
-const TRANSCRIPT_EXTENSION = '.jsonl';
-
-/**
- * Collect the id of every session that has a transcript on disk.
- *
- * Claude Code stores transcripts as `<projects root>/<project slug>/<session
- * id>.jsonl`. We sweep every slug folder rather than computing the slug for one
- * project, because a room binding records only a session id — it does not
- * record which working directory the session belonged to.
- *
- * TODO(DOR-782): once `projectSlug()` lands in `services/session/project-slug.ts`,
- * a caller that knows the room's working directory can probe the single
- * expected path instead of sweeping. The sweep stays as the fallback for
- * bindings whose working directory is unknown.
- *
- * @param projectsRoots - Absolute paths of `projects` folders to sweep.
- * @returns Every session id that has a transcript file.
- */
-export function collectTranscriptSessionIds(projectsRoots: readonly string[]): Set<string> {
-  const ids = new Set<string>();
-  for (const root of projectsRoots) {
-    for (const slugDir of readDirNames(root)) {
-      for (const entry of readFileNames(path.join(root, slugDir))) {
-        if (entry.endsWith(TRANSCRIPT_EXTENSION)) {
-          ids.add(entry.slice(0, -TRANSCRIPT_EXTENSION.length));
-        }
-      }
-    }
-  }
-  return ids;
-}
-
 /**
  * Read the agent id each folder's manifest claims.
  *
@@ -97,18 +64,6 @@ function readDirNames(dir: string): string[] {
     return fs
       .readdirSync(dir, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name);
-  } catch {
-    return [];
-  }
-}
-
-/** Names of the immediate files of `dir`, or none when unreadable. */
-function readFileNames(dir: string): string[] {
-  try {
-    return fs
-      .readdirSync(dir, { withFileTypes: true })
-      .filter((entry) => entry.isFile())
       .map((entry) => entry.name);
   } catch {
     return [];
