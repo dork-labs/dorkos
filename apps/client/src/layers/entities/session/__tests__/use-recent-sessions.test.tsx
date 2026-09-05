@@ -8,7 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { RecentSessionsResponse } from '@dorkos/shared/types';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { RECENT_SESSIONS_WINDOW, useRecentSessions } from '../model/use-recent-sessions';
+import { RECENT_SESSIONS_WINDOW, useRecentSessions } from '../model/query/use-recent-sessions';
 import { sessionKeys } from '../api/query-keys';
 
 const envelope: RecentSessionsResponse = {

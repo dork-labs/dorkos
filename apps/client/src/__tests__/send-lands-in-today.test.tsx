@@ -141,7 +141,7 @@ vi.mock('@/layers/entities/agent', async (importOriginal) => ({
 }));
 // The SUBMODULE, not the barrel — `agent-attention.ts` reaches for this path
 // directly, so a barrel mock would leave the real hook wanting a transport.
-vi.mock('@/layers/entities/session/model/use-recent-sessions', () => ({
+vi.mock('@/layers/entities/session/model/query/use-recent-sessions', () => ({
   useRecentSessions: () => ({ data: RECENT, isLoading: false, isSuccess: true }),
 }));
 vi.mock('@/layers/entities/room', async (importOriginal) => ({

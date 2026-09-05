@@ -27,13 +27,13 @@ vi.mock('@/layers/shared/model/app-store', () => ({
 
 // Mock useSessionId
 const mockSetSessionId = vi.fn();
-vi.mock('@/layers/entities/session/model/use-session-id', () => ({
+vi.mock('@/layers/entities/session/model/navigation/use-session-id', () => ({
   useSessionId: () => [null, mockSetSessionId] as const,
 }));
 
 // Mock useSessionSearch (TanStack Router search params)
 let mockSearchDir: string | undefined = undefined;
-vi.mock('@/layers/entities/session/model/use-session-search', () => ({
+vi.mock('@/layers/entities/session/model/navigation/use-session-search', () => ({
   useSessionSearch: () => ({ dir: mockSearchDir }),
 }));
 
@@ -84,7 +84,7 @@ vi.mock('@tanstack/react-query', async (importOriginal) => ({
 }));
 
 import { QueryClient } from '@tanstack/react-query';
-import { useDirectoryState } from '../model/use-directory-state';
+import { useDirectoryState } from '../model/navigation/use-directory-state';
 
 describe('useDirectoryState', () => {
   beforeEach(() => {

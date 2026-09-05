@@ -59,7 +59,7 @@ vi.mock('@/layers/shared/lib/transport', () => ({
   },
 }));
 
-vi.mock('@/layers/entities/session/model/use-session-id', () => ({
+vi.mock('@/layers/entities/session/model/navigation/use-session-id', () => ({
   useSessionId: () => [null, vi.fn()] as const,
 }));
 

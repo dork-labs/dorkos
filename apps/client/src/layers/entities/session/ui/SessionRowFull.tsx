@@ -5,10 +5,13 @@ import type { Session } from '@dorkos/shared/types';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import { Tooltip, TooltipContent, TooltipTrigger, TRUST_TONE_TEXT } from '@/layers/shared/ui';
 import { RuntimeMark } from '@/layers/entities/runtime';
-import { useSessionBorderState, type SessionBorderState } from '../model/use-session-border-state';
-import { useInlineRename } from '../model/use-inline-rename';
-import { useSessionPermissionSummary } from '../model/use-session-permission-summary';
-import { usePulseMotion } from '../model/use-pulse-motion';
+import {
+  useSessionBorderState,
+  type SessionBorderState,
+} from '../model/status/use-session-border-state';
+import { useInlineRename } from '../model/rename/use-inline-rename';
+import { useSessionPermissionSummary } from '../model/settings/use-session-permission-summary';
+import { usePulseMotion } from '../model/status/use-pulse-motion';
 import { sessionDisplayTitle } from '../lib/session-display-title';
 import { FULL_POWER_MARK_LABEL } from '../lib/permission-mode';
 import { useNow } from '@/layers/shared/model';

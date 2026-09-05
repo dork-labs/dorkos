@@ -45,7 +45,7 @@
         "apps/client/src/layers/features/chat/ui/message/CompactBoundaryRow.tsx",
         "apps/client/src/layers/features/chat/ui/message/UserMessageContent.tsx",
         "apps/client/src/layers/features/chat/model/stream/project-session-turn.ts",
-        "apps/client/src/layers/entities/session/model/session-stream-store.ts",
+        "apps/client/src/layers/entities/session/model/stream/session-stream-store.ts",
         "apps/server/src/services/session/event-log-history.ts",
         "apps/server/src/services/runtimes/test-mode/scenario-store.ts",
         "apps/server/src/services/runtimes/test-mode/test-mode-runtime.ts",

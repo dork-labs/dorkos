@@ -43,15 +43,15 @@ vi.mock('@/layers/entities/runtime', async (importOriginal) => ({
 
 // The runtime chip reads the session list for its "started" signal; the real
 // useSessions needs router search params, absent in this suite.
-vi.mock('@/layers/entities/session/model/use-sessions', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/layers/entities/session/model/use-sessions')>()),
+vi.mock('@/layers/entities/session/model/query/use-sessions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/session/model/query/use-sessions')>()),
   useSessions: () => ({ sessions: [], isLoading: false }) as never,
 }));
 
 // `useSessionStatus` reports the COLD state: no live event has arrived, so the
 // derived context %/cost are null. The snapshot-backed stream store must fill
 // these in on cold mount.
-vi.mock('@/layers/entities/session/model/use-session-status', () => ({
+vi.mock('@/layers/entities/session/model/settings/use-session-status', () => ({
   useSessionStatus: () => ({
     permissionMode: 'default',
     cwd: '/test/dir',

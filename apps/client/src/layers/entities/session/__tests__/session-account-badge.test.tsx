@@ -16,8 +16,8 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { TransportProvider, useAppStore, useClaudeAccounts } from '@/layers/shared/model';
 import { SessionRow } from '../ui/SessionRow';
-import { useSessionChatStore } from '../model/session-chat-store';
-import { useSessionListStore } from '../model/session-list-store';
+import { useSessionChatStore } from '../model/stream/session-chat-store';
+import { useSessionListStore } from '../model/stream/session-list-store';
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {

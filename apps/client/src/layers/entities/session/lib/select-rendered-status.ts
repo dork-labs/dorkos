@@ -14,7 +14,7 @@
  */
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
 import type { ChatStatus } from '@/layers/shared/model';
-import type { SessionStreamState } from '../model/session-stream-store';
+import type { SessionStreamState } from '../model/stream/session-stream-store';
 
 /**
  * Map a projected lifecycle onto the renderer's coarse {@link ChatStatus}.

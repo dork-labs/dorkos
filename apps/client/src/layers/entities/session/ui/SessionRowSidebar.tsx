@@ -31,9 +31,12 @@ import {
 } from '@/layers/shared/ui';
 import { RuntimeMark } from '@/layers/entities/runtime';
 import type { StatusSignal } from '@/layers/shared/ui';
-import { useSessionBorderState, type SessionBorderKind } from '../model/use-session-border-state';
-import { useSessionPermissionSummary } from '../model/use-session-permission-summary';
-import { useInlineRename } from '../model/use-inline-rename';
+import {
+  useSessionBorderState,
+  type SessionBorderKind,
+} from '../model/status/use-session-border-state';
+import { useSessionPermissionSummary } from '../model/settings/use-session-permission-summary';
+import { useInlineRename } from '../model/rename/use-inline-rename';
 import { sessionDisplayTitle } from '../lib/session-display-title';
 import { FULL_POWER_MARK_LABEL } from '../lib/permission-mode';
 import { AccountMark } from './AccountMark';

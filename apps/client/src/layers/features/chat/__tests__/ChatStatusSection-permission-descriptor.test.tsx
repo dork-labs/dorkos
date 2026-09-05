@@ -90,8 +90,8 @@ vi.mock('@/layers/entities/runtime', async (importOriginal) => ({
   }),
 }));
 
-vi.mock('@/layers/entities/session/model/use-sessions', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/layers/entities/session/model/use-sessions')>()),
+vi.mock('@/layers/entities/session/model/query/use-sessions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/session/model/query/use-sessions')>()),
   useSessions: () =>
     ({
       sessions: [{ id: SESSION_ID, runtime: 'exotic', model: null }],
@@ -99,7 +99,7 @@ vi.mock('@/layers/entities/session/model/use-sessions', async (importOriginal) =
     }) as never,
 }));
 
-vi.mock('@/layers/entities/session/model/use-session-status', () => ({
+vi.mock('@/layers/entities/session/model/settings/use-session-status', () => ({
   useSessionStatus: () => ({
     permissionMode: sessionState.permissionMode,
     cwd: '/test/dir',

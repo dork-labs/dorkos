@@ -18,8 +18,8 @@ const mockSessionList = vi.fn<() => { sessions: unknown[]; isLoading: boolean }>
   sessions: [],
   isLoading: false,
 }));
-vi.mock('@/layers/entities/session/model/use-sessions', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/layers/entities/session/model/use-sessions')>()),
+vi.mock('@/layers/entities/session/model/query/use-sessions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/session/model/query/use-sessions')>()),
   useSessions: () => mockSessionList() as never,
 }));
 
