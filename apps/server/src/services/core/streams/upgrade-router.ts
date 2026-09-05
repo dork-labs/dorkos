@@ -22,7 +22,8 @@ import type { TLSSocket } from 'node:tls';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { STREAM_CLOSE_CODE_BASE } from '@dorkos/shared/stream-socket';
 import {
-  isTrustedUpgradeOrigin,
+  type BrowserOriginPolicy,
+  isTrustedBrowserOrigin,
   parseHostname,
   getTunnelHost,
 } from '../../../lib/trusted-origins.js';
@@ -113,13 +114,30 @@ export interface UpgradeRoute {
 }
 
 /**
+ * What the WebSocket upgrade asks of the one origin policy.
+ *
+ * `allowNoOrigin` is `true` because a non-browser WebSocket client (the CLI,
+ * the desktop shell, a test) sends none, and a browser is forced to send one
+ * truthfully — so absence convicts nobody. `pairSameOriginWithHost` is `true`
+ * because there is no middleware chain out here: an upgrade never reaches
+ * `hostGuard`, so if the same-origin branch is not paired with the host
+ * allowlist right here, nothing pairs it, and a DNS-rebound page satisfies
+ * same-origin by construction.
+ */
+const UPGRADE_ORIGIN_POLICY: BrowserOriginPolicy = {
+  allowNoOrigin: true,
+  pairSameOriginWithHost: true,
+};
+
+/**
  * Resolve the facts the origin policy needs and ask it.
  *
  * WebSocket handshakes are NOT subject to CORS: a page on any origin can open a
  * socket to any host its user can reach, and the browser attaches that host's
  * cookies. `Origin` is the only thing separating a cockpit tab from a page that
  * DNS-rebound onto this port. The policy itself — and why it is not a bare
- * allowlist — lives in {@link isTrustedUpgradeOrigin}.
+ * allowlist — lives in {@link isTrustedBrowserOrigin}, the one origin policy
+ * the CORS delegate and the `/mcp` mounts read too.
  *
  * @param req - The upgrade request, for its headers and its socket's encryption.
  * @param credential - The claimed route's posture, which decides whether the
@@ -143,33 +161,36 @@ function originIsTrusted(req: IncomingMessage, credential: UpgradeRoute['credent
   // never checked and cannot be doing the work the exemption assumes.
   const hostCheckInert = credential === 'required' && configManager.get('auth')?.enabled === true;
 
-  return isTrustedUpgradeOrigin({
-    origin: headers.origin,
-    hostHeader: headers.host,
-    hostAllowed: isHostAllowed({
-      hostname: parseHostname(headers.host),
-      trustedHosts: parseTrustedHosts(env.DORKOS_TRUSTED_HOSTS),
-      tunnelHost: getTunnelHost(),
-    }),
-    // eslint-disable-next-line no-restricted-syntax -- DORKOS_CORS_ORIGIN is not in env.ts; read the same way app.ts reads it
-    configuredOrigins: process.env.DORKOS_CORS_ORIGIN,
-    // Buys exactly one thing here: an IP-literal `Host` satisfies the pairing,
-    // which is what makes the shipped container reachable at its LAN address.
-    // A NAME still needs `DORKOS_TRUSTED_HOSTS` — a rebound name is the one
-    // thing this must never accept.
-    ownsNetworkBoundary: env.DORKOS_ALLOW_INSECURE_BIND === true,
-    // The upgrade's equivalent of `trust proxy: 1`, which is what lets
-    // `req.protocol` see through Caddy/ngrok on the HTTP path.
-    forwardedProto: Array.isArray(headers['x-forwarded-proto'])
-      ? headers['x-forwarded-proto'][0]
-      : headers['x-forwarded-proto'],
-    // When no proxy names the scheme, the same-origin comparison defaults to
-    // the connection's own encryption. The server binds plain HTTP (TLS is
-    // terminated upstream), so this is always falsy in practice and the default
-    // resolves to `http` — matching what `buildCors` pins on the HTTP path.
-    connectionEncrypted: Boolean((req.socket as TLSSocket).encrypted),
-    hostCheckInert,
-  });
+  return isTrustedBrowserOrigin(
+    {
+      origin: headers.origin,
+      hostHeader: headers.host,
+      hostAllowed: isHostAllowed({
+        hostname: parseHostname(headers.host),
+        trustedHosts: parseTrustedHosts(env.DORKOS_TRUSTED_HOSTS),
+        tunnelHost: getTunnelHost(),
+      }),
+      // eslint-disable-next-line no-restricted-syntax -- DORKOS_CORS_ORIGIN is not in env.ts; read the same way app.ts reads it
+      configuredOrigins: process.env.DORKOS_CORS_ORIGIN,
+      // Buys exactly one thing here: an IP-literal `Host` satisfies the pairing,
+      // which is what makes the shipped container reachable at its LAN address.
+      // A NAME still needs `DORKOS_TRUSTED_HOSTS` — a rebound name is the one
+      // thing this must never accept.
+      ownsNetworkBoundary: env.DORKOS_ALLOW_INSECURE_BIND === true,
+      // The upgrade's equivalent of `trust proxy: 1`, which is what lets
+      // `req.protocol` see through Caddy/ngrok on the HTTP path.
+      forwardedProto: Array.isArray(headers['x-forwarded-proto'])
+        ? headers['x-forwarded-proto'][0]
+        : headers['x-forwarded-proto'],
+      // When no proxy names the scheme, the same-origin comparison defaults to
+      // the connection's own encryption. The server binds plain HTTP (TLS is
+      // terminated upstream), so this is always falsy in practice and the default
+      // resolves to `http` — matching what `buildCors` pins on the HTTP path.
+      connectionEncrypted: Boolean((req.socket as TLSSocket).encrypted),
+      hostCheckInert,
+    },
+    UPGRADE_ORIGIN_POLICY
+  );
 }
 
 /** Write a bare HTTP status onto the un-upgraded socket, then destroy it. */

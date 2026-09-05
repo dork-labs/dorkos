@@ -325,12 +325,13 @@ The `operator-only` verdict carries the usual qualifier, and this leaf is no exc
 
 The following settings are controlled exclusively by environment variables and have no corresponding config file key:
 
-| Environment Variable      | Default                            | Description                                                                                                                                                                                                                                                         |
-| ------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DORKOS_RELAY_ENABLED`    | `true`                             | Enable the Relay message bus subsystem at the process level                                                                                                                                                                                                         |
-| `DORKOS_CORS_ORIGIN`      | localhost on DORKOS_PORT/VITE_PORT | CORS allowed origin(s) — a comma-separated list. `*` is ignored with a warning (see below).                                                                                                                                                                         |
-| `DORKOS_CLOUD_URL`        | `https://dorkos.ai`                | Base URL of the DorkOS cloud (dorkos.ai) that this instance device-links and heartbeats to. Override for local dev against a self-hosted `apps/site`. Read via `apps/server/src/env.ts`.                                                                            |
-| `DORKOS_VERSION_OVERRIDE` | (none)                             | Override the reported server version for testing upgrade UX. When set, dev mode detection is bypassed and this value is used as the current version. Example: `DORKOS_VERSION_OVERRIDE=0.1.0` simulates running an old version so the upgrade notification appears. |
+| Environment Variable      | Default                      | Description                                                                                                                                                                                                                                                         |
+| ------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DORKOS_RELAY_ENABLED`    | `true`                       | Enable the Relay message bus subsystem at the process level                                                                                                                                                                                                         |
+| `DORKOS_CORS_ORIGIN`      | (none; adds to the defaults) | EXTRA CORS origin(s) — a comma-separated list, added to the loopback/tunnel/same-origin policy rather than replacing it. `*` is ignored with a warning (see below).                                                                                                 |
+| `DORKOS_TRUST_PROXY`      | `false`                      | Key rate limits on `X-Forwarded-For` instead of the connection. Only behind a single proxy you control (see below).                                                                                                                                                 |
+| `DORKOS_CLOUD_URL`        | `https://dorkos.ai`          | Base URL of the DorkOS cloud (dorkos.ai) that this instance device-links and heartbeats to. Override for local dev against a self-hosted `apps/site`. Read via `apps/server/src/env.ts`.                                                                            |
+| `DORKOS_VERSION_OVERRIDE` | (none)                       | Override the reported server version for testing upgrade UX. When set, dev mode detection is bypassed and this value is used as the current version. Example: `DORKOS_VERSION_OVERRIDE=0.1.0` simulates running an old version so the upgrade notification appears. |
 
 The config file also contains a `version` field (currently `1`) that the schema carries for historical reasons. The authoritative migration tracker is a separate internal key that `conf` manages automatically — see **Schema Migrations** below.
 
@@ -1162,12 +1163,35 @@ This env var controls process-level Relay initialization and must be set before 
 
 Configures the `Access-Control-Allow-Origin` header on the Express server. When unset, defaults to localhost on `DORKOS_PORT` and `VITE_PORT` (code default 4241, dev convention 6241), plus the live tunnel origin and same-origin requests. Set a comma-separated list of origins to allow multiple production origins.
 
+Since DOR-1711 the list **adds to** that policy rather than replacing it: your entries join the loopback origins, the live tunnel and the same-origin branch instead of standing in for them. That matters most for the addresses you would never think to list — the port your container is published on, a LAN IP, the host a reverse proxy forwards — all of which are same-origin with their own requests. Replacing the policy left those refused, which showed up as an app that loaded fine (a same-origin GET sends no `Origin`) and failed every write.
+
 The list is also Better Auth's CSRF allowlist (`resolveAuthTrustedOrigins`, DOR-1744), so an origin you list here can sign in as well as call the API. Without that, a surface CORS answers gets an app where everything works except logging in, which is what the desktop dev renderer hit. What reaches the auth list is narrower in two ways: an entry containing `*` or `?` is dropped (Better Auth reads those as wildcard patterns; CORS reads them as literals), and so is an empty entry. `routes/extensions-approval.ts` still does not consult this variable at all, on purpose.
 
-`*` is **not** accepted: it is ignored with a warning on the HTTP path (`buildCors`), the WebSocket path (`isTrustedUpgradeOrigin`), and the auth allowlist, and the server falls back to the per-request policy. Login is off by default, so a wildcard would let any page the operator visits read and write the whole API cross-origin. All three surfaces read one parser (`parseConfiguredOrigins` in `apps/server/src/lib/trusted-origins.ts`) so the same value cannot mean different things on each.
+`*` is **not** accepted: it is ignored with a warning at boot (`buildCors`), by the shared origin policy (`isTrustedBrowserOrigin`), and by the auth allowlist, and the server falls back to the rest of the policy. Login is off by default, so a wildcard would let any page the operator visits read and write the whole API cross-origin. All four surfaces read one parser (`parseConfiguredOrigins` in `apps/server/src/lib/trusted-origins.ts`) — CORS, the MCP mounts and the WebSocket upgrade reach it as branch 3 of the shared origin policy, and the auth allowlist reads it directly — so the same value cannot mean different things on each.
 
 ```bash
 export DORKOS_CORS_ORIGIN=https://myapp.example.com
+dorkos
+```
+
+There is no config file key for this setting. It must be set as an environment variable.
+
+### DORKOS_TRUST_PROXY
+
+Whether `X-Forwarded-For` may name the client **for rate limiting**. Off by default (DOR-1711).
+
+Left off, every limiter keys on the TCP peer address, which no header can move. That is the whole point: the header is free for anyone to write, so on a direct bind a caller who rotates it lands in a fresh bucket every request, which silently disables the sign-in brute-force brake. All six inherited that from `app.set('trust proxy', 1)` until this flag existed — sign-in, `/mcp`, the two A2A endpoints, each extension's data proxy, the relay binding probe, and the admin routes, which is the one worth naming out loud: three attempts per five minutes guarding `POST /api/admin/reset`, which deletes the data directory.
+
+Turn it on only when a proxy you control is the only way in and you need per-client buckets behind it. Everyone who can reach that proxy's upstream can then write the key.
+
+It also assumes a **single** hop, because `trust proxy` is set to `1`. Express strips one address off the right of the `X-Forwarded-For` chain and takes what is left, so with two proxies in front (a CDN into your own nginx, say) the key becomes your _inner_ proxy's address — one bucket for every client, not one each. Measured, not inferred. If you genuinely run two hops, leave this off: connection keying gives you the same single bucket without pretending otherwise.
+
+DorkOS's own tunnel is not a reason to turn it on: the ngrok agent runs inside the server process and forwards to the local port, so tunnel traffic has a loopback peer and shares one bucket. That is the strict direction, and one shared bucket at 60/minute is not a ceiling a single operator's phone and agents meet.
+
+This does **not** change `trust proxy` itself. `req.protocol` and `req.secure` still see through one forwarded hop, so Better Auth keeps setting `Secure` cookies behind a TLS-terminating proxy. Nothing security-relevant reads what that derives: the origin and host decisions read raw headers and the raw socket.
+
+```bash
+export DORKOS_TRUST_PROXY=true
 dorkos
 ```
 

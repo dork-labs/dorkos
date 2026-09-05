@@ -35,7 +35,8 @@ import { requestLogger } from './middleware/request-logger.js';
 import { buildAuthRateLimiter } from './middleware/auth-rate-limit.js';
 import { resolveAgentIdentity } from './middleware/agent-identity.js';
 import { getAuth, toNodeHandler, sessionGate } from './services/core/auth/index.js';
-import { parseConfiguredOrigins, resolveTrustedOrigins } from './lib/trusted-origins.js';
+import { type BrowserOriginPolicy, isTrustedBrowserOrigin } from './lib/trusted-origins.js';
+import { resolveBrowserOriginFacts } from './middleware/browser-origin.js';
 import { logger } from './lib/logger.js';
 import { testControlRouter } from './routes/test-control.js';
 import { createMockMcpOAuthRouter } from './routes/mock-mcp-oauth-server.js';
@@ -44,52 +45,79 @@ import { env } from './env.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
+ * What the CORS layer asks of the one origin policy
+ * (`isTrustedBrowserOrigin` in `lib/trusted-origins.ts`).
+ *
+ * `allowNoOrigin` keeps server-to-server and `curl` traffic working: a request
+ * with no `Origin` is not a browser, and CORS exists to answer browsers.
+ *
+ * `pairSameOriginWithHost` is the one place a DorkOS surface turns the pairing
+ * off. Duplicating it here would refuse the shipped container reached at a NAME
+ * — `DORKOS_ALLOW_INSECURE_BIND` makes `hostGuard` stand down without putting
+ * that name on any allowlist — turning a working deployment into a blank window.
+ *
+ * On `/api` that costs nothing: `middleware/host-guard.ts` is mounted twenty
+ * lines later and refuses exactly the rebound `Host` the pairing would have.
+ * This handler is app-wide, though, so it also answers mounts `hostGuard` never
+ * sees — `/a2a`, the static SPA assets — and there the pairing is simply absent
+ * rather than relocated. That is not an exploit, and the reason is worth stating
+ * rather than glossing: CORS is not a gate. A DNS-rebound page is SAME-ORIGIN to
+ * the browser, so it sends no preflight and reads the response whatever this
+ * layer answers; refusing it here would withhold a header nobody was waiting on.
+ * What actually stops rebinding on those mounts is the mount's own guard — the
+ * A2A exposure guard and its auth, and the fact that static assets are the same
+ * bytes any visitor may fetch. The surfaces where this layer IS the only origin
+ * check — the MCP family, the WebSocket upgrade — pair.
+ */
+const CORS_ORIGIN_POLICY: BrowserOriginPolicy = {
+  allowNoOrigin: true,
+  pairSameOriginWithHost: false,
+};
+
+/**
  * Build the CORS middleware.
  *
- * `DORKOS_CORS_ORIGIN` is the manual override: a comma-separated allowlist.
- * Without it, origins are resolved per request: the static loopback origins plus
- * the live tunnel origin (so a tunnel that connects after boot is trusted
- * without a restart), plus any request whose `Origin` is same-origin with the
- * request itself.
+ * Every decision is delegated to `isTrustedBrowserOrigin`, the single origin
+ * policy this repo has (DOR-1711) — the same predicate `middleware/mcp-origin.ts`
+ * and the WebSocket upgrade router read. What used to live here as its own
+ * branch list now lives there as branches 0-4, and `DORKOS_CORS_ORIGIN` is one
+ * of them rather than an early return that replaced the whole policy.
  *
- * A `*` is **not** an allowlist and is ignored, exactly as
- * `isTrustedUpgradeOrigin` has always ignored it on the WebSocket path. The
- * argument that once justified honouring it here — a wildcard
- * `Access-Control-Allow-Origin` is invalid for credentialed requests, so
- * browsers reject it — only covers the credentialed case, and the shipped
- * default posture is `auth.enabled: false`, where the API asks for no
- * credential at all. In that posture a wildcard turns any page the operator
- * visits into a full API client for their DorkOS: it reads sessions, files and
- * diffs cross-origin and POSTs turns back. The operator gets one warning line
- * naming the variable and what to set instead, and the request falls through to
- * the per-request policy below, so an install that reached for `*` to fix a
- * proxy keeps working for every origin that is genuinely its own.
+ * That last part is the behaviour change worth naming: setting the variable no
+ * longer switches CORS to a bare static allowlist. It adds to the policy, so
+ * `localhost` and a live tunnel stay trusted alongside the operator's list. The
+ * socket path has always worked that way and says why — "locking the operator
+ * out of `localhost` for setting a production allowlist would be an outage, not
+ * a boundary" — and while the two disagreed, an operator who set the variable
+ * got an app that rendered at `localhost` and could not fetch, which is the
+ * silent-outage shape this whole change is about.
  *
- * The same-origin check exists because the server's loopback allowlist is keyed
- * to the port it listens on *inside* its own process. When the host port is
- * remapped — `docker run -p 4300:4242`, an `ssh -L` forward, a reverse proxy —
- * the browser loads the page on the remapped port and requests same-origin
- * assets with e.g. `Origin: http://localhost:4300`, which the container's own
- * `:4242` allowlist does not contain, so every asset 503s and the cockpit goes
- * blank. Allowing an `Origin` that equals `${req.protocol}://${req.headers.host}`
- * fixes that: it is by definition same-origin traffic and adds no cross-origin
- * exposure (an attacker page at evil.com still sends `Origin: https://evil.com`
- * with its own `Host`, so it is rejected). `trust proxy` is set below, so
- * `req.protocol` honors `X-Forwarded-Proto` behind Caddy/ngrok.
+ * A `*` is **not** an allowlist and is ignored. The argument that once justified
+ * honouring it here — a wildcard `Access-Control-Allow-Origin` is invalid for
+ * credentialed requests, so browsers reject it — only covers the credentialed
+ * case, and the shipped default posture is `auth.enabled: false`, where the API
+ * asks for no credential at all. In that posture a wildcard turns any page the
+ * operator visits into a full API client for their DorkOS: it reads sessions,
+ * files and diffs cross-origin and POSTs turns back. The operator gets one
+ * warning line naming the variable and what to set instead, and the request
+ * falls through to the rest of the policy, so an install that reached for `*` to
+ * fix a proxy keeps working for every origin that is genuinely its own.
  *
  * The delegate form (`cors((req, cb) => ...)`) is required because the plain
- * `origin` callback never receives the request, and the same-origin comparison
- * needs `req.protocol` and `req.headers.host`.
+ * `origin` callback never receives the request, and the policy needs the
+ * request's own `Host` and forwarded scheme.
  */
 function buildCors(): express.RequestHandler {
   // Trimmed, so a value that is whitespace around a wildcard (or whitespace
   // around nothing) is read as what the operator meant rather than becoming a
   // one-entry allowlist of `" * "` that matches no origin at all and warns
-  // about nothing. `isTrustedUpgradeOrigin` treats the socket side the same way.
+  // about nothing. `parseConfiguredOrigins` — which is what the policy itself
+  // reads — trims the same way, so the warning and the decision cannot drift.
   // eslint-disable-next-line no-restricted-syntax -- DORKOS_CORS_ORIGIN is not in env.ts (optional CORS override, not worth validating)
   const envOrigin = process.env.DORKOS_CORS_ORIGIN?.trim();
 
-  // A wildcard is no list at all — say so once, then resolve per request.
+  // A wildcard is no list at all — say so once at boot, then let the policy
+  // decide every request.
   if (envOrigin === '*') {
     logger.warn(
       '[CORS] DORKOS_CORS_ORIGIN="*" is ignored: a wildcard would let any web page ' +
@@ -98,30 +126,22 @@ function buildCors(): express.RequestHandler {
     );
   }
 
-  // User-specified origins (comma-separated) — static, no per-request check.
-  // Read through the shared `parseConfiguredOrigins`, which is also what the
-  // WebSocket upgrade check and Better Auth's CSRF allowlist read, so one value
-  // cannot mean different things on the three surfaces that honour it. It
-  // returns nothing for the wildcard, which is what drops the request through to
-  // the per-request policy below.
-  const configuredOrigins = parseConfiguredOrigins(envOrigin);
-  if (configuredOrigins.length > 0) return cors({ origin: configuredOrigins, credentials: true });
-
-  // Dynamic per-request policy.
   return cors<express.Request>((req, done) => {
     done(null, {
       credentials: true,
       origin: (origin, callback) => {
-        // Allow requests with no origin (server-to-server, curl, etc.)
-        if (!origin) return callback(null, true);
-
-        // Static loopback origins + the live tunnel origin.
-        if (resolveTrustedOrigins().includes(origin)) return callback(null, true);
-
-        // Same-origin as this very request (host-port remap / forward / proxy).
-        const host = req.headers.host;
-        if (host && origin === `${req.protocol}://${host}`) return callback(null, true);
-
+        // `cors` normalizes an absent header to `undefined`, which is what the
+        // policy's no-Origin branch reads. Everything else — the loopback
+        // origins, a live tunnel, `DORKOS_CORS_ORIGIN`, same-origin — is the
+        // policy's to answer.
+        if (
+          isTrustedBrowserOrigin(
+            resolveBrowserOriginFacts(req, { hostCheckInert: false }),
+            CORS_ORIGIN_POLICY
+          )
+        ) {
+          return callback(null, true);
+        }
         callback(new Error(`Origin ${origin} not allowed by CORS`));
       },
     });
@@ -159,7 +179,24 @@ function createFirstContactMarker(message: string): () => void {
 export function createApp() {
   const app = express();
 
-  // Trust the first proxy (ngrok) for correct req.hostname, req.ip, req.protocol
+  // Trust one forwarded hop, for `req.protocol` and `req.secure` and nothing
+  // else. A reverse proxy or the tunnel terminates TLS upstream and names the
+  // real scheme in `X-Forwarded-Proto`; without this, Better Auth would drop the
+  // `Secure` flag from its cookies on every proxied deployment.
+  //
+  // NOTHING SECURITY-RELEVANT MAY READ WHAT THIS DERIVES (DOR-1711). On a direct
+  // connection the "first proxy" is the caller, so `req.ip`, `req.ips` and
+  // `req.hostname` are all attacker-written: anyone can send
+  // `X-Forwarded-For: 1.2.3.4` and become `req.ip`. Two consequences are already
+  // enforced elsewhere and must stay that way:
+  //   - the origin and host decisions read RAW headers and the RAW socket —
+  //     `middleware/host-guard.ts`, `middleware/browser-origin.ts`,
+  //     `lib/trusted-origins.ts`;
+  //   - every rate limiter keys through `middleware/rate-limit-key.ts`, which
+  //     reads the socket peer unless `DORKOS_TRUST_PROXY` explicitly says a
+  //     proxy is in front. Until DOR-1711 they all inherited this line, so a
+  //     rotating `X-Forwarded-For` bought unlimited buckets and the sign-in
+  //     brute-force limiter counted nothing.
   app.set('trust proxy', 1);
 
   // Mounted ahead of every other `/api` handler, the host guard included: a

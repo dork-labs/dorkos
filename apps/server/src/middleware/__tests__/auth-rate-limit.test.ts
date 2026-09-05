@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, afterEach, beforeAll, afterAll } from 'vitest';
 import express, { type RequestHandler } from 'express';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import request from 'supertest';
 import { buildAuthRateLimiter } from '../auth-rate-limit.js';
+import { env } from '../../env.js';
 
 /**
  * The limiter is configured with `max: 10` per window. Kept in sync with the
@@ -159,28 +160,97 @@ describe('buildAuthRateLimiter', () => {
     expect(blocked.status).toBe(429);
   });
 
-  it('keys the budget on the client IP so distinct clients get separate buckets', async () => {
-    const app = makeApp();
+  /**
+   * The bug this limiter existed to have, and did not survive (DOR-1711).
+   *
+   * These tests used to assert the opposite of the first case below: that
+   * rotating `X-Forwarded-For` put a caller in a different bucket. It did — the
+   * limiter inherited `req.ip`, `app.ts` sets `trust proxy, 1`, and on a direct
+   * connection the "first proxy" is the caller. Read as a security property that
+   * is "a password guesser gets a fresh budget for every value it invents",
+   * which is no brake at all on the one surface where a brake is the whole
+   * point. What looked like a passing test for per-client buckets was a passing
+   * test for the bypass.
+   *
+   * `trust proxy, 1` is still set on the app above, deliberately, so these prove
+   * the limiter no longer inherits it rather than proving the app was
+   * reconfigured around it.
+   */
+  describe('bucket keys (DOR-1711)', () => {
+    const mutableEnv = env as { DORKOS_TRUST_PROXY: boolean };
 
-    // Exhaust the budget for one forwarded client IP.
-    for (let i = 0; i < MAX_ATTEMPTS; i++) {
-      const res = await request(app)
+    afterEach(() => {
+      mutableEnv.DORKOS_TRUST_PROXY = false;
+    });
+
+    it('does NOT hand a rotating X-Forwarded-For a fresh budget', async () => {
+      const app = makeApp();
+
+      for (let i = 0; i < MAX_ATTEMPTS; i++) {
+        const res = await request(app)
+          .post('/api/auth/sign-in/email')
+          .set('X-Forwarded-For', `203.0.113.${i + 1}`)
+          .send({ email: 'a@b.c' });
+        expect(res.status, `attempt ${i + 1} of ${MAX_ATTEMPTS} must be within budget`).toBe(200);
+      }
+
+      // A brand-new spoofed value, and the budget is still spent: every one of
+      // these requests came from the same socket, which is the key.
+      const blocked = await request(app)
+        .post('/api/auth/sign-in/email')
+        .set('X-Forwarded-For', '198.51.100.77')
+        .send({ email: 'a@b.c' });
+      expect(blocked.status).toBe(429);
+    });
+
+    it('keys on the forwarded client IP when DORKOS_TRUST_PROXY says a proxy is in front', async () => {
+      mutableEnv.DORKOS_TRUST_PROXY = true;
+      const app = makeApp();
+
+      for (let i = 0; i < MAX_ATTEMPTS; i++) {
+        const res = await request(app)
+          .post('/api/auth/sign-in/email')
+          .set('X-Forwarded-For', '203.0.113.1')
+          .send({ email: 'a@b.c' });
+        expect(res.status, `attempt ${i + 1} of ${MAX_ATTEMPTS} must be within budget`).toBe(200);
+      }
+      const blocked = await request(app)
         .post('/api/auth/sign-in/email')
         .set('X-Forwarded-For', '203.0.113.1')
         .send({ email: 'a@b.c' });
-      expect(res.status, `attempt ${i + 1} of ${MAX_ATTEMPTS} must be within budget`).toBe(200);
-    }
-    const blocked = await request(app)
-      .post('/api/auth/sign-in/email')
-      .set('X-Forwarded-For', '203.0.113.1')
-      .send({ email: 'a@b.c' });
-    expect(blocked.status).toBe(429);
+      expect(blocked.status).toBe(429);
 
-    // A different client IP still has its full budget.
-    const other = await request(app)
-      .post('/api/auth/sign-in/email')
-      .set('X-Forwarded-For', '203.0.113.2')
-      .send({ email: 'a@b.c' });
-    expect(other.status).toBe(200);
+      // A different client behind that proxy still has its full budget — which
+      // is the whole point of turning the flag on, and the whole risk of it.
+      const other = await request(app)
+        .post('/api/auth/sign-in/email')
+        .set('X-Forwarded-For', '203.0.113.2')
+        .send({ email: 'a@b.c' });
+      expect(other.status).toBe(200);
+    });
+
+    it('reads the flag per request, so it cannot be captured at mount time', async () => {
+      // The limiter is built once at boot in `app.ts`. A posture resolved there
+      // would be the posture forever, which is how a flag ends up meaning
+      // nothing after the first restart of a long-lived process.
+      const app = makeApp();
+
+      const direct = await request(app)
+        .post('/api/auth/sign-in/email')
+        .set('X-Forwarded-For', '203.0.113.9')
+        .send({ email: 'a@b.c' });
+      expect(direct.status).toBe(200);
+
+      mutableEnv.DORKOS_TRUST_PROXY = true;
+      // Same limiter, same store: the socket bucket has one attempt in it and
+      // `203.0.113.9` has none, so this must be a fresh budget.
+      for (let i = 0; i < MAX_ATTEMPTS; i++) {
+        const res = await request(app)
+          .post('/api/auth/sign-in/email')
+          .set('X-Forwarded-For', '203.0.113.9')
+          .send({ email: 'a@b.c' });
+        expect(res.status, `attempt ${i + 1} of ${MAX_ATTEMPTS} must be within budget`).toBe(200);
+      }
+    });
   });
 });

@@ -677,22 +677,60 @@ describe('attachUpgradeRouter', () => {
       }
     });
 
-    it('treats an explicit list as EXHAUSTIVE, with no same-origin fallback', async () => {
-      // `buildCors` switches to a static allowlist and drops its own same-origin
-      // branch; falling through to branch 4 here would be wider than CORS.
+    /**
+     * An explicit list ADDS to the policy; it never replaces it (DOR-1711).
+     *
+     * This used to assert the opposite — "treats an explicit list as EXHAUSTIVE"
+     * — on the grounds that `buildCors` switched to a static
+     * `cors({ origin: [...] })` and dropped its own same-origin branch, so
+     * falling through here would be wider than CORS. Both halves of that are
+     * gone: `buildCors` now reads this very policy, and the static `cors` form
+     * never refused anything anyway (an unlisted origin got no
+     * `Access-Control-Allow-Origin` and the route still ran), so copying its
+     * short-circuit onto a surface that REFUSES turned it into an outage rather
+     * than a boundary.
+     *
+     * The old assertion also survived the change, because its origin was
+     * `https://` while the connection resolves to `http://` — it was refused on
+     * the SCHEME, not on the list. The scheme is pinned here so the list is
+     * genuinely what is under test.
+     */
+    it('lets an unlisted origin through when it is same-origin with the request', async () => {
       mutableEnv.DORKOS_TRUSTED_HOSTS = 'dorkos.example.com';
       process.env.DORKOS_CORS_ORIGIN = 'https://only-this.example';
       try {
         await listen([acceptingRoute]);
 
         const listed = await attempt('/api/accept', { origin: 'https://only-this.example' });
-        expect(listed.opened).toBe(true);
+        expect(listed.opened, 'a listed origin still connects').toBe(true);
 
         const sameOrigin = await attempt('/api/accept', {
           origin: 'https://dorkos.example.com',
           host: 'dorkos.example.com',
+          'x-forwarded-proto': 'https',
         });
-        expect(sameOrigin.httpStatus, 'the list is the whole policy').toBe(403);
+        expect(sameOrigin.opened, 'and so does the address the app is served on').toBe(true);
+      } finally {
+        delete process.env.DORKOS_CORS_ORIGIN;
+        mutableEnv.DORKOS_TRUSTED_HOSTS = undefined;
+      }
+    });
+
+    it('still refuses a stranger while a list is set', async () => {
+      // The other direction: falling through must not become "anything goes".
+      // `evil.example` is on no list and is same-origin with a `Host` this
+      // instance does not answer to, so no branch admits it.
+      mutableEnv.DORKOS_TRUSTED_HOSTS = 'dorkos.example.com';
+      process.env.DORKOS_CORS_ORIGIN = 'https://only-this.example';
+      try {
+        await listen([acceptingRoute]);
+
+        const rebound = await attempt('/api/accept', {
+          origin: 'https://evil.example',
+          host: 'evil.example',
+          'x-forwarded-proto': 'https',
+        });
+        expect(rebound.httpStatus, 'a rebound host is still refused').toBe(403);
       } finally {
         delete process.env.DORKOS_CORS_ORIGIN;
         mutableEnv.DORKOS_TRUSTED_HOSTS = undefined;

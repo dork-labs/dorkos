@@ -6,7 +6,11 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
   },
 }));
 
-import { isTrustedUpgradeOrigin, type UpgradeOriginFacts } from '../trusted-origins.js';
+import {
+  type BrowserOriginFacts,
+  type BrowserOriginPolicy,
+  isTrustedBrowserOrigin,
+} from '../trusted-origins.js';
 
 /**
  * The upgrade origin policy, tested as the pure predicate it is.
@@ -25,7 +29,7 @@ import { isTrustedUpgradeOrigin, type UpgradeOriginFacts } from '../trusted-orig
  */
 
 /** Facts for a request that reaches a bare, unconfigured instance. */
-function facts(overrides: Partial<UpgradeOriginFacts> = {}): UpgradeOriginFacts {
+function facts(overrides: Partial<BrowserOriginFacts> = {}): BrowserOriginFacts {
   return {
     origin: undefined,
     hostHeader: 'localhost:4242',
@@ -41,11 +45,28 @@ function facts(overrides: Partial<UpgradeOriginFacts> = {}): UpgradeOriginFacts 
   };
 }
 
+/**
+ * The three surfaces' policies, spelled out here so a change to any of them
+ * fails a test rather than a deployment. They are copies of the constants at the
+ * mounts (`UPGRADE_ORIGIN_POLICY` in `services/core/streams/upgrade-router.ts`,
+ * `MCP_ORIGIN_POLICY` in `middleware/mcp-origin.ts`, `CORS_ORIGIN_POLICY` in
+ * `app.ts`) on purpose: a test that imported them could not notice one of them
+ * changing.
+ */
+const UPGRADE_POLICY: BrowserOriginPolicy = { allowNoOrigin: true, pairSameOriginWithHost: true };
+const MCP_POLICY: BrowserOriginPolicy = { allowNoOrigin: true, pairSameOriginWithHost: true };
+const CORS_POLICY: BrowserOriginPolicy = { allowNoOrigin: true, pairSameOriginWithHost: false };
+
+/** The predicate as the WebSocket upgrade asks it. */
+function isTrustedUpgradeOrigin(f: BrowserOriginFacts): boolean {
+  return isTrustedBrowserOrigin(f, UPGRADE_POLICY);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe('isTrustedUpgradeOrigin', () => {
+describe('isTrustedBrowserOrigin, as the WebSocket upgrade asks it', () => {
   describe('absent vs opaque — they read alike and mean opposite things', () => {
     it('trusts a request with NO Origin (a non-browser client)', () => {
       expect(isTrustedUpgradeOrigin(facts({ origin: undefined }))).toBe(true);
@@ -203,12 +224,60 @@ describe('isTrustedUpgradeOrigin', () => {
       ).toBe(true);
     });
 
-    it('makes the list exhaustive — no same-origin fallback under it', () => {
+    /**
+     * The list ADDS to the policy; it does not replace it (DOR-1711 round 2).
+     *
+     * This pair used to be a single test asserting the opposite — "makes the
+     * list exhaustive, no same-origin fallback under it" — and after the
+     * semantics changed it kept passing for a reason that had nothing to do
+     * with the list: its origin was `https://` while the connection resolved to
+     * `http://`, so branch 4 refused it on the SCHEME. A test that survives the
+     * behaviour it pins being deleted is not pinning it, so the scheme is
+     * matched here and the two directions are separated.
+     */
+    it('lets an UNLISTED origin through when it is same-origin with the request', () => {
+      // A container published on a remapped port, a LAN IP, a reverse-proxied
+      // host: all same-origin with themselves and none of them named by a list
+      // that names the public origin. Refusing these was measured as a 500 on
+      // every write while reads kept working.
       expect(
         isTrustedUpgradeOrigin(
           facts({
             origin: 'https://box.example',
             hostHeader: 'box.example',
+            forwardedProto: 'https',
+            configuredOrigins: 'https://other.example',
+          })
+        )
+      ).toBe(true);
+    });
+
+    it('still refuses an unlisted origin that is NOT same-origin', () => {
+      // The other direction, so "additive" cannot quietly become "anything
+      // goes": a stranger is admitted by no branch at all.
+      expect(
+        isTrustedUpgradeOrigin(
+          facts({
+            origin: 'https://evil.example',
+            hostHeader: 'box.example',
+            forwardedProto: 'https',
+            configuredOrigins: 'https://other.example',
+          })
+        )
+      ).toBe(false);
+    });
+
+    it('still pairs the fallthrough with the host allowlist, so rebinding stays refused', () => {
+      // Falling through must not hand a DNS-rebound page the branch the list
+      // used to shadow: Origin and Host agree by construction there, so the
+      // pairing is the only thing refusing it.
+      expect(
+        isTrustedUpgradeOrigin(
+          facts({
+            origin: 'https://evil.example',
+            hostHeader: 'evil.example',
+            hostAllowed: false,
+            forwardedProto: 'https',
             configuredOrigins: 'https://other.example',
           })
         )
@@ -303,6 +372,138 @@ describe('isTrustedUpgradeOrigin', () => {
           })
         )
       ).toBe(false);
+    });
+  });
+});
+
+/**
+ * The rows DOR-1711 unified: one predicate, three surfaces, and the ONE thing
+ * that legitimately differs between them stated as a policy rather than as three
+ * implementations.
+ *
+ * Every case below was a disagreement before the merge, not a hypothetical. The
+ * `/mcp` mounts carried their own 43-line allowlist of `http://localhost:PORT`
+ * and `http://127.0.0.1:PORT` plus the tunnel — no same-origin branch, no
+ * `DORKOS_CORS_ORIGIN`, no `[::1]` — so each of these origins was accepted by
+ * `/api` and refused by `/mcp` on the same instance.
+ */
+describe('one policy, three surfaces (DOR-1711)', () => {
+  /** Every surface, so a case can assert they now agree. */
+  const SURFACES: ReadonlyArray<readonly [string, BrowserOriginPolicy]> = [
+    ['upgrade', UPGRADE_POLICY],
+    ['mcp', MCP_POLICY],
+    ['cors', CORS_POLICY],
+  ];
+
+  describe('the no-Origin pass is a stated option, not an accident', () => {
+    it('is what every surface asks for — MCP clients send no Origin', () => {
+      // The MCP TypeScript SDK's HTTP transport sets Authorization,
+      // mcp-session-id, mcp-protocol-version, Accept and content-type, and
+      // Node's fetch adds no Origin. DorkOS's own in-process MCP clients (the
+      // Codex canvas stub, the Nango proxy) ride the same branch.
+      for (const [name, policy] of SURFACES) {
+        expect(
+          isTrustedBrowserOrigin(facts({ origin: undefined }), policy),
+          `${name} refused a request with no Origin`
+        ).toBe(true);
+      }
+    });
+
+    it('is the OPTION deciding it, so a surface that said false would refuse', () => {
+      // Proves the branch reads the policy rather than returning a constant —
+      // without this, flipping `allowNoOrigin` anywhere would be silent.
+      expect(
+        isTrustedBrowserOrigin(facts({ origin: undefined }), {
+          allowNoOrigin: false,
+          pairSameOriginWithHost: true,
+        })
+      ).toBe(false);
+    });
+
+    it('never extends to the literal `null`, whatever the policy says', () => {
+      // Absent means "no browser"; `null` means "a browser, from a sandboxed
+      // iframe / data: / file:" — an origin trusted with nothing.
+      for (const [name, policy] of SURFACES) {
+        expect(
+          isTrustedBrowserOrigin(facts({ origin: 'null' }), policy),
+          `${name} admitted an opaque origin`
+        ).toBe(false);
+      }
+    });
+  });
+
+  describe('rows where /mcp used to disagree with /api', () => {
+    it('accepts the IPv6 loopback literal on every surface (DOR-553, absorbed)', () => {
+      // `[::1]` is not on the static list and must not be — nothing binds it,
+      // and an origin the server never serves is one an attacker can forge
+      // (DOR-554). It passes here as the request's OWN origin: the Host is
+      // loopback, so the pairing holds, and the origin matches it exactly.
+      const ipv6 = facts({
+        origin: 'http://[::1]:4242',
+        hostHeader: '[::1]:4242',
+        hostAllowed: true,
+      });
+      for (const [name, policy] of SURFACES) {
+        expect(isTrustedBrowserOrigin(ipv6, policy), `${name} refused [::1]`).toBe(true);
+      }
+    });
+
+    it('accepts a remapped host port on every surface (docker run -p 4300:4242)', () => {
+      const remapped = facts({
+        origin: 'http://localhost:4300',
+        hostHeader: 'localhost:4300',
+        hostAllowed: true,
+      });
+      for (const [name, policy] of SURFACES) {
+        expect(isTrustedBrowserOrigin(remapped, policy), `${name} refused a port remap`).toBe(true);
+      }
+    });
+
+    it("honours the operator's DORKOS_CORS_ORIGIN list on every surface", () => {
+      const configured = facts({
+        origin: 'https://dorkos.example.com',
+        configuredOrigins: 'https://dorkos.example.com',
+      });
+      for (const [name, policy] of SURFACES) {
+        expect(
+          isTrustedBrowserOrigin(configured, policy),
+          `${name} ignored the operator's allowlist`
+        ).toBe(true);
+      }
+    });
+
+    it('refuses a stranger on every surface', () => {
+      const evil = facts({ origin: 'https://evil.example', hostHeader: 'localhost:4242' });
+      for (const [name, policy] of SURFACES) {
+        expect(isTrustedBrowserOrigin(evil, policy), `${name} admitted a stranger`).toBe(false);
+      }
+    });
+  });
+
+  describe('the host pairing is the one difference, and it is load-bearing', () => {
+    /** A page that rebound `evil.example` onto this port: same-origin to the browser. */
+    const rebound = facts({
+      origin: 'http://evil.example',
+      hostHeader: 'evil.example',
+      hostAllowed: false,
+    });
+
+    it('refuses a DNS-rebound page wherever nothing else checks Host', () => {
+      // These two mounts have no `hostGuard` in front of them. If the pairing
+      // did not run here, the same-origin branch would admit the attack by
+      // construction — the browser makes Origin and Host agree.
+      expect(isTrustedBrowserOrigin(rebound, UPGRADE_POLICY)).toBe(false);
+      expect(isTrustedBrowserOrigin(rebound, MCP_POLICY)).toBe(false);
+    });
+
+    it('leaves it to hostGuard on the CORS mount, which is where it lives', () => {
+      // Not a weaker posture — the SAME pairing, mounted separately: `app.ts`
+      // puts `hostGuard` on `/api` a few lines after this handler, and it
+      // answers this exact request with a 403. Duplicating it here would also
+      // refuse the shipped container reached at a name, whose `hostGuard`
+      // stands down for DORKOS_ALLOW_INSECURE_BIND without putting that name on
+      // any allowlist.
+      expect(isTrustedBrowserOrigin(rebound, CORS_POLICY)).toBe(true);
     });
   });
 });

@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import rateLimit, { type RateLimitRequestHandler } from 'express-rate-limit';
+import { rateLimitKey } from './rate-limit-key.js';
 import { configManager } from '../services/core/config-manager.js';
 
 /**
@@ -9,6 +10,12 @@ import { configManager } from '../services/core/config-manager.js';
  * take effect after a server restart (the Settings UI communicates this).
  *
  * When rate limiting is disabled in config, returns a pass-through middleware.
+ *
+ * Keys through {@link rateLimitKey} — the TCP peer address unless
+ * `DORKOS_TRUST_PROXY` says a proxy is in front (DOR-1711). `/mcp` is the
+ * surface most likely to be reached from off this machine, and it inherited
+ * `req.ip`, so a caller sending a fresh `X-Forwarded-For` per request was never
+ * counted.
  */
 export function buildMcpRateLimiter(): RateLimitRequestHandler {
   const cfg = configManager.get('mcp')?.rateLimit ?? {
@@ -25,6 +32,7 @@ export function buildMcpRateLimiter(): RateLimitRequestHandler {
   return rateLimit({
     windowMs: cfg.windowSecs * 1000,
     max: cfg.maxPerWindow,
+    keyGenerator: rateLimitKey,
     standardHeaders: true,
     legacyHeaders: false,
     message: {

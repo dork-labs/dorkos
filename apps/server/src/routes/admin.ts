@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { spawn } from 'child_process';
 import fs from 'fs/promises';
 import rateLimit from 'express-rate-limit';
+import { rateLimitKey } from '../middleware/rate-limit-key.js';
 import { env } from '../env.js';
 
 /**
@@ -141,9 +142,14 @@ export function createAdminRouter(deps: AdminDeps): Router {
     });
   });
 
+  // Keys through the shared `rateLimitKey` — the TCP peer address, not the
+  // spoofable `X-Forwarded-For` that `req.ip` derives from `trust proxy`
+  // (DOR-1711). Three attempts per five minutes on routes that end the process
+  // and can delete the data directory is a budget worth being able to reach.
   const adminLimiter = rateLimit({
     windowMs: 5 * 60 * 1000, // 5 minutes
     max: 3,
+    keyGenerator: rateLimitKey,
     message: { error: 'Too many admin requests. Try again later.' },
   });
   router.use(adminLimiter);

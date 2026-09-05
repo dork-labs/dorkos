@@ -9,6 +9,7 @@
 import { Router } from 'express';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
+import { rateLimitKey } from '../middleware/rate-limit-key.js';
 import { z } from 'zod';
 import type { WebhookAdapter } from '@dorkos/relay';
 import {
@@ -683,10 +684,14 @@ export function createAdapterRouter(
     return res.json({ ok: true });
   });
 
-  // Rate limiter for binding test endpoint — 10 tests per minute per IP
+  // Rate limiter for binding test endpoint — 10 tests per minute per caller.
+  // Keys through the shared `rateLimitKey`, like every other limiter here: the
+  // TCP peer address, not the spoofable `X-Forwarded-For` that `req.ip` derives
+  // from `trust proxy` (DOR-1711).
   const testRateLimiter = rateLimit({
     windowMs: 60_000,
     max: 10,
+    keyGenerator: rateLimitKey,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many test requests, try again in a minute' },
