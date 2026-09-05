@@ -73,6 +73,11 @@ export function enforceBudget(envelope: RelayEnvelope, currentEndpoint: string):
     };
   }
 
+  // The publish-side half of one rule: an expired envelope never runs. The
+  // delivery-side half — a message that goes stale AFTER this gate let it
+  // through, waiting for a slot or behind another turn — lives in
+  // `lib/envelope-ttl.ts`, where the policy and each seam's refusal shape are
+  // written down.
   if (Date.now() > budget.ttl) {
     return {
       allowed: false,

@@ -19,6 +19,10 @@ import type { AgentRuntimeLike, TasksStoreLike } from './types.js';
 import { OPERATOR_CANCEL } from './task-cancel-handler.js';
 import type { AbortRegistry } from '../../lib/abort-registry.js';
 import { interruptTurn } from './interrupt.js';
+// One answer to "has this message run out of time?", shared with the agent-turn
+// handler and the capacity line so the three cannot disagree. The policy — an
+// expired envelope never runs — is written down there.
+import { ttlRemainingMs } from '../../lib/envelope-ttl.js';
 
 /** Maximum characters to collect for run output summary. */
 const OUTPUT_SUMMARY_MAX_CHARS = 1000;
@@ -271,8 +275,11 @@ export async function handleTasksMessage(
     error: null,
   });
 
-  // Set up timeout from TTL budget
-  const ttlRemaining = envelope.budget.ttl - clock();
+  // Set up timeout from TTL budget. An expired envelope never runs
+  // (`lib/envelope-ttl.ts`): the controller starts aborted, the throw below is
+  // the refusal, and the run row it writes is how a person sees that this run
+  // was refused rather than left pinned to `running`.
+  const ttlRemaining = ttlRemainingMs(envelope, clock);
   const controller = new AbortController();
   let timeout: ReturnType<typeof setTimeout> | undefined;
   if (ttlRemaining <= 0) {

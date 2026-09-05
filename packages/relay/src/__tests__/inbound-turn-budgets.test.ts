@@ -14,13 +14,15 @@
  * {@link fixedClock}, because a TTL is the one thing here that a busy runner
  * can decide instead of the code: this suite used to date a twenty-millisecond
  * deadline from `Date.now()`, and the handler's own startup — a `ensureSession`,
- * an awaited settings lookup — spent it before the turn began. `ttlRemaining`
- * then landed at or below zero, the turn silently took the five-second default
- * instead, ran to completion, and released the very binding the case is about.
- * The two assertions that read `Date.now()` back had the same problem from the
- * other end: the abort they waited on is fired by a MONOTONIC timer and read
- * back off the WALL clock, two clocks that need only disagree by a millisecond
- * at the boundary.
+ * an awaited settings lookup — spent it before the turn began. The envelope was
+ * then already expired when the deadline was read, which is a different path
+ * from the mid-turn stop these cases are about: today it is refused before it
+ * starts (DOR-1770) and binds nothing at all, and before that it quietly took
+ * the five-second default, ran to completion, and released the very binding the
+ * case is about. Two different wrong answers, one cause. The two assertions that
+ * read `Date.now()` back had the same problem from the other end: the abort they
+ * waited on is fired by a MONOTONIC timer and read back off the WALL clock, two
+ * clocks that need only disagree by a millisecond at the boundary.
  *
  * So the deadline is spent in milliseconds the test owns, and the turns below
  * end when their stop actually lands rather than after a sleep long enough to
@@ -166,7 +168,6 @@ describe('the dispatching adapter binds the turn (DOR-791)', () => {
       envelope(),
       undefined,
       clock.now(),
-      { defaultTimeoutMs: 5_000 },
       {
         agentManager: runtimeThatObserves(budgets, seen),
         traceStore,
@@ -192,7 +193,6 @@ describe('the dispatching adapter binds the turn (DOR-791)', () => {
       envelope(),
       undefined,
       clock.now(),
-      { defaultTimeoutMs: 5_000 },
       {
         agentManager: runtimeThatObserves(budgets, seen, true),
         traceStore,
@@ -241,7 +241,6 @@ describe('the dispatching adapter binds the turn (DOR-791)', () => {
       expiring,
       undefined,
       clock.now(),
-      { defaultTimeoutMs: 5_000 },
       {
         agentManager: runtime,
         traceStore,
@@ -264,9 +263,10 @@ describe('the dispatching adapter binds the turn (DOR-791)', () => {
     // **The flake this closes (DOR-1729).** The deadline is
     // `budget.ttl - now()`, computed after `ensureSession` and after an AWAITED
     // settings lookup — so on a busy machine a millisecond-scale fixture TTL was
-    // already gone by the time it was read, `ttlRemaining` came out at or below
-    // zero, and the turn quietly took `defaultTimeoutMs` instead. It then ran to
-    // completion and released the binding this whole path exists to hold.
+    // already gone by the time it was read, and the turn took a path this case
+    // is not about: it is refused before it starts, binding nothing (DOR-1770),
+    // where it used to quietly take `defaultTimeoutMs`, run to completion, and
+    // release the binding this whole path exists to hold.
     //
     // Seeded defect: drop `now` from the deps below and this reds, because the
     // resolver's delay is longer than the TTL. With the clock injected the
@@ -294,7 +294,6 @@ describe('the dispatching adapter binds the turn (DOR-791)', () => {
       expiring,
       undefined,
       clock.now(),
-      { defaultTimeoutMs: 60_000 },
       {
         agentManager: runtime,
         traceStore,
@@ -326,7 +325,6 @@ describe('the dispatching adapter binds the turn (DOR-791)', () => {
       envelope(),
       undefined,
       clock.now(),
-      { defaultTimeoutMs: 5_000 },
       {
         agentManager: runtimeThatObserves(budgets, seen),
         traceStore,

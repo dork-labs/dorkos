@@ -74,6 +74,10 @@ import { subscribeApprovalHandler } from './approval-handler.js';
 import { subscribeTaskCancelHandler } from './task-cancel-handler.js';
 import { subscribeAgentCancelHandler } from './agent-cancel-handler.js';
 import { AbortRegistry } from '../../lib/abort-registry.js';
+// One answer to "how long has this message got left?", shared with both
+// handlers so the three seams cannot disagree. The policy — an expired envelope
+// never runs — is written down there.
+import { ttlRemainingMs } from '../../lib/envelope-ttl.js';
 import {
   AGENT_SUBJECT_PREFIX,
   RUNTIME_TYPES,
@@ -734,13 +738,18 @@ export class ClaudeCodeAdapter implements RelayAdapter {
     }
     const agentManager = selected.runtime;
 
-    // A hold may not outlive the message it holds. `handleAgentMessage` gives
-    // the turn whatever is left of the envelope's TTL, and falls back to
-    // `defaultTimeoutMs` when nothing is — so a wait that ate the whole TTL
-    // would start the turn on a FRESH full budget, an hour-old message running
-    // as if it had just arrived. The wait stops when the message's own time is
-    // up, and a message with no time left never waits at all.
-    const ttlRemainingMs = envelope.budget.ttl - Date.now();
+    // An expired envelope never runs (`lib/envelope-ttl.ts`), so a hold may not
+    // outlive the message it holds: a message with no time left never waits at
+    // all, and a live one waits at most as long as it has. Both handlers refuse
+    // an envelope that ran out — a wait that ate the whole TTL would therefore
+    // end in a refusal, and the point of stopping the wait here is that the
+    // refusal happens while somebody is still reading, not an hour later.
+    //
+    // The refusing itself is deliberately NOT done here. This seam has no reply
+    // stream and no run row; the handlers do, and refusing before them would
+    // turn a message a person is waiting on into silence. So this gate bounds
+    // the wait and lets the message through to the seam that can answer it.
+    const remainingMs = ttlRemainingMs(envelope);
     const slot = await this.capacity.acquire({
       // Only a delivery the pipeline licensed may wait, and the pipeline is the
       // only thing that can tell which those are: it sets `onHeld` when a
@@ -748,8 +757,8 @@ export class ClaudeCodeAdapter implements RelayAdapter {
       // {@link AdapterContext.onHeld}). Deciding this from the subject here
       // instead would put the same rule in two modules — and an awaited caller
       // parked in this line loses its reply rather than waiting for it.
-      mayWait: context?.onHeld !== undefined && ttlRemainingMs > 0,
-      ceilingMs: ttlRemainingMs,
+      mayWait: context?.onHeld !== undefined && remainingMs > 0,
+      ceilingMs: remainingMs,
       ...(context?.onHeld ? { onHeld: context.onHeld } : {}),
     });
     if (slot !== 'acquired') {
@@ -757,7 +766,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
         slot,
         this.config,
         Date.now() - startTime,
-        Math.min(this.config.defaultTimeoutMs, Math.max(ttlRemainingMs, 0))
+        Math.min(this.config.defaultTimeoutMs, Math.max(remainingMs, 0))
       );
     }
 
@@ -793,7 +802,6 @@ export class ClaudeCodeAdapter implements RelayAdapter {
           envelope,
           context,
           startTime,
-          { defaultTimeoutMs: this.config.defaultTimeoutMs },
           {
             agentManager,
             runtimeType: selected.runtimeType,
