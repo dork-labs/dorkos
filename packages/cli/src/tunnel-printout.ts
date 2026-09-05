@@ -40,10 +40,15 @@ export interface TunnelStatusSource {
  * runs — the tunnel started at boot with `--tunnel`, and one turned on later
  * from Remote Access in the app, both arrive here.
  *
- * Subscribes BEFORE reading the current status, so a tunnel that came up in
- * between is still reported. Each address prints once: the manager announces a
- * dropped tunnel and its reconnect as two more changes, and reprinting an
- * address that never changed would read as a second tunnel.
+ * The SUBSCRIPTION is the path that does the work, including at boot. The
+ * server's `start()` is never awaited, so importing the server hands control
+ * back long before a tunnel could be up, and every address in practice arrives
+ * as a change. Reading the current status is only there to close the gap
+ * between constructing this and subscribing — which is why it happens second.
+ *
+ * Each address prints once: the manager announces a dropped tunnel and its
+ * reconnect as two more changes, and reprinting an address that never changed
+ * would read as a second tunnel.
  *
  * @param source - The tunnel manager belonging to the running server.
  */

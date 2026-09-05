@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(cli): the tunnel URL printout listens to the live server, not a bundled copy (DOR-1745)'
+  - 'fix(cli): fold adversarial review nits on the tunnel printout (DOR-1745)'
 ---
 
 ### Fixed

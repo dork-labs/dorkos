@@ -84,6 +84,65 @@ function expectedShims(): Map<string, string> {
   return expected;
 }
 
+/**
+ * The subset of {@link expectedShims} the CLI imports for the module's VALUE —
+ * the imports that actually put a copy of that module in the bundle.
+ *
+ * A type-only import is erased before a bundle exists, so it cannot hand the
+ * CLI a second copy of anything and must not be judged as if it could. It still
+ * needs its shim, which is why this is a second pass rather than a narrowing of
+ * `expectedShims` — `config-write.ts` imports `operator/config-write.js` both
+ * ways, for a type on line 15 and for its value further down.
+ *
+ * Counted rather than subtracted for that reason: a module is value-imported if
+ * it has even one occurrence that is not type-only. `[^;]*?` cannot cross a
+ * statement boundary, so the type-only pattern matches a whole `import type`
+ * however many lines its braces span.
+ *
+ * KNOWN GAP: `import { type Foo } from '…'` — an inline qualifier on every
+ * binding — is also fully erased but reads here as a value import. There are
+ * none today, and the cost of one is an over-strict guard, never a missed bug.
+ *
+ * @returns Shim paths (relative to `packages/cli/server/`) whose module the CLI
+ *   pulls into the bundle.
+ */
+function valueImportedShims(): Set<string> {
+  const seam = /(?:from|import)\s*\(?\s*['"]((?:\.\.\/)+server\/[^'"]+)['"]/g;
+  const typeOnly = /import\s+type\s[^;]*?from\s*['"]((?:\.\.\/)+server\/[^'"]+)['"]/g;
+  const valueImported = new Set<string>();
+
+  for (const file of walkTs(path.join(CLI_PKG, 'src'))) {
+    const source = readFileSync(file, 'utf-8');
+    const remaining = new Map<string, number>();
+    for (const [, specifier] of source.matchAll(seam)) {
+      remaining.set(specifier, (remaining.get(specifier) ?? 0) + 1);
+    }
+    for (const [, specifier] of source.matchAll(typeOnly)) {
+      remaining.set(specifier, (remaining.get(specifier) ?? 0) - 1);
+    }
+    for (const [specifier, count] of remaining) {
+      if (count > 0) {
+        valueImported.add(specifier.replace(/^(?:\.\.\/)+server\//, '').replace(/\.js$/, '.d.ts'));
+      }
+    }
+  }
+  return valueImported;
+}
+
+/**
+ * Constructors whose module-scope `export const` is a frozen lookup table, not
+ * a live object: a second copy of one answers every question identically, so
+ * the seam guard below has nothing to say about it.
+ *
+ * This is a judgement about how these are used in `apps/server`, where they
+ * hold data written at construction and never mutated (`tool-security.ts`,
+ * `tool-exposure.ts`, `projector-persistence.ts` all have one). An empty
+ * `new Map()` kept as a mutable cache has the same shape and WOULD be a real
+ * find — the guard cannot tell the two apart and lets it through. Narrowing
+ * that is the metafile walker's job, not this regex's.
+ */
+const INERT_CONSTRUCTIONS = /^(?:Set|Map|WeakSet|WeakMap)$/;
+
 describe('server declaration mirror', () => {
   const expected = expectedShims();
 
@@ -137,26 +196,45 @@ describe('server declaration mirror', () => {
    * manager off `../server/index.js`, and this test keeps the next module of
    * that shape from being reached for the same way.
    *
-   * WHAT THIS CANNOT SEE: state a module declares but leaves for an initializer
-   * to fill (`export let configManager`, which the CLI deliberately builds its
-   * own of, from the same file on disk). Those fail loudly and immediately when
-   * read uninitialized, rather than quietly answering about the wrong instance.
+   * WHAT THIS CANNOT SEE, in the order the holes matter:
+   *
+   * 1. TRANSITIVE inlining. This checks the modules the CLI names and stops
+   *    there, but esbuild follows their imports too, and everything it reaches
+   *    lands in the bundle just as inlined. That is not hypothetical: today
+   *    `operator/config-write.js` → `config-patch.ts` → `account-switch.ts`
+   *    already drags four dead singletons into `dist/bin/cli.js` (an
+   *    `EventFanOut`, a `RuntimeRegistry`, a `SessionListBroadcaster`, and the
+   *    devtools-capture chain). They are latent, not broken — no CLI path reads
+   *    any of them — but a one-hop check will not notice the day one does.
+   *    Closing it means walking esbuild's metafile for the real import graph
+   *    rather than reading source, which is worth doing and is deliberately not
+   *    done here.
+   * 2. State a module declares and leaves for an initializer to fill
+   *    (`export let configManager`, which the CLI deliberately builds its own
+   *    of, from the same file on disk). Those fail loudly and immediately when
+   *    read uninitialized, rather than quietly answering about the wrong
+   *    instance.
+   * 3. A mutable cache built with one of the {@link INERT_CONSTRUCTIONS}.
    */
-  it.each([...expectedShims()].filter(([shim]) => shim !== 'index.d.ts'))(
-    '%s does not construct a singleton the CLI would get a dead copy of',
-    (_shim, target) => {
-      const source = readFileSync(path.join(ROOT, target.replace(/\.js$/, '.ts')), 'utf-8');
-      const singletons = [...source.matchAll(/^export const (\w+)(?::[^=]+)? = new \w/gm)].map(
-        ([, name]) => name
-      );
-      expect(
-        singletons,
-        `${target} constructs a module-scope singleton, and the CLI imports it through a ` +
-          `specifier that esbuild INLINES — so the CLI would hold its own dead copy, not the ` +
-          `one the running server drives (DOR-1745).\n` +
-          `Export what the CLI needs from apps/server/src/index.ts instead, and read it off ` +
-          `the module that \`await import('../server/index.js')\` returns.`
-      ).toEqual([]);
-    }
-  );
+  it.each(
+    [...expectedShims()].filter(([shim]) => shim !== 'index.d.ts' && valueImportedShims().has(shim))
+  )('%s does not construct a singleton the CLI would get a dead copy of', (_shim, target) => {
+    const source = readFileSync(path.join(ROOT, target.replace(/\.js$/, '.ts')), 'utf-8');
+    const singletons = [...source.matchAll(/^export const (\w+)(?::[^=]+)? = new (\w+)/gm)]
+      .filter(([, , constructor]) => !INERT_CONSTRUCTIONS.test(constructor))
+      .map(([, name]) => name);
+    expect(
+      singletons,
+      `${target} constructs a long-lived object at module scope, and the CLI imports that ` +
+        `module for its value through a specifier esbuild INLINES — so the CLI holds its own ` +
+        `copy, which nothing in the server ever drives (DOR-1745).\n` +
+        `If the CLI needs the object the RUNNING server uses, export it from ` +
+        `apps/server/src/index.ts and read it off the module ` +
+        `\`await import('../server/index.js')\` returns — that specifier is the only one left ` +
+        `external.\n` +
+        `If the CLI only needs the type, make the import \`import type\`. If the object turns ` +
+        `out to be frozen data a second copy answers identically, add its constructor to ` +
+        `INERT_CONSTRUCTIONS with a note saying why.`
+    ).toEqual([]);
+  });
 });

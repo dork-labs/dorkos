@@ -123,14 +123,27 @@ describe('attachTunnelPrintout', () => {
     expect(lines.filter((line) => line.includes('Tunnel:')).length).toBe(2);
   });
 
-  it('says nothing while the tunnel is off, or connected without an address', async () => {
+  it('says nothing for a status with no reachable address', async () => {
     const manager = new FakeTunnelManager();
     attachTunnelPrintout(manager);
 
     manager.change(OFF);
+    // Connected, but ngrok has not handed over an address yet.
     manager.change({ ...OFF, enabled: true, connected: true, isRunning: true });
+    // A dropped tunnel still remembers the address it had — the manager's
+    // `updateStatus({ connected: false })` leaves `url` alone — so carrying a
+    // url is not the same as being reachable on it.
+    manager.change({ ...connectedTo('https://dropped.ngrok-free.app'), connected: false });
 
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(printed()).not.toContain('Tunnel:');
+    // Proving a silence needs something to wait FOR, or the test only races the
+    // printout and wins. So a real address goes last: once IT has printed, the
+    // three statuses queued ahead of it have been handled, and anything they
+    // were going to print has printed.
+    manager.change(connectedTo('https://after-the-silence.ngrok-free.app'));
+    await vi.waitFor(() => expect(printed()).toContain('https://after-the-silence.ngrok-free.app'));
+
+    const addresses = lines.filter((line) => line.includes('Tunnel:'));
+    expect(addresses).toHaveLength(1);
+    expect(addresses[0]).toContain('https://after-the-silence.ngrok-free.app');
   });
 });
