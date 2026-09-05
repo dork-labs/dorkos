@@ -516,25 +516,47 @@ describe('AccessControl', () => {
     // actually write against — the property the grace period inside it exists
     // for, and one no injected watcher can check.
     //
-    // Exactly one write, on purpose. Re-writing to nudge a watcher that missed
-    // the first one would turn a broken gate into a passing test, which is the
-    // bug this is here to catch. The budget is generous instead.
+    // It walks all THREE handlers the class registers — `add`, `change`,
+    // `unlink` — because they are three different chokidar code paths on a
+    // single-file watch, and a real watcher that delivered only some of them
+    // would leave the hermetic tests above passing over a broken class. That
+    // costs no extra budget: each step is gated on the step before it having
+    // been delivered.
+    //
+    // Exactly one write per step, on purpose. Re-writing to nudge a watcher
+    // that missed the first one would turn a broken gate into a passing test,
+    // which is the bug this is here to catch. The budget is generous instead.
     // -----------------------------------------------------------------------
-    it('really does reload when the file changes under a real watcher', async () => {
+    it('really does see a rules file appear, change and vanish under a real watcher', async () => {
       chokidarSpy.restore();
-      writeRulesFile(tmpDir, []);
+      // Start on an EMPTY directory so the first write is a real `add`.
       acl = new AccessControl(tmpDir);
       await acl.whenWatcherReady();
 
       expect(acl.checkAccess('relay.a', 'relay.b').allowed).toBe(true);
 
+      // add
       writeRulesFile(tmpDir, [makeRule('relay.a', 'relay.b', 'deny', 10)]);
       await waitUntil(
         () => !acl.checkAccess('relay.a', 'relay.b').allowed,
-        'the externally written deny rule to be picked up'
+        'the newly created rules file to be picked up'
       );
 
-      expect(acl.checkAccess('relay.a', 'relay.b').allowed).toBe(false);
+      // change — a second rule against the now-existing file
+      writeRulesFile(tmpDir, [makeRule('relay.x', 'relay.y', 'deny', 10)]);
+      await waitUntil(
+        () => acl.checkAccess('relay.a', 'relay.b').allowed,
+        'the rewritten rules file to replace the first rule'
+      );
+      expect(acl.checkAccess('relay.x', 'relay.y').allowed).toBe(false);
+
+      // unlink — deleting the file returns the machine to "nobody wrote a rule"
+      fs.rmSync(path.join(tmpDir, 'access-rules.json'));
+      await waitUntil(
+        () => acl.checkAccess('relay.x', 'relay.y').allowed,
+        'the deleted rules file to drop every rule'
+      );
+      expect(acl.listRules()).toEqual([]);
     }, 30_000);
   });
 

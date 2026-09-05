@@ -502,10 +502,17 @@ describe('WatcherManager', () => {
             path.join(newDir, `msg-real-${attempt}.json`),
             JSON.stringify({ subject: 'test' })
           );
+          // The timer id is held so the loser of the race can be cancelled: a
+          // race does not stop the branch it did not pick, so an uncancelled
+          // timer per attempt would keep the event loop busy past the test.
+          let attemptTimer: ReturnType<typeof setTimeout> | undefined;
           await Promise.race([
             delivered.promise,
-            new Promise((resolve) => setTimeout(resolve, SMOKE_ATTEMPT_MS)),
+            new Promise((resolve) => {
+              attemptTimer = setTimeout(resolve, SMOKE_ATTEMPT_MS);
+            }),
           ]);
+          clearTimeout(attemptTimer);
         }
         if (!delivered.settled) {
           throw new Error(
