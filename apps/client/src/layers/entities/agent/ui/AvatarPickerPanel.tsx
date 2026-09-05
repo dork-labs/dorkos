@@ -108,7 +108,8 @@ export function AvatarPickerPanel({
   title,
   onClose,
 }: AvatarPickerPanelProps) {
-  // The face DorkOS seeds for this agent — see IdentityTab (DOR-949).
+  // The face DorkOS seeds for this agent — the same function the server ran at
+  // creation (DOR-949).
   const auto = useMemo(() => seedAgentFace(agent.id), [agent.id]);
   const autoColor = auto.color;
   const autoEmoji = auto.icon;

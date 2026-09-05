@@ -71,7 +71,7 @@ describe('AvatarColorGrid', () => {
   });
 
   describe('celebratory gate — behavior preservation (DOR-970)', () => {
-    it('renders a plain, tooltip-free, glow-free swatch by default (IdentityTab)', () => {
+    it('renders a plain, tooltip-free, glow-free swatch by default (settings form)', () => {
       const { container, queryByText } = renderWithTooltips(
         <AvatarColorGrid value={null} autoColor="hsl(200, 70%, 55%)" onSelect={vi.fn()} />
       );

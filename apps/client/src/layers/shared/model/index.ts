@@ -95,7 +95,6 @@ export {
   type BrowserNotificationPermissionState,
 } from './use-notification-permission';
 export { useFilterState, type UseFilterStateReturn } from './use-filter-state';
-export { useDebouncedInput } from './use-debounced-input';
 export {
   EventStreamProvider,
   useEventStream,

@@ -12,7 +12,7 @@ const BlintzCanvas = lazy(() =>
   import('./BlintzCanvas').then((m) => ({ default: m.BlintzCanvas }))
 );
 
-/** Autosave debounce, matching the app's `use-debounced-input` default. */
+/** Autosave debounce: long enough to batch a burst of keystrokes, short enough that a pause feels like an instant save. */
 const AUTOSAVE_DELAY_MS = 500;
 
 interface CanvasMarkdownContentProps {
@@ -139,8 +139,8 @@ export function CanvasMarkdownContent({
         clearTimeout(timerRef.current);
         timerRef.current = null;
       }
-      // Dropping edit mode when the active canvas session changes, which mirrors
-      // `use-debounced-input`'s reset-on-key-change.
+      // Dropping edit mode when the active canvas session changes — the
+      // reset-on-key-change contract the app's debounced inputs follow.
       setIsEditing(false);
       setDocumentEditing(documentId, false);
     }

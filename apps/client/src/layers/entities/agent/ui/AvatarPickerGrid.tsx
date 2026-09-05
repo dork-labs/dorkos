@@ -85,17 +85,24 @@ export interface AvatarColorGridProps {
   /**
    * Enables `AvatarPickerPanel`'s celebratory chrome — staggered entrance,
    * per-swatch tooltips, and a hover glow. Defaults to `false`: the plain,
-   * static grid `IdentityTab`'s settings-form popover uses. Behavior
-   * preservation is this branch's contract (DOR-970) — collapsing the two
-   * grids into one component must not hand either container chrome it
+   * static grid that the agent settings form used before DOR-1735 deleted it.
+   * Behavior preservation was this branch's contract (DOR-970) — collapsing the
+   * two grids into one component must not hand either container chrome it
    * didn't have before.
+   *
+   * **`AvatarPickerPanel` is the only production caller left, and it passes
+   * `celebratory` (plus all three `auto*` overrides below).** So the plain
+   * branch and the `DEFAULT_AUTO_*` constants survive for the Dev Playground
+   * and this component's tests only. Kept deliberately: the showcase is where
+   * the two containers are compared side by side, and dropping the default
+   * would make `celebratory` a prop with one legal value.
    */
   celebratory?: boolean;
-  /** Content rendered inside the auto-derived swatch. Defaults to a bold "A" glyph — `IdentityTab`'s convention. */
+  /** Content rendered inside the auto-derived swatch. Defaults to a bold "A" glyph — the plain grid's convention. */
   autoIcon?: ReactNode;
-  /** Ring classes applied to the auto swatch when it's the active selection. Defaults to `IdentityTab`'s dashed ring. */
+  /** Ring classes applied to the auto swatch when it's the active selection. Defaults to the plain grid's dashed ring. */
   autoActiveRing?: string;
-  /** Accessible label for the auto swatch. Defaults to `IdentityTab`'s "Select default color". */
+  /** Accessible label for the auto swatch. Defaults to the plain grid's "Select default color". */
   autoLabel?: string;
 }
 
@@ -106,8 +113,9 @@ const DEFAULT_AUTO_LABEL = 'Select default color';
 /**
  * The color-swatch row shared by every avatar color picker: the
  * auto-derived default plus the fixed {@link AGENT_COLOR_PRESETS} palette. Was
- * duplicated near-verbatim between `IdentityTab` and `AvatarPickerPanel`
- * before DOR-970 collapsed it to one implementation. `celebratory` gates
+ * duplicated near-verbatim between the agent settings form and
+ * `AvatarPickerPanel` before DOR-970 collapsed it to one implementation.
+ * `celebratory` gates
  * every piece of chrome that differed between the two originals; layout,
  * selection-ring logic and sizing are identical either way.
  */
@@ -249,8 +257,9 @@ export interface AvatarEmojiGridProps {
   justSelectedKey?: string | null;
   /**
    * Enables `AvatarPickerPanel`'s celebratory chrome — staggered entrance
-   * and hover/tap scale. Defaults to `false`: the plain grid `IdentityTab`
-   * uses. See {@link AvatarColorGridProps.celebratory}.
+   * and hover/tap scale. Defaults to `false`: the plain grid, which now only
+   * the Dev Playground and these tests reach. See
+   * {@link AvatarColorGridProps.celebratory}.
    */
   celebratory?: boolean;
 }
@@ -279,8 +288,8 @@ export function AvatarEmojiGrid({
                 isAutoDefault
                   ? 'bg-accent ring-muted-foreground/50 ring-1'
                   : 'bg-accent ring-foreground ring-1',
-                // IdentityTab's auto-default state is dashed, matching its color
-                // swatch convention; the celebratory panel's is solid.
+                // The plain grid's auto-default state was dashed, matching its
+                // color swatch convention; the celebratory panel's is solid.
                 isAutoDefault && !celebratory && 'ring-dashed'
               )
             : 'hover:bg-accent/50 active:scale-90'

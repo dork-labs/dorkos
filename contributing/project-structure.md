@@ -89,7 +89,7 @@ src/
 │   │   ├── dashboard-attention/ # Attention rows + detail sheets — what the triage header composes
 │   │   ├── dashboard-activity/ # useDashboardActivity — time-grouped recent activity, read by Pulse
 │   │   ├── settings/    # SettingsDialog (Appearance, Preferences, Server, Tools, Advanced)
-│   │   ├── agent-settings/ # AgentDialog (IdentityTab, PersonaTab, CapabilitiesTab, IntegrationsTab)
+│   │   ├── agent-settings/ # Agent config tabs (IntegrationsTab, ToolsTab), ConventionFileEditor, MCP server cards
 │   │   ├── files/       # FileBrowser
 │   │   ├── tasks/        # TasksPanel, ScheduleRow, CronVisualBuilder, AgentCombobox
 │   │   ├── relay/       # RelayPanel, ActivityFeed, AdapterCard, AdapterSetupWizard
