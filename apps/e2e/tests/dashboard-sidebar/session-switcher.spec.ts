@@ -133,10 +133,26 @@ async function assertChipGeometry(page: Page, width: number): Promise<void> {
   }
 }
 
-/** The group headings on screen, in DOM order. */
+/**
+ * The switcher's group headings, in DOM order.
+ *
+ * **Scoped to a `SwitcherGroup`, not to the page.** This read bare `h3`s until
+ * DOR-1766 put a `MessagingConnections` showcase on `/dev/features` whose
+ * live-adapters section is also headed "Live now" — so the switcher's three
+ * groups came back as four and three tests went red over a switcher that was
+ * drawing exactly what it should. The playground renders the whole component
+ * library on one route; a page-wide query there answers for all of it, and this
+ * one was always going to collide with something eventually.
+ *
+ * `section[aria-label] > h3` is the shape `SwitcherGroup` renders and the same
+ * section the assertions below already target by name, so the scope is the
+ * switcher's own structure rather than a fact about one neighbour. It still
+ * reads the VISIBLE heading text rather than the label attribute, which is what
+ * keeps a renamed group a failure here.
+ */
 async function groupOrder(page: Page): Promise<string[]> {
   return page
-    .locator('h3')
+    .locator('section[aria-label] > h3')
     .filter({ hasText: /^(Live now|Recent|Automated)$/ })
     .allTextContents();
 }
