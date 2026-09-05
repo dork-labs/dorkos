@@ -77,6 +77,13 @@ export const FORMS_SECTIONS: PlaygroundSection[] = [
     category: 'Primitives',
     keywords: ['search', 'autocomplete', 'combobox', 'filter', 'cmdk', 'palette'],
   },
+  {
+    id: 'boundednumberinput',
+    title: 'BoundedNumberInput',
+    page: 'forms',
+    category: 'Primitives',
+    keywords: ['number', 'bounded', 'min', 'max', 'range', 'commit', 'integer', 'validation'],
+  },
   // ComposedFormShowcases — Composed
   {
     id: 'timezonecombobox',

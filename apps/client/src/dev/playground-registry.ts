@@ -7,6 +7,7 @@ export type Page =
   | 'conversation'
   | 'entry-actions'
   | 'features'
+  | 'home-inbox'
   | 'identity'
   | 'promos'
   | 'command-palette'
@@ -34,13 +35,14 @@ export interface PlaygroundSection {
   /** Which page this section lives on. */
   page: Page;
   /**
-   * In-file documentation only: the feature or subsystem this section belongs
-   * to, as a note to whoever reads the array next.
+   * The feature or subsystem this section belongs to.
    *
-   * **Nothing reads it.** ⌘K groups by `page` (`PlaygroundSearch`) and the TOC
-   * renders flat (`TocSidebar`), so this has never been a search grouping
-   * however it was written up. It is kept because it documents 241 entries and
-   * rewriting all of them buys nobody anything — but no code may branch on it.
+   * `TocSidebar` groups the page's TOC by this field into labeled
+   * sub-headings, keyed by name (DOR-1766, batch 20 audit finding 20.3) — a
+   * category can appear anywhere in the array and its sections still render
+   * under one heading, positioned at its first occurrence. ⌘K still groups
+   * only by `page` (`PlaygroundSearch`); this has never been a search
+   * grouping.
    */
   category: string;
   /** Alias keywords for fuzzy search matching. */
@@ -52,7 +54,8 @@ export { FORMS_SECTIONS } from './sections/forms-sections';
 export { COMPONENTS_SECTIONS } from './sections/components-sections';
 export { CONVERSATION_SECTIONS } from './sections/conversation-sections';
 export { ENTRY_ACTIONS_SECTIONS } from './sections/entry-actions-sections';
-export { FEATURES_SECTIONS } from './sections/features-sections';
+export { FEATURE_AGENT_SECTIONS } from './sections/features-agent-sections';
+export { FEATURE_SURFACE_SECTIONS } from './sections/features-surface-sections';
 export { IDENTITY_SECTIONS } from './sections/identity-sections';
 export { PROMOS_SECTIONS } from './sections/promos-sections';
 export { COMMAND_PALETTE_SECTIONS } from './sections/command-palette-sections';
@@ -77,7 +80,8 @@ import { FORMS_SECTIONS as forms } from './sections/forms-sections';
 import { COMPONENTS_SECTIONS as components } from './sections/components-sections';
 import { CONVERSATION_SECTIONS as conversation } from './sections/conversation-sections';
 import { ENTRY_ACTIONS_SECTIONS as entryActions } from './sections/entry-actions-sections';
-import { FEATURES_SECTIONS as features } from './sections/features-sections';
+import { FEATURE_AGENT_SECTIONS as featureAgent } from './sections/features-agent-sections';
+import { FEATURE_SURFACE_SECTIONS as featureSurface } from './sections/features-surface-sections';
 import { IDENTITY_SECTIONS as identity } from './sections/identity-sections';
 import { PROMOS_SECTIONS as promos } from './sections/promos-sections';
 import { COMMAND_PALETTE_SECTIONS as commandPalette } from './sections/command-palette-sections';
@@ -107,7 +111,8 @@ export const PLAYGROUND_REGISTRY: PlaygroundSection[] = [
   ...components,
   ...conversation,
   ...entryActions,
-  ...features,
+  ...featureAgent,
+  ...featureSurface,
   ...identity,
   ...promos,
   ...commandPalette,
