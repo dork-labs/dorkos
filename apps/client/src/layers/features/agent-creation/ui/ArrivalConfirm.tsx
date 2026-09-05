@@ -174,7 +174,7 @@ export function ArrivalConfirm({
       <div className="flex flex-col gap-2">
         {!canSubmit && (
           <p className="text-warning text-center text-xs" data-testid="arrival-needs-name">
-            This agent still needs a name — choose &ldquo;Customize first&rdquo; to give it one.
+            This agent still needs a name. Choose &ldquo;Customize first&rdquo; to give it one.
           </p>
         )}
         {isCheckingOffer && (

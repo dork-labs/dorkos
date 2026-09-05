@@ -194,7 +194,7 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
         : // Rejecting lands on the conversation's existing save-error beat, which
           // offers a retry — the right outcome for "we do not know where DorkBot
           // lives yet", and strictly better than writing somewhere we guessed.
-          Promise.reject(new Error('DorkBot’s location is still loading — try again in a moment.')),
+          Promise.reject(new Error('DorkBot’s location is still loading. Try again in a moment.')),
     // The same deep-merge write path as tours: PATCH { profile: { roles } }.
     saveProfile: (roles) => saveRoles(roles),
     completeStep,

@@ -1,6 +1,5 @@
 import {
   createContext,
-  useCallback,
   useContext,
   useMemo,
   type CSSProperties,
@@ -11,6 +10,7 @@ import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { cn } from '@/layers/shared/lib';
+import { SIDEBAR_DRAGGING_ATTRIBUTE, type SidebarDragActivatorProps } from '@/layers/shared/model';
 import { sidebarItemKey } from '../../model/sidebar-item';
 import type { SidebarDndData, UngroupedSectionId } from '../../model/use-sidebar-dnd';
 
@@ -38,11 +38,18 @@ export const SidebarDndEnabledProvider = SidebarDndEnabledContext.Provider;
  * hiding the row it wrapped.
  *
  * `group` is the honest answer and it is not a widget role, so it may contain
- * focusable content: the wrapper really is a container of related controls, it
- * still takes `tabIndex`, `aria-disabled`, `aria-describedby` (dnd-kit's
- * keyboard instructions) and `aria-roledescription="sortable"` — which needs an
- * explicit role to be valid at all, so simply deleting the role would have
- * traded one violation for another.
+ * focusable content: the wrapper really is a container of related controls, and
+ * it still takes `tabIndex` and `aria-disabled`.
+ *
+ * **It has to be spelled, not deleted.** dnd-kit reads `role` with a
+ * `= defaultRole` fallback, so omitting it is how you ask for `button` — the
+ * violation — rather than how you ask for no role at all.
+ *
+ * The sortable ARIA it used to carry beside the role — `aria-roledescription`
+ * and dnd-kit's keyboard instructions — moved to the row in DOR-1746. Both are
+ * announced on focus, and this wrapper is never focused; they belong on the
+ * element a reader actually lands on. {@link SIDEBAR_DRAG_ROOT_ATTRIBUTE} is
+ * what names this node now.
  *
  * It costs `aria-pressed`, which dnd-kit emits only while the role is its
  * `button` default, and that is a real trade rather than a free one: the grabbed
@@ -56,21 +63,57 @@ export const SidebarDndEnabledProvider = SidebarDndEnabledContext.Provider;
  */
 const SORTABLE_ROOT_ROLE = 'group';
 
+/**
+ * The drag root's place in the tab order: none.
+ *
+ * dnd-kit puts `tabIndex={0}` on a draggable, which is right for the bare handle
+ * it assumes and wrong for a wrapper around a row that has its own button. The
+ * sidebar's roving focus stamped it back to `-1` anyway — one Tab stop per
+ * section, and the wrapper is not the stop — so the `0` was never true in the
+ * panel and only ever described a fixture (DOR-1746). Declaring `-1` here makes
+ * the drag root's own answer match the panel's, and the row inside it is where
+ * the keyboard actually lands: see {@link SortableBindings.activatorProps}.
+ */
+const SORTABLE_ROOT_TAB_INDEX = -1;
+
+/**
+ * The mark every drag root carries — what names the wrapper dnd-kit measures.
+ *
+ * Its predecessor was `aria-roledescription="sortable"`, which page objects and
+ * the `nested-interactive` sweep both located the wrapper by. That attribute
+ * moved to the row in DOR-1746 (it is announced on focus, and the row is what
+ * takes focus), so the wrapper needed a name of its own rather than borrowing a
+ * screen-reader attribute to be findable — which is what it had been doing.
+ */
+export const SIDEBAR_DRAG_ROOT_ATTRIBUTE = 'data-sidebar-drag-root';
+
 /** Read whether the sidebar drag layer is active in the current subtree. */
 function useSidebarDndEnabled(): boolean {
   return useContext(SidebarDndEnabledContext);
 }
 
 /**
- * Everything a draggable element needs, spread onto its root. `handleProps`
- * carries the drag activators plus the WCAG sortable ARIA attributes; `style`
- * carries the live transform.
+ * Everything a draggable needs, split across the two elements that make it up.
+ *
+ * **A drag root and an activator, not one node doing both** (DOR-1746). The root
+ * is the wrapper the transform rides and the sortable ARIA hangs off; the
+ * activator is the row's OWN control — the button the roving focus lands on —
+ * and it is where the drag's pointer and keyboard listeners live. Splitting them
+ * is what makes a keyboard drag reachable at all: a keyboard can only start a
+ * drag from an element it can focus, and the only focusable element here is the
+ * row.
  */
 export interface SortableBindings {
   /** Ref for the measured/draggable node. */
   setNodeRef: (node: HTMLElement | null) => void;
-  /** Spread onto the draggable element (pointer/keyboard activators + a11y). */
-  handleProps: HTMLAttributes<HTMLElement>;
+  /** Spread onto the drag ROOT — sortable ARIA, the drag state mark, no tab stop. */
+  rootProps: HTMLAttributes<HTMLElement>;
+  /**
+   * Spread onto the row's own focusable control — the element the sidebar's
+   * roving focus makes reachable. Carries the pointer/keyboard activators, the
+   * activator ref, and dnd-kit's keyboard instructions.
+   */
+  activatorProps: SidebarDragActivatorProps;
   /** Live drag transform. */
   style: CSSProperties;
   /** Whether this item is the one being dragged. */
@@ -87,7 +130,8 @@ export interface SortableBindings {
  */
 export const DISABLED_SORTABLE_BINDINGS: SortableBindings = {
   setNodeRef: () => {},
-  handleProps: {},
+  rootProps: {},
+  activatorProps: { ref: () => {} },
   style: {},
   isDragging: false,
   isOver: false,
@@ -123,20 +167,11 @@ function SortableInner({
     transition,
     isDragging,
     isOver,
-  } = useSortable({ id, data, attributes: { role: SORTABLE_ROOT_ROLE } });
-  // Register the row as its own activator node. KeyboardSensor only starts a
-  // drag when `event.target === activatorNode`, so Space/Enter on nested
-  // interactive controls (the "…" trigger, "New session", session rows, the
-  // rename input) bubble through untouched — only a keydown on the focused row
-  // itself picks it up. Without this, activatorNode is null and dnd-kit skips
-  // that guard entirely.
-  const setCombinedRef = useCallback(
-    (node: HTMLElement | null) => {
-      setNodeRef(node);
-      setActivatorNodeRef(node);
-    },
-    [setNodeRef, setActivatorNodeRef]
-  );
+  } = useSortable({
+    id,
+    data,
+    attributes: { role: SORTABLE_ROOT_ROLE, tabIndex: SORTABLE_ROOT_TAB_INDEX },
+  });
   // **Memoized, because the row underneath is** (`specs/sidebar-simplification`
   // D8). `RoomRow` is `React.memo` and takes these as one prop, so a fresh
   // bindings object on every render of the panel would defeat the memo for every
@@ -150,13 +185,47 @@ function SortableInner({
     }),
     [transform, transition]
   );
-  const handleProps = useMemo(
-    () => ({ ...attributes, ...(listeners ?? {}) }) as HTMLAttributes<HTMLElement>,
-    [attributes, listeners]
+  const rootProps = useMemo(() => {
+    // **The two halves of one spoken message go to the activator together.**
+    // `aria-roledescription="sortable"` and `aria-describedby` (dnd-kit's "To
+    // pick up a sortable item, press space…") are both read out when the element
+    // carrying them takes focus, and the root never does — so a root keeping
+    // either of them is telling a reader something they will never hear, in the
+    // half of a sentence whose other half moved (DOR-1746).
+    const {
+      'aria-describedby': _describedBy,
+      'aria-roledescription': _roleDescription,
+      ...root
+    } = attributes;
+    return {
+      ...root,
+      // What names a drag root, now that the sortable roledescription no longer
+      // does. Page objects and the axe sweep locate the wrapper by this.
+      [SIDEBAR_DRAG_ROOT_ATTRIBUTE]: '',
+      // Read by `useRovingFocus`, which stands its arrow traversal down while a
+      // row is off the ground. Stamped here rather than by each call site: a
+      // section that forgot it would fight the drag it is hosting.
+      ...(isDragging ? { [SIDEBAR_DRAGGING_ATTRIBUTE]: '' } : {}),
+    } as HTMLAttributes<HTMLElement>;
+  }, [attributes, isDragging]);
+  // The activators ride the ROW, not the root that wraps it. KeyboardSensor
+  // starts a drag only when the keydown target is the registered activator node,
+  // and the listeners are on the row itself, so a keypress on any of the row's
+  // NEIGHBOURS — the "⋮", the glyph that opens a profile, a trailing control —
+  // never reaches them at all. While an inline editor has replaced the row there
+  // is no activator and no listener, so a rename cannot be dragged by accident.
+  const activatorProps = useMemo<SidebarDragActivatorProps>(
+    () => ({
+      ref: setActivatorNodeRef,
+      'aria-roledescription': attributes['aria-roledescription'],
+      'aria-describedby': attributes['aria-describedby'],
+      ...(listeners ?? {}),
+    }),
+    [setActivatorNodeRef, attributes, listeners]
   );
   const bindings = useMemo<SortableBindings>(
-    () => ({ setNodeRef: setCombinedRef, handleProps, style, isDragging, isOver }),
-    [setCombinedRef, handleProps, style, isDragging, isOver]
+    () => ({ setNodeRef, rootProps, activatorProps, style, isDragging, isOver }),
+    [setNodeRef, rootProps, activatorProps, style, isDragging, isOver]
   );
   return <>{render(bindings)}</>;
 }

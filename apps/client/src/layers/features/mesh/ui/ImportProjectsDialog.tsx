@@ -68,7 +68,7 @@ export function ImportProjectsDialog() {
           <ResponsiveDialogTitle>Bring in existing projects</ResponsiveDialogTitle>
           <ResponsiveDialogDescription>
             {showSummary
-              ? 'All set — your projects are ready to manage in DorkOS.'
+              ? 'All set. Your projects are ready to manage in DorkOS.'
               : 'Scan your machine for existing projects and add the ones you want to manage.'}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>

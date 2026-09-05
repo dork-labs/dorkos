@@ -165,7 +165,7 @@ describe('syncLocation — only a history traversal may move focus', () => {
   });
 
   it('keeps the new tab even when a sibling already holds the resolved session', () => {
-    // Regression (the headline path): "Open in New Tab" on an agent someone is
+    // Regression (the headline path): "Open in a new tab" on an agent someone is
     // already reading. Rule 2 used to focus the sibling and strand the new tab
     // on `/session?dir=…`, a location its own loader redirects away from every
     // time it is clicked — a tab that can never do anything.

@@ -38,7 +38,7 @@ import {
  * than only the refusal: the row CAN be kept in place, by pinning it.
  */
 export const COMPUTED_ZONE_REJECTION =
-  'Heads up and Today are computed — pin it to Library to keep it in place.';
+  'Heads up and Today are computed. Pin it to Library to keep it in place.';
 
 /**
  * The three Library sections a row can sit in without belonging to a group.
@@ -440,9 +440,9 @@ function describeSidebarDropOp(op: SidebarDropOp, ctx: SidebarDndAnnounceContext
     case 'reorder-pinned':
       return `Reordered ${ctx.itemName(op.ref)} in Pinned.`;
     case 'reject-smart-group':
-      return `Can't move ${ctx.itemName(op.ref)} into ${ctx.groupName(op.groupId)} — membership is rule-based. Edit rules instead.`;
+      return `Can't move ${ctx.itemName(op.ref)} into ${ctx.groupName(op.groupId)}. Membership is rule-based. Edit rules instead.`;
     case 'reject-computed-zone':
-      return `Can't move ${ctx.itemName(op.ref)} there — ${COMPUTED_ZONE_REJECTION}`;
+      return `Can't move ${ctx.itemName(op.ref)} there. ${COMPUTED_ZONE_REJECTION}`;
     case 'none':
       return '';
   }

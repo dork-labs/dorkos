@@ -9,9 +9,10 @@
  *
  * @module features/dashboard-sidebar/ui/SidebarSection
  */
+import { memo, useMemo } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
-import { useRovingFocus } from '@/layers/shared/model';
+import { useRovingFocus, type SidebarDragActivatorProps } from '@/layers/shared/model';
 import { SectionHeader, SidebarGroup, SidebarMenu } from '@/layers/shared/ui';
 import type { SidebarSectionModel } from '../model/build-sidebar-model';
 import type { SidebarContainer, UngroupedSectionId } from '../model/use-sidebar-dnd';
@@ -33,6 +34,24 @@ import { useSectionChrome } from './useSectionChrome';
  * is the decoration this rule exists to keep out.
  */
 const ANNOUNCES_ARRIVALS: ReadonlySet<string> = new Set(['now', 'today']);
+
+/**
+ * The section header, memoized — because a draggable one is rebuilt on every
+ * tick of a drag.
+ *
+ * A user-made section's header is rendered inside `Sortable`'s render callback,
+ * and `useSortable` re-renders every sortable in its context on every transform
+ * frame — so a header that was a plain element re-rendered its label, its
+ * roll-up, its chevron and its whole menu surface once per pointer-move, for
+ * every section on screen, for the length of a drag. It is the same reason
+ * `RoomRow` is memoized (`specs/sidebar-simplification` D8), one level up.
+ *
+ * The memo only pays if the props hold still, which is why `trailing` is
+ * memoized where it is built and `dragActivator` is memoized in
+ * `SidebarDndPrimitives`: both are the kind of prop — a fresh element, a fresh
+ * object — that quietly defeats a `memo` from the outside.
+ */
+const MemoSectionHeader = memo(SectionHeader);
 
 /**
  * The ungrouped section a section id names, or `undefined` for one that is not
@@ -154,8 +173,30 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
     return ref === null ? [] : [sidebarRowDndId(prefix, ref)];
   });
 
-  const header = (
-    <SectionHeader
+  // Built here rather than in the header below, because the header below is
+  // rebuilt on every frame of a drag and a fresh element per frame is exactly
+  // what stops {@link MemoSectionHeader} from bailing out.
+  const trailing = useMemo(
+    () =>
+      section.collapsed && section.rollup !== undefined ? (
+        <SectionRollup section={section} />
+      ) : undefined,
+    [section]
+  );
+
+  /**
+   * The header, drawn with or without the drag layer's activators.
+   *
+   * A function rather than one element because only a user-made section is a
+   * drag source, and the activators are the drag layer's to hand out — they
+   * arrive inside `Sortable`'s render callback below, after this point.
+   *
+   * @param dragActivator - What the toggle takes so a keyboard can lift the
+   *   section (DOR-1746). Omitted for a section that cannot be reordered.
+   */
+  const renderHeader = (dragActivator?: SidebarDragActivatorProps) => (
+    <MemoSectionHeader
+      {...(dragActivator === undefined ? {} : { dragActivator })}
       label={section.label ?? ''}
       collapsed={section.collapsed}
       {...(section.collapsible ? { onToggle: chrome.toggleCollapsed, onToggleAll } : {})}
@@ -171,9 +212,7 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
       // bold label and nothing else (design-decisions §18), so the weight is
       // where it lives.
       emphasized={section.collapsed && (section.rollup?.unread.tier ?? 'none') !== 'none'}
-      {...(section.collapsed && section.rollup !== undefined
-        ? { trailing: <SectionRollup section={section} /> }
-        : {})}
+      {...(trailing === undefined ? {} : { trailing })}
     />
   );
 
@@ -203,19 +242,21 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
             <div
               ref={b.setNodeRef}
               style={b.style}
-              {...b.handleProps}
+              {...b.rootProps}
               className={cn(
-                'focus-visible:ring-sidebar-ring rounded-md outline-hidden focus-visible:ring-2',
+                // The corner only: the toggle inside rings itself, and this box
+                // is not focusable (DOR-1746 — see `SidebarRow`'s drag root).
+                'rounded-md',
                 b.isDragging && 'opacity-40',
                 b.isOver && 'sidebar-drop-ring'
               )}
             >
-              {header}
+              {renderHeader(b.activatorProps)}
             </div>
           )}
         </Sortable>
       ) : (
-        header
+        renderHeader()
       )}
       {chrome.action}
       {chrome.dialogs}

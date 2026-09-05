@@ -199,7 +199,7 @@ export function FileTreeRow({
             <button
               type="button"
               aria-label="Retry loading"
-              title="Couldn't load — retry"
+              title="Couldn't load. Retry"
               onClick={(e) => {
                 e.stopPropagation();
                 onRetry();
@@ -267,10 +267,10 @@ export function FileTreeRow({
       <ResponsiveContextMenuTrigger asChild>{body}</ResponsiveContextMenuTrigger>
       <ResponsiveContextMenuContent className="w-52">
         <ResponsiveContextMenuItem onClick={() => onNewFile(parent)}>
-          New File
+          New file
         </ResponsiveContextMenuItem>
         <ResponsiveContextMenuItem onClick={() => onNewFolder(parent)}>
-          New Folder
+          New folder
         </ResponsiveContextMenuItem>
         <ResponsiveContextMenuSeparator />
         {revealLabel && (
@@ -281,7 +281,7 @@ export function FileTreeRow({
         {/* `movesFocus`: this one puts the caret in the composer, so it runs
             once the menu is on its way out and keeps the focus it takes. */}
         <ResponsiveContextMenuItem movesFocus onClick={() => onAddToChat(entry)}>
-          Add to Chat
+          Add to chat
         </ResponsiveContextMenuItem>
         <ResponsiveContextMenuSeparator />
         <ResponsiveContextMenuItem onClick={() => onCopy(entry)}>Copy</ResponsiveContextMenuItem>
@@ -294,10 +294,10 @@ export function FileTreeRow({
         </ResponsiveContextMenuItem>
         <ResponsiveContextMenuSeparator />
         <ResponsiveContextMenuItem onClick={() => onCopyPath(entry, 'absolute')}>
-          Copy Path
+          Copy path
         </ResponsiveContextMenuItem>
         <ResponsiveContextMenuItem onClick={() => onCopyPath(entry, 'relative')}>
-          Copy Relative Path
+          Copy relative path
         </ResponsiveContextMenuItem>
         <ResponsiveContextMenuSeparator />
         <ResponsiveContextMenuItem onClick={() => onStartRename(entry)}>

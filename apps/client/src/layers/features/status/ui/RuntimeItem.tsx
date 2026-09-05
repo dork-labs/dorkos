@@ -251,7 +251,7 @@ export function RuntimeItem({
                 aria-describedby={accountNoteId}
               >
                 <ResponsiveDropdownMenuRadioItem value={DEFAULT_ACCOUNT_VALUE}>
-                  {account.defaultLabel ? `Default — ${account.defaultLabel}` : 'Default'}
+                  {account.defaultLabel ? `Default: ${account.defaultLabel}` : 'Default'}
                 </ResponsiveDropdownMenuRadioItem>
                 {account.accounts.map((entry) => (
                   <ResponsiveDropdownMenuRadioItem

@@ -105,7 +105,7 @@ export function createQueryClientConfig(): QueryClientConfig {
         });
         addBreadcrumb('query_error', `${String(query.queryKey[0] ?? 'query')}: ${error.message}`);
         if (query.meta?.showToastOnError) {
-          const label = (query.meta.errorLabel as string) ?? 'Failed to load data';
+          const label = (query.meta.errorLabel as string) ?? "Couldn't load that. Try again.";
           toast.error(label, { action: reportAction(`${label}: ${error.message}`) });
         }
       },
@@ -123,9 +123,11 @@ export function createQueryClientConfig(): QueryClientConfig {
         );
         if (mutation.meta?.suppressErrorToast) return;
         // `errorLabel` names the action in the user's terms; the server's own
-        // sentence says why. Together they read like a person explaining what
-        // went wrong — "Couldn't send your message — This room is archived" —
-        // which is what the generic line below can never do.
+        // sentence says why. The authored line is the HEADLINE and the raw text
+        // is the description under it (DOR-1755): they used to be joined with an
+        // em dash into one line, which put "ENOENT: no such file or directory"
+        // in the same breath as the sentence written for a person, and the house
+        // rule bans the dash anyway.
         const label = mutation.meta?.errorLabel as string | undefined;
         // `errorToastId` collapses repeats. A mutation a person can only fire
         // once wants one toast per failure; a mutation they can fire ten times
@@ -133,13 +135,17 @@ export function createQueryClientConfig(): QueryClientConfig {
         // answering — wants the tenth failure to REPLACE the first line rather
         // than stack a column of identical ones. Sonner keys on the id.
         const id = mutation.meta?.errorToastId as string | undefined;
-        const line = label ? `${label} — ${error.message}` : 'Action failed. Please try again.';
+        const headline = label ?? "That didn't work. Try again.";
         // Every failure toast now carries a "Report" action that opens a
         // prefilled bug report — the highest-intent moment to capture one. The
-        // `id` (when set) still collapses repeats; it is merged into the same
-        // options object as the action.
-        toast.error(line, {
-          action: reportAction(line),
+        // report still gets both halves on one line, because that is a bug
+        // report and not something a person has to read at a glance.
+        //
+        // The `id` (when set) still collapses repeats; it is merged into the
+        // same options object as the action.
+        toast.error(headline, {
+          description: error.message,
+          action: reportAction(`${headline}: ${error.message}`),
           ...(id !== undefined ? { id } : {}),
         });
       },

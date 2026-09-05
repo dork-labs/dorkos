@@ -58,7 +58,7 @@ describe('CopyButton', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy to clipboard' }));
 
-    const button = await screen.findByRole('button', { name: "Couldn't copy — try again" });
+    const button = await screen.findByRole('button', { name: "Couldn't copy. Try again" });
     expect(button.querySelector('.lucide-x')).not.toBeNull();
     expect(button.querySelector('.lucide-check')).toBeNull();
     expect(button.querySelector('.lucide-copy')).toBeNull();

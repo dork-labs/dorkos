@@ -141,7 +141,7 @@ function CreatedKeyReveal({ created, onDone }: { created: CreatedApiKey; onDone:
   const { copied, failed, copy } = useCopyFeedback();
   return (
     <div className="border-primary/40 bg-primary/5 space-y-3 rounded-lg border p-3">
-      <p className="text-sm font-medium">Copy your key now — it won&apos;t be shown again</p>
+      <p className="text-sm font-medium">Copy your key now. It won&apos;t be shown again.</p>
       <div className="flex items-center gap-2">
         <code className="bg-muted min-w-0 flex-1 truncate rounded-md px-3 py-2 font-mono text-xs">
           {created.key}
@@ -149,7 +149,7 @@ function CreatedKeyReveal({ created, onDone }: { created: CreatedApiKey; onDone:
         <button
           className="text-muted-foreground hover:text-foreground shrink-0 rounded-sm p-1.5 transition-colors"
           onClick={() => void copy(created.key)}
-          aria-label={failed ? "Couldn't copy API key — try again" : 'Copy API key'}
+          aria-label={failed ? "Couldn't copy API key. Try again" : 'Copy API key'}
         >
           {copied ? (
             <Check className="size-4 text-green-500" />

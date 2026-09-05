@@ -30,6 +30,18 @@ describe('AppCrashFallback', () => {
     expect(screen.getByText('Provider crashed')).toBeTruthy();
   });
 
+  // DOR-1755: the raw error used to be the ONLY explanation on the crash
+  // screen, so a person met `ENOENT: no such file or directory` with nothing
+  // else to read. It now sits under a labelled Details line, below a sentence
+  // that tells them what to do.
+  it('leads with a plain sentence and files the raw error under Details', () => {
+    render(<AppCrashFallback error={new Error('Provider crashed')} resetErrorBoundary={vi.fn()} />);
+
+    expect(screen.getByText('DorkOS stopped. Sorry about that.')).toBeTruthy();
+    expect(screen.getByText(/Reload to pick up where you left off/)).toBeTruthy();
+    expect(screen.getByText('Details')).toBeTruthy();
+  });
+
   it('renders "Reload DorkOS" button', () => {
     render(<AppCrashFallback error={new Error('fail')} resetErrorBoundary={vi.fn()} />);
     expect(screen.getByRole('button', { name: /reload dorkos/i })).toBeTruthy();

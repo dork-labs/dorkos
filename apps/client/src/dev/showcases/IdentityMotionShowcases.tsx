@@ -105,7 +105,7 @@ function RosterFlipDemo() {
           aria-pressed={grouped}
           onClick={() => setGrouped((current) => !current)}
         >
-          Group: manager
+          Group by owner
         </Button>
       </div>
       <div className="flex flex-wrap items-center gap-2">
@@ -279,7 +279,7 @@ export function IdentityMotionShowcases() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Signature 1 — the roster FLIP. Flip Group: manager and watch cards travel from the flat grid
+        Signature 1 — the roster FLIP. Flip Group by owner and watch cards travel from the flat grid
         into their owner&rsquo;s cluster rather than teleporting. Narrow to People or Agents and the
         leavers fade without shoving the survivors. Position only, and off entirely above 120 cards
         or under reduced motion — switch the roster to &ldquo;Over the limit&rdquo; and the travel

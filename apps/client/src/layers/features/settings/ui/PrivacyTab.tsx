@@ -60,7 +60,7 @@ export function PrivacyTab() {
           />
           <SwitchSettingRow
             label="Share an anonymous daily heartbeat"
-            description="Send one small anonymous ping about once a day so we can count active installs. Payload shown below."
+            description="Send one small anonymous ping about once a day so we can count active installs. You can see exactly what gets sent below."
             checked={telemetry?.heartbeat ?? false}
             onCheckedChange={(v) => setChannel('heartbeat', v)}
             disabled={updateConfig.isPending}

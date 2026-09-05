@@ -210,7 +210,13 @@ describe('ExtensionsSettingsTab', () => {
       await waitFor(() => {
         expect(vi.mocked(toast.error)).toHaveBeenCalled();
       });
-      return vi.mocked(toast.error).mock.calls[0]?.[0];
+      // The refusal rides in `description`; the first argument is the short
+      // headline. Reading the description is what pins "the server's sentence
+      // reaches the person INTACT" — a prefix concatenated into the headline
+      // would leave this assertion passing only if the sentence were also
+      // whole, which is the property under test.
+      const [headline, options] = vi.mocked(toast.error).mock.calls[0] ?? [];
+      return { headline, description: (options as { description?: string })?.description };
     }
 
     it("shows the server's own sentence, with nothing prefixed to it", async () => {
@@ -223,16 +229,18 @@ describe('ExtensionsSettingsTab', () => {
         message: refusal,
       });
 
-      // Byte-for-byte. `toContain` would pass with the old double-wrapped
-      // "Failed to enable extension: DorkOS changed nothing…" still in place,
-      // which is the exact defect this pins.
-      expect(await toggleAndCatchToast()).toBe(refusal);
+      const { headline, description } = await toggleAndCatchToast();
+      // Byte-for-byte, and in the description rather than glued onto the
+      // headline — the double-wrapped "Couldn't turn that on.: DorkOS changed
+      // nothing…" is exactly what this refuses to accept.
+      expect(description).toBe(refusal);
+      expect(headline).toBe("Couldn't turn that on.");
     });
 
     it('falls back to `error` when the body carries no message', async () => {
       mockRefusedToggle({ error: 'Only a person can change this' });
 
-      expect(await toggleAndCatchToast()).toBe('Only a person can change this');
+      expect((await toggleAndCatchToast()).description).toBe('Only a person can change this');
     });
 
     it('falls back to the status code when the body is not JSON at all', async () => {
@@ -255,7 +263,9 @@ describe('ExtensionsSettingsTab', () => {
         })
       );
 
-      expect(await toggleAndCatchToast()).toBe("Failed to enable extension 'my-ext': 502");
+      expect((await toggleAndCatchToast()).description).toBe(
+        "Failed to enable extension 'my-ext': 502"
+      );
     });
   });
 
@@ -747,7 +757,10 @@ describe('permission to run code inside DorkOS (DOR-516)', () => {
 
     await waitFor(() => {
       expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
-        'Only a person can approve an extension to run inside DorkOS'
+        "Couldn't let it run.",
+        expect.objectContaining({
+          description: 'Only a person can approve an extension to run inside DorkOS',
+        })
       );
     });
   });

@@ -322,11 +322,11 @@ export function FeedbackDialog({
                   className="border-muted-foreground/25 text-muted-foreground flex items-center justify-center gap-2 rounded-md border border-dashed px-3 py-4 text-xs opacity-70"
                 >
                   <ImagePlus className="size-4" aria-hidden />
-                  Add screenshot — coming soon
+                  Add screenshot (coming soon)
                 </div>
                 <div className="text-muted-foreground flex items-center gap-1.5 text-xs opacity-70">
                   <Crosshair className="size-3.5" aria-hidden />
-                  Point at element — soon
+                  Point at element (coming soon)
                 </div>
               </div>
 
@@ -357,7 +357,7 @@ export function FeedbackDialog({
               {/* Privacy line */}
               <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
                 <Lock className="size-3 shrink-0" aria-hidden />
-                Private — only the DorkOS core team sees these. Never public.
+                Private. Only the DorkOS core team sees these. Never public.
               </p>
             </CollapsibleContent>
           </Collapsible>

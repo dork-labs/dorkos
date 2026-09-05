@@ -141,6 +141,10 @@
       "types": "./src/run-outcome.ts",
       "default": "./dist/run-outcome.js"
     },
+    "./run-time-limit": {
+      "types": "./src/run-time-limit.ts",
+      "default": "./dist/run-time-limit.js"
+    },
     "./workspace": {
       "types": "./src/workspace.ts",
       "default": "./dist/workspace.js"

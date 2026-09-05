@@ -24,7 +24,7 @@ import { test, expect } from '@playwright/test';
 // to hit the marketing site, where /marketplace lives. SITE_BASE_URL lets a
 // run whose site leg was moved off 6244 (DORKOS_SITE_PORT, e.g. alongside a
 // live site dev server) still find it — same contract as features.spec.ts.
-// eslint-disable-next-line no-restricted-syntax -- e2e harness has no env.ts; matches playwright.config.ts
+// eslint-disable-next-line no-restricted-syntax -- e2e harness has no env.ts; a spec is not a config file, so it cannot lean on the repo-wide `**/*.config.ts` carve-out
 const SITE_BASE_URL = process.env.SITE_BASE_URL ?? 'http://localhost:6244';
 
 test.use({ baseURL: SITE_BASE_URL });

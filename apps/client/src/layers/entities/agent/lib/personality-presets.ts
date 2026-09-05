@@ -83,7 +83,7 @@ export const PERSONALITY_PRESETS: PersonalityPreset[] = [
     tagline: 'Ship fast, explain later. Turns caffeine into commits.',
     traits: { verbosity: 2, autonomy: 5, chaos: 4, creativity: 5, humor: 3, spice: 4 },
     sampleResponse:
-      'Done. Pushed the fix, tests pass, already moved on. Used a completely new approach btw — way cleaner.',
+      'Done. Pushed the fix, tests pass, already moved on. Used a completely new approach btw, way cleaner.',
     colors: {
       nebula: '#ea580c',
       wisp: '#f97316',

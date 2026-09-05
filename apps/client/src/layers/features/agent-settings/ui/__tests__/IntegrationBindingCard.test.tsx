@@ -101,9 +101,9 @@ describe('IntegrationBindingCard', () => {
     expect(view.getByText('Telegram')).toBeInTheDocument();
   });
 
-  it('renders integration name + chat display name with em-dash when chatDisplayName provided', () => {
+  it('renders integration name + chat display name, joined by a middot, when chatDisplayName provided', () => {
     const { view } = renderCard({ chatDisplayName: 'Dev chat' });
-    expect(view.getByText('Telegram — Dev chat')).toBeInTheDocument();
+    expect(view.getByText('Telegram · Dev chat')).toBeInTheDocument();
   });
 
   it('renders AdapterIcon with integrationAdapterType', () => {

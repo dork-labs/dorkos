@@ -8,9 +8,9 @@ interface MetricsSummaryProps {
 /**
  * Inline summary row of key delivery metrics for the Activity tab.
  *
- * Renders five stat pills (Total, Delivered, Failed, No listener, Dead Letter)
- * and an average latency indicator. Failed is red when > 0, Dead Letter is
- * amber when > 0, Delivered is green when > 0. Returns null when relay is
+ * Renders five stat pills (Total, Delivered, Failed, No listener, Never
+ * arrived) and an average latency indicator. Failed is red when > 0, Never
+ * arrived is amber when > 0, Delivered is green when > 0. Returns null when relay is
  * disabled or metrics are not yet loaded.
  *
  * "No listener" is deliberately its own pill and deliberately not red: those
@@ -32,7 +32,7 @@ export function MetricsSummary({ enabled }: MetricsSummaryProps) {
     },
     { label: 'No listener', value: metrics.noSubscriberCount, variant: 'default' as const },
     {
-      label: 'Dead Letter',
+      label: 'Never arrived',
       value: metrics.deadLetteredCount,
       variant: metrics.deadLetteredCount > 0 ? 'warning' : 'default',
     },

@@ -842,7 +842,7 @@ describe('RuntimeItem', () => {
       expect(group.querySelectorAll('[role="radio"]')).toHaveLength(3);
       // "Default" alone is a choice with no consequence spelled out; naming the
       // account it resolves to makes picking nothing a legible decision.
-      expect(group).toHaveTextContent('Default — Personal');
+      expect(group).toHaveTextContent('Default: Personal');
       expect(group).toHaveTextContent('Acme Corp');
       // Nothing chosen yet, so the default option is the selected one.
       expect(group.getAttribute('data-value')).toBe('__default__');
@@ -875,7 +875,7 @@ describe('RuntimeItem', () => {
     it("names the AGENT's account on the default row, not the server default", async () => {
       // The ladder is agent-then-default, so on a directory whose agent is
       // pinned to Acme Corp a machine defaulting to Personal still bills Acme.
-      // "Default — Personal" here would be a false statement about money.
+      // "Default: Personal" here would be a false statement about money.
       mockServerConfig = withAccounts(2);
       mockAgent = agentPinnedTo('acme-corp');
       useAppStore.setState({ selectedCwd: '/work/project' });
@@ -889,8 +889,8 @@ describe('RuntimeItem', () => {
         />
       );
 
-      await waitFor(() => expect(accountGroup()).toHaveTextContent('Default — Acme Corp'));
-      expect(accountGroup()).not.toHaveTextContent('Default — Personal');
+      await waitFor(() => expect(accountGroup()).toHaveTextContent('Default: Acme Corp'));
+      expect(accountGroup()).not.toHaveTextContent('Default: Personal');
     });
 
     it('falls back to the server default when the agent pins an account nobody registered', async () => {
@@ -911,7 +911,7 @@ describe('RuntimeItem', () => {
       );
 
       await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
-      await waitFor(() => expect(accountGroup()).toHaveTextContent('Default — Personal'));
+      await waitFor(() => expect(accountGroup()).toHaveTextContent('Default: Personal'));
       expect(accountGroup()).not.toHaveTextContent('retired-client');
     });
 
@@ -941,7 +941,7 @@ describe('RuntimeItem', () => {
 
       // And it fills in once the answer arrives.
       agentAnswer.resolve(agentPinnedTo('acme-corp'));
-      await waitFor(() => expect(accountGroup()).toHaveTextContent('Default — Acme Corp'));
+      await waitFor(() => expect(accountGroup()).toHaveTextContent('Default: Acme Corp'));
     });
 
     it('holds the pick for THIS session and writes no config at all', async () => {
@@ -988,7 +988,7 @@ describe('RuntimeItem', () => {
       await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
 
       await user.click(screen.getByText('Acme Corp'));
-      await user.click(screen.getByText('Default — Personal'));
+      await user.click(screen.getByText('Default: Personal'));
 
       // Null, not the default account's id: omitting the hint is what leaves the
       // server's own ladder (the agent's account, then the default) in charge.
@@ -1183,7 +1183,7 @@ describe('RuntimeItem', () => {
         )
       ).toEqual(['__default__', 'personal', 'acme-corp']);
       // It is still what the default resolves to, so it is named there.
-      expect(group).toHaveTextContent('Default — .claude-adhoc');
+      expect(group).toHaveTextContent('Default: .claude-adhoc');
     });
 
     it('says so when a registered folder is not a usable account, instead of offering it plainly', async () => {

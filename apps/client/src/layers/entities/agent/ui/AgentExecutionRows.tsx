@@ -173,8 +173,8 @@ function ExecutionRow({
             data-testid={`${testId}-inherit`}
           >
             {serverDefault
-              ? `Using server default: ${serverDefault} — tap to restore`
-              : 'Use server default — the runtime picks'}
+              ? `Using server default: ${serverDefault}. Tap to restore`
+              : 'Use server default: the runtime picks'}
           </button>
         </ResponsivePopoverContent>
       </ResponsivePopover>

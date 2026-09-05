@@ -45,7 +45,7 @@ export function ServerTab() {
                 Development Build
               </span>
               <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">
-                Running from source — version checks disabled
+                Running from source. Version checks disabled
               </p>
             </div>
           ) : (
@@ -75,8 +75,8 @@ export function ServerTab() {
           <ServerAddress port={config.port} />
 
           <ConfigRow label="Uptime" value={formatUptime(config.uptime)} />
-          <ConfigRow label="Working Directory" value={config.workingDirectory} mono truncate />
-          <ConfigRow label="Data Directory" value={config.dorkHome} mono truncate />
+          <ConfigRow label="Working folder" value={config.workingDirectory} mono truncate />
+          <ConfigRow label="Data folder" value={config.dorkHome} mono truncate />
           <ConfigRow label="Boundary" value={config.boundary} mono truncate />
           <ConfigRow label="Node.js" value={config.nodeVersion} />
         </div>

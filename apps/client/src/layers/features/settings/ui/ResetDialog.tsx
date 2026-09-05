@@ -85,7 +85,10 @@ export function ResetDialog({ open, onOpenChange, onResetComplete }: ResetDialog
       onOpenChange(false);
       onResetComplete();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to reset data');
+      toast.error("Couldn't reset your data.", {
+        description:
+          err instanceof Error ? err.message : "We're not sure what got through. Try again.",
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -103,7 +106,7 @@ export function ResetDialog({ open, onOpenChange, onResetComplete }: ResetDialog
     <AlertDialog open={open} onOpenChange={handleOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Reset All Data</AlertDialogTitle>
+          <AlertDialogTitle>Reset all data</AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="space-y-3">
               <p>This will permanently delete all DorkOS data, including:</p>
@@ -136,7 +139,7 @@ export function ResetDialog({ open, onOpenChange, onResetComplete }: ResetDialog
             onClick={handleReset}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
-            {isSubmitting ? 'Resetting...' : 'Reset All Data'}
+            {isSubmitting ? 'Resetting…' : 'Reset all data'}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

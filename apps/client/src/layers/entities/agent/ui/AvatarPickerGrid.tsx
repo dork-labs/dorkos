@@ -140,7 +140,7 @@ export function AvatarColorGrid({
           activeRing={autoActiveRing}
           color={autoColor}
           label={autoLabel}
-          tooltip="Unique — derived from agent name"
+          tooltip="Unique, derived from agent name"
           onClick={() => onSelect(null)}
           onHoverChange={onHoverChange}
           justSelected={justSelectedKey === 'auto'}

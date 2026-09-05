@@ -69,7 +69,7 @@ export function PulseAttentionSection() {
       // A card still saying it was approved is not an all-clear, even though
       // the server has already stopped counting it.
       empty={!isLoading && total === 0 && shownSchedules.length === 0}
-      allClear="All quiet — nothing needs you."
+      allClear="All quiet. Nothing needs you."
       action={
         showViewAll ? (
           <Button

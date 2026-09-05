@@ -147,7 +147,7 @@ describe('StreamingText dorkos-ui fence', () => {
 
     // No flag (default) → live, playable board.
     render(<StreamingText content={boardFence} sessionId="s-1" />, { wrapper: Wrapper });
-    expect(await screen.findByLabelText('Row 1, column 1: empty — play here')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Row 1, column 1: empty, play here')).toBeInTheDocument();
   });
 
   it('renders multiple dorkos-ui fences in one message independently', async () => {

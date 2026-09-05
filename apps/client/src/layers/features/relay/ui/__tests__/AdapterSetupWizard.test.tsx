@@ -226,7 +226,7 @@ describe('AdapterSetupWizard', () => {
     // Password should be pre-filled with sentinel (edit mode: shows saved indicator)
     const tokenInput = screen.getByLabelText(/api token/i);
     expect(tokenInput).toHaveValue('***');
-    expect(tokenInput).toHaveAttribute('placeholder', 'Saved — enter a new one to replace');
+    expect(tokenInput).toHaveAttribute('placeholder', 'Saved. Enter a new one to replace');
     expect(screen.getByLabelText(/channel/i)).toHaveValue('#dev');
   });
 

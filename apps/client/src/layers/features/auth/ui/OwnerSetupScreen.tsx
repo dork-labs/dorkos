@@ -107,7 +107,7 @@ export function OwnerSetupScreen({
             autoFocus
           />
           <p className="text-muted-foreground text-xs">
-            A local identifier only — it is never verified and no email is ever sent.
+            A local identifier only. It is never verified and no email is ever sent.
           </p>
         </div>
         <div className="space-y-1.5">

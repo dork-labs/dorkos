@@ -33,7 +33,7 @@ export function initializeExtensions(): void {
 
   // Command palette items (priority 1-10 for built-ins). Some built-ins depend
   // on AppShell chrome the Obsidian embed never renders, so acting on them there
-  // is a dead-end: Create Agent / "Bring in existing projects" open dialogs
+  // is a dead-end: Create agent / "Bring in existing projects" open dialogs
   // (CreateAgentDialog / ImportProjectsDialog) that mount only in AppShell;
   // Profile and Canvas open the right panel the embed never renders; and
   // Dashboard / Agents call navigate(), which throws with no RouterProvider (the
@@ -262,7 +262,7 @@ export function registerRightPanelTabs(register: RegisterFn): void {
     component: lazy(() =>
       import('@/layers/features/file-explorer').then((m) => ({ default: m.FileExplorer }))
     ),
-    // Toolbar (New File / New Folder / Show hidden / Refresh) rendered in the
+    // Toolbar (New file / New folder / Show hidden / Refresh) rendered in the
     // container-owned panel header, wired to the tree via the file-explorer store.
     headerActions: lazy(() =>
       import('@/layers/features/file-explorer').then((m) => ({ default: m.FileExplorerActions }))

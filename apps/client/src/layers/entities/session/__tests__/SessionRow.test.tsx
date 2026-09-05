@@ -167,7 +167,7 @@ describe('SessionRow variant="full"', () => {
     // draws a legitimately red dot when a session is nearly out of context, and
     // a row-wide "no red" sweep would fail on that the day a fixture runs the
     // context down — for a reason that has nothing to do with permissions.
-    const mark = screen.getByRole('button', { name: 'Full power — acts without approval prompts' });
+    const mark = screen.getByRole('button', { name: 'Full power: acts without approval prompts' });
     expect(mark).toBeInTheDocument();
     expect(mark.innerHTML).toMatch(/text-status-success/);
     expect(mark.innerHTML).not.toMatch(/text-red-/);
@@ -179,7 +179,7 @@ describe('SessionRow variant="full"', () => {
       <SessionRow variant="full" session={makeSession()} isActive={false} onClick={() => {}} />
     );
     expect(
-      screen.queryByRole('button', { name: 'Full power — acts without approval prompts' })
+      screen.queryByRole('button', { name: 'Full power: acts without approval prompts' })
     ).not.toBeInTheDocument();
     expect(container.querySelector('.text-status-success')).toBeNull();
   });

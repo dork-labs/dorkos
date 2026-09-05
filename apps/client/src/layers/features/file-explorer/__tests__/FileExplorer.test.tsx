@@ -182,7 +182,7 @@ describe('FileExplorer', () => {
     await screen.findByRole('treeitem', { name: 'existing.ts' });
 
     // Start a new file, name it, and commit.
-    fireEvent.click(screen.getByRole('button', { name: 'New File' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New file' }));
     const input = screen.getByRole('textbox', { name: 'New file name' });
     fireEvent.change(input, { target: { value: 'new.ts' } });
     fireEvent.keyDown(input, { key: 'Enter' });

@@ -241,7 +241,7 @@ export function NamingStep({
                 )}
                 {form.conflictStatus === 'exists-no-dork' && (
                   <p className="text-muted-foreground text-xs" data-testid="conflict-status">
-                    Directory exists — will create project inside
+                    That folder is already there. The project goes inside it.
                   </p>
                 )}
                 {form.conflictStatus === 'error' && (

@@ -33,7 +33,7 @@ import { useLaneElapsed } from '../model/use-lane-elapsed';
 export function stalledSentence(unavailable: boolean): string {
   return unavailable
     ? 'This room is no longer available. It may have been deleted, or you may no longer have access to it.'
-    : "New messages aren't coming through right now. You can still send — anything that doesn't get through will say so.";
+    : "New messages aren't coming through right now. You can still send. Anything that doesn't get through will say so.";
 }
 
 /**
@@ -49,7 +49,7 @@ export function stalledSentence(unavailable: boolean): string {
  * @param unavailable - Whether the room itself is gone rather than unreachable.
  */
 export function shortStalledSentence(unavailable: boolean): string {
-  return unavailable ? 'This room is no longer available' : 'Reconnecting — you can still send';
+  return unavailable ? 'This room is no longer available' : 'Reconnecting. You can still send';
 }
 
 /**

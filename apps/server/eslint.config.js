@@ -141,11 +141,14 @@ export default defineConfig([
     rules: { 'max-lines': 'off' },
   },
 
-  // process.env carve-outs (server-specific)
+  // process.env carve-outs (server-specific).
+  //
+  // `**/*.config.ts` was here until DOR-1785; the shared preset now carves out
+  // every build/tool config file repo-wide, so this list holds only the
+  // server's own exemptions.
   {
     files: [
       '**/env.ts',
-      '**/*.config.ts',
       '**/__tests__/**',
       '**/*.test.ts',
       'src/lib/dork-home.ts',

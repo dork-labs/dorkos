@@ -208,7 +208,7 @@ export function SidebarFooterMenu({ labelled = false }: SidebarFooterMenuProps) 
         {showDevTools && (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuLabel>Developer Tools</DropdownMenuLabel>
+            <DropdownMenuLabel>Developer tools</DropdownMenuLabel>
             <DropdownMenuItem onSelect={() => openLink('/dev')}>
               <LayoutGrid className="size-(--size-icon-sm)" />
               Dev Playground

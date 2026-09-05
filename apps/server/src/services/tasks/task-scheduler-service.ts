@@ -21,6 +21,7 @@ import {
 import { taskDispatchSubject } from '@dorkos/shared/relay-schemas';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { createRunOutcomeTracker } from '@dorkos/shared/run-outcome';
+import { runTimeLimitError } from '@dorkos/shared/run-time-limit';
 import { createTaggedLogger, logError } from '../../lib/logger.js';
 import { runInDispatch } from '../../lib/dispatch-context.js';
 import { recordDispatchEnd, recordDispatchStart } from '../observability/dispatch-buffers.js';
@@ -1304,6 +1305,12 @@ export class TaskSchedulerService {
         // Both stops record `cancelled` — the run-status vocabulary has no
         // separate timeout — so the error line is what tells a person which
         // happened.
+        //
+        // The time-limit line is `runTimeLimitError`'s, shared with the
+        // relay-dispatched twin (`packages/relay/src/adapters/claude-code/
+        // task-handler.ts`) so the same event cannot be worded two ways in one
+        // run history (DOR-1786). This path is the one that names the duration:
+        // it holds the task's own `maxRuntime`, which the relay path never sees.
         const timedOut =
           (combinedSignal.reason as { name?: string } | null)?.name === 'TimeoutError';
         const operatorCancelled = combinedSignal.reason === OPERATOR_CANCEL;
@@ -1314,7 +1321,7 @@ export class TaskSchedulerService {
           outputSummary: outputSummary.slice(0, 500),
           error:
             timedOut && task.maxRuntime
-              ? `Run stopped after passing its ${formatDuration(task.maxRuntime)} time limit`
+              ? runTimeLimitError(formatDuration(task.maxRuntime))
               : 'Run cancelled',
           sessionId: persistedSessionId(),
         });

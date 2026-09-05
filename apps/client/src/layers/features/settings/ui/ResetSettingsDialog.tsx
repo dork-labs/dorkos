@@ -39,10 +39,10 @@ export function ResetSettingsDialog({ open, onOpenChange }: ResetSettingsDialogP
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Reset All Settings</AlertDialogTitle>
+          <AlertDialogTitle>Reset all settings</AlertDialogTitle>
           <AlertDialogDescription>
             This puts the theme, text, toggles, and panel layouts on this device back to how they
-            shipped. Nothing you have made is deleted — your projects, agents, and chats stay.
+            shipped. Nothing you have made is deleted. Your projects, agents, and chats stay.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -51,7 +51,7 @@ export function ResetSettingsDialog({ open, onOpenChange }: ResetSettingsDialogP
             onClick={handleReset}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
-            Reset Settings
+            Reset settings
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

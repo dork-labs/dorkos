@@ -346,7 +346,7 @@ const router = createAppRouter(queryClient, transport);
 registerLinkNavigator(({ href, replace }) => void router.navigate({ href, replace }));
 
 // …and, in the desktop app only, its tab strip. `target: 'tab'` links — the
-// palette's "Open in New Tab", anything that wants a second view without losing
+// palette's "Open in a new tab", anything that wants a second view without losing
 // the first — add a tab here and navigate into it (DOR-540). The strip is a
 // desktop feature: a browser already owns tabs, so a tab request there opens a
 // real browser tab instead (DOR-568).

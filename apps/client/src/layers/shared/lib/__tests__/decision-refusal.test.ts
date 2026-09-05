@@ -3,7 +3,7 @@
  * `agent-approval-settings` §3.5).
  *
  * The server writes a specific sentence for every refusal and the app-wide handler
- * replaces all of them with "Action failed. Please try again." These cases pin the
+ * replaces all of them with "That didn't work. Try again." These cases pin the
  * one place that stops happening, and in particular pin the case where saying
  * "failed" is not merely unhelpful but dangerous.
  *

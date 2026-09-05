@@ -92,7 +92,7 @@ export function ComposeMessageDialog({
       )}
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Send Test Message</DialogTitle>
+          <DialogTitle>Send a test message</DialogTitle>
           <DialogDescription>Compose a message to send through the Relay bus.</DialogDescription>
         </DialogHeader>
         <form.AppForm>

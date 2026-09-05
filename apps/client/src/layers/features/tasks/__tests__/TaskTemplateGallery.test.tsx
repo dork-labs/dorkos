@@ -78,7 +78,7 @@ describe('TaskTemplateGallery', () => {
   it('shows error message on error', () => {
     mockUseTaskTemplates.mockReturnValue({ isLoading: false, isError: true, data: undefined });
     render(<TaskTemplateGallery />, { wrapper: Wrapper });
-    expect(screen.getByText(/Failed to load presets/i)).toBeTruthy();
+    expect(screen.getByText(/Couldn’t load the ready-made tasks/i)).toBeTruthy();
   });
 
   it('renders a card for each preset', () => {

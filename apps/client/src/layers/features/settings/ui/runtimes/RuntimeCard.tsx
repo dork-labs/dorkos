@@ -424,7 +424,7 @@ export function RuntimeCard({
           className="text-muted-foreground px-4 text-xs"
           data-testid={`runtime-card-timing-${type}`}
         >
-          Applies to new conversations — running ones keep their settings.
+          Applies to new conversations. Running ones keep their settings.
         </p>
       )}
 

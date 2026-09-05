@@ -361,7 +361,7 @@ export function TrustDial({
         >
           <Lock className="size-3 shrink-0" aria-hidden />
           <span>
-            Limited — <span className="underline underline-offset-2">unlock</span>
+            Limited. <span className="underline underline-offset-2">Unlock</span>
           </span>
         </button>
       )}

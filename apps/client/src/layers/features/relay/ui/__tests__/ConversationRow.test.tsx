@@ -201,7 +201,7 @@ describe('ConversationRow', () => {
       fireEvent.click(screen.getByRole('button', { name: /route to agent/i }));
 
       await waitFor(() => {
-        expect(screen.getByText('Route to Agent')).toBeInTheDocument();
+        expect(screen.getByText('Route to agent')).toBeInTheDocument();
       });
     });
 

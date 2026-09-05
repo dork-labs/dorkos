@@ -42,7 +42,7 @@ export function AppearanceTab() {
     <div className="space-y-4">
       <FieldCard>
         <FieldCardContent>
-          <SettingRow label="Theme" description="Choose your preferred color scheme">
+          <SettingRow label="Theme">
             <Select value={theme} onValueChange={setTheme}>
               <SelectTrigger className="w-32">
                 <SelectValue />
@@ -55,7 +55,7 @@ export function AppearanceTab() {
             </Select>
           </SettingRow>
 
-          <SettingRow label="Font family" description="Choose the typeface for the interface">
+          <SettingRow label="Font family">
             <Select value={fontFamily} onValueChange={(v) => setFontFamily(v as FontFamilyKey)}>
               <SelectTrigger className="w-40">
                 <SelectValue />
@@ -73,7 +73,7 @@ export function AppearanceTab() {
             </Select>
           </SettingRow>
 
-          <SettingRow label="Font size" description="Adjust the text size across the interface">
+          <SettingRow label="Font size">
             <Select
               value={fontSize}
               onValueChange={(v) => setFontSize(v as 'small' | 'medium' | 'large')}

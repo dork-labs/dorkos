@@ -1041,6 +1041,115 @@ describe('DashboardSidebar', () => {
       expect(document.activeElement).toBe(screen.getByText('#general').closest('button'));
     });
 
+    it('picks a row up from the keyboard, on the row the arrows actually reach (DOR-1746)', async () => {
+      // The defect: every sortable drag root in the panel is a WRAPPER around
+      // the row, and dnd-kit's `KeyboardSensor` starts a drag only when the
+      // keydown target IS the registered activator node. The wrapper was that
+      // node, the roving focus stamps it `tabIndex={-1}` — so the only element
+      // that could begin a keyboard drag was one no key could ever reach, and
+      // the WCAG 2.2 §2.5.7 path the drag layer advertises was a pointer path
+      // with an ARIA description attached to it.
+      //
+      // Driven the way a person would: Tab into the section, arrow down to a
+      // row, press Space. Nothing here focuses anything programmatically except
+      // the header, which is the panel's own single Tab stop.
+      mockRooms.mockReturnValue([channel('r1', 'general')]);
+      renderWithProviders(<DashboardSidebar />);
+      await screen.findByText('#general');
+
+      // No drag root is in the tab order — the whole reason the activator has
+      // to be the row rather than the root that wraps it.
+      const dragRoots = document.querySelectorAll('[data-sidebar-drag-root]');
+      expect(
+        dragRoots.length,
+        'the drag layer put no sortable root in the panel, so nothing below proves anything'
+      ).toBeGreaterThan(0);
+      expect([...dragRoots].map((root) => root.getAttribute('tabindex'))).toEqual(
+        [...dragRoots].map(() => '-1')
+      );
+
+      const toggle = sectionToggle('Channels');
+      toggle.focus();
+      fireEvent.keyDown(toggle, { key: 'ArrowDown' });
+      fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+      const row = screen.getByText('#general').closest('button');
+      expect(document.activeElement).toBe(row);
+
+      fireEvent.keyDown(document.activeElement!, { code: 'Space' });
+
+      // The row is off the ground: the drag layer marks the root it lifted, and
+      // the root it marked is the one wrapping the row the arrows reached.
+      const lifted = document.querySelectorAll('[data-sidebar-dragging]');
+      expect(lifted.length, 'Space on the focused row did not pick anything up').toBe(1);
+      expect(lifted[0]).toBe(row?.closest('[data-sidebar-drag-root]'));
+      // …and a screen reader is told so, through dnd-kit's OWN live region. Not
+      // `[role="status"]`: the sidebar has more than one — `AgentActivityBadge`
+      // publishes into one too — and the first in document order is not
+      // reliably this one.
+      expect(document.querySelector('[id^="DndLiveRegion"]')?.textContent ?? '').not.toBe('');
+
+      // And Escape puts it back down. The tick is dnd-kit's: its keyboard sensor
+      // arms its own document listener in a `setTimeout`, so a cancel fired in
+      // the same turn as the pick-up is heard by nobody.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      fireEvent.keyDown(row!, { code: 'Escape' });
+      expect(document.querySelectorAll('[data-sidebar-dragging]')).toHaveLength(0);
+    });
+
+    it('picks a SECTION you made up from its own header, and Escape puts it back', async () => {
+      // The header half of the same rule. A user-made section is a drag source,
+      // its header's toggle is the section's single Tab stop, and the toggle is
+      // therefore where the activators go — so Space on a focused group header
+      // lifts the section.
+      //
+      // **What this cannot say is what Space stops doing.** Suppressing the
+      // fold is a BROWSER rule — dnd-kit calls `preventDefault()` on the keydown
+      // it lifts from, and a button's activation is a default action of Space —
+      // and jsdom implements no default action for either key, while
+      // `user-event` synthesizes the click on keyup without consulting the
+      // keydown's `defaultPrevented`. Either tool would report a fold here that
+      // a real browser does not perform. The fold semantics are pinned in
+      // `sidebar-groups.spec.ts`, in a browser, for exactly that reason.
+      mockSidebarPrefs.mockReturnValue(makePrefs({ groups: [group({ items: [] })] }));
+      renderWithProviders(<DashboardSidebar />);
+      await screen.findByRole('heading', { name: /Clients/, level: 3 });
+
+      const header = sectionToggle('Clients');
+      header.focus();
+      fireEvent.keyDown(header, { code: 'Space' });
+
+      const lifted = document.querySelectorAll('[data-sidebar-dragging]');
+      expect(lifted.length, 'Space on the focused section header lifted nothing').toBe(1);
+      expect(lifted[0]).toBe(header.closest('[data-sidebar-drag-root]'));
+
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      fireEvent.keyDown(header, { code: 'Escape' });
+      expect(document.querySelectorAll('[data-sidebar-dragging]')).toHaveLength(0);
+    });
+
+    it('leaves a FIXED section header undraggable, so its Space is still the fold’s', async () => {
+      // The other side of the trade, and the reason it is a trade rather than an
+      // inconsistency: Channels, Direct messages and Agents are not movable, so
+      // nothing takes their Space away. Only a section the operator made — the
+      // only kind that can be reordered — spends it.
+      mockRooms.mockReturnValue([channel('r1', 'general')]);
+      renderWithProviders(<DashboardSidebar />);
+      await screen.findByText('#general');
+
+      const header = sectionToggle('Channels');
+      // No activator on it at all: not a drag source, so not wired to one.
+      expect(header.closest('[data-sidebar-drag-root]')).toBeNull();
+      expect(header.getAttribute('aria-roledescription')).toBeNull();
+
+      header.focus();
+      fireEvent.keyDown(header, { code: 'Space' });
+      expect(document.querySelectorAll('[data-sidebar-dragging]')).toHaveLength(0);
+    });
+
     it('points the Agents section "+" at the one New menu instead of a handler', async () => {
       mockMeshPaths.mockReturnValue(['/a/1', '/a/2', '/a/3']);
       renderWithProviders(<DashboardSidebar />);

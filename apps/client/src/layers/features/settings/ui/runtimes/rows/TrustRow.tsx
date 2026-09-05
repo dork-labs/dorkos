@@ -100,7 +100,7 @@ export function TrustRow({
           data-testid={`runtime-trust-unavailable-${runtimeType}`}
           className="text-muted-foreground px-1 text-xs leading-relaxed"
         >
-          {runtimeLabel} hasn’t said what it can do, so there is nothing to choose from yet — new
+          {runtimeLabel} hasn’t said what it can do, so there is nothing to choose from yet. New
           sessions start where it starts them.
         </p>
       ) : (

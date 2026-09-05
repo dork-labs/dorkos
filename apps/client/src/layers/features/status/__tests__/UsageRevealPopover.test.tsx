@@ -43,7 +43,7 @@ describe('UsageRevealPopover (DOR-109 /context)', () => {
         onOpenChange={vi.fn()}
       />
     );
-    expect(screen.getByText('Subscription Usage')).toBeInTheDocument();
+    expect(screen.getByText('Subscription usage')).toBeInTheDocument();
     expect(screen.getByText('50%')).toBeInTheDocument();
     expect(screen.getByText('$0.42')).toBeInTheDocument();
   });

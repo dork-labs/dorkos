@@ -66,7 +66,7 @@ describe('ComposeMessageDialog', () => {
     it('renders all three fields and the title when open', () => {
       const { wrapper } = createWrapper();
       render(<ComposeMessageDialog open={true} onOpenChange={vi.fn()} />, { wrapper });
-      expect(d().getByText('Send Test Message')).toBeInTheDocument();
+      expect(d().getByText('Send a test message')).toBeInTheDocument();
       expect(d().getByPlaceholderText('e.g. relay.test.ping')).toBeInTheDocument();
       expect(d().getByDisplayValue('relay.human.console')).toBeInTheDocument();
       expect(d().getByPlaceholderText(/plain text or json/i)).toBeInTheDocument();

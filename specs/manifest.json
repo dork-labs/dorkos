@@ -2,6 +2,15 @@
   "version": 1,
   "specs": [
     {
+      "id": "260905-204014",
+      "slug": "white-label-connections",
+      "title": "DorkOS Connections — managed and BYO accounts, scoped agent access, usage, and events",
+      "created": "2026-09-05",
+      "status": "specified",
+      "linearIssue": "DOR-1792",
+      "project": "DorkOS Connections"
+    },
+    {
       "id": "260901-200750",
       "slug": "pre-push-gate-relief",
       "title": "Pre-push gate relief on shared-touching branches",

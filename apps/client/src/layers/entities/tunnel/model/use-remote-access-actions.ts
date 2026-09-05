@@ -85,7 +85,7 @@ export function useRemoteAccessActions(): RemoteAccessActionHandlers {
 
       useRemoteAccessStore
         .getState()
-        .failStart(err instanceof Error ? err.message : 'Failed to start tunnel');
+        .failStart(err instanceof Error ? err.message : "Couldn't open your link. Try again.");
     }
   }, [transport, queryClient]);
 
@@ -105,7 +105,11 @@ export function useRemoteAccessActions(): RemoteAccessActionHandlers {
     } catch (err) {
       useRemoteAccessStore
         .getState()
-        .failStop(err instanceof Error ? err.message : 'Failed to stop tunnel');
+        .failStop(
+          err instanceof Error
+            ? err.message
+            : "Couldn't close your link. Not sure if it's still on."
+        );
     }
   }, [transport, queryClient]);
 

@@ -496,8 +496,8 @@ describe('CreateAgentDialog', () => {
     const { toast } = await import('sonner');
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
-        "Couldn't create that agent — Agent already exists",
-        expect.anything()
+        "Couldn't create that agent",
+        expect.objectContaining({ description: 'Agent already exists' })
       )
     );
   });
@@ -706,7 +706,7 @@ describe('CreateAgentDialog', () => {
 
     await waitFor(() =>
       expect(screen.getByTestId('conflict-status')).toHaveTextContent(
-        'Directory exists — will create project inside'
+        'That folder is already there. The project goes inside it.'
       )
     );
   });

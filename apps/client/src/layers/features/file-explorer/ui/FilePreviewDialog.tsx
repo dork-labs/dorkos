@@ -279,7 +279,7 @@ export function FilePreviewDialog({ source, path, onClose }: FilePreviewDialogPr
     if (theirs.body.kind !== 'text') {
       setRefusal(
         theirs.body.kind === 'not-readable'
-          ? `${theirs.body.reason} What you typed is still here — save it over their change, or close this and copy it out first.`
+          ? `${theirs.body.reason} What you typed is still here. Save it over their change, or close this and copy it out first.`
           : 'Their version isn’t something that can be shown here, so nothing here changed.'
       );
       return;

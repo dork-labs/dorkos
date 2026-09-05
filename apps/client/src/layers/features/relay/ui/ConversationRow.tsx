@@ -220,7 +220,7 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
             {formatRelativeTime(conversation.sentAt)}
           </span>
 
-          {/* Route to Agent popover */}
+          {/* Route to agent popover */}
           <Popover open={routePopoverOpen} onOpenChange={setRoutePopoverOpen}>
             <PopoverTrigger asChild>
               <Button
@@ -235,7 +235,7 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-64 space-y-3 p-3" align="end">
-              <p className="text-xs font-medium">Route to Agent</p>
+              <p className="text-xs font-medium">Route to agent</p>
               {existingBindings.length > 0 && (
                 <div className="rounded border border-blue-200 bg-blue-50 px-2 py-1.5 text-xs dark:border-blue-900 dark:bg-blue-950">
                   <p className="font-medium text-blue-800 dark:text-blue-200">

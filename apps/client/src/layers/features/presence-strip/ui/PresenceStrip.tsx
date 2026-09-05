@@ -201,7 +201,7 @@ function PresenceRowButton({
         // Names the ACTION and keeps the name inside the label, the same shape
         // the mention pill and the sidebar face use — so "watch tangerines" is
         // sayable by voice and the visible text is a prefix of what is spoken.
-        aria-label={row.detail === null ? `Watch ${row.name}` : `Watch ${row.name} — ${row.detail}`}
+        aria-label={row.detail === null ? `Watch ${row.name}` : `Watch ${row.name}: ${row.detail}`}
         onClick={() => onFollow(row.follow)}
         onPointerEnter={() => setWatchedAt(Date.now())}
         onPointerLeave={() => setWatchedAt(null)}

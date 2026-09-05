@@ -277,7 +277,7 @@ export type MarketplaceSearch = z.infer<typeof marketplaceRouteSearchSchema>;
  */
 const ConnectionsBar = () => <TitleBar title="Connections" />;
 const MarketplaceBar = () => <TitleBar title="Marketplace" />;
-const MarketplaceSourcesBar = () => <TitleBar title="Marketplace Sources" />;
+const MarketplaceSourcesBar = () => <TitleBar title="Marketplace sources" />;
 const FeedbackRequestsBar = () => <TitleBar title="Product feedback" />;
 
 // ── Pathless layout route (home surface) ────────────────────

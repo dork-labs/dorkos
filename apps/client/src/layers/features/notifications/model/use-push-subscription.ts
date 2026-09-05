@@ -280,7 +280,7 @@ class PushPermissionError extends Error {
 function describeSubscribeFailure(err: unknown): string {
   if (err instanceof PushPermissionError) {
     return err.permission === 'denied'
-      ? 'Your browser is set to refuse notifications from DorkOS, and it will not ask again — you can change that in your browser’s settings for this site.'
+      ? 'Your browser is set to refuse notifications from DorkOS, and it will not ask again. You can change that in your browser’s settings for this site.'
       : 'DorkOS needs permission to show notifications before it can reach this device.';
   }
   return 'This device could not be set up for notifications. Try again in a moment.';

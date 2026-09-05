@@ -97,7 +97,7 @@ describe('UpdatePill', () => {
     };
     render(<PillHost />);
 
-    expect(screen.getByText('Update ready — v1.4.0')).toBeInTheDocument();
+    expect(screen.getByText('Update ready: v1.4.0')).toBeInTheDocument();
   });
 
   it('stays quiet about a version the operator already dismissed', () => {
@@ -126,7 +126,7 @@ describe('UpdatePill', () => {
     Object.assign(navigator, { clipboard: { writeText } });
     render(<PillHost />);
 
-    fireEvent.click(screen.getByText('Update ready — v1.4.0'));
+    fireEvent.click(screen.getByText('Update ready: v1.4.0'));
 
     expect(writeText).toHaveBeenCalledWith('npm update -g dorkos');
     await waitFor(() => expect(screen.getByText('Command copied')).toBeInTheDocument());
@@ -144,7 +144,7 @@ describe('UpdatePill', () => {
     });
     render(<PillHost />);
 
-    fireEvent.click(screen.getByText('Update ready — v1.4.0'));
+    fireEvent.click(screen.getByText('Update ready: v1.4.0'));
 
     await waitFor(() => expect(screen.getByText("Couldn't copy")).toBeInTheDocument());
     expect(screen.queryByText('Command copied')).toBeNull();
@@ -173,13 +173,13 @@ describe('UpdatePill', () => {
 
     mockDesktop = { isDesktop: true, status: { state: 'downloaded', version: '2.0.0' } };
     render(<PillHost />);
-    fireEvent.click(screen.getByText('Update ready — Restart'));
+    fireEvent.click(screen.getByText('Restart to update'));
     expect(mockRestart).toHaveBeenCalled();
   });
 
   it('stops offering a restart once the install has failed, and offers a fresh copy instead', () => {
     // Restarting is precisely the thing that did not work — this is the state
-    // where the card used to keep saying "Update ready — Restart" forever.
+    // where the card used to keep saying "Restart to update" forever.
     stubDesktopShell('darwin');
     mockDesktop = {
       isDesktop: true,
@@ -189,11 +189,11 @@ describe('UpdatePill', () => {
 
     expect(
       screen.getByText(
-        "The update couldn't install itself. Download a fresh copy — your settings and agents stay put."
+        "The update couldn't install itself. Download a fresh copy. Your settings and agents stay put."
       )
     ).toBeInTheDocument();
     expect(screen.getByText('Download fresh copy')).toBeInTheDocument();
-    expect(screen.queryByText('Update ready — Restart')).toBeNull();
+    expect(screen.queryByText('Restart to update')).toBeNull();
   });
 
   it('never re-offers a plain restart past two failed attempts', () => {
@@ -204,7 +204,7 @@ describe('UpdatePill', () => {
     };
     render(<PillHost />);
 
-    expect(screen.queryByText('Update ready — Restart')).toBeNull();
+    expect(screen.queryByText('Restart to update')).toBeNull();
     expect(screen.queryByLabelText('Restart to install the update')).toBeNull();
     fireEvent.click(screen.getByText('Download fresh copy'));
     expect(mockRestart).not.toHaveBeenCalled();
@@ -263,7 +263,7 @@ describe('UpdatePill', () => {
     render(<PillHost />);
 
     // Observable: the pill IS on screen for this state.
-    expect(screen.getByText('Update ready — v1.4.0')).toBeInTheDocument();
+    expect(screen.getByText('Update ready: v1.4.0')).toBeInTheDocument();
 
     // And the zone model built from the same moment — a fleet that genuinely
     // has things waiting, so the Heads up zone is populated and the query below
@@ -273,7 +273,7 @@ describe('UpdatePill', () => {
     const nowRows = now?.sections.flatMap((section) => section.rows) ?? [];
     expect(nowRows.length).toBeGreaterThan(0);
     const nowText = nowRows.map((r) => `${r.primary} ${r.secondary ?? ''} ${r.reason}`);
-    expect(nowText).not.toContain('Update ready — v1.4.0');
+    expect(nowText).not.toContain('Update ready: v1.4.0');
     expect(nowText.filter((text) => /update|version|restart/i.test(text))).toEqual([]);
     // Every Heads up row is an agent that needs you or a rollup of them, and
     // nothing else can be (BC-5).

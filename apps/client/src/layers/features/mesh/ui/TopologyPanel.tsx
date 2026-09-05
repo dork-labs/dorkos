@@ -98,7 +98,7 @@ function AccessRuleRow({
       {isDefault ? (
         <span
           className="text-muted-foreground flex size-8 items-center justify-center"
-          title="Built-in rule, always enforced — not removable"
+          title="Built-in rule, always enforced. Not removable"
         >
           <Lock className="size-4" aria-hidden="true" />
         </span>

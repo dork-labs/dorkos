@@ -468,7 +468,7 @@ describe('link dispatch', () => {
       // The surface decides, not who registered an adapter. `main.tsx` only
       // registers an opener on the desktop, but that gate reads as redundant
       // beside `registerLinkNavigator` — and if it were the only thing enforcing
-      // the surface, deleting it would turn every "Open in New Tab" in the
+      // the surface, deleting it would turn every "Open in a new tab" in the
       // browser into an in-place navigation into a strip nothing renders, with
       // the whole suite still green.
       const opened = captureTabOpens();
@@ -836,7 +836,7 @@ describe('link dispatch', () => {
 
   describe('supportsSeparateWindow', () => {
     it('is true in the desktop app and false in the browser', () => {
-      // A browser's "new window" is the tab "Open in New Tab" already offers,
+      // A browser's "new window" is the tab "Open in a new tab" already offers,
       // so the second row is not offered there (DOR-568).
       expect(supportsSeparateWindow()).toBe(false);
       enterDesktopShell();

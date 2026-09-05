@@ -150,14 +150,14 @@ describe('RightPanelToggle', () => {
     mockRightPanelOpen = false;
     mockAttentionTotal = 3;
     await renderToggle();
-    expect(screen.getByLabelText('Open right panel — 3 items need attention')).toBeInTheDocument();
+    expect(screen.getByLabelText('Open right panel: 3 items need attention')).toBeInTheDocument();
   });
 
   it('uses the singular "item needs" for a single pending item', async () => {
     mockRightPanelOpen = false;
     mockAttentionTotal = 1;
     await renderToggle();
-    expect(screen.getByLabelText('Open right panel — 1 item needs attention')).toBeInTheDocument();
+    expect(screen.getByLabelText('Open right panel: 1 item needs attention')).toBeInTheDocument();
   });
 
   it('keeps a plain aria-label when nothing needs attention', async () => {

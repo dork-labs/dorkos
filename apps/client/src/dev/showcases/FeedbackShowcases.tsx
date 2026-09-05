@@ -18,6 +18,8 @@ import {
   Collapsible,
   CollapsibleTrigger,
   CollapsibleContent,
+  PermissionModeScopeNote,
+  UnverifiedCatalogNotice,
 } from '@/layers/shared/ui';
 import { useCopyFeedback } from '@/layers/shared/lib';
 import { FeedbackDialog } from '@/layers/features/feedback';
@@ -134,7 +136,7 @@ function CopyToastFallbackDemo() {
   );
 }
 
-/** Feedback component showcases: Skeleton, Separator, Tooltip, HoverCard, Collapsible, Toaster. */
+/** Feedback component showcases: Skeleton, Separator, Tooltip, HoverCard, Collapsible, Toaster, PermissionModeScopeNote, UnverifiedCatalogNotice. */
 export function FeedbackShowcases() {
   const [collapsibleOpen, setCollapsibleOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
@@ -311,6 +313,35 @@ export function FeedbackShowcases() {
               Warning
             </Button>
           </div>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="PermissionModeScopeNote"
+        description="What a mode that stops asking does NOT cover, said where the mode is chosen — DorkOS-level approvals still ask, whatever the session's own reach. Renders nothing for a mode that still asks."
+      >
+        <ShowcaseLabel>Default — still asks, so the note renders nothing</ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="border-border/60 rounded-md border border-dashed p-3">
+            <PermissionModeScopeNote mode="default" />
+            <p className="text-muted-foreground text-xs italic">
+              (nothing rendered above — the border is the demo&rsquo;s)
+            </p>
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>A mode that never asks — the note appears</ShowcaseLabel>
+        <ShowcaseDemo>
+          <PermissionModeScopeNote mode="bypassPermissions" />
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="UnverifiedCatalogNotice"
+        description="Says out loud that a model menu is a bounded guess, not the real list — shown whenever the runtime found no connected credentials."
+      >
+        <ShowcaseDemo>
+          <UnverifiedCatalogNotice />
         </ShowcaseDemo>
       </PlaygroundSection>
     </>
