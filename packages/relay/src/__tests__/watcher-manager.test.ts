@@ -17,7 +17,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { WatcherManager } from '../watcher-manager.js';
 import type { SubscriptionRegistry } from '../subscription-registry.js';
-import type { MaildirStore } from '../maildir-store.js';
+import { MaildirStore } from '../maildir-store.js';
 import type { SqliteIndex } from '../sqlite-index.js';
 import type { CircuitBreakerManager } from '../circuit-breaker.js';
 import type { EndpointInfo, RelayLogger } from '../types.js';
@@ -39,10 +39,24 @@ function createSpyLogger(): RelayLogger {
 // ---------------------------------------------------------------------------
 
 function createMockMaildirStore(): MaildirStore {
+  // `claim` models the real thing — an atomic `new/` -> `cur/` rename that
+  // exactly one caller can win. That is the entire dedup story between the
+  // startup sweep and the watcher, so a mock that said `ok: true` to everyone
+  // would make a double delivery look like a pass.
+  const claimed = new Set<string>();
   return {
-    claim: vi.fn().mockResolvedValue({ ok: true, envelope: { subject: 'test' } }),
+    claim: vi.fn(async (endpointHash: string, messageId: string) => {
+      const key = `${endpointHash}/${messageId}`;
+      if (claimed.has(key)) {
+        return { ok: false, error: 'claim failed: ENOENT' };
+      }
+      claimed.add(key);
+      return { ok: true, envelope: { subject: 'test' }, path: `/virtual/cur/${messageId}.json` };
+    }),
     complete: vi.fn().mockResolvedValue(undefined),
     fail: vi.fn().mockResolvedValue({ ok: true, path: '/tmp/test/failed/msg.json' }),
+    // Nothing is pending unless a test says so — the sweep is a no-op by default.
+    listNew: vi.fn().mockResolvedValue([]),
   } as unknown as MaildirStore;
 }
 
@@ -82,6 +96,76 @@ function armDeliveryBarrier(index: SqliteIndex): Deferred<void> {
     return true;
   });
   return barrier;
+}
+
+/**
+ * Arm a barrier that trips when `claim` is next called and has returned.
+ *
+ * The counterpart to {@link armDeliveryBarrier} for the paths that are
+ * SUPPOSED to stop early: a duplicate dispatch loses the claim race and never
+ * reaches the index, so there is no delivery to wait on — but the attempt is
+ * still observable, and waiting for it is what makes "exactly once" an
+ * assertion about finished work rather than about work that had not started.
+ *
+ * @param store - The mock store whose `claim` to wrap.
+ * @returns The barrier to await after triggering the second dispatch.
+ */
+function armNextClaimBarrier(store: MaildirStore): Deferred<void> {
+  const barrier = deferred();
+  const inner = vi.mocked(store.claim).getMockImplementation();
+  if (!inner) throw new Error('armNextClaimBarrier: claim has no implementation to wrap');
+  vi.mocked(store.claim).mockImplementation(async (endpointHash, messageId) => {
+    const result = await inner(endpointHash, messageId);
+    barrier.resolve();
+    return result;
+  });
+  return barrier;
+}
+
+/**
+ * Yield past a macrotask boundary, draining everything queued behind it.
+ *
+ * The claim barrier trips inside the `claim` mock, which is one microtask
+ * BEFORE its caller resumes — so a duplicate dispatch that (wrongly) went on to
+ * invoke a handler would not have done it yet, and "handler called once" would
+ * pass for the wrong reason. A macrotask boundary drains every pending
+ * microtask, including the ones those microtasks queue, so after this the
+ * duplicate has finished whatever it was going to do. Nothing on that path
+ * touches a timer or real IO, so one hop is a bound, not a guess.
+ *
+ * @returns A promise resolved on the next macrotask.
+ */
+async function flushPendingDispatches(): Promise<void> {
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+}
+
+/**
+ * Race a promise against a descriptive deadline.
+ *
+ * Only the real-filesystem smoke needs one: everything else waits on a barrier
+ * the production code trips. A bare vitest timeout would say "test timed out"
+ * and name nothing.
+ *
+ * @param promise - What to wait for.
+ * @param ms - The ceiling, paid only on failure.
+ * @param what - What did not happen, for the error message.
+ * @returns The promise's value.
+ */
+async function withDeadline<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
+  // The timer id is held so the loser of the race can be cancelled — an
+  // uncancelled timer keeps the event loop busy past the end of the test.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${what} within ${ms}ms`)), ms);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -141,14 +225,17 @@ describe('WatcherManager', () => {
   });
 
   describe('startWatcher', () => {
-    it('watches the endpoint new/ directory, ignoring what is already there', async () => {
+    it('watches the endpoint new/ directory, leaving the initial scan to the sweep', async () => {
       const endpoint = createEndpoint();
 
       const watcher = await start(manager, endpoint);
 
       expect(watcher.watchedPath).toBe(path.join(endpoint.maildirPath, 'new'));
-      // `ignoreInitial` is load-bearing: without it, every message already
-      // sitting in new/ would be re-dispatched on every restart.
+      // `ignoreInitial` is still load-bearing, for a different reason than it
+      // used to be: what is already in new/ IS delivered now, but by the sweep
+      // (see below), which claims each message once. Letting chokidar replay
+      // the same files as `add` events would just be a second dispatcher racing
+      // the first for a claim only one of them can win.
       expect(watcher.options).toMatchObject({ persistent: true, ignoreInitial: true });
     });
 
@@ -283,6 +370,181 @@ describe('WatcherManager', () => {
       expect(maildirStore.fail).toHaveBeenCalledWith('hash-fail', 'msg-002', 'handler error');
       expect(sqliteIndex.updateStatus).toHaveBeenCalledWith('msg-002', 'hash-fail', 'failed');
       expect(circuitBreaker.recordFailure).toHaveBeenCalledWith('hash-fail');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // The startup reconcile (DOR-1787).
+  //
+  // chokidar's `ready` does not mean "nothing was missed": `chokidar.watch()`
+  // returns before it has attached anything, and a file created inside that
+  // window produces no `add` event at all — measured in DOR-577, where the same
+  // gap kept sessions off the session list. For push delivery that was a
+  // message dropped outright, because nothing re-read new/ afterwards. So the
+  // manager lists the directory once the watcher is live and dispatches what is
+  // really there.
+  //
+  // `listNew` is a directory listing, not an event, so these tests need no
+  // filesystem and no clock: the mock decides what the mailbox holds.
+  // -------------------------------------------------------------------------
+
+  describe('startup reconcile sweep', () => {
+    it('delivers a message that was already sitting in new/ when the watcher started', async () => {
+      const handler = vi.fn();
+      vi.mocked(subscriptionRegistry.getSubscribers).mockReturnValue([handler]);
+      vi.mocked(maildirStore.listNew).mockResolvedValue(['msg-pre-existing']);
+
+      const delivered = armDeliveryBarrier(sqliteIndex);
+      await start(manager, createEndpoint('hash-sweep'));
+      await delivered.promise;
+
+      expect(maildirStore.listNew).toHaveBeenCalledWith('hash-sweep');
+      expect(maildirStore.claim).toHaveBeenCalledWith('hash-sweep', 'msg-pre-existing');
+      expect(handler).toHaveBeenCalled();
+      expect(maildirStore.complete).toHaveBeenCalledWith('hash-sweep', 'msg-pre-existing');
+      expect(sqliteIndex.updateStatus).toHaveBeenCalledWith(
+        'msg-pre-existing',
+        'hash-sweep',
+        'delivered'
+      );
+    });
+
+    it('dispatches every pending message, in the FIFO order the listing gives', async () => {
+      const seen: string[] = [];
+      vi.mocked(subscriptionRegistry.getSubscribers).mockReturnValue([vi.fn()]);
+      vi.mocked(maildirStore.listNew).mockResolvedValue(['msg-a', 'msg-b', 'msg-c']);
+
+      const allDelivered = deferred();
+      vi.mocked(sqliteIndex.updateStatus).mockImplementation((messageId) => {
+        seen.push(messageId);
+        if (seen.length === 3) allDelivered.resolve();
+        return true;
+      });
+
+      await start(manager, createEndpoint('hash-fifo'));
+      await allDelivered.promise;
+
+      expect(seen).toEqual(['msg-a', 'msg-b', 'msg-c']);
+    });
+
+    // The both-saw-it case, in each order. Whichever dispatcher gets there
+    // second loses the claim — the atomic rename the mock store models — so the
+    // handler runs once. Both orders are pinned because in production the order
+    // is decided by the platform, not by this code.
+    it('delivers exactly once when the sweep dispatches first and the watcher event follows', async () => {
+      const handler = vi.fn();
+      vi.mocked(subscriptionRegistry.getSubscribers).mockReturnValue([handler]);
+      vi.mocked(maildirStore.listNew).mockResolvedValue(['msg-both']);
+
+      const endpoint = createEndpoint('hash-both-sweep-first');
+      const delivered = armDeliveryBarrier(sqliteIndex);
+      const watcher = await start(manager, endpoint);
+      await delivered.promise;
+
+      const secondClaim = armNextClaimBarrier(maildirStore);
+      watcher.emit('add', path.join(endpoint.maildirPath, 'new', 'msg-both.json'));
+      await secondClaim.promise;
+      await flushPendingDispatches();
+
+      expect(vi.mocked(maildirStore.claim).mock.calls).toHaveLength(2);
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(sqliteIndex.updateStatus).mock.calls).toHaveLength(1);
+    });
+
+    it('delivers exactly once when the watcher event lands before the sweep lists it', async () => {
+      const handler = vi.fn();
+      vi.mocked(subscriptionRegistry.getSubscribers).mockReturnValue([handler]);
+      vi.mocked(maildirStore.listNew).mockResolvedValue(['msg-both']);
+
+      const endpoint = createEndpoint('hash-both-watcher-first');
+      const started = manager.startWatcher(endpoint);
+      const watcher = chokidarSpy.latest();
+
+      const delivered = armDeliveryBarrier(sqliteIndex);
+      watcher.emit('add', path.join(endpoint.maildirPath, 'new', 'msg-both.json'));
+      await delivered.promise;
+
+      const secondClaim = armNextClaimBarrier(maildirStore);
+      watcher.emit('ready');
+      await started;
+      await secondClaim.promise;
+      await flushPendingDispatches();
+
+      expect(vi.mocked(maildirStore.claim).mock.calls).toHaveLength(2);
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(sqliteIndex.updateStatus).mock.calls).toHaveLength(1);
+    });
+
+    it('honours wasDispatched for swept messages, exactly as for watcher events', async () => {
+      vi.mocked(subscriptionRegistry.getSubscribers).mockReturnValue([vi.fn()]);
+      vi.mocked(maildirStore.listNew).mockResolvedValue(['msg-dup-001', 'sentinel']);
+      manager.setWasDispatched((id) => id === 'msg-dup-001');
+
+      // The sentinel proves the sweep ran at all, so "msg-dup-001 was not
+      // claimed" means "skipped", not "the sweep never got there".
+      const delivered = armDeliveryBarrier(sqliteIndex);
+      await start(manager, createEndpoint('hash-sweep-dedup'));
+      await delivered.promise;
+
+      const claimed = vi.mocked(maildirStore.claim).mock.calls;
+      expect(claimed.every(([, id]) => id !== 'msg-dup-001')).toBe(true);
+      expect(claimed.some(([, id]) => id === 'sentinel')).toBe(true);
+    });
+
+    it('keeps the watcher alive and logs when the mailbox cannot be listed', async () => {
+      const logger = createSpyLogger();
+      const loggedManager = new WatcherManager(
+        maildirStore,
+        subscriptionRegistry,
+        sqliteIndex,
+        circuitBreaker,
+        logger
+      );
+      const handler = vi.fn();
+      vi.mocked(subscriptionRegistry.getSubscribers).mockReturnValue([handler]);
+      vi.mocked(maildirStore.listNew).mockRejectedValue(
+        Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' })
+      );
+
+      try {
+        const endpoint = createEndpoint('hash-sweep-fail', 'relay.agent.sweep-fail');
+        // A sweep that throws must not take the start promise — nor push
+        // delivery — down with it.
+        const watcher = await start(loggedManager, endpoint);
+
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.stringMatching(/^\[watcher-sweep\] WatcherManager: /),
+          expect.objectContaining({
+            endpointSubject: 'relay.agent.sweep-fail',
+            message: 'EACCES: permission denied',
+          })
+        );
+
+        const delivered = armDeliveryBarrier(sqliteIndex);
+        watcher.emit('add', path.join(endpoint.maildirPath, 'new', 'msg-after-fail.json'));
+        await delivered.promise;
+
+        expect(maildirStore.claim).toHaveBeenCalledWith('hash-sweep-fail', 'msg-after-fail');
+        expect(handler).toHaveBeenCalled();
+      } finally {
+        await loggedManager.closeAll();
+      }
+    });
+
+    it('abandons the sweep when the endpoint was stopped while the listing was in flight', async () => {
+      vi.mocked(subscriptionRegistry.getSubscribers).mockReturnValue([vi.fn()]);
+      const listing = deferred<string[]>();
+      vi.mocked(maildirStore.listNew).mockReturnValue(listing.promise);
+
+      const started = manager.startWatcher(createEndpoint('hash-sweep-stopped'));
+      chokidarSpy.latest().emit('ready');
+      await manager.stopWatcher('hash-sweep-stopped');
+
+      // The mailbox answers only now — for a watcher nobody is listening to.
+      listing.resolve(['msg-orphan']);
+      await started;
+
+      expect(maildirStore.claim).not.toHaveBeenCalled();
     });
   });
 
@@ -455,79 +717,80 @@ describe('WatcherManager', () => {
   });
 
   // -------------------------------------------------------------------------
-  // The one test in this file that touches the real filesystem and a real
-  // chokidar watcher.
+  // The one test in this file that touches the real filesystem, a real
+  // chokidar watcher and the real `listNew` behind the sweep.
   //
-  // Everything above proves what the manager does with an `add` event. This
-  // proves an `add` event happens at all: that `chokidar.watch(<maildir>/new)`
-  // sees a file really written there, and that the path it hands back has the
-  // message id as its basename — the assumption every hermetic test encodes.
-  // A chokidar major that changed either would sail past the tests above.
+  // Everything above drives the dispatch contracts against doubles. This proves
+  // the wiring underneath them: that a file really written into
+  // `<maildir>/new` reaches the handler, and that the id the manager claims is
+  // the file's basename — the assumption every hermetic test encodes.
   //
-  // Its bound is wall-clock and deliberate. Retrying under a FRESH filename is
-  // the part that matters: chokidar reports `ready` a beat before libuv starts
-  // delivering, so an early write is dropped outright, not delivered late, and
-  // no amount of extra waiting on that path recovers it (measured on macOS —
-  // see READY_DELIVERY_GRACE_MS in access-control.ts, and DOR-577).
+  // One write, no retry loop. It used to need one: delivery depended on
+  // catching a real `add` event, and chokidar reports `ready` a beat before
+  // libuv starts delivering, so an early write was dropped outright rather than
+  // delivered late — no amount of waiting recovered it, only a fresh filename
+  // (measured on macOS; see READY_DELIVERY_GRACE_MS in access-control.ts, and
+  // DOR-577). The sweep is what retired the loop: the message is written before
+  // the watcher exists, so it is found by a directory LISTING, and a listing
+  // cannot be dropped. The deadline below is generous and paid only on failure.
   // -------------------------------------------------------------------------
 
   describe('real filesystem smoke', () => {
-    /** Ceiling for the whole retry loop — generous, and paid only on failure. */
+    /** Ceiling on the one delivery — generous, and paid only on failure. */
     const SMOKE_BUDGET_MS = 20_000;
-    /** How long each attempt gives the platform before writing a fresh file. */
-    const SMOKE_ATTEMPT_MS = 500;
 
-    it('a file really written into new/ reaches the handler, keyed by its basename', async () => {
+    it('a file really sitting in new/ reaches the handler, keyed by its basename', async () => {
       chokidarSpy.restore();
       const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'watcher-mgr-smoke-'));
-      const maildirPath = path.join(tmpDir, 'hash-real');
-      const newDir = path.join(maildirPath, 'new');
-      await fs.mkdir(newDir, { recursive: true });
+      // A real store, not the double: `listNew` and `claim` are the two calls
+      // the sweep leans on, and a mocked listing would prove only that the
+      // mock returns what it was told to.
+      const store = new MaildirStore({ rootDir: tmpDir });
+      await store.ensureMaildir('hash-real');
+      const claimSpy = vi.spyOn(store, 'claim');
+      const smokeManager = new WatcherManager(
+        store,
+        subscriptionRegistry,
+        sqliteIndex,
+        circuitBreaker
+      );
+      const newDir = path.join(tmpDir, 'hash-real', 'new');
 
       const handler = vi.fn();
       vi.mocked(subscriptionRegistry.getSubscribers).mockReturnValue([handler]);
       const delivered = armDeliveryBarrier(sqliteIndex);
 
       try {
-        await manager.startWatcher({
+        // Written before the watcher exists: the message this endpoint missed
+        // while it was down, which is the wider half of what the sweep covers.
+        await fs.writeFile(path.join(newDir, 'msg-real.json'), JSON.stringify({ subject: 'test' }));
+
+        await smokeManager.startWatcher({
           subject: 'relay.agent.smoke',
           hash: 'hash-real',
-          maildirPath,
+          maildirPath: path.join(tmpDir, 'hash-real'),
           registeredAt: '2026-02-24T00:00:00.000Z',
         });
 
-        const deadline = Date.now() + SMOKE_BUDGET_MS;
-        for (let attempt = 0; !delivered.settled && Date.now() < deadline; attempt += 1) {
-          await fs.writeFile(
-            path.join(newDir, `msg-real-${attempt}.json`),
-            JSON.stringify({ subject: 'test' })
-          );
-          // The timer id is held so the loser of the race can be cancelled: a
-          // race does not stop the branch it did not pick, so an uncancelled
-          // timer per attempt would keep the event loop busy past the test.
-          let attemptTimer: ReturnType<typeof setTimeout> | undefined;
-          await Promise.race([
-            delivered.promise,
-            new Promise((resolve) => {
-              attemptTimer = setTimeout(resolve, SMOKE_ATTEMPT_MS);
-            }),
-          ]);
-          clearTimeout(attemptTimer);
-        }
-        if (!delivered.settled) {
-          throw new Error(
-            `a real chokidar watcher on ${newDir} delivered nothing within ${SMOKE_BUDGET_MS}ms`
-          );
-        }
+        await withDeadline(
+          delivered.promise,
+          SMOKE_BUDGET_MS,
+          `a real watcher over ${newDir} delivered nothing`
+        );
 
-        const claimed = vi.mocked(maildirStore.claim).mock.calls;
-        const [claimedHash, messageId] = claimed[0]!;
-        expect(claimedHash).toBe('hash-real');
-        expect(messageId).toMatch(/^msg-real-\d+$/);
-        expect(handler).toHaveBeenCalled();
-        expect(sqliteIndex.updateStatus).toHaveBeenCalledWith(messageId, 'hash-real', 'delivered');
+        expect(claimSpy).toHaveBeenCalledWith('hash-real', 'msg-real');
+        expect(handler).toHaveBeenCalledWith({ subject: 'test' });
+        // Exactly once against a real listing, a real claim and a real watcher:
+        // `ignoreInitial` keeps chokidar off the file, and the atomic rename
+        // behind `claim` settles it if anything else reaches for it anyway.
+        expect(handler).toHaveBeenCalledTimes(1);
+        expect(sqliteIndex.updateStatus).toHaveBeenCalledWith('msg-real', 'hash-real', 'delivered');
+        // Delivered means gone from the mailbox — claimed out of new/ and
+        // completed out of cur/.
+        expect(await store.listNew('hash-real')).toEqual([]);
+        expect(await store.listCurrent('hash-real')).toEqual([]);
       } finally {
-        await manager.closeAll();
+        await smokeManager.closeAll();
         await fs.rm(tmpDir, { recursive: true, force: true });
       }
     }, 30_000);
