@@ -84,23 +84,48 @@ describe('restartServer', () => {
   });
 });
 
+describe('prepareReset', () => {
+  it('asks the server to arm a reset and hands back the one-time token', async () => {
+    const fetchMock = serve(200, { token: 'a-one-time-token', expiresInMs: 120_000 });
+
+    await expect(createSystemMethods(BASE).prepareReset()).resolves.toEqual({
+      token: 'a-one-time-token',
+      expiresInMs: 120_000,
+    });
+    expect(fetchMock.mock.calls[0][0]).toBe(`${BASE}/admin/reset/prepare`);
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('POST');
+  });
+
+  it('throws the sentence the server wrote, not the body it came in', async () => {
+    serve(409, { error: 'Nothing has been deleted.', code: 'MANAGED_BY_DESKTOP' });
+
+    await expect(refusalMessage(createSystemMethods(BASE).prepareReset())).resolves.toBe(
+      'Nothing has been deleted.'
+    );
+  });
+});
+
 describe('resetAllData', () => {
   it('throws the sentence the server wrote, not the body it came in', async () => {
     serve(409, { error: 'Nothing has been deleted.', code: 'MANAGED_BY_DESKTOP' });
 
-    await expect(refusalMessage(createSystemMethods(BASE).resetAllData('reset'))).resolves.toBe(
-      'Nothing has been deleted.'
-    );
+    await expect(
+      refusalMessage(createSystemMethods(BASE).resetAllData('reset', 'a-one-time-token'))
+    ).resolves.toBe('Nothing has been deleted.');
   });
 
-  it('sends the confirmation the server insists on', async () => {
+  // The confirmation says a person typed a word; the token says the server was
+  // asked for one and answered THIS caller (DOR-1707). Both travel, or the
+  // server refuses.
+  it('sends the confirmation and the one-time token the server insists on', async () => {
     const fetchMock = serve(200, { message: 'Reset initiated. Server will restart.' });
 
-    await createSystemMethods(BASE).resetAllData('reset');
+    await createSystemMethods(BASE).resetAllData('reset', 'a-one-time-token');
 
     expect(fetchMock.mock.calls[0][0]).toBe(`${BASE}/admin/reset`);
     expect(JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)).toEqual({
       confirm: 'reset',
+      token: 'a-one-time-token',
     });
   });
 });
