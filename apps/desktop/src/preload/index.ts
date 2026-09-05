@@ -4,6 +4,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 // channel string is duplicated below rather than imported as a value for the
 // same reason.
 import type { UpdateStatus } from '../main/auto-updater';
+import type { AdminActionResult } from '../main/admin';
 
 /** IPC channel the main process pushes {@link UpdateStatus} events on (mirrors `UPDATE_STATUS_CHANNEL` in auto-updater.ts). */
 const UPDATE_STATUS_CHANNEL = 'update:status';
@@ -19,6 +20,12 @@ const CLOSE_TAB_SUBSCRIBE_CHANNEL = 'close-tab:subscribe';
 
 /** IPC channel this renderer gives `Cmd/Ctrl+W` back on (mirrors `CLOSE_TAB_UNSUBSCRIBE_CHANNEL` in close-tab.ts). */
 const CLOSE_TAB_UNSUBSCRIBE_CHANNEL = 'close-tab:unsubscribe';
+
+/** IPC channel "Restart Server" goes out on (mirrors `RESTART_SERVER_CHANNEL` in main/admin/index.ts). */
+const RESTART_SERVER_CHANNEL = 'admin:restart-server';
+
+/** IPC channel "Reset All Data" goes out on (mirrors `RESET_ALL_DATA_CHANNEL` in main/admin/index.ts). */
+const RESET_ALL_DATA_CHANNEL = 'admin:reset-all-data';
 
 /** IPC channel a mounted renderer reports itself alive on (mirrors `ALIVE_CHANNEL` in renderer-health/index.ts). */
 const ALIVE_CHANNEL = 'renderer:alive';
@@ -103,6 +110,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * {@link retryRenderer} for who may call this.
    */
   saveDiagnosticReport: (): Promise<void> => ipcRenderer.invoke(DIAGNOSTICS_CHANNEL),
+  /**
+   * Restart the DorkOS server, for Settings → Advanced (DOR-542).
+   *
+   * The desktop replacement for `POST /api/admin/restart`, which the server
+   * refuses here: it restarts by re-execing itself, and inside this app there is
+   * nothing to re-exec into. The main process stops and respawns its own child
+   * and then puts this window on the new port, so a successful restart usually
+   * ends with the page reloading rather than with this promise being read.
+   *
+   * Never rejects: a failure comes back as `{ ok: false, message }`, in words
+   * meant for the person who clicked. It also does not need a live server, which
+   * is what makes it the way back from a restart that failed.
+   */
+  restartServer: (): Promise<AdminActionResult> => ipcRenderer.invoke(RESTART_SERVER_CHANNEL),
+  /**
+   * Delete everything DorkOS has stored and bring the server back on an empty
+   * data directory — Settings → Advanced's "Reset All Data".
+   *
+   * The deletion happens between the stop and the start, and is abandoned (with
+   * nothing deleted) if another DorkOS holds the data directory at that moment.
+   * Same no-reject contract as {@link restartServer}.
+   */
+  resetAllData: (): Promise<AdminActionResult> => ipcRenderer.invoke(RESET_ALL_DATA_CHANNEL),
   /** The current platform (darwin, win32, linux). */
   platform: process.platform,
   /**

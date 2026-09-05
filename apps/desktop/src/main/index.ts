@@ -21,6 +21,7 @@ import { watchNotifications } from './notifications';
 import { announceBackgroundRunning } from './background-notice';
 import { armQuitGuard } from './quit-guard';
 import { setupCloseTab } from './close-tab';
+import { setupAdminActions } from './admin';
 import { clearHttpCacheOnVersionChange } from './cache-hygiene';
 import { describeLogLocation } from './log-location';
 import { offerMoveToApplications } from './install-location';
@@ -268,6 +269,11 @@ if (!gotTheLock) {
   // soon as its first document runs, and a heartbeat nothing is listening for
   // is a "failure" the ladder would go on to recover from.
   setupRendererRecovery();
+
+  // Settings → Advanced's "Restart Server" and "Reset All Data". Both are the
+  // supervisor's work here rather than the server's, because a server that ends
+  // its own process inside a UtilityProcess never comes back (see `admin/`).
+  setupAdminActions({ getRendererUrl });
 
   ipcMain.on('get-server-port', (event) => {
     event.returnValue = getServerPort();

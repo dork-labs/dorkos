@@ -73,6 +73,18 @@ const exitWaiters = new Set<() => void>();
 let safetyNetInstalled = false;
 
 /**
+ * Whether a {@link restartServer} cycle is between its stop and its start.
+ *
+ * A restart is not atomic — it stops a child, possibly deletes the data
+ * directory, and starts a replacement — and two of them interleaved would have
+ * one cycle's `startServer` race the other's `stopServer` over the same port and
+ * the same SQLite store. Only one at a time, and the second caller is told so
+ * rather than queued: the person clicked a button, and "already restarting" is
+ * the honest answer to clicking it twice.
+ */
+let restarting = false;
+
+/**
  * Log promise rejections nothing else handled.
  *
  * Electron's main process has no default handler for these, so before this a
@@ -365,6 +377,106 @@ export async function stopServer(): Promise<void> {
   // A killed child that never emitted `exit` still has to stop being the
   // current one, or the next startServer would refuse to run.
   if (child === stopping) clearChild();
+}
+
+/**
+ * A restart that could not bring a server back.
+ *
+ * Carries {@link RestartFailedError.interrupted} because the two failures are
+ * independent and a person needs both: the work asked for between the stop and
+ * the start either happened or it did not, and that is a different question from
+ * whether a server came back. Reporting only the second is how "was my data
+ * deleted?" goes unanswered — the one question a reset must never leave open.
+ */
+export class RestartFailedError extends Error {
+  /** What `whileStopped` threw before the start failed, or `null`. */
+  readonly interrupted: Error | null;
+
+  /**
+   * Wrap a failed start, keeping both accounts of what went wrong.
+   *
+   * @param cause - Whatever {@link startServer} rejected with. Its message is
+   *   adopted verbatim, because it is the server's own account of why it did not
+   *   come up, and the original rides along as `cause`.
+   * @param interrupted - What `whileStopped` threw, or `null`.
+   */
+  constructor(cause: unknown, interrupted: Error | null) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = 'RestartFailedError';
+    this.interrupted = interrupted;
+  }
+}
+
+/** What a {@link restartServer} cycle ended with. */
+export interface RestartOutcome {
+  /** The port the replacement server is listening on. */
+  port: number;
+  /**
+   * What `whileStopped` threw, or `null` when it ran cleanly (or was not given).
+   *
+   * Reported rather than thrown because the server was started anyway — see
+   * {@link restartServer}. A caller that has nothing to do between the stop and
+   * the start can ignore this; the one that deletes the data directory reads it
+   * to find out whether the deletion happened.
+   */
+  interrupted: Error | null;
+}
+
+/**
+ * Stop the running server and start a replacement, optionally doing something
+ * while nothing is holding the data directory.
+ *
+ * This is what makes Settings → Advanced work in the desktop app (DOR-542).
+ * `POST /api/admin/restart` cannot: it re-execs `process.argv[0]`, which inside
+ * an Electron `UtilityProcess` is the app executable rather than Node, so the
+ * server exited and nothing came back — which is why the server refuses that
+ * route outright when a supervisor owns its lifecycle (`DORKOS_MANAGED_BY`).
+ * The supervisor, on the other hand, restarts its own child by definition.
+ *
+ * **This function always ends with a server running, or it throws.** That is the
+ * whole contract, and it is why `whileStopped` failing is *reported* instead of
+ * propagated: a callback that threw between the stop and the start would
+ * otherwise leave the app with no server and no port — the exact bricking DOR-532
+ * gated the HTTP route to prevent, reintroduced one process up.
+ *
+ * @param whileStopped - Run once the old child is gone and before the new one
+ *   is spawned, which is the only moment nothing holds the data directory.
+ * @returns The new port, and whatever `whileStopped` threw.
+ * @throws A plain `Error` if a restart is already running — nothing was touched,
+ *   and the message is a finished sentence for the person who asked twice. A
+ *   {@link RestartFailedError} if the replacement server could not be started
+ *   (see {@link startServer} for the ways that happens); it carries what
+ *   `whileStopped` threw as well, because by then BOTH halves may have failed
+ *   and a caller that reported only the start would leave "did my data get
+ *   deleted?" unanswered. Either way the caller is left with no server — and,
+ *   because this path is IPC rather than HTTP, with a button that still works to
+ *   try again.
+ */
+export async function restartServer(whileStopped?: () => Promise<void>): Promise<RestartOutcome> {
+  if (restarting) {
+    throw new Error('DorkOS is already restarting its server. Give it a moment.');
+  }
+  restarting = true;
+  try {
+    await stopServer();
+
+    let interrupted: Error | null = null;
+    if (whileStopped) {
+      try {
+        await whileStopped();
+      } catch (err) {
+        interrupted = err instanceof Error ? err : new Error(String(err));
+      }
+    }
+
+    try {
+      return { port: await startServer(), interrupted };
+    } catch (err) {
+      throw new RestartFailedError(err, interrupted);
+    }
+  } finally {
+    restarting = false;
+  }
 }
 
 /** The port the server is listening on, or `null` when no server is running. */

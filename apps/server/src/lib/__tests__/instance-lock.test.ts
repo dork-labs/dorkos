@@ -11,11 +11,11 @@ const mockEnv = vi.hoisted(() => ({
 }));
 vi.mock('../../env.js', () => ({ env: mockEnv }));
 
+import { INSTANCE_LOCK_FILENAME } from '@dorkos/shared/instance-lock';
 import {
   acquireInstanceLock,
   isInstanceLockEnabled,
   releaseInstanceLock,
-  INSTANCE_LOCK_FILENAME,
 } from '../instance-lock.js';
 
 /** A pid high enough that no process can hold it. */

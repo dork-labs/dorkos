@@ -582,24 +582,23 @@ export function createSystemMethods(baseUrl: string) {
 
     // ── Admin ─────────────────────────────────────────────────────────────
 
-    async resetAllData(confirm: string): Promise<{ message: string }> {
-      const res = await fetch(`${baseUrl}/admin/reset`, {
+    // Both go through `fetchJSON` rather than a bare `fetch` so a refusal
+    // arrives as the sentence the server wrote. They used to throw
+    // `await res.text()`, and the Advanced tab handed that straight to
+    // `toast.error` — so a person clicking Restart in the desktop app was shown
+    // the entire raw 409 body, braces and error code included, with the
+    // explanation buried inside it. `fetchJSON` reads `error` off the body and
+    // carries `code`/`status` on the thrown error besides (DOR-542).
+
+    resetAllData(confirm: string): Promise<{ message: string }> {
+      return fetchJSON<{ message: string }>(baseUrl, '/admin/reset', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ confirm }),
       });
-      if (!res.ok) throw new Error(await res.text());
-      return res.json() as Promise<{ message: string }>;
     },
 
-    async restartServer(): Promise<{ message: string }> {
-      const res = await fetch(`${baseUrl}/admin/restart`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error(await res.text());
-      return res.json() as Promise<{ message: string }>;
+    restartServer(): Promise<{ message: string }> {
+      return fetchJSON<{ message: string }>(baseUrl, '/admin/restart', { method: 'POST' });
     },
 
     // ── Discovery Scan (SSE) ──────────────────────────────────────────────

@@ -8,14 +8,10 @@ import { env } from '../env.js';
  * Error code accompanying the 409 when the desktop app owns the server's
  * lifecycle.
  *
- * The client does not branch on it today. `system-methods.ts` does
- * `throw new Error(await res.text())` and the Advanced tab passes that straight
- * to `toast.error`, so a person is shown the ENTIRE raw response body — this
- * code, the braces, and all — with the sentence buried inside it. Each message
- * below therefore has to read well even when it arrives wrapped in JSON, and
- * teaching the client to render `error` on its own is a real follow-up. The code
- * is here so that client CAN branch, and so logs and tests match on something
- * stable.
+ * The client renders `error` on its own now (`system-methods.ts` goes through
+ * `fetchJSON`, which reads it off the body), so these messages are shown as
+ * written rather than wrapped in the raw JSON they arrive in. The code is here
+ * so a client CAN branch, and so logs and tests match on something stable.
  */
 export const MANAGED_BY_DESKTOP_CODE = 'MANAGED_BY_DESKTOP';
 
@@ -27,6 +23,13 @@ export const MANAGED_BY_DESKTOP_CODE = 'MANAGED_BY_DESKTOP';
  * quitting and reopening the app IS a restart, so that advice completes the
  * user's intent, but it deletes nothing, so offering it for a reset would send
  * someone away believing their data was wiped when it was not.
+ *
+ * **Who still sees these.** Not the desktop app's own window: since DOR-542 the
+ * cockpit asks the shell's supervisor over IPC, and both buttons really work
+ * there. What is left is every OTHER client of a desktop-managed server — a
+ * browser opened at its localhost address, a phone on the tunnel, a desktop
+ * build older than that change — none of which can drive the shell, and all of
+ * which are better off being told to do it at the machine.
  */
 const DESKTOP_MANAGED_REFUSALS: Record<string, (dorkHome: string) => string> = {
   '/restart': () =>

@@ -284,6 +284,10 @@
     "./process-liveness": {
       "types": "./src/process-liveness.ts",
       "default": "./dist/process-liveness.js"
+    },
+    "./instance-lock": {
+      "types": "./src/instance-lock.ts",
+      "default": "./dist/instance-lock.js"
     }
   },
   "scripts": {
