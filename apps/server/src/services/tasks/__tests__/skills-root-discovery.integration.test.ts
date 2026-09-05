@@ -434,12 +434,17 @@ describe('schedules discovered in skills roots', () => {
     });
 
     it('does not claim a skill just for sitting under an agents/ root', async () => {
-      // `agents/` is deliberately NOT walked: it holds every agent DorkOS
-      // creates, DorkBot included, and claiming their schedules by location
-      // would be the DOR-1789 bug pointed the other way. Whether an agent is a
-      // package is asked of that agent's own directory instead — see
-      // `lifecycle/__tests__/package-owned-agent.test.ts`, which drives both
-      // doors the way the routes do.
+      // `agents/` holds every agent DorkOS creates, DorkBot included, so the
+      // limb that walks it is marker-gated: an unmarked directory there is the
+      // person's, and claiming it would be the DOR-1789 bug pointed the other
+      // way.
+      //
+      // Scope note: this file asserts the ROOTS limbs directly, on a context
+      // built by hand. It says nothing about what the routes pass — that is
+      // exactly the gap that let the first fix ship broken — so the route-shaped
+      // cases, including every one that depends on the agent-directory probe,
+      // live in `lifecycle/__tests__/package-owned-agent.test.ts`, which drives
+      // `applyTaskFileUpdate` and `createScheduledTask` with a real mesh seam.
       const roots = packageOwnershipContext(dorkHome, projectPath);
       const agentDir = path.join(dorkHome, 'agents', 'dorkbot');
       const ownSkill = path.join(agentDir, '.agents', 'skills', 'mine', 'SKILL.md');

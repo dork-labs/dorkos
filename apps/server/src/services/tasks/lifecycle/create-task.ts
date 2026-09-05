@@ -307,14 +307,20 @@ export async function createScheduledTask(
   // the person writes a schedule DorkOS accepts, then gets told it belongs to a
   // package the moment they try to change it — a sentence that reads as untrue
   // about a file they just made (DOR-1789 review).
+  //
+  // This does cost a capability: you cannot schedule work for a marketplace
+  // agent without adding it to the package. Accepted deliberately — the
+  // capability only ever appeared to work, and evaporated at the next package
+  // update with nothing saying why. Restoring it properly (a schedule that lives
+  // outside the checkout and survives updates) is DOR-1791.
   if (home.projectPath && (await isPackageOwnedAgent(home.projectPath))) {
     return {
       ok: false,
       status: 409,
       error:
         `This agent's files belong to an installed package, so DorkOS did not make the ` +
-        `schedule — the package's next update would wipe it out. Make your own copy of the ` +
-        `agent and add the schedule there, or add it to the package itself.`,
+        `schedule — the package's next update would wipe it out. Add the schedule to the ` +
+        `package itself, or ask the package's author to ship it.`,
       code: 'schedule_package_owned',
     };
   }

@@ -1,6 +1,8 @@
 ---
 covers:
   - 'fix(server): task edits recognize agent- and Shape-package files as package-owned (DOR-1789)'
+  - 'fix(server): the package-ownership check asks the agent, not the roots (DOR-1789 review)'
+  - 'fix(server): the ownership check answers without mesh, and says who to ask (DOR-1789 re-review)'
 ---
 
 ### Fixed

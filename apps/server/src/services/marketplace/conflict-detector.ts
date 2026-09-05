@@ -351,9 +351,14 @@ export class ConflictDetector {
    * under `shapes/` and {@link ShapeInstallFlow} compiles every inline
    * extension it bundles, so a plugins-only read could never see one
    * (DOR-1776). `services/tasks/task-file-update.ts` was the last holdout and
-   * walks {@link installRootsUnder} too as of DOR-1789 — with one difference
-   * that matters only there: it refuses to WRITE, so it will not claim a
-   * hand-made agent's own skill just for sitting in `agents/`.
+   * reads the same roots as of DOR-1789, but asks a different question of them,
+   * because it decides whether DorkOS may WRITE rather than what to warn about.
+   * It ORs three limbs: location alone under `plugins/` and `shapes/`; location
+   * under `agents/` PLUS an install marker on the directory the file sits in, so
+   * a hand-made agent's own skill is never claimed; and a direct marker probe of
+   * the owning agent's directory from `meshCore.getProjectPath`, which is the
+   * only limb that reaches a project-scoped agent package. See
+   * `contributing/marketplace-installs.md` §7.
    */
   async #readInstalledExtensions(scopeRoot: string): Promise<Installed<ExtensionRecord>[]> {
     const records: Installed<ExtensionRecord>[] = [];

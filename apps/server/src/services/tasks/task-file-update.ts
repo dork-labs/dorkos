@@ -135,17 +135,24 @@ export function touchesFile(data: Record<string, unknown>, existing?: FileBacked
 /**
  * Everything {@link isPackageOwned} needs to answer for one task's file.
  *
- * Two questions, because a package reaches a schedule two different ways and
- * only one of them is a question about location.
+ * Three limbs, because a package reaches a schedule three ways and no one of
+ * them subsumes the others. Each is additive: any limb answering yes is enough,
+ * and a limb that cannot answer (no mesh, no such root on disk) costs a `false`
+ * rather than an exemption.
  */
 export interface PackageOwnershipContext {
   /**
    * Directories where being inside one is the whole answer — the `plugins/` and
    * `shapes/` install roots of every scope in view.
    */
-  installRoots: string[];
+  packageOnlyRoots: string[];
   /**
-   * The owning agent's own directory, when the task has an agent. Not a root to
+   * The `agents/` install roots — shared with the agents a person makes, so a
+   * hit here is only ownership when the install directory carries a marker.
+   */
+  sharedInstallRoots: string[];
+  /**
+   * The owning agent's own directory, when mesh could name one. Not a root to
    * search: the candidate package checkout ITSELF.
    */
   agentDir?: string;
@@ -161,21 +168,32 @@ export interface PackageOwnershipContext {
  * from a package, that directory IS the install: `<dorkHome>/agents/<name>` for a
  * global install, `<repo>/.dork/agents/<name>` for a project-scoped one.
  *
- * The first version of this fix walked `installRootsUnder()` for both scopes and
- * asked whether the file sat under an `agents/` root. That works only when the
- * agent happens to live under the data directory: for a project-scoped agent
- * package the scope root derived from `agentDir` is `<agentDir>/.dork`, whose
- * roots are `<agentDir>/.dork/{plugins,agents,shapes}` — never `<repo>/.dork/agents`,
- * the one root that would have caught it. The ancestor was never derivable from
- * what the route has. Asking about `agentDir` directly answers both scopes with
- * no derivation at all (DOR-1789 review).
+ * ## Why all three limbs, and why neither alone
  *
- * The root walk stays for the case it is genuinely right for: a `skillRef`
- * schedule whose file physically sits inside a plugin's or a Shape's checkout,
- * which no agent directory contains.
+ * The FIRST version of this fix asked only whether the file sat under an
+ * `agents/` root. That misses a project-scoped agent package entirely: the scope
+ * root derived from `agentDir` is `<agentDir>/.dork`, whose roots are
+ * `<agentDir>/.dork/{plugins,agents,shapes}` — never `<repo>/.dork/agents`, the
+ * one root that would have caught it. That ancestor is not derivable from
+ * anything the route holds (DOR-1789 review).
+ *
+ * The SECOND version replaced the `agents/` walk with the `agentDir` probe,
+ * which fixed that — and made mesh load-bearing for the whole answer. Three
+ * production-reachable states then answered `false` where the first version had
+ * answered `true`: mesh failing to initialize (`meshCore` undefined, so every
+ * package file becomes writable), an agent no longer in the registry (its rows
+ * survive and stay patchable), and a file reached through a symlink from a
+ * skills root belonging to some OTHER agent, whose `agentDir` does not contain
+ * it. A protection that evaporates when a dependency is missing is worse than a
+ * narrower one that does not (DOR-1789 re-review).
+ *
+ * So the marker-gated `agents/` walk is back BESIDE the probe rather than
+ * instead of it. It cannot reintroduce the project-scope gap: that gap was a
+ * root the derivation never produced, not a present root giving a wrong answer,
+ * and adding a root back can only turn `false` into `true`.
  *
  * @param dorkHome - The resolved data directory.
- * @param agentDir - The owning agent's own directory, when the task has one.
+ * @param agentDir - The owning agent's own directory, when mesh named one.
  * @returns The roots to search and the directory to probe.
  */
 export function packageOwnershipContext(
@@ -183,15 +201,12 @@ export function packageOwnershipContext(
   agentDir?: string
 ): PackageOwnershipContext {
   const scopeRoots = [dorkHome, ...(agentDir ? [projectScopeRoot(agentDir)] : [])];
-  const installRoots = scopeRoots.flatMap((scopeRoot) =>
-    installRootsUnder(scopeRoot)
-      // `agents/` is deliberately dropped: it is the one root shared with the
-      // agents a person makes, and the `agentDir` probe below answers for it
-      // without needing to find it.
-      .filter(({ packagesOnly }) => packagesOnly)
-      .map(({ dir }) => dir)
-  );
-  return { installRoots, ...(agentDir ? { agentDir } : {}) };
+  const roots = scopeRoots.flatMap((scopeRoot) => installRootsUnder(scopeRoot));
+  return {
+    packageOnlyRoots: roots.filter((r) => r.packagesOnly).map((r) => r.dir),
+    sharedInstallRoots: roots.filter((r) => !r.packagesOnly).map((r) => r.dir),
+    ...(agentDir ? { agentDir } : {}),
+  };
 }
 
 /**
@@ -225,24 +240,33 @@ const PACKAGE_MARKERS = [PACKAGE_MANIFEST_PATH, INSTALL_METADATA_PATH];
  * next package update overwrites it. So DorkOS does not do it. Approving such a
  * schedule is row state, which the caller reaches without a write at all.
  *
- * Two ways a package owns a schedule, so two questions:
+ * Three ways a package owns a schedule, asked in cost order and ORed together:
  *
  * 1. **The file sits in a plugin's or a Shape's checkout** — a `skillRef`
  *    schedule written into a skill the package ships
  *    (`materialize-schedules.ts`). Those roots hold nothing a person put there,
- *    so location settles it.
- * 2. **The owning AGENT is itself an installed package** — then its whole
- *    directory is the checkout, and every schedule filed under it (shipped,
- *    generated, or created later through DorkOS, which writes to
- *    `agentSkillsRoot(agentDir)`) is inside something the next update replaces.
+ *    so location settles it, with no marker read at all.
+ * 2. **The file sits in an `agents/` root under an install that carries a
+ *    marker.** Shared ground: that root also holds every agent a person makes,
+ *    DorkBot included, so location alone would claim their schedules — the same
+ *    bug pointed the other way. A hand-made agent has `.dork/agent.json` and no
+ *    {@link PACKAGE_MARKERS} file; an agent package has `.dork/agent.json` AND a
+ *    marker, because the install scaffolds the workspace on top of the package
+ *    it just unpacked.
+ * 3. **The owning AGENT is itself an installed package** — its whole directory
+ *    is the checkout, so every schedule filed under it (shipped, generated, or
+ *    created later through DorkOS, which writes to `agentSkillsRoot(agentDir)`)
+ *    sits inside something the next update replaces.
  *
- * Question 2 is asked of {@link PackageOwnershipContext.agentDir} directly and
- * is why `agents/` is not among the roots walked: that root also holds every
- * agent a person makes, DorkBot included, and claiming their schedules would be
- * this same bug pointed the other way. A hand-made agent has `.dork/agent.json`
- * and no {@link PACKAGE_MARKERS} file; an agent package has `.dork/agent.json`
- * AND a marker, because the install scaffolds the workspace on top of the
- * package it just unpacked. Containment is still required — an agent's row can
+ * **Limb 3 is the only one that reaches a project-scoped agent package**, whose
+ * `<repo>/.dork/agents` root no derivation from the route's inputs produces.
+ * **Limbs 1 and 2 are the only ones that survive without mesh** — `agentDir`
+ * comes from `meshCore.getProjectPath`, which answers nothing when mesh failed
+ * to initialize or when the agent has left the registry, and does not contain a
+ * file some OTHER agent's skills root symlinks into the package. Neither set
+ * covers the other, so both are asked (DOR-1789 re-review).
+ *
+ * Containment is required by limb 3 as well as by 1 and 2: an agent's row can
  * point at a file outside its own directory, and the agent being a package says
  * nothing about that file.
  *
@@ -262,9 +286,21 @@ export async function isPackageOwned(
   ctx: PackageOwnershipContext
 ): Promise<boolean> {
   const resolvedFile = await resolveOrSelf(filePath);
-  for (const root of ctx.installRoots) {
+  // 1 — location alone.
+  for (const root of ctx.packageOnlyRoots) {
     if (await containsFile(root, resolvedFile)) return true;
   }
+  // 2 — location plus a marker on the install the file sits in.
+  for (const root of ctx.sharedInstallRoots) {
+    const resolvedRoot = await resolveOrSelf(root);
+    if (!resolvedFile.startsWith(resolvedRoot + path.sep)) continue;
+    // The install's own directory is the first segment below the root; anything
+    // deeper is that install's contents. `path.relative` cannot escape here —
+    // the prefix test above already proved containment.
+    const [installDir] = path.relative(resolvedRoot, resolvedFile).split(path.sep);
+    if (installDir && (await hasPackageMarker(path.join(resolvedRoot, installDir)))) return true;
+  }
+  // 3 — the owning agent is the install.
   if (ctx.agentDir === undefined) return false;
   return (
     (await containsFile(ctx.agentDir, resolvedFile)) &&

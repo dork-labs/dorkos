@@ -88,14 +88,20 @@ async function makeAgent(
   return filePath;
 }
 
+/** A mesh that resolves this task's agent to `dir`, as the registry does. */
+const meshFor = (dir: string) => ({ getProjectPath: () => dir });
+
+/** A mesh that is up, but no longer has this agent — a deregistered one. */
+const meshWithoutAgent = { getProjectPath: () => undefined };
+
 /**
- * Edit a schedule through the shared update door, with mesh answering the way
- * production's does.
+ * Edit a schedule through the shared update door.
  *
- * @param agentDir - What `getProjectPath` returns for this task's agent.
  * @param filePath - The task's file on disk.
+ * @param meshCore - What the route gets from mesh: a resolver, or `undefined`
+ *   for a server whose mesh never came up.
  */
-async function editSchedule(agentDir: string, filePath: string) {
+async function editSchedule(filePath: string, meshCore: unknown) {
   const task = store.createTask({
     name: 'nightly-sweep',
     description: 'packaged',
@@ -104,10 +110,10 @@ async function editSchedule(agentDir: string, filePath: string) {
     filePath,
     agentId: 'agent-1',
   });
-  return applyTaskFileUpdate(
-    { dorkHome, meshCore: { getProjectPath: () => agentDir } as never },
-    { existing: task, data: { prompt: 'a different job' } as never }
-  );
+  return applyTaskFileUpdate({ dorkHome, meshCore } as never, {
+    existing: task,
+    data: { prompt: 'a different job' } as never,
+  });
 }
 
 /**
@@ -144,7 +150,7 @@ describe('a schedule filed under an installed agent package', () => {
     const agentDir = path.join(repo, '.dork', 'agents', 'helper');
     const filePath = await makeAgent(agentDir, 'manifest.json');
 
-    const outcome = await editSchedule(agentDir, filePath);
+    const outcome = await editSchedule(filePath, meshFor(agentDir));
 
     expect(outcome.ok).toBe(false);
     expect(!outcome.ok && outcome.code).toBe('schedule_package_owned');
@@ -155,7 +161,7 @@ describe('a schedule filed under an installed agent package', () => {
     const agentDir = path.join(dorkHome, 'agents', 'helper');
     const filePath = await makeAgent(agentDir, 'manifest.json');
 
-    const outcome = await editSchedule(agentDir, filePath);
+    const outcome = await editSchedule(filePath, meshFor(agentDir));
 
     expect(outcome.ok).toBe(false);
     expect(!outcome.ok && outcome.code).toBe('schedule_package_owned');
@@ -165,7 +171,7 @@ describe('a schedule filed under an installed agent package', () => {
     const agentDir = path.join(repo, '.dork', 'agents', 'helper');
     const filePath = await makeAgent(agentDir, 'install-metadata.json');
 
-    const outcome = await editSchedule(agentDir, filePath);
+    const outcome = await editSchedule(filePath, meshFor(agentDir));
 
     expect(outcome.ok).toBe(false);
     expect(!outcome.ok && outcome.code).toBe('schedule_package_owned');
@@ -197,7 +203,7 @@ describe('an agent the person made keeps its schedules', () => {
     const agentDir = path.join(repo, '.dork', 'agents', 'mine');
     const filePath = await makeAgent(agentDir, null);
 
-    const outcome = await editSchedule(agentDir, filePath);
+    const outcome = await editSchedule(filePath, meshFor(agentDir));
 
     expect(outcome.ok).toBe(true);
     expect(await fs.readFile(filePath, 'utf-8')).toContain('a different job');
@@ -227,9 +233,67 @@ describe('an agent the person made keeps its schedules', () => {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, SKILL, 'utf-8');
 
-    const outcome = await editSchedule(agentDir, filePath);
+    const outcome = await editSchedule(filePath, meshFor(agentDir));
 
     expect(outcome.ok).toBe(false);
     expect(!outcome.ok && outcome.code).toBe('schedule_package_owned');
+  });
+});
+
+describe('the answer does not depend on mesh being able to give it', () => {
+  // Replacing the `agents/` root walk with the agent-directory probe made mesh
+  // load-bearing for the whole answer, and each state below is one a running
+  // server reaches: the protection simply switched off, silently, and a package
+  // checkout became writable. The marker-gated root walk is back beside the
+  // probe so that any ONE of them answering is enough (DOR-1789 re-review).
+
+  /** A GLOBAL agent package, which the `agents/` root walk can see. */
+  async function installedAgent(): Promise<{ agentDir: string; filePath: string }> {
+    const agentDir = path.join(dorkHome, 'agents', 'helper');
+    return { agentDir, filePath: await makeAgent(agentDir, 'manifest.json') };
+  }
+
+  it('still refuses when mesh never came up at all', async () => {
+    // `meshCore` is undefined on a server whose mesh failed to initialize. With
+    // the probe as the only limb, EVERY package file became writable.
+    const { filePath } = await installedAgent();
+
+    const outcome = await editSchedule(filePath, undefined);
+
+    expect(outcome.ok).toBe(false);
+    expect(!outcome.ok && outcome.code).toBe('schedule_package_owned');
+    expect(await fs.readFile(filePath, 'utf-8')).toContain('packaged prompt');
+  });
+
+  it('still refuses when the agent has left the registry', async () => {
+    // Mesh is up and answers `undefined` for this agent. Its rows outlive
+    // deregistration and stay patchable, so the file is still reachable.
+    const { filePath } = await installedAgent();
+
+    const outcome = await editSchedule(filePath, meshWithoutAgent);
+
+    expect(outcome.ok).toBe(false);
+    expect(!outcome.ok && outcome.code).toBe('schedule_package_owned');
+  });
+
+  it('still refuses when reached through ANOTHER agent’s skills root', async () => {
+    // A symlink from a different agent's `.agents/skills/` into the package. The
+    // row's own agent is that other agent, whose directory does not contain the
+    // resolved file, so the probe cannot answer — only the root walk can.
+    const { filePath } = await installedAgent();
+    const otherAgent = path.join(repo, '.dork', 'agents', 'mine');
+    await makeAgent(otherAgent, null);
+    // The link stands where that agent's own skill of this name would be: the
+    // directory basename has to keep matching the skill's `name`, or the parse
+    // gate refuses first and the case proves nothing about ownership.
+    const link = path.join(otherAgent, '.agents', 'skills', 'nightly-sweep');
+    await fs.rm(link, { recursive: true, force: true });
+    await fs.symlink(path.dirname(filePath), link);
+
+    const outcome = await editSchedule(path.join(link, 'SKILL.md'), meshFor(otherAgent));
+
+    expect(outcome.ok).toBe(false);
+    expect(!outcome.ok && outcome.code).toBe('schedule_package_owned');
+    expect(await fs.readFile(filePath, 'utf-8')).toContain('packaged prompt');
   });
 });
