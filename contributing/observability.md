@@ -196,7 +196,7 @@ Every refusal `logRefusal` writes is also kept in a 256-entry in-memory ring, re
 
 The alternative — mount only when an env var is set, like `routes/test-control.ts` — would make the surface unavailable in exactly the situation it exists for: a user's machine, mid-incident, where enabling it needs a restart and a restart destroys the in-memory state you wanted to read.
 
-It earns that by obeying the **same content discipline as the span allowlist**: ids, counts, durations, coarse enums, ISO timestamps. No message text, no prompts, no file paths, no agent-authored strings. `transcriptExists` is the sharpest case — the question is about a path and the answer is a boolean, because the path never crosses the boundary. `routes/__tests__/debug.test.ts` poisons every reachable input and asserts none of it survives.
+It earns that by obeying the **same content discipline as the span allowlist**: ids, counts, durations, coarse enums, ISO timestamps. No message text, no prompts, no file paths, no agent-authored strings. The room-binding transcript read is the sharpest case — the question is about a path and the answer is an enum, because neither the transcript path nor the agent directory the probe resolved ever crosses the boundary. `routes/__tests__/debug.test.ts` poisons every reachable input and asserts none of it survives.
 
 ### Routes
 
@@ -207,8 +207,20 @@ It earns that by obeying the **same content discipline as the span allowlist**: 
 | `GET /api/debug/phantom-cancellations` | The phantom-cancellation tripwire: counts by path, recent rows   |
 | `GET /api/debug/projectors`            | Every live projector: seq, subscribers, waiters, buffer sizes    |
 | `GET /api/debug/sessions/:id`          | One session: lifecycle, lock, pending interactions, durable rows |
-| `GET /api/debug/rooms/:id/bindings`    | Whether each of a room's agent sessions has a transcript on disk |
+| `GET /api/debug/rooms/:id/bindings`    | Whether each of a room's agents still has its conversation       |
 | `GET /api/debug/relay/traces/:traceId` | Every hop of one dispatch across the bus                         |
+
+#### Two answers about one room binding, and why neither is dropped
+
+`GET /api/debug/rooms/:id/bindings` returns **both** readings of every binding, because they answer different questions and used to be conflated (DOR-1780):
+
+- `canonical` — the verdict from the one shared probe `dorkos doctor --deep` and the boot-time convergence sweep read (`rooms/session-bindings/room-binding-transcripts.ts`, DOR-805). It asks the question the way a **resume** asks it: is the transcript under the slug of the directory this agent is in now? Values are `present`, `missing`, `not-applicable`, `unreadable`, and `unavailable` for a process with no claude-code runtime to ask.
+- `anySlugSweepFound` — the raw any-slug sweep: is a file named `<sessionId>.jsonl` under **any** project slug? Reachable by this sweep, not by a resume.
+- `divergence` — `null` when the two agree, otherwise why they do not: `stale-slug`, `runtime-keeps-no-transcript`, `canonical-unreadable`, `canonical-unavailable`, `sweep-blind`.
+
+The sweep alone is what made this surface and the doctor contradict each other in silence: an agent whose project directory moved leaves its transcript filed under the OLD slug, so the sweep said `true` while the doctor warned about the same binding. Both readings are still useful — "is the file anywhere at all?" is a real incident question — so the response keeps both and names the difference instead of picking one.
+
+`GET /api/debug/sessions/:id` carries `runtimeBound` for the same reason: an id nothing has bound (every room placeholder) resolves through the registry's legacy inference to `claude-code`, and `runtimeBound: false` says the reported runtime is what the session _would_ get, not what it has.
 
 Buffers are 256 entries each (the phantom ring is 64), process-lifetime, **never written to disk**. The NDJSON log is the durable record; a persisted ring would be a second, worse log with its own retention problems.
 
@@ -302,7 +314,7 @@ dorkos debug refusals --json | jq '.refusals[] | select(.visibility!="shown")'
 dorkos debug room <room-id>
 ```
 
-`transcriptExists: false` means the room remembers a session id the runtime never wrote a transcript for — the incident's last symptom, and the one that costs an agent its memory of the room.
+`canonical: "missing"` means the room remembers a session id whose conversation is not where a resume would look for it — the incident's last symptom, and the one that costs an agent its memory of the room. Read `canonical` first, always: `anySlugSweepFound: true` beside it is the `stale-slug` case, where the file is on disk but under a project slug the agent has moved away from, and it is still amnesia. `canonical: "unreadable"` or `"unavailable"` means the question was not answered at all — neither is a clean bill of health, and `divergence` says which it was.
 
 **6. If a chat integration is involved**, the dispatch id is also the trace id:
 
@@ -349,14 +361,14 @@ grep -c '^ℹ' <captured-output>
 
 Observability the messaging hot path does not emit costs it nothing.
 
-| Mechanism                             | Cost when inactive                                                    | Cost when active                         |
-| ------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------- |
-| `runInDispatch`                       | not called                                                            | one `ALS.run` per **dispatch**           |
-| `currentDispatchId()` in the reporter | one `getStore()` — and only after the level filter has already passed | same                                     |
-| Ring buffers                          | one array write per dispatch and per refusal                          | same                                     |
-| OTel `dispatch_id` attribute          | `startSpan` returns the shared no-op before reading it                | one `setAttribute`                       |
-| `/api/debug/*`                        | routes idle; no polling, no timer, no background work                 | one request                              |
-| `transcriptExists` probe              | not called                                                            | one `existsSync` per binding, on request |
+| Mechanism                             | Cost when inactive                                                    | Cost when active                                                                                                                                                  |
+| ------------------------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runInDispatch`                       | not called                                                            | one `ALS.run` per **dispatch**                                                                                                                                    |
+| `currentDispatchId()` in the reporter | one `getStore()` — and only after the level filter has already passed | same                                                                                                                                                              |
+| Ring buffers                          | one array write per dispatch and per refusal                          | same                                                                                                                                                              |
+| OTel `dispatch_id` attribute          | `startSpan` returns the shared no-op before reading it                | one `setAttribute`                                                                                                                                                |
+| `/api/debug/*`                        | routes idle; no polling, no timer, no background work                 | one request                                                                                                                                                       |
+| Room-binding transcript read          | not called                                                            | per request: one `readdir` per transcript root, then per binding one author lookup, one runtime resolve, one transcript read and one `existsSync` per slug folder |
 
 Two rules when adding to any of this: **no dispatch context is created per stream event** (the per-event tap may only _read_), and **no observability work happens on the awaited portion of the 202 path**.
 

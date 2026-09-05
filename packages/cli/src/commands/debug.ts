@@ -18,8 +18,8 @@ import { printError, printJson, renderTable } from '../lib/operator-output.js';
 export const DEBUG_HELP = `Usage: dorkos debug <subject> [options]
 
 Read what DorkOS knows right now but keeps in memory: which agents are mid-turn,
-what was recently refused, which sessions have a live stream, and whether a
-room's conversations still have transcripts on disk.
+what was recently refused, which sessions have a live stream, and whether the
+agents in a room can still reach the conversations they remember.
 
 Nothing here is stored and nothing is sent anywhere. It reads the running
 server, so DorkOS has to be up. Ids, counts and times only — never the text of
@@ -31,7 +31,10 @@ Subjects:
   projectors           Sessions with a live event stream, and who is watching
   phantoms             Times an agent's own work was cut short by mistake, not by you
   session <id>         One session: its state, its lock, what it is waiting on
-  room <id>            One room's agent sessions, and whether each has a transcript
+  room <id>            One room's agents, and whether each can still reach its
+                       conversation ('canonical'); the raw "is the file anywhere
+                       on disk" answer sits beside it as 'anySlugSweepFound', and
+                       'divergence' says why the two ever differ
   trace <trace-id>     Every hop of one dispatch across a chat integration
 
 Options:

@@ -25,6 +25,11 @@ vi.mock('../../lib/boundary.js', () => ({
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
     getSessionRuntimeType: vi.fn(async () => 'claude-code'),
+    // Bound on purpose: the canonical binding probe routes through
+    // `resolveTurnRuntimeType`, which takes the session's recorded owner when
+    // there is one. A test that left this unbound would fall through to a
+    // manifest read of a directory that does not exist.
+    resolveSessionRuntime: vi.fn(async () => ({ type: 'claude-code', bound: true })),
     has: vi.fn(() => false),
     get: vi.fn(() => undefined),
     getDefault: vi.fn(() => undefined),
@@ -57,6 +62,7 @@ import {
   resetPhantomCancellations,
 } from '../../services/observability/phantom-cancellations.js';
 import { runInDispatch } from '../../lib/dispatch-context.js';
+import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import {
   getOrCreateProjector,
   disposeProjector,
@@ -287,10 +293,37 @@ describe('GET /api/debug/projectors and /sessions/:id', () => {
     expect(res.body.projectorLive).toBe(false);
     expect(res.body.lifecycle).toBeNull();
   });
+
+  it('says when the runtime it reports is an inference rather than a recorded owner', async () => {
+    // A room placeholder is an id nothing has bound, and the registry infers
+    // `claude-code` for it. Printing that bare made this surface state as fact
+    // something no other surface would agree with (DOR-1780).
+    vi.mocked(runtimeRegistry.resolveSessionRuntime).mockResolvedValueOnce({
+      type: 'claude-code',
+      bound: false,
+    });
+    const res = await get(buildApp(), `/api/debug/sessions/${SESSION_ID}`);
+    expect(res.body.runtime).toBe('claude-code');
+    expect(res.body.runtimeBound).toBe(false);
+  });
 });
 
 describe('GET /api/debug/rooms/:id/bindings', () => {
   let transcriptRoot: string;
+
+  /**
+   * A canonical probe that answers from an explicit set of session ids — the
+   * resume-shaped question, decoupled from where the sweep's files happen to be.
+   */
+  function canonicalProbe(
+    resumable: readonly string[],
+    agentPathFor: (authorId: string) => string | null = () => '/agents/ana'
+  ): DebugDeps['roomBindingTranscripts'] {
+    return {
+      agentPathFor,
+      hasTranscript: async (_agentPath, sessionId) => resumable.includes(sessionId),
+    };
+  }
 
   beforeEach(() => {
     transcriptRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'debug-transcripts-'));
@@ -302,7 +335,7 @@ describe('GET /api/debug/rooms/:id/bindings', () => {
     fs.rmSync(transcriptRoot, { recursive: true, force: true });
   });
 
-  it('says whether a binding points at a transcript — and never says where', async () => {
+  it('says whether a binding still has its conversation — and never says where', async () => {
     // The incident's "bindings pointing at ids with no transcript", answered
     // directly. The path is the thing this must not return.
     const app = buildApp({
@@ -313,20 +346,209 @@ describe('GET /api/debug/rooms/:id/bindings', () => {
           { roomId: 'other-room', authorId: 'cy', sessionId: 'has-one' },
         ],
       },
+      roomBindingTranscripts: canonicalProbe(['has-one']),
       transcriptProjectRoots: () => [transcriptRoot],
     });
 
     const res = await get(app, '/api/debug/rooms/room-1/bindings');
     expect(res.status).toBe(200);
     expect(res.body.bindings).toEqual([
-      { authorId: 'ana', sessionId: 'has-one', transcriptExists: true },
-      { authorId: 'bo', sessionId: 'has-none', transcriptExists: false },
+      {
+        authorId: 'ana',
+        sessionId: 'has-one',
+        canonical: 'present',
+        anySlugSweepFound: true,
+        divergence: null,
+      },
+      {
+        authorId: 'bo',
+        sessionId: 'has-none',
+        canonical: 'missing',
+        anySlugSweepFound: false,
+        divergence: null,
+      },
     ]);
     // Both halves matter: a probe that answered `true` for everything would
     // satisfy the first row, and one that answered `false` would satisfy the
     // second.
     expect(JSON.stringify(res.body)).not.toContain(transcriptRoot);
     expect(JSON.stringify(res.body)).not.toContain('Users');
+  });
+
+  it('labels a stale-slug transcript instead of reporting the room healthy', async () => {
+    // THE bug this endpoint was filed for (DOR-1780). The agent's project
+    // directory moved, so its transcript is still on disk under the OLD
+    // directory's slug — the any-slug sweep finds it — while a resume, which
+    // looks under the slug of the directory the agent is in now, finds nothing.
+    // The doctor warns about exactly this binding. This surface used to answer
+    // `transcriptExists: true` for it and say nothing else, so the two disagreed
+    // in silence and a person debugging room amnesia was told to look elsewhere.
+    const app = buildApp({
+      roomSessions: {
+        listRoomSessions: () => [{ roomId: 'room-1', authorId: 'ana', sessionId: 'has-one' }],
+      },
+      // The canonical probe cannot reach it: nothing is resumable.
+      roomBindingTranscripts: canonicalProbe([]),
+      transcriptProjectRoots: () => [transcriptRoot],
+    });
+
+    const res = await get(app, '/api/debug/rooms/room-1/bindings');
+    expect(res.body.bindings).toEqual([
+      {
+        authorId: 'ana',
+        sessionId: 'has-one',
+        // The doctor's answer, from the doctor's own probe.
+        canonical: 'missing',
+        // The raw sweep still says the file is somewhere — and is named for it.
+        anySlugSweepFound: true,
+        // And the response itself says the two differ, and why.
+        divergence: 'stale-slug',
+      },
+    ]);
+  });
+
+  it('does not let a found file speak for a binding the probe has no opinion on', async () => {
+    // An author that is not an agent this install knows: the canonical probe
+    // declines the question. A `<sessionId>.jsonl` lying under some slug is then
+    // a fact about a different question, not evidence the room is fine.
+    const app = buildApp({
+      roomSessions: {
+        listRoomSessions: () => [{ roomId: 'room-1', authorId: 'a-person', sessionId: 'has-one' }],
+      },
+      roomBindingTranscripts: canonicalProbe(['has-one'], () => null),
+      transcriptProjectRoots: () => [transcriptRoot],
+    });
+
+    const res = await get(app, '/api/debug/rooms/room-1/bindings');
+    expect(res.body.bindings[0]).toMatchObject({
+      canonical: 'not-applicable',
+      anySlugSweepFound: true,
+      divergence: 'runtime-keeps-no-transcript',
+    });
+  });
+
+  it('reports a failed canonical read as unreadable rather than deferring to the sweep', async () => {
+    // "Nothing is known about this binding" and "nothing is wrong with it" are
+    // opposite answers. A machine whose `~/.claude/projects` has gone unreadable
+    // must not read as a clean bill of health because the sweep happened to find
+    // a file — and the error text never crosses this boundary.
+    const app = buildApp({
+      roomSessions: {
+        listRoomSessions: () => [{ roomId: 'room-1', authorId: 'ana', sessionId: 'has-one' }],
+      },
+      roomBindingTranscripts: {
+        agentPathFor: () => '/agents/ana',
+        hasTranscript: async () => {
+          throw new Error(`EACCES reading ${POISON.absolutePath}`);
+        },
+      },
+      transcriptProjectRoots: () => [transcriptRoot],
+    });
+
+    const res = await get(app, '/api/debug/rooms/room-1/bindings');
+    expect(res.body.bindings[0]).toMatchObject({
+      canonical: 'unreadable',
+      anySlugSweepFound: true,
+      divergence: 'canonical-unreadable',
+    });
+    expect(JSON.stringify(res.body)).not.toContain('notes.md');
+    expect(JSON.stringify(res.body)).not.toContain('/Users/');
+  });
+
+  it('survives an author row it cannot read, at the cost of that row only', async () => {
+    // `agentPathFor` is `roomAuthors.getById` in production — a synchronous
+    // better-sqlite3 `.get()` that raises on a busy, corrupt or closed database,
+    // which is the state of a machine somebody is running this against. The
+    // throw used to escape the probe and take the whole endpoint down: 500,
+    // carrying the raw error message, which on this path is an absolute path
+    // crossing a boundary that is not allowed to see one (DOR-1780).
+    const app = buildApp({
+      roomSessions: {
+        listRoomSessions: () => [
+          { roomId: 'room-1', authorId: 'corrupt', sessionId: 'has-one' },
+          // The control: the rest of the report still answers.
+          { roomId: 'room-1', authorId: 'ana', sessionId: 'has-none' },
+        ],
+      },
+      roomBindingTranscripts: {
+        agentPathFor: (authorId) => {
+          if (authorId === 'corrupt') {
+            throw new Error(`SQLITE_CORRUPT reading ${POISON.absolutePath}`);
+          }
+          return '/agents/ana';
+        },
+        hasTranscript: async () => false,
+      },
+      transcriptProjectRoots: () => [transcriptRoot],
+    });
+
+    // `get` asserts 200, which is the whole point: this was a 500.
+    const res = await get(app, '/api/debug/rooms/room-1/bindings');
+    expect(res.body.bindings).toEqual([
+      {
+        authorId: 'corrupt',
+        sessionId: 'has-one',
+        canonical: 'unreadable',
+        anySlugSweepFound: true,
+        divergence: 'canonical-unreadable',
+      },
+      {
+        authorId: 'ana',
+        sessionId: 'has-none',
+        canonical: 'missing',
+        anySlugSweepFound: false,
+        divergence: null,
+      },
+    ]);
+    expect(JSON.stringify(res.body)).not.toContain('notes.md');
+    expect(JSON.stringify(res.body)).not.toContain('/Users/');
+    expect(JSON.stringify(res.body)).not.toContain('SQLITE_CORRUPT');
+  });
+
+  it('labels a conversation the sweep cannot see but a resume can', async () => {
+    // The mirror of `stale-slug`, and the case that proves the two readings are
+    // independent rather than one computed from the other: the canonical probe
+    // reaches the conversation while the sweep's roots do not cover where it
+    // looked. A reader must not conclude from `anySlugSweepFound: false` that
+    // the room has lost anything.
+    const app = buildApp({
+      roomSessions: {
+        listRoomSessions: () => [{ roomId: 'room-1', authorId: 'ana', sessionId: 'has-none' }],
+      },
+      // Resumable, but `beforeEach` only ever writes `has-one.jsonl`.
+      roomBindingTranscripts: canonicalProbe(['has-none']),
+      transcriptProjectRoots: () => [transcriptRoot],
+    });
+
+    const res = await get(app, '/api/debug/rooms/room-1/bindings');
+    expect(res.body.bindings).toEqual([
+      {
+        authorId: 'ana',
+        sessionId: 'has-none',
+        canonical: 'present',
+        anySlugSweepFound: false,
+        divergence: 'sweep-blind',
+      },
+    ]);
+  });
+
+  it('says the canonical question was never asked when there is no probe to ask', async () => {
+    // No claude-code runtime in this process, so there is nothing to compare
+    // the sweep against. Promoting the sweep to `the` answer here is how the two
+    // surfaces drifted apart in the first place.
+    const app = buildApp({
+      roomSessions: {
+        listRoomSessions: () => [{ roomId: 'room-1', authorId: 'ana', sessionId: 'has-one' }],
+      },
+      transcriptProjectRoots: () => [transcriptRoot],
+    });
+
+    const res = await get(app, '/api/debug/rooms/room-1/bindings');
+    expect(res.body.bindings[0]).toMatchObject({
+      canonical: 'unavailable',
+      anySlugSweepFound: true,
+      divergence: 'canonical-unavailable',
+    });
   });
 
   it('never probes outside the transcript roots, whatever the stored id says', async () => {
@@ -355,11 +577,12 @@ describe('GET /api/debug/rooms/:id/bindings', () => {
             { roomId: 'room-1', authorId: 'di', sessionId: 'has-one' },
           ],
         },
+        roomBindingTranscripts: canonicalProbe(['has-one']),
         transcriptProjectRoots: () => [transcriptRoot],
       });
       const res = await get(app, '/api/debug/rooms/room-1/bindings');
       expect(
-        res.body.bindings.map((b: { transcriptExists: boolean }) => b.transcriptExists)
+        res.body.bindings.map((b: { anySlugSweepFound: boolean }) => b.anySlugSweepFound)
       ).toEqual([false, false, false, true]);
     } finally {
       fs.rmSync(escape, { force: true });
@@ -463,6 +686,15 @@ describe('the whole surface leaks nothing (I7)', () => {
         roomSessions: {
           listRoomSessions: () => [{ roomId: 'room-1', authorId: 'ana', sessionId: POISON.token }],
         },
+        // The canonical probe resolves an ABSOLUTE agent directory and can throw
+        // a message carrying one. Neither may reach the response, so both are
+        // poisoned here rather than left out of the sweep.
+        roomBindingTranscripts: {
+          agentPathFor: () => POISON.absolutePath,
+          hasTranscript: async () => {
+            throw new Error(`${POISON.text} at ${POISON.absolutePath}`);
+          },
+        },
         transcriptProjectRoots: () => [transcriptRoot],
       });
 
@@ -483,6 +715,13 @@ describe('the whole surface leaks nothing (I7)', () => {
         expect(body, route).not.toContain('hunter2');
         expect(body, route).not.toContain('notes.md');
         expect(body, route).not.toContain('/Users/');
+        // Four `not.toContain`s cannot tell "nothing leaked" from "the poisoned
+        // code never ran" — a probe that was skipped passes them all. This
+        // pins that the throwing canonical probe was actually entered, so the
+        // absence above is a containment result rather than an alibi.
+        if (route.endsWith('/bindings')) {
+          expect(res.body.bindings[0].canonical, route).toBe('unreadable');
+        }
       }
     } finally {
       fs.rmSync(transcriptRoot, { recursive: true, force: true });

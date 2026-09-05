@@ -2820,6 +2820,10 @@ async function start() {
   // added by widening the health checks' dependency surface.
   app.locals.debugDeps = {
     roomSessions: roomStore,
+    // The SAME probe object the boot sweep and the deep health check hold, so
+    // the raw debug read and the doctor cannot say different things about one
+    // binding without the response naming why (DOR-1780).
+    roomBindingTranscripts,
     transcriptProjectRoots: () => claudeRuntime?.getTranscriptReader().getProjectsRootSet() ?? [],
     ...(relayCore ? { relayTraceStore: traceStore } : {}),
   } satisfies DebugDeps;

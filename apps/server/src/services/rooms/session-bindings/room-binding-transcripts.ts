@@ -47,6 +47,11 @@ export interface RoomBindingTranscriptDeps {
    * The agent directory behind a room author id, or `null` when the author is
    * not an agent this install knows. Both callers ask the author registry for
    * `naturalKey`, exactly as the dispatcher does.
+   *
+   * May throw, and is expected to: in production this is a synchronous
+   * better-sqlite3 read, which raises on a busy, corrupt or closed database.
+   * {@link probeRoomBindingTranscript} contains it — see its doc for why that
+   * matters more here than the synchronous signature suggests.
    */
   agentPathFor(authorId: string): string | null;
   /**
@@ -73,17 +78,38 @@ export type RoomBindingTranscriptAnswer =
     }
   /** `present` — the conversation is where a resume would look for it; `missing` — it is not, so this agent would start over in this room. */
   | { verdict: 'present' | 'missing'; agentPath: string }
-  /** Nothing could be learned either way — the transcript or the runtime read failed. */
-  | { verdict: 'unreadable'; agentPath: string; error: string };
+  /**
+   * Nothing could be learned either way — the agent lookup, the runtime read or
+   * the transcript read failed.
+   *
+   * `agentPath` is `null` when it was the LOOKUP that failed, because resolving
+   * it is the thing that did not happen. Both callers narrow to `present` or
+   * `missing` before reading it, so this widening costs them nothing.
+   */
+  | { verdict: 'unreadable'; agentPath: string | null; error: string };
 
 /**
  * Ask whether one room binding still has its conversation on disk.
  *
- * Never throws: a failed transcript read and a failed runtime read both come
- * back as `unreadable`, because "nothing is known about this binding" and
- * "nothing is wrong with this binding" are opposite answers and a caller that
- * cannot tell them apart reports a clean bill of health for a machine whose
- * `~/.claude/projects` has gone unreadable.
+ * **Never throws — all three reads included.** A failed transcript read, a
+ * failed runtime read and a failed AGENT LOOKUP all come back as `unreadable`,
+ * because "nothing is known about this binding" and "nothing is wrong with this
+ * binding" are opposite answers and a caller that cannot tell them apart
+ * reports a clean bill of health for a machine whose `~/.claude/projects` has
+ * gone unreadable.
+ *
+ * The agent lookup used to sit outside the guard, on the reasoning that it is a
+ * synchronous map read. It is not: in production it is `roomAuthors.getById`,
+ * a synchronous better-sqlite3 `.get()` that throws on `SQLITE_BUSY`, a corrupt
+ * file, or a closed handle — the exact conditions under which somebody runs
+ * `dorkos debug room` in the first place. One unreadable author row cost the
+ * caller its whole report: the survey behind `dorkos doctor --deep` aborted
+ * mid-sweep, and the debug endpoint answered `500` carrying the raw error
+ * message, which on this path carries an absolute path across a boundary that
+ * is not allowed to see one (DOR-1780).
+ *
+ * There is no `agentPath` to report on that branch — resolving it is what
+ * failed — so it travels as `null`, the same shape the not-an-agent case uses.
  *
  * @param binding - The row to judge.
  * @param deps - The agent lookup and the transcript probe.
@@ -93,7 +119,12 @@ export async function probeRoomBindingTranscript(
   binding: RoomSessionBinding,
   deps: RoomBindingTranscriptDeps
 ): Promise<RoomBindingTranscriptAnswer> {
-  const agentPath = deps.agentPathFor(binding.authorId);
+  let agentPath: string | null;
+  try {
+    agentPath = deps.agentPathFor(binding.authorId);
+  } catch (err) {
+    return { verdict: 'unreadable', agentPath: null, error: describe(err) };
+  }
   if (agentPath === null) return { verdict: 'not-applicable', agentPath: null };
 
   let runtime: string;
