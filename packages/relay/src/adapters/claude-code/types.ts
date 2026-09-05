@@ -205,7 +205,15 @@ export interface TasksStoreLike {
 export interface ClaudeCodeAdapterConfig {
   /** Maximum concurrent agent sessions. Default: 3 */
   maxConcurrent?: number;
-  /** Default session timeout in ms (used when envelope has no TTL). Default: 300000 (5 min) */
+  /**
+   * How long a message may WAIT for a busy runtime. Default: 300000 (5 min).
+   *
+   * Not a session timeout, despite the name: nothing here bounds how long a
+   * turn may run — that is the envelope's own TTL and nothing else, because an
+   * expired envelope is refused rather than given a fresh clock
+   * (`lib/envelope-ttl.ts`). Its only two readers are the capacity line's hold
+   * ceiling and the bound reported on an at-capacity refusal.
+   */
   defaultTimeoutMs?: number;
   /** Default working directory for agents without explicit directory */
   defaultCwd?: string;

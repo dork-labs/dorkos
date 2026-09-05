@@ -9,6 +9,7 @@
  */
 import type { RelayEnvelope, RelayBudget } from '@dorkos/shared/relay-schemas';
 import type { BudgetResult } from './types.js';
+import { isExpired, ttlRemainingMs } from './lib/envelope-ttl.js';
 
 /**
  * One hour in milliseconds — default TTL for new budgets.
@@ -73,7 +74,15 @@ export function enforceBudget(envelope: RelayEnvelope, currentEndpoint: string):
     };
   }
 
-  if (Date.now() > budget.ttl) {
+  // The publish-side half of one rule: an expired envelope never runs. The
+  // delivery-side half — a message that goes stale AFTER this gate let it
+  // through, waiting for a slot or behind another turn — lives in
+  // `lib/envelope-ttl.ts`, where the policy and each seam's refusal shape are
+  // written down. The boundary is asked through the shared predicate rather
+  // than open-coded here, because a gate that allowed the exact millisecond the
+  // handler behind it refuses is a message accepted for a delivery that cannot
+  // happen.
+  if (isExpired(ttlRemainingMs(envelope))) {
     return {
       allowed: false,
       code: 'ttl_expired',

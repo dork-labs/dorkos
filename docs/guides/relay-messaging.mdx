@@ -239,7 +239,7 @@ The Claude Code adapter is on by default whenever Relay starts. It listens on `r
 }
 ```
 
-`maxConcurrent` limits how many agent sessions run at once. `defaultTimeoutMs` sets the longest a session can run before it's stopped.
+`maxConcurrent` limits how many agent sessions run at once. `defaultTimeoutMs` sets the longest a message may wait for a busy agent — not how long a session may run. What bounds a running session is the message's own lifetime, and nothing else: a message that runs out of time is turned away rather than given a fresh clock.
 
 A message from a connected Telegram or Slack chat that arrives while every session is busy is not turned away. It waits, and it runs as soon as one of those sessions finishes. If the wait lasts more than ten seconds, the chat gets one line saying the message is waiting.
 

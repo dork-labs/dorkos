@@ -556,10 +556,10 @@ describe('ClaudeCodeAdapter', () => {
 
         await vi.advanceTimersByTimeAsync(5_000);
         // Seeded defect: drop `ceilingMs` from the `acquire()` call. The wait
-        // runs the full 60s, and `handleAgentMessage` then finds no TTL left
-        // and falls back to `defaultTimeoutMs` — so a message that waited out
-        // its own deadline runs on a FRESH full budget, as if it had just
-        // arrived.
+        // runs the full 60s, and the message then reaches `handleAgentMessage`
+        // with nothing left, where it is refused (DOR-1770) — so a person who
+        // could have been told "busy" at five seconds is told "expired" a
+        // minute later instead. The wait ends when the message's own time does.
         await expect(second).resolves.toMatchObject({ success: false, code: 'at_capacity' });
         expect(manager.sendMessage).toHaveBeenCalledTimes(1);
 
@@ -639,6 +639,26 @@ describe('ClaudeCodeAdapter', () => {
       await first;
       vi.useRealTimers();
     });
+  });
+
+  // === An expired envelope never runs (DOR-1770) ===
+
+  it('never reaches the runtime with an expired envelope, even with every slot free', async () => {
+    // The capacity tests above prove an expired message is not made to WAIT.
+    // This one proves the policy holds where waiting is not the question at all:
+    // nothing is busy, a slot is there for the taking, and the message is still
+    // refused rather than answered an hour late. The refusal shape and the
+    // handler-level pins live in `expired-envelope.test.ts`.
+    await adapter.start(relay);
+    const expired = createTestEnvelope({
+      budget: { ...createTestEnvelope().budget, ttl: Date.now() - 60 * 60 * 1000 },
+    });
+
+    const result = await adapter.deliver(expired.subject, expired);
+
+    expect(agentManager.sendMessage).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('The message expired before the agent could start');
   });
 
   it('publishes response events to envelope.replyTo', async () => {
@@ -1391,7 +1411,7 @@ describe('ClaudeCodeAdapter', () => {
       vi.mocked(agentManager.sendMessage).mockReturnValue(
         (async function* () {
           yield { type: 'text_delta', data: { text: 'partial' } } as StreamEvent;
-          await new Promise((resolve) => setTimeout(resolve, 60));
+          await new Promise((resolve) => setTimeout(resolve, 500));
           yield { type: 'text_delta', data: { text: 'never seen' } } as StreamEvent;
         })()
       );
@@ -1405,7 +1425,12 @@ describe('ClaudeCodeAdapter', () => {
             hopCount: 1,
             maxHops: 5,
             ancestorChain: [],
-            ttl: Date.now() + 20,
+            // Live on arrival, and by enough of a margin that a loaded runner
+            // cannot spend it during the handler's own startup: an envelope that
+            // arrives already expired is REFUSED before the turn begins
+            // (DOR-1770), which is a different branch from the mid-stream death
+            // this case is about.
+            ttl: Date.now() + 150,
             callBudgetRemaining: 10,
           },
         })
@@ -1414,7 +1439,11 @@ describe('ClaudeCodeAdapter', () => {
       const calls = vi.mocked(relay.publish).mock.calls;
       const final = calls[calls.length - 1];
       expect(final[1]).toMatchObject({ type: 'agent_result', done: true });
-      expect((final[1] as { error?: string }).error).toMatch(/TTL budget expired/);
+      expect((final[1] as { error?: string }).error).toMatch(
+        /ran out of time before the agent finished/
+      );
+      // The turn genuinely started and streamed before its deadline landed.
+      expect(agentManager.sendMessage).toHaveBeenCalledTimes(1);
     });
 
     it('streams individual events to relay.human.console.* (not aggregated)', async () => {
@@ -1745,7 +1774,7 @@ describe('ClaudeCodeAdapter', () => {
         (async function* () {
           yield { type: 'text_delta', data: { text: 'partial' } } as StreamEvent;
           // Outlive the TTL so the abort controller fires before the next yield.
-          await new Promise((resolve) => setTimeout(resolve, 60));
+          await new Promise((resolve) => setTimeout(resolve, 500));
           yield { type: 'text_delta', data: { text: 'never seen' } } as StreamEvent;
         })()
       );
@@ -1757,7 +1786,10 @@ describe('ClaudeCodeAdapter', () => {
           hopCount: 1,
           maxHops: 5,
           ancestorChain: [],
-          ttl: Date.now() + 20,
+          // Live on arrival by a margin a loaded runner cannot eat — an envelope
+          // that arrives expired is refused before the turn starts (DOR-1770),
+          // which is not the branch this case is about.
+          ttl: Date.now() + 150,
           callBudgetRemaining: 10,
         },
       });
@@ -1774,7 +1806,9 @@ describe('ClaudeCodeAdapter', () => {
       expect(errorIdx).toBeGreaterThanOrEqual(0);
       expect(doneIdx).toBeGreaterThan(errorIdx);
       const errorPayload = publishCalls[errorIdx]![1] as { data: { message: string } };
-      expect(errorPayload.data.message).toMatch(/TTL budget expired/);
+      expect(errorPayload.data.message).toMatch(/ran out of time before the agent finished/);
+      // The turn genuinely started and streamed before its deadline landed.
+      expect(agentManager.sendMessage).toHaveBeenCalledTimes(1);
     });
 
     it('does not publish an error event on a clean turn', async () => {
