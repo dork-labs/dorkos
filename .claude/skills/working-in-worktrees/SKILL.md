@@ -7,7 +7,7 @@ description: Decides when agent work needs an isolated git worktree and how to c
 
 ## Overview
 
-This skill governs **workspace isolation** for code work in DorkOS — a repo that is routinely worked by several agents and sessions at once. It teaches the one decision rule (_one checkout, one writer_), the concrete failure mode that makes isolation non-optional, and the exact mechanics for creating, entering, and cleaning up a worktree without losing anyone's work.
+This skill governs **workspace isolation** for code work in DorkOS — a repo that is routinely worked by several agents and sessions at once. It teaches the one decision rule (_one checkout, one writer_), the concrete failure mode that makes isolation non-optional, the exact mechanics for creating, entering, and cleaning up a worktree without losing anyone's work — and the half that isolation does **not** buy you, because worktrees separate working trees but share every ref.
 
 The repo-wide rule lives in `AGENTS.md` → **Worktrees**. This skill is the mechanics and the _why_.
 
@@ -16,6 +16,7 @@ The repo-wide rule lives in `AGENTS.md` → **Worktrees**. This skill is the mec
 - You are about to make a code change and the checkout **may be shared** with another agent or session.
 - You are running the `/flow:execute` stage (the workspace-choice phase of the flow plugin's `executing-specs` skill) — the unified `/flow` execution gate.
 - You are running parallel work that mutates tracked files.
+- You are comparing your branch against `main` across **more than one command** — a conflict investigation, a red-before drill, a changelog gate, a "what did `main` change" question.
 - You need to create, enter, exit, or remove a worktree and want the safe procedure.
 - You are _unsure_ whether to isolate — the default answer for code work in this repo is **yes**.
 
@@ -48,6 +49,34 @@ The `Stop` hook `.claude/hooks/create-checkpoint.sh` runs on **every turn** and 
 This is not theoretical — it happened while dispatching `DOR-101` (an empty-tree commit that had to be recovered via `--amend`). Your own research documents the **identical** industry failure: Cursor "silently ran `git stash` + `git reset HEAD` mid-session"; Claude Code auto-cleanup deleted 10 days of uncommitted work (#46444). See `research/20260611_workspace_strategy_runtimes_symphony.md`. A worktree gives each agent its own tree, so each checkpoint only ever touches that agent's own work — the race cannot happen.
 
 The hook also self-defends: it **bails when a git operation is in progress** (`index.lock`, rebase/merge/cherry-pick state). That narrows the window but does **not** replace isolation — worktrees are the structural fix.
+
+### Two readers, one ref namespace
+
+The hazard above is about two **writers** sharing one working tree. There is a second, quieter one: two **readers** sharing one set of refs. A worktree isolates the working tree. It does **not** isolate the refs or the object store — those live in the common git dir, shared by every worktree of this repo:
+
+```bash
+git rev-parse --git-dir --git-common-dir              # differ ⇒ you are in a secondary worktree
+git rev-parse --git-path refs/remotes/origin/main     # …yet this resolves under the COMMON dir
+```
+
+So you can hold a perfectly isolated tree and still share one `origin/main` with every other session on the machine. When any of them runs `git fetch`, that ref moves **for you too** — including between two commands of your own investigation.
+
+**Nothing errors.** Every command exits `0`. Two `git` invocations seconds apart simply answer against different trees, and the inconsistency surfaces only as a conclusion that does not match the code. On 2026-09-01, with two sessions in one checkout, an agent resolving a merge conflict listed the files `main` had touched, reasoned about that list, and concluded `main` had modified client model-picker files it had never touched — a concurrent session had fetched mid-investigation. It recovered by re-deriving everything against a pinned SHA, but only because the answer had looked implausible. A wrong answer that looks reasonable does not get caught.
+
+**The rule: pin the base once, then never name the moving ref again.**
+
+```bash
+BASE=$(git rev-parse origin/main)          # once, at the start of the comparison
+git diff --name-only "$BASE"...HEAD
+git log --oneline "$(git merge-base "$BASE" HEAD)"..HEAD
+```
+
+- Use `$BASE` for every step of a multi-step comparison — **never write `origin/main` twice** in one line of reasoning.
+- Prefer `git merge-base "$BASE" HEAD` over re-reading the branch name. A merge base recomputed against a ref that moved is a _different_ merge base, silently.
+- **Treat a surprising file list as evidence the ref moved, not as data.** A diff naming files nobody on your branch went near is a symptom, not a discovery — re-derive it against a pinned SHA before you reason one step further.
+- **Hand people SHAs, not ref names.** "`main` touched 8 files" is unfalsifiable an hour later; "`2a8fb9c9b` touched 8 files" is checkable forever. `git show --name-only --format='' 2a8fb9c9b` returns the same eight paths on every machine, at every hour, regardless of who fetched — which is the whole property a moving ref lacks.
+
+The same shape bites outside `git`. PR #1413 reported `mergeable: MERGEABLE` from the GitHub API while its own merge-queue entry read `UNMERGEABLE`, and a local test-merge disagreed with both — three answers to one question, each read at a slightly different moment. Any answer you did not pin is a snapshot, not a fact.
 
 ### Non-code phases stay in `main`
 
@@ -154,6 +183,8 @@ Better still: start the work in a worktree from the outset (the steps above, min
 - ❌ Auto-removing a worktree with **uncommitted, untracked, or unpushed** work — refuse and confirm first. This is where Claude Code and Cursor both shipped data-loss bugs.
 - ❌ Forcing the `/flow` intent stages (`/flow:ideate`, `/flow:specify`, `/flow:decompose`) into worktrees — they only write `specs/` markdown; stay in `main`.
 - ❌ Reading `.env` directly to learn a worktree's ports (the file-guard hook denies it) — use `/worktree:list`.
+- ❌ Naming `origin/main` twice in one investigation. Pin it once (`BASE=$(git rev-parse origin/main)`) and compare against `$BASE` — another session's `git fetch` moves the shared ref between your commands, and every command still exits `0`.
+- ❌ Believing a file list that surprised you. In a shared checkout that is first evidence the ref moved, not a finding to reason from.
 
 ## References
 

@@ -505,12 +505,17 @@ by squash, each with a recipe that has worked repeatedly:
 
 - **Your own squashed base conflicts with you.** A branch stacked on another
   branch (or on its own earlier PR) hits "changed in both" conflicts against the
-  squash commit, with byte-identical content on both sides. Verify each conflicted
-  file is identical between the merge base and `origin/main`
-  (`git diff <base>:<file> origin/main:<file>` — empty means the conflict is pure
+  squash commit, with byte-identical content on both sides. Pin the base first —
+  `BASE=$(git rev-parse origin/main)` — then verify each conflicted file is
+  identical between the merge base and `$BASE`
+  (`git diff <base>:<file> "$BASE":<file>` — empty means the conflict is pure
   squash noise), then keep the branch side wholesale. Write files out with
   `git show HEAD:<file> > <file>` — `git checkout -- <path>` is hook-banned here.
-  Confirm with a three-dot diff showing only the branch's own work.
+  Confirm with a three-dot diff against `$BASE` showing only the branch's own work.
+  **Reuse `$BASE`; never name `origin/main` twice in one comparison** — worktrees
+  isolate working trees, not refs, so another session's `git fetch` moves it
+  between your commands and nothing errors. See `working-in-worktrees` →
+  _Two readers, one ref namespace_.
 - **A textually clean merge is not a semantically clean one.** When sibling
   branches landed on one seam, `git merge origin/main` can resolve cleanly while
   leaving a new route calling a renamed helper, tests asserting copy another PR
