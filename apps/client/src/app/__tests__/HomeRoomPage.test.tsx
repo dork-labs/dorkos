@@ -334,12 +334,12 @@ describe('HomeRoomPage — getting out of the keyboard’s way', () => {
     // mounts, and jsdom has no touch to refuse it with, so the full header has
     // to be established rather than assumed.
     act(() => field.blur());
-    expect(await screen.findByText('Waiting On You')).toBeInTheDocument();
+    expect(await screen.findByText('Waiting on you')).toBeInTheDocument();
 
     act(() => field.focus());
 
     expect(await screen.findByText('1 waiting')).toBeInTheDocument();
-    expect(screen.queryByText('Waiting On You')).not.toBeInTheDocument();
+    expect(screen.queryByText('Waiting on you')).not.toBeInTheDocument();
   });
 
   it('gives the caret back — and the header — when the condensed line is tapped', async () => {
@@ -356,18 +356,18 @@ describe('HomeRoomPage — getting out of the keyboard’s way', () => {
       fireEvent.click(line);
     });
 
-    expect(await screen.findByText('Waiting On You')).toBeInTheDocument();
+    expect(await screen.findByText('Waiting on you')).toBeInTheDocument();
     expect(document.activeElement).not.toBe(field);
   });
 
   it('leaves a wide screen alone when the composer is focused', async () => {
     renderHome(waiting);
     const field = await screen.findByPlaceholderText('Message #team…');
-    await screen.findByText('Waiting On You');
+    await screen.findByText('Waiting on you');
 
     act(() => field.focus());
 
-    expect(screen.getByText('Waiting On You')).toBeInTheDocument();
+    expect(screen.getByText('Waiting on you')).toBeInTheDocument();
     expect(screen.queryByText('1 waiting')).not.toBeInTheDocument();
   });
 });
@@ -483,7 +483,7 @@ describe('HomeRoomPage — the attention deep links', () => {
     search = { detail: 'offline-agent', itemId: 'offline' };
     renderHome();
 
-    expect(await screen.findByRole('dialog', { name: /offline/i })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: /aren’t answering/i })).toBeInTheDocument();
   });
 
   it('draws no sheet without one', async () => {

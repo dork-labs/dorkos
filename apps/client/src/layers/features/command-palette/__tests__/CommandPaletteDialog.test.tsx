@@ -274,15 +274,15 @@ vi.mock('../model/use-palette-items', () => ({
       { name: '/world', description: 'Say world' },
     ],
     quickActions: [
-      { id: 'new-session', label: 'New Session', icon: 'Plus', action: 'newSession' },
+      { id: 'new-session', label: 'New session', icon: 'Plus', action: 'newSession' },
       {
         id: 'discover',
         label: 'Bring in existing projects',
         icon: 'Search',
         action: 'discoverAgents',
       },
-      { id: 'browse', label: 'Browse Filesystem', icon: 'FolderOpen', action: 'browseFilesystem' },
-      { id: 'theme', label: 'Toggle Theme', icon: 'Moon', action: 'toggleTheme' },
+      { id: 'browse', label: 'Browse filesystem', icon: 'FolderOpen', action: 'browseFilesystem' },
+      { id: 'theme', label: 'Toggle theme', icon: 'Moon', action: 'toggleTheme' },
     ],
     // The corpus the REAL search and ranking read. `usePaletteSearch` is
     // deliberately not mocked in this file: it is the thing that decides what
@@ -308,7 +308,7 @@ vi.mock('../model/use-palette-items', () => ({
         { name: '/world', description: 'Say world' },
       ].map((c) => ({ id: `cmd-${c.name}`, name: c.name, type: 'command', ...unranked, data: c })),
       ...[
-        { id: 'new-session', label: 'New Session', icon: 'Plus', action: 'newSession' },
+        { id: 'new-session', label: 'New session', icon: 'Plus', action: 'newSession' },
         {
           id: 'discover',
           label: 'Bring in existing projects',
@@ -317,14 +317,14 @@ vi.mock('../model/use-palette-items', () => ({
         },
         {
           id: 'browse',
-          label: 'Browse Filesystem',
+          label: 'Browse filesystem',
           icon: 'FolderOpen',
           action: 'browseFilesystem',
         },
-        { id: 'theme', label: 'Toggle Theme', icon: 'Moon', action: 'toggleTheme' },
+        { id: 'theme', label: 'Toggle theme', icon: 'Moon', action: 'toggleTheme' },
       ].map((q) => ({ id: q.id, name: q.label, type: 'quick-action', ...unranked, data: q })),
     ],
-    newActions: [{ id: 'new-session', label: 'New Session', icon: 'Plus', action: 'newSession' }],
+    newActions: [{ id: 'new-session', label: 'New session', icon: 'Plus', action: 'newSession' }],
     sessions: [],
     continueRows: [],
     // The zero-query Recent list. Agent rows, so the sub-menu drill-in this
@@ -390,13 +390,13 @@ describe('CommandPaletteDialog', () => {
     render(<CommandPaletteDialog />);
     expect(screen.queryByText('Features')).not.toBeInTheDocument();
     expect(screen.queryByText('Quick Actions')).not.toBeInTheDocument();
-    expect(screen.queryByText('Toggle Theme')).not.toBeInTheDocument();
+    expect(screen.queryByText('Toggle theme')).not.toBeInTheDocument();
   });
 
   it("renders the New group with the cockpit's creation actions", () => {
     render(<CommandPaletteDialog />);
     expect(screen.getByText('New')).toBeInTheDocument();
-    expect(screen.getByText('New Session')).toBeInTheDocument();
+    expect(screen.getByText('New session')).toBeInTheDocument();
   });
 
   it('does not render Commands group when search query is empty', () => {
@@ -428,36 +428,36 @@ describe('CommandPaletteDialog', () => {
     ).not.toBeInTheDocument();
   });
 
-  // --- Agent selection (two-step: click agent → sub-menu → Open Here) ---
+  // --- Agent selection (two-step: click agent → sub-menu → Open here) ---
 
   it('clicking an agent item opens the sub-menu (agent-actions page)', () => {
     render(<CommandPaletteDialog />);
     const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
     // Sub-menu should appear with the agent actions
-    expect(screen.getByText('Open Here')).toBeInTheDocument();
-    expect(screen.getByText('Open in New Tab')).toBeInTheDocument();
-    expect(screen.getByText('New Session')).toBeInTheDocument();
-    expect(screen.getByText('Edit Worker Settings')).toBeInTheDocument();
+    expect(screen.getByText('Open here')).toBeInTheDocument();
+    expect(screen.getByText('Open in a new tab')).toBeInTheDocument();
+    expect(screen.getByText('New session')).toBeInTheDocument();
+    expect(screen.getByText('Edit Worker settings')).toBeInTheDocument();
   });
 
-  it('offers Open in New Window in the desktop app', () => {
+  it('offers Open in a new window in the desktop app', () => {
     enterDesktopShell();
     render(<CommandPaletteDialog />);
     const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
-    expect(screen.getByText('Open in New Window')).toBeInTheDocument();
+    expect(screen.getByText('Open in a new window')).toBeInTheDocument();
   });
 
-  it('leaves Open in New Window out entirely in the browser', () => {
+  it('leaves Open in a new window out entirely in the browser', () => {
     // Not disabled, not remapped to a tab — absent. In a browser a new window
     // IS the tab the row above already offers, and two rows that do the same
     // thing is a lie told in the UI (DOR-568).
     render(<CommandPaletteDialog />);
     const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
-    expect(screen.getByText('Open in New Tab')).toBeInTheDocument();
-    expect(screen.queryByText('Open in New Window')).not.toBeInTheDocument();
+    expect(screen.getByText('Open in a new tab')).toBeInTheDocument();
+    expect(screen.queryByText('Open in a new window')).not.toBeInTheDocument();
   });
 
   it('shows breadcrumb when in agent sub-menu', () => {
@@ -468,7 +468,7 @@ describe('CommandPaletteDialog', () => {
     expect(screen.getByText('Agent: Worker')).toBeInTheDocument();
   });
 
-  it('opens an in-window tab on the agent\u2019s project from Open in New Tab', () => {
+  it('opens an in-window tab on the agent\u2019s project from Open in a new tab', () => {
     // DOR-540: this used to be a second window (and before DOR-534, a hand-off
     // to Chrome). In the desktop app it is now a tab in this window, aimed at
     // `/session` with only the agent's directory — the loader resolves which
@@ -479,7 +479,7 @@ describe('CommandPaletteDialog', () => {
     render(<CommandPaletteDialog />);
     const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
-    const newTabItem = screen.getByText('Open in New Tab').closest('[data-slot="command-item"]');
+    const newTabItem = screen.getByText('Open in a new tab').closest('[data-slot="command-item"]');
     if (newTabItem) fireEvent.click(newTabItem as Element);
 
     expect(opened).toHaveLength(1);
@@ -513,14 +513,14 @@ describe('CommandPaletteDialog', () => {
     });
     const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
-    const newTabItem = screen.getByText('Open in New Tab').closest('[data-slot="command-item"]');
+    const newTabItem = screen.getByText('Open in a new tab').closest('[data-slot="command-item"]');
     if (newTabItem) fireEvent.click(newTabItem as Element);
 
     const target = new URL(opened[0], window.location.origin);
     expect(target.searchParams.get('session')).toBe('known-session');
   });
 
-  it('opens a real browser tab from Open in New Tab in the browser', () => {
+  it('opens a real browser tab from Open in a new tab in the browser', () => {
     // Same row, same label, different owner (DOR-568). `main.tsx` registers no
     // strip in a browser, so nothing is registered here either — that absence
     // IS the browser condition, and the seam answers it with the browser's own
@@ -529,7 +529,7 @@ describe('CommandPaletteDialog', () => {
     render(<CommandPaletteDialog />);
     const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
-    const newTabItem = screen.getByText('Open in New Tab').closest('[data-slot="command-item"]');
+    const newTabItem = screen.getByText('Open in a new tab').closest('[data-slot="command-item"]');
     if (newTabItem) fireEvent.click(newTabItem as Element);
 
     expect(openSpy).toHaveBeenCalledTimes(1);
@@ -543,7 +543,7 @@ describe('CommandPaletteDialog', () => {
     openSpy.mockRestore();
   });
 
-  it('opens a second cockpit window \u2014 not a tab \u2014 from Open in New Window', () => {
+  it('opens a second cockpit window \u2014 not a tab \u2014 from Open in a new window', () => {
     // "Another tab" and "put this on my other monitor" are different requests,
     // so the strip must not absorb the second one. Same target as the tab
     // action; only where it lands differs. Desktop-only — see the browser case
@@ -555,7 +555,7 @@ describe('CommandPaletteDialog', () => {
     const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
     const newWindowItem = screen
-      .getByText('Open in New Window')
+      .getByText('Open in a new window')
       .closest('[data-slot="command-item"]');
     if (newWindowItem) fireEvent.click(newWindowItem as Element);
 
@@ -576,13 +576,13 @@ describe('CommandPaletteDialog', () => {
     openSpy.mockRestore();
   });
 
-  it('records the agent and switches directory when Open Here is clicked in sub-menu', async () => {
+  it('records the agent and switches directory when Open here is clicked in sub-menu', async () => {
     render(<CommandPaletteDialog />);
     // Click agent to enter sub-menu
     const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
-    // Click Open Here
-    const openHereItem = screen.getByText('Open Here').closest('[data-slot="command-item"]');
+    // Click Open here
+    const openHereItem = screen.getByText('Open here').closest('[data-slot="command-item"]');
     if (openHereItem) fireEvent.click(openHereItem as Element);
     expect(mockSetDir).toHaveBeenCalledWith('/projects/current', expect.anything());
     // Frecency waits for the agent to actually open (DOR-928): a failed or
@@ -590,14 +590,14 @@ describe('CommandPaletteDialog', () => {
     await waitFor(() => expect(openedAgents()).toContain('/projects/current'));
   });
 
-  it('starts a BRAND-NEW conversation from New Session, not the agent’s latest', async () => {
-    // Red when New Session routes through `setDir`: that resolves the agent's
+  it('starts a BRAND-NEW conversation from New session, not the agent’s latest', async () => {
+    // Red when New session routes through `setDir`: that resolves the agent's
     // most recent conversation and resumes it, which is exactly what "Open
     // Here" two rows above already does — two rows, one behaviour (DOR-928).
     render(<CommandPaletteDialog />);
     const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
-    const newSession = screen.getByText('New Session').closest('[data-slot="command-item"]');
+    const newSession = screen.getByText('New session').closest('[data-slot="command-item"]');
     if (newSession) fireEvent.click(newSession as Element);
 
     expect(mockSetDir).not.toHaveBeenCalled();
@@ -613,11 +613,11 @@ describe('CommandPaletteDialog', () => {
     await waitFor(() => expect(openedAgents()).toContain('/projects/current'));
   });
 
-  it('closes palette after Open Here is clicked in sub-menu', () => {
+  it('closes palette after Open here is clicked in sub-menu', () => {
     render(<CommandPaletteDialog />);
     const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
-    const openHereItem = screen.getByText('Open Here').closest('[data-slot="command-item"]');
+    const openHereItem = screen.getByText('Open here').closest('[data-slot="command-item"]');
     if (openHereItem) fireEvent.click(openHereItem as Element);
     expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
   });
@@ -626,7 +626,7 @@ describe('CommandPaletteDialog', () => {
     render(<CommandPaletteDialog />);
     const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
-    const editItem = screen.getByText('Edit Worker Settings').closest('[data-slot="command-item"]');
+    const editItem = screen.getByText('Edit Worker settings').closest('[data-slot="command-item"]');
     if (editItem) fireEvent.click(editItem as Element);
     // One call now, not three: naming the agent, selecting the tab and opening
     // the panel are all "open the profile", and the store does them together.
@@ -690,9 +690,9 @@ describe('CommandPaletteDialog', () => {
     expect(mockImportOpen).toHaveBeenCalledTimes(1);
   });
 
-  it('opens directory picker when Browse Filesystem quick action is selected', () => {
-    searchThen('Browse Filesystem');
-    const item = screen.getByText('Browse Filesystem').closest('[data-slot="command-item"]');
+  it('opens directory picker when Browse filesystem quick action is selected', () => {
+    searchThen('Browse filesystem');
+    const item = screen.getByText('Browse filesystem').closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
     expect(mockSetPickerOpen).toHaveBeenCalledWith(true);
   });

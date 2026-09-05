@@ -44,12 +44,12 @@ describe('RestartDialog', () => {
 
   it('displays confirmation text about active sessions', () => {
     render(<RestartDialog {...defaultProps} />, { wrapper: Wrapper });
-    expect(screen.getByText(/active sessions will be interrupted/i)).toBeInTheDocument();
+    expect(screen.getByText(/Anything running right now stops/i)).toBeInTheDocument();
   });
 
   it('calls transport.restartServer on confirm', async () => {
     render(<RestartDialog {...defaultProps} />, { wrapper: Wrapper });
-    fireEvent.click(screen.getByRole('button', { name: /restart server/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Restart DorkOS' }));
     await waitFor(() => {
       expect(mockTransport.restartServer).toHaveBeenCalled();
     });
@@ -57,7 +57,7 @@ describe('RestartDialog', () => {
 
   it('calls onRestartComplete callback on success', async () => {
     render(<RestartDialog {...defaultProps} />, { wrapper: Wrapper });
-    fireEvent.click(screen.getByRole('button', { name: /restart server/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Restart DorkOS' }));
     await waitFor(() => {
       expect(defaultProps.onRestartComplete).toHaveBeenCalled();
     });
@@ -82,7 +82,7 @@ describe('RestartDialog', () => {
       const restartServer = installShell({ ok: true });
       render(<RestartDialog {...defaultProps} />, { wrapper: Wrapper });
 
-      fireEvent.click(screen.getByRole('button', { name: /restart server/i }));
+      fireEvent.click(screen.getByRole('button', { name: /restart dorkos/i }));
 
       await waitFor(() => expect(restartServer).toHaveBeenCalled());
       // The HTTP route answers 409 when a supervisor owns the server, so
@@ -98,12 +98,15 @@ describe('RestartDialog', () => {
       });
       render(<RestartDialog {...defaultProps} />, { wrapper: Wrapper });
 
-      fireEvent.click(screen.getByRole('button', { name: /restart server/i }));
+      fireEvent.click(screen.getByRole('button', { name: /restart dorkos/i }));
 
+      // The shell's sentence is the DESCRIPTION now, under an authored headline
+      // (DOR-1755). It still reaches the person verbatim — that is what this
+      // test guards; only which argument carries it moved.
       await waitFor(() =>
-        expect(toast.error).toHaveBeenCalledWith(
-          "DorkOS couldn't restart its server. Port 4242 is taken."
-        )
+        expect(toast.error).toHaveBeenCalledWith("Couldn't restart DorkOS.", {
+          description: "DorkOS couldn't restart its server. Port 4242 is taken.",
+        })
       );
       expect(defaultProps.onRestartComplete).not.toHaveBeenCalled();
     });
@@ -114,7 +117,7 @@ describe('RestartDialog', () => {
       window.electronAPI = { getServerPort: () => 4242 } as unknown as ElectronAPI;
       render(<RestartDialog {...defaultProps} />, { wrapper: Wrapper });
 
-      fireEvent.click(screen.getByRole('button', { name: /restart server/i }));
+      fireEvent.click(screen.getByRole('button', { name: /restart dorkos/i }));
 
       await waitFor(() => expect(mockTransport.restartServer).toHaveBeenCalled());
     });

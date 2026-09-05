@@ -73,53 +73,58 @@ describe('AdvancedTab', () => {
     cleanup();
   });
 
-  it('renders the Danger Zone heading', () => {
+  it('renders the Danger zone heading', () => {
     render(<AdvancedTab />, { wrapper: createWrapper() });
-    expect(screen.getByText('Danger Zone')).toBeInTheDocument();
+    expect(screen.getByText('Danger zone')).toBeInTheDocument();
   });
 
-  it('renders Reset All Data and Restart Server rows', () => {
+  it('renders the reset-data and restart rows in sentence case', () => {
     render(<AdvancedTab />, { wrapper: createWrapper() });
-    expect(screen.getByText('Reset All Data')).toBeInTheDocument();
-    expect(screen.getByText('Restart Server')).toBeInTheDocument();
+    expect(screen.getByText('Reset all data')).toBeInTheDocument();
+    // "Restart DorkOS", not "Restart Server": the person restarts the app they
+    // opened, not a process they never started (DOR-1755).
+    expect(screen.getByText('Restart DorkOS')).toBeInTheDocument();
+    expect(screen.queryByText('Restart Server')).not.toBeInTheDocument();
   });
 
   // The clean slate for interface settings lives here and only here (DOR-923):
   // the Appearance panel's own reset stops at theme and typography.
-  it('renders the Reset All Settings row, and its button says which reset it is', () => {
+  it('renders the Reset all settings row, and its button says which reset it is', () => {
     render(<AdvancedTab />, { wrapper: createWrapper() });
-    expect(screen.getByText('Reset All Settings')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Reset Settings' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Reset Data' })).toBeInTheDocument();
+    expect(screen.getByText('Reset all settings')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reset settings' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reset data' })).toBeInTheDocument();
   });
 
   it('asks for a confirm before resetting settings — the dialog opens, nothing resets on the click', () => {
     render(<AdvancedTab />, { wrapper: createWrapper() });
     expect(screen.queryByTestId('reset-settings-dialog')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reset Settings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reset settings' }));
 
     expect(screen.getByTestId('reset-settings-dialog')).toBeInTheDocument();
   });
 
-  it('retains the Background refresh row', () => {
+  it('retains the background-polling row', () => {
     render(<AdvancedTab />, { wrapper: createWrapper() });
-    expect(screen.getByText('Background refresh')).toBeInTheDocument();
+    expect(screen.getByText('Watch for agents you started somewhere else')).toBeInTheDocument();
   });
 
-  // Background refresh is re-described as an opt-in external-session polling
-  // fallback (spec chat-stream-reconnection, ADR-0266): server-side discovery is
-  // now primary, so the copy must frame it as a fallback, not a correctness switch.
-  it('describes Background refresh as an opt-in external-session fallback', () => {
+  // The row is an opt-in fallback for sessions started outside DorkOS (spec
+  // chat-stream-reconnection, ADR-0266): server-side discovery is now primary,
+  // so the copy must frame it as a fallback, not a correctness switch. It says
+  // that in plain words now, without the word "poll" or an "e.g." (DOR-1755).
+  it('describes the row as an opt-in fallback, in plain words', () => {
     render(<AdvancedTab />, { wrapper: createWrapper() });
-    // Row description: external-session framing, references the CLI, frames it
-    // as opt-in (text unique to the row, not the section copy above it).
-    expect(screen.getByText(/Claude Code CLI/i)).toBeInTheDocument();
+    // Row description: names where the outside work came from, and frames the
+    // switch as something you reach for only when things are slow to appear.
     expect(
-      screen.getByText(/Enable only if external activity isn't appearing promptly/i)
+      screen.getByText(/work you started in a terminal takes a while to show up here/i)
     ).toBeInTheDocument();
-    // Section copy: live sync is automatic; this is only an extra fallback.
-    expect(screen.getByText(/stay in sync across windows automatically/i)).toBeInTheDocument();
+    // Section copy: live sync is automatic; this is only an extra check.
+    expect(screen.getByText(/stay in sync across your windows automatically/i)).toBeInTheDocument();
+    // No mechanism-first jargon survives in the row.
+    expect(screen.queryByText(/\bPoll for updates\b/i)).not.toBeInTheDocument();
   });
 
   // Multi-window sync is now always-on (spec chat-stream-reconnection, ADR-0266);
@@ -214,9 +219,9 @@ describe('AdvancedTab', () => {
     expect(isolated.parentElement).toHaveClass('truncate');
   });
 
-  it('opens ResetDialog when the Reset Data button is clicked', () => {
+  it('opens ResetDialog when the Reset data button is clicked', () => {
     render(<AdvancedTab />, { wrapper: createWrapper() });
-    fireEvent.click(screen.getByRole('button', { name: 'Reset Data' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reset data' }));
     expect(screen.getByTestId('reset-dialog')).toBeInTheDocument();
     // The settings reset is a different door — clicking data must not open it.
     expect(screen.queryByTestId('reset-settings-dialog')).not.toBeInTheDocument();

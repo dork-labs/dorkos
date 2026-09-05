@@ -44,7 +44,9 @@ export function ExtensionsSettingsTab() {
         );
       },
       onError: (err) => {
-        toast.error(err.message);
+        toast.error(approve ? "Couldn't let it run." : "Couldn't stop it running.", {
+          description: err.message,
+        });
       },
     });
   }
@@ -58,8 +60,9 @@ export function ExtensionsSettingsTab() {
       // reload needed. No success toast either: the card's own Switch already
       // reads on/off, so a toast beside it would say the same thing twice.
       onError: (err) => {
-        const action = enabled ? 'enable' : 'disable';
-        toast.error(`Failed to ${action} extension: ${err.message}`);
+        toast.error(enabled ? "Couldn't turn that on." : "Couldn't turn that off.", {
+          description: err.message,
+        });
       },
     });
   }
@@ -69,8 +72,8 @@ export function ExtensionsSettingsTab() {
       onSuccess: (updated) => {
         toast.success(`Reloaded ${updated.length} extension(s)`);
       },
-      onError: () => {
-        toast.error('Failed to reload extensions');
+      onError: (err) => {
+        toast.error("Couldn't reload your extensions.", { description: err.message });
       },
     });
   }
@@ -144,7 +147,7 @@ export function ExtensionsSettingsTab() {
           data-testid="reload-extensions-button"
         >
           <RefreshCw className={cn('mr-2 size-4', reloadMutation.isPending && 'animate-spin')} />
-          Reload Extensions
+          Reload extensions
         </Button>
       </div>
     </div>

@@ -285,7 +285,9 @@ describe('ChannelCreateDialog', () => {
     // suppress just that one. Anything that is NOT a name conflict still
     // toasts, in the same voice the shared handler used.
     await waitFor(() =>
-      expect(toastError).toHaveBeenCalledWith("Couldn't create that channel — Something went wrong")
+      expect(toastError).toHaveBeenCalledWith("Couldn't create that channel.", {
+        description: 'Something went wrong',
+      })
     );
     // The retry is the same request, so nothing typed is thrown away.
     expect(onOpenChange).not.toHaveBeenCalledWith(false);

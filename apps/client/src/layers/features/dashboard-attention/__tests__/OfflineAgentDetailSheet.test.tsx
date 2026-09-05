@@ -206,7 +206,7 @@ describe('OfflineAgentDetailSheet', () => {
 
     renderSheet();
 
-    expect(screen.getByText('3 agents unreachable')).toBeInTheDocument();
+    expect(screen.getByText(/DorkOS can’t reach 3 agents right now/)).toBeInTheDocument();
   });
 
   it('shows singular description when exactly one agent is unreachable', () => {
@@ -216,7 +216,7 @@ describe('OfflineAgentDetailSheet', () => {
 
     renderSheet();
 
-    expect(screen.getByText('1 agent unreachable')).toBeInTheDocument();
+    expect(screen.getByText(/DorkOS can’t reach 1 agent right now/)).toBeInTheDocument();
   });
 
   it('shows zero count description when no agents are unreachable', () => {
@@ -226,7 +226,7 @@ describe('OfflineAgentDetailSheet', () => {
 
     renderSheet();
 
-    expect(screen.getByText('0 agents unreachable')).toBeInTheDocument();
+    expect(screen.getByText(/DorkOS can’t reach 0 agents right now/)).toBeInTheDocument();
   });
 
   it('shows last seen time for agents with lastSeenAt set', () => {
@@ -309,7 +309,7 @@ describe('OfflineAgentDetailSheet', () => {
 
     expect(screen.getByText('NS1 Agent')).toBeInTheDocument();
     expect(screen.getByText('NS2 Agent')).toBeInTheDocument();
-    expect(screen.getByText('2 agents unreachable')).toBeInTheDocument();
+    expect(screen.getByText(/DorkOS can’t reach 2 agents right now/)).toBeInTheDocument();
   });
 
   it('calls onClose when the Close button is clicked', () => {

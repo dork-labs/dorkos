@@ -53,7 +53,7 @@ export function OverridesLedger() {
                   data-testid={`override-row-${row.kind}`}
                   onClick={() => row.onOpen?.()}
                   disabled={!row.onOpen}
-                  aria-label={`${row.name} — ${row.detail}. Open.`}
+                  aria-label={`${row.name}: ${row.detail}. Open.`}
                   className="focus-ring hover:bg-accent/60 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors disabled:pointer-events-none disabled:opacity-60"
                 >
                   <Icon className="text-muted-foreground size-3.5 shrink-0" aria-hidden />

@@ -238,6 +238,6 @@ describe('CatchUpAction (P4 AC-4)', () => {
     // WCAG 2.5.3: the accessible name starts with the visible label, so voice
     // control that hears "Catch up" reaches it.
     expect(button.getAttribute('aria-label')).toMatch(/^Catch up/);
-    expect(button).toHaveAccessibleName('Catch up — mark 2 unread conversations in Today as read');
+    expect(button).toHaveAccessibleName('Catch up: mark 2 unread conversations in Today as read');
   });
 });

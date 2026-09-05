@@ -1,5 +1,6 @@
 import { useSearch } from '@tanstack/react-router';
 import { MessagesSquare } from 'lucide-react';
+import { useIsMobile } from '@/layers/shared/model';
 import { useTeamRoomRedirect } from '../model/use-team-room-redirect';
 import { RoomHistorySkeleton } from './RoomFlow';
 import { RoomSurface } from './RoomSurface';
@@ -24,6 +25,10 @@ import { RoomSurface } from './RoomSurface';
 export function ChannelsPage() {
   const { id, thread, entry } = useSearch({ from: '/_shell/channels' });
   const teamRoom = useTeamRoomRedirect(id, thread, entry);
+  // The empty state names the way in, and the way in is not the same on a
+  // phone: `MobileTabsLayout` deliberately has no sidebar and no hamburger, so
+  // copy pointing at one described a control that had been removed (DOR-1755).
+  const isMobile = useIsMobile();
 
   // **Not yet sure whether this id is Home's room — so draw the room's own
   // loading state, not a blank pane.** This branch is taken by EVERY room on a
@@ -52,8 +57,9 @@ export function ChannelsPage() {
         <MessagesSquare className="text-muted-foreground/50 size-10" aria-hidden />
         <p className="text-foreground font-medium">Pick a conversation</p>
         <p className="max-w-sm">
-          Channels and direct messages live in the sidebar. Open one to read it, or make a new
-          channel to get a few agents talking in the same place.
+          {isMobile
+            ? 'Your channels and direct messages are under All, at the bottom of the screen. Open one to read it.'
+            : 'Your channels and direct messages are in the sidebar. Open one to read it, or use + next to Channels to start a new one.'}
         </p>
       </div>
     );

@@ -6,7 +6,7 @@ import { HiddenEntriesToggle } from './HiddenEntriesToggle';
 import { WorkspaceBadge } from './WorkspaceBadge';
 
 /**
- * Files-panel header toolbar: New File, New Folder, Show/Hide hidden, Refresh,
+ * Files-panel header toolbar: New file, New folder, Show/Hide hidden, Refresh,
  * plus the workspace badge. Registered as the Files contribution's
  * `headerActions`, so it renders inside the container-owned panel header. The
  * create/refresh buttons drive the mounted {@link FileExplorer} tree through
@@ -28,8 +28,8 @@ export function FileExplorerActions() {
       <Button
         variant="ghost"
         size="icon-xs"
-        aria-label="New File"
-        title="New File"
+        aria-label="New file"
+        title="New file"
         onClick={() => commands?.newFile()}
       >
         <FilePlus className="text-muted-foreground" />
@@ -37,8 +37,8 @@ export function FileExplorerActions() {
       <Button
         variant="ghost"
         size="icon-xs"
-        aria-label="New Folder"
-        title="New Folder"
+        aria-label="New folder"
+        title="New folder"
         onClick={() => commands?.newFolder()}
       >
         <FolderPlus className="text-muted-foreground" />

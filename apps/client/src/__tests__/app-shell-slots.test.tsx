@@ -611,7 +611,7 @@ describe('AppShell slot integration', () => {
 
     it('drops the toggle with the panel — no hamburger that opens nothing', () => {
       renderAppShell();
-      expect(screen.queryByRole('button', { name: 'Toggle Sidebar' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Toggle sidebar' })).not.toBeInTheDocument();
     });
 
     it('mounts the four destinations along the bottom instead', () => {
@@ -722,7 +722,7 @@ describe('AppShell slot integration', () => {
       expect(screen.getByTestId('sidebar-footer-strip')).toBeInTheDocument();
       // `getAll`: the rail is a second control with the same name, and the
       // point here is that the toggle exists at all — not how many there are.
-      expect(screen.getAllByRole('button', { name: 'Toggle Sidebar' }).length).toBeGreaterThan(0);
+      expect(screen.getAllByRole('button', { name: 'Toggle sidebar' }).length).toBeGreaterThan(0);
       expect(screen.queryByTestId('mobile-tab-bar')).not.toBeInTheDocument();
     });
   });

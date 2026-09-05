@@ -155,14 +155,14 @@ describe('TunnelSettings', () => {
       render(
         <TunnelSettings
           {...defaultProps}
-          domainError="Sign in to DorkOS first — only a signed-in person can change Remote Access settings."
+          domainError="Sign in to DorkOS first. Only a signed-in person can change Remote access settings."
         />
       );
       await expandSettings();
 
       expect(
         screen.getByText(
-          'Sign in to DorkOS first — only a signed-in person can change Remote Access settings.'
+          'Sign in to DorkOS first. Only a signed-in person can change Remote access settings.'
         )
       ).toBeInTheDocument();
       // The hint steps aside so the two cannot be read as one sentence.

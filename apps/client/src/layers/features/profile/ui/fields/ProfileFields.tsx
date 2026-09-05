@@ -199,7 +199,7 @@ export function ProfileNameField({ member }: ProfileFieldProps) {
           // fourth line under the input.
           description={
             suggestedName
-              ? `What DorkOS calls you. ${suggestedName} — save it to make it yours.`
+              ? `What DorkOS calls you. ${suggestedName}. Save it to make it yours.`
               : 'What DorkOS calls you.'
           }
           orientation="vertical"

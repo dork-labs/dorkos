@@ -177,7 +177,7 @@ test.describe('Rooms in the command palette @smoke', () => {
 
     // `#` is a scope: no features, no quick actions, no agents.
     await expect(palette.options.filter({ hasText: 'Settings' })).toHaveCount(0);
-    await expect(palette.options.filter({ hasText: 'Toggle Theme' })).toHaveCount(0);
+    await expect(palette.options.filter({ hasText: 'Toggle theme' })).toHaveCount(0);
 
     await unreadRow.click();
     await expect(page).toHaveURL(new RegExp(`/channels\\?.*id=${unread.id}`), {

@@ -76,7 +76,7 @@ export const PALETTE_QUICK_ACTIONS: CommandPaletteContribution[] = [
   },
   {
     id: 'new-session',
-    label: 'New Session',
+    label: 'New session',
     icon: 'Plus',
     action: 'newSession',
     category: 'quick-action',
@@ -84,7 +84,7 @@ export const PALETTE_QUICK_ACTIONS: CommandPaletteContribution[] = [
   },
   {
     id: 'create-agent',
-    label: 'Create Agent',
+    label: 'Create agent',
     icon: 'Plus',
     action: 'createAgent',
     category: 'quick-action',
@@ -100,7 +100,7 @@ export const PALETTE_QUICK_ACTIONS: CommandPaletteContribution[] = [
   },
   {
     id: 'browse',
-    label: 'Browse Filesystem',
+    label: 'Browse filesystem',
     icon: 'FolderOpen',
     action: 'browseFilesystem',
     category: 'quick-action',
@@ -108,7 +108,7 @@ export const PALETTE_QUICK_ACTIONS: CommandPaletteContribution[] = [
   },
   {
     id: 'theme',
-    label: 'Toggle Theme',
+    label: 'Toggle theme',
     icon: 'Moon',
     action: 'toggleTheme',
     category: 'quick-action',
@@ -116,7 +116,7 @@ export const PALETTE_QUICK_ACTIONS: CommandPaletteContribution[] = [
   },
   {
     id: 'switch-shape',
-    label: 'Switch Shape',
+    label: 'Switch shape',
     icon: 'Shapes',
     action: 'switchShape',
     category: 'quick-action',
@@ -124,7 +124,7 @@ export const PALETTE_QUICK_ACTIONS: CommandPaletteContribution[] = [
   },
   {
     id: 'canvas',
-    label: 'Toggle Canvas',
+    label: 'Toggle canvas',
     icon: 'PanelRight',
     action: 'toggleCanvas',
     category: 'quick-action',

@@ -36,6 +36,6 @@ describe('provenanceLine', () => {
       at: '2026-08-27T11:59:50.000Z',
       subject: 'Sketch the room brief',
     });
-    expect(line.title).toBe('Sketch the room brief — Kai, Just now');
+    expect(line.title).toBe('Sketch the room brief · Kai, Just now');
   });
 });

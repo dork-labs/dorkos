@@ -130,7 +130,7 @@ export function ProviderSetupCard({ status }: { status: ConnectorProviderStatus 
       )}
       {!status.configured && status.type === 'composio' && (
         <p className="text-muted-foreground mt-2 text-xs leading-relaxed">
-          Any Composio key works — the project key from your dashboard or the account key the
+          Any Composio key works: the project key from your dashboard or the account key the
           composio CLI uses.
         </p>
       )}
@@ -140,8 +140,8 @@ export function ProviderSetupCard({ status }: { status: ConnectorProviderStatus 
 
 /** The saved-key line, naming which key kind validated when the server knows. */
 function savedKeyLine(keyKind: ConnectorProviderStatus['keyKind']): string {
-  if (keyKind === 'user') return 'API key saved — using your account key';
-  if (keyKind === 'project') return 'API key saved — using your project key';
+  if (keyKind === 'user') return 'API key saved, using your account key';
+  if (keyKind === 'project') return 'API key saved, using your project key';
   return 'API key saved';
 }
 

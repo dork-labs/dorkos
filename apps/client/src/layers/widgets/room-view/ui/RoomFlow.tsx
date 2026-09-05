@@ -414,7 +414,7 @@ export function RoomFlow({
       <div className="text-muted-foreground flex flex-col items-center gap-2 p-10 text-center text-sm">
         <p className="text-foreground font-medium">Couldn&apos;t load this conversation</p>
         <p className="max-w-sm">
-          Nothing was lost — a room keeps everything that was said. Reload to try again.
+          Nothing was lost. A room keeps everything that was said. Reload to try again.
         </p>
       </div>
     );

@@ -113,7 +113,7 @@ describe('DirectoryPicker', () => {
 
   it('renders dialog title', () => {
     renderPicker();
-    expect(screen.getByText('Select Working Directory')).toBeDefined();
+    expect(screen.getByText('Select working folder')).toBeDefined();
   });
 
   it('shows directory entries after switching to browse view', async () => {
@@ -183,21 +183,21 @@ describe('DirectoryPicker', () => {
     expect(disc?.querySelector('[data-slot="identity-badge"]')).toBeTruthy();
   });
 
-  // --- New Folder tests ---
+  // --- New folder tests ---
 
-  describe('New Folder', () => {
-    it('renders New Folder button in browse toolbar', async () => {
+  describe('New folder', () => {
+    it('renders New folder button in browse toolbar', async () => {
       renderPicker();
       await switchToBrowse();
 
-      expect(screen.getByLabelText('New Folder')).toBeDefined();
+      expect(screen.getByLabelText('New folder')).toBeDefined();
     });
 
-    it('shows inline text input when New Folder is clicked', async () => {
+    it('shows inline text input when New folder is clicked', async () => {
       renderPicker();
       await switchToBrowse();
 
-      fireEvent.click(screen.getByLabelText('New Folder'));
+      fireEvent.click(screen.getByLabelText('New folder'));
 
       const input = screen.getByLabelText('New folder name');
       expect(input).toBeDefined();
@@ -208,7 +208,7 @@ describe('DirectoryPicker', () => {
       renderPicker();
       await switchToBrowse();
 
-      fireEvent.click(screen.getByLabelText('New Folder'));
+      fireEvent.click(screen.getByLabelText('New folder'));
       const input = screen.getByLabelText('New folder name');
 
       fireEvent.change(input, { target: { value: 'INVALID_NAME' } });
@@ -222,7 +222,7 @@ describe('DirectoryPicker', () => {
       renderPicker();
       await switchToBrowse();
 
-      fireEvent.click(screen.getByLabelText('New Folder'));
+      fireEvent.click(screen.getByLabelText('New folder'));
       const input = screen.getByLabelText('New folder name');
 
       fireEvent.change(input, { target: { value: 'my-new-folder' } });
@@ -235,7 +235,7 @@ describe('DirectoryPicker', () => {
       renderPicker();
       await switchToBrowse();
 
-      fireEvent.click(screen.getByLabelText('New Folder'));
+      fireEvent.click(screen.getByLabelText('New folder'));
       const input = screen.getByLabelText('New folder name');
 
       fireEvent.change(input, { target: { value: '-bad' } });
@@ -252,7 +252,7 @@ describe('DirectoryPicker', () => {
       renderPicker();
       await switchToBrowse();
 
-      fireEvent.click(screen.getByLabelText('New Folder'));
+      fireEvent.click(screen.getByLabelText('New folder'));
       const input = screen.getByLabelText('New folder name');
 
       fireEvent.change(input, { target: { value: 'my-folder' } });
@@ -267,7 +267,7 @@ describe('DirectoryPicker', () => {
       renderPicker();
       await switchToBrowse();
 
-      fireEvent.click(screen.getByLabelText('New Folder'));
+      fireEvent.click(screen.getByLabelText('New folder'));
       expect(screen.getByLabelText('New folder name')).toBeDefined();
 
       fireEvent.keyDown(screen.getByLabelText('New folder name'), { key: 'Escape' });
@@ -279,7 +279,7 @@ describe('DirectoryPicker', () => {
       renderPicker();
       await switchToBrowse();
 
-      fireEvent.click(screen.getByLabelText('New Folder'));
+      fireEvent.click(screen.getByLabelText('New folder'));
       expect(screen.getByLabelText('New folder name')).toBeDefined();
 
       fireEvent.click(screen.getByLabelText('Cancel new folder'));
@@ -298,7 +298,7 @@ describe('DirectoryPicker', () => {
       // Record call count before create
       const callsBefore = vi.mocked(mockTransport.browseDirectory).mock.calls.length;
 
-      fireEvent.click(screen.getByLabelText('New Folder'));
+      fireEvent.click(screen.getByLabelText('New folder'));
       fireEvent.change(screen.getByLabelText('New folder name'), {
         target: { value: 'new-dir' },
       });
@@ -318,14 +318,19 @@ describe('DirectoryPicker', () => {
       renderPicker();
       await switchToBrowse();
 
-      fireEvent.click(screen.getByLabelText('New Folder'));
+      fireEvent.click(screen.getByLabelText('New folder'));
       fireEvent.change(screen.getByLabelText('New folder name'), {
         target: { value: 'my-folder' },
       });
       fireEvent.keyDown(screen.getByLabelText('New folder name'), { key: 'Enter' });
 
       await waitFor(() => {
-        expect(toast.error).toHaveBeenCalledWith('Permission denied');
+        // The authored line is the headline and the server's own words sit
+        // under it, so a person meets a sentence rather than "EACCES" (DOR-1755).
+        expect(toast.error).toHaveBeenCalledWith(
+          "Couldn't make that folder.",
+          expect.objectContaining({ description: 'Permission denied' })
+        );
       });
     });
   });

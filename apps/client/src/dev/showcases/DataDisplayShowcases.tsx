@@ -242,14 +242,26 @@ export function DataDisplayShowcases() {
 
       <PlaygroundSection
         title="FeatureDisabledState"
-        description="Empty state card shown when a subsystem is not enabled."
+        description="Empty state shown when a feature is off because DorkOS was started without it. Always says where the command goes, and offers to copy it."
       >
+        <ShowcaseLabel>Default hint</ShowcaseLabel>
         <ShowcaseDemo>
           <FeatureDisabledState
             icon={Radio}
-            name="Relay"
-            description="Inter-agent messaging requires the relay subsystem to be running."
-            command="dorkos relay start"
+            name="Messaging"
+            description="Turn on Messaging so people can reach your agents from Telegram, Slack and elsewhere."
+            command="DORKOS_RELAY_ENABLED=true dorkos"
+          />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Custom hint</ShowcaseLabel>
+        <ShowcaseDemo>
+          <FeatureDisabledState
+            icon={Radio}
+            name="Scheduling"
+            description="Scheduled tasks let your agents work on a timer, even when you're not here."
+            command="dorkos --tasks"
+            commandHint="Start DorkOS from your terminal like this:"
           />
         </ShowcaseDemo>
       </PlaygroundSection>

@@ -47,7 +47,7 @@ const NOPE_DISCLAIMER =
  * they arrive through this page or through the file.
  */
 const MEMORY_DISCLAIMER =
-  'Your agent writes notes here as it works, and every note says where it was written. Anything in this file can come up in any conversation the agent joins, including rooms shared with other people — so never keep secrets, passwords or keys here. Deleting a line is forgetting it.';
+  'Your agent writes notes here as it works, and every note says where it was written. Anything in this file can come up in any conversation the agent joins, including rooms shared with other people, so never keep secrets, passwords or keys here. Deleting a line is forgetting it.';
 
 /** Which file a page is about, and everything that differs because of it. */
 interface ConventionFile {
@@ -134,7 +134,7 @@ function status(over: number, overhead: number, dirty: boolean, savedAt: number 
     // budget is smaller than the editor looks. The prose field is the whole page;
     // the trait block spending the same budget is not on screen at all.
     const because =
-      overhead > 0 ? ` — the personality block takes ${overhead.toLocaleString()} of them` : '';
+      overhead > 0 ? `. The personality block takes ${overhead.toLocaleString()} of them` : '';
     return `Too long by ${over.toLocaleString()} character${over === 1 ? '' : 's'}${because}`;
   }
   if (dirty) return 'Unsaved changes';

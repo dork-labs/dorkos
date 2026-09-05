@@ -58,7 +58,7 @@ export function stopNotice(receipt: InterruptReceipt): StopNotice {
       return { message: null, isFailure: false };
     case 'unconfirmed':
       return {
-        message: `Stop requested. ${runtimeLabel(receipt.runtime)} didn't confirm it — the agent may still be working.`,
+        message: `Stop requested. ${runtimeLabel(receipt.runtime)} didn't confirm it. The agent may still be working.`,
         isFailure: false,
       };
     case 'failed':

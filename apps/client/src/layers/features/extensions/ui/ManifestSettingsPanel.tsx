@@ -298,7 +298,7 @@ function SecretRow({
       // would say the same thing twice.
       await onChanged();
     } catch {
-      toast.error(`Failed to save ${secret.label}`);
+      toast.error(`Couldn't save ${secret.label}. Try again.`);
     } finally {
       setSaving(false);
     }
@@ -316,7 +316,7 @@ function SecretRow({
       // the same thing twice.
       await onChanged();
     } catch {
-      toast.error(`Failed to remove ${secret.label}`);
+      toast.error(`Couldn't remove ${secret.label}. Try again.`);
     } finally {
       setSaving(false);
     }

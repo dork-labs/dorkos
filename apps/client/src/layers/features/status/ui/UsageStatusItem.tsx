@@ -39,7 +39,7 @@ export function UsageDetail({ usage }: UsageStatusItemProps) {
       : null;
     return (
       <div className="space-y-1">
-        <div className="text-xs font-medium">Subscription Usage</div>
+        <div className="text-xs font-medium">Subscription usage</div>
         <div className="text-3xs space-y-0.5">
           <DetailRow label="Utilization">{`${pct}%`}</DetailRow>
           {usage.windowLabel && <DetailRow label="Window">{usage.windowLabel}</DetailRow>}
@@ -56,7 +56,7 @@ export function UsageDetail({ usage }: UsageStatusItemProps) {
 
   return (
     <div className="space-y-1">
-      <div className="text-xs font-medium">Session Cost</div>
+      <div className="text-xs font-medium">Session cost</div>
       <div className="text-3xs space-y-0.5">
         {usage.costUsd != null && (
           <DetailRow label="Cost">{`$${usage.costUsd.toFixed(2)}`}</DetailRow>
@@ -148,7 +148,7 @@ export function UsageStatusItem({ usage }: UsageStatusItemProps) {
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-56">
         <div className="space-y-1">
-          <div className="text-xs font-medium">Session Cost</div>
+          <div className="text-xs font-medium">Session cost</div>
           <div className="text-muted-foreground text-3xs">{usage.detail}</div>
         </div>
       </TooltipContent>

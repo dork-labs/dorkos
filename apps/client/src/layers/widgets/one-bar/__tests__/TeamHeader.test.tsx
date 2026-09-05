@@ -257,16 +257,16 @@ describe('TeamHeader', () => {
       renderTeamBar();
       await screen.findByTestId('page');
 
-      const button = screen.getByRole('button', { name: 'New Agent' });
+      const button = screen.getByRole('button', { name: 'New agent' });
       // Still reachable by name (the icon carries the aria-label), but the words
       // are gone — that is the width the phone gets back.
-      expect(button).not.toHaveTextContent('New Agent');
+      expect(button).not.toHaveTextContent('New agent');
     });
 
     it('spells the words out on a desktop', async () => {
       renderTeamBar();
       await screen.findByTestId('page');
-      expect(screen.getByRole('button', { name: /new agent/i })).toHaveTextContent('New Agent');
+      expect(screen.getByRole('button', { name: /new agent/i })).toHaveTextContent('New agent');
     });
   });
 });

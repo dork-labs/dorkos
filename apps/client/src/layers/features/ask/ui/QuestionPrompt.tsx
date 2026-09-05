@@ -152,7 +152,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
           setSubmitted(true);
           onDecided?.(answers);
         } else {
-          setError(err instanceof Error ? err.message : 'Failed to submit answers');
+          setError(err instanceof Error ? err.message : "Couldn't send your answers. Try again.");
         }
       } finally {
         setSubmitting(false);

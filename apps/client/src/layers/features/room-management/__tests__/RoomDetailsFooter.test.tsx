@@ -64,8 +64,8 @@ describe('RoomDetailsFooter', () => {
       // `expect.anything()` covers the shared "Report" action every
       // mutation-error toast carries; query-client.test.ts owns its content.
       expect(toast.error).toHaveBeenCalledWith(
-        "Couldn't bring that room back — A channel called #backend already exists",
-        expect.anything()
+        "Couldn't bring that room back",
+        expect.objectContaining({ description: 'A channel called #backend already exists' })
       )
     );
     expect(toast.error).toHaveBeenCalledTimes(1);

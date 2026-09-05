@@ -296,7 +296,7 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
       await dialog.getByLabel('Approvers').fill('U01ABC123\nU02DEF456\nU03GHI789');
       await dialog.getByRole('button', { name: 'Continue' }).click();
       await dialog.getByRole('button', { name: /^(Continue|Skip)$/ }).click();
-      await dialog.getByRole('button', { name: 'Save Changes' }).click();
+      await dialog.getByRole('button', { name: 'Save changes' }).click();
       await expect(dialog).toBeHidden();
 
       // Read the saved config back from the catalog — the same JSON the cockpit
@@ -341,13 +341,13 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
       await dialog.getByLabel('Slack channel settings').fill('{"C01ABC": ');
       await dialog.getByRole('button', { name: 'Continue' }).click();
       await dialog.getByRole('button', { name: /^(Continue|Skip)$/ }).click();
-      await dialog.getByRole('button', { name: 'Save Changes' }).click();
+      await dialog.getByRole('button', { name: 'Save changes' }).click();
 
-      // The specific sentence, and ONLY it — the app-wide "Action failed.
-      // Please try again." would talk over the reason and invite a retry of the
-      // same broken input.
+      // The specific sentence, and ONLY it — the app-wide "That didn't work.
+      // Try again." would talk over the reason and invite a retry of the same
+      // broken input.
       await expect(page.getByText(/expected JSON/)).toBeVisible();
-      await expect(page.getByText('Action failed. Please try again.')).toHaveCount(0);
+      await expect(page.getByText("That didn't work. Try again.")).toHaveCount(0);
 
       // The stored rules are still there.
       const saved = (await fetchCatalog(page))

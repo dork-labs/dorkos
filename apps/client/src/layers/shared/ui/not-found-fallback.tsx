@@ -14,7 +14,7 @@ export function NotFoundFallback() {
         </p>
       </div>
       <Button variant="outline" size="sm" asChild>
-        <Link to="/">Back to Home</Link>
+        <Link to="/">Back to home</Link>
       </Button>
     </div>
   );

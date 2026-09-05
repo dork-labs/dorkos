@@ -177,7 +177,7 @@ beforeEach(() => {
 /**
  * Total toasts fired across every tone. Standing-decision failures must land as
  * exactly one toast: the specific one from `useGrantApproval`/`useDenyApproval`'s
- * own `onError`. A second, generic "Action failed" toast from the app-wide
+ * own `onError`. A second, generic fallback toast from the app-wide
  * MutationCache handler means `meta.suppressErrorToast` regressed.
  */
 function toastCallCount() {
@@ -353,7 +353,7 @@ describe('the third button on an approval card', () => {
 
   it('says the action ran when only the permission failed to record', async () => {
     // The 500 that is not a failure. The server says so in plain words; the app-wide
-    // handler would replace all of it with "Action failed. Please try again." about
+    // handler would replace all of it with "That didn't work. Try again." about
     // an irreversible action that succeeded, which invites doing it twice.
     const failure = new Error(
       'DorkOS allowed this one action, but could not record the permission to stop asking. The agent will ask again next time.'
@@ -378,7 +378,7 @@ describe('the third button on an approval card', () => {
     expect(vi.mocked(toast.warning).mock.calls[0][0]).toContain('allowed this one action');
     // Not the generic toast, and not an error tone.
     expect(toast.error).not.toHaveBeenCalled();
-    // And not a second toast of any tone: the app-wide "Action failed" handler
+    // And not a second toast of any tone: the app-wide fallback handler
     // must actually have been suppressed, not merely absent from this client.
     expect(toastCallCount()).toBe(1);
   });

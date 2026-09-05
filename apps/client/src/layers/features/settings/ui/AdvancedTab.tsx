@@ -58,23 +58,23 @@ export function AdvancedTab() {
 
   return (
     <div className="space-y-6">
-      <h3 className="text-sm font-semibold">Background Updates</h3>
+      <h3 className="text-sm font-semibold">Background updates</h3>
       <p className="text-muted-foreground text-xs">
-        Messages stream in live and stay in sync across windows automatically. This optional setting
-        adds an extra polling fallback for sessions running outside DorkOS.
+        Messages arrive live and stay in sync across your windows automatically. The switch below is
+        an extra check, and only for work you started outside DorkOS.
       </p>
       <FieldCard>
         <FieldCardContent>
           <SwitchSettingRow
-            label="Background refresh"
-            description="Poll for updates to sessions running outside DorkOS (e.g. the Claude Code CLI). Enable only if external activity isn't appearing promptly."
+            label="Watch for agents you started somewhere else"
+            description="Turn this on if work you started in a terminal takes a while to show up here."
             checked={enableMessagePolling}
             onCheckedChange={setEnableMessagePolling}
           />
         </FieldCardContent>
       </FieldCard>
 
-      <h3 className="text-sm font-semibold">Message Box</h3>
+      <h3 className="text-sm font-semibold">Message box</h3>
       <p className="text-muted-foreground text-xs">
         How the box you type messages into behaves. This applies to chat for now.
       </p>
@@ -111,12 +111,12 @@ export function AdvancedTab() {
         <>
           <h3 className="text-sm font-semibold">Logging</h3>
           <p className="text-muted-foreground text-xs">
-            Server log verbosity and rotation. Changes take effect immediately for log level;
-            rotation settings apply on next file rotation.
+            Notes DorkOS keeps about what it did, in case something goes wrong. A new log level
+            takes effect right away. The file settings apply to the next log file.
           </p>
           <FieldCard>
             <FieldCardContent>
-              <SettingRow label="Log level" description="Server log verbosity">
+              <SettingRow label="Log level" description="How much detail DorkOS writes down.">
                 <Select value={logging.level} onValueChange={(v) => updateLogging({ level: v })}>
                   <SelectTrigger className="w-28">
                     <SelectValue />
@@ -132,8 +132,8 @@ export function AdvancedTab() {
               </SettingRow>
 
               <SettingRow
-                label="Max log file size"
-                description="Size in KB before a log file is rotated"
+                label="Biggest log file"
+                description="How big one log file gets before DorkOS starts a new one."
               >
                 <div className="flex items-center gap-1.5">
                   <Input
@@ -152,8 +152,8 @@ export function AdvancedTab() {
               </SettingRow>
 
               <SettingRow
-                label="Rotated files kept"
-                description="Number of old log files to retain (1-30)"
+                label="Old files kept"
+                description="How many old log files to keep. Between 1 and 30."
               >
                 <Input
                   type="number"
@@ -176,13 +176,13 @@ export function AdvancedTab() {
 
       <div className="flex items-center gap-2">
         <TriangleAlert className="text-destructive size-4" />
-        <h3 className="text-destructive text-sm font-semibold">Danger Zone</h3>
+        <h3 className="text-destructive text-sm font-semibold">Danger zone</h3>
       </div>
       <FieldCard className="border-destructive/50">
         <FieldCardContent>
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-sm font-medium">Reset All Settings</p>
+              <p className="text-sm font-medium">Reset all settings</p>
               <p className="text-muted-foreground text-xs">
                 Put the theme, text, toggles, and panel layouts on this device back to how they
                 shipped. Your projects, agents, and chats stay.
@@ -197,28 +197,26 @@ export function AdvancedTab() {
               size="sm"
               onClick={() => setResetSettingsDialogOpen(true)}
             >
-              Reset Settings
+              Reset settings
             </Button>
           </div>
 
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-sm font-medium">Reset All Data</p>
+              <p className="text-sm font-medium">Reset all data</p>
               <p className="text-muted-foreground text-xs">
-                Permanently delete all DorkOS data and restart the server.
+                Delete everything DorkOS has saved and start it again. You cannot undo this.
               </p>
             </div>
             <Button variant="destructive" size="sm" onClick={() => setResetDialogOpen(true)}>
-              Reset Data
+              Reset data
             </Button>
           </div>
 
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-sm font-medium">Restart Server</p>
-              <p className="text-muted-foreground text-xs">
-                Restart the DorkOS server process. Active sessions will be interrupted.
-              </p>
+              <p className="text-sm font-medium">Restart DorkOS</p>
+              <p className="text-muted-foreground text-xs">Anything running right now stops.</p>
             </div>
             <Button variant="destructive" size="sm" onClick={() => setRestartDialogOpen(true)}>
               Restart
@@ -271,7 +269,7 @@ function LogLocationRow({ dorkHome }: { dorkHome: string }) {
   }
 
   return (
-    <SettingRow label="Log location" description="Directory where server log files are stored">
+    <SettingRow label="Log location" description="Where DorkOS keeps these files.">
       <button
         type="button"
         onClick={() => void copy(logPath)}

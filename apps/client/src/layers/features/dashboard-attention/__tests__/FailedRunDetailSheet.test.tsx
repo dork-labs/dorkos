@@ -154,7 +154,7 @@ describe('FailedRunDetailSheet', () => {
 
     renderSheet();
 
-    expect(screen.getByText('Failed to load run details.')).toBeInTheDocument();
+    expect(screen.getByText(/Couldn’t load this run/)).toBeInTheDocument();
   });
 
   it('renders resolved message when no run data is found', () => {
@@ -351,7 +351,7 @@ describe('FailedRunDetailSheet', () => {
   it('renders the sheet title and itemId truncated to 8 chars', () => {
     renderSheet({ itemId: 'run-abc123-full-id' });
 
-    expect(screen.getByText('Failed Run')).toBeInTheDocument();
+    expect(screen.getByText('Run that didn’t finish')).toBeInTheDocument();
     expect(screen.getByText('run-abc1')).toBeInTheDocument();
   });
 

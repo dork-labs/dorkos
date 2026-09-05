@@ -58,7 +58,7 @@ export function MessagingRegion() {
         <FeatureDisabledState
           icon={Route}
           name="Messaging"
-          description="Messaging is off, so nothing outside DorkOS can reach your agents yet. Start DorkOS with it on."
+          description="Turn on Messaging so people can reach your agents from Telegram, Slack and elsewhere."
           command="DORKOS_RELAY_ENABLED=true dorkos"
         />
       )}

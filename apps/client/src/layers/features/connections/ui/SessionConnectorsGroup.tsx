@@ -18,9 +18,9 @@ import { accountDisplayName, FALLBACK_SERVICE_ICON, SERVICE_ICONS } from '../lib
 
 /** Plain-language copy per null-branch reason — mirrors the server's reasons. */
 const WARNING_COPY: Record<SessionConnectorWarning['reason'], string> = {
-  expired: 'expired — reconnect it under Connections',
-  revoked: 'revoked — reconnect it under Connections',
-  unavailable: 'not available right now',
+  expired: 'This account expired. Reconnect it under Connections.',
+  revoked: 'This account was disconnected. Reconnect it under Connections.',
+  unavailable: 'This account is not available right now.',
 };
 
 /**
@@ -194,7 +194,7 @@ function AttachPopover({
             </p>
             {attach.data?.warning && (
               <p role="alert" className="text-destructive text-xs">
-                Attached, but {WARNING_COPY[attach.data.warning.reason]}.
+                Attached, but there is a problem. {WARNING_COPY[attach.data.warning.reason]}
               </p>
             )}
             <div className="flex justify-end gap-2">

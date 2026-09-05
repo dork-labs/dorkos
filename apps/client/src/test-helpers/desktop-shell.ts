@@ -5,7 +5,7 @@
  * Electron preload bridge, so a test changes surface by installing or removing
  * that bridge — no module mock, no `vi.resetModules()`, and the same signal the
  * real app reads. Every gate this repo puts on the desktop app (the tab strip,
- * the tab shortcuts, "Open in New Window") is provable on both sides in one file
+ * the tab shortcuts, "Open in a new window") is provable on both sides in one file
  * because of that.
  *
  * The stub is deliberately partial: one method, the one being probed. A gate

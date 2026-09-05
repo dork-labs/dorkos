@@ -184,8 +184,8 @@ describe('RoomsTab', () => {
 
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
-        "Couldn't change that limit — Only a person can change those settings",
-        expect.anything()
+        "Couldn't change that limit",
+        expect.objectContaining({ description: 'Only a person can change those settings' })
       )
     );
     await waitFor(() => expect(master).toBeChecked());

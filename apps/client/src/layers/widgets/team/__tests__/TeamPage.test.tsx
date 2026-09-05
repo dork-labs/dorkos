@@ -284,7 +284,7 @@ describe('TeamPage — grouping by manager', () => {
     renderPage({ members: MOCK_TEAM_ROSTER });
     await screen.findByText('Dorian');
 
-    await user.click(chip('Group: manager'));
+    await user.click(chip('Group by owner'));
 
     const headings = screen.getAllByRole('heading', { level: 2 });
     expect(headings).toHaveLength(3);
@@ -308,7 +308,7 @@ describe('TeamPage — grouping by manager', () => {
     renderPage({ members: MOCK_TEAM_ROSTER });
     await screen.findByText('Dorian');
 
-    await user.click(chip('Group: manager'));
+    await user.click(chip('Group by owner'));
 
     expect(cardNames()).not.toContain('Dorian');
     expect(cardNames()).not.toContain('Miguel Ferreira-Santos');
@@ -364,7 +364,7 @@ describe('TeamPage — the empty and degraded states', () => {
     });
 
     expect(
-      await screen.findByText("Couldn't read your agents — showing who we could.")
+      await screen.findByText("Couldn't read your agents. Showing who we could.")
     ).toBeInTheDocument();
     expect(cardNames()).toEqual(['Dorian', 'Miguel Ferreira-Santos']);
   });

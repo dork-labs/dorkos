@@ -91,7 +91,7 @@ function StatusIcon({ status }: { status: TaskRun['status'] }) {
       // DorkOS was already running as many tasks as it is allowed to, so this
       // occurrence was recorded and not run. The row's error text says so.
       return (
-        <span title="Skipped — DorkOS was busy" aria-label="Skipped">
+        <span title="Skipped: DorkOS was busy" aria-label="Skipped">
           <SkipForward className="text-muted-foreground size-3.5" />
         </span>
       );

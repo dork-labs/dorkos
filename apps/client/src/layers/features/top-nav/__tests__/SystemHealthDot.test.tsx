@@ -63,7 +63,10 @@ describe('SystemHealthDot', () => {
   it('has aria-label for error state', () => {
     const { container } = renderDot('error');
     const dot = container.querySelector('span');
-    expect(dot).toHaveAttribute('aria-label', 'Issues detected — check Needs Attention');
+    expect(dot).toHaveAttribute(
+      'aria-label',
+      'Something needs you. Check Needs attention on Home.'
+    );
   });
 
   it('renders as a span element', () => {

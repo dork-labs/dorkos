@@ -1322,7 +1322,7 @@ describe('AgentMcpServers', () => {
 
     // Present: the rows whose data exists today.
     expect(within(container).getByText('Runs `npx` on this computer')).toBeInTheDocument();
-    expect(within(container).getByText('None — this server doesn’t need one.')).toBeInTheDocument();
+    expect(within(container).getByText('None. This server doesn’t need one.')).toBeInTheDocument();
     expect(within(container).getByText(rawError)).toBeInTheDocument();
 
     // Absent: the rows whose data the API does not carry yet (DOR-1006). They must

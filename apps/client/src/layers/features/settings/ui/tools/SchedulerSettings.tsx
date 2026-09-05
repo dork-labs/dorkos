@@ -23,7 +23,12 @@ interface SchedulerSettingsProps {
 export function SchedulerSettings({ scheduler, onUpdate }: SchedulerSettingsProps) {
   return (
     <>
-      <SettingRow label="Concurrent runs" description="Scheduled runs at once">
+      {/* Same wording as the Control Center row that writes the same setting
+          (`ControlCenterSwitches`): one control, one name. */}
+      <SettingRow
+        label="Scheduled runs at once"
+        description="How many scheduled tasks may run at the same time."
+      >
         <Input
           type="number"
           min={1}
@@ -37,7 +42,7 @@ export function SchedulerSettings({ scheduler, onUpdate }: SchedulerSettingsProp
         />
       </SettingRow>
 
-      <SettingRow label="Run history" description="Completed runs to keep">
+      <SettingRow label="Run history" description="How many finished runs to keep.">
         <Input
           type="number"
           min={1}

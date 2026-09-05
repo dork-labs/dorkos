@@ -250,7 +250,7 @@ describe('useAppTabsSync — how the location changed decides who keeps focus', 
   });
 
   it('keeps a tab opened on an agent another tab already shows', async () => {
-    // BLOCKER (the headline path): "Open in New Tab" mints a tab on the
+    // BLOCKER (the headline path): "Open in a new tab" mints a tab on the
     // transient `/session?dir=…`, which the loader redirects to the resolved
     // session. When a sibling already sat there, focus used to snap back to it
     // and the new tab was stranded on an href its own loader redirects away

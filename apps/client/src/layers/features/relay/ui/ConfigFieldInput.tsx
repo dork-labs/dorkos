@@ -174,7 +174,7 @@ export function ConfigFieldInput({
               }}
               onFocus={() => onChange(field.key, '')}
               onBlur={handleBlur}
-              placeholder="Saved — enter a new one to replace"
+              placeholder="Saved. Enter a new one to replace"
               // Sentinel already holds a saved value, so "required" doesn't apply here —
               // matches the label, which also suppresses the asterisk in this state.
             />

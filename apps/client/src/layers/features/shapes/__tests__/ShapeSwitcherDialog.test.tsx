@@ -49,7 +49,7 @@ vi.mock('sonner', async (importOriginal) => {
 });
 
 /** The app-wide fallback the fork must never fall back to (DOR-402/DOR-453). */
-const GENERIC_MUTATION_TOAST = 'Action failed. Please try again.';
+const GENERIC_MUTATION_TOAST = "That didn't work. Try again.";
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -534,7 +534,7 @@ describe('ShapeSwitcherDialog', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/already exists/i);
     expect(screen.getByLabelText(/name your version/i)).toBeInTheDocument();
     // Reported exactly once: the field says which name is taken, and no toast
-    // talks over it — least of all the app-wide "Action failed" fallback.
+    // talks over it — least of all the app-wide fallback toast.
     expect(toast.error).not.toHaveBeenCalled();
   });
 

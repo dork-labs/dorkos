@@ -55,8 +55,8 @@ describe('room settings failures', () => {
       // this file's. Asserted as `anything()` rather than dropped, so a toast
       // raised with no options at all still fails here.
       expect(toast.error).toHaveBeenCalledWith(
-        "Couldn't rename that room — A channel called #backend already exists",
-        expect.anything()
+        "Couldn't rename that room",
+        expect.objectContaining({ description: 'A channel called #backend already exists' })
       )
     );
     // Exactly one line. A per-call `onError` toast beside this one is what
@@ -69,7 +69,7 @@ describe('room settings failures', () => {
     // that archived it, so the "Undo" offered afterwards runs against an
     // observer with no listeners — TanStack gates per-call `onError` on exactly
     // that, so a handler passed to `mutate` would never fire and the failure
-    // would surface as the generic "Action failed. Please try again." on a room
+    // would surface as the generic "That didn't work. Try again." on a room
     // the sidebar has already dropped and nothing else can bring back.
     const transport = refusingTransport('A channel called #backend already exists');
     const { result, unmount } = renderHook(() => useUnarchiveRoom(), {
@@ -81,8 +81,8 @@ describe('room settings failures', () => {
 
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
-        "Couldn't bring that room back — A channel called #backend already exists",
-        expect.anything()
+        "Couldn't bring that room back",
+        expect.objectContaining({ description: 'A channel called #backend already exists' })
       )
     );
   });

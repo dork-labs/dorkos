@@ -10,7 +10,7 @@ export type McpServerScope = 'agent' | 'project' | 'plugin' | 'computer';
 /** The sentence a scope badge's tooltip expands to. */
 const MCP_SCOPE_TOOLTIP: Record<McpServerScope, string> = {
   agent: 'Added to this agent through DorkOS',
-  project: 'From this project — declared in its config files',
+  project: 'From this project, declared in its config files',
   plugin: 'Comes with a plugin',
   computer: 'From your computer-wide config',
 };

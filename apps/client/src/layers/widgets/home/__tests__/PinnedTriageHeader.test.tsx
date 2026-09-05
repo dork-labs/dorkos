@@ -451,7 +451,7 @@ describe('PinnedTriageHeader while the composer has the caret', () => {
 
     rerender({ composerFocused: false });
 
-    expect(await screen.findByText('Waiting On You')).toBeInTheDocument();
+    expect(await screen.findByText('Waiting on you')).toBeInTheDocument();
     expect(summaryBar()).toBeNull();
   });
 
@@ -462,7 +462,7 @@ describe('PinnedTriageHeader while the composer has the caret', () => {
       { composerFocused: true }
     );
 
-    expect(await screen.findByText('Waiting On You')).toBeInTheDocument();
+    expect(await screen.findByText('Waiting on you')).toBeInTheDocument();
     expect(summaryBar()).toBeNull();
   });
 
@@ -524,7 +524,7 @@ describe('PinnedTriageHeader at its height cap', () => {
     renderHeader({
       listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
     });
-    await screen.findByText('Waiting On You');
+    await screen.findByText('Waiting on you');
 
     act(() => {
       measureAs(scroller()!, { scrollHeight: 900, clientHeight: 300, scrollTop: 0 });
@@ -540,7 +540,7 @@ describe('PinnedTriageHeader at its height cap', () => {
     renderHeader({
       listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
     });
-    await screen.findByText('Waiting On You');
+    await screen.findByText('Waiting on you');
 
     act(() => {
       measureAs(scroller()!, { scrollHeight: 300, clientHeight: 300 });
@@ -554,7 +554,7 @@ describe('PinnedTriageHeader at its height cap', () => {
     renderHeader({
       listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
     });
-    await screen.findByText('Waiting On You');
+    await screen.findByText('Waiting on you');
 
     act(() => {
       measureAs(scroller()!, { scrollHeight: 900, clientHeight: 300, scrollTop: 600 });
@@ -568,7 +568,7 @@ describe('PinnedTriageHeader at its height cap', () => {
     renderHeader({
       listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
     });
-    await screen.findByText('Waiting On You');
+    await screen.findByText('Waiting on you');
 
     act(() => {
       measureAs(scroller()!, { scrollHeight: 900, clientHeight: 300, scrollTop: 0 });
@@ -619,7 +619,7 @@ describe('PinnedTriageHeader at its height cap', () => {
         </TransportProvider>
       </QueryClientProvider>
     );
-    await screen.findByText('Waiting On You');
+    await screen.findByText('Waiting on you');
 
     act(() => {
       measureAs(scroller()!, { scrollHeight: 300, clientHeight: 300 });
@@ -675,9 +675,9 @@ describe('PinnedTriageHeader', () => {
     await waitFor(() => expect(transport.listNotifications).toHaveBeenCalled());
 
     expect(header()).toBeNull();
-    expect(screen.queryByText('Waiting On You')).not.toBeInTheDocument();
-    expect(screen.queryByText('Needs Attention')).not.toBeInTheDocument();
-    expect(screen.queryByText('Recent Activity')).not.toBeInTheDocument();
+    expect(screen.queryByText('Waiting on you')).not.toBeInTheDocument();
+    expect(screen.queryByText('Needs attention')).not.toBeInTheDocument();
+    expect(screen.queryByText('Recent activity')).not.toBeInTheDocument();
     // The live region stays — always mounted, and silent.
     expect(announcement()).toBe('');
   });
@@ -690,8 +690,8 @@ describe('PinnedTriageHeader', () => {
 
     expect(await screen.findByTestId('presence-strip')).toBeInTheDocument();
     expect(header()).not.toBeNull();
-    expect(screen.queryByText('Waiting On You')).not.toBeInTheDocument();
-    expect(screen.queryByText('Needs Attention')).not.toBeInTheDocument();
+    expect(screen.queryByText('Waiting on you')).not.toBeInTheDocument();
+    expect(screen.queryByText('Needs attention')).not.toBeInTheDocument();
   });
 
   it('draws no header for a presence slot that says it has nothing to draw', async () => {
@@ -744,7 +744,7 @@ describe('PinnedTriageHeader', () => {
       listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
     });
 
-    expect(await screen.findByText('Waiting On You')).toBeInTheDocument();
+    expect(await screen.findByText('Waiting on you')).toBeInTheDocument();
     expect(screen.getByText('Uninstall a marketplace package')).toBeInTheDocument();
   });
 
@@ -788,7 +788,7 @@ describe('PinnedTriageHeader', () => {
   it('keeps the answered approval on screen once the server stops listing it', async () => {
     // The disappearance this closes: answering is optimistic, and the refetch
     // that follows drops the request from the pending list — which used to take
-    // the card AND the "Waiting On You" group around it out of the tree in the
+    // the card AND the "Waiting on you" group around it out of the tree in the
     // same frame, because the whole list is drawn behind an
     // `approvals.length > 0` guard. An exit nothing is watching for never runs,
     // so the receipt was gone in one round trip and the answer looked like a
@@ -817,7 +817,7 @@ describe('PinnedTriageHeader', () => {
     // Still there, still saying what happened, inside a group that has not
     // collapsed around it.
     expect(screen.getByText('Allowed')).toBeInTheDocument();
-    expect(screen.getByText('Waiting On You')).toBeInTheDocument();
+    expect(screen.getByText('Waiting on you')).toBeInTheDocument();
 
     // And it does let go: a hold that never released would pin a decided card
     // to the header forever. The window is the hold plus the card's own melt.
@@ -850,15 +850,15 @@ describe('PinnedTriageHeader', () => {
 
   it('shows what recently went wrong, under its own quiet heading', async () => {
     // Agents nobody can reach is not a thing WAITING on a person — nothing is
-    // blocked on an answer — so it draws under Recent Activity rather than
+    // blocked on an answer — so it draws under Recent activity rather than
     // spending the header's amber on it.
     renderHeader({
       listNotifications: notificationsByLens({ activity: offlineAgents('tangerines') }),
     });
 
-    expect(await screen.findByText('Recent Activity')).toBeInTheDocument();
+    expect(await screen.findByText('Recent activity')).toBeInTheDocument();
     expect(screen.getByText('tangerines stopped answering')).toBeInTheDocument();
-    expect(screen.queryByText('Needs Attention')).not.toBeInTheDocument();
+    expect(screen.queryByText('Needs attention')).not.toBeInTheDocument();
   });
 
   it('keeps the activity row deep link, and opens the sheet it addresses', async () => {
@@ -875,7 +875,7 @@ describe('PinnedTriageHeader', () => {
         expect.objectContaining({ detail: 'offline-agent', itemId: 'tangerines' })
       )
     );
-    expect(await screen.findByText('Offline Agents')).toBeInTheDocument();
+    expect(await screen.findByText('Agents that aren’t answering')).toBeInTheDocument();
   });
 
   it('draws both groups at once when both have something to say', async () => {
@@ -884,24 +884,24 @@ describe('PinnedTriageHeader', () => {
       listNotifications: notificationsByLens({ activity: offlineAgents('tangerines') }),
     });
 
-    expect(await screen.findByText('Waiting On You')).toBeInTheDocument();
-    expect(await screen.findByText('Recent Activity')).toBeInTheDocument();
+    expect(await screen.findByText('Waiting on you')).toBeInTheDocument();
+    expect(await screen.findByText('Recent activity')).toBeInTheDocument();
     expect(header()).not.toBeNull();
   });
 
-  it('puts a schedule an agent parked under Waiting On You, as a card with all three answers', async () => {
+  it('puts a schedule an agent parked under Waiting on you, as a card with all three answers', async () => {
     // The event that most deserved a signal and had none: an agent proposes a
     // scheduled run, it parks because nothing arms itself, and until now the
     // only way to find it was to wander into the Tasks page.
     //
-    // It sits in Waiting On You rather than Needs Attention since DOR-1398: a
+    // It sits in Waiting on you rather than Needs attention since DOR-1398: a
     // proposal IS a decision waiting on a person, and the group below is a
     // dense row box built for things that already broke. Seeded defect: put the
     // card back under `showsAttention` and the group heading assertion reds.
     renderHeader({ listTasks: vi.fn().mockResolvedValue([parkedSchedule()]) });
 
-    expect(await screen.findByText('Waiting On You')).toBeInTheDocument();
-    expect(screen.queryByText('Needs Attention')).not.toBeInTheDocument();
+    expect(await screen.findByText('Waiting on you')).toBeInTheDocument();
+    expect(screen.queryByText('Needs attention')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reject Nightly sweep' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Run Nightly sweep once' })).toBeInTheDocument();
@@ -917,8 +917,8 @@ describe('PinnedTriageHeader', () => {
 
     await waitFor(() => expect(transport.listTasks).toHaveBeenCalled());
     await waitFor(() => expect(transport.listNotifications).toHaveBeenCalled());
-    expect(screen.queryByText('Waiting On You')).not.toBeInTheDocument();
-    expect(screen.queryByText('Needs Attention')).not.toBeInTheDocument();
+    expect(screen.queryByText('Waiting on you')).not.toBeInTheDocument();
+    expect(screen.queryByText('Needs attention')).not.toBeInTheDocument();
   });
 
   it('approves a parked schedule in place', async () => {
@@ -969,7 +969,7 @@ describe('PinnedTriageHeader', () => {
   it('draws an agent waiting on you ONCE — the card, never a second row below it', async () => {
     // Both sessions raise a signal from the one engine: `blocked` becomes a
     // permission prompt, `error` becomes a wedge. Only the wedge belongs in
-    // Needs Attention — a blocked agent already has a card in Waiting On You,
+    // Needs attention — a blocked agent already has a card in Waiting on you,
     // and the same fact twice in one header is how a person learns to read
     // neither. Seeded defect: pass every blocking kind through and there are
     // two rows here instead of one.
@@ -984,7 +984,7 @@ describe('PinnedTriageHeader', () => {
     });
     setLifecycles({ 'ses-blocked': 'blocked', 'ses-wedged': 'error' });
 
-    expect(await screen.findByText('Needs Attention')).toBeInTheDocument();
+    expect(await screen.findByText('Needs attention')).toBeInTheDocument();
     await waitFor(() =>
       expect(document.querySelectorAll('[data-slot="attention-signal-row"]')).toHaveLength(1)
     );
@@ -1039,11 +1039,11 @@ describe('PinnedTriageHeader', () => {
       </QueryClientProvider>
     );
 
-    expect(screen.getByText('Waiting On You')).toBeInTheDocument();
+    expect(screen.getByText('Waiting on you')).toBeInTheDocument();
   });
 
   describe('the daily Shift Report card', () => {
-    it('renders above Recent Activity from a seeded unread row', async () => {
+    it('renders above Recent activity from a seeded unread row', async () => {
       renderHeader({
         listNotifications: notificationsByLens({
           report: [shiftReportRow()],
@@ -1065,9 +1065,9 @@ describe('PinnedTriageHeader', () => {
 
       await screen.findByText(/While you were away/);
       expect(header()).not.toBeNull();
-      expect(screen.queryByText('Waiting On You')).not.toBeInTheDocument();
-      expect(screen.queryByText('Needs Attention')).not.toBeInTheDocument();
-      expect(screen.queryByText('Recent Activity')).not.toBeInTheDocument();
+      expect(screen.queryByText('Waiting on you')).not.toBeInTheDocument();
+      expect(screen.queryByText('Needs attention')).not.toBeInTheDocument();
+      expect(screen.queryByText('Recent activity')).not.toBeInTheDocument();
     });
 
     it('is absent when there is nothing unread to report', async () => {

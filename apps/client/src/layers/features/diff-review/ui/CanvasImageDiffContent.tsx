@@ -140,8 +140,7 @@ export function CanvasImageDiffContent({ content }: CanvasImageDiffContentProps)
           <div className="text-muted-foreground flex items-start gap-1.5 px-3 pb-2 text-xs">
             <Info className="mt-0.5 size-3.5 shrink-0" />
             <span>
-              No previous version of this image from this session — there&rsquo;s nothing to
-              restore.
+              No previous version of this image from this session. There&rsquo;s nothing to restore.
             </span>
           </div>
         )}
@@ -151,7 +150,7 @@ export function CanvasImageDiffContent({ content }: CanvasImageDiffContentProps)
         {review.writeFailed && (
           <Banner key="write-failed" tone="error" reduceMotion={reduceMotion}>
             <span className="flex-1">
-              That change couldn&rsquo;t be written to disk. Nothing was lost — try again.
+              That change couldn&rsquo;t be written to disk. Nothing was lost. Try again.
             </span>
             <Button
               type="button"

@@ -19,7 +19,7 @@ export const SIDEBAR_FOOTER_BUTTONS: SidebarFooterContribution[] = [
   {
     id: 'theme',
     icon: Sun,
-    label: 'Toggle Theme',
+    label: 'Toggle theme',
     onClick: () => {
       // Theme cycling is handled by the rendering component (SidebarFooterStrip)
       // because it needs the current theme state. This onClick is a no-op placeholder;

@@ -23,41 +23,28 @@ import {
   useAggregatedDeadLetters,
   useDismissDeadLetterGroup,
   useDeliveryMetrics,
+  DEAD_LETTER_REASON_LABEL,
+  DEAD_LETTER_REASON_FALLBACK,
 } from '@/layers/entities/relay';
 import type { AggregatedDeadLetter } from '@/layers/entities/relay';
 
-/** Map of rejection reason codes to display label and badge variant. */
-const REASON_CONFIG: Record<string, { label: string; className: string }> = {
-  hop_limit: {
-    label: 'Hop Limit',
-    className: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
-  },
-  ttl_expired: {
-    label: 'TTL Expired',
-    className: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
-  },
-  cycle_detected: {
-    label: 'Cycle Detected',
-    className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-  },
-  budget_exhausted: {
-    label: 'Budget Exhausted',
-    className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-  },
+/** Badge tint per rejection reason code. The label itself is the shared entity map. */
+const REASON_CLASS_NAME: Record<string, string> = {
+  hop_limit: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+  ttl_expired: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+  cycle_detected: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+  budget_exhausted: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 };
 
-/** Fallback config for unknown reason codes. */
-const DEFAULT_REASON_CONFIG = {
-  label: 'Unknown',
-  className: 'bg-muted text-muted-foreground',
-};
+/** Fallback tint for unknown reason codes. */
+const DEFAULT_REASON_CLASS_NAME = 'bg-muted text-muted-foreground';
 
 /** Format a time range from two ISO timestamps into a compact relative string. */
 function formatTimeRange(firstSeen: string, lastSeen: string): string {
   const first = formatRelativeTime(firstSeen);
   const last = formatRelativeTime(lastSeen);
   if (first === last) return last;
-  return `${first} — ${last}`;
+  return `${first} to ${last}`;
 }
 
 interface AggregatedCardProps {
@@ -68,7 +55,8 @@ interface AggregatedCardProps {
 function AggregatedCard({ group }: AggregatedCardProps) {
   const [sampleOpen, setSampleOpen] = useState(false);
   const dismissMutation = useDismissDeadLetterGroup();
-  const reasonConfig = REASON_CONFIG[group.reason] ?? DEFAULT_REASON_CONFIG;
+  const reasonLabel = DEAD_LETTER_REASON_LABEL[group.reason] ?? DEAD_LETTER_REASON_FALLBACK;
+  const reasonClassName = REASON_CLASS_NAME[group.reason] ?? DEFAULT_REASON_CLASS_NAME;
 
   return (
     <div className="rounded-lg border border-red-200 bg-red-50/50 p-3 dark:border-red-900/40 dark:bg-red-950/20">
@@ -77,8 +65,8 @@ function AggregatedCard({ group }: AggregatedCardProps) {
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="flex items-center gap-2">
             <span className="truncate text-sm font-medium">{group.source}</span>
-            <Badge className={cn('shrink-0 border-0 font-normal', reasonConfig.className)}>
-              {reasonConfig.label}
+            <Badge className={cn('shrink-0 border-0 font-normal', reasonClassName)}>
+              {reasonLabel}
             </Badge>
             <Badge variant="destructive" className="shrink-0 tabular-nums">
               {group.count.toLocaleString()}
@@ -98,14 +86,14 @@ function AggregatedCard({ group }: AggregatedCardProps) {
                 onClick={() => setSampleOpen(true)}
               >
                 <Eye className="mr-1 size-3" />
-                View Sample
+                See one
               </Button>
               <Dialog open={sampleOpen} onOpenChange={setSampleOpen}>
                 <DialogContent className="max-w-lg">
                   <DialogHeader>
-                    <DialogTitle>Sample Envelope</DialogTitle>
+                    <DialogTitle>What was sent</DialogTitle>
                     <DialogDescription>
-                      Representative failure from {group.source} ({reasonConfig.label})
+                      One of the messages from {group.source} that never arrived ({reasonLabel})
                     </DialogDescription>
                   </DialogHeader>
                   <pre className="bg-muted max-h-80 overflow-auto rounded-md p-3 font-mono text-xs">
@@ -124,16 +112,16 @@ function AggregatedCard({ group }: AggregatedCardProps) {
                 disabled={dismissMutation.isPending}
               >
                 <Trash2 className="mr-1 size-3" />
-                Mark Resolved
+                Clear these
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Mark dead letters as resolved?</AlertDialogTitle>
+                <AlertDialogTitle>Clear these messages?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will dismiss {group.count} dead letter{group.count !== 1 ? 's' : ''} from{' '}
-                  <span className="font-medium">{group.source}</span> ({reasonConfig.label}). This
-                  action cannot be undone.
+                  This clears {group.count} message{group.count !== 1 ? 's' : ''} from{' '}
+                  <span className="font-medium">{group.source}</span> ({reasonLabel}). Clearing them
+                  does not send them, and you cannot undo it.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -143,7 +131,7 @@ function AggregatedCard({ group }: AggregatedCardProps) {
                     dismissMutation.mutate({ source: group.source, reason: group.reason })
                   }
                 >
-                  Mark Resolved
+                  Clear these
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>

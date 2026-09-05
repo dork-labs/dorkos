@@ -58,7 +58,7 @@ const REPAIR_REFUSAL_COPY = new Map<string, string>([
   ],
   [
     'MERGE_IN_FLIGHT',
-    'Something else is writing to this room’s files right now. Nothing was changed — try again in a moment.',
+    'Something else is writing to this room’s files right now. Nothing was changed. Try again in a moment.',
   ],
   [
     'MAIN_CHECKOUT_DIRTY',
@@ -133,7 +133,7 @@ export function RoomMainWarning({ roomId }: RoomMainWarningProps) {
         className="border-border/60 text-muted-foreground rounded-lg border px-3 py-2.5 text-xs"
       >
         DorkOS couldn’t check whether this room’s files are in order. If saving here is refused,
-        this is why — try again in a moment.
+        this is why. Try again in a moment.
       </p>
     );
   }
@@ -172,7 +172,7 @@ export function RoomMainWarning({ roomId }: RoomMainWarningProps) {
           <p className="font-medium">Somebody changed this room&apos;s files outside DorkOS</p>
           <p className="text-muted-foreground text-xs">
             {wrongBranch
-              ? `This room’s files are on ${main.branch ?? 'no branch'} instead of main. Nobody can save a file here and no agent can merge into it until they are back on main — and DorkOS will not move a branch it did not move, in case there is work on it.`
+              ? `This room’s files are on ${main.branch ?? 'no branch'} instead of main. Nobody can save a file here and no agent can merge into it until they are back on main. DorkOS will not move a branch it did not move, in case there is work on it.`
               : 'Nobody can save a file here, and no agent can merge its work in, until these are dealt with.'}
           </p>
         </div>

@@ -134,12 +134,12 @@ describe('ExternalMcpCard', () => {
     expect(screen.getByText('Environment variable')).toBeInTheDocument();
   });
 
-  it('renders Setup Instructions as a collapsible section when expanded', async () => {
+  it('renders Setup instructions as a collapsible section when expanded', async () => {
     const user = userEvent.setup();
     const { Wrapper } = createWrapper();
     render(<ExternalMcpCard mcp={DEFAULT_MCP} authEnabled={false} />, { wrapper: Wrapper });
     await expandCard(user);
-    expect(screen.getByText('Setup Instructions')).toBeInTheDocument();
+    expect(screen.getByText('Setup instructions')).toBeInTheDocument();
   });
 
   it('renders duplicate tool warning when expanded', async () => {
@@ -205,7 +205,7 @@ describe('ExternalMcpCard', () => {
     vi.mocked(transport.revealMcpLocalToken).mockResolvedValue({ localToken: LOCAL_TOKEN });
     render(<ExternalMcpCard mcp={LOCAL_TOKEN_MCP} authEnabled={false} />, { wrapper: Wrapper });
     await expandCard(user);
-    await user.click(screen.getByText('Setup Instructions'));
+    await user.click(screen.getByText('Setup instructions'));
     const presBefore = Array.from(document.querySelectorAll('pre'));
     expect(presBefore.some((p) => p.textContent?.includes('dork_mcp_YOUR_API_KEY'))).toBe(true);
     await user.click(screen.getByRole('button', { name: 'Reveal token' }));

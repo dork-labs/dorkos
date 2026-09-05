@@ -494,7 +494,7 @@ describe('AgentExecutionRows — the Account row', () => {
     );
     await userEvent.click(await screen.findByTestId('agent-account-row'));
     const inherit = await screen.findByTestId('agent-account-row-inherit');
-    expect(inherit).toHaveTextContent('Using server default: .claude — tap to restore');
+    expect(inherit).toHaveTextContent('Using server default: .claude. Tap to restore');
     await userEvent.click(inherit);
     // `null`, not `undefined`: omitting the key would leave the override in
     // place on the manifest.

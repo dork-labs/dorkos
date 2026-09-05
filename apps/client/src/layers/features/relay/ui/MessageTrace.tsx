@@ -58,7 +58,11 @@ export function MessageTrace({ messageId, onClose }: MessageTraceProps) {
   }
 
   if (error || !data) {
-    return <div className="text-destructive p-4 text-sm">Failed to load trace.</div>;
+    return (
+      <div className="text-destructive p-4 text-sm">
+        Couldn&rsquo;t load where this message went.
+      </div>
+    );
   }
 
   const { traceId, spans } = data;

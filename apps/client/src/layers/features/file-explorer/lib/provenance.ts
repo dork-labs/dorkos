@@ -45,6 +45,6 @@ export function provenanceLine(lastCommit: ExplorerCommit | null | undefined): P
     label: `${lastCommit.author} · ${when}`,
     // Everything in here is member-written, and it is rendered as a title
     // attribute — text the browser draws as text, never as markup.
-    title: `${lastCommit.subject} — ${lastCommit.author}, ${when}`,
+    title: `${lastCommit.subject} · ${lastCommit.author}, ${when}`,
   };
 }

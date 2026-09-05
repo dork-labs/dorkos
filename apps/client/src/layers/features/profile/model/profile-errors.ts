@@ -46,7 +46,7 @@ export function handleErrorMessage(error: unknown, attempted: string): string {
     case 'HANDLE_TAKEN':
       return `${at} belongs to someone else. Pick a different one.`;
     case 'HANDLE_RESERVED':
-      return `${at} is spoken for — either you used it before, or it is a word DorkOS uses to reach everyone. Pick a different one.`;
+      return `${at} is spoken for. Either you used it before, or it is a word DorkOS uses to reach everyone. Pick a different one.`;
     case 'INVALID_HANDLE':
       return (
         messageOf(error) ??

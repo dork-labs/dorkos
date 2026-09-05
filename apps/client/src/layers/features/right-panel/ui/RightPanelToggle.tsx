@@ -17,7 +17,7 @@ function toggleAriaLabel(open: boolean, count: number): string {
   if (open) return 'Close right panel';
   if (count <= 0) return 'Open right panel';
   const noun = count === 1 ? 'item needs' : 'items need';
-  return `Open right panel — ${count} ${noun} attention`;
+  return `Open right panel: ${count} ${noun} attention`;
 }
 
 /**

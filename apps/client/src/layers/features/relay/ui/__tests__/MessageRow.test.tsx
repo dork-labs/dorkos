@@ -262,6 +262,6 @@ describe('MessageRow', () => {
     const deadLetterMessage = { ...baseMessage, status: 'dead_letter' };
     render(<MessageRow message={deadLetterMessage} />);
 
-    expect(screen.getByText('Dead Letter')).toBeInTheDocument();
+    expect(screen.getByText('Never arrived')).toBeInTheDocument();
   });
 });

@@ -22,7 +22,7 @@ export function SchedulesDialog({ onClose }: PromoDialogProps) {
         {
           icon: Clock,
           title: 'Cron-style schedules',
-          description: 'Run agents on any schedule — daily, hourly, or custom cron',
+          description: 'Run agents on any schedule: daily, hourly, or custom cron',
         },
         {
           icon: Repeat,

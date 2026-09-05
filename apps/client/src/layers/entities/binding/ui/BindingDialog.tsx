@@ -243,7 +243,7 @@ export function BindingDialog({
                       channelType:
                         values.channelType !== SELECT_ANY ? values.channelType : undefined,
                     });
-                    return `${sentence} — routed to ${resolvedAgentName}.`;
+                    return `${sentence}. Routed to ${resolvedAgentName}.`;
                   })()
                 : null;
             // SELECT_ANY means "no filter selected" — used for badge and clear button visibility.
@@ -502,7 +502,7 @@ export function BindingDialog({
                   </Button>
                   <Button size="sm" onClick={() => form.handleSubmit()} disabled={isSubmitDisabled}>
                     {isLoading && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
-                    {isLoading ? 'Saving...' : isEdit ? 'Save Changes' : 'Add connection'}
+                    {isLoading ? 'Saving...' : isEdit ? 'Save changes' : 'Add connection'}
                   </Button>
                 </ResponsiveDialogFooter>
               </>

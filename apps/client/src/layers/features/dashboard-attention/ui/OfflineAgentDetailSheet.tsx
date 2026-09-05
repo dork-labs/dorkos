@@ -73,9 +73,10 @@ export function OfflineAgentDetailSheet({ open, onClose }: OfflineAgentDetailShe
     <Sheet open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
       <SheetContent side="right">
         <SheetHeader>
-          <SheetTitle>Offline Agents</SheetTitle>
+          <SheetTitle>Agents that aren&rsquo;t answering</SheetTitle>
           <SheetDescription>
-            {offlineAgents.length} agent{offlineAgents.length === 1 ? '' : 's'} unreachable
+            DorkOS can&rsquo;t reach {offlineAgents.length} agent
+            {offlineAgents.length === 1 ? '' : 's'} right now
           </SheetDescription>
         </SheetHeader>
 

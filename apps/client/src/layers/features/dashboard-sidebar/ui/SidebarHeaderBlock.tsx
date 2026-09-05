@@ -148,7 +148,7 @@ export function SidebarHeaderBlock() {
               // the menu row that names the existing settings surface (§16,
               // R4). A screen reader hears the same vocabulary a sighted
               // reader does.
-              aria-label={nameUnknown ? 'Team menu' : `${teamName} — menu`}
+              aria-label={nameUnknown ? 'Team menu' : `${teamName} menu`}
               className={cn(
                 'text-sidebar-foreground hover:bg-sidebar-accent/70 focus-visible:ring-sidebar-ring flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] font-semibold outline-hidden transition-colors duration-150 focus-visible:ring-2',
                 isMobile && TOUCH_TARGET_MIN_H

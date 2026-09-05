@@ -142,7 +142,7 @@ test.describe('Mobile tabs — 390×844 @smoke', () => {
     // rather than styled: the Radix Sheet lives inside `<Sidebar>`.
     await expect(page.locator('[data-slot="sidebar"]')).toHaveCount(0);
     await expect(page.locator('[data-mobile="true"]')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Toggle Sidebar' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Toggle sidebar' })).toHaveCount(0);
     // …and the four destinations are on screen instead, permanently.
     await expect(page.locator('[data-mobile-tab]')).toHaveCount(4);
     await expect(page.getByTestId('mobile-tab-bar')).toBeVisible();
@@ -498,7 +498,7 @@ test.describe('Mobile tabs — 390×844 @smoke', () => {
     const catchUp = page.getByTestId('today-catch-up');
     await expect(catchUp).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
     await expect(catchUp).toHaveAccessibleName(
-      `Catch up — mark ${rooms.length} unread conversations in Today as read`,
+      `Catch up: mark ${rooms.length} unread conversations in Today as read`,
       { timeout: SERVER_ROUND_TRIP_MS }
     );
 

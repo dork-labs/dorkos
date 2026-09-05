@@ -80,7 +80,7 @@ export function ElicitationPrompt({
         if (code === 'INTERACTION_ALREADY_RESOLVED') {
           // Race condition — treat as success
         } else {
-          setError(err instanceof Error ? err.message : 'Failed to submit');
+          setError(err instanceof Error ? err.message : "Couldn't send that. Try again.");
           setSubmitting(false);
           return;
         }

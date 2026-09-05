@@ -745,7 +745,7 @@ describe('RoomPanel', () => {
       fireEvent.click(within(openScale()).getByRole('radio', { name: 'Everything' }));
 
       expect(
-        await screen.findByText("That didn't save — Only you can change that")
+        await screen.findByText("That didn't save. Only you can change that")
       ).toBeInTheDocument();
       expect(pill()).toHaveTextContent('@only');
       expect(pill()).not.toHaveAttribute('aria-busy');
@@ -767,7 +767,7 @@ describe('RoomPanel', () => {
 
       fireEvent.click(within(openScale('Bo')).getByRole('radio', { name: 'Everything' }));
 
-      await screen.findByText("That didn't save — Only you can change that");
+      await screen.findByText("That didn't save. Only you can change that");
       const rows = within(section).getAllByRole('listitem');
       const ana = rows.find((row) => within(row).queryByText('Ana') !== null);
       expect(ana).toBeDefined();

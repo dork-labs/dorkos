@@ -142,7 +142,7 @@ describe('LiveSessionWidget', () => {
     seedHistory([message('m1', boardFence(playableBoard('m-0-0')))]);
     render(<LiveSessionWidget sessionId={SID} />, { wrapper: Wrapper });
     // Live: the empty agent cell invites a move.
-    expect(screen.getByLabelText('Row 1, column 1: empty — play here')).toBeInTheDocument();
+    expect(screen.getByLabelText('Row 1, column 1: empty, play here')).toBeInTheDocument();
 
     // A plain-text follow-up becomes the newest message — the board stays live.
     seedHistory([
@@ -150,7 +150,7 @@ describe('LiveSessionWidget', () => {
       message('m2', 'nice game, well played'),
     ]);
 
-    expect(screen.getByLabelText('Row 1, column 1: empty — play here')).not.toHaveAttribute(
+    expect(screen.getByLabelText('Row 1, column 1: empty, play here')).not.toHaveAttribute(
       'aria-disabled'
     );
   });
@@ -165,7 +165,7 @@ describe('LiveSessionWidget', () => {
     seedHistory([message('m1', boardFence(playableBoard('move')))]);
     render(<LiveSessionWidget sessionId={SID} />, { wrapper: Wrapper });
 
-    await user.click(screen.getByLabelText('Row 1, column 1: empty — play here'));
+    await user.click(screen.getByLabelText('Row 1, column 1: empty, play here'));
     await waitFor(() => expect(mockTransport.sendUiAction).toHaveBeenCalledTimes(1));
     // Latched: the tapped cell shows the optimistic mark.
     expect(screen.getByLabelText('Row 1, column 1: X')).toBeInTheDocument();
@@ -176,7 +176,7 @@ describe('LiveSessionWidget', () => {
       message('m2', boardFence(playableBoard('move'))),
     ]);
 
-    expect(screen.getByLabelText('Row 1, column 1: empty — play here')).toBeInTheDocument();
+    expect(screen.getByLabelText('Row 1, column 1: empty, play here')).toBeInTheDocument();
   });
 
   it('keeps the latch across a content update of the SAME message (same fence instance)', async () => {
@@ -184,7 +184,7 @@ describe('LiveSessionWidget', () => {
     seedHistory([message('m1', boardFence(playableBoard('move')))]);
     render(<LiveSessionWidget sessionId={SID} />, { wrapper: Wrapper });
 
-    await user.click(screen.getByLabelText('Row 1, column 1: empty — play here'));
+    await user.click(screen.getByLabelText('Row 1, column 1: empty, play here'));
     await waitFor(() => expect(mockTransport.sendUiAction).toHaveBeenCalledTimes(1));
     expect(screen.getByLabelText('Row 1, column 1: X')).toBeInTheDocument();
 
@@ -193,7 +193,7 @@ describe('LiveSessionWidget', () => {
     seedHistory([message('m1', `${boardFence(playableBoard('move'))}\ngood luck!`)]);
 
     expect(screen.getByLabelText('Row 1, column 1: X')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Row 1, column 1: empty — play here')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Row 1, column 1: empty, play here')).not.toBeInTheDocument();
   });
 
   it('runs a ui-kind action locally, off-route, without the transport', async () => {
@@ -213,7 +213,7 @@ describe('LiveSessionWidget', () => {
     seedHistory([message('m1', boardFence(playableBoard('m-0-0')))]);
     render(<LiveSessionWidget sessionId={SID} />, { wrapper: Wrapper });
 
-    await user.click(screen.getByLabelText('Row 1, column 1: empty — play here'));
+    await user.click(screen.getByLabelText('Row 1, column 1: empty, play here'));
 
     await waitFor(() =>
       expect(mockTransport.sendUiAction).toHaveBeenCalledWith(SID, {
