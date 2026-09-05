@@ -35,7 +35,7 @@
     "@openai/codex": "0.147.0",
     "@openai/codex-sdk": "~0.147.0",
     "@opencode-ai/sdk": "^1.18.15",
-    "@scalar/express-api-reference": "^0.10.16",
+    "@scalar/express-api-reference": "^0.10.17",
     "better-sqlite3": "^12.11.1",
     "conf": "^15.1.0",
     "cors": "^2.8.6",
@@ -47,7 +47,7 @@
     "gray-matter": "^4.0.3",
     "node-pty": "^1.1.0",
     "uuid": "^13.0.2",
-    "zod": "^4.4.3"
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@dorkos/client": "workspace:*",
@@ -57,12 +57,12 @@
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "5.2.0",
     "electron": "^41.10.7",
-    "electron-builder": "^26.15.7",
-    "electron-builder-squirrel-windows": "26.15.7",
+    "electron-builder": "^26.16.0",
+    "electron-builder-squirrel-windows": "26.16.0",
     "electron-vite": "^5.0.0",
     "sharp": "^0.35.4",
     "tailwindcss": "^4.3.3",
-    "tsx": "^4.23.12",
+    "tsx": "^4.23.13",
     "typescript": "^5.9.3",
     "vite": "^7.3.6",
     "vitest": "^4.1.11",
