@@ -168,6 +168,49 @@ test.describe('Dashboard Sidebar — Sections @smoke', () => {
     await expect(groupAfterReload).toContainText(agentName);
   });
 
+  test('files an agent into a section with the keyboard alone (DOR-1746)', async ({
+    request,
+    dashboardSidebar,
+  }) => {
+    // WCAG 2.2 §2.5.7: a drag has to have a non-pointer path, and the sidebar
+    // advertised one it did not have. Every drag root in the panel is a WRAPPER
+    // around the row, dnd-kit starts a keyboard drag only from the element it
+    // registered as the activator, and the sidebar's roving focus stamps that
+    // wrapper `tabIndex={-1}` — so the one element that could begin a drag was
+    // one no key could reach. A unit test could not see it: the isolated fixture
+    // put the drag root and the row on the same node, where the bug does not
+    // exist.
+    //
+    // **Nothing here focuses anything programmatically.** Tab walks in, the
+    // arrows walk down, Space lifts, an arrow moves, Space drops — the whole
+    // path a person has, driven as a person would drive it.
+    await dashboardSidebar.createGroup(groupName);
+    const group = dashboardSidebar.groupContainer(groupName);
+    await expect(group).toBeVisible();
+    await expect(group).toContainText(EMPTY_GROUP_PLACEHOLDER);
+
+    const row = dashboardSidebar.agentRow(agentName);
+    await expect(row).toBeVisible();
+
+    await dashboardSidebar.tabToSectionHeader('Agents');
+    await dashboardSidebar.arrowToRow(row);
+    await dashboardSidebar.keyboardDragRowIntoGroup(row, groupName);
+
+    // The row moved, and the panel says so out loud.
+    await expect(group).toContainText(agentName);
+    await expect(group).not.toContainText(EMPTY_GROUP_PLACEHOLDER);
+
+    // …and the move persisted, which is the same proof the pointer drag above
+    // takes: the config, not the DOM.
+    const configRes = await request.get('/api/config');
+    const config = await configRes.json();
+    const persistedGroup = config.ui.sidebar.groups.find(
+      (g: { name: string }) => g.name === groupName
+    );
+    expect(persistedGroup, 'the keyboard drop wrote no group').toBeDefined();
+    expect(persistedGroup.items).toEqual([{ kind: 'agent', path: agentProjectPath }]);
+  });
+
   test('takes a CHANNEL into a section, and files it there', async ({
     request,
     roomsApi,

@@ -11,7 +11,7 @@
  */
 import { AnimatePresence } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
-import { useRovingFocus } from '@/layers/shared/model';
+import { useRovingFocus, type SidebarDragActivatorProps } from '@/layers/shared/model';
 import { SectionHeader, SidebarGroup, SidebarMenu } from '@/layers/shared/ui';
 import type { SidebarSectionModel } from '../model/build-sidebar-model';
 import type { SidebarContainer, UngroupedSectionId } from '../model/use-sidebar-dnd';
@@ -154,8 +154,19 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
     return ref === null ? [] : [sidebarRowDndId(prefix, ref)];
   });
 
-  const header = (
+  /**
+   * The header, drawn with or without the drag layer's activators.
+   *
+   * A function rather than one element because only a user-made section is a
+   * drag source, and the activators are the drag layer's to hand out — they
+   * arrive inside `Sortable`'s render callback below, after this point.
+   *
+   * @param dragActivator - What the toggle takes so a keyboard can lift the
+   *   section (DOR-1746). Omitted for a section that cannot be reordered.
+   */
+  const renderHeader = (dragActivator?: SidebarDragActivatorProps) => (
     <SectionHeader
+      {...(dragActivator === undefined ? {} : { dragActivator })}
       label={section.label ?? ''}
       collapsed={section.collapsed}
       {...(section.collapsible ? { onToggle: chrome.toggleCollapsed, onToggleAll } : {})}
@@ -203,19 +214,21 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
             <div
               ref={b.setNodeRef}
               style={b.style}
-              {...b.handleProps}
+              {...b.rootProps}
               className={cn(
-                'focus-visible:ring-sidebar-ring rounded-md outline-hidden focus-visible:ring-2',
+                // The corner only: the toggle inside rings itself, and this box
+                // is not focusable (DOR-1746 — see `SidebarRow`'s drag root).
+                'rounded-md',
                 b.isDragging && 'opacity-40',
                 b.isOver && 'sidebar-drop-ring'
               )}
             >
-              {header}
+              {renderHeader(b.activatorProps)}
             </div>
           )}
         </Sortable>
       ) : (
-        header
+        renderHeader()
       )}
       {chrome.action}
       {chrome.dialogs}

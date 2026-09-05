@@ -125,7 +125,8 @@ function SidebarRowShowcase() {
   const [dragging, setDragging] = useState(false);
   const drag: RowDragBindings = {
     setNodeRef: () => {},
-    handleProps: {},
+    rootProps: {},
+    activatorProps: { ref: () => {} },
     style: dragging ? { transform: 'translate3d(0px, 40px, 0px)' } : {},
     isDragging: false,
     isOver: false,

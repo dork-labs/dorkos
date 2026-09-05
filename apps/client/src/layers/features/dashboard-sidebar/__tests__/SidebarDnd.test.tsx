@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { SIDEBAR_DRAGGING_ATTRIBUTE } from '@/layers/shared/model';
 import { SidebarDnd } from '../ui/dnd/SidebarDnd';
 import { Sortable, sidebarDndData, sidebarRowDndId } from '../ui/dnd/SidebarDndPrimitives';
 
 let mockIsMobile = false;
-vi.mock('@/layers/shared/model', () => ({
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
   useIsMobile: () => mockIsMobile,
 }));
 
@@ -26,6 +28,17 @@ vi.mock('@/layers/entities/config', () => ({
   }),
 }));
 
+/**
+ * A drag source shaped like the real one: a root that measures and announces,
+ * a `<button>` row inside it that takes focus and the drag's activators, and a
+ * "⋮"-shaped sibling beside the row.
+ *
+ * **The shape is the subject.** The fixture used to put everything on one node,
+ * which is why it could assert `tabindex="0"` on a drag root the actual panel
+ * has always stamped `-1` (DOR-1746). The panel's real answer is a root out of
+ * the tab order with the keyboard's landing spot inside it, so that is what is
+ * drawn here.
+ */
 function Row() {
   return (
     <SidebarDnd displayNames={{ '/a': 'alpha' }} rooms={[]}>
@@ -34,18 +47,10 @@ function Row() {
         data={sidebarDndData('ungrouped', { kind: 'agent', path: '/a' })}
       >
         {(b) => (
-          // `data-dragging` mirrors the bindings' own `isDragging`, which is
-          // dnd-kit's active-drag state read straight off the hook. It is what
-          // these tests watch a keyboard drag through, because the drag root is
-          // no longer a `role="button"` and so no longer carries `aria-pressed`
-          // (DOR-1418) — and the real rows dim themselves off this same flag.
-          <div
-            ref={b.setNodeRef}
-            {...b.handleProps}
-            data-testid="row"
-            {...(b.isDragging ? { 'data-dragging': '' } : {})}
-          >
-            alpha
+          <div ref={b.setNodeRef} {...b.rootProps} data-testid="drag-root">
+            <button type="button" {...b.activatorProps} data-testid="row">
+              alpha
+            </button>
             <button type="button" data-testid="nested-action">
               New session
             </button>
@@ -54,6 +59,16 @@ function Row() {
       </Sortable>
     </SidebarDnd>
   );
+}
+
+/**
+ * Whether the row is off the ground, read the way the sidebar's own roving focus
+ * reads it: the mark the drag layer stamps on a root while it is dragging. The
+ * drag root is not a `role="button"` and so carries no `aria-pressed` to ask
+ * instead (DOR-1418).
+ */
+function isDragging(): boolean {
+  return screen.getByTestId('drag-root').hasAttribute(SIDEBAR_DRAGGING_ATTRIBUTE);
 }
 
 describe('SidebarDnd', () => {
@@ -72,62 +87,81 @@ describe('SidebarDnd', () => {
   });
   afterEach(() => cleanup());
 
-  it('enables drag on desktop: the row is a focusable sortable', () => {
+  it('enables drag on desktop: the root announces itself as sortable', () => {
     render(<Row />);
-    const row = screen.getByTestId('row');
-    expect(row.getAttribute('aria-roledescription')).toBe('sortable');
-    // **The `0` is this fixture's, not the app's.** It is what dnd-kit puts on a
-    // drag root by default, and the assertion is that the drag layer attached at
-    // all. In the real panel the sidebar's roving focus takes these to `-1`, so
-    // do not read this line as "a drag root is in the tab order there".
-    expect(row.getAttribute('tabindex')).toBe('0');
+    const root = screen.getByTestId('drag-root');
+    expect(root.getAttribute('aria-roledescription')).toBe('sortable');
+  });
+
+  it('keeps the drag root out of the tab order, where the panel keeps it (DOR-1746)', () => {
+    render(<Row />);
+    // dnd-kit's default is `0`, and the sidebar's roving focus stamped it back
+    // to `-1` in the real panel — so the drag root was a keyboard drag's only
+    // possible starting point AND unreachable by any key. The root declares
+    // `-1` itself now, and the row below is the reachable half.
+    expect(screen.getByTestId('drag-root').getAttribute('tabindex')).toBe('-1');
+    expect(screen.getByTestId('row').getAttribute('tabindex')).toBeNull();
   });
 
   it('wraps the row in a container role, never a second button (DOR-1418)', () => {
     render(<Row />);
-    const row = screen.getByTestId('row');
+    const root = screen.getByTestId('drag-root');
     // dnd-kit defaults a draggable to `role="button"`, which around a row that
     // CONTAINS a button is axe's `nested-interactive` — 21 of them on the
     // sidebar. `group` is a container role, so it is allowed focusable content,
     // and it still carries the sortable's ARIA.
-    expect(row.getAttribute('role')).toBe('group');
-    expect(row.querySelector('button')).not.toBeNull();
-    // Still described by dnd-kit's keyboard instructions, which is what makes
-    // the roledescription mean anything to a reader.
-    expect(row.getAttribute('aria-describedby')).toMatch(/DndDescribedBy/);
+    expect(root.getAttribute('role')).toBe('group');
+    expect(root.querySelector('button')).not.toBeNull();
+  });
+
+  it('describes the ROW with the keyboard instructions, not the root nothing focuses', () => {
+    render(<Row />);
+    // dnd-kit's "To pick up a sortable item, press space…" is read out when the
+    // element carrying it takes focus. On the root that was never — it is not in
+    // the tab order — so the instructions travel with the activator (DOR-1746).
+    expect(screen.getByTestId('row').getAttribute('aria-describedby')).toMatch(/DndDescribedBy/);
+    expect(screen.getByTestId('drag-root').getAttribute('aria-describedby')).toBeNull();
   });
 
   it('disables drag on mobile: no drag handlers or sortable role attach in the Sheet', () => {
     mockIsMobile = true;
     render(<Row />);
-    const row = screen.getByTestId('row');
-    expect(row.getAttribute('aria-roledescription')).toBeNull();
-    expect(row.getAttribute('tabindex')).toBeNull();
-    expect(row.getAttribute('role')).toBeNull();
+    const root = screen.getByTestId('drag-root');
+    expect(root.getAttribute('aria-roledescription')).toBeNull();
+    expect(root.getAttribute('tabindex')).toBeNull();
+    expect(root.getAttribute('role')).toBeNull();
+    expect(screen.getByTestId('row').getAttribute('aria-describedby')).toBeNull();
   });
 
-  // The row registers itself as its own activator node, so KeyboardSensor only
-  // activates when the keydown target IS the row — Space/Enter on nested
-  // interactive controls (menus, buttons, the rename input) must pass through.
+  // The activators ride the ROW, which is the element the sidebar's roving focus
+  // can put focus on. A keydown anywhere else — the "⋮", a glyph action, a
+  // rename field — never reaches them.
 
-  it('starts a keyboard drag from a keydown on the focused row itself', () => {
+  it('starts a keyboard drag from Space on the row itself', () => {
     render(<Row />);
     const row = screen.getByTestId('row');
-    fireEvent.keyDown(row, { code: 'Enter' });
-    // The row reports itself as the active draggable — dnd-kit's own
-    // `isDragging`, mirrored onto the node by the fixture above.
-    expect(row.hasAttribute('data-dragging')).toBe(true);
+    fireEvent.keyDown(row, { code: 'Space' });
+    expect(isDragging()).toBe(true);
     // End the drag so cleanup unmounts an idle tree.
     fireEvent.keyDown(row, { code: 'Escape' });
   });
 
-  it('does NOT start a keyboard drag from nested interactive controls', () => {
+  it('leaves Enter to the row, which opens what the row points at', () => {
     render(<Row />);
     const row = screen.getByTestId('row');
+    // dnd-kit starts a drag on Enter by default. Harmless while the activator
+    // was a wrapper nothing could focus; on the row's own button it would have
+    // meant Enter no longer opened the conversation (DOR-1746).
+    fireEvent.keyDown(row, { code: 'Enter' });
+    expect(isDragging()).toBe(false);
+  });
+
+  it('does NOT start a keyboard drag from a control beside the row', () => {
+    render(<Row />);
     const nested = screen.getByTestId('nested-action');
     fireEvent.keyDown(nested, { code: 'Enter' });
     fireEvent.keyDown(nested, { code: 'Space' });
-    expect(row.hasAttribute('data-dragging')).toBe(false);
+    expect(isDragging()).toBe(false);
   });
 });
 
