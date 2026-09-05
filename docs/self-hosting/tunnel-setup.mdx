@@ -255,17 +255,25 @@ curl http://localhost:4242/api/health
 
 ### CLI QR Code
 
-When a tunnel starts, the CLI prints a QR code:
+Opening a tunnel takes a few seconds, so the address arrives after the opening
+banner rather than inside it — below the startup logs, with a QR code you can
+scan to open DorkOS on your phone:
 
 ```
   DorkOS v0.8.0
   Local:   http://localhost:4242
   Network: http://192.168.1.100:4242
+
+... startup logs ...
+
   Tunnel:  https://your-domain.ngrok-free.app
 
   Scan to open on mobile:
   [QR Code]
 ```
+
+Turning Remote Access on later from the app prints the same thing, wherever the
+terminal has got to.
 
 ### Development Mode
 
