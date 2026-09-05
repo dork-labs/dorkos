@@ -48,6 +48,56 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
+ * Every environment variable that decides where the launched server looks for a
+ * HOME-shaped directory, pointed at the sandbox.
+ *
+ * `HOME` alone is not enough, and the gap is not theoretical: measured by
+ * booting a real server through this launcher with `CODEX_HOME` exported by the
+ * parent, the operator's Codex thread came back out of the sandbox's own
+ * `GET /api/search` — 2 hits — on a run whose `HOME` was already pinned. Each
+ * of these variables sits IN FRONT of the home-derived default in the resolver
+ * that reads it, so any one of them left inherited re-opens the leak on its own
+ * runtime. `XDG_DATA_HOME` matters most of the three because a Linux desktop
+ * routinely exports it without anyone choosing to.
+ *
+ * The set values are exactly what each resolver's home-derived fallback would
+ * produce with `HOME` at the sandbox root, so nothing here invents a layout:
+ *
+ * | Variable        | Resolver                  | Home-derived default   |
+ * | --------------- | ------------------------- | ---------------------- |
+ * | `CODEX_HOME`    | `resolveCodexHome`        | `~/.codex`             |
+ * | `XDG_DATA_HOME` | `resolveOpenCodeDataDir`  | `~/.local/share`       |
+ *
+ * `OPENCODE_DB` is ERASED rather than set, and that asymmetry is the honest
+ * shape. It overrides a FILENAME, not a directory: OpenCode names the file by
+ * release channel (`opencode-<channel>.db`), so any value written here would be
+ * a guess at a name DorkOS's own sidecar never uses. Unset, the resolver falls
+ * back to `<data dir>/opencode.db` — which the `XDG_DATA_HOME` row above has
+ * already moved into the sandbox. `spawn` omits `undefined` entries when it
+ * builds the child's environment, so this both overrides an inherited absolute
+ * path and removes it.
+ *
+ * This is also the write side, not only the read side: the OpenCode sidecar is
+ * spawned with the server's own environment (`opencode/server-manager.ts`) and
+ * resolves its data directory the same way, so before this an eval's OpenCode
+ * sessions were being WRITTEN into the operator's real store.
+ *
+ * @param sandboxRoot - The sandbox root (parent of `.dork`, `project`, `.claude`).
+ * @returns The env fragment to spread into a pinned child's environment.
+ */
+function sandboxHomeEnv(sandboxRoot: string): NodeJS.ProcessEnv {
+  return {
+    // What `os.homedir()` answers from — POSIX reads the first, Windows the
+    // second, so both are written and the resolved home is the same either way.
+    HOME: sandboxRoot,
+    USERPROFILE: sandboxRoot,
+    CODEX_HOME: path.join(sandboxRoot, '.codex'),
+    XDG_DATA_HOME: path.join(sandboxRoot, '.local', 'share'),
+    OPENCODE_DB: undefined,
+  };
+}
+
+/**
  * Build the launched server's environment: inherit the parent (PATH, so the
  * `claude` binary resolves), layer the spec's credential + model env, then PIN
  * the placement variables last, and STRIP the harness's own test-mode flags so a
@@ -96,6 +146,13 @@ function delay(ms: number): Promise<void> {
  * server's home inside its own filesystem boundary instead of pointing outside
  * it.
  *
+ * `HOME` alone is only Claude Code's half. Codex and OpenCode each read a
+ * variable that sits IN FRONT of their home-derived default, so an exported
+ * `CODEX_HOME`, `XDG_DATA_HOME` or `OPENCODE_DB` walks straight past a pinned
+ * home — measured, on a run whose `HOME` was already pinned. {@link
+ * sandboxHomeEnv} is the whole set, and it is one function so a fourth runtime's
+ * variable is added in one place rather than found by the next leak.
+ *
  * It is deliberately NOT its own condition. Moving `HOME` is safe exactly when
  * `runner/claude-config.ts` has already established that this run can
  * authenticate without the operator's real directory — a portable key/token, or
@@ -103,7 +160,9 @@ function delay(ms: number): Promise<void> {
  * macOS sign-in living in the Keychain, which belongs to that exact directory),
  * `HOME` must stay inherited too, or the harness would take away the home the
  * credential is reached through while claiming to have taken away nothing. One
- * `if` makes pinning one without the other unspellable.
+ * `if` makes pinning one without the other unspellable. That row instead gets
+ * `DORKOS_SEARCH_NO_EXTERNAL_HISTORY`, which closes the part of the leak that
+ * does not need the home to move — see the `else` branch in `buildEnv`.
  *
  * The other two runtimes lose nothing to the move. The `claude` binary is
  * resolved by absolute path before `PATH` is ever consulted (`sdk-utils.ts`:
@@ -151,18 +210,28 @@ function buildEnv(spec: ServerLaunchSpec): NodeJS.ProcessEnv {
     // one path that still depends on it — the local sign-in, whose identity is
     // that directory and whose Keychain entry is reached through that home.
     //
-    // `HOME`/`USERPROFILE` are what `os.homedir()` answers from, and the server's
-    // root set (`resolveClaudeRootSet`) unions in `~/.claude` unconditionally. So
-    // this line, not `CLAUDE_CONFIG_DIR`, is what stops a sandboxed server from
-    // enumerating the operator's real transcripts. `<sandboxRoot>/.claude` is the
-    // seeded controlled dir, so the union collapses onto it (DOR-1779).
+    // `sandboxHomeEnv` is what `os.homedir()` and its three siblings answer
+    // from, and the server's root set (`resolveClaudeRootSet`) unions in
+    // `~/.claude` unconditionally. So that block, not `CLAUDE_CONFIG_DIR`, is
+    // what stops a sandboxed server from enumerating the operator's real
+    // transcripts. `<sandboxRoot>/.claude` is the seeded controlled dir, so the
+    // union collapses onto it (DOR-1779).
+    //
+    // The ELSE branch is the keychain row, where the home cannot move. It still
+    // must not full-text-index the operator's history into a throwaway
+    // directory, which is what `pnpm evals:local` — the most-used path of all —
+    // was doing. `DORKOS_SEARCH_NO_EXTERNAL_HISTORY` is the existing lever for
+    // exactly this (DOR-1551, already used by the browser suite): it drops every
+    // `corpus: 'external'` source. It costs this harness nothing, because no
+    // eval case queries search; it also means that row does not index the
+    // SANDBOX's own transcripts either, which is the honest price and the reason
+    // it is the fallback rather than the default.
     ...(spec.claudeConfigDir !== undefined
       ? {
           CLAUDE_CONFIG_DIR: spec.claudeConfigDir,
-          HOME: sandboxRoot,
-          USERPROFILE: sandboxRoot,
+          ...sandboxHomeEnv(sandboxRoot),
         }
-      : undefined),
+      : { DORKOS_SEARCH_NO_EXTERNAL_HISTORY: 'true' }),
   };
   // A credentialed run uses the real claude-code runtime — never the harness's
   // in-process test-mode flags, which would otherwise leak from the parent.

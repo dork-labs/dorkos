@@ -269,6 +269,13 @@ export async function resolveClaudeConfigPin(
  * the numbers are machine-relative, and names the one-line fix, because a
  * confound nobody is told about is the failure this whole module exists to end.
  *
+ * It also names what the harness does INSTEAD, because declining the pin has a
+ * second consequence the earlier wording never mentioned: the run's home stays
+ * the operator's, so the server would otherwise full-text-index their Claude
+ * Code, Codex and OpenCode history into a throwaway sandbox (DOR-1779). That is
+ * turned off rather than left to happen, and a person reading this deserves to
+ * know both halves — what was kept, and what was given up to keep it.
+ *
  * @param hostConfigDir - The config dir the run will inherit instead.
  * @returns The notice to print once per run.
  */
@@ -278,7 +285,9 @@ export function inheritedClaudeConfigNotice(hostConfigDir: string): string {
     `your user-level CLAUDE.md, settings and skills. Comparisons within this machine still hold; ` +
     `absolute pass rates will not reproduce elsewhere.\n` +
     `The harness would isolate them, but your sign-in lives in the OS keychain and belongs to that ` +
-    `exact directory, so moving it would sign this run out. Set CLAUDE_CODE_OAUTH_TOKEN (from ` +
+    `exact directory, so moving it would sign this run out. Because its home stays yours, this ` +
+    `run also indexes no conversation history for search — yours or its own — which is how it ` +
+    `avoids copying your transcripts into a throwaway sandbox. Set CLAUDE_CODE_OAUTH_TOKEN (from ` +
     `\`claude setup-token\`) or ANTHROPIC_API_KEY to get a clean, reproducible config.`
   );
 }

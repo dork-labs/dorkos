@@ -209,5 +209,11 @@ describe('resolveClaudeConfigPin', () => {
     // name the fix.
     expect(pin.reason).toContain(host);
     expect(pin.reason).toContain('CLAUDE_CODE_OAUTH_TOKEN');
+    // And it names the second consequence, which the first wording left out: an
+    // inherited home is also an inherited HISTORY, so this row indexes none of
+    // it rather than copying the operator's transcripts into a sandbox
+    // (DOR-1779). A person told only half of what declining costs cannot judge
+    // it.
+    expect(pin.reason).toContain('indexes no conversation history');
   });
 });

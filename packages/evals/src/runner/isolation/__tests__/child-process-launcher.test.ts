@@ -177,14 +177,32 @@ describe('ChildProcessLauncher environment', () => {
  * variable, because that is the value the union is built from — and because
  * which variable carries it is platform-dependent (`HOME` on POSIX,
  * `USERPROFILE` on Windows) while the resolved home is not.
+ *
+ * They also cover the three variables that WALK PAST a pinned home. Each sits in
+ * front of its runtime's home-derived default, so `HOME` alone left the leak
+ * open on two of the three runtimes: measured, with `CODEX_HOME` exported by the
+ * parent, the operator's Codex thread still came back out of an already-pinned
+ * sandbox server's search results.
  */
 describe('ChildProcessLauncher home isolation', () => {
   /** A stand-in for the operator's real home, inherited by the launching process. */
   const OPERATOR_HOME = '/Users/someone';
+  /** The operator's own runtime-directory exports, as a real shell would carry them. */
+  const OPERATOR_ESCAPES = {
+    CODEX_HOME: `${OPERATOR_HOME}/.codex`,
+    XDG_DATA_HOME: `${OPERATOR_HOME}/.local/share`,
+    OPENCODE_DB: `${OPERATOR_HOME}/.local/share/opencode/opencode.db`,
+  };
 
-  it('moves the child`s ~ onto the sandbox root when the run pinned a config dir', async () => {
+  /** Export the operator's home AND every variable that could route around it. */
+  function stubOperatorEnvironment(): void {
     vi.stubEnv('HOME', OPERATOR_HOME);
     vi.stubEnv('USERPROFILE', OPERATOR_HOME);
+    for (const [key, value] of Object.entries(OPERATOR_ESCAPES)) vi.stubEnv(key, value);
+  }
+
+  it('moves the child`s ~ onto the sandbox root when the run pinned a config dir', async () => {
+    stubOperatorEnvironment();
 
     const { env, homedir, sandboxRoot } = await envSeenByChild(
       {},
@@ -205,6 +223,29 @@ describe('ChildProcessLauncher home isolation', () => {
     expect(env.DORKOS_BOUNDARY).toBe(sandboxRoot);
   });
 
+  it('pins the variables that route AROUND a home, not just the home', async () => {
+    stubOperatorEnvironment();
+
+    const { env, sandboxRoot } = await envSeenByChild(
+      {},
+      { claudeConfigDir: '/private/var/folders/xy/dorkos-evals-AbC123/.claude' }
+    );
+
+    // Each of these sits in FRONT of its runtime's `~`-derived default, so one
+    // left inherited re-opens the leak on that runtime by itself. The values are
+    // exactly what the default would have produced from the pinned home — the
+    // launcher relocates the layout, it does not invent one.
+    expect(env.CODEX_HOME).toBe(path.join(sandboxRoot, '.codex'));
+    expect(env.XDG_DATA_HOME).toBe(path.join(sandboxRoot, '.local', 'share'));
+    expect(env.CODEX_HOME).not.toBe(OPERATOR_ESCAPES.CODEX_HOME);
+    expect(env.XDG_DATA_HOME).not.toBe(OPERATOR_ESCAPES.XDG_DATA_HOME);
+    // `OPENCODE_DB` names a FILE, and OpenCode names that file by release
+    // channel — so it is erased rather than guessed at, leaving the resolver's
+    // `<data dir>/opencode.db` fallback, which XDG_DATA_HOME has already moved.
+    // Absent, not merely different: `spawn` drops undefined entries.
+    expect(env.OPENCODE_DB).toBeUndefined();
+  });
+
   it('leaves the operator`s home alone when the run declined to pin a config dir', async () => {
     // The keychain row. A macOS `claude auth login` names its Keychain entry
     // after the config directory and is reached through that home, so the run
@@ -213,22 +254,61 @@ describe('ChildProcessLauncher home isolation', () => {
     vi.stubEnv('HOME', OPERATOR_HOME);
     vi.stubEnv('USERPROFILE', OPERATOR_HOME);
 
+    stubOperatorEnvironment();
+
     const { env, homedir, sandboxRoot } = await envSeenByChild({});
 
     expect(homedir).toBe(OPERATOR_HOME);
     expect(env.HOME).toBe(OPERATOR_HOME);
     expect(homedir).not.toBe(sandboxRoot);
+    // The sibling variables stay inherited for the same reason: they travel with
+    // the home, and this row is the one that must keep it.
+    expect(env.CODEX_HOME).toBe(OPERATOR_ESCAPES.CODEX_HOME);
+    expect(env.OPENCODE_DB).toBe(OPERATOR_ESCAPES.OPENCODE_DB);
+  });
+
+  it('turns off external-history indexing on the row where the home cannot move', async () => {
+    // The keychain row keeps the operator's home, so the ONE thing left that
+    // would copy their transcripts into a throwaway directory is the search
+    // index. `pnpm evals:local` is the most-used path in the harness and it was
+    // doing exactly that. No eval case queries search, so dropping every
+    // external-history source costs this harness nothing (DOR-1551's lever).
+    stubOperatorEnvironment();
+
+    const { env } = await envSeenByChild({});
+
+    expect(env.DORKOS_SEARCH_NO_EXTERNAL_HISTORY).toBe('true');
+  });
+
+  it('needs no search flag on the pinned row, because there is no external history to find', async () => {
+    // Stated so the two rows cannot silently converge: the pinned row solves the
+    // problem at the source (every root resolves inside the sandbox), so turning
+    // the index off there would only cost it the ability to search its OWN
+    // transcripts, which a future oracle may well want.
+    stubOperatorEnvironment();
+
+    const { env } = await envSeenByChild(
+      {},
+      { claudeConfigDir: '/private/var/folders/xy/dorkos-evals-AbC123/.claude' }
+    );
+
+    expect(env.DORKOS_SEARCH_NO_EXTERNAL_HISTORY).toBeUndefined();
   });
 
   it('does not let a case`s serverEnv put the child`s ~ back on the operator', async () => {
     // `HOME` is a placement variable like `DORK_HOME` and `DORKOS_BOUNDARY`: the
     // harness's to set, never a case's to reclaim.
     const { env, homedir, sandboxRoot } = await envSeenByChild(
-      { HOME: OPERATOR_HOME, USERPROFILE: OPERATOR_HOME },
+      { HOME: OPERATOR_HOME, USERPROFILE: OPERATOR_HOME, ...OPERATOR_ESCAPES },
       { claudeConfigDir: '/private/var/folders/xy/dorkos-evals-AbC123/.claude' }
     );
 
     expect(homedir).toBe(sandboxRoot);
     expect(env.HOME).not.toBe(OPERATOR_HOME);
+    // The routes around the home are the harness's too — a case that named them
+    // would otherwise undo the pin without touching `HOME` at all.
+    expect(env.CODEX_HOME).toBe(path.join(sandboxRoot, '.codex'));
+    expect(env.XDG_DATA_HOME).toBe(path.join(sandboxRoot, '.local', 'share'));
+    expect(env.OPENCODE_DB).toBeUndefined();
   });
 });
