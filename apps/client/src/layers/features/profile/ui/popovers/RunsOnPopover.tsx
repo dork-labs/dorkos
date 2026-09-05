@@ -39,7 +39,10 @@ const LABEL_CLASS = 'text-muted-foreground text-3xs font-medium tracking-wider u
  *
  * The Account row is the only one that comes and goes — it appears where the
  * choice is real (Claude Code, more than one account registered) or where this
- * agent has already made one. {@link AgentExecutionRows} owns that rule.
+ * agent has already made one. {@link AgentExecutionRows} owns that rule, and it
+ * owns that row's SAVE too: billing is operator-only, so the account is written
+ * through `PATCH /api/mesh/agents/:id` rather than the `update` below, which
+ * reaches the agent self-edit route and is refused there (DOR-1736).
  */
 export function RunsOnPopover({ member }: ProfilePickContentProps) {
   const { agent, projectPath, isPending, update } = useProfileAgent(member);

@@ -122,6 +122,7 @@ import type {
 } from '@dorkos/shared/relay-schemas';
 import type {
   AgentManifest,
+  AgentManifestUpdate,
   CreateAgentOptions,
   DiscoveryCandidate,
   DenialRecord,
@@ -430,7 +431,7 @@ export const meshStubs = {
     throw new Error('Mesh is not supported in embedded mode');
   },
 
-  async updateMeshAgent(_id: string, _updates: Partial<AgentManifest>): Promise<AgentManifest> {
+  async updateMeshAgent(_id: string, _updates: AgentManifestUpdate): Promise<AgentManifest> {
     throw new Error('Mesh is not supported in embedded mode');
   },
 

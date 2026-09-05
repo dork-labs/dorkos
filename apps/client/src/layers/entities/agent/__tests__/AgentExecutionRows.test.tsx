@@ -159,6 +159,10 @@ function renderRows(
       },
     }),
     getModels: vi.fn().mockResolvedValue(models),
+    // The Account row's one write path (DOR-1736). Answered with a manifest so
+    // the mutation SETTLES — the invalidation this component hangs on
+    // `onSettled` never runs against a promise nobody resolves.
+    updateMeshAgent: vi.fn().mockResolvedValue(agent),
   });
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
@@ -170,7 +174,7 @@ function renderRows(
       </TransportProvider>
     </QueryClientProvider>
   );
-  return { onUpdate };
+  return { onUpdate, transport, queryClient };
 }
 
 describe('AgentExecutionRows', () => {
@@ -471,8 +475,15 @@ describe('AgentExecutionRows — the Account row', () => {
     expect(screen.getByTestId('agent-account-row')).toHaveTextContent('Acme Corp');
   });
 
-  it('writes the registry id when an account is picked', async () => {
-    const { onUpdate } = renderRows(
+  // DOR-1736. Billing is operator-only: `agent-write-policy.ts` classifies
+  // `account` as `operator-only`, so `PATCH /api/agents/current` — the route
+  // `onUpdate` reaches — refuses ANY body naming it, 403, whole patch. This row
+  // wrote through exactly that route, so on the only machines that draw it (more
+  // than one registered account) picking an account failed every time. It writes
+  // through `PATCH /api/mesh/agents/:id` instead, the same split the Tools page's
+  // toggles took in DOR-1506.
+  it('writes the registry id through the OPERATOR route, never the agent self-edit route', async () => {
+    const { onUpdate, transport } = renderRows(
       manifest(),
       DEFAULTS,
       MODELS,
@@ -481,11 +492,15 @@ describe('AgentExecutionRows — the Account row', () => {
     );
     await userEvent.click(await screen.findByTestId('agent-account-row'));
     await userEvent.click(await screen.findByRole('button', { name: /Acme Corp/ }));
-    expect(onUpdate).toHaveBeenCalledWith({ account: 'work' });
+    await waitFor(() =>
+      expect(transport.updateMeshAgent).toHaveBeenCalledWith('a', { account: 'work' })
+    );
+    // The self-edit route this row used to take, and the one that 403s.
+    expect(onUpdate).not.toHaveBeenCalled();
   });
 
   it('restores the server default through the footer, writing the wire null', async () => {
-    const { onUpdate } = renderRows(
+    const { onUpdate, transport } = renderRows(
       manifest({ account: 'work' }),
       DEFAULTS,
       MODELS,
@@ -497,8 +512,56 @@ describe('AgentExecutionRows — the Account row', () => {
     expect(inherit).toHaveTextContent('Using server default: .claude — tap to restore');
     await userEvent.click(inherit);
     // `null`, not `undefined`: omitting the key would leave the override in
-    // place on the manifest.
-    expect(onUpdate).toHaveBeenCalledWith({ account: null });
+    // place on the manifest. The mesh route turns it back into a deletion.
+    await waitFor(() =>
+      expect(transport.updateMeshAgent).toHaveBeenCalledWith('a', { account: null })
+    );
+    expect(onUpdate).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the manifest it renders, so a picked account does not snap back', async () => {
+    // `useUpdateAgent` (mesh) clears `['mesh','agents']` and stops, while this
+    // row renders the manifest `useCurrentAgent` holds under `agentKeys.byPath`
+    // — and the Settings exceptions strip reads `agentKeys.resolved`. Without
+    // the sweep the value would return to what it was: a save that looks like a
+    // refusal. The same defect `ToolsTab` pins for its own toggles.
+    const { transport, queryClient } = renderRows(
+      manifest(),
+      DEFAULTS,
+      MODELS,
+      capabilityMap(false),
+      TWO_ACCOUNTS
+    );
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    await userEvent.click(await screen.findByTestId('agent-account-row'));
+    await userEvent.click(await screen.findByRole('button', { name: /Acme Corp/ }));
+    await waitFor(() => expect(transport.updateMeshAgent).toHaveBeenCalled());
+    await waitFor(() => {
+      const asked = invalidate.mock.calls.map(([filters]) => JSON.stringify(filters?.queryKey));
+      expect(asked).toContain(JSON.stringify(['agents']));
+    });
+  });
+
+  it('leaves the row showing what is stored when the write is refused', async () => {
+    // `onSettled`, not `onSuccess`, and no optimistic write: the row is fully
+    // controlled by the manifest, so a re-read is the only thing that ever moves
+    // it — and after a REFUSED write it is the only thing that proves it did
+    // not. The failure itself is announced by the app-wide mutation handler
+    // (`shared/lib/query-client`), the same report every mesh write gets.
+    const { onUpdate, transport } = renderRows(
+      manifest({ account: 'work' }),
+      DEFAULTS,
+      MODELS,
+      capabilityMap(false),
+      TWO_ACCOUNTS
+    );
+    vi.mocked(transport.updateMeshAgent).mockRejectedValueOnce(new Error('Forbidden'));
+    await userEvent.click(await screen.findByTestId('agent-account-row'));
+    await userEvent.click(await screen.findByTestId('agent-account-row-option-personal'));
+    await waitFor(() => expect(transport.updateMeshAgent).toHaveBeenCalled());
+    // Still Acme Corp — the row never claimed a change the server rejected.
+    expect(screen.getByTestId('agent-account-row')).toHaveTextContent('Acme Corp');
+    expect(onUpdate).not.toHaveBeenCalled();
   });
 
   it('never offers a synthesized root as a choice — nothing can point at it', async () => {
