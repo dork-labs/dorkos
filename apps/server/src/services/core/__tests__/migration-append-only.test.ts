@@ -25,6 +25,7 @@ import {
   declarationPool,
   extractTopLevelDeclarations,
   normalizeForHash,
+  reachedDeclarations,
 } from './migration-closure.js';
 import type { ClosureSources } from './migration-closure.js';
 
@@ -293,6 +294,133 @@ describe('migrationClosure', () => {
 
   it('raises for a key that is not in the table', () => {
     expect(() => migrationClosure('9.9.9', sources(SOURCE))).toThrow(/not in CONFIG_MIGRATIONS/);
+  });
+});
+
+describe('template literal interpolations (DOR-1733)', () => {
+  // The mask used to blank a template literal wholesale, so a helper called only
+  // as `` `${backfillInner(store)}` `` was invisible to the walk and its body
+  // drifted freely under a shipped pin. It now blanks only the LITERAL text and
+  // leaves each `${…}` expression standing.
+  //
+  // Ten of the eleven cases here are written to fail in BOTH directions: each
+  // fixture puts one helper where the walk must now see it and the other where
+  // the walk must still not, so a mask that stops looking inside interpolations
+  // goes red, and so does one that starts reading literal prose as code. All ten
+  // were confirmed against a mask mutated back to wholesale blanking.
+  //
+  // The exception is 'keeps a binding whole through the braces an interpolation
+  // adds', which passes under wholesale blanking too — blanking a `{` hides it
+  // from the bracket count just as well as balancing it does. It is not idle:
+  // its subject is the mutation where `scanCode` swallows the closing brace it
+  // is supposed to leave standing, and against that one it is the SOLE failure
+  // in this file. It guards the seam the other ten never touch.
+  const POOL = extractTopLevelDeclarations([SEED, OTHER].join('\n\n'));
+
+  /**
+   * Which of the two fixture helpers a slice of code reaches.
+   *
+   * @param slice - Source text to walk.
+   * @returns The reached declaration names, sorted.
+   */
+  const reaches = (slice: string): string[] => reachedDeclarations(slice, POOL);
+
+  it('sees a call written inside an interpolation', () => {
+    expect(reaches('const msg = `seeded: ${backfillSeed(store)}`;')).toEqual(['backfillSeed']);
+  });
+
+  it('still hides a name that is only a template literal text', () => {
+    // The other half of the same rule: literal prose is a string, and a helper
+    // NAME sitting in one is not a call to it.
+    expect(reaches('const msg = `backfillOther(store) ${backfillSeed(store)}`;')).toEqual([
+      'backfillSeed',
+    ]);
+  });
+
+  it('sees every interpolation in a template, not just the first', () => {
+    expect(reaches('const msg = `${backfillSeed(store)}/${backfillOther(store)}`;')).toEqual([
+      'backfillOther',
+      'backfillSeed',
+    ]);
+  });
+
+  it('descends into a template nested inside an interpolation', () => {
+    // The recursion the flat scanner could not do: a template, inside an
+    // interpolation, inside a template. The inner literal text must stay hidden
+    // while the inner interpolation stays visible.
+    expect(reaches('const msg = `a ${wrap(`b ${backfillSeed(store)} backfillOther`)} c`;')).toEqual(
+      ['backfillSeed']
+    );
+  });
+
+  it('reads an escaped dollar as literal text, not as an interpolation', () => {
+    expect(reaches('const msg = `\\${backfillOther(store)} ${backfillSeed(store)}`;')).toEqual([
+      'backfillSeed',
+    ]);
+  });
+
+  it('reads an escaped backtick as literal text, not as the end of the template', () => {
+    // If `\`` closed the template, everything after it would read as code and
+    // `backfillOther` would be reached — which is what the assertion below
+    // catches. The classic lexer slip.
+    expect(reaches('const msg = `\\` backfillOther ${backfillSeed(store)}`;')).toEqual([
+      'backfillSeed',
+    ]);
+  });
+
+  it('is not fooled by a backtick inside a string inside an interpolation', () => {
+    // The interpolation holds a normal string whose CONTENT is a backtick. Read
+    // as a template opening it would flip the parity for the rest of the file,
+    // and the trailing literal `backfillOther` would land on the code side.
+    expect(reaches('const msg = `${label("`")}${backfillSeed(store)} backfillOther`;')).toEqual([
+      'backfillSeed',
+    ]);
+  });
+
+  it('still blanks a string that sits inside an interpolation', () => {
+    // An interpolation is code, and a string inside code is still a string.
+    expect(reaches("const msg = `${pick('backfillOther')}${backfillSeed(store)}`;")).toEqual([
+      'backfillSeed',
+    ]);
+  });
+
+  it('keeps a binding whole through the braces an interpolation adds', () => {
+    // `endOfStatement` counts brackets over the masked text, and the mask now
+    // hands it the `${` and the `}` that were previously blanked away. They
+    // balance, so the statement still ends at its own semicolon rather than at
+    // the first brace inside the template.
+    const source = 'const TEMPLATED = `x ${JSON.stringify({ a: 1 })} y`;';
+    expect(extractTopLevelDeclarations(source)['TEMPLATED']).toBe(source);
+  });
+
+  it('keeps a template literal text as behavior, and a reflowed interpolation as noise', () => {
+    // Literal text is still copied through untouched — a changed message is a
+    // changed program — while the code inside an interpolation collapses like
+    // any other code, so Prettier breaking a long call across lines there does
+    // not move a pin.
+    expect(normalizeForHash('const m = `hi ${name}`;')).toContain('hi ');
+    expect(normalizeForHash('const m = `a ${x}`;')).not.toBe(
+      normalizeForHash('const m = `b ${x}`;')
+    );
+    expect(normalizeForHash('const m = `${call(\n  alpha,\n  beta\n)}`;')).toBe(
+      normalizeForHash('const m = `${call(alpha, beta)}`;')
+    );
+  });
+
+  it('moves a pin when a helper reached ONLY through an interpolation changes', () => {
+    // The whole point, at the level the rule is read at. Before DOR-1733 both
+    // sources hashed the same and `backfillInner` was editable underneath a
+    // shipped key with every guard green.
+    const outer = helper('backfillOuter', "store.set('msg', `${backfillInner(store)}`);");
+    const withInner = (body: string): string =>
+      sourceWith(["  '0.60.0': backfillOuter,"], [outer, helper('backfillInner', body)]);
+
+    const before = withInner("store.set('inner', 1);");
+    const after = withInner("store.set('inner', 2);");
+    expect(migrationClosure('0.60.0', sources(before))).toContain("store.set('inner', 1);");
+    expect(migrationHash('0.60.0', sources(after))).not.toBe(
+      migrationHash('0.60.0', sources(before))
+    );
   });
 });
 

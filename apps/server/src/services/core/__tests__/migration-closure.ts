@@ -71,17 +71,36 @@
  * Against a tag none of the four has any legal answer. A guard nobody can
  * satisfy gets deleted, so this one moves a pin instead.
  *
- * There is a second, narrower blind spot in the same family. {@link maskNonCode}
- * blanks the inside of template literals wholesale, interpolations included, so
- * a call written as `` `${backfillSomething(store)}` `` is not a call this walk
- * can see. Latent here rather than live, checked rather than assumed: the two
- * interpolations in `config-schema.ts` name locals (`` `${base}-${n}` ``, and an
- * account id inside an error message), and the only interpolated call in
- * `config-manager.ts`, `` `${describeLoadError(…)}` ``, is not reached by any
- * migration key — though it IS a top-level declaration called ONLY from inside
- * interpolations, so the shape exists in the file the guard reads. A body that
- * computed a string out of another helper would be pinned with a hole in it. The
- * mask is deliberately not a parser, and this is what that costs (DOR-1733).
+ * There WAS a second, narrower blind spot in the same family, and it is closed.
+ * {@link maskNonCode} used to blank the inside of a template literal wholesale,
+ * interpolations included, so a call written as
+ * `` `${backfillSomething(store)}` `` was not a call this walk could see. It now
+ * blanks only the LITERAL text of a template and leaves each `${…}` expression
+ * standing, so an interpolated call is followed like any other call (DOR-1733).
+ *
+ * Nothing moved when that changed, which is the evidence that the hole was
+ * latent rather than live: every one of the table's keys hashes to the same pin
+ * and reaches the same set of declarations either way, measured before and after
+ * the mask was rewritten. The interpolations in `config-schema.ts` name locals
+ * (`` `${base}-${n}` `` in `claudeAccountId`, the only one any key reaches, and
+ * an account id inside an error message), and `describeLoadError` — a top-level
+ * declaration in `config-manager.ts` called ONLY from inside interpolations, so
+ * the shape does exist in the file the guard reads — is reached by no migration
+ * key. That last claim is executed rather than asserted, in
+ * `config-manager.test.ts`, so it goes red the day a key starts reaching it.
+ *
+ * The mask is still deliberately not a parser. A REGEX LITERAL remains unknown
+ * to it, which is what the cross-check in {@link extractTopLevelDeclarations}
+ * exists for — but that hole changed SHAPE here rather than staying put, and
+ * both directions were measured. A quote-bearing regex written INSIDE an
+ * interpolation is newly in scope for it, because that text used to be blanked
+ * away with the rest of the template and is now read as code; the reverse shape
+ * improved, since a regex in ordinary code can no longer have its damage
+ * extended by a template it runs into. Net exposure is small and the failure is
+ * loud where it counts: through {@link extractTopLevelDeclarations} the
+ * cross-check throws and names the scanner, while through
+ * {@link reachedDeclarations} — which has no such check — the cost is still a
+ * silently short closure.
  */
 
 /**
@@ -138,10 +157,31 @@ const IDENTIFIER = /[A-Za-z_$][\w$]*/g;
  * Length and line breaks are preserved either way, so an offset found in the
  * output is the same offset in the input.
  *
+ * A template literal is not one opaque run. Its LITERAL text is blanked like any
+ * other string, but the expression inside each `${…}` is code and stays — so a
+ * call written as `` `${describeLoadError(cause)}` `` is a call the walk above
+ * can see (DOR-1733). The `${` and the closing `}` survive too, which is what
+ * keeps {@link endOfStatement}'s brace count balanced across a template.
+ *
+ * Three scanners rather than one flat loop, two of them mutually recursive,
+ * because the nesting is real: an interpolation may hold a string that holds a
+ * backtick, or another template that holds another interpolation. Escapes are
+ * honoured inside the literal text, so `` `\${not an interpolation}` `` and
+ * `` `\`` `` are read as the literal characters they are.
+ *
+ * Still deliberately not a parser: a REGEX LITERAL is unknown to it, and a quote
+ * inside one reads as a string opening. {@link extractTopLevelDeclarations}
+ * cross-checks for exactly that rather than trusting this. Reading
+ * interpolations moved that hole rather than leaving it alone — a regex written
+ * inside a `${…}` is newly exposed to it, a regex in ordinary code can no longer
+ * be compounded by a template it runs into. The module header states both
+ * directions.
+ *
  * @param source - Any TypeScript source text.
- * @param blankStrings - Whether the INSIDE of string and template literals is
- *   blanked as well. True when scanning for structure; false when the result is
- *   the text being compared, where a string's characters are behavior.
+ * @param blankStrings - Whether the INSIDE of string literals, and the literal
+ *   text of template literals, is blanked as well. True when scanning for
+ *   structure; false when the result is the text being compared, where a
+ *   string's characters are behavior.
  * @returns A same-length copy with the requested ranges blanked.
  */
 function blankOut(source: string, blankStrings: boolean): string {
@@ -152,51 +192,123 @@ function blankOut(source: string, blankStrings: boolean): string {
     }
   };
 
-  let i = 0;
-  while (i < source.length) {
-    const two = source.slice(i, i + 2);
-    if (two === '//') {
-      const end = source.indexOf('\n', i);
-      const stop = end === -1 ? source.length : end;
-      blank(i, stop);
-      i = stop;
-      continue;
-    }
-    if (two === '/*') {
-      const end = source.indexOf('*/', i + 2);
-      const stop = end === -1 ? source.length : end + 2;
-      blank(i, stop);
-      i = stop;
-      continue;
-    }
-    const ch = source[i]!;
-    if (ch === "'" || ch === '"' || ch === '`') {
-      let j = i + 1;
-      while (j < source.length) {
-        if (source[j] === '\\') {
-          j += 2;
-          continue;
-        }
-        if (source[j] === ch) break;
-        j++;
+  /**
+   * Consume a `'`/`"` string that opens at `from`.
+   *
+   * @param from - Index of the opening quote.
+   * @param quote - The quote character that closes it.
+   * @returns The index just past the closing quote.
+   */
+  const scanQuoted = (from: number, quote: string): number => {
+    let j = from + 1;
+    while (j < source.length) {
+      if (source[j] === '\\') {
+        j += 2;
+        continue;
       }
-      // The delimiters stay either way, so a blanked string is still visibly a
-      // string rather than a run of spaces that could merge with its neighbours.
-      if (blankStrings) blank(i + 1, Math.min(j, source.length));
-      i = Math.min(j + 1, source.length);
-      continue;
+      if (source[j] === quote) break;
+      j++;
     }
-    i++;
+    // The delimiters stay either way, so a blanked string is still visibly a
+    // string rather than a run of spaces that could merge with its neighbours.
+    if (blankStrings) blank(from + 1, Math.min(j, source.length));
+    return Math.min(j + 1, source.length);
+  };
+
+  /**
+   * Consume a template literal that opens at `from`, blanking only its literal
+   * runs and handing each `${…}` back to the code scanner.
+   *
+   * @param from - Index of the opening backtick.
+   * @returns The index just past the closing backtick.
+   */
+  const scanTemplate = (from: number): number => {
+    let j = from + 1;
+    let literalFrom = j;
+    while (j < source.length) {
+      if (source[j] === '\\') {
+        j += 2;
+        continue;
+      }
+      if (source[j] === '`') {
+        if (blankStrings) blank(literalFrom, j);
+        return j + 1;
+      }
+      if (source[j] === '$' && source[j + 1] === '{') {
+        if (blankStrings) blank(literalFrom, j);
+        // `scanCode` returns the index OF the closing brace, so the brace itself
+        // survives and the literal run resumes after it.
+        j = Math.min(scanCode(j + 2, true) + 1, source.length);
+        literalFrom = j;
+        continue;
+      }
+      j++;
+    }
+    // Unterminated: the rest of the file is literal text, which is the reading
+    // that blanks the most rather than the least.
+    if (blankStrings) blank(literalFrom, source.length);
+    return source.length;
+  };
+
+  /**
+   * Scan ordinary code, blanking comments and descending into every literal.
+   *
+   * @param from - Where to start.
+   * @param untilCloseBrace - Whether to stop at the `}` that closes the
+   *   interpolation this call is reading, rather than at the end of the source.
+   * @returns The index of that closing brace, or the end of the source.
+   */
+  function scanCode(from: number, untilCloseBrace: boolean): number {
+    let i = from;
+    let depth = 0;
+    while (i < source.length) {
+      const two = source.slice(i, i + 2);
+      if (two === '//') {
+        const end = source.indexOf('\n', i);
+        const stop = end === -1 ? source.length : end;
+        blank(i, stop);
+        i = stop;
+        continue;
+      }
+      if (two === '/*') {
+        const end = source.indexOf('*/', i + 2);
+        const stop = end === -1 ? source.length : end + 2;
+        blank(i, stop);
+        i = stop;
+        continue;
+      }
+      const ch = source[i]!;
+      if (ch === "'" || ch === '"') {
+        i = scanQuoted(i, ch);
+        continue;
+      }
+      if (ch === '`') {
+        i = scanTemplate(i);
+        continue;
+      }
+      if (untilCloseBrace) {
+        if (ch === '{') depth++;
+        else if (ch === '}') {
+          if (depth === 0) return i;
+          depth--;
+        }
+      }
+      i++;
+    }
+    return source.length;
   }
+
+  scanCode(0, false);
   return out.join('');
 }
 
 /**
  * Blank out everything that is not code, preserving every offset.
  *
- * Comments and the inside of string/template literals become spaces, so a brace,
- * a `function` keyword or a quote appearing in prose or in a string cannot be
- * mistaken for structure.
+ * Comments, the inside of string literals and the LITERAL text of template
+ * literals become spaces, so a brace, a `function` keyword or a quote appearing
+ * in prose or in a string cannot be mistaken for structure. What a `${…}` holds
+ * is code and survives, so the walk sees the calls made there (DOR-1733).
  *
  * @param source - Any TypeScript source text.
  * @returns A same-length string with non-code blanked out.
@@ -459,9 +571,11 @@ function collapseCode(text: string): string {
 /**
  * Strip a source slice down to the text whose change is a real change.
  *
- * Code is collapsed; the CONTENTS of string and template literals are copied
- * through untouched, because the characters in a string are behavior — a seeded
- * key name with a space in it is a different key.
+ * Code is collapsed; the CONTENTS of a string literal, and the literal text of a
+ * template, are copied through untouched, because those characters are behavior
+ * — a seeded key name with a space in it is a different key. What a `${…}` holds
+ * is code, so it collapses with the rest of the code and a Prettier reflow
+ * inside an interpolation is invisible here too (DOR-1733).
  *
  * @param text - A slice of TypeScript source.
  * @returns The normalized text that gets hashed or compared.
@@ -475,7 +589,8 @@ export function normalizeForHash(text: string): string {
   let inString = false;
   for (let i = 0; i < text.length; i++) {
     // Blank in both passes is a comment; blank only in the masked pass is the
-    // inside of a string.
+    // inside of a string, or a template's literal text. An interpolation is
+    // blank in neither, so it lands on the code side and collapses.
     const isStringContent = masked[i] === ' ' && code[i] !== ' ';
     if (isStringContent !== inString) {
       out += inString ? buffer : collapseCode(buffer);
