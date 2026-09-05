@@ -16,5 +16,11 @@ export default defineConfig({
     // report a useful message, which is why one flake surfaced as two unrelated
     // failures: "was never spawned" and "timed out in 5000ms" were one cause.
     testTimeout: 30_000,
+    // Honors the pre-push gate's VITEST_RETRY budget; 0 when unset. CI sets its
+    // own budget on the command line instead (DOR-1701).
+    // Rationale: apps/server/vitest.config.ts. Pinned for every project by
+    // scripts/__tests__/vitest-projects.test.ts (DOR-1772).
+    // eslint-disable-next-line no-restricted-syntax -- a vitest config has no env.ts of its own; mirrors packages/relay/vitest.config.ts
+    retry: process.env.VITEST_RETRY ? Number(process.env.VITEST_RETRY) : 0,
   },
 });

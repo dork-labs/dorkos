@@ -86,14 +86,22 @@ name: test
 # test named by that step three times over is a flake to FIX (DOR-1007), not a
 # budget to widen.
 #
-# VITEST_RETRY itself is still not set here — the budget is a CLI flag, which
-# reaches all 18 packages, while the env var is wired into only two vitest
-# configs. The lefthook gate keeps the env var and gets no reporter: its
-# passthrough is pinned to exactly `-- --run` because turbo hashes passthrough
-# args into the task cache key, so a flag there would force a full re-run of
-# every suite on every push (see lefthook.yml's CACHE-KEY CONSTRAINT). The queue
-# leg already carries --shard and the json reporter, so it has already forked
-# that key and pays nothing more.
+# VITEST_RETRY itself is still not set here — this leg's budget is a CLI flag.
+# NOT for reach: DOR-1772 wired the env var into all 21 vitest projects, so
+# either mechanism would now cover every package, and any argument resting on
+# "the flag reaches more of the repo" is dead. The flag is the right spelling
+# HERE because it states this leg's budget in the workflow, on the same line as
+# the reporter that makes the budget visible: `--retry=1` and
+# scripts/vitest-flake-reporter.ts are one decision, and a number spread across
+# 21 config files could not be read off the leg that actually spends it.
+#
+# The lefthook gate spells the same budget the other way, and it has no choice:
+# its passthrough is pinned to exactly `-- --run` because turbo hashes
+# passthrough args into the task cache key, so a flag there would force a full
+# re-run of every suite on every push (see lefthook.yml's CACHE-KEY CONSTRAINT).
+# The env var rides globalPassThroughEnv and never forks that key. The queue leg
+# already carries --shard and the json reporter, so it has already forked that
+# key and pays nothing more — which is why the flag is free here and not there.
 # TWO EVENTS, TWO DEPTHS, ONE REQUIRED CONTEXT (2026-08-23/24). The full suite
 # runs on `merge_group`, where it is a REQUIRED check of the merge queue — the
 # ruleset toggle this file's `merge_group` trigger always anticipated. That
