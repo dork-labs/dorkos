@@ -45,15 +45,15 @@
  * a conversation whose transcript may still be found by hand; a deleted one is a
  * decision nobody can review.
  *
- * @module server/services/rooms/room-session-convergence
+ * @module server/services/rooms/session-bindings/room-session-convergence
  */
-import { logger } from '../../lib/logger.js';
-import { onProjectorRekey } from '../session/index.js';
-import type { RoomStore } from './room-store.js';
-import { resolveAgentRuntimeType } from '../runtimes/shared/resolve-agent-runtime-type.js';
-
-/** The runtime whose sessions rename themselves, and the only one to sweep. */
-const CLAUDE_CODE_RUNTIME = 'claude-code';
+import { logger } from '../../../lib/logger.js';
+import { onProjectorRekey } from '../../session/index.js';
+import type { RoomStore } from '../room-store.js';
+import {
+  probeRoomBindingTranscript,
+  type RoomBindingTranscriptDeps,
+} from './room-binding-transcripts.js';
 
 /**
  * Move every room binding across a projector rekey, for as long as the returned
@@ -97,21 +97,9 @@ export function followSessionRekeys(store: RoomStore): () => void {
 }
 
 /** What the repair sweep needs from the world, so a test can supply all of it. */
-export interface RoomBindingRepairDeps {
+export interface RoomBindingRepairDeps extends RoomBindingTranscriptDeps {
   /** The store holding the bindings. */
   store: RoomStore;
-  /**
-   * The agent directory behind a room author id, or `null` when the author is
-   * not an agent this install knows. The sweep asks the author registry for
-   * `naturalKey`, exactly as the dispatcher does.
-   */
-  agentPathFor(authorId: string): string | null;
-  /**
-   * Whether a transcript for this session exists on disk under this agent's
-   * working directory. The claude-code transcript probe, injected rather than
-   * imported so the sweep does not reach into a runtime's internals.
-   */
-  hasTranscript(agentPath: string, sessionId: string): Promise<boolean>;
 }
 
 /** What one sweep found, for the caller to log and for tests to assert on. */
@@ -169,10 +157,13 @@ export interface RoomBindingRepairReport {
  *
  * Scoped hard, because it runs at startup and startup is not the place to walk a
  * disk: only rooms that HAVE a binding (the table is the input, not the room
- * list), and only bindings whose agent runs on claude-code — the one runtime
+ * list), and only bindings whose session runs on claude-code — the one runtime
  * that renames a session out from under its caller. Codex, OpenCode and
  * test-mode all return `undefined` from `getInternalSessionId`, so their ids
- * never moved and there is nothing to look for.
+ * never moved and there is nothing to look for. Both of those narrowings, and
+ * the transcript question itself, are {@link probeRoomBindingTranscript} — the
+ * same probe `dorkos doctor --deep` asks, so the two cannot answer differently
+ * about one binding (DOR-805).
  *
  * **A binding is repaired only when the ledger can NAME its successor**, which
  * since DOR-1205 includes renames recorded by an earlier process — that is the
@@ -216,29 +207,21 @@ export async function repairRoomSessionBindings(
   }
 
   for (const binding of bindings) {
-    const agentPath = deps.agentPathFor(binding.authorId);
-    if (agentPath === null) continue;
-    // `resolveAgentRuntimeType` swallows its own manifest read and falls back to
-    // the registry default, so it cannot throw and is not wrapped. If that ever
-    // stops being true, this loop is the caller that would silently skip every
-    // binding — so the guarantee belongs in that function, not in a catch here.
-    if ((await resolveAgentRuntimeType(agentPath)) !== CLAUDE_CODE_RUNTIME) continue;
-
-    let exists: boolean;
-    try {
-      exists = await deps.hasTranscript(agentPath, binding.sessionId);
-    } catch (err) {
+    const answer = await probeRoomBindingTranscript(binding, deps);
+    if (answer.verdict === 'not-applicable') continue;
+    if (answer.verdict === 'unreadable') {
       report.unreadable += 1;
       logger.debug('[rooms] could not probe a room session for its transcript', {
         roomId: binding.roomId,
         authorId: binding.authorId,
         sessionId: binding.sessionId,
-        error: err instanceof Error ? err.message : String(err),
+        error: answer.error,
       });
       continue;
     }
     report.checked += 1;
-    if (exists) continue;
+    if (answer.verdict === 'present') continue;
+    const agentPath = answer.agentPath;
 
     const successor = deps.store.sessionLedger.successorFor(binding.sessionId);
     if (successor !== undefined) {

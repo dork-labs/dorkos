@@ -22,16 +22,17 @@ import { eq, roomSessions } from '@dorkos/db';
 
 // Hoisted holder so the config-dir resolvers can be pointed at a per-test root.
 const hoisted = vi.hoisted(() => ({ configDir: '' }));
-vi.mock('../../runtimes/claude-code/claude-config-dir.js', () => ({
+vi.mock('../../../runtimes/claude-code/claude-config-dir.js', () => ({
   resolveActiveClaudeRoot: () => hoisted.configDir,
   resolveClaudeRootSet: () => [hoisted.configDir],
 }));
 
-import { RoomStore } from '../room-store.js';
+import { RoomStore } from '../../room-store.js';
 import { repairRoomSessionBindings } from '../room-session-convergence.js';
-import { TranscriptReader } from '../../runtimes/claude-code/sessions/transcript-reader.js';
-import { projectSlug } from '../../runtimes/claude-code/sessions/project-slug.js';
-import { logger } from '../../../lib/logger.js';
+import { TranscriptReader } from '../../../runtimes/claude-code/sessions/transcript-reader.js';
+import { projectSlug } from '../../../runtimes/claude-code/sessions/project-slug.js';
+import { runtimeRegistry } from '../../../core/runtime-registry.js';
+import { logger } from '../../../../lib/logger.js';
 
 const PLACEHOLDER = '00dfdce7-1111-4222-8333-444444444444';
 const CANONICAL = '0e7270c6-5555-4666-8777-888888888888';
@@ -53,6 +54,9 @@ describe('the repair sweep over real transcripts on disk', () => {
     // working directory — realpath, NFC and truncation included.
     await mkdir(join(claudeRoot, 'projects', projectSlug(agentPath)), { recursive: true });
     db = createTestDb();
+    // The shared binding probe asks the registry which runtime owns a session
+    // before it probes for a transcript (DOR-805); that read needs a database.
+    runtimeRegistry.setDb(db);
     store = new RoomStore(db);
     store.bindRoomSession(ROOM, ANA, PLACEHOLDER, new Date().toISOString());
     reader = new TranscriptReader();

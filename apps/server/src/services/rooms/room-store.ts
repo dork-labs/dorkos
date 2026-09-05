@@ -46,7 +46,7 @@ import type {
   RoomMomentKind,
 } from '@dorkos/shared/room-schemas';
 import { logger } from '../../lib/logger.js';
-import { RoomSessionLedger } from './room-session-ledger.js';
+import { RoomSessionLedger } from './session-bindings/room-session-ledger.js';
 import {
   parseEntryBody,
   toEntry,
