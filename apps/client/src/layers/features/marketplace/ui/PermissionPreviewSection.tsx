@@ -19,9 +19,10 @@ import {
   Puzzle,
   Terminal,
 } from 'lucide-react';
-import type { ComponentType } from 'react';
+import { useState, type ComponentType } from 'react';
 
 import { cn } from '@/layers/shared/lib';
+import { Badge, CollapsibleFieldCard } from '@/layers/shared/ui';
 import {
   formatPermissionPreview,
   summarizePermissionPreview,
@@ -168,40 +169,50 @@ interface SectionProps {
 }
 
 /**
- * A collapsible permission group with summary count. Returns `null` when
+ * A collapsible permission group with a count badge. Returns `null` when
  * `items` is empty so the heading is never orphaned.
  *
- * Uses the native `<details>/<summary>` element for accessible,
- * zero-JS progressive disclosure with CSS transitions.
+ * The app's one disclosure card for a group of settings-shaped rows
+ * (`design-system.md` §Disclosure), so this dialog's sections open and close the
+ * way every other group in the app does, and the badge says how much is behind
+ * a closed one. The path list INSIDE a row is a different kind of disclosure and
+ * stays a native `<details>` — see {@link PermissionDetails}.
  *
- * Every section carries its own count, effects included: a collapsed group
+ * Every section carries its own count badge, effects included: a collapsed group
  * with no count beside it is exactly the shape the charter forbids — a
  * disclosure nobody can judge without opening it first (DOR-1757).
  */
 function PermissionSection({ title, items, tone, defaultOpen = false }: SectionProps) {
+  const [open, setOpen] = useState(defaultOpen);
+
   if (items.length === 0) return null;
 
   return (
-    <details open={defaultOpen} className="group/perm">
-      <summary
-        className={cn(
-          'flex cursor-pointer list-none items-center gap-2 text-xs font-semibold tracking-wider uppercase',
-          'select-none [&::-webkit-details-marker]:hidden',
-          tone === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'
-        )}
-      >
-        <ChevronRight className="size-3 shrink-0 transition-transform duration-200 group-open/perm:rotate-90" />
-        {title}
-        <span className="text-muted-foreground font-normal tracking-normal normal-case">
-          ({items.length})
+    <CollapsibleFieldCard
+      open={open}
+      onOpenChange={setOpen}
+      trigger={
+        <span
+          className={cn(
+            'text-xs font-semibold tracking-wider uppercase',
+            tone === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'
+          )}
+        >
+          {title}
         </span>
-      </summary>
-      <ul className="mt-2 space-y-1.5">
+      }
+      badge={
+        <Badge variant="secondary" className="text-xs">
+          {items.length}
+        </Badge>
+      }
+    >
+      <ul className="space-y-1.5">
         {items.map((item, index) => (
           <PermissionItem key={index} item={item} />
         ))}
       </ul>
-    </details>
+    </CollapsibleFieldCard>
   );
 }
 

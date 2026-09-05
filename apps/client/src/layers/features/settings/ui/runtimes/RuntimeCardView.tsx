@@ -22,10 +22,10 @@
  * @module features/settings/ui/runtimes/RuntimeCardView
  */
 import { useId, useState, type CSSProperties, type ReactNode } from 'react';
-import { ChevronDown, CircleAlert } from 'lucide-react';
+import { CircleAlert } from 'lucide-react';
 import type { RuntimeSettingsSection } from '@dorkos/shared/agent-runtime';
 import { cn } from '@/layers/shared/lib';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/layers/shared/ui';
+import { CollapsibleFieldCard } from '@/layers/shared/ui';
 import { getRuntimeDescriptor, type ExpiringSignIn } from '@/layers/entities/runtime';
 import {
   RECONNECT_TRIGGERS,
@@ -162,6 +162,14 @@ export interface RuntimeCardViewProps {
   renderSection?: ((kind: string) => ReactNode) | undefined;
   /** Contents of the Setup details disclosure. Omit and the disclosure is absent. */
   setupDetails?: ReactNode;
+  /**
+   * What the Setup details disclosure is hiding, said on its closed trigger —
+   * this app's one rule for every collapsed settings group
+   * (`contributing/design-system.md` §Disclosure: "Always, and always with a
+   * `badge` saying what is behind it"). Typically a dependency count such as
+   * "2 checks" or "1 missing".
+   */
+  setupBadge?: ReactNode;
   className?: string;
 }
 
@@ -189,6 +197,7 @@ export function RuntimeCardView({
   sections,
   renderSection,
   setupDetails,
+  setupBadge,
   expiringSignIn,
   className,
 }: RuntimeCardViewProps) {
@@ -376,15 +385,18 @@ export function RuntimeCardView({
             ))}
 
           {setupDetails && (
-            <Collapsible open={setupOpen} onOpenChange={setSetupOpen}>
-              <CollapsibleTrigger className="focus-ring text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded-sm text-xs transition-colors">
-                <ChevronDown
-                  className={cn('size-3.5 transition-transform', setupOpen && 'rotate-180')}
-                />
-                Setup details
-              </CollapsibleTrigger>
-              <CollapsibleContent className="mt-3 space-y-3">{setupDetails}</CollapsibleContent>
-            </Collapsible>
+            // The app's one disclosure card for a settings group
+            // (`design-system.md` §Disclosure) rather than a hand-rolled
+            // trigger, so this opens the way every other section does.
+            <CollapsibleFieldCard
+              open={setupOpen}
+              onOpenChange={setSetupOpen}
+              trigger="Setup details"
+              badge={setupBadge}
+              className="bg-transparent"
+            >
+              {setupDetails}
+            </CollapsibleFieldCard>
           )}
         </div>
       )}

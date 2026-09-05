@@ -338,6 +338,12 @@ export interface RuntimeCardShowcaseOptions {
    * the opened body at that width.
    */
   reconnect?: RuntimeCardViewProps['reconnect'];
+  /**
+   * What the card's "Setup details" section holds — the dependency rows or the
+   * install hint a runtime this server has not registered offers. Omit and the
+   * card offers no such section, which is what a registered runtime shows.
+   */
+  setupDetails?: RuntimeCardViewProps['setupDetails'];
 }
 
 /** A handler a showcase does not care about. */
@@ -373,6 +379,7 @@ export function createRuntimeCardProps(
     onToggleExpanded = noop,
     onMakeDefault = noop,
     reconnect,
+    setupDetails,
   } = options;
 
   const settings = playgroundRuntimeSettings(type);
@@ -395,6 +402,7 @@ export function createRuntimeCardProps(
     onToggleExpanded,
     onMakeDefault: onMakeDefault ?? undefined,
     ...(reconnect ? { reconnect } : {}),
+    ...(setupDetails ? { setupDetails } : {}),
     summary: buildRuntimeCardSummary({
       ready,
       settings,

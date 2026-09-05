@@ -295,28 +295,34 @@ describe('PulsePanel', () => {
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/activity' });
   });
 
-  it('hides the attention "View all" link on the dashboard (its own destination)', () => {
+  it('drops the attention section on the home surface, which already shows it', () => {
+    // Home's pinned triage header is this same list at full size. A teaser of
+    // what is on screen beside it spends a quarter of the panel saying nothing
+    // (DOR-1759).
     mockPathname = '/';
     mockAttentionItems = makeAttention(2);
     mockActivity = makeActivityGroup(2);
 
     render(<PulsePanel />);
 
-    // Self-navigation no-op omitted on '/', but the activity link (→ /activity)
-    // still shows since we are not there.
+    expect(screen.queryByRole('heading', { name: 'Needs attention' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'View all →' })).not.toBeInTheDocument();
+    // Activity is not duplicated here, so it still draws — with its link.
+    expect(screen.getByRole('heading', { name: 'Activity' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open activity →' })).toBeInTheDocument();
   });
 
-  it('hides the activity "Open activity" link on /activity (its own destination)', () => {
+  it('drops the activity section on /activity, which already shows it', () => {
     mockPathname = '/activity';
     mockAttentionItems = makeAttention(2);
     mockActivity = makeActivityGroup(2);
 
     render(<PulsePanel />);
 
+    expect(screen.queryByRole('heading', { name: 'Activity' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Open activity →' })).not.toBeInTheDocument();
-    // The attention link (→ /) still shows since we are not on the dashboard.
+    // Attention is not duplicated here, so it still draws — with its link.
+    expect(screen.getByRole('heading', { name: 'Needs attention' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'View all →' })).toBeInTheDocument();
   });
 

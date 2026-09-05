@@ -2,8 +2,13 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTransport, useAppStore, useTabVisibility } from '@/layers/shared/model';
 import { QUERY_TIMING } from '@/layers/shared/lib';
-import { isSessionScopeReady, useSessionScopedCwd } from '@/layers/entities/session';
+import {
+  isSessionScopeReady,
+  useSessionScopedCwd,
+  useSessionStreamLifecycle,
+} from '@/layers/entities/session';
 import type { TaskItem, TaskUpdateEvent, SessionTaskStatus } from '@dorkos/shared/types';
+import type { SessionLifecycle } from '@dorkos/shared/session-stream';
 import { applyTaskEvent, createTaskFoldState, type TaskFoldState } from '@dorkos/shared/task-fold';
 
 /** Check if a task is blocked by any incomplete dependency. */
@@ -50,6 +55,17 @@ export interface TaskState {
 const MAX_VISIBLE = 10;
 
 /**
+ * Whether a turn is still writing the plan.
+ *
+ * `blocked` counts: an agent parked on a permission ask has not finished its
+ * turn, and folding its plan away mid-question would hide the very list that
+ * explains what it is asking to do.
+ */
+function isTurnRunning(lifecycle: SessionLifecycle | undefined): boolean {
+  return lifecycle === 'streaming' || lifecycle === 'blocked';
+}
+
+/**
  * Manages task state for a session, combining historical tasks from the API
  * with real-time streaming updates.
  *
@@ -60,6 +76,10 @@ const MAX_VISIBLE = 10;
  * (the SDK's `TaskCreate` tool never returns one synchronously) until an
  * `id_assigned` event re-keys it to the SDK's confirmed real id, or `remove`
  * drops it if the call failed.
+ *
+ * It also owns whether the plan is open: the list is shown while a turn writes
+ * it and folded to its progress header once that turn ends, unless the person
+ * has said otherwise. See the collapse effect.
  *
  * @param sessionId - The active session ID, or null when no session is selected.
  *   When null, the initial task query is disabled and no API requests are made.
@@ -75,7 +95,13 @@ export function useTaskState(sessionId: string | null, isStreaming: boolean = fa
   const enableMessagePolling = useAppStore((s) => s.enableMessagePolling);
   const isTabVisible = useTabVisibility();
   const [state, setState] = useState<TaskFoldState>(createTaskFoldState());
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  // Whether the plan is still being written. Read from the session stream rather
+  // than passed in, because the host that renders the panel resolves its own
+  // `status` from a hook this one feeds — see the collapse effect below.
+  const lifecycle = useSessionStreamLifecycle(sessionId ?? '');
+  // Open while a turn writes the plan, folded once it is done — including a plan
+  // this window opens onto long after its turn ended.
+  const [isCollapsed, setIsCollapsed] = useState(() => !isTurnRunning(lifecycle));
 
   // Stamped in handleTaskEvent (last live fold) and inside queryFn (when the
   // in-flight fetch was ISSUED, not when it resolves) so an empty history
@@ -166,9 +192,41 @@ export function useTaskState(sessionId: string | null, isStreaming: boolean = fa
     });
   }, []);
 
+  // Whether the person put the plan away themselves. A hand-collapsed panel
+  // stays shut through every LATER turn, not just the next one — the effect
+  // below only reopens on a running transition when this is false, and nothing
+  // ever clears it on its own. Reopening it by hand (`toggleCollapse`) is the
+  // only thing that hands the panel back to the auto-fold rule.
+  const collapsedByHandRef = useRef(false);
   const toggleCollapse = useCallback(() => {
-    setIsCollapsed((prev) => !prev);
+    setIsCollapsed((prev) => {
+      collapsedByHandRef.current = !prev;
+      return !prev;
+    });
   }, []);
+
+  // **The plan follows the turn that writes it.** Ten rows plus a progress header
+  // sit between the transcript and the composer, so a finished plan left open is
+  // a screenful of history in the place a person is trying to type. It opens
+  // while a turn is writing it and folds to its progress header — which still
+  // carries the counts — when that turn ends.
+  //
+  // Edge-triggered, so neither direction fights the person: after the fold they
+  // can open it and it stays open until the next turn ends, and a panel they
+  // collapsed by hand is not re-opened by the next turn.
+  const wasRunningRef = useRef(isTurnRunning(lifecycle));
+  /* eslint-disable react-hooks/set-state-in-effect -- follows a stream transition, not render state */
+  useEffect(() => {
+    const running = isTurnRunning(lifecycle);
+    if (running === wasRunningRef.current) return;
+    wasRunningRef.current = running;
+    if (!running) {
+      setIsCollapsed(true);
+    } else if (!collapsedByHandRef.current) {
+      setIsCollapsed(false);
+    }
+  }, [lifecycle]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const allTasks = Array.from(state.tasks.values());
   const sorted = sortTasks(allTasks, state.tasks);

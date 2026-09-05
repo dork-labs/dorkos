@@ -1,0 +1,19 @@
+---
+covers:
+  - 'fix(client): a finished plan folds itself away (DOR-1759)'
+  - 'fix(client): one offer at a time above the composer (DOR-1759)'
+  - 'fix(client): Pulse stops repeating the page it sits beside (DOR-1759)'
+  - 'fix(client): one way to open an "Advanced" section (DOR-1759)'
+  - 'fix(client,dev): the notification card keeps its buttons on a narrow screen (DOR-1759)'
+  - "refactor(client): destructure the primer offer so the slot's memo can hold (DOR-1759)"
+  - "fix(client,e2e): Pulse's de-dup respects the panel's real geometry (DOR-1759)"
+  - 'fix(client): Full autonomy earns its badge on a closed Advanced section (DOR-1759)'
+  - 'fix(client): Setup details says how much it is hiding (DOR-1759)'
+---
+
+### Fixed
+
+- The to-do list an agent writes above the message box now opens while the agent is working and folds back to its one-line progress count when the turn is done, and a long list scrolls inside its own box instead of pushing the conversation off a phone screen (DOR-1759)
+- The space just above the message box now shows one thing at a time. Suggested replies, an add-on's offer and the question about turning on notifications used to stack up together; whichever matters most speaks, and the rest wait their turn (DOR-1759)
+- The Pulse panel no longer repeats what the page beside it already shows: its activity peek is gone on the Activity page, and its "Needs attention" list is gone on Home (DOR-1759)
+- Sections you can fold open and shut — "Advanced settings", "Schedule", an install's permission groups — now look and behave the same everywhere, and each one says how much it is hiding (DOR-1759)

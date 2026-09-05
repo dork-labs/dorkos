@@ -47,7 +47,12 @@ test.describe('Pulse — right inspector panel @smoke', () => {
 
     await rightPanel.pulseTab.click();
     await expect(rightPanel.pulsePanel).toBeVisible();
-    await expect(rightPanel.attentionHeading).toBeVisible();
+    // Not "Needs attention": Home's own pinned triage header is that same
+    // list, on screen beside this panel on desktop, so PulseAttentionSection
+    // says nothing here rather than showing it twice (DOR-1759). Activity is
+    // the section that still draws on Home — it only degrades to silence on
+    // /activity itself, where the full feed is the duplicate.
+    await expect(rightPanel.activityHeading).toBeVisible();
   });
 
   test('opens on a session to the contextual default (Profile), not Pulse', async ({
@@ -81,10 +86,13 @@ test.describe('Pulse — right inspector panel @smoke', () => {
       await expect(rightPanel.badge).toHaveCount(0);
     }
 
-    // Opening the panel always hides the badge — the count is on screen inside.
-    // Pulse is where that count lives, and on Home it is now one press away
-    // rather than the default (the Room tab wins there, phase R2), so this does
-    // what an operator does: opens the panel, then asks for Pulse.
+    // Opening the panel always hides the badge, full stop — the toggle reads
+    // only `rightPanelOpen`, not which tab is active or what it draws. On Home
+    // that count is not actually inside Pulse any more (PulseAttentionSection
+    // says nothing there, duplicating the pinned triage header beside it), but
+    // the badge's own job is simpler than that: it marks a closed panel, not a
+    // hidden section. This still does what an operator does: opens the panel,
+    // then asks for Pulse.
     await rightPanel.open();
     await rightPanel.pulseTab.click();
     await expect(rightPanel.pulsePanel).toBeVisible();

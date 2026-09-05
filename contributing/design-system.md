@@ -800,6 +800,35 @@ import { FieldCard, FieldCardContent, CollapsibleFieldCard } from '@/layers/shar
 
 Used across settings panels, agent config tabs, adapter wizard, and binding dialogs.
 
+### Disclosure — which "Advanced" to reach for
+
+Progressive disclosure only works if the affordance is learnable. Someone who
+learns that a chevron and a label open a section in one dialog should get that
+knowledge back everywhere. So there are two idioms and one rule for choosing
+between them.
+
+**A form or settings group → `CollapsibleFieldCard`.** Always, and always with a
+`badge` saying what is behind it ("3 changed", "7 files", "On a schedule"). The
+badge is the half of disclosure that makes it safe: a section that hides its
+contents without saying how much it is hiding invites a person to skip it. It
+unmounts what it hides, so a control inside a closed section is genuinely not on
+the page — which is what a test has to open first, exactly as a person does.
+
+**Disclosure inside content → native `<details>`.** A tool card's output, a stack
+trace in `route-error-fallback.tsx`, the path list inside one row of the install
+preview. These are part of something you are reading rather than a group of
+controls, they need no card chrome around them, and the native element brings
+keyboard and screen-reader behaviour for free.
+
+**The one exception**: a row whose header already holds its own controls — a
+switch, a menu — cannot be a `CollapsibleFieldCard`, because that primitive's
+whole header is one button and controls cannot nest inside a button. Those rows
+use a bare Radix `Collapsible` with the same chevron treatment (`ChevronDown`,
+`-rotate-90` when closed) so they still read as the same affordance;
+`settings/ui/tools/ToolGroupRow.tsx` is the example to copy.
+
+Do not hand-roll a third one.
+
 ### Field Orientation Conventions
 
 | Context            | Orientation  | Component                          |

@@ -325,7 +325,8 @@ describe('PackageDetailSheet', () => {
     expect(screen.queryByText('Removed')).not.toBeInTheDocument();
   });
 
-  it('renders the PermissionPreviewSection when the preview resolves', () => {
+  it('renders the PermissionPreviewSection when the preview resolves', async () => {
+    const user = userEvent.setup();
     openPackage(makePackage());
     setDetailState({ data: makeDetail() });
     setPreviewState({
@@ -342,6 +343,15 @@ describe('PackageDetailSheet', () => {
     // The "Permissions & Effects" heading is the section wrapper rendered by
     // the sheet around PermissionPreviewSection.
     expect(screen.getByText('Permissions & Effects')).toBeInTheDocument();
+    // The "Secrets required" section heading is rendered.
+    expect(screen.getByText('Secrets required')).toBeInTheDocument();
+
+    // Both groups start closed and unmount their rows (DOR-1757 chose which
+    // three open; DOR-1759 made every group the same disclosure card), so the
+    // rows are read after opening them.
+    await user.click(screen.getByText('What this package will do').closest('button')!);
+    await user.click(screen.getByText('Secrets required').closest('button')!);
+
     // formatPermissionPreview emits one headline per file group naming the
     // shared folder and a count per action; the paths themselves sit behind a
     // disclosure.
@@ -350,8 +360,6 @@ describe('PackageDetailSheet', () => {
     ).toBeInTheDocument();
     // Secret rows render their key as the label.
     expect(screen.getByText('GITHUB_TOKEN')).toBeInTheDocument();
-    // The "Secrets required" section heading is also rendered.
-    expect(screen.getByText('Secrets required')).toBeInTheDocument();
   });
 
   it('shows the Install button when the package is not installed and uses the store action on click', async () => {
