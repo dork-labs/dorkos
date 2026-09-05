@@ -10,14 +10,21 @@ const SETTLE_ATTEMPTS = 15;
 /** How many times a held drag re-aims at a target that moved under it. */
 const REAIM_ATTEMPTS = 12;
 /**
- * How many `Tab` presses may pass before the sidebar has to have been reached.
+ * A backstop on the `Tab` walk, and nothing more.
  *
- * A ceiling, not a count. The panel is a handful of composite Tab stops and the
- * chrome above it a handful more, so the real number is small — but writing the
- * real number down would make this fail on the day a button is added anywhere
- * before the roster, which is not what it is asking about.
+ * **What actually ends the walk is a full cycle of the document**, not this
+ * number — see {@link DashboardSidebarPage.tabToSectionHeader}. It used to be a
+ * ceiling of 40, which read as generous and was not: the walk begins in the
+ * #team composer (the app autofocuses it), and the path from there to the
+ * sidebar runs through the room's MEMBER ROSTER, which spends three Tab stops
+ * per member. So the distance to the sidebar grew with the number of agents the
+ * run happened to have registered — a number this spec does not control and no
+ * ceiling can be written against. Measured at 22 presses with two members and
+ * rising from there; CI ran out of ceiling and the suite read as a product bug.
+ *
+ * This value exists only so a bug in the loop cannot hang the suite forever.
  */
-const TAB_PRESSES = 40;
+const TAB_WALK_LIMIT = 250;
 /** How many arrow presses may pass before a row inside a section has to be reached. */
 const ARROW_PRESSES = 20;
 /** How many arrow presses a lifted row gets to find the section it is aimed at. */
@@ -446,11 +453,43 @@ export class DashboardSidebarPage {
   async tabToSectionHeader(label: string) {
     const toggle = this.librarySectionToggle(label);
     await expect(toggle).toBeVisible();
-    for (let press = 0; press < TAB_PRESSES; press++) {
-      if (await toggle.evaluate((node) => node === document.activeElement)) return;
-      await this.page.keyboard.press('Tab');
+
+    const onTarget = () => toggle.evaluate((node) => node === document.activeElement);
+    if (await onTarget()) return;
+
+    // **The walk ends when Tab has been all the way round, not at a press
+    // count.** "Unreachable by Tab" means "a full cycle of the document never
+    // lands on it", and that is the only bound that does not depend on how much
+    // else the page happens to contain — which is exactly what a fixed ceiling
+    // got wrong here (see {@link TAB_WALK_LIMIT}).
+    const origin = await this.page.evaluateHandle(() => document.activeElement);
+    try {
+      for (let press = 0; press < TAB_WALK_LIMIT; press++) {
+        await this.page.keyboard.press('Tab');
+        if (await onTarget()) return;
+        const cycled = await this.page.evaluate(
+          (start) => start !== null && start === document.activeElement,
+          origin
+        );
+        if (cycled) break;
+      }
+    } finally {
+      await origin.dispose();
     }
-    await expect(toggle, `Tab never reached the ${label} header`).toBeFocused();
+
+    // Named rather than counted: a failure says where the walk actually ended
+    // up, which is the one fact that tells you whether the header lost its Tab
+    // stop or the walk never got near it.
+    const landed = await this.page.evaluate(() => {
+      const el = document.activeElement as HTMLElement | null;
+      if (el === null) return 'nothing';
+      const name = el.getAttribute('aria-label') ?? (el.textContent ?? '').trim().slice(0, 40);
+      return `<${el.tagName.toLowerCase()}> ${name}`;
+    });
+    await expect(
+      toggle,
+      `Tab went all the way round the document without landing on the ${label} header; it ended on ${landed}`
+    ).toBeFocused();
   }
 
   /**

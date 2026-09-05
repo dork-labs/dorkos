@@ -2,6 +2,7 @@
 covers:
   - 'fix(client): keyboard users can reach sidebar drag from the Tab order (DOR-1746)'
   - 'fix(client): Space picks up a sidebar section, Enter folds it (DOR-1746)'
+  - 'fix(e2e): the sidebar Tab walk ends at a full cycle, not a press ceiling (DOR-1746)'
 ---
 
 ### Fixed

@@ -287,7 +287,18 @@ test.describe('Dashboard Sidebar — Sections @smoke', () => {
       false
     );
 
-    await dashboardSidebar.tabToSectionHeader('Agents');
+    // **Focused directly, and that costs this test nothing.** Its subject is
+    // which key does what once you are on the header, not whether you can get
+    // there — and "there" is the very same Agents header the keyboard-drag test
+    // above walks to with Tab presses and no programmatic focus anywhere.
+    // Proving one element's reachability twice buys nothing, and buying it
+    // through a long Tab walk spends the result on something this spec does not
+    // control: the walk starts in the #team composer, and the path from there to
+    // the sidebar runs through the room's member roster at three stops per
+    // member. The row spec below has always bootstrapped this way
+    // (`await row.focus()`). What must never be focused by hand is the DRAG
+    // ROOT; this is a section toggle, which is a roving stop.
+    await header.focus();
     await page.keyboard.press('Space');
 
     await expect(page.locator('[data-sidebar-dragging]')).toHaveCount(0);
