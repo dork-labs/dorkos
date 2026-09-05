@@ -203,6 +203,31 @@ describe('probeRoomBindingTranscript', () => {
 
     expect(answer.verdict).toBe('unreadable');
   });
+
+  it('says unreadable when the AGENT lookup throws, rather than throwing itself', async () => {
+    // The third read, and the one that was outside the guard until DOR-1780.
+    // `agentPathFor` looks synchronous, so it read as a map lookup — but in
+    // production it is `roomAuthors.getById`, a synchronous better-sqlite3
+    // `.get()` that raises on a busy, corrupt or closed database. Those are the
+    // conditions under which somebody is running the doctor in the first place,
+    // and the throw escaped the probe: the boot sweep lost its whole report and
+    // `GET /api/debug/rooms/:id/bindings` answered 500 with the raw message.
+    const answer = await probeRoomBindingTranscript(
+      binding(),
+      deps({
+        agentPathFor: () => {
+          throw new Error('SQLITE_BUSY: database is locked');
+        },
+      })
+    );
+
+    // No agent path, because resolving it is what failed.
+    expect(answer).toEqual({
+      verdict: 'unreadable',
+      agentPath: null,
+      error: 'SQLITE_BUSY: database is locked',
+    });
+  });
 });
 
 describe('surveyRoomBindingTranscripts', () => {
@@ -223,5 +248,26 @@ describe('surveyRoomBindingTranscripts', () => {
 
     // The unknown author is in neither count: nothing was asked about it.
     expect(survey).toEqual({ judged: 2, missing: [dead], unreadable: 1 });
+  });
+
+  it('finishes the sweep when one binding’s author row cannot be read', async () => {
+    // One bad row used to abort the whole pass: the throw escaped the probe,
+    // escaped this loop, and the caller — the boot sweep, or the doctor's
+    // check — lost every binding after it as well as every one before
+    // (DOR-1780). Now it costs exactly the row it happened on.
+    const good = binding('live-session');
+    const bad = binding(SESSION, 'author-corrupt');
+
+    const survey = await surveyRoomBindingTranscripts(
+      [bad, good],
+      deps({
+        agentPathFor: (authorId) => {
+          if (authorId === 'author-corrupt') throw new Error('SQLITE_CORRUPT');
+          return ANA_PATH;
+        },
+      })
+    );
+
+    expect(survey).toEqual({ judged: 1, missing: [], unreadable: 1 });
   });
 });
