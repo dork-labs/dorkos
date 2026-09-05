@@ -23,6 +23,11 @@ import { noopLogger } from './types.js';
  * the watcher reads the envelope, dispatches to matching subscription
  * handlers, and manages claim/complete/fail lifecycle.
  *
+ * chokidar is the fast path, not the source of truth: once a watcher goes
+ * ready, `sweepPending` re-reads the directory and dispatches whatever is
+ * actually there, so a message written while the watcher was starting up — or
+ * while this process was not running — is delivered rather than dropped.
+ *
  * An optional `wasDispatched` callback can be provided to suppress
  * duplicate handler invocations when the synchronous fast-path in
  * `DeliveryPipeline.dispatchToSubscribers` has already handled the
@@ -68,8 +73,10 @@ export class WatcherManager {
   /**
    * Start a chokidar watcher on an endpoint's `new/` directory.
    *
-   * Returns a promise that resolves once the watcher is ready and
-   * actively monitoring the directory.
+   * Returns a promise that resolves once the watcher is ready, actively
+   * monitoring the directory, and the reconcile sweep has enumerated whatever
+   * was already waiting there. The sweep's own dispatches are NOT awaited —
+   * one `readdir` is all the boot path pays for.
    *
    * @param endpoint - The endpoint to watch
    */
@@ -83,7 +90,7 @@ export class WatcherManager {
     });
 
     watcher.on('add', (filePath: string) => {
-      void this.handleNewMessage(endpoint, filePath);
+      this.dispatchFile(endpoint, filePath);
     });
 
     this.watchers.set(endpoint.hash, watcher);
@@ -103,7 +110,14 @@ export class WatcherManager {
       const settle = (): void => {
         if (settled) return;
         settled = true;
-        resolve();
+        // Reconcile before reporting live: chokidar is a fast path, never the
+        // source of truth. See `sweepPending` for what the bare event misses.
+        // Both arms resolve, for the same reason the error handler settles at
+        // all — nothing the sweep can do may leave a boot-path caller hanging.
+        void this.sweepPending(endpoint, watcher).then(
+          () => resolve(),
+          () => resolve()
+        );
       };
       watcher.on('ready', settle);
 
@@ -165,21 +179,160 @@ export class WatcherManager {
   }
 
   /**
-   * Handle a new message file appearing in an endpoint's `new/` directory.
+   * Deliver whatever is already sitting in the endpoint's `new/` directory.
    *
-   * Reads the envelope, finds matching subscription handlers, invokes them,
-   * then claims and completes the message. On handler error, the message
-   * is moved to `failed/`.
+   * chokidar's `ready` does not mean "nothing was missed". `chokidar.watch()`
+   * returns before it has attached anything: it awaits a full scan of the
+   * directory and only then calls `fs.watch` on it, so a file created inside
+   * that window produces no `add` event at all — not a late one (measured
+   * against chokidar 5 in DOR-577, where the same gap kept sessions off the
+   * session list until the next restart). For push delivery that window is a
+   * message dropped outright, because nothing re-reads `new/` afterwards.
    *
-   * @param endpoint - The endpoint that received the message
-   * @param filePath - The path to the new message file
+   * So this is a reconcile, not a grace period: one `listNew` after `ready`,
+   * dispatching every message the directory actually holds. It is strictly
+   * stronger than waiting a few milliseconds, because it also covers mail that
+   * arrived while this process was not running at all — a restart with unread
+   * mail on disk, or an endpoint re-registered after downtime. Ordering is what
+   * makes it safe: the watcher is attached before the listing is taken, so the
+   * two overlap rather than leaving a gap between them, and a message caught by
+   * both is deduped by `claim` — an atomic rename only one caller can win.
+   *
+   * One shot is enough here — unlike DOR-577's periodic sweep, this watches a
+   * single directory that already exists, so once `fs.watch` is attached its
+   * events keep coming. What that leaves uncovered is a message written by
+   * ANOTHER process in the millisecond or two after the listing, while libuv is
+   * still warming up. Nothing this process publishes is exposed to it:
+   * `DeliveryPipeline.deliverToEndpoint` dispatches to subscribers itself and
+   * never waits for an fs event (`wasDispatched` is how the two stay out of
+   * each other's way).
+   *
+   * Failure is logged and dropped: a mailbox that cannot be listed still gets
+   * live push delivery, and its stranded mail is still pollable via `readInbox`.
+   *
+   * @param endpoint - The endpoint whose `new/` directory to reconcile.
+   * @param watcher - The watcher this sweep belongs to; the sweep is abandoned
+   *   if the endpoint has been stopped or restarted in the meantime.
    */
-  private async handleNewMessage(endpoint: EndpointInfo, filePath: string): Promise<void> {
-    // Extract message ID from filename (strip .json extension)
+  private async sweepPending(endpoint: EndpointInfo, watcher: FSWatcher): Promise<void> {
+    let messageIds: string[];
+    try {
+      messageIds = await this.maildirStore.listNew(endpoint.hash);
+    } catch (err) {
+      // Logged as an explicit object, never the bare Error — see the watcher
+      // error handler above for why (DOR-832).
+      this.logger.warn(
+        `[watcher-sweep] WatcherManager: could not list pending messages for ${endpoint.subject} — mail already in new/ waits for a poll`,
+        {
+          endpointSubject: endpoint.subject,
+          maildirPath: endpoint.maildirPath,
+          message: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+        }
+      );
+      return;
+    }
+
+    // Stopped (or replaced) while the listing was in flight — its dispatches
+    // would be delivering on behalf of a watcher that no longer exists.
+    if (this.watchers.get(endpoint.hash) !== watcher) return;
+
+    // Kicked, not awaited: the boot path pays for the listing above and
+    // nothing more. `drain` is serial inside, so this is one chain, not one
+    // per message.
+    void this.drain(endpoint, messageIds);
+  }
+
+  /**
+   * Deliver a backlog one message at a time.
+   *
+   * Serial on purpose, matching `RelayCore.drainEndpointBacklog`, which drains
+   * the same directory to the same subscribers when a late subscriber attaches.
+   * Two functions with that much in common must not disagree about what a
+   * backlog costs: dispatching the listing in parallel would turn N stranded
+   * messages into N concurrent handler invocations — and a handler here can be
+   * a whole agent turn, so peak concurrency would be however much mail happened
+   * to be waiting. Serial also means completion order follows the listing,
+   * which `listNew` sorts by ULID, so a backlog is delivered in the order it
+   * was sent.
+   *
+   * @param endpoint - The endpoint being drained.
+   * @param messageIds - The pending message IDs, in listing (FIFO) order.
+   */
+  private async drain(endpoint: EndpointInfo, messageIds: readonly string[]): Promise<void> {
+    for (const messageId of messageIds) {
+      await this.deliver(endpoint, messageId);
+    }
+  }
+
+  /**
+   * Route a watcher `add` event into the shared dispatch path.
+   *
+   * @param endpoint - The endpoint that received the message.
+   * @param filePath - The path chokidar reported, whose basename is the ID.
+   */
+  private dispatchFile(endpoint: EndpointInfo, filePath: string): void {
     const filename = path.basename(filePath);
     if (!filename.endsWith('.json')) return;
-    const messageId = filename.slice(0, -5);
+    this.dispatch(endpoint, filename.slice(0, -5));
+  }
 
+  /**
+   * Kick off delivery of one message, without waiting for it.
+   *
+   * What an fs event does: chokidar's callback may not block on a handler that
+   * can run a whole agent turn. {@link drain} calls {@link deliver} instead,
+   * because a backlog is delivered one message at a time.
+   *
+   * @param endpoint - The endpoint that received the message.
+   * @param messageId - The message ID, i.e. its filename without `.json`.
+   */
+  private dispatch(endpoint: EndpointInfo, messageId: string): void {
+    void this.deliver(endpoint, messageId);
+  }
+
+  /**
+   * Deliver one message and report when it has settled, either way.
+   *
+   * The single entry point the watcher and the sweep share, so the two cannot
+   * drift apart. It never rejects: an unexpected throw inside
+   * `handleNewMessage` (a `complete()` that is not ENOENT, say) is logged here,
+   * because both callers are un-awaited chains where a rejection would land on
+   * the process-wide unhandled-rejection path instead — and, for
+   * {@link drain}, would abandon the rest of the backlog.
+   *
+   * @param endpoint - The endpoint that received the message.
+   * @param messageId - The message ID, i.e. its filename without `.json`.
+   */
+  private async deliver(endpoint: EndpointInfo, messageId: string): Promise<void> {
+    try {
+      await this.handleNewMessage(endpoint, messageId);
+    } catch (err) {
+      this.logger.warn(
+        `[watcher-dispatch] WatcherManager: delivery of ${messageId} to ${endpoint.subject} threw`,
+        {
+          endpointSubject: endpoint.subject,
+          messageId,
+          message: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+        }
+      );
+    }
+  }
+
+  /**
+   * Handle a new message sitting in an endpoint's `new/` directory.
+   *
+   * Finds the matching subscription handlers, claims the message — the atomic
+   * `new/` -> `cur/` rename, which is also what reads the envelope — then
+   * invokes the handlers and completes it. On handler error, the message is
+   * moved to `failed/`. Nothing is claimed when there are no handlers, so mail
+   * for an endpoint nobody subscribes to stays where a poll can find it.
+   *
+   * @param endpoint - The endpoint that received the message
+   * @param messageId - The message ID (filename without the `.json` extension)
+   */
+  private async handleNewMessage(endpoint: EndpointInfo, messageId: string): Promise<void> {
     // Skip if DeliveryPipeline already dispatched this message synchronously.
     // This prevents double-invocation of subscription handlers when the
     // chokidar `add` event fires after the fast-path claim has run.
