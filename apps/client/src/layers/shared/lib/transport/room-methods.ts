@@ -162,12 +162,9 @@ export function createRoomMethods(baseUrl: string) {
      * Nothing asks for that yet; when something does, it reads the envelope
      * rather than un-mixing this array.
      */
-    listRoomEntries(id: string, query?: ListRoomEntriesQuery): Promise<RoomEntry[]> {
+    listRoomEntries(id: string, query?: ListRoomEntriesQuery): Promise<RoomEntryListResponse> {
       const qs = buildQueryString({ before: query?.before, limit: query?.limit });
-      return fetchJSON<RoomEntryListResponse>(baseUrl, `/rooms/${id}/entries${qs}`).then((r) => [
-        ...r.threadRoots,
-        ...r.entries,
-      ]);
+      return fetchJSON<RoomEntryListResponse>(baseUrl, `/rooms/${id}/entries${qs}`);
     },
 
     /**

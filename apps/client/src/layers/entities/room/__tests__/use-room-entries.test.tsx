@@ -8,7 +8,7 @@ import {
   focusManager,
   onlineManager,
 } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, mockRoomEntryPage } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import type { RoomEntry, RoomEvent } from '@dorkos/shared/room-schemas';
 import { isStreamOwnedQuery } from '@/layers/shared/lib';
@@ -17,6 +17,8 @@ import { roomKeys } from '../api/query-keys';
 import { useCreateChannel } from '../model/use-create-room';
 import { useRoomEntries } from '../model/use-room';
 import { useRoomStream } from '../model/use-room-stream';
+import { useLoadOlderRoomEntries } from '../model/use-load-older-entries';
+import { useRoomHistoryPagingStore } from '../model/room-history-paging';
 
 const ROOM = 'room-1';
 
@@ -89,7 +91,7 @@ function heldSeqs(queryClient: QueryClient): number[] | undefined {
 /** A transport whose room read answers with the trailing page, once. */
 function openRoomTransport(): Transport {
   const transport = createMockTransport();
-  transport.listRoomEntries = vi.fn().mockResolvedValue(SERVER_PAGE);
+  transport.listRoomEntries = vi.fn().mockResolvedValue(mockRoomEntryPage(SERVER_PAGE));
   transport.subscribeRoom = vi
     .fn()
     .mockImplementation((_id: string, _cursor: number, signal: AbortSignal) =>
@@ -109,6 +111,7 @@ function openRoomTransport(): Transport {
 
 beforeEach(() => {
   vi.spyOn(console, 'warn').mockImplementation(() => {});
+  useRoomHistoryPagingStore.setState({ paging: {} });
 });
 
 afterEach(() => {
@@ -223,6 +226,54 @@ describe('useRoomEntries — the stream owns this cache', () => {
       expect(heldSeqs(queryClient)).toEqual([1, 2, 3]);
     } finally {
       unmount();
+    }
+  });
+
+  it('resumes from the newest entry after a page of OLDER history is prepended (DOR-1734)', async () => {
+    // The other cursor a prepend could break. `useRoomStream` resumes from the
+    // LAST element of this cache entry, and "Older messages" merges a page into
+    // its front — so if reading backwards could move that cursor, the next
+    // reconnect would ask the server to replay from the middle of history and
+    // re-deliver everything the reader had already seen, live, as new.
+    //
+    // Driven through the shipped hooks rather than by seeding the cache: the
+    // prepend has to get there the way a real one does.
+    const transport = openRoomTransport();
+    const queryClient = makeQueryClient();
+
+    const first = renderHook(
+      () => {
+        const entries = useRoomEntries(ROOM);
+        useRoomStream(ROOM, entries.isSuccess);
+        return useLoadOlderRoomEntries(ROOM);
+      },
+      { wrapper: wrapperFor(transport, queryClient) }
+    );
+
+    try {
+      await waitFor(() => expect(heldSeqs(queryClient)).toEqual([1, 2, 3]));
+      // The room's own history reaches further back than the page it opened on.
+      transport.listRoomEntries = vi
+        .fn()
+        .mockResolvedValue(mockRoomEntryPage([entry(-1), entry(0)]));
+      await act(async () => {
+        await first.result.current.loadOlder();
+      });
+      expect(heldSeqs(queryClient)).toEqual([-1, 0, 1, 2, 3]);
+    } finally {
+      first.unmount();
+    }
+
+    // Coming back to the room is a real reconnect, and the cursor it opens with
+    // is computed from this cache. Three — the newest — and never -1.
+    const second = renderHook(() => useOpenRoom(), {
+      wrapper: wrapperFor(transport, queryClient),
+    });
+    try {
+      await waitFor(() => expect(transport.subscribeRoom).toHaveBeenCalledTimes(2));
+      expect(vi.mocked(transport.subscribeRoom).mock.calls[1]?.[1]).toBe(3);
+    } finally {
+      second.unmount();
     }
   });
 });

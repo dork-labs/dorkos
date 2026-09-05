@@ -892,6 +892,126 @@ describe('/api/rooms', () => {
     });
 
     /**
+     * The cursor a reader scrolls back on (DOR-1734).
+     *
+     * The route has served `?before=` since rooms shipped; what it had never
+     * been asked is whether the answers a CLIENT paging backwards depends on
+     * hold — that consecutive pages tile the room without gaps or repeats, that
+     * the beginning of a room is a distinguishable answer rather than a silent
+     * repeat of the same page, and that a cursor nobody could have meant is
+     * refused rather than coerced into one.
+     */
+    describe('?before= — reading past the page the room opened on', () => {
+      /** A room with `count` posts in it, written through the real route. */
+      async function roomOf(count: number): Promise<string> {
+        const room = await createChannel();
+        for (let i = 1; i <= count; i++) {
+          await request(app)
+            .post(`/api/rooms/${room.id}/entries`)
+            .send({ text: `line ${i}` });
+        }
+        return room.id;
+      }
+
+      /** The seqs one page carries. */
+      function seqs(body: { entries: { seq: number }[] }): number[] {
+        return body.entries.map((entry) => entry.seq);
+      }
+
+      it('tiles the room exactly: consecutive pages meet, with no gap and no repeat', async () => {
+        // The property a reader actually has, stated over the whole room rather
+        // than over one page: page backwards to the beginning and you have read
+        // every entry, once. A cursor that was inclusive at either end would
+        // repeat a line here, and one that stepped by the wrong amount would
+        // lose one.
+        const roomId = await roomOf(12);
+
+        const collected: number[] = [];
+        let cursor: number | undefined;
+        for (let read = 0; read < 10; read++) {
+          const res = await request(app)
+            .get(`/api/rooms/${roomId}/entries`)
+            .query(cursor === undefined ? { limit: 5 } : { before: cursor, limit: 5 });
+          expect(res.status).toBe(200);
+          const page = seqs(res.body);
+          if (page.length === 0) break;
+          collected.unshift(...page);
+          cursor = page[0];
+        }
+
+        expect(collected).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+      });
+
+      it('answers an empty page below the oldest entry, rather than the same page again', async () => {
+        // How a reader learns it has reached the beginning. An answer that
+        // clamped to the oldest entry instead would hand back a page the client
+        // already holds, forever, with a control that never goes away.
+        const roomId = await roomOf(3);
+
+        const res = await request(app)
+          .get(`/api/rooms/${roomId}/entries`)
+          .query({ before: 1, limit: 5 });
+
+        expect(res.status).toBe(200);
+        expect(res.body.entries).toEqual([]);
+        expect(res.body.threadRoots).toEqual([]);
+      });
+
+      it('resolves the roots of the page it is asked for, not of the newest one', async () => {
+        // `threadRoots` is per PAGE (DOR-690), and paging is where that stops
+        // being a distinction without a difference: the page under test is in
+        // the middle of the room, and the root it reaches back for is one no
+        // trailing page would have named.
+        const roomId = await createChannel().then((room) => room.id);
+        const root = await request(app)
+          .post(`/api/rooms/${roomId}/entries`)
+          .send({ text: 'why is the build slow?' });
+        for (let i = 0; i < 4; i++) {
+          await request(app)
+            .post(`/api/rooms/${roomId}/threads`)
+            .send({ rootEntryId: root.body.entryId, text: `answer ${i}` });
+        }
+        for (let i = 0; i < 4; i++) {
+          await request(app)
+            .post(`/api/rooms/${roomId}/entries`)
+            .send({ text: `later ${i}` });
+        }
+
+        // The trailing page holds only the four later posts and reaches back
+        // for nothing.
+        const trailing = await request(app).get(`/api/rooms/${roomId}/entries`).query({ limit: 4 });
+        expect(trailing.body.threadRoots).toEqual([]);
+
+        // The page before it is the four replies, and every one of them answers
+        // an entry the page does not hold.
+        const older = await request(app)
+          .get(`/api/rooms/${roomId}/entries`)
+          .query({ before: seqs(trailing.body)[0], limit: 4 });
+        expect(older.body.entries).toHaveLength(4);
+        expect((older.body.threadRoots as { id: string }[]).map((held) => held.id)).toEqual([
+          root.body.entryId,
+        ]);
+      });
+
+      it.each([
+        ['a word', 'oldest'],
+        ['a negative seq', '-5'],
+        ['zero, which is below every seq a room allocates', '0'],
+        ['a fraction, which is not a position in a log', '1.5'],
+      ])('refuses %s rather than reading something else', async (_case, before) => {
+        // Coerced silently, each of these is a DIFFERENT page: `NaN` and `0`
+        // both read as "no filter" in a hand-rolled parse and would answer the
+        // NEWEST page to a request for the oldest. The route's own idiom is a
+        // 400, the same one an out-of-range `limit` gets.
+        const roomId = await roomOf(3);
+
+        const res = await request(app).get(`/api/rooms/${roomId}/entries`).query({ before });
+
+        expect(res.status).toBe(400);
+      });
+    });
+
+    /**
      * The page boundary a busy thread crosses (DOR-690).
      *
      * Sized past the default page on purpose: the room holds a root and sixty

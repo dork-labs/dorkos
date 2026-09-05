@@ -11,6 +11,7 @@ import type {
   TaskRun,
 } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
+import type { RoomEntry, RoomEntryListResponse } from '@dorkos/shared/room-schemas';
 import type { WorktreeScanResult } from '@dorkos/shared/workspace';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { BUILTIN_MEMORY_PROVIDER_ID } from '@dorkos/shared/memory-provider';
@@ -172,6 +173,26 @@ function mockRoomHasNoRepoError(): Error & { code: string; status: number } {
     code: 'ROOM_HAS_NO_REPO',
     status: 409,
   });
+}
+
+/**
+ * One page of a room's history, shaped the way `GET /api/rooms/:id/entries`
+ * shapes it — the page, and the thread roots it points at from outside itself.
+ *
+ * The two arrays stay apart on the wire because a backwards cursor is
+ * `entries[0].seq` and can be nothing else (DOR-1734), so a test that stubs
+ * `listRoomEntries` has to hand back the envelope rather than a bare array.
+ * This is the shorthand for the overwhelmingly common case: a self-contained
+ * page, with no root reaching back past it.
+ *
+ * @param entries - The page, oldest first. Empty by default.
+ * @param threadRoots - Roots the page replies to but does not hold.
+ */
+export function mockRoomEntryPage(
+  entries: RoomEntry[] = [],
+  threadRoots: RoomEntry[] = []
+): RoomEntryListResponse {
+  return { entries, threadRoots };
 }
 
 /** Create a mock Transport with all methods stubbed via `vi.fn()`. */
@@ -373,7 +394,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     createRoom: vi.fn(),
     getRoom: vi.fn(),
     updateRoom: vi.fn(),
-    listRoomEntries: vi.fn().mockResolvedValue([]),
+    listRoomEntries: vi.fn().mockResolvedValue(mockRoomEntryPage()),
     // A room with no files of its own, which is what nearly every room is: the
     // surfaces that offer files read this code and show nothing at all. A test
     // about a room's files overrides both; a test about anything else must not

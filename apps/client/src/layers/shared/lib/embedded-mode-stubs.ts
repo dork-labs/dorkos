@@ -69,7 +69,7 @@ import type {
   PostToRoomRequest,
   PostToRoomResponse,
   RoomAttachment,
-  RoomEntry,
+  RoomEntryListResponse,
   RoomEvent,
   RoomMember,
   RoomSessionsResponse,
@@ -918,8 +918,11 @@ export const roomStubs = {
     throw new Error('Rooms are not supported in embedded mode');
   },
 
-  async listRoomEntries(_id: string, _query?: ListRoomEntriesQuery): Promise<RoomEntry[]> {
-    return [];
+  async listRoomEntries(
+    _id: string,
+    _query?: ListRoomEntriesQuery
+  ): Promise<RoomEntryListResponse> {
+    return { entries: [], threadRoots: [] };
   },
 
   async readRoomFiles(_id: string, _path?: string): Promise<RoomFileListResponse> {

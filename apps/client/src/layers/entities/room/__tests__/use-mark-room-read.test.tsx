@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, mockRoomEntryPage } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import { REACTION_FREQUENTS_DEFAULT } from '@dorkos/shared/room-schemas';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
@@ -127,6 +127,31 @@ describe('useMarkRoomRead', () => {
     );
     await act(async () => {});
     expect(transport.setReadCursor).not.toHaveBeenCalled();
+  });
+
+  it('is not moved by a page of OLDER history landing in front of it (DOR-1734)', async () => {
+    // The invariant reading backwards depends on, proved at the reader that
+    // would break loudest. This hook takes the LAST element of the array it is
+    // handed; "Older messages" merges a page into the FRONT of that same array
+    // and re-renders it. If a prepend could reach the cursor at all, scrolling
+    // back through a room would silently mark it unread from the middle — and
+    // the reader would find the badge they had just cleared sitting there again
+    // with a rule drawn across history they had already seen.
+    const transport = createMockTransport();
+    const room = roomWith([human(0)]);
+    const { rerender } = renderHook(
+      ({ entries }: { entries: RoomEntry[] }) => useMarkRoomRead(room, entries),
+      { wrapper: wrapperFor(transport), initialProps: { entries: [entry(10), entry(11)] } }
+    );
+    await waitFor(() => expect(transport.setReadCursor).toHaveBeenCalledWith('room', 'room-1', 11));
+
+    rerender({ entries: [entry(8), entry(9), entry(10), entry(11)] });
+    await act(async () => {});
+
+    // One write, at the same seq. Not "a second write at 11" either: the marker
+    // this hook keeps is per `(room, seq)`, so a prepend must not even re-ask.
+    expect(transport.setReadCursor).toHaveBeenCalledTimes(1);
+    expect(transport.setReadCursor).toHaveBeenCalledWith('room', 'room-1', 11);
   });
 
   it('says nothing when the reader is already caught up', async () => {
@@ -258,7 +283,7 @@ describe('useMarkRoomReadNow', () => {
     // with a separate onSuccess, so it needs its own assertion. Without this
     // the row's count survives the very action named "Mark as read".
     const transport = createMockTransport({
-      listRoomEntries: vi.fn().mockResolvedValue([entry(7)]),
+      listRoomEntries: vi.fn().mockResolvedValue(mockRoomEntryPage([entry(7)])),
     });
     const { queryClient, invalidated } = recordingWrapper();
     const { result } = renderHook(() => useMarkRoomReadNow(), {
@@ -280,13 +305,14 @@ describe('useMarkRoomReadNow', () => {
   });
 
   it('marks the NEWEST entry read, not the thread root riding in front of it', async () => {
-    // A one-entry page is not a one-entry answer any more (DOR-690): when the
-    // room's newest line is a reply to something older than the window, the root
-    // comes back with it and history arrives oldest-first. Reading the first
-    // element would move the cursor BACKWARDS onto that root and leave the badge
-    // exactly where the reader just pressed to clear it.
+    // A one-entry page is not a one-entry answer (DOR-690): when the room's
+    // newest line is a reply to something older than the window, the root comes
+    // back beside it. Reading anything but the PAGE's last entry would move the
+    // cursor BACKWARDS onto that root and leave the badge exactly where the
+    // reader just pressed to clear it. Shaped the way the wire shapes it
+    // (DOR-1734), so the root is somewhere the cursor cannot reach at all.
     const transport = createMockTransport({
-      listRoomEntries: vi.fn().mockResolvedValue([entry(1), entry(204)]),
+      listRoomEntries: vi.fn().mockResolvedValue(mockRoomEntryPage([entry(204)], [entry(1)])),
     });
     const { queryClient } = recordingWrapper();
     const { result } = renderHook(() => useMarkRoomReadNow(), {

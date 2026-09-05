@@ -2,6 +2,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef, type ReactNode } from 'r
 import { AnimatePresence, motion } from 'motion/react';
 import { useIsMobile, useVisualViewportBottomInset } from '@/layers/shared/model';
 import {
+  useLoadOlderRoomEntries,
   useMarkRoomRead,
   useRoom,
   useRoomEntries,
@@ -14,6 +15,7 @@ import {
 import type { ConversationTimelineHandle } from '@/layers/features/conversation';
 import { openRoomPanel } from '@/layers/features/room-management';
 import { Conversation } from '@/layers/features/conversation';
+import { olderPageAnchor } from '../lib/room-timeline';
 import { ROOM_CAPABILITIES } from '../model/room-capabilities';
 import { useRoomTarget } from '../model/room-target';
 import { useEntryLanding } from '../model/use-entry-landing';
@@ -235,6 +237,43 @@ export function RoomSurface({
     timelineRef.current?.scrollToRow(domId);
   }, []);
 
+  /**
+   * Reading further back, and putting the reader back where they were standing
+   * (DOR-1734).
+   *
+   * **The anchor is a ROW, never an offset**, for the same reason the resume
+   * above it is: the list is virtualized, so the pixel height of fifty rows
+   * that have not been measured yet is an estimate that changes under the
+   * reader as they settle. Compensating a `scrollTop` by a height delta would
+   * be compensating by a number that is still moving — and the scroller runs
+   * `overflow-anchor: none` (`Conversation.Timeline`), so the browser's own
+   * anchoring is deliberately not there to catch it either.
+   *
+   * So the page is merged first and the timeline is then asked for the row that
+   * WAS the boundary, which it scrolls into existence and lands the caret on.
+   * Which row that is — and why it is named by `seq` rather than taken off the
+   * front of the loaded history — is `olderPageAnchor`'s to say.
+   *
+   * Focus lands on that row rather than staying on the button, which is the
+   * honest outcome for a keyboard reader too: the control they pressed is now
+   * fifty messages above them, and where they want to be is the boundary they
+   * just moved.
+   */
+  const older = useLoadOlderRoomEntries(roomId);
+  const { loadOlder, cursor: olderCursorSeq } = older;
+  const loadOlderAndHold = useCallback(() => {
+    // Resolved BEFORE the read, against the history as it stands — see
+    // `olderPageAnchor`, which owns the rule and the reason it is a `seq` and
+    // not the array's first element.
+    const anchor = olderPageAnchor(entries, olderCursorSeq);
+    void loadOlder().then(() => {
+      if (anchor === null) return;
+      // A frame later: the merge has to be committed before the row it names
+      // exists to be scrolled to.
+      requestAnimationFrame(() => timelineRef.current?.scrollToRow(anchor.domId));
+    });
+  }, [entries, olderCursorSeq, loadOlder]);
+
   // Where a search hit asks this room to open, answered as getters the two
   // timelines' own landings read — see `useEntryLanding` for why they are asked
   // rather than fired, and why a hit on a reply opens the thread panel as well
@@ -331,6 +370,9 @@ export function RoomSurface({
         resumeRow={resumeRow}
         {...(entryLanding.roomRow === undefined ? {} : { landOnRow: entryLanding.roomRow })}
         onTopRow={noteTopRow}
+        canLoadOlder={older.canLoadOlder}
+        isLoadingOlder={older.isLoadingOlder}
+        onLoadOlder={loadOlderAndHold}
       />
       {/* The host's chrome for the composer — see `RoomSurfaceProps.aboveComposer`. */}
       {aboveComposer}

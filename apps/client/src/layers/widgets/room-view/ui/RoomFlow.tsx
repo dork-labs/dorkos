@@ -48,6 +48,7 @@ import {
   toMessageAuthor,
 } from '../lib/room-timeline';
 import { AgentInfoProvider, useRoomAgentDirectory } from '../model/agent-info-context';
+import { LoadOlderRow } from './LoadOlderRow';
 import { RoomMessage } from './RoomMessage';
 
 interface RoomFlowProps {
@@ -117,9 +118,34 @@ interface RoomFlowProps {
   landOnRow?: () => string | undefined;
   /** Told which row is at the top, or `undefined` when the reader is caught up. */
   onTopRow?: (rowId: string | undefined) => void;
+  /**
+   * True when this room has history older than what is loaded, so the flow
+   * should offer a way into it (DOR-1734).
+   *
+   * False before the first page has landed and false once the room has answered
+   * a read short — which, on this route, is most rooms on their first read.
+   *
+   * Necessary but not sufficient: the row also waits for
+   * {@link RoomFlowProps.isLoading} to clear. See where it is pushed.
+   */
+  canLoadOlder?: boolean;
+  /** True while an older page is on its way. */
+  isLoadingOlder?: boolean;
+  /** Read the page directly older than what is loaded. */
+  onLoadOlder?: () => void;
   /** The timeline's handle, so the lane's peek can take a reader to a row. */
   ref?: Ref<ConversationTimelineHandle>;
 }
+
+/**
+ * The `ConversationRow` key of the "Older messages" control.
+ *
+ * A `notice` row rather than a seventh kind in the shared union: it is the room
+ * speaking about its own history, it is drawn by this host's own `renderRow`,
+ * and no other surface has one. `RoomThreadPanel` carries the same carve-out
+ * for its three "where is the root" lines.
+ */
+const LOAD_OLDER_ROW_ID = 'room-load-older';
 
 /** Placeholder rows shown while a room's history loads. */
 const SKELETON_ROWS = 4;
@@ -167,6 +193,7 @@ export function RoomHistorySkeleton({ roomName }: { roomName?: string }) {
  * for.
  */
 type RoomFlowRow =
+  | { kind: 'load-older'; id: string }
   | { kind: 'day-divider'; id: string; label: string }
   | { kind: 'unread-divider'; id: string }
   | {
@@ -215,6 +242,9 @@ export function RoomFlow({
   resumeRow,
   landOnRow,
   onTopRow,
+  canLoadOlder = false,
+  isLoadingOlder = false,
+  onLoadOlder,
   ref,
 }: RoomFlowProps) {
   const authors = useMemo(() => authorsById(members), [members]);
@@ -263,6 +293,21 @@ export function RoomFlow({
     );
 
     const built: RoomFlowRow[] = [];
+    // Above everything, because it is the ceiling of what is loaded and the
+    // only place a reader would look for more of it. Above the first day
+    // divider too: that divider labels the oldest message this client HAS, and
+    // pressing here is what moves it.
+    //
+    // Never over a room whose history has not arrived, and that is a claim about
+    // meaning rather than a workaround: "older messages" is older THAN
+    // something, and until the first page lands there is nothing for it to be
+    // older than. (`useRoomEntries` writes the paging boundary from inside its
+    // own `queryFn`, so this flag can be true for a commit or two while the
+    // query result is still settling.) `Conversation.Timeline` no longer lets a
+    // row drawn during that gap consume its landing either — see the
+    // `landingReady` note there — but a control that is not true yet should not
+    // be in the array to begin with.
+    if (canLoadOlder && !isLoading) built.push({ kind: 'load-older', id: LOAD_OLDER_ROW_ID });
     for (const row of laid) {
       if (row.kind === 'day-divider') {
         built.push({ kind: 'day-divider', id: row.key, label: row.label });
@@ -300,11 +345,13 @@ export function RoomFlow({
       }
     }
     return built;
-  }, [topLevel, repliesByRoot, byId, lastReadSeq, now]);
+  }, [topLevel, repliesByRoot, byId, lastReadSeq, now, canLoadOlder, isLoading]);
 
   const rows = useMemo<ConversationRow[]>(
     () =>
       flowRows.map((row) => {
+        // The room speaking about its own history — see `LOAD_OLDER_ROW_ID`.
+        if (row.kind === 'load-older') return { kind: 'notice', id: row.id, at: '', body: null };
         if (row.kind === 'day-divider')
           return { kind: 'day-divider', id: row.id, label: row.label };
         if (row.kind === 'unread-divider') return { kind: 'unread-divider', id: row.id };
@@ -313,7 +360,11 @@ export function RoomFlow({
             kind: 'thread-reply',
             id: row.id,
             rootId: row.rootId,
-            replyCount: row.totalReplies ?? row.replies.length,
+            // Whichever is larger, for the reason `threadReplySummary` gives:
+            // the room's count is a snapshot taken when the root was fetched,
+            // and both a streamed reply and a page read further back can put
+            // more on screen than it knows about.
+            replyCount: Math.max(row.totalReplies ?? 0, row.replies.length),
             lastAt: row.replies[row.replies.length - 1]!.createdAt,
           };
         return {
@@ -331,6 +382,13 @@ export function RoomFlow({
   const renderRow = useCallback<ConversationRowRenderer>(
     (_row, ctx) => {
       const row = flowRows[ctx.index]!;
+      if (row.kind === 'load-older') {
+        // `onLoadOlder` is what makes the row possible at all, so a host that
+        // passes `canLoadOlder` without it draws nothing rather than a control
+        // that does not work.
+        if (onLoadOlder === undefined) return null;
+        return <LoadOlderRow loading={isLoadingOlder} onLoad={onLoadOlder} />;
+      }
       if (row.kind === 'day-divider') return <DayDivider label={row.label} />;
       if (row.kind === 'unread-divider') return <UnreadDivider />;
       if (row.kind === 'thread-reply') {
@@ -393,6 +451,8 @@ export function RoomFlow({
       orphaned,
       lastReadSeq,
       openThreadId,
+      isLoadingOlder,
+      onLoadOlder,
     ]
   );
 
