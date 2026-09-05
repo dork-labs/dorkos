@@ -474,11 +474,11 @@ This flag also controls the behavior of `POST /api/sessions/:id/messages`:
 
 Other relevant environment variables:
 
-| Variable               | Default              | Description                                                                                                                                                                                                                                    |
-| ---------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DORKOS_PORT`          | `4242` (dev: `6242`) | Express server port                                                                                                                                                                                                                            |
-| `DORKOS_CORS_ORIGIN`   | (unset)              | Comma-separated origin allowlist, honoured by CORS, the WebSocket upgrade check, and Better Auth's CSRF allowlist. Unset, origins are resolved per request (loopback + live tunnel + same-origin). `*` is ignored with a warning on all three. |
-| `DORKOS_TASKS_ENABLED` | `true`               | `/api/tasks/*` routes (task definitions and runs)                                                                                                                                                                                              |
+| Variable               | Default              | Description                                                                                                                                                                                                                                                                               |
+| ---------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DORKOS_PORT`          | `4242` (dev: `6242`) | Express server port                                                                                                                                                                                                                                                                       |
+| `DORKOS_CORS_ORIGIN`   | (unset)              | Comma-separated list of EXTRA origins, honoured by CORS, the MCP mounts, the WebSocket upgrade check, and Better Auth's CSRF allowlist. Additive (DOR-1711): entries join the per-request policy (loopback + live tunnel + same-origin), never replace it. `*` is ignored with a warning. |
+| `DORKOS_TASKS_ENABLED` | `true`               | `/api/tasks/*` routes (task definitions and runs)                                                                                                                                                                                                                                         |
 
 ## Agent Endpoints
 
@@ -1462,7 +1462,9 @@ When `MCP_API_KEY` is not set, authentication is disabled (localhost-only access
 
 ### Origin Validation
 
-The MCP endpoint validates the `Origin` header to prevent DNS rebinding attacks, as required by the MCP specification. Non-browser clients (curl, Claude Code CLI, Agent SDK apps) do not send an `Origin` header and pass through. Browser-based requests must originate from `localhost:{DORKOS_PORT}`, `127.0.0.1:{DORKOS_PORT}`, or the active tunnel URL.
+The MCP endpoint validates the `Origin` header to prevent DNS rebinding attacks, as required by the MCP specification. Non-browser clients (curl, Claude Code CLI, Agent SDK apps, every MCP SDK transport) send no `Origin` header and pass through — a stated option on the shared policy, not an accident, since a browser is the only caller the header can judge.
+
+Since DOR-1711 the decision is `isTrustedBrowserOrigin` in `apps/server/src/lib/trusted-origins.ts` — the one origin policy, read by CORS, by the three MCP mounts, and by the WebSocket upgrade. A browser request passes if its origin is a loopback dev origin, the live tunnel, an entry in `DORKOS_CORS_ORIGIN`, or same-origin with this request's own `Host` (which covers a remapped host port and a reverse proxy). On the MCP mounts the same-origin branch is paired with the host allowlist, because `hostGuard` covers `/api` only, so a DNS-rebound page is still refused.
 
 ### Middleware Chain
 
@@ -1632,7 +1634,7 @@ Same as MCP: optional `MCP_API_KEY` via `Authorization: Bearer <key>` (or a per-
 ### Deployment security
 
 - **Exposure guard.** On a non-loopback `DORKOS_HOST` with no auth configured (no `MCP_API_KEY`, no legacy compat key, login disabled), the server refuses to mount the A2A gateway and its well-known card routes, logging the fix: set `MCP_API_KEY` or enable login. `DORKOS_ALLOW_INSECURE_BIND=true` overrides for containers that own their network boundary.
-- **Rate limiting assumes a single trusted proxy.** JSON-RPC endpoints are limited to ~60 req/min/IP and card endpoints to ~300 (`DORKOS_A2A_RPC_RATE_LIMIT` / `DORKOS_A2A_CARD_RATE_LIMIT` override). The app sets `trust proxy, 1`, so client IPs are read from `X-Forwarded-For` — correct behind the intended single-hop tunnel (ngrok) or one reverse proxy. On a **direct** public bind, a client can rotate spoofed `X-Forwarded-For` values to spread requests across unlimited buckets, so the limiter is not a security boundary there: put a trusted proxy in front, or rely on auth.
+- **Rate limiting counts per connection, not per forwarded header.** JSON-RPC endpoints are limited to ~60 req/min and card endpoints to ~300 (`DORKOS_A2A_RPC_RATE_LIMIT` / `DORKOS_A2A_CARD_RATE_LIMIT` override). Every limiter keys on the TCP peer address through `middleware/rate-limit-key.ts` (DOR-1711); it used to key on `req.ip`, which the app's `trust proxy, 1` derives from `X-Forwarded-For`, so a caller on a direct bind could rotate spoofed values across unlimited buckets. Requests arriving through DorkOS's own tunnel share one bucket, because the ngrok agent runs in-process and forwards to the local port. Set `DORKOS_TRUST_PROXY=true` to get per-client buckets behind a proxy you control — and only then, since it means whoever reaches that proxy's upstream writes the key.
 - **`contextId` is a caller-supplied partition key, not a per-principal boundary.** A2A-originated agent sessions are keyed on `agentId + contextId`: callers using distinct `contextId`s get distinct sessions, but under a shared credential (one static `MCP_API_KEY`) a caller who learns another caller's `contextId` can deliberately join that session. Treat `contextId` as a shared secret between a caller and the gateway (use unguessable values, e.g. UUIDs). Per-principal isolation is future work.
 - **Advertised URLs.** Set `DORKOS_PUBLIC_URL` when DorkOS sits behind a proxy or tunnel so Agent Cards advertise a routable URL instead of the bind address (e.g. `http://0.0.0.0:4242`).
 

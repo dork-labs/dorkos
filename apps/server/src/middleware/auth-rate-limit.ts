@@ -1,5 +1,6 @@
 import type { Request } from 'express';
 import rateLimit, { type RateLimitRequestHandler } from 'express-rate-limit';
+import { rateLimitKey } from './rate-limit-key.js';
 
 /**
  * Rate-limit window for credential attempts: 15 minutes.
@@ -74,11 +75,13 @@ function isCredentialAttempt(req: Request): boolean {
  * short window permits a high sustained guess rate. This limiter is
  * environment-independent and window-based, closing both gaps.
  *
- * Keys on `req.ip`, which resolves from `X-Forwarded-For` because `app.ts` sets
- * `trust proxy, 1` — identical IP handling to the `/mcp` and `/a2a` limiters.
- * SECURITY: like those, this holds only behind a single trusted proxy; on a
- * direct public bind a client can rotate spoofed XFF values across buckets, so
- * treat it as a throttle backstopped by auth, not a hard boundary.
+ * Keys through {@link rateLimitKey}, like every other limiter here: the TCP peer
+ * address, which no header can move, unless `DORKOS_TRUST_PROXY` says a proxy is
+ * in front. This limiter is why that changed (DOR-1711). It inherited `req.ip`
+ * from `app.ts`'s `trust proxy, 1`, so `X-Forwarded-For` decided the bucket — and
+ * a password guesser sending a different value each attempt got a fresh budget
+ * every time, which is to say no brake at all on the one surface where a brake
+ * is the whole point.
  *
  * @param options - Per-limiter overrides (default: 10 attempts per window).
  * @returns An `express-rate-limit` handler returning a clean JSON `429`.
@@ -87,6 +90,7 @@ export function buildAuthRateLimiter(options: AuthRateLimitOptions = {}): RateLi
   return rateLimit({
     windowMs: WINDOW_MS,
     max: options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS,
+    keyGenerator: rateLimitKey,
     standardHeaders: true,
     legacyHeaders: false,
     // Count only sign-in/sign-up POSTs; benign session-check GETs and every
