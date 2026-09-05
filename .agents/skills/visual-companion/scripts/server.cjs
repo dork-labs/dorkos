@@ -202,7 +202,7 @@ function handleUpgrade(req, socket) {
       let result;
       try {
         result = decodeFrame(buffer);
-      } catch (e) {
+      } catch {
         socket.end(encodeFrame(OPCODES.CLOSE, Buffer.alloc(0)));
         clients.delete(socket);
         return;
@@ -259,7 +259,7 @@ function broadcast(msg) {
   for (const socket of clients) {
     try {
       socket.write(frame);
-    } catch (e) {
+    } catch {
       clients.delete(socket);
     }
   }

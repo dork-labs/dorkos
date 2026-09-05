@@ -148,7 +148,7 @@ const SRC_PREFIXES = [
 export function findDeadPaths(body, repoRoot) {
   const cited = [...body.matchAll(/`([^`\n]+)`/g)]
     .map((m) => m[1])
-    .filter((s) => /^[\w@.\/-]+$/.test(s) && PATH_RE.test(s));
+    .filter((s) => /^[\w@./-]+$/.test(s) && PATH_RE.test(s));
   if (cited.length === 0) return null;
   const dead = cited.filter((p) => {
     if (existsSync(join(repoRoot, p))) return false;

@@ -366,16 +366,18 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck:scripts
 
-      # STAYS HERE, deliberately (DOR-627). The `lint` workflow runs
-      # `turbo lint`, and turbo only runs tasks that belong to a workspace
-      # package. `scripts/` belongs to none — that is the same property the
-      # typecheck step above exists for — so `turbo lint` cannot reach these
-      # files no matter how it is invoked. This is the only ESLint pass over
-      # `scripts/` anywhere; folding it into the `lint` workflow would delete
-      # the coverage rather than move it.
-      - name: Lint
-        run: pnpm exec eslint scripts/
-
+      # NO LINT STEP HERE ANY MORE (DOR-1696). It used to run
+      # `pnpm exec eslint scripts/`, and its comment said folding that into the
+      # `lint` workflow would delete the coverage rather than move it — true
+      # while that workflow only ran `turbo lint`, which cannot reach a
+      # directory that is not a workspace package. It stopped being true when
+      # `lint` gained an explicit `pnpm lint:root` step: `eslint .` from the
+      # repo root covers `scripts/` AND the `.claude/` and `.agents/`
+      # automation that nothing linted at all. That step is in a REQUIRED
+      # merge-queue check, where this job is advisory and path-filtered, so the
+      # coverage moved strictly upward. Leaving the old step would have linted
+      # `scripts/` twice on every PR and left two places to keep in step.
+      #
       # In `harness` rather than `fixtures` because it is the only job with a
       # node_modules: the suite lints fixture text through the REAL server ESLint
       # config, which is the only way to test the thing that actually broke — the

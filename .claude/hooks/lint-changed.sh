@@ -12,8 +12,15 @@
 INPUT=$(cat)
 FILE_PATH=$(echo "$INPUT" | node -e "const d=JSON.parse(require('fs').readFileSync(0,'utf8')); console.log(d.tool_input?.file_path || '')")
 
-# Skip if not a lintable file
-if [[ ! "$FILE_PATH" =~ \.(ts|tsx|js|jsx)$ ]]; then
+# Skip if not a lintable file.
+#
+# .mjs/.cjs/.mts/.cts are in the list as of DOR-1696. They were not, which meant
+# the repo's own hooks and automation — .claude/hooks/*.mjs, .claude/scripts/*.mjs,
+# the visual-companion server.cjs — were the one thing an agent could edit here
+# with no lint feedback whatsoever. That is backwards: those files are executed
+# by the harness itself, so a break in one is felt immediately and explained by
+# nothing.
+if [[ ! "$FILE_PATH" =~ \.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$ ]]; then
   exit 0
 fi
 
