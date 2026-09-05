@@ -2,6 +2,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef, type ReactNode } from 'r
 import { AnimatePresence, motion } from 'motion/react';
 import { useIsMobile, useVisualViewportBottomInset } from '@/layers/shared/model';
 import {
+  useLoadOlderRoomEntries,
   useMarkRoomRead,
   useRoom,
   useRoomEntries,
@@ -14,6 +15,7 @@ import {
 import type { ConversationTimelineHandle } from '@/layers/features/conversation';
 import { openRoomPanel } from '@/layers/features/room-management';
 import { Conversation } from '@/layers/features/conversation';
+import { flowRowForEntry } from '../lib/room-timeline';
 import { ROOM_CAPABILITIES } from '../model/room-capabilities';
 import { useRoomTarget } from '../model/room-target';
 import { useEntryLanding } from '../model/use-entry-landing';
@@ -235,6 +237,41 @@ export function RoomSurface({
     timelineRef.current?.scrollToRow(domId);
   }, []);
 
+  /**
+   * Reading further back, and putting the reader back where they were standing
+   * (DOR-1734).
+   *
+   * **The anchor is a ROW, never an offset**, for the same reason the resume
+   * above it is: the list is virtualized, so the pixel height of fifty rows
+   * that have not been measured yet is an estimate that changes under the
+   * reader as they settle. Compensating a `scrollTop` by a height delta would
+   * be compensating by a number that is still moving — and the scroller runs
+   * `overflow-anchor: none` (`Conversation.Timeline`), so the browser's own
+   * anchoring is deliberately not there to catch it either.
+   *
+   * So the page is merged first and the timeline is then asked for the row that
+   * WAS the oldest one, which it scrolls into existence and lands the caret on.
+   * `flowRowForEntry` answers which row that is, because the oldest entry is not
+   * always drawn as itself — a thread reply is reached through its thread's own
+   * line (it is the same lookup a search hit's landing uses, deliberately).
+   *
+   * Focus lands on that row rather than staying on the button, which is the
+   * honest outcome for a keyboard reader too: the control they pressed is now
+   * fifty messages above them, and where they want to be is the boundary they
+   * just moved.
+   */
+  const older = useLoadOlderRoomEntries(roomId);
+  const { loadOlder } = older;
+  const loadOlderAndHold = useCallback(() => {
+    const anchor = entries.length > 0 ? flowRowForEntry(entries, entries[0]!.id) : null;
+    void loadOlder().then(() => {
+      if (anchor === null) return;
+      // A frame later: the merge has to be committed before the row it names
+      // exists to be scrolled to.
+      requestAnimationFrame(() => timelineRef.current?.scrollToRow(anchor.domId));
+    });
+  }, [entries, loadOlder]);
+
   // Where a search hit asks this room to open, answered as getters the two
   // timelines' own landings read — see `useEntryLanding` for why they are asked
   // rather than fired, and why a hit on a reply opens the thread panel as well
@@ -331,6 +368,9 @@ export function RoomSurface({
         resumeRow={resumeRow}
         {...(entryLanding.roomRow === undefined ? {} : { landOnRow: entryLanding.roomRow })}
         onTopRow={noteTopRow}
+        canLoadOlder={older.canLoadOlder}
+        isLoadingOlder={older.isLoadingOlder}
+        onLoadOlder={loadOlderAndHold}
       />
       {/* The host's chrome for the composer — see `RoomSurfaceProps.aboveComposer`. */}
       {aboveComposer}

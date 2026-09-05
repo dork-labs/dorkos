@@ -66,6 +66,15 @@ describe('threadReplySummary', () => {
     expect(summary.lastAt).toBe('2026-07-30T09:45:00.000Z');
   });
 
+  it('counts the array once it has overtaken the number the root came with', () => {
+    // DOR-1734. The room's count is a SNAPSHOT, taken when the root was fetched
+    // from behind the page — and both a streamed reply and a page read further
+    // back put replies into the array without touching it. Letting the field
+    // win outright meant the row went on saying "1 reply" over two of them.
+    const summary = threadReplySummary(replies, null, 1);
+    expect(summary.count).toBe(2);
+  });
+
   it('reads the newest by SEQ, not by the order it was handed', () => {
     // The log is the room's own order and `seq` is the only monotonic thing on
     // it — a clock skew between two writers must not decide what "last" means.

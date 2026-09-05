@@ -33,6 +33,7 @@ import type {
   PostToRoomResponse,
   RoomAttachment,
   RoomEntry,
+  RoomEntryListResponse,
   RoomEvent,
   RoomMember,
   RoomRosterEntry,
@@ -111,19 +112,24 @@ export interface RoomTransport {
   /**
    * Read a page of a room's history, oldest-first.
    *
-   * **More than the page, and in `seq` order regardless.** A thread is a
-   * relation between entries (ADR 260728-022013), so a reply only reads as a
-   * reply while the entry heading its thread is loaded beside it — and a thread
-   * outlives the window it started in. The page therefore arrives with the
-   * thread roots it points at from OUTSIDE itself in front of it (DOR-690),
-   * each older than everything in the page. Two consequences for a caller:
-   * `limit` bounds the page and not the array, and the newest entry is the LAST
-   * one, never the first.
+   * **Answers the wire's own two arrays rather than one merged list**, and the
+   * separation is what makes reading further back possible at all (DOR-1734).
+   * A thread is a relation between entries (ADR 260728-022013), so a reply only
+   * reads as a reply while the entry heading its thread is loaded beside it —
+   * and a thread outlives the window it started in, so the page arrives with the
+   * roots it points at from OUTSIDE itself (DOR-690), each older than everything
+   * in the page and at an arbitrary distance below it.
+   *
+   * That is exactly why the join does not happen here. A backwards cursor is
+   * `entries[0].seq` and nothing else: taking it from a merged array would take
+   * it from a root sixty messages further back, and every entry between that
+   * root and the page would become unreachable. The caller merges (see
+   * `mergeRoomHistory` in the client's room entity) and keeps the page floor.
    *
    * @param id - The room id.
    * @param query - `before` (exclusive `seq` upper bound) and `limit`.
    */
-  listRoomEntries(id: string, query?: ListRoomEntriesQuery): Promise<RoomEntry[]>;
+  listRoomEntries(id: string, query?: ListRoomEntriesQuery): Promise<RoomEntryListResponse>;
   /**
    * List one directory of a room's own files (spec `project-rooms` §3.9).
    *

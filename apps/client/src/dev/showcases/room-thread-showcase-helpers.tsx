@@ -54,7 +54,7 @@ function createThreadFixtureTransport(
 
   const handlers: Partial<Record<keyof Transport, unknown>> = {
     getRoom: () => Promise.resolve(structuredClone(room)),
-    listRoomEntries: () => Promise.resolve([]),
+    listRoomEntries: () => Promise.resolve({ entries: [], threadRoots: [] }),
     postToRoom: (_roomId: string, req: { text: string }) =>
       post(room.viewerAuthorId ?? 'author-you', req.text, null),
     replyInThread: (_roomId: string, req: { rootEntryId: string; text: string }) =>

@@ -9,7 +9,9 @@ import type { Transport } from '@dorkos/shared/transport';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { useTransport } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
+import { mergeRoomHistory, olderCursor } from '../lib/history';
 import { usePendingPostStore } from './pending-posts';
+import { useRoomHistoryPagingStore } from './room-history-paging';
 
 /**
  * Fetch one room with its roster.
@@ -54,7 +56,17 @@ export function useRoom(roomId: string | null): UseQueryResult<RoomWithRoster> {
 function roomEntriesQuery(transport: Transport, roomId: string | null) {
   return {
     queryKey: roomKeys.entries(roomId ?? ''),
-    queryFn: () => transport.listRoomEntries(roomId!),
+    queryFn: async () => {
+      const page = await transport.listRoomEntries(roomId!);
+      // Where the trailing window stops, written down as it lands — the only
+      // moment the page and the roots riding with it are still tellable apart.
+      // `useLoadOlderRoomEntries` reads it back; `room-history-paging.ts` says
+      // why it cannot live in the array this returns.
+      useRoomHistoryPagingStore
+        .getState()
+        .notePage(roomId!, olderCursor(page), page.entries.length === 0);
+      return mergeRoomHistory(undefined, page);
+    },
     staleTime: Infinity,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -66,8 +78,9 @@ function roomEntriesQuery(transport: Transport, roomId: string | null) {
  * Fetch the trailing page of a room's history, oldest-first.
  *
  * The server's default page size is the whole hydration this view needs.
- * Scrolling further back than that page is `?before=`, which the server serves
- * and no client surface asks for yet.
+ * Reading further back than that page is {@link useLoadOlderRoomEntries}, which
+ * writes into this same cache entry by prepending — so everything below stays
+ * true however far back a reader has gone.
  *
  * **A page can arrive with entries older than itself in front of it**: the
  * thread roots it replies to that fell out of the window (DOR-690), so a thread

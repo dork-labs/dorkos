@@ -115,14 +115,15 @@ export function useMarkRoomReadNow(): UseMutationResult<void, Error, string> {
 
   return useMutation({
     mutationFn: async (roomId: string) => {
-      // The LAST of what came back, never the first. History arrives oldest
-      // first, and a page can be PRECEDED by the thread roots it answers from
-      // outside itself (DOR-690) — every one of them older than the page. So
-      // `[0]` of a one-entry page is the root whenever the room's newest line
-      // is a thread reply, and marking the room read would move the cursor
-      // backwards onto a message from days ago, leaving the badge the reader
-      // just pressed exactly where it was.
-      const newest = (await transport.listRoomEntries(roomId, { limit: 1 })).at(-1);
+      // The PAGE's last entry, and neither of the two things it is easy to
+      // reach for instead. A page can ride with the thread roots it answers
+      // from outside itself (DOR-690), every one of them older than the page —
+      // so a merged array's `[0]` is a message from days ago whenever the
+      // room's newest line is a thread reply, and marking the room read would
+      // move the cursor BACKWARDS, leaving the badge the reader just pressed
+      // exactly where it was. Reading `entries` keeps the roots out of reach
+      // structurally rather than by taking the right end of a mixed list.
+      const newest = (await transport.listRoomEntries(roomId, { limit: 1 })).entries.at(-1);
       if (!newest) return;
       await transport.setReadCursor('room', roomId, newest.seq);
     },

@@ -14,7 +14,7 @@ import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, cleanup, act, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, mockRoomEntryPage } from '@dorkos/test-utils';
 import {
   REACTION_FREQUENTS_DEFAULT,
   type RoomEvent,
@@ -104,7 +104,7 @@ function installViewport(height: number) {
 function renderPage() {
   const transport = createMockTransport({
     getRoom: vi.fn().mockResolvedValue(ROOM),
-    listRoomEntries: vi.fn().mockResolvedValue([]),
+    listRoomEntries: vi.fn().mockResolvedValue(mockRoomEntryPage()),
     subscribeRoom: vi.fn((_id: string, _cursor: number, signal: AbortSignal) =>
       (async function* (): AsyncIterable<RoomEvent> {
         await new Promise<void>((resolve) => {
