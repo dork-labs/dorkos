@@ -77,6 +77,64 @@ describe('MarketplaceSourceManager', () => {
     ).rejects.toThrow(/dorkos-community/);
   });
 
+  describe('add() — which addresses are allowed (DOR-1710)', () => {
+    // A configured source's address ends up in front of `git` when the
+    // installer sparse-clones a package out of it, so it answers the same
+    // transport question a package author's URL has always had to answer.
+    const refused = [
+      ['a leading dash git reads as an option', '--upload-pack=touch /tmp/pwned'],
+      ['the ext:: transport, which runs a command', "ext::sh -c 'id > /tmp/pwned'"],
+      ['the fd:: transport', 'fd::0/foo'],
+      ['a scheme git cannot clone', 'http://example.com/marketplace'],
+      ['a bare host with no scheme', 'github.com/dork-labs/marketplace'],
+    ] as const;
+
+    for (const [why, source] of refused) {
+      it(`refuses ${why}`, async () => {
+        await manager.list();
+
+        await expect(manager.add({ name: 'hostile', source })).rejects.toThrow(
+          /isn't one DorkOS can fetch a marketplace from/
+        );
+
+        const after = await manager.list();
+        expect(after.find((s) => s.name === 'hostile')).toBeUndefined();
+      });
+    }
+
+    it('refuses before it takes the file lock, leaving the file untouched', async () => {
+      await manager.list();
+      const filePath = join(dorkHome, 'marketplaces.json');
+      const before = await readFile(filePath, 'utf-8');
+
+      await expect(
+        manager.add({ name: 'hostile', source: "ext::sh -c 'id > /tmp/pwned'" })
+      ).rejects.toThrow();
+
+      expect(await readFile(filePath, 'utf-8')).toBe(before);
+    });
+
+    const accepted = [
+      ['an https git remote', 'https://github.com/me/marketplace'],
+      ['an scp-style git remote', 'git@github.com:me/marketplace.git'],
+      ['an ssh git remote', 'ssh://git@example.com/me/marketplace.git'],
+      ['the git protocol', 'git://example.com/me/marketplace.git'],
+      // How the personal marketplace registers itself. It is a directory to
+      // read, never a remote to clone, so it never reaches `git` at all.
+      ['a file:// path to a folder on this machine', 'file:///Users/me/.dork/personal-marketplace'],
+    ] as const;
+
+    for (const [what, source] of accepted) {
+      it(`accepts ${what}`, async () => {
+        await manager.list();
+
+        await expect(manager.add({ name: `ok-${source.length}`, source })).resolves.toMatchObject({
+          source,
+        });
+      });
+    }
+  });
+
   it('remove() is idempotent when the name is absent', async () => {
     await manager.list();
 

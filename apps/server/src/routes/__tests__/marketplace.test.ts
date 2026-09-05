@@ -285,6 +285,22 @@ describe('Marketplace Routes', () => {
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
     });
+
+    it('returns 400 and says what to use instead for an address git would run (DOR-1710)', async () => {
+      const res = await request(app)
+        .post('/api/marketplace/sources')
+        .send({ name: 'hostile', source: "ext::sh -c 'id > /tmp/pwned'" });
+
+      expect(res.status).toBe(400);
+      // The whole point of the refusal is that the person reading it learns
+      // which addresses do work — not just that this one did not.
+      expect(res.body.error).toMatch(/isn't one DorkOS can fetch a marketplace from/);
+      expect(res.body.error).toMatch(/https:\/\//);
+
+      const listRes = await request(app).get('/api/marketplace/sources');
+      const names = listRes.body.sources.map((s: { name: string }) => s.name);
+      expect(names).not.toContain('hostile');
+    });
   });
 
   describe('DELETE /sources/:name', () => {

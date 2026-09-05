@@ -24,6 +24,7 @@ vi.mock('@/layers/entities/marketplace', () => ({
 }));
 
 const addMutate = vi.fn();
+const addReset = vi.fn();
 const removeMutate = vi.fn();
 
 function setSourcesState(state: { data?: MarketplaceSource[]; isLoading?: boolean }) {
@@ -35,15 +36,15 @@ function setSourcesState(state: { data?: MarketplaceSource[]; isLoading?: boolea
   } as unknown as ReturnType<typeof useMarketplaceSources>);
 }
 
-function setAddMutationState(state: { isPending?: boolean } = {}) {
+function setAddMutationState(state: { isPending?: boolean; error?: Error } = {}) {
   vi.mocked(useAddMarketplaceSource).mockReturnValue({
     mutate: addMutate,
     mutateAsync: vi.fn(),
     isPending: state.isPending ?? false,
     isSuccess: false,
-    isError: false,
-    error: null,
-    reset: vi.fn(),
+    isError: state.error !== undefined,
+    error: state.error ?? null,
+    reset: addReset,
   } as unknown as ReturnType<typeof useAddMarketplaceSource>);
 }
 
@@ -246,6 +247,41 @@ describe('MarketplaceSourcesView', () => {
         source: 'https://github.com/org/marketplace',
         enabled: true,
       });
+    });
+
+    it('shows the server refusal in the dialog when the address is not one DorkOS can use', async () => {
+      // The server refuses an address it will not hand to `git` (DOR-1710).
+      // Without this the dialog stayed open with nothing said, which reads as
+      // a button that does not work.
+      const user = userEvent.setup();
+      setSourcesState({ data: [] });
+      setAddMutationState({
+        error: new Error(
+          "That address isn't one DorkOS can fetch a marketplace from. Use an https:// or git@ " +
+            'address for a git repository, or a file:// path to a folder on this machine.'
+        ),
+      });
+
+      render(<MarketplaceSourcesView />);
+
+      await user.click(screen.getAllByRole('button', { name: /add source/i })[0]);
+
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        /isn't one DorkOS can fetch a marketplace from/
+      );
+    });
+
+    it('clears the refusal when the dialog is closed', async () => {
+      const user = userEvent.setup();
+      setSourcesState({ data: [] });
+      setAddMutationState({ error: new Error('nope') });
+
+      render(<MarketplaceSourcesView />);
+
+      await user.click(screen.getAllByRole('button', { name: /add source/i })[0]);
+      await user.click(screen.getByRole('button', { name: /cancel/i }));
+
+      expect(addReset).toHaveBeenCalled();
     });
   });
 

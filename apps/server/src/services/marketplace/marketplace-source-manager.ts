@@ -13,9 +13,20 @@ import { join } from 'node:path';
 import { withFileLock } from '@dorkos/shared/atomic-write';
 import { DORKOS_MARKETPLACE_SOURCE_NAME } from '@dorkos/marketplace';
 import { z } from 'zod';
+import { assertSupportedMarketplaceSourceUrl } from './source-url-policy.js';
 import type { MarketplaceSource } from './types.js';
 
-/** Zod schema for a single configured marketplace source. */
+/**
+ * Zod schema for a single configured marketplace source as it exists ON DISK.
+ *
+ * The address is checked for shape only, deliberately: this schema also runs on
+ * every read, and hardening it would turn one bad line in `marketplaces.json` —
+ * including a line an older DorkOS accepted — into a hard failure of the whole
+ * marketplace. New addresses are refused at the door instead — see
+ * {@link MarketplaceSourceManager.add} — and the address is checked again at
+ * the one place it reaches `git` (`marketplace-installer.ts`), so an address
+ * that got onto disk some other way still cannot be cloned from.
+ */
 const MarketplaceSourceSchema = z.object({
   name: z.string().min(1),
   source: z.string().min(1),
@@ -139,6 +150,8 @@ export class MarketplaceSourceManager {
    *
    * @param input - The new source spec (`enabled` defaults to `true`)
    * @returns The newly added source with `addedAt` filled in
+   * @throws {UnsupportedSourceUrlError} When `input.source` is not an address
+   *   DorkOS can fetch a marketplace from
    * @throws Error when a source with the same name already exists
    */
   async add(input: {
@@ -146,6 +159,10 @@ export class MarketplaceSourceManager {
     source: string;
     enabled?: boolean;
   }): Promise<MarketplaceSource> {
+    // Ahead of the lock: a refused address should not make every other mutator
+    // wait on a file this call was never going to write.
+    assertSupportedMarketplaceSourceUrl(input.source);
+
     // Read-modify-write: the read must sit inside the lock (DOR-697). With
     // only the write serialised, two mutators both read the same starting
     // state and the second write silently drops the first one's change.

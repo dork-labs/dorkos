@@ -49,6 +49,7 @@ import {
   sameDisclosedEffects,
 } from './disclosed-effects.js';
 import { RELATIVE_PATH_SENTINEL_SHA } from './source-resolvers/relative-path.js';
+import { assertSafeGitRemote } from './source-url-policy.js';
 import type { ConflictReport, InstallRequest, InstallResult, PermissionPreview } from './types.js';
 import { cp, mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -676,6 +677,13 @@ export class MarketplaceInstaller implements InstallerLike {
    * source is passed through and the fetcher resolves it locally via
    * `marketplaceRoot`.
    *
+   * The `git-subdir` source built here is the one that skips
+   * `GitSubdirSourceSchema` — it is assembled in code from the CONFIGURED
+   * marketplace's address, not parsed out of a `marketplace.json` — so it asks
+   * the schema's own transport question directly (DOR-1710). Addresses are
+   * already refused when a source is added; this is what still stands between
+   * `git` and an address that reached `marketplaces.json` some other way.
+   *
    * @internal
    */
   private buildFetchableSource(resolved: ResolvedPackageSource): PluginSource {
@@ -698,6 +706,7 @@ export class MarketplaceInstaller implements InstallerLike {
 
     // Remote marketplace: convert relative-path to a git-subdir source.
     // This lets the fetcher sparse-clone just the package subdirectory.
+    assertSafeGitRemote(sourceUrl);
     const subpath = resolveRelativeSubpath(resolved.pluginSource, resolved.pluginRoot);
     return { source: 'git-subdir', url: sourceUrl, path: subpath };
   }
