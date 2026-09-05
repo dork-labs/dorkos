@@ -135,6 +135,21 @@ name: scripts-test
 ### fixtures would keep passing against the script defaults while the job scoped
 ### on something else — so a change to those env values has to trigger the suite
 ### that pins them.
+###
+### contributing/INDEX.md is in the filter because the `Docs-coverage-map drift
+### check` step parses it: `.claude/scripts/docs-coverage-map.json` is GENERATED
+### from its three tables, and the one PR shape that drifts them is an edit to
+### INDEX.md alone — nothing under `.claude/scripts/**` need change for the
+### committed JSON to go stale. That is exactly how it went stale on main:
+### #1397 edited one description cell, regenerated nothing, and `--check` went
+### red on origin/main for the 160-odd commits before DOR-1781 noticed.
+### Extending the workflow-level filter is the right move HERE, and the
+### site-build lesson does not contradict it: that lesson is about REQUIRED
+### checks, which must report on every PR or the merge queue deadlocks waiting
+### for a check that never runs. This workflow has no `merge_group:` trigger and
+### so cannot be required — it is advisory and path-filtered by design (see the
+### `harness` job's lint comment) — so a filter that skips it skips a job rather
+### than stalling a queue.
 on:
   pull_request:
     paths:
@@ -148,6 +163,7 @@ on:
       - 'vitest.config.ts'
       - 'pnpm-workspace.yaml'
       - '.claude/hooks/**'
+      - 'contributing/INDEX.md'
       - 'apps/server/eslint.config.js'
       - 'packages/eslint-config/**'
       - '.github/workflows/scripts-test.yml'
@@ -169,6 +185,7 @@ on:
       - 'vitest.config.ts'
       - 'pnpm-workspace.yaml'
       - '.claude/hooks/**'
+      - 'contributing/INDEX.md'
       - 'apps/server/eslint.config.js'
       - 'packages/eslint-config/**'
       - '.github/workflows/scripts-test.yml'
@@ -354,6 +371,37 @@ jobs:
         run: |
           node --experimental-strip-types --disable-warning=ExperimentalWarning \
             --test .claude/scripts/__tests__/*.test.ts
+
+      # The step above pins the coverage map's PARSER; this one pins the
+      # committed ARTIFACT it parses into. `.claude/scripts/docs-coverage-map.json`
+      # is generated from contributing/INDEX.md and read at runtime by the docs
+      # Stop hook and /docs:reconcile, so drift between the two is silent by
+      # construction: the hook keeps matching a stale copy and goes on suggesting
+      # the guides INDEX.md USED to describe, while the table a human reads says
+      # something else. Nothing goes red, because nothing was asking.
+      #
+      # `--check` is the script's own drift guard and it already existed — it was
+      # wired into no CI job at all, so it went red on origin/main in #1397 and
+      # stayed red for the 160-odd commits until DOR-1781 ran it by hand. A guard
+      # nobody runs certifies nothing; this step is what makes it a gate, and
+      # `test:scripts` runs it locally so `pnpm verify` catches the drift first.
+      # Fix a red by regenerating:
+      # `node .claude/scripts/docs-coverage-map.mjs --regen`.
+      #
+      # It compares the two sides re-serialized through JSON.stringify, so it is
+      # insensitive to WHITESPACE but NOT to key order: JSON.stringify preserves
+      # insertion order, so a hand-reordered key in the committed file reds this
+      # step even though the map means the same thing. That is a feature, not a
+      # rough edge — `--regen` always emits the canonical order, so regenerating
+      # is the one correct fix for every red here, and hand-editing the JSON is
+      # never it. The file is in .prettierignore for the matching reason: the
+      # committed artifact is meant to be byte-reproducible from the generator.
+      #
+      # In `fixtures` rather than `harness` for the same reason as the step above
+      # it: the script imports only `node:*` built-ins, so it needs no pnpm
+      # install.
+      - name: Docs-coverage-map drift check
+        run: node .claude/scripts/docs-coverage-map.mjs --check
 
   # The TypeScript under scripts/ belongs to no pnpm workspace, so `pnpm verify`'s
   # affected-only turbo run resolves a scripts-only change to 0 affected packages

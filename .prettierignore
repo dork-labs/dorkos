@@ -49,6 +49,20 @@ specs/*/mockups/
 # output already matches Prettier byte-for-byte, so it stays checked.
 specs/*/03-tasks.json
 
+# Generated from contributing/INDEX.md by
+# `node .claude/scripts/docs-coverage-map.mjs --regen`, and read at runtime by
+# the docs Stop hook and /docs:reconcile. Same test the specs/manifest.json note
+# above applies, with the opposite answer: that file stays checked because its
+# generator's `JSON.stringify(m, null, 2)` already matches Prettier byte-for-
+# byte, whereas this generator's identical call does NOT — Prettier collapses
+# the short `patterns` arrays onto one line and the raw regen output expands
+# them, a ~590-line divergence. Leaving it checked meant the documented fix for
+# a `--check` red (`--regen`) emitted a file that then failed `format:check`, so
+# the two gates could not both be green at once. Ignoring it makes the committed
+# artifact byte-reproducible from the generator, which is the property
+# `--check` exists to defend.
+.claude/scripts/docs-coverage-map.json
+
 # Deliberately malformed fixture: it stands for a truncated
 # claude-execution-output.json, so scripts/test-review-classifier.sh can prove the
 # review-failure classifier reports "unknown" instead of crashing or guessing.
