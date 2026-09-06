@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): the activity feed names whoever actually did it (DOR-1829)'
+  - "fix(server): invert the actor guard's alphabet and fix two stale actor claims (DOR-1829 review)"
 ---
 
 ### Fixed

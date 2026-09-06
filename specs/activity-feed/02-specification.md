@@ -379,7 +379,20 @@ Mount at `/api/activity` in the Express app setup.
 
 #### Instrumentation Points
 
-Each subsystem adds a single `activityService.emit()` call after its primary operation. Examples:
+Each subsystem adds a single `activityService.emit()` call after its primary operation.
+
+**A route never states its own actor.** It spreads `readActivityActor(req, res)`
+(`apps/server/src/services/activity/activity-actor.ts`), which turns the request into
+the right one of the three: `user` / `'You'` for a person in the app, `agent` plus the
+agent's path for a caller that identified itself, and `system` /
+`'Unidentified caller'` for a token DorkOS cannot resolve. The examples below said
+`actorType: 'user', actorLabel: 'You'` outright until DOR-1829, and that template was
+copied into eleven routes that an agent can reach — so the operator's own feed reported
+machines' writes as their own actions. A hand-written actor is now refused by
+`routes/__tests__/route-activity-actor.test.ts`; only `system` / `'System'` may still be
+stated outright, for events DorkOS raises that nobody asked for.
+
+Examples:
 
 **Pulse runs** — in `routes/pulse.ts`, after run completion callback:
 
@@ -403,8 +416,7 @@ await activityService.emit({
 
 ```typescript
 await activityService.emit({
-  actorType: 'user',
-  actorLabel: 'You',
+  ...readActivityActor(req, res),
   category: 'relay',
   eventType: 'relay.adapter_added',
   resourceType: 'adapter',
@@ -419,8 +431,7 @@ await activityService.emit({
 
 ```typescript
 await activityService.emit({
-  actorType: 'user',
-  actorLabel: 'You',
+  ...readActivityActor(req, res),
   category: 'config',
   eventType: 'config.extension_installed',
   resourceType: 'extension',
@@ -434,8 +445,7 @@ await activityService.emit({
 
 ```typescript
 await activityService.emit({
-  actorType: 'user',
-  actorLabel: 'You',
+  ...readActivityActor(req, res),
   category: 'agent',
   eventType: 'agent.registered',
   resourceType: 'agent',

@@ -91,20 +91,25 @@ export function emitRunActivity(
  *
  * **Only `completed` and `failed` are emitted here.** A `cancelled` run is
  * deliberately left to the path that ended it, because the run row cannot say
- * whether an operator cancelled it (the cancel route emits its own event with
- * the truthful "You" actor) or a deadline did (the scheduler emits one attributed
- * to the Scheduler) — and the two carry different actors. Folding `cancelled`
- * into this row-only funnel would either double the operator's event or lose that
- * attribution. `skipped` never reaches this hook at all: a skipped tick is written
- * straight to a terminal row by `recordTick`, never through the `updateRun` funnel.
+ * whether somebody asked for the cancel or a deadline did — and the two carry
+ * different actors. The cancel route reads its own caller
+ * (`readActivityActor`, DOR-1829), so its event names the person, the agent that
+ * identified itself, or an unidentified caller; the scheduler's deadline event is
+ * attributed to the Scheduler. Only the path that ended the run knows which of
+ * those happened, and the route is the only one of them that knows WHO. Folding
+ * `cancelled` into this row-only funnel would therefore either double the event
+ * or flatten every cancel into one anonymous actor. `skipped` never reaches this
+ * hook at all: a skipped tick is written straight to a terminal row by
+ * `recordTick`, never through the `updateRun` funnel.
  *
  * One residual gap survives this, deliberately deferred to DOR-1580: only the
  * DIRECT path emits a deadline-cancel event (`task-scheduler-service.ts`, the
  * `!operatorCancelled` branch). A relay-dispatched run that hits its deadline is
  * finalized inside `packages/relay`, which cannot import this emitter and emits
  * no cancel event of its own — so a timed-out RELAY run currently reaches no live
- * activity feed, while a timed-out direct run does. Operator-cancel is covered on
- * both paths by the cancel route; only the relay+deadline case is uncovered.
+ * activity feed, while a timed-out direct run does. A cancel somebody ASKED for is
+ * covered on both paths by the cancel route; only the relay+deadline case is
+ * uncovered.
  *
  * @param activityService - The feed to write to; nothing is emitted without one.
  * @param task - The run's task, or null when the hook could not read it.
