@@ -10,7 +10,7 @@ export function NotFoundFallback() {
       <div className="flex flex-col items-center gap-2 text-center">
         <h2 className="text-foreground text-lg font-semibold">Page not found</h2>
         <p className="text-muted-foreground max-w-md text-sm">
-          The page you&apos;re looking for doesn&apos;t exist.
+          The page you’re looking for doesn’t exist.
         </p>
       </div>
       <Button variant="outline" size="sm" asChild>

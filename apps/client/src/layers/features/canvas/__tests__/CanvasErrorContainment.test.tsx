@@ -126,7 +126,7 @@ describe('Canvas per-document error containment', () => {
 
     // The failure is contained to the body as a friendly card with Retry.
     expect(screen.getByText('This tab hit a problem.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
 
     // Switching to the sibling tab still works.
     await user.click(goodTab);

@@ -94,7 +94,7 @@ export function TeamRoute() {
     return (
       <QueryErrorState
         className="h-full"
-        title="Could not load agents"
+        title="Couldn’t load agents"
         description="The mesh API is unreachable. Check that the server is running correctly."
         onRetry={() => void refetch()}
       />
@@ -138,7 +138,7 @@ export function TeamRoute() {
                     fallback={
                       <div className="text-muted-foreground flex h-full items-center justify-center text-sm">
                         <Loader2 className="mr-2 size-4 animate-spin" />
-                        Loading topology...
+                        Loading topology…
                       </div>
                     }
                   >
