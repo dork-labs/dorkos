@@ -27,6 +27,7 @@ import {
   SessionConnectorAttachmentStore,
 } from '../attachment-store.js';
 import { custodyDisclosure } from '../custody-disclosure.js';
+import { RawMcpConnectorProvider } from '../providers/raw-mcp.js';
 import type { CapabilityDeps } from '../../core/capabilities/index.js';
 import { composeDorkOsCapabilityRegistry } from '../../core/self-description/dorkos-registry.js';
 import { initCapabilityTierGate } from '../../core/capabilities/tier-enforcement.js';
@@ -148,7 +149,12 @@ describe('connector capabilities', () => {
         { service: 'slack' },
         {}
       )) as { flowId: string };
-      expect(flowBindings.providerFor(started.flowId)).toBe('composio');
+      const polled = (await capability('connector.poll_connect').invoke(
+        deps,
+        { flowId: started.flowId },
+        {}
+      )) as { status: string; account?: { toolkit: string } };
+      expect(polled).toMatchObject({ status: 'connected', account: { toolkit: 'slack' } });
     });
 
     it('start_connect fails honestly when nothing can connect the service', async () => {
@@ -175,10 +181,37 @@ describe('connector capabilities', () => {
       expect(started.message).toContain(expected);
       expect(started.message).toContain("Tell me when you've signed in");
     });
+
+    it('checks a configured raw MCP connection without claiming it opened a sign-in flow', async () => {
+      connectorRegistry.unregister('composio');
+      connectorRegistry.register(
+        new RawMcpConnectorProvider({
+          servers: [
+            {
+              slug: 'notes',
+              displayName: 'Notes',
+              connection: { transport: 'http', url: 'https://mcp.notes.example/mcp' },
+            },
+          ],
+          probe: () => Promise.resolve({ kind: 'ok', toolCount: 1 }),
+        })
+      );
+
+      const started = (await capability('connector.start_connect').invoke(
+        deps,
+        { service: 'notes' },
+        {}
+      )) as { flowId: string; authorizeUrl?: string; disclosure: string; message: string };
+
+      expect(started.authorizeUrl).toBeUndefined();
+      expect(started.message).toContain("I'll check the configured connection now.");
+      expect(started.message).not.toContain('Sign in');
+      expect(started.message).not.toContain('https://mcp.notes.example/mcp');
+    });
   });
 
   describe('the shared flow-binding map (one map, both surfaces)', () => {
-    it('records the binding on start and releases it on a terminal poll', async () => {
+    it('retains a terminal result so poll_connect is idempotent through the public capability', async () => {
       const started = (await capability('connector.start_connect').invoke(
         deps,
         { service: 'gmail' },
@@ -186,10 +219,65 @@ describe('connector capabilities', () => {
       )) as { flowId: string };
       // The SAME instance the REST router is handed — a flow started in chat is
       // pollable over REST because this binding exists.
-      expect(flowBindings.providerFor(started.flowId)).toBe('composio');
+      const first = await capability('connector.poll_connect').invoke(
+        deps,
+        { flowId: started.flowId },
+        {}
+      );
+      const repeated = await capability('connector.poll_connect').invoke(
+        deps,
+        { flowId: started.flowId },
+        {}
+      );
+      expect(repeated).toEqual(first);
+    });
 
-      await capability('connector.poll_connect').invoke(deps, { flowId: started.flowId }, {});
-      expect(flowBindings.providerFor(started.flowId)).toBeUndefined();
+    it('replays a terminal raw MCP failure through its original provider instance', async () => {
+      connectorRegistry.unregister('composio');
+      const original = new RawMcpConnectorProvider({
+        servers: [
+          {
+            slug: 'notes',
+            displayName: 'Notes',
+            connection: { transport: 'http', url: 'https://mcp.notes.example/mcp' },
+          },
+        ],
+        probe: () => Promise.resolve({ kind: 'unauthorized', error: '401 from fixture' }),
+      });
+      connectorRegistry.register(original);
+      const started = (await capability('connector.start_connect').invoke(
+        deps,
+        { service: 'notes' },
+        {}
+      )) as { flowId: string };
+      connectorRegistry.register(
+        new RawMcpConnectorProvider({
+          servers: [
+            {
+              slug: 'notes',
+              displayName: 'Notes',
+              connection: { transport: 'http', url: 'https://replacement.invalid/mcp' },
+            },
+          ],
+          probe: () => Promise.resolve({ kind: 'ok', toolCount: 1 }),
+        })
+      );
+
+      const first = await capability('connector.poll_connect').invoke(
+        deps,
+        { flowId: started.flowId },
+        {}
+      );
+      const repeated = await capability('connector.poll_connect').invoke(
+        deps,
+        { flowId: started.flowId },
+        {}
+      );
+      expect(first).toEqual({
+        status: 'failed',
+        error: 'The MCP server rejected the configured credentials. Check them and try again.',
+      });
+      expect(repeated).toEqual(first);
     });
   });
 
