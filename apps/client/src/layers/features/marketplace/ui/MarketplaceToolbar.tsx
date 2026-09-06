@@ -75,7 +75,15 @@ export function MarketplaceToolbar() {
         <MarketplaceSearchInput />
       </div>
       <Select value={sort} onValueChange={(v) => setSort(v as MarketplaceSort)}>
-        <SelectTrigger aria-label="Sort packages" className="w-32 shrink-0 text-xs">
+        {/* Narrower on a phone, where the row is 358px wide and the search
+            field beside it has one job. Measured at 390px: with `w-32` the
+            placeholder still clipped after the keyboard hint went away, and
+            with `w-24` "Featured" clipped instead. 7rem is the width where
+            both are whole (DOR-1747). Below 390 — 375 and 360, every iPhone
+            SE/mini/8 and the modal Android width — this floor alone still
+            left the placeholder short by up to 27px; the placeholder itself
+            got shorter too so the two stop competing for the same pixels. */}
+        <SelectTrigger aria-label="Sort packages" className="w-28 shrink-0 text-xs sm:w-32">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -168,11 +176,14 @@ function MarketplaceSearchInput() {
         data-testid="marketplace-search"
         value={localSearch}
         onChange={(e) => setLocalSearch(e.target.value)}
-        placeholder="Search packages…"
-        className="pr-10 pl-9 transition-shadow duration-200 focus:shadow-md"
+        placeholder="Search…"
+        className="pl-9 transition-shadow duration-200 focus:shadow-md max-sm:pr-3 sm:pr-10"
       />
-      {/* Keyboard shortcut hint */}
-      <kbd className="text-muted-foreground/60 text-3xs pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 rounded border border-current/20 px-1.5 py-0.5 font-mono leading-none group-focus-within/search:opacity-0">
+      {/* The keyboard hint, and only where a keyboard is. A phone cannot press
+          "/", so on one this badge charged the row for a shortcut nobody could
+          use — and the placeholder it crowded out clipped to "Search packag"
+          (DOR-1747). Gone below `sm`, along with the padding held for it. */}
+      <kbd className="text-muted-foreground/60 text-3xs pointer-events-none absolute top-1/2 right-3 hidden -translate-y-1/2 rounded border border-current/20 px-1.5 py-0.5 font-mono leading-none group-focus-within/search:opacity-0 sm:block">
         /
       </kbd>
     </div>
