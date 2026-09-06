@@ -291,24 +291,33 @@ describe('ChatPanel suggestion-chip slot', () => {
     });
   }
 
-  it('lets one offer speak at a time, the highest-priority one', async () => {
-    // Three offers used to gate themselves independently and co-occur, stacking
-    // over the box a person is typing in. They arbitrate now (DOR-1759): the
-    // model's follow-ups outrank the extensions' chips, so the chip waits.
+  it('arbitrates the offers that can answer for themselves, and only those', async () => {
+    // Offers that used to gate themselves independently and co-occur now share
+    // one slot (DOR-1759) — but ONLY the ones whose eligibility is answerable
+    // without rendering them.
+    //
+    // An extension's chip is not one of those: a contribution decides it has
+    // nothing to offer by rendering null, so declared as a candidate it wins the
+    // slot on `length > 0` and then draws nothing. That cost a real bug — an
+    // empty padded box in the session column, moving on every status change,
+    // which the transcript above read as the reader reaching the bottom and
+    // marked the session read, dropping its unread rule on every device. So the
+    // chip draws OUTSIDE the arbitrated slot, exactly where it always did.
     registerChip();
     mockPromptSuggestions = ['Try the next thing'];
 
     render(<ChatPanel sessionId="test" />);
 
-    expect(await screen.findByRole('button', { name: 'Try the next thing' })).toBeTruthy();
-    expect(screen.queryByTestId('suggestion-chip')).toBeNull();
+    const suggestion = await screen.findByRole('button', { name: 'Try the next thing' });
+    const slot = document.querySelector('[data-slot="session-bottom-slot"]');
+    expect(slot).not.toBeNull();
+    // The follow-up won the slot.
+    expect(slot!.contains(suggestion)).toBe(true);
 
-    mockPromptSuggestions = [];
-    cleanup();
-    render(<ChatPanel sessionId="test" />);
-
-    // Nothing outranks it now, so the chip gets the slot.
-    expect(screen.getByTestId('suggestion-chip')).toBeTruthy();
+    // And the chip is on screen beside it rather than starved behind it — but
+    // never inside the slot, which is what would let it win and draw nothing.
+    const chip = screen.getByTestId('suggestion-chip');
+    expect(slot!.contains(chip)).toBe(false);
   });
 
   it('renders suggestion chips only while idle, never mid-stream', () => {

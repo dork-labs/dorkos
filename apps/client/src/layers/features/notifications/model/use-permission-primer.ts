@@ -16,7 +16,7 @@
  * @module features/notifications/model/use-permission-primer
  */
 import { useCallback, useEffect, useState } from 'react';
-import { useNotificationPrefs } from '@/layers/entities/config';
+import { useConfig, useNotificationPrefs } from '@/layers/entities/config';
 import { getPlatform, isDesktopShell } from '@/layers/shared/lib';
 import { useBrowserNotificationPermission } from '@/layers/shared/model';
 import { armPermissionPrimer, usePermissionPrimerArmed, LONG_TURN_MS } from './primer-trigger';
@@ -71,6 +71,20 @@ export function usePermissionPrimer(streaming: boolean): PermissionPrimerOffer {
   const armed = usePermissionPrimerArmed();
   const { permission, request } = useBrowserNotificationPermission();
   const { prefs, setPrefs } = useNotificationPrefs();
+  // Whether the answer is KNOWN yet, not merely defaulted. `useNotificationPrefs`
+  // falls back to the defaults while the config query is in flight, and the
+  // default for "already answered" is `false` — so asking before it lands offers
+  // the card to somebody who answered it long ago. That is the one thing this
+  // card promises never to do.
+  //
+  // It is also why the offer has to be silent until then rather than merely
+  // wrong: the host arbitrates one card at a time above the transcript, and a
+  // card that appears and then withdraws collapses its own height while the
+  // conversation beside it is still deciding where to land — which the timeline
+  // reads as the reader arriving at the bottom, and marks a session read that
+  // nobody read (DOR-1759).
+  const { data: config } = useConfig();
+  const answerKnown = config !== undefined;
 
   // Held for this session as well as written to config, the same union
   // `usePromoDismissals` uses: `updateConfig` is a no-op on the Obsidian
@@ -105,6 +119,7 @@ export function usePermissionPrimer(streaming: boolean): PermissionPrimerOffer {
 
   const eligible =
     !unavailable &&
+    answerKnown &&
     armed &&
     !answered &&
     permission === 'default' &&

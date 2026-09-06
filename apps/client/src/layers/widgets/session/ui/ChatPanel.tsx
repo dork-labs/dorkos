@@ -587,24 +587,33 @@ export function ChatPanel({
    * What may speak in the gap between the transcript and the composer, highest
    * priority first.
    *
-   * **One offer at a time.** Suggestion chips, the extensions' chips and the
+   * **One offer at a time.** The model's follow-up suggestions and the
    * notification question each used to gate themselves on their own predicate,
-   * and they co-occur — three unrelated offers stacked over the box a person is
-   * trying to type in. ADR 260819-210153 settled this question for the sidebar;
-   * this is the same arbiter, and the order below is the whole of the policy.
+   * and they co-occur — unrelated offers stacked over the box a person is trying
+   * to type in. ADR 260819-210153 settled this question for the sidebar; this is
+   * the same arbiter, and the order below is the whole of the policy.
    *
    * The order: the model's follow-ups first, because they are about the answer
    * still on screen and they expire on their own the moment a turn starts or a
    * key is pressed — so nothing waits behind them for long. The permission
    * question next: it is asked once ever, it arms mid-turn when the chips are
-   * hidden anyway, and it stands until answered. The extension chips last,
-   * because a contribution can decide it has nothing to offer only by rendering
-   * null, so a card that draws nothing can starve only the cards below it — and
-   * below it there are none.
+   * hidden anyway, and it stands until answered.
    *
-   * What is deliberately NOT here: the live lane (a reserved line by design),
-   * the to-do panel (content about the running turn, not an offer), and the
-   * error and turn-failed blocks. A failure must never be arbitrated away.
+   * **The extensions' chips are NOT candidates, and cannot be.** The slot's one
+   * rule for callers is that a candidate's `show` must be answerable without
+   * rendering it; a contribution answers only by rendering null (`TourOfferChips`
+   * is null unless an occasion stands). Declared as a candidate, it wins the slot
+   * on `length > 0` and then draws nothing — which put an empty padded box in the
+   * column and moved it on every status change. The transcript above reads that
+   * column's geometry to decide the reader has reached the bottom, and reaching
+   * the bottom marks the session read: a session opened at its unread rule
+   * marked itself read and dropped the rule on every device (DOR-1759). So they
+   * stay where they were, drawn inline below the slot, self-suppressing and
+   * taking no space when they have nothing to say.
+   *
+   * What is deliberately NOT here either: the live lane (a reserved line by
+   * design), the to-do panel (content about the running turn, not an offer), and
+   * the error and turn-failed blocks. A failure must never be arbitrated away.
    */
   const offers = useMemo<BottomSlotCandidate[]>(
     () => [
@@ -625,18 +634,6 @@ export function ChatPanel({
           <PermissionPrimer onAllow={allowNotifications} onNotNow={declineNotifications} />
         ),
       },
-      {
-        id: 'extension-chips',
-        // Never mid-turn: an extension's offer must not interrupt a running turn.
-        show: status === 'idle' && suggestionChips.length > 0,
-        render: () => (
-          <>
-            {suggestionChips.map((chip) => (
-              <chip.component key={chip.id} />
-            ))}
-          </>
-        ),
-      },
     ],
     [
       showSuggestions,
@@ -645,8 +642,6 @@ export function ChatPanel({
       primerEligible,
       allowNotifications,
       declineNotifications,
-      status,
-      suggestionChips,
     ]
   );
 
@@ -705,6 +700,12 @@ export function ChatPanel({
           name="session-bottom-slot"
           className="px-4 pb-2"
         />
+
+        {/* Not arbitrated — see {@link offers} for why a contribution cannot be a
+          candidate. Never mid-turn: an extension's offer must not interrupt a
+          running turn. Each chip draws nothing until its own occasion stands, so
+          this costs no height while there is nothing to offer. */}
+        {status === 'idle' && suggestionChips.map((chip) => <chip.component key={chip.id} />)}
 
         <CelebrationOverlay
           celebration={celebrations.activeCelebration}

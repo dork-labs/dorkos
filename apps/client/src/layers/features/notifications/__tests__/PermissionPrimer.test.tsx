@@ -128,6 +128,43 @@ describe('PermissionPrimer', () => {
     }
   });
 
+  it('stays silent until the stored answer has actually arrived (DOR-1759)', async () => {
+    // `useNotificationPrefs` falls back to the DEFAULTS while the config query
+    // is in flight, and the default for "already answered" is false. So a card
+    // that only reads the prefs offers itself to somebody who answered it long
+    // ago, then withdraws the moment the real answer lands.
+    //
+    // That flash is not merely untidy. The host arbitrates one card at a time
+    // in the gap between the transcript and the composer, and a card that
+    // appears and withdraws collapses its own height while the conversation
+    // beside it is still deciding where to land — which the timeline reads as
+    // the reader reaching the bottom, and marks a session read that nobody
+    // read. Both `session-read-state` e2e cases died on exactly this.
+    const config = {
+      notifications: { ...NOTIFICATION_PREFS_DEFAULTS, browserPermissionPrimerDismissed: true },
+    } as unknown as ServerConfig;
+    const transport = createMockTransport({
+      getConfig: vi.fn().mockResolvedValue(config),
+      updateConfig: vi.fn().mockResolvedValue(undefined),
+    });
+    // Deliberately NOT seeded into the cache: this is the in-flight window.
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>{children}</TransportProvider>
+      </QueryClientProvider>
+    );
+    render(<PrimerHost streaming={false} />, { wrapper });
+
+    // Armed, and every other condition met — the only unknown is the answer.
+    act(() => armPermissionPrimer());
+    expect(screen.queryByText(CARD, { exact: false })).not.toBeInTheDocument();
+
+    // And once it lands saying "already answered", it never appears at all.
+    await waitFor(() => expect(transport.getConfig).toHaveBeenCalled());
+    expect(screen.queryByText(CARD, { exact: false })).not.toBeInTheDocument();
+  });
+
   it('stays away once the person has already answered it', () => {
     renderPrimer({ prefs: { browserPermissionPrimerDismissed: true } });
     act(() => armPermissionPrimer());
