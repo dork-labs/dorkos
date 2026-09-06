@@ -3,6 +3,7 @@ covers:
   - 'fix(client,site,server): one ellipsis, one apostrophe, one gate (DOR-1756)'
   - 'fix(client): four failure screens, one vocabulary (DOR-1756)'
   - 'fix(client): the asks and the last stragglers say what they mean (DOR-1756)'
+  - 'fix(client,site,scripts): review fixes for UI audit batch 10 (DOR-1756)'
 ---
 
 ### Fixed
