@@ -448,9 +448,11 @@ router.post('/:id/attachments', (req, res) => {
     // Memory, not disk: the bytes must be sniffed before anything decides the
     // extension, the mime type, or whether the file may ever be served inline.
     storage: multer.memoryStorage(),
-    // `+ 1` because busboy refuses a file that REACHES `fileSize` rather than
-    // one that exceeds it, so the configured limit itself would be rejected.
-    limits: { fileSize: uploadConfig.maxFileSize + 1, files: uploadConfig.maxFiles },
+    // No `+ 1` here: multer 2.3 already compensates internally for busboy's
+    // own off-by-one (busboy refuses a file that REACHES `fileSize` rather
+    // than one that exceeds it), so passing the configured limit as-is is
+    // exactly the cap the config means.
+    limits: { fileSize: uploadConfig.maxFileSize, files: uploadConfig.maxFiles },
     fileFilter: (_req, file, cb) =>
       uploadConfig.allowedTypes.includes('*/*') || uploadConfig.allowedTypes.includes(file.mimetype)
         ? cb(null, true)

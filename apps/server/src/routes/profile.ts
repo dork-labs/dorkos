@@ -102,11 +102,14 @@ export interface ProfileRouterDeps {
  */
 const uploadAvatar = multer({
   storage: multer.memoryStorage(),
-  // `+ 1` because busboy refuses a file that REACHES `fileSize`, not one that
-  // exceeds it: measured, `fileSize: MAX_AVATAR_BYTES` turns away a file of
-  // exactly 2 MB, which makes the cap `< 2 MB` while the spec and the error
-  // message both say `≤ 2 MB`. One byte higher is the limit those words mean.
-  limits: { fileSize: MAX_AVATAR_BYTES + 1, files: 1 },
+  // No `+ 1` here: multer 2.3 compensates internally for busboy's own
+  // off-by-one (busboy refuses a file that REACHES `fileSize`, not one that
+  // exceeds it), passing busboy `fileSize + 1` under the hood. Adding our own
+  // `+ 1` on top made the effective cap `MAX_AVATAR_BYTES + 2`, so a file one
+  // byte over the configured limit was silently accepted. `fileSize:
+  // MAX_AVATAR_BYTES` is now exactly the `≤ 2 MB` the spec and error message
+  // both promise.
+  limits: { fileSize: MAX_AVATAR_BYTES, files: 1 },
 }).single('avatar');
 
 /** The form field the photo arrives in. */
