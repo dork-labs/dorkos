@@ -119,8 +119,45 @@ export const SURFACED_ASSISTANT_ERRORS = new Set([
   'server_error',
 ]);
 
-/** Map an SDK assistant-message error to a clear, user-facing message. */
-export function describeAssistantError(error: string): string {
+/**
+ * Whether an `invalid_request` notice is the API's content safeguard, not a
+ * malformed request.
+ *
+ * The API says "…'s safeguards flagged this message (https://www.anthropic.com/legal/aup)"
+ * and the CLI files it under the same `invalid_request` code as a genuinely
+ * broken request. They need different words: a broken request is DorkOS's
+ * problem, a flagged one is something the person can act on right now by
+ * rephrasing or switching models. Matched on the phrase the API uses rather
+ * than the model name in front of it, which changes per model.
+ *
+ * @param noticeText - The CLI's own text for the failure, when it carried any.
+ */
+export function isSafeguardRefusal(noticeText: string | undefined): boolean {
+  return noticeText !== undefined && /safeguards flagged/i.test(noticeText);
+}
+
+/**
+ * What the card says when the API's safeguard declined a message.
+ *
+ * Carries the policy link on purpose: the client shows a runtime message on its
+ * own line only when it contains a URL (`ErrorMessageBlock`), so the link is
+ * what keeps this sentence visible instead of folded into Details. The
+ * request id stays in Details, where the raw notice is kept verbatim.
+ */
+export const SAFEGUARD_REFUSAL_MESSAGE =
+  'Claude’s safety filter flagged this message. It sometimes flags ordinary coding work. ' +
+  'Rephrase it, or pick a different model and try again. ' +
+  'Policy: https://www.anthropic.com/legal/aup';
+
+/**
+ * Map an SDK assistant-message error to a clear, user-facing message.
+ *
+ * @param error - The SDK's error code.
+ * @param noticeText - The CLI's own text for the failure, when the caller has
+ *   it. Only `invalid_request` reads it, to tell a safeguard refusal apart from
+ *   a malformed request.
+ */
+export function describeAssistantError(error: string, noticeText?: string): string {
   switch (error) {
     case 'model_not_found':
       return 'The selected model is unavailable. Pick a different model and try again.';
@@ -133,7 +170,9 @@ export function describeAssistantError(error: string): string {
     case 'billing_error':
       return 'There is a billing issue with your Claude account.';
     case 'invalid_request':
-      return 'The request was rejected as invalid.';
+      return isSafeguardRefusal(noticeText)
+        ? SAFEGUARD_REFUSAL_MESSAGE
+        : 'The request was rejected as invalid.';
     case 'server_error':
       return 'Claude encountered a server error. Try again in a moment.';
     default:

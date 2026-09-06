@@ -83,6 +83,17 @@ export function isStreamOwnedQuery(query: { meta?: Record<string, unknown> }): b
 }
 
 /**
+ * Whether an error is the browser's own "this request was abandoned" signal
+ * rather than something the request did wrong.
+ *
+ * Checked by name, not `instanceof DOMException`: the undici polyfill under
+ * jsdom throws a plain `Error` with the same name.
+ */
+export function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
+/**
  * Build the app's QueryClient configuration.
  *
  * A factory rather than a shared object because a QueryCache and a MutationCache
@@ -99,6 +110,16 @@ export function createQueryClientConfig(): QueryClientConfig {
   return {
     queryCache: new QueryCache({
       onError: (error, query) => {
+        // A fetch the BROWSER cut off is not a failure. Chrome rejects every
+        // in-flight request with `AbortError` ("The user aborted a request.")
+        // when the document is reloaded, navigated away from, or put to sleep,
+        // and nothing in DorkOS aborts without a timeout — which throws under
+        // its own name and gets its own sentence in `http-client.ts`. TanStack
+        // already drops its own cancellations before this handler; the
+        // browser's deserve the same silence. Logging them made every reload
+        // print one red line per polling query, and the operator read them as
+        // a bug in the app (DOR-1832).
+        if (isAbortError(error)) return;
         console.error('[dorkos:query-error]', {
           queryKey: query.queryKey,
           error: error.message,
